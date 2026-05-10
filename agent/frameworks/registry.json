@@ -9,6 +9,7 @@
         "javascript"
       ],
       "file_extensions": ["spec.ts", "spec.js", "test.ts", "test.js"],
+      "execution_command": "npx --yes playwright test {file}",
       "ecosystems": [
         "react",
         "vue",
@@ -42,6 +43,7 @@
         "javascript"
       ],
       "file_extensions": ["test.ts", "test.js", "spec.ts", "spec.js"],
+      "execution_command": "npx --yes vitest run {file}",
       "ecosystems": [
         "vite",
         "react",
@@ -73,6 +75,7 @@
       ],
       "file_extensions": ["py"],
       "file_patterns": ["test_*.py", "*_test.py"],
+      "execution_command": "pytest {file}",
       "ecosystems": [
         "python"
       ],
@@ -100,6 +103,7 @@
       ],
       "file_extensions": ["js"],
       "file_patterns": ["load.js", "*.load.js"],
+      "execution_command": "k6 run {file}",
       "ecosystems": [
         "api",
         "backend",

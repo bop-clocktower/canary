@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "name": "oracle",
+  "layers": [
+    {
+      "name": "llm",
+      "pattern": "agent/llm/**",
+      "allowedDependencies": []
+    },
+    {
+      "name": "core",
+      "pattern": "agent/core/**",
+      "allowedDependencies": [
+        "llm"
+      ]
+    },
+    {
+      "name": "cli",
+      "pattern": "agent/cli.py",
+      "allowedDependencies": [
+        "core",
+        "llm"
+      ]
+    }
+  ],
+  "forbiddenImports": [
+    {
+      "from": "agent/llm/**",
+      "disallow": [
+        "agent/core/**",
+        "agent/cli.py"
+      ],
+      "message": "LLM layer must remain isolated from business logic and CLI."
+    }
+  ],
+  "agentsMapPath": "./AGENTS.md",
+  "docsDir": "./docs",
+  "template": {
+    "level": "intermediate",
+    "version": 1
+  }
+}
