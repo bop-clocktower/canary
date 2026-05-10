@@ -168,3 +168,5 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+.harness/dispatch-last-head.txt
+.harness/metrics/adoption.jsonl
