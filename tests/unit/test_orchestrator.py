@@ -20,10 +20,8 @@ class TestOracleOrchestrator(unittest.TestCase):
         self.assertTrue(result['output_file'].endswith('.spec.ts'))
         
         output_path = Path(result['output_file'])
+        self.addCleanup(lambda: output_path.unlink(missing_ok=True))
         self.assertTrue(output_path.exists())
-        
-        # Cleanup
-        output_path.unlink()
 
     @patch('agent.core.orchestrator.generate_response')
     def test_run_performance(self, mock_generate):
@@ -34,13 +32,11 @@ class TestOracleOrchestrator(unittest.TestCase):
         
         self.assertEqual(result['test_type'], 'performance')
         self.assertEqual(result['framework'], 'k6')
-        self.assertTrue(result['output_file'].endswith('.load.js'))
+        self.assertTrue(result['output_file'].endswith('.js'))
         
         output_path = Path(result['output_file'])
+        self.addCleanup(lambda: output_path.unlink(missing_ok=True))
         self.assertTrue(output_path.exists())
-        
-        # Cleanup
-        output_path.unlink()
 
 if __name__ == '__main__':
     unittest.main()

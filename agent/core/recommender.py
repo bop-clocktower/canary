@@ -27,10 +27,18 @@ class FrameworkRecommender:
 
         selected = preferred[0] if preferred else frameworks[0]
 
+        # Derive extension with safety
+        file_extension = "ts" # Default fallback
+        if selected.get("file_extensions"):
+            file_extension = selected["file_extensions"][0]
+        elif selected.get("languages"):
+            lang_map = {"python": "py", "javascript": "js", "typescript": "ts"}
+            file_extension = lang_map.get(selected["languages"][0].lower(), "ts")
+
         return {
             "framework": selected["name"],
             "category": selected["category"],
-            "file_extension": selected.get("file_extension", "ts"),
+            "file_extension": file_extension,
             "reason": self._build_reason(selected)
         }
 
