@@ -1,5 +1,6 @@
 # agent/cli.py
 
+import json
 import typer
 from rich import print
 
@@ -9,14 +10,17 @@ app = typer.Typer()
 @app.command()
 def generate(
     prompt: str,
-    recommend_only: bool = typer.Option(False, "--recommend-only", "-r", help="Only show the recommendation, skip generation.")
+    recommend_only: bool = typer.Option(False, "--recommend-only", "-r", help="Only show the recommendation, skip generation."),
+    output_json: bool = typer.Option(False, "--json", help="Output results in JSON format for tool integration."),
+    run_test: bool = typer.Option(False, "--run", help="Execute the test immediately after generation.")
 ):
     """
     Generate test automation code from a natural language prompt.
     """
     from agent.core.orchestrator import OracleOrchestrator
 
-    print("\n[bold cyan]🧠 Oracle Processing Request...[/bold cyan]\n")
+    if not output_json:
+        print("\n[bold cyan]🧠 Oracle Processing Request...[/bold cyan]\n")
 
     if recommend_only:
         from agent.core.classifier import TestClassifier
@@ -28,6 +32,17 @@ def generate(
         classification = classifier.classify(prompt)
         result = recommender.recommend(classification)
         
+        if output_json:
+            print(json.dumps({
+                "status": "success",
+                "mode": "recommendation",
+                "test_type": classification.test_type,
+                "framework": result["framework"],
+                "file_extension": result["file_extension"],
+                "reasoning": result["reason"]
+            }, indent=2))
+            return
+
         print("[bold green]✅ Oracle Recommendation (Draft Mode)[/bold green]\n")
         print(f"[bold]Test Type:[/bold] {classification.test_type}")
         print(f"[bold]Framework:[/bold] {result['framework']}")
@@ -38,7 +53,19 @@ def generate(
         return
 
     orchestrator = OracleOrchestrator()
-    result = orchestrator.run(prompt)
+    result = orchestrator.run(prompt, execute=run_test)
+
+    if output_json:
+        print(json.dumps({
+            "status": "success",
+            "mode": "full_generation",
+            "test_type": result["test_type"],
+            "framework": result["framework"],
+            "output_file": result["output_file"],
+            "reasoning": result["reason"],
+            "execution": result.get("execution")
+        }, indent=2))
+        return
 
     print("\n[bold green]✅ Oracle Result[/bold green]\n")
 
@@ -51,6 +78,44 @@ def generate(
 
     print("\n[bold yellow]Output File:[/bold yellow]")
     print(result["output_file"])
+
+    if "execution" in result:
+        print("\n[bold cyan]🚀 Execution Results:[/bold cyan]")
+        exec_res = result["execution"]
+        color = "green" if exec_res["exit_code"] == 0 else "red"
+        print(f"[{color}]Exit Code: {exec_res['exit_code']}[/{color}]")
+        if exec_res["stderr"]:
+            print(f"[red]Error Output:[/red]\n{exec_res['stderr']}")
+        if exec_res["stdout"]:
+            # truncate stdout for readability
+            stdout_preview = exec_res["stdout"][:500] + ("..." if len(exec_res["stdout"]) > 500 else "")
+            print(f"[dim]Standard Output:[/dim]\n{stdout_preview}")
+
+
+@app.command()
+def run(
+    file_path: str,
+    framework: str = typer.Argument(..., help="Framework to use (e.g., playwright, pytest)")
+):
+    """
+    Execute a test file using Oracle's integrated executor.
+    """
+    from agent.core.executor import TestExecutor
+    from pathlib import Path
+
+    print(f"\n[bold cyan]🚀 Oracle Executing {framework} Test...[/bold cyan]\n")
+
+    executor = TestExecutor()
+    exit_code, stdout, stderr = executor.execute(Path(file_path), framework)
+
+    color = "green" if exit_code == 0 else "red"
+    print(f"[{color}]Result: {'Success' if exit_code == 0 else 'Failure'} (Exit {exit_code})[/{color}]")
+
+    if stderr:
+        print(f"\n[red]Error:[/red]\n{stderr}")
+    
+    if stdout:
+        print(f"\n[dim]Output:[/dim]\n{stdout}")
 
 
 @app.command()

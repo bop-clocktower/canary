@@ -6,31 +6,21 @@
 - Test classifier (rule-based MVP)
 - Framework recommender engine
 - Orchestrator pipeline
-- LLM abstraction layer
-- CLI Interface (`oracle generate`)
+- LLM abstraction layer (Provider-agnostic)
+- CLI Interface (`oracle generate`, `oracle run`)
+- Execution Feedback Loop (Self-healing tests)
 
 ## 🚧 Current State
 
-System is fully architected and terminal-ready.
-
-Missing:
-
-- Execution Feedback Loop (future)
-
-## ⏭️ Next Milestone: Execution Feedback Loop
-
-### TICKET-028 — Execution Feedback Loop
-
-- Run generated tests
-- Capture failures
-- Feed results back into Oracle for improvement
+Oracle is a functional, autonomous test engineer CLI. It can generate, 
+execute, and self-heal test automation code.
 
 ## 🧭 Product Stage
 
 Oracle is currently:
 
-> Functional developer CLI tool for test generation
+> Autonomous developer CLI tool for test generation and self-healing
 
 Target:
 
-> Fully autonomous test debugging and self-healing engine
+> Fully integrated SDLC partner (CI/CD integration, IDE plugins)

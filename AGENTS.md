@@ -2,7 +2,9 @@
 
 ## About This Project
 
-**Oracle** is an AI-powered test automation agent that transforms natural language requirements into high-quality, framework-aware test code. It follows strict Harness Engineering practices for layer isolation and architectural integrity.
+**Oracle** is an AI-powered test automation agent that transforms natural language
+requirements into high-quality, framework-aware test code. It follows strict harness
+engineering practices for layer isolation and architectural integrity.
 
 ## Documentation
 
@@ -21,11 +23,16 @@
 ## Integration with Harness
 
 Oracle integrates with the **Harness Engineering Ecosystem** by:
-1.  **Programmatic Access:** Exposing a `--json` flag for machine-readable generation outputs.
-2.  **Layered Architecture:** Strictly separating LLM calls from core orchestration and CLI logic.
-3.  **Mechanical Verification:** Supporting dry-runs via `--recommend-only` for early validation by other harness agents (like `harness-planner`).
+
+1. **Programmatic Access:** Exposing a `--json` flag for machine-readable generation
+   outputs
+2. **Layered Architecture:** Strictly separating LLM calls from core orchestration
+   and CLI logic
+3. **Mechanical Verification:** Supporting dry-runs via `--recommend-only` for early
+   validation by other harness agents (like `harness-planner`)
 
 ## Key Agents
 
 - **Oracle:** The primary test generator.
-- **Harness Sub-agents:** Used for architectural enforcement, planning, and verification of Oracle's own codebase.
+- **Harness Sub-agents:** Used for architectural enforcement, planning, and
+  verification of Oracle's own codebase.

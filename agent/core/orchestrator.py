@@ -3,6 +3,7 @@
 from pathlib import Path
 from datetime import datetime
 
+from rich import print
 from agent.core.classifier import TestClassifier
 from agent.core.recommender import FrameworkRecommender
 from agent.llm import generate_response
@@ -17,10 +18,11 @@ class OracleOrchestrator:
         self.output_dir = Path(__file__).resolve().parents[2] / "tests" / "generated"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def run(self, user_prompt: str) -> dict:
+    def run(self, user_prompt: str, execute: bool = False) -> dict:
         """
         Main entrypoint for Oracle pipeline
         """
+        from agent.core.executor import TestExecutor
 
         # 1. Classify intent
         classification = self.classifier.classify(user_prompt)
@@ -47,13 +49,79 @@ class OracleOrchestrator:
         # 5. Write file
         file_path = self._write_test_file(generated_code, framework, extension)
 
-        return {
+        result = {
             "input": user_prompt,
             "test_type": classification.test_type,
             "framework": framework,
             "reason": recommendation["reason"],
             "output_file": str(file_path)
         }
+
+        # 6. Execute if requested
+        if execute:
+            executor = TestExecutor()
+            exit_code, stdout, stderr = executor.execute(file_path, framework)
+            
+            result["execution"] = {
+                "exit_code": exit_code,
+                "stdout": stdout,
+                "stderr": stderr,
+                "fixed": False
+            }
+
+            # 7. Self-healing loop (MVP: 1 attempt)
+            if exit_code != 0:
+                print(f"\n[yellow]⚠️ Test failed (Exit {exit_code}). Oracle attempting to self-heal...[/yellow]")
+                
+                fixed_code = self._attempt_fix(
+                    user_prompt, 
+                    framework, 
+                    generated_code, 
+                    stderr or stdout
+                )
+                
+                # Overwrite file with fixed code
+                with open(file_path, "w") as f:
+                    f.write(fixed_code)
+                
+                # Re-execute
+                exit_code_fixed, stdout_fixed, stderr_fixed = executor.execute(file_path, framework)
+                
+                result["execution"] = {
+                    "exit_code": exit_code_fixed,
+                    "stdout": stdout_fixed,
+                    "stderr": stderr_fixed,
+                    "fixed": True,
+                    "original_error": stderr or stdout
+                }
+
+        return result
+
+    def _attempt_fix(self, user_prompt: str, framework: str, original_code: str, error: str) -> str:
+        """
+        Requests a fix from the LLM based on the error output.
+        """
+        fix_prompt = f"""
+You are Oracle, a senior test automation engineer. 
+A test you generated for the following requirement has FAILED.
+
+--- REQUIREMENT ---
+{user_prompt}
+
+--- ORIGINAL CODE ---
+{original_code}
+
+--- ERROR OUTPUT ---
+{error}
+
+--- TASK ---
+Fix the code so it passes. 
+- Maintain all original test logic
+- Address the specific error provided
+- Ensure the result is a complete, runnable file
+- Return ONLY the code, no explanation
+"""
+        return generate_response(fix_prompt)
 
     def _build_prompt(self, user_prompt: str, test_type: str, framework: str) -> str:
         """
