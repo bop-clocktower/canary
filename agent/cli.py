@@ -119,6 +119,55 @@ def run(
 
 
 @app.command()
+def init(
+    framework: str = typer.Argument(..., help="Framework to scaffold (e.g., playwright, vitest, pytest, k6)")
+):
+    """
+    Initialize a test suite with Gold Standard scaffolding and config.
+    """
+    from agent.core.scaffolder import Scaffolder
+    
+    print(f"\n[bold cyan]🛠 Oracle Initializing {framework} Scaffold...[/bold cyan]\n")
+    
+    try:
+        scaffolder = Scaffolder()
+        result = scaffolder.scaffold(framework)
+        
+        print("[bold green]✅ Scaffolding Complete[/bold green]\n")
+        
+        if result["created_dirs"]:
+            print("[bold]Directories Created:[/bold]")
+            for d in result["created_dirs"]:
+                print(f"  + {d}")
+        
+        if result["created_files"]:
+            print("\n[bold]Files Created:[/bold]")
+            for f in result["created_files"]:
+                print(f"  + {f}")
+        
+        if result["skipped_files"]:
+            print("\n[bold yellow]Files Skipped (Already Exist):[/bold yellow]")
+            for f in result["skipped_files"]:
+                print(f"  - {f}")
+        
+        # Next steps
+        print("\n[bold cyan]⏭️ Next Steps:[/bold cyan]")
+        if framework.lower() == "playwright":
+            print("  1. Run: [bold green]npm install -D @playwright/test[/bold green]")
+            print("  2. Run: [bold green]npx playwright install[/bold green]")
+        elif framework.lower() == "vitest":
+            print("  1. Run: [bold green]npm install -D vitest[/bold green]")
+        elif framework.lower() == "pytest":
+            print("  1. Run: [bold green]pip install pytest[/bold green]")
+        elif framework.lower() == "k6":
+            print("  1. Install k6: [bold green]https://k6.io/docs/getting-started/installation/[/bold green]")
+
+    except ValueError as e:
+        print(f"\n[bold red]❌ Error: {str(e)}[/bold red]")
+        print("[yellow]Supported frameworks: playwright, vitest, pytest, k6[/yellow]")
+
+
+@app.command()
 def version():
     """
     Show Oracle version info.

@@ -21,6 +21,14 @@
         "core",
         "llm"
       ]
+    },
+    {
+      "name": "tests",
+      "pattern": "tests/**",
+      "allowedDependencies": [
+        "core",
+        "llm"
+      ]
     }
   ],
   "forbiddenImports": [
