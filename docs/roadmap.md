@@ -90,6 +90,23 @@ updated: 2026-05-11
 - **Blockers:** none
 - **Plan:** none
 
+## Provider Platform
+
+### Multi-Provider LLM Support
+
+- **Status:** in-progress
+- **Spec:** none
+- **Summary:** Bring Oracle's LLM provider matrix to parity with the
+  harness toolchain. Add first-class providers for Claude (Anthropic)
+  and Gemini (Google) alongside the existing OpenAI and Mock backends,
+  plus a Codex provider to match the harness `codex` integration.
+  Switch the default provider from OpenAI to Claude. Provider selection
+  remains driven by `ORACLE_LLM_PROVIDER`. This is a prerequisite for
+  the Project Intelligence work because context-aware prompts will
+  exceed OpenAI free-tier context windows.
+- **Blockers:** none
+- **Plan:** none
+
 ## Project Intelligence
 
 ### Metadata Scanning
@@ -186,24 +203,5 @@ updated: 2026-05-11
 - **Spec:** none
 - **Summary:** First-run guided experience for installing Oracle and
   configuring providers.
-- **Blockers:** none
-- **Plan:** none
-
-## Fork-Specific (Capillary)
-
-> Items in this milestone live only in the Capillary fork and must never
-> be merged upstream. They reference internal systems by name and
-> location only — no proprietary content lives in this repo.
-
-### Company Knowledge Integration
-
-- **Status:** planned
-- **Spec:** none
-- **Summary:** Teach Oracle where to look for Capillary-internal context
-  so AI agents can ground generation in company conventions. Stores
-  pointers only (Confluence space keys, Jira project keys, internal doc
-  URLs, MCP server identifiers) — no proprietary content is committed.
-  AI agents retrieve the actual content at runtime via the configured
-  MCP servers or authenticated tools.
 - **Blockers:** none
 - **Plan:** none

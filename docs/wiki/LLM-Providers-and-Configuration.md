@@ -12,28 +12,33 @@ The `ProviderFactory` selects the appropriate backend based on the
 
 | Provider | Description | Required Configuration |
 | :--- | :--- | :--- |
-| `openai` (Default) | Uses GPT-4o-mini for fast, reliable test generation. | `OPENAI_API_KEY` |
-| `mock` | Returns static test templates. Perfect for testing, development, and CI environments. | None |
-| `gemini` (Planned) | Integration with Google's Gemini models. | `GEMINI_API_KEY` |
+| `anthropic` (Default) | Uses Claude Sonnet for high-quality test generation. | `ANTHROPIC_API_KEY` |
+| `gemini` | Google Gemini Flash for fast, low-cost generation. | `GEMINI_API_KEY` |
+| `openai` | Uses GPT-4o-mini, retained as an alternative. | `OPENAI_API_KEY` |
+| `mock` | Returns static test templates. Used by tests and CI. | None |
 
 ## How to Configure
 
 ### Switching Providers
 
-To switch to the Mock provider:
+To switch to a non-default provider:
 
 ```bash
-export ORACLE_LLM_PROVIDER='mock'
+export ORACLE_LLM_PROVIDER='gemini'
 ```
+
+The default is `anthropic` (Claude) — no env-var needed to use it.
 
 ### Setting API Keys
 
-Oracle uses **lazy initialization**, meaning it only checks for an API
-key at the exact moment of generation. This allows the CLI to run
-`version` or `recommend-only` commands even if no key is set.
+Oracle uses **lazy initialization**: it only loads the provider SDK and
+checks for an API key when generation actually runs. The CLI can run
+`version` or `--recommend-only` commands with no key set, and missing
+optional SDKs (e.g. `google-generativeai`) only break the provider
+that needs them, not the rest of the system.
 
 ```bash
-export OPENAI_API_KEY='your-key-here'
+export ANTHROPIC_API_KEY='your-key-here'
 ```
 
 ## Creating a New Provider
@@ -41,5 +46,6 @@ export OPENAI_API_KEY='your-key-here'
 To add a new LLM backend:
 
 1. Create a new file in `agent/llm/providers/`.
-2. Inherit from `BaseProvider`.
-3. Register the new provider in `agent/llm/factory.py`.
+2. Inherit from `BaseProvider` and implement `generate(messages)`.
+3. Register the new provider in `_PROVIDER_REGISTRY` in
+   `agent/llm/factory.py` as `(module_path, class_name)`.
