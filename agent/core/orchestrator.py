@@ -1,5 +1,12 @@
 # agent/core/orchestrator.py
 
+"""
+Oracle Orchestrator - The central execution engine for the Oracle agent.
+
+This module coordinates the entire test generation pipeline, including
+classification, recommendation, generation, file management, and self-healing.
+"""
+
 from pathlib import Path
 from datetime import datetime
 
@@ -10,8 +17,17 @@ from agent.llm import generate_response
 
 
 class OracleOrchestrator:
+    """
+    Coordinates the test generation and execution lifecycle.
+
+    This class manages the sequence of operations required to transform a
+    natural language prompt into a functional, validated test file.
+    """
 
     def __init__(self):
+        """
+        Initializes the orchestrator with required sub-components.
+        """
         self.classifier = TestClassifier()
         self.recommender = FrameworkRecommender()
 
@@ -20,7 +36,15 @@ class OracleOrchestrator:
 
     def run(self, user_prompt: str, execute: bool = False) -> dict:
         """
-        Main entrypoint for Oracle pipeline
+        Executes the full Oracle pipeline for a given prompt.
+
+        Args:
+            user_prompt: The natural language requirement from the user.
+            execute: Whether to run the test immediately after generation.
+
+        Returns:
+            A dictionary containing the pipeline results, including file paths
+            and execution status.
         """
         from agent.core.executor import TestExecutor
 
@@ -99,7 +123,16 @@ class OracleOrchestrator:
 
     def _attempt_fix(self, user_prompt: str, framework: str, original_code: str, error: str) -> str:
         """
-        Requests a fix from the LLM based on the error output.
+        Requests a code fix from the LLM based on execution errors.
+
+        Args:
+            user_prompt: The original test requirement.
+            framework: The framework being used.
+            original_code: The failing code implementation.
+            error: The error output from the failed execution.
+
+        Returns:
+            The fixed code implementation as a string.
         """
         fix_prompt = f"""
 You are Oracle, a senior test automation engineer. 
@@ -125,7 +158,15 @@ Fix the code so it passes.
 
     def _build_prompt(self, user_prompt: str, test_type: str, framework: str) -> str:
         """
-        Constructs framework-aware generation prompt
+        Constructs the framework-aware prompt for the LLM.
+
+        Args:
+            user_prompt: The user's requirement.
+            test_type: The classified test type (e.g., e2e_ui).
+            framework: The recommended framework (e.g., playwright).
+
+        Returns:
+            A formatted prompt string for the LLM.
         """
 
         return f"""
@@ -150,7 +191,15 @@ Framework: {framework}
 
     def _write_test_file(self, code: str, framework: str, extension: str) -> Path:
         """
-        Writes generated test to file system
+        Writes the generated code to a uniquely named file.
+
+        Args:
+            code: The generated test code.
+            framework: The framework name (used for filename).
+            extension: The file extension (e.g., spec.ts).
+
+        Returns:
+            The Path object representing the created file.
         """
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -166,7 +215,13 @@ Framework: {framework}
 
     def _sanitize_extension(self, ext: str) -> str:
         """
-        Validates and sanitizes file extension to prevent path traversal.
+        Validates and sanitizes file extensions to prevent path traversal.
+
+        Args:
+            ext: The raw extension string from the recommender.
+
+        Returns:
+            A sanitized extension string. Defaults to 'ts' if invalid.
         """
         if not ext or not isinstance(ext, str):
             return "ts"

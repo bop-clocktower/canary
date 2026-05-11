@@ -1,15 +1,31 @@
+"""
+Unit tests for the OracleOrchestrator class.
+
+These tests verify the core pipeline logic, including classification,
+framework recommendation, code generation, and self-healing.
+"""
+
 import unittest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 from agent.core.orchestrator import OracleOrchestrator
 
 class TestOracleOrchestrator(unittest.TestCase):
+    """
+    Test suite for the OracleOrchestrator class.
+    """
 
     def setUp(self):
+        """
+        Sets up a fresh orchestrator instance for each test.
+        """
         self.orchestrator = OracleOrchestrator()
 
     @patch('agent.core.orchestrator.generate_response')
     def test_run_e2e_ui(self, mock_generate):
+        """
+        Verifies the E2E UI test generation flow.
+        """
         mock_generate.return_value = "import { test } from '@playwright/test';\ntest('demo', () => {});"
         
         prompt = "Create a playwright test for login"
@@ -26,6 +42,9 @@ class TestOracleOrchestrator(unittest.TestCase):
     @patch('agent.core.executor.TestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_run_with_execution(self, mock_generate, mock_execute):
+        """
+        Verifies the pipeline when immediate test execution is requested.
+        """
         mock_generate.return_value = "import { test } from '@playwright/test';\ntest('demo', () => {});"
         mock_execute.return_value = (0, "Success", "")
         
@@ -42,6 +61,9 @@ class TestOracleOrchestrator(unittest.TestCase):
     @patch('agent.core.executor.TestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_run_with_self_healing(self, mock_generate, mock_execute):
+        """
+        Verifies the MVP self-healing loop (re-generation after failure).
+        """
         # First call to generate code, second call to fix code
         mock_generate.side_effect = [
             "import { test } from '@playwright/test';\ntest('fail', () => { throw new Error('fail'); });",
@@ -67,6 +89,9 @@ class TestOracleOrchestrator(unittest.TestCase):
 
     @patch('agent.core.orchestrator.generate_response')
     def test_run_performance(self, mock_generate):
+        """
+        Verifies the performance test generation flow.
+        """
         mock_generate.return_value = "import http from 'k6/http';\nexport default function() {}"
         
         prompt = "Create a k6 load test for /api/data"

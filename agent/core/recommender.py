@@ -1,16 +1,39 @@
 # agent/core/recommender.py
 
+"""
+Framework Recommender - Selects the optimal testing tool based on requirements.
+
+This module uses classification data and the framework registry to suggest
+the most appropriate testing framework and file configuration for a given task.
+"""
+
 from typing import Dict, List
 from agent.core.classifier import ClassificationResult
 from agent.core.framework_registry import FrameworkRegistry
 
 
 class FrameworkRecommender:
+    """
+    Logic engine for selecting testing frameworks based on test intent.
+    """
 
     def __init__(self):
+        """
+        Initializes the recommender with the framework registry.
+        """
         self.registry = FrameworkRegistry()
 
     def recommend(self, classification: ClassificationResult) -> Dict:
+        """
+        Recommends a framework based on the classification result.
+
+        Args:
+            classification: The result from the TestClassifier.
+
+        Returns:
+            Dict: A dictionary containing the recommended framework,
+                category, file extension, and reasoning.
+        """
         frameworks = self.registry.get_by_category(classification.test_type)
 
         if not frameworks:
@@ -43,6 +66,15 @@ class FrameworkRecommender:
         }
 
     def _build_reason(self, framework: Dict) -> List[str]:
+        """
+        Generates a list of human-readable justifications for a recommendation.
+
+        Args:
+            framework: The framework metadata dictionary.
+
+        Returns:
+            List[str]: A list of reasoning strings.
+        """
         reasons = []
 
         # Add explicit reasoning fields

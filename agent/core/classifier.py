@@ -1,19 +1,46 @@
 # agent/core/classifier.py
 
+"""
+Test Classifier - Identifies the intent and test type from user prompts.
+
+This module provides rule-based classification to determine whether a user
+wants to generate E2E, API, Performance, or Unit tests.
+"""
+
 from dataclasses import dataclass
 from typing import Optional
 
 
 @dataclass
 class ClassificationResult:
+    """
+    Data container for the result of a classification task.
+
+    Attributes:
+        intent: The high-level intent (e.g., 'generate_tests').
+        test_type: The specific category of test (e.g., 'performance').
+        confidence: The probability score (0.0 to 1.0) of the classification.
+    """
     intent: str
     test_type: str
     confidence: float
 
 
 class TestClassifier:
+    """
+    Heuristic-based classifier for natural language requirements.
+    """
 
     def classify(self, prompt: str) -> ClassificationResult:
+        """
+        Analyzes a prompt to determine the intended test type.
+
+        Args:
+            prompt: The natural language requirement string.
+
+        Returns:
+            ClassificationResult: The identified category and confidence.
+        """
         p = prompt.lower()
 
         # --- PERFORMANCE ---

@@ -1,5 +1,12 @@
 # agent/core/scaffolder.py
 
+"""
+Oracle Scaffolder - Bootstraps new test suites with Gold Standard configurations.
+
+This module provides templates and logic to initialize directory structures
+and configuration files for supported testing frameworks.
+"""
+
 import os
 from pathlib import Path
 from typing import Dict, Any
@@ -70,11 +77,22 @@ python_functions = test_*
 class Scaffolder:
     """
     Handles initialization and scaffolding of test suites.
+
+    This class uses predefined templates to create the necessary boilerplate
+    for frameworks like Playwright, Vitest, Pytest, and k6.
     """
 
     def scaffold(self, framework: str, project_root: str = ".") -> Dict[str, Any]:
         """
         Creates the directory structure and config files for a framework.
+
+        Args:
+            framework: The framework to scaffold (e.g., 'playwright').
+            project_root: The directory where scaffolding should occur.
+                Defaults to the current directory.
+
+        Returns:
+            A dictionary summarizing created and skipped files/directories.
         """
         framework = framework.lower()
         if framework not in TEMPLATES:

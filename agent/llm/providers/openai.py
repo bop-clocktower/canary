@@ -1,5 +1,12 @@
 # agent/llm/providers/openai.py
 
+"""
+OpenAI Provider - Integration with OpenAI's Chat Completion API.
+
+This module implements the BaseProvider interface for OpenAI, enabling
+the agent to generate test code using GPT-series models.
+"""
+
 import os
 from typing import List, Dict, Any
 from openai import OpenAI
@@ -8,10 +15,16 @@ from agent.llm.providers.base import BaseProvider
 
 class OpenAIProvider(BaseProvider):
     """
-    OpenAI-specific LLM provider.
+    OpenAI-specific LLM provider implementation.
     """
 
     def __init__(self, model: str = "gpt-4o-mini"):
+        """
+        Initializes the provider with the specified model and API key.
+
+        Args:
+            model: The OpenAI model name to use. Defaults to 'gpt-4o-mini'.
+        """
         api_key = os.getenv("OPENAI_API_KEY")
         
         if not api_key:
@@ -26,7 +39,13 @@ class OpenAIProvider(BaseProvider):
 
     def generate(self, messages: List[Dict[str, str]]) -> str:
         """
-        Generate a completion using OpenAI's chat interface.
+        Generates a completion using OpenAI's chat interface.
+
+        Args:
+            messages: A list of message dictionaries for the chat context.
+
+        Returns:
+            The generated content as a string.
         """
         response = self.client.chat.completions.create(
             model=self.model,

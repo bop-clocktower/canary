@@ -1,5 +1,12 @@
 # agent/core/executor.py
 
+"""
+Oracle Test Executor - A framework-agnostic execution engine.
+
+This module provides the capability to execute generated test files
+using the appropriate CLI commands for each supported framework.
+"""
+
 import subprocess
 import shlex
 from pathlib import Path
@@ -8,16 +15,30 @@ from agent.core.framework_registry import FrameworkRegistry
 
 class TestExecutor:
     """
-    Handles execution of generated tests in a subprocess.
+    Handles execution of generated tests in a managed subprocess.
+
+    This class coordinates with the FrameworkRegistry to determine the
+    correct execution command for a given framework and safely executes
+    the test file.
     """
 
     def __init__(self):
+        """
+        Initializes the executor with the framework registry.
+        """
         self.registry = FrameworkRegistry()
 
     def execute(self, file_path: Path, framework_name: str, timeout: int = 30) -> Tuple[int, str, str]:
         """
         Executes a test file using the specified framework.
-        Returns (exit_code, stdout, stderr).
+
+        Args:
+            file_path: Absolute path to the test file.
+            framework_name: Name of the framework (e.g., 'playwright').
+            timeout: Maximum execution time in seconds. Defaults to 30.
+
+        Returns:
+            A tuple of (exit_code, stdout, stderr).
         """
         framework = self.registry.find_by_name(framework_name)
         if not framework:

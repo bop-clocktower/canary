@@ -1,5 +1,13 @@
 # agent/cli.py
 
+"""
+Oracle CLI - The primary user interface for AI-powered test automation.
+
+This module provides the Typer-based command-line interface for generating,
+running, and initializing test suites. It serves as the entry point for
+the Oracle agent.
+"""
+
 import json
 import typer
 from rich import print
@@ -16,6 +24,12 @@ def generate(
 ):
     """
     Generate test automation code from a natural language prompt.
+
+    Args:
+        prompt: Natural language description of the test requirements.
+        recommend_only: If True, identifies the framework but skips code generation.
+        output_json: If True, outputs machine-readable JSON instead of styled text.
+        run_test: If True, executes the generated test using the identified framework.
     """
     from agent.core.orchestrator import OracleOrchestrator
 
@@ -99,6 +113,10 @@ def run(
 ):
     """
     Execute a test file using Oracle's integrated executor.
+
+    Args:
+        file_path: Path to the test file to execute.
+        framework: The testing framework to use for execution.
     """
     from agent.core.executor import TestExecutor
     from pathlib import Path
@@ -124,6 +142,9 @@ def init(
 ):
     """
     Initialize a test suite with Gold Standard scaffolding and config.
+
+    Args:
+        framework: The framework to initialize (playwright, vitest, pytest, or k6).
     """
     from agent.core.scaffolder import Scaffolder
     
