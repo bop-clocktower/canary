@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "snapshots": [
+    {
+      "capturedAt": "2026-05-11T07:58:30.295Z",
+      "commitHash": "241d1b30d01bf03394ea11147cc003f831eb2b4d",
+      "securityScore": 100,
+      "totalFindings": 0,
+      "bySeverity": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      },
+      "byCategory": {},
+      "supplyChain": {
+        "critical": 0,
+        "high": 0,
+        "moderate": 0,
+        "low": 0,
+        "info": 0,
+        "total": 0
+      },
+      "suppressionCount": 0,
+      "findingIds": []
+    }
+  ],
+  "findingLifecycles": [
+    {
+      "findingId": "984bf18e14830c81",
+      "ruleId": "SEC-SEC-002",
+      "category": "secrets",
+      "severity": "error",
+      "file": "agent/llm/providers/openai.py",
+      "firstSeenAt": "2026-05-11T07:50:48.076Z",
+      "firstSeenCommit": "241d1b30d01bf03394ea11147cc003f831eb2b4d",
+      "resolvedAt": "2026-05-11T07:51:25.011Z",
+      "resolvedCommit": "241d1b30d01bf03394ea11147cc003f831eb2b4d"
+    },
+    {
+      "findingId": "7f117710e8adb19d",
+      "ruleId": "SEC-SEC-002",
+      "category": "secrets",
+      "severity": "error",
+      "file": "agent/llm/providers/openai.py",
+      "firstSeenAt": "2026-05-11T07:51:25.011Z",
+      "firstSeenCommit": "241d1b30d01bf03394ea11147cc003f831eb2b4d",
+      "resolvedAt": "2026-05-11T07:51:47.940Z",
+      "resolvedCommit": "241d1b30d01bf03394ea11147cc003f831eb2b4d"
+    }
+  ]
+}

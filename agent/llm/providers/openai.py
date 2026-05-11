@@ -17,8 +17,7 @@ class OpenAIProvider(BaseProvider):
         if not api_key:
             error_msg = (
                 "\n[bold red]❌ Error: OPENAI_API_KEY not found.[/bold red]\n"
-                "[yellow]To use Oracle's generation features with OpenAI, please set your API key:[/yellow]\n"
-                "export OPENAI_API_KEY='your-key-here'\n"
+                "[yellow]To use Oracle's generation features with OpenAI, please set the OPENAI_API_KEY environment variable.[/yellow]\n"
             )
             raise RuntimeError(error_msg)
 
