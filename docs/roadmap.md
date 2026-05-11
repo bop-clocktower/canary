@@ -13,7 +13,8 @@ updated: 2026-05-11
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** JSON-based framework metadata with multi-extension and execution command support.
+- **Summary:** JSON-based framework metadata with multi-extension and
+  execution command support.
 - **Blockers:** none
 - **Plan:** none
 
@@ -21,7 +22,8 @@ updated: 2026-05-11
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** Rule-based test classifier plus engineering framework recommender.
+- **Summary:** Rule-based test classifier plus engineering framework
+  recommender.
 - **Blockers:** none
 - **Plan:** none
 
@@ -29,7 +31,8 @@ updated: 2026-05-11
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** Provider-agnostic factory (OpenAI, Mock) with lazy loading and thread-safe singleton client.
+- **Summary:** Provider-agnostic factory (OpenAI, Mock) with lazy loading
+  and thread-safe singleton client.
 - **Blockers:** none
 - **Plan:** none
 
@@ -37,7 +40,8 @@ updated: 2026-05-11
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** `oracle generate` (with `--run`, `--json`, `--recommend-only`), `oracle run`, `oracle init`, `oracle version`.
+- **Summary:** `oracle generate` (with `--run`, `--json`,
+  `--recommend-only`), `oracle run`, `oracle init`, `oracle version`.
 - **Blockers:** none
 - **Plan:** none
 
@@ -45,7 +49,8 @@ updated: 2026-05-11
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** MVP self-healing with one retry attempt fed by execution error output.
+- **Summary:** MVP self-healing with one retry attempt fed by execution
+  error output.
 - **Blockers:** none
 - **Plan:** none
 
@@ -53,7 +58,8 @@ updated: 2026-05-11
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** Full adoption of Bombshell engineering constraints and harness layer rules.
+- **Summary:** Full adoption of Bombshell engineering constraints and
+  harness layer rules.
 - **Blockers:** none
 - **Plan:** none
 
@@ -61,7 +67,8 @@ updated: 2026-05-11
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** TICKET-037 — `oracle init` command bootstraps Playwright/Vitest/Pytest/k6 suites.
+- **Summary:** TICKET-037 — `oracle init` command bootstraps
+  Playwright/Vitest/Pytest/k6 suites.
 - **Blockers:** none
 - **Plan:** none
 
@@ -69,7 +76,8 @@ updated: 2026-05-11
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** Passing security scans, architectural enforcement, and mechanical validation in CI.
+- **Summary:** Passing security scans, architectural enforcement, and
+  mechanical validation in CI.
 - **Blockers:** none
 - **Plan:** none
 
@@ -77,7 +85,8 @@ updated: 2026-05-11
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** Enforce that every classifier `test_type` resolves to a registry framework; pytest now covers `api`. Merged in PR #1.
+- **Summary:** Enforce that every classifier `test_type` resolves to a
+  registry framework; pytest now covers `api`. Merged in PR #1.
 - **Blockers:** none
 - **Plan:** none
 
@@ -87,7 +96,9 @@ updated: 2026-05-11
 
 - **Status:** planned
 - **Spec:** none
-- **Summary:** TICKET-029 — detect local `package.json`, `tsconfig.json`, `requirements.txt` and align generation with project-specific library versions.
+- **Summary:** TICKET-029 — detect local `package.json`, `tsconfig.json`,
+  `requirements.txt` and align generation with project-specific library
+  versions.
 - **Blockers:** none
 - **Plan:** none
 
@@ -95,7 +106,8 @@ updated: 2026-05-11
 
 - **Status:** planned
 - **Spec:** none
-- **Summary:** TICKET-030 — analyze existing tests and match project-specific coding styles, naming, and helpers.
+- **Summary:** TICKET-030 — analyze existing tests and match
+  project-specific coding styles, naming, and helpers.
 - **Blockers:** none
 - **Plan:** none
 
@@ -103,7 +115,8 @@ updated: 2026-05-11
 
 - **Status:** planned
 - **Spec:** none
-- **Summary:** TICKET-031 — scan project directories to understand available components/APIs and inject domain context into prompts.
+- **Summary:** TICKET-031 — scan project directories to understand
+  available components/APIs and inject domain context into prompts.
 - **Blockers:** none
 - **Plan:** none
 
@@ -113,7 +126,8 @@ updated: 2026-05-11
 
 - **Status:** planned
 - **Spec:** none
-- **Summary:** TICKET-032 — official Oracle GitHub Action that auto-generates tests for new features/bug fixes on PR.
+- **Summary:** TICKET-032 — official Oracle GitHub Action that
+  auto-generates tests for new features/bug fixes on PR.
 - **Blockers:** none
 - **Plan:** none
 
@@ -121,7 +135,8 @@ updated: 2026-05-11
 
 - **Status:** planned
 - **Spec:** none
-- **Summary:** TICKET-033 — export execution results to JSON/SARIF for Datadog, SonarQube, and similar dashboards.
+- **Summary:** TICKET-033 — export execution results to JSON/SARIF for
+  Datadog, SonarQube, and similar dashboards.
 - **Blockers:** none
 - **Plan:** none
 
@@ -129,7 +144,8 @@ updated: 2026-05-11
 
 - **Status:** planned
 - **Spec:** none
-- **Summary:** TICKET-034 — CI-specific execution flags and pipeline-friendly log output.
+- **Summary:** TICKET-034 — CI-specific execution flags and
+  pipeline-friendly log output.
 - **Blockers:** none
 - **Plan:** none
 
@@ -139,7 +155,8 @@ updated: 2026-05-11
 
 - **Status:** planned
 - **Spec:** none
-- **Summary:** TICKET-035 — iterative debugging across multiple fix attempts; search local code/docs to resolve complex failures.
+- **Summary:** TICKET-035 — iterative debugging across multiple fix
+  attempts; search local code/docs to resolve complex failures.
 - **Blockers:** none
 - **Plan:** none
 
@@ -147,7 +164,8 @@ updated: 2026-05-11
 
 - **Status:** planned
 - **Spec:** none
-- **Summary:** TICKET-036 — use visual snapshots or DOM trees to fix brittle UI selectors automatically.
+- **Summary:** TICKET-036 — use visual snapshots or DOM trees to fix
+  brittle UI selectors automatically.
 - **Blockers:** none
 - **Plan:** none
 
@@ -157,7 +175,8 @@ updated: 2026-05-11
 
 - **Status:** backlog
 - **Spec:** none
-- **Summary:** VS Code and JetBrains plugins exposing Oracle generation/execution.
+- **Summary:** VS Code and JetBrains plugins exposing Oracle
+  generation/execution.
 - **Blockers:** none
 - **Plan:** none
 
@@ -165,6 +184,26 @@ updated: 2026-05-11
 
 - **Status:** backlog
 - **Spec:** none
-- **Summary:** First-run guided experience for installing Oracle and configuring providers.
+- **Summary:** First-run guided experience for installing Oracle and
+  configuring providers.
+- **Blockers:** none
+- **Plan:** none
+
+## Fork-Specific (Capillary)
+
+> Items in this milestone live only in the Capillary fork and must never
+> be merged upstream. They reference internal systems by name and
+> location only — no proprietary content lives in this repo.
+
+### Company Knowledge Integration
+
+- **Status:** planned
+- **Spec:** none
+- **Summary:** Teach Oracle where to look for Capillary-internal context
+  so AI agents can ground generation in company conventions. Stores
+  pointers only (Confluence space keys, Jira project keys, internal doc
+  URLs, MCP server identifiers) — no proprietary content is committed.
+  AI agents retrieve the actual content at runtime via the configured
+  MCP servers or authenticated tools.
 - **Blockers:** none
 - **Plan:** none
