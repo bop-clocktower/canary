@@ -34,6 +34,7 @@ class OracleOrchestrator:
         self.output_dir = Path(__file__).resolve().parents[2] / "tests" / "generated"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+    # @perf-critical
     def run(self, user_prompt: str, execute: bool = False) -> dict:
         """
         Executes the full Oracle pipeline for a given prompt.

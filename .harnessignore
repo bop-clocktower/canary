@@ -1,0 +1,3 @@
+tests/generated/**
+.entropy-backups/**
+temp_harness/**

@@ -174,3 +174,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AI Generated files locally
+temp_harness/*
+*generated*
