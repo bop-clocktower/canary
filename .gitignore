@@ -1,6 +1,9 @@
 # Local Claude Code state
 .claude/
 
+# Upstream-sync build output (produced by scripts/upstream_sync.py)
+.upstream-sync/
+
 # Oracle-generated test artifacts
 tests/generated/
 

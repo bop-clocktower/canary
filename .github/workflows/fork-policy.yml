@@ -1,0 +1,22 @@
+name: Fork Policy
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+      - "scripts/upstream_sync.py"
+      - ".github/workflows/fork-policy.yml"
+  push:
+    branches:
+      - main
+
+jobs:
+  marker-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate fork-only markers
+        run: python3 scripts/upstream_sync.py check

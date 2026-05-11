@@ -206,6 +206,7 @@ updated: 2026-05-11
 - **Blockers:** none
 - **Plan:** none
 
+<!-- fork-only:capillary -->
 ## Fork-Specific (Capillary)
 
 > Items in this milestone live only in the Capillary fork and must never
@@ -224,3 +225,4 @@ updated: 2026-05-11
   MCP servers or authenticated tools.
 - **Blockers:** none
 - **Plan:** none
+<!-- /fork-only -->
