@@ -43,5 +43,25 @@ class TestTestExecutor(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.executor.execute(Path("test.js"), "nonexistent-framework")
 
+    @patch('subprocess.run')
+    def test_execute_path_with_spaces(self, mock_run):
+        """File paths with spaces must reach subprocess as a single argv
+        element, not get split by shlex into multiple tokens."""
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+        mock_process.stdout = ""
+        mock_process.stderr = ""
+        mock_run.return_value = mock_process
+
+        file_path = Path("/tmp/oracle test/my test.spec.ts")
+        self.executor.execute(file_path, "playwright")
+
+        argv = mock_run.call_args[0][0]
+        self.assertIn(str(file_path), argv)
+        self.assertEqual(
+            sum(1 for a in argv if "my test.spec.ts" in a), 1
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -70,6 +70,7 @@
       "name": "pytest",
       "display_name": "pytest",
       "category": "python_unit",
+      "categories": ["python_unit", "api"],
       "languages": [
         "python"
       ],

@@ -2,23 +2,27 @@
 
 ## 🧠 System Status
 
-Oracle is a functional, autonomous test automation CLI. It can classify user 
-intent, recommend frameworks, generate production-ready code, and 
+Oracle is a functional, autonomous test automation CLI. It can classify
+user intent, recommend frameworks, generate production-ready code, and
 automatically execute/fix tests via its feedback loop.
 
 ## ✅ Implemented Components
 
-- **Framework Registry:** registry.json with execution commands and multi-extension support.
+- **Framework Registry:** registry.json with execution commands and
+  multi-extension support.
 - **Test Classifier:** Rule-based intent detection.
 - **Framework Recommender:** Engineering decision layer.
-- **Orchestrator:** End-to-end pipeline with integrated self-healing loop.
-- **LLM Abstraction:** Provider-agnostic factory (OpenAI, Mock) with lazy loading.
-- **CLI Interface:** `oracle generate` (with `--run`, `--json`), `oracle run`, `oracle version`.
+- **Orchestrator:** End-to-end pipeline with integrated self-healing
+  loop.
+- **LLM Abstraction:** Provider-agnostic factory (OpenAI, Mock) with
+  lazy loading.
+- **CLI Interface:** `oracle generate` (with `--run`, `--json`),
+  `oracle run`, `oracle version`.
 - **Test Executor:** Subprocess-based execution with error capture.
 
 ## ⚙️ Architecture Summary
 
-User Prompt → CLI → Orchestrator → Classifier → Recommender → LLM → 
+User Prompt → CLI → Orchestrator → Classifier → Recommender → LLM →
 Executor → Error Feedback → LLM (Fix) → Final Test Output
 
 ## ❗ Current Limitation

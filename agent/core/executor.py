@@ -10,7 +10,7 @@ using the appropriate CLI commands for each supported framework.
 import subprocess
 import shlex
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple
 from agent.core.framework_registry import FrameworkRegistry
 
 class TestExecutor:
@@ -48,13 +48,12 @@ class TestExecutor:
         if not cmd_template:
             raise ValueError(f"No execution command defined for framework '{framework_name}'.")
 
-        # Interpolate file path
-        cmd_str = cmd_template.replace("{file}", str(file_path))
-        
-        # Split command for subprocess while respecting quotes
-        # Note: shlex.split might be tricky if cmd_template has shell-isms
-        # For simplicity in MVP, we use shell=True if needed, but safer to use list
-        cmd = shlex.split(cmd_str)
+        # Split the template first so the file path stays a single argv
+        # element even when it contains spaces or shell metacharacters.
+        cmd = [
+            tok.replace("{file}", str(file_path))
+            for tok in shlex.split(cmd_template)
+        ]
 
         try:
             process = subprocess.run(

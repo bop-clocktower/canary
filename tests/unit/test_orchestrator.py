@@ -105,5 +105,25 @@ class TestOracleOrchestrator(unittest.TestCase):
         self.addCleanup(lambda: output_path.unlink(missing_ok=True))
         self.assertTrue(output_path.exists())
 
+    @patch('agent.core.orchestrator.generate_response')
+    def test_run_api_routes_to_pytest(self, mock_generate):
+        """
+        API-classified prompts must resolve to a real framework (pytest),
+        not silently fall through to framework=None.
+        """
+        mock_generate.return_value = "def test_api(): assert True"
+
+        prompt = "Write tests for the /users API endpoint"
+        result = self.orchestrator.run(prompt)
+
+        self.assertEqual(result['test_type'], 'api')
+        self.assertEqual(result['framework'], 'pytest')
+        self.assertTrue(result['output_file'].endswith('.py'))
+
+        output_path = Path(result['output_file'])
+        self.addCleanup(lambda: output_path.unlink(missing_ok=True))
+        self.assertTrue(output_path.exists())
+
+
 if __name__ == '__main__':
     unittest.main()

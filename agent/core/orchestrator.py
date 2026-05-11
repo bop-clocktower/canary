@@ -55,7 +55,12 @@ class OracleOrchestrator:
         recommendation = self.recommender.recommend(classification)
 
         framework = recommendation["framework"]
-        
+        if not framework:
+            raise ValueError(
+                f"No framework available for test_type '{classification.test_type}'. "
+                f"Reason: {'; '.join(recommendation.get('reason', []))}"
+            )
+
         # --- EXTENSION VALIDATION & SANITIZATION ---
         raw_ext = recommendation.get("file_extension", "ts")
         extension = self._sanitize_extension(raw_ext)
@@ -202,7 +207,7 @@ Framework: {framework}
             The Path object representing the created file.
         """
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
         file_name = f"{framework}_test_{timestamp}.{extension}"
 

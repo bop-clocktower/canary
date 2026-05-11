@@ -8,9 +8,8 @@ the agent to generate test code using GPT-series models.
 """
 
 import os
-from typing import List, Dict, Any
+from typing import List, Dict
 from openai import OpenAI
-from rich import print
 from agent.llm.providers.base import BaseProvider
 
 class OpenAIProvider(BaseProvider):
@@ -28,11 +27,11 @@ class OpenAIProvider(BaseProvider):
         api_key = os.getenv("OPENAI_API_KEY")
         
         if not api_key:
-            error_msg = (
-                "\n[bold red]❌ Error: OPENAI_API_KEY not found.[/bold red]\n"
-                "[yellow]To use Oracle's generation features with OpenAI, please set the OPENAI_API_KEY environment variable.[/yellow]\n"
+            raise RuntimeError(
+                "OPENAI_API_KEY not found. "
+                "Set the OPENAI_API_KEY environment variable to use Oracle's "
+                "generation features with OpenAI."
             )
-            raise RuntimeError(error_msg)
 
         self.client = OpenAI(api_key=api_key)
         self.model = model

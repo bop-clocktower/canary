@@ -7,7 +7,6 @@ This module provides templates and logic to initialize directory structures
 and configuration files for supported testing frameworks.
 """
 
-import os
 from pathlib import Path
 from typing import Dict, Any
 

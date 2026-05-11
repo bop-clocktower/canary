@@ -7,7 +7,7 @@ All concrete provider implementations (e.g., OpenAI, Anthropic, Mock) must
 inherit from this class and implement its abstract methods.
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict
 from abc import ABC, abstractmethod
 
 class BaseProvider(ABC):

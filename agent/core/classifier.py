@@ -8,7 +8,6 @@ wants to generate E2E, API, Performance, or Unit tests.
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass

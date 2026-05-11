@@ -7,7 +7,7 @@ This provider returns static code templates instead of calling an external
 API, making it ideal for CI environments and local iteration.
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict
 from agent.llm.providers.base import BaseProvider
 
 class MockProvider(BaseProvider):

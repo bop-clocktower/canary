@@ -17,7 +17,7 @@ language requirements into high-quality, framework-aware test code.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/oracle-test-ai-agent.git
+git clone https://github.com/bri-stevenski/oracle-test-ai-agent.git
 cd oracle-test-ai-agent
 
 # Install in editable mode
@@ -52,12 +52,17 @@ oracle version
 
 ## ⚙️ Configuration
 
-Oracle currently defaults to OpenAI. To use the generation features, set your
-API key:
+Oracle defaults to Claude (Anthropic). To use the generation features,
+set your API key:
 
 ```bash
-export OPENAI_API_KEY='your-openai-api-key'
+export ANTHROPIC_API_KEY='your-anthropic-api-key'
 ```
+
+Other providers (`gemini`, `openai`, `mock`) are available via the
+`ORACLE_LLM_PROVIDER` environment variable. See
+[`docs/wiki/LLM-Providers-and-Configuration.md`](docs/wiki/LLM-Providers-and-Configuration.md)
+for the full provider matrix and required env vars.
 
 ## 🏗 Architecture
 

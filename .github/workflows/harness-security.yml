@@ -5,7 +5,6 @@ on:
     paths:
       - "agent/**"
       - "tests/**"
-      - "requirements.txt"
       - "pyproject.toml"
 
 jobs:
@@ -16,6 +15,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: npx --yes @harness-engineering/cli validate --severity error
-      - run: npx --yes @harness-engineering/cli check-deps --severity error
-      - run: npx --yes @harness-engineering/cli run-security-scan --severity error
+      - run: npx --yes -p @harness-engineering/cli harness validate
+      - run: npx --yes -p @harness-engineering/cli harness check-deps
+      - run: npx --yes -p @harness-engineering/cli harness check-security --severity error

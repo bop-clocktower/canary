@@ -1,3 +1,9 @@
+# Local Claude Code state
+.claude/
+
+# Oracle-generated test artifacts
+tests/generated/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

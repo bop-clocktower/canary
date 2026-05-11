@@ -61,6 +61,7 @@ class FrameworkRegistry:
         return [
             f for f in self.get_all_frameworks()
             if f.get("category") == category
+            or category in (f.get("categories") or [])
         ]
 
     def get_preferred_by_category(self, category: str) -> Optional[Dict]:
