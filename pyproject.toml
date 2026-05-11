@@ -6,10 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "oracle"
 version = "0.1.0"
 description = "AI-powered test automation agent"
+requires-python = ">=3.10"
 dependencies = [
-    "openai",
-    "typer",
-    "rich"
+    "openai>=1.50,<3",
+    "typer>=0.12,<1",
+    "rich>=13.7,<16",
 ]
 
 [project.scripts]
