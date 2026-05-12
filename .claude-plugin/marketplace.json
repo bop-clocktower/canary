@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/marketplace.schema.json",
+  "name": "oracle",
+  "owner": {
+    "name": "Bri Stevenski",
+    "url": "https://github.com/bri-stevenski"
+  },
+  "description": "Oracle — AI-powered test automation. Generate, review, recommend, and de-flake tests across Playwright, Vitest, Pytest, and k6 with four specialist personas.",
+  "plugins": [
+    {
+      "name": "oracle",
+      "source": ".",
+      "description": "Oracle plugin with four MVP personas (test-author, test-reviewer, framework-advisor, flake-hunter) and the harness MCP server. Personal-source build maintained by Bri Stevenski.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Bri Stevenski",
+        "url": "https://github.com/bri-stevenski"
+      },
+      "homepage": "https://github.com/bri-stevenski/oracle-test-ai-agent",
+      "license": "MIT",
+      "keywords": [
+        "testing",
+        "test-automation",
+        "ai",
+        "playwright",
+        "vitest",
+        "pytest",
+        "k6"
+      ]
+    }
+  ]
+}

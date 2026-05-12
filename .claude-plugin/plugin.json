@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/plugin.schema.json",
+  "name": "oracle",
+  "version": "0.1.0",
+  "description": "AI-powered test automation. Four specialist personas (test-author, test-reviewer, framework-advisor, flake-hunter) plus the Oracle CLI and harness MCP — turn natural-language requirements into idiomatic Playwright, Vitest, Pytest, and k6 tests.",
+  "author": {
+    "name": "Bri Stevenski",
+    "url": "https://github.com/bri-stevenski"
+  },
+  "homepage": "https://github.com/bri-stevenski/oracle-test-ai-agent",
+  "repository": "https://github.com/bri-stevenski/oracle-test-ai-agent",
+  "license": "MIT",
+  "keywords": [
+    "testing",
+    "test-automation",
+    "ai",
+    "playwright",
+    "vitest",
+    "pytest",
+    "k6",
+    "qa",
+    "flake",
+    "claude-code"
+  ],
+  "agents": "./.claude-plugin/agents/",
+  "mcpServers": {
+    "harness": {
+      "command": "harness-mcp"
+    }
+  }
+}

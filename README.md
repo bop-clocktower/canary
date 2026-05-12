@@ -15,6 +15,8 @@ language requirements into high-quality, framework-aware test code.
 
 ## 🛠 Installation
 
+### CLI
+
 ```bash
 # Clone the repository
 git clone https://github.com/bri-stevenski/oracle-test-ai-agent.git
@@ -23,6 +25,28 @@ cd oracle-test-ai-agent
 # Install in editable mode
 pip install -e .
 ```
+
+### Claude Code plugin
+
+Oracle ships as a Claude Code plugin with four MVP personas — `oracle-test-author`,
+`oracle-test-reviewer`, `oracle-framework-advisor`, and `oracle-flake-hunter` —
+plus the `harness` MCP server. Add it as a local marketplace:
+
+```bash
+/plugin marketplace add https://github.com/bri-stevenski/oracle-test-ai-agent
+/plugin install oracle@oracle
+```
+
+Or, if you've already cloned the repo:
+
+```bash
+/plugin marketplace add /path/to/oracle-test-ai-agent
+/plugin install oracle@oracle
+```
+
+> **Note:** the plugin shells out to the `oracle` CLI for code generation, so
+> install the Python package first (above) and set `OPENAI_API_KEY` before
+> invoking the test-author persona.
 
 ## 📖 Usage
 

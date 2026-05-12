@@ -1,6 +1,18 @@
 {
   "version": 1,
   "name": "oracle",
+  "language": "python",
+  "template": {
+    "language": "python",
+    "version": 1,
+    "level": "intermediate"
+  },
+  "tooling": {
+    "packageManager": "pip",
+    "linter": "ruff",
+    "formatter": "ruff",
+    "testRunner": "pytest"
+  },
   "layers": [
     {
       "name": "llm",
@@ -43,8 +55,7 @@
   ],
   "agentsMapPath": "./AGENTS.md",
   "docsDir": "./docs",
-  "template": {
-    "level": "intermediate",
-    "version": 1
-  }
+  "entryPoints": [
+    "agent.cli:app"
+  ]
 }

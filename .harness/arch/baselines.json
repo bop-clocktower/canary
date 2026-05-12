@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "updatedAt": "2026-05-11T11:45:40.031Z",
+  "updatedFrom": "7ba2c90",
+  "metrics": {
+    "circular-deps": {
+      "value": 0,
+      "violationIds": []
+    },
+    "layer-violations": {
+      "value": 0,
+      "violationIds": []
+    },
+    "complexity": {
+      "value": 0,
+      "violationIds": []
+    },
+    "coupling": {
+      "value": 0,
+      "violationIds": []
+    },
+    "forbidden-imports": {
+      "value": 0,
+      "violationIds": []
+    },
+    "module-size": {
+      "value": 1,
+      "violationIds": []
+    },
+    "dependency-depth": {
+      "value": 0,
+      "violationIds": []
+    }
+  }
+}
