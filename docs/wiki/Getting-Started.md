@@ -8,6 +8,7 @@ It should take about five minutes.
 You'll need:
 
 - Python 3.11 or later (`python --version` to check)
+- Node.js 18 or later (`node --version` to check)
 - An Anthropic API key ([console.anthropic.com][anthropic])
 - Git
 
@@ -29,10 +30,30 @@ oracle version
 
 You should see: `Oracle AI v0.1 (MVP)`
 
-## Step 2: Set Your API Key
+## Step 2: Run Setup
 
-Oracle uses Claude (Anthropic) by default. Set your key in your
-shell before running any generation commands:
+This checks your environment, installs the harness tooling, and
+wires up the Claude Code integration automatically:
+
+```bash
+oracle setup
+```
+
+What it does:
+
+- Checks Node.js is available
+- Installs `harness-mcp` globally if missing (provides CI checks
+  and architecture enforcement inside Claude Code)
+- Reminds you to set `ANTHROPIC_API_KEY` if it's not set
+- Creates `.claude/settings.local.json` so Claude Code approves
+  the project's MCP servers without prompting you each session
+
+If anything fails, fix it and re-run `oracle setup` — it's safe
+to run multiple times.
+
+## Step 3: Set Your API Key
+
+If `oracle setup` flagged a missing key, add it now:
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -45,9 +66,7 @@ To make this permanent, add that line to your `~/.zshrc` or
 > [LLM Providers & Configuration](LLM-Providers-and-Configuration.md)
 > for OpenAI and Gemini setup.
 
-## Step 3: Generate Your First Test
-
-Run this command (swap in whatever you'd like to test):
+## Step 4: Generate Your First Test
 
 ```bash
 oracle generate "Test that GET /api/health returns 200"
@@ -76,9 +95,7 @@ Output File:
 tests/generated/api/test_api_health_get_200.py
 ```
 
-## Step 4: Look at the Generated File
-
-Open the file Oracle just created:
+## Step 5: Look at the Generated File
 
 ```bash
 cat tests/generated/api/test_api_health_get_200.py
@@ -90,10 +107,7 @@ Read through it. Check that:
 - The assertion matches the expected behavior
 - There are no placeholder values you need to fill in
 
-## Step 5: Run the Test
-
-Run it immediately with the `--run` flag (or execute manually
-with pytest):
+## Step 6: Run the Test
 
 ```bash
 oracle generate "Test that GET /api/health returns 200" --run
@@ -126,9 +140,6 @@ calling the LLM (no API key needed):
 ```bash
 oracle generate "load test the search endpoint" --recommend-only
 ```
-
-This is useful for understanding Oracle's routing logic before
-committing to a full generation.
 
 ## Next Steps
 

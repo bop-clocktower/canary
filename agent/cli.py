@@ -189,6 +189,93 @@ def init(
 
 
 @app.command()
+def setup():
+    """
+    First-time developer setup. Run once after cloning the repository.
+
+    Checks prerequisites (Node.js, harness-mcp), verifies the API key,
+    and creates .claude/settings.local.json so Claude Code approves the
+    project MCP servers without prompting.
+    """
+    import os
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    print("\n[bold cyan]Oracle Setup[/bold cyan]\n")
+
+    issues = []
+
+    # Locate repo root so the command works from any subdirectory.
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, check=True
+        )
+        repo_root = Path(result.stdout.strip())
+    except subprocess.CalledProcessError:
+        repo_root = Path.cwd()
+
+    # ── Node.js ───────────────────────────────────────────────
+    if shutil.which("node"):
+        v = subprocess.run(
+            ["node", "--version"], capture_output=True, text=True
+        ).stdout.strip()
+        print(f"[green]✓[/green] Node.js {v}")
+    else:
+        print("[red]✗[/red] Node.js not found")
+        print("  Install from [link=https://nodejs.org]nodejs.org[/link] "
+              "then re-run setup.")
+        issues.append("Node.js missing")
+
+    # ── harness-mcp ───────────────────────────────────────────
+    if shutil.which("harness-mcp"):
+        print("[green]✓[/green] harness-mcp installed")
+    else:
+        print("[yellow]~[/yellow] harness-mcp not found — installing...")
+        r = subprocess.run(
+            ["npm", "install", "-g", "@harness-engineering/cli"],
+            capture_output=True, text=True
+        )
+        if r.returncode == 0:
+            print("[green]✓[/green] harness-mcp installed")
+        else:
+            print("[red]✗[/red] harness-mcp install failed")
+            print(f"  {r.stderr.strip()}")
+            print("  Try manually: npm install -g @harness-engineering/cli")
+            issues.append("harness-mcp install failed")
+
+    # ── API key ───────────────────────────────────────────────
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        print("[green]✓[/green] ANTHROPIC_API_KEY set")
+    else:
+        print("[yellow]![/yellow] ANTHROPIC_API_KEY not set")
+        print("  Add to ~/.zshrc or ~/.bashrc:")
+        print('  [dim]export ANTHROPIC_API_KEY="sk-ant-..."[/dim]')
+
+    # ── .claude/settings.local.json ───────────────────────────
+    local_settings = repo_root / ".claude" / "settings.local.json"
+    if local_settings.exists():
+        print("[green]✓[/green] .claude/settings.local.json already exists")
+    else:
+        (repo_root / ".claude").mkdir(exist_ok=True)
+        local_settings.write_text(
+            json.dumps({"enableAllProjectMcpServers": True}, indent=2) + "\n"
+        )
+        print("[green]✓[/green] Created .claude/settings.local.json")
+        print("  MCP servers (harness, playwright) will connect automatically.")
+
+    # ── Summary ───────────────────────────────────────────────
+    print()
+    if not issues:
+        print("[bold green]Setup complete.[/bold green] "
+              "Run [bold]oracle generate \"...\"[/bold] to create your first test.")
+    else:
+        print("[bold yellow]Setup incomplete.[/bold yellow] "
+              "Fix the issues above and re-run [bold]oracle setup[/bold].")
+
+
+@app.command()
 def version():
     """
     Show Oracle version info.
