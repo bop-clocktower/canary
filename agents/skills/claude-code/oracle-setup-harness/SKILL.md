@@ -240,3 +240,10 @@ It has no harness config yet.
   Set up the base harness using this skill, then apply the
   capillary-specific overrides as a follow-up commit. Don't
   mix upstream setup with fork-specific changes.
+- **When the wiki-sync workflow fails on first run:** The
+  GitHub wiki is a separate git repository that GitHub creates
+  lazily — it doesn't exist until someone saves the first page
+  via the UI. Go to the repo → Wiki → create any placeholder
+  page. After that, the wiki-sync workflow handles the wiki
+  repo correctly on all subsequent runs. Each new fork needs
+  this one-time step.

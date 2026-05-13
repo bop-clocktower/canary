@@ -27,7 +27,23 @@ jobs:
             "github-actions[bot]@users.noreply.github.com"
 
           WIKI_URL="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.wiki.git"
-          git clone "$WIKI_URL" wiki-repo
+
+          # Clone the wiki if it exists, otherwise init a fresh
+          # local repo pointing at the wiki remote. The wiki git
+          # repo doesn't exist until at least one page has been
+          # created via the GitHub UI; the fresh-init path handles
+          # that first-run case.
+          if git clone "$WIKI_URL" wiki-repo 2>/dev/null; then
+            echo "Cloned existing wiki."
+          else
+            echo "Wiki not yet initialized — creating fresh repo."
+            mkdir -p wiki-repo
+            cd wiki-repo
+            git init
+            git checkout -b master
+            git remote add origin "$WIKI_URL"
+            cd ..
+          fi
 
           cp docs/wiki/*.md wiki-repo/
 
@@ -37,5 +53,5 @@ jobs:
             echo "No wiki changes to push."
           else
             git commit -m "docs: sync wiki from main (${SHA})"
-            git push
+            git push origin HEAD:master
           fi
