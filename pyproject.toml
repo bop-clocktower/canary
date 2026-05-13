@@ -17,3 +17,6 @@ dependencies = [
 
 [project.scripts]
 oracle = "agent.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["agent*"]

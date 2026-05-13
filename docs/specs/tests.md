@@ -11,4 +11,5 @@ This document covers the test implementation for Oracle.
 
 ## project Reference
 
-Generated tests are written to `tests/generated/` (gitignored) and promoted to `tests/` when ready to commit.
+Generated tests are written to `tests/generated/` (gitignored) and
+promoted to `tests/` when ready to commit.
