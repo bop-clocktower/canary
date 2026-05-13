@@ -49,5 +49,6 @@ jobs:
             git add .harness/security/timeline.json \
                     docs/SECURITY_LEDGER.md
             git commit -m "chore: refresh security ledger after scan"
+            git pull --rebase origin ${{ github.head_ref }}
             git push origin HEAD:${{ github.head_ref }}
           fi
