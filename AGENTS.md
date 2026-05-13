@@ -15,7 +15,7 @@ integrity.
 - **LLM Configuration:** [docs/wiki/LLM-Providers-and-Configuration.md](docs/wiki/LLM-Providers-and-Configuration.md)
 - **Self-Healing Loop:** [docs/wiki/Self-Healing-and-Feedback-Loop.md](docs/wiki/Self-Healing-and-Feedback-Loop.md)
 - **Main README:** [README.md](README.md)
-- **Roadmap:** [docs/ORACLE_ROADMAP.md](docs/ORACLE_ROADMAP.md)
+- **Roadmap:** [docs/roadmap.md](docs/roadmap.md)
 - **State:** [docs/ORACLE_STATE.md](docs/ORACLE_STATE.md)
 - **Engineering Learnings:** [docs/ORACLE_LEARNINGS.md](docs/ORACLE_LEARNINGS.md)
 

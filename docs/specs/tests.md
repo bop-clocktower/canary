@@ -11,5 +11,4 @@ This document covers the test implementation for Oracle.
 
 ## project Reference
 
-- [tests/generated/playwright_test_20260510_034135.spec.ts](../../tests/generated/playwright_test_20260510_034135.spec.ts)
-- [tests/generated/playwright_test_20260510_034023.spec.ts](../../tests/generated/playwright_test_20260510_034023.spec.ts)
+Generated tests are written to `tests/generated/` (gitignored) and promoted to `tests/` when ready to commit.
