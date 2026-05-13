@@ -7,14 +7,47 @@ on:
       - "tests/**"
       - "pyproject.toml"
 
+permissions:
+  contents: write
+
 jobs:
   security:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: npx --yes -p @harness-engineering/cli harness validate
-      - run: npx --yes -p @harness-engineering/cli harness check-deps
-      - run: npx --yes -p @harness-engineering/cli harness check-security --severity error
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate architecture
+        run: npx --yes -p @harness-engineering/cli harness validate
+
+      - name: Check dependencies
+        run: npx --yes -p @harness-engineering/cli harness check-deps
+
+      - name: Run security scan
+        run: |
+          npx --yes -p @harness-engineering/cli harness check-security \
+            --severity error
+
+      - name: Refresh security ledger
+        run: python3 scripts/security_ledger.py
+
+      - name: Commit ledger if changed
+        run: |
+          if ! git diff --exit-code -- \
+              .harness/security/timeline.json \
+              docs/SECURITY_LEDGER.md; then
+            git config user.name "github-actions[bot]"
+            git config user.email \
+              "github-actions[bot]@users.noreply.github.com"
+            git add .harness/security/timeline.json \
+                    docs/SECURITY_LEDGER.md
+            git commit -m "chore: refresh security ledger after scan"
+            git push origin HEAD:${{ github.head_ref }}
+          fi
