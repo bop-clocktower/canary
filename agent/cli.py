@@ -251,7 +251,7 @@ def setup():
     else:
         print("[yellow]![/yellow] ANTHROPIC_API_KEY not set")
         print("  Add to ~/.zshrc or ~/.bashrc:")
-        print('  [dim]export ANTHROPIC_API_KEY="sk-ant-..."[/dim]')
+        print('  [dim]export ANTHROPIC_API_KEY="your-api-key-here"[/dim]')
 
     # ── .claude/settings.local.json ───────────────────────────
     local_settings = repo_root / ".claude" / "settings.local.json"
