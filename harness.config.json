@@ -57,5 +57,11 @@
   "docsDir": "./docs",
   "entryPoints": [
     "agent.cli:app"
-  ]
+  ],
+  "telemetry": {
+    "enabled": true
+  },
+  "adoption": {
+    "enabled": true
+  }
 }
