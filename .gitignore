@@ -1,180 +1,60 @@
-# Local Claude Code state
-.claude/
-
-# Oracle-generated test artifacts
+# ── Oracle artifacts ──────────────────────────────────────────
+# Generated tests live here; never committed (scratch space)
 tests/generated/
 
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
+# Harness tooling scratch
+temp_harness/
+.entropy-backups/
 
-# C extensions
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
 *.so
 
-# Distribution / packaging
-.Python
+# Packaging
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
-MANIFEST
 
-# PyInstaller
-*.manifest
-*.spec
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
+# Test & coverage
+.pytest_cache/
 .coverage
 .coverage.*
-.cache
-nosetests.xml
+htmlcov/
 coverage.xml
 *.cover
-*.py.cover
 .hypothesis/
-.pytest_cache/
-cover/
 test-results/
-coverage/
 
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pdm
-.pdm-python
-.pdm-build/
-
-# pixi
-.pixi
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# Redis
-*.rdb
-*.aof
-*.pid
-
-# RabbitMQ
-mnesia/
-rabbitmq/
-rabbitmq-data/
-
-# ActiveMQ
-activemq-data/
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
+# Type checkers & linters
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-.idea/
-
-# Abstra
-.abstra/
-
-# Visual Studio Code
-.vscode/
-
-# Ruff stuff:
 .ruff_cache/
 
-# PyPI configuration file
-.pypirc
+# ── Node / JavaScript ─────────────────────────────────────────
+node_modules/
+playwright-report/
+blob-report/
 
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
+# ── Environment & secrets ─────────────────────────────────────
+.env
+.env.*
+.envrc
 
-# Streamlit
-.streamlit/secrets.toml
+# ── Editor & OS ───────────────────────────────────────────────
+.idea/
+.vscode/
+.DS_Store
 
-# AI Generated files locally
-temp_harness/
-.entropy-backups/
+# Claude Code — settings.json is tracked (shared hooks + MCP config)
+# settings.local.json is personal (extra allows, tokens) — never commit
+.claude/settings.local.json

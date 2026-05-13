@@ -2,6 +2,10 @@
   "mcpServers": {
     "harness": {
       "command": "harness-mcp"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
     }
   }
 }
