@@ -131,12 +131,17 @@ Before making any code changes, check the current branch:
 1. Run `git branch --show-current` (or equivalent) to identify the active branch.
 2. If the current branch is `main`:
    - Do **not** start writing or modifying code yet.
-   - Propose a branch name following the [Branch Naming](#branch-naming) convention based on what the user is asking for.
-   - Ask: *"You're on `main`. Should I create branch `<suggested-name>` for this work?"*
+   - Propose a branch name following the
+     [Branch Naming](#branch-naming) convention based on what the
+     user is asking for.
+   - Ask: *"You're on `main`. Should I create branch
+     `<suggested-name>` for this work?"*
    - Wait for confirmation, then create and switch to the branch before proceeding.
 3. If already on a feature/fix/chore branch, proceed normally.
 
-This applies to code changes. Commits that are purely documentation-only (e.g., updating `AGENTS.md`, `README.md`) may be made directly to `main` if the user has not indicated otherwise.
+This applies to code changes. Commits that are purely
+documentation-only (e.g., updating `AGENTS.md`, `README.md`) may be
+made directly to `main` if the user has not indicated otherwise.
 
 ---
 
