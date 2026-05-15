@@ -134,7 +134,7 @@ updated: 2026-05-13
 
 ### Pattern Matching
 
-- **Status:** planned
+- **Status:** done
 - **Spec:** none
 - **Summary:** TICKET-030 — analyze existing tests and match
   project-specific coding styles, naming, and helpers.

@@ -13,6 +13,7 @@ from datetime import datetime
 from rich import print
 from agent.core.classifier import TestClassifier
 from agent.core.metadata_scanner import MetadataScanner
+from agent.core.pattern_matcher import PatternMatcher
 from agent.core.recommender import FrameworkRecommender
 from agent.llm import generate_response
 
@@ -32,6 +33,7 @@ class OracleOrchestrator:
         self.classifier = TestClassifier()
         self.recommender = FrameworkRecommender()
         self.metadata_scanner = MetadataScanner()
+        self.pattern_matcher = PatternMatcher()
 
         self.output_dir = Path(__file__).resolve().parents[2] / "tests" / "generated"
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -71,18 +73,25 @@ class OracleOrchestrator:
         raw_ext = recommendation.get("file_extension", "ts")
         extension = self._sanitize_extension(raw_ext)
 
-        # 4. Build generation prompt
+        # 4. Scan existing test patterns
+        patterns = self.pattern_matcher.scan(
+            framework=framework,
+            test_type=classification.test_type,
+        )
+
+        # 5. Build generation prompt
         generation_prompt = self._build_prompt(
             user_prompt,
             classification.test_type,
             framework,
             metadata,
+            patterns,
         )
 
-        # 5. Generate test code
+        # 6. Generate test code
         generated_code = generate_response(generation_prompt)
 
-        # 6. Write file
+        # 7. Write file
         file_path = self._write_test_file(generated_code, framework, extension)
 
         result = {
@@ -93,7 +102,7 @@ class OracleOrchestrator:
             "output_file": str(file_path)
         }
 
-        # 7. Execute if requested
+        # 8. Execute if requested
         if execute:
             executor = TestExecutor()
             exit_code, stdout, stderr = executor.execute(file_path, framework)
@@ -105,7 +114,7 @@ class OracleOrchestrator:
                 "fixed": False
             }
 
-            # 7. Self-healing loop (MVP: 1 attempt)
+            # Self-healing loop (MVP: 1 attempt)
             if exit_code != 0:
                 print(f"\n[yellow]⚠️ Test failed (Exit {exit_code}). Oracle attempting to self-heal...[/yellow]")
                 
@@ -168,7 +177,7 @@ Fix the code so it passes.
 """
         return generate_response(fix_prompt)
 
-    def _build_prompt(self, user_prompt: str, test_type: str, framework: str, metadata=None) -> str:
+    def _build_prompt(self, user_prompt: str, test_type: str, framework: str, metadata=None, patterns=None) -> str:
         """
         Constructs the framework-aware prompt for the LLM.
 
@@ -177,6 +186,7 @@ Fix the code so it passes.
             test_type: The classified test type (e.g., e2e_ui).
             framework: The recommended framework (e.g., playwright).
             metadata: Optional ProjectMetadata from the scanner.
+            patterns: Optional PatternProfile from the pattern matcher.
 
         Returns:
             A formatted prompt string for the LLM.
@@ -207,6 +217,17 @@ Fix the code so it passes.
                 if highlights:
                     context_lines.append(f"TypeScript config: {highlights}")
 
+        if patterns and not patterns.is_empty:
+            context_lines.append(f"Existing test count: {patterns.test_count}")
+            if patterns.naming_style:
+                context_lines.append(f"Naming style: {patterns.naming_style}")
+            if patterns.assertion_style:
+                context_lines.append(f"Assertion style: {patterns.assertion_style}")
+            if patterns.common_imports:
+                context_lines.append(f"Common imports: {', '.join(patterns.common_imports)}")
+            if patterns.sample_names:
+                context_lines.append(f"Example test names: {', '.join(patterns.sample_names)}")
+
         context = "\n".join(context_lines)
 
         return f"""
@@ -227,6 +248,7 @@ Generate high-quality {framework} tests for the following requirement:
 - Include comments explaining key logic
 - Ensure code is production-ready
 - Use the exact library versions detected in the project where relevant
+- Match the naming style and assertion patterns of the existing test suite
 """
 
     def _write_test_file(self, code: str, framework: str, extension: str) -> Path:
