@@ -2,8 +2,8 @@
 
 """Google Gemini provider for Oracle.
 
-Implements the BaseProvider interface using the google-generativeai
-SDK. Lazy-imports the SDK so the rest of the system stays usable
+Implements the BaseProvider interface using the google-genai SDK.
+Lazy-imports the SDK so the rest of the system stays usable
 without the optional package installed.
 """
 
@@ -27,15 +27,14 @@ class GeminiProvider(BaseProvider):
                 "Oracle's generation features with Gemini."
             )
 
-        import google.generativeai as genai
+        from google import genai
 
-        genai.configure(api_key=api_key)
-        self._genai = genai
+        self._client = genai.Client(api_key=api_key)
         self.model_name = model
 
     def generate(self, messages: List[Dict[str, str]]) -> str:
-        # Gemini takes the system prompt as a model-construction kwarg
-        # and user turns as `contents`.
+        from google.genai import types
+
         system_parts = [
             m["content"] for m in messages if m.get("role") == "system"
         ]
@@ -43,13 +42,16 @@ class GeminiProvider(BaseProvider):
             m["content"] for m in messages if m.get("role") == "user"
         ]
 
-        model = self._genai.GenerativeModel(
-            self.model_name,
+        config = types.GenerateContentConfig(
             system_instruction=(
                 "\n\n".join(system_parts) if system_parts else None
             ),
         )
-        response = model.generate_content("\n\n".join(user_parts))
+        response = self._client.models.generate_content(
+            model=self.model_name,
+            contents="\n\n".join(user_parts),
+            config=config,
+        )
 
         text = getattr(response, "text", None)
         if not text:

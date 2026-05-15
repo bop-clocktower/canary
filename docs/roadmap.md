@@ -94,7 +94,7 @@ updated: 2026-05-11
 
 ### Gemini SDK Migration
 
-- **Status:** planned
+- **Status:** done
 - **Spec:** none
 - **Summary:** Migrate `GeminiProvider` from the deprecated
   `google-generativeai` package to `google.genai`. Google has ended
