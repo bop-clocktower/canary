@@ -163,10 +163,13 @@ updated: 2026-05-13
 
 ### Standardized Reporting
 
-- **Status:** planned
+- **Status:** done
 - **Spec:** none
 - **Summary:** TICKET-033 — export execution results to JSON/SARIF for
-  Datadog, SonarQube, and similar dashboards.
+  Datadog, SonarQube, and similar dashboards. `Reporter` class with
+  `write()`, `to_json()`, `to_sarif()` methods; SARIF 2.1.0 compliant
+  with `oracle/test-generation` and `oracle/test-execution` rule IDs;
+  `oracle generate --report-format` and `--report-file` CLI flags.
 - **Blockers:** none
 - **Plan:** none
 
