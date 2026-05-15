@@ -2,7 +2,8 @@
 
 import os
 import unittest
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from agent.core.ci_env import is_ci
 
@@ -59,9 +60,8 @@ class TestIsCI(unittest.TestCase):
             self.assertFalse(is_ci())
 
     def test_false_when_CI_is_zero(self):
+        # "0" is non-empty — truthy in Python; any non-empty value means CI-present.
         with patch.dict(os.environ, {**_clean_env(), "CI": "0"}, clear=True):
-            # "0" is a non-empty string — truthy in Python; some platforms set CI=0 to disable
-            # We treat any non-empty value as CI-present (mirrors how shells work).
             self.assertTrue(is_ci())
 
 
@@ -74,14 +74,13 @@ class TestExecutorCIFlags(unittest.TestCase):
 
     def _captured_cmd(self, framework_name: str) -> list:
         """Run execute() with subprocess mocked, return the command list used."""
-        from unittest.mock import MagicMock, patch
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = ""
         mock_result.stderr = ""
         with patch("agent.core.executor.subprocess.run", return_value=mock_result) as mock_run:
             self.executor.execute(
-                file_path=__import__("pathlib").Path("/tmp/test_foo.py"),
+                file_path=Path("/tmp/test_foo.py"),
                 framework_name=framework_name,
             )
             return mock_run.call_args[0][0]

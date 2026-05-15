@@ -4,10 +4,7 @@
 
 import os
 
-# Environment variables set by the most common CI platforms.
-# GitHub Actions sets CI + GITHUB_ACTIONS; CircleCI sets CI + CIRCLECI;
-# Travis sets CI + TRAVIS; GitLab CI sets CI_SERVER; Bitbucket Pipelines
-# sets BITBUCKET_BUILD_NUMBER (no CI var).
+# Most platforms set CI=true; GitLab sets CI_SERVER; Bitbucket sets BITBUCKET_BUILD_NUMBER.
 _CI_VARS = (
     "CI",
     "GITHUB_ACTIONS",

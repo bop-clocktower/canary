@@ -57,7 +57,7 @@ class TestExecutor:
         ]
 
         if is_ci():
-            cmd.extend(framework.get("ci_flags", []))
+            cmd.extend(list(framework.get("ci_flags") or []))
 
         try:
             process = subprocess.run(
