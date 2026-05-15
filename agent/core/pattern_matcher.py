@@ -84,9 +84,7 @@ class PatternMatcher:
             return PatternProfile()
 
         sample = files[:_MAX_FILES]
-        is_python = framework in ("pytest",) or test_type in (
-            "api", "python_unit"
-        ) or (not framework and not test_type)
+        is_python = framework in ("pytest",) or test_type in ("api", "python_unit")
 
         # Detect language from file extensions when framework is ambiguous.
         if not is_python and sample:
@@ -124,7 +122,10 @@ class PatternMatcher:
                     continue
                 if any(p in _IGNORED_DIRS for p in path.parts):
                     continue
-                if path.stat().st_size > _MAX_FILE_BYTES:
+                try:
+                    if path.stat().st_size > _MAX_FILE_BYTES:
+                        continue
+                except OSError:
                     continue
                 seen.add(path)
                 found.append(path)

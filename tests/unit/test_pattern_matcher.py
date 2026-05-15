@@ -66,6 +66,11 @@ class TestFindTestFiles(unittest.TestCase):
         profile = self.matcher.scan(str(self.root), test_type="api")
         self.assertEqual(profile.test_count, 1)
 
+    def test_js_files_analyzed_as_js_when_no_framework_or_test_type(self):
+        (self.root / "login.spec.ts").write_text("test('logs in', () => {});")
+        profile = self.matcher.scan(str(self.root))
+        self.assertEqual(profile.language, "javascript")
+
 
 class TestAnalyzePython(unittest.TestCase):
 
