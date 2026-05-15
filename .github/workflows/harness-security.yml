@@ -51,7 +51,5 @@ jobs:
             git commit -m "chore: refresh security ledger after scan"
             git pull --rebase origin ${{ github.head_ref }}
             git push origin HEAD:${{ github.head_ref }} || \
-              echo "Push skipped — branch protection prevents direct \
-push to ${{ github.head_ref }}. Ledger will be committed on the \
-next scan against an unprotected branch."
+              echo "Push skipped — branch protection prevents direct push to ${{ github.head_ref }}. Ledger will be committed on the next scan against an unprotected branch."
           fi
