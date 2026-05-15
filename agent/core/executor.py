@@ -12,6 +12,7 @@ import shlex
 from pathlib import Path
 from typing import Tuple
 from agent.core.framework_registry import FrameworkRegistry
+from agent.core.ci_env import is_ci
 
 class TestExecutor:
     """
@@ -54,6 +55,9 @@ class TestExecutor:
             tok.replace("{file}", str(file_path))
             for tok in shlex.split(cmd_template)
         ]
+
+        if is_ci():
+            cmd.extend(framework.get("ci_flags", []))
 
         try:
             process = subprocess.run(

@@ -175,10 +175,14 @@ updated: 2026-05-13
 
 ### Headless Optimizations
 
-- **Status:** planned
+- **Status:** done
 - **Spec:** none
-- **Summary:** TICKET-034 — CI-specific execution flags and
-  pipeline-friendly log output.
+- **Summary:** TICKET-034 — CI environment detection (`is_ci()` across
+  GitHub Actions, CircleCI, Travis, GitLab, Bitbucket, Jenkins,
+  TeamCity); per-framework `ci_flags` in registry (playwright
+  `--reporter=list`, vitest `--reporter=verbose`, pytest
+  `--tb=short -p no:cacheprovider`); executor auto-appends flags in CI;
+  CLI auto-enables `--json` output when CI is detected.
 - **Blockers:** none
 - **Plan:** none
 

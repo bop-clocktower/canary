@@ -35,6 +35,10 @@ def generate(
         run_test: If True, executes the generated test using the identified framework.
     """
     from agent.core.orchestrator import OracleOrchestrator
+    from agent.core.ci_env import is_ci
+
+    # In CI, force machine-readable output so pipelines don't have to parse Rich markup.
+    output_json = output_json or is_ci()
 
     if not output_json:
         print("\n[bold cyan]🧠 Oracle Processing Request...[/bold cyan]\n")
