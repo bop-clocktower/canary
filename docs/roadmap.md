@@ -237,4 +237,3 @@ updated: 2026-05-13
   harness test-suite shapes: API, E2E/UI, and shared library.
 - **Blockers:** none
 - **Plan:** none
-
