@@ -9,6 +9,7 @@ the Oracle agent.
 """
 
 import json
+from typing import Optional
 import typer
 from rich import print
 
@@ -20,7 +21,9 @@ def generate(
     prompt: str,
     recommend_only: bool = typer.Option(False, "--recommend-only", "-r", help="Only show the recommendation, skip generation."),
     output_json: bool = typer.Option(False, "--json", help="Output results in JSON format for tool integration."),
-    run_test: bool = typer.Option(False, "--run", help="Execute the test immediately after generation.")
+    run_test: bool = typer.Option(False, "--run", help="Execute the test immediately after generation."),
+    report_format: Optional[str] = typer.Option(None, "--report-format", help="Export a report: json or sarif."),
+    report_file: Optional[str] = typer.Option(None, "--report-file", help="Report output path. Defaults to oracle-report.{format}."),
 ):
     """
     Generate test automation code from a natural language prompt.
@@ -69,6 +72,18 @@ def generate(
     orchestrator = OracleOrchestrator()
     result = orchestrator.run(prompt, execute=run_test)
 
+    report_path = None
+    if report_file and not report_format:
+        if not output_json:
+            print("\n[bold yellow]Warning:[/bold yellow] --report-file ignored: --report-format not set.")
+    if report_format:
+        from agent.core.reporter import Reporter
+        try:
+            report_path = str(Reporter().write(result, report_format, report_file))
+        except ValueError as e:
+            if not output_json:
+                print(f"\n[bold red]Report error:[/bold red] {e}")
+
     if output_json:
         print(json.dumps({
             "status": "success",
@@ -77,7 +92,8 @@ def generate(
             "framework": result["framework"],
             "output_file": result["output_file"],
             "reasoning": result["reason"],
-            "execution": result.get("execution")
+            "execution": result.get("execution"),
+            **({"report_file": report_path} if report_path is not None else {}),
         }, indent=2))
         return
 
@@ -92,6 +108,9 @@ def generate(
 
     print("\n[bold yellow]Output File:[/bold yellow]")
     print(result["output_file"])
+
+    if report_path:
+        print(f"\n[bold yellow]Report:[/bold yellow] {report_path}")
 
     if "execution" in result:
         print("\n[bold cyan]🚀 Execution Results:[/bold cyan]")
