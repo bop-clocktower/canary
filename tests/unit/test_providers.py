@@ -106,14 +106,13 @@ class TestGeminiProviderGenerate(unittest.TestCase):
     def tearDown(self):
         os.environ.pop("GEMINI_API_KEY", None)
 
-    @patch("google.generativeai.GenerativeModel")
-    @patch("google.generativeai.configure")
-    def test_generate_returns_text(self, mock_configure, MockModel):
+    @patch("google.genai.Client")
+    def test_generate_returns_text(self, MockClient):
         mock_instance = MagicMock()
-        MockModel.return_value = mock_instance
+        MockClient.return_value = mock_instance
         resp = MagicMock()
         resp.text = "gemini output"
-        mock_instance.generate_content.return_value = resp
+        mock_instance.models.generate_content.return_value = resp
 
         from agent.llm.providers.gemini import GeminiProvider
         result = GeminiProvider().generate(
@@ -121,16 +120,13 @@ class TestGeminiProviderGenerate(unittest.TestCase):
         )
         self.assertEqual(result, "gemini output")
 
-    @patch("google.generativeai.GenerativeModel")
-    @patch("google.generativeai.configure")
-    def test_generate_passes_system_instruction(
-        self, mock_configure, MockModel
-    ):
+    @patch("google.genai.Client")
+    def test_generate_passes_system_instruction(self, MockClient):
         mock_instance = MagicMock()
-        MockModel.return_value = mock_instance
+        MockClient.return_value = mock_instance
         resp = MagicMock()
         resp.text = "ok"
-        mock_instance.generate_content.return_value = resp
+        mock_instance.models.generate_content.return_value = resp
 
         messages = [
             {"role": "system", "content": "You are a test generator."},
@@ -139,22 +135,19 @@ class TestGeminiProviderGenerate(unittest.TestCase):
         from agent.llm.providers.gemini import GeminiProvider
         GeminiProvider().generate(messages)
 
-        call_kwargs = MockModel.call_args[1]
+        call_kwargs = mock_instance.models.generate_content.call_args[1]
         self.assertEqual(
-            call_kwargs["system_instruction"],
+            call_kwargs["config"].system_instruction,
             "You are a test generator.",
         )
 
-    @patch("google.generativeai.GenerativeModel")
-    @patch("google.generativeai.configure")
-    def test_generate_raises_on_empty_text(
-        self, mock_configure, MockModel
-    ):
+    @patch("google.genai.Client")
+    def test_generate_raises_on_empty_text(self, MockClient):
         mock_instance = MagicMock()
-        MockModel.return_value = mock_instance
+        MockClient.return_value = mock_instance
         resp = MagicMock()
         resp.text = None
-        mock_instance.generate_content.return_value = resp
+        mock_instance.models.generate_content.return_value = resp
 
         from agent.llm.providers.gemini import GeminiProvider
         with self.assertRaises(RuntimeError):
