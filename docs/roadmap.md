@@ -2,7 +2,7 @@
 project: oracle
 version: 1
 created: 2026-05-11
-updated: 2026-05-11
+updated: 2026-05-13
 ---
 
 # Roadmap
@@ -218,3 +218,23 @@ updated: 2026-05-11
   configuring providers.
 - **Blockers:** none
 - **Plan:** none
+
+### Migrate harness:initialize-test-suite Repos to `oracle init`
+
+- **Status:** planned
+- **Spec:** none
+- **Summary:** `oracle migrate` (or `oracle init --from-harness`) for
+  test-suite repos previously scaffolded by the
+  `harness:initialize-test-suite-project` skill. Steps: detect the
+  harness scaffold (layer model, tags, reporter stack, custom report,
+  `harness.config.json` / `.harness/` markers), map them onto Oracle's
+  init layout (framework registry entry, `oracle init` outputs,
+  reporter wiring), rewrite config without losing existing test
+  files, and run `oracle generate --recommend-only` as a smoke check.
+  Idempotent and dry-run by default; produces a Markdown migration
+  report listing what was moved, what was preserved, and any manual
+  follow-ups (e.g., custom reporter shims). Targets all three
+  harness test-suite shapes: API, E2E/UI, and shared library.
+- **Blockers:** none
+- **Plan:** none
+

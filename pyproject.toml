@@ -20,3 +20,4 @@ oracle = "agent.cli:app"
 
 [tool.setuptools.packages.find]
 include = ["agent*"]
+exclude = ["agents*", "tests*", "docs*", "scripts*"]

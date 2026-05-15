@@ -6,7 +6,7 @@ framework recommendation, code generation, and self-healing.
 """
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from pathlib import Path
 from agent.core.orchestrator import OracleOrchestrator
 
