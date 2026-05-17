@@ -145,13 +145,20 @@ class HarnessMigrator:
             detected_shape=shape,
         )
 
-    def migrate(self, project_root: Path, *, dry_run: bool = True) -> MigrationReport:
+    def migrate(
+        self,
+        project_root: Path,
+        *,
+        dry_run: bool = True,
+        framework: Optional[str] = None,
+    ) -> MigrationReport:
         """
         Migrate a harness-scaffolded project to Oracle's layout.
 
         Args:
             project_root: Root directory of the project to migrate.
             dry_run: When True (default), report what would change without writing anything.
+            framework: Override auto-detected framework (e.g. from --framework CLI flag).
 
         Raises:
             ValueError: If the project is not a harness-scaffolded project.
@@ -163,7 +170,7 @@ class HarnessMigrator:
                 "Expected harness.config.json and .harness/ directory."
             )
 
-        framework = ctx.detected_framework
+        framework = framework or ctx.detected_framework
         shape = ctx.detected_shape
         followups = []
 

@@ -285,6 +285,26 @@ class TestMigrationReport(unittest.TestCase):
 
 # ── non-harness project ───────────────────────────────────────────────────────
 
+class TestFrameworkOverride(unittest.TestCase):
+
+    def setUp(self):
+        self.migrator = HarnessMigrator()
+
+    def test_override_replaces_auto_detected_framework(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")  # would auto-detect pytest
+            report = self.migrator.migrate(root, dry_run=True, framework="playwright")
+            self.assertEqual(report.framework, "playwright")
+
+    def test_override_is_used_for_scaffold_in_apply_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            self.migrator.migrate(root, dry_run=False, framework="vitest")
+            self.assertTrue((root / "vitest.config.ts").exists())
+
+
 class TestNonHarnessProject(unittest.TestCase):
 
     def setUp(self):

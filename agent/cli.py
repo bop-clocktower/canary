@@ -244,10 +244,6 @@ def migrate(
         )
         raise typer.Exit(1)
 
-    # Framework override
-    if framework:
-        ctx.detected_framework = framework
-
     dry_run = not apply
     mode_label = "[dim](dry run)[/dim]" if dry_run else "[green](apply)[/green]"
     print(f"\n[bold cyan]Oracle Migrate[/bold cyan] {mode_label}\n")
@@ -256,7 +252,7 @@ def migrate(
         print("[yellow]Writing files to disk...[/yellow]\n")
 
     try:
-        report = migrator.migrate(root, dry_run=dry_run)
+        report = migrator.migrate(root, dry_run=dry_run, framework=framework or None)
     except ValueError as e:
         print(f"\n[bold red]Error:[/bold red] {e}")
         raise typer.Exit(1)
@@ -278,7 +274,7 @@ def migrate(
 
     print(report.to_markdown())
 
-    if dry_run and (report.would_create or report.created_files == []):
+    if dry_run and report.would_create:
         print("\n[dim]Re-run with [bold]--apply[/bold] to write these files.[/dim]")
 
 
