@@ -14,13 +14,12 @@ from typing import Tuple
 from agent.core.framework_registry import FrameworkRegistry
 from agent.core.ci_env import is_ci
 
-class TestExecutor:
+class OracleTestExecutor:
     """
     Handles execution of generated tests in a managed subprocess.
 
-    This class coordinates with the FrameworkRegistry to determine the
-    correct execution command for a given framework and safely executes
-    the test file.
+    Coordinates with the FrameworkRegistry to determine the correct
+    execution command for a given framework and safely executes the test file.
     """
 
     def __init__(self):

@@ -141,12 +141,12 @@ def run(
         file_path: Path to the test file to execute.
         framework: The testing framework to use for execution.
     """
-    from agent.core.executor import TestExecutor
+    from agent.core.executor import OracleTestExecutor
     from pathlib import Path
 
     print(f"\n[bold cyan]🚀 Oracle Executing {framework} Test...[/bold cyan]\n")
 
-    executor = TestExecutor()
+    executor = OracleTestExecutor()
     exit_code, stdout, stderr = executor.execute(Path(file_path), framework)
 
     color = "green" if exit_code == 0 else "red"

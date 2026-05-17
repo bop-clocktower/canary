@@ -3,12 +3,12 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
-from agent.core.executor import TestExecutor
+from agent.core.executor import OracleTestExecutor
 
-class TestTestExecutor(unittest.TestCase):
+class TestOracleTestExecutor(unittest.TestCase):
 
     def setUp(self):
-        self.executor = TestExecutor()
+        self.executor = OracleTestExecutor()
 
     @patch('subprocess.run')
     def test_execute_success(self, mock_run):

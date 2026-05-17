@@ -26,7 +26,7 @@ class TestOracleOrchestrator(unittest.TestCase):
         self.addCleanup(lambda: output_path.unlink(missing_ok=True))
         self.assertTrue(output_path.exists())
 
-    @patch('agent.core.executor.TestExecutor.execute')
+    @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_run_with_execution(self, mock_generate, mock_execute):
         mock_generate.return_value = "import { test } from '@playwright/test';\ntest('demo', () => {});"
@@ -69,7 +69,7 @@ class TestOracleOrchestrator(unittest.TestCase):
 
 class TestSelfHealing(unittest.TestCase):
 
-    @patch('agent.core.executor.TestExecutor.execute')
+    @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_heals_on_first_retry(self, mock_generate, mock_execute):
         mock_generate.side_effect = [
@@ -86,7 +86,7 @@ class TestSelfHealing(unittest.TestCase):
         self.assertEqual(result['execution']['original_error'], "Error: fail")
         Path(result['output_file']).unlink(missing_ok=True)
 
-    @patch('agent.core.executor.TestExecutor.execute')
+    @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_exhausts_max_attempts_when_all_fail(self, mock_generate, mock_execute):
         orchestrator = OracleOrchestrator(max_heal_attempts=2)
@@ -103,7 +103,7 @@ class TestSelfHealing(unittest.TestCase):
         self.assertEqual(result['execution']['original_error'], "SyntaxError")
         Path(result['output_file']).unlink(missing_ok=True)
 
-    @patch('agent.core.executor.TestExecutor.execute')
+    @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_succeeds_on_third_attempt(self, mock_generate, mock_execute):
         orchestrator = OracleOrchestrator(max_heal_attempts=3)
@@ -121,7 +121,7 @@ class TestSelfHealing(unittest.TestCase):
         self.assertEqual(result['execution']['attempts'], 2)
         Path(result['output_file']).unlink(missing_ok=True)
 
-    @patch('agent.core.executor.TestExecutor.execute')
+    @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_fixed_false_and_attempts_zero_when_first_run_passes(self, mock_generate, mock_execute):
         mock_generate.return_value = "import { test } from '@playwright/test';\ntest('ok', () => {});"
@@ -133,7 +133,7 @@ class TestSelfHealing(unittest.TestCase):
         self.assertEqual(result['execution']['attempts'], 0)
         Path(result['output_file']).unlink(missing_ok=True)
 
-    @patch('agent.core.executor.TestExecutor.execute')
+    @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_max_heal_attempts_zero_disables_healing(self, mock_generate, mock_execute):
         orchestrator = OracleOrchestrator(max_heal_attempts=0)

@@ -64,7 +64,7 @@ class OracleOrchestrator:
             A dictionary containing the pipeline results, including file paths
             and execution status.
         """
-        from agent.core.executor import TestExecutor
+        from agent.core.executor import OracleTestExecutor
 
         # 1. Scan project metadata from cwd
         metadata = self.metadata_scanner.scan()
@@ -121,7 +121,7 @@ class OracleOrchestrator:
 
         # 9. Execute if requested
         if execute:
-            executor = TestExecutor()
+            executor = OracleTestExecutor()
             exit_code, stdout, stderr = executor.execute(file_path, framework)
 
             original_error = stderr or stdout
