@@ -15,6 +15,15 @@ Both phases expose the same feature surface. VS Code ships first because the
 extension API is simpler, the marketplace has broader reach, and the team already
 works in a TypeScript-capable environment.
 
+## Assumptions
+
+- **VS Code minimum version:** >= 1.85.0 (December 2023 LTS baseline). Set
+  `engines.vscode` to `^1.85.0` in `package.json`.
+- **`oracle` CLI installed separately:** Users install `oracle` via `pip install
+  oracle` or from source before installing the plugin. The plugin does not bundle
+  or install the CLI.
+- **Oracle CLI version:** >= 0.1 (see CLI Resolution for behavior on older versions).
+
 ## User Stories
 
 | # | As a developer I want to… | So that… |
@@ -45,6 +54,7 @@ All commands are registered in the Command Palette under the `Oracle:` prefix.
 1. If invoked via right-click on a source file, pre-populate the input box with:
    `Generate tests for <filename> — ` and place cursor after the dash.
 2. Show an input box: `Describe the test you want Oracle to generate`.
+   If the user dismisses or submits an empty/whitespace-only prompt, silently no-op.
 3. Run `oracle generate "<prompt>" --json` in a child process.
 4. On success: open the generated file path (from JSON output) in a new editor
    tab. Show a success notification with "Open File" and "Run Now" actions.
@@ -52,8 +62,10 @@ All commands are registered in the Command Palette under the `Oracle:` prefix.
 
 ### `oracle.run` flow
 
-1. If no file argument, use the active editor's file path. If the active file is
-   not a test file (no `.spec.` or `.test.` in the name), prompt to select one.
+1. If no file argument, use the active editor's file path. If there is no active
+   editor, show an error notification: "No test file selected. Open a test file or
+   right-click one in the Explorer." If the active file is not a test file (no
+   `.spec.` or `.test.` in the name), prompt to select one.
 2. Prompt for framework if not auto-detectable from file extension or workspace
    config; otherwise infer silently.
 3. Run `oracle run "<file>" <framework> --json`.
@@ -68,7 +80,10 @@ All commands are registered in the Command Palette under the `Oracle:` prefix.
 
 ### `oracle.migrate` flow
 
-1. Run `oracle migrate --path <workspaceRoot> --json` (dry run).
+1. If no workspace folder is open (`vscode.workspace.workspaceFolders` is
+   undefined), show an error notification: "oracle migrate requires an open
+   workspace folder." Exit.
+   Run `oracle migrate --path <workspaceRoot> --json` (dry run).
 2. Display the JSON report in a read-only preview editor tab (`Oracle Migration
    Preview`).
 3. Show "Apply Migration" and "Cancel" buttons in a notification.
