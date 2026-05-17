@@ -2,7 +2,7 @@
 project: oracle
 version: 1
 created: 2026-05-11
-updated: 2026-05-18
+updated: 2026-05-19
 ---
 
 # Roadmap
@@ -255,19 +255,17 @@ updated: 2026-05-18
 
 ### Migrate harness:initialize-test-suite Repos to `oracle init`
 
-- **Status:** planned
+- **Status:** done
 - **Spec:** none
-- **Summary:** `oracle migrate` (or `oracle init --from-harness`) for
-  test-suite repos previously scaffolded by the
-  `harness:initialize-test-suite-project` skill. Steps: detect the
-  harness scaffold (layer model, tags, reporter stack, custom report,
-  `harness.config.json` / `.harness/` markers), map them onto Oracle's
-  init layout (framework registry entry, `oracle init` outputs,
-  reporter wiring), rewrite config without losing existing test
-  files, and run `oracle generate --recommend-only` as a smoke check.
-  Idempotent and dry-run by default; produces a Markdown migration
-  report listing what was moved, what was preserved, and any manual
-  follow-ups (e.g., custom reporter shims). Targets all three
-  harness test-suite shapes: API, E2E/UI, and shared library.
+- **Summary:** PR #48 — `oracle migrate` command for repos scaffolded by
+  `harness:initialize-test-suite-project`. `HarnessMigrator` detects
+  `harness.config.json` + `.harness/` markers and auto-detects the framework
+  from config files (`playwright.config.ts`, `vitest.config.ts`, `pytest.ini`,
+  `pyproject.toml [tool.pytest.ini_options]`, `k6.config.js`) with
+  `harness.config.json` language-field fallback. Dry-run by default (`--apply`
+  to write). Idempotent. Preserves all existing test files. `--framework`
+  override, `--json` output. `MigrationReport.to_markdown()` reports
+  created/skipped/preserved files and manual follow-ups. 30 unit tests;
+  248 total passing.
 - **Blockers:** none
 - **Plan:** none
