@@ -65,7 +65,7 @@ class TestIsCI(unittest.TestCase):
             self.assertTrue(is_ci())
 
 
-class OracleTestExecutorCIFlags(unittest.TestCase):
+class TestExecutorCIFlags(unittest.TestCase):
     """Integration: executor appends CI flags from registry when is_ci() is True."""
 
     def setUp(self):

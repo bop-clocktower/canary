@@ -21,7 +21,7 @@ The Orchestrator runs a fixed three-stage pipeline per request:
 3. **Generate.** The LLM provider produces the test source;
    `OracleOrchestrator.run` writes it under `tests/generated/`.
 
-Optionally, when invoked with `execute=True`, a `OracleTestExecutor` runs the
+Optionally, when invoked with `execute=True`, an `OracleTestExecutor` runs the
 produced file using the framework's CLI.
 
 ### 2. Registry-Driven Framework Selection
