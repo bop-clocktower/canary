@@ -221,5 +221,71 @@ class TestSearchErrorContext(unittest.TestCase):
         self.assertEqual(result, "")
 
 
+class TestSelectorHealRouting(unittest.TestCase):
+    """Orchestrator routes selector failures to SelectorHealer, others to _attempt_fix."""
+
+    @patch('agent.core.executor.OracleTestExecutor.execute')
+    @patch('agent.core.orchestrator.generate_response')
+    def test_selector_failure_calls_selector_healer(self, mock_generate, mock_execute):
+        mock_generate.side_effect = [
+            "import { test } from '@playwright/test';\ntest('x', async ({ page }) => {});",
+            "fixed code",
+        ]
+        mock_execute.side_effect = [
+            (1, "", "TimeoutError: locator('.old-btn') timeout exceeded"),
+            (0, "", ""),
+        ]
+        orchestrator = OracleOrchestrator(max_heal_attempts=1)
+        with patch.object(orchestrator.selector_healer, 'build_heal_prompt',
+                          wraps=orchestrator.selector_healer.build_heal_prompt) as mock_prompt:
+            result = orchestrator.run("Click the submit button", execute=True)
+            mock_prompt.assert_called_once()
+        self.assertTrue(result['execution']['fixed'])
+        Path(result['output_file']).unlink(missing_ok=True)
+
+    @patch('agent.core.executor.OracleTestExecutor.execute')
+    @patch('agent.core.orchestrator.generate_response')
+    def test_generic_failure_skips_selector_healer(self, mock_generate, mock_execute):
+        mock_generate.side_effect = [
+            "import { test } from '@playwright/test';\ntest('x', async ({ page }) => {});",
+            "fixed code",
+        ]
+        mock_execute.side_effect = [
+            (1, "", "AssertionError: expected 42 to equal 43"),
+            (0, "", ""),
+        ]
+        orchestrator = OracleOrchestrator(max_heal_attempts=1)
+        with patch.object(orchestrator.selector_healer, 'build_heal_prompt') as mock_prompt:
+            result = orchestrator.run("Check the cart total", execute=True)
+            mock_prompt.assert_not_called()
+        self.assertTrue(result['execution']['fixed'])
+        Path(result['output_file']).unlink(missing_ok=True)
+
+    @patch('agent.core.executor.OracleTestExecutor.execute')
+    @patch('agent.core.orchestrator.generate_response')
+    def test_selector_heal_prompt_receives_failing_selector(self, mock_generate, mock_execute):
+        mock_generate.side_effect = [
+            "import { test } from '@playwright/test';\ntest('x', async ({ page }) => {});",
+            "fixed",
+        ]
+        mock_execute.side_effect = [
+            (1, "", "TimeoutError: locator('.nav-menu') timeout exceeded"),
+            (0, "", ""),
+        ]
+        orchestrator = OracleOrchestrator(max_heal_attempts=1)
+        captured = {}
+        original = orchestrator.selector_healer.build_heal_prompt
+
+        def capturing(**kwargs):
+            captured.update(kwargs)
+            return original(**kwargs)
+
+        with patch.object(orchestrator.selector_healer, 'build_heal_prompt', side_effect=capturing):
+            result = orchestrator.run("Navigate using the menu", execute=True)
+
+        self.assertEqual(captured.get('failing_selector'), '.nav-menu')
+        Path(result['output_file']).unlink(missing_ok=True)
+
+
 if __name__ == '__main__':
     unittest.main()

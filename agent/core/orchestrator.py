@@ -18,6 +18,7 @@ from agent.core.domain_scanner import DomainScanner
 from agent.core.metadata_scanner import MetadataScanner
 from agent.core.pattern_matcher import PatternMatcher
 from agent.core.recommender import FrameworkRecommender
+from agent.core.selector_healer import SelectorHealer
 from agent.llm import generate_response
 
 
@@ -46,6 +47,7 @@ class OracleOrchestrator:
         self.metadata_scanner = MetadataScanner()
         self.pattern_matcher = PatternMatcher()
         self.domain_scanner = DomainScanner()
+        self.selector_healer = SelectorHealer()
         self.max_heal_attempts = max_heal_attempts
 
         self.output_dir = Path(__file__).resolve().parents[2] / "tests" / "generated"
@@ -130,14 +132,20 @@ class OracleOrchestrator:
 
             while exit_code != 0 and attempts < self.max_heal_attempts:
                 attempts += 1
+                error_output = stderr or stdout
                 _err.print(
                     f"\n[yellow]⚠️  Test failed (exit {exit_code}). "
                     f"Self-heal attempt {attempts}/{self.max_heal_attempts}...[/yellow]"
                 )
-                error_context = self._search_error_context(stderr or stdout)
-                fixed_code = self._attempt_fix(
-                    user_prompt, framework, current_code, stderr or stdout, error_context
-                )
+                if self.selector_healer.is_selector_failure(error_output):
+                    fixed_code = self._attempt_selector_fix(
+                        user_prompt, framework, current_code, error_output, file_path
+                    )
+                else:
+                    error_context = self._search_error_context(error_output)
+                    fixed_code = self._attempt_fix(
+                        user_prompt, framework, current_code, error_output, error_context
+                    )
                 with open(file_path, "w") as f:
                     f.write(fixed_code)
                 exit_code, stdout, stderr = executor.execute(file_path, framework)
@@ -184,6 +192,28 @@ Fix the code so it passes.
 - Return ONLY the code, no explanation
 """
         return generate_response(fix_prompt)
+
+    def _attempt_selector_fix(
+        self,
+        user_prompt: str,
+        framework: str,
+        original_code: str,
+        error: str,
+        test_file: Path,
+    ) -> str:
+        """Fix selector-related failures using DOM context when available."""
+        failing_selector = self.selector_healer.extract_failing_selector(error)
+        report_dir = test_file.parent / "playwright-report"
+        dom_context = self.selector_healer.dom_context_from_report(report_dir)
+        prompt = self.selector_healer.build_heal_prompt(
+            user_prompt=user_prompt,
+            framework=framework,
+            original_code=original_code,
+            error=error,
+            failing_selector=failing_selector,
+            dom_context=dom_context,
+        )
+        return generate_response(prompt)
 
     def _search_error_context(self, error: str, project_root: str = ".") -> str:
         """Search project source files for symbol definitions referenced in the error message."""
