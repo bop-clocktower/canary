@@ -2,7 +2,7 @@
 project: oracle
 version: 1
 created: 2026-05-11
-updated: 2026-05-19
+updated: 2026-05-17
 ---
 
 # Roadmap
@@ -238,9 +238,12 @@ updated: 2026-05-19
 ### IDE Plugins
 
 - **Status:** backlog
-- **Spec:** none
+- **Spec:** [docs/specs/ide-plugins.md](specs/ide-plugins.md)
 - **Summary:** VS Code and JetBrains plugins exposing Oracle
-  generation/execution.
+  generation/execution. Phase 1 (VS Code, TypeScript) ships first.
+  Thin-shell design — plugins invoke the installed `oracle` CLI; no LLM
+  code lives in the plugin. 6 commands, output channel, status bar,
+  CLI resolution, and full error-handling contract specified. PR #50.
 - **Blockers:** none
 - **Plan:** none
 
