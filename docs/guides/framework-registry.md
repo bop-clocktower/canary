@@ -43,7 +43,7 @@ Each entry in `frameworks[]` is a JSON object with these fields:
 - **`file_patterns`** *(optional)* — discovery patterns for
   test runners (e.g., `test_*.py`).
 - **`execution_command`** — shell template with `{file}`
-  placeholder. `TestExecutor` substitutes the generated path;
+  placeholder. `OracleTestExecutor` substitutes the generated path;
   quoting is handled so paths with spaces are preserved as a
   single argv element.
 - **`ecosystems`** — frameworks/runtimes this fits (e.g.,
@@ -67,7 +67,7 @@ Each entry in `frameworks[]` is a JSON object with these fields:
 - `get_preferred_by_category(category)` — `preferred` if
   present, else first match
 - `find_by_name(name)` — exact-name lookup (used by
-  `TestExecutor`)
+  `OracleTestExecutor`)
 - `match_by_language(language)` — all frameworks for a
   language
 
@@ -104,7 +104,7 @@ help future maintainers.
 ### 3. Validate the Execution Command
 
 The `{file}` placeholder is substituted as a single argv
-element — `TestExecutor` tokenizes the template with
+element — `OracleTestExecutor` tokenizes the template with
 `shlex.split` *before* substitution, so paths with spaces are
 preserved intact. Prefer commands that don't require additional
 config files in the project root; if they do, document the
