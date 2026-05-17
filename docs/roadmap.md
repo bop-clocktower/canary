@@ -237,15 +237,18 @@ updated: 2026-05-17
 
 ### IDE Plugins
 
-- **Status:** backlog
+- **Status:** planned
 - **Spec:** [docs/specs/ide-plugins.md](specs/ide-plugins.md)
 - **Summary:** VS Code and JetBrains plugins exposing Oracle
   generation/execution. Phase 1 (VS Code, TypeScript) ships first.
   Thin-shell design — plugins invoke the installed `oracle` CLI; no LLM
   code lives in the plugin. 5 commands, output channel, status bar,
   CLI resolution, and full error-handling contract specified. PR #50.
+  4 planning decisions resolved (D1–D4): no default keybinding, active-editor
+  workspace root for migrate, framework inference mirrors CLI probe order,
+  one-time version warning via globalState. PR #62.
 - **Blockers:** 1 open design decision (see below)
-- **Plan:** none
+- **Plan:** [docs/plans/ide-plugins-vscode.md](plans/ide-plugins-vscode.md)
 
 #### IDE Plugins — Design Decisions
 
