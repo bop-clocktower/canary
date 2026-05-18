@@ -250,7 +250,7 @@ updated: 2026-05-17
   one-time version warning via globalState. PR #62.
   All 14 plan tasks implemented in `oracle-vscode` (commits 88b27e4–13eb769)
   — typecheck clean, 16/16 tests passing, CI green on `main`. CommonJS
-  + proxyquire chosen for test isolation against Node 24's non-configurable
+  and proxyquire chosen for test isolation against Node 24's non-configurable
   built-in exports.
 - **Blockers:** 1 open design decision (see below); JetBrains plugin not started
 - **Plan:** [docs/plans/ide-plugins-vscode.md](plans/ide-plugins-vscode.md)
@@ -261,7 +261,7 @@ Soundness review (harness-soundness-review, spec mode) surfaced these before
 implementation begins. 5 of 6 resolved in spec PR #59.
 
 | # | Issue | Status | Resolution |
-|---|-------|--------|------------|
+| --- | ----- | ------ | ---------- |
 | S1-001 | [#52](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/52) | **open** | Awaiting decision on component name detection scope |
 | S1-002 | [#53](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/53) | resolved | Batch output; streaming deferred to follow-up |
 | S5-001 | [#54](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/54) | resolved | Changed to `oracle version` (subcommand) |

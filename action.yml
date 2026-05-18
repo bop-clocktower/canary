@@ -109,7 +109,7 @@ runs:
         if [ "${{ inputs.run-tests }}" = "true" ]; then
           RUN_FLAG="--run"
         fi
-        RESULT=$(oracle generate "$PROMPT" --json $RUN_FLAG 2>/dev/null)
+        RESULT=$(oracle generate "$PROMPT" --json $RUN_FLAG 2>/dev/null) || RESULT=""
         OUTPUT_FILE=$(echo "$RESULT" | python3 -c \
           "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('output_file',''))" 2>/dev/null || echo "")
         TEST_TYPE=$(echo "$RESULT" | python3 -c \
