@@ -237,7 +237,7 @@ updated: 2026-05-17
 
 ### IDE Plugins
 
-- **Status:** planned
+- **Status:** in progress — VS Code scaffold complete
 - **Spec:** [docs/specs/ide-plugins.md](specs/ide-plugins.md)
 - **Summary:** VS Code and JetBrains plugins exposing Oracle
   generation/execution. Phase 1 (VS Code, TypeScript) ships first.
@@ -247,7 +247,9 @@ updated: 2026-05-17
   4 planning decisions resolved (D1–D4): no default keybinding, active-editor
   workspace root for migrate, framework inference mirrors CLI probe order,
   one-time version warning via globalState. PR #62.
-- **Blockers:** 1 open design decision (see below)
+  All 14 plan tasks implemented in `oracle-vscode` repo (initial commit
+  88b27e4) — typecheck clean, full test suite, CI/CD workflows wired.
+- **Blockers:** 1 open design decision (see below); needs GitHub remote + CI run
 - **Plan:** [docs/plans/ide-plugins-vscode.md](plans/ide-plugins-vscode.md)
 
 #### IDE Plugins — Design Decisions

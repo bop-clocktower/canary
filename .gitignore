@@ -5,7 +5,6 @@ tests/generated/
 # Harness tooling scratch
 temp_harness/
 .entropy-backups/
-
 # ── Python ────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
