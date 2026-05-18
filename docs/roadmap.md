@@ -2,7 +2,7 @@
 project: oracle
 version: 1
 created: 2026-05-11
-updated: 2026-05-13
+updated: 2026-05-17
 ---
 
 # Roadmap
@@ -205,23 +205,64 @@ updated: 2026-05-13
 
 ### Visual DOM Self-Healing
 
-- **Status:** planned
+- **Status:** done
 - **Spec:** none
-- **Summary:** TICKET-036 — use visual snapshots or DOM trees to fix
-  brittle UI selectors automatically.
+- **Summary:** TICKET-036 — `SelectorHealer` detects selector-related UI
+  test failures (`TimeoutError`, `locator()`, `getBy*`, `page.click`, strict
+  mode violations, not-attached/not-visible) and routes them to a DOM-aware
+  fix path instead of the generic symbol-grep healer. Extracts the failing
+  selector from the error message; reads DOM context from loose HTML snapshots
+  or `snapshots/*.html` entries inside Playwright `trace.zip` files (truncated
+  at 3 500 chars). Builds a selector-focused prompt that instructs the LLM to
+  prefer `data-testid` and ARIA roles over brittle CSS classes. Wired into
+  `OracleOrchestrator`'s heal loop via `_attempt_selector_fix()`. 36 new
+  tests; 218 total passing.
 - **Blockers:** none
 - **Plan:** none
 
 ## Developer Experience and Onboarding
 
-### IDE Plugins
+### Test Suite Maintenance
 
-- **Status:** backlog
+- **Status:** done
 - **Spec:** none
-- **Summary:** VS Code and JetBrains plugins exposing Oracle
-  generation/execution.
+- **Summary:** PR #44 — renamed `TestExecutor` → `OracleTestExecutor` to
+  eliminate `PytestCollectionWarning` (pytest treats any `Test*` class with
+  `__init__` as a candidate test class). Installed missing `google-genai`
+  dependency that was declared in `pyproject.toml` but absent from the venv,
+  restoring 5 Gemini provider tests that had been failing silently. Result:
+  182/182 passing, 0 warnings.
 - **Blockers:** none
 - **Plan:** none
+
+### IDE Plugins
+
+- **Status:** planned
+- **Spec:** [docs/specs/ide-plugins.md](specs/ide-plugins.md)
+- **Summary:** VS Code and JetBrains plugins exposing Oracle
+  generation/execution. Phase 1 (VS Code, TypeScript) ships first.
+  Thin-shell design — plugins invoke the installed `oracle` CLI; no LLM
+  code lives in the plugin. 5 commands, output channel, status bar,
+  CLI resolution, and full error-handling contract specified. PR #50.
+  4 planning decisions resolved (D1–D4): no default keybinding, active-editor
+  workspace root for migrate, framework inference mirrors CLI probe order,
+  one-time version warning via globalState. PR #62.
+- **Blockers:** 1 open design decision (see below)
+- **Plan:** [docs/plans/ide-plugins-vscode.md](plans/ide-plugins-vscode.md)
+
+#### IDE Plugins — Design Decisions
+
+Soundness review (harness-soundness-review, spec mode) surfaced these before
+implementation begins. 5 of 6 resolved in spec PR #59.
+
+| # | Issue | Status | Resolution |
+|---|-------|--------|------------|
+| S1-001 | [#52](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/52) | **open** | Awaiting decision on component name detection scope |
+| S1-002 | [#53](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/53) | resolved | Batch output; streaming deferred to follow-up |
+| S5-001 | [#54](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/54) | resolved | Changed to `oracle version` (subcommand) |
+| S5-002 | [#55](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/55) | resolved | Removed `--json` from run invocation |
+| S3-002 | [#56](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/56) | resolved | macOS PATH limitation documented in Assumptions |
+| S6-001 | [#57](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/57) | resolved | `oracle.recommendOnly` moved to Out of Scope |
 
 ### Interactive Guided Onboarding
 
@@ -234,19 +275,17 @@ updated: 2026-05-13
 
 ### Migrate harness:initialize-test-suite Repos to `oracle init`
 
-- **Status:** planned
+- **Status:** done
 - **Spec:** none
-- **Summary:** `oracle migrate` (or `oracle init --from-harness`) for
-  test-suite repos previously scaffolded by the
-  `harness:initialize-test-suite-project` skill. Steps: detect the
-  harness scaffold (layer model, tags, reporter stack, custom report,
-  `harness.config.json` / `.harness/` markers), map them onto Oracle's
-  init layout (framework registry entry, `oracle init` outputs,
-  reporter wiring), rewrite config without losing existing test
-  files, and run `oracle generate --recommend-only` as a smoke check.
-  Idempotent and dry-run by default; produces a Markdown migration
-  report listing what was moved, what was preserved, and any manual
-  follow-ups (e.g., custom reporter shims). Targets all three
-  harness test-suite shapes: API, E2E/UI, and shared library.
+- **Summary:** PR #48 — `oracle migrate` command for repos scaffolded by
+  `harness:initialize-test-suite-project`. `HarnessMigrator` detects
+  `harness.config.json` + `.harness/` markers and auto-detects the framework
+  from config files (`playwright.config.ts`, `vitest.config.ts`, `pytest.ini`,
+  `pyproject.toml [tool.pytest.ini_options]`, `k6.config.js`) with
+  `harness.config.json` language-field fallback. Dry-run by default (`--apply`
+  to write). Idempotent. Preserves all existing test files. `--framework`
+  override, `--json` output. `MigrationReport.to_markdown()` reports
+  created/skipped/preserved files and manual follow-ups. 30 unit tests;
+  248 total passing.
 - **Blockers:** none
 - **Plan:** none

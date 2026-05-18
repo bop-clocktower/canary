@@ -26,7 +26,7 @@ class TestOracleOrchestrator(unittest.TestCase):
         self.addCleanup(lambda: output_path.unlink(missing_ok=True))
         self.assertTrue(output_path.exists())
 
-    @patch('agent.core.executor.TestExecutor.execute')
+    @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_run_with_execution(self, mock_generate, mock_execute):
         mock_generate.return_value = "import { test } from '@playwright/test';\ntest('demo', () => {});"
@@ -69,7 +69,7 @@ class TestOracleOrchestrator(unittest.TestCase):
 
 class TestSelfHealing(unittest.TestCase):
 
-    @patch('agent.core.executor.TestExecutor.execute')
+    @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_heals_on_first_retry(self, mock_generate, mock_execute):
         mock_generate.side_effect = [
@@ -86,7 +86,7 @@ class TestSelfHealing(unittest.TestCase):
         self.assertEqual(result['execution']['original_error'], "Error: fail")
         Path(result['output_file']).unlink(missing_ok=True)
 
-    @patch('agent.core.executor.TestExecutor.execute')
+    @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_exhausts_max_attempts_when_all_fail(self, mock_generate, mock_execute):
         orchestrator = OracleOrchestrator(max_heal_attempts=2)
@@ -103,7 +103,7 @@ class TestSelfHealing(unittest.TestCase):
         self.assertEqual(result['execution']['original_error'], "SyntaxError")
         Path(result['output_file']).unlink(missing_ok=True)
 
-    @patch('agent.core.executor.TestExecutor.execute')
+    @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_succeeds_on_third_attempt(self, mock_generate, mock_execute):
         orchestrator = OracleOrchestrator(max_heal_attempts=3)
@@ -121,7 +121,7 @@ class TestSelfHealing(unittest.TestCase):
         self.assertEqual(result['execution']['attempts'], 2)
         Path(result['output_file']).unlink(missing_ok=True)
 
-    @patch('agent.core.executor.TestExecutor.execute')
+    @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_fixed_false_and_attempts_zero_when_first_run_passes(self, mock_generate, mock_execute):
         mock_generate.return_value = "import { test } from '@playwright/test';\ntest('ok', () => {});"
@@ -133,7 +133,7 @@ class TestSelfHealing(unittest.TestCase):
         self.assertEqual(result['execution']['attempts'], 0)
         Path(result['output_file']).unlink(missing_ok=True)
 
-    @patch('agent.core.executor.TestExecutor.execute')
+    @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_max_heal_attempts_zero_disables_healing(self, mock_generate, mock_execute):
         orchestrator = OracleOrchestrator(max_heal_attempts=0)
@@ -219,6 +219,72 @@ class TestSearchErrorContext(unittest.TestCase):
             )
         # No match found, but should not have scanned all 30 files
         self.assertEqual(result, "")
+
+
+class TestSelectorHealRouting(unittest.TestCase):
+    """Orchestrator routes selector failures to SelectorHealer, others to _attempt_fix."""
+
+    @patch('agent.core.executor.OracleTestExecutor.execute')
+    @patch('agent.core.orchestrator.generate_response')
+    def test_selector_failure_calls_selector_healer(self, mock_generate, mock_execute):
+        mock_generate.side_effect = [
+            "import { test } from '@playwright/test';\ntest('x', async ({ page }) => {});",
+            "fixed code",
+        ]
+        mock_execute.side_effect = [
+            (1, "", "TimeoutError: locator('.old-btn') timeout exceeded"),
+            (0, "", ""),
+        ]
+        orchestrator = OracleOrchestrator(max_heal_attempts=1)
+        with patch.object(orchestrator.selector_healer, 'build_heal_prompt',
+                          wraps=orchestrator.selector_healer.build_heal_prompt) as mock_prompt:
+            result = orchestrator.run("Click the submit button", execute=True)
+            mock_prompt.assert_called_once()
+        self.assertTrue(result['execution']['fixed'])
+        Path(result['output_file']).unlink(missing_ok=True)
+
+    @patch('agent.core.executor.OracleTestExecutor.execute')
+    @patch('agent.core.orchestrator.generate_response')
+    def test_generic_failure_skips_selector_healer(self, mock_generate, mock_execute):
+        mock_generate.side_effect = [
+            "import { test } from '@playwright/test';\ntest('x', async ({ page }) => {});",
+            "fixed code",
+        ]
+        mock_execute.side_effect = [
+            (1, "", "AssertionError: expected 42 to equal 43"),
+            (0, "", ""),
+        ]
+        orchestrator = OracleOrchestrator(max_heal_attempts=1)
+        with patch.object(orchestrator.selector_healer, 'build_heal_prompt') as mock_prompt:
+            result = orchestrator.run("Check the cart total", execute=True)
+            mock_prompt.assert_not_called()
+        self.assertTrue(result['execution']['fixed'])
+        Path(result['output_file']).unlink(missing_ok=True)
+
+    @patch('agent.core.executor.OracleTestExecutor.execute')
+    @patch('agent.core.orchestrator.generate_response')
+    def test_selector_heal_prompt_receives_failing_selector(self, mock_generate, mock_execute):
+        mock_generate.side_effect = [
+            "import { test } from '@playwright/test';\ntest('x', async ({ page }) => {});",
+            "fixed",
+        ]
+        mock_execute.side_effect = [
+            (1, "", "TimeoutError: locator('.nav-menu') timeout exceeded"),
+            (0, "", ""),
+        ]
+        orchestrator = OracleOrchestrator(max_heal_attempts=1)
+        captured = {}
+        original = orchestrator.selector_healer.build_heal_prompt
+
+        def capturing(**kwargs):
+            captured.update(kwargs)
+            return original(**kwargs)
+
+        with patch.object(orchestrator.selector_healer, 'build_heal_prompt', side_effect=capturing):
+            result = orchestrator.run("Navigate using the menu", execute=True)
+
+        self.assertEqual(captured.get('failing_selector'), '.nav-menu')
+        Path(result['output_file']).unlink(missing_ok=True)
 
 
 if __name__ == '__main__':

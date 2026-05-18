@@ -141,12 +141,12 @@ def run(
         file_path: Path to the test file to execute.
         framework: The testing framework to use for execution.
     """
-    from agent.core.executor import TestExecutor
+    from agent.core.executor import OracleTestExecutor
     from pathlib import Path
 
     print(f"\n[bold cyan]🚀 Oracle Executing {framework} Test...[/bold cyan]\n")
 
-    executor = TestExecutor()
+    executor = OracleTestExecutor()
     exit_code, stdout, stderr = executor.execute(Path(file_path), framework)
 
     color = "green" if exit_code == 0 else "red"
@@ -209,6 +209,73 @@ def init(
     except ValueError as e:
         print(f"\n[bold red]❌ Error: {str(e)}[/bold red]")
         print("[yellow]Supported frameworks: playwright, vitest, pytest, k6[/yellow]")
+
+
+@app.command()
+def migrate(
+    path: str = typer.Option(".", "--path", "-p", help="Project root to migrate (default: current directory)."),
+    framework: str = typer.Option(None, "--framework", "-f", help="Override auto-detected framework."),
+    apply: bool = typer.Option(False, "--apply", help="Write files. Without this flag the command is a dry run."),
+    output_json: bool = typer.Option(False, "--json", help="Emit the migration report as JSON."),
+):
+    """
+    Migrate a harness-scaffolded test-suite project to Oracle's layout.
+
+    Detects harness markers (harness.config.json + .harness/), auto-detects the
+    framework, drops Oracle config files, and reports what was created or preserved.
+    Dry-run by default — pass --apply to write files.
+    """
+    from pathlib import Path as _Path
+    from agent.core.migrator import HarnessMigrator
+
+    root = _Path(path).resolve()
+    migrator = HarnessMigrator()
+
+    try:
+        ctx = migrator.detect(root)
+    except Exception as e:
+        print(f"\n[bold red]Detection error:[/bold red] {e}")
+        raise typer.Exit(1)
+
+    if not ctx.is_harness_project:
+        print(
+            f"\n[bold red]✗[/bold red] No harness project detected at [bold]{root}[/bold].\n"
+            "Expected [dim]harness.config.json[/dim] and [dim].harness/[/dim] directory."
+        )
+        raise typer.Exit(1)
+
+    dry_run = not apply
+    mode_label = "[dim](dry run)[/dim]" if dry_run else "[green](apply)[/green]"
+    print(f"\n[bold cyan]Oracle Migrate[/bold cyan] {mode_label}\n")
+
+    if not dry_run:
+        print("[yellow]Writing files to disk...[/yellow]\n")
+
+    try:
+        report = migrator.migrate(root, dry_run=dry_run, framework=framework or None)
+    except ValueError as e:
+        print(f"\n[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(1)
+
+    if output_json:
+        import json as _json
+        print(_json.dumps({
+            "framework": report.framework,
+            "shape": report.shape,
+            "dry_run": report.dry_run,
+            "created_files": report.created_files,
+            "created_dirs": report.created_dirs,
+            "skipped_configs": report.skipped_configs,
+            "preserved_files": report.preserved_files,
+            "would_create": report.would_create,
+            "manual_followups": report.manual_followups,
+        }, indent=2))
+        return
+
+    print(report.to_markdown())
+
+    if dry_run and report.would_create:
+        print("\n[dim]Re-run with [bold]--apply[/bold] to write these files.[/dim]")
 
 
 @app.command()
