@@ -7,7 +7,7 @@
 ## Decisions Made in This Plan
 
 | # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
+| --- | ---------- | ------ | --------- |
 | D1 | Keybinding for `oracle.run` | No default | Too much conflict risk; users assign via keymap |
 | D2 | Multi-root workspace target for `oracle.migrate` | Active editor's workspace folder, fallback to first | Most ergonomic — matches where the user is working |
 | D3 | Framework inference for `oracle.run` | Probe `playwright.config.*`, `vitest.config.*`, `pytest.ini`, `pyproject.toml [tool.pytest.ini_options]`, `k6.config.js` in workspace root; Quick Pick fallback | Mirrors CLI detection logic for consistency |
@@ -15,7 +15,7 @@
 
 ## File Map
 
-```
+```text
 oracle-vscode/
 ├── .github/workflows/
 │   ├── ci.yml                   # lint + typecheck + test on PR
@@ -63,6 +63,7 @@ oracle-vscode/
 Create the `oracle-vscode` directory and initialize:
 
 **`package.json`** — key fields:
+
 ```json
 {
   "name": "oracle-vscode",
@@ -112,6 +113,7 @@ Create the `oracle-vscode` directory and initialize:
 ```
 
 **`tsconfig.json`:**
+
 ```json
 { "compilerOptions": { "module": "Node16", "target": "ES2022",
     "outDir": "out", "strict": true, "sourceMap": true },
@@ -119,6 +121,7 @@ Create the `oracle-vscode` directory and initialize:
 ```
 
 **`src/extension.ts`** stub:
+
 ```typescript
 import * as vscode from 'vscode';
 export function activate(_ctx: vscode.ExtensionContext): void {}
@@ -179,14 +182,19 @@ const FALLBACK_PATHS = [
 ```
 
 `resolve(configuredPath: string): Promise<CliStatus>`:
-1. Candidate list: `[configuredPath || null, 'oracle', ...FALLBACK_PATHS]` — skip nulls.
+
+1. Candidate list: `[configuredPath || null, 'oracle', ...FALLBACK_PATHS]`
+   — skip nulls.
 2. For each candidate, spawn `<candidate> version` with `{ timeout: 5000 }`.
-3. First success → parse stdout for semver, compare to `MIN_VERSION`, return `CliStatus`.
+3. First success → parse stdout for semver, compare to `MIN_VERSION`,
+   return `CliStatus`.
 4. All fail → return `{ found: false, path: configuredPath || 'oracle' }`.
 
-Helper `compareVersions(a: string, b: string): number` — simple major.minor comparison is sufficient (no patch needed for `0.1` baseline).
+Helper `compareVersions(a: string, b: string): number` — simple
+major.minor comparison is sufficient (no patch needed for `0.1` baseline).
 
-**Verify:** `npx tsc --noEmit` exits 0. Unit test: mock `child_process.spawn` returning success/failure.
+**Verify:** `npx tsc --noEmit` exits 0. Unit test: mock
+`child_process.spawn` returning success/failure.
 
 ---
 
@@ -220,9 +228,9 @@ export class OracleOutputChannel {
 }
 ```
 
-Terminal link provider: register `vscode.window.registerTerminalLinkProvider` that matches
-absolute file paths (`/abs/path/to/file.ts:42`) and opens them with
-`vscode.workspace.openTextDocument` + `vscode.window.showTextDocument`.
+Terminal link provider: register `vscode.window.registerTerminalLinkProvider`
+that matches absolute file paths (`/abs/path/to/file.ts:42`) and opens them
+with `vscode.workspace.openTextDocument` + `vscode.window.showTextDocument`.
 
 **Verify:** `npx tsc --noEmit` exits 0.
 
@@ -269,7 +277,8 @@ export class OracleStatusBar {
 }
 ```
 
-Respect `oracle.showStatusBar`: call `hide()` if false; re-check on config change event.
+Respect `oracle.showStatusBar`: call `hide()` if false; re-check on
+config change event.
 
 **Verify:** `npx tsc --noEmit` exits 0.
 
@@ -296,16 +305,20 @@ export async function runOracle(
 ```
 
 Implementation:
+
 1. Binary: `config.cliPath || 'oracle'`.
-2. Env: inherit `process.env`; if `config.provider`, set `ORACLE_LLM_PROVIDER`.
+2. Env: inherit `process.env`; if `config.provider`, set
+   `ORACLE_LLM_PROVIDER`.
 3. If `config.defaultReportFormat` and first arg is `generate`, append
    `['--report-format', config.defaultReportFormat]`.
 4. Spawn with `{ shell: false }`. Collect stdout + stderr to strings.
 5. 120-second timeout → `child.kill()`, set `timedOut: true`.
-6. On spawn error (ENOENT etc.): return `{ exitCode: -1, stdout: '', stderr: err.message, timedOut: false }`.
-7. On completion: `output.appendLine(`Exit ${exitCode}`)`.
+6. On spawn error (ENOENT etc.): return
+   `{ exitCode: -1, stdout: '', stderr: err.message, timedOut: false }`.
+7. On completion: `output.appendLine(\`Exit ${exitCode}\`)`.
 
-**Verify:** `npx tsc --noEmit` exits 0. Unit test: mock spawn, assert env injection and timeout kill.
+**Verify:** `npx tsc --noEmit` exits 0. Unit test: mock spawn, assert env
+injection and timeout kill.
 
 ---
 
@@ -324,20 +337,29 @@ export async function generateCommand(
 ```
 
 Flow:
-1. Pre-fill: if `uri`, value = `` `Generate tests for ${path.basename(uri.fsPath)} — ` ``.
-2. `vscode.window.showInputBox({ prompt, value, valueSelection: [value.length, value.length] })`.
+
+1. Pre-fill: if `uri`, value = `` `Generate tests for
+   ${path.basename(uri.fsPath)} — ` ``.
+2. `vscode.window.showInputBox({ prompt, value, valueSelection:
+   [value.length, value.length] })`.
 3. If result is undefined or blank → return.
 4. `statusBar.setState('running')`.
-5. `output.appendLine(`oracle generate "${prompt}" --json`)`.
-6. `result = await runOracle(['generate', prompt, '--json', ...reportArgs], output, config)`.
-7. If `result.timedOut`: notification warning "Oracle timed out after 120s." → `statusBar.setState('idle')` → return.
-8. If `result.exitCode !== 0`: parse `result.stderr` or `result.stdout` for message, show error notification, `statusBar.setState('idle')` → return.
-9. Parse JSON: `const json = JSON.parse(result.stdout)`. On parse failure: `output.appendLine(result.stdout)` → return.
+5. `output.appendLine(\`oracle generate "${prompt}" --json\`)`.
+6. `result = await runOracle(['generate', prompt, '--json', ...reportArgs],
+   output, config)`.
+7. If `result.timedOut`: notification warning "Oracle timed out after 120s."
+   → `statusBar.setState('idle')` → return.
+8. If `result.exitCode !== 0`: parse `result.stderr` or `result.stdout` for
+   message, show error notification, `statusBar.setState('idle')` → return.
+9. Parse JSON: `const json = JSON.parse(result.stdout)`. On parse failure:
+   `output.appendLine(result.stdout)` → return.
 10. `statusBar.setState('idle')`.
 11. If `config.autoOpenGeneratedFile`: open `json.output_file` in new tab.
-12. Show info notification "Test generated." with buttons "Open File" (open uri) and "Run Now" (execute `oracle.run` with that file).
+12. Show info notification "Test generated." with buttons "Open File" (open
+    uri) and "Run Now" (execute `oracle.run` with that file).
 
-**Verify:** `npx tsc --noEmit` exits 0. Test: mock runner returning success JSON, assert file open called.
+**Verify:** `npx tsc --noEmit` exits 0. Test: mock runner returning success
+JSON, assert file open called.
 
 ---
 
@@ -356,17 +378,25 @@ export async function runCommand(
 ```
 
 Flow:
-1. Resolve file: `fileUri?.fsPath ?? vscode.window.activeTextEditor?.document.uri.fsPath`.
+
+1. Resolve file:
+   `fileUri?.fsPath ?? vscode.window.activeTextEditor?.document.uri.fsPath`.
 2. If no file: show error notification → return.
-3. If not a test file (no `.spec.` or `.test.` in basename): `vscode.window.showOpenDialog` filtered to `*.spec.*,*.test.*`.
-4. Infer framework: probe workspace root for `playwright.config.*` → `playwright`, `vitest.config.*` → `vitest`, `pytest.ini` / `pyproject.toml` with `[tool.pytest.ini_options]` → `pytest`, `k6.config.js` → `k6`.
-5. If no framework detected: Quick Pick `['playwright','vitest','pytest','k6']`.
+3. If not a test file (no `.spec.` or `.test.` in basename):
+   `vscode.window.showOpenDialog` filtered to `*.spec.*,*.test.*`.
+4. Infer framework: probe workspace root for `playwright.config.*` →
+   `playwright`, `vitest.config.*` → `vitest`, `pytest.ini` /
+   `pyproject.toml` with `[tool.pytest.ini_options]` → `pytest`,
+   `k6.config.js` → `k6`.
+5. If no framework detected: Quick Pick
+   `['playwright','vitest','pytest','k6']`.
 6. `statusBar.setState('running')`.
 7. `result = await runOracle(['run', file, framework], output, config)`.
 8. `statusBar.setState(result.exitCode === 0 ? 'pass' : 'fail')`.
 9. If `result.timedOut`: show warning notification.
 
-**Verify:** `npx tsc --noEmit` exits 0. Test: mock runner and framework probe, assert status bar state.
+**Verify:** `npx tsc --noEmit` exits 0. Test: mock runner and framework
+probe, assert status bar state.
 
 ---
 
@@ -383,9 +413,11 @@ export async function initCommand(
 ```
 
 Flow:
-1. Quick Pick `['playwright','vitest','pytest','k6']` with title "Select framework to scaffold".
+
+1. Quick Pick `['playwright','vitest','pytest','k6']` with title "Select
+   framework to scaffold".
 2. If cancelled → return.
-3. `output.appendLine(`oracle init ${framework}`)`.
+3. `output.appendLine(\`oracle init ${framework}\`)`.
 4. `result = await runOracle(['init', framework], output, config)`.
 5. `output.appendLine(result.stdout)`.
 6. If `result.exitCode !== 0`: show error notification.
@@ -407,22 +439,34 @@ export async function migrateCommand(
 ```
 
 Flow:
-1. If `!vscode.workspace.workspaceFolders`: show error "oracle migrate requires an open workspace folder." → return.
-2. Resolve target root: folder containing `vscode.window.activeTextEditor?.document.uri` if it belongs to a workspace folder; else `workspaceFolders[0]` (D2).
-3. Dry run: `result = await runOracle(['migrate','--path',root,'--json'], output, config)`.
+
+1. If `!vscode.workspace.workspaceFolders`: show error "oracle migrate
+   requires an open workspace folder." → return.
+2. Resolve target root: folder containing
+   `vscode.window.activeTextEditor?.document.uri` if it belongs to a
+   workspace folder; else `workspaceFolders[0]` (D2).
+3. Dry run: `result = await runOracle(['migrate','--path',root,'--json'],
+   output, config)`.
 4. If error/timeout: show error notification → return.
-5. Parse JSON report. On parse failure: `output.appendLine(result.stdout)` → return.
+5. Parse JSON report. On parse failure: `output.appendLine(result.stdout)`
+   → return.
 6. Open untitled read-only document:
+
    ```typescript
    const doc = await vscode.workspace.openTextDocument(
      { content: JSON.stringify(report, null, 2), language: 'json' });
    await vscode.window.showTextDocument(doc, { preview: true });
    ```
-7. Show notification "Migration preview ready." with buttons "Apply Migration" and "Cancel".
-8. If "Apply Migration": `await runOracle(['migrate','--path',root,'--apply','--json'], output, config)`.
-9. Refresh explorer: `vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer')`.
 
-**Verify:** `npx tsc --noEmit` exits 0. Test: mock workspace folders, runner; assert both notification buttons handled.
+7. Show notification "Migration preview ready." with buttons "Apply
+   Migration" and "Cancel".
+8. If "Apply Migration": `await runOracle(['migrate','--path',root,
+   '--apply','--json'], output, config)`.
+9. Refresh explorer:
+   `vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer')`.
+
+**Verify:** `npx tsc --noEmit` exits 0. Test: mock workspace folders,
+runner; assert both notification buttons handled.
 
 ---
 
@@ -501,9 +545,11 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 export function deactivate(): void {}
 ```
 
-Note: `getConfig()` is called fresh on each command invocation so config changes take effect without reload.
+Note: `getConfig()` is called fresh on each command invocation so config
+changes take effect without reload.
 
-**Verify:** `npx tsc --noEmit` exits 0. Smoke test: extension activates without throwing.
+**Verify:** `npx tsc --noEmit` exits 0. Smoke test: extension activates
+without throwing.
 
 ---
 
@@ -512,12 +558,13 @@ Note: `getConfig()` is called fresh on each command invocation so config changes
 **Depends on:** Task 12  
 **Outputs:** `src/test/suite/*.test.ts`
 
-Use `@vscode/test-cli` + `mocha`. Mock `vscode` API with `sinon` stubs where needed (no real VS Code process required for unit tests).
+Use `@vscode/test-cli` + `mocha`. Mock `vscode` API with `sinon` stubs
+where needed (no real VS Code process required for unit tests).
 
 **Required test coverage:**
 
 | File | Key cases |
-|------|-----------|
+| ---- | --------- |
 | `cliResolver.test.ts` | found on PATH; not found; found in fallback path; tooOld when version < 0.1 |
 | `runner.test.ts` | provider env injection; 120s timeout kill; spawn ENOENT → exitCode -1; defaultReportFormat appended to generate |
 | `generate.test.ts` | empty prompt no-op; right-click pre-fill; success → opens file; JSON parse failure → raw output; timeout warning |
@@ -536,6 +583,7 @@ Use `@vscode/test-cli` + `mocha`. Mock `vscode` API with `sinon` stubs where nee
 **Outputs:** `.github/workflows/ci.yml`, `.github/workflows/publish.yml`
 
 **`ci.yml`** — triggers on PR and push to `main`:
+
 ```yaml
 - run: npm ci
 - run: npx tsc --noEmit
@@ -543,6 +591,7 @@ Use `@vscode/test-cli` + `mocha`. Mock `vscode` API with `sinon` stubs where nee
 ```
 
 **`publish.yml`** — triggers on tag `v*`:
+
 ```yaml
 - run: npm ci
 - run: npx vsce package
@@ -557,7 +606,7 @@ Use `@vscode/test-cli` + `mocha`. Mock `vscode` API with `sinon` stubs where nee
 
 ## Dependency Graph
 
-```
+```text
 T1 ──┬── T2 ── T3 ──────────────────────┐
      ├── T4 ──────────────────── T11 ───┤
      │    └───────── T6 ── T7 ──────────┤
@@ -570,7 +619,7 @@ T1 ──┬── T2 ── T3 ────────────────
 **Parallel batches:**
 
 | Batch | Tasks | Gate |
-|-------|-------|------|
+| ----- | ----- | ---- |
 | 1 | T1 | — |
 | 2 | T2, T4, T5 | T1 done |
 | 3 | T3, T6 | T2+T4 done |
@@ -581,8 +630,11 @@ T1 ──┬── T2 ── T3 ────────────────
 
 ## Checkpoints
 
-- **After T6:** `npx tsc --noEmit` on the full project — no type errors before commands are built.
-- **After T12:** Manual smoke test — open VS Code, install extension (`F5` debug), verify command palette lists all 5 commands, status bar appears.
+- **After T6:** `npx tsc --noEmit` on the full project — no type errors
+  before commands are built.
+- **After T12:** Manual smoke test — open VS Code, install extension
+  (`F5` debug), verify command palette lists all 5 commands, status bar
+  appears.
 - **After T13:** `npm test` green — all unit cases pass.
 - **After T14:** Draft PR CI green.
 

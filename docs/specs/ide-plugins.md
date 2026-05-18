@@ -32,7 +32,7 @@ works in a TypeScript-capable environment.
 ## User Stories
 
 | # | As a developer I want to… | So that… |
-|---|--------------------------|----------|
+| --- | -------------------------- | -------- |
 | U1 | generate a test from a natural language description without leaving the editor | I don't break flow context switching to a terminal |
 | U2 | right-click a source file and generate a test for it | Oracle can pre-fill the prompt with the file name |
 | U3 | run the currently open test file with one keystroke | I get immediate feedback without remembering the exact CLI flags |
@@ -46,7 +46,7 @@ works in a TypeScript-capable environment.
 All commands are registered in the Command Palette under the `Oracle:` prefix.
 
 | Command ID | Label | Entry Points |
-|---|---|---|
+| --- | --- | --- |
 | `oracle.generate` | Oracle: Generate Test | Palette, right-click on source file |
 | `oracle.run` | Oracle: Run Test | Palette, editor toolbar (`.spec.*`, `.test.*` files), keybinding |
 | `oracle.init` | Oracle: Init Framework | Palette |
@@ -56,7 +56,7 @@ All commands are registered in the Command Palette under the `Oracle:` prefix.
 ### `oracle.generate` flow
 
 1. If invoked via right-click on a source file, pre-populate the input box with:
-   `Generate tests for <filename> — ` and place cursor after the dash.
+   `Generate tests for <filename> —` and place cursor after the dash.
 2. Show an input box: `Describe the test you want Oracle to generate`.
    If the user dismisses or submits an empty/whitespace-only prompt, silently no-op.
 3. Run `oracle generate "<prompt>" --json` in a child process.
@@ -66,9 +66,10 @@ All commands are registered in the Command Palette under the `Oracle:` prefix.
 
 ### `oracle.run` flow
 
-1. If no file argument, use the active editor's file path. If there is no active
-   editor, show an error notification: "No test file selected. Open a test file or
-   right-click one in the Explorer." If the active file is not a test file (no
+1. If no file argument, use the active editor's file path. If there is no
+   active editor, show an error notification: "No test file selected. Open a
+   test file or right-click one in the Explorer." If the active file is not a
+   test file (no
    `.spec.` or `.test.` in the name), prompt to select one.
 2. Prompt for framework if not auto-detectable from file extension or workspace
    config; otherwise infer silently.
@@ -100,7 +101,7 @@ Settings are exposed under the `oracle.*` namespace in VS Code settings /
 JetBrains plugin settings.
 
 | Key | Type | Default | Description |
-|---|---|---|---|
+| --- | ---- | ------- | ----------- |
 | `oracle.cliPath` | string | `""` | Absolute path to the `oracle` binary. Empty = auto-detect via `which oracle` / PATH. |
 | `oracle.provider` | enum | `""` | LLM provider override (`anthropic`, `openai`, `gemini`, `codex`, `mock`). Empty = use `ORACLE_LLM_PROVIDER` env var. |
 | `oracle.defaultReportFormat` | enum | `""` | Auto-attach `--report-format` to generate calls (`json`, `sarif`, or empty for none). |
@@ -109,7 +110,9 @@ JetBrains plugin settings.
 
 ## Output Channel
 
-A dedicated **Oracle** output channel (VS Code) / tool window (JetBrains) shows:
+A dedicated **Oracle** output channel (VS Code) / tool window (JetBrains)
+shows:
+
 - Raw stdout/stderr from every CLI invocation
 - Timestamps and exit codes
 - Clickable file paths (VS Code terminal link provider)
@@ -121,7 +124,7 @@ The channel persists across invocations. A "Clear" button resets it.
 Positioned at the right side of the status bar. States:
 
 | State | Text | Tooltip |
-|---|---|---|
+| ----- | ---- | ------- |
 | Idle | `$(beaker) Oracle` | `Oracle ready — click to open output` |
 | Running | `$(sync~spin) Oracle` | `Oracle: running…` |
 | Pass | `$(check) Oracle` | `Last run: passed` |
@@ -202,4 +205,4 @@ the JetBrains persistent state store), and the same error handling contract.
 
 ## src Reference
 
-_Populated once implementation begins._
+*Populated once implementation begins.*

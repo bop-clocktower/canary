@@ -237,8 +237,9 @@ updated: 2026-05-17
 
 ### IDE Plugins
 
-- **Status:** planned
+- **Status:** in progress — VS Code Phase 1 shipped, CI green
 - **Spec:** [docs/specs/ide-plugins.md](specs/ide-plugins.md)
+- **Repo:** [bri-stevenski/oracle-vscode](https://github.com/bri-stevenski/oracle-vscode)
 - **Summary:** VS Code and JetBrains plugins exposing Oracle
   generation/execution. Phase 1 (VS Code, TypeScript) ships first.
   Thin-shell design — plugins invoke the installed `oracle` CLI; no LLM
@@ -247,7 +248,11 @@ updated: 2026-05-17
   4 planning decisions resolved (D1–D4): no default keybinding, active-editor
   workspace root for migrate, framework inference mirrors CLI probe order,
   one-time version warning via globalState. PR #62.
-- **Blockers:** 1 open design decision (see below)
+  All 14 plan tasks implemented in `oracle-vscode` (commits 88b27e4–13eb769)
+  — typecheck clean, 16/16 tests passing, CI green on `main`. CommonJS
+  and proxyquire chosen for test isolation against Node 24's non-configurable
+  built-in exports.
+- **Blockers:** 1 open design decision (see below); JetBrains plugin not started
 - **Plan:** [docs/plans/ide-plugins-vscode.md](plans/ide-plugins-vscode.md)
 
 #### IDE Plugins — Design Decisions
@@ -256,7 +261,7 @@ Soundness review (harness-soundness-review, spec mode) surfaced these before
 implementation begins. 5 of 6 resolved in spec PR #59.
 
 | # | Issue | Status | Resolution |
-|---|-------|--------|------------|
+| --- | ----- | ------ | ---------- |
 | S1-001 | [#52](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/52) | **open** | Awaiting decision on component name detection scope |
 | S1-002 | [#53](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/53) | resolved | Batch output; streaming deferred to follow-up |
 | S5-001 | [#54](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/54) | resolved | Changed to `oracle version` (subcommand) |

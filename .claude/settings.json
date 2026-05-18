@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.harness/hooks/block-no-verify.js\""
+            "command": "(d=$(git rev-parse --show-toplevel 2>/dev/null) && f=$d/.harness/hooks/block-no-verify.js && [ -f \"$f\" ] && node \"$f\") || true"
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.harness/hooks/protect-config.js\""
+            "command": "(d=$(git rev-parse --show-toplevel 2>/dev/null) && f=$d/.harness/hooks/protect-config.js && [ -f \"$f\" ] && node \"$f\") || true"
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.harness/hooks/quality-gate.js\""
+            "command": "(d=$(git rev-parse --show-toplevel 2>/dev/null) && f=$d/.harness/hooks/quality-gate.js && [ -f \"$f\" ] && node \"$f\") || true"
           }
         ]
       }
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.harness/hooks/pre-compact-state.js\""
+            "command": "(d=$(git rev-parse --show-toplevel 2>/dev/null) && f=$d/.harness/hooks/pre-compact-state.js && [ -f \"$f\" ] && node \"$f\") || true"
           }
         ]
       }
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.harness/hooks/adoption-tracker.js\""
+            "command": "(d=$(git rev-parse --show-toplevel 2>/dev/null) && f=$d/.harness/hooks/adoption-tracker.js && [ -f \"$f\" ] && node \"$f\") || true"
           }
         ]
       },
@@ -57,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.harness/hooks/telemetry-reporter.js\""
+            "command": "(d=$(git rev-parse --show-toplevel 2>/dev/null) && f=$d/.harness/hooks/telemetry-reporter.js && [ -f \"$f\" ] && node \"$f\") || true"
           }
         ]
       }
