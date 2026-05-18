@@ -71,7 +71,8 @@ runs:
           | grep -E '\.(py|ts|tsx|js|jsx)$' \
           | grep -vE '(^|/)test_|_test\.(py|ts|js)$|\.spec\.(ts|js)|\.test\.(ts|js)' \
           | head -10 \
-          | tr '\n' ' ')
+          | tr '\n' ' ' \
+          || true)
         echo "files=${FILES}" >> "$GITHUB_OUTPUT"
 
     - name: Build generation prompt
