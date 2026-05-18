@@ -237,7 +237,7 @@ updated: 2026-05-17
 
 ### IDE Plugins
 
-- **Status:** in progress — VS Code Phase 1 shipped; JetBrains spec written
+- **Status:** in progress — VS Code Phase 1 shipped; JetBrains spec + plan written
 - **Spec (VS Code):** [docs/specs/ide-plugins.md](specs/ide-plugins.md)
 - **Spec (JetBrains):** [docs/specs/ide-plugins-jetbrains.md](specs/ide-plugins-jetbrains.md)
 - **Repo:** [bri-stevenski/oracle-vscode](https://github.com/bri-stevenski/oracle-vscode)
@@ -254,7 +254,11 @@ updated: 2026-05-17
   and proxyquire chosen for test isolation against Node 24's non-configurable
   built-in exports. JetBrains spec written (Kotlin, Gradle, IntelliJ
   Platform 2023.1+, GeneralCommandLine, Task.Backgroundable threading).
-- **Blockers:** JetBrains plan and implementation not started
+  JetBrains plan written (14 tasks, 7 parallel batches, 5 design decisions
+  resolved: ConsoleView, Task.Backgroundable, modules.platform, no default
+  keybinding, macOS login-shell probe with 3 s timeout).
+- **Blockers:** JetBrains implementation not started
+- **Plan (JetBrains):** [docs/plans/ide-plugins-jetbrains.md](plans/ide-plugins-jetbrains.md)
 - **Plan (VS Code):** [docs/plans/ide-plugins-vscode.md](plans/ide-plugins-vscode.md)
 
 #### IDE Plugins — Design Decisions
