@@ -237,8 +237,9 @@ updated: 2026-05-17
 
 ### IDE Plugins
 
-- **Status:** in progress — VS Code scaffold complete
+- **Status:** in progress — VS Code Phase 1 shipped, CI green
 - **Spec:** [docs/specs/ide-plugins.md](specs/ide-plugins.md)
+- **Repo:** [bri-stevenski/oracle-vscode](https://github.com/bri-stevenski/oracle-vscode)
 - **Summary:** VS Code and JetBrains plugins exposing Oracle
   generation/execution. Phase 1 (VS Code, TypeScript) ships first.
   Thin-shell design — plugins invoke the installed `oracle` CLI; no LLM
@@ -247,9 +248,11 @@ updated: 2026-05-17
   4 planning decisions resolved (D1–D4): no default keybinding, active-editor
   workspace root for migrate, framework inference mirrors CLI probe order,
   one-time version warning via globalState. PR #62.
-  All 14 plan tasks implemented in `oracle-vscode` repo (initial commit
-  88b27e4) — typecheck clean, full test suite, CI/CD workflows wired.
-- **Blockers:** 1 open design decision (see below); needs GitHub remote + CI run
+  All 14 plan tasks implemented in `oracle-vscode` (commits 88b27e4–13eb769)
+  — typecheck clean, 16/16 tests passing, CI green on `main`. CommonJS
+  + proxyquire chosen for test isolation against Node 24's non-configurable
+  built-in exports.
+- **Blockers:** 1 open design decision (see below); JetBrains plugin not started
 - **Plan:** [docs/plans/ide-plugins-vscode.md](plans/ide-plugins-vscode.md)
 
 #### IDE Plugins — Design Decisions
