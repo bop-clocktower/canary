@@ -237,7 +237,7 @@ updated: 2026-05-17
 
 ### IDE Plugins
 
-- **Status:** in progress — VS Code Phase 1 shipped; JetBrains scaffold green
+- **Status:** in progress — VS Code Phase 1 shipped; JetBrains Phase 1 complete
 - **Spec (VS Code):** [docs/specs/ide-plugins.md](specs/ide-plugins.md)
 - **Spec (JetBrains):** [docs/specs/ide-plugins-jetbrains.md](specs/ide-plugins-jetbrains.md)
 - **Repo (VS Code):** [bri-stevenski/oracle-vscode](https://github.com/bri-stevenski/oracle-vscode)
@@ -257,8 +257,11 @@ updated: 2026-05-17
   Gradle 9.5 + IntelliJ Platform Gradle Plugin 2.16.0, all 5 actions, tool
   window (ConsoleView), status bar widget, settings Configurable, CliRunner
   (GeneralCommandLine + OSProcessHandler, 120 s timeout),
-  Task.Backgroundable threading, ProjectActivity startup probe; 14 tests
-  passing, CI green on `main`.
+  Task.Backgroundable threading, ProjectActivity startup probe; 35 tests
+  passing, CI green on `main`. Action tests (PR #1) extract internal
+  companion object helpers (parseOutputFile, buildExtraArgs, nextWidgetState,
+  prettyJson) so pure business logic can be exercised without IntelliJ
+  Platform bootstrap.
 - **Blockers:** none
 - **Plan (JetBrains):** [docs/plans/ide-plugins-jetbrains.md](plans/ide-plugins-jetbrains.md)
 - **Plan (VS Code):** [docs/plans/ide-plugins-vscode.md](plans/ide-plugins-vscode.md)
