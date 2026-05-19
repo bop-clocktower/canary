@@ -127,6 +127,13 @@ class TestAppCallback(unittest.TestCase):
             result = _runner.invoke(app, ["--no-setup", "version"])
         self.assertNotIn("Oracle isn't configured", result.output)
 
+    def test_skips_when_setup_subcommand(self):
+        with patch("agent.core.setup.SetupWizard.is_configured",
+                   return_value=False), \
+             patch("sys.stdin.isatty", return_value=True):
+            result = _runner.invoke(app, ["setup"])
+        self.assertNotIn("Oracle isn't configured", result.output)
+
 
 if __name__ == "__main__":
     unittest.main()

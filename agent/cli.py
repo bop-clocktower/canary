@@ -28,7 +28,9 @@ def _pre_command(
     """Run the setup wizard if this project has not been configured."""
     if ctx.invoked_subcommand == "setup":
         return
-    if no_setup or not _sys.stdin.isatty():
+    if no_setup:
+        return
+    if not _sys.stdin.isatty():
         return
     from agent.core.setup import SetupWizard
     if not SetupWizard.is_configured():
