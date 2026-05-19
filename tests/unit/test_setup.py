@@ -4,7 +4,7 @@ import json
 import unittest
 from pathlib import Path
 import tempfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from agent.core.setup import SetupWizard
 
@@ -58,26 +58,35 @@ class TestSetupWizardRun(unittest.TestCase):
         self.assertIn("configured_at", config)
 
     def test_run_loops_on_bad_key(self):
-        # First verify call raises, second succeeds.
-        verify_calls = [Exception("Invalid API key"), None]
-
-        def fake_verify(provider, api_key):
-            result = verify_calls.pop(0)
-            if isinstance(result, Exception):
-                raise result
-
+        mock_verify = Mock(
+            side_effect=[Exception("Invalid API key"), None]
+        )
         wizard = SetupWizard(output_dir=self.root)
         with patch("agent.core.setup.Prompt.ask",
                    side_effect=["claude", "bad-key", "good-key"]), \
              patch("agent.core.setup.SetupWizard._test_connection",
-                   side_effect=fake_verify), \
+                   mock_verify), \
              patch("agent.core.setup.Confirm.ask", return_value=True):
             wizard.run()
 
+        self.assertEqual(mock_verify.call_count, 2)
         config = json.loads(
             (self.root / ".oracle" / "config.json").read_text()
         )
         self.assertEqual(config["provider"], "claude")
+
+    def test_run_exits_when_user_declines_retry(self):
+        wizard = SetupWizard(output_dir=self.root)
+        with patch("agent.core.setup.Prompt.ask",
+                   side_effect=["claude", "bad-key"]), \
+             patch("agent.core.setup.SetupWizard._test_connection",
+                   side_effect=Exception("Invalid API key")), \
+             patch("agent.core.setup.Confirm.ask", return_value=False):
+            with self.assertRaises(SystemExit):
+                wizard.run()
+
+        config_path = self.root / ".oracle" / "config.json"
+        self.assertFalse(config_path.exists())
 
 
 if __name__ == "__main__":
