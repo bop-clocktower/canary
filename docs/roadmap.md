@@ -170,6 +170,12 @@ updated: 2026-05-19
   Users can now pin `uses: bri-stevenski/oracle-test-ai-agent@v1` for
   automatic non-breaking updates. Release notes published at
   [github.com/bri-stevenski/oracle-test-ai-agent/releases/tag/v1.0.0](https://github.com/bri-stevenski/oracle-test-ai-agent/releases/tag/v1.0.0).
+  **Bug fix (post-release):** `OracleOrchestrator.__init__` used
+  `Path(__file__).resolve().parents[2]` to locate the output directory.
+  When oracle is pip-installed (as the action does), `__file__` resolves
+  to site-packages and the subsequent `mkdir` raises `PermissionError`,
+  crashing `oracle generate` before any JSON is emitted and leaving the
+  PR comment with empty outputs. Fixed by switching to `Path.cwd()`.
 - **Blockers:** none
 - **Plan:** none
 
