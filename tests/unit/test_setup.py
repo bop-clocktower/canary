@@ -98,6 +98,21 @@ class TestSetupWizardRun(unittest.TestCase):
         config_path = self.root / ".oracle" / "config.json"
         self.assertFalse(config_path.exists())
 
+    def test_setup_full_invokes_orchestrator(self):
+        wizard = SetupWizard(output_dir=self.root)
+        with patch("agent.core.setup.Prompt.ask",
+                   side_effect=["claude", "sk-test"]), \
+             patch("agent.core.setup.SetupWizard._test_connection",
+                   return_value=None), \
+             patch("agent.core.setup.Confirm.ask", return_value=False), \
+             patch("agent.core.setup.OracleOrchestrator") as mock_orch:
+            mock_orch.return_value.run.return_value = {
+                "output_file": "tests/generated/sample.spec.ts"
+            }
+            wizard.run(full=True)
+
+        mock_orch.return_value.run.assert_called_once()
+
 
 from typer.testing import CliRunner
 from agent.cli import app
