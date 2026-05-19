@@ -237,7 +237,7 @@ updated: 2026-05-17
 
 ### IDE Plugins
 
-- **Status:** in progress — VS Code Phase 1 shipped; JetBrains Phase 1 complete
+- **Status:** done
 - **Spec (VS Code):** [docs/specs/ide-plugins.md](specs/ide-plugins.md)
 - **Spec (JetBrains):** [docs/specs/ide-plugins-jetbrains.md](specs/ide-plugins-jetbrains.md)
 - **Repo (VS Code):** [bri-stevenski/oracle-vscode](https://github.com/bri-stevenski/oracle-vscode)
