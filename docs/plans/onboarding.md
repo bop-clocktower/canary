@@ -675,7 +675,8 @@ Add to `TestSetupWizardRun`:
         mock_orch.return_value.run.assert_called_once()
 ```
 
-- [ ] **Step 2: Update `_run_sample` to import `OracleOrchestrator` at module level for patching**
+- [ ] **Step 2: Update `_run_sample` to import `OracleOrchestrator` at**
+  **module level for patching**
 
 In `agent/core/setup.py`, add to the top of `_run_sample`:
 
@@ -741,7 +742,7 @@ git commit -m "test(onboarding): oracle setup --full calls orchestrator after co
 
 Add to `.gitignore` under the `# Oracle artifacts` block:
 
-```
+```text
 # User project Oracle config (project-local, no secrets, but personal)
 .oracle/
 ```
