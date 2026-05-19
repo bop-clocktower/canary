@@ -237,12 +237,13 @@ updated: 2026-05-17
 
 ### IDE Plugins
 
-- **Status:** in progress — VS Code Phase 1 shipped; JetBrains spec + plan written
+- **Status:** in progress — VS Code Phase 1 shipped; JetBrains scaffold green
 - **Spec (VS Code):** [docs/specs/ide-plugins.md](specs/ide-plugins.md)
 - **Spec (JetBrains):** [docs/specs/ide-plugins-jetbrains.md](specs/ide-plugins-jetbrains.md)
-- **Repo:** [bri-stevenski/oracle-vscode](https://github.com/bri-stevenski/oracle-vscode)
+- **Repo (VS Code):** [bri-stevenski/oracle-vscode](https://github.com/bri-stevenski/oracle-vscode)
+- **Repo (JetBrains):** [bri-stevenski/oracle-intellij](https://github.com/bri-stevenski/oracle-intellij)
 - **Summary:** VS Code and JetBrains plugins exposing Oracle
-  generation/execution. Phase 1 (VS Code, TypeScript) ships first.
+  generation/execution. Phase 1 (VS Code, TypeScript) complete.
   Thin-shell design — plugins invoke the installed `oracle` CLI; no LLM
   code lives in the plugin. 5 commands, output channel, status bar,
   CLI resolution, and full error-handling contract specified. PR #50.
@@ -252,12 +253,13 @@ updated: 2026-05-17
   All 14 plan tasks implemented in `oracle-vscode` (commits 88b27e4–13eb769)
   — typecheck clean, 16/16 tests passing, CI green on `main`. CommonJS
   and proxyquire chosen for test isolation against Node 24's non-configurable
-  built-in exports. JetBrains spec written (Kotlin, Gradle, IntelliJ
-  Platform 2023.1+, GeneralCommandLine, Task.Backgroundable threading).
-  JetBrains plan written (14 tasks, 7 parallel batches, 5 design decisions
-  resolved: ConsoleView, Task.Backgroundable, modules.platform, no default
-  keybinding, macOS login-shell probe with 3 s timeout).
-- **Blockers:** JetBrains implementation not started
+  built-in exports. JetBrains scaffold complete in `oracle-intellij`: Kotlin,
+  Gradle 9.5 + IntelliJ Platform Gradle Plugin 2.16.0, all 5 actions, tool
+  window (ConsoleView), status bar widget, settings Configurable, CliRunner
+  (GeneralCommandLine + OSProcessHandler, 120 s timeout),
+  Task.Backgroundable threading, ProjectActivity startup probe; 14 tests
+  passing, CI green on `main`.
+- **Blockers:** none
 - **Plan (JetBrains):** [docs/plans/ide-plugins-jetbrains.md](plans/ide-plugins-jetbrains.md)
 - **Plan (VS Code):** [docs/plans/ide-plugins-vscode.md](plans/ide-plugins-vscode.md)
 
