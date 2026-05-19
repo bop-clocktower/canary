@@ -101,24 +101,17 @@ class TestSetupWizardRun(unittest.TestCase):
 
 from typer.testing import CliRunner
 from agent.cli import app
+from unittest.mock import MagicMock, patch
 import io
 
-class TTYRunner(CliRunner):
-    """Custom CliRunner that supports TTY input."""
-    def invoke(self, app, args=None, input=None, **kwargs):
-        # If input is None and we want a TTY, create a FakeTTY
-        if input is None and kwargs.pop('tty', False):
-            input = self._make_tty_input()
-        return super().invoke(app, args=args, input=input, **kwargs)
+_runner = CliRunner()
 
-    @staticmethod
-    def _make_tty_input():
-        class FakeTTY(io.BytesIO):
-            def isatty(self):
-                return True
-        return FakeTTY()
 
-_runner = TTYRunner()
+class TTYInput(io.BytesIO):
+    """A BytesIO that reports isatty() as True."""
+
+    def isatty(self):
+        return True
 
 
 class TestAppCallback(unittest.TestCase):
@@ -138,16 +131,14 @@ class TestAppCallback(unittest.TestCase):
 
     def test_skips_with_no_setup_flag(self):
         with patch("agent.core.setup.SetupWizard.is_configured",
-                   return_value=False), \
-             patch("sys.stdin.isatty", return_value=True):
-            result = _runner.invoke(app, ["--no-setup", "version"])
+                   return_value=False):
+            result = _runner.invoke(app, ["--no-setup", "version"], input=TTYInput())
         self.assertNotIn("Oracle isn't configured", result.output)
 
     def test_skips_when_setup_subcommand(self):
         with patch("agent.core.setup.SetupWizard.is_configured",
-                   return_value=False), \
-             patch("sys.stdin.isatty", return_value=True):
-            result = _runner.invoke(app, ["setup"])
+                   return_value=False):
+            result = _runner.invoke(app, ["setup"], input=TTYInput())
         self.assertNotIn("Oracle isn't configured", result.output)
 
     def test_prompts_when_unconfigured_tty(self):
@@ -155,7 +146,7 @@ class TestAppCallback(unittest.TestCase):
                    return_value=False), \
              patch("agent.core.setup.Confirm.ask",
                    return_value=False) as mock_confirm:
-            _runner.invoke(app, ["version"], tty=True)
+            result = _runner.invoke(app, ["version"], input=TTYInput())
         mock_confirm.assert_called_once()
         self.assertIn(
             "Oracle isn't configured", mock_confirm.call_args[0][0]
@@ -166,7 +157,7 @@ class TestAppCallback(unittest.TestCase):
                    return_value=False), \
              patch("agent.core.setup.Confirm.ask", return_value=True), \
              patch("agent.core.setup.SetupWizard.run") as mock_run:
-            _runner.invoke(app, ["version"], tty=True)
+            result = _runner.invoke(app, ["version"], input=TTYInput())
         mock_run.assert_called_once_with()
 
 
