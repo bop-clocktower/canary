@@ -1,8 +1,8 @@
 # tests/unit/test_setup.py
+"""Unit tests for SetupWizard."""
 import json
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 import tempfile
 
 from agent.core.setup import SetupWizard
@@ -27,6 +27,13 @@ class TestIsConfigured(unittest.TestCase):
     def test_false_when_malformed(self):
         (self.root / ".oracle").mkdir()
         (self.root / ".oracle" / "config.json").write_text("{}")
+        self.assertFalse(SetupWizard.is_configured(self.root))
+
+    def test_false_when_empty_provider(self):
+        (self.root / ".oracle").mkdir()
+        (self.root / ".oracle" / "config.json").write_text(
+            json.dumps({"provider": ""})
+        )
         self.assertFalse(SetupWizard.is_configured(self.root))
 
 
