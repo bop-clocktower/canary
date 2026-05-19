@@ -126,12 +126,25 @@ class SetupWizard:
 
     def _run_sample(self, provider: str, api_key: str) -> None:
         from rich import print as rprint
-        env_key = _PROVIDER_MAP[provider][0]
+        env_key, oracle_provider = _PROVIDER_MAP[provider]
+        saved_key = os.environ.get(env_key)
+        saved_provider = os.environ.get("ORACLE_LLM_PROVIDER")
         os.environ[env_key] = api_key
-        result = OracleOrchestrator().run(
-            "Generate a sample Playwright test for a login page"
-        )
-        rprint(
-            f"\n[green]✓[/green] Sample written to "
-            f"[bold]{result['output_file']}[/bold]"
-        )
+        os.environ["ORACLE_LLM_PROVIDER"] = oracle_provider
+        try:
+            result = OracleOrchestrator().run(
+                "Generate a sample Playwright test for a login page"
+            )
+            rprint(
+                f"\n[green]✓[/green] Sample written to "
+                f"[bold]{result['output_file']}[/bold]"
+            )
+        finally:
+            if saved_key is None:
+                os.environ.pop(env_key, None)
+            else:
+                os.environ[env_key] = saved_key
+            if saved_provider is None:
+                os.environ.pop("ORACLE_LLM_PROVIDER", None)
+            else:
+                os.environ["ORACLE_LLM_PROVIDER"] = saved_provider
