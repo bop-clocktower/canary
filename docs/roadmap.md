@@ -2,7 +2,7 @@
 project: oracle
 version: 1
 created: 2026-05-11
-updated: 2026-05-17
+updated: 2026-05-19
 ---
 
 # Roadmap
@@ -158,6 +158,18 @@ updated: 2026-05-17
 - **Spec:** none
 - **Summary:** TICKET-032 — official Oracle GitHub Action that
   auto-generates tests for new features/bug fixes on PR.
+- **Blockers:** none
+- **Plan:** none
+
+### GitHub Action v1.0.0 Release
+
+- **Status:** done
+- **Spec:** none
+- **Summary:** Tagged `v1.0.0` and floating `v1` on `main` (commit
+  bbc8eda). First stable public release of the Oracle GitHub Action.
+  Users can now pin `uses: bri-stevenski/oracle-test-ai-agent@v1` for
+  automatic non-breaking updates. Release notes published at
+  [github.com/bri-stevenski/oracle-test-ai-agent/releases/tag/v1.0.0](https://github.com/bri-stevenski/oracle-test-ai-agent/releases/tag/v1.0.0).
 - **Blockers:** none
 - **Plan:** none
 
