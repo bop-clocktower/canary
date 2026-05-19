@@ -47,7 +47,7 @@ class SetupWizard:
         try:
             provider = self._select_provider()
             api_key = self._enter_key(provider)
-            self._verify(provider, api_key)
+            api_key = self._verify(provider, api_key)
             self._write_config(provider)
             if full:
                 self._run_sample(provider, api_key)
@@ -73,14 +73,14 @@ class SetupWizard:
             password=True,
         )
 
-    def _verify(self, provider: str, api_key: str) -> None:
+    def _verify(self, provider: str, api_key: str) -> str:
         from rich import print as rprint
         rprint("\n[bold]Step 3 of 3 · Verify[/bold]")
         while True:
             try:
                 self._test_connection(provider, api_key)
                 rprint("[green]✓[/green] Connected")
-                return
+                return api_key
             except Exception as exc:
                 rprint(f"[red]✗[/red] {exc}")
                 if not Confirm.ask("Try a different key?", default=True):

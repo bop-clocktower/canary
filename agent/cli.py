@@ -35,12 +35,20 @@ def _pre_command(
     from agent.core.setup import SetupWizard, Confirm
     if not SetupWizard.is_configured():
         if Confirm.ask(
-            "! Oracle isn't configured for this project yet. "
-            "Run setup now?",
+            "! Oracle isn't configured for this project yet.\n"
+            "  Run setup now? "
+            "(skip with --no-setup or run later: oracle setup)",
             default=True,
         ):
             SetupWizard().run()
             print("\n[dim]Continuing with your command…[/dim]\n")
+        else:
+            from rich import print as rprint
+            rprint(
+                "[yellow]⚠[/yellow]  Skipping setup — command may fail "
+                "without a valid API key. Run [bold]oracle setup[/bold] "
+                "to configure."
+            )
 
 
 @app.command()

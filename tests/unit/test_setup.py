@@ -175,6 +175,16 @@ class TestAppCallback(unittest.TestCase):
             result = _runner.invoke(app, ["version"], input=TTYInput())
         mock_run.assert_called_once_with()
 
+    def test_callback_resumes_command_after_setup(self):
+        with patch("agent.core.setup.SetupWizard.is_configured",
+                   return_value=False), \
+             patch("sys.stdin.isatty", return_value=True), \
+             patch("agent.core.setup.Confirm.ask", return_value=True), \
+             patch("agent.core.setup.SetupWizard.run"):
+            result = _runner.invoke(app, ["version"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("oracle", result.output.lower())
+
     def test_setup_command_runs_wizard(self):
         with patch("agent.core.setup.SetupWizard.run") as mock_run:
             result = _runner.invoke(app, ["setup"])
