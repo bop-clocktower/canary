@@ -88,6 +88,16 @@ class TestSetupWizardRun(unittest.TestCase):
         config_path = self.root / ".oracle" / "config.json"
         self.assertFalse(config_path.exists())
 
+    def test_no_partial_config_on_interrupt(self):
+        wizard = SetupWizard(output_dir=self.root)
+        with patch("agent.core.setup.Prompt.ask",
+                   side_effect=KeyboardInterrupt):
+            with self.assertRaises(SystemExit):
+                wizard.run()
+
+        config_path = self.root / ".oracle" / "config.json"
+        self.assertFalse(config_path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
