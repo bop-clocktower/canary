@@ -9,11 +9,46 @@ the Oracle agent.
 """
 
 import json
+import sys as _sys
 from typing import Optional
 import typer
 from rich import print
 
 app = typer.Typer()
+
+
+@app.callback()
+def _pre_command(
+    ctx: typer.Context,
+    no_setup: bool = typer.Option(
+        False, "--no-setup",
+        help="Skip the first-run setup check.",
+    ),
+) -> None:
+    """Run the setup wizard if this project has not been configured."""
+    if ctx.invoked_subcommand == "setup":
+        return
+    if no_setup:
+        return
+    if not _sys.stdin.isatty():
+        return
+    from agent.core.setup import SetupWizard, Confirm
+    if not SetupWizard.is_configured():
+        if Confirm.ask(
+            "! Oracle isn't configured for this project yet.\n"
+            "  Run setup now? "
+            "(skip with --no-setup or run later: oracle setup)",
+            default=True,
+        ):
+            SetupWizard().run()
+            print("\n[dim]Continuing with your command…[/dim]\n")
+        else:
+            from rich import print as rprint
+            rprint(
+                "[yellow]⚠[/yellow]  Skipping setup — command may fail "
+                "without a valid API key. Run [bold]oracle setup[/bold] "
+                "to configure."
+            )
 
 
 @app.command()
@@ -279,91 +314,18 @@ def migrate(
 
 
 @app.command()
-def setup():
+def setup(
+    full: bool = typer.Option(
+        False, "--full",
+        help="Run a sample generation after setup to preview output.",
+    ),
+) -> None:
     """
-    First-time developer setup. Run once after cloning the repository.
-
-    Checks prerequisites (Node.js, harness-mcp), verifies the API key,
-    and creates .claude/settings.local.json so Claude Code approves the
-    project MCP servers without prompting.
+    Configure Oracle for this project: choose a provider and verify your
+    API key. Re-run at any time to update the configuration.
     """
-    import os
-    import shutil
-    import subprocess
-    from pathlib import Path
-
-    print("\n[bold cyan]Oracle Setup[/bold cyan]\n")
-
-    issues = []
-
-    # Locate repo root so the command works from any subdirectory.
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True
-        )
-        repo_root = Path(result.stdout.strip())
-    except subprocess.CalledProcessError:
-        repo_root = Path.cwd()
-
-    # ── Node.js ───────────────────────────────────────────────
-    if shutil.which("node"):
-        v = subprocess.run(
-            ["node", "--version"], capture_output=True, text=True
-        ).stdout.strip()
-        print(f"[green]✓[/green] Node.js {v}")
-    else:
-        print("[red]✗[/red] Node.js not found")
-        print("  Install from [link=https://nodejs.org]nodejs.org[/link] "
-              "then re-run setup.")
-        issues.append("Node.js missing")
-
-    # ── harness-mcp ───────────────────────────────────────────
-    if shutil.which("harness-mcp"):
-        print("[green]✓[/green] harness-mcp installed")
-    else:
-        print("[yellow]~[/yellow] harness-mcp not found — installing...")
-        r = subprocess.run(
-            ["npm", "install", "-g", "@harness-engineering/cli"],
-            capture_output=True, text=True
-        )
-        if r.returncode == 0:
-            print("[green]✓[/green] harness-mcp installed")
-        else:
-            print("[red]✗[/red] harness-mcp install failed")
-            print(f"  {r.stderr.strip()}")
-            print("  Try manually: npm install -g @harness-engineering/cli")
-            issues.append("harness-mcp install failed")
-
-    # ── API key ───────────────────────────────────────────────
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        print("[green]✓[/green] ANTHROPIC_API_KEY set")
-    else:
-        print("[yellow]![/yellow] ANTHROPIC_API_KEY not set")
-        print("  Get a key at console.anthropic.com, then add to "
-              "~/.zshrc or ~/.bashrc:")
-        print("  [dim]export ANTHROPIC_API_KEY=<paste-key-here>[/dim]")
-
-    # ── .claude/settings.local.json ───────────────────────────
-    local_settings = repo_root / ".claude" / "settings.local.json"
-    if local_settings.exists():
-        print("[green]✓[/green] .claude/settings.local.json already exists")
-    else:
-        (repo_root / ".claude").mkdir(exist_ok=True)
-        local_settings.write_text(
-            json.dumps({"enableAllProjectMcpServers": True}, indent=2) + "\n"
-        )
-        print("[green]✓[/green] Created .claude/settings.local.json")
-        print("  MCP servers (harness, playwright) will connect automatically.")
-
-    # ── Summary ───────────────────────────────────────────────
-    print()
-    if not issues:
-        print("[bold green]Setup complete.[/bold green] "
-              "Run [bold]oracle generate \"...\"[/bold] to create your first test.")
-    else:
-        print("[bold yellow]Setup incomplete.[/bold yellow] "
-              "Fix the issues above and re-run [bold]oracle setup[/bold].")
+    from agent.core.setup import SetupWizard
+    SetupWizard().run(full=full)
 
 
 @app.command()

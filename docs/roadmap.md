@@ -300,12 +300,15 @@ implementation begins. All 6 resolved.
 
 ### Interactive Guided Onboarding
 
-- **Status:** backlog
-- **Spec:** none
-- **Summary:** First-run guided experience for installing Oracle and
-  configuring providers.
+- **Status:** done
+- **Spec:** [docs/specs/onboarding.md](specs/onboarding.md)
+- **Summary:** First-run guided experience for end users who install Oracle
+  via pip. `SetupWizard` in `agent/core/setup.py`; Typer `@app.callback()`
+  asks permission before any unconfigured command; `oracle setup` is
+  re-runnable with `--full` for a sample generation. Config stored in
+  `.oracle/config.json` (project-local, no secrets). 12 unit tests.
 - **Blockers:** none
-- **Plan:** none
+- **Plan:** [docs/plans/onboarding.md](plans/onboarding.md)
 
 ### Migrate harness:initialize-test-suite Repos to `oracle init`
 

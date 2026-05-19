@@ -2,9 +2,16 @@
 # Generated tests live here; never committed (scratch space)
 tests/generated/
 
+# User project Oracle config (project-local, no secrets, but personal)
+.oracle/
+
 # Harness tooling scratch
 temp_harness/
 .entropy-backups/
+.harness/knowledge/
+
+# Superpowers brainstorm sessions
+.superpowers/
 # ── Python ────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
