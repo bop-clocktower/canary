@@ -1,0 +1,46 @@
+<h2>The full setup wizard flow</h2>
+<p class="subtitle">What the user sees after answering Y — does this feel right?</p>
+
+<div class="mockup">
+  <div class="mockup-header">terminal — oracle setup (full flow)</div>
+  <div class="mockup-body" style="font-family:monospace;font-size:13px;line-height:1.9">
+
+    <span style="color:#6ee7b7">$</span> oracle generate "test the login flow"<br>
+    <br>
+    <span style="color:#fbbf24">!</span> Oracle isn't configured for this project yet.<br>
+    <span style="color:#94a3b8">  Run setup now? [Y/n]</span> Y<br>
+    <br>
+
+    <span style="color:#60a5fa;font-weight:bold">⚡ Oracle Setup</span> <span style="color:#94a3b8">— my-project</span><br>
+    <br>
+
+    <span style="color:#94a3b8">── Step 1 of 3 · Provider ──────────────────</span><br>
+    <span style="color:#94a3b8">Which LLM provider do you want to use?</span><br>
+    <br>
+    <span style="color:#f472b6">❯ claude</span> &nbsp;<span style="color:#94a3b8">(Anthropic — recommended)</span><br>
+    &nbsp;&nbsp;openai &nbsp;<span style="color:#94a3b8">(OpenAI)</span><br>
+    &nbsp;&nbsp;gemini &nbsp;<span style="color:#94a3b8">(Google)</span><br>
+    <br>
+
+    <span style="color:#94a3b8">── Step 2 of 3 · API Key ───────────────────</span><br>
+    <span style="color:#94a3b8">ANTHROPIC_API_KEY</span> <span style="color:#64748b">(input hidden)</span><span style="color:#94a3b8">:</span> ••••••••••••••••<br>
+    <br>
+
+    <span style="color:#94a3b8">── Step 3 of 3 · Verify ────────────────────</span><br>
+    <span style="color:#94a3b8">Testing connection…</span><br>
+    <span style="color:#6ee7b7">✓</span> Connected to Claude (claude-sonnet-4-6)<br>
+    <br>
+
+    <span style="color:#6ee7b7">✓</span> Config saved to <span style="color:#60a5fa">.oracle/config.json</span><br>
+    <br>
+    <span style="color:#6ee7b7;font-weight:bold">Setup complete.</span> Continuing with your command…<br>
+    <br>
+
+    <span style="color:#94a3b8">── Generating tests ────────────────────────</span><br>
+    <span style="color:#94a3b8">Classifying… recommending… generating…</span><br>
+    <span style="color:#6ee7b7">✓</span> Written to <span style="color:#60a5fa">tests/generated/oracle_login_e2e.spec.ts</span><br>
+
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px">After setup completes, the original command resumes automatically. Does this flow look right, or would you change anything?</p>

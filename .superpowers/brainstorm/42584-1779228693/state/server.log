@@ -1,0 +1,5 @@
+{"type":"server-started","port":53962,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:53962","screen_dir":"/Users/bs/Github/oracle-test-ai-agent/.superpowers/brainstorm/42584-1779228693/content","state_dir":"/Users/bs/Github/oracle-test-ai-agent/.superpowers/brainstorm/42584-1779228693/state"}
+{"type":"screen-added","file":"/Users/bs/Github/oracle-test-ai-agent/.superpowers/brainstorm/42584-1779228693/content/trigger-flow.html"}
+{"source":"user-event","type":"click","text":"B\n    \n      Ask first\n      Pauses and asks permission before starting onboarding\n      \n        terminal\n        \n          $ oracle generate \"test the login flow\"\n          \n          ! Oracle isn't configured for this project yet.\n            Run setup now? [Y/n] █\n          \n            (skip with --no-setup or run later: oracle setup)","choice":"b","id":null,"timestamp":1779228841410}
+{"type":"screen-added","file":"/Users/bs/Github/oracle-test-ai-agent/.superpowers/brainstorm/42584-1779228693/content/wizard-flow.html"}
+{"type":"screen-added","file":"/Users/bs/Github/oracle-test-ai-agent/.superpowers/brainstorm/42584-1779228693/content/waiting-2.html"}
