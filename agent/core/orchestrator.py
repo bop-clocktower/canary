@@ -50,7 +50,7 @@ class OracleOrchestrator:
         self.selector_healer = SelectorHealer()
         self.max_heal_attempts = max_heal_attempts
 
-        self.output_dir = Path(__file__).resolve().parents[2] / "tests" / "generated"
+        self.output_dir = Path.cwd() / "tests" / "generated"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     # @perf-critical
