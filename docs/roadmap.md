@@ -301,7 +301,7 @@ implementation begins. All 6 resolved.
 ### Interactive Guided Onboarding
 
 - **Status:** planned
-- **Spec:** [docs/superpowers/specs/2026-05-19-interactive-onboarding-design.md](superpowers/specs/2026-05-19-interactive-onboarding-design.md)
+- **Spec:** [docs/specs/onboarding.md](specs/onboarding.md)
 - **Summary:** First-run guided experience for end users who install Oracle
   via pip. Auto-triggers before any command in an unconfigured project
   (asks permission first, then resumes the original command). Re-runnable
