@@ -5,6 +5,10 @@ tests/generated/
 # Harness tooling scratch
 temp_harness/
 .entropy-backups/
+.harness/knowledge/
+
+# Superpowers brainstorm sessions
+.superpowers/
 # ── Python ────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
