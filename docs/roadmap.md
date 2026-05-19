@@ -300,10 +300,14 @@ implementation begins. All 6 resolved.
 
 ### Interactive Guided Onboarding
 
-- **Status:** backlog
-- **Spec:** none
-- **Summary:** First-run guided experience for installing Oracle and
-  configuring providers.
+- **Status:** planned
+- **Spec:** [docs/superpowers/specs/2026-05-19-interactive-onboarding-design.md](superpowers/specs/2026-05-19-interactive-onboarding-design.md)
+- **Summary:** First-run guided experience for end users who install Oracle
+  via pip. Auto-triggers before any command in an unconfigured project
+  (asks permission first, then resumes the original command). Re-runnable
+  via `oracle setup`. Steps: provider selection → API key → verify.
+  `SetupWizard` module + Typer `@app.callback()`. Config stored in
+  `.oracle/config.json` (project-local, no secrets).
 - **Blockers:** none
 - **Plan:** none
 
