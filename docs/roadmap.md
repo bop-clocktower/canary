@@ -194,10 +194,10 @@ updated: 2026-05-17
 - **Spec:** none
 - **Summary:** TICKET-035 — replaces MVP single-retry with configurable
   multi-step heal loop (default 3 attempts, `max_heal_attempts` ctor
-  param). Each attempt runs `_search_error_context()` — extracts
+  param). Each attempt runs `_search_error_context` — extracts
   identifiers from the error message and greps project source files for
   their definitions, injecting relevant snippets into the fix prompt.
-  Result dict gains `attempts` count. `fixed` only True when retry
+  Result dict gains an attempts count. fixed is only True when retry
   actually passes. 15 orchestrator tests cover exhaustion, multi-step
   success, zero-attempts disable, context search caps and filtering.
 - **Blockers:** none
@@ -208,14 +208,14 @@ updated: 2026-05-17
 - **Status:** done
 - **Spec:** none
 - **Summary:** TICKET-036 — `SelectorHealer` detects selector-related UI
-  test failures (`TimeoutError`, `locator()`, `getBy*`, `page.click`, strict
+  test failures (TimeoutError, locator, getBy\*, page.click, strict
   mode violations, not-attached/not-visible) and routes them to a DOM-aware
   fix path instead of the generic symbol-grep healer. Extracts the failing
   selector from the error message; reads DOM context from loose HTML snapshots
-  or `snapshots/*.html` entries inside Playwright `trace.zip` files (truncated
+  or snapshots/\*.html entries inside Playwright trace.zip files (truncated
   at 3 500 chars). Builds a selector-focused prompt that instructs the LLM to
-  prefer `data-testid` and ARIA roles over brittle CSS classes. Wired into
-  `OracleOrchestrator`'s heal loop via `_attempt_selector_fix()`. 36 new
+  prefer data-testid and ARIA roles over brittle CSS classes. Wired into
+  `OracleOrchestrator`'s heal loop via `_attempt_selector_fix`. 36 new
   tests; 218 total passing.
 - **Blockers:** none
 - **Plan:** none
@@ -226,10 +226,10 @@ updated: 2026-05-17
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** PR #44 — renamed `TestExecutor` → `OracleTestExecutor` to
-  eliminate `PytestCollectionWarning` (pytest treats any `Test*` class with
-  `__init__` as a candidate test class). Installed missing `google-genai`
-  dependency that was declared in `pyproject.toml` but absent from the venv,
+- **Summary:** PR #44 — renamed TestExecutor → `OracleTestExecutor` to
+  eliminate PytestCollectionWarning (pytest treats any Test\* class with
+  an `__init__` as a candidate test class). Installed missing google-genai
+  dependency that was declared in pyproject.toml but absent from the venv,
   restoring 5 Gemini provider tests that had been failing silently. Result:
   182/182 passing, 0 warnings.
 - **Blockers:** none
@@ -237,11 +237,13 @@ updated: 2026-05-17
 
 ### IDE Plugins
 
-- **Status:** in progress — VS Code Phase 1 shipped, CI green
-- **Spec:** [docs/specs/ide-plugins.md](specs/ide-plugins.md)
-- **Repo:** [bri-stevenski/oracle-vscode](https://github.com/bri-stevenski/oracle-vscode)
+- **Status:** done
+- **Spec (VS Code):** [docs/specs/ide-plugins.md](specs/ide-plugins.md)
+- **Spec (JetBrains):** [docs/specs/ide-plugins-jetbrains.md](specs/ide-plugins-jetbrains.md)
+- **Repo (VS Code):** [bri-stevenski/oracle-vscode](https://github.com/bri-stevenski/oracle-vscode)
+- **Repo (JetBrains):** [bri-stevenski/oracle-intellij](https://github.com/bri-stevenski/oracle-intellij)
 - **Summary:** VS Code and JetBrains plugins exposing Oracle
-  generation/execution. Phase 1 (VS Code, TypeScript) ships first.
+  generation/execution. Phase 1 (VS Code, TypeScript) complete.
   Thin-shell design — plugins invoke the installed `oracle` CLI; no LLM
   code lives in the plugin. 5 commands, output channel, status bar,
   CLI resolution, and full error-handling contract specified. PR #50.
@@ -251,23 +253,32 @@ updated: 2026-05-17
   All 14 plan tasks implemented in `oracle-vscode` (commits 88b27e4–13eb769)
   — typecheck clean, 16/16 tests passing, CI green on `main`. CommonJS
   and proxyquire chosen for test isolation against Node 24's non-configurable
-  built-in exports.
-- **Blockers:** 1 open design decision (see below); JetBrains plugin not started
-- **Plan:** [docs/plans/ide-plugins-vscode.md](plans/ide-plugins-vscode.md)
+  built-in exports. JetBrains scaffold complete in `oracle-intellij`: Kotlin,
+  Gradle 9.5 + IntelliJ Platform Gradle Plugin 2.16.0, all 5 actions, tool
+  window (ConsoleView), status bar widget, settings Configurable, CliRunner
+  (GeneralCommandLine + OSProcessHandler, 120 s timeout),
+  Task.Backgroundable threading, ProjectActivity startup probe; 35 tests
+  passing, CI green on `main`. Action tests (PR #1) extract internal
+  companion object helpers (parseOutputFile, buildExtraArgs, nextWidgetState,
+  prettyJson) so pure business logic can be exercised without IntelliJ
+  Platform bootstrap.
+- **Blockers:** none
+- **Plan (JetBrains):** [docs/plans/ide-plugins-jetbrains.md](plans/ide-plugins-jetbrains.md)
+- **Plan (VS Code):** [docs/plans/ide-plugins-vscode.md](plans/ide-plugins-vscode.md)
 
 #### IDE Plugins — Design Decisions
 
 Soundness review (harness-soundness-review, spec mode) surfaced these before
-implementation begins. 5 of 6 resolved in spec PR #59.
+implementation begins. All 6 resolved.
 
 | # | Issue | Status | Resolution |
 | --- | ----- | ------ | ---------- |
-| S1-001 | [#52](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/52) | **open** | Awaiting decision on component name detection scope |
+| S1-001 | [#52](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/52) | resolved | Option A: filename-only pre-fill; component detection deferred |
 | S1-002 | [#53](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/53) | resolved | Batch output; streaming deferred to follow-up |
 | S5-001 | [#54](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/54) | resolved | Changed to `oracle version` (subcommand) |
 | S5-002 | [#55](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/55) | resolved | Removed `--json` from run invocation |
 | S3-002 | [#56](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/56) | resolved | macOS PATH limitation documented in Assumptions |
-| S6-001 | [#57](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/57) | resolved | `oracle.recommendOnly` moved to Out of Scope |
+| S6-001 | [#57](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/57) | resolved | oracle.recommendOnly moved to Out of Scope |
 
 ### Interactive Guided Onboarding
 

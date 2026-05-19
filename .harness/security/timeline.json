@@ -333,8 +333,8 @@
       ]
     },
     {
-      "capturedAt": "2026-05-18T23:25:36.005Z",
-      "commitHash": "35116a55ebbd2f30b7291187a2e278a6569a9308",
+      "capturedAt": "2026-05-18T23:49:11.962Z",
+      "commitHash": "9b37dcb9877dba39bce29f4ea1486ae68edb5c25",
       "securityScore": 100,
       "totalFindings": 1,
       "bySeverity": {
