@@ -57,6 +57,28 @@ class TestSetupWizardRun(unittest.TestCase):
         self.assertEqual(config["provider"], "claude")
         self.assertIn("configured_at", config)
 
+    def test_run_loops_on_bad_key(self):
+        # First verify call raises, second succeeds.
+        verify_calls = [Exception("Invalid API key"), None]
+
+        def fake_verify(provider, api_key):
+            result = verify_calls.pop(0)
+            if isinstance(result, Exception):
+                raise result
+
+        wizard = SetupWizard(output_dir=self.root)
+        with patch("agent.core.setup.Prompt.ask",
+                   side_effect=["claude", "bad-key", "good-key"]), \
+             patch("agent.core.setup.SetupWizard._test_connection",
+                   side_effect=fake_verify), \
+             patch("agent.core.setup.Confirm.ask", return_value=True):
+            wizard.run()
+
+        config = json.loads(
+            (self.root / ".oracle" / "config.json").read_text()
+        )
+        self.assertEqual(config["provider"], "claude")
+
 
 if __name__ == "__main__":
     unittest.main()
