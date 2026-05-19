@@ -32,9 +32,8 @@ def _pre_command(
         return
     if not _sys.stdin.isatty():
         return
-    from agent.core.setup import SetupWizard
+    from agent.core.setup import SetupWizard, Confirm
     if not SetupWizard.is_configured():
-        from rich.prompt import Confirm
         if Confirm.ask(
             "! Oracle isn't configured for this project yet. "
             "Run setup now?",
