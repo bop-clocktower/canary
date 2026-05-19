@@ -99,5 +99,34 @@ class TestSetupWizardRun(unittest.TestCase):
         self.assertFalse(config_path.exists())
 
 
+from typer.testing import CliRunner
+from agent.cli import app
+
+_runner = CliRunner()
+
+
+class TestAppCallback(unittest.TestCase):
+
+    def test_skips_when_configured(self):
+        with patch("agent.core.setup.SetupWizard.is_configured",
+                   return_value=True):
+            result = _runner.invoke(app, ["version"])
+        self.assertNotIn("Oracle isn't configured", result.output)
+
+    def test_skips_when_not_tty(self):
+        # CliRunner sets stdin to a non-TTY by default
+        with patch("agent.core.setup.SetupWizard.is_configured",
+                   return_value=False):
+            result = _runner.invoke(app, ["version"])
+        self.assertNotIn("Oracle isn't configured", result.output)
+
+    def test_skips_with_no_setup_flag(self):
+        with patch("agent.core.setup.SetupWizard.is_configured",
+                   return_value=False), \
+             patch("sys.stdin.isatty", return_value=True):
+            result = _runner.invoke(app, ["--no-setup", "version"])
+        self.assertNotIn("Oracle isn't configured", result.output)
+
+
 if __name__ == "__main__":
     unittest.main()

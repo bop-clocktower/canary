@@ -9,11 +9,37 @@ the Oracle agent.
 """
 
 import json
+import sys as _sys
 from typing import Optional
 import typer
 from rich import print
 
 app = typer.Typer()
+
+
+@app.callback()
+def _pre_command(
+    ctx: typer.Context,
+    no_setup: bool = typer.Option(
+        False, "--no-setup",
+        help="Skip the first-run setup check.",
+    ),
+) -> None:
+    """Run the setup wizard if this project has not been configured."""
+    if ctx.invoked_subcommand == "setup":
+        return
+    if no_setup or not _sys.stdin.isatty():
+        return
+    from agent.core.setup import SetupWizard
+    if not SetupWizard.is_configured():
+        from rich.prompt import Confirm
+        if Confirm.ask(
+            "! Oracle isn't configured for this project yet. "
+            "Run setup now?",
+            default=True,
+        ):
+            SetupWizard().run()
+            print("\n[dim]Continuing with your command…[/dim]\n")
 
 
 @app.command()
