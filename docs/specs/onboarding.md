@@ -1,63 +1,87 @@
-# Interactive Guided Onboarding — Design Spec
+# Interactive Guided Onboarding Specification
 
-**Date:** 2026-05-19
-**Status:** approved
-**Roadmap item:** Interactive Guided Onboarding (Developer Experience & Onboarding)
+A first-run guided experience for end users who install Oracle via pip. Walks
+them through provider selection, API key entry, and connection verification
+before any `oracle` command runs for the first time in a project. Re-runnable
+explicitly via `oracle setup`.
 
----
+## Scope
 
-## Overview
+**In scope:**
 
-A first-run guided experience for end users who install Oracle via pip. Walks them through provider selection, API key entry, and connection verification before any `oracle` command runs for the first time in a project. Re-runnable explicitly via `oracle setup`.
+- Auto-detection of unconfigured projects with an interactive prompt to run
+  setup before continuing
+- `oracle setup` command: provider selection, masked API key entry, connection
+  verification
+- `oracle setup --full` flag: runs a sample generation after setup to
+  demonstrate output
+- Project-local config file (`.oracle/config.json`) tracking provider and
+  setup timestamp
+- `--no-setup` flag on `generate`, `run`, `init`, and `migrate` to suppress
+  the auto-trigger in scripting contexts
 
----
+**Out of scope:**
+
+- Storing API keys in the config file (keys stay in environment variables)
+- Multi-provider configs (one active provider per project)
+- GUI or web-based onboarding
+- Automatic shell profile modification (e.g. appending
+  `export ANTHROPIC_API_KEY=...` to `.zshrc`)
+
+## Assumptions
+
+- Users install Oracle via `pip install oracle` before running any command.
+  The onboarding handles configuration, not installation.
+- The API key is already known to the user; the wizard validates it but does
+  not retrieve or generate one.
+- CI environments set a recognised CI environment variable (`CI`, `TRAVIS`,
+  `CIRCLECI`, etc.); the auto-trigger checks `sys.stdin.isatty()` and skips
+  silently in non-interactive contexts.
+- `.oracle/` is added to the project's `.gitignore` as part of setup.
+
+## User Stories
+
+| # | As a developer I want to… | So that… |
+| --- | --- | --- |
+| U1 | be prompted to configure Oracle the first time I run a command | I don't get a cryptic API key error with no guidance |
+| U2 | choose my LLM provider interactively | I'm not forced to know the env var name upfront |
+| U3 | have my API key validated before setup completes | I know immediately if the key is wrong |
+| U4 | re-run setup at any time with `oracle setup` | I can switch providers or fix a broken key |
+| U5 | skip setup inline with `--no-setup` | My CI scripts and pipelines are not interrupted |
 
 ## Trigger Behaviour
 
 Onboarding fires in two ways:
 
-1. **Auto-trigger** — before any `oracle` subcommand, a Typer `@app.callback()` checks whether the project is configured. If not, and stdin is a TTY, it prompts:
-   ```
-   ! Oracle isn't configured for this project yet.
-     Run setup now? [Y/n]  (skip with --no-setup or run later: oracle setup)
-   ```
-   If the user says Y, the wizard runs and the original command resumes automatically on completion. If N, a warning is printed and the command continues (it will fail naturally if the API key is missing).
+**Auto-trigger:** A Typer `@app.callback()` runs before every subcommand. If
+`SetupWizard.is_configured()` returns False and `sys.stdin.isatty()` is True,
+it prompts:
 
-2. **Explicit** — `oracle setup` always runs the wizard regardless of config state, allowing reconfiguration. Accepts a `--full` flag to append a sample test generation after setup completes.
+```text
+! Oracle isn't configured for this project yet.
+  Run setup now? [Y/n]  (skip with --no-setup or run later: oracle setup)
+```
 
----
+If the user says Y, the wizard runs and the original command resumes
+automatically on completion. If N, a warning is printed and the command
+continues (and will likely fail on a missing API key).
 
-## Components
+**Explicit:** `oracle setup` always runs the wizard regardless of config
+state, skipping the Y/N prompt and proceeding directly to provider selection.
+Accepts `--full` to append a sample generation after setup.
 
-### `agent/core/setup.py` — `SetupWizard`
+## Wizard Steps
 
-Owns all interactive setup logic. Responsibilities:
+1. **Provider selection** — interactive prompt offering `claude` (default),
+   `openai`, `gemini`
+2. **API key entry** — masked input; key is not stored, only used for
+   verification in step 3
+3. **Connection verify** — cheap call to the selected provider to confirm the
+   key is valid; loops back to step 2 on failure with the provider's error
+   message
 
-- `is_configured(path: Path = None) -> bool` — classmethod; checks whether `.oracle/config.json` exists in `cwd` (or a given path) and contains a valid `provider` field.
-- `run(full: bool = False) -> None` — runs the three-step wizard:
-  1. **Provider selection** — interactive prompt: `claude` (default), `openai`, `gemini`
-  2. **API key entry** — masked input; key is not stored, only used for verification
-  3. **Connection verify** — cheap call to the provider to confirm the key works; loops on failure
-- Writes `.oracle/config.json` on success (only after verification passes).
-- If `full=True`, invokes `OracleOrchestrator` with a canned prompt after config is written to show a live generation.
-
-### `cli.py` — `@app.callback()`
-
-Added to the Typer app. Runs before every subcommand:
-
-1. Calls `SetupWizard.is_configured()`
-2. If False and `sys.stdin.isatty()` and `--no-setup` not passed → prompt user
-3. If user says Y → `SetupWizard().run()` → continue
-4. If user says N → warn and continue
-5. If not a TTY → silently skip (CI-safe)
-
-`oracle setup` is exempt from the guard — it always runs.
-
-### `--no-setup` flag
-
-Added to `generate`, `run`, `init`, and `migrate`. Suppresses the callback check for scripting contexts.
-
----
+On success, `.oracle/config.json` is written. On `KeyboardInterrupt` at any
+step, setup is cancelled and no partial config is written.
 
 ## Config Format
 
@@ -70,50 +94,44 @@ Added to `generate`, `run`, `init`, and `migrate`. Suppresses the callback check
 }
 ```
 
-- No API key stored — stays in the environment
-- `.oracle/` added to `.gitignore`
-- `is_configured()` requires `provider` field to be present and non-empty
-
----
+No API key is stored. `SetupWizard.is_configured()` requires the `provider`
+field to be present and non-empty.
 
 ## Error Handling
 
 | Scenario | Behaviour |
-|---|---|
-| Bad API key / network error during verify | Print provider error, offer "Try a different key? [Y/n]", loop back to key input |
-| Verification passes on retry | Continue normally, write config |
-| Non-TTY / CI context | Skip wizard silently; command runs as-is |
-| Ctrl-C mid-wizard | Catch `KeyboardInterrupt`, print "Setup cancelled. Run `oracle setup` to try again.", exit — no partial config written |
-| User runs `oracle setup` outside a project directory | No guard; config written to `cwd/.oracle/config.json` |
+| --- | --- |
+| Bad API key or network error | Print error, offer "Try a different key? [Y/n]", loop to step 2 |
+| Verification passes on retry | Continue normally and write config |
+| Non-TTY or CI context | Skip wizard silently; command runs as-is |
+| `KeyboardInterrupt` mid-wizard | Print "Setup cancelled. Run `oracle setup` to try again." No config written. |
+| `oracle setup` run outside a project | No guard; config written to `cwd/.oracle/config.json` |
 
----
+## src Reference
 
-## Testing
+- [`agent/cli.py`](../../agent/cli.py) — `@app.callback()` and `oracle setup`
+  command
+- [`agent/core/setup.py`](../../agent/core/setup.py) — `SetupWizard` class
+  (new)
+- [`tests/unit/test_setup.py`](../../tests/unit/test_setup.py) — unit tests
+  (new)
 
-New file: `tests/unit/test_setup.py` (~12 tests)
+## Test Coverage
 
-| Test | Description |
-|---|---|
-| `test_is_configured_false_when_missing` | Returns False when `.oracle/config.json` absent |
-| `test_is_configured_true_when_valid` | Returns True when file present with valid `provider` |
-| `test_is_configured_false_when_malformed` | Returns False when file exists but `provider` missing |
-| `test_run_writes_config_on_success` | Config written with correct provider after mocked verify pass |
-| `test_run_no_partial_config_on_interrupt` | No file written when `KeyboardInterrupt` raised mid-wizard |
-| `test_run_loops_on_bad_key` | Loops back to key input on first verify failure, succeeds on second |
-| `test_callback_skips_when_configured` | `@app.callback()` does not prompt when config exists |
-| `test_callback_skips_when_not_tty` | `@app.callback()` silently skips when `sys.stdin.isatty()` is False |
-| `test_callback_skips_with_no_setup_flag` | `@app.callback()` skips when `--no-setup` passed |
-| `test_callback_prompts_when_unconfigured_tty` | Prompt shown when no config and stdin is TTY |
-| `test_callback_resumes_command_after_setup` | Original command args preserved and executed after wizard |
-| `test_setup_full_invokes_orchestrator` | `oracle setup --full` calls orchestrator after config written |
+New file `tests/unit/test_setup.py` (~12 tests). All provider verify calls
+stubbed via the existing mock provider; no network required.
 
-All provider verify calls stubbed via the existing mock provider. No network required.
-
----
-
-## Out of Scope
-
-- Storing API keys in the config file (keys stay in environment variables)
-- Multi-provider configs (one active provider per project)
-- GUI or web-based onboarding
-- Automatic shell profile modification (e.g. writing `export ANTHROPIC_API_KEY=...` to `.zshrc`)
+| Test | What it checks |
+| --- | --- |
+| `test_is_configured_false_when_missing` | False when `.oracle/config.json` absent |
+| `test_is_configured_true_when_valid` | True when file present with valid `provider` |
+| `test_is_configured_false_when_malformed` | False when file exists but `provider` missing |
+| `test_run_writes_config_on_success` | Config written after mocked verify pass |
+| `test_run_no_partial_config_on_interrupt` | No file written on `KeyboardInterrupt` |
+| `test_run_loops_on_bad_key` | Loops to key input on failure, succeeds on second try |
+| `test_callback_skips_when_configured` | Callback does not prompt when config exists |
+| `test_callback_skips_when_not_tty` | Callback skips silently when stdin is not a TTY |
+| `test_callback_skips_with_no_setup_flag` | Callback skips when `--no-setup` passed |
+| `test_callback_prompts_when_unconfigured_tty` | Prompt shown when no config and TTY |
+| `test_callback_resumes_command_after_setup` | Original command resumes after wizard |
+| `test_setup_full_invokes_orchestrator` | `--full` calls orchestrator after config written |
