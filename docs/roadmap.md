@@ -194,10 +194,10 @@ updated: 2026-05-17
 - **Spec:** none
 - **Summary:** TICKET-035 — replaces MVP single-retry with configurable
   multi-step heal loop (default 3 attempts, `max_heal_attempts` ctor
-  param). Each attempt runs `_search_error_context()` — extracts
+  param). Each attempt runs `_search_error_context` — extracts
   identifiers from the error message and greps project source files for
   their definitions, injecting relevant snippets into the fix prompt.
-  Result dict gains `attempts` count. `fixed` only True when retry
+  Result dict gains an attempts count. fixed is only True when retry
   actually passes. 15 orchestrator tests cover exhaustion, multi-step
   success, zero-attempts disable, context search caps and filtering.
 - **Blockers:** none
@@ -208,14 +208,14 @@ updated: 2026-05-17
 - **Status:** done
 - **Spec:** none
 - **Summary:** TICKET-036 — `SelectorHealer` detects selector-related UI
-  test failures (`TimeoutError`, `locator()`, `getBy*`, `page.click`, strict
+  test failures (TimeoutError, locator, getBy\*, page.click, strict
   mode violations, not-attached/not-visible) and routes them to a DOM-aware
   fix path instead of the generic symbol-grep healer. Extracts the failing
   selector from the error message; reads DOM context from loose HTML snapshots
-  or `snapshots/*.html` entries inside Playwright `trace.zip` files (truncated
+  or snapshots/\*.html entries inside Playwright trace.zip files (truncated
   at 3 500 chars). Builds a selector-focused prompt that instructs the LLM to
-  prefer `data-testid` and ARIA roles over brittle CSS classes. Wired into
-  `OracleOrchestrator`'s heal loop via `_attempt_selector_fix()`. 36 new
+  prefer data-testid and ARIA roles over brittle CSS classes. Wired into
+  `OracleOrchestrator`'s heal loop via `_attempt_selector_fix`. 36 new
   tests; 218 total passing.
 - **Blockers:** none
 - **Plan:** none
@@ -226,10 +226,10 @@ updated: 2026-05-17
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** PR #44 — renamed `TestExecutor` → `OracleTestExecutor` to
-  eliminate `PytestCollectionWarning` (pytest treats any `Test*` class with
-  `__init__` as a candidate test class). Installed missing `google-genai`
-  dependency that was declared in `pyproject.toml` but absent from the venv,
+- **Summary:** PR #44 — renamed TestExecutor → `OracleTestExecutor` to
+  eliminate PytestCollectionWarning (pytest treats any Test\* class with
+  an `__init__` as a candidate test class). Installed missing google-genai
+  dependency that was declared in pyproject.toml but absent from the venv,
   restoring 5 Gemini provider tests that had been failing silently. Result:
   182/182 passing, 0 warnings.
 - **Blockers:** none
@@ -264,16 +264,16 @@ updated: 2026-05-17
 #### IDE Plugins — Design Decisions
 
 Soundness review (harness-soundness-review, spec mode) surfaced these before
-implementation begins. 5 of 6 resolved in spec PR #59.
+implementation begins. All 6 resolved.
 
 | # | Issue | Status | Resolution |
 | --- | ----- | ------ | ---------- |
-| S1-001 | [#52](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/52) | **open** | Awaiting decision on component name detection scope |
+| S1-001 | [#52](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/52) | resolved | Option A: filename-only pre-fill; component detection deferred |
 | S1-002 | [#53](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/53) | resolved | Batch output; streaming deferred to follow-up |
 | S5-001 | [#54](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/54) | resolved | Changed to `oracle version` (subcommand) |
 | S5-002 | [#55](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/55) | resolved | Removed `--json` from run invocation |
 | S3-002 | [#56](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/56) | resolved | macOS PATH limitation documented in Assumptions |
-| S6-001 | [#57](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/57) | resolved | `oracle.recommendOnly` moved to Out of Scope |
+| S6-001 | [#57](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/57) | resolved | oracle.recommendOnly moved to Out of Scope |
 
 ### Interactive Guided Onboarding
 
