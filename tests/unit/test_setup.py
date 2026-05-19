@@ -160,6 +160,12 @@ class TestAppCallback(unittest.TestCase):
             result = _runner.invoke(app, ["version"], input=TTYInput())
         mock_run.assert_called_once_with()
 
+    def test_setup_command_runs_wizard(self):
+        with patch("agent.core.setup.SetupWizard.run") as mock_run:
+            result = _runner.invoke(app, ["setup"])
+        mock_run.assert_called_once_with(full=False)
+        self.assertEqual(result.exit_code, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
