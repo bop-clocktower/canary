@@ -32,6 +32,9 @@ def _pre_command(
         return
     if not _sys.stdin.isatty():
         return
+    from agent.core.ci_env import is_ci
+    if is_ci():
+        return
     from agent.core.setup import SetupWizard, Confirm
     if not SetupWizard.is_configured():
         if Confirm.ask(

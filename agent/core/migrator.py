@@ -1,5 +1,7 @@
 # agent/core/migrator.py
 
+from __future__ import annotations
+
 """
 Oracle Migrator — detects harness-scaffolded test-suite projects and migrates
 them to Oracle's layout without touching existing test files.
