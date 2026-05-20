@@ -159,6 +159,7 @@ class TestAppCallback(unittest.TestCase):
     def test_prompts_when_unconfigured_tty(self):
         with patch("agent.core.setup.SetupWizard.is_configured",
                    return_value=False), \
+             patch("agent.core.ci_env.is_ci", return_value=False), \
              patch("agent.core.setup.Confirm.ask",
                    return_value=False) as mock_confirm:
             result = _runner.invoke(app, ["version"], input=TTYInput())
@@ -170,6 +171,7 @@ class TestAppCallback(unittest.TestCase):
     def test_runs_wizard_when_user_says_yes(self):
         with patch("agent.core.setup.SetupWizard.is_configured",
                    return_value=False), \
+             patch("agent.core.ci_env.is_ci", return_value=False), \
              patch("agent.core.setup.Confirm.ask", return_value=True), \
              patch("agent.core.setup.SetupWizard.run") as mock_run:
             result = _runner.invoke(app, ["version"], input=TTYInput())
