@@ -1,156 +1,147 @@
 # tests/unit/test_mcp_server.py
 """Unit tests for agent/mcp_server.py — all I/O and intelligence calls mocked."""
 
+import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 # ---------------------------------------------------------------------------
 # oracle__analyze_file
 # ---------------------------------------------------------------------------
 
-class TestAnalyzeFile:
-    def test_analyze_file_returns_framework(self, tmp_path):
+class TestAnalyzeFile(unittest.TestCase):
+
+    def test_analyze_file_returns_framework(self):
         """Returns expected keys when file exists."""
-        target = tmp_path / "login.ts"
-        target.write_text("export function login() {}")
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "login.ts"
+            target.write_text("export function login() {}")
 
-        mock_meta = MagicMock()
-        mock_meta.js_dependencies = {"react": "^18.0.0"}
+            mock_meta = MagicMock()
+            mock_pattern = MagicMock()
+            mock_pattern.common_imports = ["react"]
+            mock_domain = MagicMock()
+            mock_domain.functions = ["login"]
 
-        mock_pattern = MagicMock()
-        mock_pattern.is_empty = False
-        mock_pattern.common_imports = ["react"]
-        mock_pattern.sample_names = ["test_login"]
+            with patch("agent.core.metadata_scanner.MetadataScanner.scan", return_value=mock_meta), \
+                 patch("agent.core.pattern_matcher.PatternMatcher.scan", return_value=mock_pattern), \
+                 patch("agent.core.domain_scanner.DomainScanner.scan", return_value=mock_domain):
+                from agent import mcp_server as srv
+                result = srv._analyze_file_impl(str(target))
 
-        mock_domain = MagicMock()
-        mock_domain.components = ["LoginForm"]
-        mock_domain.functions = ["login"]
-        mock_domain.api_routes = []
-
-        with (
-            patch("agent.core.metadata_scanner.MetadataScanner.scan", return_value=mock_meta),
-            patch("agent.core.pattern_matcher.PatternMatcher.scan", return_value=mock_pattern),
-            patch("agent.core.domain_scanner.DomainScanner.scan", return_value=mock_domain),
-        ):
-            from agent import mcp_server as srv
-            result = srv._analyze_file_impl(str(target))
-
-        assert result["framework"] in ("playwright", "vitest", "pytest", "k6", "unknown")
-        assert "imports" in result
-        assert "functions" in result
-        assert "existing_tests" in result
-        assert "context_snippets" in result
+        self.assertIn(result["framework"], ("playwright", "vitest", "pytest", "k6", "unknown"))
+        self.assertIn("imports", result)
+        self.assertIn("functions", result)
+        self.assertIn("existing_tests", result)
+        self.assertIn("context_snippets", result)
 
     def test_analyze_file_missing_file(self):
         """Returns error dict when file does not exist."""
         from agent import mcp_server as srv
         result = srv._analyze_file_impl("/nonexistent/path/foo.ts")
-        assert "error" in result
-        assert "file not found" in result["error"]
+        self.assertIn("error", result)
+        self.assertIn("file not found", result["error"])
 
 
 # ---------------------------------------------------------------------------
 # oracle__list_frameworks
 # ---------------------------------------------------------------------------
 
-class TestListFrameworks:
+class TestListFrameworks(unittest.TestCase):
+
     def test_list_frameworks_returns_all(self):
         """Returns all four registry frameworks."""
         from agent import mcp_server as srv
         result = srv._list_frameworks_impl()
-        assert set(result["frameworks"]) == {"playwright", "vitest", "pytest", "k6"}
+        self.assertEqual(set(result["frameworks"]), {"playwright", "vitest", "pytest", "k6"})
 
 
 # ---------------------------------------------------------------------------
 # oracle__write_test_file
 # ---------------------------------------------------------------------------
 
-class TestWriteTestFile:
-    def test_write_test_file_creates_dirs(self, tmp_path):
-        """Creates parent directories and writes file; returns written_path."""
-        deep = tmp_path / "nested" / "dir" / "my_test.spec.ts"
-        from agent import mcp_server as srv
-        result = srv._write_test_file_impl(str(deep), "// test content", "playwright")
-        assert result["written_path"] == str(deep)
-        assert deep.exists()
-        assert deep.read_text() == "// test content"
+class TestWriteTestFile(unittest.TestCase):
 
-    def test_write_test_file_infers_extension(self, tmp_path):
+    def test_write_test_file_creates_dirs(self):
+        """Creates parent directories and writes file; returns written_path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            deep = Path(tmp) / "nested" / "dir" / "my_test.spec.ts"
+            from agent import mcp_server as srv
+            result = srv._write_test_file_impl(str(deep), "// test content", "playwright")
+            self.assertEqual(result["written_path"], str(deep))
+            self.assertTrue(deep.exists())
+            self.assertEqual(deep.read_text(), "// test content")
+
+    def test_write_test_file_infers_extension(self):
         """Infers .spec.ts extension when file_path has no suffix."""
-        no_ext = tmp_path / "my_test"
-        from agent import mcp_server as srv
-        result = srv._write_test_file_impl(str(no_ext), "content", "playwright")
-        assert result["written_path"].endswith(".spec.ts")
+        with tempfile.TemporaryDirectory() as tmp:
+            no_ext = Path(tmp) / "my_test"
+            from agent import mcp_server as srv
+            result = srv._write_test_file_impl(str(no_ext), "content", "playwright")
+            self.assertTrue(result["written_path"].endswith(".spec.ts"))
 
 
 # ---------------------------------------------------------------------------
 # oracle__run_tests
 # ---------------------------------------------------------------------------
 
-class TestRunTests:
-    def test_run_tests_pass(self, tmp_path):
+class TestRunTests(unittest.TestCase):
+
+    def test_run_tests_pass(self):
         """Returns exit_code=0 and positive passed count."""
-        test_file = tmp_path / "test_ok.py"
-        test_file.write_text("def test_noop(): pass")
+        with tempfile.TemporaryDirectory() as tmp:
+            test_file = Path(tmp) / "test_ok.py"
+            test_file.write_text("def test_noop(): pass")
+            with patch("agent.core.executor.OracleTestExecutor.execute",
+                       return_value=(0, "1 passed in 0.01s", "")):
+                from agent import mcp_server as srv
+                result = srv._run_tests_impl(str(test_file))
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(result["failed"], 0)
 
-        with patch(
-            "agent.core.executor.OracleTestExecutor.execute",
-            return_value=(0, "1 passed in 0.01s", ""),
-        ):
-            from agent import mcp_server as srv
-            result = srv._run_tests_impl(str(test_file))
-
-        assert result["exit_code"] == 0
-        assert result["failed"] == 0
-
-    def test_run_tests_fail(self, tmp_path):
+    def test_run_tests_fail(self):
         """Returns exit_code=1 without raising an exception."""
-        test_file = tmp_path / "test_bad.py"
-        test_file.write_text("def test_fail(): assert False")
-
-        with patch(
-            "agent.core.executor.OracleTestExecutor.execute",
-            return_value=(1, "", "AssertionError"),
-        ):
-            from agent import mcp_server as srv
-            result = srv._run_tests_impl(str(test_file))
-
-        assert result["exit_code"] == 1
-        assert isinstance(result, dict)
+        with tempfile.TemporaryDirectory() as tmp:
+            test_file = Path(tmp) / "test_bad.py"
+            test_file.write_text("def test_fail(): assert False")
+            with patch("agent.core.executor.OracleTestExecutor.execute",
+                       return_value=(1, "", "AssertionError")):
+                from agent import mcp_server as srv
+                result = srv._run_tests_impl(str(test_file))
+        self.assertEqual(result["exit_code"], 1)
+        self.assertIsInstance(result, dict)
 
 
 # ---------------------------------------------------------------------------
 # oracle__init_suite
 # ---------------------------------------------------------------------------
 
-class TestInitSuite:
-    def test_init_suite_creates_files(self, tmp_path):
-        """Returns framework name and list of created scaffold items."""
-        mock_scaffold_result = {
-            "created_files": ["playwright.config.ts"],
-            "created_dirs": ["tests/e2e"],
-            "skipped_files": [],
-        }
-        with patch(
-            "agent.core.scaffolder.Scaffolder.scaffold",
-            return_value=mock_scaffold_result,
-        ):
-            from agent import mcp_server as srv
-            result = srv._init_suite_impl("playwright", str(tmp_path))
+class TestInitSuite(unittest.TestCase):
 
-        assert result["framework"] == "playwright"
-        assert "playwright.config.ts" in result["files_created"]
-        assert "tests/e2e" in result["files_created"]
+    def test_init_suite_creates_files(self):
+        """Returns framework name and list of created scaffold items."""
+        with tempfile.TemporaryDirectory() as tmp:
+            mock_scaffold = {
+                "created_files": ["playwright.config.ts"],
+                "created_dirs": ["tests/e2e"],
+                "skipped_files": [],
+            }
+            with patch("agent.core.scaffolder.Scaffolder.scaffold", return_value=mock_scaffold):
+                from agent import mcp_server as srv
+                result = srv._init_suite_impl("playwright", tmp)
+        self.assertEqual(result["framework"], "playwright")
+        self.assertIn("playwright.config.ts", result["files_created"])
+        self.assertIn("tests/e2e", result["files_created"])
 
 
 # ---------------------------------------------------------------------------
 # oracle__migrate
 # ---------------------------------------------------------------------------
 
-class TestMigrate:
+class TestMigrate(unittest.TestCase):
+
     def _mock_ctx(self, is_harness=True):
         ctx = MagicMock()
         ctx.is_harness_project = is_harness
@@ -173,55 +164,50 @@ class TestMigrate:
         report.manual_followups = []
         return report
 
-    def test_migrate_dry_run(self, tmp_path):
+    def test_migrate_dry_run(self):
         """Dry-run returns plan with dry_run=true and no files_created."""
-        with (
-            patch("agent.core.migrator.HarnessMigrator.detect",
-                  return_value=self._mock_ctx()),
-            patch("agent.core.migrator.HarnessMigrator.migrate",
-                  return_value=self._mock_dry_report()),
-        ):
-            from agent import mcp_server as srv
-            result = srv._migrate_impl(str(tmp_path), apply=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("agent.core.migrator.HarnessMigrator.detect", return_value=self._mock_ctx()), \
+                 patch("agent.core.migrator.HarnessMigrator.migrate", return_value=self._mock_dry_report()):
+                from agent import mcp_server as srv
+                result = srv._migrate_impl(tmp, apply=False)
+        self.assertTrue(result["dry_run"])
+        self.assertEqual(result["files_created"], [])
 
-        assert result["dry_run"] is True
-        assert result["files_created"] == []
-
-    def test_migrate_apply(self, tmp_path):
+    def test_migrate_apply(self):
         """apply=True returns dry_run=false and populated files_created."""
-        with (
-            patch("agent.core.migrator.HarnessMigrator.detect",
-                  return_value=self._mock_ctx()),
-            patch("agent.core.migrator.HarnessMigrator.migrate",
-                  return_value=self._mock_apply_report()),
-        ):
-            from agent import mcp_server as srv
-            result = srv._migrate_impl(str(tmp_path), apply=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("agent.core.migrator.HarnessMigrator.detect", return_value=self._mock_ctx()), \
+                 patch("agent.core.migrator.HarnessMigrator.migrate", return_value=self._mock_apply_report()):
+                from agent import mcp_server as srv
+                result = srv._migrate_impl(tmp, apply=True)
+        self.assertFalse(result["dry_run"])
+        self.assertIn("playwright.config.ts", result["files_created"])
 
-        assert result["dry_run"] is False
-        assert "playwright.config.ts" in result["files_created"]
-
-    def test_migrate_no_harness(self, tmp_path):
+    def test_migrate_no_harness(self):
         """Returns error dict when no harness markers are found."""
-        with patch(
-            "agent.core.migrator.HarnessMigrator.detect",
-            return_value=self._mock_ctx(is_harness=False),
-        ):
-            from agent import mcp_server as srv
-            result = srv._migrate_impl(str(tmp_path), apply=False)
-
-        assert "error" in result
-        assert "no harness.config.json" in result["error"]
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("agent.core.migrator.HarnessMigrator.detect",
+                       return_value=self._mock_ctx(is_harness=False)):
+                from agent import mcp_server as srv
+                result = srv._migrate_impl(tmp, apply=False)
+        self.assertIn("error", result)
+        self.assertIn("no harness.config.json", result["error"])
 
 
 # ---------------------------------------------------------------------------
-# MCP error response (tool-level error does not raise Python exception)
+# MCP error response
 # ---------------------------------------------------------------------------
 
-class TestMcpErrorResponse:
+class TestMcpErrorResponse(unittest.TestCase):
+
     def test_mcp_server_tool_error_response(self):
         """analyze_file with missing file returns error dict, not an exception."""
         from agent import mcp_server as srv
         result = srv._analyze_file_impl("/does/not/exist.ts")
-        assert isinstance(result, dict)
-        assert "error" in result
+        self.assertIsInstance(result, dict)
+        self.assertIn("error", result)
+
+
+if __name__ == "__main__":
+    unittest.main()
