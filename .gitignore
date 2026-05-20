@@ -64,3 +64,4 @@ blob-report/
 # Claude Code — settings.json is tracked (shared hooks + MCP config)
 # settings.local.json is personal (extra allows, tokens) — never commit
 .claude/settings.local.json
+.claude/scheduled_tasks.lock

@@ -2,7 +2,7 @@
 project: oracle
 version: 1
 created: 2026-05-11
-updated: 2026-05-19
+updated: 2026-05-20
 ---
 
 # Roadmap
@@ -372,3 +372,19 @@ implementation begins. All 6 resolved.
   248 total passing.
 - **Blockers:** none
 - **Plan:** none
+
+## Ecosystem
+
+### Oracle Claude Code Plugin
+
+- **Status:** planned
+- **Spec:** [docs/specs/oracle-plugin.md](specs/oracle-plugin.md)
+- **Summary:** Oracle as a Claude Code plugin: FastMCP server exposing six
+  analysis and execution tools (`oracle__analyze_file`, `oracle__write_test_file`,
+  `oracle__run_tests`, `oracle__init_suite`, `oracle__list_frameworks`,
+  `oracle__migrate`), three slash-command skills (`oracle:generate`,
+  `oracle:init`, `oracle:migrate`), and three thin agents. Claude Code's session
+  handles test generation — no API key required for plugin users. Existing CLI
+  and GitHub Action unchanged.
+- **Blockers:** none
+- **Plan:** [docs/plans/oracle-plugin.md](plans/oracle-plugin.md)
