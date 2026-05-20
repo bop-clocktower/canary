@@ -163,6 +163,24 @@ made directly to `main` if the user has not indicated otherwise.
 
 ## Development Workflow
 
+### First-time clone setup
+
+Run once after cloning to activate the shared pre-commit hook:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook (`.githooks/pre-commit`) does two things automatically on every
+commit:
+
+- Runs `markdownlint` on staged `.md` files — catches MD040 and other
+  violations before they reach CI.
+- Re-runs `python3 scripts/security_ledger.py` whenever non-ledger files
+  are staged — keeps the security ledger fresh without a manual step.
+
+### Workflow steps
+
 1. **Requirement Analysis:** User provides natural language requirements.
 2. **Classification:** Oracle identifies the target testing framework and
    language using [agent/core/classifier.py][classifier].
