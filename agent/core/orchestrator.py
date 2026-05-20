@@ -14,7 +14,9 @@ from datetime import datetime
 from rich import print
 from rich.console import Console
 from agent.core.classifier import TestClassifier
+from agent.core.code_extractor import extract_code
 from agent.core.domain_scanner import DomainScanner
+from agent.core.fixture_scanner import FixtureScanner
 from agent.core.metadata_scanner import MetadataScanner
 from agent.core.pattern_matcher import PatternMatcher
 from agent.core.recommender import FrameworkRecommender
@@ -47,6 +49,7 @@ class OracleOrchestrator:
         self.metadata_scanner = MetadataScanner()
         self.pattern_matcher = PatternMatcher()
         self.domain_scanner = DomainScanner()
+        self.fixture_scanner = FixtureScanner()
         self.selector_healer = SelectorHealer()
         self.max_heal_attempts = max_heal_attempts
 
@@ -98,6 +101,9 @@ class OracleOrchestrator:
         # 5. Scan project domain knowledge
         domain = self.domain_scanner.scan(project_root)
 
+        # 5b. Scan test fixtures/helpers so the LLM imports real names.
+        fixtures = self.fixture_scanner.scan(project_root)
+
         # 6. Build generation prompt
         generation_prompt = self._build_prompt(
             user_prompt,
@@ -106,18 +112,36 @@ class OracleOrchestrator:
             metadata,
             patterns,
             domain,
+            fixtures,
         )
 
-        # 7. Generate test code
-        generated_code = generate_response(generation_prompt)
+        # 7. Generate test code; strip conversational prose / Markdown
+        #    fences some providers wrap around the actual code.
+        raw_response = generate_response(generation_prompt)
+        generated_code = extract_code(raw_response)
 
         # 8. Write file
         file_path = self._write_test_file(generated_code, framework, extension)
+
+        # Resolve which provider+model actually served the generation so
+        # downstream consumers (feedback URL, telemetry) can surface them.
+        # get_llm() was already instantiated by generate_response above;
+        # the try/except is for tests that mock generate_response without
+        # priming the singleton.
+        import os
+        from agent.llm import get_llm
+        provider_name = os.getenv("ORACLE_LLM_PROVIDER", "anthropic").lower()
+        try:
+            model_name = getattr(get_llm().provider, "model", "unknown")
+        except Exception:
+            model_name = "unknown"
 
         result = {
             "input": user_prompt,
             "test_type": classification.test_type,
             "framework": framework,
+            "provider": provider_name,
+            "model": model_name,
             "reasoning": recommendation["reason"],
             "output_file": str(file_path)
         }
@@ -277,7 +301,7 @@ Fix the code so it passes.
             return ""
         return "\n\n".join(snippets[:_CONTEXT_SNIPPETS])
 
-    def _build_prompt(self, user_prompt: str, test_type: str, framework: str, metadata=None, patterns=None, domain=None) -> str:
+    def _build_prompt(self, user_prompt: str, test_type: str, framework: str, metadata=None, patterns=None, domain=None, fixtures=None) -> str:
         """
         Constructs the framework-aware prompt for the LLM.
 
@@ -288,6 +312,9 @@ Fix the code so it passes.
             metadata: Optional ProjectMetadata from the scanner.
             patterns: Optional PatternProfile from the pattern matcher.
             domain: Optional DomainContext from the domain scanner.
+            fixtures: Optional FixtureSymbols from the fixture scanner.
+                Adds a "PROJECT SYMBOLS" section so the LLM imports real
+                identifiers instead of inventing plausible-looking ones.
 
         Returns:
             A formatted prompt string for the LLM.
@@ -341,6 +368,21 @@ Fix the code so it passes.
 
         context = "\n".join(context_lines)
 
+        # Project Symbols: exact, AST-discovered names exported by the
+        # project's test fixtures/helpers. Without this, the LLM tends
+        # to invent plausible-looking but wrong identifiers.
+        symbols_section = ""
+        if fixtures and not fixtures.is_empty:
+            lines = ["--- PROJECT SYMBOLS (import these EXACTLY) ---"]
+            for module_path, names in fixtures.by_module.items():
+                lines.append(f"  {module_path}: {', '.join(names)}")
+            lines.append(
+                "Use the exact identifiers and module paths above. "
+                "Do not invent helper names or fixture parameter names. "
+                "Do not import anything that is not used."
+            )
+            symbols_section = "\n" + "\n".join(lines) + "\n"
+
         return f"""
 You are Oracle, a senior test automation engineer.
 
@@ -351,7 +393,7 @@ Generate high-quality {framework} tests for the following requirement:
 
 --- CONTEXT ---
 {context}
-
+{symbols_section}
 --- RULES ---
 - Follow best practices for {framework}
 - Write clean, maintainable tests
