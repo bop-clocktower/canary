@@ -220,6 +220,16 @@ class TestExtractJavaScript(unittest.TestCase):
         ctx = self.scanner.scan(str(self.root))
         self.assertIn("formatDate", ctx.functions)
 
+    def test_extracts_export_const_with_dotted_type_annotation(self):
+        self._write("Login.tsx", "export const Login: React.FC<Props> = () => <form/>;\n")
+        ctx = self.scanner.scan(str(self.root))
+        self.assertIn("Login", ctx.components)
+
+    def test_extracts_export_const_with_zod_type_annotation(self):
+        self._write("schema.ts", "export const userSchema: z.ZodObject<UserShape> = z.object({});\n")
+        ctx = self.scanner.scan(str(self.root))
+        self.assertIn("userSchema", ctx.functions)
+
     def test_extracts_express_routes(self):
         self._write("routes.ts", "router.get('/users', handler);\nrouter.post('/users', create);\n")
         ctx = self.scanner.scan(str(self.root))

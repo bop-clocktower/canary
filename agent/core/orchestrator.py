@@ -54,7 +54,7 @@ class OracleOrchestrator:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     # @perf-critical
-    def run(self, user_prompt: str, execute: bool = False) -> dict:
+    def run(self, user_prompt: str, execute: bool = False, project_root: str = ".") -> dict:
         """
         Executes the full Oracle pipeline for a given prompt.
 
@@ -68,8 +68,8 @@ class OracleOrchestrator:
         """
         from agent.core.executor import OracleTestExecutor
 
-        # 1. Scan project metadata from cwd
-        metadata = self.metadata_scanner.scan()
+        # 1. Scan project metadata
+        metadata = self.metadata_scanner.scan(project_root)
 
         # 2. Classify intent
         classification = self.classifier.classify(user_prompt)
@@ -90,12 +90,13 @@ class OracleOrchestrator:
 
         # 4. Scan existing test patterns
         patterns = self.pattern_matcher.scan(
+            project_root=project_root,
             framework=framework,
             test_type=classification.test_type,
         )
 
         # 5. Scan project domain knowledge
-        domain = self.domain_scanner.scan()
+        domain = self.domain_scanner.scan(project_root)
 
         # 6. Build generation prompt
         generation_prompt = self._build_prompt(

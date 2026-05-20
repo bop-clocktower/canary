@@ -11,13 +11,18 @@ from agent.core.orchestrator import OracleOrchestrator
 class TestOracleOrchestrator(unittest.TestCase):
 
     def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.project_root = self._tmp.name
         self.orchestrator = OracleOrchestrator()
+
+    def tearDown(self):
+        self._tmp.cleanup()
 
     @patch('agent.core.orchestrator.generate_response')
     def test_run_e2e_ui(self, mock_generate):
         mock_generate.return_value = "import { test } from '@playwright/test';\ntest('demo', () => {});"
 
-        result = self.orchestrator.run("Create a playwright test for login")
+        result = self.orchestrator.run("Create a playwright test for login", project_root=self.project_root)
 
         self.assertEqual(result['test_type'], 'e2e_ui')
         self.assertEqual(result['framework'], 'playwright')
@@ -32,7 +37,7 @@ class TestOracleOrchestrator(unittest.TestCase):
         mock_generate.return_value = "import { test } from '@playwright/test';\ntest('demo', () => {});"
         mock_execute.return_value = (0, "Success", "")
 
-        result = self.orchestrator.run("Create a playwright test for login", execute=True)
+        result = self.orchestrator.run("Create a playwright test for login", execute=True, project_root=self.project_root)
 
         self.assertIn('execution', result)
         self.assertEqual(result['execution']['exit_code'], 0)
@@ -44,7 +49,7 @@ class TestOracleOrchestrator(unittest.TestCase):
     def test_run_performance(self, mock_generate):
         mock_generate.return_value = "import http from 'k6/http';\nexport default function() {}"
 
-        result = self.orchestrator.run("Create a k6 load test for /api/data")
+        result = self.orchestrator.run("Create a k6 load test for /api/data", project_root=self.project_root)
 
         self.assertEqual(result['test_type'], 'performance')
         self.assertEqual(result['framework'], 'k6')
@@ -57,7 +62,7 @@ class TestOracleOrchestrator(unittest.TestCase):
     def test_run_api_routes_to_pytest(self, mock_generate):
         mock_generate.return_value = "def test_api(): assert True"
 
-        result = self.orchestrator.run("Write tests for the /users API endpoint")
+        result = self.orchestrator.run("Write tests for the /users API endpoint", project_root=self.project_root)
 
         self.assertEqual(result['test_type'], 'api')
         self.assertEqual(result['framework'], 'pytest')
@@ -69,6 +74,13 @@ class TestOracleOrchestrator(unittest.TestCase):
 
 class TestSelfHealing(unittest.TestCase):
 
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.project_root = self._tmp.name
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
     @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_heals_on_first_retry(self, mock_generate, mock_execute):
@@ -78,7 +90,7 @@ class TestSelfHealing(unittest.TestCase):
         ]
         mock_execute.side_effect = [(1, "", "Error: fail"), (0, "pass", "")]
 
-        result = OracleOrchestrator().run("Create a playwright test for login", execute=True)
+        result = OracleOrchestrator().run("Create a playwright test for login", execute=True, project_root=self.project_root)
 
         self.assertTrue(result['execution']['fixed'])
         self.assertEqual(result['execution']['exit_code'], 0)
@@ -95,7 +107,7 @@ class TestSelfHealing(unittest.TestCase):
         # initial run + 2 retries
         mock_execute.side_effect = [(1, "", "SyntaxError")] * 3
 
-        result = orchestrator.run("Create a playwright test for login", execute=True)
+        result = orchestrator.run("Create a playwright test for login", execute=True, project_root=self.project_root)
 
         self.assertFalse(result['execution']['fixed'])
         self.assertNotEqual(result['execution']['exit_code'], 0)
@@ -114,7 +126,7 @@ class TestSelfHealing(unittest.TestCase):
             (0, "ok", ""),
         ]
 
-        result = orchestrator.run("Create a playwright test for login", execute=True)
+        result = orchestrator.run("Create a playwright test for login", execute=True, project_root=self.project_root)
 
         self.assertTrue(result['execution']['fixed'])
         self.assertEqual(result['execution']['exit_code'], 0)
@@ -127,7 +139,7 @@ class TestSelfHealing(unittest.TestCase):
         mock_generate.return_value = "import { test } from '@playwright/test';\ntest('ok', () => {});"
         mock_execute.return_value = (0, "pass", "")
 
-        result = OracleOrchestrator().run("Create a playwright test", execute=True)
+        result = OracleOrchestrator().run("Create a playwright test", execute=True, project_root=self.project_root)
 
         self.assertFalse(result['execution']['fixed'])
         self.assertEqual(result['execution']['attempts'], 0)
@@ -140,7 +152,7 @@ class TestSelfHealing(unittest.TestCase):
         mock_generate.return_value = "bad code"
         mock_execute.return_value = (1, "", "fail")
 
-        result = orchestrator.run("Create a playwright test for login", execute=True)
+        result = orchestrator.run("Create a playwright test for login", execute=True, project_root=self.project_root)
 
         # Zero attempts allowed — no retries, still reports failure
         self.assertFalse(result['execution']['fixed'])
@@ -224,6 +236,13 @@ class TestSearchErrorContext(unittest.TestCase):
 class TestSelectorHealRouting(unittest.TestCase):
     """Orchestrator routes selector failures to SelectorHealer, others to _attempt_fix."""
 
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.project_root = self._tmp.name
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
     @patch('agent.core.executor.OracleTestExecutor.execute')
     @patch('agent.core.orchestrator.generate_response')
     def test_selector_failure_calls_selector_healer(self, mock_generate, mock_execute):
@@ -238,7 +257,7 @@ class TestSelectorHealRouting(unittest.TestCase):
         orchestrator = OracleOrchestrator(max_heal_attempts=1)
         with patch.object(orchestrator.selector_healer, 'build_heal_prompt',
                           wraps=orchestrator.selector_healer.build_heal_prompt) as mock_prompt:
-            result = orchestrator.run("Click the submit button", execute=True)
+            result = orchestrator.run("Click the submit button", execute=True, project_root=self.project_root)
             mock_prompt.assert_called_once()
         self.assertTrue(result['execution']['fixed'])
         Path(result['output_file']).unlink(missing_ok=True)
@@ -256,7 +275,7 @@ class TestSelectorHealRouting(unittest.TestCase):
         ]
         orchestrator = OracleOrchestrator(max_heal_attempts=1)
         with patch.object(orchestrator.selector_healer, 'build_heal_prompt') as mock_prompt:
-            result = orchestrator.run("Check the cart total", execute=True)
+            result = orchestrator.run("Check the cart total", execute=True, project_root=self.project_root)
             mock_prompt.assert_not_called()
         self.assertTrue(result['execution']['fixed'])
         Path(result['output_file']).unlink(missing_ok=True)
@@ -281,7 +300,7 @@ class TestSelectorHealRouting(unittest.TestCase):
             return original(**kwargs)
 
         with patch.object(orchestrator.selector_healer, 'build_heal_prompt', side_effect=capturing):
-            result = orchestrator.run("Navigate using the menu", execute=True)
+            result = orchestrator.run("Navigate using the menu", execute=True, project_root=self.project_root)
 
         self.assertEqual(captured.get('failing_selector'), '.nav-menu')
         Path(result['output_file']).unlink(missing_ok=True)
