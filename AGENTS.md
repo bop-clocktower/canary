@@ -88,6 +88,22 @@ docs/branching-convention
   — Internal registry for managing supported testing frameworks and their
   capabilities.
 
+### Claude Code Plugin (`.claude-plugin/`)
+
+Oracle is also loadable as a Claude Code plugin for in-editor test
+generation via slash commands.
+
+- **MCP server:** [agent/mcp_server.py](agent/mcp_server.py) — FastMCP
+  server exposing six tools to Claude Code:
+  `oracle__analyze_file`, `oracle__write_test_file`, `oracle__run_tests`,
+  `oracle__init_suite`, `oracle__list_frameworks`, `oracle__migrate`.
+- **Manifest:** [.claude-plugin/plugin.json](.claude-plugin/plugin.json)
+- **Agents:** `.claude-plugin/agents/` — three agent definitions:
+  `oracle-test-generator`, `oracle-initializer`, `oracle-migrator`.
+- **Skills:** `agents/skills/` — three slash commands:
+  `/oracle:generate`, `/oracle:init`, `/oracle:migrate`.
+- **Activate:** load the repo root as a Claude Code plugin.
+
 ### LLM Layer (`agent/llm/`)
 
 - **Client:** [agent/llm/client.py][llm-client] — High-level LLM
@@ -146,6 +162,24 @@ made directly to `main` if the user has not indicated otherwise.
 ---
 
 ## Development Workflow
+
+### First-time clone setup
+
+Run once after cloning to activate the shared pre-commit hook:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook (`.githooks/pre-commit`) does two things automatically on every
+commit:
+
+- Runs `markdownlint` on staged `.md` files — catches MD040 and other
+  violations before they reach CI.
+- Re-runs `python3 scripts/security_ledger.py` whenever non-ledger files
+  are staged — keeps the security ledger fresh without a manual step.
+
+### Workflow steps
 
 1. **Requirement Analysis:** User provides natural language requirements.
 2. **Classification:** Oracle identifies the target testing framework and

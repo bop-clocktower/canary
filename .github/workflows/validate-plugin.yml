@@ -1,0 +1,44 @@
+name: Validate Plugin Manifest
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.claude-plugin/plugin.json'
+      - '.claude-plugin/schemas/plugin.schema.json'
+      - '.github/workflows/validate-plugin.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.claude-plugin/plugin.json'
+      - '.claude-plugin/schemas/plugin.schema.json'
+      - '.github/workflows/validate-plugin.yml'
+
+jobs:
+  validate:
+    name: Validate plugin.json against schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install jsonschema
+        run: pip install jsonschema==4.23.0
+
+      - name: Validate plugin manifest
+        run: |
+          python3 - <<'PYEOF'
+          import json, jsonschema, sys
+          schema   = json.load(open('.claude-plugin/schemas/plugin.schema.json'))
+          manifest = json.load(open('.claude-plugin/plugin.json'))
+          try:
+              jsonschema.validate(manifest, schema)
+              print("plugin.json is valid")
+          except jsonschema.ValidationError as e:
+              print(f"Validation FAILED: {e.message}", file=sys.stderr)
+              sys.exit(1)
+          PYEOF

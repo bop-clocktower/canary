@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Pre-commit hook — runs automatically before every commit.
+# Install once per clone: git config core.hooksPath .githooks
+set -euo pipefail
+
+# 1. Markdownlint — check staged .md files only
+STAGED_MD=$(git diff --cached --name-only --diff-filter=ACM | grep '\.md$' || true)
+if [ -n "$STAGED_MD" ]; then
+  if command -v npx &>/dev/null; then
+    echo "[pre-commit] markdownlint: checking staged markdown files..."
+    echo "$STAGED_MD" | xargs npx --no markdownlint-cli
+  fi
+fi
+
+# 2. Security ledger — regenerate if source files changed, then stage
+LEDGER_SOURCES=$(git diff --cached --name-only | grep -Ev '^(\.harness/security/timeline\.json|docs/SECURITY_LEDGER\.md)$' || true)
+if [ -n "$LEDGER_SOURCES" ] && [ -f "scripts/security_ledger.py" ]; then
+  echo "[pre-commit] refreshing security ledger..."
+  python3 scripts/security_ledger.py 2>/dev/null || true
+  git add .harness/security/timeline.json docs/SECURITY_LEDGER.md 2>/dev/null || true
+fi
