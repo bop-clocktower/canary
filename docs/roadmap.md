@@ -310,6 +310,52 @@ implementation begins. All 6 resolved.
 - **Blockers:** none
 - **Plan:** [docs/plans/onboarding.md](plans/onboarding.md)
 
+## Future Work
+
+### Multi-Provider Config
+
+- **Status:** planned
+- **Spec:** none
+- **Summary:** Allow switching the active provider without re-running full
+  setup. `oracle config set provider <name>` updates `.oracle/config.json`;
+  `oracle config show` prints current config. Validates the new provider's
+  env var is set before writing. Out of scope for the original onboarding
+  feature (one active provider per project), now a first-class follow-on.
+- **Blockers:** none
+- **Plan:** none
+
+### `oracle migrate` Improvements
+
+- **Status:** planned
+- **Spec:** none
+- **Summary:** Extend the `oracle migrate` command with better framework
+  detection, richer dry-run output, and support for additional harness
+  config shapes. Specific improvements TBD during planning.
+- **Blockers:** none
+- **Plan:** none
+
+### Test Quality Scoring
+
+- **Status:** planned
+- **Spec:** none
+- **Summary:** Post-generation analysis of Oracle-generated tests. Score
+  each test file on coverage breadth, assertion density, and flakiness
+  signals (timeouts, sleeps, global state). Surface the score in
+  `oracle generate` output and the GitHub Action PR comment.
+- **Blockers:** none
+- **Plan:** none
+
+### Onboarding `--full` Polish
+
+- **Status:** planned
+- **Spec:** none
+- **Summary:** Improve the `oracle setup --full` experience. After sample
+  generation, display the generated test inline, explain what it tests,
+  and offer to run it immediately. Turns a raw file dump into a guided
+  "hello world" moment.
+- **Blockers:** none
+- **Plan:** none
+
 ### Migrate harness:initialize-test-suite Repos to `oracle init`
 
 - **Status:** done
