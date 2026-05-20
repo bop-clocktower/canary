@@ -39,6 +39,7 @@ jobs:
         run: python3 scripts/security_ledger.py
 
       - name: Commit ledger if changed
+        if: github.event.pull_request.head.repo.fork != true
         run: |
           if ! git diff --exit-code -- \
               .harness/security/timeline.json \
