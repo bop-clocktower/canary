@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Claude Code Plugin Manifest",
+  "type": "object",
+  "required": ["name", "version", "description", "mcpServers"],
+  "properties": {
+    "$schema":     { "type": "string" },
+    "name":        { "type": "string", "minLength": 1 },
+    "version":     { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "description": { "type": "string", "minLength": 1 },
+    "skills":      { "type": "array",  "items": { "type": "string" } },
+    "agents":      { "type": "string" },
+    "mcpServers": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["command", "args"],
+        "properties": {
+          "command": { "type": "string" },
+          "args":    { "type": "array", "items": { "type": "string" } },
+          "cwd":     { "type": "string" }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

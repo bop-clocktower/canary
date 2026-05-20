@@ -88,6 +88,22 @@ docs/branching-convention
   — Internal registry for managing supported testing frameworks and their
   capabilities.
 
+### Claude Code Plugin (`.claude-plugin/`)
+
+Oracle is also loadable as a Claude Code plugin for in-editor test
+generation via slash commands.
+
+- **MCP server:** [agent/mcp_server.py](agent/mcp_server.py) — FastMCP
+  server exposing six tools to Claude Code:
+  `oracle__analyze_file`, `oracle__write_test_file`, `oracle__run_tests`,
+  `oracle__init_suite`, `oracle__list_frameworks`, `oracle__migrate`.
+- **Manifest:** [.claude-plugin/plugin.json](.claude-plugin/plugin.json)
+- **Agents:** `.claude-plugin/agents/` — three agent definitions:
+  `oracle-test-generator`, `oracle-initializer`, `oracle-migrator`.
+- **Skills:** `agents/skills/` — three slash commands:
+  `/oracle:generate`, `/oracle:init`, `/oracle:migrate`.
+- **Activate:** load the repo root as a Claude Code plugin.
+
 ### LLM Layer (`agent/llm/`)
 
 - **Client:** [agent/llm/client.py][llm-client] — High-level LLM
