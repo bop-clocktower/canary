@@ -377,14 +377,15 @@ implementation begins. All 6 resolved.
 
 ### Oracle Claude Code Plugin
 
-- **Status:** planned
+- **Status:** done
 - **Spec:** [docs/specs/oracle-plugin.md](specs/oracle-plugin.md)
-- **Summary:** Oracle as a Claude Code plugin: FastMCP server exposing six
-  analysis and execution tools (`oracle__analyze_file`, `oracle__write_test_file`,
-  `oracle__run_tests`, `oracle__init_suite`, `oracle__list_frameworks`,
-  `oracle__migrate`), three slash-command skills (`oracle:generate`,
-  `oracle:init`, `oracle:migrate`), and three thin agents. Claude Code's session
-  handles test generation — no API key required for plugin users. Existing CLI
-  and GitHub Action unchanged.
-- **Blockers:** none
 - **Plan:** [docs/plans/oracle-plugin.md](plans/oracle-plugin.md)
+- **PR:** #78
+- **Summary:** Oracle as a Claude Code plugin: FastMCP server
+  (`agent/mcp_server.py`) exposing six tools (`oracle__analyze_file`,
+  `oracle__write_test_file`, `oracle__run_tests`, `oracle__init_suite`,
+  `oracle__list_frameworks`, `oracle__migrate`), three slash-command skills
+  (`/oracle:generate`, `/oracle:init`, `/oracle:migrate`), and three agent
+  definitions. Plugin manifest at `.claude-plugin/plugin.json`. 12 unit tests,
+  CI schema validation via `validate-plugin.yml`. Existing CLI and GitHub
+  Action unchanged.
