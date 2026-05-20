@@ -110,7 +110,7 @@ runs:
           RUN_FLAG="--run"
         fi
         ORACLE_STDERR=$(mktemp)
-        RESULT=$(oracle generate "$PROMPT" --no-setup --json $RUN_FLAG 2>"$ORACLE_STDERR") || {
+        RESULT=$(oracle --no-setup generate "$PROMPT" --json $RUN_FLAG 2>"$ORACLE_STDERR") || {
           echo "::warning::oracle generate failed — stderr below"
           cat "$ORACLE_STDERR" >&2
           RESULT=""
