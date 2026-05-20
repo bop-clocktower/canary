@@ -1,6 +1,7 @@
 # Plan: Oracle Claude Code Plugin
 
-**Date:** 2026-05-19 | **Spec:** docs/specs/oracle-plugin.md | **Tasks:** 14 | **Time:** ~50 min | **Integration Tier:** large
+**Date:** 2026-05-19 | **Spec:** docs/specs/oracle-plugin.md |
+**Tasks:** 14 | **Time:** ~50 min | **Integration Tier:** large
 
 ---
 
@@ -70,7 +71,7 @@ touching the existing CLI, GitHub Action, or IDE plugins.
 
 ## File Map
 
-```
+```text
 CREATE agent/mcp_server.py
 CREATE .claude-plugin/plugin.json
 CREATE .claude-plugin/agents/oracle-test-generator.md
@@ -127,7 +128,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 5. Commit:
 
-   ```
+   ```text
    chore(deps): add fastmcp>=2.0 to pyproject.toml
    ```
 
@@ -232,7 +233,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 4. Commit:
 
-   ```
+   ```text
    test(mcp): add failing tests for analyze_file and list_frameworks
    ```
 
@@ -436,7 +437,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
    Expected output:
 
-   ```
+   ```text
    tests/unit/test_mcp_server.py::TestAnalyzeFile::test_analyze_file_returns_framework PASSED
    tests/unit/test_mcp_server.py::TestAnalyzeFile::test_analyze_file_missing_file PASSED
    tests/unit/test_mcp_server.py::TestListFrameworks::test_list_frameworks_returns_all PASSED
@@ -447,7 +448,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 4. Commit:
 
-   ```
+   ```text
    feat(mcp): implement oracle MCP server with analyze_file and list_frameworks
    ```
 
@@ -535,13 +536,13 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 4. Commit:
 
-   ```
+   ```text
    test(mcp): add tests for write_test_file and run_tests
    ```
 
 ---
 
-### Task 5: Write failing tests for init_suite, migrate dry-run, migrate apply, and error response
+### Task 5: Write failing tests for init_suite, migrate, and error
 
 **Depends on:** Task 4 | **Files:** `tests/unit/test_mcp_server.py`
 
@@ -667,7 +668,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 4. Commit:
 
-   ```
+   ```text
    test(mcp): complete unit-test suite — 10 tests, all green
    ```
 
@@ -715,7 +716,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 5. Commit:
 
-   ```
+   ```text
    feat(plugin): add .claude-plugin/plugin.json manifest
    ```
 
@@ -887,7 +888,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 7. Commit:
 
-   ```
+   ```text
    feat(plugin): add three agent definition files
    ```
 
@@ -900,7 +901,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 1. Create `agents/skills/oracle:generate.md`:
 
-   ```markdown
+   ````markdown
    ---
    name: oracle:generate
    description: Generate a framework-appropriate test for the active editor file using Oracle's analysis pipeline.
@@ -948,11 +949,11 @@ MODIFY pyproject.toml  (add fastmcp dependency)
    - `oracle__run_tests` returns `exit_code == 0` on the final attempt.
    - If tests could not be made to pass after 3 attempts, the agent
      reports the last failure output and the test file path.
-   ```
+   ````
 
 2. Create `agents/skills/oracle:init.md`:
 
-   ```markdown
+   ````markdown
    ---
    name: oracle:init
    description: Scaffold a new test suite for a chosen framework using Oracle's initializer agent.
@@ -990,11 +991,11 @@ MODIFY pyproject.toml  (add fastmcp dependency)
    - `oracle__init_suite` returns without error.
    - The response lists at least one created file or directory.
    - The user is reminded to install framework dependencies if applicable.
-   ```
+   ````
 
 3. Create `agents/skills/oracle:migrate.md`:
 
-   ```markdown
+   ````markdown
    ---
    name: oracle:migrate
    description: Migrate a harness-scaffolded test suite to Oracle's layout with a confirm-before-apply flow.
@@ -1032,7 +1033,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
    - User explicitly confirmed before apply was called.
    - Final response lists all created files and required manual follow-ups.
    - If no harness project is detected, the agent surfaces the error and stops.
-   ```
+   ````
 
 4. Verify all three skill files exist:
 
@@ -1055,7 +1056,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 6. Commit:
 
-   ```
+   ```text
    feat(plugin): add oracle:generate, oracle:init, oracle:migrate skill files
    ```
 
@@ -1124,7 +1125,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 5. Commit:
 
-   ```
+   ```text
    feat(plugin): vendor plugin JSON Schema for offline CI validation
    ```
 
@@ -1197,7 +1198,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 4. Commit:
 
-   ```
+   ```text
    ci: add validate-plugin.yml — JSON Schema validation of plugin manifest
    ```
 
@@ -1218,7 +1219,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
    Expected: server starts and prints something like:
 
-   ```
+   ```text
    Starting Oracle MCP server...
    ```
 
@@ -1246,7 +1247,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
    Expected:
 
-   ```
+   ```text
    Registered tools: ['oracle__analyze_file', 'oracle__write_test_file', ...]
    All 6 tools present
    ```
@@ -1289,7 +1290,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 4. Commit any fixes needed:
 
-   ```
+   ```text
    fix(mcp): resolve regression in <test_name>
    ```
 
@@ -1328,7 +1329,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 5. Commit:
 
-   ```
+   ```text
    docs(agents): document Oracle Claude Code Plugin capabilities in AGENTS.md
    ```
 
@@ -1404,7 +1405,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 6. Commit:
 
-   ```
+   ```text
    chore(plugin): final validation pass — all deliverables present and tests green
    ```
 
@@ -1414,27 +1415,27 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 | Task | What it delivers | Est. time |
 | --- | --- | --- |
-| 1  | `fastmcp` dependency in `pyproject.toml`           | 2 min |
-| 2  | Failing tests: `analyze_file`, `list_frameworks`   | 3 min |
-| 3  | `agent/mcp_server.py` — all 6 tools implemented   | 5 min |
-| 4  | Failing tests: `write_test_file`, `run_tests`       | 3 min |
-| 5  | Failing tests: `init_suite`, `migrate`, error case  | 4 min |
-| 6  | `.claude-plugin/plugin.json` manifest              | 2 min |
-| 7  | Three agent definition markdown files              | 4 min |
-| 8  | Three skill markdown files                         | 4 min |
-| 9  | Vendored plugin JSON Schema                        | 3 min |
-| 10 | CI workflow: `validate-plugin.yml`                 | 3 min |
-| 11 | [checkpoint] MCP server smoke test                 | 4 min |
+| 1 | `fastmcp` dependency in `pyproject.toml` | 2 min |
+| 2 | Failing tests: `analyze_file`, `list_frameworks` | 3 min |
+| 3 | `agent/mcp_server.py` — all 6 tools implemented | 5 min |
+| 4 | Failing tests: `write_test_file`, `run_tests` | 3 min |
+| 5 | Failing tests: `init_suite`, `migrate`, error case | 4 min |
+| 6 | `.claude-plugin/plugin.json` manifest | 2 min |
+| 7 | Three agent definition markdown files | 4 min |
+| 8 | Three skill markdown files | 4 min |
+| 9 | Vendored plugin JSON Schema | 3 min |
+| 10 | CI workflow: `validate-plugin.yml` | 3 min |
+| 11 | [checkpoint] MCP server smoke test | 4 min |
 | 12 | Full regression — confirm no existing tests broken | 3 min |
-| 13 | AGENTS.md integration documentation                | 3 min |
-| 14 | Final validation pass                              | 3 min |
-| **Total** |                                             | **~46 min** |
+| 13 | AGENTS.md integration documentation | 3 min |
+| 14 | Final validation pass | 3 min |
+| **Total** | | **~46 min** |
 
 ---
 
 ## Dependency Order
 
-```
+```text
 Task 1 (pyproject)
   └── Task 2 (failing tests: analyze, list)
         └── Task 3 (mcp_server.py impl)
