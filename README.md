@@ -15,14 +15,20 @@ language requirements into high-quality, framework-aware test code.
 
 ## 🛠 Installation
 
-### CLI
+### pipx (recommended)
 
 ```bash
-# Clone the repository
+pipx install git+https://github.com/bri-stevenski/oracle-test-ai-agent@v0.2.0
+```
+
+This installs the `oracle` binary globally without polluting your project
+virtualenv. Upgrade by re-running with `@<new-tag>`.
+
+### From source
+
+```bash
 git clone https://github.com/bri-stevenski/oracle-test-ai-agent.git
 cd oracle-test-ai-agent
-
-# Install in editable mode
 pip install -e .
 ```
 

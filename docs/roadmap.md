@@ -375,6 +375,20 @@ implementation begins. All 6 resolved.
 
 ## Ecosystem
 
+### Skill Discovery and pipx Distribution
+
+- **Status:** done
+- **Spec:** [docs/specs/skill-discovery.md](specs/skill-discovery.md)
+- **PR:** #81
+- **Summary:** Downstream overlay repositories can extend Oracle with zero
+  application code — just `.oracle/skills/<name>/SKILL.md` directories.
+  `SkillRegistry` discovers bundled skills (flat `oracle:*.md` slash commands +
+  nested harness `claude-code/<name>/SKILL.md`) and local overlays, walking from
+  CWD up to the git root. Local skills override bundled skills of the same name.
+  `oracle skills list [--verbose]` surfaces all discoverable skills. Package
+  renamed to `oracle-test-ai` (v0.2.0); `pipx install git+...@v0.2.0` is the
+  documented install path. 17 new tests; 294 total passing.
+
 ### Oracle Claude Code Plugin
 
 - **Status:** done
