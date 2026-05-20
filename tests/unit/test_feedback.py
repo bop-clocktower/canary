@@ -1,7 +1,5 @@
 """Tests for agent.core.feedback."""
 
-import importlib
-
 import agent.core.feedback as fb
 
 
@@ -32,12 +30,9 @@ def test_build_issue_url_truncates_long_prompts():
 
 
 def test_build_issue_url_uses_env_override(monkeypatch):
-    monkeypatch.setenv("ORACLE_FEEDBACK_REPO", "team/sink")
-    importlib.reload(fb)
+    monkeypatch.setattr(fb, "FEEDBACK_REPO", "team/sink")
     url = fb.build_issue_url(_payload())
     assert "team/sink" in url
-    monkeypatch.delenv("ORACLE_FEEDBACK_REPO")
-    importlib.reload(fb)
 
 
 def test_record_and_load_last_generation(tmp_path, monkeypatch):

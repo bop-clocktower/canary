@@ -7,6 +7,7 @@ This module coordinates the entire test generation pipeline, including
 classification, recommendation, generation, file management, and self-healing.
 """
 
+import os
 import re
 from pathlib import Path
 from datetime import datetime
@@ -126,15 +127,8 @@ class OracleOrchestrator:
         # Resolve which provider+model actually served the generation so
         # downstream consumers (feedback URL, telemetry) can surface them.
         # get_llm() was already instantiated by generate_response above;
-        # the try/except is for tests that mock generate_response without
-        # priming the singleton.
-        import os
-        from agent.llm import get_llm
         provider_name = os.getenv("ORACLE_LLM_PROVIDER", "anthropic").lower()
-        try:
-            model_name = getattr(get_llm().provider, "model", "unknown")
-        except Exception:
-            model_name = "unknown"
+        model_name = os.getenv("ORACLE_LLM_MODEL", "unknown")
 
         result = {
             "input": user_prompt,

@@ -58,7 +58,8 @@ _TS_DECL_RE = re.compile(
 # TS/JS: `export { foo, bar as baz }`.
 _TS_NAMED_RE = re.compile(r"^\s*export\s*\{([^}]+)\}", re.MULTILINE)
 
-# Python: top-level `def foo` / `class Bar` (skip dunder/private).
+# Python: top-level `def foo` / `class Bar`. Private names excluded by the
+# [A-Za-z] first-char anchor — names starting with `_` cannot match.
 _PY_DECL_RE = re.compile(
     r"^(?:def|class)\s+([A-Za-z][\w]*)",
     re.MULTILINE,
@@ -167,8 +168,6 @@ def _extract_python(text: str) -> List[str]:
     seen_set: set = set()
     for m in _PY_DECL_RE.finditer(text):
         name = m.group(1)
-        if name.startswith("_"):
-            continue
         if name in seen_set:
             continue
         seen_set.add(name)

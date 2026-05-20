@@ -13,6 +13,8 @@ import sys as _sys
 from typing import Optional
 import typer
 from rich import print
+from rich.console import Console
+from agent.core.feedback import FeedbackPayload, build_issue_url, record_last_generation
 
 app = typer.Typer()
 
@@ -114,12 +116,6 @@ def generate(
     orchestrator = OracleOrchestrator()
     result = orchestrator.run(prompt, execute=run_test)
 
-    from agent.core.feedback import (
-        FeedbackPayload,
-        build_issue_url,
-        record_last_generation,
-    )
-
     feedback_payload = FeedbackPayload(
         prompt=prompt,
         test_type=result["test_type"],
@@ -187,9 +183,7 @@ def generate(
             stdout_preview = exec_res["stdout"][:500] + ("..." if len(exec_res["stdout"]) > 500 else "")
             print(f"[dim]Standard Output:[/dim]\n{stdout_preview}")
 
-    from rich.console import Console
-    _url_console = Console(soft_wrap=True)
-    _url_console.print(
+    Console(soft_wrap=True).print(
         "\n[dim]💬 Report feedback (public link — review before submitting): "
         f"{feedback_url}[/dim]"
     )
