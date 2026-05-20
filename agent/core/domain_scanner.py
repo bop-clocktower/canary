@@ -181,7 +181,7 @@ class DomainScanner:
 
         # export const foo = / export const Foo =
         for m in re.finditer(
-            r"\bexport\s+const\s+([A-Za-z]\w*)\s*(?::\s*\w[\w<>, ]*?)?\s*=", text
+            r"\bexport\s+const\s+([A-Za-z]\w*)\s*(?::[^=]+)?\s*=", text
         ):
             name = m.group(1)
             if name[0].isupper():
