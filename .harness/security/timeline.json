@@ -672,6 +672,37 @@
       "findingIds": [
         "f648dc252b6f0cc1"
       ]
+    },
+    {
+      "capturedAt": "2026-05-20T23:59:40.197Z",
+      "commitHash": "f1b2b23fc63fe2a26ec4e4a508e17f795e2fcdb0",
+      "securityScore": 100,
+      "totalFindings": 1,
+      "bySeverity": {
+        "error": 0,
+        "warning": 0,
+        "info": 1
+      },
+      "byCategory": {
+        "network": {
+          "findingCount": 1,
+          "errorCount": 0,
+          "warningCount": 0,
+          "infoCount": 1
+        }
+      },
+      "supplyChain": {
+        "critical": 0,
+        "high": 0,
+        "moderate": 0,
+        "low": 0,
+        "info": 0,
+        "total": 0
+      },
+      "suppressionCount": 0,
+      "findingIds": [
+        "f648dc252b6f0cc1"
+      ]
     }
   ],
   "findingLifecycles": [

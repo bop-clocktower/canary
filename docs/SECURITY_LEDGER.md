@@ -6,8 +6,8 @@ to refresh.
 
 ## Latest Snapshot
 
-- **Captured:** 2026-05-20T21:01:34.229Z
-- **Commit:** `d8bcc3904260`
+- **Captured:** 2026-05-20T23:59:40.197Z
+- **Commit:** `f1b2b23fc63f`
 - **Score:** 100
 - **Findings:** 1 (error: 0, warning: 0, info: 1)
 - **Supply chain:** 0 (critical: 0, high: 0, moderate: 0, low: 0)
@@ -17,7 +17,6 @@ to refresh.
 
 | Captured | Commit | Score | Findings | Err/Warn/Info | Supply |
 | --- | --- | ---: | ---: | --- | ---: |
-| 2026-05-19T16:46:30 | `341cebd` | 100 | 1 | 0/0/1 | 0 |
 | 2026-05-19T17:20:49 | `8bddeba` | 100 | 1 | 0/0/1 | 0 |
 | 2026-05-19T23:55:19 | `3a9e68d` | 100 | 1 | 0/0/1 | 0 |
 | 2026-05-20T00:58:56 | `83c3bd4` | 100 | 1 | 0/0/1 | 0 |
@@ -27,6 +26,7 @@ to refresh.
 | 2026-05-20T19:16:08 | `8656674` | 100 | 1 | 0/0/1 | 0 |
 | 2026-05-20T20:21:44 | `c7d4201` | 100 | 1 | 0/0/1 | 0 |
 | 2026-05-20T21:01:34 | `d8bcc39` | 100 | 1 | 0/0/1 | 0 |
+| 2026-05-20T23:59:40 | `f1b2b23` | 100 | 1 | 0/0/1 | 0 |
 
 ## Open Findings
 
@@ -34,6 +34,6 @@ to refresh.
 
 ## Stats
 
-- Total snapshots recorded: 24
+- Total snapshots recorded: 25
 - Findings resolved (lifetime): 2
 - Findings open: 1
