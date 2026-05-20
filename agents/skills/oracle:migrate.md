@@ -9,7 +9,7 @@ Invoke the `oracle-migrator` agent against the current working directory.
 
 ## Usage
 
-```
+```text
 /oracle:migrate
 ```
 
@@ -20,7 +20,7 @@ before writing any files.
 
 Provide this context to `oracle-migrator`:
 
-```
+```text
 Target directory: <current working directory>
 
 1. Run oracle__migrate with apply=false and show the dry-run plan.

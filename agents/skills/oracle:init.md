@@ -9,7 +9,7 @@ Invoke the `oracle-initializer` agent to scaffold a test suite.
 
 ## Usage
 
-```
+```text
 /oracle:init [framework]
 ```
 
@@ -22,7 +22,7 @@ Invoke the `oracle-initializer` agent to scaffold a test suite.
 
 Provide this context to `oracle-initializer`:
 
-```
+```text
 Framework: <framework or "unspecified">
 Target directory: <current working directory>
 

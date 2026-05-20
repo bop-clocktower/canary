@@ -10,7 +10,7 @@ the analysis target.
 
 ## Usage
 
-```
+```text
 /oracle:generate [file_path]
 ```
 
@@ -20,7 +20,7 @@ If `file_path` is omitted, use the currently open file in the editor.
 
 Provide this context to `oracle-test-generator`:
 
-```
+```text
 Target file: <file_path>
 
 Analysis instructions:
