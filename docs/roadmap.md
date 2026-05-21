@@ -118,7 +118,7 @@ updated: 2026-05-20
   the Project Intelligence work because context-aware prompts will
   exceed OpenAI free-tier context windows.
 - **Blockers:** none
-- **Plan:** none
+- **Plan:** [docs/changes/multi-provider-llm/plans/2026-05-14-multi-provider-llm-plan.md](changes/multi-provider-llm/plans/2026-05-14-multi-provider-llm-plan.md)
 
 ## Project Intelligence
 
