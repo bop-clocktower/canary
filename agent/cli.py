@@ -417,13 +417,8 @@ def env_setup_cmd(
     ),
 ) -> None:
     """
-    Interactive tester onboarding: choose a provider, verify the API key,
-    write .env, and (with --full) generate a sample test.
-
-    Calls the shared SetupWizard so this flow is identical to the
-    auto-trigger in the --pre-command callback. The wizard internally
-    uses provider_ping for status-aware validation and env_writer for
-    safe .env merges.
+    Alias for `oracle setup`. Runs the interactive provider selection wizard
+    and (with --full) generates a sample test after setup.
     """
     from agent.core.setup import SetupWizard
     SetupWizard().run(full=full)
