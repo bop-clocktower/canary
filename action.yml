@@ -54,7 +54,7 @@ runs:
     - name: Install Oracle
       shell: bash
       run: |
-        pip install --quiet "${GITHUB_ACTION_PATH}"
+        pip install --no-cache-dir --quiet "${GITHUB_ACTION_PATH}"
 
     - name: Detect changed source files
       id: changed
@@ -110,11 +110,15 @@ runs:
           RUN_FLAG="--run"
         fi
         ORACLE_STDERR=$(mktemp)
-        RESULT=$(oracle --no-setup generate "$PROMPT" --json $RUN_FLAG 2>"$ORACLE_STDERR") || {
-          echo "::warning::oracle generate failed — stderr below"
-          cat "$ORACLE_STDERR" >&2
-          RESULT=""
-        }
+        ORACLE_STDOUT=$(mktemp)
+        oracle --no-setup generate "$PROMPT" --json $RUN_FLAG \
+          >"$ORACLE_STDOUT" 2>"$ORACLE_STDERR" && EXIT_CODE=0 || EXIT_CODE=$?
+        RESULT=$(cat "$ORACLE_STDOUT")
+        echo "::notice::oracle exit=${EXIT_CODE} stdout_len=${#RESULT} stderr_len=$(wc -c < "$ORACLE_STDERR")"
+        echo "::notice::oracle stdout head: $(echo "$RESULT" | head -c 120 | tr '\n' '|')"
+        if [ "$EXIT_CODE" != "0" ]; then
+          echo "::warning::oracle generate failed (exit ${EXIT_CODE}) — stderr: $(cat "$ORACLE_STDERR")"
+        fi
         OUTPUT_FILE=$(echo "$RESULT" | python3 -c \
           "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('output_file',''))" 2>/dev/null || echo "")
         TEST_TYPE=$(echo "$RESULT" | python3 -c \
@@ -124,8 +128,13 @@ runs:
         echo "output-file=${OUTPUT_FILE}" >> "$GITHUB_OUTPUT"
         echo "test-type=${TEST_TYPE}" >> "$GITHUB_OUTPUT"
         echo "framework=${FRAMEWORK}" >> "$GITHUB_OUTPUT"
-        # Persist result JSON for the comment step
-        echo "$RESULT" > /tmp/oracle_result.json
+        # Persist extracted scalar values for the comment step. Writing
+        # individual files avoids re-parsing JSON in the next step, which is
+        # fragile when the JSON passes through shell variable expansion.
+        printf '%s' "$OUTPUT_FILE" > /tmp/oracle_output_file.txt
+        printf '%s' "$TEST_TYPE"  > /tmp/oracle_test_type.txt
+        printf '%s' "$FRAMEWORK"  > /tmp/oracle_framework.txt
+        echo "${RESULT:-{}}" > /tmp/oracle_result.json
 
     - name: Post PR comment
       if: inputs.comment == 'true' && github.event_name == 'pull_request'
@@ -133,9 +142,12 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        OUTPUT_FILE="${{ steps.generate.outputs.output-file }}"
-        TEST_TYPE="${{ steps.generate.outputs.test-type }}"
-        FRAMEWORK="${{ steps.generate.outputs.framework }}"
+        # Read pre-extracted scalar values written by the generate step.
+        # Avoids re-parsing the JSON through shell variables, which is fragile.
+        OUTPUT_FILE=$(cat /tmp/oracle_output_file.txt 2>/dev/null || echo "")
+        TEST_TYPE=$(cat /tmp/oracle_test_type.txt 2>/dev/null || echo "")
+        FRAMEWORK=$(cat /tmp/oracle_framework.txt 2>/dev/null || echo "")
+        echo "::notice::comment step output_file=${OUTPUT_FILE} test_type=${TEST_TYPE} framework=${FRAMEWORK}"
 
         if [ -n "$OUTPUT_FILE" ] && [ -f "$OUTPUT_FILE" ]; then
           TEST_CONTENT=$(cat "$OUTPUT_FILE")

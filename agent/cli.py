@@ -94,14 +94,14 @@ def generate(
         result = recommender.recommend(classification)
         
         if output_json:
-            print(json.dumps({
+            _sys.stdout.write(json.dumps({
                 "status": "success",
                 "mode": "recommendation",
                 "test_type": classification.test_type,
                 "framework": result["framework"],
                 "file_extension": result["file_extension"],
                 "reasoning": result["reasoning"],
-            }, indent=2))
+            }, indent=2) + "\n")
             return
 
         print("[bold green]✅ Oracle Recommendation (Draft Mode)[/bold green]\n")
@@ -143,7 +143,7 @@ def generate(
                 print(f"\n[bold red]Report error:[/bold red] {e}")
 
     if output_json:
-        print(json.dumps({
+        _sys.stdout.write(json.dumps({
             "status": "success",
             "mode": "full_generation",
             "test_type": result["test_type"],
@@ -153,7 +153,7 @@ def generate(
             "execution": result.get("execution"),
             "feedback_url": feedback_url,
             **({"report_file": report_path} if report_path is not None else {}),
-        }, indent=2))
+        }, indent=2) + "\n")
         return
 
     print("\n[bold green]✅ Oracle Result[/bold green]\n")
@@ -319,7 +319,7 @@ def migrate(
 
     if output_json:
         import json as _json
-        print(_json.dumps({
+        _sys.stdout.write(_json.dumps({
             "framework": report.framework,
             "shape": report.shape,
             "dry_run": report.dry_run,
@@ -329,7 +329,7 @@ def migrate(
             "preserved_files": report.preserved_files,
             "would_create": report.would_create,
             "manual_followups": report.manual_followups,
-        }, indent=2))
+        }, indent=2) + "\n")
         return
 
     print(report.to_markdown())
