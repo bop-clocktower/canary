@@ -20,6 +20,7 @@ from agent.core.domain_scanner import DomainScanner
 from agent.core.fixture_scanner import FixtureScanner
 from agent.core.metadata_scanner import MetadataScanner
 from agent.core.pattern_matcher import PatternMatcher
+from agent.core.quality_scorer import QualityScorer
 from agent.core.recommender import FrameworkRecommender
 from agent.core.selector_healer import SelectorHealer
 from agent.llm import generate_response
@@ -136,6 +137,8 @@ class OracleOrchestrator:
         provider_name = os.getenv("ORACLE_LLM_PROVIDER", "anthropic").lower()
         model_name = os.getenv("ORACLE_LLM_MODEL", "unknown")
 
+        quality = QualityScorer().score(file_path, framework)
+
         result = {
             "input": user_prompt,
             "test_type": classification.test_type,
@@ -143,7 +146,8 @@ class OracleOrchestrator:
             "provider": provider_name,
             "model": model_name,
             "reasoning": recommendation["reason"],
-            "output_file": str(file_path)
+            "output_file": str(file_path),
+            "quality": quality,
         }
 
         # 9. Execute if requested

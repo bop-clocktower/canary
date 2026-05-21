@@ -158,6 +158,7 @@ def generate(
             "framework": result["framework"],
             "output_file": result["output_file"],
             "reasoning": result["reasoning"],
+            "quality": result.get("quality"),
             "execution": result.get("execution"),
             "feedback_url": feedback_url,
             **({"report_file": report_path} if report_path is not None else {}),
@@ -175,6 +176,16 @@ def generate(
 
     print("\n[bold yellow]Output File:[/bold yellow]")
     print(result["output_file"])
+
+    quality = result.get("quality")
+    if quality:
+        grade_color = {"A": "green", "B": "cyan", "C": "yellow", "D": "yellow", "F": "red"}.get(quality["grade"], "white")
+        print(f"\n[bold]Quality Score:[/bold] [{grade_color}]{quality['score']}/100 ({quality['grade']})[/{grade_color}]")
+        print(f"  Coverage breadth:   {quality['coverage_breadth']:>3}")
+        print(f"  Assertion density:  {quality['assertion_density']:>3}")
+        print(f"  Flakiness risk:     {quality['flakiness_risk']:>3}")
+        for detail in quality["details"]:
+            print(f"  [dim]{detail}[/dim]")
 
     if report_path:
         print(f"\n[bold yellow]Report:[/bold yellow] {report_path}")

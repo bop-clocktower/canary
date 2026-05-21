@@ -336,12 +336,17 @@ implementation begins. All 6 resolved.
 
 ### Test Quality Scoring
 
-- **Status:** planned
+- **Status:** done
 - **Spec:** none
-- **Summary:** Post-generation analysis of Oracle-generated tests. Score
-  each test file on coverage breadth, assertion density, and flakiness
-  signals (timeouts, sleeps, global state). Surface the score in
-  `oracle generate` output and the GitHub Action PR comment.
+- **Summary:** `QualityScorer` in `agent/core/quality_scorer.py` — static
+  analysis scorer running automatically after every generation. Three
+  dimensions: coverage breadth (test count, error/negative path keywords,
+  parametrize bonus), assertion density (framework-aware assertion patterns
+  per test function), and flakiness risk (deductions for hardcoded waits,
+  `random.*`, timestamp-dependent assertions). Returns a 0–100 composite
+  score with letter grade (A–F). Surfaced in CLI text output, `--json`,
+  GitHub Action PR comment table row, and SARIF `properties`. 30 unit
+  tests; all frameworks covered (pytest, playwright, vitest, k6).
 - **Blockers:** none
 - **Plan:** none
 

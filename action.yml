@@ -131,9 +131,12 @@ runs:
         # Persist extracted scalar values for the comment step. Writing
         # individual files avoids re-parsing JSON in the next step, which is
         # fragile when the JSON passes through shell variable expansion.
+        QUALITY=$(echo "$RESULT" | python3 -c \
+          "import sys,json; d=json.loads(sys.stdin.read()); q=d.get('quality'); print(f\"{q['score']}/100 ({q['grade']})\" if q else '')" 2>/dev/null || echo "")
         printf '%s' "$OUTPUT_FILE" > /tmp/oracle_output_file.txt
         printf '%s' "$TEST_TYPE"  > /tmp/oracle_test_type.txt
         printf '%s' "$FRAMEWORK"  > /tmp/oracle_framework.txt
+        printf '%s' "$QUALITY"    > /tmp/oracle_quality.txt
         echo "${RESULT:-{}}" > /tmp/oracle_result.json
 
     - name: Post PR comment
@@ -149,7 +152,8 @@ runs:
         OUTPUT_FILE=$(cat /tmp/oracle_output_file.txt 2>/dev/null || echo "")
         TEST_TYPE=$(cat /tmp/oracle_test_type.txt 2>/dev/null || echo "")
         FRAMEWORK=$(cat /tmp/oracle_framework.txt 2>/dev/null || echo "")
-        echo "::notice::comment step output_file=${OUTPUT_FILE} test_type=${TEST_TYPE} framework=${FRAMEWORK}"
+        QUALITY=$(cat /tmp/oracle_quality.txt 2>/dev/null || echo "")
+        echo "::notice::comment step output_file=${OUTPUT_FILE} test_type=${TEST_TYPE} framework=${FRAMEWORK} quality=${QUALITY}"
 
         if [ -n "$OUTPUT_FILE" ] && [ -f "$OUTPUT_FILE" ]; then
           TEST_CONTENT=$(cat "$OUTPUT_FILE")
@@ -176,6 +180,7 @@ runs:
         | **Test type** | \`${TEST_TYPE}\` |
         | **Framework** | \`${FRAMEWORK}\` |
         | **Output** | \`${OUTPUT_FILE}\` |
+        ${QUALITY:+| **Quality score** | \`${QUALITY}\` |}
 
         ${PREVIEW}
 
