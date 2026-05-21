@@ -115,6 +115,10 @@ runs:
           cat "$ORACLE_STDERR" >&2
           RESULT=""
         }
+        # Surface any stderr output so it appears in the Actions log
+        if [ -s "$ORACLE_STDERR" ]; then
+          echo "::debug::oracle stderr: $(cat "$ORACLE_STDERR")"
+        fi
         OUTPUT_FILE=$(echo "$RESULT" | python3 -c \
           "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('output_file',''))" 2>/dev/null || echo "")
         TEST_TYPE=$(echo "$RESULT" | python3 -c \
@@ -124,8 +128,10 @@ runs:
         echo "output-file=${OUTPUT_FILE}" >> "$GITHUB_OUTPUT"
         echo "test-type=${TEST_TYPE}" >> "$GITHUB_OUTPUT"
         echo "framework=${FRAMEWORK}" >> "$GITHUB_OUTPUT"
-        # Persist result JSON for the comment step
-        echo "$RESULT" > /tmp/oracle_result.json
+        # Persist result JSON for the comment step (read directly; avoids
+        # composite-action expression evaluation ordering issues). Always
+        # write valid JSON so the comment step gets {} instead of empty.
+        echo "${RESULT:-{}}" > /tmp/oracle_result.json
 
     - name: Post PR comment
       if: inputs.comment == 'true' && github.event_name == 'pull_request'
@@ -133,9 +139,17 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        OUTPUT_FILE="${{ steps.generate.outputs.output-file }}"
-        TEST_TYPE="${{ steps.generate.outputs.test-type }}"
-        FRAMEWORK="${{ steps.generate.outputs.framework }}"
+        # Read result from the persisted JSON file — composite action ${{ steps.* }}
+        # expressions in run: blocks are evaluated before the step executes, so they
+        # are always empty. Reading from the temp file is the reliable alternative.
+        RESULT=$(cat /tmp/oracle_result.json 2>/dev/null)
+        [ -z "$RESULT" ] && RESULT="{}"
+        OUTPUT_FILE=$(echo "$RESULT" | python3 -c \
+          "import sys,json; print(json.loads(sys.stdin.read()).get('output_file',''))" 2>/dev/null || echo "")
+        TEST_TYPE=$(echo "$RESULT" | python3 -c \
+          "import sys,json; print(json.loads(sys.stdin.read()).get('test_type',''))" 2>/dev/null || echo "")
+        FRAMEWORK=$(echo "$RESULT" | python3 -c \
+          "import sys,json; print(json.loads(sys.stdin.read()).get('framework',''))" 2>/dev/null || echo "")
 
         if [ -n "$OUTPUT_FILE" ] && [ -f "$OUTPUT_FILE" ]; then
           TEST_CONTENT=$(cat "$OUTPUT_FILE")
