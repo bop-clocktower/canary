@@ -115,6 +115,7 @@ runs:
           >"$ORACLE_STDOUT" 2>"$ORACLE_STDERR" && EXIT_CODE=0 || EXIT_CODE=$?
         RESULT=$(cat "$ORACLE_STDOUT")
         echo "::notice::oracle exit=${EXIT_CODE} stdout_len=${#RESULT} stderr_len=$(wc -c < "$ORACLE_STDERR")"
+        echo "::notice::oracle stdout head: $(echo "$RESULT" | head -c 120 | tr '\n' '|')"
         if [ "$EXIT_CODE" != "0" ]; then
           echo "::warning::oracle generate failed (exit ${EXIT_CODE}) — stderr: $(cat "$ORACLE_STDERR")"
         fi
