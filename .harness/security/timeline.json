@@ -2,28 +2,6 @@
   "version": 1,
   "snapshots": [
     {
-      "capturedAt": "2026-05-11T07:58:30.295Z",
-      "commitHash": "241d1b30d01bf03394ea11147cc003f831eb2b4d",
-      "securityScore": 100,
-      "totalFindings": 0,
-      "bySeverity": {
-        "error": 0,
-        "warning": 0,
-        "info": 0
-      },
-      "byCategory": {},
-      "supplyChain": {
-        "critical": 0,
-        "high": 0,
-        "moderate": 0,
-        "low": 0,
-        "info": 0,
-        "total": 0
-      },
-      "suppressionCount": 0,
-      "findingIds": []
-    },
-    {
       "capturedAt": "2026-05-11T08:06:47.833Z",
       "commitHash": "2b7c8e407865e192942c9eeb435ca336e10a803c",
       "securityScore": 100,
@@ -831,6 +809,37 @@
     {
       "capturedAt": "2026-05-21T02:25:15.438Z",
       "commitHash": "27db140eb83ec2b98c5776998e6c67ba957de688",
+      "securityScore": 100,
+      "totalFindings": 1,
+      "bySeverity": {
+        "error": 0,
+        "warning": 0,
+        "info": 1
+      },
+      "byCategory": {
+        "network": {
+          "findingCount": 1,
+          "errorCount": 0,
+          "warningCount": 0,
+          "infoCount": 1
+        }
+      },
+      "supplyChain": {
+        "critical": 0,
+        "high": 0,
+        "moderate": 0,
+        "low": 0,
+        "info": 0,
+        "total": 0
+      },
+      "suppressionCount": 0,
+      "findingIds": [
+        "f648dc252b6f0cc1"
+      ]
+    },
+    {
+      "capturedAt": "2026-05-21T02:28:44.367Z",
+      "commitHash": "82b11efd7eb2dd217421014fac3f397630aad6f2",
       "securityScore": 100,
       "totalFindings": 1,
       "bySeverity": {
