@@ -7,10 +7,6 @@ on:
         description: 'PR number to commit the generated test to'
         required: true
         type: number
-      provider:
-        description: 'LLM provider (claude, openai, gemini, mock)'
-        required: false
-        default: 'claude'
 
 jobs:
   commit:
@@ -39,22 +35,42 @@ jobs:
           # Falls back to the built-in token (push will not re-trigger PR checks).
           token: ${{ secrets.ORACLE_COMMIT_TOKEN || github.token }}
 
+      - name: Detect LLM provider
+        id: provider
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "name=claude" >> "$GITHUB_OUTPUT"
+          elif [ -n "$OPENAI_API_KEY" ]; then
+            echo "name=openai" >> "$GITHUB_OUTPUT"
+          elif [ -n "$GEMINI_API_KEY" ]; then
+            echo "name=gemini" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=" >> "$GITHUB_OUTPUT"
+            echo "::notice::No LLM API key found in secrets — skipping Oracle test generation."
+          fi
+
       - name: Generate test
         id: oracle
+        if: steps.provider.outputs.name != ''
         uses: ./
         with:
-          provider: ${{ inputs.provider }}
-          api-key: ${{ secrets.ANTHROPIC_API_KEY || secrets.OPENAI_API_KEY || secrets.GEMINI_API_KEY || 'mock' }}
+          provider: ${{ steps.provider.outputs.name }}
+          api-key: ${{ secrets.ANTHROPIC_API_KEY || secrets.OPENAI_API_KEY || secrets.GEMINI_API_KEY }}
           # Don't post a second comment — the original comment already exists.
           comment: 'false'
 
       - name: Commit and push
+        if: steps.provider.outputs.name != ''
         env:
           OUTPUT_FILE: ${{ steps.oracle.outputs.output-file }}
           TEST_TYPE: ${{ steps.oracle.outputs.test-type }}
           FRAMEWORK: ${{ steps.oracle.outputs.framework }}
           PR_NUMBER: ${{ inputs.pr_number }}
-          PROVIDER: ${{ inputs.provider }}
+          PROVIDER: ${{ steps.provider.outputs.name }}
         run: |
           if [ -z "$OUTPUT_FILE" ] || [ ! -f "$OUTPUT_FILE" ]; then
             echo "::error::No test file was generated — check the generate step logs."
@@ -76,6 +92,7 @@ Framework: ${FRAMEWORK}"
           fi
 
       - name: Comment on PR
+        if: steps.provider.outputs.name != ''
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
