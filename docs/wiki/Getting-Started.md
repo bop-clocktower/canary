@@ -30,43 +30,20 @@ oracle version
 
 You should see: `Oracle AI v0.1 (MVP)`
 
-## Step 2: Run Setup
+## Step 2: Open Oracle in Claude Code
 
-This checks your environment, installs the harness tooling, and
-wires up the Claude Code integration automatically:
-
-```bash
-oracle setup
-```
-
-What it does:
-
-- Checks Node.js is available
-- Installs `harness-mcp` globally if missing (provides CI checks
-  and architecture enforcement inside Claude Code)
-- Reminds you to set `ANTHROPIC_API_KEY` if it's not set
-- Creates `.claude/settings.local.json` so Claude Code approves
-  the project's MCP servers without prompting you each session
-
-If anything fails, fix it and re-run `oracle setup` — it's safe
-to run multiple times.
-
-## Step 3: Set Your API Key
-
-If `oracle setup` flagged a missing key, add it now:
+Oracle runs as a Claude Code plugin — no API key setup required.
+Install the plugin once:
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
+claude plugin install .
 ```
 
-To make this permanent, add that line to your `~/.zshrc` or
-`~/.bashrc`.
+Claude Code's own session provides the LLM. Your first
+`/oracle:generate` will analyse the target file and write tests
+automatically.
 
-> **Using a different provider?** See
-> [LLM Providers & Configuration](LLM-Providers-and-Configuration.md)
-> for OpenAI and Gemini setup.
-
-## Step 4: Generate Your First Test
+## Step 3: Generate Your First Test
 
 ```bash
 oracle generate "Test that GET /api/health returns 200"

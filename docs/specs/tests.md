@@ -63,7 +63,6 @@ tests/
     test_reporter.py        — JSON/SARIF reporter output
     test_scaffolder.py      — OracleScaffolder file generation
     test_selector_healer.py — SelectorHealer prompt construction
-    test_setup.py           — SetupWizard configuration wizard
     test_skill_registry.py  — SkillRegistry discovery and frontmatter parsing
   generated/                — Oracle-generated tests (gitignored)
 ```

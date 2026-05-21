@@ -22,8 +22,8 @@ pick, and the next steps after generation. No generated test files are committed
 
 ## Prerequisites
 
-Before running any example, make sure `oracle env-setup` has been run and a
-provider key is set. See [Getting Started](../docs/wiki/Getting-Started.md).
+Before running any example, install Oracle as a Claude Code plugin.
+See [Getting Started](../docs/wiki/Getting-Started.md).
 
 For the mock provider (no API key, no real LLM call):
 

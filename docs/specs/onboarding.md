@@ -1,5 +1,10 @@
 # Interactive Guided Onboarding Specification
 
+> **Superseded.** Oracle now runs as a Claude Code plugin; no API key or
+> provider setup is required. The `oracle setup`, `env-setup`, and first-run
+> wizard described below have been removed. This document is retained for
+> historical reference only.
+
 A first-run guided experience for end users who install Oracle via pip. Walks
 them through provider selection before any `oracle` command runs for the first
 time in a project. Re-runnable explicitly via `oracle setup`.

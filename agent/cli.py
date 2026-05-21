@@ -317,43 +317,6 @@ def migrate(
         print("\n[dim]Re-run with [bold]--apply[/bold] to write these files.[/dim]")
 
 
-skills_app = typer.Typer(help="Discover and list Oracle skills.")
-app.add_typer(skills_app, name="skills")
-
-
-@skills_app.command("list")
-def skills_list(
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show file paths."),
-) -> None:
-    """List all discoverable skills — bundled defaults and local overlays."""
-    from agent.core.skill_registry import SkillRegistry
-    from pathlib import Path as _Path
-
-    skills = SkillRegistry().discover(_Path.cwd())
-    if not skills:
-        print("[yellow]No skills found.[/yellow]")
-        return
-
-    bundled = [s for s in skills if s.source == "bundled"]
-    local = [s for s in skills if s.source == "local"]
-
-    if bundled:
-        print("[bold]Bundled skills:[/bold]")
-        for s in bundled:
-            desc = f"  [dim]{s.description}[/dim]" if s.description else ""
-            print(f"  [cyan]/{s.name}[/cyan]{desc}")
-            if verbose:
-                print(f"    [dim]{s.path}[/dim]")
-
-    if local:
-        print("\n[bold green]Local overlay skills (override bundled):[/bold green]")
-        for s in local:
-            desc = f"  [dim]{s.description}[/dim]" if s.description else ""
-            print(f"  [cyan]/{s.name}[/cyan]{desc}")
-            if verbose:
-                print(f"    [dim]{s.path}[/dim]")
-
-
 @app.command()
 def version():
     """
