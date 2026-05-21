@@ -1,21 +1,18 @@
 # Interactive Guided Onboarding Specification
 
 A first-run guided experience for end users who install Oracle via pip. Walks
-them through provider selection, API key entry, and connection verification
-before any `oracle` command runs for the first time in a project. Re-runnable
-explicitly via `oracle setup`.
+them through provider selection before any `oracle` command runs for the first
+time in a project. Re-runnable explicitly via `oracle setup`.
 
 ## Overview
 
 **Goals:**
 
 1. **Eliminate cold-start friction** — A developer who installs Oracle and runs
-   any command for the first time is guided through provider selection, API key
-   entry, and connection verification before the command executes — no cryptic
-   "missing API key" errors.
+   any command for the first time is guided through provider selection before
+   the command executes — no unconfigured-project errors.
 2. **Re-runnable explicit setup** — `oracle setup` can be run at any time to
-   switch providers or fix a broken key, with no dependency on existing config
-   state.
+   switch providers, with no dependency on existing config state.
 3. **CI-safe auto-trigger** — The setup auto-trigger detects non-interactive
    contexts (no TTY, `CI` env var) and skips silently so pipelines are never
    blocked.
@@ -97,7 +94,7 @@ it prompts:
 
 If the user says Y, the wizard runs and the original command resumes
 automatically on completion. If N, a warning is printed and the command
-continues (and will likely fail on a missing API key).
+continues without a configured provider.
 
 **Explicit:** `oracle setup` always runs the wizard regardless of config
 state, skipping the Y/N prompt and proceeding directly to provider selection.
