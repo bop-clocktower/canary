@@ -14,7 +14,7 @@ from datetime import datetime
 
 from rich import print
 from rich.console import Console
-from agent.core.classifier import TestClassifier
+from agent.core.classifier import TestClassifier, extract_framework_hint
 from agent.core.code_extractor import extract_code
 from agent.core.domain_scanner import DomainScanner
 from agent.core.fixture_scanner import FixtureScanner
@@ -78,8 +78,14 @@ class OracleOrchestrator:
         # 2. Classify intent
         classification = self.classifier.classify(user_prompt)
 
-        # 3. Recommend framework
-        recommendation = self.recommender.recommend(classification, metadata=metadata)
+        # 3. Recommend framework — pass framework_hint so an explicit
+        # framework name in the prompt breaks ties when two frameworks claim
+        # the same test_type.
+        recommendation = self.recommender.recommend(
+            classification,
+            metadata=metadata,
+            framework_hint=extract_framework_hint(user_prompt),
+        )
 
         framework = recommendation["framework"]
         if not framework:

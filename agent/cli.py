@@ -84,14 +84,17 @@ def generate(
         print("\n[bold cyan]🧠 Oracle Processing Request...[/bold cyan]\n")
 
     if recommend_only:
-        from agent.core.classifier import TestClassifier
+        from agent.core.classifier import TestClassifier, extract_framework_hint
         from agent.core.recommender import FrameworkRecommender
-        
+
         classifier = TestClassifier()
         recommender = FrameworkRecommender()
-        
+
         classification = classifier.classify(prompt)
-        result = recommender.recommend(classification)
+        result = recommender.recommend(
+            classification,
+            framework_hint=extract_framework_hint(prompt),
+        )
         
         if output_json:
             _sys.stdout.write(json.dumps({

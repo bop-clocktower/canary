@@ -22,6 +22,30 @@ _HTTP_VERB_RE = re.compile(
     r"\b(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b",
 )
 
+# Maps an explicit framework name in the prompt to the test_type it implies.
+# A user who writes "Playwright" or "Vitest" by name is giving us a stronger
+# signal than any URL or keyword heuristic — honor it before the API/UI
+# fallthrough. "load test"/"stress test" still wins (performance is checked
+# first) so "load test with Playwright runner" stays performance.
+_FRAMEWORK_HINTS = {
+    "playwright": "e2e_ui",
+    "cypress": "e2e_ui",
+    "vitest": "frontend_unit",
+    "jest": "frontend_unit",
+    "pytest": "api",
+    "k6": "performance",
+}
+_FRAMEWORK_HINT_RE = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in _FRAMEWORK_HINTS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def extract_framework_hint(prompt: str) -> "str | None":
+    """Return the lowercase framework name explicitly mentioned in the prompt, if any."""
+    m = _FRAMEWORK_HINT_RE.search(prompt)
+    return m.group(1).lower() if m else None
+
 
 @dataclass
 class ClassificationResult:
@@ -61,6 +85,19 @@ class TestClassifier:
                 intent="generate_tests",
                 test_type="performance",
                 confidence=0.95
+            )
+
+        # --- EXPLICIT FRAMEWORK HINT ---
+        # A named framework in the prompt outranks URL/keyword heuristics —
+        # otherwise "Playwright test for /api/orders/{id}" gets routed to api
+        # by the HTTP-path match, and "Vitest unit test for validateEmail"
+        # falls through to the e2e_ui default.
+        hint = _FRAMEWORK_HINT_RE.search(prompt)
+        if hint:
+            return ClassificationResult(
+                intent="generate_tests",
+                test_type=_FRAMEWORK_HINTS[hint.group(1).lower()],
+                confidence=0.95,
             )
 
         # --- HTTP VERB / PATH SIGNALS ---

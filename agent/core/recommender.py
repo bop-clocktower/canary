@@ -23,7 +23,12 @@ class FrameworkRecommender:
         """
         self.registry = FrameworkRegistry()
 
-    def recommend(self, classification: ClassificationResult, metadata=None) -> Dict:
+    def recommend(
+        self,
+        classification: ClassificationResult,
+        metadata=None,
+        framework_hint: Optional[str] = None,
+    ) -> Dict:
         """
         Recommends a framework based on the classification result.
 
@@ -32,6 +37,11 @@ class FrameworkRecommender:
             metadata: Optional ProjectMetadata. When provided, candidates are
                 filtered to those whose languages intersect with the project's
                 detected languages. Falls back to unfiltered if no match.
+            framework_hint: Optional explicit framework name (lowercase, e.g.
+                "pytest"). When the hint matches a candidate within the
+                language-filtered set it wins over registry preferred-default.
+                Used to break ties when two frameworks claim the same test_type
+                and no project metadata narrows the set.
 
         Returns:
             Dict: A dictionary containing the recommended framework,
@@ -56,13 +66,26 @@ class FrameworkRecommender:
                 ]
                 candidates = filtered if filtered else frameworks
 
-        # Prefer "preferred" status first
-        preferred = [
-            f for f in candidates
-            if f.get("status") == "preferred"
-        ]
+        # An explicit framework name in the prompt outranks the registry's
+        # preferred-default — resolves the ambiguity when two frameworks
+        # (e.g. playwright, pytest) both claim ``api`` and no project metadata
+        # is available to break the tie.
+        hinted = None
+        if framework_hint:
+            hinted = next(
+                (f for f in candidates if f.get("name") == framework_hint.lower()),
+                None,
+            )
 
-        selected = preferred[0] if preferred else candidates[0]
+        if hinted is not None:
+            selected = hinted
+        else:
+            # Prefer "preferred" status first
+            preferred = [
+                f for f in candidates
+                if f.get("status") == "preferred"
+            ]
+            selected = preferred[0] if preferred else candidates[0]
 
         # Derive extension with safety
         file_extension = "ts" # Default fallback
@@ -72,11 +95,15 @@ class FrameworkRecommender:
             lang_map = {"python": "py", "javascript": "js", "typescript": "ts"}
             file_extension = lang_map.get(selected["languages"][0].lower(), "ts")
 
+        reason = self._build_reason(selected)
+        if hinted is not None:
+            reason.insert(0, f"prompt-named framework ({selected['name']})")
+
         return {
             "framework": selected["name"],
             "category": selected["category"],
             "file_extension": file_extension,
-            "reason": self._build_reason(selected)
+            "reason": reason,
         }
 
     def _build_reason(self, framework: Dict) -> List[str]:
