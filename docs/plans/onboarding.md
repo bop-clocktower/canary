@@ -1,18 +1,22 @@
 # Interactive Guided Onboarding Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
-> (recommended) or superpowers:executing-plans to implement this plan task-by-task.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use the `harness:tdd` skill
+> (recommended) or `harness:execution` to implement this plan task-by-task.
 > Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a first-run setup wizard that auto-triggers before any Oracle
-command in an unconfigured project, walks the user through provider and API
-key selection, verifies the key works, and writes `.oracle/config.json`.
+command in an unconfigured project, walks the user through provider selection,
+and writes `.oracle/config.json`. The wizard does **not** prompt for or
+validate provider API keys — Oracle's CLI no longer requires the user to
+supply a key during setup. Key handling (when needed) is delegated to the
+chosen provider's own auth mechanism at first call time.
 
 **Architecture:** A new `SetupWizard` class in `agent/core/setup.py` owns all
 interactive logic. A Typer `@app.callback()` in `cli.py` runs before every
 subcommand and triggers the wizard when the project is unconfigured and stdin
 is a TTY. The existing `oracle setup` command body is replaced to call
-`SetupWizard().run()`.
+`SetupWizard().run()`. The wizard records the chosen provider and timestamps
+the configuration; no secret material is stored.
 
 **Tech Stack:** Python, Typer, Rich (`rich.prompt.Prompt`, `rich.prompt.Confirm`),
 `unittest.mock`, `typer.testing.CliRunner`
@@ -24,7 +28,7 @@ is a TTY. The existing `oracle setup` command body is replaced to call
 | Action | Path | Purpose |
 | --- | --- | --- |
 | Create | `agent/core/setup.py` | `SetupWizard` class — all wizard logic |
-| Create | `tests/unit/test_setup.py` | 12 unit tests for wizard + callback |
+| Create | `tests/unit/test_setup.py` | 9 unit tests for wizard + callback |
 | Modify | `agent/cli.py` | Add `@app.callback()`, replace `setup()` body |
 | Modify | `.gitignore` | Add `.oracle/` |
 | Modify | `docs/roadmap.md` | Link plan, update status |
@@ -130,7 +134,7 @@ git commit -m "feat(onboarding): SetupWizard.is_configured()"
 
 ---
 
-### Task 2: Wizard happy path — provider, key, verify, write config
+### Task 2: Wizard happy path — provider selection, write config
 
 **Files:**
 
@@ -148,11 +152,9 @@ class TestSetupWizardRun(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.root = Path(self.tmp)
 
-    def _run_wizard(self, provider="claude", key="sk-test", full=False):
+    def _run_wizard(self, provider="claude", full=False):
         wizard = SetupWizard(output_dir=self.root)
-        with patch("agent.core.setup.Prompt.ask", side_effect=[provider, key]), \
-             patch("agent.core.setup.SetupWizard._test_connection", return_value=None), \
-             patch("agent.core.setup.Confirm.ask", return_value=False):
+        with patch("agent.core.setup.Prompt.ask", return_value=provider):
             wizard.run(full=full)
 
     def test_run_writes_config_on_success(self):
@@ -168,7 +170,7 @@ class TestSetupWizardRun(unittest.TestCase):
 .venv/bin/pytest tests/unit/test_setup.py::TestSetupWizardRun::test_run_writes_config_on_success -v
 ```
 
-Expected: `ImportError` — `run`, `Prompt`, `Confirm` not yet defined.
+Expected: `ImportError` — `run`, `Prompt` not yet defined.
 
 - [ ] **Step 3: Implement the wizard happy path**
 
@@ -176,26 +178,27 @@ Replace `agent/core/setup.py` with:
 
 ```python
 # agent/core/setup.py
-"""Interactive setup wizard for first-run Oracle configuration."""
+"""Interactive setup wizard for first-run Oracle configuration.
+
+The wizard records the chosen provider and timestamps the
+configuration; it does NOT prompt for or validate API keys. Key
+handling (when needed) is delegated to the chosen provider's own
+auth mechanism at first call time — Oracle's CLI no longer requires
+the user to supply a key during setup.
+"""
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Prompt
 
 _CONFIG_FILE = Path(".oracle") / "config.json"
 
-_PROVIDERS = ("claude", "openai", "gemini")
-
-# Maps wizard provider name -> (env key name, ORACLE_LLM_PROVIDER value)
-_PROVIDER_MAP = {
-    "claude": ("ANTHROPIC_API_KEY", "anthropic"),
-    "openai": ("OPENAI_API_KEY", "openai"),
-    "gemini": ("GEMINI_API_KEY", "gemini"),
-}
+# Provider names accepted by the wizard. The mapping to underlying
+# implementation lives in agent/llm/factory.py.
+_PROVIDERS = ("claude", "openai", "gemini", "mock")
 
 
 class SetupWizard:
@@ -222,13 +225,10 @@ class SetupWizard:
         rprint("\n[bold cyan]⚡ Oracle Setup[/bold cyan]\n")
         try:
             provider = self._select_provider()
-            api_key = self._enter_key(provider)
-            self._verify(provider, api_key)
             self._write_config(provider)
             if full:
-                self._run_sample(provider, api_key)
+                self._run_sample()
         except KeyboardInterrupt:
-            from rich import print as rprint
             rprint(
                 "\n\nSetup cancelled. "
                 "Run [bold]oracle setup[/bold] to try again."
@@ -237,52 +237,10 @@ class SetupWizard:
 
     def _select_provider(self) -> str:
         return Prompt.ask(
-            "\n[bold]Step 1 of 3 · Provider[/bold]\nChoose a provider",
+            "\n[bold]Step 1 of 1 · Provider[/bold]\nChoose a provider",
             choices=list(_PROVIDERS),
             default="claude",
         )
-
-    def _enter_key(self, provider: str) -> str:
-        env_key = _PROVIDER_MAP[provider][0]
-        return Prompt.ask(
-            f"\n[bold]Step 2 of 3 · API Key[/bold]\n{env_key}",
-            password=True,
-        )
-
-    def _verify(self, provider: str, api_key: str) -> None:
-        from rich import print as rprint
-        rprint("\n[bold]Step 3 of 3 · Verify[/bold]")
-        while True:
-            try:
-                self._test_connection(provider, api_key)
-                rprint("[green]✓[/green] Connected")
-                return
-            except Exception as exc:
-                rprint(f"[red]✗[/red] {exc}")
-                if not Confirm.ask("Try a different key?", default=True):
-                    raise SystemExit(1)
-                api_key = self._enter_key(provider)
-
-    def _test_connection(self, provider: str, api_key: str) -> None:
-        """Make a minimal provider call to verify the key. Raises on failure."""
-        env_key, oracle_provider = _PROVIDER_MAP[provider]
-        saved_key = os.environ.get(env_key)
-        saved_provider = os.environ.get("ORACLE_LLM_PROVIDER")
-        os.environ[env_key] = api_key
-        os.environ["ORACLE_LLM_PROVIDER"] = oracle_provider
-        try:
-            from agent.llm.factory import ProviderFactory
-            p = ProviderFactory.get_provider()
-            p.generate([{"role": "user", "content": "ping"}])
-        finally:
-            if saved_key is None:
-                os.environ.pop(env_key, None)
-            else:
-                os.environ[env_key] = saved_key
-            if saved_provider is None:
-                os.environ.pop("ORACLE_LLM_PROVIDER", None)
-            else:
-                os.environ["ORACLE_LLM_PROVIDER"] = saved_provider
 
     def _write_config(self, provider: str) -> None:
         from rich import print as rprint
@@ -300,11 +258,8 @@ class SetupWizard:
             "[bold].oracle/config.json[/bold]"
         )
 
-    def _run_sample(self, provider: str, api_key: str) -> None:
+    def _run_sample(self) -> None:
         from rich import print as rprint
-        env_key = _PROVIDER_MAP[provider][0]
-        os.environ[env_key] = api_key
-        from agent.core.orchestrator import OracleOrchestrator
         result = OracleOrchestrator().run(
             "Generate a sample Playwright test for a login page"
         )
@@ -326,63 +281,12 @@ Expected: PASS.
 
 ```bash
 git add agent/core/setup.py tests/unit/test_setup.py
-git commit -m "feat(onboarding): wizard happy path — provider, key, verify, write config"
+git commit -m "feat(onboarding): wizard happy path — provider selection, write config"
 ```
 
 ---
 
-### Task 3: Verify loop on bad key
-
-**Files:**
-
-- Modify: `tests/unit/test_setup.py`
-
-- [ ] **Step 1: Add the loop test**
-
-Add to `TestSetupWizardRun`:
-
-```python
-    def test_run_loops_on_bad_key(self):
-        # First verify call raises, second succeeds.
-        verify_calls = [Exception("Invalid API key"), None]
-
-        def fake_verify(provider, api_key):
-            result = verify_calls.pop(0)
-            if isinstance(result, Exception):
-                raise result
-
-        wizard = SetupWizard(output_dir=self.root)
-        with patch("agent.core.setup.Prompt.ask",
-                   side_effect=["claude", "bad-key", "good-key"]), \
-             patch("agent.core.setup.SetupWizard._test_connection",
-                   side_effect=fake_verify), \
-             patch("agent.core.setup.Confirm.ask", return_value=True):
-            wizard.run()
-
-        config = json.loads(
-            (self.root / ".oracle" / "config.json").read_text()
-        )
-        self.assertEqual(config["provider"], "claude")
-```
-
-- [ ] **Step 2: Run test to confirm it passes (no new code needed)**
-
-```bash
-.venv/bin/pytest tests/unit/test_setup.py::TestSetupWizardRun::test_run_loops_on_bad_key -v
-```
-
-Expected: PASS.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add tests/unit/test_setup.py
-git commit -m "test(onboarding): verify loops back to key entry on bad key"
-```
-
----
-
-### Task 4: `KeyboardInterrupt` — no partial config written
+### Task 3: `KeyboardInterrupt` — no partial config written
 
 **Files:**
 
@@ -421,7 +325,7 @@ git commit -m "test(onboarding): KeyboardInterrupt leaves no partial config"
 
 ---
 
-### Task 5: `@app.callback()` — skip when configured or not a TTY
+### Task 4: `@app.callback()` — skip when configured or not a TTY
 
 **Files:**
 
@@ -527,7 +431,7 @@ git commit -m "feat(onboarding): app.callback() skips wizard when configured or 
 
 ---
 
-### Task 6: `@app.callback()` — prompt and run when unconfigured TTY
+### Task 5: `@app.callback()` — prompt and run when unconfigured TTY
 
 **Files:**
 
@@ -575,7 +479,7 @@ git commit -m "test(onboarding): callback prompts and runs wizard on unconfigure
 
 ---
 
-### Task 7: Replace `oracle setup` command body
+### Task 6: Replace `oracle setup` command body
 
 **Files:**
 
@@ -616,8 +520,8 @@ def setup(
     ),
 ) -> None:
     """
-    Configure Oracle for this project: choose a provider and verify your
-    API key. Re-run at any time to update the configuration.
+    Configure Oracle for this project: choose a provider. Re-run at any
+    time to update the configuration.
     """
     from agent.core.setup import SetupWizard
     SetupWizard().run(full=full)
@@ -648,7 +552,7 @@ git commit -m "feat(onboarding): replace oracle setup with SetupWizard"
 
 ---
 
-### Task 8: `oracle setup --full` invokes orchestrator
+### Task 7: `oracle setup --full` invokes orchestrator
 
 **Files:**
 
@@ -661,11 +565,7 @@ Add to `TestSetupWizardRun`:
 ```python
     def test_setup_full_invokes_orchestrator(self):
         wizard = SetupWizard(output_dir=self.root)
-        with patch("agent.core.setup.Prompt.ask",
-                   side_effect=["claude", "sk-test"]), \
-             patch("agent.core.setup.SetupWizard._test_connection",
-                   return_value=None), \
-             patch("agent.core.setup.Confirm.ask", return_value=False), \
+        with patch("agent.core.setup.Prompt.ask", return_value="claude"), \
              patch("agent.core.setup.OracleOrchestrator") as mock_orch:
             mock_orch.return_value.run.return_value = {
                 "output_file": "tests/generated/sample.spec.ts"
@@ -675,36 +575,19 @@ Add to `TestSetupWizardRun`:
         mock_orch.return_value.run.assert_called_once()
 ```
 
-- [ ] **Step 2: Update `_run_sample` to import `OracleOrchestrator` at**
-  **module level for patching**
+- [ ] **Step 2: Make `OracleOrchestrator` patchable at the module level**
 
-In `agent/core/setup.py`, add to the top of `_run_sample`:
-
-The current implementation already imports `OracleOrchestrator` inside
-`_run_sample`. The mock patches `agent.core.setup.OracleOrchestrator`, so
-add a top-level import alias so the patch target resolves correctly.
-
-Add near the top of `agent/core/setup.py` (after the existing imports):
+The mock patches `agent.core.setup.OracleOrchestrator`, so the symbol must
+exist at module scope (not just inside `_run_sample`). Add a top-level import
+near the existing imports in `agent/core/setup.py`:
 
 ```python
 from agent.core.orchestrator import OracleOrchestrator
 ```
 
-Then remove the local import inside `_run_sample`:
-
-```python
-    def _run_sample(self, provider: str, api_key: str) -> None:
-        from rich import print as rprint
-        env_key = _PROVIDER_MAP[provider][0]
-        os.environ[env_key] = api_key
-        result = OracleOrchestrator().run(
-            "Generate a sample Playwright test for a login page"
-        )
-        rprint(
-            f"\n[green]✓[/green] Sample written to "
-            f"[bold]{result['output_file']}[/bold]"
-        )
-```
+The `_run_sample` implementation written in Task 2 already references
+`OracleOrchestrator` directly with no local import, so the existing body is
+ready as-is once the top-level import is added.
 
 - [ ] **Step 3: Run test to confirm it passes**
 
@@ -731,7 +614,7 @@ git commit -m "test(onboarding): oracle setup --full calls orchestrator after co
 
 ---
 
-### Task 9: Gitignore, markdownlint, and roadmap
+### Task 8: Gitignore, markdownlint, and roadmap
 
 **Files:**
 
@@ -767,8 +650,10 @@ Find the `### Interactive Guided Onboarding` section and update:
 - **Summary:** First-run guided experience for end users who install Oracle
   via pip. `SetupWizard` in `agent/core/setup.py`; Typer `@app.callback()`
   asks permission before any unconfigured command; `oracle setup` is
-  re-runnable with `--full` for a sample generation. Config stored in
-  `.oracle/config.json` (project-local, no secrets). 12 unit tests.
+  re-runnable with `--full` for a sample generation. The wizard records
+  the chosen provider only — no API key prompt, no key validation, no
+  secret material stored. Config in `.oracle/config.json` is project-local
+  and safe to commit. 9 unit tests.
 - **Blockers:** none
 - **Plan:** [docs/plans/onboarding.md](../plans/onboarding.md)
 ```
