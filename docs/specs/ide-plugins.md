@@ -6,6 +6,43 @@ and JetBrains IDEs. The plugins are intentionally thin: they shell out to the
 native IDE UI (output panels, editor tabs, notifications). No LLM code lives in
 the plugin.
 
+## Overview
+
+**Goals:**
+
+1. **In-editor test generation** — Developers generate tests from a natural
+   language description without leaving the IDE, via a command palette entry or
+   right-click context menu.
+2. **Zero-context-switch test execution** — The active test file can be run with
+   one command; results appear in a dedicated output channel without opening a
+   terminal.
+3. **Framework scaffolding and migration** — `oracle init` and `oracle migrate`
+   are accessible from the IDE, with output shown in the editor and apply/cancel
+   actions for migration previews.
+4. **Persistent status visibility** — A status bar item reflects Oracle's current
+   state (idle / running / pass / fail / not found) and links to output on click.
+5. **Native settings UI** — Oracle configuration (`oracle.cliPath`, provider,
+   report format) is exposed through the IDE's own settings panel, not via JSON
+   editing or env vars.
+
+## Success Criteria
+
+1. **Generate roundtrip:** `oracle.generate` invoked with a non-empty prompt
+   produces a file opened in a new editor tab; the Oracle output channel shows
+   exit code 0.
+2. **Run result in status bar:** `oracle.run` on a test file updates the status
+   bar to Pass or Fail within 10 seconds of process exit.
+3. **CLI not found — graceful degradation:** When `oracle` is not on PATH and
+   `oracle.cliPath` is empty, all commands are registered but disabled; the
+   status bar shows "Oracle: not found" with a link to install instructions.
+4. **Migration preview:** `oracle.migrate` shows a read-only JSON preview tab
+   before applying; no files are modified until the user confirms.
+5. **Timeout kill:** Child processes running longer than 120 seconds are
+   terminated and a warning is shown; the plugin does not hang or leave orphan
+   processes.
+6. **Prompt cancellation — no error:** Dismissing the generate input box
+   silently no-ops; no notification or output channel entry is shown.
+
 ## Scope
 
 **Phase 1 — VS Code** (TypeScript, VS Code Extension API)
@@ -19,6 +56,8 @@ works in a TypeScript-capable environment.
 
 - **VS Code minimum version:** >= 1.85.0 (December 2023 LTS baseline). Set
   `engines.vscode` to `^1.85.0` in `package.json`.
+- **VS Code extension runtime:** Node.js >=18.x LTS (bundled with VS Code
+  1.85+; the extension is compiled TypeScript — no separate Node.js install).
 - **`oracle` CLI installed separately:** Users install `oracle` via `pip install
   oracle` or from source before installing the plugin. The plugin does not bundle
   or install the CLI.
@@ -88,12 +127,15 @@ All commands are registered in the Command Palette under the `Oracle:` prefix.
 1. If no workspace folder is open (`vscode.workspace.workspaceFolders` is
    undefined), show an error notification: "oracle migrate requires an open
    workspace folder." Exit.
-2. Run `oracle migrate --path <workspaceRoot> --json` (dry run).
-3. Display the JSON report in a read-only preview editor tab (`Oracle Migration
+2. Resolve the target root: use the workspace folder containing the active
+   editor file (`vscode.workspace.getWorkspaceFolder(activeEditor.document.uri)`);
+   if no editor is active, use `vscode.workspace.workspaceFolders[0]`.
+3. Run `oracle migrate --path <resolvedRoot> --json` (dry run).
+4. Display the JSON report in a read-only preview editor tab (`Oracle Migration
    Preview`).
-4. Show "Apply Migration" and "Cancel" buttons in a notification.
-5. If "Apply Migration": run `oracle migrate --path <workspaceRoot> --apply --json`.
-6. Refresh the file explorer after apply.
+5. Show "Apply Migration" and "Cancel" buttons in a notification.
+6. If "Apply Migration": run `oracle migrate --path <resolvedRoot> --apply --json`.
+7. Refresh the file explorer after apply.
 
 ## Configuration
 
@@ -185,13 +227,10 @@ the JetBrains persistent state store), and the same error handling contract.
 1. **Keybinding defaults** — Should `oracle.run` have a default keybinding
    (e.g. `⌘⇧T`)? Risk of conflicting with existing bindings; may be better to
    ship with no default and let users assign.
-2. **Multi-root workspaces** — When VS Code has multiple workspace folders, which
-   root does `oracle migrate` target? Options: (a) always the first root, (b)
-   prompt the user, (c) the root containing the active editor file.
-3. **Streaming vs batch** — `oracle run` currently returns all output on exit.
+2. **Streaming vs batch** — `oracle run` currently returns all output on exit.
    A future `--stream` flag on the CLI would enable real-time output in the
    plugin. Spec assumes batch for now; streaming is a follow-up.
-4. **JetBrains marketplace tier** — Free plugin or freemium? Assumed free/open
+3. **JetBrains marketplace tier** — Free plugin or freemium? Assumed free/open
    for now; revisit if distribution costs become a concern.
 
 ## Implementation Notes

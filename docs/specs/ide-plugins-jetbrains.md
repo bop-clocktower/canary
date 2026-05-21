@@ -4,6 +4,42 @@ Phase 2 of the Oracle IDE Plugins initiative. Mirrors the feature surface of
 the VS Code extension ([ide-plugins.md](ide-plugins.md)) using IntelliJ
 Platform APIs.
 
+## Overview
+
+**Goals:**
+
+1. **In-editor test generation** — Developers generate tests from a natural
+   language description without leaving IntelliJ-based IDEs, via Find Action or
+   right-click context menu.
+2. **Zero-context-switch test execution** — The active test file can be run with
+   one action; stdout/stderr streams to the Oracle Tool Window.
+3. **Framework scaffolding and migration** — `oracle.init` and `oracle.migrate`
+   are accessible from the action system; migration shows a preview before
+   applying.
+4. **Persistent status visibility** — A status bar widget reflects Oracle's
+   current state (Idle / Running / Pass / Fail / Not installed) and opens the
+   Tool Window on click.
+5. **Native settings UI** — Oracle configuration is exposed through
+   **Preferences > Tools > Oracle** using IntelliJ's `Configurable` API.
+
+## Success Criteria
+
+1. **Generate roundtrip:** `oracle.generate` invoked with a non-empty prompt
+   produces a file opened in an editor tab; the Oracle Tool Window shows exit
+   code 0.
+2. **Run result in status bar:** `oracle.run` on a test file updates the status
+   bar widget to Pass or Fail within 10 seconds of process exit.
+3. **CLI not found — graceful degradation:** When `oracle` is not detected by
+   any probe (cliPath, `which`, fallback dirs), all actions are disabled;
+   status bar shows "Oracle: not found" with an install-docs notification.
+4. **Migration preview:** `oracle.migrate` shows a read-only preview
+   (`LightVirtualFile` or scratch file) before applying; no files are modified
+   until **Apply Migration** is clicked.
+5. **Timeout kill:** `handler.waitFor(120_000L)` returns false → `handler.
+   destroyProcess()` is called; a warning balloon is shown; no EDT block.
+6. **EDT safety:** No CLI invocation runs on the Event Dispatch Thread; all
+   long-running tasks use `Task.Backgroundable` or `executeOnPooledThread`.
+
 ## Scope
 
 **Platform:** IntelliJ Platform — IDEA Community/Ultimate, PyCharm, WebStorm,
@@ -392,15 +428,11 @@ oracle-intellij/
 2. **Tool Window content type** — Plain `EditorTextField` (lightweight) vs
    `ConsoleView` (richer: ANSI colors, clickable stack traces, process filter).
    `ConsoleView` is more powerful but heavier to set up.
-3. **Threading approach** — `Task.Backgroundable` vs `executeOnPooledThread`
-   vs Kotlin coroutines (`CoroutineScope(Dispatchers.IO)`). Coroutines are
-   cleanest but require careful scope management; `Task.Backgroundable` gives
-   free progress-indicator UI.
-4. **macOS login-shell PATH probe** — Should the plugin try
+3. **macOS login-shell PATH probe** — Should the plugin try
    `bash -l -c "which oracle"` as a fallback? This adds latency on activation
    and may show a terminal flash. Alternative: require explicit `oracle.cliPath`
    and document prominently.
-5. **JetBrains Marketplace tier** — Free / open-source plugin or freemium?
+4. **JetBrains Marketplace tier** — Free / open-source plugin or freemium?
    Assumed free for now; revisit if distribution costs become a concern.
 
 ## Shared Contract with VS Code Extension

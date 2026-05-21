@@ -10,6 +10,54 @@ updated: 2026-05-21
 This spec defines how Oracle discovers skills at runtime, enabling downstream
 overlay repositories to extend Oracle's behavior with zero application code.
 
+## Overview
+
+**Goals:**
+
+1. **Zero-fork extensibility** — Teams with company-specific test workflows extend
+   Oracle by dropping skill files into `.oracle/skills/` without forking or
+   patching Oracle's source code.
+2. **Filesystem-based discovery** — Oracle walks from CWD to the nearest `.git`
+   boundary and collects all `.oracle/skills/` directories, making skills from
+   any ancestor directory automatically visible.
+3. **Deterministic precedence** — Local overlay skills always win over bundled
+   skills with the same `name`; among overlays, the closest to CWD wins.
+4. **Bundled executable skills** — Overlay skills may ship deterministic code
+   alongside prose (via `cli:` / `entry:` frontmatter) and invoke it via
+   `oracle skills run`.
+5. **CI safety for executable skills** — In non-interactive / CI contexts,
+   executable skills require explicit opt-in (`--allow-executable-skills`) to
+   prevent silent code execution from untrusted overlays.
+
+## Success Criteria
+
+1. **Discovery completeness:** `oracle skills list` from any subdirectory of a
+   project returns all skills reachable by walking to the `.git` boundary —
+   bundled and overlay, in precedence order.
+2. **Precedence correctness:** When a local overlay and a bundled skill share the
+   same `name`, `oracle skills list` and `oracle skills run` resolve to the
+   overlay skill.
+3. **Path-escape rejection:** Any `cli:` path that resolves outside the skill
+   directory after symlink resolution causes `oracle skills run` to fail with a
+   clear error; the skill still appears in `oracle skills list`.
+4. **CI guard:** In a context where `CI=true` or `sys.stdin.isatty()` is False,
+   `oracle skills run` exits non-zero unless `--allow-executable-skills` is
+   passed. Markdown-only discovery is unaffected.
+5. **Executable invocation:** `oracle skills run <name> -- arg1 arg2` invokes
+   the declared `cli:` script with CWD set to the skill directory and args
+   forwarded; exit code is propagated.
+
+## Assumptions
+
+- **Runtime:** Python >=3.10 (Oracle runtime requirement; all skill discovery
+  code is Python).
+- **Git repository:** Discovery walks to a `.git` boundary. A project with no
+  `.git` root will discover only CWD-local `.oracle/skills/` directories.
+- **Filesystem access:** Oracle reads `.oracle/skills/` directories; write
+  access is not required for discovery or prose skills.
+- **No auto-install:** `cli:` skill dependencies are the skill's responsibility
+  to declare and install; Oracle does not manage them.
+
 ## Background
 
 Oracle ships bundled skills (slash commands, harness-prescriptive agents) that

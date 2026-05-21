@@ -6,6 +6,44 @@ execution tools, three skills (`oracle:generate`, `oracle:init`,
 generation using its own session — no API key required for plugin users. The
 existing CLI and GitHub Action are unchanged.
 
+## Overview
+
+**Goals:**
+
+1. **In-editor test generation without an API key** — Plugin users generate
+   tests via Claude Code's own session; no `ANTHROPIC_API_KEY` required in the
+   plugin path.
+2. **Six MCP tools covering the full Oracle surface** — analyze, write, run,
+   init, list-frameworks, and migrate are exposed as MCP tools so agents can
+   compose them without re-implementing Oracle logic.
+3. **Slash-command UX** — Three skills (`/oracle:generate`, `/oracle:init`,
+   `/oracle:migrate`) give users single-command access from the Claude Code
+   command bar.
+4. **No logic duplication** — MCP tools delegate directly to existing
+   `agent/core/` modules; the plugin path and CLI path share the same
+   implementation.
+5. **Testability without live Claude Code** — All six MCP tools are covered by
+   unit tests using mocked `agent/core/` modules and file I/O; no live
+   subprocess or API call required in CI.
+
+## Success Criteria
+
+1. **MCP server starts:** `python -m agent.mcp_server` starts without error and
+   exposes exactly six tools to Claude Code.
+2. **Tool delegation:** `oracle__analyze_file` calls `MetadataScanner`,
+   `PatternMatcher`, and `DomainScanner` from `agent/core/` and returns a dict
+   with `framework`, `test_type`, `imports`, `functions`, `existing_tests`,
+   and `context_snippets`.
+3. **Error as MCP response:** When a tool encounters a recoverable error (file
+   not found, no harness markers), it returns a structured MCP error dict —
+   not a Python exception.
+4. **Plugin manifest valid:** `.claude-plugin/plugin.json` passes JSON Schema
+   validation against the Claude Code plugin schema.
+5. **Unit test suite passes:** `tests/unit/test_mcp_server.py` (10 tests)
+   passes with 0 failures in CI using mocked modules; no network calls.
+6. **CLI path unchanged:** All existing `oracle generate / init / migrate / run`
+   CLI commands continue to pass their existing test suite after plugin addition.
+
 ## Scope
 
 **In scope:**
@@ -44,7 +82,7 @@ existing CLI and GitHub Action are unchanged.
 - CLI users continue to need `ANTHROPIC_API_KEY` — identical to the harness
   orchestrator's Anthropic backend pattern.
 - Plugin users need no API key — Claude Code's session provides the LLM.
-- The existing `agent/intelligence/`, `agent/frameworks/`, and
+- The existing `agent/core/`, `agent/frameworks/`, and
   `agent/core/` modules are called directly by the MCP server tools; no
   logic is duplicated.
 
@@ -65,7 +103,7 @@ Claude Code session
     ├── oracle__list_frameworks
     └── oracle__migrate
          │
-         └── agent/intelligence/, agent/frameworks/, agent/core/
+         └── agent/core/, agent/frameworks/, agent/core/
               (shared with CLI path — no duplication)
 
 CLI path (unchanged)
@@ -98,7 +136,7 @@ Output:
 ```
 
 Calls `MetadataScanner`, `PatternMatcher`, and `DomainScanner` from
-`agent/intelligence/`. Returns everything the agent needs to write a
+`agent/core/`. Returns everything the agent needs to write a
 well-targeted test.
 
 ### `oracle__write_test_file`
