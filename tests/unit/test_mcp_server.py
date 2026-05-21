@@ -1,10 +1,19 @@
 # tests/unit/test_mcp_server.py
 """Unit tests for agent/mcp_server.py — all I/O and intelligence calls mocked."""
 
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+# fastmcp is an optional MCP framework dependency. Inject a passthrough mock so
+# unit tests run without it installed. @mcp.tool() must be an identity decorator
+# so the _impl functions remain callable on the module.
+if "fastmcp" not in sys.modules:
+    _mock_fastmcp = MagicMock()
+    _mock_fastmcp.FastMCP.return_value.tool.return_value = lambda f: f
+    sys.modules["fastmcp"] = _mock_fastmcp
 
 
 # ---------------------------------------------------------------------------

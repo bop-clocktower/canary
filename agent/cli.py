@@ -13,6 +13,8 @@ import sys as _sys
 from typing import Optional
 import typer
 from rich import print
+from rich.console import Console
+from agent.core.feedback import FeedbackPayload, build_issue_url, record_last_generation
 
 app = typer.Typer()
 
@@ -114,6 +116,20 @@ def generate(
     orchestrator = OracleOrchestrator()
     result = orchestrator.run(prompt, execute=run_test)
 
+    feedback_payload = FeedbackPayload(
+        prompt=prompt,
+        test_type=result["test_type"],
+        framework=result["framework"],
+        provider=result.get("provider", "unknown"),
+        model=result.get("model", "unknown"),
+        output_file=result["output_file"],
+    )
+    try:
+        record_last_generation(feedback_payload)
+    except OSError:
+        pass  # Recording is best-effort; never break generate on disk errors.
+    feedback_url = build_issue_url(feedback_payload)
+
     report_path = None
     if report_file and not report_format:
         import sys
@@ -135,6 +151,7 @@ def generate(
             "output_file": result["output_file"],
             "reasoning": result["reasoning"],
             "execution": result.get("execution"),
+            "feedback_url": feedback_url,
             **({"report_file": report_path} if report_path is not None else {}),
         }, indent=2))
         return
@@ -165,6 +182,11 @@ def generate(
             # truncate stdout for readability
             stdout_preview = exec_res["stdout"][:500] + ("..." if len(exec_res["stdout"]) > 500 else "")
             print(f"[dim]Standard Output:[/dim]\n{stdout_preview}")
+
+    Console(soft_wrap=True).print(
+        "\n[dim]💬 Report feedback (public link — review before submitting): "
+        f"{feedback_url}[/dim]"
+    )
 
 
 @app.command()
@@ -374,6 +396,29 @@ def version():
     Show Oracle version info.
     """
     print("[bold green]Oracle AI v0.1 (MVP)[/bold green]")
+
+
+@app.command()
+def feedback():
+    """
+    Print a pre-filled GitHub issue URL for the most recent `oracle generate`.
+    """
+    from agent.core.feedback import build_issue_url, load_last_generation
+    from rich.console import Console
+
+    payload = load_last_generation()
+    if payload is None:
+        print(
+            "[yellow]No recent generation found.[/yellow] "
+            "Run [bold]oracle generate \"...\"[/bold] first."
+        )
+        raise typer.Exit(1)
+    url = build_issue_url(payload)
+    Console(soft_wrap=True).print(
+        "[bold cyan]💬 Report feedback[/bold cyan] "
+        "[dim](public link — review before submitting):[/dim]\n"
+        f"{url}"
+    )
 
 
 if __name__ == "__main__":

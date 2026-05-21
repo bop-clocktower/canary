@@ -1,6 +1,7 @@
 """Unit tests for concrete LLM provider generate() methods."""
 
 import os
+import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -35,9 +36,12 @@ class TestAnthropicProviderGenerate(unittest.TestCase):
 
     def setUp(self):
         os.environ["ANTHROPIC_API_KEY"] = "test-key"
+        if "anthropic" not in sys.modules:
+            sys.modules["anthropic"] = MagicMock()
 
     def tearDown(self):
         os.environ.pop("ANTHROPIC_API_KEY", None)
+        sys.modules.pop("anthropic", None)
 
     def _mock_response(self, text: str):
         block = MagicMock()
