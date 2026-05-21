@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Optional
 from unittest.mock import patch
 
 from agent.core.skill_registry import (
@@ -19,8 +20,8 @@ def _write_skill(
     name: str,
     *,
     description: str = "",
-    cli: str | None = None,
-    entry: str | None = None,
+    cli: Optional[str] = None,
+    entry: Optional[str] = None,
     body: str = "",
 ) -> Path:
     skill_dir = skills_root / name
