@@ -24,12 +24,28 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Detect LLM provider
+        id: provider
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "name=claude" >> "$GITHUB_OUTPUT"
+          elif [ -n "$OPENAI_API_KEY" ]; then
+            echo "name=openai" >> "$GITHUB_OUTPUT"
+          elif [ -n "$GEMINI_API_KEY" ]; then
+            echo "name=gemini" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=" >> "$GITHUB_OUTPUT"
+            echo "::notice::No LLM API key found in secrets — skipping Oracle test generation."
+          fi
+
       - name: Generate tests with Oracle
+        if: steps.provider.outputs.name != ''
         uses: ./
         with:
-          # Use the mock provider in CI — no API key required.
-          # To use a real provider, set ANTHROPIC_API_KEY (or equivalent)
-          # in your repo secrets and change provider to 'claude'.
-          provider: mock
-          api-key: mock
+          provider: ${{ steps.provider.outputs.name }}
+          api-key: ${{ secrets.ANTHROPIC_API_KEY || secrets.OPENAI_API_KEY || secrets.GEMINI_API_KEY }}
           comment: ${{ github.event_name == 'pull_request' }}

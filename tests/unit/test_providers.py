@@ -6,6 +6,45 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 
+class TestMockProvider(unittest.TestCase):
+
+    def _msg(self, framework: str) -> list:
+        return [{"role": "user", "content": f"Framework: {framework}\nWrite tests."}]
+
+    def test_playwright_stub(self):
+        from agent.llm.providers.mock import MockProvider
+        result = MockProvider().generate(self._msg("playwright"))
+        self.assertIn("@playwright/test", result)
+        self.assertNotIn("pytest", result)
+
+    def test_pytest_stub(self):
+        from agent.llm.providers.mock import MockProvider
+        result = MockProvider().generate(self._msg("pytest"))
+        self.assertIn("def test_", result)
+        self.assertNotIn("@playwright/test", result)
+
+    def test_vitest_stub(self):
+        from agent.llm.providers.mock import MockProvider
+        result = MockProvider().generate(self._msg("vitest"))
+        self.assertIn("vitest", result)
+        self.assertNotIn("@playwright/test", result)
+
+    def test_k6_stub(self):
+        from agent.llm.providers.mock import MockProvider
+        result = MockProvider().generate(self._msg("k6"))
+        self.assertIn("k6/http", result)
+
+    def test_unknown_framework_falls_back_to_playwright(self):
+        from agent.llm.providers.mock import MockProvider
+        result = MockProvider().generate([{"role": "user", "content": "no framework line here"}])
+        self.assertIn("@playwright/test", result)
+
+    def test_header_names_framework(self):
+        from agent.llm.providers.mock import MockProvider
+        result = MockProvider().generate(self._msg("pytest"))
+        self.assertIn("framework=pytest", result)
+
+
 class TestCodexProviderInit(unittest.TestCase):
 
     def tearDown(self):
