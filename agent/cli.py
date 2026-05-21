@@ -487,6 +487,8 @@ def env_setup_legacy() -> None:
             print(f"  .env keys added:     {', '.join(outcome.env_added)}")
         if outcome.env_preserved:
             print(f"  .env keys preserved: {', '.join(outcome.env_preserved)}")
+        if not outcome.smoke_ok:
+            print("[bold yellow]Warning:[/bold yellow] smoke check failed — your key is saved but generation may need debugging.")
         print("\nNext: [bold]oracle generate \"your test prompt here\"[/bold]")
     else:
         print(f"[bold yellow]env-setup incomplete:[/bold yellow] {outcome.reason}")

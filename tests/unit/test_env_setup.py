@@ -159,13 +159,14 @@ class TestCliEnvSetup(_TmpEnvBase):
         self.assertIn("console.anthropic.com", result.output)
         self.assertFalse((self.tmp_path / ".env").exists())
 
-    def test_smoke_failure_exits_nonzero(self):
+    def test_smoke_failure_warns_but_exits_zero(self):
         os.chdir(self.tmp_path)
         runner = CliRunner()
         with patch("agent.cli.subprocess.run", side_effect=_fail_smoke):
             result = runner.invoke(app, ["env-setup-legacy"], input="mock\n")
-        self.assertNotEqual(result.exit_code, 0)
+        self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("smoke check failed", result.output)
+        self.assertIn("env-setup complete", result.output)
 
 
 if __name__ == "__main__":

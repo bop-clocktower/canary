@@ -97,7 +97,7 @@ def _try_models_list(provider: str, api_key: Optional[str]) -> Tuple[bool, str, 
                 next(iter(client.models.list()), None)
                 return True, "gemini: key valid (models.list)", None
             return False, f"unknown provider: {provider}", None
-        except BaseException as e:
+        except Exception as e:
             last_exc = e
             status = _extract_status(e)
             if status in _AUTH_STATUSES:
@@ -141,7 +141,7 @@ def _try_completion(provider: str, api_key: Optional[str]) -> Tuple[bool, str, O
             )
             return True, "gemini: key valid (1-token completion)", None
         return False, f"unknown provider: {provider}", None
-    except BaseException as e:
+    except Exception as e:
         return False, _exc_summary(e), _extract_status(e)
 
 

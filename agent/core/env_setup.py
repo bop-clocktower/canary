@@ -97,8 +97,8 @@ def run_flow(
 
     smoke_ok = smoke_check()
     return EnvSetupResult(
-        success=smoke_ok,
-        reason="" if smoke_ok else "smoke_failed",
+        success=True,
+        reason="" if smoke_ok else "smoke_warning",
         provider=provider,
         env_added=added,
         env_preserved=preserved,
