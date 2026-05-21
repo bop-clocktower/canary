@@ -1,31 +1,69 @@
+"""Discovers Oracle skills: bundled defaults and local project overlays.
+
+Implements the discovery convention defined in docs/specs/skill-discovery.md.
+
+Skills are SKILL.md files with YAML-style frontmatter. The optional ``cli:``
+and ``entry:`` frontmatter fields let a skill ship executable code alongside
+its prose:
+
+- ``cli:`` — filesystem path (relative to the skill directory) of an
+  executable to invoke as a subprocess.
+- ``entry:`` — Python ``module:callable`` string to call in-process. Reserved
+  for skills bundled as installed packages.
+
+These fields are mutually exclusive; specifying both is rejected at discovery.
+"""
+
 from __future__ import annotations
 
-# agent/core/skill_registry.py
-"""Discovers Oracle skills: bundled defaults and local project overlays."""
-
+import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 _AGENTS_SKILLS_DIR = Path(__file__).parents[2] / "agents" / "skills"
 
 
 @dataclass
 class SkillInfo:
+    """A discovered skill.
+
+    ``cli``/``entry`` are populated only when the SKILL.md frontmatter
+    declares them; markdown-only skills leave both ``None``.
+    """
+
     name: str
-    path: Path
+    path: Path  # the SKILL.md file
     source: str  # "bundled" | "local"
     description: str = ""
+    cli: Optional[str] = None
+    entry: Optional[str] = None
+    # Validation error captured at discovery time. When set, the skill is
+    # still listed (so users can see the bad config) but ``oracle skills
+    # run`` will refuse to invoke it.
+    error: Optional[str] = None
+
+    @property
+    def dir(self) -> Path:
+        """Directory containing SKILL.md — base for relative cli paths."""
+        return self.path.parent
+
+    @property
+    def is_executable(self) -> bool:
+        return (self.cli is not None or self.entry is not None) and self.error is None
 
 
 class SkillRegistry:
-    """Discover skills from bundled defaults and .oracle/skills/ overlays.
+    """Discover skills from bundled defaults and ``.oracle/skills/`` overlays.
 
     Precedence: local overlay skills override bundled skills of the same name.
-    Discovery walks from the given root up to the nearest .git directory so
-    team-level overlays placed at the repo root are always found.
+    Discovery walks from the given root up to the nearest ``.git`` directory
+    so team-level overlays placed at the repo root are found from anywhere
+    inside the checkout.
     """
 
-    def discover(self, root: Path | None = None) -> list[SkillInfo]:
+    def discover(self, root: Optional[Path] = None) -> list[SkillInfo]:
         skills: dict[str, SkillInfo] = {}
 
         for info in self._bundled_slash_skills():
@@ -41,13 +79,20 @@ class SkillRegistry:
 
         return sorted(skills.values(), key=lambda s: s.name)
 
+    def find(self, name: str, root: Optional[Path] = None) -> Optional[SkillInfo]:
+        """Return the SkillInfo for ``name`` honoring precedence, or None."""
+        for skill in self.discover(root):
+            if skill.name == name:
+                return skill
+        return None
+
     # ------------------------------------------------------------------
     # Bundled skill sources
     # ------------------------------------------------------------------
 
     def _bundled_slash_skills(self) -> list[SkillInfo]:
-        """Flat *.md files in agents/skills/ — Claude Code slash commands."""
-        results = []
+        """Flat ``*.md`` files in ``agents/skills/`` — Claude Code slash commands."""
+        results: list[SkillInfo] = []
         if not _AGENTS_SKILLS_DIR.exists():
             return results
         for path in sorted(_AGENTS_SKILLS_DIR.glob("*.md")):
@@ -59,8 +104,8 @@ class SkillRegistry:
         return results
 
     def _bundled_harness_skills(self) -> list[SkillInfo]:
-        """Nested claude-code/<name>/SKILL.md — prescriptive harness skills."""
-        results = []
+        """Nested ``claude-code/<name>/SKILL.md`` — prescriptive harness skills."""
+        results: list[SkillInfo] = []
         harness_dir = _AGENTS_SKILLS_DIR / "claude-code"
         if not harness_dir.exists():
             return results
@@ -77,8 +122,8 @@ class SkillRegistry:
     # ------------------------------------------------------------------
 
     def _local_overlay_skills(self, candidate: Path) -> list[SkillInfo]:
-        """Skills in <candidate>/.oracle/skills/<name>/SKILL.md."""
-        results = []
+        """Skills in ``<candidate>/.oracle/skills/<name>/SKILL.md``."""
+        results: list[SkillInfo] = []
         overlay_dir = candidate / ".oracle" / "skills"
         if not overlay_dir.exists():
             return results
@@ -96,7 +141,8 @@ class SkillRegistry:
     # Filesystem helpers
     # ------------------------------------------------------------------
 
-    def _ancestors_to_git_root(self, start: Path) -> list[Path]:
+    @staticmethod
+    def _ancestors_to_git_root(start: Path) -> list[Path]:
         """Return directories from start up to (and including) the git root."""
         candidates: list[Path] = []
         current = start
@@ -114,23 +160,73 @@ class SkillRegistry:
     # Parsers
     # ------------------------------------------------------------------
 
-    def _parse_flat(self, path: Path, source: str) -> SkillInfo | None:
+    def _parse_flat(self, path: Path, source: str) -> Optional[SkillInfo]:
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
             return None
-        name = self._frontmatter(text, "name") or path.stem
-        description = self._frontmatter(text, "description") or ""
-        return SkillInfo(name=name, path=path, source=source, description=description)
+        fm = self._parse_frontmatter(text)
+        name = fm.get("name") or path.stem
+        return SkillInfo(
+            name=name,
+            path=path,
+            source=source,
+            description=fm.get("description", ""),
+            cli=fm.get("cli"),
+            entry=fm.get("entry"),
+            error=self._validate_executable_fields(fm),
+        )
 
-    def _parse_nested(self, path: Path, dir_name: str, source: str) -> SkillInfo | None:
+    def _parse_nested(
+        self, path: Path, dir_name: str, source: str
+    ) -> Optional[SkillInfo]:
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
             return None
-        name = self._frontmatter(text, "name") or dir_name
-        description = self._frontmatter(text, "description") or self._blockquote_tagline(text)
-        return SkillInfo(name=name, path=path, source=source, description=description)
+        fm = self._parse_frontmatter(text)
+        name = fm.get("name") or dir_name
+        description = fm.get("description") or self._blockquote_tagline(text)
+        return SkillInfo(
+            name=name,
+            path=path,
+            source=source,
+            description=description,
+            cli=fm.get("cli"),
+            entry=fm.get("entry"),
+            error=self._validate_executable_fields(fm),
+        )
+
+    @staticmethod
+    def _parse_frontmatter(text: str) -> dict[str, str]:
+        """Tiny YAML-subset parser: top-level scalar fields only.
+
+        Supports ``key: value`` lines between ``---`` delimiters. No nesting,
+        no flow style, no quoting — matches the SKILL.md spec.
+        """
+        result: dict[str, str] = {}
+        if not text.startswith("---"):
+            return result
+        lines = text.split("\n")
+        for line in lines[1:]:
+            if line.strip() == "---":
+                break
+            if not line or line.lstrip().startswith("#"):
+                continue
+            if ":" not in line:
+                continue
+            key, _, value = line.partition(":")
+            result[key.strip()] = value.strip()
+        return result
+
+    @staticmethod
+    def _validate_executable_fields(fm: dict[str, str]) -> Optional[str]:
+        """Return an error string if cli/entry combination is invalid."""
+        cli = fm.get("cli")
+        entry = fm.get("entry")
+        if cli and entry:
+            return "skill declares both cli: and entry: — they are mutually exclusive"
+        return None
 
     @staticmethod
     def _blockquote_tagline(text: str) -> str:
@@ -145,14 +241,44 @@ class SkillRegistry:
                 break
         return " ".join(quote_lines)
 
-    @staticmethod
-    def _frontmatter(text: str, field: str) -> str | None:
-        if not text.startswith("---"):
-            return None
-        lines = text.split("\n")
-        for i, line in enumerate(lines[1:], 1):
-            if line.strip() == "---":
-                break
-            if line.startswith(f"{field}:"):
-                return line.split(":", 1)[1].strip()
-        return None
+
+def resolve_cli_path(skill: SkillInfo) -> Path:
+    """Resolve ``skill.cli`` to an absolute path inside the skill directory.
+
+    Raises:
+        ValueError: if the skill has no ``cli:`` field, the path escapes the
+            skill dir after symlink resolution, or the target doesn't exist.
+    """
+    if not skill.cli:
+        raise ValueError(f"skill '{skill.name}' has no cli: field")
+    skill_dir = skill.dir.resolve()
+    candidate = (skill_dir / skill.cli).resolve()
+    try:
+        candidate.relative_to(skill_dir)
+    except ValueError:
+        raise ValueError(
+            f"skill '{skill.name}' cli path escapes the skill directory: "
+            f"{skill.cli!r}"
+        )
+    if not candidate.exists():
+        raise ValueError(
+            f"skill '{skill.name}' cli target does not exist: {skill.cli!r}"
+        )
+    return candidate
+
+
+def is_executable_skill_allowed(allow_flag: bool) -> bool:
+    """Whether to honor cli:/entry: invocation in the current context.
+
+    In non-interactive contexts (no TTY, or ``CI=true``) executable skills
+    require an explicit opt-in via ``--allow-executable-skills`` to prevent
+    a freshly cloned malicious overlay from silently executing code on the
+    next CI run. Interactive contexts allow execution by default.
+    """
+    if allow_flag:
+        return True
+    if os.environ.get("CI", "").lower() in ("1", "true", "yes"):
+        return False
+    if not sys.stdin.isatty():
+        return False
+    return True
