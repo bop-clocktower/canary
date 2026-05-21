@@ -16,10 +16,10 @@ _HTTP_VERB_PATH_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Bare HTTP verb with no explicit path: "POST a new order with bearer token"
+# Bare HTTP verb with no explicit path (case-sensitive — requires uppercase so
+# common English words like "get"/"delete"/"post" don't trigger false positives).
 _HTTP_VERB_RE = re.compile(
     r"\b(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b",
-    re.IGNORECASE,
 )
 
 
@@ -55,6 +55,14 @@ class TestClassifier:
         """
         p = prompt.lower()
 
+        # --- PERFORMANCE ---  (checked before HTTP signals — "load test GET /x" is perf)
+        if "performance" in p or "load test" in p or "stress test" in p:
+            return ClassificationResult(
+                intent="generate_tests",
+                test_type="performance",
+                confidence=0.95
+            )
+
         # --- HTTP VERB / PATH SIGNALS ---
         if _HTTP_VERB_PATH_RE.search(prompt):
             return ClassificationResult(
@@ -67,14 +75,6 @@ class TestClassifier:
                 intent="generate_tests",
                 test_type="api",
                 confidence=0.85,
-            )
-
-        # --- PERFORMANCE ---
-        if "performance" in p or "load test" in p or "stress test" in p:
-            return ClassificationResult(
-                intent="generate_tests",
-                test_type="performance",
-                confidence=0.95
             )
 
         # --- API TESTING ---
