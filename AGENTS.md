@@ -87,6 +87,49 @@ docs/branching-convention
 - **Framework Registry:** [agent/core/framework_registry.py][fw-registry]
   — Internal registry for managing supported testing frameworks and their
   capabilities.
+- **Metadata Scanner:** [agent/core/metadata_scanner.py](agent/core/metadata_scanner.py)
+  — Reads `package.json`, `tsconfig.json`, `requirements.txt`, and
+  `pyproject.toml` to surface exact dependency versions for the generation
+  prompt. Enables version-accurate generated imports.
+- **Pattern Matcher:** [agent/core/pattern_matcher.py](agent/core/pattern_matcher.py)
+  — Scans existing test files to extract naming conventions, common
+  imports, and assertion style so generated tests match the project's
+  existing patterns.
+- **Domain Scanner:** [agent/core/domain_scanner.py](agent/core/domain_scanner.py)
+  — Scans project source files (not tests) to extract component names,
+  public functions, and API routes for injection into the generation
+  prompt. Prevents the LLM from inventing symbol names.
+- **Fixture Scanner:** [agent/core/fixture_scanner.py](agent/core/fixture_scanner.py)
+  — Scans test fixture and helper modules to extract named exports,
+  injected as a "Project Symbols" section in the prompt so generated
+  tests import real identifiers.
+- **Code Extractor:** [agent/core/code_extractor.py](agent/core/code_extractor.py)
+  — Strips conversational prose and Markdown fences from raw LLM
+  responses, returning bare runnable code. Guards against providers that
+  wrap output in narrative introductions.
+- **Selector Healer:** [agent/core/selector_healer.py](agent/core/selector_healer.py)
+  — Detects Playwright selector failures in test output and builds
+  DOM-aware heal prompts. Used by the orchestrator's self-healing loop
+  when a `TimeoutError` or `locator()` failure is detected.
+- **Reporter:** [agent/core/reporter.py](agent/core/reporter.py)
+  — Exports generation and execution results to JSON or SARIF for
+  ingestion by Datadog, SonarQube, and GitHub Code Scanning. Invoked via
+  `oracle generate --report-format json|sarif`.
+- **Migrator:** [agent/core/migrator.py](agent/core/migrator.py)
+  — Detects harness-scaffolded test projects (via `harness.config.json`
+  and `.harness/`) and migrates them to Oracle's layout without touching
+  existing test files. Invoked via `oracle migrate`.
+- **Setup Wizard:** [agent/core/setup.py](agent/core/setup.py)
+  — Interactive first-run configuration wizard. Prompts for provider
+  selection and API key, verifies connectivity, and persists config.
+  Invoked automatically on first use or explicitly via `oracle setup`.
+- **Skill Registry:** [agent/core/skill_registry.py](agent/core/skill_registry.py)
+  — Discovers bundled default skills and local project overlay skills
+  (from `.oracle/skills/`) for slash command resolution via `oracle
+  skills list`.
+- **CI Environment:** [agent/core/ci_env.py](agent/core/ci_env.py)
+  — Detects CI environment variables (`CI`, `GITHUB_ACTIONS`, etc.) to
+  enable headless optimizations and force JSON output in pipelines.
 
 ### Claude Code Plugin (`.claude-plugin/`)
 
@@ -98,8 +141,10 @@ generation via slash commands.
   `oracle__analyze_file`, `oracle__write_test_file`, `oracle__run_tests`,
   `oracle__init_suite`, `oracle__list_frameworks`, `oracle__migrate`.
 - **Manifest:** [.claude-plugin/plugin.json](.claude-plugin/plugin.json)
-- **Agents:** `.claude-plugin/agents/` — three agent definitions:
-  `oracle-test-generator`, `oracle-initializer`, `oracle-migrator`.
+- **Agents:** `.claude-plugin/agents/` — seven agent definitions:
+  `oracle-test-generator`, `oracle-test-author`, `oracle-test-reviewer`,
+  `oracle-initializer`, `oracle-migrator`, `oracle-framework-advisor`,
+  `oracle-flake-hunter`.
 - **Skills:** `agents/skills/` — three slash commands:
   `/oracle:generate`, `/oracle:init`, `/oracle:migrate`.
 - **Activate:** load the repo root as a Claude Code plugin.
@@ -111,7 +156,8 @@ generation via slash commands.
 - **Factory:** [agent/llm/factory.py][llm-factory] — Factory class for
   creating LLM provider instances based on project configuration.
 - **Providers:** [agent/llm/providers/](agent/llm/providers/) — Specific
-  provider implementations (OpenAI, Gemini, Local LLMs, etc.).
+  provider implementations: `anthropic` (Claude), `openai`, `codex`
+  (OpenAI Codex), `gemini`, `mock` (deterministic stub for CI).
 
 ### Configuration & Data
 
@@ -126,6 +172,25 @@ generation via slash commands.
 - **Playwright Tests:** `tests/generated/` — Automated tests generated
   by the agent. These are considered output artifacts and are generally
   excluded from manual review.
+
+### GitHub Actions (`action.yml`, `.github/workflows/`)
+
+Oracle ships as a reusable GitHub Actions composite action.
+
+- **Composite action:** [action.yml](action.yml) — Installs Oracle,
+  detects changed source files on the PR, generates tests, and posts a
+  PR comment with the result and a CTA to commit the test to the branch.
+  Inputs: `api-key`, `provider`, `prompt`, `run-tests`, `comment`,
+  `python-version`.
+- **Generation workflow:** [.github/workflows/oracle-generate.yml](.github/workflows/oracle-generate.yml)
+  — Triggers on `pull_request` to `main`. Auto-detects which LLM API key
+  secret is configured (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GEMINI_API_KEY`) and skips generation silently if none is found.
+- **Commit workflow:** [.github/workflows/oracle-commit-test.yml](.github/workflows/oracle-commit-test.yml)
+  — `workflow_dispatch` workflow. Accepts a PR number, checks out the PR
+  branch, re-runs Oracle, commits the generated file, and posts a
+  follow-up comment. Requires `contents: write` permission; optionally
+  uses `ORACLE_COMMIT_TOKEN` PAT to trigger downstream CI on push.
 
 ## Integration with Harness
 
