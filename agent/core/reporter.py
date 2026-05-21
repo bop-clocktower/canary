@@ -113,6 +113,7 @@ class Reporter:
                 "framework": framework,
                 "test_type": test_type,
                 "reasoning": result.get("reasoning", []),
+                **({"quality": result["quality"]} if result.get("quality") else {}),
             },
         })
 

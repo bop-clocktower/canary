@@ -111,6 +111,13 @@ docs/branching-convention
   — Detects Playwright selector failures in test output and builds
   DOM-aware heal prompts. Used by the orchestrator's self-healing loop
   when a `TimeoutError` or `locator()` failure is detected.
+- **Quality Scorer:** [agent/core/quality_scorer.py](agent/core/quality_scorer.py)
+  — Static analysis scorer for Oracle-generated test files. Scores on
+  three dimensions: coverage breadth (test count + error path coverage),
+  assertion density (assertions per test function), and flakiness risk
+  (hardcoded waits, random values, timestamp dependencies). Returns a
+  0–100 composite score with letter grade. Runs automatically after every
+  generation; surfaced in CLI output, `--json`, PR comments, and SARIF.
 - **Reporter:** [agent/core/reporter.py](agent/core/reporter.py)
   — Exports generation and execution results to JSON or SARIF for
   ingestion by Datadog, SonarQube, and GitHub Code Scanning. Invoked via
