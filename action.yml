@@ -54,7 +54,7 @@ runs:
     - name: Install Oracle
       shell: bash
       run: |
-        pip install --quiet "${GITHUB_ACTION_PATH}"
+        pip install --no-cache-dir --quiet "${GITHUB_ACTION_PATH}"
 
     - name: Detect changed source files
       id: changed
