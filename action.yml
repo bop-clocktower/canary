@@ -110,14 +110,13 @@ runs:
           RUN_FLAG="--run"
         fi
         ORACLE_STDERR=$(mktemp)
-        RESULT=$(oracle --no-setup generate "$PROMPT" --json $RUN_FLAG 2>"$ORACLE_STDERR") || {
-          echo "::warning::oracle generate failed — stderr below"
-          cat "$ORACLE_STDERR" >&2
-          RESULT=""
-        }
-        # Surface any stderr output so it appears in the Actions log
-        if [ -s "$ORACLE_STDERR" ]; then
-          echo "::debug::oracle stderr: $(cat "$ORACLE_STDERR")"
+        ORACLE_STDOUT=$(mktemp)
+        oracle --no-setup generate "$PROMPT" --json $RUN_FLAG \
+          >"$ORACLE_STDOUT" 2>"$ORACLE_STDERR" && EXIT_CODE=0 || EXIT_CODE=$?
+        RESULT=$(cat "$ORACLE_STDOUT")
+        echo "::notice::oracle exit=${EXIT_CODE} stdout_len=${#RESULT} stderr_len=$(wc -c < "$ORACLE_STDERR")"
+        if [ "$EXIT_CODE" != "0" ]; then
+          echo "::warning::oracle generate failed (exit ${EXIT_CODE}) — stderr: $(cat "$ORACLE_STDERR")"
         fi
         OUTPUT_FILE=$(echo "$RESULT" | python3 -c \
           "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('output_file',''))" 2>/dev/null || echo "")
