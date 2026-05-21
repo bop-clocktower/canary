@@ -537,5 +537,151 @@ def feedback():
     )
 
 
+# ---------------------------------------------------------------------------
+# `oracle skills` — discovery + invocation of bundled and overlay skills.
+# ---------------------------------------------------------------------------
+
+skills_app = typer.Typer(help="List and invoke discoverable Oracle skills.")
+app.add_typer(skills_app, name="skills")
+
+
+@skills_app.command("list")
+def skills_list(
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v",
+        help="Also print the SKILL.md path for each skill.",
+    ),
+) -> None:
+    """List every skill discoverable from the current directory."""
+    from agent.core.skill_registry import SkillRegistry
+
+    skills = SkillRegistry().discover()
+    if not skills:
+        print("[yellow]No skills found.[/yellow]")
+        return
+
+    bundled = [s for s in skills if s.source == "bundled"]
+    local = [s for s in skills if s.source == "local"]
+
+    def _format(skill) -> str:
+        # Backslash-escapes prevent rich from interpreting [cli]/[entry]
+        # as markup tags so the literal brackets reach stdout.
+        marker = ""
+        if skill.error:
+            marker = r" \[error]"
+        elif skill.cli:
+            marker = r" \[cli]"
+        elif skill.entry:
+            marker = r" \[entry]"
+        desc = f"  {skill.description}" if skill.description else ""
+        line = f"  /{skill.name}{marker}{desc}"
+        if verbose:
+            line += f"\n    [dim]{skill.path}[/dim]"
+        return line
+
+    if bundled:
+        print("[bold]Bundled skills:[/bold]")
+        for skill in bundled:
+            print(_format(skill))
+    if local:
+        if bundled:
+            print()
+        print("[bold]Local overlay skills[/bold] [dim](override bundled):[/dim]")
+        for skill in local:
+            print(_format(skill))
+
+
+@skills_app.command("run")
+def skills_run(
+    name: str = typer.Argument(..., help="Name of the skill to invoke."),
+    args: list[str] = typer.Argument(
+        None, help="Arguments forwarded to the skill's cli/entry.",
+    ),
+    allow_executable_skills: bool = typer.Option(
+        False, "--allow-executable-skills",
+        help="Opt-in to invoking cli:/entry: skills in non-interactive (CI) contexts.",
+    ),
+) -> None:
+    """Invoke a code-bearing skill's declared cli or entry target.
+
+    Refuses to run when:
+    - The skill has no cli/entry field (markdown-only)
+    - The skill has a validation error (e.g. both cli and entry declared)
+    - The cli path escapes the skill directory after symlink resolution
+    - The context is non-interactive and --allow-executable-skills is unset
+    """
+    import subprocess
+    import sys
+    from agent.core.skill_registry import (
+        SkillRegistry,
+        is_executable_skill_allowed,
+        resolve_cli_path,
+    )
+
+    skill = SkillRegistry().find(name)
+    if skill is None:
+        print(f"[red]✗[/red] No skill named [bold]{name}[/bold] found.")
+        raise typer.Exit(1)
+    if skill.error:
+        print(f"[red]✗[/red] Skill [bold]{name}[/bold]: {skill.error}")
+        raise typer.Exit(2)
+    if not skill.is_executable:
+        print(
+            f"[yellow]Skill [bold]{name}[/bold] is markdown-only — no "
+            f"cli: or entry: field to run.[/yellow]"
+        )
+        raise typer.Exit(2)
+    if not is_executable_skill_allowed(allow_executable_skills):
+        print(
+            "[red]✗[/red] Refusing to invoke executable skill in "
+            "non-interactive context. Pass [bold]--allow-executable-skills[/bold] "
+            "to opt in (e.g. in trusted CI configurations)."
+        )
+        raise typer.Exit(3)
+
+    forwarded = list(args or [])
+
+    if skill.cli:
+        try:
+            target = resolve_cli_path(skill)
+        except ValueError as exc:
+            print(f"[red]✗[/red] {exc}")
+            raise typer.Exit(4)
+        result = subprocess.run(
+            [str(target), *forwarded],
+            cwd=str(skill.dir),
+        )
+        raise typer.Exit(result.returncode)
+
+    if skill.entry:
+        module_name, _, attr = skill.entry.partition(":")
+        if not module_name or not attr:
+            print(
+                f"[red]✗[/red] Skill [bold]{name}[/bold] entry must be "
+                f"'module:callable', got {skill.entry!r}"
+            )
+            raise typer.Exit(5)
+        try:
+            import importlib
+            module = importlib.import_module(module_name)
+            target = getattr(module, attr)
+        except (ImportError, AttributeError) as exc:
+            print(
+                f"[red]✗[/red] Skill [bold]{name}[/bold] entry "
+                f"{skill.entry!r}: {exc}"
+            )
+            raise typer.Exit(6)
+
+        saved_argv = sys.argv
+        sys.argv = [skill.entry, *forwarded]
+        try:
+            rc = target()
+        except SystemExit as exc:
+            rc = exc.code if isinstance(exc.code, int) else 0
+        finally:
+            sys.argv = saved_argv
+        raise typer.Exit(int(rc or 0))
+
+
 if __name__ == "__main__":
     app()
