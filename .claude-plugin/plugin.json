@@ -6,6 +6,7 @@
   "skills": ["./agents/skills"],
   "agents": "./.claude-plugin/agents/",
   "commands": "./.claude-plugin/commands/",
+  "hooks": "./.claude-plugin/hooks.json",
   "mcpServers": {
     "oracle": {
       "command": "python",
