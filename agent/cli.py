@@ -9,7 +9,9 @@ the Oracle agent.
 """
 
 import json
+import subprocess
 import sys as _sys
+from pathlib import Path
 from typing import Optional
 import typer
 from rich import print
@@ -28,7 +30,10 @@ def _pre_command(
     ),
 ) -> None:
     """Run the setup wizard if this project has not been configured."""
-    if ctx.invoked_subcommand == "setup":
+    # Don't auto-trigger the wizard when the user is explicitly invoking
+    # any setup-class command. `setup` is dev/MCP bootstrap; `env-setup`
+    # is the wizard.
+    if ctx.invoked_subcommand in ("setup", "env-setup", "env-setup-legacy"):
         return
     if no_setup:
         return
@@ -391,6 +396,101 @@ def skills_list(
             print(f"  [cyan]/{s.name}[/cyan]{desc}")
             if verbose:
                 print(f"    [dim]{s.path}[/dim]")
+
+
+@app.command(name="env-setup")
+def env_setup_cmd(
+    full: bool = typer.Option(
+        False, "--full",
+        help="Run a sample generation after setup to preview output.",
+    ),
+) -> None:
+    """
+    Interactive tester onboarding: choose a provider, verify the API key,
+    write .env, and (with --full) generate a sample test.
+
+    Calls the shared SetupWizard so this flow is identical to the
+    auto-trigger in the --pre-command callback. The wizard internally
+    uses provider_ping for status-aware validation and env_writer for
+    safe .env merges.
+    """
+    from agent.core.setup import SetupWizard
+    SetupWizard().run(full=full)
+
+
+@app.command(name="env-setup-legacy", hidden=True)
+def env_setup_legacy() -> None:
+    """
+    Legacy non-interactive env-setup retained for scripts that call
+    `oracle env-setup-legacy`. Prefer `oracle env-setup` (the wizard).
+    """
+    from agent.core.env_setup import (
+        DEFAULT_PROVIDER,
+        SUPPORTED_PROVIDERS,
+        run_flow,
+    )
+
+    print("\n[bold cyan]Oracle env-setup[/bold cyan] [dim](tester onboarding)[/dim]\n")
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, check=True,
+        )
+        repo_root = Path(result.stdout.strip())
+    except subprocess.CalledProcessError:
+        repo_root = Path.cwd()
+
+    def _provider_prompt() -> str:
+        return typer.prompt(
+            f"Provider [{'/'.join(SUPPORTED_PROVIDERS)}]",
+            default=DEFAULT_PROVIDER,
+        )
+
+    def _key_prompt(env_var: str) -> str:
+        return typer.prompt(f"{env_var} (input hidden)", hide_input=True, default="")
+
+    def _smoke() -> bool:
+        import shutil
+        # Prefer the `oracle` console script (on PATH) so the smoke check
+        # exercises the same entry point a real tester uses. When the venv
+        # isn't activated, fall back to `python -m agent.cli` so the check
+        # still runs.
+        oracle_bin = shutil.which("oracle")
+        if oracle_bin:
+            cmd = [oracle_bin, "generate", "--recommend-only", "smoke"]
+        else:
+            cmd = [_sys.executable, "-m", "agent.cli", "generate", "--recommend-only", "smoke"]
+        print(f"\n[bold]Running smoke check:[/bold] {' '.join(cmd[-4:])}")
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        except subprocess.TimeoutExpired:
+            print("[red]✗[/red] smoke check timed out after 30s")
+            return False
+        if r.returncode == 0:
+            print("[green]✓[/green] smoke check passed")
+            return True
+        print(f"[red]✗[/red] smoke check failed:\n{r.stderr}")
+        return False
+
+    outcome = run_flow(
+        repo_root=repo_root,
+        provider_prompt=_provider_prompt,
+        api_key_prompt=_key_prompt,
+        smoke_check=_smoke,
+    )
+
+    print()
+    if outcome.success:
+        print(f"[bold green]env-setup complete.[/bold green] Provider: {outcome.provider}")
+        if outcome.env_added:
+            print(f"  .env keys added:     {', '.join(outcome.env_added)}")
+        if outcome.env_preserved:
+            print(f"  .env keys preserved: {', '.join(outcome.env_preserved)}")
+        print("\nNext: [bold]oracle generate \"your test prompt here\"[/bold]")
+    else:
+        print(f"[bold yellow]env-setup incomplete:[/bold yellow] {outcome.reason}")
+        raise typer.Exit(1)
 
 
 @app.command()
