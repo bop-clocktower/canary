@@ -6,8 +6,8 @@ to refresh.
 
 ## Latest Snapshot
 
-- **Captured:** 2026-05-21T18:37:36.457Z
-- **Commit:** `2f4fa9ae89d1`
+- **Captured:** 2026-05-21T20:04:46.358Z
+- **Commit:** `873eb4166318`
 - **Score:** 100
 - **Findings:** 1 (error: 0, warning: 0, info: 1)
 - **Supply chain:** 0 (critical: 0, high: 0, moderate: 0, low: 0)
@@ -17,7 +17,6 @@ to refresh.
 
 | Captured | Commit | Score | Findings | Err/Warn/Info | Supply |
 | --- | --- | ---: | ---: | --- | ---: |
-| 2026-05-21T00:50:35 | `ee54a84` | 100 | 1 | 0/0/1 | 0 |
 | 2026-05-21T00:59:27 | `dc62e7c` | 100 | 1 | 0/0/1 | 0 |
 | 2026-05-21T01:54:57 | `ecfef28` | 100 | 1 | 0/0/1 | 0 |
 | 2026-05-21T02:25:15 | `27db140` | 100 | 1 | 0/0/1 | 0 |
@@ -27,6 +26,7 @@ to refresh.
 | 2026-05-21T16:48:14 | `a30fe6e` | 100 | 1 | 0/0/1 | 0 |
 | 2026-05-21T17:42:54 | `96db2ef` | 100 | 1 | 0/0/1 | 0 |
 | 2026-05-21T18:37:36 | `2f4fa9a` | 100 | 1 | 0/0/1 | 0 |
+| 2026-05-21T20:04:46 | `873eb41` | 100 | 1 | 0/0/1 | 0 |
 
 ## Open Findings
 
