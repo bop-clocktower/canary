@@ -21,6 +21,9 @@ with unit tests that mock the underlying SDK.
    generate() tests for Anthropic, Gemini, OpenAI, and Codex (mocked
    SDKs).
 5. `harness validate` passes after all changes.
+6. `ProviderFactory.get_provider()` with `ORACLE_LLM_PROVIDER` unset
+   returns an `AnthropicProvider` instance (default switched from OpenAI
+   to Claude, covered by `test_default_is_anthropic`).
 
 ## Uncertainties
 
