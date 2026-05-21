@@ -144,12 +144,14 @@ runs:
         # are always empty. Reading from the temp file is the reliable alternative.
         RESULT=$(cat /tmp/oracle_result.json 2>/dev/null)
         [ -z "$RESULT" ] && RESULT="{}"
+        echo "::notice::comment step result_len=${#RESULT} head=$(echo "$RESULT" | head -c 60 | tr '\n' '|')"
         OUTPUT_FILE=$(echo "$RESULT" | python3 -c \
           "import sys,json; print(json.loads(sys.stdin.read()).get('output_file',''))" 2>/dev/null || echo "")
         TEST_TYPE=$(echo "$RESULT" | python3 -c \
           "import sys,json; print(json.loads(sys.stdin.read()).get('test_type',''))" 2>/dev/null || echo "")
         FRAMEWORK=$(echo "$RESULT" | python3 -c \
           "import sys,json; print(json.loads(sys.stdin.read()).get('framework',''))" 2>/dev/null || echo "")
+        echo "::notice::extracted output_file=${OUTPUT_FILE} test_type=${TEST_TYPE} framework=${FRAMEWORK}"
 
         if [ -n "$OUTPUT_FILE" ] && [ -f "$OUTPUT_FILE" ]; then
           TEST_CONTENT=$(cat "$OUTPUT_FILE")
