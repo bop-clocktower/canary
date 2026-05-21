@@ -79,7 +79,7 @@ class OracleOrchestrator:
         classification = self.classifier.classify(user_prompt)
 
         # 3. Recommend framework
-        recommendation = self.recommender.recommend(classification)
+        recommendation = self.recommender.recommend(classification, metadata=metadata)
 
         framework = recommendation["framework"]
         if not framework:

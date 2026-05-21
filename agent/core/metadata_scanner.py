@@ -11,7 +11,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Set
 
 
 @dataclass
@@ -25,6 +25,18 @@ class ProjectMetadata:
     @property
     def is_empty(self) -> bool:
         return not self.js_dependencies and not self.python_packages and not self.tsconfig
+
+    @property
+    def detected_languages(self) -> Set[str]:
+        """Infer project languages from detected metadata."""
+        langs: Set[str] = set()
+        if self.js_dependencies:
+            langs.update({"typescript", "javascript"})
+        if self.tsconfig:
+            langs.add("typescript")
+        if self.python_packages:
+            langs.add("python")
+        return langs
 
 
 class MetadataScanner:

@@ -7,7 +7,7 @@ This module uses classification data and the framework registry to suggest
 the most appropriate testing framework and file configuration for a given task.
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 from agent.core.classifier import ClassificationResult
 from agent.core.framework_registry import FrameworkRegistry
 
@@ -23,12 +23,15 @@ class FrameworkRecommender:
         """
         self.registry = FrameworkRegistry()
 
-    def recommend(self, classification: ClassificationResult) -> Dict:
+    def recommend(self, classification: ClassificationResult, metadata=None) -> Dict:
         """
         Recommends a framework based on the classification result.
 
         Args:
             classification: The result from the TestClassifier.
+            metadata: Optional ProjectMetadata. When provided, candidates are
+                filtered to those whose languages intersect with the project's
+                detected languages. Falls back to unfiltered if no match.
 
         Returns:
             Dict: A dictionary containing the recommended framework,
@@ -42,13 +45,24 @@ class FrameworkRecommender:
                 "reason": ["No matching framework found"]
             }
 
+        # Apply language filter when project languages are known.
+        candidates = frameworks
+        if metadata is not None:
+            detected = metadata.detected_languages
+            if detected:
+                filtered = [
+                    f for f in frameworks
+                    if set(f.get("languages", [])) & detected
+                ]
+                candidates = filtered if filtered else frameworks
+
         # Prefer "preferred" status first
         preferred = [
-            f for f in frameworks
+            f for f in candidates
             if f.get("status") == "preferred"
         ]
 
-        selected = preferred[0] if preferred else frameworks[0]
+        selected = preferred[0] if preferred else candidates[0]
 
         # Derive extension with safety
         file_extension = "ts" # Default fallback
