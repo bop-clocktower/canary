@@ -275,7 +275,7 @@ class TestOracleSkillsCli(unittest.TestCase):
         from agent.cli import app
 
         runner = CliRunner()
-        result = runner.invoke(app, ["--no-setup", "skills", "list"])
+        result = runner.invoke(app, ["skills", "list"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("Bundled skills", result.output)
 
@@ -289,7 +289,7 @@ class TestOracleSkillsCli(unittest.TestCase):
 
         os.chdir(self.root)
         runner = CliRunner()
-        result = runner.invoke(app, ["--no-setup", "skills", "list"])
+        result = runner.invoke(app, ["skills", "list"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("/alpha", result.output)
         self.assertIn("[cli]", result.output)
@@ -299,7 +299,7 @@ class TestOracleSkillsCli(unittest.TestCase):
         from agent.cli import app
 
         runner = CliRunner()
-        result = runner.invoke(app, ["--no-setup", "skills", "run", "nonexistent"])
+        result = runner.invoke(app, ["skills", "run", "nonexistent"])
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("No skill named", result.output)
 
@@ -312,7 +312,7 @@ class TestOracleSkillsCli(unittest.TestCase):
         runner = CliRunner()
         result = runner.invoke(
             app,
-            ["--no-setup", "skills", "run", "alpha", "--allow-executable-skills"],
+            ["skills", "run", "alpha", "--allow-executable-skills"],
         )
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("markdown-only", result.output)
@@ -329,7 +329,7 @@ class TestOracleSkillsCli(unittest.TestCase):
 
         os.chdir(self.root)
         runner = CliRunner()
-        result = runner.invoke(app, ["--no-setup", "skills", "run", "alpha"])
+        result = runner.invoke(app, ["skills", "run", "alpha"])
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("non-interactive", result.output)
 
@@ -350,7 +350,7 @@ class TestOracleSkillsCli(unittest.TestCase):
         result = runner.invoke(
             app,
             [
-                "--no-setup", "skills", "run", "alpha",
+                "skills", "run", "alpha",
                 "--allow-executable-skills",
             ],
         )
