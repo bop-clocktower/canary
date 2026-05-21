@@ -1159,7 +1159,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
        name: Validate plugin.json against schema
        runs-on: ubuntu-latest
        steps:
-         - uses: actions/checkout@v6
+         - uses: actions/checkout@v4
 
          - name: Set up Python
            uses: actions/setup-python@v5
