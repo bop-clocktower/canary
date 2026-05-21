@@ -4,6 +4,7 @@
       "name": "playwright",
       "display_name": "Playwright",
       "category": "e2e_ui",
+      "categories": ["e2e_ui", "api"],
       "languages": [
         "typescript",
         "javascript"

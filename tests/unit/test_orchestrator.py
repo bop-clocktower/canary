@@ -61,6 +61,8 @@ class TestOracleOrchestrator(unittest.TestCase):
     @patch('agent.core.orchestrator.generate_response')
     def test_run_api_routes_to_pytest(self, mock_generate):
         mock_generate.return_value = "def test_api(): assert True"
+        # Simulate a Python project so language-aware recommender selects pytest.
+        Path(self.project_root, "requirements.txt").write_text("requests==2.31.0\n")
 
         result = self.orchestrator.run("Write tests for the /users API endpoint", project_root=self.project_root)
 
