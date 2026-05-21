@@ -409,7 +409,8 @@ path, non-zero exit.
 
 **Depends on:** Task 1
 **Outputs:** `toolwindow/OracleToolWindowFactory.kt`,
-`toolwindow/OracleToolWindowPanel.kt`
+`toolwindow/OracleToolWindowPanel.kt`,
+`toolwindow/OracleToolWindowService.kt`
 
 **`OracleToolWindowPanel.kt`:**
 
@@ -464,6 +465,37 @@ class OracleToolWindowFactory : ToolWindowFactory {
 }
 ```
 
+**`OracleToolWindowService.kt`:**
+
+```kotlin
+package com.oracle.intellij.toolwindow
+
+import com.intellij.openapi.application.invokeLater
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.wm.ToolWindowManager
+
+@Service(Service.Level.PROJECT)
+class OracleToolWindowService(private val project: Project) {
+
+    private var panel: OracleToolWindowPanel? = null
+
+    fun initialize(p: OracleToolWindowPanel) { panel = p }
+
+    // All methods guard with invokeLater — actions call these from
+    // background threads (Task.Backgroundable).
+    fun append(text: String) { invokeLater { panel?.append(text) } }
+    fun appendError(text: String) { invokeLater { panel?.appendError(text) } }
+    fun clear() { invokeLater { panel?.clear() } }
+    fun show() {
+        invokeLater {
+            ToolWindowManager.getInstance(project)
+                .getToolWindow("Oracle")?.show()
+        }
+    }
+}
+```
+
 Register in `plugin.xml`:
 
 ```xml
@@ -473,10 +505,6 @@ Register in `plugin.xml`:
 <projectService
     serviceImplementation="com.oracle.intellij.toolwindow.OracleToolWindowService"/>
 ```
-
-`OracleToolWindowService` is a `@Service(Service.Level.PROJECT)` that holds
-the `OracleToolWindowPanel` reference and exposes `append`, `appendError`,
-`clear`, and `show` helpers called by actions.
 
 **Verify:** `./gradlew buildPlugin` exits 0. Tool window appears in the
 bottom stripe when plugin is installed in a sandbox IDE.
@@ -930,7 +958,8 @@ Register in `plugin.xml`:
 ### Task 12 — Plugin Startup (`OraclePlugin`)
 
 **Depends on:** Tasks 3, 6
-**Outputs:** `OraclePlugin.kt` (replace stub)
+**Outputs:** `OraclePlugin.kt` (replace stub),
+`statusbar/OracleStatusBarService.kt`
 
 ```kotlin
 package com.oracle.intellij
@@ -1000,9 +1029,48 @@ Register in `plugin.xml`:
 </extensions>
 ```
 
-`OracleStatusBarService` is a `@Service(Service.Level.PROJECT)` holding the
-current `OracleWidgetState` and `isCliFound` flag. Actions call
-`OracleStatusBarService.getInstance(project)` to read/write state.
+**`OracleStatusBarService.kt`** — add to `statusbar/` package alongside Task 6 files:
+
+```kotlin
+package com.oracle.intellij.statusbar
+
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.project.Project
+
+@Service(Service.Level.PROJECT)
+class OracleStatusBarService(private val project: Project) {
+
+    @Volatile private var cliFound = false
+    private var widget: OracleStatusBarWidget? = null
+
+    fun isCliFound(): Boolean = cliFound
+    fun setCliFound(found: Boolean) { cliFound = found }
+
+    // Called by OracleStatusBarWidget.install() to register itself.
+    internal fun setWidget(w: OracleStatusBarWidget) { widget = w }
+
+    fun setState(state: OracleWidgetState) {
+        widget?.setState(state)
+    }
+}
+```
+
+Also add to `plugin.xml`:
+
+```xml
+<projectService
+    serviceImplementation="com.oracle.intellij.statusbar.OracleStatusBarService"/>
+```
+
+And in `OracleStatusBarWidget.install()` (Task 6), add one line so the widget
+registers itself with the service:
+
+```kotlin
+override fun install(bar: StatusBar) {
+    statusBar = bar
+    project.getService(OracleStatusBarService::class.java).setWidget(this)
+}
+```
 
 **Verify:** `./gradlew buildPlugin` exits 0. In sandbox IDE: plugin probes
 CLI on project open; status bar shows correct state; one-time version warning

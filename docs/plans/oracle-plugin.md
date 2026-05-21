@@ -454,7 +454,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 ---
 
-### Task 4: Write failing tests for write_test_file and run_tests
+### Task 4: Add tests for write_test_file and run_tests
 
 **Depends on:** Task 3 | **Files:** `tests/unit/test_mcp_server.py`
 
@@ -521,16 +521,15 @@ MODIFY pyproject.toml  (add fastmcp dependency)
            assert isinstance(result, dict)
    ```
 
-2. Run just the new tests and verify they fail (implementation not yet wired
-   for the patched path):
+2. Run the new tests and verify they pass (implementation is already in place
+   from Task 3):
 
    ```bash
    python3 -m pytest tests/unit/test_mcp_server.py::TestWriteTestFile \
-                     tests/unit/test_mcp_server.py::TestRunTests -v 2>&1
+                     tests/unit/test_mcp_server.py::TestRunTests -v
    ```
 
-   Expected: tests are collected and either pass (if impl already matches) or
-   show the specific assertion errors — no `ImportError` or syntax errors.
+   Expected: `2 passed` (or `4 passed` if both classes run).
 
 3. Run `harness validate`.
 
@@ -542,7 +541,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 ---
 
-### Task 5: Write failing tests for init_suite, migrate, and error
+### Task 5: Add tests for init_suite, migrate, and error
 
 **Depends on:** Task 4 | **Files:** `tests/unit/test_mcp_server.py`
 
@@ -1418,8 +1417,8 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 | 1 | `fastmcp` dependency in `pyproject.toml` | 2 min |
 | 2 | Failing tests: `analyze_file`, `list_frameworks` | 3 min |
 | 3 | `agent/mcp_server.py` — all 6 tools implemented | 5 min |
-| 4 | Failing tests: `write_test_file`, `run_tests` | 3 min |
-| 5 | Failing tests: `init_suite`, `migrate`, error case | 4 min |
+| 4 | Tests: `write_test_file`, `run_tests` | 3 min |
+| 5 | Tests: `init_suite`, `migrate`, error case | 4 min |
 | 6 | `.claude-plugin/plugin.json` manifest | 2 min |
 | 7 | Three agent definition markdown files | 4 min |
 | 8 | Three skill markdown files | 4 min |
