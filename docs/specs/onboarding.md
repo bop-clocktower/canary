@@ -5,6 +5,42 @@ them through provider selection, API key entry, and connection verification
 before any `oracle` command runs for the first time in a project. Re-runnable
 explicitly via `oracle setup`.
 
+## Overview
+
+**Goals:**
+
+1. **Eliminate cold-start friction** — A developer who installs Oracle and runs
+   any command for the first time is guided through provider selection, API key
+   entry, and connection verification before the command executes — no cryptic
+   "missing API key" errors.
+2. **Re-runnable explicit setup** — `oracle setup` can be run at any time to
+   switch providers or fix a broken key, with no dependency on existing config
+   state.
+3. **CI-safe auto-trigger** — The setup auto-trigger detects non-interactive
+   contexts (no TTY, `CI` env var) and skips silently so pipelines are never
+   blocked.
+4. **Validated key before write** — The wizard verifies the API key against the
+   selected provider before writing any config; a bad key causes a retry loop,
+   not a partial-config write.
+
+## Success Criteria
+
+1. **Auto-trigger fires once:** On first command run in an unconfigured project
+   with an interactive TTY, the user sees the Y/N setup prompt; after completing
+   setup, the original command resumes without re-prompting.
+2. **No TTY — silent skip:** When `sys.stdin.isatty()` is False or `CI=true`,
+   no setup prompt appears; the command proceeds as-is.
+3. **`--no-setup` suppresses trigger:** Passing `--no-setup` on any command
+   skips the auto-trigger unconditionally, even in an interactive TTY.
+4. **Retry on bad key:** A failed provider verify call prints the provider's
+   error and loops to the API key input step; no partial `.oracle/config.json`
+   is written.
+5. **`KeyboardInterrupt` leaves no partial config:** Interrupting the wizard at
+   any step leaves `.oracle/config.json` absent; `oracle setup` run again starts
+   fresh.
+6. **Config format:** On success, `.oracle/config.json` contains exactly
+   `provider` and `configured_at` fields; no API key is stored.
+
 ## Scope
 
 **In scope:**
@@ -106,6 +142,7 @@ field to be present and non-empty.
 | Non-TTY or CI context | Skip wizard silently; command runs as-is |
 | `KeyboardInterrupt` mid-wizard | Print "Setup cancelled. Run `oracle setup` to try again." No config written. |
 | `oracle setup` run outside a project | No guard; config written to `cwd/.oracle/config.json` |
+| Cannot create `.oracle/` directory (permissions) | Print error message and exit non-zero; no partial config written |
 
 ## src Reference
 
