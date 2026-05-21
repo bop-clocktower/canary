@@ -18,7 +18,7 @@ def strip_strings_and_comments(cmd):
 
 def contains_hook_bypass(command):
     stripped = strip_strings_and_comments(command)
-    if re.search(r"(?:^|\s)--no-verify(?=\s|$)", stripped):
+    if re.search(r"\bgit\s+(?:[\w-]+\s+)*?commit\b[^\n]*?--no-verify(?=\s|$)", stripped):
         return True
     if re.search(r"\bgit\s+(?:[\w-]+\s+)*?commit\b[^\n]*?(?:^|\s)-n(?=\s|$)", stripped):
         return True

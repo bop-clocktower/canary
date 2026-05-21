@@ -4,6 +4,7 @@
 # Never blocks (always exits 0). Warnings go to stderr.
 
 import json
+import os
 import subprocess
 import sys
 
@@ -29,6 +30,9 @@ def main():
             sys.exit(0)
 
         if not file_path.endswith(".py"):
+            sys.exit(0)
+
+        if not os.path.isfile(file_path):
             sys.exit(0)
 
         result = subprocess.run(
