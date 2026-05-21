@@ -111,7 +111,7 @@ runs:
         fi
         ORACLE_STDERR=$(mktemp)
         ORACLE_STDOUT=$(mktemp)
-        oracle --no-setup generate "$PROMPT" --json $RUN_FLAG \
+        oracle generate "$PROMPT" --json $RUN_FLAG \
           >"$ORACLE_STDOUT" 2>"$ORACLE_STDERR" && EXIT_CODE=0 || EXIT_CODE=$?
         RESULT=$(cat "$ORACLE_STDOUT")
         echo "::notice::oracle exit=${EXIT_CODE} stdout_len=${#RESULT} stderr_len=$(wc -c < "$ORACLE_STDERR")"
