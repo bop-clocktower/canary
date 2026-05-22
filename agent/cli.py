@@ -413,7 +413,13 @@ def skills_run(
         help="Opt-in to invoking cli:/entry: skills in non-interactive (CI) contexts.",
     ),
 ) -> None:
-    """Invoke a code-bearing skill's declared cli or entry target.
+    """
+    Alias for `oracle setup`. Runs the interactive provider selection wizard
+    and (with --full) generates a sample test after setup.
+    """
+    from agent.core.setup import SetupWizard
+    SetupWizard().run(full=full)
+
 
     Refuses to run when:
     - The skill has no cli/entry field (markdown-only)

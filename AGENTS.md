@@ -71,6 +71,8 @@ docs/branching-convention
 
 - **CLI:** [agent/cli.py](agent/cli.py) — The primary entry point for
   the agent. Handles command-line arguments and high-level orchestration.
+  Commands: `generate`, `run`, `init`, `migrate`, `setup`, `skills list`,
+  `env-setup` (alias for `setup`), `version`, `feedback`.
 
 ### Core Services (`agent/core/`)
 
@@ -133,6 +135,11 @@ docs/branching-convention
 - **CI Environment:** [agent/core/ci_env.py](agent/core/ci_env.py)
   — Detects CI environment variables (`CI`, `GITHUB_ACTIONS`, etc.) to
   enable headless optimizations and force JSON output in pipelines.
+- **Feedback:** [agent/core/feedback.py](agent/core/feedback.py)
+  — Builds a pre-filled GitHub issue URL from the last `oracle generate`
+  run. Loads `.oracle/last_generation.json` (written by the orchestrator
+  after each generation) and encodes prompt, framework, test type,
+  provider, and model into the URL. Invoked via `oracle feedback`.
 
 ### Claude Code Plugin (`.claude-plugin/`)
 
