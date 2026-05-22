@@ -1,4 +1,4 @@
-"""Unit tests for .claude-plugin/hooks/*.py hook scripts.
+"""Unit tests for plugins/oracle/.claude-plugin/hooks/*.py hook scripts.
 
 Each hook is exercised as a subprocess with crafted stdin payloads,
 matching the Claude Code hook protocol (JSON in, exit code out).
@@ -10,7 +10,7 @@ import sys
 import unittest
 from pathlib import Path
 
-HOOKS_DIR = Path(__file__).parents[2] / ".claude-plugin" / "hooks"
+HOOKS_DIR = Path(__file__).parents[2] / "plugins" / "oracle" / ".claude-plugin" / "hooks"
 
 
 def _run(hook: str, payload) -> subprocess.CompletedProcess:
