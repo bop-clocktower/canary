@@ -312,6 +312,36 @@ implementation begins. All 6 resolved.
 
 ## Future Work
 
+### Decide fate of the generate skill + auto-generation Action
+
+- **Status:** decision pending
+- **Spec:** none
+- **Summary:** The `oracle generate` command and the GitHub Action that
+  invokes it on every PR (see "GitHub Action v1.0.0 Release" above)
+  together require an LLM provider API key and auto-produce test code
+  on each pull request. The question to resolve: does this lean too
+  hard on AI? Auto-generated tests on every PR creates pressure to
+  accept LLM output rather than understand the change being tested,
+  and the required API key is friction for casual contributors (see
+  also `feedback_no_api_keys` — downstream users have explicitly asked
+  for keyless paths). Options to evaluate:
+  1. **Leave as-is** — keep the Action, document the AI-dependency
+     trade-off, lean on human review to catch over-reliance.
+  2. **Demote to opt-in** — Action ships but defaults to off; teams
+     enable it deliberately. Keeps the capability without the
+     PR-level pressure.
+  3. **Remove entirely** — delete `action.yml`, the auto-generation
+     workflow, and the `generate` CLI subcommand. Test authorship
+     stays human; Oracle becomes a recommender + skill loader.
+  4. **Split** — keep `oracle generate` as a CLI for manual use; remove
+     the PR-triggered Action. Capability without the pressure.
+  Decision drives downstream cleanup: the Capillary overlay deleted
+  `action.yml` during the skills-only reshape but assumed the Action
+  would be reshipped upstream as a pipx wrapper. If we remove
+  altogether, that follow-up evaporates.
+- **Blockers:** decision required from upstream maintainer.
+- **Plan:** none
+
 ### Multi-Provider Config
 
 - **Status:** planned
