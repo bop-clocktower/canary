@@ -21,46 +21,6 @@ from agent.core.feedback import FeedbackPayload, build_issue_url, record_last_ge
 app = typer.Typer()
 
 
-@app.callback()
-def _pre_command(
-    ctx: typer.Context,
-    no_setup: bool = typer.Option(
-        False, "--no-setup",
-        help="Skip the first-run setup check.",
-    ),
-) -> None:
-    """Run the setup wizard if this project has not been configured."""
-    # Don't auto-trigger the wizard when the user is explicitly invoking
-    # any setup-class command. `setup` is dev/MCP bootstrap; `env-setup`
-    # is the wizard.
-    if ctx.invoked_subcommand in ("setup", "env-setup", "env-setup-legacy"):
-        return
-    if no_setup:
-        return
-    if not _sys.stdin.isatty():
-        return
-    from agent.core.ci_env import is_ci
-    if is_ci():
-        return
-    from agent.core.setup import SetupWizard, Confirm
-    if not SetupWizard.is_configured():
-        if Confirm.ask(
-            "! Oracle isn't configured for this project yet.\n"
-            "  Run setup now? "
-            "(skip with --no-setup or run later: oracle setup)",
-            default=True,
-        ):
-            SetupWizard().run()
-            print("\n[dim]Continuing with your command…[/dim]\n")
-        else:
-            from rich import print as rprint
-            rprint(
-                "[yellow]⚠[/yellow]  Skipping setup — command may fail "
-                "without a valid API key. Run [bold]oracle setup[/bold] "
-                "to configure."
-            )
-
-
 @app.command()
 def generate(
     prompt: str,
@@ -358,150 +318,6 @@ def migrate(
 
 
 @app.command()
-def setup(
-    full: bool = typer.Option(
-        False, "--full",
-        help="Run a sample generation after setup to preview output.",
-    ),
-) -> None:
-    """
-    Configure Oracle for this project: choose a provider and verify your
-    API key. Re-run at any time to update the configuration.
-    """
-    from agent.core.setup import SetupWizard
-    SetupWizard().run(full=full)
-
-
-skills_app = typer.Typer(help="Discover and list Oracle skills.")
-app.add_typer(skills_app, name="skills")
-
-
-@skills_app.command("list")
-def skills_list(
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show file paths."),
-) -> None:
-    """List all discoverable skills — bundled defaults and local overlays."""
-    from agent.core.skill_registry import SkillRegistry
-    from pathlib import Path as _Path
-
-    skills = SkillRegistry().discover(_Path.cwd())
-    if not skills:
-        print("[yellow]No skills found.[/yellow]")
-        return
-
-    bundled = [s for s in skills if s.source == "bundled"]
-    local = [s for s in skills if s.source == "local"]
-
-    if bundled:
-        print("[bold]Bundled skills:[/bold]")
-        for s in bundled:
-            desc = f"  [dim]{s.description}[/dim]" if s.description else ""
-            print(f"  [cyan]/{s.name}[/cyan]{desc}")
-            if verbose:
-                print(f"    [dim]{s.path}[/dim]")
-
-    if local:
-        print("\n[bold green]Local overlay skills (override bundled):[/bold green]")
-        for s in local:
-            desc = f"  [dim]{s.description}[/dim]" if s.description else ""
-            print(f"  [cyan]/{s.name}[/cyan]{desc}")
-            if verbose:
-                print(f"    [dim]{s.path}[/dim]")
-
-
-@app.command(name="env-setup")
-def env_setup_cmd(
-    full: bool = typer.Option(
-        False, "--full",
-        help="Run a sample generation after setup to preview output.",
-    ),
-) -> None:
-    """
-    Alias for `oracle setup`. Runs the interactive provider selection wizard
-    and (with --full) generates a sample test after setup.
-    """
-    from agent.core.setup import SetupWizard
-    SetupWizard().run(full=full)
-
-
-@app.command(name="env-setup-legacy", hidden=True)
-def env_setup_legacy() -> None:
-    """
-    Legacy non-interactive env-setup retained for scripts that call
-    `oracle env-setup-legacy`. Prefer `oracle env-setup` (the wizard).
-    """
-    from agent.core.env_setup import (
-        DEFAULT_PROVIDER,
-        SUPPORTED_PROVIDERS,
-        run_flow,
-    )
-
-    print("\n[bold cyan]Oracle env-setup[/bold cyan] [dim](tester onboarding)[/dim]\n")
-
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True,
-        )
-        repo_root = Path(result.stdout.strip())
-    except subprocess.CalledProcessError:
-        repo_root = Path.cwd()
-
-    def _provider_prompt() -> str:
-        return typer.prompt(
-            f"Provider [{'/'.join(SUPPORTED_PROVIDERS)}]",
-            default=DEFAULT_PROVIDER,
-        )
-
-    def _key_prompt(env_var: str) -> str:
-        return typer.prompt(f"{env_var} (input hidden)", hide_input=True, default="")
-
-    def _smoke() -> bool:
-        import shutil
-        # Prefer the `oracle` console script (on PATH) so the smoke check
-        # exercises the same entry point a real tester uses. When the venv
-        # isn't activated, fall back to `python -m agent.cli` so the check
-        # still runs.
-        oracle_bin = shutil.which("oracle")
-        if oracle_bin:
-            cmd = [oracle_bin, "generate", "--recommend-only", "smoke"]
-        else:
-            cmd = [_sys.executable, "-m", "agent.cli", "generate", "--recommend-only", "smoke"]
-        print(f"\n[bold]Running smoke check:[/bold] {' '.join(cmd[-4:])}")
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        except subprocess.TimeoutExpired:
-            print("[red]✗[/red] smoke check timed out after 30s")
-            return False
-        if r.returncode == 0:
-            print("[green]✓[/green] smoke check passed")
-            return True
-        print(f"[red]✗[/red] smoke check failed:\n{r.stderr}")
-        return False
-
-    outcome = run_flow(
-        repo_root=repo_root,
-        provider_prompt=_provider_prompt,
-        api_key_prompt=_key_prompt,
-        smoke_check=_smoke,
-    )
-
-    print()
-    if outcome.success:
-        print(f"[bold green]env-setup complete.[/bold green] Provider: {outcome.provider}")
-        if outcome.env_added:
-            print(f"  .env keys added:     {', '.join(outcome.env_added)}")
-        if outcome.env_preserved:
-            print(f"  .env keys preserved: {', '.join(outcome.env_preserved)}")
-        if not outcome.smoke_ok:
-            print("[bold yellow]Warning:[/bold yellow] smoke check failed — your key is saved but generation may need debugging.")
-        print("\nNext: [bold]oracle generate \"your test prompt here\"[/bold]")
-    else:
-        print(f"[bold yellow]env-setup incomplete:[/bold yellow] {outcome.reason}")
-        raise typer.Exit(1)
-
-
-@app.command()
 def version():
     """
     Show Oracle version info.
@@ -530,6 +346,158 @@ def feedback():
         "[dim](public link — review before submitting):[/dim]\n"
         f"{url}"
     )
+
+
+# ---------------------------------------------------------------------------
+# `oracle skills` — discovery + invocation of bundled and overlay skills.
+# ---------------------------------------------------------------------------
+
+skills_app = typer.Typer(help="List and invoke discoverable Oracle skills.")
+app.add_typer(skills_app, name="skills")
+
+
+@skills_app.command("list")
+def skills_list(
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v",
+        help="Also print the SKILL.md path for each skill.",
+    ),
+) -> None:
+    """List every skill discoverable from the current directory."""
+    from agent.core.skill_registry import SkillRegistry
+
+    skills = SkillRegistry().discover()
+    if not skills:
+        print("[yellow]No skills found.[/yellow]")
+        return
+
+    bundled = [s for s in skills if s.source == "bundled"]
+    local = [s for s in skills if s.source == "local"]
+
+    def _format(skill) -> str:
+        # Backslash-escapes prevent rich from interpreting [cli]/[entry]
+        # as markup tags so the literal brackets reach stdout.
+        marker = ""
+        if skill.error:
+            marker = r" \[error]"
+        elif skill.cli:
+            marker = r" \[cli]"
+        elif skill.entry:
+            marker = r" \[entry]"
+        desc = f"  {skill.description}" if skill.description else ""
+        line = f"  /{skill.name}{marker}{desc}"
+        if verbose:
+            line += f"\n    [dim]{skill.path}[/dim]"
+        return line
+
+    if bundled:
+        print("[bold]Bundled skills:[/bold]")
+        for skill in bundled:
+            print(_format(skill))
+    if local:
+        if bundled:
+            print()
+        print("[bold]Local overlay skills[/bold] [dim](override bundled):[/dim]")
+        for skill in local:
+            print(_format(skill))
+
+
+@skills_app.command("run")
+def skills_run(
+    name: str = typer.Argument(..., help="Name of the skill to invoke."),
+    args: list[str] = typer.Argument(
+        None, help="Arguments forwarded to the skill's cli/entry.",
+    ),
+    allow_executable_skills: bool = typer.Option(
+        False, "--allow-executable-skills",
+        help="Opt-in to invoking cli:/entry: skills in non-interactive (CI) contexts.",
+    ),
+) -> None:
+    """
+    Alias for `oracle setup`. Runs the interactive provider selection wizard
+    and (with --full) generates a sample test after setup.
+    """
+    from agent.core.setup import SetupWizard
+    SetupWizard().run(full=full)
+
+
+    Refuses to run when:
+    - The skill has no cli/entry field (markdown-only)
+    - The skill has a validation error (e.g. both cli and entry declared)
+    - The cli path escapes the skill directory after symlink resolution
+    - The context is non-interactive and --allow-executable-skills is unset
+    """
+    import subprocess
+    import sys
+    from agent.core.skill_registry import (
+        SkillRegistry,
+        is_executable_skill_allowed,
+        resolve_cli_path,
+    )
+
+    skill = SkillRegistry().find(name)
+    if skill is None:
+        print(f"[red]✗[/red] No skill named [bold]{name}[/bold] found.")
+        raise typer.Exit(1)
+    if skill.error:
+        print(f"[red]✗[/red] Skill [bold]{name}[/bold]: {skill.error}")
+        raise typer.Exit(2)
+    if not skill.is_executable:
+        print(
+            f"[yellow]Skill [bold]{name}[/bold] is markdown-only — no "
+            f"cli: or entry: field to run.[/yellow]"
+        )
+        raise typer.Exit(2)
+    if not is_executable_skill_allowed(allow_executable_skills):
+        print(
+            "[red]✗[/red] Refusing to invoke executable skill in "
+            "non-interactive context. Pass [bold]--allow-executable-skills[/bold] "
+            "to opt in (e.g. in trusted CI configurations)."
+        )
+        raise typer.Exit(3)
+
+    forwarded = list(args or [])
+
+    if skill.cli:
+        try:
+            target = resolve_cli_path(skill)
+        except ValueError as exc:
+            print(f"[red]✗[/red] {exc}")
+            raise typer.Exit(4)
+        result = subprocess.run(
+            [str(target), *forwarded],
+            cwd=str(skill.dir),
+        )
+        raise typer.Exit(result.returncode)
+
+    if skill.entry:
+        module_name, _, attr = skill.entry.partition(":")
+        if not module_name or not attr:
+            print(
+                f"[red]✗[/red] Skill [bold]{name}[/bold] entry must be "
+                f"'module:callable', got {skill.entry!r}"
+            )
+            raise typer.Exit(5)
+        try:
+            import importlib
+            module = importlib.import_module(module_name)
+            target = getattr(module, attr)
+        except (ImportError, AttributeError) as exc:
+            print(
+                f"[red]✗[/red] Skill [bold]{name}[/bold] entry "
+                f"{skill.entry!r}: {exc}"
+            )
+            raise typer.Exit(6)
+
+        saved_argv = sys.argv
+        sys.argv = [skill.entry, *forwarded]
+        try:
+            rc = target()
+        except SystemExit as exc:
+            rc = exc.code if isinstance(exc.code, int) else 0
+        finally:
+            sys.argv = saved_argv
+        raise typer.Exit(int(rc or 0))
 
 
 if __name__ == "__main__":

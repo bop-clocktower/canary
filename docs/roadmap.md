@@ -2,7 +2,7 @@
 project: oracle
 version: 1
 created: 2026-05-11
-updated: 2026-05-20
+updated: 2026-05-21
 ---
 
 # Roadmap
@@ -352,12 +352,11 @@ implementation begins. All 6 resolved.
 
 ### Onboarding `--full` Polish
 
-- **Status:** planned
+- **Status:** dropped
 - **Spec:** none
-- **Summary:** Improve the `oracle setup --full` experience. After sample
-  generation, display the generated test inline, explain what it tests,
-  and offer to run it immediately. Turns a raw file dump into a guided
-  "hello world" moment.
+- **Summary:** Dropped — `oracle setup --full` and the SetupWizard were
+  removed in v2.2.0 (#113). Oracle now runs exclusively as a Claude Code
+  plugin; no first-run setup flow exists to polish.
 - **Blockers:** none
 - **Plan:** none
 

@@ -128,11 +128,6 @@ docs/branching-convention
   — Detects harness-scaffolded test projects (via `harness.config.json`
   and `.harness/`) and migrates them to Oracle's layout without touching
   existing test files. Invoked via `oracle migrate`.
-- **Setup Wizard:** [agent/core/setup.py](agent/core/setup.py)
-  — Interactive first-run configuration wizard. Prompts for provider
-  selection and persists `.oracle/config.json`. No API key is prompted
-  or validated. Invoked automatically on first use or explicitly via
-  `oracle setup`.
 - **Skill Registry:** [agent/core/skill_registry.py](agent/core/skill_registry.py)
   — Discovers bundled default skills and local project overlay skills
   (from `.oracle/skills/`) for slash command resolution via `oracle
