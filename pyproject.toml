@@ -18,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 oracle = "agent.cli:app"
+oracle-mcp = "agent.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["agent*"]

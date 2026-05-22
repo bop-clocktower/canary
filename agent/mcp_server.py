@@ -174,5 +174,15 @@ def oracle__migrate(target_dir: str = "", apply: bool = False) -> dict:
     return _migrate_impl(target_dir, apply)
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Console-script entry point for `oracle-mcp` (see pyproject.toml).
+
+    The Claude Code plugin manifest references this entry by name so it
+    works against any pipx-installed oracle-test-ai without depending on
+    the source tree being checked out at ``${CLAUDE_PLUGIN_ROOT}``.
+    """
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()
