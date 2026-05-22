@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/hooks/block-no-verify.py\""
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/block-no-verify.py\""
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/hooks/protect-config.py\""
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/protect-config.py\""
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/hooks/quality-gate.py\""
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/quality-gate.py\""
           }
         ]
       }
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/.claude-plugin/hooks/pre-compact-state.py\""
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact-state.py\""
           }
         ]
       }

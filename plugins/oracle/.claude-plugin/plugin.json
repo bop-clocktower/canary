@@ -4,8 +4,6 @@
   "version": "1.0.0",
   "description": "AI-powered test generation for Claude Code — generate, init, and migrate test suites via slash commands.",
   "skills": ["./agents/skills"],
-  "agents": "./.claude-plugin/agents/",
-  "commands": "./.claude-plugin/commands/",
   "hooks": "./.claude-plugin/hooks.json",
   "mcpServers": {
     "oracle": {
