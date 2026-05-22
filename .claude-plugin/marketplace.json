@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "oracle",
-      "source": ".",
+      "source": "./plugins/oracle",
       "description": "Oracle plugin with four MVP personas (test-author, test-reviewer, framework-advisor, flake-hunter) and the harness MCP server. Personal-source build maintained by Bri Stevenski.",
       "version": "0.1.0",
       "author": {
