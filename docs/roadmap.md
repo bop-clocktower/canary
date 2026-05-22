@@ -312,6 +312,65 @@ implementation begins. All 6 resolved.
 
 ## Future Work
 
+### Migrate all LLM-dependent tasks to keyless slash commands
+
+- **Status:** planned
+- **Spec:** none
+- **Summary:** Eliminate the API key requirement from Oracle's user-facing
+  surface by moving every LLM-dependent task into Claude Code slash
+  commands that use the host's session (no `ANTHROPIC_API_KEY` /
+  `OPENAI_API_KEY` / `GEMINI_API_KEY` needed). The oracle-plugin spec
+  already commits to "no API key required for plugin users" — this
+  closes the loop by deprecating the CLI/Action paths that still
+  require keys.
+
+  **Today's LLM-dependent surfaces:**
+  - `oracle generate` (CLI) — calls `generate_response()` →
+    `agent/llm/*` provider matrix → requires a provider key.
+  - GitHub Action wrapping `oracle generate` on every PR — same
+    keyed dependency.
+  - Orchestrator self-healing loop (`_attempt_fix`,
+    `_attempt_selector_fix` in `agent/core/orchestrator.py`) — calls
+    `generate_response()` for retry generation.
+
+  **Target end state:**
+  - `/oracle-generate` (slash command) replaces `oracle generate`.
+    Already partially exists via `plugins/oracle/commands/`.
+  - `/oracle-self-heal` (or equivalent) wraps the self-healing loop.
+  - The MCP server (`agent/mcp_server.py`) exposes the deterministic
+    pieces (analyze, write, run, init, list-frameworks, migrate) so
+    agents can compose them.
+  - The CLI's LLM-keyed commands are deprecated, then removed in a
+    later major version. Mock provider stays as a CI fixture.
+  - `agent/llm/*` providers are kept only if external automation needs
+    them; otherwise removed.
+
+  **Why now:**
+  - Downstream `oracle-capillary` explicitly asked for keyless paths
+    (see `feedback_no_api_keys` agent memory).
+  - The plugin path is now stable enough to be the primary surface
+    (#115/#118/#121 landed the canonical layout + working MCP
+    invocation).
+  - Resolves the open decision in "Decide fate of the generate skill"
+    below by adopting option 5: not just demote the Action, but move
+    the underlying capability to a slash-command + host-LLM model.
+
+  **Phasing:**
+  1. Inventory every call site that uses `agent.llm` (orchestrator,
+     CLI, action). Document which can move to slash commands and
+     which need MCP tool wrappers instead.
+  2. Ship parity slash commands under `plugins/oracle/commands/` for
+     each retained capability (`/oracle-generate`, `/oracle-self-heal`,
+     etc.).
+  3. Print a deprecation warning from the keyed CLI paths pointing
+     users at the slash-command equivalent.
+  4. Remove the GitHub Action and `oracle generate` from a future
+     major release; bump version accordingly.
+- **Blockers:** decision from "Decide fate of the generate skill"
+  below; the two items are coupled and should land as a single
+  direction.
+- **Plan:** none
+
 ### Decide fate of the generate skill + auto-generation Action
 
 - **Status:** decision pending
