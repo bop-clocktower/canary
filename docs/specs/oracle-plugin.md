@@ -28,8 +28,9 @@ existing CLI and GitHub Action are unchanged.
 
 ## Success Criteria
 
-1. **MCP server starts:** `python -m agent.mcp_server` starts without error and
-   exposes exactly six tools to Claude Code.
+1. **MCP server starts:** the `oracle-mcp` console script (registered by
+   `pyproject.toml`, available after `pipx install oracle-test-ai`) starts
+   without error and exposes exactly six tools to Claude Code.
 2. **Tool delegation:** `oracle__analyze_file` calls `MetadataScanner`,
    `PatternMatcher`, and `DomainScanner` from `agent/core/` and returns a dict
    with `framework`, `test_type`, `imports`, `functions`, `existing_tests`,
@@ -75,10 +76,13 @@ existing CLI and GitHub Action are unchanged.
 
 - FastMCP (Python MCP SDK) is used for the server; added to `pyproject.toml`
   as a dependency.
-- The plugin MCP server runs as a subprocess spawned by Claude Code using
-  `python -m agent.mcp_server` from the plugin root.
+- The plugin MCP server runs as a subprocess spawned by Claude Code via the
+  `oracle-mcp` console script (registered in `pyproject.toml` as a `[project.scripts]`
+  entry pointing at `agent.mcp_server:main`). The console script must be on
+  `PATH` — `pipx install oracle-test-ai` puts it there.
 - `CLAUDE_PLUGIN_ROOT` is set by Claude Code when the plugin is active; the
-  MCP server uses it as the working directory.
+  MCP server reads it from the environment when needed (not as `cwd`, which
+  would otherwise leave the bundled Python package unimportable).
 - CLI users continue to need `ANTHROPIC_API_KEY` — identical to the harness
   orchestrator's Anthropic backend pattern.
 - Plugin users need no API key — Claude Code's session provides the LLM.
@@ -95,7 +99,7 @@ Claude Code session
 ├── oracle:init skill      ──► oracle-initializer agent        ◄── user
 ├── oracle:migrate skill   ──► oracle-migrator agent
 │
-└── Oracle MCP server (subprocess, python -m agent.mcp_server)
+└── Oracle MCP server (subprocess, oracle-mcp)
     ├── oracle__analyze_file
     ├── oracle__write_test_file
     ├── oracle__run_tests
@@ -229,13 +233,11 @@ Delegates to `HarnessMigrator` from `agent/core/migrator.py`.
   "name": "oracle",
   "version": "1.0.0",
   "description": "AI-powered test generation for Claude Code — generate, init, and migrate test suites via slash commands.",
-  "skills": ["./agents/skills"],
-  "agents": "./.claude-plugin/agents/",
+  "hooks": "./.claude-plugin/hooks.json",
   "mcpServers": {
     "oracle": {
-      "command": "python",
-      "args": ["-m", "agent.mcp_server"],
-      "cwd": "${CLAUDE_PLUGIN_ROOT}"
+      "command": "oracle-mcp",
+      "args": []
     }
   }
 }
