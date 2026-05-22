@@ -150,8 +150,8 @@ generation via slash commands.
   server exposing six tools to Claude Code:
   `oracle__analyze_file`, `oracle__write_test_file`, `oracle__run_tests`,
   `oracle__init_suite`, `oracle__list_frameworks`, `oracle__migrate`.
-- **Manifest:** [.claude-plugin/plugin.json](.claude-plugin/plugin.json)
-- **Agents:** `.claude-plugin/agents/` — seven agent definitions:
+- **Manifest:** [plugins/oracle/.claude-plugin/plugin.json](plugins/oracle/.claude-plugin/plugin.json)
+- **Agents:** `plugins/oracle/.claude-plugin/agents/` — seven agent definitions:
   `oracle-test-generator`, `oracle-test-author`, `oracle-test-reviewer`,
   `oracle-initializer`, `oracle-migrator`, `oracle-framework-advisor`,
   `oracle-flake-hunter`.
