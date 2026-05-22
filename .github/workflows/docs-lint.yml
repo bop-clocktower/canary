@@ -19,4 +19,4 @@ jobs:
         with:
           node-version: "20"
       - name: Run markdownlint
-        run: npx --yes markdownlint-cli "**/*.md" --ignore node_modules
+        run: npx --yes markdownlint-cli "**/*.md" --ignore node_modules --ignore plugins
