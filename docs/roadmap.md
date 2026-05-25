@@ -375,7 +375,9 @@ when the project already holds an active license.
      ranked list of up to three candidates instead of a single pick,
      exposing `ClassificationResult.confidence` in the output. Existing
      single-pick callers use `result[0]`.
-- **Blockers:** sequenced after [#127](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/127) (keyless slash-command migration).
+- **Blockers:** sequenced after
+  [#127](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/127)
+  (keyless slash-command migration).
 - **Plan:** none
 
 ### Framework Picker — Stage 2: Observability Routing
@@ -393,8 +395,10 @@ when the project already holds an active license.
   scope boundary between ReportPortal and QA Intelligence Dashboard is tracked
   under **OC-001** and must be settled before the routing condition can be
   written.
-- **Blockers:** OC-001 — [#125](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/125) ReportPortal vs QA Intelligence Dashboard scope
-  boundary must be settled before Stage 2 routing rules can be written.
+- **Blockers:** OC-001 —
+  [#125](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/125)
+  — ReportPortal vs QA Intelligence Dashboard scope boundary must be
+  settled before Stage 2 routing rules can be written.
 - **Plan:** none
 
 ### Framework Picker — Stage 3: Enterprise License Awareness
@@ -415,8 +419,10 @@ when the project already holds an active license.
   is acceptable SDV becomes the `status: preferred` entry; otherwise
   Faker + factory-boy is promoted to preferred and SDV is added as
   `status: conditional` with the license gate.
-- **Blockers:** OC-002 — [#126](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/126) SDV BSL license acceptability review required before
-  the `synthetic_data` registry entry can be finalised.
+- **Blockers:** OC-002 —
+  [#126](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/126)
+  — SDV BSL license acceptability review required before the
+  `synthetic_data` registry entry can be finalised.
 - **Plan:** none
 
 ### Spike: Schemathesis API Fuzzing
@@ -444,7 +450,9 @@ when the project already holds an active license.
   output fidelity and confirm BSL license is acceptable under Capillary /
   Optum procurement rules. Result feeds the OC-002 decision that gates the
   `synthetic_data` registry entry in Stage 3.
-- **Blockers:** OC-002 — [#126](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/126) BSL license review required.
+- **Blockers:** OC-002 —
+  [#126](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/126)
+  — BSL license review required.
 - **Plan:** none
 
 ## Future Work
