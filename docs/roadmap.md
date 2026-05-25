@@ -350,6 +350,7 @@ when the project already holds an active license.
 ### Framework Picker — Stage 1: Expand to 16 Categories
 
 - **Status:** planned — blocked on keyless migration completing first
+- **Issue:** [#128](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/128)
 - **Spec:** none
 - **Summary:** Expand both picker layers from their current coverage to 16
   test categories. The 12 additions are: `accessibility`, `security`,
@@ -374,12 +375,13 @@ when the project already holds an active license.
      ranked list of up to three candidates instead of a single pick,
      exposing `ClassificationResult.confidence` in the output. Existing
      single-pick callers use `result[0]`.
-- **Blockers:** sequenced after keyless slash-command migration.
+- **Blockers:** sequenced after [#127](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/127) (keyless slash-command migration).
 - **Plan:** none
 
 ### Framework Picker — Stage 2: Observability Routing
 
 - **Status:** planned
+- **Issue:** [#129](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/129)
 - **Spec:** none
 - **Summary:** Wire the new `observability` test type (added in Stage 1) to
   a reporting-sink routing layer inside `FrameworkRecommender`. When
@@ -391,13 +393,14 @@ when the project already holds an active license.
   scope boundary between ReportPortal and QA Intelligence Dashboard is tracked
   under **OC-001** and must be settled before the routing condition can be
   written.
-- **Blockers:** OC-001 — ReportPortal vs QA Intelligence Dashboard scope
+- **Blockers:** OC-001 — [#125](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/125) ReportPortal vs QA Intelligence Dashboard scope
   boundary must be settled before Stage 2 routing rules can be written.
 - **Plan:** none
 
 ### Framework Picker — Stage 3: Enterprise License Awareness
 
 - **Status:** planned
+- **Issue:** [#130](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/130)
 - **Spec:** none
 - **Summary:** Add a license-gate layer to `FrameworkRecommender.recommend()`
   that filters the ranked candidate list before it is returned. Tricentis
@@ -412,13 +415,14 @@ when the project already holds an active license.
   is acceptable SDV becomes the `status: preferred` entry; otherwise
   Faker + factory-boy is promoted to preferred and SDV is added as
   `status: conditional` with the license gate.
-- **Blockers:** OC-002 — SDV BSL license acceptability review required before
+- **Blockers:** OC-002 — [#126](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/126) SDV BSL license acceptability review required before
   the `synthetic_data` registry entry can be finalised.
 - **Plan:** none
 
 ### Spike: Schemathesis API Fuzzing
 
 - **Status:** planned
+- **Issue:** [#131](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/131)
 - **Spec:** none
 - **Summary:** Time-boxed spike on branch `spike/schemathesis`. Run
   Schemathesis against one Optum API endpoint in read-only mode; measure
@@ -433,13 +437,14 @@ when the project already holds an active license.
 ### Spike: SDV Synthetic Data (OC-002)
 
 - **Status:** planned
+- **Issue:** [#132](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/132)
 - **Spec:** none
 - **Summary:** Time-boxed spike on branch `spike/sdv`. Generate a synthetic
   dataset matching one Optum schema using SDV (Synthetic Data Vault). Verify
   output fidelity and confirm BSL license is acceptable under Capillary /
   Optum procurement rules. Result feeds the OC-002 decision that gates the
   `synthetic_data` registry entry in Stage 3.
-- **Blockers:** BSL license review required (OC-002).
+- **Blockers:** OC-002 — [#126](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/126) BSL license review required.
 - **Plan:** none
 
 ## Future Work
@@ -447,6 +452,7 @@ when the project already holds an active license.
 ### Migrate all LLM-dependent tasks to keyless slash commands
 
 - **Status:** next — unblocked, work begins before Framework Picker
+- **Issue:** [#127](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/127)
 - **Spec:** none
 - **Summary:** Eliminate the API key requirement from Oracle's user-facing
   surface by moving every LLM-dependent task into Claude Code slash
@@ -501,6 +507,7 @@ when the project already holds an active license.
 ### Decide fate of the generate skill + auto-generation Action
 
 - **Status:** decided — option 5 (keyless slash commands)
+- **Issue:** [#127](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/127)
 - **Spec:** none
 - **Summary:** The `oracle generate` command and the GitHub Action that
   invokes it on every PR (see "GitHub Action v1.0.0 Release" above)
@@ -519,6 +526,7 @@ when the project already holds an active license.
 ### Multi-Provider Config
 
 - **Status:** planned
+- **Issue:** [#133](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/133)
 - **Spec:** none
 - **Summary:** Allow switching the active provider without re-running full
   setup. `oracle config set provider <name>` updates `.oracle/config.json`;
@@ -531,6 +539,7 @@ when the project already holds an active license.
 ### `oracle migrate` Improvements
 
 - **Status:** planned
+- **Issue:** [#134](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/134)
 - **Spec:** none
 - **Summary:** Extend the `oracle migrate` command with better framework
   detection, richer dry-run output, and support for additional harness
