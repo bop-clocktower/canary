@@ -312,11 +312,25 @@ implementation begins. All 6 resolved.
 
 ## Framework Picker
 
-The picker is the combination of `TestClassifier` (`agent/core/classifier.py`),
-`FrameworkRecommender` (`agent/core/recommender.py`), and the framework
-registry (`agent/frameworks/registry.json`). Today it classifies prompts into
-4 test types (`e2e_ui`, `api`, `frontend_unit`, `performance`) and returns a
-single best-match framework. The stages below expand that baseline.
+**Sequenced after:** "Migrate all LLM-dependent tasks to keyless slash commands"
+above. Framework Picker Stage 1 work does not begin until the keyless migration
+is complete.
+
+The picker has two layers that must stay in sync:
+
+1. **Keyless slash-command layer (primary):** `/oracle-pick-framework`
+   (`plugins/oracle/commands/oracle-pick-framework.md`) → `oracle-framework-advisor`
+   agent (`plugins/oracle/agents/oracle-framework-advisor.md`). Already ships;
+   currently covers 7 test needs. No API key required.
+2. **Rule-based CLI layer (transitional):** `TestClassifier`
+   (`agent/core/classifier.py`) + `FrameworkRecommender`
+   (`agent/core/recommender.py`) + `agent/frameworks/registry.json`. Currently
+   covers 4 test types. Feeds `oracle generate --recommend-only` during the
+   deprecation period; removed with the CLI in a future major version.
+
+Both layers expand together in Stage 1. The agent's recommendation map is the
+user-facing surface; the CLI classifier/registry is kept in sync during the
+transition so downstream automation that calls `--recommend-only` keeps working.
 
 Research phase complete: 16 tool categories surveyed (May 2026). Routing rules
 and enterprise-license guard-rails locked; three delivery stages defined below.
@@ -335,30 +349,32 @@ when the project already holds an active license.
 
 ### Framework Picker — Stage 1: Expand to 16 Categories
 
-- **Status:** planned
+- **Status:** planned — blocked on keyless migration completing first
 - **Spec:** none
-- **Summary:** Extend the existing picker from 4 test types to 16. Changes
-  land in three files:
+- **Summary:** Expand both picker layers from their current coverage to 16
+  test categories. The 12 additions are: `accessibility`, `security`,
+  `visual`, `contract`, `chaos`, `synthetic_data`, `observability`, `mobile`,
+  `load`, `mutation`, `static_analysis`, and `integration`.
+
+  **Agent layer** (`oracle-framework-advisor.md`): extend the recommendation
+  map table with one row per new category, following the existing format
+  (need → tool → why). This is the primary change; the agent is the surface
+  users actually invoke.
+
+  **CLI layer** (kept in sync during deprecation period):
   1. **`agent/core/classifier.py`** — add keyword patterns and
-     `_FRAMEWORK_HINTS` entries for the 12 new categories:
-     `accessibility`, `security`, `visual`, `contract`, `chaos`,
-     `synthetic_data`, `observability`, `mobile`, `load`, `mutation`,
-     `static_analysis`, and `integration`. Existing `e2e_ui`, `api`,
-     `frontend_unit`, `performance` rules are unchanged.
-  2. **`agent/frameworks/registry.json`** — add registry entries (following
-     the existing schema: `name`, `category`, `languages`, `status`,
-     `maturity`, `recommended_for`, `strengths`, `avoid_when`) for the OSS
-     default tool in each new category (e.g. axe-core for accessibility,
-     OWASP ZAP for security, Percy for visual, Pact for contract).
+     `_FRAMEWORK_HINTS` entries for the 12 new categories.
+     Existing `e2e_ui`, `api`, `frontend_unit`, `performance` rules
+     are unchanged.
+  2. **`agent/frameworks/registry.json`** — add registry entries
+     (following the existing schema: `name`, `category`, `languages`,
+     `status`, `maturity`, `recommended_for`, `strengths`, `avoid_when`)
+     for the OSS default tool in each new category.
   3. **`agent/core/recommender.py`** — change `recommend()` to return a
      ranked list of up to three candidates instead of a single pick,
-     exposing the `ClassificationResult.confidence` in the output so callers
-     can threshold on it. Existing single-pick callers (`oracle generate`)
-     continue to use `result[0]`.
-  Surface the expanded picker via a new `oracle recommend` subcommand (first-
-  class alternative to `--recommend-only`) and a `/oracle:recommend` slash
-  command. No LLM key required — routing remains rule-based.
-- **Blockers:** none
+     exposing `ClassificationResult.confidence` in the output. Existing
+     single-pick callers use `result[0]`.
+- **Blockers:** sequenced after keyless slash-command migration.
 - **Plan:** none
 
 ### Framework Picker — Stage 2: Observability Routing
@@ -430,7 +446,7 @@ when the project already holds an active license.
 
 ### Migrate all LLM-dependent tasks to keyless slash commands
 
-- **Status:** planned
+- **Status:** next — unblocked, work begins before Framework Picker
 - **Spec:** none
 - **Summary:** Eliminate the API key requirement from Oracle's user-facing
   surface by moving every LLM-dependent task into Claude Code slash
@@ -438,9 +454,17 @@ when the project already holds an active license.
   `OPENAI_API_KEY` / `GEMINI_API_KEY` needed). The oracle-plugin spec
   already commits to "no API key required for plugin users" — this
   closes the loop by deprecating the CLI/Action paths that still
-  require keys.
+  require keys. The "Decide fate of the generate skill" decision below
+  is resolved in favour of this path (option 5).
 
-  **Today's LLM-dependent surfaces:**
+  **Current keyless coverage (already shipped):**
+  - `/oracle-pick-framework` → `oracle-framework-advisor` agent (Read,
+    Glob, Grep — no key needed).
+  - `/oracle-write-test` → `oracle-test-author` agent.
+  - `/oracle-review-test` → `oracle-test-reviewer` agent.
+  - `/oracle-debug-flake` → `oracle-flake-hunter` agent.
+
+  **Still keyed (to migrate):**
   - `oracle generate` (CLI) — calls `generate_response()` →
     `agent/llm/*` provider matrix → requires a provider key.
   - GitHub Action wrapping `oracle generate` on every PR — same
@@ -450,8 +474,8 @@ when the project already holds an active license.
     `generate_response()` for retry generation.
 
   **Target end state:**
-  - `/oracle-generate` (slash command) replaces `oracle generate`.
-    Already partially exists via `plugins/oracle/commands/`.
+  - `/oracle-write-test` (already exists) is the canonical replacement
+    for `oracle generate`.
   - `/oracle-self-heal` (or equivalent) wraps the self-healing loop.
   - The MCP server (`agent/mcp_server.py`) exposes the deterministic
     pieces (analyze, write, run, init, list-frameworks, migrate) so
@@ -461,60 +485,35 @@ when the project already holds an active license.
   - `agent/llm/*` providers are kept only if external automation needs
     them; otherwise removed.
 
-  **Why now:**
-  - Downstream `oracle-capillary` explicitly asked for keyless paths
-    (see `feedback_no_api_keys` agent memory).
-  - The plugin path is now stable enough to be the primary surface
-    (#115/#118/#121 landed the canonical layout + working MCP
-    invocation).
-  - Resolves the open decision in "Decide fate of the generate skill"
-    below by adopting option 5: not just demote the Action, but move
-    the underlying capability to a slash-command + host-LLM model.
-
   **Phasing:**
   1. Inventory every call site that uses `agent.llm` (orchestrator,
      CLI, action). Document which can move to slash commands and
      which need MCP tool wrappers instead.
   2. Ship parity slash commands under `plugins/oracle/commands/` for
-     each retained capability (`/oracle-generate`, `/oracle-self-heal`,
-     etc.).
+     each retained capability (principally `/oracle-self-heal`).
   3. Print a deprecation warning from the keyed CLI paths pointing
      users at the slash-command equivalent.
   4. Remove the GitHub Action and `oracle generate` from a future
      major release; bump version accordingly.
-- **Blockers:** decision from "Decide fate of the generate skill"
-  below; the two items are coupled and should land as a single
-  direction.
+- **Blockers:** none
 - **Plan:** none
 
 ### Decide fate of the generate skill + auto-generation Action
 
-- **Status:** decision pending
+- **Status:** decided — option 5 (keyless slash commands)
 - **Spec:** none
 - **Summary:** The `oracle generate` command and the GitHub Action that
   invokes it on every PR (see "GitHub Action v1.0.0 Release" above)
   together require an LLM provider API key and auto-produce test code
-  on each pull request. The question to resolve: does this lean too
-  hard on AI? Auto-generated tests on every PR creates pressure to
-  accept LLM output rather than understand the change being tested,
-  and the required API key is friction for casual contributors (see
-  also `feedback_no_api_keys` — downstream users have explicitly asked
-  for keyless paths). Options to evaluate:
-  1. **Leave as-is** — keep the Action, document the AI-dependency
-     trade-off, lean on human review to catch over-reliance.
-  2. **Demote to opt-in** — Action ships but defaults to off; teams
-     enable it deliberately. Keeps the capability without the
-     PR-level pressure.
-  3. **Remove entirely** — delete `action.yml`, the auto-generation
-     workflow, and the `generate` CLI subcommand. Test authorship
-     stays human; Oracle becomes a recommender + skill loader.
-  4. **Split** — keep `oracle generate` as a CLI for manual use; remove
-     the PR-triggered Action. Capability without the pressure.
-  Decision drives downstream cleanup: the Capillary overlay deleted
-  `action.yml` during the skills-only reshape but assumed the Action
-  would be reshipped upstream as a pipx wrapper. If we remove
-  altogether, that follow-up evaporates.
-- **Blockers:** decision required from upstream maintainer.
+  on each pull request. Decision: move the underlying capability to
+  slash commands that use the host Claude Code session (option 5 —
+  not in the original list, adopted from "Migrate all LLM-dependent
+  tasks" above). `/oracle-write-test` already ships and covers the
+  generation use case keylessly. The GitHub Action and `oracle generate`
+  CLI will be deprecated and removed in a future major version per the
+  phasing plan in that item. The Capillary overlay's `action.yml`
+  deletion is correct and does not need to be reversed.
+- **Blockers:** none
 - **Plan:** none
 
 ### Multi-Provider Config
