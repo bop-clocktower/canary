@@ -310,6 +310,96 @@ implementation begins. All 6 resolved.
 - **Blockers:** none
 - **Plan:** [docs/plans/onboarding.md](plans/onboarding.md)
 
+## Framework Picker
+
+Research phase complete: 16 tool categories surveyed (May 2026). Routing rules
+and enterprise-license guard-rails locked; three delivery stages defined below.
+OSS-first is the default throughout — paid or vendor-locked tools surface only
+when the project already holds an active license.
+
+**Locked picker decisions (not re-opened without explicit sign-off):**
+
+- **Tricentis (Tosca, NeoLoad, Testim):** no new adoption recommended; Oracle
+  works within an active license but never proactively routes users toward
+  these tools.
+- **LambdaTest / KaneAI / Testμ:** Optum-scoped paid licenses only — do not
+  surface for non-Optum projects.
+- **OSS-first default:** every picker path prefers an OSS option unless the
+  project's existing toolchain makes a paid tool the obvious fit.
+
+### Framework Picker — Stage 1: Core Routing
+
+- **Status:** planned
+- **Spec:** none
+- **Summary:** Implement the primary picker decision tree inside the Oracle
+  classifier. Given a user's tech stack (language, runtime, project type) and
+  test intent (unit, integration, e2e, API, performance, accessibility,
+  security, visual, contract, chaos, synthetic-data, observability, mobile,
+  load, mutation, static-analysis), emit a ranked list of OSS-first framework
+  recommendations drawn from the 16-category taxonomy. Each recommendation
+  includes: framework name, rationale, install snippet, and a confidence score.
+  Surface via `oracle recommend` (new subcommand) and as a `/oracle:recommend`
+  slash command. No LLM key required — routing is rule-based.
+- **Blockers:** none
+- **Plan:** none
+
+### Framework Picker — Stage 2: Observability Routing
+
+- **Status:** planned
+- **Spec:** none
+- **Summary:** Extend the picker with an observability/reporting layer. When
+  a project signals it has a test-reporting target (env var, config key, or
+  CLI flag), the picker routes to the correct sink: ReportPortal for
+  self-hosted OSS observability; QA Intelligence Dashboard (Capillary overlay)
+  for org-managed aggregation. Exact scope boundary between ReportPortal and
+  QA Intelligence Dashboard is tracked under **OC-001** — Stage 2 is blocked
+  until that decision lands.
+- **Blockers:** OC-001 — ReportPortal vs QA Intelligence Dashboard scope
+  boundary must be settled before Stage 2 routing rules can be written.
+- **Plan:** none
+
+### Framework Picker — Stage 3: Enterprise License Awareness
+
+- **Status:** planned
+- **Spec:** none
+- **Summary:** Add an enterprise license layer that gates paid-tool
+  recommendations behind explicit signals. Tricentis tools appear in picker
+  output only when `ORACLE_LICENSE_TRICENTIS=1` is set (active-license
+  signal); LambdaTest / KaneAI / Testμ appear only when
+  `ORACLE_SCOPE=optum` is set. Stage 3 also integrates synthetic-data
+  tooling: SDV (Synthetic Data Vault) is the OSS candidate for schema-aware
+  dataset generation, but its BSL license must be reviewed before it can be
+  recommended — tracked under **OC-002**. If BSL is acceptable, SDV becomes
+  the default recommendation for synthetic-data test intent; otherwise the
+  picker falls back to Faker + factory-boy.
+- **Blockers:** OC-002 — SDV BSL license acceptability review required before
+  synthetic-data routing can be finalised.
+- **Plan:** none
+
+### Spike: Schemathesis API Fuzzing
+
+- **Status:** planned
+- **Spec:** none
+- **Summary:** Time-boxed spike on branch `spike/schemathesis`. Run
+  Schemathesis against one Optum API endpoint in read-only mode; measure
+  defects found vs. existing manual/Postman suite. Decision gate: if
+  defect-find rate justifies adoption, Schemathesis enters the Stage 1 picker
+  as the default recommendation for API fuzz / property-based test intent.
+- **Blockers:** none
+- **Plan:** none
+
+### Spike: SDV Synthetic Data (OC-002)
+
+- **Status:** planned
+- **Spec:** none
+- **Summary:** Time-boxed spike on branch `spike/sdv`. Generate a synthetic
+  dataset matching one Optum schema using SDV (Synthetic Data Vault). Verify
+  output fidelity and, critically, confirm BSL license is acceptable under
+  Capillary / Optum procurement rules before recommending SDV in the Framework
+  Picker Stage 3 synthetic-data path. Result feeds the OC-002 decision.
+- **Blockers:** BSL license review required (OC-002).
+- **Plan:** none
+
 ## Future Work
 
 ### Migrate all LLM-dependent tasks to keyless slash commands
