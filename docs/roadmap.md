@@ -312,6 +312,12 @@ implementation begins. All 6 resolved.
 
 ## Framework Picker
 
+The picker is the combination of `TestClassifier` (`agent/core/classifier.py`),
+`FrameworkRecommender` (`agent/core/recommender.py`), and the framework
+registry (`agent/frameworks/registry.json`). Today it classifies prompts into
+4 test types (`e2e_ui`, `api`, `frontend_unit`, `performance`) and returns a
+single best-match framework. The stages below expand that baseline.
+
 Research phase complete: 16 tool categories surveyed (May 2026). Routing rules
 and enterprise-license guard-rails locked; three delivery stages defined below.
 OSS-first is the default throughout — paid or vendor-locked tools surface only
@@ -327,19 +333,31 @@ when the project already holds an active license.
 - **OSS-first default:** every picker path prefers an OSS option unless the
   project's existing toolchain makes a paid tool the obvious fit.
 
-### Framework Picker — Stage 1: Core Routing
+### Framework Picker — Stage 1: Expand to 16 Categories
 
 - **Status:** planned
 - **Spec:** none
-- **Summary:** Implement the primary picker decision tree inside the Oracle
-  classifier. Given a user's tech stack (language, runtime, project type) and
-  test intent (unit, integration, e2e, API, performance, accessibility,
-  security, visual, contract, chaos, synthetic-data, observability, mobile,
-  load, mutation, static-analysis), emit a ranked list of OSS-first framework
-  recommendations drawn from the 16-category taxonomy. Each recommendation
-  includes: framework name, rationale, install snippet, and a confidence score.
-  Surface via `oracle recommend` (new subcommand) and as a `/oracle:recommend`
-  slash command. No LLM key required — routing is rule-based.
+- **Summary:** Extend the existing picker from 4 test types to 16. Changes
+  land in three files:
+  1. **`agent/core/classifier.py`** — add keyword patterns and
+     `_FRAMEWORK_HINTS` entries for the 12 new categories:
+     `accessibility`, `security`, `visual`, `contract`, `chaos`,
+     `synthetic_data`, `observability`, `mobile`, `load`, `mutation`,
+     `static_analysis`, and `integration`. Existing `e2e_ui`, `api`,
+     `frontend_unit`, `performance` rules are unchanged.
+  2. **`agent/frameworks/registry.json`** — add registry entries (following
+     the existing schema: `name`, `category`, `languages`, `status`,
+     `maturity`, `recommended_for`, `strengths`, `avoid_when`) for the OSS
+     default tool in each new category (e.g. axe-core for accessibility,
+     OWASP ZAP for security, Percy for visual, Pact for contract).
+  3. **`agent/core/recommender.py`** — change `recommend()` to return a
+     ranked list of up to three candidates instead of a single pick,
+     exposing the `ClassificationResult.confidence` in the output so callers
+     can threshold on it. Existing single-pick callers (`oracle generate`)
+     continue to use `result[0]`.
+  Surface the expanded picker via a new `oracle recommend` subcommand (first-
+  class alternative to `--recommend-only`) and a `/oracle:recommend` slash
+  command. No LLM key required — routing remains rule-based.
 - **Blockers:** none
 - **Plan:** none
 
@@ -347,13 +365,16 @@ when the project already holds an active license.
 
 - **Status:** planned
 - **Spec:** none
-- **Summary:** Extend the picker with an observability/reporting layer. When
-  a project signals it has a test-reporting target (env var, config key, or
-  CLI flag), the picker routes to the correct sink: ReportPortal for
-  self-hosted OSS observability; QA Intelligence Dashboard (Capillary overlay)
-  for org-managed aggregation. Exact scope boundary between ReportPortal and
-  QA Intelligence Dashboard is tracked under **OC-001** — Stage 2 is blocked
-  until that decision lands.
+- **Summary:** Wire the new `observability` test type (added in Stage 1) to
+  a reporting-sink routing layer inside `FrameworkRecommender`. When
+  `classification.test_type == "observability"`, the recommender checks for
+  a reporting target signal (env var or `.oracle/config.json` key) and routes
+  to: **ReportPortal** (self-hosted OSS) or **QA Intelligence Dashboard**
+  (Capillary overlay, `ORACLE_SCOPE=capillary`). No change to the classifier
+  or registry schema — this is purely a `recommend()` routing branch. Exact
+  scope boundary between ReportPortal and QA Intelligence Dashboard is tracked
+  under **OC-001** and must be settled before the routing condition can be
+  written.
 - **Blockers:** OC-001 — ReportPortal vs QA Intelligence Dashboard scope
   boundary must be settled before Stage 2 routing rules can be written.
 - **Plan:** none
@@ -362,18 +383,21 @@ when the project already holds an active license.
 
 - **Status:** planned
 - **Spec:** none
-- **Summary:** Add an enterprise license layer that gates paid-tool
-  recommendations behind explicit signals. Tricentis tools appear in picker
-  output only when `ORACLE_LICENSE_TRICENTIS=1` is set (active-license
-  signal); LambdaTest / KaneAI / Testμ appear only when
-  `ORACLE_SCOPE=optum` is set. Stage 3 also integrates synthetic-data
-  tooling: SDV (Synthetic Data Vault) is the OSS candidate for schema-aware
-  dataset generation, but its BSL license must be reviewed before it can be
-  recommended — tracked under **OC-002**. If BSL is acceptable, SDV becomes
-  the default recommendation for synthetic-data test intent; otherwise the
-  picker falls back to Faker + factory-boy.
+- **Summary:** Add a license-gate layer to `FrameworkRecommender.recommend()`
+  that filters the ranked candidate list before it is returned. Tricentis
+  entries (added to `registry.json` with `"license": "commercial"`) are
+  stripped from results unless `ORACLE_LICENSE_TRICENTIS=1` is set;
+  LambdaTest / KaneAI / Testμ entries are stripped unless
+  `ORACLE_SCOPE=optum` is set. Without those signals the OSS fallback from
+  Stage 1 is always returned — no paid tool is ever surfaced silently.
+  Stage 3 also finalises the `synthetic_data` routing path: SDV (Synthetic
+  Data Vault) is the preferred registry entry, but its BSL license must be
+  reviewed before the entry can be merged — tracked under **OC-002**. If BSL
+  is acceptable SDV becomes the `status: preferred` entry; otherwise
+  Faker + factory-boy is promoted to preferred and SDV is added as
+  `status: conditional` with the license gate.
 - **Blockers:** OC-002 — SDV BSL license acceptability review required before
-  synthetic-data routing can be finalised.
+  the `synthetic_data` registry entry can be finalised.
 - **Plan:** none
 
 ### Spike: Schemathesis API Fuzzing
@@ -382,9 +406,11 @@ when the project already holds an active license.
 - **Spec:** none
 - **Summary:** Time-boxed spike on branch `spike/schemathesis`. Run
   Schemathesis against one Optum API endpoint in read-only mode; measure
-  defects found vs. existing manual/Postman suite. Decision gate: if
-  defect-find rate justifies adoption, Schemathesis enters the Stage 1 picker
-  as the default recommendation for API fuzz / property-based test intent.
+  defects found vs. the existing suite. Decision gate: if the defect-find
+  rate justifies adoption, add a Schemathesis registry entry under the `api`
+  category (which `TestClassifier` already handles) with
+  `recommended_for: ["property-based API testing", "OpenAPI fuzz testing"]`
+  so it surfaces alongside pytest in Stage 1 ranked output.
 - **Blockers:** none
 - **Plan:** none
 
@@ -394,9 +420,9 @@ when the project already holds an active license.
 - **Spec:** none
 - **Summary:** Time-boxed spike on branch `spike/sdv`. Generate a synthetic
   dataset matching one Optum schema using SDV (Synthetic Data Vault). Verify
-  output fidelity and, critically, confirm BSL license is acceptable under
-  Capillary / Optum procurement rules before recommending SDV in the Framework
-  Picker Stage 3 synthetic-data path. Result feeds the OC-002 decision.
+  output fidelity and confirm BSL license is acceptable under Capillary /
+  Optum procurement rules. Result feeds the OC-002 decision that gates the
+  `synthetic_data` registry entry in Stage 3.
 - **Blockers:** BSL license review required (OC-002).
 - **Plan:** none
 
