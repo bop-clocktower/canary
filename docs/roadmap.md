@@ -342,8 +342,8 @@ when the project already holds an active license.
 - **Tricentis (Tosca, NeoLoad, Testim):** no new adoption recommended; Oracle
   works within an active license but never proactively routes users toward
   these tools.
-- **LambdaTest / KaneAI / Testμ:** Optum-scoped paid licenses only — do not
-  surface for non-Optum projects.
+- **LambdaTest / KaneAI / Testμ:** org-scoped paid licenses only — do not
+  surface outside the specific org deployment that holds the license.
 - **OSS-first default:** every picker path prefers an OSS option unless the
   project's existing toolchain makes a paid tool the obvious fit.
 
@@ -389,8 +389,8 @@ when the project already holds an active license.
   a reporting-sink routing layer inside `FrameworkRecommender`. When
   `classification.test_type == "observability"`, the recommender checks for
   a reporting target signal (env var or `.oracle/config.json` key) and routes
-  to: **ReportPortal** (self-hosted OSS) or **QA Intelligence Dashboard**
-  (Capillary overlay, `ORACLE_SCOPE=capillary`). No change to the classifier
+  to: **ReportPortal** (self-hosted OSS) or a downstream aggregation
+  dashboard (`ORACLE_SCOPE=<overlay-id>`). No change to the classifier
   or registry schema — this is purely a `recommend()` routing branch. Exact
   scope boundary between ReportPortal and QA Intelligence Dashboard is tracked
   under **OC-001** and must be settled before the routing condition can be
@@ -411,7 +411,8 @@ when the project already holds an active license.
   entries (added to `registry.json` with `"license": "commercial"`) are
   stripped from results unless `ORACLE_LICENSE_TRICENTIS=1` is set;
   LambdaTest / KaneAI / Testμ entries are stripped unless
-  `ORACLE_SCOPE=optum` is set. Without those signals the OSS fallback from
+  `ORACLE_SCOPE=<org>` matches the org that holds the license. Without
+  those signals the OSS fallback from
   Stage 1 is always returned — no paid tool is ever surfaced silently.
   Stage 3 also finalises the `synthetic_data` routing path: SDV (Synthetic
   Data Vault) is the preferred registry entry, but its BSL license must be
@@ -431,7 +432,7 @@ when the project already holds an active license.
 - **Issue:** [#131](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/131)
 - **Spec:** none
 - **Summary:** Time-boxed spike on branch `spike/schemathesis`. Run
-  Schemathesis against one Optum API endpoint in read-only mode; measure
+  Schemathesis against one sample API endpoint in read-only mode; measure
   defects found vs. the existing suite. Decision gate: if the defect-find
   rate justifies adoption, add a Schemathesis registry entry under the `api`
   category (which `TestClassifier` already handles) with
@@ -446,9 +447,9 @@ when the project already holds an active license.
 - **Issue:** [#132](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/132)
 - **Spec:** none
 - **Summary:** Time-boxed spike on branch `spike/sdv`. Generate a synthetic
-  dataset matching one Optum schema using SDV (Synthetic Data Vault). Verify
-  output fidelity and confirm BSL license is acceptable under Capillary /
-  Optum procurement rules. Result feeds the OC-002 decision that gates the
+  dataset matching one sample schema using SDV (Synthetic Data Vault). Verify
+  output fidelity and confirm BSL license is acceptable under your org's
+  procurement rules. Result feeds the OC-002 decision that gates the
   `synthetic_data` registry entry in Stage 3.
 - **Blockers:** OC-002 —
   [#126](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/126)
@@ -526,7 +527,7 @@ when the project already holds an active license.
   tasks" above). `/oracle-write-test` already ships and covers the
   generation use case keylessly. The GitHub Action and `oracle generate`
   CLI will be deprecated and removed in a future major version per the
-  phasing plan in that item. The Capillary overlay's `action.yml`
+  phasing plan in that item. Any downstream overlay's `action.yml`
   deletion is correct and does not need to be reversed.
 - **Blockers:** none
 - **Plan:** none
