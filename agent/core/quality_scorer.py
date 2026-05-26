@@ -69,6 +69,58 @@ _TIMESTAMP = re.compile(
     r"Date\.now\s*\(|datetime\.now\s*\(|datetime\.utcnow\s*\("
 )
 
+# --- Magic-number detection ------------------------------------------------
+# Deterministic complement to the agent-prompt "no magic numbers" rule.
+# Lexical only and deliberately conservative — the goal is to catch bare
+# numeric literals that should be named/derived (timeouts, retry counts,
+# thresholds, hardcoded lengths), not legitimate expected values.
+
+# Strip string contents before scanning so numbers inside URLs, dates, and
+# test-data strings ("localhost:3000", "2024-01-01") are not flagged.
+_STRING_LITERAL = re.compile(r"""(['"])(?:\\.|(?!\1).)*?\1""")
+
+# A standalone numeric literal (int or float), not part of an identifier or
+# dotted version. Negative sign captured so "-1" is recognized as allowed.
+_NUMERIC_LITERAL = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])")
+
+# Single-digit ints, the common index/count values, and HTTP status codes are
+# self-evident expected values, not magic numbers.
+_ALLOWED_NUMBERS = {"0", "1", "2", "-1", "10", "100"}
+_HTTP_STATUS = {
+    "200", "201", "202", "204", "301", "302", "304",
+    "400", "401", "403", "404", "405", "409", "410", "422", "429",
+    "500", "501", "502", "503", "504",
+}
+# Cap reported findings so a data-heavy file doesn't flood the output.
+_MAX_MAGIC_FINDINGS = 10
+
+
+def _is_allowed_number(token: str) -> bool:
+    if token in _ALLOWED_NUMBERS or token in _HTTP_STATUS:
+        return True
+    # Single-digit integers are usually indices / small counts — allow.
+    bare = token.lstrip("-")
+    return bare.isdigit() and len(bare) == 1
+
+
+def _detect_magic_numbers(code: str) -> List[str]:
+    """Return human-readable findings for bare magic-number literals."""
+    findings: List[str] = []
+    for lineno, raw in enumerate(code.splitlines(), 1):
+        stripped = raw.strip()
+        if stripped.startswith("#") or stripped.startswith("//"):
+            continue
+        # Blank out string contents to avoid flagging numbers inside literals.
+        scrubbed = _STRING_LITERAL.sub('""', raw)
+        for m in _NUMERIC_LITERAL.finditer(scrubbed):
+            token = m.group()
+            if _is_allowed_number(token):
+                continue
+            findings.append(f"line {lineno}: magic number {token} — name it or derive it")
+            if len(findings) >= _MAX_MAGIC_FINDINGS:
+                return findings
+    return findings
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -81,6 +133,7 @@ class QualityScore:
     coverage_breadth: int
     assertion_density: int
     flakiness_risk: int
+    magic_numbers: int = 0
     details: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -90,6 +143,7 @@ class QualityScore:
             "coverage_breadth": self.coverage_breadth,
             "assertion_density": self.assertion_density,
             "flakiness_risk": self.flakiness_risk,
+            "magic_numbers": self.magic_numbers,
             "details": self.details,
         }
 
@@ -202,7 +256,20 @@ class QualityScorer:
         assertion, asr_details = _score_assertions(code, fw)
         flakiness, flk_details = _score_flakiness(code)
 
+        magic_findings = _detect_magic_numbers(code)
+        mag_details: List[str] = []
+        if magic_findings:
+            mag_details.append(
+                f"{len(magic_findings)} magic number(s) detected"
+            )
+            mag_details.extend(magic_findings)
+        else:
+            mag_details.append("No magic numbers detected")
+
         composite = round(0.4 * coverage + 0.4 * assertion + 0.2 * flakiness)
+        # Capped maintainability penalty — magic numbers shouldn't tank an
+        # otherwise-good score, but they should nudge the grade.
+        composite = max(0, composite - min(15, len(magic_findings) * 3))
 
         return QualityScore(
             score=composite,
@@ -210,5 +277,6 @@ class QualityScorer:
             coverage_breadth=coverage,
             assertion_density=assertion,
             flakiness_risk=flakiness,
-            details=cov_details + asr_details + flk_details,
+            magic_numbers=len(magic_findings),
+            details=cov_details + asr_details + flk_details + mag_details,
         ).to_dict()

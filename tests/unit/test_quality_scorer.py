@@ -315,3 +315,60 @@ class TestCompositeScore(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMagicNumberDetection(unittest.TestCase):
+    """Deterministic magic-number flagging (complements the agent-prompt rule)."""
+
+    def setUp(self):
+        from agent.core.quality_scorer import QualityScorer
+        self.scorer = QualityScorer()
+
+    def test_flags_bare_threshold(self):
+        from agent.core.quality_scorer import _detect_magic_numbers
+        self.assertTrue(_detect_magic_numbers("await page.waitForTimeout(5000)"))
+
+    def test_allows_http_status_and_small_values(self):
+        from agent.core.quality_scorer import _detect_magic_numbers
+        self.assertEqual(_detect_magic_numbers("expect(res.status).toBe(200)"), [])
+        self.assertEqual(_detect_magic_numbers("expect(arr).toHaveLength(0)"), [])
+        self.assertEqual(_detect_magic_numbers("const first = items[0]"), [])
+
+    def test_ignores_numbers_inside_strings(self):
+        from agent.core.quality_scorer import _detect_magic_numbers
+        self.assertEqual(
+            _detect_magic_numbers('await page.goto("http://localhost:3000/x")'), []
+        )
+        self.assertEqual(_detect_magic_numbers('d = "2024-01-01"'), [])
+
+    def test_ignores_comments(self):
+        from agent.core.quality_scorer import _detect_magic_numbers
+        self.assertEqual(_detect_magic_numbers("# retry up to 42 times"), [])
+
+    def test_findings_capped(self):
+        from agent.core.quality_scorer import _detect_magic_numbers, _MAX_MAGIC_FINDINGS
+        code = "\n".join(f"x = {n}" for n in range(1000, 1000 + 50))
+        self.assertEqual(len(_detect_magic_numbers(code)), _MAX_MAGIC_FINDINGS)
+
+    def test_score_surfaces_magic_numbers_field(self):
+        code = "def test_x():\n    assert compute() == 42\n    assert other() == 9999\n"
+        result = self.scorer.score(code, "pytest")
+        self.assertEqual(result["magic_numbers"], 2)
+        self.assertTrue(any("magic number" in d for d in result["details"]))
+
+    def test_clean_code_reports_zero(self):
+        code = "def test_x():\n    assert ok() == 0\n    assert res.status == 200\n"
+        result = self.scorer.score(code, "pytest")
+        self.assertEqual(result["magic_numbers"], 0)
+        self.assertIn("No magic numbers detected", result["details"])
+
+    def test_magic_numbers_apply_capped_penalty(self):
+        from agent.core.quality_scorer import QualityScorer
+        clean = "def test_a():\n    assert ok() == 0\n    assert res.status == 200\n"
+        dirty = clean + "\n".join(f"    assert v{n}() == {1000 + n * 111}" for n in range(8))
+        s_clean = QualityScorer().score(clean, "pytest")["score"]
+        s_dirty = QualityScorer().score(dirty, "pytest")["score"]
+        # Penalty is capped at 15 and only ever lowers the score.
+        self.assertLessEqual(s_dirty, s_clean)
+        self.assertGreaterEqual(s_clean - s_dirty, 0)
+        self.assertLessEqual(s_clean - s_dirty, 15)
