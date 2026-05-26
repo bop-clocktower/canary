@@ -301,27 +301,39 @@ needed before this is fully validated; flagging as follow-up.
 
 In priority order:
 
-1. **F1: `framework` field semantics** — rename or fix. Affects
-   reliability of agent self-checks.
-2. **F3: populate `existing_tests`** — closes half of Phase 1's
-   coverage matrix gap. Path-of-least-friction is to surface
-   `pattern.sample_names` or recently-modified test files under
-   `tests/`.
-3. **F2 + F4: scope of `functions` / `imports`** — either filter
-   to file-local or rename for clarity. Lower priority than F1/F3.
-4. **F5: nearest-existing-test fallback** on missing target —
-   nice-to-have, defensive against agents skipping Phase 1.
-5. **Self-check phrasing in `oracle-test-author.md`** — broaden the
-   "framework match analyze_file's detection" check to cover the
-   prompt-asserted or config-detected case (since analyze_file is
-   the least-reliable source).
+1. **F1: `framework` field semantics** — ✅ **Fixed in PR #146**
+   (merged 2026-05-26). Framework is now detected from project
+   config files (`playwright.config.*`, `vitest.config.*`,
+   `pytest.ini`, `pyproject.toml` with `[tool.pytest...]`) by
+   walking up to the `.git` boundary; suffix is a documented
+   fallback. New `framework_source` field reports
+   `"config"` / `"suffix"` / `"unknown"` so callers can gauge
+   trust level.
+2. **F3: populate `existing_tests`** — ✅ **Fixed in PR #146.**
+   Returns up to 10 test file paths relative to the project root,
+   sourced from `PatternMatcher._find_test_files`. Sibling fix:
+   `project_root` now walks up to `.git` (was `path.parent`, which
+   broke discovery for nested files).
+3. **F2: `functions` scope** — ⏩ **Partially addressed in PR #146.**
+   New `file_functions` field returns file-local defs only (Python
+   AST + TS/JS regex). The existing `functions` field keeps its
+   project-wide semantics for backward compat; agents should
+   prefer `file_functions` for the target file's own definitions.
+4. **F4: `imports` scope** — ⏸ Not fixed. Still surfaces
+   `PatternMatcher.common_imports` (cross-test common). Lower
+   priority since agents have `Read` for direct imports.
+5. **F5: nearest-existing-test fallback** on missing target — ⏸
+   Not implemented. The populated `existing_tests` field covers
+   the common case; a true nearest-test heuristic is its own scope.
+6. **Self-check phrasing in `oracle-test-author.md`** — ⏸ Not
+   changed. With F1 fixed the existing self-check is tighter, but
+   the agent prose could still be broadened to cite
+   `framework_source`. Follow-up.
 
-None block the migration as-shipped. Phase 1 and Phase 2's agents
-produce usable output for the four example prompts; quality is
-predicted to be high based on instruction review. The MCP tool gaps
-are fixable in a follow-up PR after the architecture meeting (the
-fixes port cleanly to either "Oracle separate" or "Oracle inside
-Harness").
+None blocked the migration as-shipped. Phase 1 and Phase 2's agents
+produce usable output for the four example prompts. The remaining
+gaps (F4, F5, self-check phrasing) are non-blocking and agnostic to
+the "stay separate vs pull into Harness" decision.
 
 ## Overall verdict
 
