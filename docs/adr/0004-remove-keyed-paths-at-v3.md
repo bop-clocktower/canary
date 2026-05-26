@@ -124,7 +124,7 @@ Same behaviour, no deprecation baggage, survives the removal.
 - **Docs PR** to rewrite README around the plugin path as the
   canonical surface. Currently the README still leads with the CLI;
   the doc-pass is deferred from Phase 3 and lands with v3.0.
-- **Downstream `oracle-capillary`** is unaffected — it never used
+- **The downstream overlay** is unaffected — it never used
   the keyed CLI path. No coordination needed.
 - **MCP server** stays (it's keyless). `oracle skills list`,
   `oracle skills run`, `oracle init`, `oracle run`, `oracle migrate`,
@@ -243,7 +243,7 @@ command name.
    to the plugin? Out of scope; no telemetry pipeline exists.
 4. **Timing of the v3.0 release** — no specific date proposed.
    Recommend: gather one release cycle of Phase 3 warnings in the
-   field (and downstream `oracle-capillary` feedback), then cut.
+   field (and downstream overlay feedback), then cut.
    Could be as soon as ~2026-06.
 
 ## References

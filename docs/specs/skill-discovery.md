@@ -66,9 +66,10 @@ test generation workflows — custom frameworks, internal conventions, house-sty
 assertions — should not fork Oracle. Instead they place skill files in a
 well-known directory and Oracle discovers them at runtime.
 
-This mirrors the `harness-engineering` ↔ `harness-capillary` relationship:
-the engine is separate from the overlay. Extension is a filesystem convention,
-not a Python entry-point or subclass.
+This mirrors the engine ↔ company-overlay relationship (e.g. an
+`engine` repo and a separate `company-overlay` repo): the engine is separate
+from the overlay. Extension is a filesystem convention, not a Python
+entry-point or subclass.
 
 ## Skill File Format
 
@@ -97,10 +98,9 @@ next section.
 
 Some skills ship more than prose. An overlay might need to emit company-style
 templates, parse runtime artifacts, post results to an internal dashboard, or
-run deterministic transforms that no LLM should re-derive. The Harness overlay
-pattern (`harness-engineering` ↔ `harness-capillary`) handles this by letting
-a skill directory ship a `scripts/` tree alongside `SKILL.md`. Oracle adopts
-the same convention.
+run deterministic transforms that no LLM should re-derive. The engine ↔
+company-overlay pattern handles this by letting a skill directory ship a
+`scripts/` tree alongside `SKILL.md`. Oracle adopts the same convention.
 
 A skill that bundles executable code looks like:
 
@@ -174,14 +174,14 @@ An overlay repo contains only skill directories — no application code, no
 be markdown-only or ship bundled code via `scripts/`:
 
 ```text
-oracle-capillary/
+acme-overlay/
   .oracle/
     skills/
-      capillary-api-test/
+      acme-api-test/
         SKILL.md                  # markdown-only: prescriptive guidance
-      capillary-contract-test/
+      acme-contract-test/
         SKILL.md
-      capillary-dashboard-sink/
+      acme-dashboard-sink/
         SKILL.md                  # frontmatter: cli: scripts/cli.py
         scripts/
           cli.py
@@ -230,8 +230,8 @@ Bundled skills:
   /oracle:migrate        Migrate a harness-scaffolded test suite to Oracle's layout.
 
 Local overlay skills (override bundled):
-  /capillary-api-test         Generate Capillary-style API contract tests.
-  /capillary-dashboard-sink   Post test reports to an internal dashboard.  [cli]
+  /acme-api-test         Generate company-style API contract tests.
+  /acme-dashboard-sink   Post test reports to an internal dashboard.  [cli]
 ```
 
 `oracle skills run <name>` resolves the skill via the precedence rules,

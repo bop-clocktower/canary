@@ -36,7 +36,7 @@ The same coupling exists inside the orchestrator's self-healing loop
 (`agent/core/orchestrator.py`: `_attempt_fix`, `_attempt_selector_fix`)
 which call `generate_response()` for retry generation.
 
-Capillary's downstream overlay maintainer has explicitly asked for a
+The downstream overlay maintainer has explicitly asked for a
 keyless path (`feedback_no_api_keys` agent memory). Casual contributors
 upstream similarly avoid setting up a provider key. The current
 architecture forces both groups to either supply a key or skip the

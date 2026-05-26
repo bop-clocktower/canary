@@ -149,7 +149,7 @@ def _project_root_for(path: Path) -> Path:
     """Walk up from `path` to the nearest .git directory, else return parent.
 
     Matches the discovery convention used by `oracle skills list` and the
-    Capillary overlay loader — the project boundary is the .git root.
+    downstream overlay loader — the project boundary is the .git root.
     """
     cur = path.resolve().parent
     while True:
