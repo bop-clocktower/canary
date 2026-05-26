@@ -340,7 +340,12 @@ def version():
     """
     Show Oracle version info.
     """
-    print("[bold green]Oracle AI v0.1 (MVP)[/bold green]")
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+    try:
+        ver = _pkg_version("oracle-test-ai")
+    except PackageNotFoundError:
+        ver = "unknown"
+    print(f"[bold green]Oracle AI v{ver}[/bold green]")
 
 
 @app.command()
