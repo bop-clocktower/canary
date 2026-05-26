@@ -23,6 +23,11 @@ targeted tests.
    - `functions` — public functions in the source file
    - `context_snippets` — relevant source lines for reference
 
+   Also check for a project voice config per
+   `plugins/oracle/voice/discovery.md`. If found, resolve its profile and apply
+   the voice to your final report only — never to the generated test file. If
+   none, use neutral voice.
+
 2. Using the analysis output, generate test content that:
    - Matches the detected framework's conventions
    - Tests each public function identified in `functions`
