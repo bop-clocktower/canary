@@ -64,7 +64,7 @@ def generate(
         )
 
     if not output_json:
-        print("\n[bold cyan]🧠 Oracle Processing Request...[/bold cyan]\n")
+        print("\n[bold cyan]🦇 Oracle Processing Request...[/bold cyan]\n")
 
     if recommend_only:
         from agent.core.classifier import TestClassifier, extract_framework_hint
