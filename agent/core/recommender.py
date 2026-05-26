@@ -23,14 +23,17 @@ class FrameworkRecommender:
         """
         self.registry = FrameworkRegistry()
 
+    # Cap the ranked candidate list so the output stays scannable.
+    _MAX_CANDIDATES = 3
+
     def recommend(
         self,
         classification: ClassificationResult,
         metadata=None,
         framework_hint: Optional[str] = None,
-    ) -> Dict:
+    ) -> List[Dict]:
         """
-        Recommends a framework based on the classification result.
+        Recommend frameworks for a classification, ranked best-first.
 
         Args:
             classification: The result from the TestClassifier.
@@ -39,21 +42,19 @@ class FrameworkRecommender:
                 detected languages. Falls back to unfiltered if no match.
             framework_hint: Optional explicit framework name (lowercase, e.g.
                 "pytest"). When the hint matches a candidate within the
-                language-filtered set it wins over registry preferred-default.
-                Used to break ties when two frameworks claim the same test_type
-                and no project metadata narrows the set.
+                language-filtered set it is ranked first.
 
         Returns:
-            Dict: A dictionary containing the recommended framework,
-                category, file extension, and reasoning.
+            List[Dict]: Up to three candidates, ranked best-first. Each entry
+                carries ``framework``, ``category``, ``file_extension``,
+                ``reason``, and ``confidence`` (echoing the classification
+                confidence). Empty list when no framework matches —
+                single-pick callers should read ``result[0]`` after guarding
+                for emptiness.
         """
         frameworks = self.registry.get_by_category(classification.test_type)
-
         if not frameworks:
-            return {
-                "framework": None,
-                "reason": ["No matching framework found"]
-            }
+            return []
 
         # Apply language filter when project languages are known.
         candidates = frameworks
@@ -77,33 +78,44 @@ class FrameworkRecommender:
                 None,
             )
 
-        if hinted is not None:
-            selected = hinted
-        else:
-            # Prefer "preferred" status first
-            preferred = [
-                f for f in candidates
-                if f.get("status") == "preferred"
-            ]
-            selected = preferred[0] if preferred else candidates[0]
+        # Rank: hinted first, then preferred-status, then the rest — each tier
+        # preserving registry order. De-dupe while preserving that ranking.
+        preferred = [f for f in candidates if f.get("status") == "preferred"]
+        rest = [f for f in candidates if f.get("status") != "preferred"]
+        ranked_pool = ([hinted] if hinted is not None else []) + preferred + rest
 
-        # Derive extension with safety
-        file_extension = "ts" # Default fallback
-        if selected.get("file_extensions"):
-            file_extension = selected["file_extensions"][0]
-        elif selected.get("languages"):
+        ranked: List[Dict] = []
+        seen = set()
+        for fw in ranked_pool:
+            name = fw.get("name")
+            if name in seen:
+                continue
+            seen.add(name)
+            entry = self._format_candidate(fw, classification.confidence)
+            if fw is hinted:
+                entry["reason"].insert(0, f"prompt-named framework ({name})")
+            ranked.append(entry)
+            if len(ranked) >= self._MAX_CANDIDATES:
+                break
+        return ranked
+
+    def _format_candidate(self, framework: Dict, confidence: float) -> Dict:
+        """Shape a single registry entry into a recommendation candidate."""
+        file_extension = "ts"  # Default fallback
+        if framework.get("file_extensions"):
+            file_extension = framework["file_extensions"][0]
+        elif framework.get("languages"):
             lang_map = {"python": "py", "javascript": "js", "typescript": "ts"}
-            file_extension = lang_map.get(selected["languages"][0].lower(), "ts")
-
-        reason = self._build_reason(selected)
-        if hinted is not None:
-            reason.insert(0, f"prompt-named framework ({selected['name']})")
+            file_extension = lang_map.get(
+                framework["languages"][0].lower(), "ts"
+            )
 
         return {
-            "framework": selected["name"],
-            "category": selected["category"],
+            "framework": framework["name"],
+            "category": framework["category"],
             "file_extension": file_extension,
-            "reason": reason,
+            "reason": self._build_reason(framework),
+            "confidence": confidence,
         }
 
     def _build_reason(self, framework: Dict) -> List[str]:

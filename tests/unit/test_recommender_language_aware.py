@@ -27,11 +27,11 @@ class TestRecommenderWithoutMetadata(unittest.TestCase):
         self.rec = FrameworkRecommender()
 
     def test_api_no_metadata_returns_a_framework(self):
-        result = self.rec.recommend(_cls("api"))
+        result = self.rec.recommend(_cls("api"))[0]
         self.assertIsNotNone(result["framework"])
 
     def test_e2e_no_metadata_returns_playwright(self):
-        result = self.rec.recommend(_cls("e2e_ui"))
+        result = self.rec.recommend(_cls("e2e_ui"))[0]
         self.assertEqual(result["framework"], "playwright")
 
 
@@ -42,24 +42,24 @@ class TestRecommenderLanguageFilter(unittest.TestCase):
 
     def test_api_typescript_project_picks_ts_framework(self):
         """TypeScript project should not get pytest for API tests."""
-        result = self.rec.recommend(_cls("api"), metadata=_ts_meta())
+        result = self.rec.recommend(_cls("api"), metadata=_ts_meta())[0]
         self.assertNotEqual(result["framework"], "pytest",
             "pytest is Python-only; a TypeScript project should get a TS-compatible framework")
 
     def test_api_python_project_picks_pytest(self):
         """Python project should get pytest for API tests."""
-        result = self.rec.recommend(_cls("api"), metadata=_py_meta())
+        result = self.rec.recommend(_cls("api"), metadata=_py_meta())[0]
         self.assertEqual(result["framework"], "pytest")
 
     def test_e2e_typescript_project_picks_playwright(self):
-        result = self.rec.recommend(_cls("e2e_ui"), metadata=_ts_meta())
+        result = self.rec.recommend(_cls("e2e_ui"), metadata=_ts_meta())[0]
         self.assertEqual(result["framework"], "playwright")
 
     def test_filter_falls_back_when_no_language_match(self):
         """If no framework matches the detected language, fall back to unfiltered."""
         # k6 is the only performance framework and it's JavaScript — a Python-only
         # project would normally get no match; the fallback must still return k6.
-        result = self.rec.recommend(_cls("performance"), metadata=_py_meta())
+        result = self.rec.recommend(_cls("performance"), metadata=_py_meta())[0]
         self.assertIsNotNone(result["framework"])
         self.assertEqual(result["framework"], "k6")
 
