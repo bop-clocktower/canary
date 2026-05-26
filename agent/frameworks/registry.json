@@ -5,19 +5,11 @@
       "display_name": "Playwright",
       "category": "e2e_ui",
       "categories": ["e2e_ui", "api"],
-      "languages": [
-        "typescript",
-        "javascript"
-      ],
+      "languages": ["typescript", "javascript"],
       "file_extensions": ["spec.ts", "spec.js", "test.ts", "test.js"],
       "execution_command": "npx --yes playwright test {file}",
       "ci_flags": ["--reporter=list"],
-      "ecosystems": [
-        "react",
-        "vue",
-        "angular",
-        "node"
-      ],
+      "ecosystems": ["react", "vue", "angular", "node"],
       "status": "preferred",
       "maturity": "high",
       "community_size": "large",
@@ -32,26 +24,17 @@
         "Modern testing architecture",
         "Fast execution"
       ],
-      "avoid_when": [
-        "legacy selenium-only environments"
-      ]
+      "avoid_when": ["legacy selenium-only environments"]
     },
     {
       "name": "vitest",
       "display_name": "Vitest",
       "category": "frontend_unit",
-      "languages": [
-        "typescript",
-        "javascript"
-      ],
+      "languages": ["typescript", "javascript"],
       "file_extensions": ["test.ts", "test.js", "spec.ts", "spec.js"],
       "execution_command": "npx --yes vitest run {file}",
       "ci_flags": ["--reporter=verbose"],
-      "ecosystems": [
-        "vite",
-        "react",
-        "vue"
-      ],
+      "ecosystems": ["vite", "react", "vue"],
       "status": "preferred",
       "maturity": "high",
       "community_size": "large",
@@ -65,25 +48,19 @@
         "Modern developer experience",
         "Vite-native integration"
       ],
-      "avoid_when": [
-        "legacy jest-only environments"
-      ]
+      "avoid_when": ["legacy jest-only environments"]
     },
     {
       "name": "pytest",
       "display_name": "pytest",
       "category": "python_unit",
       "categories": ["python_unit", "api"],
-      "languages": [
-        "python"
-      ],
+      "languages": ["python"],
       "file_extensions": ["py"],
       "file_patterns": ["test_*.py", "*_test.py"],
       "execution_command": "pytest {file}",
       "ci_flags": ["--tb=short", "-p", "no:cacheprovider"],
-      "ecosystems": [
-        "python"
-      ],
+      "ecosystems": ["python"],
       "status": "preferred",
       "maturity": "very_high",
       "community_size": "massive",
@@ -103,18 +80,12 @@
       "name": "k6",
       "display_name": "k6",
       "category": "performance",
-      "languages": [
-        "javascript"
-      ],
+      "languages": ["javascript"],
       "file_extensions": ["js"],
       "file_patterns": ["load.js", "*.load.js"],
       "execution_command": "k6 run {file}",
       "ci_flags": [],
-      "ecosystems": [
-        "api",
-        "backend",
-        "microservices"
-      ],
+      "ecosystems": ["api", "backend", "microservices"],
       "status": "preferred",
       "maturity": "high",
       "community_size": "large",
@@ -129,6 +100,272 @@
         "Modern architecture"
       ],
       "avoid_when": []
+    },
+    {
+      "name": "axe-core",
+      "display_name": "axe-core",
+      "category": "accessibility",
+      "languages": ["typescript", "javascript"],
+      "file_extensions": ["spec.ts", "spec.js"],
+      "execution_command": "npx --yes playwright test {file}",
+      "ecosystems": ["playwright", "react", "vue", "angular"],
+      "status": "supported",
+      "maturity": "high",
+      "community_size": "large",
+      "recommended_for": [
+        "accessibility audits (WCAG)",
+        "a11y regression checks in existing E2E suites"
+      ],
+      "strengths": [
+        "Pairs with an existing Playwright suite via @axe-core/playwright",
+        "Maps findings to WCAG success criteria",
+        "No separate runner to maintain"
+      ],
+      "avoid_when": ["projects with no browser-driven test layer"]
+    },
+    {
+      "name": "zap",
+      "display_name": "OWASP ZAP",
+      "category": "security",
+      "languages": ["any"],
+      "execution_command": "zap-baseline.py -t {target}",
+      "ecosystems": ["web", "api"],
+      "status": "supported",
+      "maturity": "high",
+      "community_size": "large",
+      "recommended_for": [
+        "dynamic application security testing (DAST)",
+        "baseline vulnerability scans in CI"
+      ],
+      "strengths": [
+        "Mature OWASP-backed scanner",
+        "Scriptable baseline scan for CI gating",
+        "Active + passive scan modes"
+      ],
+      "avoid_when": [
+        "static-only analysis needs (use static_analysis category instead)"
+      ]
+    },
+    {
+      "name": "backstopjs",
+      "display_name": "BackstopJS",
+      "category": "visual",
+      "languages": ["javascript", "typescript"],
+      "file_extensions": ["js", "json"],
+      "execution_command": "npx --yes backstop test",
+      "ecosystems": ["web"],
+      "status": "supported",
+      "maturity": "medium",
+      "community_size": "medium",
+      "recommended_for": [
+        "visual regression testing",
+        "pixel-diff snapshots across viewports"
+      ],
+      "strengths": [
+        "Dedicated visual-diff workflow",
+        "Configurable viewports and scenarios"
+      ],
+      "avoid_when": ["teams already using Playwright snapshots inline with E2E"]
+    },
+    {
+      "name": "pact",
+      "display_name": "Pact",
+      "category": "contract",
+      "languages": ["typescript", "javascript", "python", "java"],
+      "execution_command": "npx --yes pact verify",
+      "ecosystems": ["microservices", "api"],
+      "status": "supported",
+      "maturity": "high",
+      "community_size": "large",
+      "recommended_for": [
+        "consumer-driven contract testing between services",
+        "preventing integration drift across teams"
+      ],
+      "strengths": [
+        "Consumer-driven contracts",
+        "Broker for sharing pacts across teams",
+        "Polyglot language support"
+      ],
+      "avoid_when": ["single-team monolith with no cross-service contracts"]
+    },
+    {
+      "name": "chaos-toolkit",
+      "display_name": "Chaos Toolkit",
+      "category": "chaos",
+      "languages": ["python"],
+      "file_extensions": ["json", "yaml"],
+      "execution_command": "chaos run {file}",
+      "ecosystems": ["kubernetes", "cloud", "microservices"],
+      "status": "supported",
+      "maturity": "medium",
+      "community_size": "medium",
+      "recommended_for": [
+        "chaos engineering experiments",
+        "resilience and fault-injection testing"
+      ],
+      "strengths": [
+        "Declarative experiment definitions",
+        "Extensible driver ecosystem (k8s, cloud providers)"
+      ],
+      "avoid_when": ["systems without redundancy to absorb induced failures"]
+    },
+    {
+      "name": "faker",
+      "display_name": "Faker",
+      "category": "synthetic_data",
+      "languages": ["python", "javascript", "typescript"],
+      "execution_command": "python -m pytest {file}",
+      "ecosystems": ["any"],
+      "status": "supported",
+      "maturity": "very_high",
+      "community_size": "massive",
+      "recommended_for": [
+        "generating realistic synthetic test data",
+        "seeding fixtures without production data"
+      ],
+      "strengths": [
+        "Permissive MIT license",
+        "Huge provider catalog",
+        "Python and JS implementations"
+      ],
+      "avoid_when": [
+        "statistically faithful synthetic datasets are required (evaluate SDV — license review pending, see issue #126)"
+      ]
+    },
+    {
+      "name": "opentelemetry",
+      "display_name": "OpenTelemetry",
+      "category": "observability",
+      "languages": ["any"],
+      "ecosystems": ["distributed-systems", "microservices"],
+      "status": "supported",
+      "maturity": "high",
+      "community_size": "large",
+      "recommended_for": [
+        "instrumentation and telemetry assertions",
+        "validating traces/metrics/logs emitted under test"
+      ],
+      "strengths": [
+        "Vendor-neutral standard",
+        "Traces, metrics, and logs in one SDK"
+      ],
+      "avoid_when": [
+        "simple apps with no distributed call graph (Stage 2 routes this, issue #129)"
+      ]
+    },
+    {
+      "name": "maestro",
+      "display_name": "Maestro",
+      "category": "mobile",
+      "languages": ["yaml"],
+      "file_extensions": ["yaml", "yml"],
+      "execution_command": "maestro test {file}",
+      "ecosystems": ["android", "ios", "react-native", "flutter"],
+      "status": "supported",
+      "maturity": "medium",
+      "community_size": "medium",
+      "recommended_for": [
+        "mobile UI flow testing (Android/iOS)",
+        "cross-platform mobile smoke tests"
+      ],
+      "strengths": [
+        "Simple YAML flow syntax",
+        "Built-in flakiness tolerance",
+        "Single tool across Android and iOS"
+      ],
+      "avoid_when": [
+        "deep native-instrumentation needs (consider Appium/Espresso)"
+      ]
+    },
+    {
+      "name": "locust",
+      "display_name": "Locust",
+      "category": "load",
+      "languages": ["python"],
+      "file_extensions": ["py"],
+      "file_patterns": ["locustfile.py", "*_locust.py"],
+      "execution_command": "locust -f {file} --headless",
+      "ecosystems": ["api", "web", "backend"],
+      "status": "supported",
+      "maturity": "high",
+      "community_size": "large",
+      "recommended_for": [
+        "Python-defined load scenarios",
+        "soak and spike testing with concurrent users"
+      ],
+      "strengths": [
+        "Load scenarios as plain Python",
+        "Distributed mode for high concurrency",
+        "Live web UI for run monitoring"
+      ],
+      "avoid_when": [
+        "teams standardized on k6 for performance (overlapping concern)"
+      ]
+    },
+    {
+      "name": "stryker",
+      "display_name": "Stryker Mutator",
+      "category": "mutation",
+      "languages": ["typescript", "javascript"],
+      "file_extensions": ["js", "ts"],
+      "execution_command": "npx --yes stryker run",
+      "ecosystems": ["node", "react", "vue"],
+      "status": "supported",
+      "maturity": "high",
+      "community_size": "medium",
+      "recommended_for": [
+        "mutation testing to measure test-suite effectiveness",
+        "finding assertions that never actually fail"
+      ],
+      "strengths": [
+        "Reveals weak/ineffective tests",
+        "Integrates with Jest/Vitest/Mocha"
+      ],
+      "avoid_when": [
+        "suites too slow to tolerate the mutation runtime multiplier"
+      ]
+    },
+    {
+      "name": "semgrep",
+      "display_name": "Semgrep",
+      "category": "static_analysis",
+      "languages": ["any"],
+      "file_extensions": ["yaml", "yml"],
+      "execution_command": "semgrep --config auto {target}",
+      "ecosystems": ["any"],
+      "status": "supported",
+      "maturity": "high",
+      "community_size": "large",
+      "recommended_for": [
+        "static analysis and custom lint rules",
+        "catching anti-patterns and code smells pre-merge"
+      ],
+      "strengths": [
+        "Pattern rules across many languages",
+        "Fast, CI-friendly, custom-rule authoring"
+      ],
+      "avoid_when": ["runtime/dynamic behavior is what needs verifying"]
+    },
+    {
+      "name": "testcontainers",
+      "display_name": "Testcontainers",
+      "category": "integration",
+      "languages": ["python", "typescript", "javascript", "java", "go"],
+      "execution_command": "pytest {file}",
+      "ecosystems": ["docker", "microservices", "backend"],
+      "status": "supported",
+      "maturity": "high",
+      "community_size": "large",
+      "recommended_for": [
+        "integration tests against real dependencies (DBs, brokers) in Docker",
+        "replacing brittle mocks with disposable real services"
+      ],
+      "strengths": [
+        "Real dependencies in ephemeral containers",
+        "Polyglot bindings",
+        "Deterministic teardown"
+      ],
+      "avoid_when": ["CI without a Docker daemon available"]
     }
   ]
 }
