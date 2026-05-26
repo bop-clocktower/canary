@@ -16,6 +16,11 @@ scaffold tools.
 1. If the user did not specify a framework, call `oracle__list_frameworks`
    to retrieve all supported options, then ask the user to choose one.
 
+   Also check for a project voice config per
+   `plugins/oracle/voice/discovery.md`. If found, resolve its named profile and
+   apply the voice to any prose you write (a scaffold README, your report) —
+   not to scaffolded config or test files. If none, use neutral voice.
+
 2. Call `oracle__init_suite` with the chosen framework and an empty
    `target_dir` (defaults to the plugin root).
 
