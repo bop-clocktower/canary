@@ -33,6 +33,12 @@ def generate(
     """
     Generate test automation code from a natural language prompt.
 
+    DEPRECATED: this command requires a provider API key and will be
+    removed in v3.0. Use the `/oracle-write-test` slash command from
+    the Claude Code plugin instead — it runs the same generation in
+    the host session with no API key required. See
+    docs/adr/0003-deprecate-oracle-generate.md.
+
     Args:
         prompt: Natural language description of the test requirements.
         recommend_only: If True, identifies the framework but skips code generation.
@@ -44,6 +50,18 @@ def generate(
 
     # In CI, force machine-readable output so pipelines don't have to parse Rich markup.
     output_json = output_json or is_ci()
+
+    # Deprecation warning — print to stderr so JSON output on stdout stays clean
+    # for pipeline consumers. The `--recommend-only` path doesn't call the LLM
+    # and stays keyless, so we don't warn for it.
+    if not recommend_only:
+        Console(stderr=True).print(
+            "[bold yellow]⚠ oracle generate is deprecated[/bold yellow] "
+            "and will be removed in v3.0. Migrate to the "
+            "[bold]/oracle-write-test[/bold] slash command "
+            "(Claude Code plugin) — no API key required. "
+            "See ADR 0003.",
+        )
 
     if not output_json:
         print("\n[bold cyan]🧠 Oracle Processing Request...[/bold cyan]\n")
@@ -329,9 +347,19 @@ def version():
 def feedback():
     """
     Print a pre-filled GitHub issue URL for the most recent `oracle generate`.
+
+    DEPRECATED: tied to `oracle generate`, which itself is deprecated.
+    Both removed in v3.0. The plugin path doesn't need a feedback
+    command — share Claude Code conversation snippets directly.
     """
     from agent.core.feedback import build_issue_url, load_last_generation
     from rich.console import Console
+
+    Console(stderr=True).print(
+        "[bold yellow]⚠ oracle feedback is deprecated[/bold yellow] "
+        "and will be removed in v3.0 alongside `oracle generate`. "
+        "See ADR 0003.",
+    )
 
     payload = load_last_generation()
     if payload is None:
