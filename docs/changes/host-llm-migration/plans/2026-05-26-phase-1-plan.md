@@ -244,7 +244,7 @@ references to this plan.
 | Host-LLM generation quality worse than CLI | Side-by-side test against four prompts; iterate instructions | Task 4 |
 | `oracle__analyze_file` doesn't return enough context | Document gaps in Task 1; extend MCP tool if needed | Task 1 |
 | Spec drift between `oracle-plugin.md` and `host-llm-migration.md` | Cross-reference; patch stale sections | Task 5 |
-| Downstream `oracle-capillary` users still hit the CLI path somehow | They don't — they only use the overlay; deprecation comes later | n/a |
+| Downstream overlay users still hit the CLI path somehow | They don't — they only use the overlay; deprecation comes later | n/a |
 
 ## Out of scope
 

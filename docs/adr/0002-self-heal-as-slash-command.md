@@ -32,7 +32,7 @@ CLI command, just an internal loop invoked by `generate --run`. As a
 result, today's only way to use the self-heal capability requires the
 keyed CLI path entirely.
 
-Capillary downstream and casual contributors who want a keyless path
+Downstream overlay users and casual contributors who want a keyless path
 have no analog for "this test fails, fix it".
 
 ## Decision

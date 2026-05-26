@@ -236,9 +236,9 @@ It has no harness config yet.
   the setup is wrong. Read the failure output — it often points
   to a pre-existing issue in the repo that the harness is now
   surfacing for the first time.
-- **When a fork needs capillary-specific config injected:**
+- **When a fork needs company-specific config injected:**
   Set up the base harness using this skill, then apply the
-  capillary-specific overrides as a follow-up commit. Don't
+  company-specific overrides as a follow-up commit. Don't
   mix upstream setup with fork-specific changes.
 - **When the wiki-sync workflow fails on first run:** The
   GitHub wiki is a separate git repository that GitHub creates

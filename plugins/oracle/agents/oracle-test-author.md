@@ -62,7 +62,7 @@ prompt has access to.
    - `tests/helpers/`, `tests/fixtures/`, `conftest.py` for shared
      fixtures the new test should reuse (don't invent fixture names —
      import real ones)
-   - `.oracle/company.json` if present — Capillary-internal pointers
+   - `.oracle/company.json` if present — company-internal pointers
      (Confluence spaces, Jira projects, MCP servers) to ground
      domain-specific tests
 3. **Expand the user's prompt** with the gathered context. Make
