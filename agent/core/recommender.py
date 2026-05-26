@@ -110,13 +110,24 @@ class FrameworkRecommender:
                 framework["languages"][0].lower(), "ts"
             )
 
-        return {
+        candidate = {
             "framework": framework["name"],
             "category": framework["category"],
             "file_extension": file_extension,
             "reason": self._build_reason(framework),
             "confidence": confidence,
         }
+        # Surface a license caveat (e.g. source-available BSL tools) so
+        # downstream adopters see the review requirement before relying on
+        # the pick. Carried as a structured field and echoed into the reason.
+        if framework.get("license_note"):
+            candidate["license"] = framework.get("license")
+            candidate["warning"] = framework["license_note"]
+            license_label = framework.get("license", "non-OSI license")
+            candidate["reason"].insert(
+                0, f"⚠ {license_label}: review against your license policy"
+            )
+        return candidate
 
     def _build_reason(self, framework: Dict) -> List[str]:
         """

@@ -148,10 +148,11 @@ class TestListFrameworks(unittest.TestCase):
         names = set(result["frameworks"])
         # Core four must always be present.
         self.assertTrue({"playwright", "vitest", "pytest", "k6"} <= names)
-        # Stage 1 expanded the registry to 16 frameworks.
-        self.assertEqual(len(names), 16)
+        # Stage 1 expanded the registry to 16; SDV added a 17th.
+        self.assertEqual(len(names), 17)
         self.assertIn("semgrep", names)
         self.assertIn("testcontainers", names)
+        self.assertIn("sdv", names)
 
 
 # ---------------------------------------------------------------------------

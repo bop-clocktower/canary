@@ -54,3 +54,30 @@ class TestRankedRecommendation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSyntheticDataLicenseWarning(unittest.TestCase):
+    """SDV is preferred for synthetic_data, with a surfaced BSL license warning."""
+
+    def setUp(self):
+        self.rec = FrameworkRecommender()
+
+    def test_sdv_is_preferred_for_synthetic_data(self):
+        result = self.rec.recommend(_cls("synthetic_data"))
+        self.assertEqual(result[0]["framework"], "sdv")
+        # Faker remains available as an alternative.
+        self.assertIn("faker", [c["framework"] for c in result])
+
+    def test_sdv_candidate_carries_license_warning(self):
+        top = self.rec.recommend(_cls("synthetic_data"))[0]
+        self.assertEqual(top["license"], "BSL-1.1")
+        self.assertIn("review", top["warning"].lower())
+        # The caveat is echoed into the reason list as well.
+        self.assertTrue(any("review" in r.lower() for r in top["reason"]))
+
+    def test_faker_has_no_license_warning(self):
+        faker = next(
+            c for c in self.rec.recommend(_cls("synthetic_data"))
+            if c["framework"] == "faker"
+        )
+        self.assertNotIn("warning", faker)

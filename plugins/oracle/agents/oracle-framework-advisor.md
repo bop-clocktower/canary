@@ -41,7 +41,7 @@ the user is ready to write.
 | Visual regression              | Playwright snapshots, or BackstopJS | Inline with E2E, or dedicated pixel-diff         |
 | API contract / consumer-driven | Pact (or Pytest + schemathesis)     | Consumer-driven contracts, broker sharing        |
 | Chaos / resilience             | Chaos Toolkit                       | Declarative fault-injection experiments          |
-| Synthetic test data            | Faker (SDV if stats-faithful\*)     | MIT-licensed, huge provider catalog              |
+| Synthetic test data            | SDV\* (Faker for field-level)       | Schema-aware, distribution-faithful synthesis    |
 | Observability assertions       | OpenTelemetry                       | Vendor-neutral traces/metrics/logs               |
 | Mobile UI flows (Android/iOS)  | Maestro                             | One YAML flow syntax across platforms            |
 | Load (soak / spike / Python)   | Locust (or k6)                      | Load scenarios as plain Python, distributed mode |
@@ -49,9 +49,12 @@ the user is ready to write.
 | Static analysis / custom lint  | Semgrep                             | Multi-language pattern rules, CI-friendly        |
 | Integration vs real deps       | Testcontainers                      | Real DBs/brokers in disposable containers        |
 
-`*` SDV (Synthetic Data Vault) gives statistically faithful synthetic data but
-its BSL license is under review — see issue #126. Default to Faker until that's
-settled.
+`*` SDV (Synthetic Data Vault) is the preferred synthetic-data tool —
+schema-aware, distribution-faithful. It ships under the **Business Source
+License (BSL)** (source-available, not OSI open-source). Internal test-data use
+is generally permitted, but **downstream adopters must review BSL against their
+own business/procurement rules** before relying on it. Fall back to Faker (MIT)
+for field-level fakes or where BSL is unacceptable. See issue #126.
 
 **Default to the repo's existing framework when one is in use** unless there's a
 concrete reason to switch (sunsetted tool, can't express the test type, etc.).
