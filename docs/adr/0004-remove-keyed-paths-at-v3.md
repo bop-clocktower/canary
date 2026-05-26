@@ -171,6 +171,47 @@ LLM accessible from a CLI subprocess; the whole reason for the
 plugin path is that Claude Code provides the session. The CLI has
 nowhere to route to.
 
+## Guiding principle (revealed during Phase 3 review)
+
+After Phases 1–3 landed, the implicit shape of Oracle's surface is:
+
+- **Deterministic operations** (file scans, registry lookups, AST
+  walks, framework detection, static checks, test execution, report
+  generation) live in the keyless `oracle <subcmd>` CLI. They run
+  without an LLM and benefit from being scriptable and CI-friendly.
+- **Generative operations** (write new test code, repair a failing
+  test, critique substance) live in slash commands. They need a
+  reasoning loop and run in the host Claude Code session.
+
+This matches the Harness pattern (Harness's CLI does deterministic
+work; its slash commands invoke generative agents).
+
+The Phases 1–2 migrations focused only on the _generative_ pieces —
+they moved them off the keyed `oracle generate` path onto slash
+commands. They did not surface the fact that some of the
+slash-command-only agents have a **static-check companion that could
+ship as a keyless CLI command**:
+
+| Slash command | Generative bit (stays) | Keyless static bit (could be CLI) |
+| --- | --- | --- |
+| `/oracle-write-test` | Generate code from a requirement | (none — pure generation) |
+| `/oracle-heal-test` | Diagnose novel failures | Pattern-fix (regex-detectable fixes — selector swap from trace, missing await) |
+| `/oracle-review-test` | Substantive critique | Static lint (idiom check, brittle-selector flag, missing-assertion flag) |
+| `/oracle-debug-flake` | Diagnose a specific failure mode | Pattern detection (`Math.random` in tests, `setTimeout` without `waitFor`, etc.) |
+| `/oracle-pick-framework` | (none — already keyless: this is the classifier) | `oracle recommend "<prompt>"` (planned above as the `--recommend-only` replacement) |
+
+**This ADR does not propose implementing those CLI companions.** They
+are flagged here so a reader of the v3.0 plan understands that
+"removed the keyed path" doesn't mean "removed every CLI surface
+adjacent to the slash commands." The keyless CLI companions are
+future work, tracked in a follow-up roadmap item.
+
+If Oracle is eventually pulled into Harness (separate decision; see
+roadmap item _"Decide whether to pull Oracle into Harness directly"_),
+these CLI companions become `harness test:review`, `harness
+test:flake-check`, etc. — same underlying static analysis, different
+command name.
+
 ## Open Questions
 
 1. **`action.yml`: delete vs. hard-error shim** (Alternative 2). The

@@ -458,6 +458,45 @@ when the project already holds an active license.
 
 ## Future Work
 
+### Decide whether to pull Oracle into Harness directly
+
+- **Status:** decision pending — team discussion scheduled
+- **Spec:** none
+- **Summary:** Oracle's current shape (separate `oracle` CLI, plugin,
+  and MCP server) parallels Harness's pattern (CLI for deterministic
+  work, slash commands for generative work) but maintains its own
+  install path, brand, and release cadence. Alternative: pull Oracle
+  into Harness directly — its capabilities become `harness:test-*`
+  skills, the `oracle` CLI becomes `harness test:<subcmd>`, the MCP
+  tools either fold into Harness's MCP surface or get reimplemented.
+  Cost: ~20–25% of the in-flight host-LLM migration work is
+  throwaway under "pull in"; the remaining 75%+ (slash command
+  markdown, agent definitions, deterministic modules) ports cleanly.
+  Holding the v3.0 cut and any new keyless CLI commands (see related
+  item below) until this decision lands so they don't ship in the
+  wrong shape.
+- **Blockers:** team discussion.
+- **Plan:** none
+
+### Add keyless CLI companions for static-analysis-only operations
+
+- **Status:** planned (paused pending Harness-pull decision above)
+- **Spec:** none
+- **Summary:** Several slash-command agents have a static-analysis
+  dimension that could ship as keyless CLI commands alongside the
+  generative slash command. See the "Guiding principle" section of
+  [ADR 0004](adr/0004-remove-keyed-paths-at-v3.md) for the full
+  table. Candidates: `oracle review-test --static` (lint-style
+  static checks for tests), `oracle flake-check` (pattern detection
+  for known flake causes — `Math.random`, `setTimeout` without
+  `waitFor`, etc.), `oracle heal-test --pattern` (regex-detectable
+  fixes like selector swaps from trace). Aligns Oracle with Harness's
+  shape: deterministic → CLI, generative → slash command. **Paused**
+  because the "pull into Harness" decision changes where these
+  commands live (`oracle` vs `harness test:`).
+- **Blockers:** decision on Harness-pull.
+- **Plan:** none
+
 ### Migrate all LLM-dependent tasks to keyless slash commands
 
 - **Status:** in progress — Phase 1 + Phase 2 landed; CLI deprecation
