@@ -74,11 +74,17 @@ def generate(
         recommender = FrameworkRecommender()
 
         classification = classifier.classify(prompt)
-        result = recommender.recommend(
+        results = recommender.recommend(
             classification,
             framework_hint=extract_framework_hint(prompt),
         )
-        
+        result = results[0] if results else {
+            "framework": None,
+            "file_extension": "ts",
+            "reason": ["No matching framework found"],
+        }
+        alternatives = [r["framework"] for r in results[1:]]
+
         if output_json:
             _sys.stdout.write(json.dumps({
                 "status": "success",
@@ -86,7 +92,8 @@ def generate(
                 "test_type": classification.test_type,
                 "framework": result["framework"],
                 "file_extension": result["file_extension"],
-                "reasoning": result["reasoning"],
+                "reasoning": result["reason"],
+                "alternatives": alternatives,
             }, indent=2) + "\n")
             return
 
@@ -94,8 +101,10 @@ def generate(
         print(f"[bold]Test Type:[/bold] {classification.test_type}")
         print(f"[bold]Framework:[/bold] {result['framework']}")
         print("\n[bold]Reasoning:[/bold]")
-        for r in result["reasoning"]:
+        for r in result["reason"]:
             print(f" - {r}")
+        if alternatives:
+            print(f"\n[bold]Alternatives:[/bold] {', '.join(alternatives)}")
         print("\n[yellow]Note: Generation skipped due to --recommend-only flag.[/yellow]")
         return
 

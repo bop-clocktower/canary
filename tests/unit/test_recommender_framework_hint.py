@@ -23,7 +23,7 @@ class TestFrameworkHint(unittest.TestCase):
         self.rec = FrameworkRecommender()
 
     def test_pytest_hint_wins_api_without_metadata(self):
-        result = self.rec.recommend(_api("api"), metadata=None, framework_hint="pytest")
+        result = self.rec.recommend(_api("api"), metadata=None, framework_hint="pytest")[0]
         self.assertEqual(result["framework"], "pytest")
         self.assertTrue(
             any("prompt-named framework (pytest)" in r for r in result["reason"]),
@@ -31,7 +31,7 @@ class TestFrameworkHint(unittest.TestCase):
         )
 
     def test_playwright_hint_wins_api_without_metadata(self):
-        result = self.rec.recommend(_api("api"), metadata=None, framework_hint="playwright")
+        result = self.rec.recommend(_api("api"), metadata=None, framework_hint="playwright")[0]
         self.assertEqual(result["framework"], "playwright")
 
     def test_hint_ignored_when_not_in_candidates(self):
@@ -39,7 +39,7 @@ class TestFrameworkHint(unittest.TestCase):
         silently dropped — caller still gets a valid recommendation."""
         result = self.rec.recommend(
             _api("performance"), metadata=None, framework_hint="pytest"
-        )
+        )[0]
         self.assertEqual(result["framework"], "k6")
         self.assertFalse(
             any("prompt-named framework" in r for r in result["reason"]),
@@ -47,8 +47,8 @@ class TestFrameworkHint(unittest.TestCase):
         )
 
     def test_no_hint_preserves_existing_default(self):
-        """Sanity: without a hint the recommender behaves exactly as before."""
-        result = self.rec.recommend(_api("e2e_ui"), metadata=None)
+        """Sanity: without a hint the top pick is unchanged."""
+        result = self.rec.recommend(_api("e2e_ui"), metadata=None)[0]
         self.assertEqual(result["framework"], "playwright")
 
 

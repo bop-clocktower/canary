@@ -82,18 +82,18 @@ class OracleOrchestrator:
         # 3. Recommend framework — pass framework_hint so an explicit
         # framework name in the prompt breaks ties when two frameworks claim
         # the same test_type.
-        recommendation = self.recommender.recommend(
+        recommendations = self.recommender.recommend(
             classification,
             metadata=metadata,
             framework_hint=extract_framework_hint(user_prompt),
         )
 
-        framework = recommendation["framework"]
-        if not framework:
+        if not recommendations or not recommendations[0].get("framework"):
             raise ValueError(
-                f"No framework available for test_type '{classification.test_type}'. "
-                f"Reason: {'; '.join(recommendation.get('reason', []))}"
+                f"No framework available for test_type '{classification.test_type}'."
             )
+        recommendation = recommendations[0]
+        framework = recommendation["framework"]
 
         # --- EXTENSION VALIDATION & SANITIZATION ---
         raw_ext = recommendation.get("file_extension", "ts")
