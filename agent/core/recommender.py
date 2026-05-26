@@ -62,6 +62,13 @@ class FrameworkRecommender:
         if not frameworks:
             return []
 
+        # License gate (Stage 3): strip commercially-licensed entries unless
+        # the unlocking signal is present. OSS-first — paid tools never
+        # surface silently; the OSS default for the category always remains.
+        frameworks = [f for f in frameworks if self._license_allowed(f)]
+        if not frameworks:
+            return []
+
         # Apply language filter when project languages are known.
         candidates = frameworks
         if metadata is not None:
@@ -104,6 +111,30 @@ class FrameworkRecommender:
             if len(ranked) >= self._MAX_CANDIDATES:
                 break
         return ranked
+
+    @staticmethod
+    def _license_allowed(framework: Dict) -> bool:
+        """Whether a framework may surface given the current license signals.
+
+        OSS / ungated entries (no ``license_gate``) always pass. Gated entries
+        require their ``license_gate`` env var to be set:
+
+        - A truthy value (e.g. ``ORACLE_LICENSE_TRICENTIS=1``) unlocks a
+          ``commercial`` tool.
+        - For ``commercial-org`` tools gated on ``ORACLE_SCOPE``, any non-empty
+          scope unlocks it; if the entry lists ``license_scopes``, the scope
+          value must be one of them.
+        """
+        gate = framework.get("license_gate")
+        if not gate:
+            return True
+        value = os.environ.get(gate, "").strip()
+        if not value or value.lower() in ("0", "false", "no", "off"):
+            return False
+        scopes = framework.get("license_scopes")
+        if scopes:
+            return value in scopes
+        return True
 
     def _recommend_observability(self, classification: ClassificationResult) -> List[Dict]:
         """Reporting-sink routing for the observability test type (Stage 2).

@@ -391,6 +391,72 @@
         "Deterministic teardown"
       ],
       "avoid_when": ["CI without a Docker daemon available"]
+    },
+    {
+      "name": "tosca",
+      "display_name": "Tricentis Tosca",
+      "category": "e2e_ui",
+      "languages": ["any"],
+      "ecosystems": ["enterprise", "sap", "web"],
+      "status": "commercial",
+      "license": "commercial",
+      "license_gate": "ORACLE_LICENSE_TRICENTIS",
+      "maturity": "high",
+      "community_size": "medium",
+      "recommended_for": [
+        "model-based / codeless E2E in orgs that already license Tricentis"
+      ],
+      "strengths": [
+        "Codeless model-based authoring",
+        "Broad enterprise app coverage"
+      ],
+      "avoid_when": [
+        "no active Tricentis license — prefer the OSS default (Playwright)"
+      ]
+    },
+    {
+      "name": "neoload",
+      "display_name": "Tricentis NeoLoad",
+      "category": "performance",
+      "languages": ["any"],
+      "ecosystems": ["enterprise", "api", "web"],
+      "status": "commercial",
+      "license": "commercial",
+      "license_gate": "ORACLE_LICENSE_TRICENTIS",
+      "maturity": "high",
+      "community_size": "medium",
+      "recommended_for": [
+        "enterprise load testing in orgs that already license Tricentis"
+      ],
+      "strengths": [
+        "Enterprise protocol coverage",
+        "Integrated with Tricentis suite"
+      ],
+      "avoid_when": [
+        "no active Tricentis license — prefer the OSS default (k6)"
+      ]
+    },
+    {
+      "name": "lambdatest",
+      "display_name": "LambdaTest",
+      "category": "e2e_ui",
+      "languages": ["any"],
+      "ecosystems": ["cloud", "cross-browser"],
+      "status": "commercial",
+      "license": "commercial-org",
+      "license_gate": "ORACLE_SCOPE",
+      "maturity": "high",
+      "community_size": "large",
+      "recommended_for": [
+        "cloud cross-browser grids for orgs holding a LambdaTest license"
+      ],
+      "strengths": [
+        "Large device/browser cloud",
+        "Parallel cross-browser runs"
+      ],
+      "avoid_when": [
+        "no org license scope set — prefer the OSS default (Playwright)"
+      ]
     }
   ]
 }
