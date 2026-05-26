@@ -26,3 +26,4 @@ Not every PR needs an ADR. Day-to-day refactors and bug fixes don't.
 | --- | --- | --- |
 | [0001](0001-host-llm-generation-for-agents.md) | Host-LLM generation for agents (no API key path) | accepted |
 | [0002](0002-self-heal-as-slash-command.md) | Self-heal as a slash command (`/oracle-heal-test`) | accepted |
+| [0003](0003-deprecate-oracle-generate.md) | Deprecate `oracle generate` CLI + the GitHub Action | accepted |

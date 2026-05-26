@@ -1,5 +1,5 @@
 name: 'Oracle Test Generator'
-description: 'Auto-generate tests for new features and bug fixes on pull requests using AI'
+description: '[DEPRECATED — removed in v3.0] Auto-generate tests for new features and bug fixes on pull requests using AI. Migrate to the Claude Code plugin (/oracle-write-test slash command).'
 author: 'bri-stevenski'
 
 branding:

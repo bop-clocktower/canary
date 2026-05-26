@@ -471,6 +471,10 @@ when the project already holds an active license.
   spec [self-heal-migration.md](specs/self-heal-migration.md) ·
   plan [self-heal-migration.md](plans/self-heal-migration.md) ·
   [ADR 0002](adr/0002-self-heal-as-slash-command.md)
+- **Phase 3 (CLI + Action deprecation, done):**
+  spec [cli-deprecation.md](specs/cli-deprecation.md) ·
+  plan [cli-deprecation.md](plans/cli-deprecation.md) ·
+  [ADR 0003](adr/0003-deprecate-oracle-generate.md)
 - **Summary:** Eliminate the API key requirement from Oracle's user-facing
   surface by moving every LLM-dependent task into Claude Code slash
   commands that use the host's session (no `ANTHROPIC_API_KEY` /
