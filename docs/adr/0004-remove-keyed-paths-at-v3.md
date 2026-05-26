@@ -9,6 +9,22 @@
 [ADR 0002](0002-self-heal-as-slash-command.md), roadmap item
 _"Migrate all LLM-dependent tasks to keyless slash commands"_
 
+> **Pending architecture decision (2026-05-27).** This ADR assumes
+> Oracle continues as a standalone repository with its own release
+> cadence. The Wednesday architecture meeting will decide whether
+> Oracle stays separate or is pulled into Harness as a persona.
+>
+> - If **stays separate:** this ADR proceeds as written — flip to
+>   `accepted`, write the v3 spec + plan, and cut a release branch.
+> - If **pulled into Harness:** the _deletions_ listed here still
+>   apply (the keyed surface goes regardless), but the framing of
+>   "v3.0 release" becomes a Harness persona migration rather than
+>   a standalone semver bump. Re-read the "Decision" section in that
+>   light; the alternatives and open questions still hold.
+>
+> Re-evaluate this status field post-meeting before flipping to
+> `accepted`.
+
 ## Context
 
 ADRs 0001–0003 landed the keyless migration in three phases:
