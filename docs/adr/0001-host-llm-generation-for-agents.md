@@ -1,7 +1,7 @@
 # ADR 0001 — Host-LLM generation for agents (no API key path)
 
-**Status:** proposed
-**Date:** 2026-05-22
+**Status:** accepted
+**Date:** 2026-05-22 (proposed) / 2026-05-26 (accepted)
 **Deciders:** Bri Stevenski (upstream maintainer)
 **Related:** roadmap item _"Migrate all LLM-dependent tasks to keyless
 slash commands"_; downstream agent memory `feedback_no_api_keys`

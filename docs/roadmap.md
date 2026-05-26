@@ -460,9 +460,12 @@ when the project already holds an active license.
 
 ### Migrate all LLM-dependent tasks to keyless slash commands
 
-- **Status:** next — unblocked, work begins before Framework Picker
+- **Status:** in progress — Phase 1 (oracle-test-author) in this PR;
+  self-heal and CLI deprecation are separate phases
 - **Issue:** [#127](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/127)
-- **Spec:** none
+- **Spec:** [docs/specs/host-llm-migration.md](specs/host-llm-migration.md)
+- **Plan:** [docs/plans/host-llm-migration.md](plans/host-llm-migration.md)
+- **ADR:** [docs/adr/0001-host-llm-generation-for-agents.md](adr/0001-host-llm-generation-for-agents.md)
 - **Summary:** Eliminate the API key requirement from Oracle's user-facing
   surface by moving every LLM-dependent task into Claude Code slash
   commands that use the host's session (no `ANTHROPIC_API_KEY` /
