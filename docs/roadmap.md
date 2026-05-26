@@ -364,9 +364,9 @@ implementation begins. All 6 resolved.
 
 ## Framework Picker
 
-**Sequencing note (2026-05-26):** all three stages shipped. Stage 1 (PRs #152,
-#153), Stage 2 (PR #159, after OC-001 settled), Stage 3 (PR #160 + #155, after
-OC-002 settled). The picker now covers 16 categories with ranked output,
+**Sequencing note (2026-05-26):** all three stages shipped. Stage 1 (PRs #152
+and #153); Stage 2 (PR #159, after OC-001 settled); Stage 3 (PRs #160 and #155,
+after OC-002 settled). The picker now covers 16 categories with ranked output,
 observability sink routing, and an OSS-first commercial-license gate.
 
 The picker has two layers that must stay in sync:
