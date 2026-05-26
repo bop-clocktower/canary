@@ -105,6 +105,14 @@ Every generated test must:
 - Be deterministic: no `Math.random`, no live network calls without
   mocks, no time-dependent assertions without a clock fixture.
 - Have a single, descriptive name. One assertion theme per test.
+- **No magic numbers.** Extract unexplained or repeated literals into
+  named constants, or derive them from a source of truth instead of
+  hardcoding (e.g. compute an expected count from the data under test,
+  don't paste a literal that silently breaks when the data changes).
+  Self-evident, single-use expected values tied to a clear assertion are
+  fine (`expect(res.status).toBe(200)`, `toHaveLength(0)`); a bare `42`,
+  a `5000` timeout, a retry count, or a hardcoded length that should
+  track real data are not.
 
 ### Do not scaffold env-guard wrappers
 
