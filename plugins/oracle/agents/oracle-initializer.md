@@ -23,8 +23,20 @@ scaffold tools.
    Remind the user to install the framework's dependencies if applicable
    (e.g., `npm install --save-dev @playwright/test` for Playwright).
 
+4. Add a **Decisions** section separating what the user specified from
+   what you chose autonomously (framework only if they picked it vs. you
+   defaulted it, target dir, any scaffold options). Flag the autonomous
+   choices as "please verify" — they're where silent drift lives.
+
 ## Constraints
 
 - Do not call `oracle__init_suite` until a framework is confirmed.
 - If `oracle__init_suite` returns an error, surface the error message
   verbatim and suggest running `oracle init <framework>` from the CLI.
+- **Do not scaffold env-guard wrapper scripts** (`scripts/run-tests.mjs`
+  or similar) that no-op the runner when a target env var is unset, and
+  do not wire `package.json` `test` scripts through one. The `test`
+  script must invoke the runner directly. Hard-vs-soft CI gating belongs
+  in GitHub Actions `needs:` topology, not in workspace code. If asked to
+  scaffold an in-workspace env-guard, push back and explain the
+  workflow-topology pattern.

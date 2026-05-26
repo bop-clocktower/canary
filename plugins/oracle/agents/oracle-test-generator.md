@@ -42,6 +42,12 @@ targeted tests.
 5. After 3 failed attempts, report the last failure output verbatim and
    advise the user to run `oracle run <test_file>` manually.
 
+6. In your final report, include a **Decisions** section separating what
+   the user specified from what you derived autonomously from
+   `oracle__analyze_file` (framework, file placement, naming convention,
+   which functions you chose to cover). Flag the autonomous choices as
+   "please verify" — they're the ones most likely to need review.
+
 ## Constraints
 
 - Never modify the source file under test.

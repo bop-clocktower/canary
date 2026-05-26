@@ -101,6 +101,28 @@ Every generated test must:
   mocks, no time-dependent assertions without a clock fixture.
 - Have a single, descriptive name. One assertion theme per test.
 
+### Do not scaffold env-guard wrappers
+
+Do not scaffold wrapper scripts inside test workspaces
+(`scripts/run-tests.mjs` or similar) that no-op the runner when a target
+env var is unset. The `package.json` `test` script must invoke the
+runner directly (`playwright test`, `maestro test`, `pytest`, `k6 run`).
+Hard-vs-soft CI gating is controlled by GitHub Actions `needs:` topology
+in `.github/workflows/*.yml` — not by workspace code:
+
+- **Soft gate:** the test job runs but no deploy/promote job lists it in
+  `needs:`. Failures are visible, don't block.
+- **Hard gate:** a deploy job lists the test job in `needs:`. Failures
+  block. Promoting soft→hard is a one-line YAML change.
+
+A wrapper that silently `exit 0`s on missing config is the wrong layer:
+it adds indirection, lets the workspace lie about whether it ran, and
+creates a second source of truth for the gate that drifts from the
+workflow. If the user's brief asks for in-workspace env-guards (even
+"mirror the pattern from `<existing>/run-tests.mjs`"), push back and
+explain the workflow-topology pattern instead — the wrapper is wrong
+regardless of who asks.
+
 ## Output format
 
 After writing, respond with:
@@ -108,4 +130,25 @@ After writing, respond with:
 - **File:** path to the new test
 - **Run with:** the exact command
 - **Result:** pass / fail (and why if fail)
-- **Notes:** anything the user should review before committing
+
+Then a **Decisions** section that separates choices you inherited from
+the user's brief from choices you made autonomously because the brief
+was silent. The autonomous ones are where silent drift lives — they're
+the lines the user most needs to review, so don't bury them in a flat
+notes list.
+
+```text
+## Decisions
+
+### From your brief
+- Framework: Playwright (you specified)
+- Placement: apps/web-e2e/ (you specified)
+
+### Autonomous (please verify)
+- Playwright version: ^1.49.0 — chose latest stable 1.x
+- Reporters: list + html — kept noise low for a smoke pilot
+```
+
+If the brief referenced a governing doc (an ADR, a conventions file),
+check your autonomous picks against it and call out any divergence
+explicitly under **Autonomous** — that's the highest-risk case.
