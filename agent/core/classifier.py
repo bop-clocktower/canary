@@ -34,7 +34,57 @@ _FRAMEWORK_HINTS = {
     "jest": "frontend_unit",
     "pytest": "api",
     "k6": "performance",
+    # Stage 1 — specialized-category tools. A named tool is a strong signal
+    # for its category even when the prompt is otherwise generic.
+    "axe": "accessibility",
+    "axe-core": "accessibility",
+    "pa11y": "accessibility",
+    "zap": "security",
+    "backstopjs": "visual",
+    "percy": "visual",
+    "pact": "contract",
+    "schemathesis": "contract",
+    "chaos-toolkit": "chaos",
+    "faker": "synthetic_data",
+    "opentelemetry": "observability",
+    "maestro": "mobile",
+    "appium": "mobile",
+    "locust": "load",
+    "gatling": "load",
+    "stryker": "mutation",
+    "mutmut": "mutation",
+    "semgrep": "static_analysis",
+    "testcontainers": "integration",
 }
+
+# Stage 1 — specialized test categories keyed by high-specificity phrases.
+# Checked after the performance rule (so "load test" stays performance) and
+# before the generic HTTP/api/ui fallbacks. Keywords are deliberately narrow
+# so they don't steal generic prompts; first match wins, so more specific
+# phrases are listed where overlap is possible.
+_CATEGORY_KEYWORDS = (
+    ("accessibility", ("accessibility", "a11y", "wcag", "screen reader")),
+    ("security", ("security test", "pentest", "penetration test",
+                  "vulnerability scan", "owasp", "dast", "sast")),
+    ("visual", ("visual regression", "visual test", "screenshot test",
+                "snapshot test", "pixel diff")),
+    ("contract", ("contract test", "consumer-driven contract", "pact test",
+                  "openapi contract", "schema contract")),
+    ("chaos", ("chaos engineering", "chaos test", "fault injection",
+               "resilience test")),
+    ("synthetic_data", ("synthetic data", "fake data", "test data generation",
+                        "data generation")),
+    ("observability", ("observability", "telemetry", "distributed tracing",
+                       "instrumentation test")),
+    ("mobile", ("mobile test", "android test", "ios test", "react native test",
+                "mobile app test")),
+    ("mutation", ("mutation test", "mutation testing", "mutation score")),
+    ("static_analysis", ("static analysis", "lint rule", "code smell",
+                         "sonarqube")),
+    ("load", ("soak test", "spike test", "concurrent users", "load profile")),
+    ("integration", ("integration test", "integration testing",
+                     "end-to-end integration")),
+)
 _FRAMEWORK_HINT_RE = re.compile(
     r"\b(" + "|".join(re.escape(k) for k in _FRAMEWORK_HINTS) + r")\b",
     re.IGNORECASE,
@@ -86,6 +136,19 @@ class TestClassifier:
                 test_type="performance",
                 confidence=0.95
             )
+
+        # --- SPECIALIZED CATEGORIES (Stage 1) ---
+        # High-specificity intents checked before the framework-hint and
+        # generic HTTP/api/ui rules. "load test" already returned above as
+        # performance, so the load category here only fires on distinct
+        # phrasing (soak/spike/concurrent users).
+        for test_type, keywords in _CATEGORY_KEYWORDS:
+            if any(kw in p for kw in keywords):
+                return ClassificationResult(
+                    intent="generate_tests",
+                    test_type=test_type,
+                    confidence=0.88,
+                )
 
         # --- EXPLICIT FRAMEWORK HINT ---
         # A named framework in the prompt outranks URL/keyword heuristics —
