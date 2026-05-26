@@ -3,7 +3,8 @@
 **Status:** proposed
 **Date:** 2026-05-22
 **Deciders:** Bri Stevenski (upstream maintainer)
-**Related:** roadmap item _"Migrate all LLM-dependent tasks to keyless slash commands"_, downstream agent memory `feedback_no_api_keys`
+**Related:** roadmap item _"Migrate all LLM-dependent tasks to keyless
+slash commands"_; downstream agent memory `feedback_no_api_keys`
 
 ## Context
 
@@ -117,7 +118,7 @@ by this ADR.
 
 ## Alternatives Considered
 
-### Alternative 1: Keep delegating to `oracle generate` but make the CLI use the host LLM somehow
+### Alternative 1: Keep delegating to `oracle generate`, route via host LLM
 
 The CLI runs as a subprocess outside the Claude Code session. There is
 no straightforward way to share the host LLM context with the

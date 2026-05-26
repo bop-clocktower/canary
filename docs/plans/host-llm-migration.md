@@ -1,7 +1,8 @@
 # Plan: Host-LLM Migration — Phase 1 (`oracle-test-author`)
 
-**Date:** 2026-05-22 | **Spec:** [docs/specs/host-llm-migration.md](../specs/host-llm-migration.md) |
-**ADR:** [docs/adr/0001-host-llm-generation-for-agents.md](../adr/0001-host-llm-generation-for-agents.md) |
+**Date:** 2026-05-22 |
+**Spec:** [host-llm-migration.md](../specs/host-llm-migration.md) |
+**ADR:** [0001-host-llm-generation-for-agents.md][adr0001] |
 **Tasks:** 9 | **Time:** ~90 min
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use the `harness:tdd`
@@ -31,7 +32,7 @@ CLI output. Update related specs to reflect the new path.
 
 ---
 
-### Task 1: Document `oracle__analyze_file` output gaps vs. the orchestrator's context injection
+### Task 1: Document `oracle__analyze_file` gaps vs. orchestrator context
 
 **Files (read-only):**
 
@@ -252,3 +253,5 @@ references to this plan.
 - GitHub Action removal.
 - Performance benchmarking of host LLM vs. CLI.
 - New MCP tools beyond what already exists.
+
+[adr0001]: ../adr/0001-host-llm-generation-for-agents.md
