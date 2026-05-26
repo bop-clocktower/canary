@@ -364,9 +364,10 @@ implementation begins. All 6 resolved.
 
 ## Framework Picker
 
-**Sequencing note (2026-05-26):** the keyless migration (#127) is complete, so
-the Stage 1 gate is lifted. Stage 1 shipped (PRs #152, #153). Stages 2–3 remain
-gated on the OC-001/OC-002 decisions, not on the migration.
+**Sequencing note (2026-05-26):** all three stages shipped. Stage 1 (PRs #152
+and #153); Stage 2 (PR #159, after OC-001 settled); Stage 3 (PRs #160 and #155,
+after OC-002 settled). The picker now covers 16 categories with ranked output,
+observability sink routing, and an OSS-first commercial-license gate.
 
 The picker has two layers that must stay in sync:
 
@@ -432,48 +433,41 @@ when the project already holds an active license.
 
 ### Framework Picker — Stage 2: Observability Routing
 
-- **Status:** planned
+- **Status:** done — PR #159
 - **Issue:**
   [#129](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/129)
+  (closed)
 - **Spec:** none
-- **Summary:** Wire the new `observability` test type (added in Stage 1) to a
-  reporting-sink routing layer inside `FrameworkRecommender`. When
-  `classification.test_type == "observability"`, the recommender checks for a
-  reporting target signal (env var or `.oracle/config.json` key) and routes to:
-  **ReportPortal** (self-hosted OSS) or a downstream aggregation dashboard
-  (`ORACLE_SCOPE=<overlay-id>`). No change to the classifier or registry schema
-  — this is purely a `recommend()` routing branch. Exact scope boundary between
-  ReportPortal and QA Intelligence Dashboard is tracked under **OC-001** and
-  must be settled before the routing condition can be written.
-- **Blockers:** OC-001 —
-  [#125](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/125) —
-  ReportPortal vs QA Intelligence Dashboard scope boundary must be settled
-  before Stage 2 routing rules can be written.
+- **Summary:** Reporting-sink routing branch in `FrameworkRecommender` for
+  `test_type == "observability"`, implementing the OC-001 decision: ReportPortal
+  is the always-on OSS default sink; a downstream aggregation dashboard is an
+  opt-in _additional_ sink, surfaced and ranked first when
+  `ORACLE_SCOPE=<overlay-id>` is set. OpenTelemetry (Stage 1 registry entry) is
+  included as the instrumentation framework. Sink candidates carry
+  `kind: reporting-sink`, OTel `kind: instrumentation`. Routing branch only — no
+  classifier or registry-schema change.
+- **Blockers:** none (OC-001 settled, #125).
 - **Plan:** none
 
 ### Framework Picker — Stage 3: Enterprise License Awareness
 
-- **Status:** planned
+- **Status:** done — PR #160 (license gate) + PR #155 (synthetic_data)
 - **Issue:**
   [#130](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/130)
+  (closed)
 - **Spec:** none
-- **Summary:** Add a license-gate layer to `FrameworkRecommender.recommend()`
-  that filters the ranked candidate list before it is returned. Tricentis
-  entries (added to `registry.json` with `"license": "commercial"`) are stripped
-  from results unless `ORACLE_LICENSE_TRICENTIS=1` is set; LambdaTest / KaneAI /
-  Testμ entries are stripped unless `ORACLE_SCOPE=<org>` matches the org that
-  holds the license. Without those signals the OSS fallback from Stage 1 is
-  always returned — no paid tool is ever surfaced silently. Stage 3 also
-  finalises the `synthetic_data` routing path: SDV (Synthetic Data Vault) is the
-  preferred registry entry, but its BSL license must be reviewed before the
-  entry can be merged — tracked under **OC-002**. If BSL is acceptable SDV
-  becomes the `status: preferred` entry; otherwise Faker + factory-boy is
-  promoted to preferred and SDV is added as `status: conditional` with the
-  license gate.
-- **Blockers:** OC-002 —
-  [#126](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/126) — SDV
-  BSL license acceptability review required before the `synthetic_data` registry
-  entry can be finalised.
+- **Summary:** OSS-first license gate in `FrameworkRecommender`. Commercial
+  registry entries carry `license` + `license_gate`: Tricentis Tosca (e2e_ui)
+  and NeoLoad (performance) gated on `ORACLE_LICENSE_TRICENTIS`; LambdaTest
+  (e2e_ui) gated on `ORACLE_SCOPE`. `_license_allowed()` strips gated entries
+  unless the signal is set, before ranking; OSS entries always pass so the
+  category's OSS default always remains. Commercial entries are
+  `status: commercial`, so even when unlocked they rank below the OSS option —
+  Oracle works within a license but never proactively routes to paid. The
+  `synthetic_data` path was finalized separately when OC-002 resolved: SDV is
+  `status: preferred` with a surfaced BSL review warning, Faker the MIT fallback
+  (PR #155).
+- **Blockers:** none (OC-002 settled, #126).
 - **Plan:** none
 
 ### Spike: Schemathesis API Fuzzing
