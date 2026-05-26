@@ -7,6 +7,7 @@ This module uses classification data and the framework registry to suggest
 the most appropriate testing framework and file configuration for a given task.
 """
 
+import os
 from typing import Dict, List, Optional
 from agent.core.classifier import ClassificationResult
 from agent.core.framework_registry import FrameworkRegistry
@@ -52,6 +53,11 @@ class FrameworkRecommender:
                 single-pick callers should read ``result[0]`` after guarding
                 for emptiness.
         """
+        # Observability has a dedicated reporting-sink routing branch (Stage 2):
+        # where results/telemetry go is a config decision, not a registry pick.
+        if classification.test_type == "observability":
+            return self._recommend_observability(classification)
+
         frameworks = self.registry.get_by_category(classification.test_type)
         if not frameworks:
             return []
@@ -98,6 +104,57 @@ class FrameworkRecommender:
             if len(ranked) >= self._MAX_CANDIDATES:
                 break
         return ranked
+
+    def _recommend_observability(self, classification: ClassificationResult) -> List[Dict]:
+        """Reporting-sink routing for the observability test type (Stage 2).
+
+        Per OC-001: ReportPortal is the always-on OSS default sink; a
+        downstream aggregation dashboard is an opt-in *additional* sink,
+        surfaced when ``ORACLE_SCOPE=<overlay-id>`` is set (the
+        upstream-neutral equivalent of the overlay's dashboard config). The
+        sinks are complementary to OpenTelemetry, which instruments the
+        telemetry the sinks collect — so it is included as well.
+        """
+        confidence = classification.confidence
+        candidates: List[Dict] = []
+
+        # Opt-in overlay dashboard sink, ranked first when configured.
+        scope = os.environ.get("ORACLE_SCOPE", "").strip()
+        if scope:
+            candidates.append({
+                "framework": f"{scope}-dashboard",
+                "category": "observability",
+                "file_extension": "",
+                "reason": [
+                    f"configured aggregation dashboard (ORACLE_SCOPE={scope})",
+                    "overlay reporting sink — receives results in addition to ReportPortal",
+                ],
+                "confidence": confidence,
+                "kind": "reporting-sink",
+            })
+
+        # ReportPortal — always-on OSS default sink.
+        candidates.append({
+            "framework": "reportportal",
+            "category": "observability",
+            "file_extension": "",
+            "reason": ["self-hosted OSS reporting sink — default for observability output"],
+            "confidence": confidence,
+            "kind": "reporting-sink",
+        })
+
+        # OpenTelemetry — instrumentation framework (from the Stage 1 registry).
+        otel = next(
+            (f for f in self.registry.get_by_category("observability")
+             if f.get("name") == "opentelemetry"),
+            None,
+        )
+        if otel is not None:
+            otel_candidate = self._format_candidate(otel, confidence)
+            otel_candidate["kind"] = "instrumentation"
+            candidates.append(otel_candidate)
+
+        return candidates[:self._MAX_CANDIDATES]
 
     def _format_candidate(self, framework: Dict, confidence: float) -> Dict:
         """Shape a single registry entry into a recommendation candidate."""
