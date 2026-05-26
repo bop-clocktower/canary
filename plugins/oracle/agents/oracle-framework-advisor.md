@@ -42,7 +42,7 @@ the user is ready to write.
 | API contract / consumer-driven | Pact (or Pytest + schemathesis)     | Consumer-driven contracts, broker sharing        |
 | Chaos / resilience             | Chaos Toolkit                       | Declarative fault-injection experiments          |
 | Synthetic test data            | SDV\* (Faker for field-level)       | Schema-aware, distribution-faithful synthesis    |
-| Observability assertions       | OpenTelemetry                       | Vendor-neutral traces/metrics/logs               |
+| Observability assertions       | OpenTelemetry + ReportPortal sink†  | Instrument with OTel; report to ReportPortal     |
 | Mobile UI flows (Android/iOS)  | Maestro                             | One YAML flow syntax across platforms            |
 | Load (soak / spike / Python)   | Locust (or k6)                      | Load scenarios as plain Python, distributed mode |
 | Mutation testing               | Stryker                             | Surfaces weak/ineffective tests                  |
@@ -55,6 +55,12 @@ License (BSL)** (source-available, not OSI open-source). Internal test-data use
 is generally permitted, but **downstream adopters must review BSL against their
 own business/procurement rules** before relying on it. Fall back to Faker (MIT)
 for field-level fakes or where BSL is unacceptable. See issue #126.
+
+`†` For observability, OpenTelemetry instruments the telemetry; the **reporting
+sink** is where results go. ReportPortal (self-hosted OSS) is the default sink.
+If a downstream aggregation dashboard is configured
+(`ORACLE_SCOPE=<overlay-id>`), results route there too — it's an additional
+sink, not a replacement.
 
 **Default to the repo's existing framework when one is in use** unless there's a
 concrete reason to switch (sunsetted tool, can't express the test type, etc.).
