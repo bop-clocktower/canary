@@ -166,6 +166,27 @@ clarifies: use `Write` for direct authoring; if parity with the CLI's
 output shape is needed (telemetry, post-write hooks), use
 `oracle__write_test_file` instead. Default to `Write` for simplicity.
 
+## Context coverage matrix
+
+Resolved as Task 1 of the implementation plan. The CLI orchestrator
+(`OracleOrchestrator.run`) injects five context blocks into its
+generation prompt; `oracle__analyze_file` only partially covers them.
+Per-gap decision: (a) agent reads via `Read`/`Glob`, (b) extend
+`analyze_file` later, (c) accept gap.
+
+| Orchestrator block | `analyze_file` coverage | Decision |
+| --- | --- | --- |
+| metadata (`package.json`, `pyproject.toml`, `tsconfig.json`) | scans but doesn't surface fields | (a) agent reads files directly |
+| patterns (existing test imports, naming) | only `common_imports` | (a) agent globs `tests/` + reads samples |
+| domain (components, functions, modules) | only `functions[:10]` | (a) agent supplements via `Read` |
+| fixtures (test helpers) | not called | (b) follow-up; agent globs `tests/helpers/` for now |
+| company (`.oracle/company.json`) | not loaded | (a) agent reads `.oracle/company.json` |
+
+Net: no MCP extension blocks this phase. The fixture gap is the
+highest-value follow-up — projects with rich fixture libraries may
+see quality differences vs CLI output until `analyze_file` is
+extended.
+
 ## Plan
 
 See [`docs/plans/host-llm-migration.md`](../plans/host-llm-migration.md)

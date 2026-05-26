@@ -1,7 +1,7 @@
 ---
 description: Generate production-ready test code from a natural-language requirement (Playwright, Vitest, Pytest, k6).
 argument-hint: <requirement or feature description>
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, mcp__oracle__oracle__analyze_file
 ---
 
 # oracle-write-test

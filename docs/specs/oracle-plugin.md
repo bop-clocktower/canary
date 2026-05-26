@@ -6,6 +6,17 @@ execution tools, three skills (`oracle:generate`, `oracle:init`,
 generation using its own session — no API key required for plugin users. The
 existing CLI and GitHub Action are unchanged.
 
+> **Update (2026-05-26):** The "no API key required for plugin users"
+> claim above was originally aspirational — the bundled
+> `oracle-test-author` agent still delegated to `oracle generate`
+> (which requires a provider key). The
+> [host-LLM migration](host-llm-migration.md) makes the claim true:
+> the agent now generates in-session. See
+> [ADR 0001](../adr/0001-host-llm-generation-for-agents.md) for the
+> decision record. The CLI / GitHub Action sections of this spec
+> still describe the keyed CLI path — that path is intentionally
+> preserved for users who want it.
+
 ## Overview
 
 **Goals:**
