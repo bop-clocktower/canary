@@ -142,17 +142,19 @@ class TestAnalyzeFile(unittest.TestCase):
 class TestListFrameworks(unittest.TestCase):
 
     def test_list_frameworks_returns_all(self):
-        """Returns every registry framework, including the core four."""
+        """The tool surfaces exactly the registry's framework names."""
         from agent import mcp_server as srv
+        from agent.core.framework_registry import FrameworkRegistry
+
         result = srv._list_frameworks_impl()
         names = set(result["frameworks"])
-        # Core four must always be present.
+        # The contract: list_frameworks mirrors the registry, not a fixed
+        # count. Derive the expected set so registry additions don't require
+        # editing a magic number here.
+        expected = {f["name"] for f in FrameworkRegistry().get_all_frameworks()}
+        self.assertEqual(names, expected)
+        # Core four must always be among them.
         self.assertTrue({"playwright", "vitest", "pytest", "k6"} <= names)
-        # Stage 1 expanded the registry to 16; SDV added a 17th.
-        self.assertEqual(len(names), 17)
-        self.assertIn("semgrep", names)
-        self.assertIn("testcontainers", names)
-        self.assertIn("sdv", names)
 
 
 # ---------------------------------------------------------------------------
