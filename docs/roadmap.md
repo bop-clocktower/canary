@@ -460,12 +460,17 @@ when the project already holds an active license.
 
 ### Migrate all LLM-dependent tasks to keyless slash commands
 
-- **Status:** in progress — Phase 1 (oracle-test-author) in this PR;
-  self-heal and CLI deprecation are separate phases
+- **Status:** in progress — Phase 1 + Phase 2 landed; CLI deprecation
+  (Phase 3) and GitHub Action removal (Phase 4) are separate ADRs
 - **Issue:** [#127](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/127)
-- **Spec:** [docs/specs/host-llm-migration.md](specs/host-llm-migration.md)
-- **Plan:** [docs/plans/host-llm-migration.md](plans/host-llm-migration.md)
-- **ADR:** [docs/adr/0001-host-llm-generation-for-agents.md](adr/0001-host-llm-generation-for-agents.md)
+- **Phase 1 (generation, done):**
+  spec [host-llm-migration.md](specs/host-llm-migration.md) ·
+  plan [host-llm-migration.md](plans/host-llm-migration.md) ·
+  [ADR 0001](adr/0001-host-llm-generation-for-agents.md)
+- **Phase 2 (self-heal, done):**
+  spec [self-heal-migration.md](specs/self-heal-migration.md) ·
+  plan [self-heal-migration.md](plans/self-heal-migration.md) ·
+  [ADR 0002](adr/0002-self-heal-as-slash-command.md)
 - **Summary:** Eliminate the API key requirement from Oracle's user-facing
   surface by moving every LLM-dependent task into Claude Code slash
   commands that use the host's session (no `ANTHROPIC_API_KEY` /
