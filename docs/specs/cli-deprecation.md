@@ -90,7 +90,7 @@ deprecated. Removal at v3.0 (separate phase).
 ```text
 Before:
   $ oracle generate "test the login"
-  🧠 Oracle Processing Request...
+  🦇 Oracle Processing Request...
   ✅ Oracle Result
   …
 
@@ -99,7 +99,7 @@ After:
   ⚠ oracle generate is deprecated and will be removed in v3.0.        ← stderr
     Migrate to the /oracle-write-test slash command
     (Claude Code plugin) — no API key required. See ADR 0003.
-  🧠 Oracle Processing Request...                                       ← stdout
+  🦇 Oracle Processing Request...                                       ← stdout
   ✅ Oracle Result
   …
 

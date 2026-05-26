@@ -1,4 +1,4 @@
-# Oracle 🧠
+# Oracle 🦇
 
 **Oracle** is an AI-powered test automation agent that transforms natural
 language requirements into high-quality, framework-aware test code.
