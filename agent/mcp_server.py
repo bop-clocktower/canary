@@ -25,23 +25,157 @@ _WORKING_DIR = os.environ.get("CLAUDE_PLUGIN_ROOT", os.getcwd())
 # Internal implementation functions (importable for unit tests without MCP)
 # ---------------------------------------------------------------------------
 
+_CONFIG_FRAMEWORK_GLOBS = (
+    ("playwright", ("playwright.config.ts", "playwright.config.js",
+                    "playwright.config.mts", "playwright.config.mjs")),
+    ("vitest", ("vitest.config.ts", "vitest.config.js",
+                "vitest.config.mts", "vitest.config.mjs")),
+    ("pytest", ("pytest.ini", "pyproject.toml")),
+)
+_SUFFIX_FRAMEWORK = {
+    ".ts": "playwright",
+    ".tsx": "playwright",
+    ".js": "playwright",
+    ".jsx": "playwright",
+    ".mjs": "playwright",
+    ".py": "pytest",
+}
+# Cap test-file path list size to keep response payload reasonable.
+_MAX_EXISTING_TESTS = 10
+# Cap file-local function extraction so a giant file doesn't dominate.
+_MAX_FILE_FUNCTIONS = 20
+
+
+def _detect_framework_from_config(project_root: Path) -> tuple[str, str]:
+    """Return (framework, source) where source indicates trust level.
+
+    Walks up from project_root checking for canonical config files.
+    `source` is one of: "config" (config file found),
+    "suffix" (fell back to file extension), "unknown" (no signal).
+    """
+    cur = project_root.resolve()
+    # Walk up to filesystem root or .git boundary.
+    while True:
+        for fw, globs in _CONFIG_FRAMEWORK_GLOBS:
+            for name in globs:
+                if (cur / name).exists():
+                    if name == "pyproject.toml":
+                        # Confirm it actually configures pytest.
+                        try:
+                            text = (cur / name).read_text(
+                                encoding="utf-8", errors="ignore"
+                            )
+                            if "[tool.pytest" in text:
+                                return fw, "config"
+                            # Otherwise keep looking — pyproject alone is
+                            # not enough to claim pytest.
+                            continue
+                        except OSError:
+                            continue
+                    return fw, "config"
+        if (cur / ".git").exists():
+            break
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return "unknown", "unknown"
+
+
+def _extract_file_functions(path: Path) -> list[str]:
+    """Best-effort file-local function extraction.
+
+    Python: AST-walks top-level + class-level def statements.
+    TS/JS: regex-matches `function name(` and `const name = (` patterns.
+    Falls back to empty list on parse failure.
+    """
+    suffix = path.suffix.lower()
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return []
+    names: list[str] = []
+    if suffix == ".py":
+        import ast
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            return []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                names.append(node.name)
+    elif suffix in (".ts", ".tsx", ".js", ".jsx", ".mjs"):
+        import re
+        # Conservative: only top-level-ish declarations.
+        fn_re = re.compile(
+            r"^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)",
+            re.MULTILINE,
+        )
+        const_re = re.compile(
+            r"^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(",
+            re.MULTILINE,
+        )
+        names.extend(fn_re.findall(text))
+        names.extend(const_re.findall(text))
+    # Dedupe preserving order.
+    seen: set[str] = set()
+    deduped = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            deduped.append(n)
+    return deduped[:_MAX_FILE_FUNCTIONS]
+
+
+def _find_existing_tests(project_root: Path, framework: str) -> list[str]:
+    """Return up to N existing test file paths relative to project_root.
+
+    Uses PatternMatcher's discovery; falls back to a simple glob if the
+    matcher returns nothing.
+    """
+    matcher = PatternMatcher()
+    files = matcher._find_test_files(project_root, framework, "")
+    if not files:
+        return []
+    out = []
+    for f in files[:_MAX_EXISTING_TESTS]:
+        try:
+            out.append(str(f.relative_to(project_root)))
+        except ValueError:
+            out.append(str(f))
+    return out
+
+
+def _project_root_for(path: Path) -> Path:
+    """Walk up from `path` to the nearest .git directory, else return parent.
+
+    Matches the discovery convention used by `oracle skills list` and the
+    Capillary overlay loader — the project boundary is the .git root.
+    """
+    cur = path.resolve().parent
+    while True:
+        if (cur / ".git").exists():
+            return cur
+        if cur.parent == cur:
+            return path.parent.resolve()
+        cur = cur.parent
+
+
 def _analyze_file_impl(file_path: str) -> dict:
     path = Path(file_path)
     if not path.exists():
         return {"error": f"file not found: {file_path}"}
 
-    project_root = str(path.parent)
-    meta = MetadataScanner().scan(project_root)
-    pattern = PatternMatcher().scan(project_root)
-    domain = DomainScanner().scan(project_root)
+    project_root = _project_root_for(path)
+    pattern = PatternMatcher().scan(str(project_root))
+    domain = DomainScanner().scan(str(project_root))
 
-    suffix = path.suffix.lower()
-    if suffix in (".ts", ".js"):
-        framework = "playwright"
-    elif suffix == ".py":
-        framework = "pytest"
-    else:
-        framework = "unknown"
+    # Framework detection: config files first, suffix as fallback.
+    framework, framework_source = _detect_framework_from_config(project_root)
+    if framework_source != "config":
+        suffix_fw = _SUFFIX_FRAMEWORK.get(path.suffix.lower())
+        if suffix_fw:
+            framework = suffix_fw
+            framework_source = "suffix"
 
     try:
         lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
@@ -51,10 +185,15 @@ def _analyze_file_impl(file_path: str) -> dict:
 
     return {
         "framework": framework,
+        "framework_source": framework_source,
         "test_type": "e2e" if framework == "playwright" else "api",
         "imports": pattern.common_imports,
+        # `functions` historically returned project-wide public functions
+        # from the DomainScanner. Kept for backward compat; agents should
+        # prefer `file_functions` for the target file's own definitions.
         "functions": domain.functions[:10],
-        "existing_tests": [],
+        "file_functions": _extract_file_functions(path),
+        "existing_tests": _find_existing_tests(project_root, framework),
         "context_snippets": context_snippets,
     }
 

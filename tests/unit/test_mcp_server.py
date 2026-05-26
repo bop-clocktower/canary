@@ -53,6 +53,87 @@ class TestAnalyzeFile(unittest.TestCase):
         self.assertIn("error", result)
         self.assertIn("file not found", result["error"])
 
+    def test_analyze_file_framework_source_field(self):
+        """framework_source signals whether framework came from config or suffix."""
+        from agent import mcp_server as srv
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".git").mkdir()
+            (root / "playwright.config.ts").write_text("export default {};")
+            target = root / "login.spec.ts"
+            target.write_text("import { test } from '@playwright/test';\n")
+            result = srv._analyze_file_impl(str(target))
+        self.assertEqual(result["framework"], "playwright")
+        self.assertEqual(result["framework_source"], "config")
+
+    def test_analyze_file_framework_source_suffix_fallback(self):
+        """Without a config file, framework_source is 'suffix' and the value is
+        still the conventional suffix mapping."""
+        from agent import mcp_server as srv
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".git").mkdir()  # project boundary, no config files
+            target = root / "tests" / "test_x.py"
+            target.parent.mkdir()
+            target.write_text("def test_thing(): pass\n")
+            result = srv._analyze_file_impl(str(target))
+        self.assertEqual(result["framework_source"], "suffix")
+        self.assertEqual(result["framework"], "pytest")
+
+    def test_analyze_file_file_functions_python(self):
+        """file_functions extracts top-level and class-level defs from Python."""
+        from agent import mcp_server as srv
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".git").mkdir()
+            target = root / "mod.py"
+            target.write_text(
+                "def foo():\n    pass\n\n"
+                "async def bar():\n    pass\n\n"
+                "class C:\n    def baz(self):\n        pass\n"
+            )
+            result = srv._analyze_file_impl(str(target))
+        self.assertEqual(set(result["file_functions"]), {"foo", "bar", "baz"})
+
+    def test_analyze_file_file_functions_typescript(self):
+        """file_functions extracts function and const-arrow definitions from TS."""
+        from agent import mcp_server as srv
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".git").mkdir()
+            target = root / "mod.ts"
+            target.write_text(
+                "export function alpha() {}\n"
+                "async function beta() {}\n"
+                "export const gamma = () => {};\n"
+                "const delta = async (x: number) => x;\n"
+            )
+            result = srv._analyze_file_impl(str(target))
+        self.assertEqual(
+            set(result["file_functions"]),
+            {"alpha", "beta", "gamma", "delta"},
+        )
+
+    def test_analyze_file_existing_tests_populated(self):
+        """existing_tests returns relative paths to discovered test files."""
+        from agent import mcp_server as srv
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".git").mkdir()
+            (root / "tests").mkdir()
+            (root / "tests" / "test_one.py").write_text("def test_a(): pass")
+            (root / "tests" / "test_two.py").write_text("def test_b(): pass")
+            target = root / "src" / "thing.py"
+            target.parent.mkdir()
+            target.write_text("def thing(): pass")
+            result = srv._analyze_file_impl(str(target))
+        # Order is sorted; should see both
+        self.assertEqual(len(result["existing_tests"]), 2)
+        self.assertTrue(
+            all("test_" in p for p in result["existing_tests"]),
+            result["existing_tests"],
+        )
+
 
 # ---------------------------------------------------------------------------
 # oracle__list_frameworks
