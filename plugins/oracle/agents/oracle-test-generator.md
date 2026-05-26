@@ -59,3 +59,7 @@ targeted tests.
 - Preserve the project's existing assertion style from `context_snippets`.
 - Each attempt must produce a syntactically different test — do not
   retry with identical content.
+- No magic numbers: extract unexplained or repeated literals into named
+  constants or derive them from a source of truth. Self-evident expected
+  values tied to a clear assertion (a `200` status, a `0` length) are
+  fine; bare thresholds, timeouts, counts, and indices are not.

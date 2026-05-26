@@ -33,6 +33,7 @@ For each test or test file, evaluate:
 6. **Scope.** E2E test doing what a unit test should do (slow, hard to debug). Unit test reaching into the network.
 7. **Readability.** Clear test name describing behavior. Single responsibility. AAA structure visible at a glance.
 8. **Coverage gaps.** Obvious edge cases, error paths, or boundary conditions missing.
+9. **Magic numbers / unexplained literals.** Numeric or string literals whose meaning isn't obvious from context — timeouts, retry counts, array indices into non-obvious positions, thresholds, or hardcoded counts/lengths that should derive from the data under test. Flag with a named-constant or derive-from-source suggestion. Do **not** flag self-evident expected values tied to a clear assertion (HTTP `200`/`404`, `toBe(0)`, `[0]` on an obviously-first element) — over-flagging these is noise.
 
 ## Process
 
