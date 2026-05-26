@@ -46,6 +46,7 @@ _FRAMEWORK_HINTS = {
     "schemathesis": "contract",
     "chaos-toolkit": "chaos",
     "faker": "synthetic_data",
+    "sdv": "synthetic_data",
     "opentelemetry": "observability",
     "maestro": "mobile",
     "appium": "mobile",

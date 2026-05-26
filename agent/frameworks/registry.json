@@ -210,6 +210,31 @@
       "avoid_when": ["systems without redundancy to absorb induced failures"]
     },
     {
+      "name": "sdv",
+      "display_name": "SDV (Synthetic Data Vault)",
+      "category": "synthetic_data",
+      "languages": ["python"],
+      "execution_command": "python -m pytest {file}",
+      "ecosystems": ["python", "data"],
+      "status": "preferred",
+      "license": "BSL-1.1",
+      "license_note": "Business Source License — source-available, not OSI open-source. Internal test-data generation is generally within permitted use, but BSL carries a production-use restriction. Downstream adopters must review BSL against their own business/procurement rules before relying on it; fall back to Faker if BSL is unacceptable.",
+      "maturity": "high",
+      "community_size": "medium",
+      "recommended_for": [
+        "statistically faithful synthetic datasets",
+        "schema-aware multi-table data preserving distributions and correlations"
+      ],
+      "strengths": [
+        "Learns real-data distributions and cross-column relationships",
+        "Relational / multi-table synthesis",
+        "Higher fidelity than field-level fakers"
+      ],
+      "avoid_when": [
+        "BSL is unacceptable under the adopter's license policy (use Faker)"
+      ]
+    },
+    {
       "name": "faker",
       "display_name": "Faker",
       "category": "synthetic_data",
@@ -229,7 +254,7 @@
         "Python and JS implementations"
       ],
       "avoid_when": [
-        "statistically faithful synthetic datasets are required (evaluate SDV — license review pending, see issue #126)"
+        "statistically faithful, distribution-matching datasets are required (prefer SDV, subject to its BSL review)"
       ]
     },
     {

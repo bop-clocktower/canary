@@ -86,7 +86,7 @@ def generate(
         alternatives = [r["framework"] for r in results[1:]]
 
         if output_json:
-            _sys.stdout.write(json.dumps({
+            payload = {
                 "status": "success",
                 "mode": "recommendation",
                 "test_type": classification.test_type,
@@ -94,7 +94,11 @@ def generate(
                 "file_extension": result["file_extension"],
                 "reasoning": result["reason"],
                 "alternatives": alternatives,
-            }, indent=2) + "\n")
+            }
+            if result.get("warning"):
+                payload["license"] = result.get("license")
+                payload["warning"] = result["warning"]
+            _sys.stdout.write(json.dumps(payload, indent=2) + "\n")
             return
 
         print("[bold green]✅ Oracle Recommendation (Draft Mode)[/bold green]\n")
@@ -103,6 +107,8 @@ def generate(
         print("\n[bold]Reasoning:[/bold]")
         for r in result["reason"]:
             print(f" - {r}")
+        if result.get("warning"):
+            print(f"\n[yellow]⚠ License: {result['warning']}[/yellow]")
         if alternatives:
             print(f"\n[bold]Alternatives:[/bold] {', '.join(alternatives)}")
         print("\n[yellow]Note: Generation skipped due to --recommend-only flag.[/yellow]")
