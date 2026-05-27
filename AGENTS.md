@@ -185,22 +185,14 @@ generation via slash commands.
 
 ### GitHub Actions (`action.yml`, `.github/workflows/`)
 
-Oracle ships as a reusable GitHub Actions composite action.
+The composite action (`action.yml`) and its companion generation and commit
+workflows were deprecated in v3.0. They required an LLM API key secret and are
+superseded by the Claude Code plugin (`/oracle-write-test` slash command), which
+runs generation inside the developer's own authenticated session.
 
-- **Composite action:** [action.yml](action.yml) — Installs Oracle,
-  detects changed source files on the PR, generates tests, and posts a
-  PR comment with the result and a CTA to commit the test to the branch.
-  Inputs: `api-key`, `provider`, `prompt`, `run-tests`, `comment`,
-  `python-version`.
-- **Generation workflow:** [.github/workflows/oracle-generate.yml](.github/workflows/oracle-generate.yml)
-  — Triggers on `pull_request` to `main`. Auto-detects which LLM API key
-  secret is configured (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-  `GEMINI_API_KEY`) and skips generation silently if none is found.
-- **Commit workflow:** [.github/workflows/oracle-commit-test.yml](.github/workflows/oracle-commit-test.yml)
-  — `workflow_dispatch` workflow. Accepts a PR number, checks out the PR
-  branch, re-runs Oracle, commits the generated file, and posts a
-  follow-up comment. Requires `contents: write` permission; optionally
-  uses `ORACLE_COMMIT_TOKEN` PAT to trigger downstream CI on push.
+- **Composite action:** [action.yml](action.yml) — marked `[DEPRECATED]`;
+  retained for downstream consumers pinned to v2. Migrate to the Claude Code
+  plugin.
 
 ## Integration with Harness
 
