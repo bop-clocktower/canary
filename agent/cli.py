@@ -730,5 +730,115 @@ def workflow_show(
         raise typer.Exit(1)
 
 
+@app.command("ticket-update")
+def ticket_update(
+    test_file: Optional[str] = typer.Option(
+        None,
+        "--test-file",
+        help="Test file to extract linkage from (default: last run).",
+    ),
+    result_path: Optional[str] = typer.Option(
+        None,
+        "--result",
+        help="Path to oracle report JSON (default: auto-detect).",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be posted/transitioned; don't write."
+    ),
+    comment_only: bool = typer.Option(
+        False, "--comment-only", help="Post comment but skip transition."
+    ),
+    transition_only: bool = typer.Option(
+        False, "--transition-only", help="Transition only, skip comment."
+    ),
+    project: Optional[str] = typer.Option(
+        None, "--project", help="Override auto-detected project key."
+    ),
+    ticket: Optional[str] = typer.Option(
+        None, "--ticket", help="Override auto-detected ticket key (e.g. PROJ-1234)."
+    ),
+) -> None:
+    """
+    Post a run comment and/or transition the linked ticket after a test run.
+
+    Ticket linkage is detected from the test file frontmatter
+    (# oracle:ticket: KEY), a @ticket:KEY tag, or the current branch name.
+    Transition targets are resolved from the workflow mapping produced by
+    `oracle workflow-discover` -- no status names are hardcoded.
+    """
+    import os
+    from agent.core.ticket_updater import RunSummary, TicketUpdater
+
+    # ── load report JSON ──────────────────────────────────────────────────────
+    report_data: dict = {}
+    if result_path:
+        try:
+            report_data = json.loads(Path(result_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"[red]Could not read result file {result_path!r}: {exc}[/red]")
+            raise typer.Exit(1) from exc
+
+    # Build a RunSummary from report_data (or sensible defaults for ad-hoc use).
+    suite_name = report_data.get("suite_name", test_file or "unknown")
+    env_name = report_data.get("env", os.environ.get("ORACLE_ENV", "unknown"))
+    raw_result = report_data.get("result", "FAIL").upper()
+    if raw_result not in ("PASS", "FAIL", "PARTIAL"):
+        raw_result = "FAIL"
+
+    passed_names: list[str] = report_data.get("passed_names", [])
+    failed_pairs: list = report_data.get("failed_names", [])
+    # Normalise to list[tuple[str, str]].
+    failed_names: list[tuple[str, str]] = [
+        (item[0], item[1]) if (isinstance(item, (list, tuple)) and len(item) >= 2)
+        else (str(item), "unknown")
+        for item in failed_pairs
+    ]
+
+    summary = RunSummary(
+        suite_name=suite_name,
+        env=env_name,
+        result=raw_result,  # type: ignore[arg-type]
+        passed=report_data.get("passed", len(passed_names)),
+        total=report_data.get("total", len(passed_names) + len(failed_names)),
+        flaky_count=report_data.get("flaky_count", 0),
+        duration_s=float(report_data.get("duration_s", 0.0)),
+        test_file=test_file or report_data.get("test_file", ""),
+        report_url=report_data.get("report_url"),
+        passed_names=passed_names,
+        failed_names=failed_names,
+        ticket_key=ticket,
+        project_key=project,
+    )
+
+    updater = TicketUpdater()
+    update_result = updater.update(
+        summary,
+        dry_run=dry_run,
+        comment_only=comment_only,
+        transition_only=transition_only,
+    )
+
+    # ── render output ─────────────────────────────────────────────────────────
+    for msg in update_result.messages:
+        print(msg)
+
+    if not dry_run:
+        if update_result.comment_posted:
+            print(
+                f"[green]✓[/green] Comment posted to {update_result.ticket_key}"
+            )
+        tr = update_result.transition
+        if tr.attempted and tr.succeeded:
+            print(
+                f"[green]✓[/green] Transitioned {update_result.ticket_key}: "
+                f'"{tr.from_status}" → "{tr.to_status}"'
+            )
+        elif tr.attempted and not tr.succeeded:
+            print(f"[yellow]⚠[/yellow]  Transition failed: {tr.reason}")
+
+    if update_result.transition.reason.startswith("⚠"):
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()
