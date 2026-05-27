@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from agent.core.scaffolder import Scaffolder
+from agent.core.scaffolder import Scaffolder, TEMPLATES
 
 # Ordered probe list: (config_file, framework, shape)
 _CONFIG_PROBES = [
@@ -193,7 +193,6 @@ class HarnessMigrator:
 
         if dry_run:
             # Simulate what scaffold would create
-            from agent.core.scaffolder import TEMPLATES
             tmpl = TEMPLATES.get(framework, {})
             would_create = [
                 f for f in tmpl.get("files", {})
@@ -227,9 +226,20 @@ class HarnessMigrator:
     # ── private helpers ───────────────────────────────────────────────────
 
     def _load_harness_config(self, root: Path) -> dict:
+        config_path = root / "harness.config.json"
         try:
-            return json.loads((root / "harness.config.json").read_text())
-        except (OSError, json.JSONDecodeError):
+            return json.loads(config_path.read_text())
+        except OSError:
+            # File absent or unreadable — normal for non-harness projects.
+            return {}
+        except json.JSONDecodeError as exc:
+            # File present but malformed — warn so the user knows why the
+            # language fallback fired instead of the config value.
+            from rich.console import Console
+            Console(stderr=True).print(
+                f"[yellow]Warning:[/yellow] {config_path} is not valid JSON "
+                f"({exc}). Framework will be inferred from project files."
+            )
             return {}
 
     def _detect_framework(self, root: Path, config: dict) -> tuple[Optional[str], str]:

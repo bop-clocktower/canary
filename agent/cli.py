@@ -214,7 +214,6 @@ def run(
         framework: The testing framework to use for execution.
     """
     from agent.core.executor import OracleTestExecutor
-    from pathlib import Path
 
     print(f"\n[bold cyan]🚀 Oracle Executing {framework} Test...[/bold cyan]\n")
 
@@ -297,10 +296,9 @@ def migrate(
     framework, drops Oracle config files, and reports what was created or preserved.
     Dry-run by default — pass --apply to write files.
     """
-    from pathlib import Path as _Path
     from agent.core.migrator import HarnessMigrator
 
-    root = _Path(path).resolve()
+    root = Path(path).resolve()
     migrator = HarnessMigrator()
 
     try:
@@ -330,8 +328,7 @@ def migrate(
         raise typer.Exit(1)
 
     if output_json:
-        import json as _json
-        _sys.stdout.write(_json.dumps({
+        _sys.stdout.write(json.dumps({
             "framework": report.framework,
             "shape": report.shape,
             "dry_run": report.dry_run,

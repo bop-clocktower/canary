@@ -5,12 +5,15 @@ OpenAI Provider - Integration with OpenAI's Chat Completion API.
 
 This module implements the BaseProvider interface for OpenAI, enabling
 the agent to generate test code using GPT-series models.
+
+The ``openai`` SDK is lazy-imported inside ``__init__`` so that the rest of
+the system stays importable without the optional package installed.
 """
 
 import os
 from typing import List, Dict
-from openai import OpenAI
 from agent.llm.providers.base import BaseProvider
+
 
 class OpenAIProvider(BaseProvider):
     """
@@ -25,13 +28,15 @@ class OpenAIProvider(BaseProvider):
             model: The OpenAI model name to use. Defaults to 'gpt-4o-mini'.
         """
         api_key = os.getenv("OPENAI_API_KEY")
-        
+
         if not api_key:
             raise RuntimeError(
                 "OPENAI_API_KEY not found. "
                 "Set the OPENAI_API_KEY environment variable to use Oracle's "
                 "generation features with OpenAI."
             )
+
+        from openai import OpenAI
 
         self.client = OpenAI(api_key=api_key)
         self.model = model

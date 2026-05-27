@@ -46,9 +46,18 @@ class TestMockProvider(unittest.TestCase):
 
 
 class TestCodexProviderInit(unittest.TestCase):
+    """Tests for CodexProvider.__init__().
+
+    The ``openai`` SDK is an optional dependency; we stub it in sys.modules.
+    """
+
+    def setUp(self):
+        sys.modules.setdefault("openai", MagicMock())
 
     def tearDown(self):
         os.environ.pop("OPENAI_API_KEY", None)
+        sys.modules.pop("openai", None)
+        sys.modules.pop("agent.llm.providers.codex", None)
 
     def test_requires_api_key(self):
         os.environ.pop("OPENAI_API_KEY", None)
@@ -142,12 +151,31 @@ class TestAnthropicProviderGenerate(unittest.TestCase):
 
 
 class TestGeminiProviderGenerate(unittest.TestCase):
+    """Tests for GeminiProvider.generate().
+
+    The ``google-genai`` SDK is an optional dependency; we stub it in
+    sys.modules so the tests run in any environment.
+    """
 
     def setUp(self):
         os.environ["GEMINI_API_KEY"] = "test-key"
+        # Stub the google / google.genai namespace so the lazy import inside
+        # GeminiProvider.__init__ and generate() resolves to a MagicMock.
+        google_mock = MagicMock()
+        genai_mock = MagicMock()
+        types_mock = MagicMock()
+        google_mock.genai = genai_mock
+        genai_mock.types = types_mock
+        sys.modules.setdefault("google", google_mock)
+        sys.modules.setdefault("google.genai", genai_mock)
+        sys.modules.setdefault("google.genai.types", types_mock)
 
     def tearDown(self):
         os.environ.pop("GEMINI_API_KEY", None)
+        for key in ("google", "google.genai", "google.genai.types"):
+            sys.modules.pop(key, None)
+        # Evict the provider module so the next test gets a fresh import.
+        sys.modules.pop("agent.llm.providers.gemini", None)
 
     @patch("google.genai.Client")
     def test_generate_returns_text(self, MockClient):
@@ -178,10 +206,12 @@ class TestGeminiProviderGenerate(unittest.TestCase):
         from agent.llm.providers.gemini import GeminiProvider
         GeminiProvider().generate(messages)
 
-        call_kwargs = mock_instance.models.generate_content.call_args[1]
-        self.assertEqual(
-            call_kwargs["config"].system_instruction,
-            "You are a test generator.",
+        # types.GenerateContentConfig is a MagicMock; assert it was called
+        # with the right system_instruction rather than inspecting the mock
+        # instance's attribute (which would be another MagicMock).
+        types_mock = sys.modules["google.genai.types"]
+        types_mock.GenerateContentConfig.assert_called_once_with(
+            system_instruction="You are a test generator.",
         )
 
     @patch("google.genai.Client")
@@ -212,14 +242,23 @@ def _mock_openai_client(MockOpenAI: MagicMock, text: str) -> MagicMock:
 
 
 class TestOpenAIProviderGenerate(unittest.TestCase):
+    """Tests for OpenAIProvider.generate().
+
+    The ``openai`` SDK is an optional dependency; we stub it in sys.modules.
+    OpenAIProvider lazy-imports ``openai.OpenAI`` inside ``__init__``, so we
+    patch at ``openai.OpenAI`` (not the no-longer-module-level name).
+    """
 
     def setUp(self):
         os.environ["OPENAI_API_KEY"] = "test-key"
+        sys.modules.setdefault("openai", MagicMock())
 
     def tearDown(self):
         os.environ.pop("OPENAI_API_KEY", None)
+        sys.modules.pop("openai", None)
+        sys.modules.pop("agent.llm.providers.openai", None)
 
-    @patch("agent.llm.providers.openai.OpenAI")
+    @patch("openai.OpenAI")
     def test_generate_returns_content(self, MockOpenAI):
         _mock_openai_client(MockOpenAI, "openai output")
         from agent.llm.providers.openai import OpenAIProvider
@@ -228,7 +267,7 @@ class TestOpenAIProviderGenerate(unittest.TestCase):
         )
         self.assertEqual(result, "openai output")
 
-    @patch("agent.llm.providers.openai.OpenAI")
+    @patch("openai.OpenAI")
     def test_generate_raises_on_empty_choices(self, MockOpenAI):
         mock_client = MagicMock()
         MockOpenAI.return_value = mock_client
@@ -244,12 +283,19 @@ class TestOpenAIProviderGenerate(unittest.TestCase):
 
 
 class TestCodexProviderGenerate(unittest.TestCase):
+    """Tests for CodexProvider.generate().
+
+    The ``openai`` SDK is an optional dependency; we stub it in sys.modules.
+    """
 
     def setUp(self):
         os.environ["OPENAI_API_KEY"] = "test-key"
+        sys.modules.setdefault("openai", MagicMock())
 
     def tearDown(self):
         os.environ.pop("OPENAI_API_KEY", None)
+        sys.modules.pop("openai", None)
+        sys.modules.pop("agent.llm.providers.codex", None)
 
     @patch("openai.OpenAI")
     def test_generate_returns_content(self, MockOpenAI):
