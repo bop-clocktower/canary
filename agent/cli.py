@@ -542,5 +542,193 @@ def skills_run(
         raise typer.Exit(int(rc or 0))
 
 
+# ---------------------------------------------------------------------------
+# `oracle workflow` — per-project issue-workflow discovery and inspection.
+# ---------------------------------------------------------------------------
+
+workflow_app = typer.Typer(help="Discover and inspect per-project issue-workflow mappings.")
+app.add_typer(workflow_app, name="workflow")
+
+
+@workflow_app.command("discover")
+def workflow_discover(
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        "-p",
+        help="Jira project key (e.g. OPTUM) or GitHub repo slug (owner/repo). "
+             "Defaults to all keys in .oracle/company.json jira_projects.",
+    ),
+    refresh: bool = typer.Option(
+        False, "--refresh", help="Re-discover even if a cached mapping already exists."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print the mapping that would be written without writing it."
+    ),
+) -> None:
+    """
+    Discover the Jira or GitHub workflow for one or more projects and persist
+    the mapping to .oracle/workflow-<key>.json.
+
+    Requires ATLASSIAN_URL, ATLASSIAN_USER, and ATLASSIAN_TOKEN environment
+    variables for Jira projects, or an authenticated `gh` CLI for GitHub repos.
+    """
+    from agent.core.workflow_discovery import WorkflowDiscovery, WorkflowDiscoveryError
+
+    wd = WorkflowDiscovery()
+
+    # Resolve the list of project keys to discover.
+    keys: list[str] = []
+    if project:
+        keys = [project]
+    else:
+        # Read from .oracle/company.json if present.
+        company_path = Path.cwd() / ".oracle" / "company.json"
+        if company_path.exists():
+            try:
+                data = json.loads(company_path.read_text(encoding="utf-8"))
+                keys = data.get("jira_projects", [])
+            except (json.JSONDecodeError, OSError):
+                pass
+        if not keys:
+            print(
+                "[yellow]No project keys found.[/yellow] "
+                "Pass [bold]--project <key>[/bold] or add keys to "
+                "[bold].oracle/company.json[/bold] → [bold]jira_projects[/bold]."
+            )
+            raise typer.Exit(1)
+
+    errors: list[str] = []
+    for key in keys:
+        print(f"\n[bold cyan]🔍 Discovering workflow for {key}…[/bold cyan]")
+        try:
+            mapping = wd.discover(key, refresh=refresh, dry_run=dry_run)
+        except WorkflowDiscoveryError as exc:
+            print(f"[red]✗[/red] {exc}")
+            errors.append(key)
+            continue
+
+        # Summary output.
+        n_types = len(mapping.issue_types)
+        n_roles = len(mapping.semantic_roles)
+        confirmed = "✓ confirmed" if mapping.role_annotations_confirmed else "⚠ unconfirmed"
+        if dry_run:
+            print(f"[dim](dry-run)[/dim] {mapping.to_json()}")
+        else:
+            print(
+                f"[green]✓[/green] {key}: {n_types} issue type(s), "
+                f"{n_roles} semantic role(s) [{confirmed}]"
+            )
+            if not mapping.role_annotations_confirmed:
+                print(
+                    "[dim]  Tip: verify role assignments with "
+                    "[bold]oracle workflow show --project "
+                    f"{key} --roles-only[/bold][/dim]"
+                )
+
+    if errors:
+        print(f"\n[red]Discovery failed for: {', '.join(errors)}[/red]")
+        raise typer.Exit(1)
+
+
+@workflow_app.command("show")
+def workflow_show(
+    project: Optional[str] = typer.Option(
+        None, "--project", "-p",
+        help="Jira project key or GitHub repo slug. Shows all cached mappings if omitted.",
+    ),
+    roles_only: bool = typer.Option(
+        False, "--roles-only", help="Print only the semantic_roles block."
+    ),
+    output_json: bool = typer.Option(
+        False, "--json", help="Emit raw JSON instead of styled output."
+    ),
+) -> None:
+    """
+    Print the persisted workflow mapping for a project.
+
+    Use --roles-only to verify semantic role assignments at a glance before
+    Oracle uses them to transition tickets.
+    """
+    from agent.core.workflow_discovery import WorkflowDiscovery
+
+    wd = WorkflowDiscovery()
+
+    # Resolve project keys.
+    keys: list[str] = []
+    if project:
+        keys = [project]
+    else:
+        oracle_dir = Path.cwd() / ".oracle"
+        if oracle_dir.is_dir():
+            keys = [
+                p.stem.removeprefix("workflow-")
+                for p in oracle_dir.glob("workflow-*.json")
+            ]
+        if not keys:
+            print("[yellow]No cached workflow mappings found.[/yellow]")
+            raise typer.Exit(0)
+
+    any_found = False
+    for key in keys:
+        mapping = wd.show(key)
+        if mapping is None:
+            print(f"[yellow]No cached mapping for {key}.[/yellow]  "
+                  f"Run [bold]oracle workflow discover --project {key}[/bold] first.")
+            continue
+
+        any_found = True
+
+        if output_json:
+            if roles_only:
+                roles_dict = {
+                    r: {"status_name": sr.status_name, "issue_type": sr.issue_type}
+                    for r, sr in mapping.semantic_roles.items()
+                }
+                print(json.dumps(roles_dict, indent=2))
+            else:
+                print(mapping.to_json())
+            continue
+
+        # Styled output.
+        confirmed_tag = (
+            "[green]confirmed[/green]"
+            if mapping.role_annotations_confirmed
+            else "[yellow]unconfirmed[/yellow]"
+        )
+        print(
+            f"\n[bold]{key}[/bold]  "
+            f"[dim]source={mapping.source}  "
+            f"discovered={mapping.discovered_at}  "
+            f"roles={confirmed_tag}[/dim]"
+        )
+
+        if roles_only:
+            if mapping.semantic_roles:
+                print("  [bold]Semantic roles:[/bold]")
+                for role, sr in mapping.semantic_roles.items():
+                    print(f"    {role:<20} → {sr.status_name!r}  [dim]({sr.issue_type})[/dim]")
+            else:
+                print("  [yellow]No semantic roles resolved yet.[/yellow]")
+            continue
+
+        for it in mapping.issue_types:
+            print(f"\n  [bold]{it.name}[/bold]")
+            for s in it.statuses:
+                print(f"    [{s.category}] {s.name}")
+            if it.transitions:
+                print("    Transitions:")
+                for t in it.transitions:
+                    print(f"      {t.from_status} → {t.to_status}  [dim]({t.name})[/dim]")
+
+        if mapping.semantic_roles:
+            print("\n  [bold]Semantic roles:[/bold]")
+            for role, sr in mapping.semantic_roles.items():
+                print(f"    {role:<20} → {sr.status_name!r}  [dim]({sr.issue_type})[/dim]")
+
+    if not any_found:
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()
