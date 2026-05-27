@@ -326,7 +326,10 @@ class TicketUpdater:
         if dry_run:
             return True
 
-        base_url, auth_header = _jira_auth()
+        # Infer project key from ticket key to select the right Atlassian URL.
+        pm = _TICKET_PROJECT.match(ticket_key)
+        project_key = pm.group(1) if pm else None
+        base_url, auth_header = _jira_auth(project_key, self.oracle_dir)
         if base_url is None:
             return False
 
@@ -444,8 +447,8 @@ class TicketUpdater:
                 ),
             )
 
-        # Need Jira creds to proceed.
-        base_url, auth_header = _jira_auth()
+        # Need Jira creds to proceed — prefer URL stored in mapping for this project.
+        base_url, auth_header = _jira_auth(project_key, self.oracle_dir)
         if base_url is None:
             return TransitionResult(
                 attempted=False,
@@ -511,12 +514,34 @@ class TicketUpdater:
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
-def _jira_auth() -> tuple[Optional[str], Optional[str]]:
+def _jira_auth(
+    project_key: Optional[str] = None,
+    oracle_dir: Optional[Path] = None,
+) -> tuple[Optional[str], Optional[str]]:
     """
-    Return (base_url, auth_header) from environment variables, or (None, None)
+    Return (base_url, auth_header) for the given *project_key*, or (None, None)
     if credentials are missing.
+
+    Resolution order for base_url:
+    1. ``atlassian_url`` stored in ``.oracle/workflow-{project_key}.json``
+       (written by ``oracle workflow-discover`` or ``oracle workflow-init``).
+    2. ``ATLASSIAN_URL`` environment variable.
+
+    This lets projects on different Atlassian instances each carry their own URL
+    in the mapping file without requiring separate env-var management.
     """
-    base_url = os.environ.get("ATLASSIAN_URL", "").rstrip("/")
+    # Prefer the URL stored in the per-project mapping.
+    base_url: str = ""
+    if project_key:
+        from agent.core.workflow_discovery import atlassian_url_for
+
+        stored = atlassian_url_for(project_key, oracle_dir)
+        if stored:
+            base_url = stored.rstrip("/")
+
+    if not base_url:
+        base_url = os.environ.get("ATLASSIAN_URL", "").rstrip("/")
+
     user = os.environ.get("ATLASSIAN_USER", "")
     token = os.environ.get("ATLASSIAN_TOKEN", "")
     if not all([base_url, user, token]):

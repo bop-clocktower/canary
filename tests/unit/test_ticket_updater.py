@@ -8,6 +8,7 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Optional
 from unittest.mock import MagicMock, patch
 
 
@@ -263,7 +264,12 @@ class TestTransitionLogic(unittest.TestCase):
     def tearDown(self):
         self.tmpdir.cleanup()
 
-    def _write_mapping(self, project_key: str, qa_passed_status: str) -> None:
+    def _write_mapping(
+        self,
+        project_key: str,
+        qa_passed_status: str,
+        atlassian_url: Optional[str] = None,
+    ) -> None:
         mapping = {
             "project_key": project_key,
             "source": "jira",
@@ -295,6 +301,8 @@ class TestTransitionLogic(unittest.TestCase):
             },
             "role_annotations_confirmed": True,
         }
+        if atlassian_url:
+            mapping["atlassian_url"] = atlassian_url
         path = self.oracle_dir / f"workflow-{project_key}.json"
         path.write_text(json.dumps(mapping), encoding="utf-8")
 
@@ -558,3 +566,193 @@ class TestSafetyGate(unittest.TestCase):
             result = updater.update(summary, dry_run=True, comment_only=True)
 
         self.assertEqual(result.transition.reason, "skipped (comment-only mode)")
+
+
+# ── per-project Atlassian URL ─────────────────────────────────────────────────
+
+
+class TestPerProjectAtlassianUrl(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = TemporaryDirectory()
+        self.oracle_dir = Path(self.tmpdir.name) / ".oracle"
+        self.oracle_dir.mkdir()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _write_mapping(self, project_key: str, atlassian_url: Optional[str] = None) -> None:
+        mapping: dict = {
+            "project_key": project_key,
+            "source": "jira",
+            "discovered_at": "2026-01-01T00:00:00+00:00",
+            "issue_types": [],
+            "semantic_roles": {
+                "qa_passed": {"status_name": "QA Passed", "issue_type": "Story"},
+                "in_qa": {"status_name": "In QA", "issue_type": "Story"},
+            },
+            "role_annotations_confirmed": True,
+        }
+        if atlassian_url:
+            mapping["atlassian_url"] = atlassian_url
+        (self.oracle_dir / f"workflow-{project_key}.json").write_text(
+            json.dumps(mapping), encoding="utf-8"
+        )
+
+    def test_stored_url_preferred_over_env_var(self):
+        """atlassian_url in mapping takes precedence over ATLASSIAN_URL env var."""
+        from agent.core.ticket_updater import _jira_auth
+
+        self._write_mapping("ACME", atlassian_url="https://acme.atlassian.net")
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "ATLASSIAN_URL": "https://wrong.atlassian.net",
+                    "ATLASSIAN_USER": "user@example.com",
+                    "ATLASSIAN_TOKEN": "token123",
+                },
+            )
+        ):
+            base_url, _ = _jira_auth("ACME", self.oracle_dir)
+
+        self.assertEqual(base_url, "https://acme.atlassian.net")
+
+    def test_env_var_used_when_no_stored_url(self):
+        """Falls back to ATLASSIAN_URL env var when mapping has no atlassian_url."""
+        from agent.core.ticket_updater import _jira_auth
+
+        self._write_mapping("ACME")  # no atlassian_url stored
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "ATLASSIAN_URL": "https://fallback.atlassian.net",
+                    "ATLASSIAN_USER": "user@example.com",
+                    "ATLASSIAN_TOKEN": "token123",
+                },
+            )
+        ):
+            base_url, _ = _jira_auth("ACME", self.oracle_dir)
+
+        self.assertEqual(base_url, "https://fallback.atlassian.net")
+
+    def test_two_projects_different_atlassian_instances(self):
+        """Two projects on different Atlassian instances each get their own URL."""
+        from agent.core.ticket_updater import _jira_auth
+
+        self._write_mapping("INTERNAL", atlassian_url="https://internal.atlassian.net")
+        self._write_mapping("CUSTOMER", atlassian_url="https://customer.atlassian.net")
+
+        with patch.dict(
+            os.environ,
+            {"ATLASSIAN_USER": "user@example.com", "ATLASSIAN_TOKEN": "tok"},
+        ):
+            internal_url, _ = _jira_auth("INTERNAL", self.oracle_dir)
+            customer_url, _ = _jira_auth("CUSTOMER", self.oracle_dir)
+
+        self.assertEqual(internal_url, "https://internal.atlassian.net")
+        self.assertEqual(customer_url, "https://customer.atlassian.net")
+
+    def test_no_project_key_falls_back_to_env(self):
+        """Without a project key, env var is the only option."""
+        from agent.core.ticket_updater import _jira_auth
+
+        with patch.dict(
+            os.environ,
+            {
+                "ATLASSIAN_URL": "https://env.atlassian.net",
+                "ATLASSIAN_USER": "user@example.com",
+                "ATLASSIAN_TOKEN": "tok",
+            },
+        ):
+            base_url, _ = _jira_auth(None, self.oracle_dir)
+
+        self.assertEqual(base_url, "https://env.atlassian.net")
+
+
+# ── workflow-init (static role config) ───────────────────────────────────────
+
+
+class TestWorkflowMappingStaticInit(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = TemporaryDirectory()
+        self.oracle_dir = Path(self.tmpdir.name) / ".oracle"
+        self.oracle_dir.mkdir()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_hand_authored_mapping_used_by_ticket_updater(self):
+        """A manually written mapping file (no discovery) is respected by transition logic."""
+        from agent.core.ticket_updater import TicketUpdater
+        from agent.core.workflow_discovery import WorkflowDiscovery, WorkflowMapping, SemanticRole
+
+        mapping = WorkflowMapping(
+            project_key="HAND",
+            source="jira",
+            discovered_at="2026-01-01T00:00:00+00:00",
+            semantic_roles={
+                "qa_passed": SemanticRole(status_name="Testing Complete", issue_type="Story"),
+                "in_qa": SemanticRole(status_name="In Testing", issue_type="Story"),
+            },
+            role_annotations_confirmed=True,
+            atlassian_url="https://hand.atlassian.net",
+        )
+        WorkflowDiscovery(oracle_dir=self.oracle_dir)._write(mapping)
+
+        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+
+        with (
+            patch("agent.core.ticket_updater._jira_auth", return_value=("https://hand.atlassian.net", "Basic dGVzdA==")),
+            patch("agent.core.ticket_updater._jira_current_status", return_value="In Testing"),
+            patch("agent.core.ticket_updater._jira_find_transition", return_value="99"),
+        ):
+            result = updater._transition_jira("HAND-1", "HAND", "PASS", dry_run=True)
+
+        self.assertTrue(result.attempted)
+        self.assertEqual(result.to_status, "Testing Complete")
+
+    def test_mapping_round_trips_atlassian_url(self):
+        """atlassian_url survives JSON serialisation/deserialisation."""
+        from agent.core.workflow_discovery import WorkflowDiscovery, WorkflowMapping, SemanticRole
+
+        mapping = WorkflowMapping(
+            project_key="RT",
+            source="jira",
+            discovered_at="2026-01-01T00:00:00+00:00",
+            semantic_roles={"qa_passed": SemanticRole("Done", "Story")},
+            role_annotations_confirmed=True,
+            atlassian_url="https://rt.atlassian.net",
+        )
+        wd = WorkflowDiscovery(oracle_dir=self.oracle_dir)
+        wd._write(mapping)
+        loaded = wd.show("RT")
+
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded.atlassian_url, "https://rt.atlassian.net")
+
+    def test_mapping_without_atlassian_url_loads_as_none(self):
+        """Existing mapping files without atlassian_url field load cleanly."""
+        from agent.core.workflow_discovery import WorkflowDiscovery
+
+        legacy = {
+            "project_key": "LEGACY",
+            "source": "jira",
+            "discovered_at": "2025-01-01T00:00:00+00:00",
+            "issue_types": [],
+            "semantic_roles": {
+                "qa_passed": {"status_name": "QA Done", "issue_type": "Story"}
+            },
+            "role_annotations_confirmed": True,
+        }
+        (self.oracle_dir / "workflow-LEGACY.json").write_text(
+            json.dumps(legacy), encoding="utf-8"
+        )
+        wd = WorkflowDiscovery(oracle_dir=self.oracle_dir)
+        loaded = wd.show("LEGACY")
+
+        self.assertIsNotNone(loaded)
+        self.assertIsNone(loaded.atlassian_url)
+        self.assertEqual(loaded.semantic_roles["qa_passed"].status_name, "QA Done")

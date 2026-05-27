@@ -730,6 +730,98 @@ def workflow_show(
         raise typer.Exit(1)
 
 
+@workflow_app.command("init")
+def workflow_init(
+    project: str = typer.Option(..., "--project", "-p", help="Jira project key (e.g. OPTUM)."),
+    qa_passed: str = typer.Option(
+        ...,
+        "--qa-passed",
+        help="Exact Jira status name that means QA passed (e.g. 'QA Passed', 'Testing Complete').",
+    ),
+    in_qa: Optional[str] = typer.Option(
+        None,
+        "--in-qa",
+        help="Exact Jira status name for 'in QA' (e.g. 'In QA', 'Testing'). Optional.",
+    ),
+    atlassian_url: Optional[str] = typer.Option(
+        None,
+        "--atlassian-url",
+        help="Jira base URL for this project (e.g. https://acme.atlassian.net). "
+             "Stored in the mapping so oracle ticket-update never needs ATLASSIAN_URL "
+             "for this project. Defaults to the ATLASSIAN_URL env var if omitted.",
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite an existing mapping file."
+    ),
+) -> None:
+    """
+    Create a minimal workflow mapping for a project without running discovery.
+
+    Use this when you know the Jira status names for your project and don't
+    want to (or can't) run oracle workflow-discover against a live Jira instance.
+    The mapping is written to .oracle/workflow-<PROJECT>.json with
+    role_annotations_confirmed=true so oracle ticket-update uses it immediately.
+
+    Example:
+
+        oracle workflow init --project OPTUM --qa-passed "QA Passed" --in-qa "In QA"
+
+    To use a different Atlassian instance for this project:
+
+        oracle workflow init --project INTERNAL --qa-passed "Done" \\
+            --atlassian-url https://internal.atlassian.net
+    """
+    import os as _os
+    from agent.core.workflow_discovery import SemanticRole, WorkflowDiscovery, WorkflowMapping
+
+    wd = WorkflowDiscovery()
+    mapping_path = wd._mapping_path(project)
+
+    if mapping_path.exists() and not force:
+        print(
+            f"[yellow]⚠[/yellow]  Mapping already exists at {mapping_path}.\n"
+            "Use [bold]--force[/bold] to overwrite."
+        )
+        raise typer.Exit(1)
+
+    # Resolve atlassian_url: explicit flag > env var > None.
+    resolved_url = (atlassian_url or _os.environ.get("ATLASSIAN_URL", "") or "").rstrip("/") or None
+
+    semantic_roles: dict[str, SemanticRole] = {
+        "qa_passed": SemanticRole(status_name=qa_passed, issue_type="Story"),
+    }
+    if in_qa:
+        semantic_roles["in_qa"] = SemanticRole(status_name=in_qa, issue_type="Story")
+
+    mapping = WorkflowMapping(
+        project_key=project,
+        source="jira",
+        discovered_at=_now_iso_cli(),
+        issue_types=[],
+        semantic_roles=semantic_roles,
+        role_annotations_confirmed=True,
+        atlassian_url=resolved_url,
+    )
+    wd._write(mapping)
+
+    print(f"[green]✓[/green] Created {mapping_path}")
+    print(f"  qa_passed  → {qa_passed!r}")
+    if in_qa:
+        print(f"  in_qa      → {in_qa!r}")
+    if resolved_url:
+        print(f"  atlassian_url → {resolved_url}")
+    print(
+        "\n[dim]Verify with: [bold]oracle workflow show --project "
+        f"{project} --roles-only[/bold][/dim]"
+    )
+
+
+def _now_iso_cli() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+
+
 @app.command("ticket-update")
 def ticket_update(
     test_file: Optional[str] = typer.Option(
