@@ -100,6 +100,7 @@ class WorkflowMapping:
     issue_types: list[IssueType] = field(default_factory=list)
     semantic_roles: dict[str, SemanticRole] = field(default_factory=dict)
     role_annotations_confirmed: bool = False
+    atlassian_url: Optional[str] = None  # per-project Jira base URL; overrides ATLASSIAN_URL
 
     # ── serialisation ─────────────────────────────────────────────────────────
 
@@ -113,6 +114,8 @@ class WorkflowMapping:
             "semantic_roles": {},
             "role_annotations_confirmed": self.role_annotations_confirmed,
         }
+        if self.atlassian_url:
+            d["atlassian_url"] = self.atlassian_url
         for it in self.issue_types:
             it_d: dict = {
                 "id": it.id,
@@ -169,6 +172,7 @@ class WorkflowMapping:
             issue_types=issue_types,
             semantic_roles=semantic_roles,
             role_annotations_confirmed=data.get("role_annotations_confirmed", False),
+            atlassian_url=data.get("atlassian_url"),
         )
 
 
@@ -316,6 +320,8 @@ class WorkflowDiscovery:
             "Authorization": f"Basic {auth}",
             "Accept": "application/json",
         }
+        # Capture the URL so ticket_updater can use it without requiring the env var.
+        discovered_base_url = base_url
 
         # 1. Get issue types for this project.
         issue_types_raw = self._jira_get(
@@ -355,6 +361,7 @@ class WorkflowDiscovery:
             source="jira",
             discovered_at=_now_iso(),
             issue_types=issue_types,
+            atlassian_url=discovered_base_url,
         )
 
     def _parse_statuses(
@@ -594,6 +601,22 @@ def resolve_role(
     ...     raise RuntimeError("Run oracle workflow-discover --project OPTUM first")
     """
     return WorkflowDiscovery(oracle_dir=oracle_dir).resolve_role(project_key, role)
+
+
+def atlassian_url_for(
+    project_key: str,
+    oracle_dir: Optional[Path | str] = None,
+) -> Optional[str]:
+    """
+    Return the Atlassian base URL for *project_key* from the persisted mapping,
+    or ``None`` if the mapping is missing or has no stored URL.
+
+    Used by ``ticket_updater`` so each project can point at a different Atlassian
+    instance.  Falls back to the ``ATLASSIAN_URL`` environment variable at the
+    call site when this returns ``None``.
+    """
+    mapping = WorkflowDiscovery(oracle_dir=oracle_dir).show(project_key)
+    return mapping.atlassian_url if mapping else None
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

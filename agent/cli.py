@@ -730,5 +730,207 @@ def workflow_show(
         raise typer.Exit(1)
 
 
+@workflow_app.command("init")
+def workflow_init(
+    project: str = typer.Option(..., "--project", "-p", help="Jira project key (e.g. OPTUM)."),
+    qa_passed: str = typer.Option(
+        ...,
+        "--qa-passed",
+        help="Exact Jira status name that means QA passed (e.g. 'QA Passed', 'Testing Complete').",
+    ),
+    in_qa: Optional[str] = typer.Option(
+        None,
+        "--in-qa",
+        help="Exact Jira status name for 'in QA' (e.g. 'In QA', 'Testing'). Optional.",
+    ),
+    atlassian_url: Optional[str] = typer.Option(
+        None,
+        "--atlassian-url",
+        help="Jira base URL for this project (e.g. https://acme.atlassian.net). "
+             "Stored in the mapping so oracle ticket-update never needs ATLASSIAN_URL "
+             "for this project. Defaults to the ATLASSIAN_URL env var if omitted.",
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite an existing mapping file."
+    ),
+) -> None:
+    """
+    Create a minimal workflow mapping for a project without running discovery.
+
+    Use this when you know the Jira status names for your project and don't
+    want to (or can't) run oracle workflow-discover against a live Jira instance.
+    The mapping is written to .oracle/workflow-<PROJECT>.json with
+    role_annotations_confirmed=true so oracle ticket-update uses it immediately.
+
+    Example:
+
+        oracle workflow init --project OPTUM --qa-passed "QA Passed" --in-qa "In QA"
+
+    To use a different Atlassian instance for this project:
+
+        oracle workflow init --project INTERNAL --qa-passed "Done" \\
+            --atlassian-url https://internal.atlassian.net
+    """
+    import os as _os
+    from agent.core.workflow_discovery import SemanticRole, WorkflowDiscovery, WorkflowMapping
+
+    wd = WorkflowDiscovery()
+    mapping_path = wd._mapping_path(project)
+
+    if mapping_path.exists() and not force:
+        print(
+            f"[yellow]⚠[/yellow]  Mapping already exists at {mapping_path}.\n"
+            "Use [bold]--force[/bold] to overwrite."
+        )
+        raise typer.Exit(1)
+
+    # Resolve atlassian_url: explicit flag > env var > None.
+    resolved_url = (atlassian_url or _os.environ.get("ATLASSIAN_URL", "") or "").rstrip("/") or None
+
+    semantic_roles: dict[str, SemanticRole] = {
+        "qa_passed": SemanticRole(status_name=qa_passed, issue_type="Story"),
+    }
+    if in_qa:
+        semantic_roles["in_qa"] = SemanticRole(status_name=in_qa, issue_type="Story")
+
+    mapping = WorkflowMapping(
+        project_key=project,
+        source="jira",
+        discovered_at=_now_iso_cli(),
+        issue_types=[],
+        semantic_roles=semantic_roles,
+        role_annotations_confirmed=True,
+        atlassian_url=resolved_url,
+    )
+    wd._write(mapping)
+
+    print(f"[green]✓[/green] Created {mapping_path}")
+    print(f"  qa_passed  → {qa_passed!r}")
+    if in_qa:
+        print(f"  in_qa      → {in_qa!r}")
+    if resolved_url:
+        print(f"  atlassian_url → {resolved_url}")
+    print(
+        "\n[dim]Verify with: [bold]oracle workflow show --project "
+        f"{project} --roles-only[/bold][/dim]"
+    )
+
+
+def _now_iso_cli() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+
+
+@app.command("ticket-update")
+def ticket_update(
+    test_file: Optional[str] = typer.Option(
+        None,
+        "--test-file",
+        help="Test file to extract linkage from (default: last run).",
+    ),
+    result_path: Optional[str] = typer.Option(
+        None,
+        "--result",
+        help="Path to oracle report JSON (default: auto-detect).",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be posted/transitioned; don't write."
+    ),
+    comment_only: bool = typer.Option(
+        False, "--comment-only", help="Post comment but skip transition."
+    ),
+    transition_only: bool = typer.Option(
+        False, "--transition-only", help="Transition only, skip comment."
+    ),
+    project: Optional[str] = typer.Option(
+        None, "--project", help="Override auto-detected project key."
+    ),
+    ticket: Optional[str] = typer.Option(
+        None, "--ticket", help="Override auto-detected ticket key (e.g. PROJ-1234)."
+    ),
+) -> None:
+    """
+    Post a run comment and/or transition the linked ticket after a test run.
+
+    Ticket linkage is detected from the test file frontmatter
+    (# oracle:ticket: KEY), a @ticket:KEY tag, or the current branch name.
+    Transition targets are resolved from the workflow mapping produced by
+    `oracle workflow-discover` -- no status names are hardcoded.
+    """
+    import os
+    from agent.core.ticket_updater import RunSummary, TicketUpdater
+
+    # ── load report JSON ──────────────────────────────────────────────────────
+    report_data: dict = {}
+    if result_path:
+        try:
+            report_data = json.loads(Path(result_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"[red]Could not read result file {result_path!r}: {exc}[/red]")
+            raise typer.Exit(1) from exc
+
+    # Build a RunSummary from report_data (or sensible defaults for ad-hoc use).
+    suite_name = report_data.get("suite_name", test_file or "unknown")
+    env_name = report_data.get("env", os.environ.get("ORACLE_ENV", "unknown"))
+    raw_result = report_data.get("result", "FAIL").upper()
+    if raw_result not in ("PASS", "FAIL", "PARTIAL"):
+        raw_result = "FAIL"
+
+    passed_names: list[str] = report_data.get("passed_names", [])
+    failed_pairs: list = report_data.get("failed_names", [])
+    # Normalise to list[tuple[str, str]].
+    failed_names: list[tuple[str, str]] = [
+        (item[0], item[1]) if (isinstance(item, (list, tuple)) and len(item) >= 2)
+        else (str(item), "unknown")
+        for item in failed_pairs
+    ]
+
+    summary = RunSummary(
+        suite_name=suite_name,
+        env=env_name,
+        result=raw_result,  # type: ignore[arg-type]
+        passed=report_data.get("passed", len(passed_names)),
+        total=report_data.get("total", len(passed_names) + len(failed_names)),
+        flaky_count=report_data.get("flaky_count", 0),
+        duration_s=float(report_data.get("duration_s", 0.0)),
+        test_file=test_file or report_data.get("test_file", ""),
+        report_url=report_data.get("report_url"),
+        passed_names=passed_names,
+        failed_names=failed_names,
+        ticket_key=ticket,
+        project_key=project,
+    )
+
+    updater = TicketUpdater()
+    update_result = updater.update(
+        summary,
+        dry_run=dry_run,
+        comment_only=comment_only,
+        transition_only=transition_only,
+    )
+
+    # ── render output ─────────────────────────────────────────────────────────
+    for msg in update_result.messages:
+        print(msg)
+
+    if not dry_run:
+        if update_result.comment_posted:
+            print(
+                f"[green]✓[/green] Comment posted to {update_result.ticket_key}"
+            )
+        tr = update_result.transition
+        if tr.attempted and tr.succeeded:
+            print(
+                f"[green]✓[/green] Transitioned {update_result.ticket_key}: "
+                f'"{tr.from_status}" → "{tr.to_status}"'
+            )
+        elif tr.attempted and not tr.succeeded:
+            print(f"[yellow]⚠[/yellow]  Transition failed: {tr.reason}")
+
+    if update_result.transition.reason.startswith("⚠"):
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()
