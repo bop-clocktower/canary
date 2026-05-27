@@ -5,7 +5,7 @@
   "description": "AI-powered test generation for Claude Code — generate, init, and migrate test suites via slash commands.",
   "hooks": "./.claude-plugin/hooks.json",
   "mcpServers": {
-    "oracle": {
+    "oracle-mcp": {
       "command": "oracle-mcp",
       "args": []
     }
