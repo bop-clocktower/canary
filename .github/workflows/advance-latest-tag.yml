@@ -1,0 +1,39 @@
+name: Advance latest tag
+
+# Moves the floating `latest` git tag to the release commit whenever a
+# GitHub Release is published.  This keeps
+#   pipx install git+https://github.com/bri-stevenski/oracle-test-ai-agent@latest
+# and
+#   pipx upgrade oracle-test-ai
+# pointing at the newest stable release without requiring users to update
+# their install spec on every version bump.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  advance-latest:
+    name: Move latest → ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    # Only advance for vX.Y.Z tags, not pre-release or other tags.
+    if: startsWith(github.ref_name, 'v') && !github.event.release.prerelease
+
+    permissions:
+      contents: write   # needed to push the tag
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Move latest tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -fa latest "$RELEASE_SHA" -m "latest → ${RELEASE_TAG}"
+          git push origin latest --force
+          echo "Moved latest → ${RELEASE_TAG} (${RELEASE_SHA})"
