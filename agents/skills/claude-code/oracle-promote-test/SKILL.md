@@ -35,7 +35,12 @@
    the SUT returns structured data, the test should assert on shape.
 4. **Confirm no hardcoded secrets or environment-specific URLs.**
    Replace with fixtures or env-driven config before promoting.
-5. **Decide: promote, regenerate, or discard.** If review reveals more
+5. **Optional: run `harness:test-craft` for a deeper quality audit.**
+   `test-craft` runs an 8-axis per-test LLM critique (assertion density,
+   flakiness risk, contract vs implementation, etc.). Use it when the
+   generated test is substantial or when the team wants a second opinion
+   before committing. Not required for simple happy-path tests.
+6. **Decide: promote, regenerate, or discard.** If review reveals more
    than ~3 small fixes, regenerate with a sharper prompt instead.
 
 ### Phase 2: RELOCATE — Move into the Suite
