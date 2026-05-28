@@ -194,6 +194,24 @@ Oracle integrates with the **Harness Engineering Ecosystem** by:
 3. **Mechanical Verification:** Supporting dry-runs via `--recommend-only`
    for early validation by other harness agents (like `harness-planner`)
 
+### Recommended Composition Pattern
+
+Oracle and Harness skills are **complementary, not competing**. The
+recommended flow for test development combines both:
+
+```text
+harness-tdd         → discipline: write failing test first (RED phase)
+/oracle-write-test  → generation: AI writes the test from your description
+harness:test-craft  → quality: 8-axis audit of the generated test
+/oracle-review-test → promotion: move from tests/generated/ to committed suite
+```
+
+`harness-tdd` owns the TDD discipline — write a failing test, watch it
+fail, then implement. `/oracle-write-test` can assist the RED phase by
+generating the failing test stub from a description. The two entry points
+serve different workflows: `harness-tdd` when writing tests yourself,
+`/oracle-write-test` when generating from a prompt.
+
 ## Agent Behavior
 
 ### Branch Hygiene Before Code Changes
