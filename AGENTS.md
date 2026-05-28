@@ -71,13 +71,13 @@ docs/branching-convention
 
 - **CLI:** [agent/cli.py](agent/cli.py) — The primary entry point for
   the agent. Handles command-line arguments and high-level orchestration.
-  Commands: `generate`, `run`, `init`, `migrate`, `setup`, `skills list`,
-  `env-setup` (alias for `setup`), `version`, `feedback`.
+  Commands: `recommend`, `run`, `init`, `migrate`, `setup`, `skills list`,
+  `env-setup` (alias for `setup`), `version`.
 
 ### Core Services (`agent/core/`)
 
-- **Orchestrator:** [agent/core/orchestrator.py][orchestrator] —
-  Coordinates the multi-step generation and execution loop.
+- **Orchestrator:** removed in v3.0 — LLM generation pipeline is now
+  handled by the `/oracle-write-test` slash command in the host session.
 - **Classifier:** [agent/core/classifier.py][classifier] — Identifies
   requirement types and selects target frameworks based on tech stack.
 - **Scaffolder:** [agent/core/scaffolder.py][scaffolder] — Generates the
@@ -109,10 +109,9 @@ docs/branching-convention
   — Strips conversational prose and Markdown fences from raw LLM
   responses, returning bare runnable code. Guards against providers that
   wrap output in narrative introductions.
-- **Selector Healer:** [agent/core/selector_healer.py](agent/core/selector_healer.py)
-  — Detects Playwright selector failures in test output and builds
-  DOM-aware heal prompts. Used by the orchestrator's self-healing loop
-  when a `TimeoutError` or `locator()` failure is detected.
+- **Selector Healer:** removed in v3.0 — DOM-aware selector fix logic was
+  part of the LLM generation pipeline (orchestrator). Replaced by the
+  `/oracle-debug-flake` slash command.
 - **Quality Scorer:** [agent/core/quality_scorer.py](agent/core/quality_scorer.py)
   — Static analysis scorer for Oracle-generated test files. Scores on
   three dimensions: coverage breadth (test count + error path coverage),
@@ -135,11 +134,8 @@ docs/branching-convention
 - **CI Environment:** [agent/core/ci_env.py](agent/core/ci_env.py)
   — Detects CI environment variables (`CI`, `GITHUB_ACTIONS`, etc.) to
   enable headless optimizations and force JSON output in pipelines.
-- **Feedback:** [agent/core/feedback.py](agent/core/feedback.py)
-  — Builds a pre-filled GitHub issue URL from the last `oracle generate`
-  run. Loads `.oracle/last_generation.json` (written by the orchestrator
-  after each generation) and encodes prompt, framework, test type,
-  provider, and model into the URL. Invoked via `oracle feedback`.
+- **Feedback:** removed in v3.0 — was tied to `oracle generate`, which is
+  also removed. Share feedback via Claude Code conversation snippets.
 
 ### Claude Code Plugin (`.claude-plugin/`)
 
@@ -161,13 +157,10 @@ generation via slash commands.
 
 ### LLM Layer (`agent/llm/`)
 
-- **Client:** [agent/llm/client.py][llm-client] — High-level LLM
-  interaction client providing a unified interface for various providers.
-- **Factory:** [agent/llm/factory.py][llm-factory] — Factory class for
-  creating LLM provider instances based on project configuration.
-- **Providers:** [agent/llm/providers/](agent/llm/providers/) — Specific
-  provider implementations: `anthropic` (Claude), `openai`, `codex`
-  (OpenAI Codex), `gemini`, `mock` (deterministic stub for CI).
+Removed in v3.0. The provider matrix (`anthropic`, `openai`, `gemini`,
+`codex`, `mock`), factory, and client are deleted. LLM generation now
+runs through the host Claude Code session via `/oracle-write-test` — no
+API key required.
 
 ### Configuration & Data
 
@@ -183,16 +176,12 @@ generation via slash commands.
   by the agent. These are considered output artifacts and are generally
   excluded from manual review.
 
-### GitHub Actions (`action.yml`, `.github/workflows/`)
+### GitHub Actions (`.github/workflows/`)
 
-The composite action (`action.yml`) and its companion generation and commit
-workflows were deprecated in v3.0. They required an LLM API key secret and are
-superseded by the Claude Code plugin (`/oracle-write-test` slash command), which
-runs generation inside the developer's own authenticated session.
-
-- **Composite action:** [action.yml](action.yml) — marked `[DEPRECATED]`;
-  retained for downstream consumers pinned to v2. Migrate to the Claude Code
-  plugin.
+The composite action (`action.yml`) was removed in v3.0 — it called
+`oracle generate` which no longer exists. Use the Claude Code plugin
+(`/oracle-write-test`) instead; generation runs in the developer's own
+authenticated session with no API key required.
 
 ## Integration with Harness
 
@@ -268,12 +257,9 @@ commit:
 [harness-int]: docs/wiki/Harness-Engineering-Integration.md
 [llm-config]: docs/wiki/LLM-Providers-and-Configuration.md
 [self-healing]: docs/wiki/Self-Healing-and-Feedback-Loop.md
-[orchestrator]: agent/core/orchestrator.py
 [classifier]: agent/core/classifier.py
 [scaffolder]: agent/core/scaffolder.py
 [executor]: agent/core/executor.py
 [recommender]: agent/core/recommender.py
 [fw-registry]: agent/core/framework_registry.py
-[llm-client]: agent/llm/client.py
-[llm-factory]: agent/llm/factory.py
 [fw-json]: agent/frameworks/registry.json
