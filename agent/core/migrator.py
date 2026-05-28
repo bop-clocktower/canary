@@ -116,7 +116,7 @@ class MigrationReport:
             lines.append("")
 
         if not self.manual_followups:
-            lines += ["## Status", "", "Migration complete. Run `oracle generate --recommend-only` to verify.", ""]
+            lines += ["## Status", "", "Migration complete. Run `oracle recommend \"<test description>\"` to verify framework detection.", ""]
 
         return "\n".join(lines)
 

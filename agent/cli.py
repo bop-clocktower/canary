@@ -15,190 +15,65 @@ from pathlib import Path
 from typing import Optional
 import typer
 from rich import print
-from rich.console import Console
-from agent.core.feedback import FeedbackPayload, build_issue_url, record_last_generation
 
 app = typer.Typer()
 
 
 @app.command()
-def generate(
+def recommend(
     prompt: str,
-    recommend_only: bool = typer.Option(False, "--recommend-only", "-r", help="Only show the recommendation, skip generation."),
-    output_json: bool = typer.Option(False, "--json", help="Output results in JSON format for tool integration."),
-    run_test: bool = typer.Option(False, "--run", help="Execute the test immediately after generation."),
-    report_format: Optional[str] = typer.Option(None, "--report-format", help="Export a report: json or sarif."),
-    report_file: Optional[str] = typer.Option(None, "--report-file", help="Report output path. Defaults to oracle-report.{format}."),
+    output_json: bool = typer.Option(False, "--json", help="Output as JSON for tool integration."),
 ):
     """
-    Generate test automation code from a natural language prompt.
+    Classify a test prompt and recommend the best framework — no API key required.
 
-    DEPRECATED: this command requires a provider API key and will be
-    removed in v3.0. Use the `/oracle-write-test` slash command from
-    the Claude Code plugin instead — it runs the same generation in
-    the host session with no API key required. See
-    docs/adr/0003-deprecate-oracle-generate.md.
-
-    Args:
-        prompt: Natural language description of the test requirements.
-        recommend_only: If True, identifies the framework but skips code generation.
-        output_json: If True, outputs machine-readable JSON instead of styled text.
-        run_test: If True, executes the generated test using the identified framework.
+    Runs Oracle's classifier + recommender pipeline locally and returns the
+    framework, file extension, and reasoning. Use /oracle-pick-framework from
+    the Claude Code plugin for an interactive version with Capillary overlays.
     """
-    from agent.core.orchestrator import OracleOrchestrator
-    from agent.core.ci_env import is_ci
+    from agent.core.classifier import TestClassifier, extract_framework_hint
+    from agent.core.recommender import FrameworkRecommender
 
-    # In CI, force machine-readable output so pipelines don't have to parse Rich markup.
-    output_json = output_json or is_ci()
+    classifier = TestClassifier()
+    recommender = FrameworkRecommender()
 
-    # Deprecation warning — print to stderr so JSON output on stdout stays clean
-    # for pipeline consumers. The `--recommend-only` path doesn't call the LLM
-    # and stays keyless, so we don't warn for it.
-    if not recommend_only:
-        Console(stderr=True).print(
-            "[bold yellow]⚠ oracle generate is deprecated[/bold yellow] "
-            "and will be removed in v3.0. Migrate to the "
-            "[bold]/oracle-write-test[/bold] slash command "
-            "(Claude Code plugin) — no API key required. "
-            "See ADR 0003.",
-        )
-
-    if not output_json:
-        print("\n[bold cyan]🦇 Oracle Processing Request...[/bold cyan]\n")
-
-    if recommend_only:
-        from agent.core.classifier import TestClassifier, extract_framework_hint
-        from agent.core.recommender import FrameworkRecommender
-
-        classifier = TestClassifier()
-        recommender = FrameworkRecommender()
-
-        classification = classifier.classify(prompt)
-        results = recommender.recommend(
-            classification,
-            framework_hint=extract_framework_hint(prompt),
-        )
-        result = results[0] if results else {
-            "framework": None,
-            "file_extension": "ts",
-            "reason": ["No matching framework found"],
-        }
-        alternatives = [r["framework"] for r in results[1:]]
-
-        if output_json:
-            payload = {
-                "status": "success",
-                "mode": "recommendation",
-                "test_type": classification.test_type,
-                "framework": result["framework"],
-                "file_extension": result["file_extension"],
-                "reasoning": result["reason"],
-                "alternatives": alternatives,
-            }
-            if result.get("warning"):
-                payload["license"] = result.get("license")
-                payload["warning"] = result["warning"]
-            _sys.stdout.write(json.dumps(payload, indent=2) + "\n")
-            return
-
-        print("[bold green]✅ Oracle Recommendation (Draft Mode)[/bold green]\n")
-        print(f"[bold]Test Type:[/bold] {classification.test_type}")
-        print(f"[bold]Framework:[/bold] {result['framework']}")
-        print("\n[bold]Reasoning:[/bold]")
-        for r in result["reason"]:
-            print(f" - {r}")
-        if result.get("warning"):
-            print(f"\n[yellow]⚠ License: {result['warning']}[/yellow]")
-        if alternatives:
-            print(f"\n[bold]Alternatives:[/bold] {', '.join(alternatives)}")
-        print("\n[yellow]Note: Generation skipped due to --recommend-only flag.[/yellow]")
-        return
-
-    orchestrator = OracleOrchestrator()
-    result = orchestrator.run(prompt, execute=run_test)
-
-    feedback_payload = FeedbackPayload(
-        prompt=prompt,
-        test_type=result["test_type"],
-        framework=result["framework"],
-        provider=result.get("provider", "unknown"),
-        model=result.get("model", "unknown"),
-        output_file=result["output_file"],
+    classification = classifier.classify(prompt)
+    results = recommender.recommend(
+        classification,
+        framework_hint=extract_framework_hint(prompt),
     )
-    try:
-        record_last_generation(feedback_payload)
-    except OSError:
-        pass  # Recording is best-effort; never break generate on disk errors.
-    feedback_url = build_issue_url(feedback_payload)
-
-    report_path = None
-    if report_file and not report_format:
-        import sys
-        print("Warning: --report-file ignored: --report-format not set.", file=sys.stderr)
-    if report_format:
-        from agent.core.reporter import Reporter
-        try:
-            report_path = str(Reporter().write(result, report_format, report_file))
-        except ValueError as e:
-            if not output_json:
-                print(f"\n[bold red]Report error:[/bold red] {e}")
+    result = results[0] if results else {
+        "framework": None,
+        "file_extension": "ts",
+        "reason": ["No matching framework found"],
+    }
+    alternatives = [r["framework"] for r in results[1:]]
 
     if output_json:
-        _sys.stdout.write(json.dumps({
+        payload = {
             "status": "success",
-            "mode": "full_generation",
-            "test_type": result["test_type"],
+            "test_type": classification.test_type,
             "framework": result["framework"],
-            "output_file": result["output_file"],
-            "reasoning": result["reasoning"],
-            "quality": result.get("quality"),
-            "execution": result.get("execution"),
-            "feedback_url": feedback_url,
-            **({"report_file": report_path} if report_path is not None else {}),
-        }, indent=2) + "\n")
+            "file_extension": result["file_extension"],
+            "reasoning": result["reason"],
+            "alternatives": alternatives,
+        }
+        if result.get("warning"):
+            payload["license"] = result.get("license")
+            payload["warning"] = result["warning"]
+        _sys.stdout.write(json.dumps(payload, indent=2) + "\n")
         return
 
-    print("\n[bold green]✅ Oracle Result[/bold green]\n")
-
-    print(f"[bold]Test Type:[/bold] {result['test_type']}")
+    print("[bold green]✅ Oracle Recommendation[/bold green]\n")
+    print(f"[bold]Test Type:[/bold] {classification.test_type}")
     print(f"[bold]Framework:[/bold] {result['framework']}")
-
     print("\n[bold]Reasoning:[/bold]")
-    for r in result["reasoning"]:
+    for r in result["reason"]:
         print(f" - {r}")
-
-    print("\n[bold yellow]Output File:[/bold yellow]")
-    print(result["output_file"])
-
-    quality = result.get("quality")
-    if quality:
-        grade_color = {"A": "green", "B": "cyan", "C": "yellow", "D": "yellow", "F": "red"}.get(quality["grade"], "white")
-        print(f"\n[bold]Quality Score:[/bold] [{grade_color}]{quality['score']}/100 ({quality['grade']})[/{grade_color}]")
-        print(f"  Coverage breadth:   {quality['coverage_breadth']:>3}")
-        print(f"  Assertion density:  {quality['assertion_density']:>3}")
-        print(f"  Flakiness risk:     {quality['flakiness_risk']:>3}")
-        for detail in quality["details"]:
-            print(f"  [dim]{detail}[/dim]")
-
-    if report_path:
-        print(f"\n[bold yellow]Report:[/bold yellow] {report_path}")
-
-    if "execution" in result:
-        print("\n[bold cyan]🚀 Execution Results:[/bold cyan]")
-        exec_res = result["execution"]
-        color = "green" if exec_res["exit_code"] == 0 else "red"
-        print(f"[{color}]Exit Code: {exec_res['exit_code']}[/{color}]")
-        if exec_res["stderr"]:
-            print(f"[red]Error Output:[/red]\n{exec_res['stderr']}")
-        if exec_res["stdout"]:
-            # truncate stdout for readability
-            stdout_preview = exec_res["stdout"][:500] + ("..." if len(exec_res["stdout"]) > 500 else "")
-            print(f"[dim]Standard Output:[/dim]\n{stdout_preview}")
-
-    Console(soft_wrap=True).print(
-        "\n[dim]💬 Report feedback (public link — review before submitting): "
-        f"{feedback_url}[/dim]"
-    )
+    if result.get("warning"):
+        print(f"\n[yellow]⚠ License: {result['warning']}[/yellow]")
+    if alternatives:
+        print(f"\n[bold]Alternatives:[/bold] {', '.join(alternatives)}")
 
 
 @app.command()
@@ -361,39 +236,6 @@ def version():
     except PackageNotFoundError:
         ver = "unknown"
     print(f"[bold green]Oracle AI v{ver}[/bold green]")
-
-
-@app.command()
-def feedback():
-    """
-    Print a pre-filled GitHub issue URL for the most recent `oracle generate`.
-
-    DEPRECATED: tied to `oracle generate`, which itself is deprecated.
-    Both removed in v3.0. The plugin path doesn't need a feedback
-    command — share Claude Code conversation snippets directly.
-    """
-    from agent.core.feedback import build_issue_url, load_last_generation
-    from rich.console import Console
-
-    Console(stderr=True).print(
-        "[bold yellow]⚠ oracle feedback is deprecated[/bold yellow] "
-        "and will be removed in v3.0 alongside `oracle generate`. "
-        "See ADR 0003.",
-    )
-
-    payload = load_last_generation()
-    if payload is None:
-        print(
-            "[yellow]No recent generation found.[/yellow] "
-            "Run [bold]oracle generate \"...\"[/bold] first."
-        )
-        raise typer.Exit(1)
-    url = build_issue_url(payload)
-    Console(soft_wrap=True).print(
-        "[bold cyan]💬 Report feedback[/bold cyan] "
-        "[dim](public link — review before submitting):[/dim]\n"
-        f"{url}"
-    )
 
 
 # ---------------------------------------------------------------------------
