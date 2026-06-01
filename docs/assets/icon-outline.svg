@@ -2,6 +2,7 @@
   <title>Canary icon — outline variant</title>
   <desc>Geometric canary bird mark, outline/ghost style</desc>
   <rect width="64" height="64" rx="10" fill="none" stroke="#F0C040" stroke-width="1.5"/>
+  <g transform="translate(7,-6)">
   <!-- Body -->
   <polygon points="14,52 26,28 40,26 42,48 32,58 18,60" fill="none" stroke="#F0C040" stroke-width="1.5" stroke-linejoin="round"/>
   <!-- Wing upper -->
@@ -16,4 +17,5 @@
   <circle cx="10" cy="37" r="2" fill="#F0C040"/>
   <!-- Beak -->
   <polygon points="4,39 0,42 4,44" fill="#F0C040"/>
+  </g>
 </svg>

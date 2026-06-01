@@ -2,6 +2,7 @@
   <title>Canary icon — dark variant</title>
   <desc>Geometric canary bird mark on obsidian background</desc>
   <rect width="64" height="64" rx="10" fill="#0A0A0A"/>
+  <g transform="translate(7,-9)">
   <!-- Body -->
   <polygon points="14,52 26,28 40,26 42,48 32,58 18,60" fill="#F0C040"/>
   <!-- Wing upper -->
@@ -20,4 +21,5 @@
   <polygon points="4,39 0,42 4,44" fill="#E8B830"/>
   <!-- Black Canary band -->
   <rect x="6" y="44" width="16" height="4" rx="1" fill="#000" opacity="0.4"/>
+  </g>
 </svg>
