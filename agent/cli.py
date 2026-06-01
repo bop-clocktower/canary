@@ -225,6 +225,197 @@ def migrate(
         print("\n[dim]Re-run with [bold]--apply[/bold] to write these files.[/dim]")
 
 
+@app.command("review-test")
+def review_test(
+    path: str = typer.Argument(..., help="Test file or directory to lint."),
+    static: bool = typer.Option(True, "--static/--no-static", help="Run static-only analysis (no LLM). Currently the only supported mode."),
+    framework: Optional[str] = typer.Option(None, "--framework", "-f", help="Force framework: pytest, playwright, vitest, k6."),
+    output_json: bool = typer.Option(False, "--json", help="Output findings as JSON."),
+):
+    """
+    Lint test files for quality issues — no LLM or API key required.
+
+    Checks for brittle selectors, hardcoded sleeps, missing assertions,
+    random values, timestamp dependencies, missing awaits, and magic numbers.
+    For generative critique, use /canary-review-test in Claude Code.
+    """
+    from agent.core.static_linter import StaticLinter
+
+    target = Path(path)
+    files = sorted(target.rglob("test_*.py") or []) + sorted(target.rglob("*.spec.ts") or []) \
+        if target.is_dir() else [target]
+    if target.is_dir():
+        files = sorted(
+            list(target.rglob("test_*.py")) +
+            list(target.rglob("*.spec.ts")) +
+            list(target.rglob("*.spec.js")) +
+            list(target.rglob("*.test.ts")) +
+            list(target.rglob("*.test.js"))
+        )
+    else:
+        files = [target]
+
+    linter = StaticLinter()
+    all_findings = []
+    for f in files:
+        all_findings.extend(linter.lint(f, framework=framework))
+
+    if output_json:
+        import json as _json
+        payload = [
+            {"file": f.file, "line": f.line, "rule": f.rule,
+             "severity": f.severity, "message": f.message, "suggestion": f.suggestion}
+            for f in all_findings
+        ]
+        _sys.stdout.write(_json.dumps(payload, indent=2) + "\n")
+        return
+
+    if not all_findings:
+        print("[bold green]✅ No issues found.[/bold green]")
+        return
+
+    severity_order = {"critical": 0, "warning": 1, "info": 2}
+    all_findings.sort(key=lambda f: (f.file, f.line, severity_order.get(f.severity, 9)))
+
+    counts = {"critical": 0, "warning": 0, "info": 0}
+    for f in all_findings:
+        counts[f.severity] = counts.get(f.severity, 0) + 1
+        color = {"critical": "red", "warning": "yellow", "info": "dim"}.get(f.severity, "white")
+        print(f"[{color}][{f.severity.upper()}][/{color}] {f.file}:{f.line} [dim]({f.rule})[/dim]")
+        print(f"  {f.message}")
+        print(f"  [dim]→ {f.suggestion}[/dim]\n")
+
+    summary_parts = []
+    if counts["critical"]:
+        summary_parts.append(f"[red]{counts['critical']} critical[/red]")
+    if counts["warning"]:
+        summary_parts.append(f"[yellow]{counts['warning']} warning[/yellow]")
+    if counts["info"]:
+        summary_parts.append(f"[dim]{counts['info']} info[/dim]")
+    print(f"[bold]{len(all_findings)} finding(s):[/bold] {', '.join(summary_parts)}")
+
+    if counts["critical"]:
+        raise typer.Exit(1)
+
+
+@app.command("flake-check")
+def flake_check(
+    path: str = typer.Argument(..., help="Test file or directory to check."),
+    output_json: bool = typer.Option(False, "--json", help="Output findings as JSON."),
+):
+    """
+    Detect flakiness patterns in test files — no LLM or API key required.
+
+    Flags hardcoded sleeps, non-deterministic random values, timestamp
+    dependencies, and setTimeout without waitFor. For root-cause diagnosis
+    of a specific intermittent failure, use /canary-debug-flake in Claude Code.
+    """
+    from agent.core.static_linter import StaticLinter
+
+    target = Path(path)
+    if target.is_dir():
+        files = sorted(
+            list(target.rglob("test_*.py")) +
+            list(target.rglob("*.spec.ts")) +
+            list(target.rglob("*.spec.js")) +
+            list(target.rglob("*.test.ts")) +
+            list(target.rglob("*.test.js"))
+        )
+    else:
+        files = [target]
+
+    linter = StaticLinter()
+    all_findings = []
+    for f in files:
+        all_findings.extend(linter.flake_check(f))
+
+    if output_json:
+        import json as _json
+        payload = [
+            {"file": f.file, "line": f.line, "rule": f.rule,
+             "severity": f.severity, "message": f.message, "suggestion": f.suggestion}
+            for f in all_findings
+        ]
+        _sys.stdout.write(_json.dumps(payload, indent=2) + "\n")
+        return
+
+    if not all_findings:
+        print("[bold green]✅ No flakiness patterns detected.[/bold green]")
+        return
+
+    for f in all_findings:
+        color = "red" if f.severity == "critical" else "yellow"
+        print(f"[{color}][{f.severity.upper()}][/{color}] {f.file}:{f.line} [dim]({f.rule})[/dim]")
+        print(f"  {f.message}")
+        print(f"  [dim]→ {f.suggestion}[/dim]\n")
+
+    print(f"[bold]{len(all_findings)} flakiness pattern(s) found.[/bold]")
+    raise typer.Exit(1)
+
+
+@app.command("heal-test")
+def heal_test(
+    path: str = typer.Argument(..., help="Test file to heal."),
+    pattern: bool = typer.Option(True, "--pattern/--no-pattern", help="Apply regex-safe pattern fixes (no LLM)."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
+    output_json: bool = typer.Option(False, "--json", help="Output results as JSON."),
+):
+    """
+    Apply deterministic pattern fixes to a test file — no LLM or API key required.
+
+    Auto-fixes hardcoded sleeps (replaced with TODO comments) and missing awaits
+    before Playwright actions. Brittle selectors are flagged but not auto-fixed —
+    selector repair requires DOM context; use /canary-heal-test in Claude Code.
+    """
+    from agent.core.pattern_healer import PatternHealer
+
+    target = Path(path)
+    if not target.is_file():
+        print(f"[red]Error: {path} is not a file.[/red]")
+        raise typer.Exit(1)
+
+    healer = PatternHealer()
+    result = healer.heal(target)
+
+    if output_json:
+        import json as _json
+        payload = {
+            "file": result.file,
+            "changed": result.changed,
+            "changes": [
+                {"line": c.line, "rule": c.rule, "description": c.description,
+                 "before": c.before.strip(), "after": c.after.strip()}
+                for c in result.changes
+            ],
+            "skipped": result.skipped,
+        }
+        _sys.stdout.write(_json.dumps(payload, indent=2) + "\n")
+        if result.changed and not dry_run:
+            target.write_text(result.patched_content, encoding="utf-8")
+        return
+
+    if not result.changed:
+        print("[bold green]✅ No auto-fixable patterns found.[/bold green]")
+        for s in result.skipped:
+            print(f"[yellow]⚠ Skipped:[/yellow] {s}")
+        return
+
+    print(f"[bold cyan]🔧 Pattern fixes for {path}[/bold cyan]\n")
+    for c in result.changes:
+        print(f"[green]line {c.line}[/green] [dim]({c.rule})[/dim] {c.description}")
+        print(f"  [red]- {c.before.strip()}[/red]")
+        print(f"  [green]+ {c.after.strip()}[/green]\n")
+
+    for s in result.skipped:
+        print(f"[yellow]⚠ Skipped:[/yellow] {s}\n")
+
+    if dry_run:
+        print(f"[dim]{len(result.changes)} fix(es) ready. Re-run without --dry-run to apply.[/dim]")
+    else:
+        target.write_text(result.patched_content, encoding="utf-8")
+        print(f"[bold green]✅ {len(result.changes)} fix(es) applied to {path}[/bold green]")
+
+
 @app.command()
 def version():
     """
