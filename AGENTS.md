@@ -77,7 +77,7 @@ docs/branching-convention
 ### Core Services (`agent/core/`)
 
 - **Orchestrator:** removed in v3.0 — LLM generation pipeline is now
-  handled by the `/oracle-write-test` slash command in the host session.
+  handled by the `/canary-write-test` slash command in the host session.
 - **Classifier:** [agent/core/classifier.py][classifier] — Identifies
   requirement types and selects target frameworks based on tech stack.
 - **Scaffolder:** [agent/core/scaffolder.py][scaffolder] — Generates the
@@ -111,7 +111,7 @@ docs/branching-convention
   wrap output in narrative introductions.
 - **Selector Healer:** removed in v3.0 — DOM-aware selector fix logic was
   part of the LLM generation pipeline (orchestrator). Replaced by the
-  `/oracle-debug-flake` slash command.
+  `/canary-debug-flake` slash command.
 - **Quality Scorer:** [agent/core/quality_scorer.py](agent/core/quality_scorer.py)
   — Static analysis scorer for Oracle-generated test files. Scores on
   three dimensions: coverage breadth (test count + error path coverage),
@@ -122,19 +122,19 @@ docs/branching-convention
 - **Reporter:** [agent/core/reporter.py](agent/core/reporter.py)
   — Exports generation and execution results to JSON or SARIF for
   ingestion by Datadog, SonarQube, and GitHub Code Scanning. Invoked via
-  `oracle generate --report-format json|sarif`.
+  `canary generate --report-format json|sarif`.
 - **Migrator:** [agent/core/migrator.py](agent/core/migrator.py)
   — Detects harness-scaffolded test projects (via `harness.config.json`
   and `.harness/`) and migrates them to Oracle's layout without touching
-  existing test files. Invoked via `oracle migrate`.
+  existing test files. Invoked via `canary migrate`.
 - **Skill Registry:** [agent/core/skill_registry.py](agent/core/skill_registry.py)
   — Discovers bundled default skills and local project overlay skills
-  (from `.oracle/skills/`) for slash command resolution via `oracle
+  (from `.canary/skills/`) for slash command resolution via `canary
   skills list`.
 - **CI Environment:** [agent/core/ci_env.py](agent/core/ci_env.py)
   — Detects CI environment variables (`CI`, `GITHUB_ACTIONS`, etc.) to
   enable headless optimizations and force JSON output in pipelines.
-- **Feedback:** removed in v3.0 — was tied to `oracle generate`, which is
+- **Feedback:** removed in v3.0 — was tied to `canary generate`, which is
   also removed. Share feedback via Claude Code conversation snippets.
 
 ### Claude Code Plugin (`.claude-plugin/`)
@@ -144,22 +144,22 @@ generation via slash commands.
 
 - **MCP server:** [agent/mcp_server.py](agent/mcp_server.py) — FastMCP
   server exposing six tools to Claude Code:
-  `oracle__analyze_file`, `oracle__write_test_file`, `oracle__run_tests`,
-  `oracle__init_suite`, `oracle__list_frameworks`, `oracle__migrate`.
+  `canary__analyze_file`, `canary__write_test_file`, `canary__run_tests`,
+  `canary__init_suite`, `canary__list_frameworks`, `canary__migrate`.
 - **Manifest:** [.claude-plugin/plugin.json](.claude-plugin/plugin.json)
 - **Agents:** `agents/` — seven agent definitions:
-  `oracle-test-generator`, `oracle-test-author`, `oracle-test-reviewer`,
-  `oracle-initializer`, `oracle-migrator`, `oracle-framework-advisor`,
-  `oracle-flake-hunter`.
+  `canary-test-generator`, `canary-test-author`, `canary-test-reviewer`,
+  `canary-initializer`, `canary-migrator`, `canary-framework-advisor`,
+  `canary-flake-hunter`.
 - **Skills:** `agents/skills/` — three slash commands:
-  `/oracle:generate`, `/oracle:init`, `/oracle:migrate`.
+  `/canary:generate`, `/canary:init`, `/canary:migrate`.
 - **Activate:** load the repo root as a Claude Code plugin.
 
 ### LLM Layer (`agent/llm/`)
 
 Removed in v3.0. The provider matrix (`anthropic`, `openai`, `gemini`,
 `codex`, `mock`), factory, and client are deleted. LLM generation now
-runs through the host Claude Code session via `/oracle-write-test` — no
+runs through the host Claude Code session via `/canary-write-test` — no
 API key required.
 
 ### Configuration & Data
@@ -179,8 +179,8 @@ API key required.
 ### GitHub Actions (`.github/workflows/`)
 
 The composite action (`action.yml`) was removed in v3.0 — it called
-`oracle generate` which no longer exists. Use the Claude Code plugin
-(`/oracle-write-test`) instead; generation runs in the developer's own
+`canary generate` which no longer exists. Use the Claude Code plugin
+(`/canary-write-test`) instead; generation runs in the developer's own
 authenticated session with no API key required.
 
 ## Integration with Harness
@@ -201,16 +201,16 @@ recommended flow for test development combines both:
 
 ```text
 harness-tdd         → discipline: write failing test first (RED phase)
-/oracle-write-test  → generation: AI writes the test from your description
+/canary-write-test  → generation: AI writes the test from your description
 harness:test-craft  → quality: 8-axis audit of the generated test
-/oracle-review-test → promotion: move from tests/generated/ to committed suite
+/canary-review-test → promotion: move from tests/generated/ to committed suite
 ```
 
 `harness-tdd` owns the TDD discipline — write a failing test, watch it
-fail, then implement. `/oracle-write-test` can assist the RED phase by
+fail, then implement. `/canary-write-test` can assist the RED phase by
 generating the failing test stub from a description. The two entry points
 serve different workflows: `harness-tdd` when writing tests yourself,
-`/oracle-write-test` when generating from a prompt.
+`/canary-write-test` when generating from a prompt.
 
 ## Agent Behavior
 
