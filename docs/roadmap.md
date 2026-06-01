@@ -491,7 +491,7 @@ when the project already holds an active license.
   skills Harness already covers well stay where they are. Rationale: Harness is
   strong at code quality, architecture enforcement, and unit-level testing;
   Oracle's edge is integration tests, E2E, API contract tests, and
-  cross-service flows — exactly where Optum testing lives. This decision
+  cross-service flows — exactly where the team's testing lives. This decision
   unblocks the keyless CLI companions work below.
 - **Blockers:** none
 - **Plan:** none
