@@ -83,14 +83,15 @@ The 400 response from Finding 2 is not listed in the OpenAPI responses object
 code and the default 422 validation error. Custom `HTTPException` responses
 need explicit `responses=` declarations in the route decorator.
 
-**Fix required:** Add `responses={400: {"description": "Validation error"}, 401: {"description": "Unauthorized"}}` to the route.
+**Fix required:** Add explicit `responses=` declarations to the route decorator
+for the 400 and 401 cases so clients have a documented error contract.
 
 ---
 
 ## Comparison to the existing hand-written suite
 
 | Case | Hand-written suite | Schemathesis |
-|---|---|---|
+| --- | --- | --- |
 | 201 success | ✅ | ✅ (implicit) |
 | 400 empty items | ✅ | ✅ + found schema mismatch |
 | 401 missing auth | ✅ | — (auth bypassed for coverage) |
@@ -108,6 +109,7 @@ cases and 1 second of runtime.
 category in `registry.json`.
 
 Rationale:
+
 - It found a real coercion bug (qty=false → 0) that a hand-written suite
   wouldn't think to test — property-based input generation is the key
   differentiator.
