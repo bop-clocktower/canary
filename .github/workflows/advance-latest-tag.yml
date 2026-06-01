@@ -4,7 +4,7 @@ name: Advance latest tag
 # GitHub Release is published.  This keeps
 #   pipx install git+https://github.com/bop-clocktower/canary@latest
 # and
-#   pipx upgrade oracle-test-ai
+#   pipx upgrade canary-test-ai
 # pointing at the newest stable release without requiring users to update
 # their install spec on every version bump.
 
