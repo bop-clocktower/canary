@@ -40,15 +40,19 @@ plus the `harness` MCP server. Add it as a local marketplace:
 
 ```bash
 /plugin marketplace add https://github.com/bri-stevenski/oracle-test-ai-agent
-/plugin install oracle@oracle
+/plugin install oracle
 ```
 
 Or, if you've already cloned the repo:
 
 ```bash
 /plugin marketplace add /path/to/oracle-test-ai-agent
-/plugin install oracle@oracle
+/plugin install oracle
 ```
+
+> **Tip:** the `@<marketplace>` qualifier (e.g. `oracle@oracle`) is only needed
+> when multiple marketplaces ship a plugin with the same name. If the short name
+> is unambiguous, `oracle` alone is sufficient.
 
 > **Note:** the plugin shells out to the `oracle` CLI for code generation, so
 > install the Python package first (above) and set `OPENAI_API_KEY` before
