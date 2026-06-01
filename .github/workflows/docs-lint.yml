@@ -23,12 +23,17 @@ jobs:
         run: npx --yes markdownlint-cli "**/*.md" --ignore node_modules --ignore plugins
 
   removed-symbols:
-    name: No references to removed surfaces
+    name: No removed-symbol or proprietary leaks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - name: Check docs for removed-symbol drift
+      - name: Check for removed-symbol drift and proprietary leaks
+        # The company denylist is supplied privately via a repo secret so the
+        # public workflow names no company. If the secret is unset, only the
+        # generic structural checks run.
+        env:
+          CANARY_PROPRIETARY_DENYLIST: ${{ secrets.CANARY_PROPRIETARY_DENYLIST }}
         run: python3 scripts/check_removed_symbols.py
