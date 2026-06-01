@@ -77,6 +77,37 @@
       "avoid_when": []
     },
     {
+      "name": "schemathesis",
+      "display_name": "Schemathesis",
+      "category": "api",
+      "categories": ["api"],
+      "languages": ["python"],
+      "file_extensions": ["py"],
+      "file_patterns": ["test_*.py", "*_test.py"],
+      "execution_command": "schemathesis run {file}",
+      "ci_flags": ["--checks", "all", "--max-response-time", "2000"],
+      "ecosystems": ["python", "openapi", "rest"],
+      "status": "supported",
+      "license": "MIT",
+      "maturity": "high",
+      "community_size": "medium",
+      "recommended_for": [
+        "property-based API testing",
+        "OpenAPI fuzz testing",
+        "finding schema/implementation drift"
+      ],
+      "strengths": [
+        "Automatically generates test cases from OpenAPI schemas",
+        "Finds coercion bugs and undocumented responses hand-written tests miss",
+        "Zero test code required — point at an OpenAPI URL",
+        "MIT licensed, no API key, no external service"
+      ],
+      "avoid_when": [
+        "No OpenAPI/Swagger spec available",
+        "API has destructive side-effects not safe to trigger randomly (use --dry-run or filter operations)"
+      ]
+    },
+    {
       "name": "k6",
       "display_name": "k6",
       "category": "performance",
