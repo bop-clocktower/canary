@@ -82,8 +82,9 @@ Promotion is its own workflow — don't collapse it into this one.
 - **`agent/frameworks/registry.json`** — Maps `test_type` → framework.
   Edit here when adding a new framework; never hard-code framework
   choices in callers.
-- **`agent/llm/factory.py`** — Provider selection. Override via
-  `CANARY_LLM_PROVIDER=<anthropic|gemini|openai|mock>` env.
+- **Generation runs in your Claude Code session** — there is no LLM
+  provider layer or API key to configure (the `agent/llm/` layer was
+  removed in v3.0).
 
 ## Success Criteria
 
@@ -152,9 +153,8 @@ unrealistic, surface that to the requester before promoting.
 - **When the registry has no entry for the classified `test_type`:**
   Stop and file a registry update. Do not invent a framework name.
 - **When the generated test repeatedly fails to parse:** This usually
-  means the prompt is under-specified or the LLM provider is the wrong
-  fit for the framework. Try a different provider via
-  `CANARY_LLM_PROVIDER` before assuming a bug.
+  means the prompt is under-specified. Narrow it to a single behavior
+  and regenerate before assuming a bug.
 - **When execution requires creds you don't have:** Surface the
   missing-cred error to the user; never embed dummy creds in a generated
   test to make it "run".

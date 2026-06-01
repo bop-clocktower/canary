@@ -2,34 +2,13 @@
 
 Common problems and how to fix them.
 
-## API Key Errors
+## "Canary needs an API key"
 
-**Error:** `AuthenticationError` or `Invalid API key`
-
-This means Canary can't connect to the LLM provider.
-
-**Fix:** Make sure your API key is set in your shell session:
-
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
-
-If you've set it before but it's gone, you may need to re-add
-it to your shell config (`~/.zshrc` or `~/.bashrc`) and reload:
-
-```bash
-source ~/.zshrc
-```
-
-To confirm the key is set:
-
-```bash
-echo $ANTHROPIC_API_KEY
-```
-
-Using a different provider? See
-[LLM Providers & Configuration](LLM-Providers-and-Configuration.md)
-for the correct env variable names.
+It doesn't. Canary runs as a Claude Code plugin and uses your Claude Code
+session for all LLM work — there is no provider API key to set. The CLI
+commands (`recommend`, `init`, `run`, `migrate`) are deterministic and make no
+LLM calls. If a doc, script, or older fork tells you to set `ANTHROPIC_API_KEY`
+or `CANARY_LLM_PROVIDER`, it predates v3 and is out of date.
 
 ## Canary Command Not Found
 
@@ -56,8 +35,8 @@ in the framework registry.
 **Fix:** This usually means the prompt was vague or the classifier
 made an unexpected guess. Try adding the test type explicitly:
 
-```bash
-canary generate "API test: GET /v1/users returns 200"
+```text
+/canary-write-test  API test: GET /v1/users returns 200
 ```
 
 Or check the registry for the available categories:
@@ -108,9 +87,9 @@ ambiguous.
 
 **Fix:** Be more explicit. Add the test type to the prompt:
 
-```bash
-canary generate "API test: POST /v1/orders with a valid payload
-should return 201 and an order ID"
+```text
+/canary-write-test  API test: POST /v1/orders with a valid payload
+should return 201 and an order ID
 ```
 
 See [Writing Good Prompts](Writing-Good-Prompts.md) for more
@@ -134,15 +113,12 @@ The most common CI failures:
 **Symptom:** The output file exists but contains no test code,
 or contains garbled output.
 
-This usually means the LLM response was truncated or the
-provider had a transient error.
+This usually means the model response in your Claude Code session was
+truncated or interrupted.
 
-**Fix:** Rerun the same command. If it fails repeatedly, try
-a different provider:
-
-```bash
-CANARY_LLM_PROVIDER=openai canary generate "..."
-```
+**Fix:** Re-run the `/canary-write-test` command in Claude Code. If the
+problem persists, narrow the prompt to a single behavior so the generation
+fits comfortably in one response.
 
 ## Can't Find the Generated File
 

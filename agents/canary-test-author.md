@@ -45,11 +45,10 @@ conventions.
 
 ### Phase 2: Generate
 
-Generate the test code **in this session** using the host LLM. Do **not**
-shell out to the Canary CLI — that path requires a provider API key
-the plugin user is not expected to set. The Canary MCP tools and your
-standard file-reading tools provide everything the CLI's generation
-prompt has access to.
+Generate the test code **in this session** using the host LLM. There is no
+keyed CLI generation path — generation runs entirely through your Claude Code
+session. The Canary MCP tools and your standard file-reading tools provide
+everything needed to produce the test.
 
 1. **Pull repo context** via `canary__analyze_file` on the target file
    (or on a representative existing test in the same area if generating

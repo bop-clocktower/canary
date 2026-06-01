@@ -41,11 +41,11 @@ Test that submitting valid credentials on the login page
 redirects the user to the dashboard
 ```
 
-Run it:
+Run it — in Claude Code:
 
-```bash
-canary generate "Test that submitting valid credentials on the
-login page redirects the user to the dashboard"
+```text
+/canary-write-test  Test that submitting valid credentials on the
+login page redirects the user to the dashboard
 ```
 
 Canary classifies this as an end-to-end UI test and generates
@@ -131,9 +131,9 @@ draft, not a final product.
 
 If the type is wrong, tell it explicitly:
 
-```bash
-canary generate "Test that the cart persists after page refresh
--- this is an end-to-end browser test"
+```text
+/canary-write-test  Test that the cart persists after page refresh
+-- this is an end-to-end browser test
 ```
 
 If the generated test is almost right but misses something,

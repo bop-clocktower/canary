@@ -1,51 +1,19 @@
-# LLM Providers & Configuration 🤖
+# LLM Providers & Configuration
 
-Canary is designed to be **LLM-agnostic**. You can switch between
-different AI backends without changing the core test generation logic.
+> **Removed in v3.0.** Canary no longer has a pluggable LLM-provider layer.
 
-## The Factory Pattern
+Earlier versions (the Oracle POC, ≤ 2.x) shipped a `ProviderFactory` with
+`anthropic` / `gemini` / `openai` / `mock` backends selected via a
+`CANARY_LLM_PROVIDER` (then `ORACLE_LLM_PROVIDER`) environment variable, each
+needing its own API key.
 
-The `ProviderFactory` selects the appropriate backend based on the
-`CANARY_LLM_PROVIDER` environment variable.
+That entire layer (`agent/llm/`) was deleted in v3.0. **There is no API key or
+provider configuration to set.** All LLM work now runs through your Claude Code
+session when you use the plugin:
 
-## Available Providers
+- **Generation** happens in-session via the `canary-test-author` agent
+  (`/canary-write-test`) — see [Getting Started](Getting-Started.md).
+- **The CLI** (`canary recommend`, `init`, `run`, `migrate`) is deterministic
+  and makes no LLM calls.
 
-| Provider | Description | Required Configuration |
-| :--- | :--- | :--- |
-| `anthropic` (Default) | Uses Claude Sonnet for high-quality test generation. | `ANTHROPIC_API_KEY` |
-| `gemini` | Google Gemini Flash for fast, low-cost generation. | `GEMINI_API_KEY` |
-| `openai` | Uses GPT-4o-mini, retained as an alternative. | `OPENAI_API_KEY` |
-| `mock` | Returns static test templates. Used by tests and CI. | None |
-
-## How to Configure
-
-### Switching Providers
-
-To switch to a non-default provider:
-
-```bash
-export CANARY_LLM_PROVIDER='gemini'
-```
-
-The default is `anthropic` (Claude) — no env-var needed to use it.
-
-### Setting API Keys
-
-Canary uses **lazy initialization**: it only loads the provider SDK and
-checks for an API key when generation actually runs. The CLI can run
-`version` or `--recommend-only` commands with no key set, and missing
-optional SDKs (e.g. `google-generativeai`) only break the provider
-that needs them, not the rest of the system.
-
-```bash
-export ANTHROPIC_API_KEY='your-key-here'
-```
-
-## Creating a New Provider
-
-To add a new LLM backend:
-
-1. Create a new file in `agent/llm/providers/`.
-2. Inherit from `BaseProvider` and implement `generate(messages)`.
-3. Register the new provider in `_PROVIDER_REGISTRY` in
-   `agent/llm/factory.py` as `(module_path, class_name)`.
+See [Architecture Deep Dive](Architecture-Deep-Dive.md) for the current model.

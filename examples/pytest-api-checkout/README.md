@@ -32,7 +32,13 @@ See [`prompt.txt`](prompt.txt) for a copy-pasteable version.
 
 ```bash
 cd examples/pytest-api-checkout
-canary generate "$(cat prompt.txt)"
+cat prompt.txt        # the scenario
+```
+
+Then, in Claude Code, generate the test from the scenario:
+
+```text
+/canary-write-test  <paste the contents of prompt.txt>
 ```
 
 Canary will classify as `api`, pick `pytest`, and write a `test_*.py` file.
@@ -103,5 +109,5 @@ def test_missing_auth_returns_401():
 
 ## See also
 
-- [CLI Reference → `canary generate`](../../docs/wiki/CLI-Reference.md)
+- [Getting Started → generating tests](../../docs/wiki/Getting-Started.md)
 - [Writing Good Prompts](../../docs/wiki/Writing-Good-Prompts.md)

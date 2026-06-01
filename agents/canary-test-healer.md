@@ -93,9 +93,8 @@ Without seeing the actual DOM, fixes are guesses.
 
 ### Phase 4: Generate fix
 
-In this session, using the host LLM. Do **not** shell out to the
-Canary CLI — that path requires a provider API key the plugin user
-is not expected to set.
+In this session, using the host LLM. There is no keyed CLI generation
+path — the fix is produced entirely through your Claude Code session.
 
 Inputs to your reasoning:
 

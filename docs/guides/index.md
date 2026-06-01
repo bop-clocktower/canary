@@ -33,14 +33,10 @@ support.
 
 ### [LLM Providers Guide](./llm-providers.md)
 
-The provider abstraction behind every generation call. Covers
-the `BaseProvider` contract, the in-process provider registry,
-the `CANARY_LLM_PROVIDER` env var, the thread-safe singleton
-client, and per-provider capability notes (Anthropic default,
-Gemini, OpenAI, mock).
-
-**Best for:** Switching providers, running tests without paying
-for inference, or adding a new provider.
+**Removed in v3.0.** The `agent/llm/` provider layer was deleted —
+there are no providers to configure and no API key to set. LLM work
+runs through your Claude Code session via the plugin. The guide is kept
+as a removal note pointing to the current model.
 
 ## Related
 

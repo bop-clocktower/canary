@@ -114,18 +114,18 @@ under 1%
 Canary classifies your prompt automatically. If it picks the
 wrong type, add the type explicitly:
 
-```bash
-canary generate "E2E test: ..."
-canary generate "API test: ..."
-canary generate "Unit test: ..."
-canary generate "Load test: ..."
+```text
+/canary-write-test  E2E test: ...
+/canary-write-test  API test: ...
+/canary-write-test  Unit test: ...
+/canary-write-test  Load test: ...
 ```
 
-You can also use `--recommend-only` to preview Canary's
-classification without generating:
+You can also use `canary recommend` to preview Canary's
+classification without generating (deterministic, no LLM call):
 
 ```bash
-canary generate "test the login" --recommend-only
+canary recommend "test the login"
 ```
 
 If Canary's recommendation doesn't match your intent, refine

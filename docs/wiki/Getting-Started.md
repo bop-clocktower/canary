@@ -9,16 +9,14 @@ You'll need:
 
 - Python 3.11 or later (`python --version` to check)
 - Node.js 18 or later (`node --version` to check)
-- An Anthropic API key ([console.anthropic.com][anthropic])
+- Claude Code (Canary runs as a plugin — no separate API key needed)
 - Git
-
-[anthropic]: https://console.anthropic.com
 
 ## Step 1: Install Canary
 
 ```bash
 git clone https://github.com/bop-clocktower/canary.git
-cd canary-test-ai-agent
+cd canary
 pip install -e .
 ```
 
@@ -28,7 +26,7 @@ Verify the install worked:
 canary version
 ```
 
-You should see: `Canary AI v0.1 (MVP)`
+You should see the Canary banner with the version, e.g. `canary  v1.0.0`.
 
 ## Step 2: Open Canary in Claude Code
 
@@ -45,8 +43,10 @@ automatically.
 
 ## Step 3: Generate Your First Test
 
-```bash
-canary generate "Test that GET /api/health returns 200"
+In Claude Code, invoke the test-author persona:
+
+```text
+/canary-write-test  Test that GET /api/health returns 200
 ```
 
 Canary will:
@@ -86,11 +86,13 @@ Read through it. Check that:
 
 ## Step 6: Run the Test
 
+Once the file is written, run it with the CLI executor (deterministic, no key):
+
 ```bash
-canary generate "Test that GET /api/health returns 200" --run
+canary run tests/generated/api/test_api_health_get_200.py pytest
 ```
 
-Or, if you already have the file:
+Or invoke the framework directly:
 
 ```bash
 pytest tests/generated/api/test_api_health_get_200.py
@@ -111,11 +113,11 @@ the full promotion checklist.
 
 ## Want a Preview Without Generating?
 
-Use `--recommend-only` to see what Canary would pick without
-calling the LLM (no API key needed):
+Use `canary recommend` to see what framework Canary would pick, with its
+reasoning — a deterministic CLI command that makes no LLM call:
 
 ```bash
-canary generate "load test the search endpoint" --recommend-only
+canary recommend "load test the search endpoint"
 ```
 
 ## Next Steps
