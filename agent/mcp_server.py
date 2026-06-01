@@ -16,7 +16,7 @@ from agent.core.framework_registry import FrameworkRegistry
 from agent.core.scaffolder import Scaffolder
 from agent.core.migrator import HarnessMigrator
 
-mcp = FastMCP("oracle")
+mcp = FastMCP("canary")
 
 _WORKING_DIR = os.environ.get("CLAUDE_PLUGIN_ROOT", os.getcwd())
 
@@ -278,43 +278,43 @@ def _migrate_impl(target_dir: str, apply: bool) -> dict:
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def oracle__analyze_file(file_path: str) -> dict:
+def canary__analyze_file(file_path: str) -> dict:
     """Analyse a source file and return everything needed to write a test."""
     return _analyze_file_impl(file_path)
 
 
 @mcp.tool()
-def oracle__write_test_file(file_path: str, content: str, framework: str) -> dict:
+def canary__write_test_file(file_path: str, content: str, framework: str) -> dict:
     """Write test content to file_path, creating parent directories as needed."""
     return _write_test_file_impl(file_path, content, framework)
 
 
 @mcp.tool()
-def oracle__run_tests(test_file: str) -> dict:
+def canary__run_tests(test_file: str) -> dict:
     """Run a test file and return exit code and output without raising."""
     return _run_tests_impl(test_file)
 
 
 @mcp.tool()
-def oracle__init_suite(framework: str, target_dir: str = "") -> dict:
+def canary__init_suite(framework: str, target_dir: str = "") -> dict:
     """Scaffold a test suite for framework in target_dir."""
     return _init_suite_impl(framework, target_dir)
 
 
 @mcp.tool()
-def oracle__list_frameworks() -> dict:
+def canary__list_frameworks() -> dict:
     """Return all frameworks registered in agent/frameworks/registry.json."""
     return _list_frameworks_impl()
 
 
 @mcp.tool()
-def oracle__migrate(target_dir: str = "", apply: bool = False) -> dict:
+def canary__migrate(target_dir: str = "", apply: bool = False) -> dict:
     """Migrate a harness-scaffolded project to Oracle layout. Dry-run by default."""
     return _migrate_impl(target_dir, apply)
 
 
 def main() -> None:
-    """Console-script entry point for `oracle-mcp` (see pyproject.toml).
+    """Console-script entry point for `canary-mcp` (see pyproject.toml).
 
     The Claude Code plugin manifest references this entry by name so it
     works against any pipx-installed oracle-test-ai without depending on
