@@ -16,7 +16,7 @@ the plugin.
 2. **Zero-context-switch test execution** — The active test file can be run with
    one command; results appear in a dedicated output channel without opening a
    terminal.
-3. **Framework scaffolding and migration** — `oracle init` and `oracle migrate`
+3. **Framework scaffolding and migration** — `canary init` and `canary migrate`
    are accessible from the IDE, with output shown in the editor and apply/cancel
    actions for migration previews.
 4. **Persistent status visibility** — A status bar item reflects Oracle's current
@@ -75,7 +75,7 @@ works in a TypeScript-capable environment.
 | U1 | generate a test from a natural language description without leaving the editor | I don't break flow context switching to a terminal |
 | U2 | right-click a source file and generate a test for it | Oracle can pre-fill the prompt with the file name |
 | U3 | run the currently open test file with one keystroke | I get immediate feedback without remembering the exact CLI flags |
-| U4 | scaffold a new test suite from the command palette | I don't have to look up `oracle init` syntax |
+| U4 | scaffold a new test suite from the command palette | I don't have to look up `canary init` syntax |
 | U5 | migrate a harness project from within the IDE | I can review what would change in the editor before applying |
 | U6 | see Oracle's status (connected provider, last result) in the status bar | I know at a glance which LLM backend is active |
 | U7 | configure Oracle settings in the IDE's native settings UI | I don't have to edit JSON or env vars manually |
@@ -98,7 +98,7 @@ All commands are registered in the Command Palette under the `Oracle:` prefix.
    `Generate tests for <filename> —` and place cursor after the dash.
 2. Show an input box: `Describe the test you want Oracle to generate`.
    If the user dismisses or submits an empty/whitespace-only prompt, silently no-op.
-3. Run `oracle generate "<prompt>" --json` in a child process.
+3. Run `canary generate "<prompt>" --json` in a child process.
 4. On success: open the generated file path (from JSON output) in a new editor
    tab. Show a success notification with "Open File" and "Run Now" actions.
 5. On error: show the error in the Oracle Output panel and a warning notification.
@@ -119,22 +119,22 @@ All commands are registered in the Command Palette under the `Oracle:` prefix.
 ### `oracle.init` flow
 
 1. Show a Quick Pick: `playwright | vitest | pytest | k6`.
-2. Run `oracle init <framework>`.
+2. Run `canary init <framework>`.
 3. Display scaffold result (created files/dirs) in the Oracle Output panel.
 
 ### `oracle.migrate` flow
 
 1. If no workspace folder is open (`vscode.workspace.workspaceFolders` is
-   undefined), show an error notification: "oracle migrate requires an open
+   undefined), show an error notification: "canary migrate requires an open
    workspace folder." Exit.
 2. Resolve the target root: use the workspace folder containing the active
    editor file (`vscode.workspace.getWorkspaceFolder(activeEditor.document.uri)`);
    if no editor is active, use `vscode.workspace.workspaceFolders[0]`.
-3. Run `oracle migrate --path <resolvedRoot> --json` (dry run).
+3. Run `canary migrate --path <resolvedRoot> --json` (dry run).
 4. Display the JSON report in a read-only preview editor tab (`Oracle Migration
    Preview`).
 5. Show "Apply Migration" and "Cancel" buttons in a notification.
-6. If "Apply Migration": run `oracle migrate --path <resolvedRoot> --apply --json`.
+6. If "Apply Migration": run `canary migrate --path <resolvedRoot> --apply --json`.
 7. Refresh the file explorer after apply.
 
 ## Configuration
@@ -177,7 +177,7 @@ Clicking any state opens the Oracle Output channel.
 
 ## CLI Resolution
 
-On activation the plugin runs `oracle version` (or the configured `oracle.cliPath`).
+On activation the plugin runs `canary version` (or the configured `oracle.cliPath`).
 
 - If the command succeeds: plugin activates normally.
 - If not found: all commands are registered but disabled; the status bar shows

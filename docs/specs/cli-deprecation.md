@@ -6,7 +6,7 @@ created: 2026-05-26
 
 # CLI Deprecation Specification (Phase 3)
 
-Mark `oracle generate`, `oracle feedback`, and the GitHub Action as
+Mark `canary generate`, `oracle feedback`, and the GitHub Action as
 deprecated. Removal at v3.0 (separate phase).
 
 ## Overview
@@ -24,12 +24,12 @@ deprecated. Removal at v3.0 (separate phase).
 
 ## Success Criteria
 
-1. `oracle generate "smoke" --recommend-only` runs without printing
+1. `canary generate "smoke" --recommend-only` runs without printing
    the deprecation warning (the recommend-only path stays keyless and
    useful).
-2. `oracle generate "smoke"` without `--recommend-only` prints
+2. `canary generate "smoke"` without `--recommend-only` prints
    exactly one yellow warning on stderr, pointing at
-   `/oracle-write-test`.
+   `/canary-write-test`.
 3. `oracle feedback` (with or without a prior generation recorded)
    prints exactly one yellow warning on stderr.
 4. `action.yml`'s top-level `description` is prefixed with
@@ -77,7 +77,7 @@ deprecated. Removal at v3.0 (separate phase).
 - `Console(stderr=True).print(...)` from `rich` is the established
   pattern (already used elsewhere in this CLI). Verified by `grep
   -n stderr agent/cli.py`.
-- No existing test asserts on stderr being empty for `oracle generate`
+- No existing test asserts on stderr being empty for `canary generate`
   — `CliRunner.invoke` captures `stdout` by default and `stderr` only
   when `mix_stderr=False` is passed, which the existing tests don't
   do. Confirmed by inspection of `tests/unit/test_orchestrator.py`
@@ -89,24 +89,24 @@ deprecated. Removal at v3.0 (separate phase).
 
 ```text
 Before:
-  $ oracle generate "test the login"
+  $ canary generate "test the login"
   🦇 Oracle Processing Request...
   ✅ Oracle Result
   …
 
 After:
-  $ oracle generate "test the login"
-  ⚠ oracle generate is deprecated and will be removed in v3.0.        ← stderr
-    Migrate to the /oracle-write-test slash command
+  $ canary generate "test the login"
+  ⚠ canary generate is deprecated and will be removed in v3.0.        ← stderr
+    Migrate to the /canary-write-test slash command
     (Claude Code plugin) — no API key required. See ADR 0003.
   🦇 Oracle Processing Request...                                       ← stdout
   ✅ Oracle Result
   …
 
-  $ oracle generate "test the login" --json 2>/dev/null
+  $ canary generate "test the login" --json 2>/dev/null
   { "status": "success", … }                                           ← stdout, clean
 
-  $ oracle generate "smoke" --recommend-only
+  $ canary generate "smoke" --recommend-only
   ✅ Oracle Recommendation (Draft Mode)                                  ← stdout, no warning
   Test Type: e2e_ui
   Framework: playwright
@@ -127,8 +127,8 @@ the task-by-task implementation.
 
 ## Open Questions
 
-1. **Should `oracle generate --recommend-only` get its own command
-   (`oracle recommend`)** so the keyless classifier check survives
+1. **Should `canary generate --recommend-only` get its own command
+   (`canary recommend`)** so the keyless classifier check survives
    the `generate` removal? Recommend: yes, but as part of the
    removal phase, not this one.
 2. **Should the warning be suppressible** via an env var
@@ -140,7 +140,7 @@ the task-by-task implementation.
 ## Risks
 
 - **Action description not visible to existing consumers** — once a
-  workflow has `uses: bri-stevenski/oracle-test-ai-agent@v1` pinned,
+  workflow has `uses: bri-stevenski/canary-test-ai-agent@v1` pinned,
   the consumer doesn't re-read the marketplace listing. Mitigation:
   none feasible — `action.yml` doesn't have a runtime-warning hook.
   The Action will continue to work; removal at v3.0 will be a major-

@@ -84,7 +84,7 @@ Same U1–U7 as the VS Code spec.
 | U1 | generate a test from a natural language description without leaving the editor | I don't break flow context switching to a terminal |
 | U2 | right-click a source file and generate a test for it | Oracle can pre-fill the prompt with the file name |
 | U3 | run the currently open test file with one keystroke | I get immediate feedback without remembering the exact CLI flags |
-| U4 | scaffold a new test suite from the action system | I don't have to look up `oracle init` syntax |
+| U4 | scaffold a new test suite from the action system | I don't have to look up `canary init` syntax |
 | U5 | migrate a harness project from within the IDE | I can review what would change before applying |
 | U6 | see Oracle's status (connected provider, last result) in the status bar | I know at a glance which LLM backend is active |
 | U7 | configure Oracle settings in the IDE's native settings UI | I don't have to edit JSON or env vars manually |
@@ -116,7 +116,7 @@ Long-running work is dispatched off the EDT.
    to generate", "Oracle: Generate Test", ...)`. If the user cancels or
    submits blank/whitespace, silently no-op.
 3. Dispatch a pooled-thread task (see Threading). Run:
-   `oracle generate "<prompt>" --json`.
+   `canary generate "<prompt>" --json`.
 4. On success: parse JSON output for `output_file`. Open the file via
    `FileEditorManager.getInstance(project).openFile(virtualFile, true)`.
    Show a balloon notification: "Oracle: Test generated — `<filename>`" with
@@ -143,7 +143,7 @@ Long-running work is dispatched off the EDT.
 
 1. Show a framework chooser via `Messages.showChooseDialog`: `playwright`,
    `vitest`, `pytest`, `k6`.
-2. Run `oracle init <framework>` on a pooled thread.
+2. Run `canary init <framework>` on a pooled thread.
 3. Append scaffold output to the Oracle Tool Window.
 4. Refresh the project tree: `ProjectView.getInstance(project).refresh()`.
 
@@ -151,7 +151,7 @@ Long-running work is dispatched off the EDT.
 
 1. Resolve `project.basePath`. If null (no open project), show error balloon
    and exit.
-2. Run `oracle migrate --path <projectRoot> --json` (dry run) on a pooled
+2. Run `canary migrate --path <projectRoot> --json` (dry run) on a pooled
    thread.
 3. Display the JSON report in a read-only editor tab: open a virtual
    scratch file named `Oracle Migration Preview` using
@@ -159,7 +159,7 @@ Long-running work is dispatched off the EDT.
 4. Show a notification with **Apply Migration** and **Cancel** actions
    (balloon `addAction`).
 5. If Apply Migration: run
-   `oracle migrate --path <projectRoot> --apply --json` on a pooled thread.
+   `canary migrate --path <projectRoot> --apply --json` on a pooled thread.
 6. Refresh the VFS: `VirtualFileManager.getInstance().syncRefresh()`.
 
 ## Configuration
@@ -214,7 +214,7 @@ to the EDT via `StatusBar.updateWidget` called after `invokeLater`.
 ## CLI Resolution
 
 On project open the plugin's `ProjectManagerListener.projectOpened` (or a
-`StartupActivity`) runs `oracle version` using the configured or
+`StartupActivity`) runs `canary version` using the configured or
 auto-detected CLI path.
 
 - **Found:** plugin activates normally; version stored for one-time warning

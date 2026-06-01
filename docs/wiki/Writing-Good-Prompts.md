@@ -115,17 +115,17 @@ Oracle classifies your prompt automatically. If it picks the
 wrong type, add the type explicitly:
 
 ```bash
-oracle generate "E2E test: ..."
-oracle generate "API test: ..."
-oracle generate "Unit test: ..."
-oracle generate "Load test: ..."
+canary generate "E2E test: ..."
+canary generate "API test: ..."
+canary generate "Unit test: ..."
+canary generate "Load test: ..."
 ```
 
 You can also use `--recommend-only` to preview Oracle's
 classification without generating:
 
 ```bash
-oracle generate "test the login" --recommend-only
+canary generate "test the login" --recommend-only
 ```
 
 If Oracle's recommendation doesn't match your intent, refine

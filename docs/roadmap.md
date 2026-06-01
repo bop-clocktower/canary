@@ -40,8 +40,8 @@ updated: 2026-05-26
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** `oracle generate` (with `--run`, `--json`, `--recommend-only`),
-  `oracle run`, `oracle init`, `oracle version`.
+- **Summary:** `canary generate` (with `--run`, `--json`, `--recommend-only`),
+  `oracle run`, `canary init`, `canary version`.
 - **Blockers:** none
 - **Plan:** none
 
@@ -67,7 +67,7 @@ updated: 2026-05-26
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** TICKET-037 — `oracle init` command bootstraps
+- **Summary:** TICKET-037 — `canary init` command bootstraps
   Playwright/Vitest/Pytest/k6 suites.
 - **Blockers:** none
 - **Plan:** none
@@ -168,14 +168,14 @@ updated: 2026-05-26
 - **Spec:** none
 - **Summary:** Tagged `v1.0.0` and floating `v1` on `main` (commit bbc8eda).
   First stable public release of the Oracle GitHub Action. Users can now pin
-  `uses: bri-stevenski/oracle-test-ai-agent@v1` for automatic non-breaking
+  `uses: bri-stevenski/canary-test-ai-agent@v1` for automatic non-breaking
   updates. Release notes published at
-  [github.com/bri-stevenski/oracle-test-ai-agent/releases/tag/v1.0.0](https://github.com/bri-stevenski/oracle-test-ai-agent/releases/tag/v1.0.0).
+  [github.com/bri-stevenski/canary-test-ai-agent/releases/tag/v1.0.0](https://github.com/bri-stevenski/canary-test-ai-agent/releases/tag/v1.0.0).
   **Bug fix (post-release):** `OracleOrchestrator.__init__` used
   `Path(__file__).resolve().parents[2]` to locate the output directory. When
   oracle is pip-installed (as the action does), `__file__` resolves to
   site-packages and the subsequent `mkdir` raises `PermissionError`, crashing
-  `oracle generate` before any JSON is emitted and leaving the PR comment with
+  `canary generate` before any JSON is emitted and leaving the PR comment with
   empty outputs. Fixed by switching to `Path.cwd()`.
 - **Blockers:** none
 - **Plan:** none
@@ -188,7 +188,7 @@ updated: 2026-05-26
   SonarQube, and similar dashboards. `Reporter` class with `write()`,
   `to_json()`, `to_sarif()` methods; SARIF 2.1.0 compliant with
   `oracle/test-generation` and `oracle/test-execution` rule IDs;
-  `oracle generate --report-format` and `--report-file` CLI flags.
+  `canary generate --report-format` and `--report-file` CLI flags.
 - **Blockers:** none
 - **Plan:** none
 
@@ -295,12 +295,12 @@ implementation begins. All 6 resolved.
 
 | #      | Issue                                                                  | Status   | Resolution                                                     |
 | ------ | ---------------------------------------------------------------------- | -------- | -------------------------------------------------------------- |
-| S1-001 | [#52](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/52) | resolved | Option A: filename-only pre-fill; component detection deferred |
-| S1-002 | [#53](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/53) | resolved | Batch output; streaming deferred to follow-up                  |
-| S5-001 | [#54](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/54) | resolved | Changed to `oracle version` (subcommand)                       |
-| S5-002 | [#55](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/55) | resolved | Removed `--json` from run invocation                           |
-| S3-002 | [#56](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/56) | resolved | macOS PATH limitation documented in Assumptions                |
-| S6-001 | [#57](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/57) | resolved | oracle.recommendOnly moved to Out of Scope                     |
+| S1-001 | [#52](https://github.com/bri-stevenski/canary-test-ai-agent/issues/52) | resolved | Option A: filename-only pre-fill; component detection deferred |
+| S1-002 | [#53](https://github.com/bri-stevenski/canary-test-ai-agent/issues/53) | resolved | Batch output; streaming deferred to follow-up                  |
+| S5-001 | [#54](https://github.com/bri-stevenski/canary-test-ai-agent/issues/54) | resolved | Changed to `canary version` (subcommand)                       |
+| S5-002 | [#55](https://github.com/bri-stevenski/canary-test-ai-agent/issues/55) | resolved | Removed `--json` from run invocation                           |
+| S3-002 | [#56](https://github.com/bri-stevenski/canary-test-ai-agent/issues/56) | resolved | macOS PATH limitation documented in Assumptions                |
+| S6-001 | [#57](https://github.com/bri-stevenski/canary-test-ai-agent/issues/57) | resolved | oracle.recommendOnly moved to Out of Scope                     |
 
 ### Interactive Guided Onboarding
 
@@ -309,7 +309,7 @@ implementation begins. All 6 resolved.
 - **Summary:** First-run guided experience for end users who install Oracle via
   pip. `SetupWizard` in `agent/core/setup.py`; Typer `@app.callback()` asks
   permission before any unconfigured command; `oracle setup` is re-runnable with
-  `--full` for a sample generation. Config stored in `.oracle/config.json`
+  `--full` for a sample generation. Config stored in `.canary/config.json`
   (project-local, no secrets). 12 unit tests.
 - **Blockers:** none
 - **Plan:** [docs/plans/onboarding.md](plans/onboarding.md)
@@ -333,15 +333,15 @@ implementation begins. All 6 resolved.
 
 - **Status:** done — PR #150
 - **Issue:**
-  [#140](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/140),
-  [#141](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/141) (both
+  [#140](https://github.com/bri-stevenski/canary-test-ai-agent/issues/140),
+  [#141](https://github.com/bri-stevenski/canary-test-ai-agent/issues/141) (both
   closed)
 - **Summary:** Two prompt-layer guardrails for the scaffolding agents. #140 —
   agents must not scaffold env-guard wrapper scripts; hard-vs-soft CI gating
   belongs in workflow `needs:` topology, not workspace code. #141 — scaffolding
   reports separate brief-inherited decisions from autonomous ones (the latter
-  flagged "please verify"). Applied to `oracle-test-author`,
-  `oracle-initializer`, `oracle-test-generator`.
+  flagged "please verify"). Applied to `canary-test-author`,
+  `canary-initializer`, `canary-test-generator`.
 - **Blockers:** none
 - **Plan:** none
 
@@ -349,8 +349,8 @@ implementation begins. All 6 resolved.
 
 - **Status:** done — PR #151
 - **Issue:**
-  [#142](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/142),
-  [#144](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/144) (both
+  [#142](https://github.com/bri-stevenski/canary-test-ai-agent/issues/142),
+  [#144](https://github.com/bri-stevenski/canary-test-ai-agent/issues/144) (both
   closed)
 - **Summary:** Markdown-only voice subsystem under `voice/`.
   Reusable named profiles (`profiles/clocktower.md` ships first), a verified
@@ -371,16 +371,16 @@ observability sink routing, and an OSS-first commercial-license gate.
 
 The picker has two layers that must stay in sync:
 
-1. **Keyless slash-command layer (primary):** `/oracle-pick-framework`
-   (`commands/oracle-pick-framework.md`) →
-   `oracle-framework-advisor` agent
-   (`agents/oracle-framework-advisor.md`). No API key required.
+1. **Keyless slash-command layer (primary):** `/canary-pick-framework`
+   (`commands/canary-pick-framework.md`) →
+   `canary-framework-advisor` agent
+   (`agents/canary-framework-advisor.md`). No API key required.
    Recommendation map covers 16 categories as of Stage 1.
 2. **Rule-based CLI layer (survives v3.0):** `TestClassifier`
    (`agent/core/classifier.py`) + `FrameworkRecommender`
    (`agent/core/recommender.py`) + `agent/frameworks/registry.json`. Covers 16
    categories. Per ADR 0004 this pipeline survives the v3.0 cut — it needs no
-   API key and powers the planned keyless `oracle recommend`. `recommend()`
+   API key and powers the planned keyless `canary recommend`. `recommend()`
    returns a ranked ≤3 candidate list with confidence.
 
 Both layers expand together in Stage 1. The agent's recommendation map is the
@@ -406,7 +406,7 @@ when the project already holds an active license.
 
 - **Status:** done — PRs #152 (foundation) + #153 (ranked recommender)
 - **Issue:**
-  [#128](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/128)
+  [#128](https://github.com/bri-stevenski/canary-test-ai-agent/issues/128)
   (closed)
 - **Spec:** none
 - **Summary:** Expanded both picker layers to 16 test categories. The 12
@@ -415,7 +415,7 @@ when the project already holds an active license.
   (Faker; SDV pending OC-002), `observability` (OpenTelemetry), `mobile`
   (Maestro), `load` (Locust), `mutation` (Stryker), `static_analysis` (Semgrep),
   `integration` (Testcontainers).
-  - **Agent layer** (`oracle-framework-advisor.md`): recommendation map extended
+  - **Agent layer** (`canary-framework-advisor.md`): recommendation map extended
     with one row per category.
   - **`classifier.py`**: `_CATEGORY_KEYWORDS` block + `_FRAMEWORK_HINTS`
     entries; existing `e2e_ui`/`api`/`frontend_unit`/`performance` rules
@@ -435,7 +435,7 @@ when the project already holds an active license.
 
 - **Status:** done — PR #159
 - **Issue:**
-  [#129](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/129)
+  [#129](https://github.com/bri-stevenski/canary-test-ai-agent/issues/129)
   (closed)
 - **Spec:** none
 - **Summary:** Reporting-sink routing branch in `FrameworkRecommender` for
@@ -453,7 +453,7 @@ when the project already holds an active license.
 
 - **Status:** done — PR #160 (license gate) + PR #155 (synthetic_data)
 - **Issue:**
-  [#130](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/130)
+  [#130](https://github.com/bri-stevenski/canary-test-ai-agent/issues/130)
   (closed)
 - **Spec:** none
 - **Summary:** OSS-first license gate in `FrameworkRecommender`. Commercial
@@ -474,7 +474,7 @@ when the project already holds an active license.
 
 - **Status:** planned
 - **Issue:**
-  [#131](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/131)
+  [#131](https://github.com/bri-stevenski/canary-test-ai-agent/issues/131)
 - **Spec:** none
 - **Summary:** Time-boxed spike on branch `spike/schemathesis`. Run Schemathesis
   against one sample API endpoint in read-only mode; measure defects found vs.
@@ -490,7 +490,7 @@ when the project already holds an active license.
 
 - **Status:** planned
 - **Issue:**
-  [#132](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/132)
+  [#132](https://github.com/bri-stevenski/canary-test-ai-agent/issues/132)
 - **Spec:** none
 - **Summary:** Time-boxed spike on branch `spike/sdv`. Generate a synthetic
   dataset matching one sample schema using SDV (Synthetic Data Vault). Verify
@@ -498,7 +498,7 @@ when the project already holds an active license.
   procurement rules. Result feeds the OC-002 decision that gates the
   `synthetic_data` registry entry in Stage 3.
 - **Blockers:** OC-002 —
-  [#126](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/126) — BSL
+  [#126](https://github.com/bri-stevenski/canary-test-ai-agent/issues/126) — BSL
   license review required.
 - **Plan:** none
 
@@ -510,15 +510,15 @@ when the project already holds an active license.
 - **Issue:** none yet
 - **Spec:** none
 - **Summary:** Rename the tool from Oracle to Canary to avoid collision with
-  Oracle Corporation. Changes: package `oracle-test-ai` → `canary-test-ai`;
+  Oracle Corporation. Changes: package `canary-test-ai` → `canary-test-ai`;
   CLI entry point `oracle` → `canary`; MCP server `FastMCP("oracle")` →
   `FastMCP("canary")` with tool names `oracle__*` → `canary__*`; agent
   `allowed-tools:` frontmatter updated accordingly; all agent/command/skill
-  files renamed from `oracle-*` to `canary-*`; config dir `.oracle/` →
+  files renamed from `oracle-*` to `canary-*`; config dir `.canary/` →
   `.canary/`; bulk doc pass. Voice files (Clocktower profile, Birds of Prey
   quotes, house aphorisms) are **unchanged** — the Clocktower/Barbara Gordon
   persona is intentional; the character framing does not depend on the tool
-  name. GitHub repo rename (`oracle-test-ai-agent`) deferred to post-demo.
+  name. GitHub repo rename (`canary-test-ai-agent`) deferred to post-demo.
   **Sequencing note:** plugin files live at repo root after PR
   `refactor/plugin-root-move` — rename targets root paths (`agents/`,
   `commands/`, `hooks/`), not `plugins/oracle/`.
@@ -568,7 +568,7 @@ when the project already holds an active license.
   Harness-pull decision. Issue #127 closed 2026-05-26 (migration complete;
   removal tracked separately).
 - **Issue:**
-  [#127](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/127)
+  [#127](https://github.com/bri-stevenski/canary-test-ai-agent/issues/127)
   (closed)
 - **Phase 1 (generation, done):** spec
   [host-llm-migration.md](specs/host-llm-migration.md) · plan
@@ -591,24 +591,24 @@ when the project already holds an active license.
   skill" decision below is resolved in favour of this path (option 5).
 
   **Current keyless coverage (already shipped):**
-  - `/oracle-pick-framework` → `oracle-framework-advisor` agent (Read, Glob,
+  - `/canary-pick-framework` → `canary-framework-advisor` agent (Read, Glob,
     Grep — no key needed).
-  - `/oracle-write-test` → `oracle-test-author` agent.
-  - `/oracle-review-test` → `oracle-test-reviewer` agent.
-  - `/oracle-debug-flake` → `oracle-flake-hunter` agent.
+  - `/canary-write-test` → `canary-test-author` agent.
+  - `/oracle-review-test` → `canary-test-reviewer` agent.
+  - `/canary-debug-flake` → `canary-flake-hunter` agent.
 
   **Still keyed (to migrate):**
-  - `oracle generate` (CLI) — calls `generate_response()` → `agent/llm/*`
+  - `canary generate` (CLI) — calls `generate_response()` → `agent/llm/*`
     provider matrix → requires a provider key.
-  - GitHub Action wrapping `oracle generate` on every PR — same keyed
+  - GitHub Action wrapping `canary generate` on every PR — same keyed
     dependency.
   - Orchestrator self-healing loop (`_attempt_fix`, `_attempt_selector_fix` in
     `agent/core/orchestrator.py`) — calls `generate_response()` for retry
     generation.
 
   **Target end state:**
-  - `/oracle-write-test` (already exists) is the canonical replacement for
-    `oracle generate`.
+  - `/canary-write-test` (already exists) is the canonical replacement for
+    `canary generate`.
   - `/oracle-self-heal` (or equivalent) wraps the self-healing loop.
   - The MCP server (`agent/mcp_server.py`) exposes the deterministic pieces
     (analyze, write, run, init, list-frameworks, migrate) so agents can compose
@@ -626,7 +626,7 @@ when the project already holds an active license.
      retained capability (principally `/oracle-self-heal`).
   3. Print a deprecation warning from the keyed CLI paths pointing users at the
      slash-command equivalent.
-  4. Remove the GitHub Action and `oracle generate` from a future major release;
+  4. Remove the GitHub Action and `canary generate` from a future major release;
      bump version accordingly.
 
 - **Blockers:** none
@@ -636,16 +636,16 @@ when the project already holds an active license.
 
 - **Status:** decided — option 5 (keyless slash commands)
 - **Issue:**
-  [#127](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/127)
+  [#127](https://github.com/bri-stevenski/canary-test-ai-agent/issues/127)
 - **Spec:** none
-- **Summary:** The `oracle generate` command and the GitHub Action that invokes
+- **Summary:** The `canary generate` command and the GitHub Action that invokes
   it on every PR (see "GitHub Action v1.0.0 Release" above) together require an
   LLM provider API key and auto-produce test code on each pull request.
   Decision: move the underlying capability to slash commands that use the host
   Claude Code session (option 5 — not in the original list, adopted from
-  "Migrate all LLM-dependent tasks" above). `/oracle-write-test` already ships
+  "Migrate all LLM-dependent tasks" above). `/canary-write-test` already ships
   and covers the generation use case keylessly. The GitHub Action and
-  `oracle generate` CLI will be deprecated and removed in a future major version
+  `canary generate` CLI will be deprecated and removed in a future major version
   per the phasing plan in that item. Any downstream overlay's `action.yml`
   deletion is correct and does not need to be reversed.
 - **Blockers:** none
@@ -655,7 +655,7 @@ when the project already holds an active license.
 
 - **Status:** dropped (won't-do) — Issue #133 closed 2026-05-26
 - **Issue:**
-  [#133](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/133)
+  [#133](https://github.com/bri-stevenski/canary-test-ai-agent/issues/133)
   (closed)
 - **Spec:** none
 - **Summary:** Would have added `oracle config set/show provider` to switch the
@@ -667,13 +667,13 @@ when the project already holds an active license.
 - **Blockers:** none
 - **Plan:** none
 
-### `oracle migrate` Improvements
+### `canary migrate` Improvements
 
 - **Status:** planned
 - **Issue:**
-  [#134](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/134)
+  [#134](https://github.com/bri-stevenski/canary-test-ai-agent/issues/134)
 - **Spec:** none
-- **Summary:** Extend the `oracle migrate` command with better framework
+- **Summary:** Extend the `canary migrate` command with better framework
   detection, richer dry-run output, and support for additional harness config
   shapes. Specific improvements TBD during planning.
 - **Blockers:** none
@@ -705,11 +705,11 @@ when the project already holds an active license.
 - **Blockers:** none
 - **Plan:** none
 
-### Migrate harness:initialize-test-suite Repos to `oracle init`
+### Migrate harness:initialize-test-suite Repos to `canary init`
 
 - **Status:** done
 - **Spec:** none
-- **Summary:** PR #48 — `oracle migrate` command for repos scaffolded by
+- **Summary:** PR #48 — `canary migrate` command for repos scaffolded by
   `harness:initialize-test-suite-project`. `HarnessMigrator` detects
   `harness.config.json` + `.harness/` markers and auto-detects the framework
   from config files (`playwright.config.ts`, `vitest.config.ts`, `pytest.ini`,
@@ -730,12 +730,12 @@ when the project already holds an active license.
 - **Spec:** [docs/specs/skill-discovery.md](specs/skill-discovery.md)
 - **PR:** #81
 - **Summary:** Downstream overlay repositories can extend Oracle with zero
-  application code — just `.oracle/skills/<name>/SKILL.md` directories.
+  application code — just `.canary/skills/<name>/SKILL.md` directories.
   `SkillRegistry` discovers bundled skills (flat `oracle:*.md` slash commands +
   nested harness `claude-code/<name>/SKILL.md`) and local overlays, walking from
   CWD up to the git root. Local skills override bundled skills of the same name.
   `oracle skills list [--verbose]` surfaces all discoverable skills. Package
-  renamed to `oracle-test-ai` (v0.2.0); `pipx install git+...@v0.2.0` is the
+  renamed to `canary-test-ai` (v0.2.0); `pipx install git+...@v0.2.0` is the
   documented install path. 17 new tests; 294 total passing.
 
 ### Oracle Claude Code Plugin
@@ -748,7 +748,7 @@ when the project already holds an active license.
   (`agent/mcp_server.py`) exposing six tools (`oracle__analyze_file`,
   `oracle__write_test_file`, `oracle__run_tests`, `oracle__init_suite`,
   `oracle__list_frameworks`, `oracle__migrate`), three slash-command skills
-  (`/oracle:generate`, `/oracle:init`, `/oracle:migrate`), and three agent
+  (`/canary:generate`, `/canary:init`, `/canary:migrate`), and three agent
   definitions. Plugin manifest at `.claude-plugin/plugin.json`. 12 unit tests,
   CI schema validation via `validate-plugin.yml`. Existing CLI and GitHub Action
   unchanged.

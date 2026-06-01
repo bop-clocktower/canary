@@ -57,7 +57,7 @@ in the framework registry.
 made an unexpected guess. Try adding the test type explicitly:
 
 ```bash
-oracle generate "API test: GET /v1/users returns 200"
+canary generate "API test: GET /v1/users returns 200"
 ```
 
 Or check the registry for the available categories:
@@ -109,7 +109,7 @@ ambiguous.
 **Fix:** Be more explicit. Add the test type to the prompt:
 
 ```bash
-oracle generate "API test: POST /v1/orders with a valid payload
+canary generate "API test: POST /v1/orders with a valid payload
 should return 201 and an order ID"
 ```
 
@@ -141,7 +141,7 @@ provider had a transient error.
 a different provider:
 
 ```bash
-ORACLE_LLM_PROVIDER=openai oracle generate "..."
+ORACLE_LLM_PROVIDER=openai canary generate "..."
 ```
 
 ## Can't Find the Generated File
@@ -191,8 +191,8 @@ volta install node
 Then restart your terminal (or `source ~/.zshrc`) and retry:
 
 ```bash
-/plugin marketplace add https://github.com/bri-stevenski/oracle-test-ai-agent
-/plugin install oracle@oracle
+/plugin marketplace add https://github.com/bri-stevenski/canary-test-ai-agent
+/plugin install canary@canary
 ```
 
 ## Still Stuck?
@@ -202,4 +202,4 @@ Open an issue on GitHub with:
 1. The exact command you ran
 2. The full error output
 3. Your Python version (`python --version`)
-4. Your Oracle version (`oracle version`)
+4. Your Oracle version (`canary version`)

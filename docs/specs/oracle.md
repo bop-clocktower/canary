@@ -27,12 +27,12 @@ requirements into framework-aware, runnable test code.
 
 - Oracle does not execute tests in production environments.
 - Oracle does not manage or migrate test frameworks (migration is a separate
-  `oracle migrate` command, scoped to harness-scaffolded projects only).
+  `canary migrate` command, scoped to harness-scaffolded projects only).
 - Oracle does not provide a GUI — all interaction is via CLI or GitHub Actions.
 
 ## Success Criteria
 
-1. **Generation completes:** Given a natural-language prompt, `oracle generate`
+1. **Generation completes:** Given a natural-language prompt, `canary generate`
    produces a non-empty test file in `tests/generated/` with exit code 0.
 2. **Quality floor:** Every generated file achieves a composite quality score
    ≥70 (grade B) using the formula
@@ -42,7 +42,7 @@ requirements into framework-aware, runnable test code.
 4. **Provider parity:** All four first-class providers (Anthropic, OpenAI,
    Gemini, Codex) return a parseable, code-only response when given the same
    generation prompt. The mock provider returns a deterministic stub in CI.
-5. **Machine-readable output:** `oracle generate --json` returns a JSON object
+5. **Machine-readable output:** `canary generate --json` returns a JSON object
    containing `file_path`, `framework`, `test_type`, `quality_score`, and
    `provider`.
 6. **GitHub Actions smoke:** The composite action (`action.yml`) completes

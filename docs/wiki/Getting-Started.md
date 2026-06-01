@@ -17,15 +17,15 @@ You'll need:
 ## Step 1: Install Oracle
 
 ```bash
-git clone https://github.com/bri-stevenski/oracle-test-ai-agent.git
-cd oracle-test-ai-agent
+git clone https://github.com/bri-stevenski/canary-test-ai-agent.git
+cd canary-test-ai-agent
 pip install -e .
 ```
 
 Verify the install worked:
 
 ```bash
-oracle version
+canary version
 ```
 
 You should see: `Oracle AI v0.1 (MVP)`
@@ -40,13 +40,13 @@ claude plugin install .
 ```
 
 Claude Code's own session provides the LLM. Your first
-`/oracle:generate` will analyse the target file and write tests
+`/canary:generate` will analyse the target file and write tests
 automatically.
 
 ## Step 3: Generate Your First Test
 
 ```bash
-oracle generate "Test that GET /api/health returns 200"
+canary generate "Test that GET /api/health returns 200"
 ```
 
 Oracle will:
@@ -87,7 +87,7 @@ Read through it. Check that:
 ## Step 6: Run the Test
 
 ```bash
-oracle generate "Test that GET /api/health returns 200" --run
+canary generate "Test that GET /api/health returns 200" --run
 ```
 
 Or, if you already have the file:
@@ -115,7 +115,7 @@ Use `--recommend-only` to see what Oracle would pick without
 calling the LLM (no API key needed):
 
 ```bash
-oracle generate "load test the search endpoint" --recommend-only
+canary generate "load test the search endpoint" --recommend-only
 ```
 
 ## Next Steps

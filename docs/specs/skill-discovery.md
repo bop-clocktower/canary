@@ -15,10 +15,10 @@ overlay repositories to extend Oracle's behavior with zero application code.
 **Goals:**
 
 1. **Zero-fork extensibility** — Teams with company-specific test workflows extend
-   Oracle by dropping skill files into `.oracle/skills/` without forking or
+   Oracle by dropping skill files into `.canary/skills/` without forking or
    patching Oracle's source code.
 2. **Filesystem-based discovery** — Oracle walks from CWD to the nearest `.git`
-   boundary and collects all `.oracle/skills/` directories, making skills from
+   boundary and collects all `.canary/skills/` directories, making skills from
    any ancestor directory automatically visible.
 3. **Deterministic precedence** — Local overlay skills always win over bundled
    skills with the same `name`; among overlays, the closest to CWD wins.
@@ -52,8 +52,8 @@ overlay repositories to extend Oracle's behavior with zero application code.
 - **Runtime:** Python >=3.10 (Oracle runtime requirement; all skill discovery
   code is Python).
 - **Git repository:** Discovery walks to a `.git` boundary. A project with no
-  `.git` root will discover only CWD-local `.oracle/skills/` directories.
-- **Filesystem access:** Oracle reads `.oracle/skills/` directories; write
+  `.git` root will discover only CWD-local `.canary/skills/` directories.
+- **Filesystem access:** Oracle reads `.canary/skills/` directories; write
   access is not required for discovery or prose skills.
 - **No auto-install:** `cli:` skill dependencies are the skill's responsibility
   to declare and install; Oracle does not manage them.
@@ -61,7 +61,7 @@ overlay repositories to extend Oracle's behavior with zero application code.
 ## Background
 
 Oracle ships bundled skills (slash commands, harness-prescriptive agents) that
-live inside the `oracle-test-ai-agent` repository. Teams who need company-specific
+live inside the `canary-test-ai-agent` repository. Teams who need company-specific
 test generation workflows — custom frameworks, internal conventions, house-style
 assertions — should not fork Oracle. Instead they place skill files in a
 well-known directory and Oracle discovers them at runtime.
@@ -105,7 +105,7 @@ company-overlay pattern handles this by letting a skill directory ship a
 A skill that bundles executable code looks like:
 
 ```text
-.oracle/skills/<name>/
+.canary/skills/<name>/
   SKILL.md              # required — frontmatter declares cli or entry
   scripts/              # conventional location for bundled code
     cli.py              # or package.json + src/, pyproject.toml + …, …
@@ -148,15 +148,15 @@ Oracle ships two layers of bundled skills:
 
 | Location | Format | Purpose |
 | --- | --- | --- |
-| `agents/skills/oracle:*.md` | Flat `.md` | Claude Code slash commands (`/oracle:generate`, `/oracle:init`, `/oracle:migrate`) |
+| `agents/skills/oracle:*.md` | Flat `.md` | Claude Code slash commands (`/canary:generate`, `/canary:init`, `/canary:migrate`) |
 | `agents/skills/claude-code/<name>/SKILL.md` | Nested directory | Prescriptive harness skills invoked by harness agents |
 
 ## Local Overlay Convention
 
-Local skills live in `.oracle/skills/` under any directory in the project tree:
+Local skills live in `.canary/skills/` under any directory in the project tree:
 
 ```text
-.oracle/
+.canary/
   config.json          # existing Oracle config (provider, key, etc.)
   skills/
     <skill-name>/
@@ -164,7 +164,7 @@ Local skills live in `.oracle/skills/` under any directory in the project tree:
 ```
 
 Oracle walks from the current working directory up to the nearest `.git`
-boundary, collecting every `.oracle/skills/` directory it finds along the way.
+boundary, collecting every `.canary/skills/` directory it finds along the way.
 This means a skill placed at the repo root is visible from any subdirectory.
 
 ### Example overlay repository
@@ -175,7 +175,7 @@ be markdown-only or ship bundled code via `scripts/`:
 
 ```text
 acme-overlay/
-  .oracle/
+  .canary/
     skills/
       acme-api-test/
         SKILL.md                  # markdown-only: prescriptive guidance
@@ -190,7 +190,7 @@ acme-overlay/
   README.md
 ```
 
-When a developer clones the overlay and installs `oracle-test-ai` (the base),
+When a developer clones the overlay and installs `canary-test-ai` (the base),
 Oracle discovers every skill from any subdirectory of the checkout. Markdown
 skills are read as prose; code-bearing skills are invocable via
 `oracle skills run`.
@@ -198,7 +198,7 @@ skills are read as prose; code-bearing skills are invocable via
 ## Precedence Rules
 
 1. Local overlay skills always win over bundled skills with the same `name`.
-2. Among multiple `.oracle/skills/` directories found while walking to the git
+2. Among multiple `.canary/skills/` directories found while walking to the git
    root, the one closest to CWD wins (most-specific wins).
 3. Among bundled skills, slash-command skills (`oracle:*.md`) take precedence
    over harness prescriptive skills with the same name (the slash-command format
@@ -225,9 +225,9 @@ visible at a glance:
 Bundled skills:
   /oracle-add-framework  Add a new testing framework to Oracle's registry end-to-end.
   /oracle-generate-test  Generate a framework-appropriate test from a natural-language requirement.
-  /oracle:generate       Generate tests for the file open in the editor.
-  /oracle:init           Scaffold a test suite for the active project.
-  /oracle:migrate        Migrate a harness-scaffolded test suite to Oracle's layout.
+  /canary:generate       Generate tests for the file open in the editor.
+  /canary:init           Scaffold a test suite for the active project.
+  /canary:migrate        Migrate a harness-scaffolded test suite to Oracle's layout.
 
 Local overlay skills (override bundled):
   /acme-api-test         Generate company-style API contract tests.
@@ -269,13 +269,13 @@ Oracle is installable without cloning:
 
 ```bash
 # Latest stable release
-pipx install git+https://github.com/bri-stevenski/oracle-test-ai-agent@v0.2.0
+pipx install git+https://github.com/bri-stevenski/canary-test-ai-agent@v0.2.0
 
 # Specific tag
-pipx install "git+https://github.com/bri-stevenski/oracle-test-ai-agent@v0.2.0"
+pipx install "git+https://github.com/bri-stevenski/canary-test-ai-agent@v0.2.0"
 ```
 
-Once PyPI publication is set up, `pipx install oracle-test-ai` will work
+Once PyPI publication is set up, `pipx install canary-test-ai` will work
 as the canonical install path.
 
 ## Out of Scope

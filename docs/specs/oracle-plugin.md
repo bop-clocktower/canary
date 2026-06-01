@@ -1,14 +1,14 @@
 # Oracle Claude Code Plugin Specification
 
 Oracle becomes a Claude Code plugin: an MCP server exposing analysis and
-execution tools, three skills (`oracle:generate`, `oracle:init`,
-`oracle:migrate`), and three thin agents. The Claude Code agent handles test
+execution tools, three skills (`canary:generate`, `canary:init`,
+`canary:migrate`), and three thin agents. The Claude Code agent handles test
 generation using its own session — no API key required for plugin users. The
 existing CLI and GitHub Action are unchanged.
 
 > **Update (2026-05-26):** The "no API key required for plugin users"
 > claim above was originally aspirational — the bundled
-> `oracle-test-author` agent still delegated to `oracle generate`
+> `canary-test-author` agent still delegated to `canary generate`
 > (which requires a provider key). The
 > [host-LLM migration](host-llm-migration.md) makes the claim true:
 > the agent now generates in-session. See
@@ -27,8 +27,8 @@ existing CLI and GitHub Action are unchanged.
 2. **Six MCP tools covering the full Oracle surface** — analyze, write, run,
    init, list-frameworks, and migrate are exposed as MCP tools so agents can
    compose them without re-implementing Oracle logic.
-3. **Slash-command UX** — Three skills (`/oracle:generate`, `/oracle:init`,
-   `/oracle:migrate`) give users single-command access from the Claude Code
+3. **Slash-command UX** — Three skills (`/canary:generate`, `/canary:init`,
+   `/canary:migrate`) give users single-command access from the Claude Code
    command bar.
 4. **No logic duplication** — MCP tools delegate directly to existing
    `agent/core/` modules; the plugin path and CLI path share the same
@@ -40,7 +40,7 @@ existing CLI and GitHub Action are unchanged.
 ## Success Criteria
 
 1. **MCP server starts:** the `oracle-mcp` console script (registered by
-   `pyproject.toml`, available after `pipx install oracle-test-ai`) starts
+   `pyproject.toml`, available after `pipx install canary-test-ai`) starts
    without error and exposes exactly six tools to Claude Code.
 2. **Tool delegation:** `oracle__analyze_file` calls `MetadataScanner`,
    `PatternMatcher`, and `DomainScanner` from `agent/core/` and returns a dict
@@ -53,7 +53,7 @@ existing CLI and GitHub Action are unchanged.
    validation against the Claude Code plugin schema.
 5. **Unit test suite passes:** `tests/unit/test_mcp_server.py` (10 tests)
    passes with 0 failures in CI using mocked modules; no network calls.
-6. **CLI path unchanged:** All existing `oracle generate / init / migrate / run`
+6. **CLI path unchanged:** All existing `canary generate / init / migrate / run`
    CLI commands continue to pass their existing test suite after plugin addition.
 
 ## Scope
@@ -64,8 +64,8 @@ existing CLI and GitHub Action are unchanged.
 - `.claude-plugin/plugin.json` — plugin manifest wiring the MCP server,
   skills, and agents
 - `.claude-plugin/agents/` — three agent definitions
-  (`oracle-test-generator`, `oracle-initializer`, `oracle-migrator`)
-- `agents/skills/oracle:generate`, `oracle:init`, `oracle:migrate` — three
+  (`canary-test-generator`, `canary-initializer`, `canary-migrator`)
+- `agents/skills/canary:generate`, `canary:init`, `canary:migrate` — three
   slash-command skills
 - CI: JSON Schema validation of `plugin.json` against the Claude Code plugin
   schema
@@ -73,7 +73,7 @@ existing CLI and GitHub Action are unchanged.
 
 **Out of scope:**
 
-- Changes to `oracle generate`, `oracle run`, `oracle init`, `oracle migrate`,
+- Changes to `canary generate`, `oracle run`, `canary init`, `canary migrate`,
   `oracle setup` CLI commands
 - Changes to the GitHub Action
 - Changes to oracle-vscode or oracle-intellij plugins
@@ -90,7 +90,7 @@ existing CLI and GitHub Action are unchanged.
 - The plugin MCP server runs as a subprocess spawned by Claude Code via the
   `oracle-mcp` console script (registered in `pyproject.toml` as a `[project.scripts]`
   entry pointing at `agent.mcp_server:main`). The console script must be on
-  `PATH` — `pipx install oracle-test-ai` puts it there.
+  `PATH` — `pipx install canary-test-ai` puts it there.
 - `CLAUDE_PLUGIN_ROOT` is set by Claude Code when the plugin is active; the
   MCP server reads it from the environment when needed (not as `cwd`, which
   would otherwise leave the bundled Python package unimportable).
@@ -106,9 +106,9 @@ existing CLI and GitHub Action are unchanged.
 ```text
 Claude Code session
 │
-├── oracle:generate skill  ──► oracle-test-generator agent
-├── oracle:init skill      ──► oracle-initializer agent        ◄── user
-├── oracle:migrate skill   ──► oracle-migrator agent
+├── canary:generate skill  ──► canary-test-generator agent
+├── canary:init skill      ──► canary-initializer agent        ◄── user
+├── canary:migrate skill   ──► canary-migrator agent
 │
 └── Oracle MCP server (subprocess, oracle-mcp)
     ├── oracle__analyze_file
@@ -122,7 +122,7 @@ Claude Code session
               (shared with CLI path — no duplication)
 
 CLI path (unchanged)
-└── oracle generate / init / migrate / run / setup
+└── canary generate / init / migrate / run / setup
      └── OracleOrchestrator ──► ANTHROPIC_API_KEY ──► Anthropic API
 ```
 
@@ -198,7 +198,7 @@ Output:
 }
 ```
 
-Delegates to the same scaffolding logic as `oracle init`. `target_dir`
+Delegates to the same scaffolding logic as `canary init`. `target_dir`
 defaults to `cwd` when empty.
 
 ### `oracle__list_frameworks`
@@ -260,7 +260,7 @@ Three agent markdown files in `.claude-plugin/agents/`. Each follows the
 harness agent pattern: `name`, `description`, `tools` frontmatter, then
 role and steps in the body.
 
-### `oracle-test-generator`
+### `canary-test-generator`
 
 Tools: `mcp__oracle__analyze_file`, `mcp__oracle__write_test_file`,
 `mcp__oracle__run_tests`, Read, Bash
@@ -275,7 +275,7 @@ Steps:
 5. If tests fail, read the output, revise the content, repeat from step 3
    (up to 3 attempts)
 
-### `oracle-initializer`
+### `canary-initializer`
 
 Tools: `mcp__oracle__init_suite`, `mcp__oracle__list_frameworks`
 
@@ -286,7 +286,7 @@ Steps:
 2. Call `oracle__init_suite` with the chosen framework
 3. Report created files
 
-### `oracle-migrator`
+### `canary-migrator`
 
 Tools: `mcp__oracle__migrate`, Read
 
@@ -302,21 +302,21 @@ Steps:
 Three skill files under `agents/skills/`. Each is a short markdown file
 with frontmatter (`name`, `description`) and instructions for the agent.
 
-### `oracle:generate`
+### `canary:generate`
 
-Invokes `oracle-test-generator` with the active editor file as the target.
+Invokes `canary-test-generator` with the active editor file as the target.
 Includes the prompt template the agent uses to generate test content:
 framework-specific conventions, assertion style, naming patterns extracted
 from `oracle__analyze_file`'s `context_snippets`.
 
-### `oracle:init`
+### `canary:init`
 
-Invokes `oracle-initializer`. If the user typed `/oracle:init playwright`,
+Invokes `canary-initializer`. If the user typed `/canary:init playwright`,
 passes `playwright` directly; otherwise the agent prompts for a framework.
 
-### `oracle:migrate`
+### `canary:migrate`
 
-Invokes `oracle-migrator` with `cwd` as the target directory.
+Invokes `canary-migrator` with `cwd` as the target directory.
 
 ## Error Handling
 

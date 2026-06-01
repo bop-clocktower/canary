@@ -21,7 +21,7 @@ static generator into an autonomous engineer.
 ### Auto-Healing on Generation
 
 ```bash
-oracle generate "Create a playwright test for login" --run
+canary generate "Create a playwright test for login" --run
 ```
 
 ### Manual Run

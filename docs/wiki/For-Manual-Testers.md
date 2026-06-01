@@ -44,7 +44,7 @@ redirects the user to the dashboard
 Run it:
 
 ```bash
-oracle generate "Test that submitting valid credentials on the
+canary generate "Test that submitting valid credentials on the
 login page redirects the user to the dashboard"
 ```
 
@@ -132,7 +132,7 @@ draft, not a final product.
 If the type is wrong, tell it explicitly:
 
 ```bash
-oracle generate "Test that the cart persists after page refresh
+canary generate "Test that the cart persists after page refresh
 -- this is an end-to-end browser test"
 ```
 
