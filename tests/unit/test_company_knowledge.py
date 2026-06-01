@@ -54,14 +54,14 @@ class TestLoadValidFile(unittest.TestCase):
         _write_company_json(
             Path(self.tmp.name),
             {
-                "confluence_spaces": ["QA", "ENG", "OPS"],
-                "jira_projects": ["PROJ", "OPS"],
+                "confluence_spaces": ["QA", "ENG", "ACME"],
+                "jira_projects": ["ORACLE", "ACME"],
                 "internal_doc_urls": [
-                    "https://acme.atlassian.net/wiki/spaces/QA/pages/1/Test-Conventions",
+                    "https://wiki.example.com/wiki/spaces/QA/pages/1/Test-Conventions",
                 ],
-                "internal_domains": ["acme.example.com", "partner.example.com"],
+                "internal_domains": ["corp.example.com", "engage.example.com"],
                 "mcp_servers": ["plugin_atlassian_atlassian"],
-                "claude_code_skills": ["acme:ui", "acme:e2e"],
+                "claude_code_skills": ["team:ui", "team:vulcan"],
                 "notes": "Use idiomatic Playwright helpers.",
             },
         )
@@ -74,23 +74,23 @@ class TestLoadValidFile(unittest.TestCase):
         self.assertFalse(self.ck.is_empty)
 
     def test_confluence_spaces_loaded(self):
-        self.assertEqual(self.ck.confluence_spaces, ["QA", "ENG", "OPS"])
+        self.assertEqual(self.ck.confluence_spaces, ["QA", "ENG", "ACME"])
 
     def test_jira_projects_loaded(self):
-        self.assertEqual(self.ck.jira_projects, ["PROJ", "OPS"])
+        self.assertEqual(self.ck.jira_projects, ["ORACLE", "ACME"])
 
     def test_internal_doc_urls_loaded(self):
         self.assertEqual(len(self.ck.internal_doc_urls), 1)
-        self.assertIn("acme.atlassian.net", self.ck.internal_doc_urls[0])
+        self.assertIn("wiki.example.com", self.ck.internal_doc_urls[0])
 
     def test_internal_domains_loaded(self):
-        self.assertIn("acme.example.com", self.ck.internal_domains)
+        self.assertIn("corp.example.com", self.ck.internal_domains)
 
     def test_mcp_servers_loaded(self):
         self.assertEqual(self.ck.mcp_servers, ["plugin_atlassian_atlassian"])
 
     def test_claude_code_skills_loaded(self):
-        self.assertIn("acme:ui", self.ck.claude_code_skills)
+        self.assertIn("team:ui", self.ck.claude_code_skills)
 
     def test_notes_loaded(self):
         self.assertIn("Playwright", self.ck.notes)
@@ -119,8 +119,8 @@ class TestFieldValidation(unittest.TestCase):
         self.assertIn("QA", ck.confluence_spaces)
 
     def test_internal_domains_lowercased(self):
-        ck = self._load({"internal_domains": ["ACME.EXAMPLE.COM"]})
-        self.assertEqual(ck.internal_domains, ["acme.example.com"])
+        ck = self._load({"internal_domains": ["CORP.EXAMPLE.COM"]})
+        self.assertEqual(ck.internal_domains, ["corp.example.com"])
 
     def test_internal_doc_urls_invalid_scheme_dropped(self):
         ck = self._load({"internal_doc_urls": ["ftp://bad.example.com/page"]})
@@ -140,13 +140,13 @@ class TestFieldValidation(unittest.TestCase):
         self.assertIn("verify", ck.claude_code_skills)
 
     def test_skill_scoped_slug_accepted(self):
-        ck = self._load({"claude_code_skills": ["acme:ui"]})
-        self.assertIn("acme:ui", ck.claude_code_skills)
+        ck = self._load({"claude_code_skills": ["team:ui"]})
+        self.assertIn("team:ui", ck.claude_code_skills)
 
     def test_skill_invalid_dropped(self):
-        ck = self._load({"claude_code_skills": ["UPPERCASE", "acme:ui"]})
+        ck = self._load({"claude_code_skills": ["UPPERCASE", "team:ui"]})
         self.assertNotIn("UPPERCASE", ck.claude_code_skills)
-        self.assertIn("acme:ui", ck.claude_code_skills)
+        self.assertIn("team:ui", ck.claude_code_skills)
 
     def test_notes_capped_at_2048(self):
         ck = self._load({"notes": "x" * 3000})
@@ -157,8 +157,8 @@ class TestFieldValidation(unittest.TestCase):
         self.assertNotIn("```", ck.notes)
 
     def test_optum_dashboard_token_env_accepted(self):
-        ck = self._load({"optum_dashboard_token_env": "OPTUM_DASHBOARD_TOKEN"})
-        self.assertEqual(ck.optum_dashboard_token_env, "OPTUM_DASHBOARD_TOKEN")
+        ck = self._load({"optum_dashboard_token_env": "ACME_DASHBOARD_TOKEN"})
+        self.assertEqual(ck.optum_dashboard_token_env, "ACME_DASHBOARD_TOKEN")
 
     def test_optum_dashboard_token_env_lowercase_dropped(self):
         ck = self._load({"optum_dashboard_token_env": "my_token"})
@@ -220,9 +220,9 @@ class TestPromptBlock(unittest.TestCase):
         self.assertIn("plugin_atlassian_atlassian", block)
 
     def test_skills_formatted_with_slash(self):
-        ck = CompanyKnowledge(claude_code_skills=["acme:ui", "verify"])
+        ck = CompanyKnowledge(claude_code_skills=["team:ui", "verify"])
         block = ck.prompt_block()
-        self.assertIn("/acme:ui", block)
+        self.assertIn("/team:ui", block)
         self.assertIn("/verify", block)
 
     def test_notes_included_verbatim(self):
@@ -284,17 +284,17 @@ class TestMergeCascade(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self._write(Path(tmp), "company.json", {
                 "mcp_servers": ["plugin_atlassian_atlassian"],
-                "internal_domains": ["acme.example.com"],
+                "internal_domains": ["corp.example.com"],
             })
             self._write(Path(tmp), "company.uat.json", {
                 "mcp_servers": ["harness"],
-                "internal_domains": ["partner.example.com"],
+                "internal_domains": ["engage.example.com"],
             })
             ck = CompanyKnowledge.load(Path(tmp), env="uat")
         self.assertIn("plugin_atlassian_atlassian", ck.mcp_servers)
         self.assertIn("harness", ck.mcp_servers)
-        self.assertIn("acme.example.com", ck.internal_domains)
-        self.assertIn("partner.example.com", ck.internal_domains)
+        self.assertIn("corp.example.com", ck.internal_domains)
+        self.assertIn("engage.example.com", ck.internal_domains)
 
     def test_lists_deduped_across_layers(self):
         with tempfile.TemporaryDirectory() as tmp:

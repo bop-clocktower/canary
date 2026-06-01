@@ -980,10 +980,6 @@ def ck_show(
         None, "--env", "-e",
         help="Environment override layer to load (e.g. 'uat'). Defaults to CANARY_ENV.",
     ),
-    validate_mcp: bool = typer.Option(
-        False, "--validate-mcp",
-        help="Check each mcp_servers entry against locally registered MCP sources.",
-    ),
     output_json: bool = typer.Option(False, "--json", help="Emit raw JSON."),
 ) -> None:
     """
@@ -992,9 +988,6 @@ def ck_show(
     Merges ~/.canary/company.json (org defaults), .canary/company.json
     (project-local), and .canary/company.<env>.json (env override) and prints
     the resolved result. Useful for debugging grounding issues.
-
-    Pass --validate-mcp to check whether each listed MCP server is registered
-    in the current Claude Code session (scans .mcp.json and installed plugins).
     """
     from agent.core.company_knowledge import CompanyKnowledge
 
@@ -1005,14 +998,7 @@ def ck_show(
         raise typer.Exit(1)
 
     if output_json:
-        out = ck.to_dict()
-        if validate_mcp and ck.mcp_servers:
-            from agent.core.mcp_validator import validate_mcp_servers
-            out["mcp_validation"] = [
-                {"server_id": r.server_id, "status": r.status, "source": r.source, "note": r.note}
-                for r in validate_mcp_servers(ck.mcp_servers)
-            ]
-        _sys.stdout.write(json.dumps(out, indent=2) + "\n")
+        _sys.stdout.write(json.dumps(ck.to_dict(), indent=2) + "\n")
         return
 
     if ck.is_empty:
@@ -1034,19 +1020,7 @@ def ck_show(
     if ck.internal_domains:
         print(f"[bold]Internal domains:[/bold]  {', '.join(ck.internal_domains)}")
     if ck.mcp_servers:
-        if validate_mcp:
-            from agent.core.mcp_validator import validate_mcp_servers
-            results = validate_mcp_servers(ck.mcp_servers)
-            print("[bold]MCP servers:[/bold]")
-            for r in results:
-                if r.status == "registered":
-                    print(f"  [green]✓[/green] {r.server_id}  [dim]{r.source}[/dim]")
-                elif r.status == "plugin_disabled":
-                    print(f"  [yellow]⚠[/yellow] {r.server_id}  [dim]{r.note}[/dim]")
-                else:
-                    print(f"  [red]✗[/red] {r.server_id}  [dim]not found in .mcp.json or installed plugins[/dim]")
-        else:
-            print(f"[bold]MCP servers:[/bold]       {', '.join(ck.mcp_servers)}")
+        print(f"[bold]MCP servers:[/bold]       {', '.join(ck.mcp_servers)}")
     if ck.claude_code_skills:
         print(f"[bold]Claude Code skills:[/bold] {', '.join(ck.claude_code_skills)}")
     if ck.optum_dashboard_url:
@@ -1065,10 +1039,6 @@ def ck_show(
 def ck_init(
     force: bool = typer.Option(
         False, "--force", help="Overwrite an existing .canary/company.json."
-    ),
-    validate_mcp: bool = typer.Option(
-        False, "--validate-mcp",
-        help="After saving, check each mcp_servers entry against locally registered MCP sources.",
     ),
 ) -> None:
     """
@@ -1139,16 +1109,16 @@ def ck_init(
         doc_urls.append(url.strip())
 
     internal_domains = _prompt_list(
-        "\nInternal hostnames", "acme.example.com",
-        existing.internal_domains, "e.g. acme.example.com"
+        "\nInternal hostnames", "corp.example.com",
+        existing.internal_domains, "e.g. corp.example.com"
     )
     mcp_servers = _prompt_list(
         "MCP server identifiers", "plugin_atlassian_atlassian",
         existing.mcp_servers, "e.g. plugin_atlassian_atlassian"
     )
     claude_code_skills = _prompt_list(
-        "Claude Code skill slugs", "acme:ui",
-        existing.claude_code_skills, "e.g. acme:ui"
+        "Claude Code skill slugs", "team:skill-name",
+        existing.claude_code_skills, "e.g. team:skill-name"
     )
     notes_raw = _prompt_str(
         "\nFree-text notes for the LLM", existing.notes,
@@ -1187,25 +1157,6 @@ def ck_init(
 
     print(f"\n[green]✓[/green] Written to [bold]{out_path}[/bold]")
     print("[dim]Verify with: canary company-knowledge show[/dim]")
-
-    if validate_mcp and out.get("mcp_servers"):
-        from agent.core.mcp_validator import validate_mcp_servers
-        print("\n[bold]MCP server validation:[/bold]")
-        any_unregistered = False
-        for r in validate_mcp_servers(out["mcp_servers"]):
-            if r.status == "registered":
-                print(f"  [green]✓[/green] {r.server_id}  [dim]{r.source}[/dim]")
-            elif r.status == "plugin_disabled":
-                print(f"  [yellow]⚠[/yellow] {r.server_id}  [dim]{r.note}[/dim]")
-                any_unregistered = True
-            else:
-                print(f"  [red]✗[/red] {r.server_id}  not found in .mcp.json or installed plugins")
-                any_unregistered = True
-        if any_unregistered:
-            print(
-                "\n[yellow]Some MCP servers could not be verified locally.[/yellow] "
-                "They may still work if registered in your Claude Code session at runtime."
-            )
 
 
 if __name__ == "__main__":

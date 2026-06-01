@@ -498,20 +498,18 @@ when the project already holds an active license.
 
 ### Add keyless CLI companions for static-analysis-only operations
 
-- **Status:** planned (unblocked 2026-05-28 — Harness-pull decision resolved)
+- **Status:** done — PR #190
 - **Spec:** none
-- **Summary:** Several slash-command agents have a static-analysis dimension
-  that could ship as keyless CLI commands alongside the generative slash
-  command. See the "Guiding principle" section of
-  [ADR 0004](adr/0004-remove-keyed-paths-at-v3.md) for the full table.
-  Candidates: `oracle review-test --static` (lint-style static checks for
-  tests), `oracle flake-check` (pattern detection for known flake causes —
-  `Math.random`, `setTimeout` without `waitFor`, etc.),
-  `oracle heal-test --pattern` (regex-detectable fixes like selector swaps from
-  trace). Aligns Oracle with Harness's shape: deterministic → CLI, generative →
-  slash command. **Paused** because the "pull into Harness" decision changes
-  where these commands live (`oracle` vs `harness test:`).
-- **Blockers:** decision on Harness-pull.
+- **Summary:** Shipped three deterministic CLI commands (no LLM, no API key):
+  `canary review-test PATH --static` (file:line findings across 8 quality
+  dimensions — brittle selectors, hardcoded sleeps, missing assertions,
+  randomness, timestamps, missing awaits, magic numbers);
+  `canary flake-check PATH` (flakiness-only subset, exits 1 in CI if patterns
+  found); `canary heal-test PATH --pattern` (auto-fixes sleep→TODO comment,
+  waitForTimeout→TODO comment, missing await; brittle selectors flagged but not
+  auto-fixed without DOM context). All three support `--json`. 35 unit tests.
+  New modules: `agent/core/static_linter.py`, `agent/core/pattern_healer.py`.
+- **Blockers:** none
 - **Plan:** none
 
 ### Migrate all LLM-dependent tasks to keyless slash commands
