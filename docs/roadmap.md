@@ -436,17 +436,18 @@ when the project already holds an active license.
 
 ### Spike: Schemathesis API Fuzzing
 
-- **Status:** planned
+- **Status:** done — PR #194 (spike adopted)
 - **Issue:**
   [#131](https://github.com/bop-clocktower/canary/issues/131)
 - **Spec:** none
-- **Summary:** Time-boxed spike on branch `spike/schemathesis`. Run Schemathesis
-  against one sample API endpoint in read-only mode; measure defects found vs.
-  the existing suite. Decision gate: if the defect-find rate justifies adoption,
-  add a Schemathesis registry entry under the `api` category (which
-  `TestClassifier` already handles) with
-  `recommended_for: ["property-based API testing", "OpenAPI fuzz testing"]` so
-  it surfaces alongside pytest in Stage 1 ranked output.
+- **Summary:** Spike run against `POST /v1/checkout` (from
+  `examples/pytest-api-checkout`). Schemathesis v4.21.0 generated 36 test
+  cases in 1.08s and found 3 unique failures — 2 missed by the hand-written
+  suite: a `qty=false` coercion bug (boolean accepted as integer, processed
+  as qty=0) and a schema/implementation mismatch (400 response undocumented,
+  `minItems` not enforced in schema). Decision: **adopt**. Schemathesis added
+  to `registry.json` under `api` category (MIT license, no API key required).
+  Full findings in `spike/schemathesis/SPIKE_REPORT.md`.
 - **Blockers:** none
 - **Plan:** none
 
