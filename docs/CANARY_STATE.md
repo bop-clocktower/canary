@@ -1,6 +1,6 @@
-# Oracle — Current State
+# Canary — Current State
 
-## 🦇 System Status
+## 🐦 System Status
 
 Oracle is a functional, autonomous test automation CLI. It can classify
 user intent, recommend frameworks, generate production-ready code, and
