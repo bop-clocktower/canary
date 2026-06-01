@@ -352,7 +352,7 @@ implementation begins. All 6 resolved.
   [#142](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/142),
   [#144](https://github.com/bri-stevenski/oracle-test-ai-agent/issues/144) (both
   closed)
-- **Summary:** Markdown-only voice subsystem under `plugins/oracle/voice/`.
+- **Summary:** Markdown-only voice subsystem under `voice/`.
   Reusable named profiles (`profiles/clocktower.md` ships first), a verified
   canon quote pool (`quotes/birds-of-prey.md`, shipped empty with strict
   primary-source citation rules), house aphorisms, and a shared `discovery.md`
@@ -372,9 +372,9 @@ observability sink routing, and an OSS-first commercial-license gate.
 The picker has two layers that must stay in sync:
 
 1. **Keyless slash-command layer (primary):** `/oracle-pick-framework`
-   (`plugins/oracle/commands/oracle-pick-framework.md`) →
+   (`commands/oracle-pick-framework.md`) →
    `oracle-framework-advisor` agent
-   (`plugins/oracle/agents/oracle-framework-advisor.md`). No API key required.
+   (`agents/oracle-framework-advisor.md`). No API key required.
    Recommendation map covers 16 categories as of Stage 1.
 2. **Rule-based CLI layer (survives v3.0):** `TestClassifier`
    (`agent/core/classifier.py`) + `FrameworkRecommender`
@@ -504,6 +504,27 @@ when the project already holds an active license.
 
 ## Future Work
 
+### Rename oracle → canary
+
+- **Status:** planned
+- **Issue:** none yet
+- **Spec:** none
+- **Summary:** Rename the tool from Oracle to Canary to avoid collision with
+  Oracle Corporation. Changes: package `oracle-test-ai` → `canary-test-ai`;
+  CLI entry point `oracle` → `canary`; MCP server `FastMCP("oracle")` →
+  `FastMCP("canary")` with tool names `oracle__*` → `canary__*`; agent
+  `allowed-tools:` frontmatter updated accordingly; all agent/command/skill
+  files renamed from `oracle-*` to `canary-*`; config dir `.oracle/` →
+  `.canary/`; bulk doc pass. Voice files (Clocktower profile, Birds of Prey
+  quotes, house aphorisms) are **unchanged** — the Clocktower/Barbara Gordon
+  persona is intentional; the character framing does not depend on the tool
+  name. GitHub repo rename (`oracle-test-ai-agent`) deferred to post-demo.
+  **Sequencing note:** plugin files live at repo root after PR
+  `refactor/plugin-root-move` — rename targets root paths (`agents/`,
+  `commands/`, `hooks/`), not `plugins/oracle/`.
+- **Blockers:** none
+- **Plan:** none
+
 ### Decide whether to pull Oracle into Harness directly
 
 - **Status:** decision pending — team discussion scheduled
@@ -601,7 +622,7 @@ when the project already holds an active license.
   1. Inventory every call site that uses `agent.llm` (orchestrator, CLI,
      action). Document which can move to slash commands and which need MCP tool
      wrappers instead.
-  2. Ship parity slash commands under `plugins/oracle/commands/` for each
+  2. Ship parity slash commands under `commands/` for each
      retained capability (principally `/oracle-self-heal`).
   3. Print a deprecation warning from the keyed CLI paths pointing users at the
      slash-command equivalent.
