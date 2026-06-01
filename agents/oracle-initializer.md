@@ -17,7 +17,7 @@ scaffold tools.
    to retrieve all supported options, then ask the user to choose one.
 
    Also check for a project voice config per
-   `plugins/oracle/voice/discovery.md`. If found, resolve its named profile and
+   `voice/discovery.md`. If found, resolve its named profile and
    apply the voice to any prose you write (a scaffold README, your report) —
    not to scaffolded config or test files. If none, use neutral voice.
 

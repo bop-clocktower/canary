@@ -4,14 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - 'plugins/oracle/.claude-plugin/plugin.json'
-      - 'plugins/oracle/.claude-plugin/schemas/plugin.schema.json'
+      - '.claude-plugin/plugin.json'
+      - '.claude-plugin/schemas/plugin.schema.json'
       - '.github/workflows/validate-plugin.yml'
   pull_request:
     branches: [main]
     paths:
-      - 'plugins/oracle/.claude-plugin/plugin.json'
-      - 'plugins/oracle/.claude-plugin/schemas/plugin.schema.json'
+      - '.claude-plugin/plugin.json'
+      - '.claude-plugin/schemas/plugin.schema.json'
       - '.github/workflows/validate-plugin.yml'
 
 jobs:
@@ -33,8 +33,8 @@ jobs:
         run: |
           python3 - <<'PYEOF'
           import json, jsonschema, sys
-          schema   = json.load(open('plugins/oracle/.claude-plugin/schemas/plugin.schema.json'))
-          manifest = json.load(open('plugins/oracle/.claude-plugin/plugin.json'))
+          schema   = json.load(open('.claude-plugin/schemas/plugin.schema.json'))
+          manifest = json.load(open('.claude-plugin/plugin.json'))
           try:
               jsonschema.validate(manifest, schema)
               print("plugin.json is valid")
