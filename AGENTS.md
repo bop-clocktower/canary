@@ -34,6 +34,15 @@ integrity.
   of stale references behind (this drift was the motivation for the guard).
   `scripts/check_removed_symbols.py` (run in CI via `docs-lint`) now fails the
   build on that drift — add a row there for each newly-removed surface.
+- **Open-core boundary.** This repo is public/open-source. The generic engine
+  lives here; **company-specific content** (client names, internal domains,
+  proprietary skills, populated `company.json`) lives **only** in a private
+  overlay, discovered at runtime via `.canary/skills/`. The same guard enforces
+  this: it scans tracked files for internal-hostname patterns plus a
+  company-name **denylist** loaded from a gitignored `.proprietary-denylist`
+  file (and the `CANARY_PROPRIETARY_DENYLIST` CI secret). The public script
+  names no company — keep it that way. Use a neutral placeholder (e.g. `ACME`)
+  in public examples.
 
 #### Branch Naming
 

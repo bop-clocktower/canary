@@ -65,3 +65,6 @@ blob-report/
 # settings.local.json is personal (extra allows, tokens) — never commit
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+# Proprietary denylist for the company-leak guard (kept local; CI uses a secret)
+.proprietary-denylist

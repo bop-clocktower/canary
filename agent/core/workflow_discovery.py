@@ -40,7 +40,7 @@ from typing import Optional
 
 # ── schema ────────────────────────────────────────────────────────────────────
 
-SCHEMA_VERSION = "https://canary.capillary.internal/schemas/workflow-mapping/v1"
+SCHEMA_VERSION = "https://github.com/bop-clocktower/canary/schemas/workflow-mapping/v1"
 
 # Word-list used for automatic semantic-role heuristics.
 _ROLE_TRIGGERS: dict[str, list[str]] = {
@@ -217,7 +217,7 @@ class WorkflowDiscovery:
         Parameters
         ----------
         project_key : str
-            Jira project key (e.g. ``"OPTUM"``) or GitHub repo slug
+            Jira project key (e.g. ``"ACME"``) or GitHub repo slug
             (``"owner/repo"``).
         refresh : bool
             Re-discover even if a cached mapping exists.  Preserves existing
@@ -596,9 +596,9 @@ def resolve_role(
     Example
     -------
     >>> from agent.core.workflow_discovery import resolve_role
-    >>> transition_name = resolve_role("OPTUM", "qa_passed")
+    >>> transition_name = resolve_role("ACME", "qa_passed")
     >>> if transition_name is None:
-    ...     raise RuntimeError("Run canary workflow-discover --project OPTUM first")
+    ...     raise RuntimeError("Run canary workflow-discover --project ACME first")
     """
     return WorkflowDiscovery(canary_dir=canary_dir).resolve_role(project_key, role)
 

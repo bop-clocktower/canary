@@ -29,7 +29,7 @@ def recommend(
 
     Runs Canary's classifier + recommender pipeline locally and returns the
     framework, file extension, and reasoning. Use /canary-pick-framework from
-    the Claude Code plugin for an interactive version with Capillary overlays.
+    the Claude Code plugin for an interactive version with company overlays.
     """
     from agent.core.classifier import TestClassifier, extract_framework_hint
     from agent.core.recommender import FrameworkRecommender
@@ -399,7 +399,7 @@ def workflow_discover(
         None,
         "--project",
         "-p",
-        help="Jira project key (e.g. OPTUM) or GitHub repo slug (owner/repo). "
+        help="Jira project key (e.g. ACME) or GitHub repo slug (owner/repo). "
              "Defaults to all keys in .canary/company.json jira_projects.",
     ),
     refresh: bool = typer.Option(
@@ -575,7 +575,7 @@ def workflow_show(
 
 @workflow_app.command("init")
 def workflow_init(
-    project: str = typer.Option(..., "--project", "-p", help="Jira project key (e.g. OPTUM)."),
+    project: str = typer.Option(..., "--project", "-p", help="Jira project key (e.g. ACME)."),
     qa_passed: str = typer.Option(
         ...,
         "--qa-passed",
@@ -607,7 +607,7 @@ def workflow_init(
 
     Example:
 
-        canary workflow init --project OPTUM --qa-passed "QA Passed" --in-qa "In QA"
+        canary workflow init --project ACME --qa-passed "QA Passed" --in-qa "In QA"
 
     To use a different Atlassian instance for this project:
 
