@@ -2,7 +2,7 @@
 project: oracle
 version: 1
 created: 2026-05-11
-updated: 2026-05-26
+updated: 2026-06-01
 ---
 
 # Roadmap
@@ -452,64 +452,53 @@ when the project already holds an active license.
 
 ### Spike: SDV Synthetic Data (OC-002)
 
-- **Status:** planned
+- **Status:** superseded — spike never ran as a standalone deliverable; OC-002
+  resolved via team decision and SDV shipped directly in Stage 3 (PR #155).
 - **Issue:**
   [#132](https://github.com/bop-clocktower/canary/issues/132)
 - **Spec:** none
-- **Summary:** Time-boxed spike on branch `spike/sdv`. Generate a synthetic
-  dataset matching one sample schema using SDV (Synthetic Data Vault). Verify
-  output fidelity and confirm BSL license is acceptable under your org's
-  procurement rules. Result feeds the OC-002 decision that gates the
-  `synthetic_data` registry entry in Stage 3.
-- **Blockers:** OC-002 —
-  [#126](https://github.com/bop-clocktower/canary/issues/126) — BSL
-  license review required.
+- **Summary:** The spike's goal was to feed the OC-002 license decision that
+  gated the `synthetic_data` registry entry. OC-002 was resolved (Issue #126
+  closed) and SDV was added to `registry.json` as `status: preferred` with a
+  BSL warning and Faker as the MIT fallback, all in PR #155. No further work
+  needed.
+- **Blockers:** none
 - **Plan:** none
 
 ## Future Work
 
 ### Rename oracle → canary
 
-- **Status:** planned
-- **Issue:** none yet
+- **Status:** done
+- **Issue:** none
 - **Spec:** none
-- **Summary:** Rename the tool from Oracle to Canary to avoid collision with
-  Oracle Corporation. Changes: package `canary-test-ai` → `canary-test-ai`;
-  CLI entry point `oracle` → `canary`; MCP server `FastMCP("oracle")` →
-  `FastMCP("canary")` with tool names `oracle__*` → `canary__*`; agent
-  `allowed-tools:` frontmatter updated accordingly; all agent/command/skill
-  files renamed from `oracle-*` to `canary-*`; config dir `.canary/` →
-  `.canary/`; bulk doc pass. Voice files (Clocktower profile, Birds of Prey
+- **Summary:** Renamed the tool from Oracle to Canary. Package is
+  `canary-test-ai`; CLI entry point is `canary`; MCP server is
+  `FastMCP("canary")` with tool names `canary__*`; all agent/command/skill
+  files use `canary-*` names. Voice files (Clocktower profile, Birds of Prey
   quotes, house aphorisms) are **unchanged** — the Clocktower/Barbara Gordon
-  persona is intentional; the character framing does not depend on the tool
-  name. GitHub repo rename (`canary-test-ai-agent`) deferred to post-demo.
-  **Sequencing note:** plugin files live at repo root after PR
-  `refactor/plugin-root-move` — rename targets root paths (`agents/`,
-  `commands/`, `hooks/`), not `plugins/oracle/`.
+  persona is intentional and does not depend on the tool name.
 - **Blockers:** none
 - **Plan:** none
 
 ### Decide whether to pull Oracle into Harness directly
 
-- **Status:** decision pending — team discussion scheduled
+- **Status:** decided — 2026-05-28 team meeting
 - **Spec:** none
-- **Summary:** Oracle's current shape (separate `oracle` CLI, plugin, and MCP
-  server) parallels Harness's pattern (CLI for deterministic work, slash
-  commands for generative work) but maintains its own install path, brand, and
-  release cadence. Alternative: pull Oracle into Harness directly — its
-  capabilities become `harness:test-*` skills, the `oracle` CLI becomes
-  `harness test:<subcmd>`, the MCP tools either fold into Harness's MCP surface
-  or get reimplemented. Cost: ~20–25% of the in-flight host-LLM migration work
-  is throwaway under "pull in"; the remaining 75%+ (slash command markdown,
-  agent definitions, deterministic modules) ports cleanly. Holding the v3.0 cut
-  and any new keyless CLI commands (see related item below) until this decision
-  lands so they don't ship in the wrong shape.
-- **Blockers:** team discussion.
+- **Summary:** **Oracle and Harness stay complementary, not merged.** Rather
+  than a big-bang integration, each Oracle skill will be evaluated against the
+  Harness catalog one at a time; skills that fill genuine gaps get folded in,
+  skills Harness already covers well stay where they are. Rationale: Harness is
+  strong at code quality, architecture enforcement, and unit-level testing;
+  Oracle's edge is integration tests, E2E, API contract tests, and
+  cross-service flows — exactly where the team's testing lives. This decision
+  unblocks the keyless CLI companions work below.
+- **Blockers:** none
 - **Plan:** none
 
 ### Add keyless CLI companions for static-analysis-only operations
 
-- **Status:** planned (paused pending Harness-pull decision above)
+- **Status:** planned (unblocked 2026-05-28 — Harness-pull decision resolved)
 - **Spec:** none
 - **Summary:** Several slash-command agents have a static-analysis dimension
   that could ship as keyless CLI commands alongside the generative slash
