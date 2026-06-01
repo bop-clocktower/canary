@@ -24,7 +24,7 @@ language requirements into high-quality, framework-aware test code.
 ### pipx (recommended)
 
 ```bash
-pipx install git+https://github.com/bop-clocktower/canary@v0.2.0
+pipx install git+https://github.com/bop-clocktower/canary@latest
 ```
 
 This installs the `canary` binary globally without polluting your project
@@ -97,6 +97,11 @@ harness-scaffolded project), `canary version`.
 Claude Code session for any LLM work — there is no separate provider key to
 set. The CLI commands (`recommend`, `init`, `run`, `migrate`) are deterministic
 and make no LLM calls.
+
+## 📝 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release history. Per-release notes are
+also published on [GitHub Releases](https://github.com/bop-clocktower/canary/releases).
 
 ## 🏗 Architecture
 
