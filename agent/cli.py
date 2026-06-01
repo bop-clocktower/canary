@@ -1050,7 +1050,7 @@ def ck_show(
     if ck.claude_code_skills:
         print(f"[bold]Claude Code skills:[/bold] {', '.join(ck.claude_code_skills)}")
     if ck.optum_dashboard_url:
-        print(f"[bold]Optum dashboard:[/bold]   {ck.optum_dashboard_url}")
+        print(f"[bold]Dashboard URL:[/bold]     {ck.optum_dashboard_url}")
     if ck.notes:
         print(f"[bold]Notes:[/bold] {ck.notes}")
     if ck.error:
@@ -1139,16 +1139,16 @@ def ck_init(
         doc_urls.append(url.strip())
 
     internal_domains = _prompt_list(
-        "\nInternal hostnames", "capillarytech.com",
-        existing.internal_domains, "e.g. capillarytech.com"
+        "\nInternal hostnames", "acme.example.com",
+        existing.internal_domains, "e.g. acme.example.com"
     )
     mcp_servers = _prompt_list(
         "MCP server identifiers", "plugin_atlassian_atlassian",
         existing.mcp_servers, "e.g. plugin_atlassian_atlassian"
     )
     claude_code_skills = _prompt_list(
-        "Claude Code skill slugs", "capillary:ui",
-        existing.claude_code_skills, "e.g. capillary:ui"
+        "Claude Code skill slugs", "acme:ui",
+        existing.claude_code_skills, "e.g. acme:ui"
     )
     notes_raw = _prompt_str(
         "\nFree-text notes for the LLM", existing.notes,
