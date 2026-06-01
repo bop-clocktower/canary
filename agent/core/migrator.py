@@ -106,6 +106,13 @@ class MigrationContext:
 
 
 @dataclass
+class SkillDeployResult:
+    skill_name: str
+    status: str   # "copied" | "skipped" | "dry_run"
+    note: str = ""
+
+
+@dataclass
 class MigrationReport:
     framework: str
     shape: str
@@ -118,6 +125,7 @@ class MigrationReport:
     preserved_files: list = field(default_factory=list)
     would_create: list = field(default_factory=list)
     manual_followups: list = field(default_factory=list)
+    deployed_skills: list[SkillDeployResult] = field(default_factory=list)
 
     def to_markdown(self) -> str:
         lines = ["# Canary Migration Report", ""]
@@ -188,6 +196,18 @@ class MigrationReport:
                     lines.append(f"- `{f}`")
                 lines.append("")
 
+        if self.deployed_skills:
+            copied = [r for r in self.deployed_skills if r.status in ("copied", "dry_run")]
+            skipped = [r for r in self.deployed_skills if r.status == "skipped"]
+            section = "## Skills (would deploy)" if self.dry_run else "## Skills Deployed"
+            lines += [section, ""]
+            for r in copied:
+                prefix = "(dry run) " if r.status == "dry_run" else ""
+                lines.append(f"- `{r.skill_name}` — {prefix}copied to `.canary/skills/`")
+            for r in skipped:
+                lines.append(f"- `{r.skill_name}` — skipped ({r.note})")
+            lines.append("")
+
         if self.manual_followups:
             lines += ["## Manual Follow-ups Required", ""]
             for item in self.manual_followups:
@@ -236,6 +256,7 @@ class HarnessMigrator:
         *,
         dry_run: bool = True,
         framework: Optional[str] = None,
+        overlay_path: Optional[Path] = None,
     ) -> MigrationReport:
         ctx = self.detect(project_root)
         if not ctx.is_harness_project:
@@ -266,6 +287,7 @@ class HarnessMigrator:
 
         preserved = self._find_existing_tests(project_root)
         scaffolder = Scaffolder()
+        deployed = self._deploy_skills(shape, overlay_path, project_root, dry_run)
 
         if dry_run:
             from agent.core.scaffolder import TEMPLATES
@@ -291,6 +313,7 @@ class HarnessMigrator:
                 skipped_configs=already_present,
                 preserved_files=preserved,
                 manual_followups=followups,
+                deployed_skills=deployed,
             )
 
         result = scaffolder.scaffold(effective_framework, project_root=str(project_root))
@@ -306,9 +329,91 @@ class HarnessMigrator:
             skipped_configs=result["skipped_files"],
             preserved_files=preserved,
             manual_followups=followups,
+            deployed_skills=deployed,
         )
 
     # ── private helpers ───────────────────────────────────────────────────────
+
+    def _deploy_skills(
+        self,
+        shape: str,
+        overlay_path: Optional[Path],
+        target_root: Path,
+        dry_run: bool,
+    ) -> list[SkillDeployResult]:
+        """Copy skills from *overlay_path*/.canary/skills/ that match *shape*.
+
+        A skill is deployed when its ``deploy_to`` frontmatter list includes
+        the detected shape or the sentinel value ``all``. Skills already
+        present in the target are skipped (not overwritten).
+
+        When *overlay_path* is None and ``~/.canary/skills/`` does not exist,
+        returns an empty list silently.
+        """
+        from agent.core.skill_registry import SkillRegistry
+
+        results: list[SkillDeployResult] = []
+
+        # Collect overlay skill directories to inspect.
+        candidate_roots: list[Path] = []
+        if overlay_path is not None:
+            candidate_roots.append(overlay_path)
+        home_skills = Path.home() / ".canary" / "skills"
+        if home_skills.is_dir():
+            candidate_roots.append(home_skills.parent.parent)  # registry walks up
+
+        skills_to_deploy: list = []
+        seen_names: set[str] = set()
+
+        for root in candidate_roots:
+            overlay_skills_dir = root / ".canary" / "skills"
+            if not overlay_skills_dir.is_dir():
+                # Maybe root IS the .canary/skills dir directly
+                if root.name == "skills" and (root / "..").resolve().name == ".canary":
+                    overlay_skills_dir = root
+                else:
+                    continue
+            for skill_dir in sorted(overlay_skills_dir.iterdir()):
+                if not skill_dir.is_dir():
+                    continue
+                skill_md = skill_dir / "SKILL.md"
+                if not skill_md.exists():
+                    continue
+                # Parse frontmatter directly to avoid full registry overhead.
+                reg = SkillRegistry()
+                info = reg._parse_nested(skill_md, skill_dir.name, "overlay")
+                if info is None or info.name in seen_names:
+                    continue
+                if not info.deploy_to:
+                    continue
+                if shape not in info.deploy_to and "all" not in info.deploy_to:
+                    continue
+                seen_names.add(info.name)
+                skills_to_deploy.append((info, skill_dir))
+
+        target_skills_dir = target_root / ".canary" / "skills"
+
+        for info, skill_dir in skills_to_deploy:
+            dest = target_skills_dir / skill_dir.name
+            if dest.exists():
+                results.append(SkillDeployResult(
+                    skill_name=info.name,
+                    status="skipped",
+                    note="already present",
+                ))
+                continue
+            if dry_run:
+                results.append(SkillDeployResult(
+                    skill_name=info.name,
+                    status="dry_run",
+                ))
+                continue
+            import shutil
+            target_skills_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(skill_dir, dest)
+            results.append(SkillDeployResult(skill_name=info.name, status="copied"))
+
+        return results
 
     def _load_harness_config(self, root: Path) -> dict:
         try:
