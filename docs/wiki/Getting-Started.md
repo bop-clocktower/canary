@@ -26,7 +26,7 @@ Verify the install worked:
 canary version
 ```
 
-You should see the Canary banner with the version, e.g. `canary  v1.0.0`.
+You should see the Canary banner with the current version number.
 
 ## Step 2: Open Canary in Claude Code
 
