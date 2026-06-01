@@ -14,9 +14,9 @@ and how to drive it), see [Guides](../../docs/guides/index.md).
 ```text
 agents/skills/
 ├── claude-code/          # Claude Code skills (current)
-│   ├── oracle-generate-test/
-│   ├── oracle-promote-test/
-│   └── oracle-add-framework/
+│   ├── canary-generate-test/
+│   ├── canary-promote-test/
+│   └── canary-add-framework/
 └── README.md             # this file
 ```
 
@@ -29,28 +29,28 @@ adjustments.
 
 ### Generation
 
-- [`oracle-generate-test`](./claude-code/oracle-generate-test/SKILL.md)
+- [`canary-generate-test`](./claude-code/canary-generate-test/SKILL.md)
   — Generate a framework-appropriate test from a natural-language
   requirement. Routes through classify → recommend → generate, writes
   the test under `tests/generated/`, and optionally executes it.
 
 ### Lifecycle
 
-- [`oracle-promote-test`](./claude-code/oracle-promote-test/SKILL.md)
+- [`canary-promote-test`](./claude-code/canary-promote-test/SKILL.md)
   — Move a generated test from `tests/generated/` into the committed
   test suite. Reviews, relocates, drops generation artifacts, and
   verifies the test runs in the project's normal flow.
 
 ### Maintenance
 
-- [`oracle-add-framework`](./claude-code/oracle-add-framework/SKILL.md)
+- [`canary-add-framework`](./claude-code/canary-add-framework/SKILL.md)
   — Add a new testing framework to Oracle's registry end-to-end.
   Enforces the classifier↔registry contract, authors the registry
   entry, validates the execution command, and updates docs + state.
 
 ### Setup
 
-- [`oracle-setup-harness`](./claude-code/oracle-setup-harness/SKILL.md)
+- [`canary-setup-harness`](./claude-code/canary-setup-harness/SKILL.md)
   — Configure the Harness Engineering guardrails in a new Oracle
   project or fork. Installs the harness CLI, initialises the
   config, wires up CI workflows, and verifies all gates pass.
@@ -83,7 +83,7 @@ Invoke by referencing the skill name in conversation, or via slash
 command if the host registers one:
 
 ```text
-Use the oracle-generate-test skill to write a load test for /v1/search.
+Use the canary-generate-test skill to write a load test for /v1/search.
 ```
 
 ### Programmatic
