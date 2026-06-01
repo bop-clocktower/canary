@@ -66,6 +66,18 @@ accumulate, churn diffs, and leak prompt content into git history. Keep the
 directory tracked (so the orchestrator can write to it) by relying on the
 ignore rule plus the orchestrator's `mkdir(parents=True, exist_ok=True)`.
 
+## 11. Claude Code plugin install requires Volta for consistent Node version
+
+`/plugin install` can fail with "source type not supported" when Claude Code
+runs under the wrong Node.js version — even when the marketplace source format
+is valid. The error message implies a CC version problem but the root cause is
+a Node runtime mismatch.
+
+**Fix:** Install Volta (`brew install volta && volta install node`). Volta pins
+a default Node version globally, which gives CC a stable runtime for plugin
+operations. Documented in
+[Troubleshooting.md](wiki/Troubleshooting.md#plugin-install-fails-source-type-not-supported).
+
 ## 10. Use sub-second precision for output filenames
 
 The orchestrator writes one file per run with a timestamped name. Second
