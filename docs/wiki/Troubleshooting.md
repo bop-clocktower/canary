@@ -175,26 +175,25 @@ Failed to install: This plugin uses a source type your Claude Code version
 does not support. Update Claude Code and try again.
 ```
 
-This error appears during `/plugin install oracle@oracle` and is caused by a
-Node.js version mismatch — Claude Code picks up the wrong Node runtime and
-misreads the marketplace plugin source format.
+This error was caused by the plugin source using the `git-subdir` format,
+which requires a specific Node.js runtime version to parse correctly. The
+root cause is fixed — the plugin now lives at the repo root and
+`marketplace.json` uses a plain GitHub URL.
 
-**Fix:** Install [Volta](https://volta.sh) to pin the Node version:
+If you are on an older checkout that still uses `git-subdir`, install
+[Volta](https://volta.sh) to fix the Node version:
 
 ```bash
 brew install volta
 volta install node
 ```
 
-Then restart your terminal (or `source ~/.zshrc`) and retry the plugin install:
+Then restart your terminal (or `source ~/.zshrc`) and retry:
 
 ```bash
 /plugin marketplace add https://github.com/bri-stevenski/oracle-test-ai-agent
 /plugin install oracle@oracle
 ```
-
-> **Note:** Volta sets a default Node version globally. It does not affect
-> project-local `.nvmrc` files or other version managers already in use.
 
 ## Still Stuck?
 

@@ -66,16 +66,15 @@ accumulate, churn diffs, and leak prompt content into git history. Keep the
 directory tracked (so the orchestrator can write to it) by relying on the
 ignore rule plus the orchestrator's `mkdir(parents=True, exist_ok=True)`.
 
-## 11. Claude Code plugin install requires Volta for consistent Node version
+## 11. Plugin source format drives CC install compatibility
 
-`/plugin install` can fail with "source type not supported" when Claude Code
-runs under the wrong Node.js version — even when the marketplace source format
-is valid. The error message implies a CC version problem but the root cause is
-a Node runtime mismatch.
+Keep plugin files at the repo root so `marketplace.json` can use a plain
+`"https://github.com/owner/repo"` source URL. The `git-subdir` object format
+(required when the plugin lives in a subdirectory) requires a specific Node.js
+runtime version to parse correctly — installing Volta was the workaround, but
+moving the plugin to repo root eliminates the dependency entirely.
 
-**Fix:** Install Volta (`brew install volta && volta install node`). Volta pins
-a default Node version globally, which gives CC a stable runtime for plugin
-operations. Documented in
+If `git-subdir` is unavoidable, install Volta to pin the Node version. See
 [Troubleshooting.md](wiki/Troubleshooting.md#plugin-install-fails-source-type-not-supported).
 
 ## 10. Use sub-second precision for output filenames

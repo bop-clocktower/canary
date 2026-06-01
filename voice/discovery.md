@@ -50,7 +50,7 @@ overrides: # optional: extra vocabulary / house aphorisms
 ```
 
 Resolve `profile:` against the shipped profiles in
-`plugins/oracle/voice/profiles/<name>.md`.
+`voice/profiles/<name>.md`.
 
 - **Profile found** → apply its rules (tone, vocabulary, palette, opener/closer,
   anti-patterns) plus any project `overrides`, but only to files matching

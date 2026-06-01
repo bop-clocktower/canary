@@ -43,10 +43,10 @@ the Phase 1 pattern from ADR 0001.
 
 Concretely:
 
-- Agent file: `plugins/oracle/agents/oracle-test-healer.md`.
+- Agent file: `agents/oracle-test-healer.md`.
   Mirrors `oracle-test-author` shape — Phase 1 (analyze the failure),
   Phase 2 (propose a fix in-session), Phase 3 (write + verify).
-- Command file: `plugins/oracle/commands/oracle-heal-test.md`.
+- Command file: `commands/oracle-heal-test.md`.
   Takes a test file path + (optionally) the failing error output as
   argument; delegates to the healer agent.
 - Reuses `oracle__analyze_file` and the existing MCP toolset; no new

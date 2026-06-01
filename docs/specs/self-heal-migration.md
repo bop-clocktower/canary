@@ -32,10 +32,10 @@ Phase 3 will deprecate it alongside `oracle generate`.
 
 ## Success Criteria
 
-1. `plugins/oracle/agents/oracle-test-healer.md` exists with `Read`,
+1. `agents/oracle-test-healer.md` exists with `Read`,
    `Write`, `Edit`, `Glob`, `Grep`, `Bash`, and
    `mcp__oracle__oracle__analyze_file` authorized.
-2. `plugins/oracle/commands/oracle-heal-test.md` exists, delegates
+2. `commands/oracle-heal-test.md` exists, delegates
    to the healer agent, takes a test path + optional error output
    argument.
 3. Invoking `/oracle-heal-test path/to/failing.spec.ts` against a
@@ -54,8 +54,8 @@ Phase 3 will deprecate it alongside `oracle generate`.
 
 **In scope:**
 
-- `plugins/oracle/agents/oracle-test-healer.md` — new agent.
-- `plugins/oracle/commands/oracle-heal-test.md` — new slash command.
+- `agents/oracle-test-healer.md` — new agent.
+- `commands/oracle-heal-test.md` — new slash command.
 - `docs/adr/0002-self-heal-as-slash-command.md` — decision record
   (accepted on merge of this PR).
 - `docs/adr/README.md` — index updated.

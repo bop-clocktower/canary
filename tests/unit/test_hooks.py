@@ -1,4 +1,4 @@
-"""Unit tests for plugins/oracle/hooks/*.py hook scripts.
+"""Unit tests for hooks/*.py hook scripts.
 
 Each hook is exercised as a subprocess with crafted stdin payloads,
 matching the Claude Code hook protocol (JSON in, exit code out).

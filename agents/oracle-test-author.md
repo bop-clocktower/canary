@@ -38,7 +38,7 @@ conventions.
    fixtures.
 3. If no framework signal exists, ask the user once or defer to `oracle-framework-advisor`.
 4. **Check for a project voice config** per the protocol in
-   `plugins/oracle/voice/discovery.md`. If one is found, resolve its named
+   `voice/discovery.md`. If one is found, resolve its named
    profile and apply the voice to any **prose** you write this dispatch
    (workspace READMEs, your end-of-dispatch report, decision logs) — never to
    test code. If none is found, use the default neutral voice.

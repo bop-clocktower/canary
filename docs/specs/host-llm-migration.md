@@ -29,7 +29,7 @@ the CLI itself, and the GitHub Action.
    knowledge, fixtures, company knowledge) are available to the host
    agent.
 4. **Single edit point** — Future agents added under
-   `plugins/oracle/agents/` follow the same pattern; rewriting one
+   `agents/` follow the same pattern; rewriting one
    skill template doesn't propagate to N agent files.
 
 ## Success Criteria
@@ -56,9 +56,9 @@ the CLI itself, and the GitHub Action.
 
 **In scope:**
 
-- `plugins/oracle/agents/oracle-test-author.md` — rewritten to use
+- `agents/oracle-test-author.md` — rewritten to use
   host-LLM generation.
-- `plugins/oracle/commands/oracle-write-test.md` — verified unchanged
+- `commands/oracle-write-test.md` — verified unchanged
   (it just delegates to the agent); update only if the rewrite
   requires a different argument shape.
 - `docs/specs/oracle-plugin.md` — sections claiming "no API key
