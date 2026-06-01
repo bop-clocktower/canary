@@ -6,6 +6,7 @@ on:
       - "**/*.md"
       - ".markdownlint.json"
       - ".github/workflows/docs-lint.yml"
+      - "scripts/check_removed_symbols.py"
   push:
     branches:
       - main
@@ -20,3 +21,14 @@ jobs:
           node-version: "20"
       - name: Run markdownlint
         run: npx --yes markdownlint-cli "**/*.md" --ignore node_modules --ignore plugins
+
+  removed-symbols:
+    name: No references to removed surfaces
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Check docs for removed-symbol drift
+        run: python3 scripts/check_removed_symbols.py

@@ -27,6 +27,13 @@ integrity.
   specific project/folder they apply to (e.g., `.harness/.gitignore`,
   `tests/.gitignore`) rather than being consolidated into the root
   `.gitignore`.
+- **Deleting a surface = a doc contract.** When you remove a CLI command,
+  module, or env var, grep the *entire* tree (not just `agent/`) for its
+  name and update docs/examples in the **same** change. The v3.0 cut removed
+  the provider layer, orchestrator, and keyed generate command but left months
+  of stale references behind (this drift was the motivation for the guard).
+  `scripts/check_removed_symbols.py` (run in CI via `docs-lint`) now fails the
+  build on that drift — add a row there for each newly-removed surface.
 
 #### Branch Naming
 
