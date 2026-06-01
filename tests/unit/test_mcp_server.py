@@ -193,7 +193,7 @@ class TestRunTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             test_file = Path(tmp) / "test_ok.py"
             test_file.write_text("def test_noop(): pass")
-            with patch("agent.core.executor.OracleTestExecutor.execute",
+            with patch("agent.core.executor.CanaryTestExecutor.execute",
                        return_value=(0, "1 passed in 0.01s", "")):
                 from agent import mcp_server as srv
                 result = srv._run_tests_impl(str(test_file))
@@ -205,7 +205,7 @@ class TestRunTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             test_file = Path(tmp) / "test_bad.py"
             test_file.write_text("def test_fail(): assert False")
-            with patch("agent.core.executor.OracleTestExecutor.execute",
+            with patch("agent.core.executor.CanaryTestExecutor.execute",
                        return_value=(1, "", "AssertionError")):
                 from agent import mcp_server as srv
                 result = srv._run_tests_impl(str(test_file))

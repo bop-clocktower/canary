@@ -1,6 +1,6 @@
 # agent/core/domain_scanner.py
 
-"""Domain knowledge scanner for Oracle.
+"""Domain knowledge scanner for Canary.
 
 Scans the user's project source files (not test files) to extract
 components, public functions, and API routes. This domain context is

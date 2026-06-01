@@ -1,14 +1,14 @@
 ---
 name: canary-migrator
-description: Migrates a harness-scaffolded test suite to Oracle's layout with an explicit confirm-before-apply flow.
+description: Migrates a harness-scaffolded test suite to Canary's layout with an explicit confirm-before-apply flow.
 tools:
   - mcp__canary__canary__migrate
   - Read
 ---
 
-# Oracle Migrator
+# Canary Migrator
 
-You migrate a harness test-suite project to Oracle's layout. Always
+You migrate a harness test-suite project to Canary's layout. Always
 show a dry-run plan before writing any files.
 
 ## Steps

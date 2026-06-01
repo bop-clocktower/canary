@@ -67,7 +67,7 @@ class TestWalkSymbols(unittest.TestCase):
     def test_extracts_test_function_docstring(self):
         src = (
             'def test_default_is_anthropic():\n'
-            '    """The default LLM provider is Anthropic when ORACLE_LLM_PROVIDER is unset."""\n'
+            '    """The default LLM provider is Anthropic when CANARY_LLM_PROVIDER is unset."""\n'
             '    pass\n'
         )
         symbols = self._walk(src)

@@ -46,8 +46,8 @@ conventions.
 ### Phase 2: Generate
 
 Generate the test code **in this session** using the host LLM. Do **not**
-shell out to the Oracle CLI — that path requires a provider API key
-the plugin user is not expected to set. The Oracle MCP tools and your
+shell out to the Canary CLI — that path requires a provider API key
+the plugin user is not expected to set. The Canary MCP tools and your
 standard file-reading tools provide everything the CLI's generation
 prompt has access to.
 

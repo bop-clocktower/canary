@@ -1,11 +1,11 @@
 # Framework Registry Guide
 
-The Framework Registry is Oracle's single source of truth for
+The Framework Registry is Canary's single source of truth for
 which testing frameworks exist, what they're good for, and how
 to invoke them. It lives in `agent/frameworks/registry.json`
 and is loaded by `FrameworkRegistry`
 (`agent/core/framework_registry.py`). Every framework choice
-in the Oracle pipeline resolves through this registry — no
+in the Canary pipeline resolves through this registry — no
 caller hard-codes framework names.
 
 ## Core Concepts
@@ -43,7 +43,7 @@ Each entry in `frameworks[]` is a JSON object with these fields:
 - **`file_patterns`** *(optional)* — discovery patterns for
   test runners (e.g., `test_*.py`).
 - **`execution_command`** — shell template with `{file}`
-  placeholder. `OracleTestExecutor` substitutes the generated path;
+  placeholder. `CanaryTestExecutor` substitutes the generated path;
   quoting is handled so paths with spaces are preserved as a
   single argv element.
 - **`ecosystems`** — frameworks/runtimes this fits (e.g.,
@@ -67,7 +67,7 @@ Each entry in `frameworks[]` is a JSON object with these fields:
 - `get_preferred_by_category(category)` — `preferred` if
   present, else first match
 - `find_by_name(name)` — exact-name lookup (used by
-  `OracleTestExecutor`)
+  `CanaryTestExecutor`)
 - `match_by_language(language)` — all frameworks for a
   language
 
@@ -104,7 +104,7 @@ help future maintainers.
 ### 3. Validate the Execution Command
 
 The `{file}` placeholder is substituted as a single argv
-element — `OracleTestExecutor` tokenizes the template with
+element — `CanaryTestExecutor` tokenizes the template with
 `shlex.split` *before* substitution, so paths with spaces are
 preserved intact. Prefer commands that don't require additional
 config files in the project root; if they do, document the
@@ -130,7 +130,7 @@ chose your new entry, and `--execute` runs without setup errors.
 
 ## Failure Modes
 
-- **No framework for `test_type`.** `OracleOrchestrator.run`
+- **No framework for `test_type`.** `CanaryOrchestrator.run`
   raises `ValueError`. Fix: add an entry for that category, or
   change the classifier to emit a category that exists.
 - **Multiple `preferred` entries in a category.**
@@ -151,7 +151,7 @@ chose your new entry, and `--execute` runs without setup errors.
 
 - [Orchestrator Guide](./orchestrator.md) — how the registry
   plugs into the pipeline
-- [Oracle: Add Framework][add-framework-skill] —
+- [Canary: Add Framework][add-framework-skill] —
   agent-invokable flow for adding a framework end-to-end
 
-[add-framework-skill]: ../../agents/skills/claude-code/oracle-add-framework/SKILL.md
+[add-framework-skill]: ../../agents/skills/claude-code/canary-add-framework/SKILL.md

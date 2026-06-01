@@ -95,7 +95,7 @@ Phase 3 will deprecate it alongside `canary generate`.
 Before (Phase 1 — keyed CLI only):
   canary generate --run "<prompt>"
    ↓
-  OracleOrchestrator.run() → executes test → fails
+  CanaryOrchestrator.run() → executes test → fails
    ↓
   _attempt_fix or _attempt_selector_fix
    ↓

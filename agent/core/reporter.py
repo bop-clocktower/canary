@@ -1,6 +1,6 @@
 # agent/core/reporter.py
 
-"""Standardized reporting for Oracle execution results.
+"""Standardized reporting for Canary execution results.
 
 Exports generation and execution results to JSON or SARIF format for
 consumption by Datadog, SonarQube, GitHub Code Scanning, and similar
@@ -14,19 +14,19 @@ from pathlib import Path
 from typing import Optional
 
 _SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
-_TOOL_NAME = "Oracle"
+_TOOL_NAME = "Canary"
 _TOOL_VERSION = "0.1.0"
-_TOOL_URI = "https://github.com/bri-stevenski/oracle-test-ai-agent"
+_TOOL_URI = "https://github.com/bop-clocktower/canary"
 
 _RULES = (
     {
-        "id": "oracle/test-generation",
+        "id": "canary/test-generation",
         "name": "TestGeneration",
         "shortDescription": {"text": "AI-generated test file"},
         "helpUri": _TOOL_URI,
     },
     {
-        "id": "oracle/test-execution",
+        "id": "canary/test-execution",
         "name": "TestExecution",
         "shortDescription": {"text": "Automated test execution result"},
         "helpUri": _TOOL_URI,
@@ -37,7 +37,7 @@ SUPPORTED_FORMATS = ("json", "sarif")
 
 
 class Reporter:
-    """Converts Oracle pipeline results into standardized report formats."""
+    """Converts Canary pipeline results into standardized report formats."""
 
     def write(self, result: dict, fmt: str, output_path: Optional[str] = None) -> Path:
         """Serialize result to fmt ('json' or 'sarif') and write to disk; raises ValueError for unsupported formats."""
@@ -50,7 +50,7 @@ class Reporter:
         if output_path:
             path = Path(output_path)
         else:
-            path = Path(f"oracle-report.{fmt}")
+            path = Path(f"canary-report.{fmt}")
 
         if fmt == "json":
             content = self.to_json(result)
@@ -100,7 +100,7 @@ class Reporter:
 
         # Generation result — always present
         sarif_results.append({
-            "ruleId": "oracle/test-generation",
+            "ruleId": "canary/test-generation",
             "message": {
                 "text": (
                     f"Generated {framework} test ({test_type})"
@@ -138,7 +138,7 @@ class Reporter:
                     message_parts.append(f"Error: {preview}")
 
             sarif_results.append({
-                "ruleId": "oracle/test-execution",
+                "ruleId": "canary/test-execution",
                 "message": {"text": " ".join(message_parts)},
                 "level": "none" if passed else "error",
                 "locations": [_location(output_file)] if output_file else [],

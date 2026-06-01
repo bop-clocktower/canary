@@ -61,7 +61,7 @@ class TestDetectLinkageFrontmatter(unittest.TestCase):
 
         f = self._write(
             "test.spec.ts",
-            "# oracle:ticket: PROJ-42\n\ntest('foo', () => {});\n",
+            "# canary:ticket: PROJ-42\n\ntest('foo', () => {});\n",
         )
         key, project, source = TicketUpdater().detect_linkage(f)
         self.assertEqual(key, "PROJ-42")
@@ -69,12 +69,12 @@ class TestDetectLinkageFrontmatter(unittest.TestCase):
         self.assertEqual(source, "frontmatter")
 
     def test_frontmatter_ticket_and_project(self):
-        """Explicit oracle:project overrides inferred project."""
+        """Explicit canary:project overrides inferred project."""
         from agent.core.ticket_updater import TicketUpdater
 
         f = self._write(
             "test.spec.ts",
-            "# oracle:ticket: OPTM-99\n# oracle:project: OPTM\n\ntest('x', () => {});\n",
+            "# canary:ticket: OPTM-99\n# canary:project: OPTM\n\ntest('x', () => {});\n",
         )
         key, project, source = TicketUpdater().detect_linkage(f)
         self.assertEqual(key, "OPTM-99")
@@ -87,7 +87,7 @@ class TestDetectLinkageFrontmatter(unittest.TestCase):
 
         f = self._write(
             "test.spec.ts",
-            "# oracle:ticket: FRONT-1\n\ntest('@ticket:TAG-2 something', () => {});\n",
+            "# canary:ticket: FRONT-1\n\ntest('@ticket:TAG-2 something', () => {});\n",
         )
         key, _, source = TicketUpdater().detect_linkage(f)
         self.assertEqual(key, "FRONT-1")
@@ -242,7 +242,7 @@ class TestBuildComment(unittest.TestCase):
     def test_suite_name_in_header(self):
         s = _make_summary(suite_name="my-custom-suite")
         body = self.updater._build_comment(s)
-        self.assertIn("Oracle Test Run — my-custom-suite", body)
+        self.assertIn("Canary Test Run — my-custom-suite", body)
 
     def test_no_llm_text_markers(self):
         """Comment body must never contain LLM-style commentary."""
@@ -331,7 +331,7 @@ class TestTransitionLogic(unittest.TestCase):
         updater = TicketUpdater(canary_dir=self.canary_dir)
         result = updater._transition_jira("PROJ-1", "PROJ", "PASS", dry_run=True)
         self.assertFalse(result.attempted)
-        self.assertIn("oracle workflow-discover", result.reason)
+        self.assertIn("canary workflow-discover", result.reason)
         self.assertIn("PROJ", result.reason)
 
     def test_pass_dry_run_returns_proposed_transition(self):
@@ -517,7 +517,7 @@ class TestSafetyGate(unittest.TestCase):
 
         self.assertFalse(result.transition.attempted)
         combined_msgs = "\n".join(result.messages) + result.transition.reason
-        self.assertIn("oracle workflow-discover", combined_msgs)
+        self.assertIn("canary workflow-discover", combined_msgs)
 
     def test_no_linkage_skips_entirely(self):
         from agent.core.ticket_updater import TicketUpdater

@@ -1,6 +1,6 @@
 ---
 name: canary:init
-description: Scaffold a new test suite for a chosen framework using Oracle's initializer agent.
+description: Scaffold a new test suite for a chosen framework using Canary's initializer agent.
 ---
 
 # canary:init

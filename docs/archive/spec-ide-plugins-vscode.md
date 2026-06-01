@@ -145,7 +145,7 @@ JetBrains plugin settings.
 | Key | Type | Default | Description |
 | --- | ---- | ------- | ----------- |
 | `oracle.cliPath` | string | `""` | Absolute path to the `oracle` binary. Empty = auto-detect via `which oracle` / PATH. |
-| `oracle.provider` | enum | `""` | LLM provider override (`anthropic`, `openai`, `gemini`, `codex`, `mock`). Empty = use `ORACLE_LLM_PROVIDER` env var. |
+| `oracle.provider` | enum | `""` | LLM provider override (`anthropic`, `openai`, `gemini`, `codex`, `mock`). Empty = use `CANARY_LLM_PROVIDER` env var. |
 | `oracle.defaultReportFormat` | enum | `""` | Auto-attach `--report-format` to generate calls (`json`, `sarif`, or empty for none). |
 | `oracle.showStatusBar` | boolean | `true` | Show Oracle status bar item. |
 | `oracle.autoOpenGeneratedFile` | boolean | `true` | Automatically open generated test file after `oracle.generate` succeeds. |

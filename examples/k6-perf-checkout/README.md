@@ -29,10 +29,10 @@ See [`prompt.txt`](prompt.txt) for a copy-pasteable version.
 
 ```bash
 cd examples/k6-perf-checkout
-oracle generate "$(cat prompt.txt)"
+canary generate "$(cat prompt.txt)"
 ```
 
-Oracle classifies as `performance`, picks `k6`, writes a `*.load.js` file.
+Canary classifies as `performance`, picks `k6`, writes a `*.load.js` file.
 
 ## Running the generated test
 
@@ -41,7 +41,7 @@ Oracle classifies as `performance`, picks `k6`, writes a `*.load.js` file.
 # linux: see https://k6.io/docs/getting-started/installation/
 
 export K6_BEARER_TOKEN=stub-for-now
-oracle run tests/generated/<filename>.load.js k6
+canary run tests/generated/<filename>.load.js k6
 ```
 
 The test will fail against `api.example.com` (no real endpoint). To adapt:
@@ -118,5 +118,5 @@ export default function () {
 
 ## See also
 
-- [CLI Reference → `oracle generate`](../../docs/wiki/CLI-Reference.md)
+- [CLI Reference → `canary generate`](../../docs/wiki/CLI-Reference.md)
 - [Writing Good Prompts](../../docs/wiki/Writing-Good-Prompts.md)

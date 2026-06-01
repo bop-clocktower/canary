@@ -1,28 +1,28 @@
-# Oracle for Manual Testers
+# Canary for Manual Testers
 
 You've spent years finding bugs, writing test cases, and knowing
 exactly what "this should do X but it does Y" looks like in
-practice. That skill set is exactly what Oracle needs from you.
+practice. That skill set is exactly what Canary needs from you.
 
-Oracle handles the coding. You handle the thinking.
+Canary handles the coding. You handle the thinking.
 
 ## The Mental Model
 
 In manual testing, you write test cases: a description of the
-steps to take and the expected outcome. In Oracle, you do the
-same thing — you just describe it in plain English, and Oracle
+steps to take and the expected outcome. In Canary, you do the
+same thing — you just describe it in plain English, and Canary
 writes the code.
 
-| Manual Testing | With Oracle |
+| Manual Testing | With Canary |
 | --- | --- |
 | Write a test case in a spreadsheet | Describe the test in a prompt |
-| Execute the test by hand | Oracle generates and can run it |
-| Note "Expected: 200, Actual: 500" | Oracle asserts the expected outcome |
-| File a bug if it fails | Oracle flags the failure for you |
+| Execute the test by hand | Canary generates and can run it |
+| Note "Expected: 200, Actual: 500" | Canary asserts the expected outcome |
+| File a bug if it fails | Canary flags the failure for you |
 
 You don't need to know Python, JavaScript, or any testing
-framework to use Oracle. If you can describe what you're testing
-clearly, Oracle can write the test.
+framework to use Canary. If you can describe what you're testing
+clearly, Canary can write the test.
 
 ## Your First Test — Step by Step
 
@@ -48,14 +48,14 @@ canary generate "Test that submitting valid credentials on the
 login page redirects the user to the dashboard"
 ```
 
-Oracle classifies this as an end-to-end UI test and generates
+Canary classifies this as an end-to-end UI test and generates
 a Playwright test for you.
 
 ## Describing Tests You Know Well
 
 You've probably tested dozens of scenarios by hand. Pick one
 you know inside and out — that familiarity makes you the best
-person to prompt Oracle on it, because you already know:
+person to prompt Canary on it, because you already know:
 
 - What the expected behavior is
 - What a failure looks like
@@ -72,7 +72,7 @@ message rather than an error
 That's a much stronger prompt than a developer who's never
 clicked through the search feature would write.
 
-## Types of Tests Oracle Can Generate
+## Types of Tests Canary Can Generate
 
 You don't need to know what these mean technically — just
 pick the one that sounds closest to what you're testing:
@@ -87,12 +87,12 @@ pick the one that sounds closest to what you're testing:
   "Under N users, the page should load in under X seconds."
 
 If you're not sure which type applies, just describe what you
-want to test. Oracle will classify it — and if it guesses wrong,
+want to test. Canary will classify it — and if it guesses wrong,
 you can tell it which type you meant and try again.
 
 ## What to Do with the Generated Test
 
-Oracle writes the test; you review it. Here's a simple checklist:
+Canary writes the test; you review it. Here's a simple checklist:
 
 1. **Does it test what I asked?** Read the assertions — do they
    match the expected behavior you described?
@@ -115,17 +115,17 @@ parts that matter.
   message" is much better.
 - **Test one thing at a time.** Manual test cases that cover
   one scenario are better than tests that cover five. The same
-  is true for Oracle prompts.
+  is true for Canary prompts.
 - **Include the expected outcome.** "The user sees the dashboard"
-  or "the API returns 201 with the order ID" — Oracle uses this
+  or "the API returns 201 with the order ID" — Canary uses this
   to write the assertion.
 - **Edge cases matter.** If you've found a bug in a weird edge
   case before, that's exactly the kind of test worth generating.
   Those tests are the most valuable to have automated.
 
-## When Oracle Gets It Wrong
+## When Canary Gets It Wrong
 
-Oracle sometimes misclassifies a test type or generates a test
+Canary sometimes misclassifies a test type or generates a test
 that's close but not quite right. This is normal — it's a first
 draft, not a final product.
 
@@ -145,12 +145,12 @@ guidance on getting it right the first time.
 
 ## You're Not Replacing Yourself
 
-Generating a test with Oracle still requires you to:
+Generating a test with Canary still requires you to:
 
 - Know what the correct behavior is
 - Review whether the test actually checks that behavior
 - Decide if the test is worth keeping
 
-Oracle speeds up the work of writing the code. It doesn't
+Canary speeds up the work of writing the code. It doesn't
 replace the judgment of someone who understands the product.
 That's you.

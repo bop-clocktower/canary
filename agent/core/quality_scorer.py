@@ -1,6 +1,6 @@
 """Test quality static analyser.
 
-Scores Oracle-generated test files on three dimensions:
+Scores Canary-generated test files on three dimensions:
   - coverage_breadth:  number of test cases + negative/error path coverage
   - assertion_density: assertions per test function
   - flakiness_risk:    absence of hardcoded waits, random values, timestamp deps
@@ -245,7 +245,7 @@ def _grade(score: int) -> str:
 # ---------------------------------------------------------------------------
 
 class QualityScorer:
-    """Scores Oracle-generated test files via static analysis."""
+    """Scores Canary-generated test files via static analysis."""
 
     def score(self, source: "str | Path", framework: str) -> dict:
         """Return a quality score dict for `source` (code string or file path)."""

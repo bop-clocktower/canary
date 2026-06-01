@@ -308,7 +308,7 @@ Implementation:
 
 1. Binary: `config.cliPath || 'oracle'`.
 2. Env: inherit `process.env`; if `config.provider`, set
-   `ORACLE_LLM_PROVIDER`.
+   `CANARY_LLM_PROVIDER`.
 3. If `config.defaultReportFormat` and first arg is `generate`, append
    `['--report-format', config.defaultReportFormat]`.
 4. Spawn with `{ shell: false }`. Collect stdout + stderr to strings.

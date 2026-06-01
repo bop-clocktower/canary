@@ -1,6 +1,6 @@
 # Orchestrator Guide
 
-The Oracle Orchestrator is the central execution engine that turns a
+The Canary Orchestrator is the central execution engine that turns a
 natural-language test requirement into a generated, validated test file.
 It coordinates the three-stage pipeline — classify, recommend, generate —
 and optionally executes the generated test against the recommended
@@ -19,9 +19,9 @@ The Orchestrator runs a fixed three-stage pipeline per request:
    and returns a concrete framework choice with file extension and
    reasoning.
 3. **Generate.** The LLM provider produces the test source;
-   `OracleOrchestrator.run` writes it under `tests/generated/`.
+   `CanaryOrchestrator.run` writes it under `tests/generated/`.
 
-Optionally, when invoked with `execute=True`, an `OracleTestExecutor` runs the
+Optionally, when invoked with `execute=True`, an `CanaryTestExecutor` runs the
 produced file using the framework's CLI.
 
 ### 2. Registry-Driven Framework Selection
@@ -34,7 +34,7 @@ framework is a registry bug and surfaces as a `ValueError` at runtime.
 ### 3. Pluggable LLM Providers
 
 `agent/llm/factory.py` picks a provider at call time from
-`ORACLE_LLM_PROVIDER` env config. Currently supported: `anthropic`
+`CANARY_LLM_PROVIDER` env config. Currently supported: `anthropic`
 (default), `gemini`, `openai`, `mock`. Providers implement the
 `agent/llm/providers/base.py` contract — input prompt and
 provider-specific config in, completion string out.
@@ -49,7 +49,7 @@ provider-specific config in, completion string out.
 
 ## Pipeline Output
 
-`OracleOrchestrator.run(prompt, execute=False)` returns a dict with:
+`CanaryOrchestrator.run(prompt, execute=False)` returns a dict with:
 
 - `classification` — the `ClassificationResult` (intent, test_type,
   confidence)
@@ -89,8 +89,8 @@ framework's run output.
 ### 4. Run Generated Tests
 
 Add `--execute` to the CLI invocation, or call
-`OracleOrchestrator.run(prompt, execute=True)` programmatically. The
-`OracleTestExecutor` resolves the framework's run command from the registry and
+`CanaryOrchestrator.run(prompt, execute=True)` programmatically. The
+`CanaryTestExecutor` resolves the framework's run command from the registry and
 invokes it with the generated file path as a single argv element
 (path-with-spaces is preserved).
 
@@ -107,9 +107,9 @@ invokes it with the generated file path as a single argv element
 
 ## Observability
 
-Generated test runs are logged into `docs/ORACLE_STATE.md` for handoff
+Generated test runs are logged into `docs/CANARY_STATE.md` for handoff
 continuity. The self-healing loop (planned) will write structured failure
-entries to `docs/ORACLE_LEARNINGS.md` so subsequent runs can avoid known
+entries to `docs/CANARY_LEARNINGS.md` so subsequent runs can avoid known
 traps.
 
 ## Related

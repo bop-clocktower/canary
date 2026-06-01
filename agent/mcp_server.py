@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # agent/mcp_server.py
-"""Oracle MCP server — exposes Oracle intelligence tools to Claude Code."""
+"""Canary MCP server — exposes Canary intelligence tools to Claude Code."""
 
 import os
 from pathlib import Path
@@ -11,7 +11,7 @@ from fastmcp import FastMCP
 from agent.core.metadata_scanner import MetadataScanner
 from agent.core.pattern_matcher import PatternMatcher
 from agent.core.domain_scanner import DomainScanner
-from agent.core.executor import OracleTestExecutor
+from agent.core.executor import CanaryTestExecutor
 from agent.core.framework_registry import FrameworkRegistry
 from agent.core.scaffolder import Scaffolder
 from agent.core.migrator import HarnessMigrator
@@ -148,7 +148,7 @@ def _find_existing_tests(project_root: Path, framework: str) -> list[str]:
 def _project_root_for(path: Path) -> Path:
     """Walk up from `path` to the nearest .git directory, else return parent.
 
-    Matches the discovery convention used by `oracle skills list` and the
+    Matches the discovery convention used by `canary skills list` and the
     downstream overlay loader — the project boundary is the .git root.
     """
     cur = path.resolve().parent
@@ -217,7 +217,7 @@ def _run_tests_impl(test_file: str) -> dict:
     path = Path(test_file)
     suffix = path.suffix.lower()
     framework = "pytest" if suffix == ".py" else "playwright"
-    executor = OracleTestExecutor()
+    executor = CanaryTestExecutor()
     try:
         exit_code, stdout, stderr = executor.execute(path, framework)
     except Exception as exc:
@@ -309,7 +309,7 @@ def canary__list_frameworks() -> dict:
 
 @mcp.tool()
 def canary__migrate(target_dir: str = "", apply: bool = False) -> dict:
-    """Migrate a harness-scaffolded project to Oracle layout. Dry-run by default."""
+    """Migrate a harness-scaffolded project to Canary layout. Dry-run by default."""
     return _migrate_impl(target_dir, apply)
 
 
@@ -317,7 +317,7 @@ def main() -> None:
     """Console-script entry point for `canary-mcp` (see pyproject.toml).
 
     The Claude Code plugin manifest references this entry by name so it
-    works against any pipx-installed oracle-test-ai without depending on
+    works against any pipx-installed canary-test-ai without depending on
     the source tree being checked out at ``${CLAUDE_PLUGIN_ROOT}``.
     """
     mcp.run()

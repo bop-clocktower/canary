@@ -1,6 +1,6 @@
 # agent/core/pattern_matcher.py
 
-"""Pattern matcher for Oracle.
+"""Pattern matcher for Canary.
 
 Scans existing test files in the user's project and extracts coding
 conventions — naming style, common imports, assertion style, and

@@ -9,6 +9,8 @@ description: >
 tools: Read, Glob, Grep
 ---
 
+# Canary Framework Advisor
+
 ## Role
 
 Match testing needs to frameworks. Lay out a sensible folder structure. Stop
@@ -59,13 +61,13 @@ for field-level fakes or where BSL is unacceptable. See issue #126.
 `†` For observability, OpenTelemetry instruments the telemetry; the **reporting
 sink** is where results go. ReportPortal (self-hosted OSS) is the default sink.
 If a downstream aggregation dashboard is configured
-(`ORACLE_SCOPE=<overlay-id>`), results route there too — it's an additional
+(`CANARY_SCOPE=<overlay-id>`), results route there too — it's an additional
 sink, not a replacement.
 
 **OSS-first.** Commercially-licensed tools (Tricentis Tosca/NeoLoad, LambdaTest,
 etc.) are **never** recommended by default — they surface only when the project
-already holds a license, signalled by `ORACLE_LICENSE_TRICENTIS=1` or an org
-`ORACLE_SCOPE=<org>`. Even when unlocked they rank below the OSS option; Oracle
+already holds a license, signalled by `CANARY_LICENSE_TRICENTIS=1` or an org
+`CANARY_SCOPE=<org>`. Even when unlocked they rank below the OSS option; Canary
 works within an active license but never proactively routes you toward a paid
 tool.
 
@@ -84,7 +86,7 @@ concrete reason to switch (sunsetted tool, can't express the test type, etc.).
 
 ## Output format
 
-```
+```text
 Recommendation: <Framework name>
 
 Why: <2-3 sentences>

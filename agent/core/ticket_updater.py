@@ -4,9 +4,9 @@ from __future__ import annotations
 
 """
 Ticket Updater — posts a structured run comment and optionally transitions
-the linked ticket after an Oracle test run.
+the linked ticket after an Canary test run.
 
-Oracle never hardcodes Jira status names.  Transition targets are resolved
+Canary never hardcodes Jira status names.  Transition targets are resolved
 via the semantic-role mapping persisted by ``WorkflowDiscovery``.
 
 Public surface
@@ -56,7 +56,7 @@ class UpdateResult:
 
 @dataclass
 class RunSummary:
-    """Describes a completed Oracle test run."""
+    """Describes a completed Canary test run."""
 
     suite_name: str
     env: str
@@ -77,8 +77,8 @@ class RunSummary:
 # ── main class ────────────────────────────────────────────────────────────────
 
 # Patterns for ticket linkage detection.
-_FRONTMATTER_TICKET = re.compile(r"^#\s*oracle:ticket:\s*(\S+)", re.MULTILINE)
-_FRONTMATTER_PROJECT = re.compile(r"^#\s*oracle:project:\s*(\S+)", re.MULTILINE)
+_FRONTMATTER_TICKET = re.compile(r"^#\s*canary:ticket:\s*(\S+)", re.MULTILINE)
+_FRONTMATTER_PROJECT = re.compile(r"^#\s*canary:project:\s*(\S+)", re.MULTILINE)
 _TAG_TICKET = re.compile(r"@(?:ticket|jira):([A-Z][A-Z0-9]*-\d+)", re.MULTILINE)
 _BRANCH_TICKET = re.compile(r"(?:feature|fix|chore)/([A-Z][A-Z0-9]*-\d+)")
 _TICKET_PROJECT = re.compile(r"^([A-Z][A-Z0-9]*)-\d+$")
@@ -145,7 +145,7 @@ class TicketUpdater:
         if not ticket_key:
             messages.append(
                 "No ticket linkage found — skipping comment and transition.\n"
-                "Add '# oracle:ticket: PROJ-123' to the test file frontmatter, "
+                "Add '# canary:ticket: PROJ-123' to the test file frontmatter, "
                 "a '@ticket:PROJ-123' tag, or run from a branch named "
                 "feature/PROJ-123."
             )
@@ -284,13 +284,13 @@ class TicketUpdater:
         flags = f"--result {summary.result.lower()}"
 
         lines = [
-            f"🧪 Oracle Test Run — {summary.suite_name}",
+            f"🧪 Canary Test Run — {summary.suite_name}",
             "",
             f"Environment: {summary.env}",
             f"Result: {summary.result} ({summary.passed}/{summary.total} tests)",
             f"Flaky: {summary.flaky_count}",
             f"Duration: {summary.duration_s}s",
-            f"Run by: oracle report {flags}",
+            f"Run by: canary report {flags}",
             "",
             f"Test file: {summary.test_file}",
         ]
@@ -442,7 +442,7 @@ class TicketUpdater:
                 to_status=None,
                 reason=(
                     f"⚠  No workflow mapping found for project {project_key}.\n"
-                    f"   Run `oracle workflow-discover --project {project_key}` first.\n"
+                    f"   Run `canary workflow-discover --project {project_key}` first.\n"
                     "   Comment was posted. Transition was NOT attempted."
                 ),
             )
@@ -524,7 +524,7 @@ def _jira_auth(
 
     Resolution order for base_url:
     1. ``atlassian_url`` stored in ``.canary/workflow-{project_key}.json``
-       (written by ``oracle workflow-discover`` or ``oracle workflow-init``).
+       (written by ``canary workflow-discover`` or ``canary workflow-init``).
     2. ``ATLASSIAN_URL`` environment variable.
 
     This lets projects on different Atlassian instances each carry their own URL

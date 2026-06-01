@@ -27,17 +27,17 @@ See [`prompt.txt`](prompt.txt) for a copy-pasteable version.
 
 ```bash
 cd examples/playwright-e2e-login
-oracle generate "$(cat prompt.txt)"
+canary generate "$(cat prompt.txt)"
 ```
 
-Oracle will:
+Canary will:
 
 1. Classify the request as `e2e_ui`
 2. Pick `playwright` from the framework registry
 3. Write a `*.spec.ts` file under `tests/generated/`
 4. Print the file path + feedback hint
 
-## What Oracle should produce
+## What Canary should produce
 
 The exact code varies between runs and providers, but expect roughly:
 
@@ -69,7 +69,7 @@ test.describe('Login flow', () => {
 ```bash
 npm install -D @playwright/test
 npx playwright install
-oracle run tests/generated/<filename>.spec.ts playwright
+canary run tests/generated/<filename>.spec.ts playwright
 ```
 
 The test will fail against `example.com` (no real login form). To adapt:
@@ -83,10 +83,10 @@ The test will fail against `example.com` (no real login form). To adapt:
 - **Smaller scope:** drop the error path and ask for just the happy path
 - **Bigger scope:** add a forgot-password flow as a third scenario
 - **Different framework:** rephrase the prompt to ask for a Cypress version
-  (Oracle's framework advisor agent can recommend; see
+  (Canary's framework advisor agent can recommend; see
   [Plugin Agents](../../docs/wiki/Plugin-Agents.md))
 
 ## See also
 
-- [CLI Reference → `oracle generate`](../../docs/wiki/CLI-Reference.md)
+- [CLI Reference → `canary generate`](../../docs/wiki/CLI-Reference.md)
 - [Writing Good Prompts](../../docs/wiki/Writing-Good-Prompts.md)

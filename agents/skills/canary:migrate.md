@@ -1,6 +1,6 @@
 ---
 name: canary:migrate
-description: Migrate a harness-scaffolded test suite to Oracle's layout with a confirm-before-apply flow.
+description: Migrate a harness-scaffolded test suite to Canary's layout with a confirm-before-apply flow.
 ---
 
 # canary:migrate

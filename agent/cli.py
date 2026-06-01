@@ -1,11 +1,11 @@
 # agent/cli.py
 
 """
-Oracle CLI - The primary user interface for AI-powered test automation.
+Canary CLI - The primary user interface for AI-powered test automation.
 
 This module provides the Typer-based command-line interface for generating,
 running, and initializing test suites. It serves as the entry point for
-the Oracle agent.
+the Canary agent.
 """
 
 import json
@@ -27,8 +27,8 @@ def recommend(
     """
     Classify a test prompt and recommend the best framework — no API key required.
 
-    Runs Oracle's classifier + recommender pipeline locally and returns the
-    framework, file extension, and reasoning. Use /oracle-pick-framework from
+    Runs Canary's classifier + recommender pipeline locally and returns the
+    framework, file extension, and reasoning. Use /canary-pick-framework from
     the Claude Code plugin for an interactive version with Capillary overlays.
     """
     from agent.core.classifier import TestClassifier, extract_framework_hint
@@ -64,7 +64,7 @@ def recommend(
         _sys.stdout.write(json.dumps(payload, indent=2) + "\n")
         return
 
-    print("[bold green]✅ Oracle Recommendation[/bold green]\n")
+    print("[bold green]✅ Canary Recommendation[/bold green]\n")
     print(f"[bold]Test Type:[/bold] {classification.test_type}")
     print(f"[bold]Framework:[/bold] {result['framework']}")
     print("\n[bold]Reasoning:[/bold]")
@@ -82,18 +82,18 @@ def run(
     framework: str = typer.Argument(..., help="Framework to use (e.g., playwright, pytest)")
 ):
     """
-    Execute a test file using Oracle's integrated executor.
+    Execute a test file using Canary's integrated executor.
 
     Args:
         file_path: Path to the test file to execute.
         framework: The testing framework to use for execution.
     """
-    from agent.core.executor import OracleTestExecutor
+    from agent.core.executor import CanaryTestExecutor
     from pathlib import Path
 
-    print(f"\n[bold cyan]🚀 Oracle Executing {framework} Test...[/bold cyan]\n")
+    print(f"\n[bold cyan]🚀 Canary Executing {framework} Test...[/bold cyan]\n")
 
-    executor = OracleTestExecutor()
+    executor = CanaryTestExecutor()
     exit_code, stdout, stderr = executor.execute(Path(file_path), framework)
 
     color = "green" if exit_code == 0 else "red"
@@ -118,7 +118,7 @@ def init(
     """
     from agent.core.scaffolder import Scaffolder
     
-    print(f"\n[bold cyan]🛠 Oracle Initializing {framework} Scaffold...[/bold cyan]\n")
+    print(f"\n[bold cyan]🛠 Canary Initializing {framework} Scaffold...[/bold cyan]\n")
     
     try:
         scaffolder = Scaffolder()
@@ -166,10 +166,10 @@ def migrate(
     output_json: bool = typer.Option(False, "--json", help="Emit the migration report as JSON."),
 ):
     """
-    Migrate a harness-scaffolded test-suite project to Oracle's layout.
+    Migrate a harness-scaffolded test-suite project to Canary's layout.
 
     Detects harness markers (harness.config.json + .harness/), auto-detects the
-    framework, drops Oracle config files, and reports what was created or preserved.
+    framework, drops Canary config files, and reports what was created or preserved.
     Dry-run by default — pass --apply to write files.
     """
     from pathlib import Path as _Path
@@ -193,7 +193,7 @@ def migrate(
 
     dry_run = not apply
     mode_label = "[dim](dry run)[/dim]" if dry_run else "[green](apply)[/green]"
-    print(f"\n[bold cyan]Oracle Migrate[/bold cyan] {mode_label}\n")
+    print(f"\n[bold cyan]Canary Migrate[/bold cyan] {mode_label}\n")
 
     if not dry_run:
         print("[yellow]Writing files to disk...[/yellow]\n")
@@ -228,21 +228,22 @@ def migrate(
 @app.command()
 def version():
     """
-    Show Oracle version info.
+    Show Canary version info.
     """
     from importlib.metadata import PackageNotFoundError, version as _pkg_version
+    from agent.ui.banner import print_banner
     try:
-        ver = _pkg_version("oracle-test-ai")
+        ver = _pkg_version("canary-test-ai")
     except PackageNotFoundError:
         ver = "unknown"
-    print(f"[bold green]Oracle AI v{ver}[/bold green]")
+    print_banner(version=ver)
 
 
 # ---------------------------------------------------------------------------
-# `oracle skills` — discovery + invocation of bundled and overlay skills.
+# `canary skills` — discovery + invocation of bundled and overlay skills.
 # ---------------------------------------------------------------------------
 
-skills_app = typer.Typer(help="List and invoke discoverable Oracle skills.")
+skills_app = typer.Typer(help="List and invoke discoverable Canary skills.")
 app.add_typer(skills_app, name="skills")
 
 
@@ -385,7 +386,7 @@ def skills_run(
 
 
 # ---------------------------------------------------------------------------
-# `oracle workflow` — per-project issue-workflow discovery and inspection.
+# `canary workflow` — per-project issue-workflow discovery and inspection.
 # ---------------------------------------------------------------------------
 
 workflow_app = typer.Typer(help="Discover and inspect per-project issue-workflow mappings.")
@@ -464,7 +465,7 @@ def workflow_discover(
             if not mapping.role_annotations_confirmed:
                 print(
                     "[dim]  Tip: verify role assignments with "
-                    "[bold]oracle workflow show --project "
+                    "[bold]canary workflow show --project "
                     f"{key} --roles-only[/bold][/dim]"
                 )
 
@@ -490,7 +491,7 @@ def workflow_show(
     Print the persisted workflow mapping for a project.
 
     Use --roles-only to verify semantic role assignments at a glance before
-    Oracle uses them to transition tickets.
+    Canary uses them to transition tickets.
     """
     from agent.core.workflow_discovery import WorkflowDiscovery
 
@@ -516,7 +517,7 @@ def workflow_show(
         mapping = wd.show(key)
         if mapping is None:
             print(f"[yellow]No cached mapping for {key}.[/yellow]  "
-                  f"Run [bold]oracle workflow discover --project {key}[/bold] first.")
+                  f"Run [bold]canary workflow discover --project {key}[/bold] first.")
             continue
 
         any_found = True
@@ -589,7 +590,7 @@ def workflow_init(
         None,
         "--atlassian-url",
         help="Jira base URL for this project (e.g. https://acme.atlassian.net). "
-             "Stored in the mapping so oracle ticket-update never needs ATLASSIAN_URL "
+             "Stored in the mapping so canary ticket-update never needs ATLASSIAN_URL "
              "for this project. Defaults to the ATLASSIAN_URL env var if omitted.",
     ),
     force: bool = typer.Option(
@@ -600,17 +601,17 @@ def workflow_init(
     Create a minimal workflow mapping for a project without running discovery.
 
     Use this when you know the Jira status names for your project and don't
-    want to (or can't) run oracle workflow-discover against a live Jira instance.
+    want to (or can't) run canary workflow-discover against a live Jira instance.
     The mapping is written to .canary/workflow-<PROJECT>.json with
-    role_annotations_confirmed=true so oracle ticket-update uses it immediately.
+    role_annotations_confirmed=true so canary ticket-update uses it immediately.
 
     Example:
 
-        oracle workflow init --project OPTUM --qa-passed "QA Passed" --in-qa "In QA"
+        canary workflow init --project OPTUM --qa-passed "QA Passed" --in-qa "In QA"
 
     To use a different Atlassian instance for this project:
 
-        oracle workflow init --project INTERNAL --qa-passed "Done" \\
+        canary workflow init --project INTERNAL --qa-passed "Done" \\
             --atlassian-url https://internal.atlassian.net
     """
     import os as _os
@@ -653,7 +654,7 @@ def workflow_init(
     if resolved_url:
         print(f"  atlassian_url → {resolved_url}")
     print(
-        "\n[dim]Verify with: [bold]oracle workflow show --project "
+        "\n[dim]Verify with: [bold]canary workflow show --project "
         f"{project} --roles-only[/bold][/dim]"
     )
 
@@ -674,7 +675,7 @@ def ticket_update(
     result_path: Optional[str] = typer.Option(
         None,
         "--result",
-        help="Path to oracle report JSON (default: auto-detect).",
+        help="Path to canary report JSON (default: auto-detect).",
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would be posted/transitioned; don't write."
@@ -696,9 +697,9 @@ def ticket_update(
     Post a run comment and/or transition the linked ticket after a test run.
 
     Ticket linkage is detected from the test file frontmatter
-    (# oracle:ticket: KEY), a @ticket:KEY tag, or the current branch name.
+    (# canary:ticket: KEY), a @ticket:KEY tag, or the current branch name.
     Transition targets are resolved from the workflow mapping produced by
-    `oracle workflow-discover` -- no status names are hardcoded.
+    `canary workflow-discover` -- no status names are hardcoded.
     """
     import os
     from agent.core.ticket_updater import RunSummary, TicketUpdater
@@ -714,7 +715,7 @@ def ticket_update(
 
     # Build a RunSummary from report_data (or sensible defaults for ad-hoc use).
     suite_name = report_data.get("suite_name", test_file or "unknown")
-    env_name = report_data.get("env", os.environ.get("ORACLE_ENV", "unknown"))
+    env_name = report_data.get("env", os.environ.get("CANARY_ENV", "unknown"))
     raw_result = report_data.get("result", "FAIL").upper()
     if raw_result not in ("PASS", "FAIL", "PARTIAL"):
         raw_result = "FAIL"

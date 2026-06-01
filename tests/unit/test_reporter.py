@@ -82,7 +82,7 @@ class TestToSarif(unittest.TestCase):
 
     def test_tool_name(self):
         sarif = self._parsed(_GENERATION_ONLY)
-        self.assertEqual(sarif["runs"][0]["tool"]["driver"]["name"], "Oracle")
+        self.assertEqual(sarif["runs"][0]["tool"]["driver"]["name"], "Canary")
 
     def test_rules_list_not_empty(self):
         sarif = self._parsed(_GENERATION_ONLY)
@@ -93,7 +93,7 @@ class TestToSarif(unittest.TestCase):
         sarif = self._parsed(_GENERATION_ONLY)
         results = sarif["runs"][0]["results"]
         rule_ids = [r["ruleId"] for r in results]
-        self.assertIn("oracle/test-generation", rule_ids)
+        self.assertIn("canary/test-generation", rule_ids)
 
     def test_generation_only_one_result_without_execution(self):
         sarif = self._parsed(_GENERATION_ONLY)
@@ -125,43 +125,43 @@ class TestToSarif(unittest.TestCase):
     def test_execution_result_present_when_execution_in_result(self):
         sarif = self._parsed(_WITH_EXECUTION_PASS)
         rule_ids = [r["ruleId"] for r in sarif["runs"][0]["results"]]
-        self.assertIn("oracle/test-execution", rule_ids)
+        self.assertIn("canary/test-execution", rule_ids)
 
     def test_execution_level_none_on_pass(self):
         sarif = self._parsed(_WITH_EXECUTION_PASS)
-        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "oracle/test-execution")
+        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "canary/test-execution")
         self.assertEqual(exec_r["level"], "none")
 
     def test_execution_level_error_on_fail(self):
         sarif = self._parsed(_WITH_EXECUTION_FAIL)
-        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "oracle/test-execution")
+        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "canary/test-execution")
         self.assertEqual(exec_r["level"], "error")
 
     def test_execution_message_contains_exit_code(self):
         sarif = self._parsed(_WITH_EXECUTION_FAIL)
-        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "oracle/test-execution")
+        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "canary/test-execution")
         self.assertIn("exit code 1", exec_r["message"]["text"])
 
     def test_execution_message_contains_stderr_preview(self):
         sarif = self._parsed(_WITH_EXECUTION_FAIL)
-        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "oracle/test-execution")
+        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "canary/test-execution")
         self.assertIn("AssertionError", exec_r["message"]["text"])
 
     def test_stderr_truncated_at_300_chars(self):
         long_err = "x" * 400
         result = {**_GENERATION_ONLY, "execution": {"exit_code": 1, "stdout": "", "stderr": long_err, "fixed": False}}
         sarif = self._parsed(result)
-        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "oracle/test-execution")
+        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "canary/test-execution")
         self.assertIn("…", exec_r["message"]["text"])
 
     def test_fixed_flag_in_execution_message(self):
         sarif = self._parsed(_WITH_EXECUTION_FIXED)
-        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "oracle/test-execution")
+        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "canary/test-execution")
         self.assertIn("Self-healed", exec_r["message"]["text"])
 
     def test_execution_properties_include_exit_code(self):
         sarif = self._parsed(_WITH_EXECUTION_PASS)
-        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "oracle/test-execution")
+        exec_r = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "canary/test-execution")
         self.assertEqual(exec_r["properties"]["exit_code"], 0)
 
     def test_two_results_when_execution_present(self):
@@ -211,7 +211,7 @@ class TestWrite(unittest.TestCase):
         os.chdir(self.tmp.name)
         try:
             path = self.reporter.write(_GENERATION_ONLY, "json")
-            self.assertEqual(path.name, "oracle-report.json")
+            self.assertEqual(path.name, "canary-report.json")
         finally:
             os.chdir(original)
 
@@ -221,7 +221,7 @@ class TestWrite(unittest.TestCase):
         os.chdir(self.tmp.name)
         try:
             path = self.reporter.write(_GENERATION_ONLY, "sarif")
-            self.assertEqual(path.name, "oracle-report.sarif")
+            self.assertEqual(path.name, "canary-report.sarif")
         finally:
             os.chdir(original)
 

@@ -45,7 +45,7 @@ the CLI itself, and the GitHub Action.
 4. The generated file matches the project's preferred framework
    (verified by seeding a project with a `playwright.config.ts` and
    expecting playwright output, not pytest).
-5. `agent.cli.generate` and `agent.core.orchestrator.OracleOrchestrator.run`
+5. `agent.cli.generate` and `agent.core.orchestrator.CanaryOrchestrator.run`
    are untouched by this migration — the CLI path continues to work
    for users who still want it.
 6. No new MCP tool is required; the agent uses
@@ -169,7 +169,7 @@ output shape is needed (telemetry, post-write hooks), use
 ## Context coverage matrix
 
 Resolved as Task 1 of the implementation plan. The CLI orchestrator
-(`OracleOrchestrator.run`) injects five context blocks into its
+(`CanaryOrchestrator.run`) injects five context blocks into its
 generation prompt; `oracle__analyze_file` only partially covers them.
 Per-gap decision: (a) agent reads via `Read`/`Glob`, (b) extend
 `analyze_file` later, (c) accept gap.
@@ -216,7 +216,7 @@ for the task-by-task implementation.
    `oracle-plugin-v2.md` written? Recommend in-place patch — the rest
    of that spec is still accurate.
 3. **Phase 1 (Anchor in the repo) parity:** The CLI's
-   `OracleOrchestrator.run()` injects five context signals (metadata,
+   `CanaryOrchestrator.run()` injects five context signals (metadata,
    patterns, domain, fixtures, company knowledge). Does the agent's
    `Phase 1 + oracle__analyze_file` cover all five? If not, the plan
    should add tasks to extend `oracle__analyze_file` or document

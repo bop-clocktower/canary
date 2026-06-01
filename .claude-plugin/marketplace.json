@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/marketplace.schema.json",
-  "name": "canary",
+  "name": "bop-clocktower",
   "owner": {
     "name": "Bri Stevenski",
     "url": "https://github.com/bri-stevenski"
@@ -9,14 +9,14 @@
   "plugins": [
     {
       "name": "canary",
-      "source": "https://github.com/bri-stevenski/oracle-test-ai-agent",
+      "source": "https://github.com/bop-clocktower/canary",
       "description": "Canary plugin with four MVP personas (test-author, test-reviewer, framework-advisor, flake-hunter) and the harness MCP server. Personal-source build maintained by Bri Stevenski.",
       "version": "0.1.0",
       "author": {
         "name": "Bri Stevenski",
         "url": "https://github.com/bri-stevenski"
       },
-      "homepage": "https://github.com/bri-stevenski/oracle-test-ai-agent",
+      "homepage": "https://github.com/bop-clocktower/canary",
       "license": "MIT",
       "keywords": [
         "testing",

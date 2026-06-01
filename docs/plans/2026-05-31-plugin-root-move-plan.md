@@ -14,7 +14,7 @@ Move the Oracle Claude Code plugin from `plugins/oracle/` to the repo root so
 1. `/.claude-plugin/plugin.json` exists at repo root; `plugins/oracle/` does not.
 2. `/agents/oracle-*.md`, `/commands/oracle-*.md`, `/hooks/*.py`, and `/voice/`
    exist at repo root.
-3. `marketplace.json` `source` is `"https://github.com/bri-stevenski/oracle-test-ai-agent"`
+3. `marketplace.json` `source` is `"https://github.com/bop-clocktower/canary"`
    (plain string, no `type`/`path` sub-fields).
 4. `/plugin install oracle@oracle` succeeds on a machine without volta.
 5. `harness validate` passes.
@@ -45,7 +45,7 @@ MODIFY docs/changes/host-llm-migration/plans/2026-05-26-phase-1-plan.md
 MODIFY docs/changes/host-llm-migration/plans/2026-05-26-phase-2-plan.md
 MODIFY docs/changes/host-llm-migration/verification-2026-05-26.md
 MODIFY docs/wiki/Troubleshooting.md
-MODIFY docs/ORACLE_LEARNINGS.md
+MODIFY docs/CANARY_LEARNINGS.md
 ```
 
 ## Tasks
@@ -124,7 +124,7 @@ Edit `.claude-plugin/marketplace.json` — replace the `source` object with a
 plain string:
 
 ```json
-"source": "https://github.com/bri-stevenski/oracle-test-ai-agent",
+"source": "https://github.com/bop-clocktower/canary",
 ```
 
 Full resulting `plugins` entry:
@@ -132,7 +132,7 @@ Full resulting `plugins` entry:
 ```json
 {
   "name": "oracle",
-  "source": "https://github.com/bri-stevenski/oracle-test-ai-agent",
+  "source": "https://github.com/bop-clocktower/canary",
   "description": "Oracle plugin with four MVP personas (test-author, test-reviewer, framework-advisor, flake-hunter) and the harness MCP server. Personal-source build maintained by Bri Stevenski.",
   "version": "0.1.0",
   ...
@@ -245,10 +245,10 @@ item), with a sequencing note that plugin files are now at root (not
 harness validate
 ```
 
-### Task 7: Update Troubleshooting.md and ORACLE_LEARNINGS.md
+### Task 7: Update Troubleshooting.md and CANARY_LEARNINGS.md
 
 **Depends on:** Task 6 | **Files:** `docs/wiki/Troubleshooting.md`,
-`docs/ORACLE_LEARNINGS.md`
+`docs/CANARY_LEARNINGS.md`
 
 In `docs/wiki/Troubleshooting.md`, update the "Plugin Install Fails" section
 added in PR #176. Change the explanation from "Node version mismatch" to the
@@ -267,7 +267,7 @@ brew install volta
 volta install node
 ```
 
-In `docs/ORACLE_LEARNINGS.md`, update entry #11:
+In `docs/CANARY_LEARNINGS.md`, update entry #11:
 
 Replace the body of entry `## 11.` with:
 

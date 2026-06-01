@@ -1,12 +1,12 @@
 # LLM Providers & Configuration 🤖
 
-Oracle is designed to be **LLM-agnostic**. You can switch between
+Canary is designed to be **LLM-agnostic**. You can switch between
 different AI backends without changing the core test generation logic.
 
 ## The Factory Pattern
 
 The `ProviderFactory` selects the appropriate backend based on the
-`ORACLE_LLM_PROVIDER` environment variable.
+`CANARY_LLM_PROVIDER` environment variable.
 
 ## Available Providers
 
@@ -24,14 +24,14 @@ The `ProviderFactory` selects the appropriate backend based on the
 To switch to a non-default provider:
 
 ```bash
-export ORACLE_LLM_PROVIDER='gemini'
+export CANARY_LLM_PROVIDER='gemini'
 ```
 
 The default is `anthropic` (Claude) — no env-var needed to use it.
 
 ### Setting API Keys
 
-Oracle uses **lazy initialization**: it only loads the provider SDK and
+Canary uses **lazy initialization**: it only loads the provider SDK and
 checks for an API key when generation actually runs. The CLI can run
 `version` or `--recommend-only` commands with no key set, and missing
 optional SDKs (e.g. `google-generativeai`) only break the provider

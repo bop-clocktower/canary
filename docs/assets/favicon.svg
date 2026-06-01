@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img">
+  <title>Canary favicon</title>
+  <rect width="32" height="32" rx="6" fill="#0A0A0A"/>
+  <polygon points="7,26 13,14 20,13 21,24 16,29 9,30" fill="#F0C040"/>
+  <polygon points="13,14 20,13 25,7 19,12 15,15" fill="#D4A820"/>
+  <polygon points="7,26 13,22 16,29 9,30" fill="#B8901A"/>
+  <circle cx="7" cy="20" r="5" fill="#F0C040"/>
+  <circle cx="5" cy="18" r="1.5" fill="#0A0A0A"/>
+  <polygon points="2,19 0,21 2,22" fill="#E8B830"/>
+</svg>

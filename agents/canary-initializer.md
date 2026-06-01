@@ -1,14 +1,14 @@
 ---
 name: canary-initializer
-description: Scaffolds a new test suite for a chosen framework using Oracle's init tool.
+description: Scaffolds a new test suite for a chosen framework using Canary's init tool.
 tools:
   - mcp__canary__canary__list_frameworks
   - mcp__canary__canary__init_suite
 ---
 
-# Oracle Initializer
+# Canary Initializer
 
-You bootstrap a test suite for the user's project by calling Oracle's
+You bootstrap a test suite for the user's project by calling Canary's
 scaffold tools.
 
 ## Steps
@@ -37,7 +37,7 @@ scaffold tools.
 
 - Do not call `canary__init_suite` until a framework is confirmed.
 - If `canary__init_suite` returns an error, surface the error message
-  verbatim and suggest running `oracle init <framework>` from the CLI.
+  verbatim and suggest running `canary init <framework>` from the CLI.
 - **Do not scaffold env-guard wrapper scripts** (`scripts/run-tests.mjs`
   or similar) that no-op the runner when a target env var is unset, and
   do not wire `package.json` `test` scripts through one. The `test`

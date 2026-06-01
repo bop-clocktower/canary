@@ -1,6 +1,6 @@
-# Oracle Agent Skills
+# Canary Agent Skills
 
-Agent-invokable workflows for Oracle, written in the harness-engineering
+Agent-invokable workflows for Canary, written in the harness-engineering
 SKILL.md format. Each skill is a prescriptive, phase-broken procedure
 with explicit When-to-Use / NOT-for clauses, success criteria,
 rationalizations to reject, examples, and escalation paths.
@@ -20,7 +20,7 @@ agents/skills/
 └── README.md             # this file
 ```
 
-Skills are organized by host platform. As Oracle adds support for
+Skills are organized by host platform. As Canary adds support for
 additional agent runtimes (Gemini CLI, Cursor, Codex), sibling
 directories mirror the same skill set with platform-specific tool-list
 adjustments.
@@ -44,14 +44,14 @@ adjustments.
 ### Maintenance
 
 - [`canary-add-framework`](./claude-code/canary-add-framework/SKILL.md)
-  — Add a new testing framework to Oracle's registry end-to-end.
+  — Add a new testing framework to Canary's registry end-to-end.
   Enforces the classifier↔registry contract, authors the registry
   entry, validates the execution command, and updates docs + state.
 
 ### Setup
 
 - [`canary-setup-harness`](./claude-code/canary-setup-harness/SKILL.md)
-  — Configure the Harness Engineering guardrails in a new Oracle
+  — Configure the Harness Engineering guardrails in a new Canary
   project or fork. Installs the harness CLI, initialises the
   config, wires up CI workflows, and verifies all gates pass.
 
@@ -62,7 +62,7 @@ Every skill in this tree follows the same structure:
 1. **Tagline** — one sentence, what the skill does
 2. **When to Use** — bulleted use-cases plus explicit NOT-for clauses
 3. **Process** — broken into numbered phases with numbered steps
-4. **Oracle Integration** — files, env vars, and project entry points
+4. **Canary Integration** — files, env vars, and project entry points
    the skill touches
 5. **Success Criteria** — measurable end-state conditions
 6. **Rationalizations to Reject** — table of common shortcuts and why
@@ -90,7 +90,7 @@ Use the canary-generate-test skill to write a load test for /v1/search.
 
 Skills are documentation, not executable artifacts — they describe *how
 an agent should behave*, not a function to call. To invoke the
-underlying Oracle pipeline directly, use:
+underlying Canary pipeline directly, use:
 
 ```bash
 python -m agent.cli generate "<requirement>"

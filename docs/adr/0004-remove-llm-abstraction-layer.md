@@ -55,7 +55,7 @@ the supported replacement. It runs in the host session with no API key.
 now a first-class command rather than a flag on a deprecated command.
 
 **Company knowledge injection:** the `--- COMPANY KNOWLEDGE ---` block that
-`OracleOrchestrator` appended to generation prompts is now the responsibility
+`CanaryOrchestrator` appended to generation prompts is now the responsibility
 of the slash command layer. The `/oracle-write-test` command invokes
 `oracle company-knowledge show` and prepends the output to its context.
 `agent/core/company_knowledge.py` and `oracle company-knowledge show` are

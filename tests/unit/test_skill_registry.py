@@ -85,12 +85,12 @@ class TestLocalOverlaySkills(unittest.TestCase):
             root = _make_git_root(tmp)
             _write_skill(
                 root / ".canary" / "skills",
-                "oracle-generate-test",
+                "canary-generate-test",
                 description="Company override",
             )
             matches = [
                 s for s in SkillRegistry().discover(root)
-                if s.name == "oracle-generate-test"
+                if s.name == "canary-generate-test"
             ]
             self.assertEqual(len(matches), 1)
             self.assertEqual(matches[0].source, "local")

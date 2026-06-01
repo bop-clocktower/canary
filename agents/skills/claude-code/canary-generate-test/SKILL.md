@@ -1,7 +1,7 @@
-# Oracle: Generate Test
+# Canary: Generate Test
 
 > Generate a framework-appropriate test from a natural-language
-> requirement. Routes through Oracle's classify → recommend → generate
+> requirement. Routes through Canary's classify → recommend → generate
 > pipeline, writes the test under `tests/generated/`, and optionally
 > executes it.
 
@@ -63,27 +63,27 @@
      prompt asserted) → this is a useful signal; review with the
      requester before changing the test
 3. **Log the run.** Append the requirement, classification, framework,
-   and pass/fail to `docs/ORACLE_STATE.md` so downstream sessions can
+   and pass/fail to `docs/CANARY_STATE.md` so downstream sessions can
    pick up context.
 
 ### Phase 4: PROMOTE — Move from Generated to Committed
 
 If the generated test passes review and belongs in the committed suite,
-use the [`oracle-promote-test`](../oracle-promote-test/SKILL.md) skill.
+use the [`canary-promote-test`](../canary-promote-test/SKILL.md) skill.
 Promotion is its own workflow — don't collapse it into this one.
 
-## Oracle Integration
+## Canary Integration
 
 - **`python -m agent.cli generate <prompt>`** — Primary entry. Runs the
   full pipeline; supports `--execute` to immediately run the generated
   test.
-- **`OracleOrchestrator.run(prompt, execute=False)`** — Programmatic
+- **`CanaryOrchestrator.run(prompt, execute=False)`** — Programmatic
   entry. Returns the structured pipeline-result dict.
 - **`agent/frameworks/registry.json`** — Maps `test_type` → framework.
   Edit here when adding a new framework; never hard-code framework
   choices in callers.
 - **`agent/llm/factory.py`** — Provider selection. Override via
-  `ORACLE_LLM_PROVIDER=<anthropic|gemini|openai|mock>` env.
+  `CANARY_LLM_PROVIDER=<anthropic|gemini|openai|mock>` env.
 
 ## Success Criteria
 
@@ -154,7 +154,7 @@ unrealistic, surface that to the requester before promoting.
 - **When the generated test repeatedly fails to parse:** This usually
   means the prompt is under-specified or the LLM provider is the wrong
   fit for the framework. Try a different provider via
-  `ORACLE_LLM_PROVIDER` before assuming a bug.
+  `CANARY_LLM_PROVIDER` before assuming a bug.
 - **When execution requires creds you don't have:** Surface the
   missing-cred error to the user; never embed dummy creds in a generated
   test to make it "run".

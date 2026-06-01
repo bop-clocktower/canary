@@ -123,7 +123,7 @@ Claude Code session
 
 CLI path (unchanged)
 └── canary generate / init / migrate / run / setup
-     └── OracleOrchestrator ──► ANTHROPIC_API_KEY ──► Anthropic API
+     └── CanaryOrchestrator ──► ANTHROPIC_API_KEY ──► Anthropic API
 ```
 
 ## MCP Server Tools
@@ -183,7 +183,7 @@ Output:
 ```
 
 Never raises on test failure — exit code and output are returned for the agent
-to interpret. Uses `OracleTestExecutor` from `agent/core/executor.py`.
+to interpret. Uses `CanaryTestExecutor` from `agent/core/executor.py`.
 
 ### `oracle__init_suite`
 

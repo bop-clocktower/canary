@@ -1,4 +1,4 @@
-"""Unit tests for `oracle version`."""
+"""Unit tests for `canary version`."""
 
 from typer.testing import CliRunner
 
@@ -11,7 +11,7 @@ def test_version_reports_installed_package_version():
     """version reflects the installed package metadata, not a hardcoded string."""
     res = runner.invoke(app, ["version"])
     assert res.exit_code == 0
-    assert "Oracle AI v" in res.stdout
+    assert "canary" in res.stdout
     assert "v0.1 (MVP)" not in res.stdout
 
 
@@ -26,4 +26,4 @@ def test_version_falls_back_when_metadata_missing(monkeypatch):
     monkeypatch.setattr("importlib.metadata.version", _raise)
     res = runner.invoke(app, ["version"])
     assert res.exit_code == 0
-    assert "Oracle AI vunknown" in res.stdout
+    assert "vunknown" in res.stdout

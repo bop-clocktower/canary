@@ -55,7 +55,7 @@ touching the existing CLI, GitHub Action, or IDE plugins.
   handler (FastMCP converts them to MCP error responses). If wrong, Task 2 will
   need revision of the error-return approach.
 - [ASSUMPTION] `agent/core/` modules (`MetadataScanner`, `PatternMatcher`,
-  `DomainScanner`, `OracleTestExecutor`, `HarnessMigrator`, `FrameworkRegistry`,
+  `DomainScanner`, `CanaryTestExecutor`, `HarnessMigrator`, `FrameworkRegistry`,
   `Scaffolder`) are importable as-is from `agent.core.*` — verified by the
   existing test baseline (122 passing tests).
 - [ASSUMPTION] The Claude Code plugin JSON Schema URL in the manifest
@@ -259,7 +259,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
    from agent.core.metadata_scanner import MetadataScanner
    from agent.core.pattern_matcher import PatternMatcher
    from agent.core.domain_scanner import DomainScanner
-   from agent.core.executor import OracleTestExecutor
+   from agent.core.executor import CanaryTestExecutor
    from agent.core.framework_registry import FrameworkRegistry
    from agent.core.scaffolder import Scaffolder
    from agent.core.migrator import HarnessMigrator
@@ -328,7 +328,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
        path = Path(test_file)
        suffix = path.suffix.lower()
        framework = "pytest" if suffix == ".py" else "playwright"
-       executor = OracleTestExecutor()
+       executor = CanaryTestExecutor()
        try:
            exit_code, stdout, stderr = executor.execute(path, framework)
        except Exception as exc:
@@ -495,7 +495,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
            test_file.write_text("def test_noop(): pass")
 
            with patch(
-               "agent.core.executor.OracleTestExecutor.execute",
+               "agent.core.executor.CanaryTestExecutor.execute",
                return_value=(0, "1 passed in 0.01s", ""),
            ):
                from agent import mcp_server as srv
@@ -510,7 +510,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
            test_file.write_text("def test_fail(): assert False")
 
            with patch(
-               "agent.core.executor.OracleTestExecutor.execute",
+               "agent.core.executor.CanaryTestExecutor.execute",
                return_value=(1, "", "AssertionError"),
            ):
                from agent import mcp_server as srv
@@ -680,7 +680,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 1. Create the directory:
 
    ```bash
-   mkdir -p /Users/bs/Github/oracle-test-ai-agent/.claude-plugin
+   mkdir -p /Users/bs/Github/canary-test-ai-agent/.claude-plugin
    ```
 
 2. Create `.claude-plugin/plugin.json` with the following content exactly:
@@ -730,7 +730,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 1. Create the directory:
 
    ```bash
-   mkdir -p /Users/bs/Github/oracle-test-ai-agent/.claude-plugin/agents
+   mkdir -p /Users/bs/Github/canary-test-ai-agent/.claude-plugin/agents
    ```
 
 2. Create `.claude-plugin/agents/oracle-test-generator.md`:
@@ -1068,7 +1068,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 1. Create the schemas directory:
 
    ```bash
-   mkdir -p /Users/bs/Github/oracle-test-ai-agent/.claude-plugin/schemas
+   mkdir -p /Users/bs/Github/canary-test-ai-agent/.claude-plugin/schemas
    ```
 
 2. Create `.claude-plugin/schemas/plugin.schema.json` with a minimal but
@@ -1212,7 +1212,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 1. Start the MCP server as Claude Code would:
 
    ```bash
-   cd /Users/bs/Github/oracle-test-ai-agent
+   cd /Users/bs/Github/canary-test-ai-agent
    timeout 5 python3 -m agent.mcp_server 2>&1 || true
    ```
 

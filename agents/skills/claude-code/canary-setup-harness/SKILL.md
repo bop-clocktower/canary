@@ -1,15 +1,15 @@
-# Oracle: Setup Harness
+# Canary: Setup Harness
 
-> Configure the Harness Engineering guardrails in a new Oracle
+> Configure the Harness Engineering guardrails in a new Canary
 > project (or a fork). Installs the harness CLI, initialises the
 > config, wires up CI workflows, and verifies all gates pass on
 > a clean repository.
 
 ## When to Use
 
-- When setting up Oracle (or a fork) in a new repository for
+- When setting up Canary (or a fork) in a new repository for
   the first time
-- When onboarding a new project that wants Oracle's CI gate
+- When onboarding a new project that wants Canary's CI gate
   structure
 - When a fork has drifted from the harness config and needs
   to be re-aligned
@@ -68,7 +68,7 @@
    are sensible, but confirm:
 
    - `layers` matches the project's actual package structure
-     (for Oracle: `llm`, `core`, `cli`)
+     (for Canary: `llm`, `core`, `cli`)
    - `entrypoints` lists the correct top-level packages
    - `telemetry` and `adoption` settings match team policy
 
@@ -94,7 +94,7 @@
    - `harness-security.yml` — security scan + ledger refresh
    - `docs-lint.yml` — markdown formatting enforcement
 
-   If any are missing, copy them from an upstream Oracle
+   If any are missing, copy them from an upstream Canary
    reference install or generate them:
 
    ```bash
@@ -161,10 +161,10 @@
    push again. Do not suppress gates or skip hooks to make CI
    green — fix the actual issue.
 
-4. **Log to `docs/ORACLE_STATE.md`** that harness setup was
+4. **Log to `docs/CANARY_STATE.md`** that harness setup was
    completed, including the date and commit SHA.
 
-## Oracle Integration
+## Canary Integration
 
 - **`harness.config.json`** — Layer rules, entrypoints,
   telemetry/adoption settings. Source of truth for all
@@ -176,7 +176,7 @@
 - **`scripts/security_ledger.py`** — Regenerates
   `docs/SECURITY_LEDGER.md` from `.harness/security/timeline.json`.
   Must be run after every security scan.
-- **`docs/ORACLE_STATE.md`** — Project ledger. Log setup
+- **`docs/CANARY_STATE.md`** — Project ledger. Log setup
   completion here.
 
 ## Success Criteria
@@ -186,7 +186,7 @@
 - The security ledger (`docs/SECURITY_LEDGER.md`) exists and
   is not stale
 - `.harness/hooks/` is committed and present in the repo
-- A setup entry exists in `docs/ORACLE_STATE.md`
+- A setup entry exists in `docs/CANARY_STATE.md`
 
 ## Rationalizations to Reject
 
@@ -201,7 +201,7 @@
 
 ### Example: Fresh install on a new fork
 
-**Scenario:** `cap-oracle` is a new fork of `oracle-test-ai-agent`.
+**Scenario:** `cap-canary` is a new fork of `canary-test-ai-agent`.
 It has no harness config yet.
 
 **Steps:**
@@ -211,7 +211,7 @@ It has no harness config yet.
    `cli`. Entrypoints set to `agent`.
 3. Copy the five CI workflow files from upstream.
 4. Run the security scan, generate the baseline ledger, commit.
-5. Push. All five gates pass. Log to `ORACLE_STATE.md`.
+5. Push. All five gates pass. Log to `CANARY_STATE.md`.
 
 ### Example: Re-aligning a drift after harness update
 

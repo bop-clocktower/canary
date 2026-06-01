@@ -171,7 +171,7 @@ Settings are registered as a `Configurable` implementation under
 | Key | Type | Default | Description |
 | --- | ---- | ------- | ----------- |
 | `oracle.cliPath` | String | `""` | Absolute path to the `oracle` binary. Empty = auto-detect. |
-| `oracle.provider` | Enum | `""` | LLM provider override (`anthropic`, `openai`, `gemini`, `codex`, `mock`). Empty = use `ORACLE_LLM_PROVIDER` env. |
+| `oracle.provider` | Enum | `""` | LLM provider override (`anthropic`, `openai`, `gemini`, `codex`, `mock`). Empty = use `CANARY_LLM_PROVIDER` env. |
 | `oracle.defaultReportFormat` | Enum | `""` | Auto-attach `--report-format` (`json`, `sarif`, or empty). |
 | `oracle.showStatusBar` | Boolean | `true` | Show Oracle status bar widget. |
 | `oracle.autoOpenGeneratedFile` | Boolean | `true` | Open generated test file after `oracle.generate` succeeds. |
@@ -271,7 +271,7 @@ CLI invocations use `GeneralCommandLine` + `OSProcessHandler`:
 ```kotlin
 val cmd = GeneralCommandLine(resolvedCliPath, *args)
     .withWorkDirectory(workDir)
-    .withEnvironment("ORACLE_LLM_PROVIDER", provider)
+    .withEnvironment("CANARY_LLM_PROVIDER", provider)
     .withCharset(Charsets.UTF_8)
 
 val handler = OSProcessHandler(cmd)
@@ -292,7 +292,7 @@ if (!handler.waitFor(120_000L)) {
 }
 ```
 
-The `ORACLE_LLM_PROVIDER` environment variable is injected from the
+The `CANARY_LLM_PROVIDER` environment variable is injected from the
 `oracle.provider` setting (if non-empty); otherwise the variable is omitted
 and the CLI picks it up from the system environment.
 
@@ -342,7 +342,7 @@ oracle-intellij/
           CliResult.kt           # data class: exitCode, stdout, stderr
         util/
           CliResolver.kt         # auto-detect oracle binary
-          EnvUtil.kt             # ORACLE_LLM_PROVIDER injection
+          EnvUtil.kt             # CANARY_LLM_PROVIDER injection
       resources/META-INF/
         plugin.xml
     test/

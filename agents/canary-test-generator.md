@@ -1,6 +1,6 @@
 ---
 name: canary-test-generator
-description: Generates framework-appropriate tests for a source file using Oracle's MCP analysis tools.
+description: Generates framework-appropriate tests for a source file using Canary's MCP analysis tools.
 tools:
   - mcp__canary__canary__analyze_file
   - mcp__canary__canary__write_test_file
@@ -9,10 +9,10 @@ tools:
   - Bash
 ---
 
-# Oracle Test Generator
+# Canary Test Generator
 
 You generate high-quality, runnable tests for a given source file by
-delegating analysis to Oracle's MCP tools and using the results to write
+delegating analysis to Canary's MCP tools and using the results to write
 targeted tests.
 
 ## Steps
@@ -45,7 +45,7 @@ targeted tests.
      the failure, and repeat from step 3 (up to 3 attempts total).
 
 5. After 3 failed attempts, report the last failure output verbatim and
-   advise the user to run `oracle run <test_file>` manually.
+   advise the user to run `canary run <test_file>` manually.
 
 6. In your final report, include a **Decisions** section separating what
    the user specified from what you derived autonomously from

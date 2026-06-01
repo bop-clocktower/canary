@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 """
-Oracle Migrator — detects harness-scaffolded test-suite projects and migrates
-them to Oracle's layout without touching existing test files.
+Canary Migrator — detects harness-scaffolded test-suite projects and migrates
+them to Canary's layout without touching existing test files.
 """
 
 import json
@@ -69,7 +69,7 @@ class MigrationReport:
     manual_followups: list = field(default_factory=list)
 
     def to_markdown(self) -> str:
-        lines = ["# Oracle Migration Report", ""]
+        lines = ["# Canary Migration Report", ""]
         if self.dry_run:
             lines += ["> **Dry run** — no files were written. Re-run with `--apply` to migrate.", ""]
 
@@ -116,13 +116,13 @@ class MigrationReport:
             lines.append("")
 
         if not self.manual_followups:
-            lines += ["## Status", "", "Migration complete. Run `oracle recommend \"<test description>\"` to verify framework detection.", ""]
+            lines += ["## Status", "", "Migration complete. Run `canary recommend \"<test description>\"` to verify framework detection.", ""]
 
         return "\n".join(lines)
 
 
 class HarnessMigrator:
-    """Detects harness test-suite projects and migrates them to Oracle's layout."""
+    """Detects harness test-suite projects and migrates them to Canary's layout."""
 
     def detect(self, project_root: Path) -> MigrationContext:
         """Inspect project_root for harness markers and auto-detect framework."""
@@ -155,7 +155,7 @@ class HarnessMigrator:
         framework: Optional[str] = None,
     ) -> MigrationReport:
         """
-        Migrate a harness-scaffolded project to Oracle's layout.
+        Migrate a harness-scaffolded project to Canary's layout.
 
         Args:
             project_root: Root directory of the project to migrate.
@@ -178,7 +178,7 @@ class HarnessMigrator:
 
         if framework is None:
             followups.append(
-                "Could not auto-detect framework. Run `oracle migrate --framework <name>` "
+                "Could not auto-detect framework. Run `canary migrate --framework <name>` "
                 "with one of: playwright, vitest, pytest, k6."
             )
             return MigrationReport(

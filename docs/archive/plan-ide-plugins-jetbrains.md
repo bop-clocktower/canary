@@ -361,7 +361,7 @@ object CliRunner {
             .apply {
                 if (workDir != null) withWorkDirectory(workDir)
                 if (settings.provider.isNotBlank())
-                    withEnvironment("ORACLE_LLM_PROVIDER", settings.provider)
+                    withEnvironment("CANARY_LLM_PROVIDER", settings.provider)
                 // inject defaultReportFormat when running generate
                 if (args.firstOrNull() == "generate"
                         && settings.defaultReportFormat.isNotBlank()) {
@@ -1092,7 +1092,7 @@ Use the IntelliJ Platform test framework (`LightPlatformTestCase` /
 | File | Key cases |
 | ---- | --------- |
 | `CliResolverTest.kt` | found on PATH; not found; found in fallback `~/.local/bin`; `tooOld` when version `"0.0.9"`; login-shell fallback (macOS only) |
-| `CliRunnerTest.kt` | env injection of `ORACLE_LLM_PROVIDER`; 120 s timeout → `timedOut = true`; non-zero exit captured; `ExecutionException` → `exitCode = -1` |
+| `CliRunnerTest.kt` | env injection of `CANARY_LLM_PROVIDER`; 120 s timeout → `timedOut = true`; non-zero exit captured; `ExecutionException` → `exitCode = -1` |
 | `GenerateActionTest.kt` | blank prompt → no-op; right-click pre-fill populated; success opens file; JSON parse failure → raw stdout in tool window; timeout notification shown |
 | `RunActionTest.kt` | no active file → error notification; framework inferred from `playwright.config.ts`; Quick Pick when not detected; pass/fail widget state set |
 | `InitActionTest.kt` | chooser cancelled → no-op; selected framework passed to runner; project tree refreshed on success |

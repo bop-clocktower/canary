@@ -1,8 +1,8 @@
-# Oracle Knowledge Map
+# Canary Knowledge Map
 
 ## Project Overview
 
-**Oracle** is an AI-powered test automation agent that transforms natural
+**Canary** is an AI-powered test automation agent that transforms natural
 language requirements into high-quality, framework-aware test code. It follows
 strict harness engineering practices for layer isolation and architectural
 integrity.
@@ -16,8 +16,8 @@ integrity.
 - **Self-Healing Loop:** [Self-Healing Loop][self-healing]
 - **Main README:** [README.md](README.md)
 - **Roadmap:** [docs/roadmap.md](docs/roadmap.md)
-- **State:** [ORACLE_STATE.md](docs/ORACLE_STATE.md)
-- **Engineering Learnings:** [ORACLE_LEARNINGS.md](docs/ORACLE_LEARNINGS.md)
+- **State:** [CANARY_STATE.md](docs/CANARY_STATE.md)
+- **Engineering Learnings:** [CANARY_LEARNINGS.md](docs/CANARY_LEARNINGS.md)
 
 ## Repository Structure
 
@@ -113,7 +113,7 @@ docs/branching-convention
   part of the LLM generation pipeline (orchestrator). Replaced by the
   `/canary-debug-flake` slash command.
 - **Quality Scorer:** [agent/core/quality_scorer.py](agent/core/quality_scorer.py)
-  — Static analysis scorer for Oracle-generated test files. Scores on
+  — Static analysis scorer for Canary-generated test files. Scores on
   three dimensions: coverage breadth (test count + error path coverage),
   assertion density (assertions per test function), and flakiness risk
   (hardcoded waits, random values, timestamp dependencies). Returns a
@@ -125,7 +125,7 @@ docs/branching-convention
   `canary generate --report-format json|sarif`.
 - **Migrator:** [agent/core/migrator.py](agent/core/migrator.py)
   — Detects harness-scaffolded test projects (via `harness.config.json`
-  and `.harness/`) and migrates them to Oracle's layout without touching
+  and `.harness/`) and migrates them to Canary's layout without touching
   existing test files. Invoked via `canary migrate`.
 - **Skill Registry:** [agent/core/skill_registry.py](agent/core/skill_registry.py)
   — Discovers bundled default skills and local project overlay skills
@@ -139,7 +139,7 @@ docs/branching-convention
 
 ### Claude Code Plugin (`.claude-plugin/`)
 
-Oracle is also loadable as a Claude Code plugin for in-editor test
+Canary is also loadable as a Claude Code plugin for in-editor test
 generation via slash commands.
 
 - **MCP server:** [agent/mcp_server.py](agent/mcp_server.py) — FastMCP
@@ -185,7 +185,7 @@ authenticated session with no API key required.
 
 ## Integration with Harness
 
-Oracle integrates with the **Harness Engineering Ecosystem** by:
+Canary integrates with the **Harness Engineering Ecosystem** by:
 
 1. **Programmatic Access:** Exposing a `--json` flag for machine-readable
    generation outputs
@@ -196,7 +196,7 @@ Oracle integrates with the **Harness Engineering Ecosystem** by:
 
 ### Recommended Composition Pattern
 
-Oracle and Harness skills are **complementary, not competing**. The
+Canary and Harness skills are **complementary, not competing**. The
 recommended flow for test development combines both:
 
 ```text
@@ -256,9 +256,9 @@ commit:
 ### Workflow steps
 
 1. **Requirement Analysis:** User provides natural language requirements.
-2. **Classification:** Oracle identifies the target testing framework and
+2. **Classification:** Canary identifies the target testing framework and
    language using [agent/core/classifier.py][classifier].
-3. **Scaffolding:** Oracle generates the initial test structure using
+3. **Scaffolding:** Canary generates the initial test structure using
    [agent/core/scaffolder.py][scaffolder].
 4. **Execution:** Tests are executed via [agent/core/executor.py][executor].
 5. **Iteration:** Based on test results, the orchestrator handles
@@ -266,9 +266,9 @@ commit:
 
 ## Key Agents
 
-- **Oracle:** The primary test generator.
+- **Canary:** The primary test generator.
 - **Harness Sub-agents:** Used for architectural enforcement, planning,
-  and verification of Oracle's own codebase.
+  and verification of Canary's own codebase.
 
 [wiki-home]: docs/wiki/Home.md
 [arch-deep-dive]: docs/wiki/Architecture-Deep-Dive.md

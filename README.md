@@ -1,4 +1,10 @@
-# Canary 🦇
+# Canary
+
+![version](https://img.shields.io/badge/version-1.0.0-F0C040?style=flat-square&labelColor=0A0A0A&color=F0C040)
+![python](https://img.shields.io/badge/python-3.11+-F5F5F5?style=flat-square&labelColor=1C1C1C&color=2E2E2E)
+![tests](https://img.shields.io/badge/tests-passing-28C840?style=flat-square&labelColor=1C1C1C&color=1C1C1C&logoColor=28C840)
+![frameworks](https://img.shields.io/badge/playwright_·_vitest_·_pytest-F0C040?style=flat-square&labelColor=C09018&color=F0C040)
+![license](https://img.shields.io/badge/license-MIT-555?style=flat-square&labelColor=1C1C1C&color=2E2E2E)
 
 **Canary** is an AI-powered test automation agent that transforms natural
 language requirements into high-quality, framework-aware test code.
@@ -18,7 +24,7 @@ language requirements into high-quality, framework-aware test code.
 ### pipx (recommended)
 
 ```bash
-pipx install git+https://github.com/bri-stevenski/oracle-test-ai-agent@v0.2.0
+pipx install git+https://github.com/bop-clocktower/canary@v0.2.0
 ```
 
 This installs the `canary` binary globally without polluting your project
@@ -27,8 +33,8 @@ virtualenv. Upgrade by re-running with `@<new-tag>`.
 ### From source
 
 ```bash
-git clone https://github.com/bri-stevenski/oracle-test-ai-agent.git
-cd oracle-test-ai-agent
+git clone https://github.com/bop-clocktower/canary.git
+cd canary
 pip install -e .
 ```
 
@@ -39,20 +45,20 @@ Canary ships as a Claude Code plugin with four MVP personas — `canary-test-aut
 plus the `harness` MCP server. Add it as a local marketplace:
 
 ```bash
-/plugin marketplace add https://github.com/bri-stevenski/oracle-test-ai-agent
-/plugin install canary@canary
+/plugin marketplace add https://github.com/bop-clocktower/canary
+/plugin install canary@bop-clocktower
 ```
 
 Or, if you've already cloned the repo:
 
 ```bash
-/plugin marketplace add /path/to/oracle-test-ai-agent
-/plugin install canary@canary
+/plugin marketplace add /path/to/canary
+/plugin install canary@bop-clocktower
 ```
 
-> **Note:** `canary@canary` is `<plugin-name>@<marketplace-name>` — both are
-> `canary` here, which is intentional. The `@canary` qualifier disambiguates
-> the plugin when multiple marketplaces are registered.
+> **Note:** the install syntax is `<plugin-name>@<marketplace-name>`. The
+> `canary` plugin ships from the `bop-clocktower` marketplace, so the `@`
+> qualifier reads as `canary@bop-clocktower`.
 
 No separate API key is required. The plugin runs through Claude Code's own
 session authentication.
@@ -70,7 +76,7 @@ canary generate "Create a playwright test for the login flow on https://example.
 
 ### Recommendation Only (Draft Mode)
 
-If you want to see Oracle's reasoning without calling the LLM, use the
+If you want to see Canary's reasoning without calling the LLM, use the
 `--recommend-only` flag:
 
 ```bash
@@ -96,7 +102,7 @@ export ANTHROPIC_API_KEY='your-anthropic-api-key'
 ```
 
 Other providers (`gemini`, `openai`, `mock`) are available via the
-`ORACLE_LLM_PROVIDER` environment variable. See
+`CANARY_LLM_PROVIDER` environment variable. See
 [`docs/wiki/LLM-Providers-and-Configuration.md`](docs/wiki/LLM-Providers-and-Configuration.md)
 for the full provider matrix and required env vars.
 

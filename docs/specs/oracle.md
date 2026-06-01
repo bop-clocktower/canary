@@ -54,7 +54,7 @@ requirements into framework-aware, runnable test code.
 - **Runtime:** Python >=3.10 (declared in `pyproject.toml`; matches f-string,
   match-statement, and type-union syntax used across source modules).
 - **Supported providers:** Anthropic (Claude), OpenAI (GPT), Google Gemini,
-  OpenAI Codex — selected via `ORACLE_LLM_PROVIDER` env var. Mock provider is
+  OpenAI Codex — selected via `CANARY_LLM_PROVIDER` env var. Mock provider is
   used in CI only and is not a production target.
 - **Single-process execution:** Oracle runs as a single Python process; no
   worker threads or subprocess pools are used for generation.
@@ -65,7 +65,7 @@ requirements into framework-aware, runnable test code.
 
 ### Generation Pipeline
 
-The `OracleOrchestrator.run()` method executes these steps in order:
+The `CanaryOrchestrator.run()` method executes these steps in order:
 
 1. **Metadata scan** — Read `package.json`, `pyproject.toml`, etc. for exact
    dependency versions to inject into the generation prompt.

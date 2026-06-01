@@ -67,7 +67,7 @@
   "roadmap": {
     "tracker": {
       "kind": "github",
-      "repo": "bri-stevenski/oracle-test-ai-agent",
+      "repo": "bop-clocktower/canary",
       "labels": ["harness-managed"],
       "statusMap": {
         "backlog": "open",

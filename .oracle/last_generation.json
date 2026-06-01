@@ -1,8 +1,0 @@
-{
-  "prompt": "Generate tests for changes in this pull request",
-  "test_type": "api",
-  "framework": "pytest",
-  "provider": "mock",
-  "model": "unknown",
-  "output_file": "/Users/bs/Github/oracle-test-ai-agent/tests/generated/pytest_test_20260520_212858_905601.py"
-}

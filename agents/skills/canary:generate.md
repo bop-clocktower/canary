@@ -1,6 +1,6 @@
 ---
 name: canary:generate
-description: Generate a framework-appropriate test for the active editor file using Oracle's analysis pipeline.
+description: Generate a framework-appropriate test for the active editor file using Canary's analysis pipeline.
 ---
 
 # canary:generate

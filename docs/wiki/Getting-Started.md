@@ -1,4 +1,4 @@
-# Getting Started with Oracle
+# Getting Started with Canary
 
 This guide takes you from zero to your first generated test.
 It should take about five minutes.
@@ -14,10 +14,10 @@ You'll need:
 
 [anthropic]: https://console.anthropic.com
 
-## Step 1: Install Oracle
+## Step 1: Install Canary
 
 ```bash
-git clone https://github.com/bri-stevenski/canary-test-ai-agent.git
+git clone https://github.com/bop-clocktower/canary.git
 cd canary-test-ai-agent
 pip install -e .
 ```
@@ -28,11 +28,11 @@ Verify the install worked:
 canary version
 ```
 
-You should see: `Oracle AI v0.1 (MVP)`
+You should see: `Canary AI v0.1 (MVP)`
 
-## Step 2: Open Oracle in Claude Code
+## Step 2: Open Canary in Claude Code
 
-Oracle runs as a Claude Code plugin — no API key setup required.
+Canary runs as a Claude Code plugin — no API key setup required.
 Install the plugin once:
 
 ```bash
@@ -49,7 +49,7 @@ automatically.
 canary generate "Test that GET /api/health returns 200"
 ```
 
-Oracle will:
+Canary will:
 
 1. Classify the intent (API test)
 2. Pick the best framework (pytest)
@@ -59,7 +59,7 @@ Oracle will:
 The output looks something like:
 
 ```text
-Oracle Processing Request...
+Canary Processing Request...
 
 Test Type: api
 Framework: pytest
@@ -104,14 +104,14 @@ run freely.
 
 Once a test passes review, you can promote it into the committed
 test suite. See the
-[oracle-promote-test][promote-skill] skill for
+[canary-promote-test][promote-skill] skill for
 the full promotion checklist.
 
-[promote-skill]: ../skills/claude-code/oracle-promote-test/SKILL.md
+[promote-skill]: ../skills/claude-code/canary-promote-test/SKILL.md
 
 ## Want a Preview Without Generating?
 
-Use `--recommend-only` to see what Oracle would pick without
+Use `--recommend-only` to see what Canary would pick without
 calling the LLM (no API key needed):
 
 ```bash

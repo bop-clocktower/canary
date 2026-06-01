@@ -1,6 +1,6 @@
 # agent/core/ci_env.py
 
-"""CI environment detection for Oracle headless optimizations."""
+"""CI environment detection for Canary headless optimizations."""
 
 import os
 

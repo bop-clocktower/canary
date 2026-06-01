@@ -1,4 +1,4 @@
-"""Discovers Oracle skills: bundled defaults and local project overlays.
+"""Discovers Canary skills: bundled defaults and local project overlays.
 
 Implements the discovery convention defined in docs/specs/skill-discovery.md.
 
@@ -40,7 +40,7 @@ class SkillInfo:
     cli: Optional[str] = None
     entry: Optional[str] = None
     # Validation error captured at discovery time. When set, the skill is
-    # still listed (so users can see the bad config) but ``oracle skills
+    # still listed (so users can see the bad config) but ``canary skills
     # run`` will refuse to invoke it.
     error: Optional[str] = None
 

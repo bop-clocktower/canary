@@ -14,7 +14,7 @@ specific type of problem that has caused real issues before:
 
 - Broken links in docs that send readers to dead pages
 - Security vulnerabilities introduced during normal development
-- Code structure that makes Oracle harder to maintain or extend
+- Code structure that makes Canary harder to maintain or extend
 - Documentation that drifts out of sync with the code it
   describes
 
@@ -26,7 +26,7 @@ before they become bigger problems.
 ### Architecture Enforcer
 
 **What it checks:** That the code's layer structure is intact.
-Oracle is built in three layers — LLM, Core, and CLI — and they
+Canary is built in three layers — LLM, Core, and CLI — and they
 must only communicate in one direction (CLI depends on Core,
 Core depends on LLM, LLM depends on nothing else). This check
 also validates that markdown links in docs point to files that
@@ -124,7 +124,7 @@ know what's wrong.
 If a check is failing and you can't figure out why:
 
 1. Copy the error message from the CI log
-2. Share it in your team channel or with Oracle — describe
+2. Share it in your team channel or with Canary — describe
    what you were changing when it failed
 3. The error message usually contains enough information for
    someone to spot the issue immediately

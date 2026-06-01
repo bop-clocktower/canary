@@ -1,6 +1,6 @@
 # agent/core/metadata_scanner.py
 
-"""Project metadata scanner for Oracle.
+"""Project metadata scanner for Canary.
 
 Scans the user's project root for package.json, tsconfig.json,
 requirements.txt, and pyproject.toml, then surfaces dependency

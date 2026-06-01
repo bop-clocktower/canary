@@ -6,22 +6,22 @@
 ## Goal
 
 Oracle's LLM layer supports five providers — Claude (default), Gemini,
-OpenAI, Codex, and Mock — via `ORACLE_LLM_PROVIDER`, each fully tested
+OpenAI, Codex, and Mock — via `CANARY_LLM_PROVIDER`, each fully tested
 with unit tests that mock the underlying SDK.
 
 ## Observable Truths (Acceptance Criteria)
 
 1. `ProviderFactory.available_providers()` returns
    `("anthropic", "codex", "gemini", "mock", "openai")`.
-2. `ORACLE_LLM_PROVIDER=codex` with `OPENAI_API_KEY` unset raises
+2. `CANARY_LLM_PROVIDER=codex` with `OPENAI_API_KEY` unset raises
    `RuntimeError` on `ProviderFactory.get_provider()`.
-3. `ORACLE_LLM_PROVIDER=openai` with `OPENAI_API_KEY` unset raises
+3. `CANARY_LLM_PROVIDER=openai` with `OPENAI_API_KEY` unset raises
    `RuntimeError` on `ProviderFactory.get_provider()`.
 4. `pytest tests/unit/` passes, including new `test_providers.py` with
    generate() tests for Anthropic, Gemini, OpenAI, and Codex (mocked
    SDKs).
 5. `harness validate` passes after all changes.
-6. `ProviderFactory.get_provider()` with `ORACLE_LLM_PROVIDER` unset
+6. `ProviderFactory.get_provider()` with `CANARY_LLM_PROVIDER` unset
    returns an `AnthropicProvider` instance (default switched from OpenAI
    to Claude, covered by `test_default_is_anthropic`).
 
@@ -192,13 +192,13 @@ CREATE tests/unit/test_providers.py
        )
 
    def test_codex_provider_requires_key(self):
-       os.environ["ORACLE_LLM_PROVIDER"] = "codex"
+       os.environ["CANARY_LLM_PROVIDER"] = "codex"
        os.environ.pop("OPENAI_API_KEY", None)
        with self.assertRaises(RuntimeError):
            ProviderFactory.get_provider()
 
    def test_openai_provider_requires_key(self):
-       os.environ["ORACLE_LLM_PROVIDER"] = "openai"
+       os.environ["CANARY_LLM_PROVIDER"] = "openai"
        os.environ.pop("OPENAI_API_KEY", None)
        with self.assertRaises(RuntimeError):
            ProviderFactory.get_provider()

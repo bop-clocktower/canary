@@ -6,10 +6,10 @@ from __future__ import annotations
 Workflow Discovery — discovers per-project Jira / GitHub issue workflows
 and persists the mapping to `.canary/workflow-<key>.json`.
 
-Oracle never hardcodes Jira status names or GitHub board columns.  Instead, it
+Canary never hardcodes Jira status names or GitHub board columns.  Instead, it
 calls `resolve_role()` which looks up the persisted mapping.  If the mapping is
 missing, `WorkflowDiscovery.discover()` must be called first (either explicitly
-or via `oracle workflow-discover`).
+or via `canary workflow-discover`).
 
 Jira REST API is called directly using credentials from the environment
 (``ATLASSIAN_URL``, ``ATLASSIAN_USER``, ``ATLASSIAN_TOKEN``).  GitHub Projects
@@ -40,7 +40,7 @@ from typing import Optional
 
 # ── schema ────────────────────────────────────────────────────────────────────
 
-SCHEMA_VERSION = "https://oracle.capillary.internal/schemas/workflow-mapping/v1"
+SCHEMA_VERSION = "https://canary.capillary.internal/schemas/workflow-mapping/v1"
 
 # Word-list used for automatic semantic-role heuristics.
 _ROLE_TRIGGERS: dict[str, list[str]] = {
@@ -598,7 +598,7 @@ def resolve_role(
     >>> from agent.core.workflow_discovery import resolve_role
     >>> transition_name = resolve_role("OPTUM", "qa_passed")
     >>> if transition_name is None:
-    ...     raise RuntimeError("Run oracle workflow-discover --project OPTUM first")
+    ...     raise RuntimeError("Run canary workflow-discover --project OPTUM first")
     """
     return WorkflowDiscovery(canary_dir=canary_dir).resolve_role(project_key, role)
 

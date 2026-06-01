@@ -3,12 +3,12 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
-from agent.core.executor import OracleTestExecutor
+from agent.core.executor import CanaryTestExecutor
 
-class TestOracleTestExecutor(unittest.TestCase):
+class TestCanaryTestExecutor(unittest.TestCase):
 
     def setUp(self):
-        self.executor = OracleTestExecutor()
+        self.executor = CanaryTestExecutor()
 
     @patch('subprocess.run')
     def test_execute_success(self, mock_run):
@@ -53,7 +53,7 @@ class TestOracleTestExecutor(unittest.TestCase):
         mock_process.stderr = ""
         mock_run.return_value = mock_process
 
-        file_path = Path("/tmp/oracle test/my test.spec.ts")
+        file_path = Path("/tmp/canary test/my test.spec.ts")
         self.executor.execute(file_path, "playwright")
 
         argv = mock_run.call_args[0][0]

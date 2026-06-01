@@ -1,6 +1,6 @@
-# Oracle: Add Framework
+# Canary: Add Framework
 
-> Add a new testing framework to Oracle's registry end-to-end. Confirms
+> Add a new testing framework to Canary's registry end-to-end. Confirms
 > the classifier↔registry contract, authors the registry entry,
 > validates the execution command, and ensures every classifier
 > `test_type` still resolves to a non-null framework.
@@ -25,7 +25,7 @@
 1. **Verify the framework is real and installable.** It needs a runnable
    CLI invocation (the `execution_command` template). If you can't write
    a one-line shell command that runs a single test file, it doesn't fit
-   Oracle's model.
+   Canary's model.
 2. **Identify the category.** Match to an existing `category` value
    (`e2e_ui`, `python_unit`, `api`, `performance`, `frontend_unit`,
    etc.). New categories require a coordinated classifier update — see
@@ -105,7 +105,7 @@
    extension.
 3. **Execute with `--execute`.** Confirm the framework's CLI actually
    runs the generated file. A passing execution validates the
-   `execution_command` template under the real Oracle invocation path.
+   `execution_command` template under the real Canary invocation path.
 4. **Don't promote.** This is a registry-validation run, not a real test
    promotion. Leave the artifact in `tests/generated/`.
 
@@ -117,14 +117,14 @@
 2. **Update the LLM-providers guide** if the new framework only works
    with specific provider output styles (rare; flag this as a smell if
    it's true).
-3. **Log to `docs/ORACLE_STATE.md`.** One line: framework name,
+3. **Log to `docs/CANARY_STATE.md`.** One line: framework name,
    category, status, date added. This is the project ledger; future
    maintainers grep here first.
 4. **Open a PR.** Title: `feat(registry): add <framework-name> support`.
    Body should include the validation steps you ran and the
    generated/executed sample.
 
-## Oracle Integration
+## Canary Integration
 
 - **`agent/frameworks/registry.json`** — Source of truth for entries.
 - **`agent/core/framework_registry.py`** — Loader and lookup methods.
@@ -147,7 +147,7 @@
 - `--execute` runs the generated file successfully via the new
   `execution_command`
 - `framework-registry.md` documents any new category or schema field
-- `ORACLE_STATE.md` ledger entry is present
+- `CANARY_STATE.md` ledger entry is present
 - PR includes the validation transcript
 
 ## Rationalizations to Reject
@@ -156,7 +156,7 @@
 | --- | --- |
 | "I'll add the registry entry now and update the classifier later" | Orphaned registry entries are routing traps. Either both land together or neither does. |
 | "Marking it `preferred` is fine, no need to demote the existing entry" | Multiple `preferred` entries in one category means `get_preferred_by_category` picks by registry order, not by merit. Demote the loser explicitly. |
-| "I tested the command with my path — Oracle's substitution will work too" | Test the substituted command with a path that contains spaces. The executor's `shlex.split`-then-substitute order exists specifically to handle this case; a broken template will silently corrupt argv. |
+| "I tested the command with my path — Canary's substitution will work too" | Test the substituted command with a path that contains spaces. The executor's `shlex.split`-then-substitute order exists specifically to handle this case; a broken template will silently corrupt argv. |
 | "It only needs to work for the happy-path prompt I tried" | If the classifier emits this `test_type` with confidence ≥0.7 for *any* phrasing, the framework must handle the resulting generated file. Test at least two distinct prompts that route to the new entry. |
 | "Sparse metadata is fine, we can fill it in later" | The recommender's reasoning string is read by humans and agents. Sparse metadata produces unhelpful recommendations — fill it in now while you have the context. |
 
@@ -227,7 +227,7 @@ CLI runs the generated file without error.
 
 - **When the framework requires a non-trivial config file (e.g.,
   `playwright.config.ts`):** Document the setup in `avoid_when` or in
-  `recommended_for`. If Oracle is expected to generate the config too,
+  `recommended_for`. If Canary is expected to generate the config too,
   that's a scaffolder change, not just a registry change.
 - **When two frameworks legitimately should both be `preferred` for
   different sub-cases:** Split the category. A single category should
@@ -237,6 +237,6 @@ CLI runs the generated file without error.
   Don't add the registry entry yet. Strengthen the classifier first — an
   unreachable entry is dead weight.
 - **When the framework's CLI doesn't accept a single-file argument:**
-  Oracle's model is one-test-per-file generation. Frameworks that only
+  Canary's model is one-test-per-file generation. Frameworks that only
   run by directory or by tag don't fit cleanly; raise this with the user
   before forcing a workaround.

@@ -69,8 +69,8 @@ class TestExecutorCIFlags(unittest.TestCase):
     """Integration: executor appends CI flags from registry when is_ci() is True."""
 
     def setUp(self):
-        from agent.core.executor import OracleTestExecutor
-        self.executor = OracleTestExecutor()
+        from agent.core.executor import CanaryTestExecutor
+        self.executor = CanaryTestExecutor()
 
     def _captured_cmd(self, framework_name: str) -> list:
         """Run execute() with subprocess mocked, return the command list used."""

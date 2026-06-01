@@ -24,7 +24,7 @@ class TestLicenseGate(unittest.TestCase):
     def setUp(self):
         self.rec = FrameworkRecommender()
         # Ensure a clean baseline regardless of the host environment.
-        for var in ("ORACLE_LICENSE_TRICENTIS", "ORACLE_SCOPE"):
+        for var in ("CANARY_LICENSE_TRICENTIS", "CANARY_SCOPE"):
             os.environ.pop(var, None)
 
     def test_commercial_tools_stripped_by_default(self):
@@ -34,7 +34,7 @@ class TestLicenseGate(unittest.TestCase):
         self.assertNotIn("lambdatest", names)
 
     def test_tricentis_unlocked_by_license_signal(self):
-        with patch.dict(os.environ, {"ORACLE_LICENSE_TRICENTIS": "1"}, clear=False):
+        with patch.dict(os.environ, {"CANARY_LICENSE_TRICENTIS": "1"}, clear=False):
             e2e = _names(self.rec.recommend(_cls("e2e_ui")))
             perf = _names(self.rec.recommend(_cls("performance")))
         self.assertIn("tosca", e2e)
@@ -43,18 +43,18 @@ class TestLicenseGate(unittest.TestCase):
         self.assertEqual(self.rec.recommend(_cls("e2e_ui"))[0]["framework"], "playwright")
 
     def test_falsey_license_signal_stays_gated(self):
-        with patch.dict(os.environ, {"ORACLE_LICENSE_TRICENTIS": "0"}, clear=False):
+        with patch.dict(os.environ, {"CANARY_LICENSE_TRICENTIS": "0"}, clear=False):
             self.assertNotIn("tosca", _names(self.rec.recommend(_cls("e2e_ui"))))
 
     def test_org_scope_unlocks_lambdatest(self):
-        with patch.dict(os.environ, {"ORACLE_SCOPE": "acme"}, clear=False):
+        with patch.dict(os.environ, {"CANARY_SCOPE": "acme"}, clear=False):
             names = _names(self.rec.recommend(_cls("e2e_ui")))
         self.assertIn("lambdatest", names)
 
     def test_oss_default_ranks_first_even_when_paid_unlocked(self):
         with patch.dict(
             os.environ,
-            {"ORACLE_LICENSE_TRICENTIS": "1", "ORACLE_SCOPE": "acme"},
+            {"CANARY_LICENSE_TRICENTIS": "1", "CANARY_SCOPE": "acme"},
             clear=False,
         ):
             result = self.rec.recommend(_cls("e2e_ui"))
@@ -62,16 +62,16 @@ class TestLicenseGate(unittest.TestCase):
 
     def test_license_allowed_helper(self):
         oss = {"name": "playwright"}
-        tri = {"name": "tosca", "license_gate": "ORACLE_LICENSE_TRICENTIS"}
-        scoped = {"name": "x", "license_gate": "ORACLE_SCOPE", "license_scopes": ["acme"]}
+        tri = {"name": "tosca", "license_gate": "CANARY_LICENSE_TRICENTIS"}
+        scoped = {"name": "x", "license_gate": "CANARY_SCOPE", "license_scopes": ["acme"]}
         self.assertTrue(FrameworkRecommender._license_allowed(oss))
-        with patch.dict(os.environ, {"ORACLE_LICENSE_TRICENTIS": "1"}, clear=False):
+        with patch.dict(os.environ, {"CANARY_LICENSE_TRICENTIS": "1"}, clear=False):
             self.assertTrue(FrameworkRecommender._license_allowed(tri))
-        os.environ.pop("ORACLE_LICENSE_TRICENTIS", None)
+        os.environ.pop("CANARY_LICENSE_TRICENTIS", None)
         self.assertFalse(FrameworkRecommender._license_allowed(tri))
-        with patch.dict(os.environ, {"ORACLE_SCOPE": "other"}, clear=False):
+        with patch.dict(os.environ, {"CANARY_SCOPE": "other"}, clear=False):
             self.assertFalse(FrameworkRecommender._license_allowed(scoped))
-        with patch.dict(os.environ, {"ORACLE_SCOPE": "acme"}, clear=False):
+        with patch.dict(os.environ, {"CANARY_SCOPE": "acme"}, clear=False):
             self.assertTrue(FrameworkRecommender._license_allowed(scoped))
 
 

@@ -132,7 +132,7 @@ the task-by-task implementation.
    the `generate` removal? Recommend: yes, but as part of the
    removal phase, not this one.
 2. **Should the warning be suppressible** via an env var
-   (`ORACLE_SUPPRESS_DEPRECATION=1`) for users who knowingly continue
+   (`CANARY_SUPPRESS_DEPRECATION=1`) for users who knowingly continue
    to use the CLI through v3.0 in CI? Recommend: no for this phase —
    informational warnings shouldn't be suppressed. If consumers ask,
    add later.
@@ -140,7 +140,7 @@ the task-by-task implementation.
 ## Risks
 
 - **Action description not visible to existing consumers** — once a
-  workflow has `uses: bri-stevenski/canary-test-ai-agent@v1` pinned,
+  workflow has `uses: bop-clocktower/canary@v1` pinned,
   the consumer doesn't re-read the marketplace listing. Mitigation:
   none feasible — `action.yml` doesn't have a runtime-warning hook.
   The Action will continue to work; removal at v3.0 will be a major-

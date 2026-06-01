@@ -1,6 +1,6 @@
 # Architecture Deep Dive 🏗️
 
-Oracle follows a strictly layered, modular pipeline. Each component has
+Canary follows a strictly layered, modular pipeline. Each component has
 a single responsibility, ensuring the system is extensible and
 vendor-agnostic.
 
@@ -51,6 +51,6 @@ Output`
 
 ## Security & Sanitization
 
-Oracle includes a `_sanitize_extension` layer to prevent path traversal
+Canary includes a `_sanitize_extension` layer to prevent path traversal
 and ensure that all generated files follow a strict whitelist of allowed
 extensions (`.ts`, `.py`, `.js`, etc.).
