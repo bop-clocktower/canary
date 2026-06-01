@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Canary — Demo Deck</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600&display=swap');
+
+  :root {
+    --obsidian: #0A0A0A;
+    --ash:      #1C1C1C;
+    --smoke:    #2E2E2E;
+    --wire:     #3A3A3A;
+    --muted:    #555555;
+    --dim:      #888888;
+    --platinum: #F5F5F5;
+    --white:    #FFFFFF;
+    --canary:   #F0C040;
+    --amber:    #C09018;
+    --amber-dk: #8C6410;
+    --pass:     #28C840;
+    --fail:     #E24B4A;
+    --slide-w:  960px;
+    --slide-h:  540px;
+    --mono:     'JetBrains Mono', monospace;
+    --sans:     'Inter', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #111;
+    font-family: var(--sans);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+    padding: 40px 20px;
+    min-height: 100vh;
+  }
+
+  /* ── NAV ─────────────────────────────────────────── */
+  .deck-nav {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .deck-nav button {
+    background: var(--ash);
+    border: 1px solid var(--wire);
+    color: var(--dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 12px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .deck-nav button:hover { border-color: var(--canary); color: var(--canary); }
+  .deck-nav .counter { color: var(--canary); min-width: 48px; text-align: center; }
+
+  /* ── SLIDE SHELL ─────────────────────────────────── */
+  .slide {
+    width: var(--slide-w);
+    height: var(--slide-h);
+    background: var(--obsidian);
+    position: relative;
+    overflow: hidden;
+    display: none;
+    border: 1px solid var(--wire);
+  }
+  .slide.active { display: block; }
+
+  /* Grid texture */
+  .slide::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--ash) 1px, transparent 1px),
+      linear-gradient(90deg, var(--ash) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.35;
+    pointer-events: none;
+  }
+
+  /* Gold left rule */
+  .slide::after {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--canary);
+  }
+
+  /* ── COMMON ELEMENTS ─────────────────────────────── */
+  .slide-content { position: relative; z-index: 1; height: 100%; }
+
+  .canary-mark {
+    position: absolute;
+    top: 20px; right: 28px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--wire);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .slide-num {
+    position: absolute;
+    bottom: 20px; right: 28px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--wire);
+  }
+
+  .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--canary);
+    background: rgba(240,192,64,0.08);
+    border: 1px solid rgba(240,192,64,0.25);
+    padding: 3px 10px;
+    border-radius: 2px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* ── SLIDE 1: COVER ──────────────────────────────── */
+  #s1 .bird-bg {
+    position: absolute;
+    right: 60px; top: 50%;
+    transform: translateY(-50%);
+    opacity: 0.06;
+    font-size: 320px;
+    line-height: 1;
+    color: var(--canary);
+    font-family: var(--mono);
+    user-select: none;
+  }
+
+  #s1 .cover-body {
+    padding: 70px 60px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+  }
+
+  #s1 h1 {
+    font-family: var(--mono);
+    font-size: 80px;
+    font-weight: 700;
+    color: var(--white);
+    letter-spacing: -2px;
+    line-height: 0.9;
+    margin-bottom: 20px;
+  }
+
+  #s1 h1 span { color: var(--canary); }
+
+  #s1 .subtitle {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--dim);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 32px;
+  }
+
+  #s1 .meta {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  #s1 .version {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* ── SLIDE 2: CONTENT ────────────────────────────── */
+  #s2 .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    height: 100%;
+  }
+
+  #s2 .left {
+    padding: 52px 40px 40px 52px;
+    border-right: 1px solid var(--wire);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  #s2 h2 {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--white);
+    line-height: 1.1;
+    margin-top: 12px;
+  }
+
+  #s2 .bullet-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 8px;
+  }
+
+  #s2 .bullet-list li {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 13px;
+    color: var(--platinum);
+    line-height: 1.5;
+  }
+
+  #s2 .bullet-list li .dot {
+    color: var(--canary);
+    font-family: var(--mono);
+    font-size: 16px;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  #s2 .right {
+    padding: 52px 40px 40px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .stat-card {
+    background: var(--ash);
+    border: 1px solid var(--wire);
+    border-radius: 4px;
+    padding: 16px 20px;
+  }
+  .stat-card .num {
+    font-family: var(--mono);
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--canary);
+    line-height: 1;
+  }
+  .stat-card .stat-label {
+    font-size: 11px;
+    color: var(--dim);
+    margin-top: 4px;
+    font-family: var(--mono);
+    letter-spacing: 0.08em;
+  }
+
+  /* ── SLIDE 3: CODE ───────────────────────────────── */
+  #s3 .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    height: 100%;
+  }
+
+  #s3 .left {
+    padding: 52px 40px 40px 52px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    justify-content: center;
+  }
+
+  #s3 h2 {
+    font-family: var(--mono);
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--white);
+    line-height: 1.2;
+  }
+
+  #s3 p {
+    font-size: 13px;
+    color: var(--dim);
+    line-height: 1.7;
+  }
+
+  #s3 .chip-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+
+  #s3 .chip {
+    font-family: var(--mono);
+    font-size: 10px;
+    background: var(--ash);
+    border: 1px solid var(--wire);
+    color: var(--canary);
+    padding: 3px 8px;
+    border-radius: 2px;
+  }
+
+  #s3 .right {
+    background: #060606;
+    border-left: 1px solid var(--wire);
+    padding: 32px 28px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--wire);
+  }
+  .code-header .dot-r { width:8px; height:8px; border-radius:50%; background:#E24B4A; }
+  .code-header .dot-y { width:8px; height:8px; border-radius:50%; background:#FFBD2E; }
+  .code-header .dot-g { width:8px; height:8px; border-radius:50%; background:#28C840; }
+  .code-header .fname {
+    margin-left: 8px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  pre {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--platinum);
+    overflow: hidden;
+  }
+
+  .k  { color: #C792EA; }   /* keyword  */
+  .s  { color: #C3E88D; }   /* string   */
+  .f  { color: #82AAFF; }   /* function */
+  .c  { color: #546E7A; font-style: italic; }  /* comment  */
+  .n  { color: var(--canary); }   /* name/canary gold */
+  .p  { color: var(--dim); }      /* punctuation */
+
+  /* ── SLIDE 4: CLOSING ────────────────────────────── */
+  #s4 .cover-body {
+    padding: 70px 60px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    height: 100%;
+    gap: 16px;
+  }
+
+  #s4 h2 {
+    font-family: var(--mono);
+    font-size: 48px;
+    font-weight: 700;
+    color: var(--white);
+    line-height: 1;
+  }
+
+  #s4 h2 span { color: var(--canary); }
+
+  #s4 .links {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  #s4 .link-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--dim);
+  }
+
+  #s4 .link-row .lk { color: var(--canary); }
+  #s4 .link-icon { color: var(--muted); }
+
+  .rule-h { width: 48px; height: 2px; background: var(--canary); border-radius: 1px; }
+</style>
+</head>
+<body>
+
+<div class="deck-nav">
+  <button onclick="prev()">← prev</button>
+  <span class="counter" id="counter">1 / 4</span>
+  <button onclick="next()">next →</button>
+  <span style="margin-left:16px;">canary demo deck · v3.1.0</span>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SLIDE 1: COVER                                         -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="slide active" id="s1">
+  <div class="slide-content">
+    <div class="bird-bg">▲</div>
+    <div class="cover-body">
+      <span class="tag">birds of prey network</span>
+      <h1>can<span>▲</span>ry</h1>
+      <p class="subtitle">AI-powered test automation agent</p>
+      <div class="meta">
+        <span class="tag">v3.1.0</span>
+        <span class="version">playwright · vitest · pytest · k6</span>
+      </div>
+    </div>
+    <div class="canary-mark">clocktower voice system</div>
+    <div class="slide-num">01</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SLIDE 2: CONTENT — WHY CANARY                          -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="slide" id="s2">
+  <div class="slide-content">
+    <div class="layout">
+      <div class="left">
+        <span class="tag">the problem</span>
+        <h2>Writing tests is<br/>the bottleneck.</h2>
+        <ul class="bullet-list">
+          <li><span class="dot">◆</span> Engineers context-switch to write test fixtures</li>
+          <li><span class="dot">◆</span> Coverage gaps ship to production undetected</li>
+          <li><span class="dot">◆</span> Flaky tests erode trust in CI pipelines</li>
+          <li><span class="dot">◆</span> Migration between frameworks means rewrites</li>
+        </ul>
+      </div>
+      <div class="right">
+        <span class="tag" style="margin-bottom:4px;">impact</span>
+        <div class="stat-card">
+          <div class="num">10×</div>
+          <div class="stat-label">faster test generation</div>
+        </div>
+        <div class="stat-card">
+          <div class="num">4</div>
+          <div class="stat-label">frameworks · one command</div>
+        </div>
+        <div class="stat-card">
+          <div class="num">0</div>
+          <div class="stat-label">context switching required</div>
+        </div>
+      </div>
+    </div>
+    <div class="canary-mark">canary</div>
+    <div class="slide-num">02</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SLIDE 3: CODE — HOW IT WORKS                           -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="slide" id="s3">
+  <div class="slide-content">
+    <div class="layout">
+      <div class="left">
+        <span class="tag">how it works</span>
+        <h2>Natural language<br/>→ production tests.</h2>
+        <p>Describe what to test. Canary analyzes your codebase, infers fixtures, and generates framework-appropriate tests — with the Clocktower voice system keeping output consistent.</p>
+        <div class="chip-row">
+          <span class="chip">analyze</span>
+          <span class="chip">generate</span>
+          <span class="chip">review</span>
+          <span class="chip">migrate</span>
+        </div>
+      </div>
+      <div class="right">
+        <div class="code-header">
+          <div class="dot-r"></div><div class="dot-y"></div><div class="dot-g"></div>
+          <span class="fname">terminal</span>
+        </div>
+        <pre><span class="c"># generate tests for a component</span>
+<span class="n">$</span> canary generate <span class="s">"test the login flow"</span>
+
+<span class="c"># canary analyzes, then generates:</span>
+<span class="n">◆</span>  canary__analyze_file    login.ts
+<span class="n">◆</span>  canary__generate_test   playwright
+<span class="p">✓</span>  login.spec.ts  <span class="c">847ms</span>
+
+<span class="c"># migrate a whole suite</span>
+<span class="n">$</span> canary migrate <span class="k">--from</span> jest <span class="k">--to</span> vitest
+
+<span class="p">✓</span>  28 tests migrated
+<span class="p">✓</span>  0 failures</pre>
+      </div>
+    </div>
+    <div class="canary-mark">canary</div>
+    <div class="slide-num">03</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SLIDE 4: CLOSING / CTA                                 -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="slide" id="s4">
+  <div class="slide-content">
+    <div class="cover-body">
+      <span class="tag">get started</span>
+      <div class="rule-h"></div>
+      <h2>ship tests,<br/><span>not tickets.</span></h2>
+      <div class="links">
+        <div class="link-row">
+          <span class="link-icon">◆</span>
+          <span class="lk">pip install canary-test-ai</span>
+        </div>
+        <div class="link-row">
+          <span class="link-icon">◆</span>
+          <span class="lk">canary init</span>
+          <span>· auto-detects your stack</span>
+        </div>
+        <div class="link-row">
+          <span class="link-icon">◆</span>
+          <span>docs · github · clocktower voice system</span>
+        </div>
+      </div>
+    </div>
+    <div class="canary-mark">birds of prey network</div>
+    <div class="slide-num">04</div>
+  </div>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let cur = 0;
+  const counter = document.getElementById('counter');
+
+  function show(n) {
+    slides[cur].classList.remove('active');
+    cur = (n + slides.length) % slides.length;
+    slides[cur].classList.add('active');
+    counter.textContent = (cur + 1) + ' / ' + slides.length;
+  }
+
+  function next() { show(cur + 1); }
+  function prev() { show(cur - 1); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ') next();
+    if (e.key === 'ArrowLeft') prev();
+  });
+</script>
+</body>
+</html>
