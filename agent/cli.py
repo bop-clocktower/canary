@@ -775,5 +775,191 @@ def ticket_update(
         raise typer.Exit(1)
 
 
+# ---------------------------------------------------------------------------
+# `canary company-knowledge` — load, show, and scaffold .canary/company.json
+# ---------------------------------------------------------------------------
+
+ck_app = typer.Typer(help="Manage company-knowledge pointers in .canary/company.json.")
+app.add_typer(ck_app, name="company-knowledge")
+
+
+@ck_app.command("show")
+def ck_show(
+    output_json: bool = typer.Option(False, "--json", help="Emit raw JSON."),
+) -> None:
+    """
+    Print the resolved company-knowledge pointer view.
+
+    Reads .canary/company.json from the current directory, validates it, and
+    prints what Canary sees. Useful for debugging grounding issues without
+    spelunking config files.
+    """
+    from agent.core.company_knowledge import CompanyKnowledge
+
+    ck = CompanyKnowledge.load()
+
+    if ck.error:
+        print(f"[red]✗[/red] {ck.error}")
+        raise typer.Exit(1)
+
+    if output_json:
+        _sys.stdout.write(json.dumps(ck.to_dict(), indent=2) + "\n")
+        return
+
+    if ck.is_empty:
+        print("[yellow]No company knowledge configured.[/yellow]  "
+              "Create [bold].canary/company.json[/bold] or run "
+              "[bold]canary company-knowledge init[/bold].")
+        return
+
+    print("[bold green]✓ Company Knowledge[/bold green]\n")
+    if ck.confluence_spaces:
+        print(f"[bold]Confluence spaces:[/bold] {', '.join(ck.confluence_spaces)}")
+    if ck.jira_projects:
+        print(f"[bold]Jira projects:[/bold]     {', '.join(ck.jira_projects)}")
+    if ck.internal_doc_urls:
+        print("[bold]Reference docs:[/bold]")
+        for url in ck.internal_doc_urls:
+            print(f"  {url}")
+    if ck.internal_domains:
+        print(f"[bold]Internal domains:[/bold]  {', '.join(ck.internal_domains)}")
+    if ck.mcp_servers:
+        print(f"[bold]MCP servers:[/bold]       {', '.join(ck.mcp_servers)}")
+    if ck.claude_code_skills:
+        print(f"[bold]Claude Code skills:[/bold] {', '.join(ck.claude_code_skills)}")
+    if ck.optum_dashboard_url:
+        print(f"[bold]Optum dashboard:[/bold]   {ck.optum_dashboard_url}")
+    if ck.notes:
+        print(f"[bold]Notes:[/bold] {ck.notes}")
+    if ck.warnings:
+        print()
+        for w in ck.warnings:
+            print(f"[yellow]⚠[/yellow] {w}")
+
+
+@ck_app.command("init")
+def ck_init(
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite an existing .canary/company.json."
+    ),
+) -> None:
+    """
+    Interactively scaffold .canary/company.json.
+
+    Walks you through each pointer field with examples. Existing values are
+    shown as defaults so re-running is safe (merges unless --force is passed).
+    Secrets are never accepted — store those in environment variables.
+    """
+    import os
+    from agent.core.company_knowledge import CompanyKnowledge
+
+    canary_dir = Path.cwd() / ".canary"
+    out_path = canary_dir / "company.json"
+
+    # Load existing data as defaults.
+    existing = CompanyKnowledge.load() if out_path.exists() else CompanyKnowledge()
+
+    if out_path.exists() and not force:
+        print(
+            f"[yellow]⚠[/yellow]  [bold]{out_path}[/bold] already exists.\n"
+            "Existing values will be shown as defaults. "
+            "Pass [bold]--force[/bold] to start from scratch."
+        )
+        print()
+
+    def _prompt_list(
+        label: str,
+        example: str,
+        current: list[str],
+        hint: str = "",
+    ) -> list[str]:
+        default_str = ", ".join(current) if current else ""
+        display_default = f" [{default_str}]" if default_str else ""
+        prompt_text = f"{label}{display_default} (comma-separated{', ' + hint if hint else ''}): "
+        raw = typer.prompt(prompt_text, default=default_str, show_default=False)
+        if not raw.strip():
+            return current
+        return [v.strip() for v in raw.split(",") if v.strip()]
+
+    def _prompt_str(label: str, current: str, hint: str = "") -> str:
+        display_default = f" [{current}]" if current else ""
+        prompt_text = f"{label}{display_default}{': ' if not hint else ' (' + hint + '): '}"
+        raw = typer.prompt(prompt_text, default=current, show_default=False)
+        return raw.strip()
+
+    print("[bold cyan]Canary Company Knowledge Setup[/bold cyan]\n")
+    print("Enter values for each pointer field, or press Enter to keep the current value.")
+    print("Leave a field empty to skip it. [dim]Secrets are never accepted here.[/dim]\n")
+
+    confluence_spaces = _prompt_list(
+        "Confluence space keys", "QA, ENG",
+        existing.confluence_spaces, "uppercase, e.g. QA"
+    )
+    jira_projects = _prompt_list(
+        "Jira project keys", "PROJ, OPS",
+        existing.jira_projects, "uppercase, e.g. PROJ"
+    )
+
+    print("\nInternal doc URLs (one per line, blank line to finish):")
+    doc_urls: list[str] = list(existing.internal_doc_urls)
+    if doc_urls:
+        print(f"  Current: {', '.join(doc_urls)}")
+    while True:
+        url = typer.prompt("  URL (or Enter to finish)", default="", show_default=False)
+        if not url.strip():
+            break
+        doc_urls.append(url.strip())
+
+    internal_domains = _prompt_list(
+        "\nInternal hostnames", "capillarytech.com",
+        existing.internal_domains, "e.g. capillarytech.com"
+    )
+    mcp_servers = _prompt_list(
+        "MCP server identifiers", "plugin_atlassian_atlassian",
+        existing.mcp_servers, "e.g. plugin_atlassian_atlassian"
+    )
+    claude_code_skills = _prompt_list(
+        "Claude Code skill slugs", "capillary:ui",
+        existing.claude_code_skills, "e.g. capillary:ui"
+    )
+    notes_raw = _prompt_str(
+        "\nFree-text notes for the LLM", existing.notes,
+        "no secrets"
+    )
+    notes = notes_raw[:2048] if notes_raw else ""
+
+    # Build output dict (omit empty lists/strings).
+    out: dict = {}
+    if confluence_spaces:
+        out["confluence_spaces"] = [v.upper() for v in confluence_spaces]
+    if jira_projects:
+        out["jira_projects"] = [v.upper() for v in jira_projects]
+    if doc_urls:
+        out["internal_doc_urls"] = doc_urls
+    if internal_domains:
+        out["internal_domains"] = [v.lower() for v in internal_domains]
+    if mcp_servers:
+        out["mcp_servers"] = mcp_servers
+    if claude_code_skills:
+        out["claude_code_skills"] = [v.lower() for v in claude_code_skills]
+    if notes:
+        out["notes"] = notes
+
+    # Ensure .canary/ exists.
+    canary_dir.mkdir(parents=True, exist_ok=True)
+
+    # Ensure .canary/ is gitignored.
+    gitignore = Path.cwd() / ".gitignore"
+    if gitignore.exists():
+        content = gitignore.read_text(encoding="utf-8")
+        if ".canary/" not in content:
+            gitignore.write_text(content.rstrip() + "\n.canary/\n", encoding="utf-8")
+
+    out_path.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
+
+    print(f"\n[green]✓[/green] Written to [bold]{out_path}[/bold]")
+    print("[dim]Verify with: canary company-knowledge show[/dim]")
+
+
 if __name__ == "__main__":
     app()
