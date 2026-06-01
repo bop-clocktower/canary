@@ -1,12 +1,12 @@
 # Harness Engineering Integration 🛡️
 
-Oracle is built using **Harness Engineering** principles. This ensures
+Canary is built using **Harness Engineering** principles. This ensures
 that the AI agent operates within "mechanical constraints" that prevent
 structural decay and architectural drift.
 
 ## Core Constraints
 
-Oracle uses a `harness.config.json` to enforce strict **Layered
+Canary uses a `harness.config.json` to enforce strict **Layered
 Dependency Rules**:
 
 - **LLM Layer:** Is isolated and forbidden from importing from `core`
@@ -16,7 +16,7 @@ Dependency Rules**:
 
 ## Verification Protocols
 
-Every milestone in Oracle is verified using the **3-Tier Verification
+Every milestone in Canary is verified using the **3-Tier Verification
 Protocol**:
 
 1. **EXISTS:** Confirming all artifacts are present on disk.
@@ -28,14 +28,14 @@ Protocol**:
 ## The Knowledge Map (`AGENTS.md`)
 
 The `AGENTS.md` file serves as the "index" for other AI agents to
-understand how to interact with Oracle. It defines:
+understand how to interact with Canary. It defines:
 
 - **Programmatic Entry Points:** Like the `--json` flag.
 - **Dry-Run Capabilities:** Like the `--recommend-only` flag.
 - **Architectural Boundaries:** Ensuring other agents don't violate
-  Oracle's internal structure.
+  Canary's internal structure.
 
 ---
 
-*By adopting these constraints, Oracle ensures it remains a robust,
+*By adopting these constraints, Canary ensures it remains a robust,
 enterprise-grade tool even as it evolves autonomously.*

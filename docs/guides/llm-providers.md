@@ -1,6 +1,6 @@
 # LLM Providers Guide
 
-Oracle abstracts the LLM behind a provider interface so the pipeline can
+Canary abstracts the LLM behind a provider interface so the pipeline can
 swap backends without touching orchestration code. Providers are resolved
 at call time from an environment variable; only the active provider and
 the mock are ever imported in a process, so missing optional SDKs (e.g.,
@@ -32,7 +32,7 @@ _PROVIDER_REGISTRY = {
 }
 ```
 
-`ProviderFactory.get_provider()` reads `ORACLE_LLM_PROVIDER`, looks up
+`ProviderFactory.get_provider()` reads `CANARY_LLM_PROVIDER`, looks up
 the entry, lazy-imports the module, and instantiates the class. An
 unknown name raises `ValueError` listing the available providers — never
 falls back silently.
@@ -47,12 +47,12 @@ only and produces deterministic stub responses.
 
 `agent/llm/__init__.py` exposes `get_llm()` — a thread-safe singleton
 `LLMClient` wrapping the resolved provider. Callers use
-`generate_response(prompt)` which prepends the Oracle system prompt
-(`"You are Oracle, a senior test automation engineer."`) and dispatches
+`generate_response(prompt)` which prepends the Canary system prompt
+(`"You are Canary, a senior test automation engineer."`) and dispatches
 to the singleton.
 
 The singleton is initialized once per process. Changing
-`ORACLE_LLM_PROVIDER` mid-process does **not** flip the active provider
+`CANARY_LLM_PROVIDER` mid-process does **not** flip the active provider
 — restart the process to switch.
 
 ## Switching Providers
@@ -60,7 +60,7 @@ The singleton is initialized once per process. Changing
 ### 1. Set the Env Var
 
 ```bash
-export ORACLE_LLM_PROVIDER=gemini
+export CANARY_LLM_PROVIDER=gemini
 export GOOGLE_API_KEY=...   # provider-specific cred
 ```
 
@@ -78,12 +78,12 @@ Each provider reads its own credentials from the environment:
 - `mock` → none
 
 Missing credentials surface as the provider SDK's authentication error,
-not as a generic Oracle error.
+not as a generic Canary error.
 
 ### 3. Verify in a Dry Run
 
 ```bash
-ORACLE_LLM_PROVIDER=gemini python -m agent.cli generate "Test that GET /health returns 200"
+CANARY_LLM_PROVIDER=gemini python -m agent.cli generate "Test that GET /health returns 200"
 ```
 
 Check that the generated file looks idiomatic for the chosen provider and
@@ -96,7 +96,7 @@ deterministic across providers (it comes from the registry, not the LLM).
 For unit tests, pin to `mock`:
 
 ```bash
-ORACLE_LLM_PROVIDER=mock pytest tests/
+CANARY_LLM_PROVIDER=mock pytest tests/
 ```
 
 The mock provider produces deterministic output, never makes a network
@@ -126,7 +126,7 @@ call, and never reads real credentials.
 3. Document the env var the provider reads for credentials.
 4. Add a test under `tests/unit/test_factory.py` confirming
    `ProviderFactory.get_provider()` returns an instance when
-   `ORACLE_LLM_PROVIDER=<name>`.
+   `CANARY_LLM_PROVIDER=<name>`.
 5. Update this guide's provider-capability section.
 
 No changes needed in the orchestrator, classifier, or recommender — the
@@ -139,9 +139,9 @@ contract is fully behind the factory.
 - **Missing optional SDK.** Surfaces as `ImportError` only when that
   provider is selected. Other providers continue to work.
 - **Provider-side rate limit or 5xx.** Surfaces as the SDK's exception.
-  Oracle does not retry — wrap your caller if you want retry semantics,
+  Canary does not retry — wrap your caller if you want retry semantics,
   or wait for the planned self-healing loop.
-- **Wrong credentials.** Surfaces as the SDK's auth error. Oracle does
+- **Wrong credentials.** Surfaces as the SDK's auth error. Canary does
   not mask this.
 
 ## Related

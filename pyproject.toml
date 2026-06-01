@@ -3,8 +3,8 @@ requires = ["setuptools>=82.0.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "oracle-test-ai"
-version = "3.0.0"
+name = "canary-test-ai"
+version = "1.0.0"
 description = "AI-powered test automation agent"
 requires-python = ">=3.10"
 dependencies = [
@@ -14,8 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-oracle = "agent.cli:app"
-oracle-mcp = "agent.mcp_server:main"
+canary = "agent.cli:app"
+canary-mcp = "agent.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["agent*"]

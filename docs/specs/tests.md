@@ -48,14 +48,14 @@ tests/
     test_classifier_*.py    — TestClassifier (framework hints, HTTP signals)
     test_code_extractor.py  — CodeExtractor strip logic
     test_domain_scanner.py  — DomainScanner symbol extraction
-    test_executor.py        — OracleTestExecutor run/parse
+    test_executor.py        — CanaryTestExecutor run/parse
     test_factory.py         — LLM provider factory selection
     test_feedback.py        — Feedback capture
     test_fixture_scanner.py — FixtureScanner named export extraction
     test_mcp_server.py      — All six MCP tools (mocked I/O)
     test_metadata_scanner.py— MetadataScanner version detection
     test_migrator.py        — HarnessMigrator dry-run and apply
-    test_orchestrator.py    — OracleOrchestrator full pipeline (mocked LLM)
+    test_orchestrator.py    — CanaryOrchestrator full pipeline (mocked LLM)
     test_pattern_matcher.py — PatternMatcher convention extraction
     test_providers.py       — Provider implementations (mock backend)
     test_quality_scorer.py  — QualityScorer dimension scoring and grading

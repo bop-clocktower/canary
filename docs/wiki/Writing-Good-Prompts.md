@@ -1,6 +1,6 @@
 # Writing Good Prompts
 
-The quality of Oracle's output depends directly on how well
+The quality of Canary's output depends directly on how well
 you describe what you want. This guide shows you the difference
 between prompts that produce vague tests and prompts that
 produce useful ones.
@@ -109,31 +109,31 @@ Load test: 200 virtual users hitting GET /v1/products for
 under 1%
 ```
 
-## Helping Oracle Pick the Right Type
+## Helping Canary Pick the Right Type
 
-Oracle classifies your prompt automatically. If it picks the
+Canary classifies your prompt automatically. If it picks the
 wrong type, add the type explicitly:
 
 ```bash
-oracle generate "E2E test: ..."
-oracle generate "API test: ..."
-oracle generate "Unit test: ..."
-oracle generate "Load test: ..."
+canary generate "E2E test: ..."
+canary generate "API test: ..."
+canary generate "Unit test: ..."
+canary generate "Load test: ..."
 ```
 
-You can also use `--recommend-only` to preview Oracle's
+You can also use `--recommend-only` to preview Canary's
 classification without generating:
 
 ```bash
-oracle generate "test the login" --recommend-only
+canary generate "test the login" --recommend-only
 ```
 
-If Oracle's recommendation doesn't match your intent, refine
+If Canary's recommendation doesn't match your intent, refine
 the prompt before running the full generation.
 
 ## When to Regenerate vs. Edit
 
-After Oracle generates a test, you might find small things to
+After Canary generates a test, you might find small things to
 fix. Use this rule:
 
 - **1-2 small fixes** (a wrong URL, a missing import): edit
@@ -145,7 +145,7 @@ fix. Use this rule:
 
 ## Prompts for Edge Cases
 
-Edge cases are where Oracle shines, because they're the tests
+Edge cases are where Canary shines, because they're the tests
 that are tedious to write by hand but easy to describe:
 
 ```text
@@ -175,8 +175,8 @@ know the edge cases, the expected outcomes, and the gotchas.
 Turn that knowledge into prompts:
 
 Think: "What would I write in the test case section of a
-test plan?" Then write that as an Oracle prompt.
+test plan?" Then write that as an Canary prompt.
 
 Your manual testing expertise makes you better at writing
-Oracle prompts than someone who has never used the feature.
+Canary prompts than someone who has never used the feature.
 Use it.

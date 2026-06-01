@@ -6,7 +6,7 @@ Common problems and how to fix them.
 
 **Error:** `AuthenticationError` or `Invalid API key`
 
-This means Oracle can't connect to the LLM provider.
+This means Canary can't connect to the LLM provider.
 
 **Fix:** Make sure your API key is set in your shell session:
 
@@ -31,11 +31,11 @@ Using a different provider? See
 [LLM Providers & Configuration](LLM-Providers-and-Configuration.md)
 for the correct env variable names.
 
-## Oracle Command Not Found
+## Canary Command Not Found
 
-**Error:** `oracle: command not found`
+**Error:** `canary: command not found`
 
-Oracle wasn't installed or the install didn't complete.
+Canary wasn't installed or the install didn't complete.
 
 **Fix:** Run the install from the repo root:
 
@@ -44,7 +44,7 @@ pip install -e .
 ```
 
 If you're using a virtual environment, make sure it's activated
-before installing and before running Oracle.
+before installing and before running Canary.
 
 ## No Framework Resolved
 
@@ -57,7 +57,7 @@ in the framework registry.
 made an unexpected guess. Try adding the test type explicitly:
 
 ```bash
-oracle generate "API test: GET /v1/users returns 200"
+canary generate "API test: GET /v1/users returns 200"
 ```
 
 Or check the registry for the available categories:
@@ -68,9 +68,9 @@ cat agent/frameworks/registry.json
 
 If the category genuinely has no entry, a new registry entry is
 needed. See the
-[oracle-add-framework skill][add-framework] for how to add one.
+[canary-add-framework skill][add-framework] for how to add one.
 
-[add-framework]: ../skills/claude-code/oracle-add-framework/SKILL.md
+[add-framework]: ../skills/claude-code/canary-add-framework/SKILL.md
 
 ## Test Execution Fails After Generation
 
@@ -80,7 +80,7 @@ First, determine what kind of failure it is:
 
 **Syntax/import error in the generated file:**
 
-Oracle produced code that doesn't run. This is a generation
+Canary produced code that doesn't run. This is a generation
 quality issue. Try a more specific prompt and regenerate —
 don't hand-edit more than a line or two.
 
@@ -100,7 +100,7 @@ latter, you just found a bug automatically.
 
 ## Classifier Confidence Is Low
 
-**Symptom:** Oracle generates a test for the wrong type (e.g.,
+**Symptom:** Canary generates a test for the wrong type (e.g.,
 unit test when you wanted an API test).
 
 Low-confidence classifications happen when the prompt is
@@ -109,7 +109,7 @@ ambiguous.
 **Fix:** Be more explicit. Add the test type to the prompt:
 
 ```bash
-oracle generate "API test: POST /v1/orders with a valid payload
+canary generate "API test: POST /v1/orders with a valid payload
 should return 201 and an order ID"
 ```
 
@@ -141,12 +141,12 @@ provider had a transient error.
 a different provider:
 
 ```bash
-ORACLE_LLM_PROVIDER=openai oracle generate "..."
+CANARY_LLM_PROVIDER=openai canary generate "..."
 ```
 
 ## Can't Find the Generated File
 
-Oracle always prints the output path at the end of a successful
+Canary always prints the output path at the end of a successful
 run. If you missed it, generated files are always under:
 
 ```text
@@ -191,8 +191,8 @@ volta install node
 Then restart your terminal (or `source ~/.zshrc`) and retry:
 
 ```bash
-/plugin marketplace add https://github.com/bri-stevenski/oracle-test-ai-agent
-/plugin install oracle@oracle
+/plugin marketplace add https://github.com/bop-clocktower/canary
+/plugin install canary@bop-clocktower
 ```
 
 ## Still Stuck?
@@ -202,4 +202,4 @@ Open an issue on GitHub with:
 1. The exact command you ran
 2. The full error output
 3. Your Python version (`python --version`)
-4. Your Oracle version (`oracle version`)
+4. Your Canary version (`canary version`)

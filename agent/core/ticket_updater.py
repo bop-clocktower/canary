@@ -4,9 +4,9 @@ from __future__ import annotations
 
 """
 Ticket Updater — posts a structured run comment and optionally transitions
-the linked ticket after an Oracle test run.
+the linked ticket after an Canary test run.
 
-Oracle never hardcodes Jira status names.  Transition targets are resolved
+Canary never hardcodes Jira status names.  Transition targets are resolved
 via the semantic-role mapping persisted by ``WorkflowDiscovery``.
 
 Public surface
@@ -56,7 +56,7 @@ class UpdateResult:
 
 @dataclass
 class RunSummary:
-    """Describes a completed Oracle test run."""
+    """Describes a completed Canary test run."""
 
     suite_name: str
     env: str
@@ -77,8 +77,8 @@ class RunSummary:
 # ── main class ────────────────────────────────────────────────────────────────
 
 # Patterns for ticket linkage detection.
-_FRONTMATTER_TICKET = re.compile(r"^#\s*oracle:ticket:\s*(\S+)", re.MULTILINE)
-_FRONTMATTER_PROJECT = re.compile(r"^#\s*oracle:project:\s*(\S+)", re.MULTILINE)
+_FRONTMATTER_TICKET = re.compile(r"^#\s*canary:ticket:\s*(\S+)", re.MULTILINE)
+_FRONTMATTER_PROJECT = re.compile(r"^#\s*canary:project:\s*(\S+)", re.MULTILINE)
 _TAG_TICKET = re.compile(r"@(?:ticket|jira):([A-Z][A-Z0-9]*-\d+)", re.MULTILINE)
 _BRANCH_TICKET = re.compile(r"(?:feature|fix|chore)/([A-Z][A-Z0-9]*-\d+)")
 _TICKET_PROJECT = re.compile(r"^([A-Z][A-Z0-9]*)-\d+$")
@@ -90,14 +90,14 @@ class TicketUpdater:
 
     Parameters
     ----------
-    oracle_dir : Path | str | None
+    canary_dir : Path | str | None
         Directory containing workflow mapping files.  Defaults to
-        ``.oracle/`` relative to the current working directory.
+        ``.canary/`` relative to the current working directory.
     """
 
-    def __init__(self, oracle_dir: Optional[Path | str] = None) -> None:
-        self.oracle_dir: Path = (
-            Path(oracle_dir) if oracle_dir is not None else Path.cwd() / ".oracle"
+    def __init__(self, canary_dir: Optional[Path | str] = None) -> None:
+        self.canary_dir: Path = (
+            Path(canary_dir) if canary_dir is not None else Path.cwd() / ".canary"
         )
 
     # ── public ────────────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ class TicketUpdater:
         if not ticket_key:
             messages.append(
                 "No ticket linkage found — skipping comment and transition.\n"
-                "Add '# oracle:ticket: PROJ-123' to the test file frontmatter, "
+                "Add '# canary:ticket: PROJ-123' to the test file frontmatter, "
                 "a '@ticket:PROJ-123' tag, or run from a branch named "
                 "feature/PROJ-123."
             )
@@ -219,7 +219,7 @@ class TicketUpdater:
                     f"Would transition {ticket_key}:\n"
                     f'  "{transition_result.from_status}" → "{transition_result.to_status}"\n'
                     f"  (resolved via qa_passed role in "
-                    f".oracle/workflow-{project_key}.json)\n\n"
+                    f".canary/workflow-{project_key}.json)\n\n"
                     "Re-run without --dry-run to apply."
                 )
             elif not transition_result.attempted:
@@ -284,13 +284,13 @@ class TicketUpdater:
         flags = f"--result {summary.result.lower()}"
 
         lines = [
-            f"🧪 Oracle Test Run — {summary.suite_name}",
+            f"🧪 Canary Test Run — {summary.suite_name}",
             "",
             f"Environment: {summary.env}",
             f"Result: {summary.result} ({summary.passed}/{summary.total} tests)",
             f"Flaky: {summary.flaky_count}",
             f"Duration: {summary.duration_s}s",
-            f"Run by: oracle report {flags}",
+            f"Run by: canary report {flags}",
             "",
             f"Test file: {summary.test_file}",
         ]
@@ -329,7 +329,7 @@ class TicketUpdater:
         # Infer project key from ticket key to select the right Atlassian URL.
         pm = _TICKET_PROJECT.match(ticket_key)
         project_key = pm.group(1) if pm else None
-        base_url, auth_header = _jira_auth(project_key, self.oracle_dir)
+        base_url, auth_header = _jira_auth(project_key, self.canary_dir)
         if base_url is None:
             return False
 
@@ -433,7 +433,7 @@ class TicketUpdater:
         # Resolve target status name from workflow mapping.
         from agent.core.workflow_discovery import resolve_role
 
-        target_status = resolve_role(project_key, "qa_passed", self.oracle_dir)
+        target_status = resolve_role(project_key, "qa_passed", self.canary_dir)
         if target_status is None:
             return TransitionResult(
                 attempted=False,
@@ -442,13 +442,13 @@ class TicketUpdater:
                 to_status=None,
                 reason=(
                     f"⚠  No workflow mapping found for project {project_key}.\n"
-                    f"   Run `oracle workflow-discover --project {project_key}` first.\n"
+                    f"   Run `canary workflow-discover --project {project_key}` first.\n"
                     "   Comment was posted. Transition was NOT attempted."
                 ),
             )
 
         # Need Jira creds to proceed — prefer URL stored in mapping for this project.
-        base_url, auth_header = _jira_auth(project_key, self.oracle_dir)
+        base_url, auth_header = _jira_auth(project_key, self.canary_dir)
         if base_url is None:
             return TransitionResult(
                 attempted=False,
@@ -516,15 +516,15 @@ class TicketUpdater:
 
 def _jira_auth(
     project_key: Optional[str] = None,
-    oracle_dir: Optional[Path] = None,
+    canary_dir: Optional[Path] = None,
 ) -> tuple[Optional[str], Optional[str]]:
     """
     Return (base_url, auth_header) for the given *project_key*, or (None, None)
     if credentials are missing.
 
     Resolution order for base_url:
-    1. ``atlassian_url`` stored in ``.oracle/workflow-{project_key}.json``
-       (written by ``oracle workflow-discover`` or ``oracle workflow-init``).
+    1. ``atlassian_url`` stored in ``.canary/workflow-{project_key}.json``
+       (written by ``canary workflow-discover`` or ``canary workflow-init``).
     2. ``ATLASSIAN_URL`` environment variable.
 
     This lets projects on different Atlassian instances each carry their own URL
@@ -535,7 +535,7 @@ def _jira_auth(
     if project_key:
         from agent.core.workflow_discovery import atlassian_url_for
 
-        stored = atlassian_url_for(project_key, oracle_dir)
+        stored = atlassian_url_for(project_key, canary_dir)
         if stored:
             base_url = stored.rstrip("/")
 

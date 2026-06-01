@@ -1,7 +1,7 @@
 # Example: Vitest Unit — Validation Helper
 
 Generates a pure-function unit test for a small validation helper. No browser,
-no HTTP — fastest type of test Oracle produces.
+no HTTP — fastest type of test Canary produces.
 
 ## Prompt
 
@@ -32,16 +32,16 @@ See [`prompt.txt`](prompt.txt) for a copy-pasteable version.
 
 ```bash
 cd examples/vitest-unit-validation
-oracle generate "$(cat prompt.txt)"
+canary generate "$(cat prompt.txt)"
 ```
 
-Oracle classifies as `unit`, picks `vitest`, writes a `*.test.ts` file.
+Canary classifies as `unit`, picks `vitest`, writes a `*.test.ts` file.
 
 ## Running the generated test
 
 ```bash
 npm install -D vitest
-oracle run tests/generated/<filename>.test.ts vitest
+canary run tests/generated/<filename>.test.ts vitest
 ```
 
 The test will fail because `validateEmail` doesn't exist yet — this example is
@@ -52,7 +52,7 @@ The test will fail because `validateEmail` doesn't exist yet — this example is
 3. Iterate
 
 This pattern (write tests against a contract, then implement) is what the
-`@oracle-test-author` plugin agent shines at — see
+`@canary-test-author` plugin agent shines at — see
 [Plugin Agents](../../docs/wiki/Plugin-Agents.md).
 
 ## What to expect
@@ -97,11 +97,11 @@ describe('validateEmail', () => {
 
 - **Property-based:** rephrase the prompt to use fast-check
 - **More edge cases:** Unicode local parts, very long inputs, IPv4-as-domain
-- **Different framework:** Ask for Jest instead of Vitest — Oracle's framework
+- **Different framework:** Ask for Jest instead of Vitest — Canary's framework
   advisor agent will explain when each makes sense
 
 ## See also
 
-- [CLI Reference → `oracle generate`](../../docs/wiki/CLI-Reference.md)
+- [CLI Reference → `canary generate`](../../docs/wiki/CLI-Reference.md)
 - [Writing Good Prompts](../../docs/wiki/Writing-Good-Prompts.md)
 - [Plugin Agents](../../docs/wiki/Plugin-Agents.md)

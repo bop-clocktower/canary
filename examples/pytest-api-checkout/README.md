@@ -32,17 +32,17 @@ See [`prompt.txt`](prompt.txt) for a copy-pasteable version.
 
 ```bash
 cd examples/pytest-api-checkout
-oracle generate "$(cat prompt.txt)"
+canary generate "$(cat prompt.txt)"
 ```
 
-Oracle will classify as `api`, pick `pytest`, and write a `test_*.py` file.
+Canary will classify as `api`, pick `pytest`, and write a `test_*.py` file.
 
 ## Running the generated test
 
 ```bash
 pip install pytest requests
 export TEST_BEARER_TOKEN=stub-for-now
-oracle run tests/generated/<filename>.py pytest
+canary run tests/generated/<filename>.py pytest
 ```
 
 The test will fail against `api.example.com` (no real endpoint). Adapt by:
@@ -53,7 +53,7 @@ The test will fail against `api.example.com` (no real endpoint). Adapt by:
 
 ## What to expect
 
-Oracle generally produces something like:
+Canary generally produces something like:
 
 ```python
 import os
@@ -98,10 +98,10 @@ def test_missing_auth_returns_401():
 
 - **Add more error cases:** rate-limit (429), invalid currency, malformed JSON
 - **Use `httpx` instead of `requests`:** rephrase the prompt
-- **Add parametrize:** ask Oracle to use `@pytest.mark.parametrize` for the
+- **Add parametrize:** ask Canary to use `@pytest.mark.parametrize` for the
   validation cases
 
 ## See also
 
-- [CLI Reference → `oracle generate`](../../docs/wiki/CLI-Reference.md)
+- [CLI Reference → `canary generate`](../../docs/wiki/CLI-Reference.md)
 - [Writing Good Prompts](../../docs/wiki/Writing-Good-Prompts.md)

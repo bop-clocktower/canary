@@ -260,7 +260,7 @@ class SetupWizard:
 
     def _run_sample(self) -> None:
         from rich import print as rprint
-        result = OracleOrchestrator().run(
+        result = CanaryOrchestrator().run(
             "Generate a sample Playwright test for a login page"
         )
         rprint(
@@ -566,7 +566,7 @@ Add to `TestSetupWizardRun`:
     def test_setup_full_invokes_orchestrator(self):
         wizard = SetupWizard(output_dir=self.root)
         with patch("agent.core.setup.Prompt.ask", return_value="claude"), \
-             patch("agent.core.setup.OracleOrchestrator") as mock_orch:
+             patch("agent.core.setup.CanaryOrchestrator") as mock_orch:
             mock_orch.return_value.run.return_value = {
                 "output_file": "tests/generated/sample.spec.ts"
             }
@@ -575,18 +575,18 @@ Add to `TestSetupWizardRun`:
         mock_orch.return_value.run.assert_called_once()
 ```
 
-- [ ] **Step 2: Make `OracleOrchestrator` patchable at the module level**
+- [ ] **Step 2: Make `CanaryOrchestrator` patchable at the module level**
 
-The mock patches `agent.core.setup.OracleOrchestrator`, so the symbol must
+The mock patches `agent.core.setup.CanaryOrchestrator`, so the symbol must
 exist at module scope (not just inside `_run_sample`). Add a top-level import
 near the existing imports in `agent/core/setup.py`:
 
 ```python
-from agent.core.orchestrator import OracleOrchestrator
+from agent.core.orchestrator import CanaryOrchestrator
 ```
 
 The `_run_sample` implementation written in Task 2 already references
-`OracleOrchestrator` directly with no local import, so the existing body is
+`CanaryOrchestrator` directly with no local import, so the existing body is
 ready as-is once the top-level import is added.
 
 - [ ] **Step 3: Run test to confirm it passes**

@@ -1,7 +1,7 @@
 """Framework Picker Stage 2 — observability reporting-sink routing (#129).
 
 ReportPortal is the always-on OSS default sink; the overlay dashboard is an
-opt-in additional sink keyed on ORACLE_SCOPE (per OC-001). OpenTelemetry is
+opt-in additional sink keyed on CANARY_SCOPE (per OC-001). OpenTelemetry is
 included as the instrumentation framework.
 """
 
@@ -25,7 +25,7 @@ class TestObservabilityRouting(unittest.TestCase):
     @patch.dict("os.environ", {}, clear=False)
     def test_reportportal_is_default_without_scope(self):
         import os
-        os.environ.pop("ORACLE_SCOPE", None)
+        os.environ.pop("CANARY_SCOPE", None)
         names = [c["framework"] for c in self.rec.recommend(_obs())]
         self.assertIn("reportportal", names)
         self.assertIn("opentelemetry", names)
@@ -34,7 +34,7 @@ class TestObservabilityRouting(unittest.TestCase):
 
     def test_dashboard_sink_added_and_ranked_first_with_scope(self):
         import os
-        with patch.dict(os.environ, {"ORACLE_SCOPE": "acme"}, clear=False):
+        with patch.dict(os.environ, {"CANARY_SCOPE": "acme"}, clear=False):
             result = self.rec.recommend(_obs())
         names = [c["framework"] for c in result]
         self.assertEqual(result[0]["framework"], "acme-dashboard")
@@ -44,10 +44,10 @@ class TestObservabilityRouting(unittest.TestCase):
 
     def test_reportportal_always_present(self):
         import os
-        os.environ.pop("ORACLE_SCOPE", None)
+        os.environ.pop("CANARY_SCOPE", None)
         with_scope = self.rec.recommend(_obs())
         self.assertIn("reportportal", [c["framework"] for c in with_scope])
-        with patch.dict(os.environ, {"ORACLE_SCOPE": "x"}, clear=False):
+        with patch.dict(os.environ, {"CANARY_SCOPE": "x"}, clear=False):
             self.assertIn(
                 "reportportal",
                 [c["framework"] for c in self.rec.recommend(_obs())],
@@ -55,12 +55,12 @@ class TestObservabilityRouting(unittest.TestCase):
 
     def test_capped_at_three(self):
         import os
-        with patch.dict(os.environ, {"ORACLE_SCOPE": "acme"}, clear=False):
+        with patch.dict(os.environ, {"CANARY_SCOPE": "acme"}, clear=False):
             self.assertLessEqual(len(self.rec.recommend(_obs())), 3)
 
     def test_candidates_carry_confidence_and_category(self):
         import os
-        os.environ.pop("ORACLE_SCOPE", None)
+        os.environ.pop("CANARY_SCOPE", None)
         for c in self.rec.recommend(_obs(0.77)):
             self.assertEqual(c["confidence"], 0.77)
             self.assertEqual(c["category"], "observability")

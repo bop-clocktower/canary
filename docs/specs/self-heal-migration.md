@@ -7,9 +7,9 @@ created: 2026-05-26
 # Self-Heal Migration Specification (Phase 2)
 
 Add a keyless self-heal surface for test repair via a new
-`oracle-test-healer` agent and `/oracle-heal-test` slash command. The
+`canary-test-healer` agent and `/oracle-heal-test` slash command. The
 CLI's existing self-heal loop in `orchestrator.py` remains in place —
-Phase 3 will deprecate it alongside `oracle generate`.
+Phase 3 will deprecate it alongside `canary generate`.
 
 ## Overview
 
@@ -32,7 +32,7 @@ Phase 3 will deprecate it alongside `oracle generate`.
 
 ## Success Criteria
 
-1. `agents/oracle-test-healer.md` exists with `Read`,
+1. `agents/canary-test-healer.md` exists with `Read`,
    `Write`, `Edit`, `Glob`, `Grep`, `Bash`, and
    `mcp__oracle__oracle__analyze_file` authorized.
 2. `commands/oracle-heal-test.md` exists, delegates
@@ -45,7 +45,7 @@ Phase 3 will deprecate it alongside `oracle generate`.
 4. Selector failures specifically: the agent extracts the failing
    selector from the error message and reads any Playwright
    `trace.zip` DOM snapshots before proposing a fix.
-5. The CLI path (`oracle generate --run` → self-heal loop) is
+5. The CLI path (`canary generate --run` → self-heal loop) is
    unchanged. `agent.core.orchestrator` continues to import and call
    `generate_response()` from `_attempt_fix` and
    `_attempt_selector_fix`.
@@ -54,7 +54,7 @@ Phase 3 will deprecate it alongside `oracle generate`.
 
 **In scope:**
 
-- `agents/oracle-test-healer.md` — new agent.
+- `agents/canary-test-healer.md` — new agent.
 - `commands/oracle-heal-test.md` — new slash command.
 - `docs/adr/0002-self-heal-as-slash-command.md` — decision record
   (accepted on merge of this PR).
@@ -93,9 +93,9 @@ Phase 3 will deprecate it alongside `oracle generate`.
 
 ```text
 Before (Phase 1 — keyed CLI only):
-  oracle generate --run "<prompt>"
+  canary generate --run "<prompt>"
    ↓
-  OracleOrchestrator.run() → executes test → fails
+  CanaryOrchestrator.run() → executes test → fails
    ↓
   _attempt_fix or _attempt_selector_fix
    ↓
@@ -104,7 +104,7 @@ Before (Phase 1 — keyed CLI only):
 After Phase 2 (keyless slash command added alongside):
   /oracle-heal-test path/to/failing.spec.ts [error]
    ↓
-  oracle-test-healer agent (Claude Code host)
+  canary-test-healer agent (Claude Code host)
    ├─→ oracle__analyze_file (MCP)         ← context
    ├─→ Read failing test + helpers/fixtures
    ├─→ Bash unzip trace.zip if present    ← DOM context for selector fails
@@ -114,14 +114,14 @@ After Phase 2 (keyless slash command added alongside):
        overwrites the test file
 
   CLI path unchanged:
-  oracle generate --run …  → same self-heal loop as before (keyed)
+  canary generate --run …  → same self-heal loop as before (keyed)
 ```
 
 ## Agent outline
 
-Five sections, mirroring `oracle-test-author`:
+Five sections, mirroring `canary-test-author`:
 
-**Frontmatter:** `name: oracle-test-healer`. Description triggers on
+**Frontmatter:** `name: canary-test-healer`. Description triggers on
 phrases like "fix this failing test", "this test fails", "heal the
 test". `tools` authorizes `Bash, Read, Write, Edit, Glob, Grep,
 mcp__oracle__oracle__analyze_file`.
@@ -134,9 +134,9 @@ output or knows where to find it, wants a fix.
 
 **When NOT to use:**
 
-- Test fails intermittently → `oracle-flake-hunter`.
-- User wants new tests written → `oracle-test-author`.
-- User wants review of passing tests → `oracle-test-reviewer`.
+- Test fails intermittently → `canary-flake-hunter`.
+- User wants new tests written → `canary-test-author`.
+- User wants review of passing tests → `canary-test-reviewer`.
 
 **Process:**
 

@@ -19,7 +19,7 @@ plugin users.
 What remains in the keyed path:
 
 - **`oracle generate` CLI** (`agent/cli.py:generate`) — calls
-  `OracleOrchestrator.run()` which calls `generate_response()` →
+  `CanaryOrchestrator.run()` which calls `generate_response()` →
   `agent/llm/*` providers → requires `ANTHROPIC_API_KEY` /
   `OPENAI_API_KEY` / `GEMINI_API_KEY`.
 - **GitHub Action** (`action.yml`) — wraps `oracle generate` for
@@ -38,7 +38,7 @@ them in indefinitely creates two problems:
    deprecation signal, users invest time configuring keys and writing
    automation around it before discovering the keyless plugin path.
 2. **Maintenance debt** — the `agent/llm/*` provider matrix (5
-   providers), `OracleOrchestrator.run()`, the self-heal loop, and
+   providers), `CanaryOrchestrator.run()`, the self-heal loop, and
    `SelectorHealer` exist only to serve the keyed CLI path. After
    removal these can all go, dropping ~2,000 LOC + 4 dependency lines
    from `pyproject.toml`.
@@ -95,7 +95,7 @@ or a deliberate cutoff justifies the major-version bump.
 - **Removal ADR (0004 or later)** when major-version bump is
   approved. Deletes:
   - `agent/cli.py:generate()`, `feedback()`
-  - `OracleOrchestrator` and its self-heal loop
+  - `CanaryOrchestrator` and its self-heal loop
   - `agent/llm/*` (provider matrix)
   - `agent/core/selector_healer.py`
   - `action.yml`
@@ -151,7 +151,7 @@ without the benefit of a clean removal.
 ### Alternative 3: Hide commands behind a flag
 
 `oracle generate` becomes available only if
-`ORACLE_ALLOW_DEPRECATED=1` is set. Effective but invasive — touches
+`CANARY_ALLOW_DEPRECATED=1` is set. Effective but invasive — touches
 the Typer command registration, complicates `--help` output. Rejected
 for this phase; reasonable for the removal phase if a long
 "deprecated-but-available" window is wanted.

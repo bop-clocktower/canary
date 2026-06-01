@@ -17,7 +17,7 @@ if "fastmcp" not in sys.modules:
 
 
 # ---------------------------------------------------------------------------
-# oracle__analyze_file
+# canary__analyze_file
 # ---------------------------------------------------------------------------
 
 class TestAnalyzeFile(unittest.TestCase):
@@ -136,7 +136,7 @@ class TestAnalyzeFile(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# oracle__list_frameworks
+# canary__list_frameworks
 # ---------------------------------------------------------------------------
 
 class TestListFrameworks(unittest.TestCase):
@@ -158,7 +158,7 @@ class TestListFrameworks(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# oracle__write_test_file
+# canary__write_test_file
 # ---------------------------------------------------------------------------
 
 class TestWriteTestFile(unittest.TestCase):
@@ -183,7 +183,7 @@ class TestWriteTestFile(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# oracle__run_tests
+# canary__run_tests
 # ---------------------------------------------------------------------------
 
 class TestRunTests(unittest.TestCase):
@@ -193,7 +193,7 @@ class TestRunTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             test_file = Path(tmp) / "test_ok.py"
             test_file.write_text("def test_noop(): pass")
-            with patch("agent.core.executor.OracleTestExecutor.execute",
+            with patch("agent.core.executor.CanaryTestExecutor.execute",
                        return_value=(0, "1 passed in 0.01s", "")):
                 from agent import mcp_server as srv
                 result = srv._run_tests_impl(str(test_file))
@@ -205,7 +205,7 @@ class TestRunTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             test_file = Path(tmp) / "test_bad.py"
             test_file.write_text("def test_fail(): assert False")
-            with patch("agent.core.executor.OracleTestExecutor.execute",
+            with patch("agent.core.executor.CanaryTestExecutor.execute",
                        return_value=(1, "", "AssertionError")):
                 from agent import mcp_server as srv
                 result = srv._run_tests_impl(str(test_file))
@@ -214,7 +214,7 @@ class TestRunTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# oracle__init_suite
+# canary__init_suite
 # ---------------------------------------------------------------------------
 
 class TestInitSuite(unittest.TestCase):
@@ -236,7 +236,7 @@ class TestInitSuite(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# oracle__migrate
+# canary__migrate
 # ---------------------------------------------------------------------------
 
 class TestMigrate(unittest.TestCase):

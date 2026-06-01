@@ -8,7 +8,7 @@ created: 2026-05-22
 
 Move Oracle's LLM-dependent generation tasks out of the keyed CLI path
 and into the host Claude Code session. Phase 1 (this spec) covers
-`oracle-test-author`. Later phases (separate specs) cover self-heal,
+`canary-test-author`. Later phases (separate specs) cover self-heal,
 the CLI itself, and the GitHub Action.
 
 ## Overview
@@ -18,9 +18,9 @@ the CLI itself, and the GitHub Action.
 1. **No API key required to use the plugin** — A user with no
    `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` set can
    install Oracle as a Claude Code plugin and invoke
-   `/oracle-write-test` end-to-end, producing a runnable test file.
+   `/canary-write-test` end-to-end, producing a runnable test file.
 2. **Match CLI output quality** — The host-LLM-generated test is at
-   least as good as `oracle generate` produces today against the same
+   least as good as `canary generate` produces today against the same
    prompt + repo state, where "as good" means: same framework
    detection, same idiom usage, same fixture reuse, same conformance
    to existing test conventions in the repo.
@@ -34,9 +34,9 @@ the CLI itself, and the GitHub Action.
 
 ## Success Criteria
 
-1. `oracle-test-author.md` no longer contains the string
-   `oracle generate` in its Phase 2 process.
-2. Invoking `/oracle-write-test "Test the login flow"` against a fresh
+1. `canary-test-author.md` no longer contains the string
+   `canary generate` in its Phase 2 process.
+2. Invoking `/canary-write-test "Test the login flow"` against a fresh
    playwright project — with NO provider key in the environment —
    produces a `.spec.ts` file at the conventional location.
 3. The generated file imports the project's existing helpers when
@@ -45,7 +45,7 @@ the CLI itself, and the GitHub Action.
 4. The generated file matches the project's preferred framework
    (verified by seeding a project with a `playwright.config.ts` and
    expecting playwright output, not pytest).
-5. `agent.cli.generate` and `agent.core.orchestrator.OracleOrchestrator.run`
+5. `agent.cli.generate` and `agent.core.orchestrator.CanaryOrchestrator.run`
    are untouched by this migration — the CLI path continues to work
    for users who still want it.
 6. No new MCP tool is required; the agent uses
@@ -56,14 +56,14 @@ the CLI itself, and the GitHub Action.
 
 **In scope:**
 
-- `agents/oracle-test-author.md` — rewritten to use
+- `agents/canary-test-author.md` — rewritten to use
   host-LLM generation.
-- `commands/oracle-write-test.md` — verified unchanged
+- `commands/canary-write-test.md` — verified unchanged
   (it just delegates to the agent); update only if the rewrite
   requires a different argument shape.
 - `docs/specs/oracle-plugin.md` — sections claiming "no API key
   required" updated to reference this spec; sections describing
-  `oracle generate` delegation marked superseded.
+  `canary generate` delegation marked superseded.
 - Smoke test that the host-LLM path works against a known prompt
   fixture (under `tests/integration/` if such a layout exists, else
   manual verification logged in the plan).
@@ -74,9 +74,9 @@ the CLI itself, and the GitHub Action.
 
 - `_attempt_fix` / `_attempt_selector_fix` in `orchestrator.py` —
   separate phase (and ADR).
-- `oracle-flake-hunter.md` agent — uses the selector heal loop; pulls
+- `canary-flake-hunter.md` agent — uses the selector heal loop; pulls
   in orchestrator changes that aren't in scope here.
-- `oracle generate` CLI deprecation — coupled to the GitHub Action
+- `canary generate` CLI deprecation — coupled to the GitHub Action
   removal; separate ADR.
 - A new MCP tool for writing reports/artifacts — orthogonal.
 - Performance benchmarking of host-LLM vs CLI generation — useful
@@ -91,7 +91,7 @@ the CLI itself, and the GitHub Action.
   produce idiomatic output. If gaps are discovered, they're flagged
   in the plan as follow-up work, not blockers for this phase.
 - The agent's `Read` and `Glob` tools (already authorized in the
-  current `oracle-test-author.md` frontmatter) are sufficient to
+  current `canary-test-author.md` frontmatter) are sufficient to
   read any repo files the LLM needs that aren't covered by
   `oracle__analyze_file`.
 - The agent has the `Write` tool authorized (it does today).
@@ -103,20 +103,20 @@ the CLI itself, and the GitHub Action.
 
 ```text
 Before:
-  /oracle-write-test "<prompt>"
+  /canary-write-test "<prompt>"
    ↓
-  oracle-test-author agent (Claude Code host)
+  canary-test-author agent (Claude Code host)
    ↓ Bash
-  oracle generate "<expanded prompt>"
+  canary generate "<expanded prompt>"
    ↓
   agent/core/orchestrator.py → generate_response() → agent/llm/* → provider API
                                                                    ↑
                                                                    requires API key
 
 After:
-  /oracle-write-test "<prompt>"
+  /canary-write-test "<prompt>"
    ↓
-  oracle-test-author agent (Claude Code host)
+  canary-test-author agent (Claude Code host)
    ├─→ oracle__analyze_file (MCP)   ← deterministic repo context
    ├─→ Read / Glob (tools)          ← extra context as needed
    └─→ generation in host session   ← uses Claude Code's own LLM, no API key
@@ -126,7 +126,7 @@ After:
 
 ## Agent rewrite outline
 
-The current `oracle-test-author.md` has five sections: Role, When to
+The current `canary-test-author.md` has five sections: Role, When to
 use, When NOT to use, Process (Phases 1–3), Output expectations.
 Only Phase 2 ("Generate") changes substantively.
 
@@ -138,7 +138,7 @@ Only Phase 2 ("Generate") changes substantively.
 1. Expand the user's prompt with repo context (target URL, function
    signature, schema, etc.) so the CLI has enough to work with.
 2. Delegate to the Oracle CLI when applicable:
-       oracle generate "<expanded prompt>"
+       canary generate "<expanded prompt>"
 3. Refine the CLI output against repo conventions — fix imports, swap
    selectors to the repo's preferred style, align fixture usage.
 ```
@@ -169,7 +169,7 @@ output shape is needed (telemetry, post-write hooks), use
 ## Context coverage matrix
 
 Resolved as Task 1 of the implementation plan. The CLI orchestrator
-(`OracleOrchestrator.run`) injects five context blocks into its
+(`CanaryOrchestrator.run`) injects five context blocks into its
 generation prompt; `oracle__analyze_file` only partially covers them.
 Per-gap decision: (a) agent reads via `Read`/`Glob`, (b) extend
 `analyze_file` later, (c) accept gap.
@@ -180,7 +180,7 @@ Per-gap decision: (a) agent reads via `Read`/`Glob`, (b) extend
 | patterns (existing test imports, naming) | only `common_imports` | (a) agent globs `tests/` + reads samples |
 | domain (components, functions, modules) | only `functions[:10]` | (a) agent supplements via `Read` |
 | fixtures (test helpers) | not called | (b) follow-up; agent globs `tests/helpers/` for now |
-| company (`.oracle/company.json`) | not loaded | (a) agent reads `.oracle/company.json` |
+| company (`.canary/company.json`) | not loaded | (a) agent reads `.canary/company.json` |
 
 Net: no MCP extension blocks this phase. The fixture gap is the
 highest-value follow-up — projects with rich fixture libraries may
@@ -216,7 +216,7 @@ for the task-by-task implementation.
    `oracle-plugin-v2.md` written? Recommend in-place patch — the rest
    of that spec is still accurate.
 3. **Phase 1 (Anchor in the repo) parity:** The CLI's
-   `OracleOrchestrator.run()` injects five context signals (metadata,
+   `CanaryOrchestrator.run()` injects five context signals (metadata,
    patterns, domain, fixtures, company knowledge). Does the agent's
    `Phase 1 + oracle__analyze_file` cover all five? If not, the plan
    should add tasks to extend `oracle__analyze_file` or document
@@ -232,7 +232,7 @@ for the task-by-task implementation.
   enough information about the repo. Mitigation: the spec calls for
   the plan to verify before the migration lands; extend the MCP tool
   if needed.
-- **User confusion during transition** — `oracle generate` CLI
+- **User confusion during transition** — `canary generate` CLI
   continues to work; users will have two paths until deprecation.
   Mitigation: README and CLI help text point new users to
-  `/oracle-write-test`; deprecation comes later.
+  `/canary-write-test`; deprecation comes later.

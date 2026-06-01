@@ -22,7 +22,7 @@ time in a project. Re-runnable explicitly via `oracle setup`.
    contexts (no TTY, `CI` env var) and skips silently so pipelines are never
    blocked.
 4. **No partial config on interruption** — Interrupting the wizard at any step
-   leaves `.oracle/config.json` absent; no secret material is stored at any
+   leaves `.canary/config.json` absent; no secret material is stored at any
    point because the wizard does not prompt for or validate API keys.
 
 ## Success Criteria
@@ -35,9 +35,9 @@ time in a project. Re-runnable explicitly via `oracle setup`.
 3. **`--no-setup` suppresses trigger:** Passing `--no-setup` on any command
    skips the auto-trigger unconditionally, even in an interactive TTY.
 4. **`KeyboardInterrupt` leaves no partial config:** Interrupting the wizard at
-   any step leaves `.oracle/config.json` absent; `oracle setup` run again starts
+   any step leaves `.canary/config.json` absent; `oracle setup` run again starts
    fresh.
-5. **Config format:** On success, `.oracle/config.json` contains exactly
+5. **Config format:** On success, `.canary/config.json` contains exactly
    `provider` and `configured_at` fields; no API key is stored.
 
 ## Scope
@@ -49,7 +49,7 @@ time in a project. Re-runnable explicitly via `oracle setup`.
 - `oracle setup` command: provider selection, config write
 - `oracle setup --full` flag: runs a sample generation after setup to
   demonstrate output
-- Project-local config file (`.oracle/config.json`) tracking provider and
+- Project-local config file (`.canary/config.json`) tracking provider and
   setup timestamp
 - `--no-setup` flag on `generate`, `run`, `init`, and `migrate` to suppress
   the auto-trigger in scripting contexts
@@ -73,7 +73,7 @@ time in a project. Re-runnable explicitly via `oracle setup`.
 - CI environments set a recognised CI environment variable (`CI`, `TRAVIS`,
   `CIRCLECI`, etc.); the auto-trigger checks `sys.stdin.isatty()` and skips
   silently in non-interactive contexts.
-- `.oracle/` is added to the project's `.gitignore` as part of setup.
+- `.canary/` is added to the project's `.gitignore` as part of setup.
 
 ## User Stories
 
@@ -110,14 +110,14 @@ Accepts `--full` to append a sample generation after setup.
 1. **Provider selection** — interactive prompt offering `claude` (default),
    `openai`, `gemini`, `mock`
 
-On completion, `.oracle/config.json` is written with the chosen provider and
+On completion, `.canary/config.json` is written with the chosen provider and
 a timestamp. On `KeyboardInterrupt`, setup is cancelled and no partial config
 is written. No API key is prompted or validated; the provider's own auth
 mechanism is invoked at first call time.
 
 ## Config Format
 
-**Location:** `.oracle/config.json` (project-local, relative to `cwd`)
+**Location:** `.canary/config.json` (project-local, relative to `cwd`)
 
 ```json
 {
@@ -135,8 +135,8 @@ field to be present and non-empty.
 | --- | --- |
 | Non-TTY or CI context | Skip wizard silently; command runs as-is |
 | `KeyboardInterrupt` mid-wizard | Print "Setup cancelled. Run `oracle setup` to try again." No config written. |
-| `oracle setup` run outside a project | No guard; config written to `cwd/.oracle/config.json` |
-| Cannot create `.oracle/` directory (permissions) | Print error message and exit non-zero; no partial config written |
+| `oracle setup` run outside a project | No guard; config written to `cwd/.canary/config.json` |
+| Cannot create `.canary/` directory (permissions) | Print error message and exit non-zero; no partial config written |
 
 ## src Reference
 
@@ -154,7 +154,7 @@ interactions are not exercised during setup.
 
 | Test | What it checks |
 | --- | --- |
-| `test_is_configured_false_when_missing` | False when `.oracle/config.json` absent |
+| `test_is_configured_false_when_missing` | False when `.canary/config.json` absent |
 | `test_is_configured_true_when_valid` | True when file present with valid `provider` |
 | `test_is_configured_false_when_malformed` | False when file exists but `provider` missing |
 | `test_run_writes_config_on_success` | Config written after provider selected |

@@ -1,6 +1,6 @@
-# Oracle Agent Skills
+# Canary Agent Skills
 
-Agent-invokable workflows for Oracle, written in the harness-engineering
+Agent-invokable workflows for Canary, written in the harness-engineering
 SKILL.md format. Each skill is a prescriptive, phase-broken procedure
 with explicit When-to-Use / NOT-for clauses, success criteria,
 rationalizations to reject, examples, and escalation paths.
@@ -14,13 +14,13 @@ and how to drive it), see [Guides](../../docs/guides/index.md).
 ```text
 agents/skills/
 ├── claude-code/          # Claude Code skills (current)
-│   ├── oracle-generate-test/
-│   ├── oracle-promote-test/
-│   └── oracle-add-framework/
+│   ├── canary-generate-test/
+│   ├── canary-promote-test/
+│   └── canary-add-framework/
 └── README.md             # this file
 ```
 
-Skills are organized by host platform. As Oracle adds support for
+Skills are organized by host platform. As Canary adds support for
 additional agent runtimes (Gemini CLI, Cursor, Codex), sibling
 directories mirror the same skill set with platform-specific tool-list
 adjustments.
@@ -29,29 +29,29 @@ adjustments.
 
 ### Generation
 
-- [`oracle-generate-test`](./claude-code/oracle-generate-test/SKILL.md)
+- [`canary-generate-test`](./claude-code/canary-generate-test/SKILL.md)
   — Generate a framework-appropriate test from a natural-language
   requirement. Routes through classify → recommend → generate, writes
   the test under `tests/generated/`, and optionally executes it.
 
 ### Lifecycle
 
-- [`oracle-promote-test`](./claude-code/oracle-promote-test/SKILL.md)
+- [`canary-promote-test`](./claude-code/canary-promote-test/SKILL.md)
   — Move a generated test from `tests/generated/` into the committed
   test suite. Reviews, relocates, drops generation artifacts, and
   verifies the test runs in the project's normal flow.
 
 ### Maintenance
 
-- [`oracle-add-framework`](./claude-code/oracle-add-framework/SKILL.md)
-  — Add a new testing framework to Oracle's registry end-to-end.
+- [`canary-add-framework`](./claude-code/canary-add-framework/SKILL.md)
+  — Add a new testing framework to Canary's registry end-to-end.
   Enforces the classifier↔registry contract, authors the registry
   entry, validates the execution command, and updates docs + state.
 
 ### Setup
 
-- [`oracle-setup-harness`](./claude-code/oracle-setup-harness/SKILL.md)
-  — Configure the Harness Engineering guardrails in a new Oracle
+- [`canary-setup-harness`](./claude-code/canary-setup-harness/SKILL.md)
+  — Configure the Harness Engineering guardrails in a new Canary
   project or fork. Installs the harness CLI, initialises the
   config, wires up CI workflows, and verifies all gates pass.
 
@@ -62,7 +62,7 @@ Every skill in this tree follows the same structure:
 1. **Tagline** — one sentence, what the skill does
 2. **When to Use** — bulleted use-cases plus explicit NOT-for clauses
 3. **Process** — broken into numbered phases with numbered steps
-4. **Oracle Integration** — files, env vars, and project entry points
+4. **Canary Integration** — files, env vars, and project entry points
    the skill touches
 5. **Success Criteria** — measurable end-state conditions
 6. **Rationalizations to Reject** — table of common shortcuts and why
@@ -83,14 +83,14 @@ Invoke by referencing the skill name in conversation, or via slash
 command if the host registers one:
 
 ```text
-Use the oracle-generate-test skill to write a load test for /v1/search.
+Use the canary-generate-test skill to write a load test for /v1/search.
 ```
 
 ### Programmatic
 
 Skills are documentation, not executable artifacts — they describe *how
 an agent should behave*, not a function to call. To invoke the
-underlying Oracle pipeline directly, use:
+underlying Canary pipeline directly, use:
 
 ```bash
 python -m agent.cli generate "<requirement>"

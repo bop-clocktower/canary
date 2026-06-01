@@ -1,6 +1,6 @@
 # Guides
 
-Practical, focused guides to Oracle's components and contracts.
+Practical, focused guides to Canary's components and contracts.
 Each guide explains *what* a piece does, *how* it plugs into
 the pipeline, and *how to drive it* from the CLI or
 programmatically. For agent-invokable workflows (generate a
@@ -21,7 +21,7 @@ becomes a test file.
 
 ### [Framework Registry Guide](./framework-registry.md)
 
-The single source of truth for which testing frameworks Oracle
+The single source of truth for which testing frameworks Canary
 supports. Covers the entry schema, the classifier↔registry
 contract, the lookup surface (`get_by_category`,
 `get_preferred_by_category`, `find_by_name`,
@@ -35,7 +35,7 @@ support.
 
 The provider abstraction behind every generation call. Covers
 the `BaseProvider` contract, the in-process provider registry,
-the `ORACLE_LLM_PROVIDER` env var, the thread-safe singleton
+the `CANARY_LLM_PROVIDER` env var, the thread-safe singleton
 client, and per-provider capability notes (Anthropic default,
 Gemini, OpenAI, mock).
 
@@ -49,5 +49,5 @@ for inference, or adding a new provider.
 - [Architecture Deep-Dive](../wiki/Architecture-Deep-Dive.md) —
   module-by-module internals
 - [Harness Engineering Integration](../wiki/Harness-Engineering-Integration.md)
-  — how Oracle plugs into the harness toolkit
+  — how Canary plugs into the harness toolkit
 - [Roadmap](../roadmap.md) — what's planned and what's in flight

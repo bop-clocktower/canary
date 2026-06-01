@@ -400,7 +400,7 @@
       "ecosystems": ["enterprise", "sap", "web"],
       "status": "commercial",
       "license": "commercial",
-      "license_gate": "ORACLE_LICENSE_TRICENTIS",
+      "license_gate": "CANARY_LICENSE_TRICENTIS",
       "maturity": "high",
       "community_size": "medium",
       "recommended_for": [
@@ -422,7 +422,7 @@
       "ecosystems": ["enterprise", "api", "web"],
       "status": "commercial",
       "license": "commercial",
-      "license_gate": "ORACLE_LICENSE_TRICENTIS",
+      "license_gate": "CANARY_LICENSE_TRICENTIS",
       "maturity": "high",
       "community_size": "medium",
       "recommended_for": [
@@ -444,7 +444,7 @@
       "ecosystems": ["cloud", "cross-browser"],
       "status": "commercial",
       "license": "commercial-org",
-      "license_gate": "ORACLE_SCOPE",
+      "license_gate": "CANARY_SCOPE",
       "maturity": "high",
       "community_size": "large",
       "recommended_for": [

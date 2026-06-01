@@ -2,7 +2,7 @@ name: Advance latest tag
 
 # Moves the floating `latest` git tag to the release commit whenever a
 # GitHub Release is published.  This keeps
-#   pipx install git+https://github.com/bri-stevenski/oracle-test-ai-agent@latest
+#   pipx install git+https://github.com/bop-clocktower/canary@latest
 # and
 #   pipx upgrade oracle-test-ai
 # pointing at the newest stable release without requiring users to update

@@ -20,7 +20,7 @@ session. It explicitly listed _self-healing_ as the natural sequel:
 That work is this ADR.
 
 Today's behaviour: `oracle generate --run` executes the freshly
-generated test. If the test fails, `OracleOrchestrator.run()` enters a
+generated test. If the test fails, `CanaryOrchestrator.run()` enters a
 self-heal loop (`max_heal_attempts`, default 3). Each iteration either
 routes to `_attempt_selector_fix` (DOM-aware repair for Playwright
 selector failures) or `_attempt_fix` (generic error-context-enriched

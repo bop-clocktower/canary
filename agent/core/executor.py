@@ -1,7 +1,7 @@
 # agent/core/executor.py
 
 """
-Oracle Test Executor - A framework-agnostic execution engine.
+Canary Test Executor - A framework-agnostic execution engine.
 
 This module provides the capability to execute generated test files
 using the appropriate CLI commands for each supported framework.
@@ -14,7 +14,7 @@ from typing import Tuple
 from agent.core.framework_registry import FrameworkRegistry
 from agent.core.ci_env import is_ci
 
-class OracleTestExecutor:
+class CanaryTestExecutor:
     """
     Handles execution of generated tests in a managed subprocess.
 

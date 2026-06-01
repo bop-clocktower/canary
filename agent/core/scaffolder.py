@@ -1,7 +1,7 @@
 # agent/core/scaffolder.py
 
 """
-Oracle Scaffolder - Bootstraps new test suites with Gold Standard configurations.
+Canary Scaffolder - Bootstraps new test suites with Gold Standard configurations.
 
 This module provides templates and logic to initialize directory structures
 and configuration files for supported testing frameworks.

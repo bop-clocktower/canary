@@ -119,9 +119,9 @@ class FrameworkRecommender:
         OSS / ungated entries (no ``license_gate``) always pass. Gated entries
         require their ``license_gate`` env var to be set:
 
-        - A truthy value (e.g. ``ORACLE_LICENSE_TRICENTIS=1``) unlocks a
+        - A truthy value (e.g. ``CANARY_LICENSE_TRICENTIS=1``) unlocks a
           ``commercial`` tool.
-        - For ``commercial-org`` tools gated on ``ORACLE_SCOPE``, any non-empty
+        - For ``commercial-org`` tools gated on ``CANARY_SCOPE``, any non-empty
           scope unlocks it; if the entry lists ``license_scopes``, the scope
           value must be one of them.
         """
@@ -141,7 +141,7 @@ class FrameworkRecommender:
 
         Per OC-001: ReportPortal is the always-on OSS default sink; a
         downstream aggregation dashboard is an opt-in *additional* sink,
-        surfaced when ``ORACLE_SCOPE=<overlay-id>`` is set (the
+        surfaced when ``CANARY_SCOPE=<overlay-id>`` is set (the
         upstream-neutral equivalent of the overlay's dashboard config). The
         sinks are complementary to OpenTelemetry, which instruments the
         telemetry the sinks collect — so it is included as well.
@@ -150,14 +150,14 @@ class FrameworkRecommender:
         candidates: List[Dict] = []
 
         # Opt-in overlay dashboard sink, ranked first when configured.
-        scope = os.environ.get("ORACLE_SCOPE", "").strip()
+        scope = os.environ.get("CANARY_SCOPE", "").strip()
         if scope:
             candidates.append({
                 "framework": f"{scope}-dashboard",
                 "category": "observability",
                 "file_extension": "",
                 "reason": [
-                    f"configured aggregation dashboard (ORACLE_SCOPE={scope})",
+                    f"configured aggregation dashboard (CANARY_SCOPE={scope})",
                     "overlay reporting sink — receives results in addition to ReportPortal",
                 ],
                 "confidence": confidence,

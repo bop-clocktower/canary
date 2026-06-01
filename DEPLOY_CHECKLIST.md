@@ -1,4 +1,4 @@
-# Deploy Checklist: oracle-test-ai-agent
+# Deploy Checklist: canary-test-ai-agent
 
 **Date:** 2026-05-13 | **Deployer:** Bri | **Strategy:** Direct / all-at-once
 

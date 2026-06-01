@@ -1,12 +1,12 @@
 # Voice Discovery Protocol
 
-Shared instructions for prose-generating Oracle agents (`oracle-test-author`,
-`oracle-initializer`, `oracle-test-generator`). Each agent references this
+Shared instructions for prose-generating Canary agents (`canary-test-author`,
+`canary-initializer`, `canary-test-generator`). Each agent references this
 protocol from its Phase 1 ("Anchor in the repo") step rather than restating it.
 
 ## When this applies
 
-Voice applies only to **prose** Oracle authors:
+Voice applies only to **prose** Canary authors:
 
 - Files it writes that are prose — workspace READMEs, runbook docs.
 - Its own end-of-dispatch report.
@@ -23,12 +23,12 @@ Voice does **not** apply to:
 
 Check these paths in order; use the first that exists:
 
-1. `.oracle/voice.md` — project-root, dot-prefixed. Most explicit signal.
-2. `docs/<role>/oracle-voice.md` — role-scoped (recommended). e.g.
-   `docs/sdet/oracle-voice.md`, `docs/qa/oracle-voice.md`. The folder names the
+1. `.canary/voice.md` — project-root, dot-prefixed. Most explicit signal.
+2. `docs/<role>/canary-voice.md` — role-scoped (recommended). e.g.
+   `docs/sdet/canary-voice.md`, `docs/qa/canary-voice.md`. The folder names the
    team that owns the docs, so it survives tool renames.
-3. `docs/oracle/voice.md` — tool-scoped fallback.
-4. A pointer in `oracle.config.json` (or similar project config) for repos that
+3. `docs/canary/voice.md` — tool-scoped fallback.
+4. A pointer in `canary.config.json` (or similar project config) for repos that
    centralize tool configuration.
 
 If no config is found, generate prose in the **default neutral voice**. Voice is

@@ -139,7 +139,7 @@ class TestWorkflowDiscoveryPersistence(unittest.TestCase):
 
     def test_write_and_load_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             mapping = _make_mapping(project_key="PROJ")
             wd._write(mapping)
             path = Path(tmp) / "workflow-PROJ.json"
@@ -150,26 +150,26 @@ class TestWorkflowDiscoveryPersistence(unittest.TestCase):
 
     def test_load_cached_returns_none_when_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             self.assertIsNone(wd._load_cached("NOEXIST"))
 
     def test_load_cached_returns_none_for_corrupt_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "workflow-BAD.json"
             path.write_text("not valid json", encoding="utf-8")
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             self.assertIsNone(wd._load_cached("BAD"))
 
     def test_mapping_path_sanitises_slash_in_key(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             path = wd._mapping_path("owner/repo")
             self.assertNotIn("/owner/", path.name)
             self.assertIn("workflow-", path.name)
 
     def test_discover_skips_write_in_dry_run(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             # Pre-seed a mapping so no network call happens.
             seed = _make_mapping(project_key="DRY")
             wd._write(seed)
@@ -272,7 +272,7 @@ class TestResolveRole(unittest.TestCase):
 
     def test_resolve_role_returns_status_name(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             m = _make_mapping(
                 project_key="R",
                 semantic_roles={"qa_passed": {"status_name": "QA Passed", "issue_type": "Bug"}},
@@ -284,25 +284,25 @@ class TestResolveRole(unittest.TestCase):
 
     def test_resolve_role_returns_none_when_mapping_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             self.assertIsNone(wd.resolve_role("MISSING", "qa_passed"))
 
     def test_resolve_role_returns_none_for_unset_role(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             m = _make_mapping(project_key="S")
             wd._write(m)
             self.assertIsNone(wd.resolve_role("S", "nonexistent_role"))
 
     def test_module_level_resolve_role(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             m = _make_mapping(
                 project_key="MOD",
                 semantic_roles={"ready_to_deploy": {"status_name": "Done", "issue_type": "Bug"}},
             )
             wd._write(m)
-            result = resolve_role("MOD", "ready_to_deploy", oracle_dir=tmp)
+            result = resolve_role("MOD", "ready_to_deploy", canary_dir=tmp)
             self.assertEqual(result, "Done")
 
 
@@ -313,7 +313,7 @@ class TestDiscoverCacheFirst(unittest.TestCase):
 
     def test_discover_returns_cached_without_network_call(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             seed = _make_mapping(project_key="CACHED")
             wd._write(seed)
             with patch.object(wd, "_fetch_jira") as mock_fetch:
@@ -323,7 +323,7 @@ class TestDiscoverCacheFirst(unittest.TestCase):
 
     def test_discover_refresh_calls_fetch(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             seed = _make_mapping(project_key="REFRESH")
             wd._write(seed)
             fresh = _make_mapping(project_key="REFRESH")
@@ -333,7 +333,7 @@ class TestDiscoverCacheFirst(unittest.TestCase):
 
     def test_discover_missing_cache_calls_fetch(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             fresh = _make_mapping(project_key="NEW")
             with patch.object(wd, "_fetch_jira", return_value=fresh):
                 result = wd.discover("NEW")
@@ -343,7 +343,7 @@ class TestDiscoverCacheFirst(unittest.TestCase):
 
     def test_discover_github_repo_routes_to_fetch_github(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             fresh = _make_mapping(project_key="owner/repo", source="github")
             with patch.object(wd, "_fetch_github", return_value=fresh) as mock_gh:
                 wd.discover("owner/repo")
@@ -351,7 +351,7 @@ class TestDiscoverCacheFirst(unittest.TestCase):
 
     def test_discover_refresh_preserves_confirmed_roles(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             confirmed = _make_mapping(
                 project_key="PRES",
                 semantic_roles={"qa_passed": {"status_name": "Verified", "issue_type": "Bug"}},
@@ -375,7 +375,7 @@ class TestJiraErrorPaths(unittest.TestCase):
         env_backup = {k: os.environ.pop(k, None) for k in ("ATLASSIAN_URL", "ATLASSIAN_USER", "ATLASSIAN_TOKEN")}
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                wd = WorkflowDiscovery(oracle_dir=tmp)
+                wd = WorkflowDiscovery(canary_dir=tmp)
                 with self.assertRaises(WorkflowDiscoveryError) as ctx:
                     wd._fetch_jira("NOENV")
             self.assertIn("ATLASSIAN_URL", str(ctx.exception))
@@ -392,7 +392,7 @@ class TestJiraErrorPaths(unittest.TestCase):
         }
         with patch.dict("os.environ", env_patch):
             with tempfile.TemporaryDirectory() as tmp:
-                wd = WorkflowDiscovery(oracle_dir=tmp)
+                wd = WorkflowDiscovery(canary_dir=tmp)
                 http_error = urllib.error.HTTPError(
                     url="https://fake.atlassian.net/rest/api/3/project/BAD/issuetypes",
                     code=404,
@@ -413,7 +413,7 @@ class TestJiraErrorPaths(unittest.TestCase):
         }
         with patch.dict("os.environ", env_patch):
             with tempfile.TemporaryDirectory() as tmp:
-                wd = WorkflowDiscovery(oracle_dir=tmp)
+                wd = WorkflowDiscovery(canary_dir=tmp)
                 with patch(
                     "urllib.request.urlopen",
                     side_effect=urllib.error.URLError("connection refused"),
@@ -429,7 +429,7 @@ class TestJiraErrorPaths(unittest.TestCase):
         }
         with patch.dict("os.environ", env_patch):
             with tempfile.TemporaryDirectory() as tmp:
-                wd = WorkflowDiscovery(oracle_dir=tmp)
+                wd = WorkflowDiscovery(canary_dir=tmp)
                 error_body = json.dumps(
                     {"errorMessages": ["No project could be found with key 'X'"]}
                 ).encode()
@@ -506,7 +506,7 @@ class TestShow(unittest.TestCase):
 
     def test_show_returns_mapping_when_cached(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             seed = _make_mapping(project_key="SHOW")
             wd._write(seed)
             result = wd.show("SHOW")
@@ -515,7 +515,7 @@ class TestShow(unittest.TestCase):
 
     def test_show_returns_none_when_not_cached(self):
         with tempfile.TemporaryDirectory() as tmp:
-            wd = WorkflowDiscovery(oracle_dir=tmp)
+            wd = WorkflowDiscovery(canary_dir=tmp)
             self.assertIsNone(wd.show("GHOST"))
 
 

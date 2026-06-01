@@ -57,7 +57,7 @@ machinery. Concretely:
 
 - `agent/cli.py:generate()` — the deprecated command.
 - `agent/cli.py:feedback()` — tied to `generate`.
-- `agent/core/orchestrator.py` — `OracleOrchestrator` class and all
+- `agent/core/orchestrator.py` — `CanaryOrchestrator` class and all
   its private helpers (`_attempt_fix`, `_attempt_selector_fix`,
   `_search_error_context`, `_build_prompt`, `_write_test_file`,
   `_sanitize_extension`). The only remaining caller is `oracle
@@ -133,7 +133,7 @@ Same behaviour, no deprecation baggage, survives the removal.
 ### Risks
 
 - **Breaking change for Action consumers** — anyone with
-  `uses: bri-stevenski/oracle-test-ai-agent@v3` pinned will get
+  `uses: bop-clocktower/canary@v3` pinned will get
   "action not found" at v3.0. Mitigation: release notes name the
   migration path; consumers can pin `@v2` to keep working.
 - **`pyproject.toml` version-pin churn** — downstream installs that
@@ -161,7 +161,7 @@ floating `v3` tag moves.
 
 ### Alternative 1: Soft-keep the CLI behind a feature flag
 
-`oracle generate` continues to work if `ORACLE_ALLOW_DEPRECATED=1` is
+`oracle generate` continues to work if `CANARY_ALLOW_DEPRECATED=1` is
 set in the environment. Useful for organizations that can't migrate
 immediately. Rejected as scope creep — same effect achieved by
 pinning to `@v2`.

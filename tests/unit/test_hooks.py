@@ -10,7 +10,7 @@ import sys
 import unittest
 from pathlib import Path
 
-HOOKS_DIR = Path(__file__).parents[2] / "plugins" / "oracle" / "hooks"
+HOOKS_DIR = Path(__file__).parents[2] / "hooks"
 
 
 def _run(hook: str, payload) -> subprocess.CompletedProcess:

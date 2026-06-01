@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # agent/mcp_server.py
-"""Oracle MCP server — exposes Oracle intelligence tools to Claude Code."""
+"""Canary MCP server — exposes Canary intelligence tools to Claude Code."""
 
 import os
 from pathlib import Path
@@ -11,12 +11,12 @@ from fastmcp import FastMCP
 from agent.core.metadata_scanner import MetadataScanner
 from agent.core.pattern_matcher import PatternMatcher
 from agent.core.domain_scanner import DomainScanner
-from agent.core.executor import OracleTestExecutor
+from agent.core.executor import CanaryTestExecutor
 from agent.core.framework_registry import FrameworkRegistry
 from agent.core.scaffolder import Scaffolder
 from agent.core.migrator import HarnessMigrator
 
-mcp = FastMCP("oracle")
+mcp = FastMCP("canary")
 
 _WORKING_DIR = os.environ.get("CLAUDE_PLUGIN_ROOT", os.getcwd())
 
@@ -148,7 +148,7 @@ def _find_existing_tests(project_root: Path, framework: str) -> list[str]:
 def _project_root_for(path: Path) -> Path:
     """Walk up from `path` to the nearest .git directory, else return parent.
 
-    Matches the discovery convention used by `oracle skills list` and the
+    Matches the discovery convention used by `canary skills list` and the
     downstream overlay loader — the project boundary is the .git root.
     """
     cur = path.resolve().parent
@@ -217,7 +217,7 @@ def _run_tests_impl(test_file: str) -> dict:
     path = Path(test_file)
     suffix = path.suffix.lower()
     framework = "pytest" if suffix == ".py" else "playwright"
-    executor = OracleTestExecutor()
+    executor = CanaryTestExecutor()
     try:
         exit_code, stdout, stderr = executor.execute(path, framework)
     except Exception as exc:
@@ -278,46 +278,46 @@ def _migrate_impl(target_dir: str, apply: bool) -> dict:
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def oracle__analyze_file(file_path: str) -> dict:
+def canary__analyze_file(file_path: str) -> dict:
     """Analyse a source file and return everything needed to write a test."""
     return _analyze_file_impl(file_path)
 
 
 @mcp.tool()
-def oracle__write_test_file(file_path: str, content: str, framework: str) -> dict:
+def canary__write_test_file(file_path: str, content: str, framework: str) -> dict:
     """Write test content to file_path, creating parent directories as needed."""
     return _write_test_file_impl(file_path, content, framework)
 
 
 @mcp.tool()
-def oracle__run_tests(test_file: str) -> dict:
+def canary__run_tests(test_file: str) -> dict:
     """Run a test file and return exit code and output without raising."""
     return _run_tests_impl(test_file)
 
 
 @mcp.tool()
-def oracle__init_suite(framework: str, target_dir: str = "") -> dict:
+def canary__init_suite(framework: str, target_dir: str = "") -> dict:
     """Scaffold a test suite for framework in target_dir."""
     return _init_suite_impl(framework, target_dir)
 
 
 @mcp.tool()
-def oracle__list_frameworks() -> dict:
+def canary__list_frameworks() -> dict:
     """Return all frameworks registered in agent/frameworks/registry.json."""
     return _list_frameworks_impl()
 
 
 @mcp.tool()
-def oracle__migrate(target_dir: str = "", apply: bool = False) -> dict:
-    """Migrate a harness-scaffolded project to Oracle layout. Dry-run by default."""
+def canary__migrate(target_dir: str = "", apply: bool = False) -> dict:
+    """Migrate a harness-scaffolded project to Canary layout. Dry-run by default."""
     return _migrate_impl(target_dir, apply)
 
 
 def main() -> None:
-    """Console-script entry point for `oracle-mcp` (see pyproject.toml).
+    """Console-script entry point for `canary-mcp` (see pyproject.toml).
 
     The Claude Code plugin manifest references this entry by name so it
-    works against any pipx-installed oracle-test-ai without depending on
+    works against any pipx-installed canary-test-ai without depending on
     the source tree being checked out at ``${CLAUDE_PLUGIN_ROOT}``.
     """
     mcp.run()
