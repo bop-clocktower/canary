@@ -167,7 +167,7 @@ a repo.
 If your team has a login-helper skill installed globally, you can ask Claude
 from any context:
 
-> "Help me log in as a test user on stage-optum"
+> "Help me log in as a test user on stage"
 
 Claude will walk you through the HealthSafe ID flow step by step, including
 which OTP code to enter and what to do if the T&C or passkey pages appear.

@@ -24,8 +24,8 @@ overlay repositories to extend Canary's behavior with zero application code.
    available in every Canary session regardless of working directory, enabling
    use from the Claude web extension, scratch directories, and anywhere outside
    a project checkout.
-4. **Deterministic precedence** — Local project skills > global home-dir skills >
-   bundled skills; among local overlays, the closest to CWD wins.
+4. **Deterministic precedence** — Local project skills > global home-dir
+   skills > bundled skills; among local overlays, the closest to CWD wins.
 5. **Bundled executable skills** — Overlay skills may ship deterministic code
    alongside prose (via `cli:` / `entry:` frontmatter) and invoke it via
    `canary skills run`.
@@ -249,7 +249,8 @@ extension or a scratch directory.
 
 ## Precedence Rules
 
-1. Local project skills always win over global and bundled skills with the same `name`.
+1. Local project skills always win over global and bundled skills with the
+   same `name`.
 2. Global home-dir skills win over bundled skills with the same `name`.
 3. Among multiple `.canary/skills/` directories found while walking to the git
    root, the one closest to CWD wins (most-specific wins).

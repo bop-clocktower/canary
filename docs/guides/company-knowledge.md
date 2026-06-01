@@ -50,6 +50,7 @@ each layer adds to the set.
 ### Environment detection
 
 The env layer is loaded when:
+
 - `CANARY_ENV` is set in the shell, or
 - `--env <name>` is passed to `canary company-knowledge show`
 

@@ -31,7 +31,7 @@ detected project shape are copied into the target's `.canary/skills/`. Skills
 already present are skipped. Dry-run shows what would be copied without
 writing anything.
 
-Example: an API test repo (`shape=api`) with `--overlay path/to/canary-capillary`
+Example: an API test repo (`shape=api`) with `--overlay path/to/acme-overlay`
 receives all skills tagged `deploy_to: [api]` or `deploy_to: [all]`.
 
 ## Prompt template for the agent
