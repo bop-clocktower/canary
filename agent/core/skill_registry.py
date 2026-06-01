@@ -60,12 +60,16 @@ class SkillInfo:
 
 
 class SkillRegistry:
-    """Discover skills from bundled defaults and ``.canary/skills/`` overlays.
+    """Discover skills from bundled defaults, global home-dir, and local overlays.
 
-    Precedence: local overlay skills override bundled skills of the same name.
-    Discovery walks from the given root up to the nearest ``.git`` directory
-    so team-level overlays placed at the repo root are found from anywhere
-    inside the checkout.
+    Precedence (lowest → highest):
+      1. Bundled — shipped with the canary package
+      2. Global  — ``~/.canary/skills/<name>/SKILL.md`` (available in every session)
+      3. Local   — ``.canary/skills/<name>/SKILL.md`` walking up to the git root
+
+    Global skills make skills available outside any repo (e.g. from the Claude
+    web extension or a scratch directory). Local project skills override global
+    skills of the same name.
     """
 
     def discover(self, root: Optional[Path] = None) -> list[SkillInfo]:
@@ -77,10 +81,13 @@ class SkillRegistry:
         for info in self._bundled_harness_skills():
             skills.setdefault(info.name, info)
 
+        for info in self._global_skills():
+            skills[info.name] = info  # global wins over bundled
+
         search_root = (root or Path.cwd()).resolve()
         for candidate in self._ancestors_to_git_root(search_root):
             for info in self._local_overlay_skills(candidate):
-                skills[info.name] = info  # local wins
+                skills[info.name] = info  # local wins over global
 
         return sorted(skills.values(), key=lambda s: s.name)
 
@@ -118,6 +125,31 @@ class SkillRegistry:
             path = skill_dir / "SKILL.md"
             if path.exists():
                 info = self._parse_nested(path, skill_dir.name, "bundled")
+                if info:
+                    results.append(info)
+        return results
+
+    # ------------------------------------------------------------------
+    # Global home-dir skills
+    # ------------------------------------------------------------------
+
+    def _global_skills(self) -> list[SkillInfo]:
+        """Skills in ``~/.canary/skills/<name>/SKILL.md``.
+
+        Available in every Canary session regardless of working directory.
+        Install a skill here to use it from the Claude web extension, a
+        scratch directory, or anywhere outside a project checkout.
+        """
+        results: list[SkillInfo] = []
+        global_dir = Path.home() / ".canary" / "skills"
+        if not global_dir.is_dir():
+            return results
+        for skill_dir in sorted(global_dir.iterdir()):
+            if not skill_dir.is_dir():
+                continue
+            path = skill_dir / "SKILL.md"
+            if path.exists():
+                info = self._parse_nested(path, skill_dir.name, "global")
                 if info:
                     results.append(info)
         return results

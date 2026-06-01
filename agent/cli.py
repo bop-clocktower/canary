@@ -470,6 +470,7 @@ def skills_list(
         return
 
     bundled = [s for s in skills if s.source == "bundled"]
+    global_ = [s for s in skills if s.source == "global"]
     local = [s for s in skills if s.source == "local"]
 
     def _format(skill) -> str:
@@ -492,10 +493,16 @@ def skills_list(
         print("[bold]Bundled skills:[/bold]")
         for skill in bundled:
             print(_format(skill))
-    if local:
+    if global_:
         if bundled:
             print()
-        print("[bold]Local overlay skills[/bold] [dim](override bundled):[/dim]")
+        print("[bold]Global skills[/bold] [dim](~/.canary/skills/ — override bundled):[/dim]")
+        for skill in global_:
+            print(_format(skill))
+    if local:
+        if bundled or global_:
+            print()
+        print("[bold]Local overlay skills[/bold] [dim](override global):[/dim]")
         for skill in local:
             print(_format(skill))
 
