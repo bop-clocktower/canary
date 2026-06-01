@@ -1,5 +1,5 @@
 ---
-name: oracle-flake-hunter
+name: canary-flake-hunter
 description: >
   Diagnose flaky tests by analyzing test code, CI logs, and failure patterns, then propose a deterministic fix. Use when the user says "this test is flaky", "intermittent failure", "passes locally fails in CI", "only fails sometimes", or pastes a CI log of a failing test. NOT for tests that fail consistently — those are bugs, not flakes.
 tools: Bash, Read, Edit, Glob, Grep
@@ -17,9 +17,9 @@ Find the *root cause* of test flakiness and propose a fix that makes the test de
 
 ## When NOT to use
 
-- The test fails *every* run → it's a bug, defer to standard debugging or `oracle-test-reviewer`.
+- The test fails *every* run → it's a bug, defer to standard debugging or `canary-test-reviewer`.
 - The whole suite is broken → likely environment/config, not a flake.
-- The user wants new tests written → `oracle-test-author`.
+- The user wants new tests written → `canary-test-author`.
 
 ## Flake categories
 

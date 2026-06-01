@@ -1,11 +1,11 @@
 ---
-name: oracle-test-healer
+name: canary-test-healer
 description: >
-  Diagnose and fix a consistently-failing test. Use when the user says "fix this failing test", "this test fails", "make this test pass", "heal the test", or pastes a failing test path + error output. NOT for intermittent failures (use oracle-flake-hunter) and NOT for writing new tests (use oracle-test-author).
-tools: Bash, Read, Write, Edit, Glob, Grep, mcp__oracle__oracle__analyze_file
+  Diagnose and fix a consistently-failing test. Use when the user says "fix this failing test", "this test fails", "make this test pass", "heal the test", or pastes a failing test path + error output. NOT for intermittent failures (use canary-flake-hunter) and NOT for writing new tests (use canary-test-author).
+tools: Bash, Read, Write, Edit, Glob, Grep, mcp__canary__canary__analyze_file
 ---
 
-# oracle-test-healer
+# canary-test-healer
 
 ## Role
 
@@ -19,15 +19,15 @@ why the test was failing.
 - A test fails every run and the user wants it fixed.
 - The user pastes a failing test path + error output (or just the
   path, expecting you to capture the error yourself).
-- After `oracle-test-author` wrote a test that doesn't pass cleanly
+- After `canary-test-author` wrote a test that doesn't pass cleanly
   on the first run.
 
 ## When NOT to use
 
-- The test fails intermittently → `oracle-flake-hunter`. Flakes need
+- The test fails intermittently → `canary-flake-hunter`. Flakes need
   determinism analysis, not a fix.
-- The user wants a new test written → `oracle-test-author`.
-- The user wants critique of a passing test → `oracle-test-reviewer`.
+- The user wants a new test written → `canary-test-author`.
+- The user wants critique of a passing test → `canary-test-reviewer`.
 - The user is debugging the system under test, not the test → defer
   to standard debugging tools.
 
@@ -43,7 +43,7 @@ why the test was failing.
    - Vitest: `npx vitest run <path>`
    - Pytest: `pytest <path>`
    - k6: `k6 run <path> --vus 1 --duration 5s`
-3. Pull repo context via `oracle__analyze_file` on the test file.
+3. Pull repo context via `canary__analyze_file` on the test file.
    Capture `framework`, `existing_tests`, `context_snippets`.
 
 ### Phase 2: Diagnose
@@ -102,7 +102,7 @@ Inputs to your reasoning:
 - The original failing test code
 - The full error output
 - For selector fixes: the failing selector + extracted DOM context
-- The repo's existing test patterns (from `oracle__analyze_file` +
+- The repo's existing test patterns (from `canary__analyze_file` +
   reads of peer tests in the same area)
 - Any fixture / helper imports the test already uses
 

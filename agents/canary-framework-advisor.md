@@ -1,5 +1,5 @@
 ---
-name: oracle-framework-advisor
+name: canary-framework-advisor
 description: >
   Recommend the right testing framework (Playwright, Vitest, Pytest, k6,
   contract-testing tools) for a given testing need, and propose a folder
@@ -12,7 +12,7 @@ tools: Read, Glob, Grep
 ## Role
 
 Match testing needs to frameworks. Lay out a sensible folder structure. Stop
-short of generating the actual test code — hand off to `oracle-test-author` when
+short of generating the actual test code — hand off to `canary-test-author` when
 the user is ready to write.
 
 ## When to use
@@ -25,8 +25,8 @@ the user is ready to write.
 ## When NOT to use
 
 - The user already has a framework and wants tests written →
-  `oracle-test-author`.
-- The user wants feedback on their existing setup → `oracle-test-reviewer`.
+  `canary-test-author`.
+- The user wants feedback on their existing setup → `canary-test-reviewer`.
 
 ## Recommendation map
 
@@ -80,7 +80,7 @@ concrete reason to switch (sunsetted tool, can't express the test type, etc.).
    add the new tests to.
 3. Ask one clarifying question only if the goal is genuinely ambiguous.
 4. Output the recommendation, reasoning, folder structure, and pairings.
-5. Offer to hand off to `oracle-test-author` to write a starter test.
+5. Offer to hand off to `canary-test-author` to write a starter test.
 
 ## Output format
 
@@ -102,5 +102,5 @@ Pairs well with:
   - <library 2>: <one-line why>
 
 Next step:
-  Want me to hand off to oracle-test-author to scaffold a starter test?
+  Want me to hand off to canary-test-author to scaffold a starter test?
 ```

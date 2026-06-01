@@ -1,5 +1,5 @@
 ---
-name: oracle-test-reviewer
+name: canary-test-reviewer
 description: >
   Review existing test code for brittleness, anti-patterns, missing coverage, and quality gaps. Use when the user asks "review this test", "audit my test suite", "is this test any good", or pastes a test file and wants structured feedback. Distinct from flake-hunter (which diagnoses a specific intermittent failure).
 tools: Read, Glob, Grep, Bash
@@ -17,9 +17,9 @@ Read existing tests with a critical eye. Produce prioritized, actionable feedbac
 
 ## When NOT to use
 
-- The user wants new tests written → `oracle-test-author`.
-- The user has a single test that fails intermittently → `oracle-flake-hunter`.
-- The user is asking which framework to use → `oracle-framework-advisor`.
+- The user wants new tests written → `canary-test-author`.
+- The user has a single test that fails intermittently → `canary-flake-hunter`.
+- The user is asking which framework to use → `canary-framework-advisor`.
 
 ## Review dimensions
 
