@@ -320,3 +320,319 @@ class TestNonHarnessProject(unittest.TestCase):
             with self.assertRaises(ValueError) as ctx:
                 self.migrator.migrate(Path(tmp), dry_run=True)
             self.assertIn("harness", str(ctx.exception).lower())
+
+
+# ── improvement 1: extended framework detection ───────────────────────────────
+
+class TestExtendedConfigFileDetection(unittest.TestCase):
+
+    def setUp(self):
+        self.migrator = HarnessMigrator()
+
+    def test_detects_jest_config_ts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="typescript")
+            (root / "jest.config.ts").write_text("export default {};")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "vitest")
+            self.assertEqual(ctx.detected_shape, "frontend_unit")
+
+    def test_detects_jest_config_js(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="javascript")
+            (root / "jest.config.js").write_text("module.exports = {};")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "vitest")
+
+    def test_detects_cypress_config_ts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="typescript")
+            (root / "cypress.config.ts").write_text("export default {};")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "playwright")
+            self.assertEqual(ctx.detected_shape, "e2e_ui")
+
+    def test_detects_vitest_config_mts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="typescript")
+            (root / "vitest.config.mts").write_text("export default {};")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "vitest")
+
+    def test_detects_locustfile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            (root / "locustfile.py").write_text("from locust import HttpUser\n")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "locust")
+            self.assertEqual(ctx.detected_shape, "load")
+
+    def test_detects_backstop_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="javascript")
+            (root / "backstop.json").write_text("{}")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "backstopjs")
+            self.assertEqual(ctx.detected_shape, "visual")
+
+    def test_detects_stryker_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="typescript")
+            (root / "stryker.config.js").write_text("module.exports = {};")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "stryker")
+            self.assertEqual(ctx.detected_shape, "mutation")
+
+
+class TestPackageJsonDetection(unittest.TestCase):
+
+    def setUp(self):
+        self.migrator = HarnessMigrator()
+
+    def _make_pkg(self, root: Path, test_script: str) -> None:
+        _make_harness_project(root, language="typescript")
+        (root / "package.json").write_text(
+            json.dumps({"scripts": {"test": test_script}})
+        )
+
+    def test_detects_playwright_from_package_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._make_pkg(root, "playwright test")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "playwright")
+            self.assertEqual(ctx.detection_source, "package.json (scripts.test)")
+            self.assertEqual(ctx.detection_confidence, "content")
+
+    def test_detects_vitest_from_package_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._make_pkg(root, "vitest run")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "vitest")
+
+    def test_detects_jest_from_package_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._make_pkg(root, "jest --coverage")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "vitest")
+
+    def test_config_file_takes_precedence_over_package_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._make_pkg(root, "jest --coverage")
+            (root / "playwright.config.ts").write_text("export default {};")
+            ctx = self.migrator.detect(root)
+            # Config file probe wins
+            self.assertEqual(ctx.detected_framework, "playwright")
+            self.assertEqual(ctx.detection_confidence, "config")
+
+
+class TestRequirementsTxtDetection(unittest.TestCase):
+
+    def setUp(self):
+        self.migrator = HarnessMigrator()
+
+    def test_detects_pytest_from_requirements_txt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            (root / "requirements.txt").write_text("pytest>=7.0\nrequests\n")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "pytest")
+            self.assertEqual(ctx.detection_source, "requirements.txt")
+            self.assertEqual(ctx.detection_confidence, "content")
+
+    def test_detects_locust_from_requirements_txt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            (root / "requirements.txt").write_text("locust==2.17\n")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "locust")
+            self.assertEqual(ctx.detected_shape, "load")
+
+    def test_detects_from_requirements_dev_txt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            (root / "requirements-dev.txt").write_text("pytest\n")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "pytest")
+            self.assertEqual(ctx.detection_source, "requirements-dev.txt")
+
+    def test_detects_pytest_from_pyproject_dependencies(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            # requirements-style lines in pyproject extras (pip-tools / poetry lock output)
+            (root / "pyproject.toml").write_text(
+                "[tool.poetry.dependencies]\npytest = \"^7.0\"\nrequests = \"*\"\n"
+            )
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "pytest")
+            self.assertEqual(ctx.detection_source, "pyproject.toml (dependencies)")
+
+
+# ── improvement 2: detection source and confidence ────────────────────────────
+
+class TestDetectionSourceAndConfidence(unittest.TestCase):
+
+    def setUp(self):
+        self.migrator = HarnessMigrator()
+
+    def test_config_file_yields_high_confidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root)
+            (root / "playwright.config.ts").write_text("export default {};")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detection_confidence, "config")
+            self.assertEqual(ctx.detection_source, "playwright.config.ts")
+
+    def test_language_fallback_yields_low_confidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detection_confidence, "language")
+            self.assertIn("python", ctx.detection_source)
+
+    def test_no_detection_yields_none_confidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="unknown-lang")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detection_confidence, "none")
+            self.assertIsNone(ctx.detected_framework)
+
+    def test_report_includes_detection_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root)
+            (root / "playwright.config.ts").write_text("export default {};")
+            report = self.migrator.migrate(root, dry_run=True)
+            self.assertEqual(report.detection_source, "playwright.config.ts")
+            self.assertEqual(report.detection_confidence, "config")
+
+    def test_markdown_shows_detection_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root)
+            (root / "playwright.config.ts").write_text("export default {};")
+            report = self.migrator.migrate(root, dry_run=True)
+            md = report.to_markdown()
+            self.assertIn("playwright.config.ts", md)
+            self.assertIn("high", md)
+
+    def test_markdown_shows_medium_confidence_for_content_detection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            (root / "requirements.txt").write_text("pytest\n")
+            report = self.migrator.migrate(root, dry_run=True)
+            md = report.to_markdown()
+            self.assertIn("medium", md)
+
+    def test_cli_override_recorded_in_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            report = self.migrator.migrate(root, dry_run=True, framework="vitest")
+            self.assertEqual(report.detection_source, "CLI override")
+
+    def test_dry_run_shows_already_present_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            (root / "pytest.ini").write_text("[pytest]\n")
+            report = self.migrator.migrate(root, dry_run=True)
+            self.assertIn("pytest.ini", report.skipped_configs)
+
+    def test_dry_run_markdown_shows_already_present_section(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            (root / "pytest.ini").write_text("[pytest]\n")
+            report = self.migrator.migrate(root, dry_run=True)
+            md = report.to_markdown()
+            self.assertIn("Already Present", md)
+
+
+# ── improvement 3: new config shapes ─────────────────────────────────────────
+
+class TestNewConfigShapes(unittest.TestCase):
+
+    def setUp(self):
+        self.migrator = HarnessMigrator()
+
+    def test_detects_accessibility_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="javascript")
+            (root / "axe.config.js").write_text("module.exports = {};")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_shape, "accessibility")
+            self.assertEqual(ctx.detected_framework, "axe-core")
+
+    def test_detects_visual_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="javascript")
+            (root / "backstop.json").write_text("{}")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_shape, "visual")
+            self.assertEqual(ctx.detected_framework, "backstopjs")
+
+    def test_detects_contract_shape_from_pact_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="typescript")
+            (root / "pact.json").write_text("{}")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_shape, "contract")
+            self.assertEqual(ctx.detected_framework, "pact")
+
+    def test_detects_mutation_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="typescript")
+            (root / "stryker.config.mjs").write_text("export default {};")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_shape, "mutation")
+            self.assertEqual(ctx.detected_framework, "stryker")
+
+    def test_detects_load_shape_from_locust_conf(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            (root / "locust.conf").write_text("[locust]\n")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_shape, "load")
+            self.assertEqual(ctx.detected_framework, "locust")
+
+    def test_detects_synthetic_data_from_requirements(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            (root / "requirements.txt").write_text("faker==20.0\n")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_shape, "synthetic_data")
+            self.assertEqual(ctx.detected_framework, "faker")
+
+    def test_detects_integration_shape_from_requirements(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            (root / "requirements.txt").write_text("testcontainers\n")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_shape, "integration")
+            self.assertEqual(ctx.detected_framework, "testcontainers")

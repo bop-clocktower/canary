@@ -620,13 +620,22 @@ when the project already holds an active license.
 
 ### `canary migrate` Improvements
 
-- **Status:** planned
+- **Status:** done — PR #192
 - **Issue:**
   [#134](https://github.com/bop-clocktower/canary/issues/134)
 - **Spec:** none
-- **Summary:** Extend the `canary migrate` command with better framework
-  detection, richer dry-run output, and support for additional harness config
-  shapes. Specific improvements TBD during planning.
+- **Summary:** Three improvements shipped together:
+  (1) **Extended framework detection** — added jest, cypress, vitest.config.mts,
+  locust, backstopjs, stryker, pact, axe-core config file probes; package.json
+  `scripts.test` scan; requirements.txt / requirements-dev.txt / pyproject.toml
+  dependency scan.
+  (2) **Richer dry-run output** — `MigrationContext` and `MigrationReport` now
+  carry `detection_source` and `detection_confidence` (`config` / `content` /
+  `language`); dry-run markdown shows what triggered detection, confidence level,
+  and an "Already Present" section for files that won't be touched.
+  (3) **New config shapes** — `accessibility`, `visual`, `contract`, `mutation`,
+  `load`, `synthetic_data`, `integration` now detected and mapped. 33 new tests
+  (61 total).
 - **Blockers:** none
 - **Plan:** none
 
