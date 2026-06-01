@@ -162,6 +162,11 @@ def init(
 def migrate(
     path: str = typer.Option(".", "--path", "-p", help="Project root to migrate (default: current directory)."),
     framework: str = typer.Option(None, "--framework", "-f", help="Override auto-detected framework."),
+    overlay: str = typer.Option(
+        None, "--overlay", "-o",
+        help="Path to an overlay repo whose .canary/skills/ are deployed into the target. "
+             "Skills are filtered by deploy_to frontmatter matching the detected shape.",
+    ),
     apply: bool = typer.Option(False, "--apply", help="Write files. Without this flag the command is a dry run."),
     output_json: bool = typer.Option(False, "--json", help="Emit the migration report as JSON."),
 ):
@@ -171,11 +176,16 @@ def migrate(
     Detects harness markers (harness.config.json + .harness/), auto-detects the
     framework, drops Canary config files, and reports what was created or preserved.
     Dry-run by default — pass --apply to write files.
+
+    Pass --overlay <path> to also deploy overlay skills into the target's
+    .canary/skills/. Skills with deploy_to matching the detected shape are copied;
+    skills already present are skipped.
     """
     from pathlib import Path as _Path
     from agent.core.migrator import HarnessMigrator
 
     root = _Path(path).resolve()
+    overlay_path = _Path(overlay).resolve() if overlay else None
     migrator = HarnessMigrator()
 
     try:
@@ -199,7 +209,9 @@ def migrate(
         print("[yellow]Writing files to disk...[/yellow]\n")
 
     try:
-        report = migrator.migrate(root, dry_run=dry_run, framework=framework or None)
+        report = migrator.migrate(
+            root, dry_run=dry_run, framework=framework or None, overlay_path=overlay_path
+        )
     except ValueError as e:
         print(f"\n[bold red]Error:[/bold red] {e}")
         raise typer.Exit(1)
@@ -216,6 +228,10 @@ def migrate(
             "preserved_files": report.preserved_files,
             "would_create": report.would_create,
             "manual_followups": report.manual_followups,
+            "deployed_skills": [
+                {"skill_name": r.skill_name, "status": r.status, "note": r.note}
+                for r in report.deployed_skills
+            ],
         }, indent=2) + "\n")
         return
 

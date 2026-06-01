@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -39,6 +39,11 @@ class SkillInfo:
     description: str = ""
     cli: Optional[str] = None
     entry: Optional[str] = None
+    # Shapes this skill should be deployed to during `canary migrate`.
+    # Values match MigrationContext.detected_shape: "api", "e2e", "load",
+    # "frontend_unit", etc. Empty list means the skill is not auto-deployed.
+    # Use ["all"] to deploy regardless of shape.
+    deploy_to: list[str] = field(default_factory=list)
     # Validation error captured at discovery time. When set, the skill is
     # still listed (so users can see the bad config) but ``canary skills
     # run`` will refuse to invoke it.
@@ -174,6 +179,7 @@ class SkillRegistry:
             description=fm.get("description", ""),
             cli=fm.get("cli"),
             entry=fm.get("entry"),
+            deploy_to=self._parse_deploy_to(fm),
             error=self._validate_executable_fields(fm),
         )
 
@@ -194,17 +200,27 @@ class SkillRegistry:
             description=description,
             cli=fm.get("cli"),
             entry=fm.get("entry"),
+            deploy_to=self._parse_deploy_to(fm),
             error=self._validate_executable_fields(fm),
         )
 
     @staticmethod
-    def _parse_frontmatter(text: str) -> dict[str, str]:
-        """Tiny YAML-subset parser: top-level scalar fields only.
+    def _parse_deploy_to(fm: dict) -> list[str]:
+        raw = fm.get("deploy_to", [])
+        if isinstance(raw, list):
+            return [str(v).strip() for v in raw if str(v).strip()]
+        if isinstance(raw, str) and raw:
+            return [raw.strip()]
+        return []
 
-        Supports ``key: value`` lines between ``---`` delimiters. No nesting,
-        no flow style, no quoting — matches the SKILL.md spec.
+    @staticmethod
+    def _parse_frontmatter(text: str) -> dict:
+        """Tiny YAML-subset parser: top-level scalar and flow-list fields.
+
+        Supports ``key: value`` and ``key: [a, b, c]`` lines between ``---``
+        delimiters. No nesting, no block sequences, no quoting.
         """
-        result: dict[str, str] = {}
+        result: dict = {}
         if not text.startswith("---"):
             return result
         lines = text.split("\n")
@@ -216,7 +232,14 @@ class SkillRegistry:
             if ":" not in line:
                 continue
             key, _, value = line.partition(":")
-            result[key.strip()] = value.strip()
+            v = value.strip()
+            if v.startswith("[") and v.endswith("]"):
+                inner = v[1:-1]
+                result[key.strip()] = [
+                    item.strip() for item in inner.split(",") if item.strip()
+                ]
+            else:
+                result[key.strip()] = v
         return result
 
     @staticmethod
