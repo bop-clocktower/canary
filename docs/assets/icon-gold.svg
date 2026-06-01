@@ -2,6 +2,7 @@
   <title>Canary icon — gold variant</title>
   <desc>Geometric canary bird mark on gold background</desc>
   <rect width="64" height="64" rx="10" fill="#F0C040"/>
+  <g transform="translate(7,-9)">
   <!-- Body -->
   <polygon points="14,52 26,28 40,26 42,48 32,58 18,60" fill="#0A0A0A"/>
   <!-- Wing upper -->
@@ -18,4 +19,5 @@
   <circle cx="9" cy="36" r="1" fill="#0A0A0A"/>
   <!-- Beak -->
   <polygon points="4,39 0,42 4,44" fill="#333"/>
+  </g>
 </svg>
