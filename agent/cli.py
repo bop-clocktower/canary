@@ -785,20 +785,24 @@ app.add_typer(ck_app, name="company-knowledge")
 
 @ck_app.command("show")
 def ck_show(
+    env: Optional[str] = typer.Option(
+        None, "--env", "-e",
+        help="Environment override layer to load (e.g. 'uat'). Defaults to CANARY_ENV.",
+    ),
     output_json: bool = typer.Option(False, "--json", help="Emit raw JSON."),
 ) -> None:
     """
-    Print the resolved company-knowledge pointer view.
+    Print the merged company-knowledge view.
 
-    Reads .canary/company.json from the current directory, validates it, and
-    prints what Canary sees. Useful for debugging grounding issues without
-    spelunking config files.
+    Merges ~/.canary/company.json (org defaults), .canary/company.json
+    (project-local), and .canary/company.<env>.json (env override) and prints
+    the resolved result. Useful for debugging grounding issues.
     """
     from agent.core.company_knowledge import CompanyKnowledge
 
-    ck = CompanyKnowledge.load()
+    ck = CompanyKnowledge.load(env=env or None)
 
-    if ck.error:
+    if ck.error and ck.is_empty:
         print(f"[red]✗[/red] {ck.error}")
         raise typer.Exit(1)
 
@@ -812,7 +816,8 @@ def ck_show(
               "[bold]canary company-knowledge init[/bold].")
         return
 
-    print("[bold green]✓ Company Knowledge[/bold green]\n")
+    sources_str = ", ".join(ck.sources) if ck.sources else "none"
+    print(f"[bold green]✓ Company Knowledge[/bold green]  [dim]sources: {sources_str}[/dim]\n")
     if ck.confluence_spaces:
         print(f"[bold]Confluence spaces:[/bold] {', '.join(ck.confluence_spaces)}")
     if ck.jira_projects:
@@ -831,6 +836,8 @@ def ck_show(
         print(f"[bold]Optum dashboard:[/bold]   {ck.optum_dashboard_url}")
     if ck.notes:
         print(f"[bold]Notes:[/bold] {ck.notes}")
+    if ck.error:
+        print(f"\n[yellow]⚠[/yellow] {ck.error}")
     if ck.warnings:
         print()
         for w in ck.warnings:

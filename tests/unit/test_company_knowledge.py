@@ -39,7 +39,7 @@ class TestLoadMalformedJson(unittest.TestCase):
             (canary_dir / "company.json").write_text("{not valid json", encoding="utf-8")
             ck = CompanyKnowledge.load(Path(tmp))
         self.assertTrue(ck.is_empty)
-        self.assertEqual(ck.error, "")
+        self.assertTrue(ck.error)  # parse error is recorded
 
     def test_returns_empty_on_non_object_root(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -247,6 +247,117 @@ class TestToDict(unittest.TestCase):
     def test_error_key_absent_when_clear(self):
         ck = CompanyKnowledge(confluence_spaces=["QA"])
         self.assertNotIn("error", ck.to_dict())
+
+
+class TestMergeCascade(unittest.TestCase):
+    """Tests for org-defaults + project-local + env-override merge cascade."""
+
+    def _write(self, base: Path, filename: str, data: dict) -> None:
+        canary_dir = base / ".canary"
+        canary_dir.mkdir(parents=True, exist_ok=True)
+        (canary_dir / filename).write_text(json.dumps(data), encoding="utf-8")
+
+    def test_project_local_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(Path(tmp), "company.json", {"confluence_spaces": ["QA"]})
+            ck = CompanyKnowledge.load(Path(tmp))
+        self.assertIn("QA", ck.confluence_spaces)
+        self.assertIn(".canary/company.json", ck.sources)
+
+    def test_env_override_loaded_when_canary_env_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(Path(tmp), "company.json", {"confluence_spaces": ["QA"]})
+            self._write(Path(tmp), "company.uat.json", {"confluence_spaces": ["UAT"]})
+            ck = CompanyKnowledge.load(Path(tmp), env="uat")
+        self.assertIn("QA", ck.confluence_spaces)
+        self.assertIn("UAT", ck.confluence_spaces)
+        self.assertIn(".canary/company.uat.json", ck.sources)
+
+    def test_env_override_not_loaded_without_env(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(Path(tmp), "company.json", {"confluence_spaces": ["QA"]})
+            self._write(Path(tmp), "company.uat.json", {"confluence_spaces": ["UAT"]})
+            ck = CompanyKnowledge.load(Path(tmp))
+        self.assertNotIn("UAT", ck.confluence_spaces)
+
+    def test_lists_are_unioned_across_layers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(Path(tmp), "company.json", {
+                "mcp_servers": ["plugin_atlassian_atlassian"],
+                "internal_domains": ["capillarytech.com"],
+            })
+            self._write(Path(tmp), "company.uat.json", {
+                "mcp_servers": ["harness"],
+                "internal_domains": ["optumengage.com"],
+            })
+            ck = CompanyKnowledge.load(Path(tmp), env="uat")
+        self.assertIn("plugin_atlassian_atlassian", ck.mcp_servers)
+        self.assertIn("harness", ck.mcp_servers)
+        self.assertIn("capillarytech.com", ck.internal_domains)
+        self.assertIn("optumengage.com", ck.internal_domains)
+
+    def test_lists_deduped_across_layers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(Path(tmp), "company.json", {"mcp_servers": ["harness"]})
+            self._write(Path(tmp), "company.prod.json", {"mcp_servers": ["harness"]})
+            ck = CompanyKnowledge.load(Path(tmp), env="prod")
+        self.assertEqual(ck.mcp_servers.count("harness"), 1)
+
+    def test_scalar_notes_replaced_by_higher_priority(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(Path(tmp), "company.json", {"notes": "base note"})
+            self._write(Path(tmp), "company.prod.json", {"notes": "prod note"})
+            ck = CompanyKnowledge.load(Path(tmp), env="prod")
+        self.assertEqual(ck.notes, "prod note")
+
+    def test_scalar_notes_falls_back_to_lower_layer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(Path(tmp), "company.json", {"notes": "base note"})
+            self._write(Path(tmp), "company.prod.json", {"mcp_servers": ["harness"]})
+            ck = CompanyKnowledge.load(Path(tmp), env="prod")
+        self.assertEqual(ck.notes, "base note")
+
+    def test_optum_dashboard_url_replaced_by_env_layer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(Path(tmp), "company.json", {
+                "optum_dashboard_url": "https://dashboard.example.com/base"
+            })
+            self._write(Path(tmp), "company.uat.json", {
+                "optum_dashboard_url": "https://dashboard.example.com/uat"
+            })
+            ck = CompanyKnowledge.load(Path(tmp), env="uat")
+        self.assertEqual(ck.optum_dashboard_url, "https://dashboard.example.com/uat")
+
+    def test_secret_in_env_layer_skipped_but_base_merged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(Path(tmp), "company.json", {"confluence_spaces": ["QA"]})
+            self._write(Path(tmp), "company.uat.json", {"mcp_servers": ["sk-secret"]})
+            ck = CompanyKnowledge.load(Path(tmp), env="uat")
+        # base layer still loaded
+        self.assertIn("QA", ck.confluence_spaces)
+        # error recorded
+        self.assertTrue(ck.error)
+
+    def test_missing_env_file_is_silent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(Path(tmp), "company.json", {"confluence_spaces": ["QA"]})
+            ck = CompanyKnowledge.load(Path(tmp), env="nonexistent")
+        self.assertIn("QA", ck.confluence_spaces)
+        self.assertEqual(ck.error, "")
+
+    def test_sources_tracks_all_loaded_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(Path(tmp), "company.json", {"confluence_spaces": ["QA"]})
+            self._write(Path(tmp), "company.staging.json", {"jira_projects": ["PROJ"]})
+            ck = CompanyKnowledge.load(Path(tmp), env="staging")
+        self.assertIn(".canary/company.json", ck.sources)
+        self.assertIn(".canary/company.staging.json", ck.sources)
+
+    def test_to_dict_includes_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(Path(tmp), "company.json", {"confluence_spaces": ["QA"]})
+            ck = CompanyKnowledge.load(Path(tmp))
+        self.assertIn("sources", ck.to_dict())
 
 
 if __name__ == "__main__":
