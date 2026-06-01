@@ -113,16 +113,15 @@ docs/branching-convention
   part of the LLM generation pipeline (orchestrator). Replaced by the
   `/canary-debug-flake` slash command.
 - **Quality Scorer:** [agent/core/quality_scorer.py](agent/core/quality_scorer.py)
-  — Static analysis scorer for Canary-generated test files. Scores on
-  three dimensions: coverage breadth (test count + error path coverage),
-  assertion density (assertions per test function), and flakiness risk
-  (hardcoded waits, random values, timestamp dependencies). Returns a
-  0–100 composite score with letter grade. Runs automatically after every
-  generation; surfaced in CLI output, `--json`, PR comments, and SARIF.
+  — Static analysis scorer (coverage breadth, assertion density, flakiness
+  risk) returning a 0–100 composite score with letter grade. **Vestigial as
+  of v3.0:** it was wired into the removed `generate`/orchestrator path and is
+  not currently invoked by any live command. Retained pending a decision to
+  re-wire it into the plugin flow or remove it.
 - **Reporter:** [agent/core/reporter.py](agent/core/reporter.py)
-  — Exports generation and execution results to JSON or SARIF for
-  ingestion by Datadog, SonarQube, and GitHub Code Scanning. Invoked via
-  `canary generate --report-format json|sarif`.
+  — Exports results to JSON or SARIF (Datadog, SonarQube, GitHub Code
+  Scanning). **Vestigial as of v3.0:** it was invoked by the removed
+  `canary generate` path and is not currently wired into any live command.
 - **Migrator:** [agent/core/migrator.py](agent/core/migrator.py)
   — Detects harness-scaffolded test projects (via `harness.config.json`
   and `.harness/`) and migrates them to Canary's layout without touching

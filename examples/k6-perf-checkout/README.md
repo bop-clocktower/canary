@@ -29,7 +29,13 @@ See [`prompt.txt`](prompt.txt) for a copy-pasteable version.
 
 ```bash
 cd examples/k6-perf-checkout
-canary generate "$(cat prompt.txt)"
+cat prompt.txt        # the scenario
+```
+
+Then, in Claude Code, generate the test from the scenario:
+
+```text
+/canary-write-test  <paste the contents of prompt.txt>
 ```
 
 Canary classifies as `performance`, picks `k6`, writes a `*.load.js` file.
@@ -118,5 +124,5 @@ export default function () {
 
 ## See also
 
-- [CLI Reference → `canary generate`](../../docs/wiki/CLI-Reference.md)
+- [Getting Started → generating tests](../../docs/wiki/Getting-Started.md)
 - [Writing Good Prompts](../../docs/wiki/Writing-Good-Prompts.md)

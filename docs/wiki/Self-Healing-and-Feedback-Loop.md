@@ -1,32 +1,28 @@
 # Self-Healing & Feedback Loop 🔄
 
-One of Canary's most advanced features is its ability to learn from its
-own mistakes. The **Execution Feedback Loop** turns Canary from a
-static generator into an autonomous engineer.
+Canary can diagnose a failing or flaky test and propose a fix. As of v3 this
+runs through the Claude Code plugin — **not** an in-process orchestrator loop,
+and with no API key.
 
 ## How it Works
 
-1. **Generation:** Canary writes a test file based on your requirement.
-2. **Execution:** Using the `--run` flag, Canary immediately executes
-   the test in a secure subprocess.
-3. **Capture:** If the test fails (non-zero exit code), Canary captures
-   the `stderr` and the failing code.
-4. **Self-Healing:** Canary sends the error output back to the LLM,
-   requesting a fix for the specific failure.
-5. **Re-Verification:** The fixed code is rewritten to disk and
-   executed again.
+1. **Generation:** the `canary-test-author` agent (`/canary-write-test`) writes
+   a test based on your requirement, in your Claude Code session.
+2. **Execution:** run the test with the deterministic CLI executor —
+   `canary run <file> <framework>` — or your framework's own runner.
+3. **Capture:** if it fails, copy the error output back into Claude Code.
+4. **Self-Healing:** the `canary-test-healer` agent (`/canary-heal-test`)
+   reads the failing code and error, forms a single root-cause hypothesis, and
+   proposes a fix — using the host session, no provider key.
+5. **Re-Verification:** apply the fix and re-run the test to confirm.
 
-## Usage
+For *intermittent* failures specifically, use the `canary-flake-hunter` agent
+(`/canary-debug-flake`), which classifies the flake (timing, ordering,
+environment, selectors, etc.) and proposes a deterministic fix.
 
-### Auto-Healing on Generation
+## Manual Run
 
-```bash
-canary generate "Create a playwright test for login" --run
-```
-
-### Manual Run
-
-You can also run any test file manually using Canary's knowledge:
+Run any test file with Canary's executor (deterministic, no key):
 
 ```bash
 canary run tests/generated/my_test.spec.ts playwright
@@ -34,10 +30,10 @@ canary run tests/generated/my_test.spec.ts playwright
 
 ## Safety Mechanisms
 
-- **1-Retry Limit:** To prevent infinite loops and token waste, the MVP
-  self-healing loop is limited to one correction attempt.
-- **Subprocess Timeout:** All test executions have a 30-second timeout
-  to prevent "hanging" tests from blocking the CLI.
-- **Non-Interactive Execution:** Canary uses hardened flags (like
-  `npx --yes`) to ensure it doesn't get stuck waiting for user input
-  during a run.
+- **Subprocess Timeout:** all test executions have a 30-second timeout so a
+  hanging test can't block the CLI.
+- **Non-Interactive Execution:** Canary uses hardened flags (like `npx --yes`)
+  so a run never stalls waiting for input.
+- **Human in the loop:** healing happens in your Claude Code session — you
+  review and apply each proposed fix rather than an autonomous loop rewriting
+  files unattended.
