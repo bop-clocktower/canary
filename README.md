@@ -50,9 +50,12 @@ Or, if you've already cloned the repo:
 /plugin install oracle@oracle
 ```
 
-> **Note:** the plugin shells out to the `oracle` CLI for code generation, so
-> install the Python package first (above) and set `OPENAI_API_KEY` before
-> invoking the test-author persona.
+> **Note:** `oracle@oracle` is `<plugin-name>@<marketplace-name>` — both are
+> `oracle` here, which is intentional. The `@oracle` qualifier disambiguates
+> the plugin when multiple marketplaces are registered.
+
+No separate API key is required. The plugin runs through Claude Code's own
+session authentication.
 
 ## 📖 Usage
 
@@ -67,8 +70,8 @@ oracle generate "Create a playwright test for the login flow on https://example.
 
 ### Recommendation Only (Draft Mode)
 
-If you want to see Oracle's reasoning without calling the LLM (and without
-needing an API key), use the `--recommend-only` flag:
+If you want to see Oracle's reasoning without calling the LLM, use the
+`--recommend-only` flag:
 
 ```bash
 oracle generate "I need a load test for my checkout API" --recommend-only
@@ -82,8 +85,11 @@ oracle version
 
 ## ⚙️ Configuration
 
-Oracle defaults to Claude (Anthropic). To use the generation features,
-set your API key:
+**Claude Code plugin:** No API key needed — authentication flows through your
+Claude Code session.
+
+**CLI (`oracle generate`):** Oracle defaults to Claude (Anthropic). Set your
+API key for the `generate` subcommand:
 
 ```bash
 export ANTHROPIC_API_KEY='your-anthropic-api-key'

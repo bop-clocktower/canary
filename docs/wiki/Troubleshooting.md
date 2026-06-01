@@ -166,6 +166,36 @@ Note: `tests/generated/` is gitignored, so it won't show in
 find tests/generated -name "*.py" -newer pyproject.toml
 ```
 
+## Plugin Install Fails: "source type not supported"
+
+**Error:**
+
+```text
+Failed to install: This plugin uses a source type your Claude Code version
+does not support. Update Claude Code and try again.
+```
+
+This error appears during `/plugin install oracle@oracle` and is caused by a
+Node.js version mismatch — Claude Code picks up the wrong Node runtime and
+misreads the marketplace plugin source format.
+
+**Fix:** Install [Volta](https://volta.sh) to pin the Node version:
+
+```bash
+brew install volta
+volta install node
+```
+
+Then restart your terminal (or `source ~/.zshrc`) and retry the plugin install:
+
+```bash
+/plugin marketplace add https://github.com/bri-stevenski/oracle-test-ai-agent
+/plugin install oracle@oracle
+```
+
+> **Note:** Volta sets a default Node version globally. It does not affect
+> project-local `.nvmrc` files or other version managers already in use.
+
 ## Still Stuck?
 
 Open an issue on GitHub with:
