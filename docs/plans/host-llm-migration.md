@@ -13,7 +13,7 @@
 
 ## Goal
 
-Rewrite `plugins/oracle/agents/oracle-test-author.md` so the agent
+Rewrite `agents/oracle-test-author.md` so the agent
 generates test code in the host Claude Code session rather than
 shelling out to `oracle generate`. Verify against the four shipped
 example prompts that the host-LLM output is at least as good as the
@@ -23,8 +23,8 @@ CLI output. Update related specs to reflect the new path.
 
 | Action | Path | Purpose |
 | --- | --- | --- |
-| Modify | `plugins/oracle/agents/oracle-test-author.md` | Drop `oracle generate` delegation; use MCP + host LLM |
-| Verify | `plugins/oracle/commands/oracle-write-test.md` | Confirm no change needed (delegates to agent) |
+| Modify | `agents/oracle-test-author.md` | Drop `oracle generate` delegation; use MCP + host LLM |
+| Verify | `commands/oracle-write-test.md` | Confirm no change needed (delegates to agent) |
 | Modify | `docs/specs/oracle-plugin.md` | Patch out "Delegate to the Oracle CLI" wording; cross-reference this spec |
 | Add | `docs/changes/host-llm-migration/plans/2026-05-22-phase-1-plan.md` | Symlink/copy of this plan for the changes-tracking convention |
 | Verify | `docs/adr/README.md` index entry exists for ADR 0001 | Index up-to-date |
@@ -63,7 +63,7 @@ decision (a)/(b)/(c) recorded.
 
 **Files:**
 
-- Modify: `plugins/oracle/agents/oracle-test-author.md`
+- Modify: `agents/oracle-test-author.md`
 
 - [ ] **Step 1: Replace Phase 2** with the four-step process from
   the spec (call `oracle__analyze_file`, expand prompt, generate
@@ -74,7 +74,7 @@ decision (a)/(b)/(c) recorded.
 - [ ] **Step 3: Remove the literal `oracle generate` invocation** —
   grep the file to verify zero remaining occurrences.
 
-**Acceptance:** `grep -c "oracle generate" plugins/oracle/agents/oracle-test-author.md`
+**Acceptance:** `grep -c "oracle generate" agents/oracle-test-author.md`
 returns 0.
 
 **Time estimate:** 15 min.
@@ -85,7 +85,7 @@ returns 0.
 
 **Files (read-only):**
 
-- Read: `plugins/oracle/commands/oracle-write-test.md`
+- Read: `commands/oracle-write-test.md`
 
 - [ ] **Step 1: Confirm the command file just delegates** to
   `oracle-test-author` with `$ARGUMENTS`. If it does, no change.

@@ -22,8 +22,8 @@ remove it alongside `oracle generate`.
 
 | Action | Path | Purpose |
 | --- | --- | --- |
-| Add | `plugins/oracle/agents/oracle-test-healer.md` | New agent for test repair |
-| Add | `plugins/oracle/commands/oracle-heal-test.md` | Slash command delegating to the agent |
+| Add | `agents/oracle-test-healer.md` | New agent for test repair |
+| Add | `commands/oracle-heal-test.md` | Slash command delegating to the agent |
 | Add | `docs/adr/0002-self-heal-as-slash-command.md` | Decision record |
 | Modify | `docs/adr/README.md` | Index entry for ADR 0002 |
 | Add | `docs/specs/self-heal-migration.md` | Spec |
@@ -37,7 +37,7 @@ remove it alongside `oracle generate`.
 
 **Files:**
 
-- Add: `plugins/oracle/agents/oracle-test-healer.md`
+- Add: `agents/oracle-test-healer.md`
 
 - [ ] **Step 1: Frontmatter** — `name: oracle-test-healer`,
   `description` keyed on "fix this failing test"-style phrases,
@@ -63,7 +63,7 @@ the generic-fix and selector-fix paths.
 
 **Files:**
 
-- Add: `plugins/oracle/commands/oracle-heal-test.md`
+- Add: `commands/oracle-heal-test.md`
 
 - [ ] **Step 1: Frontmatter** — `description`, `argument-hint`,
   `allowed-tools` including `mcp__oracle__oracle__analyze_file`.

@@ -149,7 +149,7 @@ fallback even if it skips its own Phase 1.
 
 ### Finding F6 — agent's "tools" frontmatter has Bash but no rationale
 
-`plugins/oracle/agents/oracle-test-author.md` line 5:
+`agents/oracle-test-author.md` line 5:
 `tools: Bash, Read, Write, Edit, Glob, Grep, mcp__oracle__oracle__analyze_file`
 
 The agent never uses `Bash` in its current Process. The only Bash

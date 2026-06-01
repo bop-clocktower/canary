@@ -16,8 +16,8 @@ produce test code:
    (`agent/llm/providers/{anthropic,openai,gemini,codex}.py`). Each requires
    a real provider API key (`ANTHROPIC_API_KEY`, etc.).
 2. **Plugin slash command**: `/oracle-write-test` (defined under
-   `plugins/oracle/commands/`) hands control to the `oracle-test-author`
-   agent (defined under `plugins/oracle/agents/`).
+   `commands/`) hands control to the `oracle-test-author`
+   agent (defined under `agents/`).
 
 The plugin path's documented selling point — restated in the
 `docs/specs/oracle-plugin.md` overview — is _"no API key required for
@@ -44,7 +44,7 @@ feature entirely.
 
 ## Decision
 
-Agents under `plugins/oracle/agents/` will generate test code **in the
+Agents under `agents/` will generate test code **in the
 host LLM session** rather than delegating to `oracle generate`. This
 ADR establishes the pattern for `oracle-test-author` first; future
 agents that need an LLM call (`oracle-flake-hunter` for selector heals,
@@ -111,7 +111,7 @@ out of the keyed code path.
 ### Reversibility
 
 High. The change is to one agent definition file
-(`plugins/oracle/agents/oracle-test-author.md`). If the host-LLM path
+(`agents/oracle-test-author.md`). If the host-LLM path
 proves insufficient, revert the markdown and the previous behavior
 (Bash to `oracle generate`) returns. No code in `agent/` is removed
 by this ADR.
@@ -160,7 +160,7 @@ discover the bait-and-switch on first use. Rejected.
 - Roadmap: "Migrate all LLM-dependent tasks to keyless slash commands"
   (added in PR #122)
 - Spec: `docs/specs/oracle-plugin.md` (claims no API key in plugin path)
-- Code: `plugins/oracle/agents/oracle-test-author.md` (Phase 2 contains
+- Code: `agents/oracle-test-author.md` (Phase 2 contains
   the offending `oracle generate` delegation)
 - Code: `agent/core/orchestrator.py` (`_attempt_fix`,
   `_attempt_selector_fix` — out of scope for this ADR)
