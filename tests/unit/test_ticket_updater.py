@@ -258,8 +258,8 @@ class TestBuildComment(unittest.TestCase):
 class TestTransitionLogic(unittest.TestCase):
     def setUp(self):
         self.tmpdir = TemporaryDirectory()
-        self.oracle_dir = Path(self.tmpdir.name) / ".oracle"
-        self.oracle_dir.mkdir()
+        self.canary_dir = Path(self.tmpdir.name) / ".canary"
+        self.canary_dir.mkdir()
 
     def tearDown(self):
         self.tmpdir.cleanup()
@@ -303,14 +303,14 @@ class TestTransitionLogic(unittest.TestCase):
         }
         if atlassian_url:
             mapping["atlassian_url"] = atlassian_url
-        path = self.oracle_dir / f"workflow-{project_key}.json"
+        path = self.canary_dir / f"workflow-{project_key}.json"
         path.write_text(json.dumps(mapping), encoding="utf-8")
 
     def test_fail_result_does_not_transition(self):
         from agent.core.ticket_updater import TicketUpdater
 
         self._write_mapping("PROJ", "QA Passed")
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
         result = updater._transition_jira("PROJ-1", "PROJ", "FAIL", dry_run=True)
         self.assertFalse(result.attempted)
         self.assertIn("FAIL", result.reason)
@@ -319,7 +319,7 @@ class TestTransitionLogic(unittest.TestCase):
         from agent.core.ticket_updater import TicketUpdater
 
         self._write_mapping("PROJ", "QA Passed")
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
         result = updater._transition_jira("PROJ-1", "PROJ", "PARTIAL", dry_run=True)
         self.assertFalse(result.attempted)
         self.assertIn("PARTIAL", result.reason)
@@ -328,7 +328,7 @@ class TestTransitionLogic(unittest.TestCase):
         from agent.core.ticket_updater import TicketUpdater
 
         # No mapping file written.
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
         result = updater._transition_jira("PROJ-1", "PROJ", "PASS", dry_run=True)
         self.assertFalse(result.attempted)
         self.assertIn("oracle workflow-discover", result.reason)
@@ -338,7 +338,7 @@ class TestTransitionLogic(unittest.TestCase):
         from agent.core.ticket_updater import TicketUpdater
 
         self._write_mapping("ACME", "QA Passed")
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
 
         # Mock Jira credentials and current status lookup.
         with (
@@ -358,7 +358,7 @@ class TestTransitionLogic(unittest.TestCase):
         from agent.core.ticket_updater import TicketUpdater
 
         self._write_mapping("ACME", "QA Passed")
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
 
         with (
             patch("agent.core.ticket_updater._jira_auth", return_value=("https://j.example.com", "Basic dGVzdA==")),
@@ -375,7 +375,7 @@ class TestTransitionLogic(unittest.TestCase):
         from agent.core.ticket_updater import TicketUpdater
 
         self._write_mapping("ACME", "QA Passed")
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
 
         with (
             patch("agent.core.ticket_updater._jira_auth", return_value=("https://j.example.com", "Basic dGVzdA==")),
@@ -395,8 +395,8 @@ class TestTransitionLogic(unittest.TestCase):
 class TestDryRun(unittest.TestCase):
     def setUp(self):
         self.tmpdir = TemporaryDirectory()
-        self.oracle_dir = Path(self.tmpdir.name) / ".oracle"
-        self.oracle_dir.mkdir()
+        self.canary_dir = Path(self.tmpdir.name) / ".canary"
+        self.canary_dir.mkdir()
 
     def tearDown(self):
         self.tmpdir.cleanup()
@@ -412,7 +412,7 @@ class TestDryRun(unittest.TestCase):
             },
             "role_annotations_confirmed": True,
         }
-        (self.oracle_dir / "workflow-PROJ.json").write_text(
+        (self.canary_dir / "workflow-PROJ.json").write_text(
             json.dumps(mapping), encoding="utf-8"
         )
 
@@ -421,7 +421,7 @@ class TestDryRun(unittest.TestCase):
         from agent.core.ticket_updater import TicketUpdater
 
         self._write_mapping()
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
         summary = _make_summary(
             ticket_key="PROJ-10",
             project_key="PROJ",
@@ -447,7 +447,7 @@ class TestDryRun(unittest.TestCase):
         from agent.core.ticket_updater import TicketUpdater
 
         self._write_mapping()
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
         summary = _make_summary(
             ticket_key="PROJ-10",
             project_key="PROJ",
@@ -469,7 +469,7 @@ class TestDryRun(unittest.TestCase):
         from agent.core.ticket_updater import TicketUpdater
 
         self._write_mapping()
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
         summary = _make_summary(
             ticket_key="PROJ-10",
             project_key="PROJ",
@@ -494,8 +494,8 @@ class TestDryRun(unittest.TestCase):
 class TestSafetyGate(unittest.TestCase):
     def setUp(self):
         self.tmpdir = TemporaryDirectory()
-        self.oracle_dir = Path(self.tmpdir.name) / ".oracle"
-        self.oracle_dir.mkdir()
+        self.canary_dir = Path(self.tmpdir.name) / ".canary"
+        self.canary_dir.mkdir()
 
     def tearDown(self):
         self.tmpdir.cleanup()
@@ -503,7 +503,7 @@ class TestSafetyGate(unittest.TestCase):
     def test_missing_mapping_surfaces_workflow_discover_command(self):
         from agent.core.ticket_updater import TicketUpdater
 
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
         summary = _make_summary(
             ticket_key="NOPE-1",
             project_key="NOPE",
@@ -522,7 +522,7 @@ class TestSafetyGate(unittest.TestCase):
     def test_no_linkage_skips_entirely(self):
         from agent.core.ticket_updater import TicketUpdater
 
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
         summary = _make_summary(
             ticket_key=None,
             project_key=None,
@@ -541,7 +541,7 @@ class TestSafetyGate(unittest.TestCase):
     def test_unknown_ticket_format_produces_message(self):
         from agent.core.ticket_updater import TicketUpdater
 
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
         summary = _make_summary(
             ticket_key="not-a-valid-key",
             project_key=None,
@@ -555,7 +555,7 @@ class TestSafetyGate(unittest.TestCase):
     def test_comment_only_skips_transition(self):
         from agent.core.ticket_updater import TicketUpdater
 
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
         summary = _make_summary(
             ticket_key="PROJ-5",
             project_key="PROJ",
@@ -574,8 +574,8 @@ class TestSafetyGate(unittest.TestCase):
 class TestPerProjectAtlassianUrl(unittest.TestCase):
     def setUp(self):
         self.tmpdir = TemporaryDirectory()
-        self.oracle_dir = Path(self.tmpdir.name) / ".oracle"
-        self.oracle_dir.mkdir()
+        self.canary_dir = Path(self.tmpdir.name) / ".canary"
+        self.canary_dir.mkdir()
 
     def tearDown(self):
         self.tmpdir.cleanup()
@@ -594,7 +594,7 @@ class TestPerProjectAtlassianUrl(unittest.TestCase):
         }
         if atlassian_url:
             mapping["atlassian_url"] = atlassian_url
-        (self.oracle_dir / f"workflow-{project_key}.json").write_text(
+        (self.canary_dir / f"workflow-{project_key}.json").write_text(
             json.dumps(mapping), encoding="utf-8"
         )
 
@@ -614,7 +614,7 @@ class TestPerProjectAtlassianUrl(unittest.TestCase):
                 },
             )
         ):
-            base_url, _ = _jira_auth("ACME", self.oracle_dir)
+            base_url, _ = _jira_auth("ACME", self.canary_dir)
 
         self.assertEqual(base_url, "https://acme.atlassian.net")
 
@@ -634,7 +634,7 @@ class TestPerProjectAtlassianUrl(unittest.TestCase):
                 },
             )
         ):
-            base_url, _ = _jira_auth("ACME", self.oracle_dir)
+            base_url, _ = _jira_auth("ACME", self.canary_dir)
 
         self.assertEqual(base_url, "https://fallback.atlassian.net")
 
@@ -649,8 +649,8 @@ class TestPerProjectAtlassianUrl(unittest.TestCase):
             os.environ,
             {"ATLASSIAN_USER": "user@example.com", "ATLASSIAN_TOKEN": "tok"},
         ):
-            internal_url, _ = _jira_auth("INTERNAL", self.oracle_dir)
-            customer_url, _ = _jira_auth("CUSTOMER", self.oracle_dir)
+            internal_url, _ = _jira_auth("INTERNAL", self.canary_dir)
+            customer_url, _ = _jira_auth("CUSTOMER", self.canary_dir)
 
         self.assertEqual(internal_url, "https://internal.atlassian.net")
         self.assertEqual(customer_url, "https://customer.atlassian.net")
@@ -667,7 +667,7 @@ class TestPerProjectAtlassianUrl(unittest.TestCase):
                 "ATLASSIAN_TOKEN": "tok",
             },
         ):
-            base_url, _ = _jira_auth(None, self.oracle_dir)
+            base_url, _ = _jira_auth(None, self.canary_dir)
 
         self.assertEqual(base_url, "https://env.atlassian.net")
 
@@ -678,8 +678,8 @@ class TestPerProjectAtlassianUrl(unittest.TestCase):
 class TestWorkflowMappingStaticInit(unittest.TestCase):
     def setUp(self):
         self.tmpdir = TemporaryDirectory()
-        self.oracle_dir = Path(self.tmpdir.name) / ".oracle"
-        self.oracle_dir.mkdir()
+        self.canary_dir = Path(self.tmpdir.name) / ".canary"
+        self.canary_dir.mkdir()
 
     def tearDown(self):
         self.tmpdir.cleanup()
@@ -700,9 +700,9 @@ class TestWorkflowMappingStaticInit(unittest.TestCase):
             role_annotations_confirmed=True,
             atlassian_url="https://hand.atlassian.net",
         )
-        WorkflowDiscovery(oracle_dir=self.oracle_dir)._write(mapping)
+        WorkflowDiscovery(canary_dir=self.canary_dir)._write(mapping)
 
-        updater = TicketUpdater(oracle_dir=self.oracle_dir)
+        updater = TicketUpdater(canary_dir=self.canary_dir)
 
         with (
             patch("agent.core.ticket_updater._jira_auth", return_value=("https://hand.atlassian.net", "Basic dGVzdA==")),
@@ -726,7 +726,7 @@ class TestWorkflowMappingStaticInit(unittest.TestCase):
             role_annotations_confirmed=True,
             atlassian_url="https://rt.atlassian.net",
         )
-        wd = WorkflowDiscovery(oracle_dir=self.oracle_dir)
+        wd = WorkflowDiscovery(canary_dir=self.canary_dir)
         wd._write(mapping)
         loaded = wd.show("RT")
 
@@ -747,10 +747,10 @@ class TestWorkflowMappingStaticInit(unittest.TestCase):
             },
             "role_annotations_confirmed": True,
         }
-        (self.oracle_dir / "workflow-LEGACY.json").write_text(
+        (self.canary_dir / "workflow-LEGACY.json").write_text(
             json.dumps(legacy), encoding="utf-8"
         )
-        wd = WorkflowDiscovery(oracle_dir=self.oracle_dir)
+        wd = WorkflowDiscovery(canary_dir=self.canary_dir)
         loaded = wd.show("LEGACY")
 
         self.assertIsNotNone(loaded)

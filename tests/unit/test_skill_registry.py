@@ -67,7 +67,7 @@ class TestLocalOverlaySkills(unittest.TestCase):
     def test_local_skill_discovered(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_git_root(tmp)
-            _write_skill(root / ".oracle" / "skills", "my-custom-skill", description="Custom")
+            _write_skill(root / ".canary" / "skills", "my-custom-skill", description="Custom")
             skills = SkillRegistry().discover(root)
             names = {s.name for s in skills}
             self.assertIn("my-custom-skill", names)
@@ -75,7 +75,7 @@ class TestLocalOverlaySkills(unittest.TestCase):
     def test_local_skill_has_source_local(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_git_root(tmp)
-            _write_skill(root / ".oracle" / "skills", "company-skill")
+            _write_skill(root / ".canary" / "skills", "company-skill")
             local = [s for s in SkillRegistry().discover(root) if s.name == "company-skill"]
             self.assertEqual(len(local), 1)
             self.assertEqual(local[0].source, "local")
@@ -84,7 +84,7 @@ class TestLocalOverlaySkills(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_git_root(tmp)
             _write_skill(
-                root / ".oracle" / "skills",
+                root / ".canary" / "skills",
                 "oracle-generate-test",
                 description="Company override",
             )
@@ -99,7 +99,7 @@ class TestLocalOverlaySkills(unittest.TestCase):
     def test_local_skill_discovered_from_subdirectory(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_git_root(tmp)
-            _write_skill(root / ".oracle" / "skills", "team-skill")
+            _write_skill(root / ".canary" / "skills", "team-skill")
             subdir = root / "src" / "components"
             subdir.mkdir(parents=True)
             names = {s.name for s in SkillRegistry().discover(subdir)}
@@ -131,7 +131,7 @@ class TestExecutableFields(unittest.TestCase):
     def test_cli_field_makes_skill_executable(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_git_root(tmp)
-            _write_skill(root / ".oracle" / "skills", "alpha", cli="scripts/cli.py")
+            _write_skill(root / ".canary" / "skills", "alpha", cli="scripts/cli.py")
             skill = SkillRegistry().find("alpha", root)
             self.assertEqual(skill.cli, "scripts/cli.py")
             self.assertIsNone(skill.entry)
@@ -141,7 +141,7 @@ class TestExecutableFields(unittest.TestCase):
     def test_entry_field_makes_skill_executable(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_git_root(tmp)
-            _write_skill(root / ".oracle" / "skills", "alpha", entry="pkg.mod:main")
+            _write_skill(root / ".canary" / "skills", "alpha", entry="pkg.mod:main")
             skill = SkillRegistry().find("alpha", root)
             self.assertEqual(skill.entry, "pkg.mod:main")
             self.assertTrue(skill.is_executable)
@@ -150,7 +150,7 @@ class TestExecutableFields(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_git_root(tmp)
             _write_skill(
-                root / ".oracle" / "skills", "alpha",
+                root / ".canary" / "skills", "alpha",
                 cli="scripts/cli.py", entry="pkg:main",
             )
             skill = SkillRegistry().find("alpha", root)
@@ -161,7 +161,7 @@ class TestExecutableFields(unittest.TestCase):
     def test_markdown_only_is_not_executable(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_git_root(tmp)
-            _write_skill(root / ".oracle" / "skills", "alpha", description="prose only")
+            _write_skill(root / ".canary" / "skills", "alpha", description="prose only")
             skill = SkillRegistry().find("alpha", root)
             self.assertFalse(skill.is_executable)
 
@@ -172,7 +172,7 @@ class TestResolveCliPath(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_git_root(tmp)
             skill_dir = _write_skill(
-                root / ".oracle" / "skills", "alpha", cli="scripts/cli.py",
+                root / ".canary" / "skills", "alpha", cli="scripts/cli.py",
             )
             (skill_dir / "scripts").mkdir()
             (skill_dir / "scripts" / "cli.py").write_text("#!/usr/bin/env python3\n")
@@ -185,7 +185,7 @@ class TestResolveCliPath(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_git_root(tmp)
             _write_skill(
-                root / ".oracle" / "skills", "alpha", cli="../../../etc/passwd",
+                root / ".canary" / "skills", "alpha", cli="../../../etc/passwd",
             )
             skill = SkillRegistry().find("alpha", root)
             with self.assertRaises(ValueError) as ctx:
@@ -196,7 +196,7 @@ class TestResolveCliPath(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_git_root(tmp)
             _write_skill(
-                root / ".oracle" / "skills", "alpha", cli="scripts/missing.py",
+                root / ".canary" / "skills", "alpha", cli="scripts/missing.py",
             )
             skill = SkillRegistry().find("alpha", root)
             with self.assertRaises(ValueError) as ctx:
@@ -207,7 +207,7 @@ class TestResolveCliPath(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_git_root(tmp)
             skill_dir = _write_skill(
-                root / ".oracle" / "skills", "alpha", cli="scripts/cli.py",
+                root / ".canary" / "skills", "alpha", cli="scripts/cli.py",
             )
             outside = root / "outside.py"
             outside.write_text("#!/usr/bin/env python3\n")
@@ -225,7 +225,7 @@ class TestResolveCliPath(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = _make_git_root(tmp)
             _write_skill(
-                root / ".oracle" / "skills", "alpha", description="prose only",
+                root / ".canary" / "skills", "alpha", description="prose only",
             )
             skill = SkillRegistry().find("alpha", root)
             with self.assertRaises(ValueError) as ctx:
@@ -262,7 +262,7 @@ class TestOracleSkillsCli(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name).resolve()
         (self.root / ".git").mkdir()
-        self.overlay = self.root / ".oracle" / "skills"
+        self.overlay = self.root / ".canary" / "skills"
         self.overlay.mkdir(parents=True)
         self._cwd = os.getcwd()
 
