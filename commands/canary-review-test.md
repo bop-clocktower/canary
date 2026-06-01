@@ -4,8 +4,8 @@ argument-hint: <file path or describe what to review>
 allowed-tools: Read, Glob, Grep, Bash
 ---
 
-# oracle-review-test
+# canary-review-test
 
-Use the `oracle-test-reviewer` agent to review the following:
+Use the `canary-test-reviewer` agent to review the following:
 
 $ARGUMENTS
