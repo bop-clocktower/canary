@@ -3,7 +3,7 @@
 tests/generated/
 
 # User project Oracle config (project-local, no secrets, but personal)
-.oracle/
+.canary/
 
 # Harness tooling scratch
 temp_harness/

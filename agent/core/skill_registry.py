@@ -55,7 +55,7 @@ class SkillInfo:
 
 
 class SkillRegistry:
-    """Discover skills from bundled defaults and ``.oracle/skills/`` overlays.
+    """Discover skills from bundled defaults and ``.canary/skills/`` overlays.
 
     Precedence: local overlay skills override bundled skills of the same name.
     Discovery walks from the given root up to the nearest ``.git`` directory
@@ -122,9 +122,9 @@ class SkillRegistry:
     # ------------------------------------------------------------------
 
     def _local_overlay_skills(self, candidate: Path) -> list[SkillInfo]:
-        """Skills in ``<candidate>/.oracle/skills/<name>/SKILL.md``."""
+        """Skills in ``<candidate>/.canary/skills/<name>/SKILL.md``."""
         results: list[SkillInfo] = []
-        overlay_dir = candidate / ".oracle" / "skills"
+        overlay_dir = candidate / ".canary" / "skills"
         if not overlay_dir.exists():
             return results
         for skill_dir in sorted(overlay_dir.iterdir()):

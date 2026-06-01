@@ -90,14 +90,14 @@ class TicketUpdater:
 
     Parameters
     ----------
-    oracle_dir : Path | str | None
+    canary_dir : Path | str | None
         Directory containing workflow mapping files.  Defaults to
-        ``.oracle/`` relative to the current working directory.
+        ``.canary/`` relative to the current working directory.
     """
 
-    def __init__(self, oracle_dir: Optional[Path | str] = None) -> None:
-        self.oracle_dir: Path = (
-            Path(oracle_dir) if oracle_dir is not None else Path.cwd() / ".oracle"
+    def __init__(self, canary_dir: Optional[Path | str] = None) -> None:
+        self.canary_dir: Path = (
+            Path(canary_dir) if canary_dir is not None else Path.cwd() / ".canary"
         )
 
     # ── public ────────────────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ class TicketUpdater:
                     f"Would transition {ticket_key}:\n"
                     f'  "{transition_result.from_status}" → "{transition_result.to_status}"\n'
                     f"  (resolved via qa_passed role in "
-                    f".oracle/workflow-{project_key}.json)\n\n"
+                    f".canary/workflow-{project_key}.json)\n\n"
                     "Re-run without --dry-run to apply."
                 )
             elif not transition_result.attempted:
@@ -329,7 +329,7 @@ class TicketUpdater:
         # Infer project key from ticket key to select the right Atlassian URL.
         pm = _TICKET_PROJECT.match(ticket_key)
         project_key = pm.group(1) if pm else None
-        base_url, auth_header = _jira_auth(project_key, self.oracle_dir)
+        base_url, auth_header = _jira_auth(project_key, self.canary_dir)
         if base_url is None:
             return False
 
@@ -433,7 +433,7 @@ class TicketUpdater:
         # Resolve target status name from workflow mapping.
         from agent.core.workflow_discovery import resolve_role
 
-        target_status = resolve_role(project_key, "qa_passed", self.oracle_dir)
+        target_status = resolve_role(project_key, "qa_passed", self.canary_dir)
         if target_status is None:
             return TransitionResult(
                 attempted=False,
@@ -448,7 +448,7 @@ class TicketUpdater:
             )
 
         # Need Jira creds to proceed — prefer URL stored in mapping for this project.
-        base_url, auth_header = _jira_auth(project_key, self.oracle_dir)
+        base_url, auth_header = _jira_auth(project_key, self.canary_dir)
         if base_url is None:
             return TransitionResult(
                 attempted=False,
@@ -516,14 +516,14 @@ class TicketUpdater:
 
 def _jira_auth(
     project_key: Optional[str] = None,
-    oracle_dir: Optional[Path] = None,
+    canary_dir: Optional[Path] = None,
 ) -> tuple[Optional[str], Optional[str]]:
     """
     Return (base_url, auth_header) for the given *project_key*, or (None, None)
     if credentials are missing.
 
     Resolution order for base_url:
-    1. ``atlassian_url`` stored in ``.oracle/workflow-{project_key}.json``
+    1. ``atlassian_url`` stored in ``.canary/workflow-{project_key}.json``
        (written by ``oracle workflow-discover`` or ``oracle workflow-init``).
     2. ``ATLASSIAN_URL`` environment variable.
 
@@ -535,7 +535,7 @@ def _jira_auth(
     if project_key:
         from agent.core.workflow_discovery import atlassian_url_for
 
-        stored = atlassian_url_for(project_key, oracle_dir)
+        stored = atlassian_url_for(project_key, canary_dir)
         if stored:
             base_url = stored.rstrip("/")
 

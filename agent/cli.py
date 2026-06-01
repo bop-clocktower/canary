@@ -399,7 +399,7 @@ def workflow_discover(
         "--project",
         "-p",
         help="Jira project key (e.g. OPTUM) or GitHub repo slug (owner/repo). "
-             "Defaults to all keys in .oracle/company.json jira_projects.",
+             "Defaults to all keys in .canary/company.json jira_projects.",
     ),
     refresh: bool = typer.Option(
         False, "--refresh", help="Re-discover even if a cached mapping already exists."
@@ -410,7 +410,7 @@ def workflow_discover(
 ) -> None:
     """
     Discover the Jira or GitHub workflow for one or more projects and persist
-    the mapping to .oracle/workflow-<key>.json.
+    the mapping to .canary/workflow-<key>.json.
 
     Requires ATLASSIAN_URL, ATLASSIAN_USER, and ATLASSIAN_TOKEN environment
     variables for Jira projects, or an authenticated `gh` CLI for GitHub repos.
@@ -424,8 +424,8 @@ def workflow_discover(
     if project:
         keys = [project]
     else:
-        # Read from .oracle/company.json if present.
-        company_path = Path.cwd() / ".oracle" / "company.json"
+        # Read from .canary/company.json if present.
+        company_path = Path.cwd() / ".canary" / "company.json"
         if company_path.exists():
             try:
                 data = json.loads(company_path.read_text(encoding="utf-8"))
@@ -436,7 +436,7 @@ def workflow_discover(
             print(
                 "[yellow]No project keys found.[/yellow] "
                 "Pass [bold]--project <key>[/bold] or add keys to "
-                "[bold].oracle/company.json[/bold] → [bold]jira_projects[/bold]."
+                "[bold].canary/company.json[/bold] → [bold]jira_projects[/bold]."
             )
             raise typer.Exit(1)
 
@@ -501,11 +501,11 @@ def workflow_show(
     if project:
         keys = [project]
     else:
-        oracle_dir = Path.cwd() / ".oracle"
-        if oracle_dir.is_dir():
+        canary_dir = Path.cwd() / ".canary"
+        if canary_dir.is_dir():
             keys = [
                 p.stem.removeprefix("workflow-")
-                for p in oracle_dir.glob("workflow-*.json")
+                for p in canary_dir.glob("workflow-*.json")
             ]
         if not keys:
             print("[yellow]No cached workflow mappings found.[/yellow]")
@@ -601,7 +601,7 @@ def workflow_init(
 
     Use this when you know the Jira status names for your project and don't
     want to (or can't) run oracle workflow-discover against a live Jira instance.
-    The mapping is written to .oracle/workflow-<PROJECT>.json with
+    The mapping is written to .canary/workflow-<PROJECT>.json with
     role_annotations_confirmed=true so oracle ticket-update uses it immediately.
 
     Example:
