@@ -31,6 +31,16 @@ contract between classifier and recommender.
 **Best for:** Adding, deprecating, or auditing framework
 support.
 
+### [Company Knowledge Guide](./company-knowledge.md)
+
+Configuration system for grounding AI generation in internal context —
+Confluence spaces, Jira projects, internal doc URLs, MCP servers, and
+Claude Code skill slugs. Covers the three-source merge cascade (org defaults
+→ project-local → env override), interactive scaffolding, MCP validation,
+and the `--- COMPANY KNOWLEDGE ---` prompt injection format.
+
+**Best for:** Setting up or debugging `.canary/company.json` in a project.
+
 ### [LLM Providers Guide](./llm-providers.md)
 
 **Removed in v3.0.** The `agent/llm/` provider layer was deleted —

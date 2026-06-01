@@ -143,6 +143,36 @@ edit the file directly before promoting it.
 See [Writing Good Prompts](Writing-Good-Prompts.md) for detailed
 guidance on getting it right the first time.
 
+## Using Canary Outside a Project Repo
+
+You don't need to be inside a test repo to use Canary's skills. Some skills —
+like login helpers or environment guides — are useful anywhere: in the Claude
+web extension, in a scratch directory, or during an exploratory testing session.
+
+### Installing a skill globally
+
+Ask your team lead or SDET for the skill directory, then install it once:
+
+```bash
+mkdir -p ~/.canary/skills/my-skill
+cp /path/to/SKILL.md ~/.canary/skills/my-skill/
+```
+
+After this, Claude can reference the skill from anywhere — including the
+Claude web extension — without you needing to open a terminal or navigate to
+a repo.
+
+### Example: login helper
+
+If your team has a login-helper skill installed globally, you can ask Claude
+from any context:
+
+> "Help me log in as a test user on stage-optum"
+
+Claude will walk you through the HealthSafe ID flow step by step, including
+which OTP code to enter and what to do if the T&C or passkey pages appear.
+No extension, no spreadsheet, no guessing.
+
 ## You're Not Replacing Yourself
 
 Generating a test with Canary still requires you to:
