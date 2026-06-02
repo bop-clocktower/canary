@@ -563,10 +563,12 @@ def skills_run(
         except ValueError as exc:
             print(f"[red]✗[/red] {exc}")
             raise typer.Exit(4)
-        result = subprocess.run(
-            [str(target), *forwarded],
-            cwd=str(skill.dir),
-        )
+        # Run .py skills with the same interpreter that runs canary so that
+        # canary's own venv dependencies (e.g. openpyxl) are available.
+        import sys as _sys
+        cmd = ([_sys.executable, str(target)] if str(target).endswith(".py")
+               else [str(target)])
+        result = subprocess.run(cmd + forwarded, cwd=str(skill.dir))
         raise typer.Exit(result.returncode)
 
     if skill.entry:
