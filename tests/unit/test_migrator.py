@@ -247,7 +247,7 @@ class TestMigrationReport(unittest.TestCase):
             root = Path(tmp)
             _make_harness_project(root, language="python")
             report = self.migrator.migrate(root, dry_run=True)
-            self.assertIn(report.shape, ("api", "e2e_ui", "frontend_unit", "performance", "unknown"))
+            self.assertIn(report.shape, ("api", "e2e_ui", "frontend_unit", "performance", "mobile", "unknown"))
 
     def test_report_has_manual_followups_for_unknown_framework(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -636,3 +636,23 @@ class TestNewConfigShapes(unittest.TestCase):
             ctx = self.migrator.detect(root)
             self.assertEqual(ctx.detected_shape, "integration")
             self.assertEqual(ctx.detected_framework, "testcontainers")
+
+    def test_detects_wdio_from_config_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="typescript")
+            (root / "wdio.conf.ts").write_text("export const config = {};")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "wdio")
+            self.assertEqual(ctx.detected_shape, "mobile")
+
+    def test_detects_wdio_from_package_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="typescript")
+            (root / "package.json").write_text(
+                json.dumps({"scripts": {"test": "wdio run wdio.conf.ts"}})
+            )
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "wdio")
+            self.assertEqual(ctx.detected_shape, "mobile")

@@ -70,6 +70,26 @@ python_functions = test_*
 """
         },
         "dirs": ["tests/performance"]
+    },
+    "wdio": {
+        "files": {
+            "wdio.conf.ts": """import type { Options } from "@wdio/types";
+
+export const config: Options.Testrunner = {
+  runner: "local",
+  specs: ["./tests/**/*.spec.ts"],
+  maxInstances: 1,
+  framework: "mocha",
+  mochaOpts: {
+    ui: "bdd",
+    timeout: 60000,
+  },
+  reporters: ["spec"],
+  services: [],
+};
+"""
+        },
+        "dirs": ["tests"]
     }
 }
 

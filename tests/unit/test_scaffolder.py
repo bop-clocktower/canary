@@ -38,6 +38,16 @@ class TestScaffolder(unittest.TestCase):
         self.assertTrue((self.test_root / "pytest.ini").exists())
         self.assertTrue((self.test_root / "tests").is_dir())
 
+    def test_scaffold_wdio(self):
+        result = self.scaffolder.scaffold("wdio", project_root=str(self.test_root))
+
+        self.assertEqual(result["framework"], "wdio")
+        self.assertIn("wdio.conf.ts", result["created_files"])
+        self.assertIn("tests", result["created_dirs"])
+
+        self.assertTrue((self.test_root / "wdio.conf.ts").exists())
+        self.assertTrue((self.test_root / "tests").is_dir())
+
     def test_invalid_framework(self):
         with self.assertRaises(ValueError):
             self.scaffolder.scaffold("nonexistent", project_root=str(self.test_root))
