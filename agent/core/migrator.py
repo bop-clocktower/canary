@@ -42,6 +42,9 @@ _CONFIG_PROBES: list[tuple[str, str, str, str]] = [
     ("stryker.config.mjs",    "stryker",        "mutation",      "config"),
     ("locust.conf",           "locust",         "load",          "config"),
     ("locustfile.py",         "locust",         "load",          "config"),
+    ("wdio.conf.ts",          "wdio",           "mobile",        "config"),
+    ("wdio.conf.js",          "wdio",           "mobile",        "config"),
+    ("wdio.conf.mjs",         "wdio",           "mobile",        "config"),
 ]
 
 # pyproject.toml section markers
@@ -59,6 +62,7 @@ _PACKAGE_SCRIPT_PATTERNS: list[tuple[re.Pattern, str, str]] = [
     (re.compile(r"\bk6\b"),         "k6",         "performance"),
     (re.compile(r"\blocust\b"),     "locust",     "load"),
     (re.compile(r"\bstryker\b"),    "stryker",    "mutation"),
+    (re.compile(r"\bwdio\b"),       "wdio",       "mobile"),
 ]
 
 # Python dependency → (framework, shape)
@@ -274,7 +278,7 @@ class HarnessMigrator:
         if effective_framework is None:
             followups.append(
                 "Could not auto-detect framework. Run `canary migrate --framework <name>` "
-                "with one of: playwright, vitest, pytest, k6."
+                "with one of: playwright, vitest, pytest, k6, wdio."
             )
             return MigrationReport(
                 framework="unknown",
