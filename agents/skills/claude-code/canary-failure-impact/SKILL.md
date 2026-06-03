@@ -1,0 +1,118 @@
+---
+name: canary-failure-impact
+description: >
+  For a given test, function, or code path, traces downstream effects and
+  produces a severity label. Investigates config/auth failures using the
+  consuming repo's declared user_catalog_skill. Optionally focuses on critical
+  paths when critical-areas.json is present.
+---
+
+# Canary: Failure Impact
+
+Answers "what actually breaks if this code fails and no test catches it?"
+Produces a severity label and a concrete description of downstream effects to
+help prioritise where to invest test coverage.
+
+## When to Use
+
+- Before deciding which gap to close first: "which of these matters most?"
+
+- When a test fails and you need to understand the blast radius
+
+- As Phase 3 of `/canary-test-pipeline`
+
+- When asked "what's the impact if this breaks?"
+
+## Input
+
+Provide one of:
+
+- A test file path: `tests/loyalty/points.spec.ts`
+
+- A function name: `accruePoints`
+
+- A code path: `src/loyalty/points.service.ts`
+
+If `.canary/critical-areas.json` is present, focus tracing on paths with
+`risk_score ≥ 0.7`.
+
+## Tracing Logic
+
+### Step 1 — Identify the code path
+
+Resolve the input to a specific file and function. If ambiguous, ask before
+proceeding.
+
+### Step 2 — Walk downstream dependents
+
+**With harness MCP available:** call `get_relationships` for the target file;
+collect all `imports` / `calls` / `depends_on` edges transitively (up to 3
+hops).
+
+**Fallback:** use `grep -r` to find files that import or call the target.
+Limit to direct dependents (1 hop) when MCP is unavailable.
+
+### Step 3 — Classify each dependent by domain
+
+Apply these heuristics to the dependent paths and function names:
+
+| Domain signal | Severity modifier |
+| --------------- | ------------------ |
+| billing / payment / charge / invoice | +2 (financial impact) |
+| auth / session / token / permission | +2 (security/access) |
+| compliance / audit / PHI / PII / HIPAA | +2 (regulatory) |
+| data / persist / write / store / commit | +1 (data integrity) |
+| UI / render / display / format / label | −1 (user-facing only, no data risk) |
+
+### Step 4 — Aggregate to severity label
+
+Base score starts at 2 (Medium). Sum modifiers from step 3. Cap at 4 (Critical).
+
+| Score | Label |
+| ------- | ------- |
+| 5+ | Critical |
+| 3–4 | High |
+| 2 | Medium |
+| 0–1 | Low |
+
+### Step 5 — User catalog investigation
+
+When a test failure in the target path involves an auth, permission, or
+configuration error:
+
+1. Read `user_catalog_skill` from `.canary/company.json`
+2. If present: invoke `canary skills run <user_catalog_skill>` with the
+   required attributes from the error context
+3. If a matching user/config is found: surface it as a suggestion
+4. If absent or no match: present constructively —
+
+   > "This failure may be a test user or test data configuration issue.
+   > Check your user catalog if you have one, or set up the required test
+   > data before re-running."
+
+## Output Format
+
+```text
+Failure impact — src/loyalty/points.service.ts::accruePoints
+
+  Severity: HIGH
+
+  If this breaks undetected:
+  · Members see incorrect balance in the partner portal  (user-facing)
+  · Points journal diverges from the ledger  (data integrity)
+  · Downstream: redemption.service.ts · tier-upgrade.service.ts ·
+    reporting.service.ts  (3 dependents)
+
+  Priority: write failure-path tests before next release
+  Suggested: /canary-write-test "test failure paths for accruePoints"
+```text
+
+## Related skills
+
+- `/canary-critical-areas` — produces `critical-areas.json` used for focus
+
+- `/canary-ci-ready` — uses the same user-catalog investigation pattern
+
+- `/canary-write-test` — generates tests for the identified high-impact gaps
+
+- `/canary-test-pipeline` — Phase 3
