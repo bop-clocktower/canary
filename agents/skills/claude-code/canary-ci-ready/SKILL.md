@@ -16,8 +16,11 @@ Use this before promoting a suite to CI, or as the convergence gate in
 ## When to Use
 
 - Before wiring a new test suite into CI for the first time
+
 - When a CI run is failing and you need to understand why
+
 - As part of `/canary-test-pipeline` (Phase 0 and convergence gate)
+
 - When asked "is this suite ready for CI?"
 
 ## The Five Checks
@@ -33,7 +36,9 @@ Default threshold: depth ≥ 2 for all endpoints in critical areas. Override wit
 `--threshold <n>`.
 
 - **pass** — all critical-area endpoints at depth ≥ threshold
+
 - **warn** — some endpoints at depth 1 (hit but unasserted)
+
 - **fail** — any critical-area endpoint at depth 0
 
 ### 2. Flakiness
@@ -45,7 +50,9 @@ A quarantined test is acceptable only when it has a linked open issue (Jira or
 GitHub). Check issue state:
 
 - Linked issue **open** → counts as verified (documented, tracked)
+
 - Linked issue **closed** → flag: quarantine should be resolved
+
 - **No linked issue** → fail: unlinked quarantine blocks CI-ready
 
 ### 3. Assertion quality
@@ -53,7 +60,9 @@ GitHub). Check issue state:
 Read depth scores from the inventory. In critical-area endpoints:
 
 - **pass** — all tests at depth ≥ 2 (shaped assertions: result.ok or equivalent)
+
 - **warn** — some tests at depth 1 (status-only assertions)
+
 - **fail** — majority of critical-path tests at depth 1
 
 ### 4. Critical path coverage
@@ -64,8 +73,11 @@ Cross-reference the top 5 risk-scored areas from `critical-areas.json` against
 `test-inventory.json`:
 
 - **pass** — all top-5 areas have at least one test at depth ≥ 1
+
 - **warn** — one area uncovered
+
 - **fail** — two or more top areas uncovered
+
 - **skip** — `critical-areas.json` absent (note this in output, not a failure)
 
 ### 5. Suite runtime
@@ -73,7 +85,9 @@ Cross-reference the top 5 risk-scored areas from `critical-areas.json` against
 Read `test-results/run-history.ndjson`. Use the p95 of the last 10 runs.
 
 - **pass** — p95 under the configured timeout (default: 5 minutes)
+
 - **warn** — p95 between 5–10 minutes
+
 - **fail** — p95 over 10 minutes, or no run history (cannot assess)
 
 ## User Catalog Investigation
@@ -94,7 +108,7 @@ Never reference a specific catalog skill by name in output.
 
 ## Output Format
 
-```
+```text
 CI Readiness — <repo-name>
 
   ✓ / ⚠ / ✗   <check name>   <brief finding>
@@ -103,7 +117,7 @@ CI Readiness — <repo-name>
   Score: N/5 — CI-READY  or  NOT CI-READY
 
   <gap list with suggested next actions>
-```
+```text
 
 Score of 5/5 = CI-READY. Any fail = NOT CI-READY. Warns do not block.
 
@@ -114,5 +128,7 @@ Score of 5/5 = CI-READY. Any fail = NOT CI-READY. Warns do not block.
 ## Related skills
 
 - `/canary-test-pipeline` — orchestrates this skill as Phase 0 and convergence gate
+
 - `/canary-critical-areas` — produces `critical-areas.json` used by check 4
+
 - `canary-unquarantine` (overlay) — resolves quarantined tests once bugs are fixed
