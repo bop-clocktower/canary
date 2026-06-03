@@ -16,15 +16,21 @@ help prioritise where to invest test coverage.
 ## When to Use
 
 - Before deciding which gap to close first: "which of these matters most?"
+
 - When a test fails and you need to understand the blast radius
+
 - As Phase 3 of `/canary-test-pipeline`
+
 - When asked "what's the impact if this breaks?"
 
 ## Input
 
 Provide one of:
+
 - A test file path: `tests/loyalty/points.spec.ts`
+
 - A function name: `accruePoints`
+
 - A code path: `src/loyalty/points.service.ts`
 
 If `.canary/critical-areas.json` is present, focus tracing on paths with
@@ -51,7 +57,7 @@ Limit to direct dependents (1 hop) when MCP is unavailable.
 Apply these heuristics to the dependent paths and function names:
 
 | Domain signal | Severity modifier |
-|---------------|------------------|
+| --------------- | ------------------ |
 | billing / payment / charge / invoice | +2 (financial impact) |
 | auth / session / token / permission | +2 (security/access) |
 | compliance / audit / PHI / PII / HIPAA | +2 (regulatory) |
@@ -63,7 +69,7 @@ Apply these heuristics to the dependent paths and function names:
 Base score starts at 2 (Medium). Sum modifiers from step 3. Cap at 4 (Critical).
 
 | Score | Label |
-|-------|-------|
+| ------- | ------- |
 | 5+ | Critical |
 | 3–4 | High |
 | 2 | Medium |
@@ -86,7 +92,7 @@ configuration error:
 
 ## Output Format
 
-```
+```text
 Failure impact — src/loyalty/points.service.ts::accruePoints
 
   Severity: HIGH
@@ -99,11 +105,14 @@ Failure impact — src/loyalty/points.service.ts::accruePoints
 
   Priority: write failure-path tests before next release
   Suggested: /canary-write-test "test failure paths for accruePoints"
-```
+```text
 
 ## Related skills
 
 - `/canary-critical-areas` — produces `critical-areas.json` used for focus
+
 - `/canary-ci-ready` — uses the same user-catalog investigation pattern
+
 - `/canary-write-test` — generates tests for the identified high-impact gaps
+
 - `/canary-test-pipeline` — Phase 3
