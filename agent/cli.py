@@ -16,7 +16,30 @@ from typing import Optional
 import typer
 from rich import print
 
-app = typer.Typer()
+app = typer.Typer(no_args_is_help=True)
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        from importlib.metadata import PackageNotFoundError, version as _pkg_version
+        from agent.ui.banner import print_banner
+        try:
+            ver = _pkg_version("canary-test-ai")
+        except PackageNotFoundError:
+            ver = "unknown"
+        print_banner(version=ver)
+        raise typer.Exit()
+
+
+@app.callback()
+def _main(
+    version: Optional[bool] = typer.Option(
+        None, "--version", "-V",
+        callback=_version_callback, is_eager=True,
+        help="Show version and exit.",
+    ),
+) -> None:
+    """Canary — AI-powered test automation agent."""
 
 
 @app.command()
@@ -444,6 +467,61 @@ def version():
     except PackageNotFoundError:
         ver = "unknown"
     print_banner(version=ver)
+
+
+@app.command()
+def upgrade(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without upgrading."),
+):
+    """
+    Upgrade Canary to the latest published version.
+
+    Uses pipx if Canary was installed that way; falls back to pip otherwise.
+    """
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+    try:
+        current = _pkg_version("canary-test-ai")
+    except PackageNotFoundError:
+        current = "unknown"
+
+    print(f"[dim]Current version: {current}[/dim]")
+
+    if dry_run:
+        print("[dim]Dry run — run without --dry-run to apply the upgrade.[/dim]")
+        return
+
+    # Try pipx first (preferred install method).
+    pipx = subprocess.run(["pipx", "upgrade", "canary-test-ai"], capture_output=True, text=True)
+    if pipx.returncode == 0:
+        try:
+            updated = _pkg_version("canary-test-ai")
+        except PackageNotFoundError:
+            updated = "unknown"
+        if updated != current:
+            print(f"[green]✓ {current} → {updated}[/green]")
+        else:
+            print(f"[dim]Already up to date ({current})[/dim]")
+        return
+
+    # Fall back to pip.
+    print("[yellow]pipx not found — trying pip...[/yellow]")
+    pip = subprocess.run(
+        [_sys.executable, "-m", "pip", "install", "--upgrade", "canary-test-ai"],
+        capture_output=True, text=True,
+    )
+    if pip.returncode == 0:
+        try:
+            updated = _pkg_version("canary-test-ai")
+        except PackageNotFoundError:
+            updated = "unknown"
+        if updated != current:
+            print(f"[green]✓ {current} → {updated}[/green]")
+        else:
+            print(f"[dim]Already up to date ({current})[/dim]")
+    else:
+        print(f"[red]Upgrade failed.[/red]\n{pip.stderr.strip()}")
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
