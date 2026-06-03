@@ -16,8 +16,11 @@ health report on exit.
 ## When to Use
 
 - Starting a new test suite from scratch
+
 - Improving a suite that is not yet CI-ready
+
 - After a major feature lands and test coverage needs updating
+
 - When asked to "bring this suite to CI-ready"
 
 ## Phases
@@ -28,6 +31,7 @@ Run `canary-ci-ready` as a baseline.
 
 - If **CI-READY**: inform the user and offer to exit or run an improvement sweep
   anyway.
+
 - If **NOT CI-READY**: show the score, continue to Phase 1.
 
 ### Phase 1 — Assess (`/canary-critical-areas`)
@@ -79,16 +83,19 @@ declared blockers.
 After Phase 5:
 
 - **ci-ready passes** → emit health report and exit
+
 - **no new gaps found** (Phase 1 produces empty list) → emit health report,
   note remaining gaps are outside current signal, suggest manual review
+
 - **gaps remain and user confirms** → loop back to Phase 1
+
 - **user stops** → emit health report with current state
 
 ## Health Report
 
 Emit on every exit (convergence or user stop):
 
-```
+```text
 Test Pipeline — run complete
 
   Areas assessed:   N   →  N now at depth 3+  (+N this run)
@@ -97,18 +104,24 @@ Test Pipeline — run complete
   CI-Ready:         CI-READY  or  NOT CI-READY (N/5 checks)
 
   <if not ready> Next: /canary-test-pipeline --continue, or address manually.
-```
+```text
 
 ## Flags
 
 - `--continue` — skip Phase 0 baseline (resume a prior run)
+
 - `--diff <ref>` — pass to `canary-critical-areas` to scope assessment to a diff
+
 - `--threshold <n>` — pass to `canary-ci-ready` (default: 2)
 
 ## Related skills
 
 - `/canary-ci-ready` — Phase 0 and convergence gate
+
 - `/canary-critical-areas` — Phase 1
+
 - `/canary-edge-cases` — Phase 2
+
 - `/canary-failure-impact` — Phase 3
+
 - `/canary-write-test` — Phase 4
