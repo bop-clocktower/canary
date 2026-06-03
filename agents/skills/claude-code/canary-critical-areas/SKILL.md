@@ -16,8 +16,11 @@ is unavailable.
 ## When to Use
 
 - Before writing new tests: "where should I focus?"
+
 - After a large diff lands: "what did this change put at risk?"
+
 - As Phase 1 of `/canary-test-pipeline`
+
 - When asked to prioritise test coverage
 
 ## Signals
@@ -28,7 +31,7 @@ Collect all available signals, score each area, and rank by composite risk score
 
 ```bash
 git log --stat --since="90 days ago" -- <path> | grep -c "^"
-```
+```text
 
 Files changed most frequently in the last 90 days score higher. Normalise to
 0–1 across all files in scope.
@@ -59,15 +62,15 @@ especially risky.
 
 ## Risk Score
 
-```
+```text
 risk_score = (churn * 0.35) + (dependents * 0.35) + (business_critical * 0.30) + depth_boost
-```
+```text
 
 Capped at 1.0. Round to 2 decimal places.
 
 ## Output
 
-```
+```text
 Critical areas — <repo> (<N> files analysed)
 
   1. src/loyalty/points.service.ts       risk 0.92  ████████████
@@ -79,7 +82,7 @@ Critical areas — <repo> (<N> files analysed)
      recommended: api tests · /canary-failure-impact suggested
 
   ...
-```
+```text
 
 Show at most 10 areas. If more than 10 qualify, note the total and offer to
 show all.
@@ -102,7 +105,7 @@ write `.canary/critical-areas.json`:
     }
   ]
 }
-```
+```text
 
 This file is consumed as opt-in context by `/canary-edge-cases` and
 `/canary-failure-impact`.
@@ -111,11 +114,15 @@ This file is consumed as opt-in context by `/canary-edge-cases` and
 
 - `--diff <git ref>` — scope analysis to files changed in a diff
   (`git diff <ref>...HEAD`)
+
 - `--save` — write `critical-areas.json`
 
 ## Related skills
 
 - `/canary-ci-ready` — check 4 consumes `critical-areas.json`
+
 - `/canary-edge-cases` — focuses edge cases on critical areas when JSON present
+
 - `/canary-failure-impact` — focuses tracing on critical paths when JSON present
+
 - `/canary-test-pipeline` — Phase 1
