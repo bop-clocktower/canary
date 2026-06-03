@@ -15,16 +15,23 @@ that work in demos but break in production.
 ## When to Use
 
 - After writing happy-path tests: "what else should I test?"
+
 - When reviewing a feature for robustness
+
 - As Phase 2 of `/canary-test-pipeline`
+
 - When asked "what edge cases should I cover?"
 
 ## Input
 
 Provide one of:
+
 - A feature description: `"points accrual on tier upgrade"`
+
 - A function signature: `accruePoints(memberId: string, amount: number): Promise<Result>`
+
 - A test file path: `tests/loyalty/points.spec.ts`
+
 - Or nothing — Canary will infer from open files and recent context
 
 If `.canary/critical-areas.json` is present, focus edge case discovery on the
@@ -71,19 +78,22 @@ Screen reader text for dynamic content. Colour contrast for status indicators.
 ## Output Depth
 
 Governed by `--level` flag. Infer from context when not specified:
+
 - User is asking from a test file or uses technical language → `sdet`
+
 - User describes themselves as new or asks "why" questions → `junior`
+
 - User mentions manual testing or is non-technical → `manual`
 
 | Level | Audience | Output style |
-|-------|----------|-------------|
+| ------- | ---------- | ------------- |
 | `sdet` | Senior SDETs | Bullet list of cases only |
 | `junior` | Junior SDETs | Cases + one-line *why this matters* |
 | `manual` | Manual testers | Cases + numbered reproduction steps |
 
 ## Output Format (`sdet` example)
 
-```
+```text
 Edge cases — points accrual on tier upgrade
 
   Boundary values
@@ -99,7 +109,7 @@ Edge cases — points accrual on tier upgrade
   ...
 
   Suggested next: /canary-write-test "add edge case tests for accruePoints boundary values"
-```
+```text
 
 ## Flags
 
@@ -108,5 +118,7 @@ Edge cases — points accrual on tier upgrade
 ## Related skills
 
 - `/canary-critical-areas` — produces `critical-areas.json` used for focus
+
 - `/canary-write-test` — generates tests for the surfaced cases
+
 - `/canary-test-pipeline` — Phase 2
