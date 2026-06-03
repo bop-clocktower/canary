@@ -1,0 +1,11 @@
+name: canary-ci-ready
+version: "1.0.0"
+description: Test intelligence skill
+stability: static
+triggers:
+  - manual
+platforms:
+  - claude-code
+type: rigid
+tier: 1
+
