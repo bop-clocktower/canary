@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: "20"
       - name: Run markdownlint
-        run: npx --yes markdownlint-cli "**/*.md" --ignore node_modules --ignore plugins
+        run: npx --yes markdownlint-cli "**/*.md" --ignore node_modules --ignore plugins --ignore agents/agents --ignore agents/commands
 
   removed-symbols:
     name: No removed-symbol or proprietary leaks

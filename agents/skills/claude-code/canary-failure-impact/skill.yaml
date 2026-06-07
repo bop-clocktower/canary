@@ -7,6 +7,7 @@ triggers:
 platforms:
   - claude-code
 type: rigid
+tools: []
 tier: 1
-  depends_on:
+depends_on:
     - canary-ci-ready

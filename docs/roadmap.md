@@ -558,10 +558,7 @@ when the project already holds an active license.
 
 ### Migrate all LLM-dependent tasks to keyless slash commands
 
-- **Status:** done — Phases 1–3 shipped; Phase 4 (keyed-path removal at v3.0) is
-  planned in [ADR 0004](adr/0004-remove-keyed-paths-at-v3.md) and gated on the
-  Harness-pull decision. Issue #127 closed 2026-05-26 (migration complete;
-  removal tracked separately).
+- **Status:** done — all four phases shipped. Issue #127 closed 2026-05-26.
 - **Issue:**
   [#127](https://github.com/bop-clocktower/canary/issues/127)
   (closed)
@@ -577,6 +574,8 @@ when the project already holds an active license.
   [cli-deprecation.md](specs/cli-deprecation.md) · plan
   [cli-deprecation.md](plans/cli-deprecation.md) ·
   [ADR 0003](adr/0003-deprecate-oracle-generate.md)
+- **Phase 4 (keyed-path removal, done — v5.0.0):**
+  [ADR 0004](adr/0004-remove-keyed-paths-at-v3.md)
 - **Summary:** Eliminate the API key requirement from Oracle's user-facing
   surface by moving every LLM-dependent task into Claude Code slash commands
   that use the host's session (no `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /

@@ -12,6 +12,23 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-06-07
+
+> **Breaking change.** The `canary generate`, `canary feedback`, and the
+> GitHub Action have been removed. See the migration guide below.
+
+### Migration guide
+
+| Removed surface | Replacement |
+| --- | --- |
+| `canary generate "<prompt>"` | `/canary-write-test` in Claude Code (no API key) |
+| `canary generate "<prompt>" --recommend-only` | `canary recommend "<prompt>"` |
+| `canary feedback` | no replacement — feedback loop is built into the slash commands |
+| GitHub Action (`uses: bop-clocktower/canary@vN`) | `/canary-write-test` in Claude Code |
+
+Pin to `@v4` or earlier to keep the old action while you migrate. The action
+file at this version is a hard-error shim that exits 1 with a migration message.
+
 ### Added
 
 - **Test Intelligence Skills** — five new bundled slash commands for suite-level
@@ -44,6 +61,9 @@ under the project's former name) are documented in the
 - **WebdriverIO (`wdio`) migrate support** — `wdio.conf.ts/.js/.mjs` config
   probe, `wdio` package.json script pattern, and a `wdio.conf.ts` + `tests/`
   scaffold (PR #202).
+- **`action.yml` hard-error shim** — consumers who pin `@v5` receive a
+  `::error::` message with migration instructions and exit 1, rather than
+  "action not found".
 
 ### Changed
 
@@ -55,6 +75,16 @@ under the project's former name) are documented in the
 
 - Added `openpyxl>=3.1` to `[project.dependencies]` so xlsx-import skills work
   out of the box (PR #203).
+
+### Removed
+
+- **`canary generate`** — deprecated in v4.1.0; removed. Use `/canary-write-test`.
+- **`canary feedback`** — deprecated in v4.1.0; removed.
+- **`agent/llm/`** — entire LLM provider matrix (`anthropic`, `openai`, `gemini`,
+  `codex`, `mock`). No callers remain after the orchestrator was removed.
+- **`agent/core/orchestrator.py`** — `CanaryOrchestrator` and all private helpers.
+- **`agent/core/selector_healer.py`**, **`agent/core/feedback.py`**,
+  **`agent/core/code_extractor.py`** — last stranded modules from the keyed path.
 
 ## [4.1.0] - 2026-06-01
 
@@ -118,6 +148,7 @@ release line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a
   CI guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v4.1.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/bop-clocktower/canary/compare/v4.1.0...v5.0.0
 [4.1.0]: https://github.com/bop-clocktower/canary/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/bop-clocktower/canary/compare/v3.0.0...v4.0.0
