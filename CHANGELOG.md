@@ -15,7 +15,7 @@ under the project's former name) are documented in the
 ### Added
 
 - **Test Intelligence Skills** — five new bundled slash commands for suite-level
-  analysis (PR #205, closes canary-capillary#35–38):
+  analysis (PR #205):
   - **`/canary-ci-ready`** — scores a suite across 5 dimensions: coverage depth,
     flakiness (quarantined tests with linked open issues count as verified),
     assertion quality, critical path coverage, and suite runtime. Looks up a

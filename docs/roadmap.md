@@ -283,8 +283,7 @@ updated: 2026-06-01
 ### Test Intelligence Skills
 
 - **Status:** done — PR #205
-- **Issue:** canary-capillary#35–38
-- **Spec:** [Capillary/canary-capillary — docs/changes/test-intelligence/proposal.md](https://github.com/Capillary/canary-capillary/blob/main/docs/changes/test-intelligence/proposal.md)
+- **Spec:** private overlay (internal proposal doc)
 - **Summary:** Five bundled slash commands for suite-level analysis.
   `/canary-ci-ready` scores across 5 dimensions (coverage depth, flakiness with
   quarantine-aware acceptance, assertion quality, critical path coverage, runtime);
