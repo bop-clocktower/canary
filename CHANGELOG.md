@@ -12,6 +12,50 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **Test Intelligence Skills** — five new bundled slash commands for suite-level
+  analysis (PR #205):
+  - **`/canary-ci-ready`** — scores a suite across 5 dimensions: coverage depth,
+    flakiness (quarantined tests with linked open issues count as verified),
+    assertion quality, critical path coverage, and suite runtime. Looks up a
+    `user_catalog_skill` from `.canary/company.json` for user-catalog–aware
+    auth-flow checks; absent → constructive degradation message.
+  - **`/canary-test-pipeline`** — multi-phase orchestrator (Gate → Assess →
+    Discover → Impact → Generate → Verify) that loops until the suite is
+    CI-ready or the user stops. Emits a health report on exit. Follows the
+    `harness:docs-pipeline` convergence pattern.
+  - **`/canary-critical-areas`** — risk-ranked area list using git churn,
+    downstream dependents (harness graph → static import fallback), and
+    business-critical flags. Writes an optional `critical-areas.json` artifact
+    consumed by the other analysis skills.
+  - **`/canary-edge-cases`** — surfaces edge cases across 6 categories (boundary
+    values, race conditions, locale/timezone, partial network, unexpected input
+    shapes, accessibility). Output depth scales with `--level sdet|junior|manual`;
+    focuses on critical areas when `critical-areas.json` is present.
+  - **`/canary-failure-impact`** — traces downstream effects of a test, function,
+    or code path failing undetected. Domain heuristics boost severity for
+    billing/auth/compliance paths. Produces a Critical/High/Medium/Low label
+    with an affected-dependency list and suggested next action.
+- **`canary --version` / `canary -V`** — conventional version flag via Typer
+  callback, alongside the existing `canary version` subcommand (PR #204).
+- **`canary upgrade`** — upgrades to the latest published version using pipx
+  (preferred), with a pip fallback for non-pipx installs (PR #204).
+- **WebdriverIO (`wdio`) migrate support** — `wdio.conf.ts/.js/.mjs` config
+  probe, `wdio` package.json script pattern, and a `wdio.conf.ts` + `tests/`
+  scaffold (PR #202).
+
+### Changed
+
+- `.py` skill CLIs now run under canary's own venv interpreter (`sys.executable`)
+  instead of the system Python resolved by their shebang — skills that depend on
+  venv packages (e.g. `openpyxl`) no longer require manual injection (PR #203).
+
+### Fixed
+
+- Added `openpyxl>=3.1` to `[project.dependencies]` so xlsx-import skills work
+  out of the box (PR #203).
+
 ## [4.1.0] - 2026-06-01
 
 ### Added

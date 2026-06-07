@@ -278,6 +278,28 @@ updated: 2026-06-01
 - **Blockers:** none
 - **Plan:** [docs/plans/onboarding.md](plans/onboarding.md)
 
+## Test Intelligence
+
+### Test Intelligence Skills
+
+- **Status:** done — PR #205
+- **Spec:** private overlay (internal proposal doc)
+- **Summary:** Five bundled slash commands for suite-level analysis.
+  `/canary-ci-ready` scores across 5 dimensions (coverage depth, flakiness with
+  quarantine-aware acceptance, assertion quality, critical path coverage, runtime);
+  looks up `user_catalog_skill` from `.canary/company.json` for user-catalog–aware
+  checks. `/canary-test-pipeline` multi-phase orchestrator
+  (Gate → Assess → Discover → Impact → Generate → Verify) with convergence loop
+  and health report, following the `harness:docs-pipeline` pattern.
+  `/canary-critical-areas` risk-ranks areas via git churn + harness graph +
+  business-critical flags; writes optional `critical-areas.json` for downstream
+  skills. `/canary-edge-cases` surfaces 6 edge-case categories with
+  `--level sdet|junior|manual` depth scaling. `/canary-failure-impact` traces
+  downstream severity (Critical/High/Medium/Low) with billing/auth/compliance
+  domain boosts.
+- **Blockers:** none
+- **Plan:** none
+
 ## Agent Quality and Voice
 
 ### MCP analyze_file Output Contract
@@ -494,6 +516,27 @@ when the project already holds an active license.
   Oracle's edge is integration tests, E2E, API contract tests, and
   cross-service flows — exactly where the team's testing lives. This decision
   unblocks the keyless CLI companions work below.
+- **Blockers:** none
+- **Plan:** none
+
+### `canary upgrade` and `--version` flag
+
+- **Status:** done — PR #204
+- **Spec:** none
+- **Summary:** `canary --version` / `canary -V` added via Typer callback (works
+  alongside the existing `canary version` subcommand). `canary upgrade` upgrades
+  to the latest published version using pipx (preferred) with a pip fallback for
+  non-pipx installs.
+- **Blockers:** none
+- **Plan:** none
+
+### WebdriverIO migrate support
+
+- **Status:** done — PR #202
+- **Spec:** none
+- **Summary:** `wdio.conf.ts/.js/.mjs` config file probes (shape: `mobile`), `wdio`
+  package.json script pattern, and a full Scaffolder entry generating `wdio.conf.ts`
+  (local runner, Mocha, spec reporter) and `tests/` directory.
 - **Blockers:** none
 - **Plan:** none
 
