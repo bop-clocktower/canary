@@ -1,7 +1,8 @@
-# ADR 0004 — Remove the keyed CLI surface at v3.0
+# ADR 0004 — Remove the keyed CLI surface at v5.0.0
 
-**Status:** proposed
+**Status:** accepted
 **Date:** 2026-05-26
+**Implemented:** 2026-06-07 (v5.0.0)
 **Deciders:** Bri Stevenski (upstream maintainer)
 **Supersedes:** Completes the work begun in
 [ADR 0003](0003-deprecate-oracle-generate.md)
@@ -9,13 +10,25 @@
 [ADR 0002](0002-self-heal-as-slash-command.md), roadmap item
 _"Migrate all LLM-dependent tasks to keyless slash commands"_
 
-> **Pending architecture decision (2026-05-27).** This ADR assumes
-> Oracle continues as a standalone repository with its own release
-> cadence. The Wednesday architecture meeting will decide whether
-> Oracle stays separate or is pulled into Harness as a persona.
+> **Architecture decision resolved (2026-05-28).** Oracle/Canary
+> stays separate from Harness — complementary, not merged.
+> This ADR proceeded as written. The "v3.0" framing in the original
+> draft became v5.0.0 after the Oracle→Canary rebrand (v4.0.0/4.1.0
+> shipped between this ADR being drafted and implemented).
 >
-> - If **stays separate:** this ADR proceeds as written — flip to
->   `accepted`, write the v3 spec + plan, and cut a release branch.
+> **Implementation notes (v5.0.0):**
+>
+> - `canary generate` and `canary feedback` were already removed in
+>   an earlier commit (`feat(v3)!: remove LLM abstraction layer`).
+> - `agent/llm/` provider matrix, `orchestrator.py`,
+>   `selector_healer.py`, and `feedback.py` were removed in that
+>   same commit.
+> - `action.yml` was removed in Phase 3; v5.0.0 restores it as a
+>   hard-error shim (Alternative 2) pointing users at the plugin.
+> - `agent/core/code_extractor.py` was the last remaining deletion
+>   target — removed in v5.0.0 along with its orphaned test.
+> - `canary recommend` was already implemented as its own command
+>   prior to this release.
 > - If **pulled into Harness:** the _deletions_ listed here still
 >   apply (the keyed surface goes regardless), but the framing of
 >   "v3.0 release" becomes a Harness persona migration rather than

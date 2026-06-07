@@ -1,0 +1,23 @@
+name: 'Canary Test Generator'
+description: >
+  [REMOVED in v5.0.0] This GitHub Action has been removed.
+  Migrate to the Canary Claude Code plugin — use the /canary-write-test
+  slash command (no API key required).
+author: 'bri-stevenski'
+
+branding:
+  icon: 'zap'
+  color: 'purple'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Canary Action removed
+      shell: bash
+      run: |
+        echo "::error::The Canary GitHub Action was removed in v5.0.0."
+        echo "::error::Migrate to the Canary Claude Code plugin:"
+        echo "::error::  1. Install: pipx install git+https://github.com/bop-clocktower/canary@latest"
+        echo "::error::  2. Use /canary-write-test in a Claude Code session (no API key required)."
+        echo "::error::Pin to @v4 or earlier to keep using the old action while you migrate."
+        exit 1
