@@ -1,5 +1,5 @@
 name: canary-test-pipeline
-version: "1.0.0"
+version: '1.0.0'
 description: Test intelligence skill
 stability: static
 triggers:
@@ -7,9 +7,11 @@ triggers:
 platforms:
   - claude-code
 type: rigid
+tools: []
 tier: 1
-  depends_on:
-    - canary-ci-ready
-    - canary-critical-areas
-    - canary-edge-case-discovery
-    - canary-failure-impact
+depends_on:
+  - canary-ci-ready
+  - canary-critical-areas
+  - canary-edge-case-discovery
+  - canary-failure-impact
+  
