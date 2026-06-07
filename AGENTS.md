@@ -121,10 +121,8 @@ docs/branching-convention
   — Scans test fixture and helper modules to extract named exports,
   injected as a "Project Symbols" section in the prompt so generated
   tests import real identifiers.
-- **Code Extractor:** [agent/core/code_extractor.py](agent/core/code_extractor.py)
-  — Strips conversational prose and Markdown fences from raw LLM
-  responses, returning bare runnable code. Guards against providers that
-  wrap output in narrative introductions.
+- **Code Extractor:** removed in v5.0 — stripped LLM response prose; last
+  caller was the orchestrator, which was removed with the keyed CLI surface.
 - **Selector Healer:** removed in v3.0 — DOM-aware selector fix logic was
   part of the LLM generation pipeline (orchestrator). Replaced by the
   `/canary-debug-flake` slash command.
