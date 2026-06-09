@@ -93,6 +93,43 @@ _TEST_GLOBS = [
     "src/**/*.test.ts",
 ]
 
+# Detects playwright UI fixture params — `async ({ page,` / `async ({browser,` etc.
+# Matches fixture destructuring specifically (inside an async arrow function param)
+# to avoid false positives from variable names or comments.
+_PW_UI_FIXTURE_RE = re.compile(
+    r"async\s*\(\s*\{[^}]*\b(?:page|browser)\b",
+    re.MULTILINE,
+)
+
+
+def _infer_playwright_shape(root: Path) -> str:
+    """Return 'api' when no playwright spec file uses page/browser fixtures.
+
+    UI suites always reference ``page`` or ``browser`` in at least one test's
+    async fixture params. API suites never do — they use ``request`` or custom
+    wrappers. If we scan all spec files and find zero UI fixture usage, the
+    suite is API-shaped.
+
+    Returns 'e2e_ui' (the default) when any UI signal is found or no spec
+    files exist.
+    """
+    spec_globs = [
+        "tests/**/*.spec.ts", "tests/**/*.spec.js",
+        "test/**/*.spec.ts",  "test/**/*.spec.js",
+    ]
+    total = 0
+    for glob in spec_globs:
+        for path in root.glob(glob):
+            try:
+                content = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            total += 1
+            if _PW_UI_FIXTURE_RE.search(content):
+                return "e2e_ui"
+
+    return "api" if total > 0 else "e2e_ui"
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -242,6 +279,16 @@ class HarnessMigrator:
             )
 
         harness_config = self._load_harness_config(project_root)
+        # Merge canary_shape from .canary/company.json into the config dict so
+        # _detect_framework can honour an explicit shape override.
+        canary_company = project_root / ".canary" / "company.json"
+        if canary_company.exists():
+            try:
+                overlay = json.loads(canary_company.read_text())
+                if "canary_shape" in overlay:
+                    harness_config = {**harness_config, "canary_shape": overlay["canary_shape"]}
+            except (OSError, json.JSONDecodeError):
+                pass
         framework, shape, source, confidence = self._detect_framework(project_root, harness_config)
 
         return MigrationContext(
@@ -430,9 +477,24 @@ class HarnessMigrator:
     ) -> tuple[Optional[str], str, str, str]:
         """Return (framework, shape, source, confidence)."""
 
+        # 0. Explicit override in .canary/company.json ("canary_shape" field)
+        explicit_shape = config.get("canary_shape", "").strip().lower()
+        if explicit_shape:
+            # Still detect the framework via normal probes, but honour the shape.
+            for filename, framework, _shape, confidence in _CONFIG_PROBES:
+                if (root / filename).exists():
+                    return framework, explicit_shape, filename, confidence
+            # Fall through to content probes; shape override still applies below.
+
         # 1. Dedicated config file (highest confidence)
         for filename, framework, shape, confidence in _CONFIG_PROBES:
             if (root / filename).exists():
+                # For playwright config files, run a secondary heuristic to
+                # distinguish API suites (request fixture) from UI suites (page).
+                if framework == "playwright" and shape == "e2e_ui":
+                    inferred = _infer_playwright_shape(root)
+                    if inferred != shape:
+                        return framework, inferred, filename, "content"
                 return framework, shape, filename, confidence
 
         # 2. pyproject.toml section markers then dependency scan
