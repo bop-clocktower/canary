@@ -531,6 +531,9 @@ def upgrade(
 from agent.history.cli import history_app
 app.add_typer(history_app, name="history")
 
+from agent.analysis.cli import analyze_app
+app.add_typer(analyze_app, name="analyze")
+
 
 # ---------------------------------------------------------------------------
 # `canary skills` — discovery + invocation of bundled and overlay skills.
