@@ -22,8 +22,8 @@ docstrings. Delete the directory and re-run for a clean rebuild.
 Usage:
 
     python3 scripts/extract_python_docstrings.py
-    npx -p @harness-engineering/cli harness ingest --source knowledge --full
-    npx -p @harness-engineering/cli harness knowledge-pipeline
+    npx -p canary-test-cli harness ingest --source knowledge --full
+    npx -p canary-test-cli harness knowledge-pipeline
 
 Coverage rises in the domain matching the module's root directory.
 """

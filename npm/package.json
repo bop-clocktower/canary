@@ -1,5 +1,5 @@
 {
-  "name": "@harness-engineering/cli",
+  "name": "canary-test-cli",
   "version": "5.0.0",
   "description": "Canary — AI-powered test automation agent",
   "license": "MIT",
