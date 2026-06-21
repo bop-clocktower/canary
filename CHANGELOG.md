@@ -12,6 +12,15 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [5.2.0] - 2026-06-21
+
+### Security
+
+- **npm install redirect host pinning** — binary download now validates every
+  HTTP redirect against an allowlist (`github.com`, `objects.githubusercontent.com`).
+  Redirects to any other host are rejected immediately, preventing a
+  man-in-the-middle from substituting a malicious binary during `volta install canary-test-cli`.
+
 ## [5.1.0] - 2026-06-21
 
 ### Added
@@ -155,7 +164,9 @@ release line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a
   CI guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v5.0.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v5.2.0...HEAD
+[5.2.0]: https://github.com/bop-clocktower/canary/compare/v5.1.0...v5.2.0
+[5.1.0]: https://github.com/bop-clocktower/canary/compare/v5.0.0...v5.1.0
 [5.0.0]: https://github.com/bop-clocktower/canary/compare/v4.1.0...v5.0.0
 [4.1.0]: https://github.com/bop-clocktower/canary/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/bop-clocktower/canary/compare/v3.0.0...v4.0.0
