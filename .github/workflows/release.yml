@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # needed to create/upload release assets
+  id-token: write   # needed for npm provenance
+
+jobs:
+  build-binaries:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform_key: linux-x64
+            binary_name: canary-linux-x64
+          - os: macos-14
+            platform_key: darwin-arm64
+            binary_name: canary-darwin-arm64
+          - os: windows-2022
+            platform_key: win32-x64
+            binary_name: canary-win32-x64.exe
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies + PyInstaller
+        run: pip install -e ".[dev]"
+
+      - name: Build binary
+        run: pyinstaller canary.spec --clean --noconfirm
+
+      - name: Rename binary to platform name
+        shell: bash
+        run: |
+          if [[ "${{ matrix.platform_key }}" == "win32-x64" ]]; then
+            mv dist/canary.exe dist/${{ matrix.binary_name }}
+          else
+            mv dist/canary dist/${{ matrix.binary_name }}
+          fi
+
+      - name: Upload binary as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary_name }}
+          path: dist/${{ matrix.binary_name }}
+
+  publish:
+    name: Publish to GitHub Releases + npm
+    needs: build-binaries
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download all binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Create GitHub Release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+          generate_release_notes: true
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Publish npm package
+        working-directory: npm
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -19,7 +19,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -e .
+        run: pip install -e . pytest
       
       - name: Run Unit Tests
         run: python3 -m unittest discover tests/unit

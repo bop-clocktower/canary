@@ -12,6 +12,11 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- `volta install @harness-engineering/cli` — self-contained native binary distribution
+  via npm. No Python required. Binaries built for linux-x64, darwin-arm64, win32-x64.
+
 ## [5.0.0] - 2026-06-07
 
 > **Breaking change.** The `canary generate`, `canary feedback`, and the

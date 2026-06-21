@@ -21,14 +21,31 @@ language requirements into high-quality, framework-aware test code.
 
 ## 🛠 Installation
 
-### pipx (recommended)
+### Volta (recommended)
+
+```bash
+volta install @harness-engineering/cli
+```
+
+Installs a self-contained `canary` binary — no Python or pipx required.
+Volta handles version pinning and per-project switching automatically.
+
+> **Supported:** linux-x64, darwin-arm64 (Apple Silicon), win32-x64.
+> Intel Mac (darwin-x64) is not yet supported.
+
+### npm / npx
+
+```bash
+npm install -g @harness-engineering/cli
+# or one-shot:
+npx @harness-engineering/cli recommend "a login page"
+```
+
+### pipx (Python users)
 
 ```bash
 pipx install git+https://github.com/bop-clocktower/canary@latest
 ```
-
-This installs the `canary` binary globally without polluting your project
-virtualenv. Upgrade by re-running with `@<new-tag>`.
 
 ### From source
 

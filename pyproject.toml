@@ -16,6 +16,9 @@ dependencies = [
 
 [project.optional-dependencies]
 history = ["supabase>=2.0,<3"]
+dev = [
+    "pyinstaller>=6,<7",
+]
 
 [project.scripts]
 canary = "agent.cli:app"
