@@ -18,6 +18,11 @@ dependencies = [
 canary = "agent.cli:app"
 canary-mcp = "agent.mcp_server:main"
 
+[project.optional-dependencies]
+dev = [
+    "pyinstaller>=6,<7",
+]
+
 [tool.setuptools.packages.find]
 include = ["agent*"]
 exclude = ["agents*", "tests*", "docs*", "scripts*"]
