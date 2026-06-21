@@ -12,6 +12,8 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-06-21
+
 ### Added
 
 - `volta install canary-test-cli` — self-contained native binary distribution
