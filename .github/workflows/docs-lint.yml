@@ -7,6 +7,9 @@ on:
       - ".markdownlint.json"
       - ".github/workflows/docs-lint.yml"
       - "scripts/check_removed_symbols.py"
+      - "pyproject.toml"
+      - "npm/package.json"
+      - "scripts/check_version_sync.py"
   push:
     branches:
       - main
