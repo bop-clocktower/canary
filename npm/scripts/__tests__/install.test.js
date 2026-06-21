@@ -53,6 +53,11 @@ describe("validateRedirectHost", () => {
       validateRedirectHost("https://objects.githubusercontent.com/releases/123/canary-linux-x64")
     );
   });
+  it("allows release-assets.githubusercontent.com", () => {
+    assert.doesNotThrow(() =>
+      validateRedirectHost("https://release-assets.githubusercontent.com/releases/123/canary-linux-x64")
+    );
+  });
   it("rejects an untrusted host", () => {
     assert.throws(
       () => validateRedirectHost("https://attacker.com/malicious-binary"),
