@@ -31,7 +31,11 @@ function getDownloadUrl(version, binaryName) {
   return `https://github.com/bop-clocktower/canary/releases/download/v${version}/${binaryName}`;
 }
 
-const TRUSTED_HOSTS = new Set(["github.com", "objects.githubusercontent.com"]);
+const TRUSTED_HOSTS = new Set([
+  "github.com",
+  "objects.githubusercontent.com",
+  "release-assets.githubusercontent.com",
+]);
 
 function validateRedirectHost(location) {
   const { hostname } = new URL(location);
