@@ -1,21 +1,22 @@
-# Oracle Claude Code Plugin Specification
+# Canary Claude Code Plugin Specification
 
-Oracle becomes a Claude Code plugin: an MCP server exposing analysis and
-execution tools, three skills (`canary:generate`, `canary:init`,
-`canary:migrate`), and three thin agents. The Claude Code agent handles test
-generation using its own session — no API key required for plugin users. The
-existing CLI and GitHub Action are unchanged.
+> **Naming note:** This spec was written under the Oracle name; the
+> project was rebranded to Canary at v4.0.0 (2026-06-01).
+> `oracle-mcp` → `canary-mcp`; `oracle-*` agents → `canary-*`.
+>
+> **Status (v5.0.0):** The keyed CLI path (`canary generate`, GitHub
+> Action) described below was removed at v5.0.0 (2026-06-07). See
+> [ADR 0004](../adr/0004-remove-keyed-paths-at-v3.md). The MCP
+> server (`canary-mcp`), skills (`/canary:init`, `/canary:migrate`),
+> and all deterministic CLI commands remain active.
+> `/canary:generate` was removed with the keyed path; test generation
+> is now handled directly by the host LLM session without a dedicated
+> slash command.
 
-> **Update (2026-05-26):** The "no API key required for plugin users"
-> claim above was originally aspirational — the bundled
-> `canary-test-author` agent still delegated to `canary generate`
-> (which requires a provider key). The
-> [host-LLM migration](host-llm-migration.md) makes the claim true:
-> the agent now generates in-session. See
-> [ADR 0001](../adr/0001-host-llm-generation-for-agents.md) for the
-> decision record. The CLI / GitHub Action sections of this spec
-> still describe the keyed CLI path — that path is intentionally
-> preserved for users who want it.
+Canary is a Claude Code plugin: an MCP server exposing analysis and
+execution tools, skills (`canary:init`, `canary:migrate`), and thin
+agents. The Claude Code agent handles test generation using its own
+session — no API key required for plugin users.
 
 ## Overview
 
@@ -39,7 +40,7 @@ existing CLI and GitHub Action are unchanged.
 
 ## Success Criteria
 
-1. **MCP server starts:** the `oracle-mcp` console script (registered by
+1. **MCP server starts:** the `canary-mcp` console script (registered by
    `pyproject.toml`, available after `pipx install canary-test-ai`) starts
    without error and exposes exactly six tools to Claude Code.
 2. **Tool delegation:** `oracle__analyze_file` calls `MetadataScanner`,
@@ -53,8 +54,9 @@ existing CLI and GitHub Action are unchanged.
    validation against the Claude Code plugin schema.
 5. **Unit test suite passes:** `tests/unit/test_mcp_server.py` (10 tests)
    passes with 0 failures in CI using mocked modules; no network calls.
-6. **CLI path unchanged:** All existing `canary generate / init / migrate / run`
+6. **CLI path unchanged:** All existing `canary init / migrate / run`
    CLI commands continue to pass their existing test suite after plugin addition.
+   (`canary generate` was removed at v5.0.0 — see spec header.)
 
 ## Scope
 
@@ -73,10 +75,11 @@ existing CLI and GitHub Action are unchanged.
 
 **Out of scope:**
 
-- Changes to `canary generate`, `oracle run`, `canary init`, `canary migrate`,
-  `oracle setup` CLI commands
-- Changes to the GitHub Action
-- Changes to oracle-vscode or oracle-intellij plugins
+- Changes to `canary run`, `canary init`, `canary migrate`,
+  `canary setup` CLI commands (at time of spec; `canary generate` no longer exists)
+- Changes to the GitHub Action (removed at v5.0.0)
+- Changes to IDE plugins (oracle-vscode / oracle-intellij — separate projects,
+  since renamed)
 - Hooks (PostToolUse auto-trigger on file write) — follow-on
 - Additional skills beyond the initial three — follow-on
 - Integration tests that invoke Claude Code with the live plugin — follow-on
@@ -88,7 +91,7 @@ existing CLI and GitHub Action are unchanged.
 - FastMCP (Python MCP SDK) is used for the server; added to `pyproject.toml`
   as a dependency.
 - The plugin MCP server runs as a subprocess spawned by Claude Code via the
-  `oracle-mcp` console script (registered in `pyproject.toml` as a `[project.scripts]`
+  `canary-mcp` console script (registered in `pyproject.toml` as a `[project.scripts]`
   entry pointing at `agent.mcp_server:main`). The console script must be on
   `PATH` — `pipx install canary-test-ai` puts it there.
 - `CLAUDE_PLUGIN_ROOT` is set by Claude Code when the plugin is active; the
@@ -106,11 +109,11 @@ existing CLI and GitHub Action are unchanged.
 ```text
 Claude Code session
 │
-├── canary:generate skill  ──► canary-test-generator agent
 ├── canary:init skill      ──► canary-initializer agent        ◄── user
 ├── canary:migrate skill   ──► canary-migrator agent
+│   (canary:generate removed at v5.0.0)
 │
-└── Oracle MCP server (subprocess, oracle-mcp)
+└── Canary MCP server (subprocess, canary-mcp)
     ├── oracle__analyze_file
     ├── oracle__write_test_file
     ├── oracle__run_tests
@@ -118,12 +121,12 @@ Claude Code session
     ├── oracle__list_frameworks
     └── oracle__migrate
          │
-         └── agent/core/, agent/frameworks/, agent/core/
+         └── agent/core/, agent/frameworks/
               (shared with CLI path — no duplication)
 
-CLI path (unchanged)
-└── canary generate / init / migrate / run / setup
-     └── CanaryOrchestrator ──► ANTHROPIC_API_KEY ──► Anthropic API
+CLI path (keyless deterministic commands remain)
+└── canary init / migrate / run / setup / recommend
+     (canary generate / feedback removed at v5.0.0)
 ```
 
 ## MCP Server Tools

@@ -179,7 +179,7 @@ Canary ships two layers of bundled skills:
 
 | Location | Format | Purpose |
 | --- | --- | --- |
-| `agents/skills/canary:*.md` | Flat `.md` | Claude Code slash commands (`/canary:generate`, `/canary:init`, `/canary:migrate`) |
+| `agents/skills/canary:*.md` | Flat `.md` | Claude Code slash commands (`/canary:init`, `/canary:migrate`) |
 | `agents/skills/claude-code/<name>/SKILL.md` | Nested directory | Prescriptive harness skills invoked by harness agents |
 
 ## Local Overlay Convention
@@ -278,8 +278,7 @@ visible at a glance:
 ```text
 Bundled skills:
   /canary-add-framework  Add a new testing framework to Canary's registry end-to-end.
-  /canary-generate-test  Generate a framework-appropriate test from a natural-language requirement.
-  /canary:generate       Generate tests for the file open in the editor.
+  /canary-write-test     Generate a framework-appropriate test from a natural-language requirement.
   /canary:init           Scaffold a test suite for the active project.
   /canary:migrate        Migrate a harness-scaffolded test suite to Canary's layout.
 
@@ -322,18 +321,20 @@ consumption work normally.
 
 ## Installation
 
-Canary is installable without cloning:
+Canary ships as a self-contained native binary via npm (no Python required)
+and as a Python package for contributors:
 
 ```bash
-# Latest stable release
-pipx install git+https://github.com/bop-clocktower/canary@v0.2.0
+# Native binary — recommended for end users
+volta install canary-test-cli       # or npm install -g canary-test-cli
 
-# Specific tag
-pipx install "git+https://github.com/bop-clocktower/canary@v0.2.0"
+# Python package — for contributors / pipx users
+pipx install canary-test-ai         # installs from PyPI (pending) or
+# pipx install git+https://github.com/bop-clocktower/canary@v5.3.0
 ```
 
-Once PyPI publication is set up, `pipx install canary-test-ai` will work
-as the canonical install path.
+The `canary-mcp` console script is registered by `pyproject.toml` and is
+available on `PATH` after the Python install.
 
 ## Out of Scope
 
