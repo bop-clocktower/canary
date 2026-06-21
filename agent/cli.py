@@ -525,6 +525,20 @@ def upgrade(
 
 
 # ---------------------------------------------------------------------------
+# `canary history` — shared run history store (flakiness + regression queries).
+# ---------------------------------------------------------------------------
+
+from agent.history.cli import history_app
+app.add_typer(history_app, name="history")
+
+from agent.analysis.cli import analyze_app
+app.add_typer(analyze_app, name="analyze")
+
+from agent.guardian.cli import guardian_app
+app.add_typer(guardian_app, name="guardian")
+
+
+# ---------------------------------------------------------------------------
 # `canary skills` — discovery + invocation of bundled and overlay skills.
 # ---------------------------------------------------------------------------
 

@@ -111,6 +111,54 @@ class TestDetectFramework(unittest.TestCase):
             self.assertEqual(ctx.detected_framework, "k6")
             self.assertEqual(ctx.detected_shape, "performance")
 
+    def test_playwright_api_suite_detected_when_no_page_fixtures(self):
+        """Playwright suites with no page/browser fixture usage → shape api."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root)
+            (root / "playwright.config.ts").write_text("export default {};")
+            tests_dir = root / "tests" / "challenges"
+            tests_dir.mkdir(parents=True)
+            (tests_dir / "enroll.spec.ts").write_text(
+                "test('enroll', async ({api, user}) => { const r = await api.challenges.enroll(); });\n"
+            )
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "playwright")
+            self.assertEqual(ctx.detected_shape, "api")
+
+    def test_playwright_ui_suite_stays_e2e_ui_when_page_fixture_present(self):
+        """Playwright suites with page fixture usage → shape e2e_ui."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root)
+            (root / "playwright.config.ts").write_text("export default {};")
+            tests_dir = root / "tests"
+            tests_dir.mkdir(parents=True)
+            (tests_dir / "login.spec.ts").write_text(
+                "test('login', async ({ page }) => { await page.goto('/login'); });\n"
+            )
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_framework, "playwright")
+            self.assertEqual(ctx.detected_shape, "e2e_ui")
+
+    def test_playwright_api_shape_via_company_json_override(self):
+        """canary_shape in company.json overrides heuristic detection."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root)
+            (root / "playwright.config.ts").write_text("export default {};")
+            # UI fixture present — would normally be e2e_ui
+            tests_dir = root / "tests"
+            tests_dir.mkdir(parents=True)
+            (tests_dir / "ui.spec.ts").write_text(
+                "test('ui', async ({ page }) => { await page.goto('/'); });\n"
+            )
+            canary_dir = root / ".canary"
+            canary_dir.mkdir()
+            (canary_dir / "company.json").write_text('{"canary_shape": "api"}')
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.detected_shape, "api")
+
     def test_falls_back_to_python_language_as_pytest(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
