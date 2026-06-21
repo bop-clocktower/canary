@@ -31,12 +31,22 @@ function getDownloadUrl(version, binaryName) {
   return `https://github.com/bop-clocktower/canary/releases/download/v${version}/${binaryName}`;
 }
 
+const TRUSTED_HOSTS = new Set(["github.com", "objects.githubusercontent.com"]);
+
+function validateRedirectHost(location) {
+  const { hostname } = new URL(location);
+  if (!TRUSTED_HOSTS.has(hostname)) {
+    throw new Error(`Redirect to untrusted host: ${hostname}`);
+  }
+}
+
 function download(url, destPath, redirectsLeft = 5) {
   return new Promise((resolve, reject) => {
     if (redirectsLeft === 0) return reject(new Error("Too many redirects"));
     https.get(url, (res) => {
       if (res.statusCode === 301 || res.statusCode === 302) {
         res.resume(); // drain redirect response to free the socket
+        try { validateRedirectHost(res.headers.location); } catch (e) { return reject(e); }
         return resolve(download(res.headers.location, destPath, redirectsLeft - 1));
       }
       if (res.statusCode !== 200) {
@@ -69,5 +79,5 @@ async function main() {
 }
 
 // Export pure functions for testing; run main() only when executed directly.
-module.exports = { getPlatformKey, getBinaryName, getDownloadUrl };
+module.exports = { getPlatformKey, getBinaryName, getDownloadUrl, validateRedirectHost };
 if (require.main === module) main().catch((e) => { process.stderr.write(e.message + "\n"); process.exit(1); });
