@@ -1,10 +1,17 @@
 ---
-project: oracle
+project: canary
 version: 1
 created: 2026-05-26
 ---
 
 # CLI Deprecation Specification (Phase 3)
+
+> **Phase 3 complete.** The deprecated surfaces described here were
+> removed at v5.0.0 (2026-06-07). See
+> [ADR 0004](../adr/0004-remove-keyed-paths-at-v3.md) and
+> [ADR 0005](../adr/0005-remove-llm-abstraction-layer.md) for the
+> removal record. This spec is preserved as a historical record of
+> the deprecation phase.
 
 Mark `canary generate`, `oracle feedback`, and the GitHub Action as
 deprecated. Removal at v3.0 (separate phase).
@@ -131,6 +138,8 @@ the task-by-task implementation.
    (`canary recommend`)** so the keyless classifier check survives
    the `generate` removal? Recommend: yes, but as part of the
    removal phase, not this one.
+   > **Resolved (v5.0.0):** `canary recommend` ships as its own
+   > top-level command. See ADR 0004 open question 2.
 2. **Should the warning be suppressible** via an env var
    (`CANARY_SUPPRESS_DEPRECATION=1`) for users who knowingly continue
    to use the CLI through v3.0 in CI? Recommend: no for this phase —

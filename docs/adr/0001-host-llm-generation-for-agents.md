@@ -151,9 +151,17 @@ discover the bait-and-switch on first use. Rejected.
   hooks later; the `Write` tool is simpler. Lean toward the MCP tool
   for forward compatibility, but the plan should call this out and
   let the user decide.
+  > **Resolved:** The agent uses the plain `Write` tool. The MCP tool
+  > path added complexity without a concrete benefit once the CLI was
+  > removed; simplicity won.
+
 - Do we update `docs/specs/oracle-plugin.md` to remove the now-stale
   "Delegate to the Oracle CLI" wording, or just supersede those
   sections via the new spec for this migration? Plan should clarify.
+  > **Resolved:** An "Update" annotation was added to
+  > `docs/specs/oracle-plugin.md` (2026-05-26) flagging that the
+  > keyless claim is now true; the spec body was not fully rewritten
+  > at that time (tracked as spec-craft finding F5).
 
 ## References
 

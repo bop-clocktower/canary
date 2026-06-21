@@ -15,6 +15,7 @@ _"Migrate all LLM-dependent tasks to keyless slash commands"_
 > This ADR proceeded as written. The "v3.0" framing in the original
 > draft became v5.0.0 after the Oracle→Canary rebrand (v4.0.0/4.1.0
 > shipped between this ADR being drafted and implemented).
+> **Status is `accepted`; the post-meeting re-evaluation is complete.**
 >
 > **Implementation notes (v5.0.0):**
 >
@@ -22,7 +23,8 @@ _"Migrate all LLM-dependent tasks to keyless slash commands"_
 >   an earlier commit (`feat(v3)!: remove LLM abstraction layer`).
 > - `agent/llm/` provider matrix, `orchestrator.py`,
 >   `selector_healer.py`, and `feedback.py` were removed in that
->   same commit.
+>   same commit (see [ADR 0005](0005-remove-llm-abstraction-layer.md)
+>   for that implementation record).
 > - `action.yml` was removed in Phase 3; v5.0.0 restores it as a
 >   hard-error shim (Alternative 2) pointing users at the plugin.
 > - `agent/core/code_extractor.py` was the last remaining deletion
@@ -34,9 +36,6 @@ _"Migrate all LLM-dependent tasks to keyless slash commands"_
 >   "v3.0 release" becomes a Harness persona migration rather than
 >   a standalone semver bump. Re-read the "Decision" section in that
 >   light; the alternatives and open questions still hold.
->
-> Re-evaluate this status field post-meeting before flipping to
-> `accepted`.
 
 ## Context
 
@@ -247,23 +246,40 @@ command name.
    shim is friendlier to consumers but adds a file we'd otherwise
    delete cleanly. Recommend: shim, since it costs ~20 lines and
    reduces support load.
+   > **Resolved (v5.0.0):** Shim shipped. `action.yml` was restored as
+   > a hard-error shell step that prints a migration message and exits 1.
+
 2. **`oracle recommend`: separate command vs. flag-only kept on
    another command** — could go under `oracle skills list` as a
    pre-flight hint, or stay its own command. Recommend: own command;
    clearest UX.
+   > **Resolved (v5.0.0):** `canary recommend` ships as its own
+   > top-level command. `canary generate --recommend-only` is gone
+   > with the rest of `generate`.
+
 3. **Telemetry on v3.0 release** — should there be analytics on how
    many users hit the removed-command error vs. successfully migrate
    to the plugin? Out of scope; no telemetry pipeline exists.
+   > **Resolved:** Deferred indefinitely. No telemetry pipeline exists
+   > upstream; the removed-command error in the CLI is signal enough
+   > for individual users. Not pursued.
+
 4. **Timing of the v3.0 release** — no specific date proposed.
    Recommend: gather one release cycle of Phase 3 warnings in the
    field (and downstream overlay feedback), then cut.
    Could be as soon as ~2026-06.
+   > **Resolved:** Shipped as v5.0.0 on 2026-06-07, one cycle after
+   > Phase 3 warnings. The "v3.0" label became v5.0.0 due to the
+   > Oracle→Canary rebrand (v4.0.0/4.1.0) landing between draft and
+   > implementation.
 
 ## References
 
 - ADR 0001: `docs/adr/0001-host-llm-generation-for-agents.md`
 - ADR 0002: `docs/adr/0002-self-heal-as-slash-command.md`
 - ADR 0003: `docs/adr/0003-deprecate-oracle-generate.md`
+- ADR 0005: `docs/adr/0005-remove-llm-abstraction-layer.md`
+  (implementation record for the removals listed above)
 - Code to delete: `agent/cli.py:generate`, `agent/cli.py:feedback`,
   `agent/core/orchestrator.py`, `agent/llm/*`,
   `agent/core/selector_healer.py`, `agent/core/feedback.py`,

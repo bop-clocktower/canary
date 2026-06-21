@@ -1,4 +1,22 @@
-# Oracle Specification
+# Oracle Specification *(archived — superseded)*
+
+> **⚠ This spec is a historical artifact.** It describes the v1–v2 Oracle
+> architecture, which was fully removed by v5.0.0 (2026-06-07):
+>
+> - `canary generate`, multi-provider LLM support, `CanaryOrchestrator`,
+>   `action.yml` GitHub Action — **all removed.** See
+>   [ADR 0004](../adr/0004-remove-keyed-paths-at-v3.md) and
+>   [ADR 0005](../adr/0005-remove-llm-abstraction-layer.md).
+> - The project was rebranded Oracle → Canary at v4.0.0 (2026-06-01).
+>
+> **Current architecture:** test generation runs in the host Claude Code
+> session via `/canary-write-test` (no API key required). Deterministic
+> operations (init, migrate, run, recommend, skills) remain as CLI commands.
+> See [AGENTS.md](../../AGENTS.md) for the current surface.
+>
+> The content below is preserved for historical reference.
+
+---
 
 Oracle is an AI-powered test automation agent that transforms natural-language
 requirements into framework-aware, runnable test code.

@@ -1,9 +1,12 @@
-# ADR 0004 — Remove LLM Abstraction Layer (v3.0)
+# ADR 0005 — Remove LLM Abstraction Layer (v3.0)
 
 **Status:** accepted
 **Date:** 2026-05-28
 **Deciders:** Bri Stevenski (upstream maintainer)
 **Supersedes:** ADR 0003 (deprecation phase — removal now complete)
+
+> **Renumbered from 0004.** A separate ADR (`0004-remove-keyed-paths-at-v3.md`)
+> already carried that number; this record is now **ADR 0005**.
 
 ## Context
 
@@ -44,8 +47,9 @@ CLI changes in `agent/cli.py`:
 ## Consequences
 
 **Net result:** ~2,000 LOC removed. `pipx install oracle-test-ai` closure
-shrinks by ~50 MB (no provider SDKs). 48 tests removed; 460 remaining, all
-covering non-LLM commands.
+shrinks by ~50 MB (no provider SDKs). 48 tests removed; 460 remaining at
+time of removal (suite has grown substantially since), all covering non-LLM
+commands.
 
 **Generation path:** `/oracle-write-test` slash command (Claude Code plugin) is
 the supported replacement. It runs in the host session with no API key.

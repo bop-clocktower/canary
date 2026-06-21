@@ -7,6 +7,11 @@
 **Related:** [ADR 0001](0001-host-llm-generation-for-agents.md), roadmap
 item _"Migrate all LLM-dependent tasks to keyless slash commands"_
 
+> **Naming note:** This ADR was written before the Oracle→Canary rebrand
+> (v4.0.0, 2026-06-01). All `oracle-*` agent filenames, slash commands
+> (`/oracle-heal-test`, `/oracle-write-test`), and module names used
+> below were renamed to `canary-*` equivalents at that time.
+
 ## Context
 
 ADR 0001 moved test _generation_ from the keyed CLI to the host LLM
