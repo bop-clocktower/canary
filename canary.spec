@@ -2,9 +2,7 @@
 # IMPORTANT: Always build with the project venv Python to pick up all dependencies:
 #   .venv/bin/python -m PyInstaller canary.spec --clean --noconfirm
 #
-import sys
-from pathlib import Path
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
 block_cipher = None
 
@@ -14,6 +12,8 @@ datas = [
 ]
 # fastmcp may have data files (e.g. schema stubs)
 datas += collect_data_files("fastmcp")
+# Bundle canary-test-ai dist-info so --version works in frozen binary
+datas += copy_metadata("canary-test-ai")
 
 hiddenimports = (
     collect_submodules("agent")
