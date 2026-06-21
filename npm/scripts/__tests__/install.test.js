@@ -3,7 +3,7 @@ const { describe, it, mock, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
 
 // We test the pure functions extracted from install.js
-const { getPlatformKey, getBinaryName, getDownloadUrl } = require("../install.js");
+const { getPlatformKey, getBinaryName, getDownloadUrl, validateRedirectHost } = require("../install.js");
 
 describe("getPlatformKey", () => {
   it("returns linux-x64 on linux x64", () => {
@@ -38,6 +38,31 @@ describe("getDownloadUrl", () => {
     assert.equal(
       url,
       "https://github.com/bop-clocktower/canary/releases/download/v5.0.0/canary-linux-x64"
+    );
+  });
+});
+
+describe("validateRedirectHost", () => {
+  it("allows github.com", () => {
+    assert.doesNotThrow(() =>
+      validateRedirectHost("https://github.com/bop-clocktower/canary/releases/download/v5.0.0/canary-linux-x64")
+    );
+  });
+  it("allows objects.githubusercontent.com", () => {
+    assert.doesNotThrow(() =>
+      validateRedirectHost("https://objects.githubusercontent.com/releases/123/canary-linux-x64")
+    );
+  });
+  it("rejects an untrusted host", () => {
+    assert.throws(
+      () => validateRedirectHost("https://attacker.com/malicious-binary"),
+      /Redirect to untrusted host: attacker\.com/
+    );
+  });
+  it("rejects a lookalike domain", () => {
+    assert.throws(
+      () => validateRedirectHost("https://github.com.evil.io/payload"),
+      /Redirect to untrusted host: github\.com\.evil\.io/
     );
   });
 });
