@@ -37,3 +37,14 @@ jobs:
         env:
           CANARY_PROPRIETARY_DENYLIST: ${{ secrets.CANARY_PROPRIETARY_DENYLIST }}
         run: python3 scripts/check_removed_symbols.py
+
+  version-sync:
+    name: npm/pyproject version parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Check version sync
+        run: python3 scripts/check_version_sync.py
