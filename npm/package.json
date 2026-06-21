@@ -1,0 +1,24 @@
+{
+  "name": "@harness-engineering/cli",
+  "version": "5.0.0",
+  "description": "Canary — AI-powered test automation agent",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bop-clocktower/canary.git"
+  },
+  "bin": {
+    "canary": "./bin/canary.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "test": "node --test scripts/__tests__/install.test.js scripts/__tests__/canary.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "scripts/install.js"
+  ]
+}
