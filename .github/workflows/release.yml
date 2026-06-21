@@ -28,10 +28,12 @@ jobs:
             binary_name: canary-win32-x64.exe
 
     steps:
+      - name: Allow colon in filenames (Windows NTFS)
+        if: runner.os == 'Windows'
+        run: git config --global core.protectNTFS false
+        shell: bash
+
       - uses: actions/checkout@v6
-        with:
-          sparse-checkout: agent
-          sparse-checkout-cone-mode: true
 
       - uses: actions/setup-python@v6
         with:
