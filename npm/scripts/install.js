@@ -36,6 +36,7 @@ function download(url, destPath, redirectsLeft = 5) {
     if (redirectsLeft === 0) return reject(new Error("Too many redirects"));
     https.get(url, (res) => {
       if (res.statusCode === 301 || res.statusCode === 302) {
+        res.resume(); // drain redirect response to free the socket
         return resolve(download(res.headers.location, destPath, redirectsLeft - 1));
       }
       if (res.statusCode !== 200) {

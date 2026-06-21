@@ -68,3 +68,7 @@ blob-report/
 
 # Proprietary denylist for the company-leak guard (kept local; CI uses a secret)
 .proprietary-denylist
+
+# Downloaded native binaries (placed by npm postinstall)
+npm/bin/canary
+npm/bin/canary.exe

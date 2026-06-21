@@ -30,6 +30,9 @@ volta install @harness-engineering/cli
 Installs a self-contained `canary` binary — no Python or pipx required.
 Volta handles version pinning and per-project switching automatically.
 
+> **Supported:** linux-x64, darwin-arm64 (Apple Silicon), win32-x64.
+> Intel Mac (darwin-x64) is not yet supported.
+
 ### npm / npx
 
 ```bash
