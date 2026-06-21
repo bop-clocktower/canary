@@ -12,6 +12,14 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [5.3.0] - 2026-06-21
+
+### Fixed
+
+- **npm install on 5.2.0** — GitHub release asset CDN now redirects through
+  `release-assets.githubusercontent.com`; added to the trusted-host allowlist so
+  `volta install canary-test-cli` succeeds again.
+
 ## [5.2.0] - 2026-06-21
 
 ### Security
@@ -164,7 +172,8 @@ release line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a
   CI guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v5.2.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v5.3.0...HEAD
+[5.3.0]: https://github.com/bop-clocktower/canary/compare/v5.2.0...v5.3.0
 [5.2.0]: https://github.com/bop-clocktower/canary/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/bop-clocktower/canary/compare/v5.0.0...v5.1.0
 [5.0.0]: https://github.com/bop-clocktower/canary/compare/v4.1.0...v5.0.0
