@@ -159,7 +159,12 @@ generation via slash commands.
   server exposing six tools to Claude Code:
   `canary__analyze_file`, `canary__write_test_file`, `canary__run_tests`,
   `canary__init_suite`, `canary__list_frameworks`, `canary__migrate`.
-- **Manifest:** [.claude-plugin/plugin.json](.claude-plugin/plugin.json)
+- **Manifest:** [.claude-plugin/plugin.json](.claude-plugin/plugin.json).
+  Its `version` (and the `canary` entry's `version` in
+  [.claude-plugin/marketplace.json](.claude-plugin/marketplace.json)) must
+  match `npm/package.json` and `pyproject.toml`. A `chore(release)` bump must
+  touch **all four**; `tests/unit/test_version_consistency.py` fails CI if they
+  drift.
 - **Agents:** `agents/` — seven agent definitions:
   `canary-test-generator`, `canary-test-author`, `canary-test-reviewer`,
   `canary-initializer`, `canary-migrator`, `canary-framework-advisor`,
