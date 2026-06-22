@@ -1,0 +1,33 @@
+Generate Vitest unit tests for a compareVersions function.
+
+Signature:
+    function compareVersions(a: string, b: string): -1 | 0 | 1
+
+The function compares two semantic-version strings by Semantic Versioning
+precedence and returns -1 if a < b, 0 if they are equal in precedence, and
+1 if a > b.
+
+Precedence rules (a subset of semver.org §11):
+  - Compare major, then minor, then patch as integers, in that order.
+  - A version WITH a prerelease tag has LOWER precedence than the same
+    core version WITHOUT one: "1.0.0-rc.1" < "1.0.0".
+  - Prerelease identifiers are compared left to right. A numeric identifier
+    is compared numerically; an alphanumeric identifier is compared lexically
+    (ASCII). A numeric identifier always has lower precedence than an
+    alphanumeric one.
+  - When all shared prerelease identifiers are equal, the version with MORE
+    identifiers has higher precedence: "1.0.0-alpha" < "1.0.0-alpha.1".
+  - Build metadata (anything after "+") is IGNORED for precedence:
+    "1.0.0+build.1" == "1.0.0+build.2".
+  - Malformed input (non-integer core segment, fewer than three segments)
+    throws a TypeError.
+
+Cover these cases:
+  1. Equal core versions — ("1.2.3", "1.2.3") → 0
+  2. Major differs — ("2.0.0", "1.9.9") → 1
+  3. Patch differs — ("1.2.4", "1.2.3") → 1
+  4. Prerelease is lower than release — ("1.0.0-rc.1", "1.0.0") → -1
+  5. Numeric identifier lower than alphanumeric — ("1.0.0-1", "1.0.0-alpha") → -1
+  6. More prerelease identifiers wins — ("1.0.0-alpha", "1.0.0-alpha.1") → -1
+  7. Build metadata ignored — ("1.0.0+build.1", "1.0.0+build.2") → 0
+  8. Malformed input — ("1.0", "1.0.0") → throws TypeError
