@@ -1,0 +1,22 @@
+Generate pytest unit tests for a reconcile_collection function.
+
+Signature:
+    def reconcile_collection(
+        local_ids: list[str],
+        api_sets: list[dict],
+    ) -> dict:
+
+The function compares locally-tracked LEGO set IDs against a list of sets
+returned by the Rebrickable API. It returns a dict with three keys:
+  - "matched":    dicts from api_sets whose set_num appears in local_ids
+  - "local_only": set IDs in local_ids that have no matching entry in api_sets
+  - "api_only":   dicts from api_sets whose set_num does NOT appear in local_ids
+
+Each item in api_sets is a dict with keys: set_num (str), name (str), num_parts (int).
+
+Cover these cases:
+  1. Happy path — some sets in both, one local-only, one api-only
+  2. Perfect match — every local ID has an api_sets entry, nothing left over
+  3. Empty local list — everything falls into api_only
+  4. Empty api_sets — everything falls into local_only
+  5. Both empty — all three result keys are empty lists
