@@ -89,3 +89,29 @@ jobs:
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  advance-latest:
+    name: Advance latest → ${{ github.ref_name }}
+    needs: publish
+    runs-on: ubuntu-latest
+    # Only advance for stable vX.Y.Z tags, never pre-releases (e.g. v1.2.0-rc1).
+    if: ${{ !contains(github.ref_name, '-') }}
+
+    permissions:
+      contents: write # needed to push the floating tag
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Move latest tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -fa latest "$RELEASE_SHA" -m "latest → ${RELEASE_TAG}"
+          git push origin latest --force
+          echo "Moved latest → ${RELEASE_TAG} (${RELEASE_SHA})"
