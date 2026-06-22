@@ -48,6 +48,29 @@ class TestFrameworkHints(unittest.TestCase):
         )
         self.assertEqual(self.clf.classify(prompt).test_type, "api")
 
+    def test_price_normalizer_example_classifies_frontend_unit(self):
+        """Vitest hint drives classification to frontend_unit even though
+        the function under test has nothing to do with a UI."""
+        prompt = (
+            "Generate Vitest unit tests for a normalizePrice function "
+            "that parses mixed-format price strings into a canonical struct."
+        )
+        self.assertEqual(self.clf.classify(prompt).test_type, "frontend_unit")
+
+    def test_subscription_expiry_example_classifies_api(self):
+        prompt = (
+            "Generate pytest unit tests for a check_subscriptions function "
+            "that buckets subscription records by expiry date."
+        )
+        self.assertEqual(self.clf.classify(prompt).test_type, "api")
+
+    def test_access_policy_example_classifies_api(self):
+        prompt = (
+            "Generate pytest unit tests for an evaluate_policy function "
+            "that performs RBAC checks across user roles and actions."
+        )
+        self.assertEqual(self.clf.classify(prompt).test_type, "api")
+
     # --- each hint maps to its declared test_type ---
 
     def test_playwright_hint_maps_to_e2e_ui(self):

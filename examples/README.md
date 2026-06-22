@@ -26,7 +26,10 @@ Canary design the test coverage — not from a URL or framework mechanic.
 
 | Example | Type | Framework | What it demonstrates |
 | ------- | ---- | --------- | -------------------- |
-| [lego-tracker-reconcile-collection](realworld-functions/lego-tracker-reconcile-collection/) | Unit | Pytest | Reconcile two LEGO set lists into matched / local-only / api-only buckets |
+| [lego-tracker-reconcile-collection](realworld-functions/lego-tracker-reconcile-collection/) | Unit | Pytest | Reconcile two LEGO set lists into matched / local-only / api-only |
+| [price-normalizer](realworld-functions/price-normalizer/) | Unit | Vitest | Parse mixed-format price strings (US, EU, bare) into a canonical struct |
+| [subscription-expiry-checker](realworld-functions/subscription-expiry-checker/) | Unit | Pytest | Bucket subscriptions into expired / expiring-soon / active by date |
+| [access-policy-evaluator](realworld-functions/access-policy-evaluator/) | Unit | Pytest | RBAC check — roles × actions with wildcard grants and role ordering |
 
 See [realworld-functions/README.md](realworld-functions/README.md) for the
 rationale and how to add more.

@@ -1,0 +1,34 @@
+Generate pytest unit tests for an evaluate_policy function.
+
+Signature:
+    def evaluate_policy(
+        user_roles: list[str],
+        action: str,
+        policy: dict[str, list[str]],
+    ) -> dict:
+
+The function performs a simple RBAC check. `policy` maps role names to the
+list of actions that role is allowed to perform. The function checks whether
+any of the user's roles grants the requested action and returns:
+  {
+    "allowed": bool,
+    "matched_role": str | None,   # first matching role, or None if denied
+  }
+
+Matching rules:
+  - The wildcard action "*" in a role's action list grants that role access
+    to any action.
+  - If multiple roles would match, the first match in user_roles order wins
+    (matched_role reflects that role).
+  - An empty user_roles list is always denied.
+  - An action not present in any role's list is denied.
+
+Cover these cases:
+  1. Single role, exact action match → allowed, matched_role set
+  2. Single role, action not in policy → denied, matched_role None
+  3. Wildcard "*" grants access → allowed, matched_role is the wildcard role
+  4. Multiple roles, first role matches → allowed, matched_role is first role
+  5. Multiple roles, only second role matches → allowed, matched_role is second
+  6. Empty user_roles → denied
+  7. Role exists in policy but action list is empty → denied
+  8. Role not present in policy at all → denied

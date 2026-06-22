@@ -13,7 +13,10 @@ produce fresh output.
 
 | Example | Type | Framework | What it demonstrates |
 | ------- | ---- | --------- | -------------------- |
-| [lego-tracker-reconcile-collection](lego-tracker-reconcile-collection/) | Unit | Pytest | Pure dict-in / dict-out reconciliation across two data sources |
+| [lego-tracker-reconcile-collection](lego-tracker-reconcile-collection/) | Unit | Pytest | Reconcile two LEGO set lists into matched / local-only / api-only |
+| [price-normalizer](price-normalizer/) | Unit | Vitest | Parse mixed-format price strings (US, EU, bare) into a canonical struct |
+| [subscription-expiry-checker](subscription-expiry-checker/) | Unit | Pytest | Bucket subscriptions into expired / expiring-soon / active by date |
+| [access-policy-evaluator](access-policy-evaluator/) | Unit | Pytest | RBAC check — roles × actions with wildcard grants and role ordering |
 
 ## How these differ from the top-level examples
 

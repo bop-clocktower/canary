@@ -1,0 +1,30 @@
+Generate pytest unit tests for a check_subscriptions function.
+
+Signature:
+    from datetime import date
+
+    def check_subscriptions(
+        subscriptions: list[dict],
+        reference_date: date,
+        warning_days: int = 30,
+    ) -> dict:
+
+The function buckets subscription records by how they stand relative to
+`reference_date`. It returns a dict with three keys:
+  - "expired":        subscriptions whose `expires_on` is before reference_date
+  - "expiring_soon":  subscriptions whose `expires_on` is within warning_days
+                      from reference_date (inclusive of reference_date itself)
+  - "active":         all remaining subscriptions
+
+Each subscription is a dict with at least: id (str), expires_on (date).
+A subscription appears in exactly one bucket — expired takes precedence over
+expiring_soon (a past-due sub is expired, not expiring soon).
+
+Cover these cases:
+  1. Mixed bag — one expired, one expiring in 15 days, one active (90 days out)
+  2. All expired — every sub lands in "expired", others are empty lists
+  3. All active — every sub is well beyond the warning window
+  4. Boundary: expires exactly on reference_date → "expired"
+  5. Boundary: expires exactly warning_days from reference_date → "expiring_soon"
+  6. Empty list — all three buckets return empty lists
+  7. Custom warning_days=0 — only reference_date itself counts as expiring_soon
