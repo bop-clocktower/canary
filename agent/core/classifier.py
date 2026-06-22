@@ -128,10 +128,10 @@ class TestClassifier:
         Returns:
             ClassificationResult: The identified category and confidence.
         """
-        p = prompt.lower()
+        prompt_lower = prompt.lower()
 
         # --- PERFORMANCE ---  (checked before HTTP signals — "load test GET /x" is perf)
-        if "performance" in p or "load test" in p or "stress test" in p:
+        if "performance" in prompt_lower or "load test" in prompt_lower or "stress test" in prompt_lower:
             return ClassificationResult(
                 intent="generate_tests",
                 test_type="performance",
@@ -144,7 +144,7 @@ class TestClassifier:
         # performance, so the load category here only fires on distinct
         # phrasing (soak/spike/concurrent users).
         for test_type, keywords in _CATEGORY_KEYWORDS:
-            if any(kw in p for kw in keywords):
+            if any(kw in prompt_lower for kw in keywords):
                 return ClassificationResult(
                     intent="generate_tests",
                     test_type=test_type,
@@ -179,7 +179,7 @@ class TestClassifier:
             )
 
         # --- API TESTING ---
-        if "api" in p or "endpoint" in p or "request" in p:
+        if "api" in prompt_lower or "endpoint" in prompt_lower or "request" in prompt_lower:
             return ClassificationResult(
                 intent="generate_tests",
                 test_type="api",
@@ -187,7 +187,7 @@ class TestClassifier:
             )
 
         # --- FRONTEND UNIT / COMPONENT ---
-        if "component" in p or "react" in p or "frontend" in p:
+        if "component" in prompt_lower or "react" in prompt_lower or "frontend" in prompt_lower:
             return ClassificationResult(
                 intent="generate_tests",
                 test_type="frontend_unit",
@@ -195,7 +195,7 @@ class TestClassifier:
             )
 
         # --- DEFAULT E2E ---
-        if "login" in p or "checkout" in p or "user flow" in p:
+        if "login" in prompt_lower or "checkout" in prompt_lower or "user flow" in prompt_lower:
             return ClassificationResult(
                 intent="generate_tests",
                 test_type="e2e_ui",

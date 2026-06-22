@@ -91,13 +91,13 @@ class FixtureScanner:
         candidates: List[Path] = []
         seen: set = set()
         for rel in _FIXTURE_DIRS:
-            d = root / rel
-            if not d.is_dir():
+            fixture_dir = root / rel
+            if not fixture_dir.is_dir():
                 continue
-            if d in seen:
+            if fixture_dir in seen:
                 continue
-            seen.add(d)
-            for path in sorted(d.rglob("*")):
+            seen.add(fixture_dir)
+            for path in sorted(fixture_dir.rglob("*")):
                 if not path.is_file():
                     continue
                 if any(part in _IGNORED_DIRS for part in path.parts):

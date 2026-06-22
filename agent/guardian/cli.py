@@ -82,7 +82,7 @@ def analyze(
 
 @guardian_app.command()
 def watch(
-    interval: int = typer.Option(300, "--interval", help="Polling interval in seconds."),
+    interval_secs: int = typer.Option(300, "--interval", help="Polling interval in seconds."),
     suite: str = typer.Option("api", "--suite"),
     db_url: Optional[str] = typer.Option(None, "--db-url", envvar="CANARY_HISTORY_DB_URL"),
 ) -> None:
@@ -91,20 +91,20 @@ def watch(
     For CI, prefer the GitHub Actions workflow instead of watch mode.
     """
     import time
-    print(f"[cyan]Guardian watch mode[/cyan] — polling every {interval}s. Ctrl+C to stop.")
+    print(f"[cyan]Guardian watch mode[/cyan] — polling every {interval_secs}s. Ctrl+C to stop.")
     try:
         while True:
             print("[dim]Polling for new merges...[/dim]")
-            time.sleep(interval)
+            time.sleep(interval_secs)
     except KeyboardInterrupt:
         print("\n[yellow]Watch stopped.[/yellow]")
 
 
 def _load_spec(path: str) -> dict:
-    p = Path(path)
-    if not p.exists():
+    spec_path = Path(path)
+    if not spec_path.exists():
         raise typer.BadParameter(f"Spec file not found: {path}")
-    text = p.read_text(encoding="utf-8")
+    text = spec_path.read_text(encoding="utf-8")
     if path.endswith(".json"):
         return json.loads(text)
     try:
@@ -115,11 +115,11 @@ def _load_spec(path: str) -> dict:
 
 
 def _load_coverage(path: str) -> list[dict]:
-    p = Path(path)
-    if not p.exists():
+    coverage_path = Path(path)
+    if not coverage_path.exists():
         return []
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
+        data = json.loads(coverage_path.read_text(encoding="utf-8"))
         return data.get("endpoints", []) if isinstance(data, dict) else []
     except (json.JSONDecodeError, OSError):
         return []
