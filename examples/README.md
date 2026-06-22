@@ -19,6 +19,18 @@ pick, and the next steps after generation. No generated test files are committed
 | [vitest-unit-validation](vitest-unit-validation/) | Unit | Vitest     | Pure unit test of a validation helper              |
 | [k6-perf-checkout](k6-perf-checkout/)             | Perf | k6         | Load test holding 50 RPS for 30s                   |
 
+## Real-world function examples
+
+Domain-logic scenarios where you start from a function signature and let
+Canary design the test coverage — not from a URL or framework mechanic.
+
+| Example | Type | Framework | What it demonstrates |
+| ------- | ---- | --------- | -------------------- |
+| [lego-tracker-reconcile-collection](realworld-functions/lego-tracker-reconcile-collection/) | Unit | Pytest | Reconcile two LEGO set lists into matched / local-only / api-only buckets |
+
+See [realworld-functions/README.md](realworld-functions/README.md) for the
+rationale and how to add more.
+
 ## Prerequisites
 
 Before running any example, install Canary as a Claude Code plugin.

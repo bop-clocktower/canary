@@ -38,6 +38,16 @@ class TestFrameworkHints(unittest.TestCase):
         prompt = "Generate a k6 load test for POST https://api.example.com/v1/checkout."
         self.assertEqual(self.clf.classify(prompt).test_type, "performance")
 
+    def test_lego_tracker_example_classifies_api(self):
+        """reconcile_collection is a pure dict function — no HTTP verb or UI keyword,
+        so it falls through to the api bucket (the classifier's home for structured
+        data functions that aren't obviously E2E or frontend)."""
+        prompt = (
+            "Generate pytest unit tests for a reconcile_collection function "
+            "that diffs locally-tracked LEGO set IDs against Rebrickable API sets."
+        )
+        self.assertEqual(self.clf.classify(prompt).test_type, "api")
+
     # --- each hint maps to its declared test_type ---
 
     def test_playwright_hint_maps_to_e2e_ui(self):
