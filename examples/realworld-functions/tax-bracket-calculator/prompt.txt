@@ -1,0 +1,35 @@
+Generate pytest unit tests for a compute_tax function.
+
+Signature:
+    def compute_tax(
+        income: float,
+        brackets: list[tuple[float, float]],
+    ) -> float:
+
+The function computes progressive (marginal) income tax. `brackets` is a list
+of (upper_bound, rate) tuples sorted ascending by upper_bound, where the final
+tuple's upper_bound is float("inf"). Income is taxed marginally: the slice of
+income that falls within each band (previous_bound, upper_bound] is taxed at
+that band's rate. The result is rounded to 2 decimal places.
+
+Use this schedule in the tests:
+    brackets = [(10_000, 0.10), (40_000, 0.20), (float("inf"), 0.30)]
+
+Rules:
+  - Each band taxes only the portion of income that falls inside it.
+  - Income exactly on a boundary fully fills that band and contributes 0 to
+    the next.
+  - The final band (upper_bound = inf) catches all remaining income.
+  - The result is rounded to 2 decimal places.
+  - Negative income raises a ValueError.
+  - An empty brackets list raises a ValueError (no schedule to apply).
+
+Cover these cases:
+  1. Zero income — compute_tax(0, brackets) → 0.0
+  2. Income within the first band — compute_tax(5_000, brackets) → 500.0
+  3. Income exactly on the first boundary — compute_tax(10_000, brackets) → 1000.0
+  4. Income spanning two bands — compute_tax(20_000, brackets) → 3000.0
+  5. Income exactly on the second boundary — compute_tax(40_000, brackets) → 7000.0
+  6. Income into the top (infinite) band — compute_tax(50_000, brackets) → 10000.0
+  7. Negative income — compute_tax(-1, brackets) → raises ValueError
+  8. Empty brackets — compute_tax(5_000, []) → raises ValueError

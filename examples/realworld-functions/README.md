@@ -17,6 +17,9 @@ produce fresh output.
 | [price-normalizer](price-normalizer/) | Unit | Vitest | Parse mixed-format price strings (US, EU, bare) into a canonical struct |
 | [subscription-expiry-checker](subscription-expiry-checker/) | Unit | Pytest | Bucket subscriptions into expired / expiring-soon / active by date |
 | [access-policy-evaluator](access-policy-evaluator/) | Unit | Pytest | RBAC check — roles × actions with wildcard grants and role ordering |
+| [interval-merger](interval-merger/) | Unit | Vitest | Merge overlapping / adjacent ranges into a sorted non-overlapping set |
+| [semver-compare](semver-compare/) | Unit | Vitest | Order semver strings — prerelease, identifier, and build-metadata rules |
+| [tax-bracket-calculator](tax-bracket-calculator/) | Unit | Pytest | Marginal tax across progressive brackets with boundary and reject cases |
 
 ## How these differ from the top-level examples
 
