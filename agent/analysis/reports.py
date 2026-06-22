@@ -53,10 +53,10 @@ def build_spikes_report(rows: list[dict], delta: float) -> str:
     spikes = []
     for suite, suite_rows in by_suite.items():
         suite_rows.sort(key=lambda x: x["timestamp"])
-        n = len(suite_rows)
-        if n < 4:
+        suite_count = len(suite_rows)
+        if suite_count < 4:
             continue
-        mid = n // 2
+        mid = suite_count // 2
         early = suite_rows[:mid]
         recent = suite_rows[mid:]
 
