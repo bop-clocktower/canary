@@ -1,23 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img">
-  <title>Canary icon — gold variant</title>
-  <desc>Geometric canary bird mark on gold background</desc>
-  <rect width="64" height="64" rx="10" fill="#F0C040"/>
-  <g transform="translate(7,-9)">
-  <!-- Body -->
-  <polygon points="14,52 26,28 40,26 42,48 32,58 18,60" fill="#0A0A0A"/>
-  <!-- Wing upper -->
-  <polygon points="26,28 40,26 50,14 38,24 30,30" fill="#1C1C1C"/>
-  <!-- Wing lower -->
-  <polygon points="14,52 26,44 32,58 18,60" fill="#2E2E2E"/>
-  <!-- Tail -->
-  <polygon points="42,48 50,56 44,62 38,56 42,52" fill="#1C1C1C"/>
-  <polygon points="44,62 50,68 42,66 40,58" fill="#333"/>
-  <!-- Head -->
-  <circle cx="14" cy="40" r="10" fill="#0A0A0A"/>
-  <!-- Eye -->
-  <circle cx="10" cy="37" r="3" fill="#F0C040"/>
-  <circle cx="9" cy="36" r="1" fill="#0A0A0A"/>
-  <!-- Beak -->
-  <polygon points="4,39 0,42 4,44" fill="#333"/>
-  </g>
+  <title>Canary icon — gold (primary)</title>
+  <desc>Crested canary mid-cry, early-warning signal radiating from the beak</desc>
+  <rect width="64" height="64" rx="10" fill="#F0C040"></rect>
+  <path d="M49 24 A9 9 0 0 1 49 40" fill="none" stroke="#0A0A0A" stroke-width="2.4" stroke-linecap="round"></path>
+  <path d="M54 19 A14 14 0 0 1 54 45" fill="none" stroke="#0A0A0A" stroke-width="2.4" stroke-linecap="round" opacity="0.45"></path>
+  <circle cx="24" cy="33" r="13" fill="#0A0A0A"></circle>
+  <polygon points="17,23 16,12 25,20" fill="#0A0A0A"></polygon>
+  <polygon points="36,29 47,33 36,37" fill="#0A0A0A"></polygon>
+  <circle cx="28" cy="30" r="2.7" fill="#F0C040"></circle>
 </svg>
