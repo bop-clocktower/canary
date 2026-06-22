@@ -12,6 +12,48 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [5.4.0] - 2026-06-22
+
+A content and tooling release — no change to the shipped CLI binary's behavior.
+
+### Added
+
+- **Real-world function examples** — a new `examples/realworld-functions/`
+  catalog of pure-function, domain-logic scenarios (you start from a function
+  signature and let Canary design the coverage). Seven examples across Pytest
+  and Vitest: LEGO-collection reconciliation, price normalizer,
+  subscription-expiry checker, access-policy (RBAC) evaluator, interval merger,
+  semver comparison, and a marginal tax-bracket calculator (#228, #229, #232).
+- **Brand refresh ("The Cry")** — new `cry-mark` icon set (gold / dark /
+  outline / favicon), a self-contained `docs/branding/brand-system.html` page,
+  verdict-colored Slack announcement banners, and three new "flock" voice
+  profiles: Black Canary, Huntress, and Batgirl (#233).
+
+### Changed
+
+- **Version-consistency guard** — `tests/unit/test_version_consistency.py`
+  asserts all four version declarations (`npm/package.json`, `pyproject.toml`,
+  `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`) agree and are
+  semver-shaped, so a future release bump that forgets a file fails CI. The
+  four-file bump requirement is documented in `AGENTS.md` (#234).
+- Spec-craft and naming-craft quality fixes across specs and identifiers
+  (#225, #227), and refreshed GitHub issue templates (#230).
+
+### Fixed
+
+- **Plugin manifest version drift** — `.claude-plugin/plugin.json` and the
+  `canary` entry in `marketplace.json` sat at `4.0.0` through the entire 5.x
+  line (manual release bumps only touched `package.json` + `pyproject.toml`);
+  both are now synced (#234).
+- **Release `latest`-tag advancement** — the floating `latest` tag is moved by
+  `release.yml` directly, instead of a separate release-triggered workflow that
+  could miss (#231).
+
+### Removed
+
+- Deleted the legacy `docs/specs/oracle.md` (v1/v2 spec, fully superseded by the
+  current specs) (#226).
+
 ## [5.3.0] - 2026-06-21
 
 ### Fixed
