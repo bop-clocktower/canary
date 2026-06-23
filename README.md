@@ -24,7 +24,7 @@ language requirements into high-quality, framework-aware test code.
 ### Volta (recommended)
 
 ```bash
-volta install canary-test-cli
+volta install canary-test-cli@latest
 ```
 
 Installs a self-contained `canary` binary — no Python or pipx required.
@@ -36,7 +36,7 @@ Volta handles version pinning and per-project switching automatically.
 ### npm / npx
 
 ```bash
-npm install -g canary-test-cli
+npm install -g canary-test-cli@latest
 # or one-shot:
 npx canary-test-cli recommend "a login page"
 ```
