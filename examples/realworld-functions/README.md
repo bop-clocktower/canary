@@ -23,6 +23,7 @@ produce fresh output.
 | [money-allocator](money-allocator/) | Unit | Vitest | Split cents by ratio so parts sum exactly to total (largest-remainder) |
 | [order-state-machine](order-state-machine/) | Unit | Pytest | Advance a state machine — terminal absorption, illegal-transition rejection |
 | [retry-backoff-schedule](retry-backoff-schedule/) | Unit | Vitest | Exponential backoff with full jitter via an injected rng (deterministic) |
+| [discount-stacking](discount-stacking/) | Unit | Vitest | Stack ordered % and fixed discounts — order-dependence, clamp, total cap |
 
 ## How these differ from the top-level examples
 
