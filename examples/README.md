@@ -33,6 +33,9 @@ Canary design the test coverage — not from a URL or framework mechanic.
 | [interval-merger](realworld-functions/interval-merger/) | Unit | Vitest | Merge overlapping / adjacent ranges into a sorted non-overlapping set |
 | [semver-compare](realworld-functions/semver-compare/) | Unit | Vitest | Order semver strings — prerelease, identifier, and build-metadata rules |
 | [tax-bracket-calculator](realworld-functions/tax-bracket-calculator/) | Unit | Pytest | Marginal tax across progressive brackets with boundary and reject cases |
+| [money-allocator](realworld-functions/money-allocator/) | Unit | Vitest | Split cents by ratio so parts sum exactly to total (largest-remainder) |
+| [order-state-machine](realworld-functions/order-state-machine/) | Unit | Pytest | Advance a state machine — terminal absorption, illegal-transition rejection |
+| [retry-backoff-schedule](realworld-functions/retry-backoff-schedule/) | Unit | Vitest | Exponential backoff with full jitter via an injected rng (deterministic) |
 
 See [realworld-functions/README.md](realworld-functions/README.md) for the
 rationale and how to add more.
