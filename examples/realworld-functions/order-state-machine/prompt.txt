@@ -1,0 +1,43 @@
+Generate pytest unit tests for an apply function.
+
+Signature:
+    def apply(
+        state: str,
+        event: str,
+        machine: dict[str, dict[str, str]],
+    ) -> str:
+
+The function advances a finite state machine. `machine` maps each state to a
+dict of {event: next_state}. The function looks up the transition for the given
+(state, event) and returns the next state.
+
+Transition rules:
+  - If machine[state][event] is defined, return that next state.
+  - If the state is not present in machine, or the event is not defined for that
+    state, raise a ValueError — illegal and unknown transitions are rejected, not
+    silently ignored.
+  - A terminal state has an empty transition dict, so every event raises.
+  - A self-loop is legal only when explicitly present (e.g. machine maps
+    state "pending" event "edit" back to "pending").
+  - The function is a pure lookup — it never mutates `machine`.
+
+Use this order-lifecycle machine in the tests:
+    ORDER = {
+        "cart":      {"checkout": "pending"},
+        "pending":   {"pay": "paid", "cancel": "cancelled", "edit": "pending"},
+        "paid":      {"ship": "shipped", "refund": "refunded"},
+        "shipped":   {"deliver": "delivered"},
+        "delivered": {},   # terminal
+        "cancelled": {},   # terminal
+        "refunded":  {},   # terminal
+    }
+
+Cover these cases:
+  1. Valid transition — apply("cart", "checkout", ORDER) → "pending"
+  2. Branch transition — apply("pending", "cancel", ORDER) → "cancelled"
+  3. Legal self-loop — apply("pending", "edit", ORDER) → "pending"
+  4. Multi-step transition — apply("paid", "ship", ORDER) → "shipped"
+  5. Unknown event for a valid state — apply("pending", "ship", ORDER) → raises ValueError
+  6. Any event on a terminal state — apply("delivered", "refund", ORDER) → raises ValueError
+  7. Unknown state — apply("archived", "checkout", ORDER) → raises ValueError
+  8. Empty-string event — apply("pending", "", ORDER) → raises ValueError
