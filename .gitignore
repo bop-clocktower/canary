@@ -9,6 +9,7 @@ tests/generated/
 temp_harness/
 .entropy-backups/
 .harness/knowledge/
+npm/.harness/
 
 # Superpowers brainstorm sessions
 .superpowers/
@@ -50,6 +51,10 @@ dmypy.json
 node_modules/
 playwright-report/
 blob-report/
+
+# Root markdownlint scratch — CI runs `npx --yes markdownlint-cli`, no root node project
+/package.json
+/package-lock.json
 
 # ── Environment & secrets ─────────────────────────────────────
 .env
