@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/plugin.schema.json",
   "name": "canary",
-  "version": "5.5.0",
+  "version": "5.5.1",
   "description": "AI-powered test generation for Claude Code — generate, init, and migrate test suites via slash commands.",
   "hooks": "./.claude-plugin/hooks.json",
   "mcpServers": {
