@@ -94,6 +94,23 @@ def _validate_url(raw: object, field_name: str, warnings: list[str]) -> str:
     return raw
 
 
+_OTEL_SCHEMES = ("http", "https", "grpc", "grpcs")
+
+
+def _validate_otel_endpoint(raw: object, field_name: str, warnings: list[str]) -> str:
+    """Validate an OTLP exporter endpoint — http/https/grpc/grpcs + a netloc."""
+    if not isinstance(raw, str):
+        warnings.append(f"{field_name}: expected string, got {type(raw).__name__} — skipped")
+        return ""
+    if _looks_like_secret(raw):
+        raise _SecretDetected(field_name, raw)
+    parsed = urlparse(raw)
+    if parsed.scheme not in _OTEL_SCHEMES or not parsed.netloc:
+        warnings.append(f"{field_name}: dropped invalid endpoint {raw!r}")
+        return ""
+    return raw
+
+
 class _SecretDetected(Exception):
     def __init__(self, field_name: str, value: str) -> None:
         self.field_name = field_name
@@ -115,6 +132,7 @@ class _Layer:
     claude_code_skills: list[str] = field(default_factory=list)
     optum_dashboard_url: str = ""
     optum_dashboard_token_env: str = ""
+    otel_exporter_endpoint: str = ""
     notes: str = ""
     warnings: list[str] = field(default_factory=list)
     source: str = ""
@@ -171,6 +189,12 @@ def _parse_layer(data: dict, source: str) -> _Layer:
             else:
                 warns.append(f"optum_dashboard_token_env: dropped invalid env-var name {raw_env!r}")
 
+    otel_exporter_endpoint = ""
+    if "otel_exporter_endpoint" in data:
+        otel_exporter_endpoint = _validate_otel_endpoint(
+            data["otel_exporter_endpoint"], "otel_exporter_endpoint", warns
+        )
+
     notes = ""
     if "notes" in data:
         raw_notes = data["notes"]
@@ -186,6 +210,7 @@ def _parse_layer(data: dict, source: str) -> _Layer:
         claude_code_skills=claude_code_skills,
         optum_dashboard_url=optum_dashboard_url,
         optum_dashboard_token_env=optum_dashboard_token_env,
+        otel_exporter_endpoint=otel_exporter_endpoint,
         notes=notes,
         warnings=warns,
         source=source,
@@ -236,6 +261,7 @@ def _merge_layers(layers: list[_Layer]) -> dict:
     claude_code_skills: list[str] = []
     optum_dashboard_url = ""
     optum_dashboard_token_env = ""
+    otel_exporter_endpoint = ""
     notes = ""
     warns: list[str] = []
     sources: list[str] = []
@@ -251,6 +277,8 @@ def _merge_layers(layers: list[_Layer]) -> dict:
             optum_dashboard_url = layer.optum_dashboard_url
         if layer.optum_dashboard_token_env:
             optum_dashboard_token_env = layer.optum_dashboard_token_env
+        if layer.otel_exporter_endpoint:
+            otel_exporter_endpoint = layer.otel_exporter_endpoint
         if layer.notes:
             notes = layer.notes
         warns.extend(layer.warnings)
@@ -266,6 +294,7 @@ def _merge_layers(layers: list[_Layer]) -> dict:
         claude_code_skills=claude_code_skills,
         optum_dashboard_url=optum_dashboard_url,
         optum_dashboard_token_env=optum_dashboard_token_env,
+        otel_exporter_endpoint=otel_exporter_endpoint,
         notes=notes,
         warnings=warns,
         sources=sources,
@@ -285,6 +314,7 @@ class CompanyKnowledge:
     claude_code_skills: list[str] = field(default_factory=list)
     optum_dashboard_url: str = ""
     optum_dashboard_token_env: str = ""
+    otel_exporter_endpoint: str = ""
     notes: str = ""
     warnings: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
@@ -418,6 +448,7 @@ class CompanyKnowledge:
             "claude_code_skills": self.claude_code_skills,
             "optum_dashboard_url": self.optum_dashboard_url,
             "optum_dashboard_token_env": self.optum_dashboard_token_env,
+            "otel_exporter_endpoint": self.otel_exporter_endpoint,
             "notes": self.notes,
             "sources": self.sources,
             "warnings": self.warnings,

@@ -168,6 +168,27 @@ class TestFieldValidation(unittest.TestCase):
         ck = self._load({"unknown_future_field": "ignored", "confluence_spaces": ["QA"]})
         self.assertFalse(ck.is_empty)
 
+    def test_otel_exporter_endpoint_http_accepted(self):
+        ck = self._load({"otel_exporter_endpoint": "http://localhost:4318"})
+        self.assertEqual(ck.otel_exporter_endpoint, "http://localhost:4318")
+
+    def test_otel_exporter_endpoint_grpc_accepted(self):
+        ck = self._load({"otel_exporter_endpoint": "grpc://collector.example.com:4317"})
+        self.assertEqual(ck.otel_exporter_endpoint, "grpc://collector.example.com:4317")
+
+    def test_otel_exporter_endpoint_invalid_scheme_dropped(self):
+        ck = self._load({"otel_exporter_endpoint": "ftp://bad.example.com:4317"})
+        self.assertEqual(ck.otel_exporter_endpoint, "")
+
+    def test_otel_exporter_endpoint_no_netloc_dropped(self):
+        ck = self._load({"otel_exporter_endpoint": "not-a-url"})
+        self.assertEqual(ck.otel_exporter_endpoint, "")
+
+    def test_otel_exporter_endpoint_secret_rejected(self):
+        ck = self._load({"otel_exporter_endpoint": "Bearer-super-secret-token-value"})
+        self.assertTrue(ck.error)
+        self.assertIn("secret", ck.error)
+
 
 class TestSecretRejection(unittest.TestCase):
     def _load(self, data: dict) -> CompanyKnowledge:
@@ -316,6 +337,17 @@ class TestMergeCascade(unittest.TestCase):
             self._write(Path(tmp), "company.prod.json", {"mcp_servers": ["harness"]})
             ck = CompanyKnowledge.load(Path(tmp), env="prod")
         self.assertEqual(ck.notes, "base note")
+
+    def test_otel_exporter_endpoint_replaced_by_env_layer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(Path(tmp), "company.json", {
+                "otel_exporter_endpoint": "http://localhost:4318"
+            })
+            self._write(Path(tmp), "company.uat.json", {
+                "otel_exporter_endpoint": "grpc://collector.uat.example.com:4317"
+            })
+            ck = CompanyKnowledge.load(Path(tmp), env="uat")
+        self.assertEqual(ck.otel_exporter_endpoint, "grpc://collector.uat.example.com:4317")
 
     def test_optum_dashboard_url_replaced_by_env_layer(self):
         with tempfile.TemporaryDirectory() as tmp:
