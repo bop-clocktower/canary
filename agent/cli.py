@@ -1142,6 +1142,8 @@ def ck_show(
         print(f"[bold]Claude Code skills:[/bold] {', '.join(ck.claude_code_skills)}")
     if ck.optum_dashboard_url:
         print(f"[bold]Dashboard URL:[/bold]     {ck.optum_dashboard_url}")
+    if ck.otel_exporter_endpoint:
+        print(f"[bold]OTel endpoint:[/bold]     {ck.otel_exporter_endpoint}")
     if ck.notes:
         print(f"[bold]Notes:[/bold] {ck.notes}")
     if ck.error:
