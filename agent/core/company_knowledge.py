@@ -98,9 +98,15 @@ _OTEL_SCHEMES = ("http", "https", "grpc", "grpcs")
 
 
 def _validate_otel_endpoint(raw: object, field_name: str, warnings: list[str]) -> str:
-    """Validate an OTLP exporter endpoint — http/https/grpc/grpcs + a netloc."""
+    """Validate an OTLP exporter endpoint — http/https/grpc/grpcs + a netloc.
+
+    An empty string is the documented "use the file-exporter default" value and
+    is accepted silently (no endpoint configured); it is not treated as invalid.
+    """
     if not isinstance(raw, str):
         warnings.append(f"{field_name}: expected string, got {type(raw).__name__} — skipped")
+        return ""
+    if not raw.strip():
         return ""
     if _looks_like_secret(raw):
         raise _SecretDetected(field_name, raw)
