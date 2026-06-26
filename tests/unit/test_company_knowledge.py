@@ -176,6 +176,12 @@ class TestFieldValidation(unittest.TestCase):
         ck = self._load({"otel_exporter_endpoint": "grpc://collector.example.com:4317"})
         self.assertEqual(ck.otel_exporter_endpoint, "grpc://collector.example.com:4317")
 
+    def test_otel_exporter_endpoint_empty_is_silent_default(self):
+        ck = self._load({"otel_exporter_endpoint": "", "confluence_spaces": ["QA"]})
+        self.assertEqual(ck.otel_exporter_endpoint, "")
+        self.assertEqual(ck.warnings, [])
+        self.assertEqual(ck.error, "")
+
     def test_otel_exporter_endpoint_invalid_scheme_dropped(self):
         ck = self._load({"otel_exporter_endpoint": "ftp://bad.example.com:4317"})
         self.assertEqual(ck.otel_exporter_endpoint, "")
