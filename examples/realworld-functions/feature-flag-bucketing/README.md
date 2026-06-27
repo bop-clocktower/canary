@@ -31,8 +31,8 @@ How it works:
       hashing the UTF-8 bytes of the string.
   - The user's bucket is `hash % 100` (an integer 0..99).
   - The user is enrolled when `bucket < percentage`.
-  - `percentage` is an integer 0..100. Values outside that range throw a
-    RangeError.
+  - `percentage` must be an integer in 0..100. A non-integer, or a value
+    outside that range, throws a RangeError.
 
 Invariants:
   - Deterministic: bucket(u, f, p) always equals bucket(u, f, p).
@@ -53,7 +53,8 @@ Cover these cases (bucket('user-42','checkout') = 75; bucket('alice','checkout')
   6. Monotonic rollout — bucket('alice', 'checkout', 30) → false, then 50 → true, 75 → true
   7. Per-flag independence — bucket('user-42', 'checkout', 50) → false but
      bucket('user-42', 'beta', 50) → true
-  8. Out-of-range percentage — bucket('alice', 'checkout', -1) and (…, 101) → throws RangeError
+  8. Invalid percentage — bucket('alice', 'checkout', -1), (…, 101), and
+     (…, 50.5) → throws RangeError (out of range, or not an integer)
 ```
 
 See [`prompt.txt`](prompt.txt) for a copy-pasteable version.
