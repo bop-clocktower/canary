@@ -1,0 +1,39 @@
+Generate Vitest unit tests for a feature-flag bucket function.
+
+Signature:
+    function bucket(userId: string, flagKey: string, percentage: number): boolean
+
+The function decides whether a user is enrolled in a gradual percentage rollout
+of a feature flag. The decision is deterministic and stable: the same inputs
+always return the same result, with no stored state.
+
+How it works:
+  - Hash the string `${userId}:${flagKey}` with 32-bit FNV-1a:
+      offset basis = 2166136261, prime = 16777619, arithmetic mod 2^32,
+      hashing the UTF-8 bytes of the string.
+  - The user's bucket is `hash % 100` (an integer 0..99).
+  - The user is enrolled when `bucket < percentage`.
+  - `percentage` must be an integer in 0..100. A non-integer, or a value
+    outside that range, throws a RangeError.
+
+Invariants:
+  - Deterministic: bucket(u, f, p) always equals bucket(u, f, p).
+  - Monotonic rollout: for a fixed (userId, flagKey), if the user is enrolled at
+    percentage p, they are enrolled at every q >= p. Raising the rollout never
+    un-enrolls anyone.
+  - 0% enrolls nobody; 100% enrolls everybody.
+  - flagKey is part of the hashed key, so the same user is bucketed
+    independently per flag.
+
+Cover these cases (bucket('user-42','checkout') = 75; bucket('alice','checkout') = 35):
+  1. Deterministic — bucket('user-42', 'checkout', 50) called twice → false both times
+  2. 0% enrolls nobody — bucket('alice', 'checkout', 0) → false
+  3. 100% enrolls everybody — bucket('user-42', 'checkout', 100) → true
+  4. Below threshold, enrolled — bucket('alice', 'checkout', 50) → true
+  5. Own bucket does NOT enroll (`<`, not `<=`) — bucket('user-42', 'checkout', 75) → false,
+     bucket('user-42', 'checkout', 76) → true
+  6. Monotonic rollout — bucket('alice', 'checkout', 30) → false, then 50 → true, 75 → true
+  7. Per-flag independence — bucket('user-42', 'checkout', 50) → false but
+     bucket('user-42', 'beta', 50) → true
+  8. Invalid percentage — bucket('alice', 'checkout', -1), (…, 101), and
+     (…, 50.5) → throws RangeError (out of range, or not an integer)

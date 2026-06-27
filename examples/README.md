@@ -37,6 +37,7 @@ Canary design the test coverage — not from a URL or framework mechanic.
 | [order-state-machine](realworld-functions/order-state-machine/) | Unit | Pytest | Advance a state machine — terminal absorption, illegal-transition rejection |
 | [retry-backoff-schedule](realworld-functions/retry-backoff-schedule/) | Unit | Vitest | Exponential backoff with full jitter via an injected rng (deterministic) |
 | [discount-stacking](realworld-functions/discount-stacking/) | Unit | Vitest | Stack ordered % and fixed discounts — order-dependence, clamp, total cap |
+| [feature-flag-bucketing](realworld-functions/feature-flag-bucketing/) | Unit | Vitest | Deterministic % rollout via FNV-1a hash — monotonic enrollment, `<` boundary |
 
 See [realworld-functions/README.md](realworld-functions/README.md) for the
 rationale and how to add more.
