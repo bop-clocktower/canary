@@ -24,6 +24,7 @@ produce fresh output.
 | [order-state-machine](order-state-machine/) | Unit | Pytest | Advance a state machine — terminal absorption, illegal-transition rejection |
 | [retry-backoff-schedule](retry-backoff-schedule/) | Unit | Vitest | Exponential backoff with full jitter via an injected rng (deterministic) |
 | [discount-stacking](discount-stacking/) | Unit | Vitest | Stack ordered % and fixed discounts — order-dependence, clamp, total cap |
+| [feature-flag-bucketing](feature-flag-bucketing/) | Unit | Vitest | Deterministic % rollout via FNV-1a hash — monotonic enrollment, `<` boundary |
 
 ## How these differ from the top-level examples
 
