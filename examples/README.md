@@ -38,6 +38,8 @@ Canary design the test coverage — not from a URL or framework mechanic.
 | [retry-backoff-schedule](realworld-functions/retry-backoff-schedule/) | Unit | Vitest | Exponential backoff with full jitter via an injected rng (deterministic) |
 | [discount-stacking](realworld-functions/discount-stacking/) | Unit | Vitest | Stack ordered % and fixed discounts — order-dependence, clamp, total cap |
 | [feature-flag-bucketing](realworld-functions/feature-flag-bucketing/) | Unit | Vitest | Deterministic % rollout via FNV-1a hash — monotonic enrollment, `<` boundary |
+| [dense-rank-leaderboard](realworld-functions/dense-rank-leaderboard/) | Unit | Pytest | Competition ranking — tied scores share a rank, next score skips the gap |
+| [bytes-humanizer](realworld-functions/bytes-humanizer/) | Unit | Vitest | Format bytes (1.5 KiB) — unit-crossing round, binary vs decimal base |
 
 See [realworld-functions/README.md](realworld-functions/README.md) for the
 rationale and how to add more.
