@@ -4,7 +4,7 @@ version: 1
 created: 2026-05-11
 updated: 2026-06-29
 last_synced: 2026-06-29
-last_manual_edit: 2026-06-30T01:18:39.593Z
+last_manual_edit: 2026-06-30T21:46:10.196Z
 ---
 
 # Roadmap
@@ -26,9 +26,9 @@ last_manual_edit: 2026-06-30T01:18:39.593Z
 
 ### Public-readiness de-identification
 
-- **Status:** backlog
-- **Spec:** —
-- **Summary:** Before the repo is shown outside the maintainer's org (demo/portfolio/open-source), remove employer/client identifiers. Blockers: rename client-named `CompanyKnowledge` dataclass fields to generic names (e.g. `dashboard_url`/`dashboard_token_env`) across core/CLI/docs/tests; scrub the non-canonical committer email from git history via `git filter-repo --mailmap` (or add a `.mailmap`); genericize a client-specific token name in docs/guides/company-knowledge.md. Polish: add `pyproject.toml` license/authors metadata, reconcile README install path vs version badge, relocate internal planning/state docs, strip hardcoded local absolute paths. (refs: Issue #248)
+- **Status:** planned
+- **Spec:** docs/changes/public-readiness-deident/proposal.md
+- **Summary:** Before the repo is shown outside the maintainer's org (demo/portfolio/open-source), remove employer/client identifiers. Blockers: rename client-named `CompanyKnowledge` dataclass fields to generic names (e.g. `dashboard_url`/`dashboard_token_env`) across core/CLI/docs/tests; scrub the non-canonical committer email from git history via a human-run `git filter-repo` runbook (no committed `.mailmap`, which would re-publish the email); genericize a client-specific token name in docs/guides/company-knowledge.md. Polish: add `pyproject.toml` license/authors metadata, reconcile README install path vs version badge, relocate internal planning/state docs, strip hardcoded local absolute paths. (refs: Issue #248)
 - **Blockers:** —
 - **Plan:** —
 
