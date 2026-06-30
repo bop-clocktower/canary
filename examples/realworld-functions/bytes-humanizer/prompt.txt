@@ -18,7 +18,8 @@ How it works:
   - Unit-crossing on round: if rounding pushes the value up to `base`
     (e.g. 999.95 kB -> 1000.0), promote to the next unit as "1.0". So
     humanize(999950, { binary: false }) is "1.0 MB", not "1000.0 kB".
-  - A negative or non-finite byte count throws a RangeError.
+  - `bytes` is a whole number of bytes. A negative or non-finite count throws
+    a RangeError.
 
 Cover these cases:
   1. Below one unit, plain bytes — humanize(512, { binary: true }) -> "512 B"
