@@ -1,0 +1,33 @@
+Generate Vitest unit tests for a humanize function.
+
+Signature:
+    function humanize(bytes: number, opts: { binary: boolean }): string
+
+The function formats a byte count as a human-readable string, choosing the
+largest unit whose value is at least 1 and rounding to one decimal place.
+
+How it works:
+  - opts.binary selects the unit system:
+      binary  -> base 1024, units B, KiB, MiB, GiB, TiB, PiB
+      decimal -> base 1000, units B, kB, MB, GB, TB, PB
+  - Below one unit (bytes < base) the result is the integer byte count followed
+    by " B" — e.g. "512 B", "0 B" — with no decimal place.
+  - At or above one unit, divide down to the largest unit below `base`, round
+    the value half-up to one decimal place, and format as "<value> <unit>" —
+    e.g. "1.5 KiB".
+  - Unit-crossing on round: if rounding pushes the value up to `base`
+    (e.g. 999.95 kB -> 1000.0), promote to the next unit as "1.0". So
+    humanize(999950, { binary: false }) is "1.0 MB", not "1000.0 kB".
+  - `bytes` is a whole number of bytes. A negative or non-finite count throws
+    a RangeError.
+
+Cover these cases:
+  1. Below one unit, plain bytes — humanize(512, { binary: true }) -> "512 B"
+  2. Zero — humanize(0, { binary: true }) -> "0 B"
+  3. Exact unit — humanize(1024, { binary: true }) -> "1.0 KiB"
+  4. One decimal place — humanize(1536, { binary: true }) -> "1.5 KiB"
+  5. Binary vs decimal diverge — humanize(1000, { binary: true }) -> "1000 B",
+     humanize(1000, { binary: false }) -> "1.0 kB"
+  6. Unit-crossing on round — humanize(999950, { binary: false }) -> "1.0 MB"
+  7. Larger unit — humanize(5368709120, { binary: true }) -> "5.0 GiB"
+  8. Negative byte count — humanize(-1, { binary: true }) -> throws RangeError

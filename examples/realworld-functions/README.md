@@ -25,6 +25,8 @@ produce fresh output.
 | [retry-backoff-schedule](retry-backoff-schedule/) | Unit | Vitest | Exponential backoff with full jitter via an injected rng (deterministic) |
 | [discount-stacking](discount-stacking/) | Unit | Vitest | Stack ordered % and fixed discounts — order-dependence, clamp, total cap |
 | [feature-flag-bucketing](feature-flag-bucketing/) | Unit | Vitest | Deterministic % rollout via FNV-1a hash — monotonic enrollment, `<` boundary |
+| [dense-rank-leaderboard](dense-rank-leaderboard/) | Unit | Pytest | Competition ranking — tied scores share a rank, next score skips the gap |
+| [bytes-humanizer](bytes-humanizer/) | Unit | Vitest | Format bytes (1.5 KiB) — unit-crossing round, binary vs decimal base |
 
 ## How these differ from the top-level examples
 

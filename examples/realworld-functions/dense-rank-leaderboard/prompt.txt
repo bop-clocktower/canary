@@ -1,0 +1,26 @@
+Generate pytest unit tests for a rank function.
+
+Signature:
+    def rank(scores: list[int]) -> list[int]:
+
+The function assigns a competition rank to each score and returns a list of
+ranks parallel to the input: rank[i] is the rank of scores[i]. Higher scores
+rank better — the highest score is rank 1.
+
+Ranking rules (standard "competition" ranking):
+  - A score's rank is 1 + the number of scores strictly greater than it.
+  - Tied scores share the same rank, and the next distinct (lower) score skips
+    the gap: [100, 90, 90, 80] -> [1, 2, 2, 4] — there is no rank 3.
+  - Ranks follow the input order; the input list is never reordered.
+  - The function is pure — it does not mutate `scores`.
+  - An empty list returns an empty list.
+
+Cover these cases:
+  1. Strictly descending, no ties — rank([100, 90, 80]) -> [1, 2, 3]
+  2. Tie shares a rank, next skips the gap — rank([100, 90, 90, 80]) -> [1, 2, 2, 4]
+  3. Input order is preserved (unsorted input) — rank([90, 100, 80]) -> [2, 1, 3]
+  4. All scores equal — rank([50, 50, 50]) -> [1, 1, 1]
+  5. Three-way tie at the top — rank([100, 100, 100, 70]) -> [1, 1, 1, 4]
+  6. Tie in the middle — rank([100, 80, 80, 80, 50]) -> [1, 2, 2, 2, 5]
+  7. Single score — rank([42]) -> [1]
+  8. Empty list — rank([]) -> []
