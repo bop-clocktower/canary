@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent.guardian.diff_extractor import extract_api_diff, ChangeType
+from agent.guardian.diff_extractor import classify_changes, extract_api_diff, ChangeType
 
 
 SPEC_V1 = {
@@ -101,3 +101,46 @@ class TestExtractApiDiff:
         diff = extract_api_diff(SPEC_V1, SPEC_V2_ADD_ENDPOINT)
         added = diff.added[0]
         assert added.operation_id == "bulkImport"
+
+
+class TestClassifyChanges:
+    def test_params_only(self):
+        before = {"parameters": [{"name": "id", "in": "path"}]}
+        after = {"parameters": [{"name": "id", "in": "path"}, {"name": "q", "in": "query"}]}
+        assert classify_changes(before, after) == ["params"]
+
+    def test_request_body_change(self):
+        before = {"requestBody": {"content": {"application/json": {"schema": {"a": 1}}}}}
+        after = {"requestBody": {"content": {"application/json": {"schema": {"a": 2}}}}}
+        assert classify_changes(before, after) == ["request-body"]
+
+    def test_new_response_code_is_status_codes(self):
+        before = {"responses": {"200": {"description": "ok"}}}
+        after = {"responses": {"200": {"description": "ok"}, "404": {"description": "nf"}}}
+        assert classify_changes(before, after) == ["status-codes"]
+
+    def test_changed_existing_response_schema_is_response(self):
+        before = {"responses": {"200": {"content": {"json": {"schema": {"a": 1}}}}}}
+        after = {"responses": {"200": {"content": {"json": {"schema": {"a": 2}}}}}}
+        assert classify_changes(before, after) == ["response"]
+
+    def test_security_change_is_auth(self):
+        before = {"security": [{"apiKey": []}]}
+        after = {"security": [{"bearer": []}]}
+        assert classify_changes(before, after) == ["auth"]
+
+    def test_multiple_changes_ordered_by_vocabulary(self):
+        before = {
+            "parameters": [{"name": "id"}],
+            "responses": {"200": {"schema": {"a": 1}}},
+        }
+        after = {
+            "parameters": [{"name": "id"}, {"name": "q"}],
+            "responses": {"200": {"schema": {"a": 2}}},
+        }
+        # VALID_CHANGES order: params before response
+        assert classify_changes(before, after) == ["params", "response"]
+
+    def test_non_vocabulary_change_returns_empty(self):
+        # A summary/description-only edit is a "changed" op with no contract delta.
+        assert classify_changes({"summary": "old"}, {"summary": "new"}) == []
