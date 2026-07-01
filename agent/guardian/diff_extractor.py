@@ -44,6 +44,37 @@ class ApiDiff:
 
 _HTTP_METHODS = ("get", "post", "put", "patch", "delete", "head", "options")
 
+# Frozen vocabulary for a changed endpoint (see docs/specs/api-delta-contract.md).
+VALID_CHANGES = ("params", "request-body", "response", "auth", "status-codes")
+
+
+def classify_changes(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
+    """Classify a changed OpenAPI operation into the frozen change vocabulary.
+
+    Returns every applicable category (an operation may change in several ways
+    at once), ordered by ``VALID_CHANGES`` for stable output. A change confined
+    to non-contract fields (summary/description/tags) returns an empty list.
+    """
+    found: set[str] = set()
+
+    if (before.get("parameters") or []) != (after.get("parameters") or []):
+        found.add("params")
+    if before.get("requestBody") != after.get("requestBody"):
+        found.add("request-body")
+    if before.get("security") != after.get("security"):
+        found.add("auth")
+
+    before_resp = before.get("responses") or {}
+    after_resp = after.get("responses") or {}
+    if set(before_resp) != set(after_resp):
+        found.add("status-codes")
+    for code in set(before_resp) & set(after_resp):
+        if before_resp[code] != after_resp[code]:
+            found.add("response")
+            break
+
+    return [c for c in VALID_CHANGES if c in found]
+
 
 def _iter_operations(spec: dict[str, Any]):
     for path, path_item in (spec.get("paths") or {}).items():
