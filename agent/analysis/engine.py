@@ -53,7 +53,6 @@ class AnalysisEngine:
         recent_failures: int = 3,
         suite: Optional[str] = None,
     ) -> AnalysisResult:
-        from agent.history.detector import detect_regressions
 
         flaky = self._store.query_flaky(window=window, suite=suite, min_rate=min_flake_rate)
 

@@ -1167,7 +1167,6 @@ def ck_init(
     shown as defaults so re-running is safe (merges unless --force is passed).
     Secrets are never accepted — store those in environment variables.
     """
-    import os
     from agent.core.company_knowledge import CompanyKnowledge
 
     canary_dir = Path.cwd() / ".canary"

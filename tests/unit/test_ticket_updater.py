@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -433,7 +432,7 @@ class TestDryRun(unittest.TestCase):
             patch("agent.core.ticket_updater._jira_current_status", return_value="In QA"),
             patch("agent.core.ticket_updater._jira_find_transition", return_value="31"),
             patch("urllib.request.urlopen") as mock_urlopen,
-            patch("subprocess.run") as mock_sub,
+            patch("subprocess.run"),
         ):
             result = updater.update(summary, dry_run=True)
 

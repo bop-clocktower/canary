@@ -136,7 +136,7 @@ class TestAnalyzePython(unittest.TestCase):
         self.assertIn("self.assert", profile.assertion_style)
 
     def test_skips_unreadable_files(self):
-        p = self._write_test("test_ok.py", "def test_ok(): pass\n")
+        self._write_test("test_ok.py", "def test_ok(): pass\n")
         # Make the second test file, then remove read permission
         p2 = self._write_test("test_bad.py", "def test_bad(): pass\n")
         p2.chmod(0o000)

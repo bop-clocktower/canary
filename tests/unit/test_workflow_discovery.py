@@ -6,7 +6,6 @@ import json
 import tempfile
 import unittest
 import urllib.error
-from datetime import timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

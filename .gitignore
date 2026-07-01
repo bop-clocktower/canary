@@ -77,3 +77,6 @@ blob-report/
 # Downloaded native binaries (placed by npm postinstall)
 npm/bin/canary
 npm/bin/canary.exe
+
+# Local turbo→ruff lint bridge (pairs with gitignored root package.json; see issue #253)
+/turbo.json

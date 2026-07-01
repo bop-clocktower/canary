@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
 from agent.guardian.diff_extractor import EndpointChange, ChangeType, ApiDiff
-from agent.guardian.impact_mapper import map_impact, ImpactGap, Severity
+from agent.guardian.impact_mapper import map_impact, Severity
 
 
 def _change(path: str, method: str, change_type: ChangeType,

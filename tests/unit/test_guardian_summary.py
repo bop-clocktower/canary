@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from agent.guardian.diff_extractor import ChangeType
 from agent.guardian.impact_mapper import ImpactGap, Severity
 from agent.guardian.summary_emitter import build_summary

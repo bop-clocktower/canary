@@ -8,7 +8,6 @@ from pathlib import Path
 
 from fastmcp import FastMCP
 
-from agent.core.metadata_scanner import MetadataScanner
 from agent.core.pattern_matcher import PatternMatcher
 from agent.core.domain_scanner import DomainScanner
 from agent.core.executor import CanaryTestExecutor

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import pytest
-from pathlib import Path
 
 from agent.history.schema import RunRecord, TestResult
 from agent.history.local_store import LocalHistoryStore

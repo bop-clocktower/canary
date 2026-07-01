@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from agent.core.migrator import HarnessMigrator, SkillDeployResult
+from agent.core.migrator import HarnessMigrator
 from agent.core.skill_registry import SkillRegistry
 
 

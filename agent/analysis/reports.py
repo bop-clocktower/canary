@@ -142,7 +142,7 @@ def build_area_health_report(rows: list[dict], weeks: int) -> str:
         })
 
     if not all_areas:
-        return f"No area health data available.\n"
+        return "No area health data available.\n"
 
     lines = [
         f"## Area Health (last {weeks} weeks)\n",

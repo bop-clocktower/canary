@@ -29,7 +29,6 @@ def analyze(
     db_url: Optional[str] = typer.Option(None, "--db-url", envvar="CANARY_HISTORY_DB_URL"),
 ) -> None:
     """Analyze API diff for a commit and emit a test impact summary."""
-    import sys
 
     if not spec_before or not spec_after:
         print("[yellow]Tip:[/yellow] pass --spec-before and --spec-after to diff two OpenAPI specs.")
@@ -135,7 +134,7 @@ def _try_post_pr_comment(summary: str, pr_url: Optional[str]) -> None:
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode == 0:
-            print(f"[green]Posted impact summary as PR comment.[/green]")
+            print("[green]Posted impact summary as PR comment.[/green]")
         else:
             print(f"[yellow]Could not post PR comment:[/yellow] {result.stderr.strip()}")
     except (FileNotFoundError, subprocess.TimeoutExpired):

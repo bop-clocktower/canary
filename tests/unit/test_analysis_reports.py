@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from agent.analysis.reports import (
     build_flaky_report,
     build_spikes_report,
