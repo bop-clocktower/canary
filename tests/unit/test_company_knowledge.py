@@ -169,9 +169,10 @@ class TestFieldValidation(unittest.TestCase):
         self.assertFalse(ck.is_empty)
 
     def test_unknown_key_emits_warning(self):
-        ck = self._load({"optum_dashboard_url": "https://x.example.com"})
+        # a removed/legacy key is unrecognized -> warns and does not populate
+        ck = self._load({"legacy_dashboard_url": "https://x.example.com"})
         self.assertTrue(
-            any("ignored unknown field: optum_dashboard_url" in w for w in ck.warnings)
+            any("ignored unknown field: legacy_dashboard_url" in w for w in ck.warnings)
         )
         # a removed key must NOT populate a dashboard field
         self.assertEqual(ck.dashboard_url, "")
