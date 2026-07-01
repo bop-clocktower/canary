@@ -1140,8 +1140,8 @@ def ck_show(
         print(f"[bold]MCP servers:[/bold]       {', '.join(ck.mcp_servers)}")
     if ck.claude_code_skills:
         print(f"[bold]Claude Code skills:[/bold] {', '.join(ck.claude_code_skills)}")
-    if ck.optum_dashboard_url:
-        print(f"[bold]Dashboard URL:[/bold]     {ck.optum_dashboard_url}")
+    if ck.dashboard_url:
+        print(f"[bold]Dashboard URL:[/bold]     {ck.dashboard_url}")
     if ck.otel_exporter_endpoint:
         print(f"[bold]OTel endpoint:[/bold]     {ck.otel_exporter_endpoint}")
     if ck.notes:
