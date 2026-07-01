@@ -14,8 +14,8 @@ content at runtime via configured MCP servers or authenticated tooling.
 2. .canary/company.json            — project-local config
 3. .canary/company.<env>.json      — environment override (CANARY_ENV or explicit)
 
-List fields are unioned across sources; scalar fields (optum_dashboard_url,
-optum_dashboard_token_env, notes) are replaced by the highest-priority source
+List fields are unioned across sources; scalar fields (dashboard_url,
+dashboard_token_env, notes) are replaced by the highest-priority source
 that sets them.
 """
 
@@ -136,8 +136,8 @@ class _Layer:
     internal_domains: list[str] = field(default_factory=list)
     mcp_servers: list[str] = field(default_factory=list)
     claude_code_skills: list[str] = field(default_factory=list)
-    optum_dashboard_url: str = ""
-    optum_dashboard_token_env: str = ""
+    dashboard_url: str = ""
+    dashboard_token_env: str = ""
     otel_exporter_endpoint: str = ""
     notes: str = ""
     warnings: list[str] = field(default_factory=list)
@@ -180,20 +180,20 @@ def _parse_layer(data: dict, source: str) -> _Layer:
         lambda v: bool(_SKILL_RE.match(v)), str.lower, warns,
     )
 
-    optum_dashboard_url = ""
-    if "optum_dashboard_url" in data:
-        optum_dashboard_url = _validate_url(data["optum_dashboard_url"], "optum_dashboard_url", warns)
+    dashboard_url = ""
+    if "dashboard_url" in data:
+        dashboard_url = _validate_url(data["dashboard_url"], "dashboard_url", warns)
 
-    optum_dashboard_token_env = ""
-    if "optum_dashboard_token_env" in data:
-        raw_env = data["optum_dashboard_token_env"]
+    dashboard_token_env = ""
+    if "dashboard_token_env" in data:
+        raw_env = data["dashboard_token_env"]
         if isinstance(raw_env, str):
             if _looks_like_secret(raw_env):
-                raise _SecretDetected("optum_dashboard_token_env", raw_env)
+                raise _SecretDetected("dashboard_token_env", raw_env)
             if _ENV_VAR_RE.match(raw_env):
-                optum_dashboard_token_env = raw_env
+                dashboard_token_env = raw_env
             else:
-                warns.append(f"optum_dashboard_token_env: dropped invalid env-var name {raw_env!r}")
+                warns.append(f"dashboard_token_env: dropped invalid env-var name {raw_env!r}")
 
     otel_exporter_endpoint = ""
     if "otel_exporter_endpoint" in data:
@@ -214,8 +214,8 @@ def _parse_layer(data: dict, source: str) -> _Layer:
         internal_domains=internal_domains,
         mcp_servers=mcp_servers,
         claude_code_skills=claude_code_skills,
-        optum_dashboard_url=optum_dashboard_url,
-        optum_dashboard_token_env=optum_dashboard_token_env,
+        dashboard_url=dashboard_url,
+        dashboard_token_env=dashboard_token_env,
         otel_exporter_endpoint=otel_exporter_endpoint,
         notes=notes,
         warnings=warns,
@@ -265,8 +265,8 @@ def _merge_layers(layers: list[_Layer]) -> dict:
     internal_domains: list[str] = []
     mcp_servers: list[str] = []
     claude_code_skills: list[str] = []
-    optum_dashboard_url = ""
-    optum_dashboard_token_env = ""
+    dashboard_url = ""
+    dashboard_token_env = ""
     otel_exporter_endpoint = ""
     notes = ""
     warns: list[str] = []
@@ -279,10 +279,10 @@ def _merge_layers(layers: list[_Layer]) -> dict:
         internal_domains = _union(internal_domains, layer.internal_domains)
         mcp_servers = _union(mcp_servers, layer.mcp_servers)
         claude_code_skills = _union(claude_code_skills, layer.claude_code_skills)
-        if layer.optum_dashboard_url:
-            optum_dashboard_url = layer.optum_dashboard_url
-        if layer.optum_dashboard_token_env:
-            optum_dashboard_token_env = layer.optum_dashboard_token_env
+        if layer.dashboard_url:
+            dashboard_url = layer.dashboard_url
+        if layer.dashboard_token_env:
+            dashboard_token_env = layer.dashboard_token_env
         if layer.otel_exporter_endpoint:
             otel_exporter_endpoint = layer.otel_exporter_endpoint
         if layer.notes:
@@ -298,8 +298,8 @@ def _merge_layers(layers: list[_Layer]) -> dict:
         internal_domains=internal_domains,
         mcp_servers=mcp_servers,
         claude_code_skills=claude_code_skills,
-        optum_dashboard_url=optum_dashboard_url,
-        optum_dashboard_token_env=optum_dashboard_token_env,
+        dashboard_url=dashboard_url,
+        dashboard_token_env=dashboard_token_env,
         otel_exporter_endpoint=otel_exporter_endpoint,
         notes=notes,
         warnings=warns,
@@ -318,8 +318,8 @@ class CompanyKnowledge:
     internal_domains: list[str] = field(default_factory=list)
     mcp_servers: list[str] = field(default_factory=list)
     claude_code_skills: list[str] = field(default_factory=list)
-    optum_dashboard_url: str = ""
-    optum_dashboard_token_env: str = ""
+    dashboard_url: str = ""
+    dashboard_token_env: str = ""
     otel_exporter_endpoint: str = ""
     notes: str = ""
     warnings: list[str] = field(default_factory=list)
@@ -335,7 +335,7 @@ class CompanyKnowledge:
             self.internal_domains,
             self.mcp_servers,
             self.claude_code_skills,
-            self.optum_dashboard_url,
+            self.dashboard_url,
             self.notes,
         ])
 
@@ -452,8 +452,8 @@ class CompanyKnowledge:
             "internal_domains": self.internal_domains,
             "mcp_servers": self.mcp_servers,
             "claude_code_skills": self.claude_code_skills,
-            "optum_dashboard_url": self.optum_dashboard_url,
-            "optum_dashboard_token_env": self.optum_dashboard_token_env,
+            "dashboard_url": self.dashboard_url,
+            "dashboard_token_env": self.dashboard_token_env,
             "otel_exporter_endpoint": self.otel_exporter_endpoint,
             "notes": self.notes,
             "sources": self.sources,

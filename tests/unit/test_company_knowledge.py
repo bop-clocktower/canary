@@ -156,13 +156,13 @@ class TestFieldValidation(unittest.TestCase):
         ck = self._load({"notes": "context ```rm -rf /``` end"})
         self.assertNotIn("```", ck.notes)
 
-    def test_optum_dashboard_token_env_accepted(self):
-        ck = self._load({"optum_dashboard_token_env": "ACME_DASHBOARD_TOKEN"})
-        self.assertEqual(ck.optum_dashboard_token_env, "ACME_DASHBOARD_TOKEN")
+    def test_dashboard_token_env_accepted(self):
+        ck = self._load({"dashboard_token_env": "ACME_DASHBOARD_TOKEN"})
+        self.assertEqual(ck.dashboard_token_env, "ACME_DASHBOARD_TOKEN")
 
-    def test_optum_dashboard_token_env_lowercase_dropped(self):
-        ck = self._load({"optum_dashboard_token_env": "my_token"})
-        self.assertEqual(ck.optum_dashboard_token_env, "")
+    def test_dashboard_token_env_lowercase_dropped(self):
+        ck = self._load({"dashboard_token_env": "my_token"})
+        self.assertEqual(ck.dashboard_token_env, "")
 
     def test_unknown_keys_tolerated(self):
         ck = self._load({"unknown_future_field": "ignored", "confluence_spaces": ["QA"]})
@@ -355,16 +355,16 @@ class TestMergeCascade(unittest.TestCase):
             ck = CompanyKnowledge.load(Path(tmp), env="uat")
         self.assertEqual(ck.otel_exporter_endpoint, "grpc://collector.uat.example.com:4317")
 
-    def test_optum_dashboard_url_replaced_by_env_layer(self):
+    def test_dashboard_url_replaced_by_env_layer(self):
         with tempfile.TemporaryDirectory() as tmp:
             self._write(Path(tmp), "company.json", {
-                "optum_dashboard_url": "https://dashboard.example.com/base"
+                "dashboard_url": "https://dashboard.example.com/base"
             })
             self._write(Path(tmp), "company.uat.json", {
-                "optum_dashboard_url": "https://dashboard.example.com/uat"
+                "dashboard_url": "https://dashboard.example.com/uat"
             })
             ck = CompanyKnowledge.load(Path(tmp), env="uat")
-        self.assertEqual(ck.optum_dashboard_url, "https://dashboard.example.com/uat")
+        self.assertEqual(ck.dashboard_url, "https://dashboard.example.com/uat")
 
     def test_secret_in_env_layer_skipped_but_base_merged(self):
         with tempfile.TemporaryDirectory() as tmp:
