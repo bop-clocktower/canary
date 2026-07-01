@@ -9,19 +9,39 @@ import { readFileSync, writeFileSync, mkdirSync, unlinkSync, realpathSync, exist
 import { resolve, dirname, join, sep } from 'node:path';
 import process from 'node:process';
 
-// Destructive tool patterns blocked during taint.
-// These are intentionally inline — this check runs before the @harness-engineering/core
-// import attempt to ensure enforcement even when core is unavailable.
-// Keep in sync with DESTRUCTIVE_BASH exported from @harness-engineering/core injection-patterns.ts.
-const DESTRUCTIVE_BASH = [
-  /\bgit\s+push\b/,
-  /\bgit\s+commit\b/,
-  /\brm\s+-rf?\b/,
-  /\brm\s+-r\b/,
-];
+// Bash gating during taint is DENY-BY-DEFAULT. Regex-matching a shell string for
+// "destructive" patterns is not a sound security boundary — bash is not a regular
+// language, so quoting, chaining, substitution, and redirection all evade an
+// enumerate-bad list. Instead we allow ONLY provably read-only commands: no shell
+// composition (pipe / redirect / chain / substitution / background / newline) and
+// an allowlisted argv[0]. `harness taint clear` is always permitted so an operator
+// is never locked out of lifting the taint. Everything else is blocked.
+const READONLY_ARGV0 = new Set([
+  'ls', 'cat', 'pwd', 'echo', 'grep', 'rg', 'head', 'tail', 'wc', 'stat', 'file',
+  'which', 'printenv', 'date', 'whoami', 'id', 'tree', 'sort', 'uniq', 'cut', 'diff',
+]);
+// Pure-read git subcommands only. branch/remote/config/checkout are excluded —
+// they have mutating variants (git branch -D, git config core.hooksPath, …).
+const GIT_READONLY_SUB = new Set([
+  'status', 'log', 'diff', 'show', 'rev-parse', 'ls-files',
+]);
+// Any shell metacharacter that could chain, redirect, substitute, or background a
+// second command. Presence of any ⇒ not a single read-only command ⇒ blocked.
+const SHELL_COMPOSITION = /[;&|<>`\n]|\$\(|\$\{|\\\n/;
 
-function isDestructiveBash(command) {
-  return DESTRUCTIVE_BASH.some((p) => p.test(command));
+// Returns true only for commands safe to run during a tainted session.
+function isAllowedDuringTaint(command) {
+  const cmd = (command ?? '').trim();
+  if (!cmd) return false;
+  if (SHELL_COMPOSITION.test(cmd)) return false; // one command, no composition
+  const tokens = cmd.split(/\s+/);
+  const argv0 = tokens[0];
+  // Escape hatch: never block lifting the taint (or a read-only validate).
+  if (argv0 === 'harness') return tokens[1] === 'taint' || tokens[1] === 'validate';
+  if (argv0 === 'git') return GIT_READONLY_SUB.has(tokens[1]);
+  // `find` is a read tool but -delete/-exec/-execdir mutate.
+  if (argv0 === 'find') return !/\s-(delete|exec|execdir)\b/.test(cmd);
+  return READONLY_ARGV0.has(argv0);
 }
 
 // Canonicalize the deepest existing ancestor of a (possibly not-yet-created)
@@ -180,10 +200,10 @@ async function main() {
     if (tainted) {
       if (toolName === 'Bash') {
         const command = toolInput?.command ?? '';
-        if (isDestructiveBash(command)) {
+        if (!isAllowedDuringTaint(command)) {
           process.stderr.write(
             `BLOCKED by Sentinel: "${toolName}" blocked during tainted session. ` +
-            `Destructive operations are restricted. Run "harness taint clear" to lift.\n`
+            `Only single read-only commands are allowed. Run "harness taint clear" to lift.\n`
           );
           process.exit(2);
         }
