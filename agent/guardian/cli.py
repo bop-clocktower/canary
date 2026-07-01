@@ -26,6 +26,9 @@ def analyze(
     coverage_file: Optional[str] = typer.Option(None, "--coverage", help="Path to coverage-report.json."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print summary to stdout only."),
     output_json: bool = typer.Option(False, "--json"),
+    emit_diff: Optional[str] = typer.Option(
+        None, "--emit-diff", help="Write a machine-readable api-delta.json to PATH."
+    ),
     db_url: Optional[str] = typer.Option(None, "--db-url", envvar="CANARY_HISTORY_DB_URL"),
 ) -> None:
     """Analyze API diff for a commit and emit a test impact summary."""
@@ -45,13 +48,23 @@ def analyze(
 
     diff = extract_api_diff(before_spec, after_spec)
 
+    sha = commit or "unknown"
+
+    if emit_diff:
+        from datetime import datetime, timezone
+
+        from agent.guardian.delta_emitter import build_api_delta, write_api_delta
+
+        generated = datetime.now(timezone.utc).isoformat()
+        write_api_delta(build_api_delta(diff, sha=sha, suite=suite, generated=generated), emit_diff)
+        print(f"[green]Wrote api-delta.json[/green] → {emit_diff}")
+
     coverage_rows: list[dict] = []
     if coverage_file:
         coverage_rows = _load_coverage(coverage_file)
 
     gaps = map_impact(diff, coverage_rows=coverage_rows)
 
-    sha = commit or "unknown"
     summary = build_summary(gaps=gaps, commit_sha=sha, suite=suite)
 
     if output_json:
