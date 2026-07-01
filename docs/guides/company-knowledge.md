@@ -44,8 +44,15 @@ Canary loads three sources and merges them, lowest to highest priority:
 `internal_domains`, `mcp_servers`, `claude_code_skills`) are **unioned** —
 each layer adds to the set.
 
-**Scalar fields** (`optum_dashboard_url`, `optum_dashboard_token_env`,
+**Scalar fields** (`dashboard_url`, `dashboard_token_env`,
 `notes`) are **replaced** by the highest-priority source that sets them.
+
+> **Naming convention (contract):** Public code carries no client/employer
+> identifiers. `company.json` scalar fields (`dashboard_url`,
+> `dashboard_token_env`, `otel_exporter_endpoint`) are generic by contract —
+> never client-named. Client-specific values belong in a project's own
+> (uncommitted) `.canary/company.json`, never in field names or shipped
+> defaults.
 
 ### Environment detection
 
@@ -96,7 +103,7 @@ The module **rejects** any value that looks like a secret — values matching
 `sk-`, `api_key`, `token`, `secret`, `bearer` prefixes, or longer than 128
 chars in non-`notes` fields. Detected secrets cause the whole file to be
 rejected with a clear error. Keep secrets in environment variables; reference
-them by env-var name (e.g. `"optum_dashboard_token_env": "MY_TOKEN_VAR"`).
+them by env-var name (e.g. `"dashboard_token_env": "MY_TOKEN_VAR"`).
 
 ---
 
@@ -176,7 +183,7 @@ Create `.canary/company.<env>.json` for environment-specific config:
 ```json
 // .canary/company.uat.json
 {
-  "notes": "Use UAT endpoint for all API calls. Credentials in OPTUM_UAT_TOKEN."
+  "notes": "Use UAT endpoint for all API calls. Credentials in DASHBOARD_API_TOKEN."
 }
 ```
 

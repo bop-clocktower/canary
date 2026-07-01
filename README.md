@@ -1,6 +1,6 @@
 # ![Canary](docs/assets/icon-gold.svg) Canary
 
-![version](https://img.shields.io/badge/version-4.0.0-F0C040?style=flat-square&labelColor=0A0A0A&color=F0C040)
+![version](https://img.shields.io/badge/version-5.5.1-F0C040?style=flat-square&labelColor=0A0A0A&color=F0C040)
 ![python](https://img.shields.io/badge/python-3.11+-F5F5F5?style=flat-square&labelColor=1C1C1C&color=2E2E2E)
 ![tests](https://img.shields.io/badge/tests-passing-28C840?style=flat-square&labelColor=1C1C1C&color=1C1C1C&logoColor=28C840)
 ![frameworks](https://img.shields.io/badge/playwright_·_vitest_·_pytest-F0C040?style=flat-square&labelColor=C09018&color=F0C040)
@@ -20,6 +20,9 @@ language requirements into high-quality, framework-aware test code.
 - **CLI-First:** Simple terminal interface for seamless developer workflow.
 
 ## 🛠 Installation
+
+> Package names differ by registry: npm/Volta package is `canary-test-cli`
+> · PyPI package is `canary-test-ai`.
 
 ### Volta (recommended)
 

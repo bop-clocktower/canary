@@ -156,17 +156,32 @@ class TestFieldValidation(unittest.TestCase):
         ck = self._load({"notes": "context ```rm -rf /``` end"})
         self.assertNotIn("```", ck.notes)
 
-    def test_optum_dashboard_token_env_accepted(self):
-        ck = self._load({"optum_dashboard_token_env": "ACME_DASHBOARD_TOKEN"})
-        self.assertEqual(ck.optum_dashboard_token_env, "ACME_DASHBOARD_TOKEN")
+    def test_dashboard_token_env_accepted(self):
+        ck = self._load({"dashboard_token_env": "ACME_DASHBOARD_TOKEN"})
+        self.assertEqual(ck.dashboard_token_env, "ACME_DASHBOARD_TOKEN")
 
-    def test_optum_dashboard_token_env_lowercase_dropped(self):
-        ck = self._load({"optum_dashboard_token_env": "my_token"})
-        self.assertEqual(ck.optum_dashboard_token_env, "")
+    def test_dashboard_token_env_lowercase_dropped(self):
+        ck = self._load({"dashboard_token_env": "my_token"})
+        self.assertEqual(ck.dashboard_token_env, "")
 
     def test_unknown_keys_tolerated(self):
         ck = self._load({"unknown_future_field": "ignored", "confluence_spaces": ["QA"]})
         self.assertFalse(ck.is_empty)
+
+    def test_unknown_key_emits_warning(self):
+        # a removed/legacy key is unrecognized -> warns and does not populate
+        ck = self._load({"legacy_dashboard_url": "https://x.example.com"})
+        self.assertTrue(
+            any("ignored unknown field: legacy_dashboard_url" in w for w in ck.warnings)
+        )
+        # a removed key must NOT populate a dashboard field
+        self.assertEqual(ck.dashboard_url, "")
+
+    def test_known_keys_emit_no_unknown_warning(self):
+        ck = self._load({"confluence_spaces": ["QA"], "dashboard_url": "https://x.example.com"})
+        self.assertFalse(
+            any("ignored unknown field" in w for w in ck.warnings)
+        )
 
     def test_otel_exporter_endpoint_http_accepted(self):
         ck = self._load({"otel_exporter_endpoint": "http://localhost:4318"})
@@ -355,16 +370,16 @@ class TestMergeCascade(unittest.TestCase):
             ck = CompanyKnowledge.load(Path(tmp), env="uat")
         self.assertEqual(ck.otel_exporter_endpoint, "grpc://collector.uat.example.com:4317")
 
-    def test_optum_dashboard_url_replaced_by_env_layer(self):
+    def test_dashboard_url_replaced_by_env_layer(self):
         with tempfile.TemporaryDirectory() as tmp:
             self._write(Path(tmp), "company.json", {
-                "optum_dashboard_url": "https://dashboard.example.com/base"
+                "dashboard_url": "https://dashboard.example.com/base"
             })
             self._write(Path(tmp), "company.uat.json", {
-                "optum_dashboard_url": "https://dashboard.example.com/uat"
+                "dashboard_url": "https://dashboard.example.com/uat"
             })
             ck = CompanyKnowledge.load(Path(tmp), env="uat")
-        self.assertEqual(ck.optum_dashboard_url, "https://dashboard.example.com/uat")
+        self.assertEqual(ck.dashboard_url, "https://dashboard.example.com/uat")
 
     def test_secret_in_env_layer_skipped_but_base_merged(self):
         with tempfile.TemporaryDirectory() as tmp:
