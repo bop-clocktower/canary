@@ -176,7 +176,7 @@ Create `.canary/company.<env>.json` for environment-specific config:
 ```json
 // .canary/company.uat.json
 {
-  "notes": "Use UAT endpoint for all API calls. Credentials in OPTUM_UAT_TOKEN."
+  "notes": "Use UAT endpoint for all API calls. Credentials in DASHBOARD_API_TOKEN."
 }
 ```
 
