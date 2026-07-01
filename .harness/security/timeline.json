@@ -2,37 +2,6 @@
   "version": 1,
   "snapshots": [
     {
-      "capturedAt": "2026-05-20T19:02:17.197Z",
-      "commitHash": "fe4c0d5fb1ebad1f694d2b9ecfd31e5139cd80bf",
-      "securityScore": 100,
-      "totalFindings": 1,
-      "bySeverity": {
-        "error": 0,
-        "warning": 0,
-        "info": 1
-      },
-      "byCategory": {
-        "network": {
-          "findingCount": 1,
-          "errorCount": 0,
-          "warningCount": 0,
-          "infoCount": 1
-        }
-      },
-      "supplyChain": {
-        "critical": 0,
-        "high": 0,
-        "moderate": 0,
-        "low": 0,
-        "info": 0,
-        "total": 0
-      },
-      "suppressionCount": 0,
-      "findingIds": [
-        "f648dc252b6f0cc1"
-      ]
-    },
-    {
       "capturedAt": "2026-05-20T19:16:08.185Z",
       "commitHash": "8656674b54a334d142243976d121143439716d1e",
       "securityScore": 100,
@@ -930,6 +899,38 @@
       "findingIds": [
         "f648dc252b6f0cc1"
       ]
+    },
+    {
+      "capturedAt": "2026-07-01T01:42:23.049Z",
+      "commitHash": "bf91dc4c4dc5c9df72988a866238883ecb1d915c",
+      "securityScore": 100,
+      "totalFindings": 2,
+      "bySeverity": {
+        "error": 0,
+        "warning": 0,
+        "info": 2
+      },
+      "byCategory": {
+        "network": {
+          "findingCount": 2,
+          "errorCount": 0,
+          "warningCount": 0,
+          "infoCount": 2
+        }
+      },
+      "supplyChain": {
+        "critical": 0,
+        "high": 0,
+        "moderate": 0,
+        "low": 0,
+        "info": 0,
+        "total": 0
+      },
+      "suppressionCount": 0,
+      "findingIds": [
+        "f648dc252b6f0cc1",
+        "792924e09ae3ba3c"
+      ]
     }
   ],
   "findingLifecycles": [
@@ -963,6 +964,17 @@
       "file": "tests/unit/test_ci_env.py",
       "firstSeenAt": "2026-05-15T23:08:15.248Z",
       "firstSeenCommit": "fbf26fe2bc12099ddca22d605163ae364535e5e2",
+      "resolvedAt": null,
+      "resolvedCommit": null
+    },
+    {
+      "findingId": "792924e09ae3ba3c",
+      "ruleId": "SEC-NET-003",
+      "category": "network",
+      "severity": "info",
+      "file": "tests/unit/test_company_knowledge.py",
+      "firstSeenAt": "2026-07-01T01:38:51.762Z",
+      "firstSeenCommit": "bf91dc4c4dc5c9df72988a866238883ecb1d915c",
       "resolvedAt": null,
       "resolvedCommit": null
     }
