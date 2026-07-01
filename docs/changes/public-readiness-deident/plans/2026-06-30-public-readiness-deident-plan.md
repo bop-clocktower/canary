@@ -6,7 +6,7 @@ Tier:** medium
 
 ## Goal
 
-Remove downstream-client (Optum) identifiers from the public surface of
+Remove downstream-client (client) identifiers from the public surface of
 `bop-clocktower/canary` and close launch-hygiene gaps, without re-leaking the
 client name and without executing any irreversible git-history operation.
 
@@ -22,12 +22,12 @@ runbook document; it does not run it.
 
 Traceable to the spec's 7 success criteria (SC) and EARS behaviors:
 
-1. **(SC#1)** `grep -ri optum` over tracked `agent/`, `tests/`, and
+1. **(SC#1)** `grep -ri client` over tracked `agent/`, `tests/`, and
    `docs/guides/` returns **zero** hits. (Baseline before change: 43 hits across
    4 files.) — delivered by Tasks 2, 4, 5, 6, 9.
 2. **(SC#2, EARS)** When a `company.json` contains an unrecognized scalar key,
    the loader shall emit `ignored unknown field: <key>`; if a config sets a
-   removed key (e.g. `optum_dashboard_url`), the loader shall not treat it as a
+   removed key (e.g. `client_dashboard_url`), the loader shall not treat it as a
    dashboard field. — delivered by Tasks 3, 4.
 3. **(SC#3)** The full unit suite passes; new/updated tests cover the renamed
    fields and the unknown-key warning. — delivered by Tasks 1, 3, 7.
@@ -64,11 +64,11 @@ Traceable to the spec's 7 success criteria (SC) and EARS behaviors:
 
 ## Change Specification (delta)
 
-- **[MODIFIED]** Config scalar keys `optum_dashboard_url` → `dashboard_url`,
-  `optum_dashboard_token_env` → `dashboard_token_env` (dataclass fields, parse,
+- **[MODIFIED]** Config scalar keys `client_dashboard_url` → `dashboard_url`,
+  `client_dashboard_token_env` → `dashboard_token_env` (dataclass fields, parse,
   merge, serialize, CLI output, docs). `otel_exporter_endpoint` unchanged.
 - **[ADDED]** `_KNOWN_KEYS` set + unknown-key warning in `_parse_layer`.
-- **[MODIFIED]** `docs/guides/company-knowledge.md` field names + `OPTUM_UAT_TOKEN`
+- **[MODIFIED]** `docs/guides/company-knowledge.md` field names + `CLIENT_UAT_TOKEN`
   example.
 - **[ADDED]** `pyproject.toml` `license`/`authors`; `docs/runbooks/scrub-committer-email.md`.
 - **[MODIFIED]** README version badge + install name; four hardcoded paths in
@@ -120,34 +120,34 @@ they fail against the un-renamed source, then Task 2 makes them pass.
 
 1. In `tests/unit/test_company_knowledge.py`, rename the two token-env tests
    (lines ~159-165):
-   - `test_optum_dashboard_token_env_accepted` → `test_dashboard_token_env_accepted`
-   - `test_optum_dashboard_token_env_lowercase_dropped` →
+   - `test_client_dashboard_token_env_accepted` → `test_dashboard_token_env_accepted`
+   - `test_client_dashboard_token_env_lowercase_dropped` →
      `test_dashboard_token_env_lowercase_dropped`
-   - Inside each, change the JSON key `"optum_dashboard_token_env"` →
-     `"dashboard_token_env"` and the attribute `ck.optum_dashboard_token_env` →
+   - Inside each, change the JSON key `"client_dashboard_token_env"` →
+     `"dashboard_token_env"` and the attribute `ck.client_dashboard_token_env` →
      `ck.dashboard_token_env`. Keep the value `"ACME_DASHBOARD_TOKEN"` (already
      generic).
 2. Rename the merge test (lines ~358-367):
-   - `test_optum_dashboard_url_replaced_by_env_layer` →
+   - `test_client_dashboard_url_replaced_by_env_layer` →
      `test_dashboard_url_replaced_by_env_layer`
-   - Change both JSON keys `"optum_dashboard_url"` → `"dashboard_url"` and the
-     attribute `ck.optum_dashboard_url` → `ck.dashboard_url`. Keep the
+   - Change both JSON keys `"client_dashboard_url"` → `"dashboard_url"` and the
+     attribute `ck.client_dashboard_url` → `ck.dashboard_url`. Keep the
      `dashboard.example.com` values.
 3. Run: `python -m pytest tests/unit/test_company_knowledge.py -k "dashboard" -q`
    — observe **failures** (AttributeError / KeyError: the source still uses
-   `optum_*`). This confirms the RED state.
+   `client_*`). This confirms the RED state.
 4. Do NOT commit yet — commit lands with the source rename in Task 2.
 
 ### Task 2: Rename fields across `company_knowledge.py` (GREEN)
 
 **Depends on:** Task 1 | **Files:** `agent/core/company_knowledge.py`
 
-Replace every `optum_dashboard_url` → `dashboard_url` and
-`optum_dashboard_token_env` → `dashboard_token_env`. `otel_exporter_endpoint`
+Replace every `client_dashboard_url` → `dashboard_url` and
+`client_dashboard_token_env` → `dashboard_token_env`. `otel_exporter_endpoint`
 stays untouched. Exact sites:
 
 1. **Module docstring (lines ~17-18):** change
-   `scalar fields (optum_dashboard_url, optum_dashboard_token_env, notes)` →
+   `scalar fields (client_dashboard_url, client_dashboard_token_env, notes)` →
    `scalar fields (dashboard_url, dashboard_token_env, notes)`.
 2. **`_Layer` dataclass (139-140):** rename both fields:
 
@@ -206,9 +206,9 @@ stays untouched. Exact sites:
 9. Run: `python -m pytest tests/unit/test_company_knowledge.py -q` — observe
    **all pass** (Task 1 tests now GREEN).
 10. Verify no leftover in source:
-    `grep -n optum agent/core/company_knowledge.py` → zero hits.
+    `grep -n client agent/core/company_knowledge.py` → zero hits.
 11. Run: `harness validate`
-12. Commit: `refactor(company-knowledge): rename optum_dashboard_* fields to
+12. Commit: `refactor(company-knowledge): rename client_dashboard_* fields to
     dashboard_*`
 
 ### Task 3: Add unknown-key-warning test (RED)
@@ -223,9 +223,9 @@ test asserting the warning fires.
 
    ```python
    def test_unknown_key_emits_warning(self):
-       ck = self._load({"optum_dashboard_url": "https://x.example.com"})
+       ck = self._load({"client_dashboard_url": "https://x.example.com"})
        self.assertTrue(
-           any("ignored unknown field: optum_dashboard_url" in w for w in ck.warnings)
+           any("ignored unknown field: client_dashboard_url" in w for w in ck.warnings)
        )
        # a removed key must NOT populate a dashboard field
        self.assertEqual(ck.dashboard_url, "")
@@ -291,7 +291,7 @@ test asserting the warning fires.
 
    (The display label "Dashboard URL" is already generic — only the attribute
    name changes.)
-2. Verify: `grep -n optum agent/cli.py` → zero hits.
+2. Verify: `grep -n client agent/cli.py` → zero hits.
 3. Run: `harness validate`
 4. Commit: `refactor(cli): use renamed dashboard_url field in company output`
 
@@ -307,7 +307,7 @@ test asserting the warning fires.
 4. Run: `harness validate`
 5. Commit: `docs(company-knowledge): rename dashboard_* fields in guide`
 
-*(Note: line 179 `OPTUM_UAT_TOKEN` is handled in Task 9, not here.)*
+*(Note: line 179 `CLIENT_UAT_TOKEN` is handled in Task 9, not here.)*
 
 ### Task 7: Verify SC#3 — full company-knowledge suite green
 
@@ -356,7 +356,7 @@ test asserting the warning fires.
    ```
 
 2. Verify SC#1 scope for the guide:
-   `grep -in optum docs/guides/company-knowledge.md` → zero hits.
+   `grep -in client docs/guides/company-knowledge.md` → zero hits.
 3. Run: `markdownlint docs/guides/company-knowledge.md` — clean.
 4. Run: `harness validate`
 5. Commit: `docs(company-knowledge): genericize UAT token example`
@@ -485,7 +485,7 @@ contain **no employer email literal** (per SC#6 and D3).
 
 [checkpoint:human-verify]
 
-1. **SC#1:** `grep -ri optum agent/ tests/ docs/guides/` → **zero** hits.
+1. **SC#1:** `grep -ri client agent/ tests/ docs/guides/` → **zero** hits.
 2. **SC#5:** `grep -rn "/Users/" docs/ --include=*.md | grep -v "docs/changes/public-readiness-deident/"`
    → zero hits.
 3. **SC#3:** `python -m pytest tests/unit -q` → all green.

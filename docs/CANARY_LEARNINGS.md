@@ -85,7 +85,7 @@ generation back-to-back, overwriting prior output. Microsecond resolution
 (`%Y%m%d_%H%M%S_%f`) is cheap and removes the foot-gun.
 
 2026-06-30 [skill:harness-verification] [outcome:pass]: Verified
-public-readiness-deident. optum->dashboard rename complete (0 dangling refs in
+public-readiness-deident. client→dashboard rename complete (0 dangling refs in
 agent/tests/docs-guides), _KNOWN_KEYS matches all 10 parsed keys, both EARS
 behaviors confirmed at runtime, 732 tests pass, harness validate/check-deps
 green. Gaps: README install-name reconciliation (SC4) not done; Knowledge
