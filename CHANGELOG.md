@@ -12,6 +12,28 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [5.6.0] - 2026-07-01
+
+Public-readiness de-identification, plus linter tooling.
+
+### Changed
+
+- **`company.json` scalar config fields renamed** to generic names —
+  `dashboard_url` and `dashboard_token_env` (previously client-prefixed). A
+  config using the old keys no longer populates the dashboard fields; update it
+  to the new names. `otel_exporter_endpoint` is unchanged.
+
+### Added
+
+- Unknown-key warning in the `company.json` loader: any unrecognized key emits
+  `ignored unknown field: <key>`, so stale configs self-diagnose.
+- MIT `license` and `authors` metadata in `pyproject.toml`.
+
+### Tooling
+
+- Adopted `ruff` as the Python linter (`[tool.ruff]` config); removed dead
+  imports and unused variables it surfaced.
+
 ## [5.4.0] - 2026-06-22
 
 A content and tooling release — no change to the shipped CLI binary's behavior.
