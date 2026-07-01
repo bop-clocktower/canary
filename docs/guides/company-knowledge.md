@@ -44,7 +44,7 @@ Canary loads three sources and merges them, lowest to highest priority:
 `internal_domains`, `mcp_servers`, `claude_code_skills`) are **unioned** —
 each layer adds to the set.
 
-**Scalar fields** (`optum_dashboard_url`, `optum_dashboard_token_env`,
+**Scalar fields** (`dashboard_url`, `dashboard_token_env`,
 `notes`) are **replaced** by the highest-priority source that sets them.
 
 ### Environment detection
@@ -96,7 +96,7 @@ The module **rejects** any value that looks like a secret — values matching
 `sk-`, `api_key`, `token`, `secret`, `bearer` prefixes, or longer than 128
 chars in non-`notes` fields. Detected secrets cause the whole file to be
 rejected with a clear error. Keep secrets in environment variables; reference
-them by env-var name (e.g. `"optum_dashboard_token_env": "MY_TOKEN_VAR"`).
+them by env-var name (e.g. `"dashboard_token_env": "MY_TOKEN_VAR"`).
 
 ---
 
