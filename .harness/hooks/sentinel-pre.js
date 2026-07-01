@@ -5,8 +5,8 @@
 // and blocks destructive operations during tainted sessions.
 // Exit codes: 0 = allow, 2 = block
 
-import { readFileSync, writeFileSync, mkdirSync, unlinkSync, realpathSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, unlinkSync, realpathSync, existsSync } from 'node:fs';
+import { resolve, dirname, join, sep } from 'node:path';
 import process from 'node:process';
 
 // Destructive tool patterns blocked during taint.
@@ -24,13 +24,35 @@ function isDestructiveBash(command) {
   return DESTRUCTIVE_BASH.some((p) => p.test(command));
 }
 
+// Canonicalize the deepest existing ancestor of a (possibly not-yet-created)
+// path, then rejoin the non-existent tail. This resolves symlinks even for
+// paths that don't exist yet, closing the "create then it doesn't exist so we
+// skip realpath" gap.
+function realpathAncestor(p) {
+  let ancestor = p;
+  const tail = [];
+  while (!existsSync(ancestor)) {
+    const parent = dirname(ancestor);
+    if (parent === ancestor) break; // reached filesystem root
+    tail.unshift(ancestor.slice(parent.length + 1));
+    ancestor = parent;
+  }
+  let real = ancestor;
+  try { real = realpathSync(ancestor); } catch { /* use as-is */ }
+  return tail.length ? join(real, ...tail) : real;
+}
+
 function isOutsideWorkspace(filePath, workspaceRoot) {
   if (!filePath || !workspaceRoot) return false;
-  const resolved = resolve(workspaceRoot, filePath);
-  // Resolve symlinks to prevent bypass via symlink pointing outside workspace
-  let realResolved = resolved;
-  try { realResolved = realpathSync(resolved); } catch { /* path doesn't exist yet — use resolved */ }
-  return !realResolved.startsWith(workspaceRoot);
+  // Canonicalize BOTH sides so the comparison is symlink-safe.
+  let root = resolve(workspaceRoot);
+  try { root = realpathSync(root); } catch { /* use resolved */ }
+  const real = realpathAncestor(resolve(root, filePath));
+  // Honor a real directory boundary: a path is inside iff it IS the root or sits
+  // strictly under "root + separator". Bare startsWith(root) would wrongly treat
+  // a sibling like "<root>-evil" as contained.
+  const rootWithSep = root.endsWith(sep) ? root : root + sep;
+  return real !== root && !real.startsWith(rootWithSep);
 }
 
 // Minimal inline patterns for when @harness-engineering/core isn't available.
@@ -167,8 +189,8 @@ async function main() {
         }
       }
 
-      if (toolName === 'Write' || toolName === 'Edit') {
-        const filePath = toolInput?.file_path ?? '';
+      if (toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit') {
+        const filePath = toolInput?.file_path ?? toolInput?.notebook_path ?? '';
         if (isOutsideWorkspace(filePath, workspaceRoot)) {
           process.stderr.write(
             `BLOCKED by Sentinel: "${toolName}" to "${filePath}" blocked during tainted session. ` +
