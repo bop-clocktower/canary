@@ -48,7 +48,7 @@ last_manual_edit: 2026-06-30T01:18:39.593Z
 
 - **Status:** backlog
 - **Spec:** —
-- **Summary:** Generalize the Capillary overlay's `capillary-test-reports` skill into a client-agnostic upstream reporter: Playwright JSON results → Markdown/JSON/self-contained HTML report + Slack summary + per-branch run history + `@known-failure` quarantine ledger. No upstream equivalent exists — highest-leverage of the three. De-id before adopting: rename to `canary-test-reports`, make result/output paths and the quarantine tag configurable (current values as defaults), make the Slack webhook optional, drop downstream-consumer references. Effort: medium (~15 scripts). (refs: overlay skill capillary-test-reports; companion: capillary-tester-run-summary)
+- **Summary:** Generalize the private overlay's test-reporter skill into a client-agnostic upstream reporter: Playwright JSON results → Markdown/JSON/self-contained HTML report + Slack summary + per-branch run history + `@known-failure` quarantine ledger. No upstream equivalent exists — highest-leverage of the three. De-id before adopting: give it a neutral `canary-` name, make result/output paths and the quarantine tag configurable (current values as defaults), make the Slack webhook optional, drop downstream-consumer references. Effort: medium (~15 scripts). (refs: private overlay test-reporter skill; companion run-summary skill)
 - **Blockers:** —
 - **Plan:** —
 
@@ -56,7 +56,7 @@ last_manual_edit: 2026-06-30T01:18:39.593Z
 
 - **Status:** backlog
 - **Spec:** —
-- **Summary:** Generalize the overlay's `capillary-fail-fast` skill: audit Playwright fail-fast config (`maxFailures`/`forbidOnly`/`retries`) and emit a categorized CI failure digest with GitHub `::error` annotations. Cleanest candidate — zero client strings; de-id is a prefix rename plus making the results path configurable and decoupling the shared results parser. Effort: low. (refs: overlay skill capillary-fail-fast)
+- **Summary:** Generalize the private overlay's fail-fast skill: audit Playwright fail-fast config (`maxFailures`/`forbidOnly`/`retries`) and emit a categorized CI failure digest with GitHub `::error` annotations. Cleanest candidate — zero client strings; de-id is a neutral rename plus making the results path configurable and decoupling the shared results parser. Effort: low. (refs: private overlay fail-fast skill)
 - **Blockers:** —
 - **Plan:** —
 
@@ -64,6 +64,6 @@ last_manual_edit: 2026-06-30T01:18:39.593Z
 
 - **Status:** backlog
 - **Spec:** —
-- **Summary:** Generalize the overlay's `capillary-instrument` skill: ship ready-made OpenTelemetry instrumentation fixtures for playwright/pytest/k6/node plus a `run.json` contract correlating tests → HTTP spans. Matches a known upstream gap (no OTel bootstrap exists). De-id: prefix rename; make the exporter endpoint generic config (was `.canary/company.json → otel_exporter_endpoint`); untangle or make optional the dependency on the coverage engine. Effort: medium. (refs: overlay skill capillary-instrument)
+- **Summary:** Generalize the private overlay's instrumentation skill: ship ready-made OpenTelemetry instrumentation fixtures for playwright/pytest/k6/node plus a `run.json` contract correlating tests → HTTP spans. Matches a known upstream gap (no OTel bootstrap exists). De-id: neutral rename; make the exporter endpoint generic config (`.canary/company.json → otel_exporter_endpoint`); untangle or make optional the dependency on the coverage engine. Effort: medium. (refs: private overlay instrumentation skill)
 - **Blockers:** —
 - **Plan:** —
