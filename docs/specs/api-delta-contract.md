@@ -7,10 +7,10 @@ created: 2026-07-01
 # API Delta Contract (`api-delta.json` v1)
 
 > The machine-readable artifact emitted by
-> `canary guardian analyze --emit-diff <path>`. It captures the OpenAPI
-> diff between two SUT specs in a stable, tool-consumable shape. Downstream
-> automation (test generators, library-stub regenerators) reads this instead
-> of re-diffing the specs.
+> `canary guardian analyze --emit-diff <path>`. It captures the OpenAPI diff
+> between two SUT specs in a stable, tool-consumable shape. Downstream
+> automation (test generators, library-stub regenerators) reads this instead of
+> re-diffing the specs.
 
 ## Shape
 
@@ -23,24 +23,26 @@ created: 2026-07-01
   "endpoints": {
     "added": [{ "method": "POST", "path": "/orders/{id}/submit" }],
     "removed": [],
-    "changed": [{ "method": "GET", "path": "/orders", "changes": ["params", "response"] }]
+    "changed": [
+      { "method": "GET", "path": "/orders", "changes": ["params", "response"] }
+    ]
   }
 }
 ```
 
 ## Fields
 
-| Field                  | Type      | Notes                                                          |
-| ---------------------- | --------- | -------------------------------------------------------------- |
-| `schema_version`       | int       | `1`. Bumped only on a breaking change; evolve additively.      |
-| `sut.sha`              | string    | Commit SHA analyzed (or `"unknown"`).                          |
-| `sut.suite`            | string    | Suite name passed via `--suite` (e.g. `api`).                  |
-| `generated`            | string    | ISO-8601 UTC timestamp of emission.                            |
-| `summary.{added,removed,changed}` | int | Counts per bucket.                                        |
-| `summary.total`        | int       | `added + removed + changed`. **`0` means "no change".**        |
-| `endpoints.added[]`    | object[]  | `{ method, path }`.                                            |
-| `endpoints.removed[]`  | object[]  | `{ method, path }`.                                            |
-| `endpoints.changed[]`  | object[]  | `{ method, path, changes[] }`.                                 |
+| Field                             | Type     | Notes                                                     |
+| --------------------------------- | -------- | --------------------------------------------------------- |
+| `schema_version`                  | int      | `1`. Bumped only on a breaking change; evolve additively. |
+| `sut.sha`                         | string   | Commit SHA analyzed (or `"unknown"`).                     |
+| `sut.suite`                       | string   | Suite name passed via `--suite` (e.g. `api`).             |
+| `generated`                       | string   | ISO-8601 UTC timestamp of emission.                       |
+| `summary.{added,removed,changed}` | int      | Counts per bucket.                                        |
+| `summary.total`                   | int      | `added + removed + changed`. **`0` means "no change".**   |
+| `endpoints.added[]`               | object[] | `{ method, path }`.                                       |
+| `endpoints.removed[]`             | object[] | `{ method, path }`.                                       |
+| `endpoints.changed[]`             | object[] | `{ method, path, changes[] }`.                            |
 
 ## Conventions (frozen)
 
@@ -52,13 +54,13 @@ created: 2026-07-01
   lists **every** category that differs (an endpoint may change in several ways
   at once):
 
-  | Value          | Meaning                                             |
-  | -------------- | --------------------------------------------------- |
-  | `params`       | `parameters` (query/path/header) differ.            |
-  | `request-body` | `requestBody` differs.                              |
-  | `response`     | Schema of an existing response code differs.        |
-  | `auth`         | `security` requirements differ.                     |
-  | `status-codes` | The set of response codes changed (added/removed).  |
+  | Value          | Meaning                                            |
+  | -------------- | -------------------------------------------------- |
+  | `params`       | `parameters` (query/path/header) differ.           |
+  | `request-body` | `requestBody` differs.                             |
+  | `response`     | Schema of an existing response code differs.       |
+  | `auth`         | `security` requirements differ.                    |
+  | `status-codes` | The set of response codes changed (added/removed). |
 
   An operation whose only delta is non-contract (summary/description/tags) has
   an empty `changes[]` but still appears under `changed`.
