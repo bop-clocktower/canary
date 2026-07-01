@@ -90,6 +90,38 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    # Builds the sdist + wheel from pyproject.toml (canary-test-ai) and uploads to
+    # PyPI via Trusted Publishing (OIDC) — no long-lived API token secret required.
+    #
+    # ONE-TIME SETUP on PyPI (pypi.org → project "canary-test-ai" → Publishing, or a
+    # "pending publisher" if the project does not exist yet): add a GitHub trusted
+    # publisher with owner=bop-clocktower, repo=canary, workflow=release.yml. Until
+    # that is configured this job will fail auth.
+    #
+    # TOKEN FALLBACK (if you prefer a token over OIDC): drop the `id-token` perm,
+    # add repo secret PYPI_API_TOKEN, and give the publish step
+    #   with: { password: ${{ secrets.PYPI_API_TOKEN }} }
+    permissions:
+      id-token: write # OIDC token for PyPI Trusted Publishing
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
   advance-latest:
     name: Advance latest → ${{ github.ref_name }}
     needs: publish
