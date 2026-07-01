@@ -677,10 +677,11 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 
 **Depends on:** Task 3 | **Files:** `.claude-plugin/plugin.json`
 
-1. Create the directory:
+1. Create the directory (set `PLUGIN_ROOT` to your local plugin checkout, e.g.
+   `PLUGIN_ROOT=~/path/to/canary-plugin`):
 
    ```bash
-   mkdir -p /Users/bs/Github/canary-test-ai-agent/.claude-plugin
+   mkdir -p "$PLUGIN_ROOT/.claude-plugin"
    ```
 
 2. Create `.claude-plugin/plugin.json` with the following content exactly:
@@ -730,7 +731,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 1. Create the directory:
 
    ```bash
-   mkdir -p /Users/bs/Github/canary-test-ai-agent/.claude-plugin/agents
+   mkdir -p "$PLUGIN_ROOT/.claude-plugin/agents"
    ```
 
 2. Create `.claude-plugin/agents/oracle-test-generator.md`:
@@ -1068,7 +1069,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 1. Create the schemas directory:
 
    ```bash
-   mkdir -p /Users/bs/Github/canary-test-ai-agent/.claude-plugin/schemas
+   mkdir -p "$PLUGIN_ROOT/.claude-plugin/schemas"
    ```
 
 2. Create `.claude-plugin/schemas/plugin.schema.json` with a minimal but
@@ -1212,7 +1213,7 @@ MODIFY pyproject.toml  (add fastmcp dependency)
 1. Start the MCP server as Claude Code would:
 
    ```bash
-   cd /Users/bs/Github/canary-test-ai-agent
+   cd "$PLUGIN_ROOT"
    timeout 5 python3 -m agent.mcp_server 2>&1 || true
    ```
 
