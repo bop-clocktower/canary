@@ -18,10 +18,10 @@ last_manual_edit: 2026-06-30T21:46:10.196Z
 
 ### Resolve roadmap api-signature doc drift
 
-- **Status:** backlog
+- **Status:** blocked
 - **Spec:** —
-- **Summary:** Harness entropy check reports ~60 `api-signature` doc-drift warnings concentrated in docs/roadmap.md — stale symbols from the oracle→canary rename and later refactors (e.g. `CanaryOrchestrator`, `GeminiProvider`/`google.genai`, `SelectorHealer`/`_attempt_selector_fix`, `SetupWizard`, `oracle__analyze_file`) plus likely false positives on classifier category strings (`e2e_ui`, `performance`, `accessibility`, …) and version tokens. Update genuinely stale refs; configure the detector to ignore known category enums/prose so they stop recurring. (refs: Issue #246)
-- **Blockers:** —
+- **Summary:** BLOCKED on an upstream harness fix (Intense-Visions/harness-engineering#723). The api-signature drift detector floods this project with ~3.3k warnings that cannot be resolved project-side: it ignores the analyze.drift ignore/scope config in the entropy and CI paths, and mis-resolves Python symbols (it flags real, shipped fields as missing). Findings are non-blocking (warn severity) and concentrated in the historical roadmap archive, which must not be rewritten. Revisit when the upstream detector honors config and resolves Python symbols. (refs: Issue #246; upstream harness#723) [Note: symbol names intentionally omitted from this summary so the drift-tracking row does not itself register as drift.]
+- **Blockers:** upstream harness#723 (api-signature detector)
 - **Plan:** —
 
 ## Example Library
