@@ -51,6 +51,19 @@ _ENV_VAR_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _NOTES_MAX = 2048
 _FENCE_RE = re.compile(r"```[^`]*```", re.DOTALL)
 
+_KNOWN_KEYS = {
+    "confluence_spaces",
+    "jira_projects",
+    "internal_doc_urls",
+    "internal_domains",
+    "mcp_servers",
+    "claude_code_skills",
+    "dashboard_url",
+    "dashboard_token_env",
+    "otel_exporter_endpoint",
+    "notes",
+}
+
 
 def _validate_strings(
     raw: object,
@@ -206,6 +219,9 @@ def _parse_layer(data: dict, source: str) -> _Layer:
         raw_notes = data["notes"]
         if isinstance(raw_notes, str):
             notes = _FENCE_RE.sub("", raw_notes).strip()[:_NOTES_MAX]
+
+    for k in sorted(set(data) - _KNOWN_KEYS):
+        warns.append(f"ignored unknown field: {k}")
 
     return _Layer(
         confluence_spaces=confluence_spaces,

@@ -168,6 +168,20 @@ class TestFieldValidation(unittest.TestCase):
         ck = self._load({"unknown_future_field": "ignored", "confluence_spaces": ["QA"]})
         self.assertFalse(ck.is_empty)
 
+    def test_unknown_key_emits_warning(self):
+        ck = self._load({"optum_dashboard_url": "https://x.example.com"})
+        self.assertTrue(
+            any("ignored unknown field: optum_dashboard_url" in w for w in ck.warnings)
+        )
+        # a removed key must NOT populate a dashboard field
+        self.assertEqual(ck.dashboard_url, "")
+
+    def test_known_keys_emit_no_unknown_warning(self):
+        ck = self._load({"confluence_spaces": ["QA"], "dashboard_url": "https://x.example.com"})
+        self.assertFalse(
+            any("ignored unknown field" in w for w in ck.warnings)
+        )
+
     def test_otel_exporter_endpoint_http_accepted(self):
         ck = self._load({"otel_exporter_endpoint": "http://localhost:4318"})
         self.assertEqual(ck.otel_exporter_endpoint, "http://localhost:4318")
