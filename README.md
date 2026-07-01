@@ -21,6 +21,9 @@ language requirements into high-quality, framework-aware test code.
 
 ## 🛠 Installation
 
+> Package names differ by registry: npm/Volta package is `canary-test-cli`
+> · PyPI package is `canary-test-ai`.
+
 ### Volta (recommended)
 
 ```bash

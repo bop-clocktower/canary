@@ -83,3 +83,19 @@ The orchestrator writes one file per run with a timestamped name. Second
 resolution (`%Y%m%d_%H%M%S`) collides when tests or scripted runs invoke
 generation back-to-back, overwriting prior output. Microsecond resolution
 (`%Y%m%d_%H%M%S_%f`) is cheap and removes the foot-gun.
+
+2026-06-30 [skill:harness-verification] [outcome:pass]: Verified
+public-readiness-deident. optum->dashboard rename complete (0 dangling refs in
+agent/tests/docs-guides), _KNOWN_KEYS matches all 10 parsed keys, both EARS
+behaviors confirmed at runtime, 732 tests pass, harness validate/check-deps
+green. Gaps: README install-name reconciliation (SC4) not done; Knowledge
+Impact convention not materialized.
+
+## 12. De-identification naming convention (public surface)
+
+Public code carries no client/employer identifiers; `company.json` scalar
+fields (`dashboard_url`, `dashboard_token_env`, `otel_exporter_endpoint`) are
+generic by contract — never client-named. Authoritative home:
+[Company Knowledge guide](guides/company-knowledge.md) "Naming convention
+(contract)". Client-specific values live in a project's uncommitted
+`.canary/company.json`, not in field names or shipped defaults.

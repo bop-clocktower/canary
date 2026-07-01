@@ -47,6 +47,13 @@ each layer adds to the set.
 **Scalar fields** (`dashboard_url`, `dashboard_token_env`,
 `notes`) are **replaced** by the highest-priority source that sets them.
 
+> **Naming convention (contract):** Public code carries no client/employer
+> identifiers. `company.json` scalar fields (`dashboard_url`,
+> `dashboard_token_env`, `otel_exporter_endpoint`) are generic by contract —
+> never client-named. Client-specific values belong in a project's own
+> (uncommitted) `.canary/company.json`, never in field names or shipped
+> defaults.
+
 ### Environment detection
 
 The env layer is loaded when:
