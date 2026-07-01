@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 import tempfile
 
-from agent.core.migrator import HarnessMigrator, MigrationContext, MigrationReport
+from agent.core.migrator import HarnessMigrator
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

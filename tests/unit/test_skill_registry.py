@@ -8,7 +8,6 @@ from typing import Optional
 from unittest.mock import patch
 
 from agent.core.skill_registry import (
-    SkillInfo,
     SkillRegistry,
     is_executable_skill_allowed,
     resolve_cli_path,

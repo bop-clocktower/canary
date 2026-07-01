@@ -202,7 +202,7 @@ def migrate(
         ts_str = entry.get("timestamp", "")
         # Try to parse ISO timestamp to epoch; fallback to 0
         try:
-            from datetime import datetime, timezone
+            from datetime import datetime
             ts = int(datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp())
         except (ValueError, AttributeError):
             ts = 0

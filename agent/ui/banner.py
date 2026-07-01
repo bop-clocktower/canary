@@ -62,9 +62,9 @@ def print_result_line(
     print_result_line("info", "canary__generate_test", "playwright")
     """
     _icons = {
-        "ok":   (f"\033[38;2;40;200;64m", "✓"),
-        "fail": (f"\033[38;2;226;75;74m",  "✗"),
-        "skip": (f"\033[38;2;85;85;85m",   "○"),
+        "ok":   ("\033[38;2;40;200;64m", "✓"),
+        "fail": ("\033[38;2;226;75;74m",  "✗"),
+        "skip": ("\033[38;2;85;85;85m",   "○"),
         "info": (GOLD,                      "◆"),
     }
     color, icon = _icons.get(status, _icons["info"])

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import pytest
 from dataclasses import asdict
 
 from agent.history.schema import RunRecord, TestResult, make_run_id

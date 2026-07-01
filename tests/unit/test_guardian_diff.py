@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-from agent.guardian.diff_extractor import extract_api_diff, EndpointChange, ChangeType
+from agent.guardian.diff_extractor import extract_api_diff, ChangeType
 
 
 SPEC_V1 = {

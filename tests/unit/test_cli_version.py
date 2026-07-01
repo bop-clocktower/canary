@@ -18,7 +18,6 @@ def test_version_reports_installed_package_version():
 def test_version_falls_back_when_metadata_missing(monkeypatch):
     """When the package isn't installed, version prints 'unknown' rather than raising."""
     from importlib.metadata import PackageNotFoundError
-    import agent.cli as cli
 
     def _raise(_name):
         raise PackageNotFoundError

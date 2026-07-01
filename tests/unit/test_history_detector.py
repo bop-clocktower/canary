@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from agent.history.detector import (
     classify_flake_trend,
     detect_regressions,
