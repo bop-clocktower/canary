@@ -13,6 +13,14 @@ last_manual_edit: 2026-06-30T01:18:39.592Z
 
 ## Shipped
 
+### Public-readiness de-identification
+
+- **Status:** done
+- **Spec:** docs/changes/public-readiness-deident/proposal.md
+- **Summary:** Removed employer/client identifiers from the public surface (Issue #248): renamed client-named `CompanyKnowledge` config fields to generic `dashboard_url`/`dashboard_token_env` + generic unknown-key warning across core/CLI/docs/tests, genericized a client token example, and polish (pyproject license/authors, README badge + npm-vs-PyPI note, hardcoded paths, de-id naming convention). Shipped in PR #250. The committer-email git-history scrub (blocker #2) was evaluated and **deferred as best-effort/won't-do** — the repo is public so forks/caches retain it and it needs a branch-protection lift; documented in docs/runbooks/scrub-committer-email.md. (refs: Issue #248)
+- **Blockers:** —
+- **Plan:** —
+
 ### Framework Registry
 
 - **Status:** done
