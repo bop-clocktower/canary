@@ -14,6 +14,7 @@ sys.path.insert(0, str(_SCRIPTS))
 
 import parse  # noqa: E402
 import failures  # noqa: E402
+import fastfail_check  # noqa: E402
 
 
 def _write(tmp_path, data) -> Path:
@@ -97,3 +98,18 @@ def test_categorize_order_schema_beats_status_code():
     # A schema error that also mentions a 404 must classify as schema (rules
     # are ordered so status-code patterns don't swallow schema signals).
     assert failures.categorize_failure("ZodError at path \"x\"; server returned 404") == "schema"
+
+
+def test_check_all_present_empty():
+    text = "forbidOnly: true, maxFailures: 10, retries: 2"
+    assert fastfail_check.check_config(text) == []
+
+
+def test_check_missing_one_flags_it():
+    text = "forbidOnly: true, maxFailures: 10"  # no retries
+    recs = fastfail_check.check_config(text)
+    assert len(recs) == 1 and "retries" in recs[0]
+
+
+def test_check_missing_all_flags_three():
+    assert len(fastfail_check.check_config("")) == 3
