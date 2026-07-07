@@ -10,6 +10,7 @@ _SCRIPTS = (
     Path(__file__).resolve().parents[2]
     / "agents" / "skills" / "claude-code" / "canary-fail-fast" / "scripts"
 )
+_SKILL_DIR = _SCRIPTS.parent
 sys.path.insert(0, str(_SCRIPTS))
 
 import parse  # noqa: E402
@@ -17,6 +18,7 @@ import failures  # noqa: E402
 import fastfail_check  # noqa: E402
 import digest  # noqa: E402
 import cli  # noqa: E402
+from agent.core.skill_registry import SkillRegistry  # noqa: E402
 
 
 def _write(tmp_path, data) -> Path:
@@ -223,3 +225,18 @@ def test_cli_config_recs_and_results_failure_returns_digest_code(tmp_path, capsy
     assert cli.main(["--config", str(cfg), "--results", str(res)]) == 1
     out = capsys.readouterr().out
     assert "recommendations" in out and "1 failing test" in out
+
+
+def test_skill_is_discoverable_and_runnable():
+    skills = {s.name: s for s in SkillRegistry().discover()}
+    assert "canary-fail-fast" in skills
+    assert skills["canary-fail-fast"].runnable
+
+
+def test_skill_dir_has_no_client_strings():
+    banned = ("capillary", "capwell")
+    for path in _SKILL_DIR.rglob("*"):
+        if path.is_file() and path.suffix in (".py", ".md"):
+            text = path.read_text(encoding="utf-8").lower()
+            for bad in banned:
+                assert bad not in text, f"client string {bad!r} in {path}"
