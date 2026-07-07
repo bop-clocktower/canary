@@ -15,6 +15,7 @@ sys.path.insert(0, str(_SCRIPTS))
 import parse  # noqa: E402
 import failures  # noqa: E402
 import fastfail_check  # noqa: E402
+import digest  # noqa: E402
 
 
 def _write(tmp_path, data) -> Path:
@@ -113,3 +114,35 @@ def test_check_missing_one_flags_it():
 
 def test_check_missing_all_flags_three():
     assert len(fastfail_check.check_config("")) == 3
+
+
+def _fail(title, error, file=None, line=None):
+    return parse.Failure(title=title, status="failed", file=file, line=line, error=error)
+
+
+def test_digest_no_failures_exit_zero():
+    d = digest.build_digest([])
+    assert d.exit_code == 0 and d.annotations == [] and "0 failing" in d.text
+
+
+def test_digest_singular_vs_plural():
+    assert "1 failing test " in digest.build_digest([_fail("t", "boom")]).text + " "
+    assert "2 failing tests" in digest.build_digest([_fail("a", "x"), _fail("b", "y")]).text
+
+
+def test_digest_groups_by_category_and_exits_one():
+    d = digest.build_digest([_fail("t1", "ZodError bad"), _fail("t2", "401 Unauthorized")])
+    assert d.exit_code == 1
+    assert "schema (1):" in d.text and "auth (1):" in d.text
+
+
+def test_digest_annotation_includes_location():
+    d = digest.build_digest([_fail("logs in", "boom", file="login.spec.ts", line=12)])
+    assert d.annotations[0].startswith("::error file=login.spec.ts,line=12,title=Test failure::")
+    assert "logs in" in d.annotations[0]
+
+
+def test_digest_annotation_omits_absent_location():
+    ann = digest.build_digest([_fail("no-loc", "boom")]).annotations[0]
+    assert "file=" not in ann and "line=" not in ann
+    assert ann.startswith("::error title=Test failure::")
