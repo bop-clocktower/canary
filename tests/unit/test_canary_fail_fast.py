@@ -230,7 +230,7 @@ def test_cli_config_recs_and_results_failure_returns_digest_code(tmp_path, capsy
 def test_skill_is_discoverable_and_runnable():
     skills = {s.name: s for s in SkillRegistry().discover()}
     assert "canary-fail-fast" in skills
-    assert skills["canary-fail-fast"].runnable
+    assert skills["canary-fail-fast"].is_executable
 
 
 def test_skill_dir_has_no_client_strings():

@@ -58,11 +58,6 @@ class SkillInfo:
     def is_executable(self) -> bool:
         return (self.cli is not None or self.entry is not None) and self.error is None
 
-    @property
-    def runnable(self) -> bool:
-        """Alias for ``is_executable`` — True when cli: or entry: is set."""
-        return self.is_executable
-
 
 class SkillRegistry:
     """Discover skills from bundled defaults, global home-dir, and local overlays.
