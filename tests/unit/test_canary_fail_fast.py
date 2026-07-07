@@ -16,6 +16,7 @@ import parse  # noqa: E402
 import failures  # noqa: E402
 import fastfail_check  # noqa: E402
 import digest  # noqa: E402
+import cli  # noqa: E402
 
 
 def _write(tmp_path, data) -> Path:
@@ -146,3 +147,53 @@ def test_digest_annotation_omits_absent_location():
     ann = digest.build_digest([_fail("no-loc", "boom")]).annotations[0]
     assert "file=" not in ann and "line=" not in ann
     assert ann.startswith("::error title=Test failure::")
+
+
+def test_cli_no_args_returns_1(capsys):
+    assert cli.main([]) == 1
+    assert "nothing to do" in capsys.readouterr().err
+
+
+def test_cli_config_ok_returns_0(tmp_path, capsys):
+    cfg = tmp_path / "playwright.config.ts"
+    cfg.write_text("forbidOnly maxFailures retries", encoding="utf-8")
+    assert cli.main(["--config", str(cfg)]) == 0
+    assert "Fail-fast config OK." in capsys.readouterr().out
+
+
+def test_cli_config_with_recs_still_returns_0(tmp_path, capsys):
+    cfg = tmp_path / "playwright.config.ts"
+    cfg.write_text("forbidOnly only", encoding="utf-8")
+    assert cli.main(["--config", str(cfg)]) == 0
+    assert "recommendations" in capsys.readouterr().out
+
+
+def test_cli_results_missing_file_returns_1(tmp_path, capsys):
+    assert cli.main(["--results", str(tmp_path / "nope.json")]) == 1
+    assert "not found" in capsys.readouterr().err
+
+
+def test_cli_results_malformed_returns_1_no_traceback(tmp_path, capsys):
+    bad = tmp_path / "bad.json"
+    bad.write_text("not json", encoding="utf-8")
+    assert cli.main(["--results", str(bad)]) == 1
+    assert "not valid JSON" in capsys.readouterr().err
+
+
+def test_cli_results_with_failure_returns_1(tmp_path, capsys):
+    data = {"suites": [{"title": "r", "specs": [
+        {"title": "t", "location": {"file": "a.ts", "line": 1},
+         "tests": [{"title": "t", "status": "failed",
+                    "results": [{"status": "failed", "error": {"message": "boom"}}]}]},
+    ]}]}
+    p = tmp_path / "results.json"
+    p.write_text(json.dumps(data), encoding="utf-8")
+    assert cli.main(["--results", str(p)]) == 1
+    assert "1 failing test" in capsys.readouterr().out
+
+
+def test_cli_results_no_failures_returns_0(tmp_path, capsys):
+    p = tmp_path / "results.json"
+    p.write_text(json.dumps({"suites": []}), encoding="utf-8")
+    assert cli.main(["--results", str(p)]) == 0
+    assert "0 failing" in capsys.readouterr().out
