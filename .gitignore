@@ -11,6 +11,11 @@ temp_harness/
 .harness/knowledge/
 npm/.harness/
 
+# Harness runtime state (machine-local; regenerated each session — never commit)
+.harness/state.json
+.harness/state.events.jsonl
+.harness/state.json.imported
+
 # Superpowers brainstorm sessions
 .superpowers/
 # ── Python ────────────────────────────────────────────────────

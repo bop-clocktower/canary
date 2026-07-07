@@ -18,6 +18,15 @@
             "command": "node \"$(git rev-parse --show-toplevel)/.harness/hooks/protect-config.js\""
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.harness/hooks/sentinel-pre.js\""
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -26,7 +35,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.harness/hooks/quality-gate.js\""
+            "command": "node \"$(git rev-parse --show-toplevel)/.harness/hooks/quality-warner.js\""
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.harness/hooks/sentinel-post.js\""
           }
         ]
       }
@@ -64,10 +82,6 @@
     ]
   },
   "enabledPlugins": {
-    "context7@claude-plugins-official": true,
-    "playwright@claude-plugins-official": true,
-    "pr-review-toolkit@claude-plugins-official": true,
-    "pyright-lsp@claude-plugins-official": true,
-    "agent-sdk-dev@claude-plugins-official": true
+    "@harness-engineering/cli-agent-sdk-mcp": true
   }
 }
