@@ -13,6 +13,7 @@ _SCRIPTS = (
 sys.path.insert(0, str(_SCRIPTS))
 
 import parse  # noqa: E402
+import failures  # noqa: E402
 
 
 def _write(tmp_path, data) -> Path:
@@ -72,3 +73,27 @@ def test_parse_error_falls_back_to_errors_array(tmp_path):
     ]}]}
     failures = parse.parse_failures(_write(tmp_path, data))
     assert failures[0].error == "from-array"
+
+
+def test_categorize_none_is_other():
+    assert failures.categorize_failure(None) == "other"
+    assert failures.categorize_failure("") == "other"
+
+
+@pytest.mark.parametrize("msg,cat", [
+    ("ZodError: invalid_type expected string", "schema"),
+    ("Request failed with status 401 Unauthorized", "auth"),
+    ("connect ECONNREFUSED 127.0.0.1:5432", "network"),
+    ("Timeout of 30000ms exceeded", "timeout"),
+    ("500 Internal Server Error", "server"),
+    ("404 Not Found", "client"),
+    ("something totally unrecognized", "other"),
+])
+def test_categorize_matches_expected(msg, cat):
+    assert failures.categorize_failure(msg) == cat
+
+
+def test_categorize_order_schema_beats_status_code():
+    # A schema error that also mentions a 404 must classify as schema (rules
+    # are ordered so status-code patterns don't swallow schema signals).
+    assert failures.categorize_failure("ZodError at path \"x\"; server returned 404") == "schema"
