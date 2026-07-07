@@ -197,3 +197,29 @@ def test_cli_results_no_failures_returns_0(tmp_path, capsys):
     p.write_text(json.dumps({"suites": []}), encoding="utf-8")
     assert cli.main(["--results", str(p)]) == 0
     assert "0 failing" in capsys.readouterr().out
+
+
+def test_cli_results_unreadable_returns_1(tmp_path, capsys):
+    # An existing path that is not a readable file (a directory) triggers the
+    # OSError branch — must exit 1 cleanly, not raise a traceback.
+    d = tmp_path / "a_dir_results.json"
+    d.mkdir()
+    assert cli.main(["--results", str(d)]) == 1
+    assert "canary-fail-fast:" in capsys.readouterr().err
+
+
+def test_cli_config_recs_and_results_failure_returns_digest_code(tmp_path, capsys):
+    # Config audit with recommendations must NOT zero out the digest's exit code:
+    # combined exit == digest exit (1 here, because there is a real failure).
+    cfg = tmp_path / "playwright.config.ts"
+    cfg.write_text("forbidOnly only", encoding="utf-8")  # missing knobs → recs
+    data = {"suites": [{"title": "r", "specs": [
+        {"title": "t", "location": {"file": "a.ts", "line": 1},
+         "tests": [{"title": "t", "status": "failed",
+                    "results": [{"status": "failed", "error": {"message": "boom"}}]}]},
+    ]}]}
+    res = tmp_path / "results.json"
+    res.write_text(json.dumps(data), encoding="utf-8")
+    assert cli.main(["--config", str(cfg), "--results", str(res)]) == 1
+    out = capsys.readouterr().out
+    assert "recommendations" in out and "1 failing test" in out

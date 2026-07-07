@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             failures = parse_failures(results_path)
-        except ValueError as exc:
+        except (OSError, ValueError) as exc:
             print(f"canary-fail-fast: {exc}", file=sys.stderr)
             return 1
 
