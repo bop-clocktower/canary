@@ -49,9 +49,9 @@ def test_parse_extracts_failure_with_location_and_error(tmp_path):
               "location": {"file": "login.spec.ts", "line": 12},
               "results": [{"status": "unexpected", "error": {"message": "boom"}}]}]),
     ]}]}
-    failures = parse.parse_failures(_write(tmp_path, data))
-    assert len(failures) == 1
-    f = failures[0]
+    result = parse.parse_failures(_write(tmp_path, data))
+    assert len(result) == 1
+    f = result[0]
     assert f.title == "root > logs in > logs in"
     assert f.file == "login.spec.ts" and f.line == 12
     assert f.error == "boom"
@@ -71,8 +71,8 @@ def test_parse_error_falls_back_to_errors_array(tmp_path):
         _spec("t", [{"title": "t", "status": "failed",
               "results": [{"status": "failed", "errors": [{"message": "from-array"}]}]}]),
     ]}]}
-    failures = parse.parse_failures(_write(tmp_path, data))
-    assert failures[0].error == "from-array"
+    result = parse.parse_failures(_write(tmp_path, data))
+    assert result[0].error == "from-array"
 
 
 def test_categorize_none_is_other():
