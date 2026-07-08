@@ -27,6 +27,15 @@
             "command": "node \"$(git rev-parse --show-toplevel)/.harness/hooks/sentinel-pre.js\""
           }
         ]
+      },
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.harness/hooks/prefer-first-party-mcp.js\""
+          }
+        ]
       }
     ],
     "PostToolUse": [
