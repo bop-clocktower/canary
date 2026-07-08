@@ -7,6 +7,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import process from 'node:process';
+import { isUntrustedSource } from './untrusted-source.js';
 
 // Minimal inline patterns for when @harness-engineering/core isn't available.
 // Keep in sync with @harness-engineering/core injection-patterns.ts ALL_PATTERNS.
@@ -88,6 +89,13 @@ async function main() {
     const workspaceRoot = process.cwd();
 
     if (!toolOutput || typeof toolOutput !== 'string') {
+      process.exit(0);
+    }
+
+    // Scope the injection scan to untrusted sources only. Local tool output
+    // (file reads, local shell, first-party MCP) is trusted and not scanned —
+    // see untrusted-source.js for the threat-model rationale.
+    if (!isUntrustedSource(toolName)) {
       process.exit(0);
     }
 
