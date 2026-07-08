@@ -41,8 +41,11 @@ def parse_failures(results_path: Path) -> List[Failure]:
         raise ValueError("results file's top-level value must be an object")
 
     failures: List[Failure] = []
-    for suite in data.get("suites", []) or []:
-        _process_suite(suite, failures, parent_path="", suite_file="")
+    try:
+        for suite in data.get("suites", []) or []:
+            _process_suite(suite, failures, parent_path="", suite_file="")
+    except (TypeError, AttributeError) as exc:
+        raise ValueError(f"results file has an unexpected structure: {exc}") from exc
     return failures
 
 

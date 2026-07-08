@@ -240,3 +240,25 @@ def test_skill_dir_has_no_client_strings():
             text = path.read_text(encoding="utf-8").lower()
             for bad in banned:
                 assert bad not in text, f"client string {bad!r} in {path}"
+
+
+def test_parse_malformed_structure_raises(tmp_path):
+    # Syntactically valid JSON but 'suites' is a string, not a list.
+    p = _write(tmp_path, {"suites": "nope"})
+    with pytest.raises(ValueError):
+        parse.parse_failures(p)
+
+
+def test_parse_non_dict_suite_raises(tmp_path):
+    # A suite entry that is not a dict must surface as ValueError, not AttributeError.
+    p = _write(tmp_path, {"suites": [123]})
+    with pytest.raises(ValueError):
+        parse.parse_failures(p)
+
+
+def test_cli_results_malformed_structure_returns_1(tmp_path, capsys):
+    # Structurally-malformed results must exit 1 cleanly (no traceback).
+    p = tmp_path / "results.json"
+    p.write_text(json.dumps({"suites": "nope"}), encoding="utf-8")
+    assert cli.main(["--results", str(p)]) == 1
+    assert "unexpected structure" in capsys.readouterr().err
