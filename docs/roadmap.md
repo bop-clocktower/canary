@@ -46,11 +46,11 @@ last_manual_edit: 2026-06-30T21:46:10.196Z
 
 ### Fail-fast CI gate
 
-- **Status:** backlog
-- **Spec:** —
-- **Summary:** Generalize the private overlay's fail-fast skill: audit Playwright fail-fast config (`maxFailures`/`forbidOnly`/`retries`) and emit a categorized CI failure digest with GitHub `::error` annotations. Cleanest candidate — zero client strings; de-id is a neutral rename plus making the results path configurable and decoupling the shared results parser. Effort: low. (refs: private overlay fail-fast skill)
+- **Status:** done
+- **Spec:** docs/changes/canary-fail-fast/proposal.md
+- **Summary:** DONE — shipped as the bundled executable skill `canary-fail-fast` at `agents/skills/claude-code/canary-fail-fast/`. Audits Playwright fail-fast config (`maxFailures`/`forbidOnly`/`retries`) and emits a categorized CI failure digest with GitHub `::error` annotations (non-zero exit on real failures; flakes excluded). Self-contained: bundles its own minimal Playwright JSON parser + failure categorizer (decoupled from the overlay's shared parser). Fully de-id'd (a test greps for residual client strings). 34 dedicated tests. (refs: docs/changes/canary-fail-fast/)
 - **Blockers:** —
-- **Plan:** —
+- **Plan:** docs/changes/canary-fail-fast/plans/2026-07-02-canary-fail-fast-plan.md
 
 ### OTel instrumentation bootstrap
 
