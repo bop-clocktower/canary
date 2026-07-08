@@ -8,6 +8,7 @@
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync, realpathSync, existsSync } from 'node:fs';
 import { resolve, dirname, join, sep } from 'node:path';
 import process from 'node:process';
+import { isUntrustedSource } from './untrusted-source.js';
 
 // Bash gating during taint is DENY-BY-DEFAULT. Regex-matching a shell string for
 // "destructive" patterns is not a sound security boundary — bash is not a regular
@@ -221,9 +222,12 @@ async function main() {
       }
     }
 
-    // Step 2: Scan tool inputs for injection patterns
+    // Step 2: Scan tool inputs for injection patterns — untrusted sources only.
+    // Local tool inputs (Write/Edit content, Bash commands, file paths) are
+    // trusted and not scanned; see untrusted-source.js for the rationale. The
+    // taint-blocking in Step 1 above is unaffected by this scoping.
     const textToScan = extractText(toolName, toolInput);
-    if (textToScan) {
+    if (textToScan && isUntrustedSource(toolName)) {
       let findings;
       try {
         const core = await import('@harness-engineering/core');
