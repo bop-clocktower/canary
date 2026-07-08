@@ -251,6 +251,28 @@ This applies to code changes. Commits that are purely
 documentation-only (e.g., updating `AGENTS.md`, `README.md`) may be
 made directly to `main` if the user has not indicated otherwise.
 
+### Trusted MCP hierarchy
+
+When a task can be done through an MCP tool, choose in this order and stop at
+the first that fits:
+
+1. **harness** — `mcp__harness__*` tools and harness skills. The first choice
+   for any task with a harness equivalent (review, planning, validation,
+   context, graph, etc.).
+2. **canary** — the canary MCP bundle (`mcp__plugin_mcp-bundle_*`: canary,
+   context7, playwright) and the `canary-*` skills. The first choice for
+   anything **test-related** (generation, analysis, CI readiness, framework
+   migration).
+3. **Third-party MCP** — everything else (`gh`/GitHub, Atlassian, Gmail,
+   Vercel, Supabase, …). Use **only** when no harness or canary option covers
+   the task.
+
+Before reaching for a third-party MCP, confirm no first-party (harness, then
+canary) tool or skill fits. This is enforced advisorily by the
+`prefer-first-party-mcp` PreToolUse hook, which injects a reminder when a
+third-party MCP tool is invoked (it never blocks). See also the global
+instruction to prefer harness-engineering and canary skills.
+
 ---
 
 ## Development Workflow
