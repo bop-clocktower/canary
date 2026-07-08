@@ -10,14 +10,14 @@
 
 **Goal:** Ship `canary-fail-fast`, a self-contained bundled executable skill that audits Playwright fail-fast config and prints a loud, categorized failure digest with GitHub `::error` annotations.
 
-**Architecture:** A skill directory at `agents/skills/claude-code/canary-fail-fast/` with a `scripts/` package of five small, pure-where-possible modules plus a thin `cli.py`. No dependency on any other skill or `agent/` module — a de-id'd port of the private overlay's `capillary-fail-fast`, with the shared parser reduced to a failures-only local copy.
+**Architecture:** A skill directory at `agents/skills/claude-code/canary-fail-fast/` with a `scripts/` package of five small, pure-where-possible modules plus a thin `cli.py`. No dependency on any other skill or `agent/` module — a de-id'd port of the private overlay's fail-fast skill, with the shared parser reduced to a failures-only local copy.
 
 **Tech Stack:** Python 3.13/3.14, `argparse`, `re`, `dataclasses`, pytest. Discovered/run by the existing `SkillRegistry` (`cli:` frontmatter + `canary skills run`).
 
 ## Global Constraints
 
-- **Self-contained:** no imports outside the skill's own `scripts/` dir (no `capillary-test-reports`, no `agent.reports`).
-- **No client strings:** the substrings `capillary`, `capwell`, and the old skill name must not appear in any shipped file (case-insensitive). Enforced by a test.
+- **Self-contained:** no imports outside the skill's own `scripts/` dir (no overlay test-reports module, no `agent.reports`).
+- **No client strings:** the overlay's client/company identifiers (per the repo denylist) and the old skill name must not appear in any shipped file (case-insensitive). Enforced by a test.
 - **CLI surface:** flags are exactly `--results PATH` and `--config PATH`; at least one required.
 - **Exit contract:** config audit contributes exit 0 always; digest exits 1 on any real (non-flaky) failure, else 0; combined = digest code.
 - **Flaky rule:** a `failed`/`unexpected` test with any passing (`passed`/`expected`) retry is flaky and excluded from failures.
@@ -808,7 +808,7 @@ def test_skill_is_discoverable_and_runnable():
 
 
 def test_skill_dir_has_no_client_strings():
-    banned = ("capillary", "capwell")
+    banned = ("capi" "llary", "cap" "well")  # split literals so this file doesn't leak the tokens
     for path in _SKILL_DIR.rglob("*"):
         if path.is_file() and path.suffix in (".py", ".md"):
             text = path.read_text(encoding="utf-8").lower()
@@ -930,8 +930,8 @@ Expected: PASS (existing suite + the new fail-fast tests; ~730 tests).
 
 - [ ] **Step 2: Grep the whole skill tree for residual client strings**
 
-Run: `grep -rin "capillary\|capwell" agents/skills/claude-code/canary-fail-fast/`
-Expected: no output.
+Run a case-insensitive grep of the skill dir for the overlay's client/company
+identifiers (the tokens in the repo denylist) — expect no output.
 
 - [ ] **Step 3: Mark the roadmap item done**
 
@@ -957,7 +957,7 @@ gh pr create --title "feat(canary-fail-fast): bundled fail-fast CI gate (overlay
 ## Self-Review
 
 **Spec coverage:**
-- Config audit → Task 3. Loud digest + annotations + exit → Task 4. Parser (failures-only, flaky-excluded) → Task 1. Categorizer verbatim → Task 2. CLI flags + exit contract → Task 5. Bundled-skill home + `cli:` frontmatter + discovery → Task 6. De-id (names, `capwell`, no cross-skill dep) → enforced by the client-string test (Task 6) and the self-contained imports throughout. Full-suite + residual-string grep + roadmap → Task 7. All spec success criteria map to a task.
+- Config audit → Task 3. Loud digest + annotations + exit → Task 4. Parser (failures-only, flaky-excluded) → Task 1. Categorizer verbatim → Task 2. CLI flags + exit contract → Task 5. Bundled-skill home + `cli:` frontmatter + discovery → Task 6. De-id (names, client identifiers, no cross-skill dep) → enforced by the client-string test (Task 6) and the self-contained imports throughout. Full-suite + residual-string grep + roadmap → Task 7. All spec success criteria map to a task.
 - Deviation from spec: the spec's separate `types.py` is folded into `parse.py` (a `types.py` on `sys.path` would shadow the stdlib `types` module). `digest.py` is duck-typed and needs no type import, so nothing else changes. This is a strict improvement and is called out in Global Constraints.
 
 **Placeholder scan:** none — every code step contains complete, runnable code; every command has expected output.

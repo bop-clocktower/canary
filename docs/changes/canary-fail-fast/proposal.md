@@ -7,7 +7,7 @@ github-annotations, config-audit, bundled-skill, self-contained, canary-fail-fas
 
 ## Overview and goals
 
-Generalize the private overlay's `capillary-fail-fast` skill into a
+Generalize the private overlay's fail-fast skill into a
 client-agnostic, bundled Canary skill named **`canary-fail-fast`**. It surfaces
 Playwright test failures **fast** (recommends the config knobs that abort a
 broken CI run early) and **loud** (a categorized failure digest to the CI log +
@@ -33,7 +33,8 @@ supports `cli:` frontmatter and the `skills run` verb; this is the first
 **Out of scope:** Slack summaries, per-branch run history, HTML reports, and the
 `@known-failure` quarantine ledger — those belong to the separate "Generic test
 reporter" roadmap item. No changes to `SkillRegistry`, `agent/cli.py`, or the
-overlay repo. This skill does **not** depend on `capillary-test-reports` or any
+overlay repo. This skill does **not** depend on the overlay's shared
+test-reports module or any
 future `agent/reports/` module.
 
 ## Decisions made
@@ -44,7 +45,7 @@ future `agent/reports/` module.
 | Parser coupling | **Self-contained** — bundle a minimal parser + categorizer in the skill's own `scripts/` | Honors roadmap's "decouple the shared results parser"; keeps this a low-effort, copy-paste-portable folder; does not front-load the medium-effort reporter item |
 | Parser scope | Extract **failures only** (drop full `ReportData` envelope: passed/skipped/pass-rate) | Fail-fast needs only the failures bucket; the copy is smaller than the overlay's 113-line `parse_results.py`, not a straight duplicate |
 | Flaky handling | A `failed`/`unexpected` test with any passing retry is **flaky**, excluded from the failure count/exit code | Matches overlay semantics; a flake should not fail the digest step |
-| De-id | `capillary-*` → `canary-*` (name, `prog`, messages); drop `deploy_to: [api, e2e_ui, capwell]`; remove `sys.path` cross-skill hack | Zero client strings by construction; the roadmap's stated de-id surface |
+| De-id | overlay skill names → `canary-*` (name, `prog`, messages); drop the overlay's `deploy_to` client-target list; remove `sys.path` cross-skill hack | Zero client strings by construction; the roadmap's stated de-id surface |
 | CLI surface | Keep `--results` and `--config` flags; at least one required | Preserves overlay ergonomics; results path is already a configurable argument |
 | Exit-code contract | Audit contributes 0; digest exits 1 on any real failure; combined = OR | Config audit must never fail a build; failures must fail the step |
 
@@ -133,7 +134,7 @@ exits 1. No silent fallbacks or fail-open behavior.
   "Fail-fast CI gate" item done on merge. No `AGENTS.md` change.
 - **Architectural Decisions:** none (no ADR — additive skill, no cross-module
   coupling introduced).
-- **Knowledge Impact:** relates to `[[capillary-overlay-upstreaming]]`; the
+- **Knowledge Impact:** relates to the overlay-upstreaming effort; the
   test-reports and instrument items remain the other upstreaming candidates.
 
 ## Success criteria
@@ -146,8 +147,8 @@ exits 1. No silent fallbacks or fail-open behavior.
   `::error` (with `file=`/`line=` when known) per failure, exit 1; a flaky test
   (failed-then-passed retry) is excluded from the failure count and exit code.
 - CLI: neither flag → exit 1 with usage; missing/malformed `--results` → exit 1.
-- No string matching `capillary`, `capwell`, or the overlay skill name appears
-  anywhere in the shipped files.
+- No overlay client/company identifier (per the repo denylist) or the overlay
+  skill name appears anywhere in the shipped files.
 - New pytest tests cover `check_config`, `parse_failures`, `build_digest`, and
   `cli` exit codes; the full suite stays green.
 
