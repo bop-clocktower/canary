@@ -12,6 +12,39 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [5.7.0] - 2026-07-13
+
+Bundled fail-fast CI gate capability, Sentinel scope optimization, PyPI
+Trusted Publishing integration, and MCP selection hook.
+
+### Added
+
+- **`canary-fail-fast` skill** — Upstreamed the fail-fast CI gate capability to
+  a bundled skill in `agents/skills/claude-code/canary-fail-fast`. It audits
+  Playwright configs for `maxFailures`, `forbidOnly`, and `retries`, parses
+  test run results, outputs structured digests with GitHub Actions error
+  annotations, and fails the build on test failures.
+- **First-party MCP hook** — Added a `prefer-first-party-mcp` hook to nudge the
+  LLM to use first-party MCP tools (harness, canary) over third-party
+  alternatives.
+- **PyPI Trusted Publishing** — Configured automated Python packaging and
+  publication to PyPI on new tags using keyless OIDC Trusted Publishing.
+
+### Changed
+
+- **Sentinel scope optimization** — Restricted prompt-injection scanning in
+  Sentinel to untrusted external sources (WebFetch, WebSearch, third-party
+  MCPs). Local tools (Write, Edit, Bash, first-party MCPs) are exempted,
+  preventing false-positive injection errors on codebase edits.
+- Refactored workspace hooks to split the quality-gate checks and harden
+  repository config protection.
+
+### Documentation & Maintenance
+
+- Added a `mise` install section to the README.
+- Roadmap updates to mark the fail-fast CI gate complete and reclassify the
+  api-signature doc-drift check.
+
 ## [5.6.0] - 2026-07-01
 
 Public-readiness de-identification, plus linter tooling.
