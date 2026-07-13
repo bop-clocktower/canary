@@ -36,6 +36,16 @@ Volta handles version pinning and per-project switching automatically.
 > **Supported:** linux-x64, darwin-arm64 (Apple Silicon), win32-x64.
 > Intel Mac (darwin-x64) is not yet supported.
 
+### mise
+
+```bash
+mise use -g npm:canary-test-cli@latest
+```
+
+Adds `canary` to your global `mise` tool manifest alongside things like
+`node` — `mise up` will then keep it current the same way it updates any
+other mise-managed tool.
+
 ### npm / npx
 
 ```bash
