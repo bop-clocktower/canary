@@ -305,3 +305,75 @@ def test_render_all_pass_report():
     ))
     assert "## Failed" not in md
     assert "3.0s" in md
+
+
+# ---------------------------------------------------------------------------
+# Task 4: json_report.py
+# ---------------------------------------------------------------------------
+
+import json_report  # noqa: E402
+
+
+def test_json_is_valid_json():
+    report = _make_report(passed=1, results=[_passed_result()])
+    out = json_report.render_json(report)
+    parsed = json.loads(out)  # must not raise
+    assert isinstance(parsed, dict)
+
+
+def test_json_version_is_1():
+    out = json.loads(json_report.render_json(_make_report()))
+    assert out["version"] == 1
+
+
+def test_json_generated_at_iso8601():
+    out = json.loads(json_report.render_json(_make_report()))
+    pattern = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+    assert pattern.match(out["generated_at"]), f"bad format: {out['generated_at']}"
+
+
+def test_json_summary_fields():
+    report = _make_report(passed=3, failed=1, flaky=1, skipped=1, duration_ms=5000,
+                          results=[_failed_result(), _flaky_result(),
+                                   _passed_result(), _passed_result("s>s>p2"),
+                                   _passed_result("s>s>p3"),
+                                   parse.TestResult(title="s>s>sk", status="skipped")])
+    out = json.loads(json_report.render_json(report))
+    s = out["summary"]
+    assert s["total"] == 6
+    assert s["passed"] == 3
+    assert s["failed"] == 1
+    assert s["flaky"] == 1
+    assert s["skipped"] == 1
+    assert s["duration_ms"] == 5000
+
+
+def test_json_results_all_statuses():
+    results = [
+        _passed_result("s>s>p"),
+        _failed_result("s>s>f"),
+        _flaky_result("s>s>fl"),
+        parse.TestResult(title="s>s>sk", status="skipped"),
+    ]
+    report = _make_report(passed=1, failed=1, flaky=1, skipped=1, results=results)
+    out = json.loads(json_report.render_json(report))
+    statuses = {r["status"] for r in out["results"]}
+    assert statuses == {"passed", "failed", "flaky", "skipped"}
+
+
+def test_json_error_null_for_passed():
+    report = _make_report(passed=1, results=[_passed_result()])
+    out = json.loads(json_report.render_json(report))
+    assert out["results"][0]["error"] is None
+
+
+def test_json_results_include_all_fields():
+    r = _failed_result(title="s > t", file="f.spec.ts", line=7, error="kaboom")
+    report = _make_report(failed=1, results=[r])
+    out = json.loads(json_report.render_json(report))
+    result = out["results"][0]
+    assert result["title"] == "s > t"
+    assert result["status"] == "failed"
+    assert result["file"] == "f.spec.ts"
+    assert result["line"] == 7
+    assert result["error"] == "kaboom"
