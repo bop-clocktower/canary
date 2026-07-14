@@ -184,3 +184,124 @@ def test_parse_strips_leading_banner(tmp_path):
     p.write_text('Playwright run\n{"suites": []}', encoding="utf-8")
     report = parse.parse_results(p)
     assert report.total == 0
+
+
+# ---------------------------------------------------------------------------
+# Task 3: render.py
+# ---------------------------------------------------------------------------
+
+import render  # noqa: E402
+
+
+def _make_report(passed=0, failed=0, flaky=0, skipped=0, results=None, duration_ms=0):
+    """Build a ReportData without going through parse_results."""
+    return parse.ReportData(
+        total=passed + failed + flaky + skipped,
+        passed=passed,
+        failed=failed,
+        flaky=flaky,
+        skipped=skipped,
+        duration_ms=duration_ms,
+        results=results or [],
+    )
+
+
+def _failed_result(title="suite > spec > test", file="a.spec.ts", line=1, error="boom"):
+    return parse.TestResult(title=title, status="failed", file=file, line=line, error=error)
+
+
+def _passed_result(title="suite > spec > ok", duration_ms=100):
+    return parse.TestResult(title=title, status="passed", duration_ms=duration_ms)
+
+
+def _flaky_result(title="suite > spec > flaky", file="b.spec.ts", line=5):
+    return parse.TestResult(title=title, status="flaky", file=file, line=line)
+
+
+def test_render_starts_with_h1(tmp_path):
+    md = render.render_markdown(_make_report(passed=1, results=[_passed_result()]))
+    assert md.startswith("# Test Report")
+
+
+def test_render_status_line_shows_counts():
+    md = render.render_markdown(_make_report(
+        passed=14, failed=2, flaky=1, skipped=1, duration_ms=12400,
+        results=[_failed_result(), _failed_result("s>s>t2"), _flaky_result(),
+                 _passed_result()] + [_passed_result(f"s>s>p{i}") for i in range(13)] +
+                [parse.TestResult(title="s>s>sk", status="skipped")],
+    ))
+    assert "2" in md and "failed" in md.lower()
+    assert "14" in md and "passed" in md.lower()
+    assert "1" in md and "flaky" in md.lower()
+    assert "12.4s" in md
+
+
+def test_render_failed_section_present():
+    r = _failed_result(title="auth > login > rejects bad pw",
+                       file="auth.spec.ts", line=42, error="Expected 401")
+    md = render.render_markdown(_make_report(failed=1, results=[r]))
+    assert "## Failed" in md
+    assert "auth > login > rejects bad pw" in md
+    assert "auth.spec.ts:42" in md
+    assert "Expected 401" in md
+
+
+def test_render_failed_error_in_code_block():
+    r = _failed_result(error="line one\nline two")
+    md = render.render_markdown(_make_report(failed=1, results=[r]))
+    assert "```" in md
+    assert "line one" in md
+    assert "line two" in md
+
+
+def test_render_error_truncated_at_10_lines():
+    long_error = "\n".join(f"line {i}" for i in range(15))
+    r = _failed_result(error=long_error)
+    md = render.render_markdown(_make_report(failed=1, results=[r]))
+    assert "truncated" in md
+    assert "line 9" in md
+    assert "line 10" not in md
+
+
+def test_render_flaky_section_present():
+    r = _flaky_result(title="search > auto > debounce", file="s.spec.ts", line=17)
+    md = render.render_markdown(_make_report(flaky=1, results=[r]))
+    assert "## Flaky" in md
+    assert "search > auto > debounce" in md
+
+
+def test_render_flaky_no_error_detail():
+    # Flaky tests must not include any error block
+    r = parse.TestResult(title="s>s>t", status="flaky", file="f.ts", line=1)
+    md = render.render_markdown(_make_report(flaky=1, results=[r]))
+    assert "```" not in md
+
+
+def test_render_no_failed_section_when_zero():
+    md = render.render_markdown(_make_report(passed=5,
+                                             results=[_passed_result(f"s>s>p{i}") for i in range(5)]))
+    assert "## Failed" not in md
+
+
+def test_render_no_flaky_section_when_zero():
+    md = render.render_markdown(_make_report(passed=1, results=[_passed_result()]))
+    assert "## Flaky" not in md
+
+
+def test_render_summary_table_present():
+    md = render.render_markdown(_make_report(
+        passed=2, failed=1, results=[_failed_result(), _passed_result(), _passed_result("s>s>p2")],
+    ))
+    assert "## Summary" in md
+    assert "Passed" in md
+    assert "Failed" in md
+    assert "Total" in md
+
+
+def test_render_all_pass_report():
+    md = render.render_markdown(_make_report(
+        passed=3, duration_ms=3000,
+        results=[_passed_result(f"s>s>p{i}", 1000) for i in range(3)],
+    ))
+    assert "## Failed" not in md
+    assert "3.0s" in md
