@@ -14,7 +14,42 @@ _SCRIPTS = (
     / "agents" / "skills" / "claude-code" / "canary-test-reporter" / "scripts"
 )
 _SKILL_DIR = _SCRIPTS.parent
+
+# Clear cached modules from other tests to avoid namespace collision in pytest
+for mod in ["parse", "render", "json_report", "cli", "failures", "fastfail_check", "digest"]:
+    sys.modules.pop(mod, None)
+
+if str(_SCRIPTS) in sys.path:
+    sys.path.remove(str(_SCRIPTS))
 sys.path.insert(0, str(_SCRIPTS))
+
+import parse
+import render
+import json_report
+import cli
+
+
+@pytest.fixture(autouse=True)
+def _isolate_namespace():
+    if str(_SCRIPTS) in sys.path:
+        sys.path.remove(str(_SCRIPTS))
+    sys.path.insert(0, str(_SCRIPTS))
+
+    import importlib
+    global parse, render, json_report, cli
+    for mod in ["parse", "render", "json_report", "cli"]:
+        sys.modules.pop(mod, None)
+        m = importlib.import_module(mod)
+        if mod == "parse":
+            parse = m
+        elif mod == "render":
+            render = m
+        elif mod == "json_report":
+            json_report = m
+        elif mod == "cli":
+            cli = m
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -478,3 +513,27 @@ def test_cli_malformed_results_exits_1(tmp_path, capsys):
     bad.write_text("not json", encoding="utf-8")
     assert cli.main(["--results", str(bad)]) == 1
     assert "canary-test-reporter:" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# Task 6: SKILL.md + de-id + discovery
+# ---------------------------------------------------------------------------
+
+from agent.core.skill_registry import SkillRegistry  # noqa: E402
+
+
+def test_skill_is_discoverable_and_runnable():
+    skills = {s.name: s for s in SkillRegistry().discover()}
+    assert "canary-test-reporter" in skills
+    assert skills["canary-test-reporter"].is_executable
+
+
+def test_skill_dir_has_no_client_strings():
+    # String literals are split so this file does not itself contain the
+    # proprietary tokens it guards against.
+    banned = ("capi" "llary", "cap" "well")
+    for path in _SKILL_DIR.rglob("*"):
+        if path.is_file() and path.suffix in (".py", ".md"):
+            text = path.read_text(encoding="utf-8").lower()
+            for bad in banned:
+                assert bad not in text, f"client string {bad!r} found in {path}"
