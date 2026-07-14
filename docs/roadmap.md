@@ -38,11 +38,11 @@ last_manual_edit: 2026-06-30T21:46:10.196Z
 
 ### Generic test reporter
 
-- **Status:** backlog
-- **Spec:** —
-- **Summary:** Generalize the private overlay's test-reporter skill into a client-agnostic upstream reporter: Playwright JSON results → Markdown/JSON/self-contained HTML report + Slack summary + per-branch run history + `@known-failure` quarantine ledger. No upstream equivalent exists — highest-leverage of the three. De-id before adopting: give it a neutral `canary-` name, make result/output paths and the quarantine tag configurable (current values as defaults), make the Slack webhook optional, drop downstream-consumer references. Effort: medium (~15 scripts). (refs: private overlay test-reporter skill; companion run-summary skill)
+- **Status:** done
+- **Spec:** docs/superpowers/specs/2026-07-13-canary-test-reporter-design.md
+- **Summary:** DONE — shipped as the bundled executable skill `canary-test-reporter` at `agents/skills/claude-code/canary-test-reporter/`. Reads a Playwright JSON results file and emits a Markdown report (stdout or file via `--markdown-out`) and/or a JSON artifact (`--json-out`). Classifies all tests as passed/failed/flaky/skipped. Exits non-zero on any real failure; flakes do not affect exit code. Self-contained (bundles its own full-fidelity parser). Fully de-id'd. ~39 dedicated tests. JSON contract (`version: 1`) designed for future TCM integration. (refs: docs/superpowers/specs/2026-07-13-canary-test-reporter-design.md)
 - **Blockers:** —
-- **Plan:** —
+- **Plan:** docs/superpowers/plans/2026-07-13-canary-test-reporter.md
 
 ### Fail-fast CI gate
 

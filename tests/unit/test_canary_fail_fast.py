@@ -13,11 +13,35 @@ _SCRIPTS = (
 _SKILL_DIR = _SCRIPTS.parent
 sys.path.insert(0, str(_SCRIPTS))
 
-import parse  # noqa: E402
-import failures  # noqa: E402
-import fastfail_check  # noqa: E402
-import digest  # noqa: E402
-import cli  # noqa: E402
+import parse
+import failures
+import fastfail_check
+import digest
+import cli
+
+
+@pytest.fixture(autouse=True)
+def _isolate_namespace():
+    if str(_SCRIPTS) in sys.path:
+        sys.path.remove(str(_SCRIPTS))
+    sys.path.insert(0, str(_SCRIPTS))
+
+    import importlib
+    global parse, failures, fastfail_check, digest, cli
+    for mod in ["parse", "failures", "fastfail_check", "digest", "cli"]:
+        sys.modules.pop(mod, None)
+        m = importlib.import_module(mod)
+        if mod == "parse":
+            parse = m
+        elif mod == "failures":
+            failures = m
+        elif mod == "fastfail_check":
+            fastfail_check = m
+        elif mod == "digest":
+            digest = m
+        elif mod == "cli":
+            cli = m
+
 from agent.core.skill_registry import SkillRegistry  # noqa: E402
 
 
