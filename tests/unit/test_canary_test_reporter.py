@@ -377,3 +377,104 @@ def test_json_results_include_all_fields():
     assert result["file"] == "f.spec.ts"
     assert result["line"] == 7
     assert result["error"] == "kaboom"
+
+
+# ---------------------------------------------------------------------------
+# Task 5: cli.py
+# ---------------------------------------------------------------------------
+
+import cli  # noqa: E402
+
+
+def _results_file(tmp_path: Path, passed: int = 0, failed: int = 0) -> Path:
+    """Write a minimal results.json with the requested pass/fail counts."""
+    specs = []
+    for i in range(passed):
+        specs.append(_make_spec(f"p{i}", [
+            _make_test(f"p{i}", "passed", [_make_result("passed", 100)],
+                       location={"file": "p.spec.ts", "line": i + 1}),
+        ]))
+    for i in range(failed):
+        specs.append(_make_spec(f"f{i}", [
+            _make_test(f"f{i}", "unexpected",
+                       [_make_result("unexpected", 200, "boom")],
+                       location={"file": "f.spec.ts", "line": i + 1}),
+        ]))
+    return _write(tmp_path, {"suites": [_make_suite("root", specs=specs)]})
+
+
+def test_cli_missing_results_exits_nonzero(tmp_path, capsys):
+    # --results is required; omitting it makes argparse exit with code 2
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main([])
+    assert exc_info.value.code != 0
+
+
+def test_cli_results_file_not_found_exits_1(tmp_path, capsys):
+    assert cli.main(["--results", str(tmp_path / "nope.json")]) == 1
+    assert "not found" in capsys.readouterr().err
+
+
+def test_cli_exit_0_on_all_pass(tmp_path, capsys):
+    p = _results_file(tmp_path, passed=3)
+    assert cli.main(["--results", str(p)]) == 0
+
+
+def test_cli_exit_1_on_failures(tmp_path, capsys):
+    p = _results_file(tmp_path, failed=2)
+    assert cli.main(["--results", str(p)]) == 1
+
+
+def test_cli_markdown_to_stdout_default(tmp_path, capsys):
+    p = _results_file(tmp_path, passed=1)
+    cli.main(["--results", str(p)])
+    out = capsys.readouterr().out
+    assert "# Test Report" in out
+
+
+def test_cli_markdown_out_writes_file(tmp_path, capsys):
+    p = _results_file(tmp_path, passed=2)
+    out_path = tmp_path / "report.md"
+    cli.main(["--results", str(p), "--markdown-out", str(out_path)])
+    assert out_path.exists()
+    assert "# Test Report" in out_path.read_text(encoding="utf-8")
+    # nothing on stdout when writing to file
+    assert capsys.readouterr().out == ""
+
+
+def test_cli_json_out_writes_file(tmp_path):
+    p = _results_file(tmp_path, passed=1)
+    out_path = tmp_path / "report.json"
+    cli.main(["--results", str(p), "--json-out", str(out_path)])
+    assert out_path.exists()
+    data = json.loads(out_path.read_text(encoding="utf-8"))
+    assert data["version"] == 1
+    assert data["summary"]["passed"] == 1
+
+
+def test_cli_both_flags_write_both_files(tmp_path):
+    p = _results_file(tmp_path, passed=1, failed=1)
+    md_path = tmp_path / "r.md"
+    json_path = tmp_path / "r.json"
+    code = cli.main(["--results", str(p),
+                     "--markdown-out", str(md_path),
+                     "--json-out", str(json_path)])
+    assert md_path.exists() and json_path.exists()
+    assert "# Test Report" in md_path.read_text(encoding="utf-8")
+    assert json.loads(json_path.read_text(encoding="utf-8"))["version"] == 1
+    assert code == 1  # failed > 0
+
+
+def test_cli_json_only_no_stdout(tmp_path, capsys):
+    # --json-out alone → no markdown on stdout
+    p = _results_file(tmp_path, passed=1)
+    out_path = tmp_path / "r.json"
+    cli.main(["--results", str(p), "--json-out", str(out_path)])
+    assert capsys.readouterr().out == ""
+
+
+def test_cli_malformed_results_exits_1(tmp_path, capsys):
+    bad = tmp_path / "bad.json"
+    bad.write_text("not json", encoding="utf-8")
+    assert cli.main(["--results", str(bad)]) == 1
+    assert "canary-test-reporter:" in capsys.readouterr().err
