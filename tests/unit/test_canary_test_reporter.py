@@ -167,6 +167,41 @@ def test_parse_flaky_test(tmp_path):
     assert report.results[0].error is None  # flakes don't carry error
 
 
+def test_parse_literal_flaky_status(tmp_path):
+    # Playwright itself can emit test.status == "flaky" directly (not just
+    # derivable via a passing retry after failed/unexpected).
+    data = _write(tmp_path, {"suites": [_make_suite("root", specs=[
+        _make_spec("search", [_make_test("autocomplete", "flaky", [])]),
+    ])]})
+    report = parse.parse_results(data)
+    assert report.flaky == 1
+    assert report.results[0].status == "flaky"
+
+
+def test_parse_unrecognized_status_fails_closed(tmp_path):
+    # An unknown/unexpected-shape status must not silently count as passed.
+    data = _write(tmp_path, {"suites": [_make_suite("root", specs=[
+        _make_spec("s", [_make_test("t", "interrupted", [])]),
+    ])]})
+    report = parse.parse_results(data)
+    assert report.passed == 0
+    assert report.failed == 1
+    assert report.results[0].status == "failed"
+
+
+def test_parse_title_not_duplicated_when_test_has_no_distinct_title(tmp_path):
+    # Real Playwright JSON has no `title` on the test object itself; it must
+    # not fall back to duplicating the spec title into the joined title.
+    data = _write(tmp_path, {"suites": [_make_suite("root", specs=[
+        _make_spec("should reject bad password", [
+            {"status": "passed", "results": [_make_result("passed", 10)]},
+        ], location={"file": "auth.spec.ts", "line": 5}),
+    ])]})
+    report = parse.parse_results(data)
+    title = report.results[0].title
+    assert title.count("should reject bad password") == 1
+
+
 def test_parse_skipped_test(tmp_path):
     data = _write(tmp_path, {"suites": [_make_suite("root", specs=[
         _make_spec("slow", [_make_test("heavy", "skipped", [])]),
@@ -340,6 +375,19 @@ def test_render_all_pass_report():
     ))
     assert "## Failed" not in md
     assert "3.0s" in md
+
+
+def test_render_empty_report_no_stray_separator():
+    md = render.render_markdown(_make_report())
+    line = md.splitlines()[2]
+    assert not line.startswith("·")
+    assert line == "0 tests · 0.0s"
+
+
+def test_render_flaky_location_falls_back_to_file_only():
+    r = parse.TestResult(title="s>s>t", status="flaky", file="f.spec.ts", line=None)
+    md = render.render_markdown(_make_report(flaky=1, results=[r]))
+    assert "f.spec.ts" in md
 
 
 # ---------------------------------------------------------------------------

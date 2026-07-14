@@ -94,7 +94,8 @@ def _process_suite(
         spec_path = f"{suite_path} > {spec.get('title', '')}"
         spec_location = spec.get("location") or {}
         for test in spec.get("tests", []) or []:
-            test_title = test.get("title") or spec.get("title", "")
+            spec_title = spec.get("title", "")
+            raw_test_title = test.get("title")
             test_location = test.get("location") or {}
             test_results = test.get("results") or []
             raw_status = test.get("status", "unknown")
@@ -103,13 +104,15 @@ def _process_suite(
                 status = "skipped"
             elif raw_status in ("passed", "expected"):
                 status = "passed"
+            elif raw_status == "flaky":
+                status = "flaky"
             elif raw_status in ("failed", "unexpected"):
                 has_passing_retry = any(
                     r.get("status") in ("passed", "expected") for r in test_results
                 )
                 status = "flaky" if has_passing_retry else "failed"
             else:
-                status = "passed"
+                status = "failed"
 
             error: Optional[str] = None
             duration: Optional[int] = None
@@ -124,11 +127,19 @@ def _process_suite(
                         if errs:
                             error = errs[0].get("message")
 
+            if raw_test_title and raw_test_title != spec_title:
+                title = f"{spec_path} > {raw_test_title}"
+            else:
+                title = spec_path
+
+            test_line = test_location.get("line")
+            line = test_line if test_line is not None else spec_location.get("line")
+
             results.append(TestResult(
-                title=f"{spec_path} > {test_title}",
+                title=title,
                 status=status,
                 file=test_location.get("file") or spec_location.get("file") or current_file or None,
-                line=test_location.get("line") or spec_location.get("line"),
+                line=line,
                 duration_ms=duration,
                 error=error,
             ))

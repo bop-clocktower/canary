@@ -1,11 +1,6 @@
 ---
 name: canary-test-reporter
-description: >
-  Playwright JSON results → Markdown + JSON test report. Summarises passed,
-  failed, flaky, and skipped counts with a per-failure error block and a
-  summary table. Exits non-zero when any test failed so the CI step fails on
-  real failures. Complements canary-fail-fast (which aborts early); this skill
-  summarises the full run at the end.
+description: Playwright JSON results → Markdown + JSON test report. Summarises passed, failed, flaky, and skipped counts with a per-failure error block and a summary table. Exits non-zero when any test failed so the CI step fails on real failures. Complements canary-fail-fast (which aborts early); this skill summarises the full run at the end.
 cli: scripts/cli.py
 ---
 
@@ -101,7 +96,7 @@ The `version` field pins the contract for downstream tooling.
 - name: Test report
   if: always()
   run: |
-    canary skills run canary-test-reporter -- \
+    canary skills run canary-test-reporter --allow-executable-skills -- \
       --results test-results/results.json \
       --markdown-out test-results/report.md \
       --json-out test-results/report.json

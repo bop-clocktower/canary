@@ -6,6 +6,12 @@ from parse import ReportData, TestResult  # noqa: F401 (TestResult used for type
 _ERROR_LINE_LIMIT = 10
 
 
+def _format_location(r: TestResult) -> str:
+    if not r.file:
+        return ""
+    return f"`{r.file}:{r.line}`" if r.line else f"`{r.file}`"
+
+
 def render_markdown(data: ReportData) -> str:
     parts: list[str] = ["# Test Report\n\n"]
 
@@ -20,7 +26,10 @@ def render_markdown(data: ReportData) -> str:
     if data.skipped:
         chips.append(f"**{data.skipped} skipped**")
     duration_s = data.duration_ms / 1000
-    parts.append(" · ".join(chips) + f" · {data.total} tests · {duration_s:.1f}s\n")
+    status_line = f"{data.total} tests · {duration_s:.1f}s\n"
+    if chips:
+        status_line = " · ".join(chips) + " · " + status_line
+    parts.append(status_line)
 
     # Failed section
     failed = [r for r in data.results if r.status == "failed"]
@@ -28,8 +37,8 @@ def render_markdown(data: ReportData) -> str:
         parts.append(f"\n## Failed ({len(failed)})\n")
         for r in failed:
             parts.append(f"\n### {r.title}\n")
-            if r.file:
-                loc = f"`{r.file}:{r.line}`" if r.line else f"`{r.file}`"
+            loc = _format_location(r)
+            if loc:
                 parts.append(f"\n{loc}\n")
             if r.error:
                 lines = r.error.splitlines()
@@ -42,8 +51,8 @@ def render_markdown(data: ReportData) -> str:
     if flaky:
         parts.append(f"\n## Flaky ({len(flaky)})\n")
         for r in flaky:
-            loc = f"`{r.file}:{r.line}` — " if (r.file and r.line) else ""
-            parts.append(f"\n- {loc}{r.title}\n")
+            loc = _format_location(r)
+            parts.append(f"\n- {loc + ' — ' if loc else ''}{r.title}\n")
 
     # Summary table
     parts.append("\n## Summary\n")

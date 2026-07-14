@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         data = parse_results(results_path)
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RecursionError, MemoryError) as exc:
         print(f"canary-test-reporter: {exc}", file=sys.stderr)
         return 1
 
