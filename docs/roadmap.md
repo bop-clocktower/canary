@@ -4,7 +4,7 @@ version: 1
 created: 2026-05-11
 updated: 2026-06-29
 last_synced: 2026-06-29
-last_manual_edit: 2026-06-30T21:46:10.196Z
+last_manual_edit: 2026-07-15T23:10:50.065Z
 ---
 
 # Roadmap
@@ -54,8 +54,8 @@ last_manual_edit: 2026-06-30T21:46:10.196Z
 
 ### OTel instrumentation bootstrap
 
-- **Status:** backlog
-- **Spec:** —
+- **Status:** planned
+- **Spec:** docs/changes/canary-instrument/proposal.md
 - **Summary:** Generalize the private overlay's instrumentation skill: ship ready-made OpenTelemetry instrumentation fixtures for playwright/pytest/k6/node plus a `run.json` contract correlating tests → HTTP spans. Matches a known upstream gap (no OTel bootstrap exists). De-id: neutral rename; make the exporter endpoint generic config (`.canary/company.json → otel_exporter_endpoint`); untangle or make optional the dependency on the coverage engine. Effort: medium. (refs: private overlay instrumentation skill)
 - **Blockers:** —
 - **Plan:** —
