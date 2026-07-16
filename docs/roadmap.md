@@ -54,8 +54,8 @@ last_manual_edit: 2026-07-15T23:10:50.065Z
 
 ### OTel instrumentation bootstrap
 
-- **Status:** planned
+- **Status:** done
 - **Spec:** docs/changes/canary-instrument/proposal.md
-- **Summary:** Generalize the private overlay's instrumentation skill: ship ready-made OpenTelemetry instrumentation fixtures for playwright/pytest/k6/node plus a `run.json` contract correlating tests → HTTP spans. Matches a known upstream gap (no OTel bootstrap exists). De-id: neutral rename; make the exporter endpoint generic config (`.canary/company.json → otel_exporter_endpoint`); untangle or make optional the dependency on the coverage engine. Effort: medium. (refs: private overlay instrumentation skill)
+- **Summary:** DONE — shipped as the bundled executable skill `canary-instrument` at `agents/skills/claude-code/canary-instrument/`. Instruments a Playwright run with OpenTelemetry and emits a `run.json` v1 artifact correlating each test to the outbound HTTP requests it made, via OTel span parent/child relationships — no manual bookkeeping in test code. Trace-only v1 (Playwright/Node only; `coverage` block and `canary_run_id` cut, YAGNI); contract left additive-safe for future pytest/k6/node producers. Default file-based span export needs no OTel collector; opt-in OTLP via the existing `otel_exporter_endpoint` company-knowledge field. Fully de-id'd (dedicated test scans `.py/.md/.mjs/.ts`). 23 dedicated tests. Last item in the "Overlay Upstreaming" milestone — all three items now shipped. (refs: docs/changes/canary-instrument/, docs/adr/0006-otel-test-side-tracing.md, PR #265)
 - **Blockers:** —
-- **Plan:** —
+- **Plan:** docs/changes/canary-instrument/plans/2026-07-15-canary-instrument-plan.md
