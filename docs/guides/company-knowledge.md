@@ -213,6 +213,31 @@ context isn't covered above, say so in a comment rather than guessing.
 
 ---
 
+## Usage examples
+
+Fields are validated and merged, but Canary itself never auto-consumes
+most of them beyond the prompt-injection block above — skills that want a
+pointer read it explicitly. `otel_exporter_endpoint` has one such consumer:
+
+### `canary-instrument` — OTLP collector endpoint
+
+The `canary-instrument` skill's `otel_bootstrap/instrument.mjs` reads the
+standard `OTEL_EXPORTER_OTLP_ENDPOINT` env var directly — it has no code
+dependency on this module. Populate that env var from company-knowledge
+before your test run if you want spans additionally streamed to a
+collector (the file-based export `canary-instrument` relies on for
+correlation works either way):
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="$(canary company-knowledge show --json | jq -r '.otel_exporter_endpoint')"
+npx playwright test
+```
+
+See `agents/skills/claude-code/canary-instrument/SKILL.md` for the full
+setup.
+
+---
+
 ## `.canary/` gitignore note
 
 `.canary/` is gitignored by `canary company-knowledge init`. This means

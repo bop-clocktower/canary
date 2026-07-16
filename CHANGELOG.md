@@ -12,6 +12,17 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`canary-instrument` skill** — Upstreamed the OTel test-instrumentation
+  capability to a bundled skill in
+  `agents/skills/claude-code/canary-instrument`. Instruments a Playwright run
+  with OpenTelemetry and emits a `run.json` v1 artifact correlating each test
+  to the outbound HTTP requests it made, via OTel span parent/child
+  relationships — no manual bookkeeping in test code. Trace-only in this v1
+  (no `coverage` block); default file-based span export needs no OTel
+  collector. Last item in the "Overlay Upstreaming" milestone.
+
 ## [5.7.0] - 2026-07-13
 
 Bundled fail-fast CI gate capability, Sentinel scope optimization, PyPI
