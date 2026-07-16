@@ -326,7 +326,7 @@ and as a Python package for contributors:
 
 ```bash
 # Native binary — recommended for end users
-volta install canary-test-cli       # or npm install -g canary-test-cli
+npm install -g canary-test-cli      # self-contained binary; no Python needed
 
 # Python package — for contributors / pipx users
 pipx install canary-test-ai         # installs from PyPI (pending) or
