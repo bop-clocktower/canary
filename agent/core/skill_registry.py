@@ -64,8 +64,10 @@ class SkillRegistry:
 
     Precedence (lowest → highest):
       1. Bundled — shipped with the canary package
-      2. Global  — ``~/.canary/skills/<name>/SKILL.md`` (available in every session)
-      3. Local   — ``.canary/skills/<name>/SKILL.md`` walking up to the git root
+      2. Overlay — ``~/.canary/overlays/<overlay>/.canary/skills/<name>/SKILL.md``
+         (tracked overlays added via ``canary overlay add``)
+      3. Global  — ``~/.canary/skills/<name>/SKILL.md`` (available in every session)
+      4. Local   — ``.canary/skills/<name>/SKILL.md`` walking up to the git root
 
     Global skills make skills available outside any repo (e.g. from the Claude
     web extension or a scratch directory). Local project skills override global
@@ -81,8 +83,11 @@ class SkillRegistry:
         for info in self._bundled_harness_skills():
             skills.setdefault(info.name, info)
 
+        for info in self._overlay_skills():
+            skills[info.name] = info  # overlay wins over bundled
+
         for info in self._global_skills():
-            skills[info.name] = info  # global wins over bundled
+            skills[info.name] = info  # global wins over overlay
 
         search_root = (root or Path.cwd()).resolve()
         for candidate in self._ancestors_to_git_root(search_root):
@@ -152,6 +157,42 @@ class SkillRegistry:
                 info = self._parse_nested(path, skill_dir.name, "global")
                 if info:
                     results.append(info)
+        return results
+
+    # ------------------------------------------------------------------
+    # Tracked-overlay skills
+    # ------------------------------------------------------------------
+
+    def _overlay_skills(self) -> list[SkillInfo]:
+        """Skills from tracked overlays under ``~/.canary/overlays/``.
+
+        Each overlay is a git clone managed by ``canary overlay add`` (the
+        TypeScript shim). Discovery is a directory scan of
+        ``~/.canary/overlays/<overlay>/.canary/skills/<name>/SKILL.md`` — it
+        never reads ``overlays.json`` (written solely by the TS side, per the
+        cross-runtime contract). Overlays are visited in sorted directory-name
+        order; a later overlay overrides an earlier one of the same skill name.
+        Overlay skills override bundled skills and are overridden by global
+        (``~/.canary/skills/``) and local skills.
+        """
+        results: list[SkillInfo] = []
+        overlays_root = Path.home() / ".canary" / "overlays"
+        if not overlays_root.is_dir():
+            return results
+        for overlay_dir in sorted(overlays_root.iterdir()):
+            if not overlay_dir.is_dir():
+                continue
+            skills_dir = overlay_dir / ".canary" / "skills"
+            if not skills_dir.is_dir():
+                continue
+            for skill_dir in sorted(skills_dir.iterdir()):
+                if not skill_dir.is_dir():
+                    continue
+                path = skill_dir / "SKILL.md"
+                if path.exists():
+                    info = self._parse_nested(path, skill_dir.name, "overlay")
+                    if info:
+                        results.append(info)
         return results
 
     # ------------------------------------------------------------------
