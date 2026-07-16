@@ -212,3 +212,67 @@ def test_blank_lines_between_spans_are_ignored(tmp_path):
     path.write_text("\n\n".join(json.dumps(s) for s in spans) + "\n\n", encoding="utf-8")
     trace = span_reader.read_traces(tmp_path)
     assert trace.spans_total == 1
+
+
+import cli  # noqa: E402
+
+
+def test_cli_writes_run_json_with_correct_shape(tmp_path, capsys):
+    spans_dir = tmp_path / "spans"
+    spans_dir.mkdir()
+    _write_jsonl(spans_dir / "otel-spans.0.jsonl", [
+        _root_span("t1", "s1", test_id="a:1", title="test a", file="a.spec.ts"),
+        _http_span("t1", "s2"),
+    ])
+    out_dir = tmp_path / "out"
+    rc = cli.main(["--spans", str(spans_dir), "--output", str(out_dir), "--suite-type", "e2e_ui"])
+    assert rc == 0
+    run_json = json.loads((out_dir / "run.json").read_text(encoding="utf-8"))
+    assert run_json["schema_version"] == 1
+    assert run_json["suite_type"] == "e2e_ui"
+    assert "coverage" not in run_json and "canary_run_id" not in run_json
+    assert run_json["trace"]["spans_total"] == 1
+
+
+def test_cli_creates_missing_output_dir(tmp_path):
+    out_dir = tmp_path / "nested" / "out"
+    assert not out_dir.exists()
+    rc = cli.main(["--spans", str(tmp_path / "no-spans"), "--output", str(out_dir)])
+    assert rc == 0
+    assert (out_dir / "run.json").exists()
+
+
+def test_cli_missing_spans_dir_is_not_a_failure(tmp_path):
+    rc = cli.main(["--spans", str(tmp_path / "nope"), "--output", str(tmp_path / "out")])
+    assert rc == 0
+    run_json = json.loads((tmp_path / "out" / "run.json").read_text(encoding="utf-8"))
+    assert run_json["trace"] == {"spans_total": 0, "by_test": []}
+
+
+def test_cli_suite_type_defaults_to_empty_string(tmp_path):
+    cli.main(["--spans", str(tmp_path / "nope"), "--output", str(tmp_path / "out")])
+    run_json = json.loads((tmp_path / "out" / "run.json").read_text(encoding="utf-8"))
+    assert run_json["suite_type"] == ""
+
+
+def test_cli_suite_type_accepts_arbitrary_string_no_enum(tmp_path):
+    rc = cli.main([
+        "--spans", str(tmp_path / "nope"), "--output", str(tmp_path / "out"),
+        "--suite-type", "totally-made-up-value",
+    ])
+    assert rc == 0
+    run_json = json.loads((tmp_path / "out" / "run.json").read_text(encoding="utf-8"))
+    assert run_json["suite_type"] == "totally-made-up-value"
+
+
+def test_cli_spans_path_is_a_file_not_dir_fails(tmp_path, capsys):
+    bad_spans = tmp_path / "spans-is-a-file"
+    bad_spans.write_text("oops", encoding="utf-8")
+    rc = cli.main(["--spans", str(bad_spans), "--output", str(tmp_path / "out")])
+    assert rc == 1
+    assert "not a directory" in capsys.readouterr().err
+
+
+def test_cli_missing_required_flags_errors(capsys):
+    with pytest.raises(SystemExit):
+        cli.main([])
