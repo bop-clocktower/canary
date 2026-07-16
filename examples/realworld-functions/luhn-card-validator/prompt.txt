@@ -1,0 +1,34 @@
+Generate pytest unit tests for an is_valid_luhn function.
+
+Signature:
+    def is_valid_luhn(number: str) -> bool:
+
+The function checks whether `number` passes the standard Luhn checksum used
+by card numbers.
+
+Rules:
+  - `number` must be a non-empty, ASCII-digit-only string. Any non-digit
+    character (dashes, spaces, letters, etc.) or an empty string raises a
+    ValueError — malformed input is rejected, not stripped or coerced.
+  - Starting from the rightmost digit and moving left, double every second
+    digit.
+  - If a doubled digit exceeds 9, reduce it by subtracting 9 (equivalent to
+    summing its own two digits).
+  - Sum all digits (doubled-and-reduced plus untouched). The number is
+    valid (returns True) iff that sum is a multiple of 10.
+  - The function is pure — it never mutates or normalizes its input.
+
+Cover these cases (hand-verified against the algorithm):
+  1. Canonical 16-digit test Visa number —
+     is_valid_luhn("4111111111111111") -> True (digit-sum = 30, 30 % 10 == 0)
+  2. Same number with the last digit changed (1 -> 2) —
+     is_valid_luhn("4111111111111112") -> False (sum becomes 31)
+  3. Minimal case exercising the >9 doubling-reduction —
+     is_valid_luhn("91") -> True (9 doubled = 18, reduced = 9; sum = 1+9 = 10)
+  4. Single digit, undoubled — is_valid_luhn("0") -> True (sum = 0)
+  5. Single digit, undoubled, fails — is_valid_luhn("5") -> False (sum = 5)
+  6. Empty string — is_valid_luhn("") -> raises ValueError
+  7. Non-digit characters present —
+     is_valid_luhn("4111-1111-1111-1111") -> raises ValueError
+  8. All-zero 16-digit number —
+     is_valid_luhn("0000000000000000") -> True
