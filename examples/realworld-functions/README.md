@@ -30,6 +30,8 @@ produce fresh output.
 | [pagination-cursor-codec](pagination-cursor-codec/) | Unit | Vitest | Tamper-evident pagination cursor — checksum round-trip, integer-only state |
 | [business-hours-deadline](business-hours-deadline/) | Unit | Pytest | Add business hours across nights/weekends/holidays, round-up-first rounding |
 | [token-bucket-rate-limiter](token-bucket-rate-limiter/) | Unit | Vitest | Continuous token-bucket refill — injected clock, capacity cap, clock-skew reject |
+| [fifo-lot-consumer](fifo-lot-consumer/) | Unit | Pytest | FIFO inventory consumption — partial/exact draining, order-preserving remainder, conservation invariant |
+| [luhn-card-validator](luhn-card-validator/) | Unit | Pytest | Luhn checksum validation — doubling-reduction, malformed-input reject, minimal 2-digit edge case |
 
 ## How these differ from the top-level examples
 
