@@ -4,7 +4,7 @@ version: 1
 created: 2026-05-11
 updated: 2026-06-29
 last_synced: 2026-06-29
-last_manual_edit: 2026-07-15T23:10:50.065Z
+last_manual_edit: 2026-07-16T03:20:17.637Z
 ---
 
 # Roadmap
@@ -28,8 +28,8 @@ last_manual_edit: 2026-07-15T23:10:50.065Z
 
 ### Realworld-functions example library
 
-- **Status:** backlog
-- **Spec:** —
+- **Status:** planned
+- **Spec:** docs/changes/realworld-functions-batch8/proposal.md
 - **Summary:** Ongoing curated batches of real-world function examples with multi-framework test parity, used to exercise and demo canary's generation/analysis. Batches 1–7 shipped (latest: dense-rank-leaderboard, bytes-humanizer — PR #247); further-batch ideation drafts live in docs/ideation/. Continue adding batches; numeric examples must pin integer/fractional input contracts (soundness S4) to stay sound. (refs: docs/ideation/realworld-function-batch*.md)
 - **Blockers:** —
 - **Plan:** —
