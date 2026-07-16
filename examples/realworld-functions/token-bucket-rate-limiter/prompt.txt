@@ -1,0 +1,33 @@
+Generate Vitest unit tests for an allow function.
+
+Signature:
+    function allow(
+        state: { tokens: number; lastRefill: number },
+        now: number,
+        capacity: number,
+        refillRate: number,
+    ): { allowed: boolean; newState: { tokens: number; lastRefill: number } }
+
+The function implements a continuous token-bucket rate limiter. All of
+`state.tokens`, `state.lastRefill`, `now`, `capacity`, and `refillRate` are
+floats (no rounding, no discrete banking of leftover time).
+
+Rules:
+  - Refill first: elapsed = now - state.lastRefill; refilled tokens =
+    min(capacity, state.tokens + elapsed * refillRate).
+  - After refill, if tokens >= 1, the request is allowed and consumes exactly
+    1 token; otherwise it is denied and no tokens are consumed.
+  - newState always reflects the refilled tokens (post-consumption if
+    allowed) and lastRefill: now.
+  - capacity must be > 0, refillRate must be >= 0, and elapsed (now -
+    state.lastRefill) must be >= 0 — any violation throws a RangeError.
+
+Cover these cases:
+  1. Fresh full bucket, one request allowed — allow({ tokens: 5, lastRefill: 1000 }, 1000, 5, 1) → { allowed: true, newState: { tokens: 4, lastRefill: 1000 } }
+  2. Repeated draining until denied — allow({ tokens: 1, lastRefill: 1000 }, 1000, 5, 1) → { allowed: true, newState: { tokens: 0, lastRefill: 1000 } }; a second call with that newState, allow({ tokens: 0, lastRefill: 1000 }, 1000, 5, 1) → { allowed: false, newState: { tokens: 0, lastRefill: 1000 } }
+  3. Refill after elapsed time restores tokens — allow({ tokens: 0, lastRefill: 1000 }, 1005, 5, 1) → { allowed: true, newState: { tokens: 4, lastRefill: 1005 } }
+  4. Refill caps at capacity — allow({ tokens: 0, lastRefill: 1000 }, 1100, 5, 1) → { allowed: true, newState: { tokens: 4, lastRefill: 1100 } }
+  5. Zero elapsed time, pure consume-check — allow({ tokens: 3, lastRefill: 1000 }, 1000, 5, 2) → { allowed: true, newState: { tokens: 2, lastRefill: 1000 } }
+  6. Tokens exactly 1.0 → allowed, becomes 0.0 — allow({ tokens: 1.0, lastRefill: 0 }, 0, 10, 0.5) → { allowed: true, newState: { tokens: 0.0, lastRefill: 0 } }
+  7. capacity <= 0 — allow({ tokens: 1, lastRefill: 0 }, 0, 0, 1) → throws RangeError
+  8. Negative elapsed (clock skew, now < lastRefill) — allow({ tokens: 1, lastRefill: 1000 }, 900, 5, 1) → throws RangeError
