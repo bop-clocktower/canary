@@ -291,3 +291,12 @@ def test_skill_dir_has_no_client_strings():
             text = path.read_text(encoding="utf-8").lower()
             for bad in banned:
                 assert bad not in text, f"client string {bad!r} found in {path}"
+
+
+from agent.core.skill_registry import SkillRegistry  # noqa: E402
+
+
+def test_skill_is_discoverable_and_runnable():
+    skills = {s.name: s for s in SkillRegistry().discover()}
+    assert "canary-instrument" in skills
+    assert skills["canary-instrument"].is_executable
