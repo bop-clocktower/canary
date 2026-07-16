@@ -15,7 +15,7 @@ function main() {
   if (!fs.existsSync(binaryPath)) {
     process.stderr.write(
       `canary binary not found at ${binaryPath}.\n` +
-      `Try reinstalling: volta install canary-test-cli\n`
+      `Try reinstalling: npm install -g canary-test-cli\n`
     );
     process.exit(1);
   }
