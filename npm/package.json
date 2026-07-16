@@ -14,7 +14,7 @@
     "build": "tsc",
     "prepare": "npm run build",
     "postinstall": "node scripts/install.js",
-    "test": "npm run build && node --test scripts/__tests__/install.test.js scripts/__tests__/canary.test.js"
+    "test": "npm run build && node --test scripts/__tests__/install.test.js scripts/__tests__/canary.test.js scripts/__tests__/canary-router.test.js"
   },
   "engines": {
     "node": ">=18"
