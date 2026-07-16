@@ -1,6 +1,6 @@
 # Canary Instrument — Overlay Upstreaming
 
-**Status:** proposed (design sign-off pending)
+**Status:** approved (design sign-off 2026-07-15); implemented, pending PR
 **Type:** feature (bundled executable skill) — new production code + tests
 **Keywords:** otel, opentelemetry, tracing, instrumentation, playwright,
 run-json, overlay-upstreaming, bundled-skill, self-contained, canary-instrument
