@@ -276,3 +276,18 @@ def test_cli_spans_path_is_a_file_not_dir_fails(tmp_path, capsys):
 def test_cli_missing_required_flags_errors(capsys):
     with pytest.raises(SystemExit):
         cli.main([])
+
+
+def test_skill_dir_has_no_client_strings():
+    # Split string literals so this file does not itself contain the
+    # proprietary tokens it guards against. Scans .py/.md AND .mjs/.ts —
+    # the repo-wide guard (scripts/check_removed_symbols.py) does not cover
+    # .mjs/.ts, so this skill's own test is the only guard for
+    # otel_bootstrap/*.
+    banned = ("capi" "llary", "loop" "back", "op" "tum", "cap" "well")
+    scanned_suffixes = (".py", ".md", ".mjs", ".ts")
+    for path in _SKILL_DIR.rglob("*"):
+        if path.is_file() and path.suffix in scanned_suffixes:
+            text = path.read_text(encoding="utf-8").lower()
+            for bad in banned:
+                assert bad not in text, f"client string {bad!r} found in {path}"
