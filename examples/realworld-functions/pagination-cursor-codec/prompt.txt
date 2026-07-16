@@ -1,0 +1,30 @@
+Generate Vitest unit tests for encodeCursor and decodeCursor functions.
+
+Signature:
+    function encodeCursor(state: { id: number; createdAt: number }): string
+    function decodeCursor(cursor: string): { id: number; createdAt: number }
+
+encodeCursor JSON-serializes `state`, appends a checksum, and base64url-encodes
+the result into an opaque pagination cursor. decodeCursor reverses this: it
+base64url-decodes the cursor, verifies the checksum, and returns the original
+state — rejecting any tampered or malformed input.
+
+Rules:
+  - `id` and `createdAt` must both be integers (Number.isInteger). encodeCursor
+    throws a RangeError if either is not an integer.
+  - decodeCursor throws a RangeError if the checksum does not match (tampered
+    payload), if the input is not valid base64url, if the input is empty, or
+    if the decoded payload is too short to contain both a state and a checksum
+    (truncated cursor).
+  - decodeCursor(encodeCursor(state)) returns a value deep-equal to the
+    original state for every valid integer-keyed input.
+
+Cover these cases:
+  1. Round-trip preserves exact state — decodeCursor(encodeCursor({ id: 42, createdAt: 1700000000000 })) → { id: 42, createdAt: 1700000000000 }
+  2. Round-trip with id: 0 — decodeCursor(encodeCursor({ id: 0, createdAt: 1700000000000 })) → { id: 0, createdAt: 1700000000000 }
+  3. Tampered payload — flip one character of a valid encodeCursor(...) output → decodeCursor throws RangeError
+  4. Malformed base64 — decodeCursor("not-valid-base64!!!") → throws RangeError
+  5. Empty string — decodeCursor("") → throws RangeError
+  6. Truncated cursor — a syntactically valid base64url string too short to contain a payload plus checksum → decodeCursor throws RangeError
+  7. Non-integer id/createdAt at encode time — encodeCursor({ id: 1.5, createdAt: 1700000000000 }) → throws RangeError
+  8. Number.MAX_SAFE_INTEGER values round-trip — decodeCursor(encodeCursor({ id: Number.MAX_SAFE_INTEGER, createdAt: Number.MAX_SAFE_INTEGER })) → { id: Number.MAX_SAFE_INTEGER, createdAt: Number.MAX_SAFE_INTEGER }
