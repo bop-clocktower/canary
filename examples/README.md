@@ -40,6 +40,9 @@ Canary design the test coverage — not from a URL or framework mechanic.
 | [feature-flag-bucketing](realworld-functions/feature-flag-bucketing/) | Unit | Vitest | Deterministic % rollout via FNV-1a hash — monotonic enrollment, `<` boundary |
 | [dense-rank-leaderboard](realworld-functions/dense-rank-leaderboard/) | Unit | Pytest | Competition ranking — tied scores share a rank, next score skips the gap |
 | [bytes-humanizer](realworld-functions/bytes-humanizer/) | Unit | Vitest | Format bytes (1.5 KiB) — unit-crossing round, binary vs decimal base |
+| [pagination-cursor-codec](realworld-functions/pagination-cursor-codec/) | Unit | Vitest | Tamper-evident pagination cursor — checksum round-trip, integer-only state |
+| [business-hours-deadline](realworld-functions/business-hours-deadline/) | Unit | Pytest | Add business hours across nights/weekends/holidays, round-up-first rounding |
+| [token-bucket-rate-limiter](realworld-functions/token-bucket-rate-limiter/) | Unit | Vitest | Continuous token-bucket refill — injected clock, capacity cap, clock-skew reject |
 
 See [realworld-functions/README.md](realworld-functions/README.md) for the
 rationale and how to add more.
