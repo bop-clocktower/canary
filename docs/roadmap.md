@@ -28,9 +28,9 @@ last_manual_edit: 2026-07-16T05:54:59.642Z
 
 ### Realworld-functions example library
 
-- **Status:** planned
-- **Spec:** docs/changes/realworld-functions-batch9/proposal.md
-- **Summary:** Ongoing curated batches of real-world function examples with multi-framework test parity, used to exercise and demo canary's generation/analysis. Batches 1–8 shipped (latest: pagination-cursor-codec, business-hours-deadline, token-bucket-rate-limiter — PR #274); further-batch ideation drafts live in docs/ideation/ (batch6's below-the-cut pool still has fifo-lot-consumer, luhn-card-validator, truncate-grapheme, cron-next-fire unbuilt). Continue adding batches; numeric examples must pin integer/fractional input contracts (soundness S4) to stay sound. (refs: docs/ideation/realworld-function-batch*.md; docs/changes/realworld-functions-batch8/)
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ongoing curated batches of real-world function examples with multi-framework test parity, used to exercise and demo canary's generation/analysis. Batches 1–9 shipped (latest: fifo-lot-consumer, luhn-card-validator — PR #279); further-batch ideation drafts live in docs/ideation/ (batch6's below-the-cut pool has two remaining, deliberately deferred as weaker candidates: truncate-grapheme [framework-parity risk], cron-next-fire [parsing-surface scope-creep risk] — next batch likely needs fresh ideation rather than this pool). Continue adding batches; numeric examples must pin integer/fractional input contracts (soundness S4) to stay sound. (refs: docs/ideation/realworld-function-batch*.md; docs/changes/realworld-functions-batch9/)
 - **Blockers:** —
 - **Plan:** —
 
