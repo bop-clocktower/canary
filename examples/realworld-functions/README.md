@@ -27,6 +27,9 @@ produce fresh output.
 | [feature-flag-bucketing](feature-flag-bucketing/) | Unit | Vitest | Deterministic % rollout via FNV-1a hash — monotonic enrollment, `<` boundary |
 | [dense-rank-leaderboard](dense-rank-leaderboard/) | Unit | Pytest | Competition ranking — tied scores share a rank, next score skips the gap |
 | [bytes-humanizer](bytes-humanizer/) | Unit | Vitest | Format bytes (1.5 KiB) — unit-crossing round, binary vs decimal base |
+| [pagination-cursor-codec](pagination-cursor-codec/) | Unit | Vitest | Tamper-evident pagination cursor — checksum round-trip, integer-only state |
+| [business-hours-deadline](business-hours-deadline/) | Unit | Pytest | Add business hours across nights/weekends/holidays, round-up-first rounding |
+| [token-bucket-rate-limiter](token-bucket-rate-limiter/) | Unit | Vitest | Continuous token-bucket refill — injected clock, capacity cap, clock-skew reject |
 
 ## How these differ from the top-level examples
 
