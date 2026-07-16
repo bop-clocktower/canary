@@ -48,7 +48,7 @@ function forwardToBinary(
  */
 function run(argv, deps = {}) {
   if (isTsCommand(argv)) {
-    return route(argv) ?? 0;
+    return route(argv, deps) ?? 0;
   }
   return forwardToBinary(argv, deps);
 }

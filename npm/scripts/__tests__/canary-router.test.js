@@ -1,5 +1,8 @@
-const { describe, it } = require("node:test");
+const { describe, it, beforeEach, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { run, forwardToBinary } = require("../../bin/canary.js");
 const { isTsCommand, TS_COMMANDS } = require("../../dist/router.js");
 
@@ -15,6 +18,14 @@ describe("router table", () => {
 });
 
 describe("shim router dispatch", () => {
+  let home;
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "canary-shim-home-"));
+  });
+  afterEach(() => {
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
   it("routes 'overlay' to the TS router without exec'ing the binary", () => {
     let execCalled = false;
     const code = run(["overlay", "list"], {
@@ -22,11 +33,13 @@ describe("shim router dispatch", () => {
         execCalled = true;
       },
       existsSync: () => true,
+      homeDir: home,
+      out: { write() {} },
       stderr: { write() {} },
     });
     assert.equal(execCalled, false, "the Python binary must not run for overlay");
-    // Phase 1 placeholder route() returns exit code 1 (dispatch lands in later tasks).
-    assert.equal(code, 1);
+    // overlay list on an empty home succeeds.
+    assert.equal(code, 0);
   });
 
   it("forwards a non-TS command to the binary with unchanged args", () => {

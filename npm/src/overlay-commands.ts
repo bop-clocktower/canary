@@ -323,3 +323,33 @@ export function update(name: string | null, deps: CommandDeps = {}): number {
   }
   return failures === 0 ? 0 : 1;
 }
+
+/**
+ * `canary overlay remove <name>` — deregister an overlay and delete its clone.
+ * Unknown name is an error; the registry is left unchanged in that case.
+ */
+export function remove(name: string, deps: CommandDeps = {}): number {
+  const homeDir = deps.homeDir ?? os.homedir();
+  const out = deps.out ?? process.stdout;
+  const err = deps.err ?? process.stderr;
+
+  let reg;
+  try {
+    reg = registry.read(homeDir);
+  } catch (e) {
+    err.write(`canary overlay remove: ${(e as Error).message}\n`);
+    return 1;
+  }
+
+  const entry = registry.get(reg, name);
+  if (!entry) {
+    err.write(`canary overlay remove: no overlay named "${name}".\n`);
+    return 1;
+  }
+
+  fs.rmSync(entry.path, { recursive: true, force: true });
+  const { registry: next } = registry.remove(reg, name);
+  registry.write(next, homeDir);
+  out.write(`Removed overlay "${name}".\n`);
+  return 0;
+}
