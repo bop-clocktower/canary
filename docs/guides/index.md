@@ -41,6 +41,17 @@ and the `--- COMPANY KNOWLEDGE ---` prompt injection format.
 
 **Best for:** Setting up or debugging `.canary/company.json` in a project.
 
+### [Tracked Overlays Guide](./tracked-overlays.md)
+
+The `canary overlay add/update/list/remove` command group for tracking a
+downstream skills overlay as a git clone under `~/.canary/overlays/`. Covers
+the source grammar, the skill-discovery precedence tier
+(`bundled < overlay < global < local`), freshness/update semantics, and the
+`overlays.json` registry.
+
+**Best for:** Installing and keeping a downstream overlay current without
+hand-copying skill directories.
+
 ### [LLM Providers Guide](./llm-providers.md)
 
 **Removed in v3.0.** The `agent/llm/` provider layer was deleted —
