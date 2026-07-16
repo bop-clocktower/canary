@@ -158,3 +158,57 @@ def test_root_span_itself_is_not_counted_as_a_request(tmp_path):
     trace = span_reader.read_traces(tmp_path)
     assert trace.spans_total == 0
     assert trace.by_test[0].requests == []
+
+
+def test_multi_worker_files_merge_without_collision(tmp_path):
+    _write_jsonl(tmp_path / "otel-spans.0.jsonl", [
+        _root_span("t1", "s1", test_id="a:1", title="test a", file="a.spec.ts"),
+        _http_span("t1", "s2", url="http://x/a"),
+    ])
+    _write_jsonl(tmp_path / "otel-spans.1.jsonl", [
+        _root_span("t2", "s1", test_id="b:1", title="test b", file="b.spec.ts"),
+        _http_span("t2", "s2", url="http://x/b"),
+    ])
+    trace = span_reader.read_traces(tmp_path)
+    assert trace.spans_total == 2
+    assert {tt.test_id for tt in trace.by_test} == {"a:1", "b:1"}
+    # spanId "s1"/"s2" repeat across workers but traceId differs — no collision.
+    urls = {req.url for tt in trace.by_test for req in tt.requests}
+    assert urls == {"http://x/a", "http://x/b"}
+
+
+def test_reconciliation_holds_across_setup_and_test_buckets(tmp_path):
+    _write_jsonl(tmp_path / "otel-spans.0.jsonl", [
+        _root_span("t1", "s1", test_id="a:1", title="test a", file="a.spec.ts"),
+        _http_span("t1", "s2"),
+        _http_span("t1", "s3"),
+        _http_span("t3", "s1"),  # rootless -> __setup__
+    ])
+    trace = span_reader.read_traces(tmp_path)
+    total_requests = sum(len(tt.requests) for tt in trace.by_test)
+    assert trace.spans_total == total_requests == 3
+    setup = next(tt for tt in trace.by_test if tt.test_id == "__setup__")
+    assert len(setup.requests) == 1
+
+
+def test_malformed_torn_line_is_skipped_not_raised(tmp_path):
+    good = [
+        _root_span("t1", "s1", test_id="a:1", title="test a", file="a.spec.ts"),
+        _http_span("t1", "s2"),
+    ]
+    path = tmp_path / "otel-spans.0.jsonl"
+    text = "\n".join(json.dumps(s) for s in good) + "\n"
+    text += '{"traceId": "t1", "spanId": "s3", "attributes": {"http.method"'  # torn, no error raised
+    path.write_text(text, encoding="utf-8")
+
+    trace = span_reader.read_traces(tmp_path)  # must not raise
+    assert trace.spans_total == 1
+    assert trace.by_test[0].test_id == "a:1"
+
+
+def test_blank_lines_between_spans_are_ignored(tmp_path):
+    path = tmp_path / "otel-spans.0.jsonl"
+    spans = [_root_span("t1", "s1", test_id="a:1", title="a", file="a.spec.ts"), _http_span("t1", "s2")]
+    path.write_text("\n\n".join(json.dumps(s) for s in spans) + "\n\n", encoding="utf-8")
+    trace = span_reader.read_traces(tmp_path)
+    assert trace.spans_total == 1
