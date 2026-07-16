@@ -54,9 +54,8 @@ no new public CLI surface beyond `canary skills run`)
    Task 5 (documented behavior; not independently pytest-testable).
 8. Malformed/torn JSONL lines are skipped, not raised — Task 3.
 9. `--output` directory is created if missing — Task 4.
-10. De-id test: zero residual `Capillary`/`LoopBack`/`Optum`/company strings
-    in the shipped skill dir (incl. `.mjs`/`.ts`, not just `.py`/`.md`) —
-    Task 6.
+10. De-id test: zero residual company-specific strings in the shipped
+    skill dir (incl. `.mjs`/`.ts`, not just `.py`/`.md`) — Task 6.
 11. `SKILL.md` documents both manual wiring steps clearly enough to set up
     from the doc alone — Task 7.
 12. `harness validate` passes; `scripts/check_removed_symbols.py`
@@ -132,7 +131,7 @@ order.
 ## Global Constraints
 
 - **Self-contained:** no imports outside the skill's own `scripts/` dir.
-- **No client strings:** `Capillary`/`LoopBack`/`Optum`/company identifiers
+- **No client strings:** company/product identifiers
   (case-insensitive) must not appear anywhere in the shipped skill dir,
   including `.mjs`/`.ts` files (the repo-wide `check_removed_symbols.py`
   guard only scans `.md/.py/.json/.svg/.html/.yml/.yaml/.txt/.toml` —
@@ -1546,8 +1545,8 @@ Expected: PASS.
 - [ ] **Step 4: Grep the whole skill tree for residual client strings (belt-and-suspenders, matches Task 6's assertions manually)**
 
 Run a case-insensitive grep of
-`agents/skills/claude-code/canary-instrument/` for `capillary`,
-`loopback`, `optum`, `capwell` — expect no output.
+`agents/skills/claude-code/canary-instrument/` for the same terms Task 6's
+banned-token list guards against — expect no output.
 
 - [ ] **Step 5: Open the PR**
 

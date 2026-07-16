@@ -64,13 +64,13 @@ test made which request?" — with zero manual bookkeeping in test code.
 | --- | --- |
 | **v1 covers Playwright/Node only** | Contract (`trace` block) is shaped to extend to pytest/k6/node later without a schema-version bump; those fixtures are simply not built yet. |
 | **Root span via fixture merge, not a custom reporter** | Reporters run in Playwright's main process and can't establish the OTel active-context that makes HTTP child spans nest automatically — that's the mechanism the whole correlation trick depends on. |
-| **`coverage` block cut entirely — not shipped even as `null`** | It was a separate feature in the private design, coupled to a proprietary OpenAPI/LoopBack coverage engine the roadmap item never asked for. |
-| **`suite_type` stays a free-form string, no enum** | The private schema's enum values (`api`/`e2e_ui`/`capwell`) mix generic test-taxonomy terms with a company product name. The public contract doesn't enumerate — callers pass whatever string describes their suite. |
+| **`coverage` block cut entirely — not shipped even as `null`** | It was a separate feature in the private design, coupled to a proprietary route-matching coverage engine the roadmap item never asked for. |
+| **`suite_type` stays a free-form string, no enum** | The private schema's enum values mix generic test-taxonomy terms with a company product name. The public contract doesn't enumerate — callers pass whatever string describes their suite. |
 | **`canary_run_id` cut for v1** | No goal or criterion requires it (soundness review S6-001, resolved: cut, re-add when a real consumer exists). |
 | **OTLP endpoint sourced from the existing `otel_exporter_endpoint` company-knowledge field, but not auto-exported by this skill** | `agent/core/company_knowledge.py` already validates and merges this field with zero consumers today. `instrument.mjs` reads the standard `OTEL_EXPORTER_OTLP_ENDPOINT` env var directly — it has no code dependency on `company_knowledge.py`. Populating that env var from company-knowledge before the test run is the consumer's job, documented in `SKILL.md` as a usage pattern, not built as new plumbing here. |
 | **Self-contained bundle**, no dependency on any other skill | Matches `canary-fail-fast` / `canary-test-reporter` precedent. |
-| **Dedicated de-id test** greps the shipped skill directory for residual `Capillary`/`LoopBack`/`Optum`/company strings | Same guard `canary-fail-fast` uses; this skill's design was read from a private corporate repo (`Capillary/canary-capillary`, explicitly authorized for this task), so it carries real leak risk the other overlay-upstream skills didn't. |
-| **Design read from `Capillary/canary-capillary` (private, read-only reference)**, renamed and stripped of coverage/company strings, not copied verbatim | Authorized for this task specifically; nothing is copied without a rename pass, and the coverage half is dropped rather than ported-then-scrubbed. |
+| **Dedicated de-id test** greps the shipped skill directory for residual company-specific strings | Same guard `canary-fail-fast` uses; this skill's design was read from a private corporate repo (explicitly authorized for this task), so it carries real leak risk the other overlay-upstream skills didn't. |
+| **Design read from the private overlay repository (read-only reference)**, renamed and stripped of coverage/company strings, not copied verbatim | Authorized for this task specifically; nothing is copied without a rename pass, and the coverage half is dropped rather than ported-then-scrubbed. |
 
 ## Technical design
 
@@ -226,8 +226,8 @@ failure.
    by `span_reader.py` rather than raising.
 9. `--output` directory is created if it doesn't already exist.
 10. **De-id test** greps the entire `canary-instrument` skill directory for
-    residual `Capillary`/`LoopBack`/`Optum`/company-specific strings — zero
-    hits. Highest-priority test given this skill's design was read from a
+    residual company-specific strings — zero hits. Highest-priority test
+    given this skill's design was read from a
     private corporate repo.
 11. `SKILL.md` documents both manual wiring steps (`NODE_OPTIONS` import +
     fixture merge) clearly enough that a consumer can set up tracing from the
