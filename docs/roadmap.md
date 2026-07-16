@@ -20,8 +20,8 @@ last_manual_edit: 2026-07-15T23:10:50.065Z
 
 - **Status:** blocked
 - **Spec:** —
-- **Summary:** BLOCKED on an upstream harness fix (Intense-Visions/harness-engineering#723). The api-signature drift detector floods this project with ~3.3k warnings that cannot be resolved project-side: it ignores the analyze.drift ignore/scope config in the entropy and CI paths, and mis-resolves Python symbols (it flags real, shipped fields as missing). Findings are non-blocking (warn severity) and concentrated in the historical roadmap archive, which must not be rewritten. Revisit when the upstream detector honors config and resolves Python symbols. (refs: Issue #246; upstream harness#723) [Note: symbol names intentionally omitted from this summary so the drift-tracking row does not itself register as drift.]
-- **Blockers:** upstream harness#723 (api-signature detector)
+- **Summary:** PARTIALLY MITIGATED, still blocked on a narrower upstream gap. Original blocker (Intense-Visions/harness-engineering#723: analyze.drift config ignored + Python symbol mis-resolution) was fixed upstream via harness#724 and issue #246 closed 2026-07-15 after re-verification (roadmap.md's own residual findings dropped from ~60 to 6, non-blocking warn severity). Project-side, `entropy.analyze.drift.checkApiSignatures: false` was added to harness.config.json, verified via `harness cleanup --json` to fully suppress findings (1450 -> 0). However, `harness ci check` — what this repo's CI workflow actually runs — has its own separate, still-unfixed code path that does not honor this config at all (same config, 0 findings via cleanup vs. 1450 via ci check). That fourth call site is the new, narrower blocker. Findings remain non-blocking (warn severity) regardless. Revisit when the upstream fix lands. (refs: Issue #246 [closed]; Issue #266; upstream harness#838) [Note: symbol names intentionally omitted from this summary so the drift-tracking row does not itself register as drift.]
+- **Blockers:** upstream harness#838 (`harness ci check` doesn't thread entropy.analyze.drift config)
 - **Plan:** —
 
 ## Example Library
