@@ -81,3 +81,80 @@ def test_test_trace_requests_defaults_to_empty_list():
 
 def test_trace_by_test_defaults_to_empty_list():
     assert run_types.Trace(spans_total=0).by_test == []
+
+
+import span_reader  # noqa: E402
+
+
+def _span(trace_id, span_id, *, attrs=None, duration_ms=1.0):
+    return {
+        "traceId": trace_id,
+        "spanId": span_id,
+        "parentSpanId": None,
+        "name": "span",
+        "startTime": "2026-07-15T18:00:01+00:00",
+        "endTime": "2026-07-15T18:00:01+00:00",
+        "duration_ms": duration_ms,
+        "attributes": attrs or {},
+    }
+
+
+def _root_span(trace_id, span_id, *, test_id, title, file, outcome="passed"):
+    return _span(trace_id, span_id, attrs={
+        "test.id": test_id, "test.title": title, "test.file": file, "test.outcome": outcome,
+    })
+
+
+def _http_span(trace_id, span_id, *, method="GET", url="http://x/1", route="/x/:id",
+                status=200, duration_ms=12.4):
+    return _span(trace_id, span_id, attrs={
+        "http.method": method, "http.url": url, "http.route": route,
+        "http.status_code": status,
+    }, duration_ms=duration_ms)
+
+
+def _write_jsonl(path, spans):
+    path.write_text("\n".join(json.dumps(s) for s in spans) + "\n", encoding="utf-8")
+
+
+def test_missing_spans_dir_returns_empty_trace(tmp_path):
+    trace = span_reader.read_traces(tmp_path / "does-not-exist")
+    assert trace.spans_total == 0 and trace.by_test == []
+
+
+def test_empty_spans_dir_returns_empty_trace(tmp_path):
+    trace = span_reader.read_traces(tmp_path)  # exists, no *.jsonl files
+    assert trace.spans_total == 0 and trace.by_test == []
+
+
+def test_http_child_attaches_to_test_root(tmp_path):
+    spans = [
+        _root_span("t1", "s1", test_id="users-spec:1", title="lists users", file="tests/users.spec.ts"),
+        _http_span("t1", "s2"),
+    ]
+    _write_jsonl(tmp_path / "otel-spans.0.jsonl", spans)
+    trace = span_reader.read_traces(tmp_path)
+    assert trace.spans_total == 1
+    assert len(trace.by_test) == 1
+    tt = trace.by_test[0]
+    assert tt.test_id == "users-spec:1" and tt.outcome == "passed"
+    assert len(tt.requests) == 1
+    assert tt.requests[0].method == "GET" and tt.requests[0].status == 200
+
+
+def test_rootless_trace_buckets_under_setup(tmp_path):
+    spans = [_http_span("t2", "s1", url="http://x/health")]
+    _write_jsonl(tmp_path / "otel-spans.0.jsonl", spans)
+    trace = span_reader.read_traces(tmp_path)
+    assert trace.spans_total == 1
+    assert len(trace.by_test) == 1
+    assert trace.by_test[0].test_id == "__setup__"
+    assert trace.by_test[0].requests[0].url == "http://x/health"
+
+
+def test_root_span_itself_is_not_counted_as_a_request(tmp_path):
+    spans = [_root_span("t1", "s1", test_id="a:1", title="a", file="a.spec.ts")]
+    _write_jsonl(tmp_path / "otel-spans.0.jsonl", spans)
+    trace = span_reader.read_traces(tmp_path)
+    assert trace.spans_total == 0
+    assert trace.by_test[0].requests == []
