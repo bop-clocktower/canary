@@ -29,3 +29,4 @@ Not every PR needs an ADR. Day-to-day refactors and bug fixes don't.
 | [0003](0003-deprecate-oracle-generate.md) | Deprecate `oracle generate` CLI + the GitHub Action | accepted |
 | [0004](0004-remove-keyed-paths-at-v3.md) | Remove the keyed CLI surface at v5.0.0 | accepted |
 | [0005](0005-remove-llm-abstraction-layer.md) | Remove LLM abstraction layer — implementation record (v5.0.0) | accepted |
+| [0006](0006-otel-test-side-tracing.md) | Test-side-only OTel tracing (Phase 1, SUT-side deferred) | accepted |
