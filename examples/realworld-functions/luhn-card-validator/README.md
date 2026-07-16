@@ -68,8 +68,7 @@ Then, in Claude Code, generate the test:
 
 Canary will:
 
-1. Classify the request as `python_unit` (pytest hint, pure checksum
-   function)
+1. Classify the request as `api` (pytest hint, pure checksum function)
 2. Pick `pytest` from the framework registry
 3. Write a `test_is_valid_luhn.py` file under `tests/generated/`
 4. Print the file path + feedback hint
