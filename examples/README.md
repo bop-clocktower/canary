@@ -43,6 +43,8 @@ Canary design the test coverage — not from a URL or framework mechanic.
 | [pagination-cursor-codec](realworld-functions/pagination-cursor-codec/) | Unit | Vitest | Tamper-evident pagination cursor — checksum round-trip, integer-only state |
 | [business-hours-deadline](realworld-functions/business-hours-deadline/) | Unit | Pytest | Add business hours across nights/weekends/holidays, round-up-first rounding |
 | [token-bucket-rate-limiter](realworld-functions/token-bucket-rate-limiter/) | Unit | Vitest | Continuous token-bucket refill — injected clock, capacity cap, clock-skew reject |
+| [fifo-lot-consumer](realworld-functions/fifo-lot-consumer/) | Unit | Pytest | FIFO inventory consumption — partial/exact draining, order-preserving remainder, conservation invariant |
+| [luhn-card-validator](realworld-functions/luhn-card-validator/) | Unit | Pytest | Luhn checksum validation — doubling-reduction, malformed-input reject, minimal 2-digit edge case |
 
 See [realworld-functions/README.md](realworld-functions/README.md) for the
 rationale and how to add more.
