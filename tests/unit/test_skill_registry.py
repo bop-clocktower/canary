@@ -278,6 +278,27 @@ class TestOracleSkillsCli(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("Bundled skills", result.output)
 
+    def test_list_shows_overlay_group(self):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from agent.cli import app
+
+        with tempfile.TemporaryDirectory() as home:
+            sk = (
+                Path(home) / ".canary" / "overlays"
+                / "example-org-example-overlay" / ".canary" / "skills" / "ov-skill"
+            )
+            sk.mkdir(parents=True)
+            (sk / "SKILL.md").write_text(
+                "---\nname: ov-skill\n---\n\n# ov-skill\n", encoding="utf-8"
+            )
+            runner = CliRunner()
+            with patch("agent.core.skill_registry.Path.home", return_value=Path(home)):
+                result = runner.invoke(app, ["skills", "list"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Overlay skills (example-org-example-overlay", result.output)
+        self.assertIn("/ov-skill", result.output)
+
     def test_list_marks_executable_skills(self):
         _write_skill(
             self.overlay, "alpha",

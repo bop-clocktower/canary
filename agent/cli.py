@@ -562,8 +562,17 @@ def skills_list(
         return
 
     bundled = [s for s in skills if s.source == "bundled"]
+    overlay = [s for s in skills if s.source == "overlay"]
     global_ = [s for s in skills if s.source == "global"]
     local = [s for s in skills if s.source == "local"]
+
+    def _overlay_name(skill) -> str:
+        # Clone layout: ~/.canary/overlays/<overlay>/.canary/skills/<name>/SKILL.md
+        parts = skill.path.parts
+        try:
+            return parts[parts.index("overlays") + 1]
+        except (ValueError, IndexError):
+            return "?"
 
     def _format(skill) -> str:
         # Backslash-escapes prevent rich from interpreting [cli]/[entry]
@@ -585,14 +594,24 @@ def skills_list(
         print("[bold]Bundled skills:[/bold]")
         for skill in bundled:
             print(_format(skill))
+    if overlay:
+        from itertools import groupby
+
+        grouped = groupby(sorted(overlay, key=_overlay_name), key=_overlay_name)
+        for idx, (oname, group) in enumerate(grouped):
+            if bundled or idx > 0:
+                print()
+            print(f"[bold]Overlay skills[/bold] [dim]({oname} — override bundled):[/dim]")
+            for skill in group:
+                print(_format(skill))
     if global_:
-        if bundled:
+        if bundled or overlay:
             print()
-        print("[bold]Global skills[/bold] [dim](~/.canary/skills/ — override bundled):[/dim]")
+        print("[bold]Global skills[/bold] [dim](~/.canary/skills/ — override overlay):[/dim]")
         for skill in global_:
             print(_format(skill))
     if local:
-        if bundled or global_:
+        if bundled or overlay or global_:
             print()
         print("[bold]Local overlay skills[/bold] [dim](override global):[/dim]")
         for skill in local:
