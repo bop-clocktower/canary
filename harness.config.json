@@ -58,6 +58,14 @@
   "entryPoints": [
     "agent.cli:app"
   ],
+  "entropy": {
+    "rootDir": ".",
+    "analyze": {
+      "drift": {
+        "checkApiSignatures": false
+      }
+    }
+  },
   "telemetry": {
     "enabled": true
   },
