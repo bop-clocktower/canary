@@ -231,3 +231,95 @@ export function list(deps: CommandDeps = {}): number {
   }
   return 0;
 }
+
+/** Update one overlay clone. Returns 0 on success, 1 on refusal/failure. */
+function updateOne(o: registry.OverlayEntry, git: GitRunner, out: Writer, err: Writer): number {
+  if (!fs.existsSync(o.path)) {
+    err.write(`overlay "${o.name}": clone missing at ${o.path} — remove and re-add it.\n`);
+    return 1;
+  }
+
+  const status = git(["status", "--porcelain"], { cwd: o.path });
+  if (status.status !== 0) {
+    err.write(`overlay "${o.name}": cannot read git status at ${o.path}.\n`);
+    return 1;
+  }
+  if (status.stdout.trim() !== "") {
+    err.write(
+      `overlay "${o.name}": local modifications in ${o.path} — refusing to update. ` +
+        `Commit/stash them, or 'canary overlay remove ${o.name}' and re-add.\n`
+    );
+    return 1;
+  }
+
+  if (o.ref) {
+    // Pinned to a tag/branch: fetch (incl. tags), then re-checkout the ref.
+    const fetch = git(["fetch", "--quiet", "--tags", "origin"], { cwd: o.path });
+    if (fetch.status !== 0) {
+      err.write(`overlay "${o.name}": fetch failed.\n${fetch.stderr.trim()}\n`);
+      return 1;
+    }
+    const co = git(["checkout", "--quiet", o.ref], { cwd: o.path });
+    if (co.status !== 0) {
+      err.write(`overlay "${o.name}": checkout ${o.ref} failed.\n${co.stderr.trim()}\n`);
+      return 1;
+    }
+    out.write(`overlay "${o.name}": fetched, pinned @ ${o.ref}.\n`);
+    return 0;
+  }
+
+  const pull = git(["pull", "--ff-only", "--quiet"], { cwd: o.path });
+  if (pull.status !== 0) {
+    err.write(
+      `overlay "${o.name}": cannot fast-forward ${o.path} ` +
+        `(diverged or rewritten history) — 'canary overlay remove ${o.name}' and re-add.\n` +
+        (pull.stderr.trim() ? `${pull.stderr.trim()}\n` : "")
+    );
+    return 1;
+  }
+  out.write(`overlay "${o.name}": updated.\n`);
+  return 0;
+}
+
+/**
+ * `canary overlay update [name]` — fast-forward tracked overlays. With no name,
+ * updates all; refuses on local modifications or a non-fast-forward.
+ */
+export function update(name: string | null, deps: CommandDeps = {}): number {
+  const git = deps.git ?? defaultGit;
+  const homeDir = deps.homeDir ?? os.homedir();
+  const out = deps.out ?? process.stdout;
+  const err = deps.err ?? process.stderr;
+
+  let reg;
+  try {
+    reg = registry.read(homeDir);
+  } catch (e) {
+    err.write(`canary overlay update: ${(e as Error).message}\n`);
+    return 1;
+  }
+
+  let targets: registry.OverlayEntry[];
+  if (name) {
+    const entry = registry.get(reg, name);
+    if (!entry) {
+      err.write(`canary overlay update: no overlay named "${name}".\n`);
+      return 1;
+    }
+    targets = [entry];
+  } else {
+    if (reg.overlays.length === 0) {
+      out.write("No overlays to update.\n");
+      return 0;
+    }
+    targets = reg.overlays;
+  }
+
+  let failures = 0;
+  for (const o of targets) {
+    if (updateOne(o, git, out, err) !== 0) {
+      failures += 1;
+    }
+  }
+  return failures === 0 ? 0 : 1;
+}
