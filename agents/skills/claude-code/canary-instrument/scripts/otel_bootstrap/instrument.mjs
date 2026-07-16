@@ -28,9 +28,16 @@ import path from 'node:path';
 const workerIndex = process.env.TEST_WORKER_INDEX ?? '0';
 const outDir = path.join(process.cwd(), 'test-results', 'trace');
 fs.mkdirSync(outDir, { recursive: true });
-const outStream = fs.createWriteStream(
+// Synchronous fd, not fs.createWriteStream: Playwright's worker process
+// calls process.exit() once its assigned tests finish (it does not wait for
+// the event loop to drain), which cuts off any pending async stream writes
+// before they reach disk. fs.writeSync makes each export() call durable
+// immediately, so span data survives that hard exit — see
+// docs/changes/canary-instrument/proposal.md's ADR reference for why this
+// skill can't assume a graceful shutdown hook will run.
+const outFd = fs.openSync(
   path.join(outDir, `otel-spans.${workerIndex}.jsonl`),
-  { flags: 'a' },
+  'a',
 );
 
 /** Minimal file exporter — one JSON span per line, matches span_reader.py. */
@@ -39,10 +46,14 @@ class JsonlFileSpanExporter {
     for (const span of spans) {
       const [startSec, startNs] = span.startTime;
       const [durSec, durNs] = span.duration;
-      outStream.write(JSON.stringify({
+      fs.writeSync(outFd, JSON.stringify({
         traceId: span.spanContext().traceId,
         spanId: span.spanContext().spanId,
-        parentSpanId: span.parentSpanId,
+        // ReadableSpan.parentSpanId was replaced by parentSpanContext in
+        // the current @opentelemetry/sdk-trace* line this skill installs
+        // (span.parentSpanId is undefined there, so JSON.stringify silently
+        // dropped the key entirely) — read the id off parentSpanContext.
+        parentSpanId: span.parentSpanContext?.spanId ?? null,
         name: span.name,
         startTime: new Date(startSec * 1000 + startNs / 1e6).toISOString(),
         duration_ms: durSec * 1000 + durNs / 1e6,
@@ -53,7 +64,12 @@ class JsonlFileSpanExporter {
   }
 
   shutdown() {
-    return new Promise((resolve) => outStream.end(resolve));
+    try {
+      fs.closeSync(outFd);
+    } catch {
+      // already closed (e.g. shutdown() invoked twice) — fine.
+    }
+    return Promise.resolve();
   }
 }
 

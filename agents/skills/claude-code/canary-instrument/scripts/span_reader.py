@@ -10,7 +10,9 @@ synthetic test id "__setup__" (traffic outside any test, e.g. global setup).
 
 Assumed span envelope (see Task 2 note in the implementation plan for why
 this shape is an assumption, not a pinned spec): {traceId, spanId,
-parentSpanId, name, startTime, endTime, duration_ms, attributes{}}, HTTP
+parentSpanId, name, startTime, duration_ms, attributes{}} — matches exactly
+what otel_bootstrap/instrument.mjs's JsonlFileSpanExporter writes; no
+`endTime` key is emitted (duration_ms + startTime cover it). HTTP
 attributes keyed http.method/http.request.method, http.url, http.route,
 http.status_code.
 """
