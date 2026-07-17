@@ -6,6 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { parseSource, SourceSpecError } from "./source-spec.js";
 import * as registry from "./overlays-registry.js";
+import { commandSucceedsHash, loadManifest } from "./doctor-manifest.js";
 
 /** Result of running a git subcommand. */
 export interface GitResult {
@@ -29,6 +30,8 @@ export interface CommandDeps {
   err?: Writer;
   /** ISO date stamp for new registry entries (injectable for tests). */
   now?: () => string;
+  /** Interactive yes/no prompt for the `overlay add` consent gate (injectable). */
+  confirm?: (question: string) => boolean;
 }
 
 const defaultGit: GitRunner = (args, opts = {}) => {
@@ -42,6 +45,54 @@ const defaultGit: GitRunner = (args, opts = {}) => {
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** Default consent prompt: reads a line from the TTY; declines when non-interactive. */
+function defaultConfirm(question: string): boolean {
+  if (!process.stdin.isTTY) {
+    return false;
+  }
+  process.stdout.write(question);
+  const buf = Buffer.alloc(256);
+  try {
+    const n = fs.readSync(0, buf, 0, buf.length, null);
+    const answer = buf.toString("utf8", 0, n).trim().toLowerCase();
+    return answer === "y" || answer === "yes";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Consent for an overlay's `command-succeeds` doctor checks, collected at add
+ * time. Overlays with no such checks (or a malformed manifest) record no
+ * consent (`null`) — there is nothing to gate, and a bad manifest surfaces
+ * later in `doctor`. Otherwise the check list is printed and confirmed.
+ */
+function collectConsent(
+  dest: string,
+  name: string,
+  confirm: (question: string) => boolean,
+  out: Writer
+): { consent: boolean | null; consentCommandsHash: string | null } {
+  const load = loadManifest(dest);
+  if (!load.ok) {
+    return { consent: null, consentCommandsHash: null };
+  }
+  const hash = commandSucceedsHash(load.checks);
+  if (hash === null) {
+    return { consent: null, consentCommandsHash: null };
+  }
+  const cmds = load.checks.filter((c) => c.type === "command-succeeds");
+  out.write(`Overlay "${name}" ships ${cmds.length} command check(s) that 'canary doctor' can run:\n`);
+  for (const c of cmds) {
+    out.write(`  - ${c.id}: ${(c.command ?? []).join(" ")}\n`);
+  }
+  const granted = confirm(`Allow 'canary doctor' to run these commands for "${name}"? [y/N] `);
+  if (!granted) {
+    out.write("Declined — 'canary doctor' will skip these command checks. Re-add the overlay to change this.\n");
+  }
+  return { consent: granted, consentCommandsHash: hash };
 }
 
 /** Ordered stderr-substring signatures for `git clone` failure classification. */
@@ -143,13 +194,16 @@ export function add(
     return 1;
   }
 
+  const confirm = deps.confirm ?? defaultConfirm;
+  const { consent, consentCommandsHash } = collectConsent(dest, parsed.name, confirm, out);
   const entry: registry.OverlayEntry = {
     name: parsed.name,
     source,
     ref,
     path: dest,
     addedDate: stamp(),
-    consent: null,
+    consent,
+    consentCommandsHash,
   };
   try {
     registry.write(registry.add(reg, entry), homeDir);
@@ -175,6 +229,22 @@ export function skillCount(dest: string): number {
   return entries.filter(
     (d) => d.isDirectory() && fs.existsSync(path.join(skillsDir, d.name, "SKILL.md"))
   ).length;
+}
+
+/** Working-tree cleanliness of a clone. */
+export type CleanStatus = "clean" | "dirty" | "unreadable";
+
+/**
+ * Whether a clone's working tree is clean, dirty (local modifications), or its
+ * git status is unreadable. Shared by `overlay update` (refuses on dirty) and
+ * the `doctor` engine check ("no local overlay modifications").
+ */
+export function workingTreeStatus(dest: string, git: GitRunner): CleanStatus {
+  const status = git(["status", "--porcelain"], { cwd: dest });
+  if (status.status !== 0) {
+    return "unreadable";
+  }
+  return status.stdout.trim() === "" ? "clean" : "dirty";
 }
 
 /**
@@ -238,12 +308,12 @@ function updateOne(o: registry.OverlayEntry, git: GitRunner, out: Writer, err: W
     return 1;
   }
 
-  const status = git(["status", "--porcelain"], { cwd: o.path });
-  if (status.status !== 0) {
+  const clean = workingTreeStatus(o.path, git);
+  if (clean === "unreadable") {
     err.write(`overlay "${o.name}": cannot read git status at ${o.path}.\n`);
     return 1;
   }
-  if (status.stdout.trim() !== "") {
+  if (clean === "dirty") {
     err.write(
       `overlay "${o.name}": local modifications in ${o.path} — refusing to update. ` +
         `Commit/stash them, or 'canary overlay remove ${o.name}' and re-add.\n`
