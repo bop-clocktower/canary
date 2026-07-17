@@ -1,0 +1,76 @@
+name: Refresh Arch Baseline
+
+# Opt-in, label-gated refresh of .harness/arch/baselines.json.
+#
+# The arch baseline is a regression ratchet: `harness ci check` fails when a
+# metric (module-size, complexity, coupling, …) grows past the recorded value,
+# so a human decides whether the growth is legitimate. This workflow automates
+# only the *mechanical* refresh — and only when a maintainer explicitly asks
+# for it by adding the `refresh-baseline` label to a PR. Nothing refreshes
+# silently; the ratchet stays intact.
+
+on:
+  pull_request:
+    types: [labeled]
+
+# Cancel a stale refresh if the PR is re-labeled while one is in flight.
+concurrency:
+  group: refresh-baseline-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    # Only for our opt-in label, and only for same-repo PRs — fork PRs get a
+    # read-only token and their head branch lives on the fork, so we cannot
+    # push a refreshed baseline back to them.
+    if: >-
+      github.event.label.name == 'refresh-baseline' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - run: npm install -g @harness-engineering/cli
+
+      - name: Refresh baseline
+        run: harness check-arch --update-baseline
+
+      - name: Commit & push if the baseline changed
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if git diff --quiet -- .harness/arch/baselines.json; then
+            echo "Baseline already current; nothing to refresh."
+            exit 0
+          fi
+          # Race guard: the PR branch can be deleted or merged mid-run.
+          if ! git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "::warning::PR branch '$BRANCH' no longer exists on origin; skipping push."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .harness/arch/baselines.json
+          git commit -m "chore(ci): refresh arch baseline via refresh-baseline label"
+          git push origin "HEAD:$BRANCH"
+
+      # Consume the label so a later regression needs a fresh, deliberate
+      # opt-in rather than silently re-refreshing on the next labeled event.
+      - name: Remove the refresh-baseline label
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr edit "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --remove-label refresh-baseline || true
