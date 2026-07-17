@@ -181,14 +181,61 @@ def init(
         print("[yellow]Supported frameworks: playwright, vitest, pytest, k6[/yellow]")
 
 
+def _resolve_migrate_overlay(from_overlay: Optional[str], overlay: Optional[str]):
+    """Resolve the effective overlay clone path for `migrate`.
+
+    Precedence: ``--from`` (tracked overlay name or path) → ``--overlay`` (a raw
+    path, deprecated) → a single tracked overlay by default → none. When more
+    than one overlay is tracked and no flag is given, this is an ambiguity error.
+    Prints user-facing notices; raises ``typer.Exit(1)`` on an unresolvable
+    ``--from`` or an ambiguous default. Returns a ``Path`` or ``None``.
+    """
+    from pathlib import Path as _Path
+    from agent.core.overlays import OverlayNotFound, list_overlays, resolve_overlay
+
+    if from_overlay:
+        if overlay:
+            print("[yellow]Both --from and --overlay given; using --from and ignoring --overlay.[/yellow]")
+        try:
+            return resolve_overlay(from_overlay)
+        except OverlayNotFound as e:
+            print(f"\n[bold red]✗[/bold red] {e}")
+            raise typer.Exit(1)
+
+    if overlay:
+        print("[yellow]--overlay is deprecated; use [bold]--from <overlay-name|path>[/bold] instead.[/yellow]")
+        return _Path(overlay).resolve()
+
+    # No flag: default to the sole tracked overlay, if exactly one.
+    tracked = list_overlays()
+    if len(tracked) == 1:
+        print(f"[dim]Using tracked overlay '{tracked[0]}' (the only one registered).[/dim]")
+        return resolve_overlay(tracked[0])
+    if len(tracked) > 1:
+        names = ", ".join(tracked)
+        print(
+            f"\n[bold red]✗[/bold red] {len(tracked)} tracked overlays registered ({names}).\n"
+            "Choose one with [bold]--from <name>[/bold]."
+        )
+        raise typer.Exit(1)
+    return None
+
+
 @app.command()
 def migrate(
     path: str = typer.Option(".", "--path", "-p", help="Project root to migrate (default: current directory)."),
     framework: str = typer.Option(None, "--framework", "-f", help="Override auto-detected framework."),
+    from_overlay: str = typer.Option(
+        None, "--from",
+        help="Tracked overlay (name or path) whose .canary/skills/ are deployed into "
+             "the target. A bare name resolves against overlays added via `canary overlay "
+             "add` (~/.canary/overlays/); with exactly one tracked overlay, this defaults "
+             "to it. Skills are filtered by deploy_to frontmatter matching the detected shape.",
+    ),
     overlay: str = typer.Option(
         None, "--overlay", "-o",
-        help="Path to an overlay repo whose .canary/skills/ are deployed into the target. "
-             "Skills are filtered by deploy_to frontmatter matching the detected shape.",
+        help="[deprecated: use --from] Path to an overlay repo whose .canary/skills/ are "
+             "deployed into the target.",
     ),
     apply: bool = typer.Option(False, "--apply", help="Write files. Without this flag the command is a dry run."),
     output_json: bool = typer.Option(False, "--json", help="Emit the migration report as JSON."),
@@ -200,7 +247,7 @@ def migrate(
     framework, drops Canary config files, and reports what was created or preserved.
     Dry-run by default — pass --apply to write files.
 
-    Pass --overlay <path> to also deploy overlay skills into the target's
+    Pass --from <overlay> to also deploy overlay skills into the target's
     .canary/skills/. Skills with deploy_to matching the detected shape are copied;
     skills already present are skipped.
     """
@@ -208,7 +255,7 @@ def migrate(
     from agent.core.migrator import HarnessMigrator
 
     root = _Path(path).resolve()
-    overlay_path = _Path(overlay).resolve() if overlay else None
+    overlay_path = _resolve_migrate_overlay(from_overlay, overlay)
     migrator = HarnessMigrator()
 
     try:
