@@ -44,31 +44,30 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Ordered stderr-substring signatures for `git clone` failure classification. */
+const CLONE_FAILURE_SIGNATURES: ReadonlyArray<{ reason: string; needles: readonly string[] }> = [
+  { reason: "git not found on PATH", needles: ["enoent", "not found: git"] },
+  {
+    reason: "network unreachable",
+    needles: ["could not resolve host", "network is unreachable", "failed to connect", "timed out"],
+  },
+  {
+    reason: "authentication denied",
+    needles: ["authentication failed", "permission denied", "could not read username", "access denied", "403 forbidden"],
+  },
+  { reason: "repository not found", needles: ["repository not found", "does not exist", "not found"] },
+];
+
 /** Best-effort classification of a failed `git clone`, for a useful remedy. */
 export function classifyCloneFailure(res: GitResult): string {
   const s = res.stderr.toLowerCase();
-  if (res.status === 127 || s.includes("enoent") || s.includes("not found: git")) {
+  if (res.status === 127) {
     return "git not found on PATH";
   }
-  if (
-    s.includes("could not resolve host") ||
-    s.includes("network is unreachable") ||
-    s.includes("failed to connect") ||
-    s.includes("timed out")
-  ) {
-    return "network unreachable";
-  }
-  if (
-    s.includes("authentication failed") ||
-    s.includes("permission denied") ||
-    s.includes("could not read username") ||
-    s.includes("access denied") ||
-    s.includes("403 forbidden")
-  ) {
-    return "authentication denied";
-  }
-  if (s.includes("repository not found") || s.includes("does not exist") || s.includes("not found")) {
-    return "repository not found";
+  for (const { reason, needles } of CLONE_FAILURE_SIGNATURES) {
+    if (needles.some((needle) => s.includes(needle))) {
+      return reason;
+    }
   }
   return "unknown error";
 }

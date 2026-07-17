@@ -48,6 +48,65 @@ function lastTwoSegments(pathPart: string): [string, string] | null {
   return [segments[segments.length - 2], segments[segments.length - 1]];
 }
 
+/** github:owner/repo shorthand. Returns null when `spec` is not this form. */
+function parseGithubShorthand(spec: string, raw: string): ParsedSource | null {
+  if (!spec.startsWith("github:")) {
+    return null;
+  }
+  const parts = spec.slice("github:".length).split("/").filter(Boolean);
+  if (parts.length !== 2) {
+    throw new SourceSpecError(`"${raw}" is not github:owner/repo (${ACCEPTED_FORMS})`);
+  }
+  const [owner, repo] = parts;
+  return {
+    cloneUrl: `https://github.com/${owner}/${stripRepoSuffix(repo)}.git`,
+    name: nameFromOwnerRepo(owner, repo, raw),
+  };
+}
+
+/** scp-like git URL: git@host:owner/repo(.git). Returns null when not this form. */
+function parseScpUrl(spec: string, raw: string): ParsedSource | null {
+  const scpMatch = spec.match(/^[\w.-]+@[\w.-]+:(.+)$/);
+  if (!scpMatch) {
+    return null;
+  }
+  const pair = lastTwoSegments(scpMatch[1]);
+  if (!pair) {
+    throw new SourceSpecError(`cannot derive owner/repo from "${raw}" (${ACCEPTED_FORMS})`);
+  }
+  return { cloneUrl: spec, name: nameFromOwnerRepo(pair[0], pair[1], raw) };
+}
+
+/** Full URL: https://, http://, git://, ssh://. Returns null when not this form. */
+function parseFullUrl(spec: string, raw: string): ParsedSource | null {
+  if (!/^(https?|git|ssh):\/\//i.test(spec)) {
+    return null;
+  }
+  let pathname: string;
+  try {
+    pathname = new URL(spec).pathname;
+  } catch {
+    throw new SourceSpecError(`"${raw}" is not a valid URL (${ACCEPTED_FORMS})`);
+  }
+  const pair = lastTwoSegments(pathname);
+  if (!pair) {
+    throw new SourceSpecError(`cannot derive owner/repo from "${raw}" (${ACCEPTED_FORMS})`);
+  }
+  return { cloneUrl: spec, name: nameFromOwnerRepo(pair[0], pair[1], raw) };
+}
+
+/** Local filesystem path (absolute, ./relative, ../relative, or ~-relative). */
+function parseLocalPath(spec: string, raw: string): ParsedSource | null {
+  if (!(spec.startsWith("/") || spec.startsWith("./") || spec.startsWith("../") || spec.startsWith("~"))) {
+    return null;
+  }
+  const basename = stripRepoSuffix(spec.split("/").filter(Boolean).pop() ?? "");
+  if (!basename) {
+    throw new SourceSpecError(`cannot derive a name from path "${raw}" (${ACCEPTED_FORMS})`);
+  }
+  return { cloneUrl: spec, name: basename };
+}
+
 /**
  * Parse a source spec into a clone URL and overlay name. Throws
  * {@link SourceSpecError} on anything that does not match an accepted form.
@@ -57,54 +116,11 @@ export function parseSource(raw: string): ParsedSource {
   if (!spec) {
     throw new SourceSpecError(`empty source (${ACCEPTED_FORMS})`);
   }
-
-  // github:owner/repo shorthand.
-  if (spec.startsWith("github:")) {
-    const rest = spec.slice("github:".length);
-    const parts = rest.split("/").filter(Boolean);
-    if (parts.length !== 2) {
-      throw new SourceSpecError(`"${raw}" is not github:owner/repo (${ACCEPTED_FORMS})`);
+  for (const handler of [parseGithubShorthand, parseScpUrl, parseFullUrl, parseLocalPath]) {
+    const parsed = handler(spec, raw);
+    if (parsed) {
+      return parsed;
     }
-    const [owner, repo] = parts;
-    return {
-      cloneUrl: `https://github.com/${owner}/${stripRepoSuffix(repo)}.git`,
-      name: nameFromOwnerRepo(owner, repo, raw),
-    };
   }
-
-  // scp-like git URL: git@host:owner/repo(.git)
-  const scpMatch = spec.match(/^[\w.-]+@[\w.-]+:(.+)$/);
-  if (scpMatch) {
-    const pair = lastTwoSegments(scpMatch[1]);
-    if (!pair) {
-      throw new SourceSpecError(`cannot derive owner/repo from "${raw}" (${ACCEPTED_FORMS})`);
-    }
-    return { cloneUrl: spec, name: nameFromOwnerRepo(pair[0], pair[1], raw) };
-  }
-
-  // Full URL: https://, http://, git://, ssh://
-  if (/^(https?|git|ssh):\/\//i.test(spec)) {
-    let pathname: string;
-    try {
-      pathname = new URL(spec).pathname;
-    } catch {
-      throw new SourceSpecError(`"${raw}" is not a valid URL (${ACCEPTED_FORMS})`);
-    }
-    const pair = lastTwoSegments(pathname);
-    if (!pair) {
-      throw new SourceSpecError(`cannot derive owner/repo from "${raw}" (${ACCEPTED_FORMS})`);
-    }
-    return { cloneUrl: spec, name: nameFromOwnerRepo(pair[0], pair[1], raw) };
-  }
-
-  // Local filesystem path (absolute, ./relative, or ~-relative).
-  if (spec.startsWith("/") || spec.startsWith("./") || spec.startsWith("../") || spec.startsWith("~")) {
-    const basename = stripRepoSuffix(spec.split("/").filter(Boolean).pop() ?? "");
-    if (!basename) {
-      throw new SourceSpecError(`cannot derive a name from path "${raw}" (${ACCEPTED_FORMS})`);
-    }
-    return { cloneUrl: spec, name: basename };
-  }
-
   throw new SourceSpecError(`unrecognized source "${raw}" (${ACCEPTED_FORMS})`);
 }

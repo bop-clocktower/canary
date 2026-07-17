@@ -12,7 +12,7 @@
  */
 
 import * as overlay from "./overlay-commands.js";
-import type { CommandDeps } from "./overlay-commands.js";
+import type { CommandDeps, Writer } from "./overlay-commands.js";
 
 /** Subcommands handled in TypeScript rather than forwarded to the binary. */
 export const TS_COMMANDS: readonly string[] = ["overlay"];
@@ -63,30 +63,42 @@ const OVERLAY_USAGE =
   "usage: canary overlay <add|list|update|remove> [args]\n" +
   "  add <source> [--ref <tag>]   list   update [name]   remove <name>\n";
 
+interface SubcommandCtx {
+  positionals: string[];
+  flags: Record<string, string | boolean>;
+  deps: CommandDeps;
+  err: Writer;
+}
+
+/** Overlay subcommand handlers, keyed by name. Each returns a process exit code. */
+const OVERLAY_SUBCOMMANDS: Record<string, (ctx: SubcommandCtx) => number> = {
+  add: ({ positionals, flags, deps, err }) => {
+    if (positionals.length < 1) {
+      err.write("usage: canary overlay add <source> [--ref <tag>]\n");
+      return 1;
+    }
+    return overlay.add(positionals[0], { ref: refFrom(flags) }, deps);
+  },
+  list: ({ deps }) => overlay.list(deps),
+  update: ({ positionals, deps }) => overlay.update(positionals[0] ?? null, deps),
+  remove: ({ positionals, deps, err }) => {
+    if (positionals.length < 1) {
+      err.write("usage: canary overlay remove <name>\n");
+      return 1;
+    }
+    return overlay.remove(positionals[0], deps);
+  },
+};
+
 function runOverlay(args: readonly string[], deps: CommandDeps): number {
   const err = deps.err ?? process.stderr;
-  const { positionals, flags } = parseArgs(args.slice(1));
-  switch (args[0]) {
-    case "add":
-      if (positionals.length < 1) {
-        err.write("usage: canary overlay add <source> [--ref <tag>]\n");
-        return 1;
-      }
-      return overlay.add(positionals[0], { ref: refFrom(flags) }, deps);
-    case "list":
-      return overlay.list(deps);
-    case "update":
-      return overlay.update(positionals[0] ?? null, deps);
-    case "remove":
-      if (positionals.length < 1) {
-        err.write("usage: canary overlay remove <name>\n");
-        return 1;
-      }
-      return overlay.remove(positionals[0], deps);
-    default:
-      err.write(`canary overlay: unknown subcommand ${args[0] ? `'${args[0]}'` : "(none)"}\n${OVERLAY_USAGE}`);
-      return 1;
+  const handler = OVERLAY_SUBCOMMANDS[args[0]];
+  if (!handler) {
+    err.write(`canary overlay: unknown subcommand ${args[0] ? `'${args[0]}'` : "(none)"}\n${OVERLAY_USAGE}`);
+    return 1;
   }
+  const { positionals, flags } = parseArgs(args.slice(1));
+  return handler({ positionals, flags, deps, err });
 }
 
 /**
