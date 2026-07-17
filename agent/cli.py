@@ -562,8 +562,17 @@ def skills_list(
         return
 
     bundled = [s for s in skills if s.source == "bundled"]
+    overlay = [s for s in skills if s.source == "overlay"]
     global_ = [s for s in skills if s.source == "global"]
     local = [s for s in skills if s.source == "local"]
+
+    def _overlay_name(skill) -> str:
+        # Clone layout: ~/.canary/overlays/<overlay>/.canary/skills/<name>/SKILL.md
+        parts = skill.path.parts
+        try:
+            return parts[parts.index("overlays") + 1]
+        except (ValueError, IndexError):
+            return "?"
 
     def _format(skill) -> str:
         # Backslash-escapes prevent rich from interpreting [cli]/[entry]
@@ -585,14 +594,24 @@ def skills_list(
         print("[bold]Bundled skills:[/bold]")
         for skill in bundled:
             print(_format(skill))
+    if overlay:
+        from itertools import groupby
+
+        grouped = groupby(sorted(overlay, key=_overlay_name), key=_overlay_name)
+        for idx, (oname, group) in enumerate(grouped):
+            if bundled or idx > 0:
+                print()
+            print(f"[bold]Overlay skills[/bold] [dim]({oname} — override bundled):[/dim]")
+            for skill in group:
+                print(_format(skill))
     if global_:
-        if bundled:
+        if bundled or overlay:
             print()
-        print("[bold]Global skills[/bold] [dim](~/.canary/skills/ — override bundled):[/dim]")
+        print("[bold]Global skills[/bold] [dim](~/.canary/skills/ — override overlay):[/dim]")
         for skill in global_:
             print(_format(skill))
     if local:
-        if bundled or global_:
+        if bundled or overlay or global_:
             print()
         print("[bold]Local overlay skills[/bold] [dim](override global):[/dim]")
         for skill in local:
@@ -691,6 +710,33 @@ def skills_run(
         finally:
             sys.argv = saved_argv
         raise typer.Exit(int(rc or 0))
+
+
+# ---------------------------------------------------------------------------
+# `canary overlay` — handled by the npm shim (TypeScript). The Python entry
+# point only reaches here on pipx installs, where it points at the npm install
+# instead of failing with an unknown-command error.
+# ---------------------------------------------------------------------------
+
+
+@app.command(
+    "overlay",
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+    help="Manage tracked overlays (requires the npm install of Canary).",
+)
+def overlay(ctx: typer.Context) -> None:
+    """`canary overlay` is provided by the npm shim, not the Python entry point.
+
+    On an npm install the shim routes ``overlay`` to its TypeScript handler and
+    never reaches here. This command exists so a pipx-installed engine prints a
+    clear pointer instead of a Typer 'No such command' error.
+    """
+    print(
+        "[yellow]`canary overlay` is provided by the npm install of Canary.[/yellow]\n"
+        "Install it with:  [bold]npm install -g canary-test-cli[/bold]\n"
+        "The pipx/Python entry point does not include the overlay commands."
+    )
+    raise typer.Exit(code=1)
 
 
 # ---------------------------------------------------------------------------

@@ -4,27 +4,58 @@
 const { execFileSync } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
+const { isTsCommand, route } = require("../dist/router.js");
 
 function getBinaryPath(platform) {
   const name = platform === "win32" ? "canary.exe" : "canary";
   return path.join(__dirname, name);
 }
 
-function main() {
-  const binaryPath = getBinaryPath(process.platform);
-  if (!fs.existsSync(binaryPath)) {
-    process.stderr.write(
+/**
+ * Forward a command to the bundled Python binary. Returns the exit code
+ * (0 on success, the binary's status on failure, 1 when the binary is missing).
+ * Dependencies are injectable for testing.
+ */
+function forwardToBinary(
+  argv,
+  {
+    execFile = execFileSync,
+    existsSync = fs.existsSync,
+    platform = process.platform,
+    stderr = process.stderr,
+  } = {}
+) {
+  const binaryPath = getBinaryPath(platform);
+  if (!existsSync(binaryPath)) {
+    stderr.write(
       `canary binary not found at ${binaryPath}.\n` +
-      `Try reinstalling: npm install -g canary-test-cli\n`
+        `Try reinstalling: npm install -g canary-test-cli\n`
     );
-    process.exit(1);
+    return 1;
   }
   try {
-    execFileSync(binaryPath, process.argv.slice(2), { stdio: "inherit" });
+    execFile(binaryPath, argv, { stdio: "inherit" });
+    return 0;
   } catch (err) {
-    process.exit(err.status ?? 1);
+    return err.status ?? 1;
   }
 }
 
-module.exports = { getBinaryPath };
+/**
+ * Dispatch one invocation: TS-handled commands (e.g. `overlay`) go to the
+ * router; everything else forwards verbatim to the Python binary. Returns the
+ * process exit code.
+ */
+function run(argv, deps = {}) {
+  if (isTsCommand(argv)) {
+    return route(argv, deps) ?? 0;
+  }
+  return forwardToBinary(argv, deps);
+}
+
+function main() {
+  process.exit(run(process.argv.slice(2)));
+}
+
+module.exports = { getBinaryPath, forwardToBinary, run };
 if (require.main === module) main();

@@ -228,13 +228,20 @@ skills are read as prose; code-bearing skills are invocable via
 
 ## Discovery Tiers
 
-Canary discovers skills from three tiers, lowest to highest priority:
+Canary discovers skills from four tiers, lowest to highest priority:
 
 | Tier | Location | Source label | Notes |
 | --- | --- | --- | --- |
 | **Bundled** | Shipped with the canary package | `bundled` | Slash commands + harness prescriptive skills |
+| **Overlay** | `~/.canary/overlays/<overlay>/.canary/skills/` | `overlay` | Tracked overlays added via `canary overlay add`; each overlay is a git clone |
 | **Global** | `~/.canary/skills/` | `global` | Available in every session; install here for Claude web extension use |
 | **Local** | `.canary/skills/` walking up to git root | `local` | Project- or repo-specific; highest priority |
+
+Overlay skills are discovered by scanning the clone directories under
+`~/.canary/overlays/` — the loader never reads `~/.canary/overlays.json`
+(that registry is written only by the `overlay` commands). An overlay clone is
+laid out exactly like a project checkout, so its `.canary/skills/` are found by
+the same nested-skill scanner.
 
 ### Installing a skill globally
 
@@ -249,14 +256,20 @@ extension or a scratch directory.
 
 ## Precedence Rules
 
-1. Local project skills always win over global and bundled skills with the
-   same `name`.
-2. Global home-dir skills win over bundled skills with the same `name`.
-3. Among multiple `.canary/skills/` directories found while walking to the git
+1. Local project skills always win over global, overlay, and bundled skills
+   with the same `name`.
+2. Global home-dir skills win over overlay and bundled skills with the same
+   `name`.
+3. Overlay skills win over bundled skills with the same `name`. Among multiple
+   overlays, they are visited in sorted directory-name order and a later
+   overlay overrides an earlier one of the same skill name.
+4. Among multiple `.canary/skills/` directories found while walking to the git
    root, the one closest to CWD wins (most-specific wins).
-4. Among bundled skills, slash-command skills (`canary:*.md`) take precedence
+5. Among bundled skills, slash-command skills (`canary:*.md`) take precedence
    over harness prescriptive skills with the same name (the slash-command format
    is the primary Claude Code extension point).
+
+Full precedence, lowest to highest: **bundled < overlay < global < local**.
 
 ## CLI Discovery
 
@@ -282,7 +295,10 @@ Bundled skills:
   /canary:init           Scaffold a test suite for the active project.
   /canary:migrate        Migrate a harness-scaffolded test suite to Canary's layout.
 
-Global skills (~/.canary/skills/ — override bundled):
+Overlay skills (example-org-example-overlay — override bundled):
+  /example-api-test      Generate API contract tests for the example service.
+
+Global skills (~/.canary/skills/ — override overlay):
   /acme-login-helper     Log in as a test user on any ACME environment.
 
 Local overlay skills (override global):
