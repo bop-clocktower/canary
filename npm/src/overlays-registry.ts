@@ -27,10 +27,17 @@ export interface OverlayEntry {
   /** ISO date the overlay was added. */
   addedDate: string;
   /**
-   * Reserved for the Phase 2 consent gate (command-succeeds doctor checks).
-   * Always null in Phase 1 — no consent is collected yet.
+   * Consent for this overlay's `command-succeeds` doctor checks: true when the
+   * user allowed them at `overlay add`, false when declined, null when the
+   * overlay ships no such checks (nothing to gate).
    */
   consent: boolean | null;
+  /**
+   * Fingerprint of the `command-succeeds` set that `consent` was granted for,
+   * or null when there are no such checks. Consent is re-requested when the
+   * live manifest's fingerprint no longer matches this.
+   */
+  consentCommandsHash: string | null;
 }
 
 export interface OverlayRegistry {
@@ -71,8 +78,8 @@ export function emptyRegistry(): OverlayRegistry {
  * present-but-unparseable file throws {@link RegistryError} so callers can
  * report it rather than silently discarding overlays.
  */
-export function read(homeDir: string = os.homedir()): OverlayRegistry {
-  const file = registryPath(homeDir);
+/** Parse registry JSON, throwing a RegistryError on unreadable/malformed input. */
+function parseRegistryFile(file: string): OverlayRegistry {
   let raw: string;
   try {
     raw = fs.readFileSync(file, "utf8");
@@ -88,18 +95,34 @@ export function read(homeDir: string = os.homedir()): OverlayRegistry {
   } catch (err) {
     throw new RegistryError(`malformed ${file}: ${(err as Error).message}`);
   }
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    !Array.isArray((parsed as { overlays?: unknown }).overlays)
-  ) {
+  const overlays = (parsed as { overlays?: unknown } | null)?.overlays;
+  if (typeof parsed !== "object" || parsed === null || !Array.isArray(overlays)) {
     throw new RegistryError(`malformed ${file}: expected { schemaVersion, overlays: [] }`);
   }
-  const reg = parsed as OverlayRegistry;
+  return parsed as OverlayRegistry;
+}
+
+/** Normalize forward-added optional fields so callers never see `undefined`. */
+function normalizeEntry(o: OverlayEntry): OverlayEntry {
+  return { ...o, consent: o.consent ?? null, consentCommandsHash: o.consentCommandsHash ?? null };
+}
+
+export function read(homeDir: string = os.homedir()): OverlayRegistry {
+  const reg = parseRegistryFile(registryPath(homeDir));
   return {
     schemaVersion: typeof reg.schemaVersion === "number" ? reg.schemaVersion : SCHEMA_VERSION,
-    overlays: reg.overlays,
+    overlays: reg.overlays.map(normalizeEntry),
   };
+}
+
+/**
+ * Whether `command-succeeds` doctor checks may run for an overlay: consent must
+ * have been granted (`true`) AND still cover the live manifest's command set
+ * (`liveHash` matching the recorded fingerprint). A changed manifest (hash
+ * mismatch) revokes consent until it is re-confirmed at `overlay add`.
+ */
+export function consentGranted(entry: OverlayEntry, liveHash: string | null): boolean {
+  return entry.consent === true && liveHash !== null && entry.consentCommandsHash === liveHash;
 }
 
 /** Write the registry atomically (temp file + rename), creating `~/.canary`. */

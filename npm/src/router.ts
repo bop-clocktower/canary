@@ -13,9 +13,10 @@
 
 import * as overlay from "./overlay-commands.js";
 import type { CommandDeps, Writer } from "./overlay-commands.js";
+import { runDoctor } from "./doctor.js";
 
 /** Subcommands handled in TypeScript rather than forwarded to the binary. */
-export const TS_COMMANDS: readonly string[] = ["overlay"];
+export const TS_COMMANDS: readonly string[] = ["overlay", "doctor"];
 
 /** True when `argv` (process.argv.slice(2)) targets a TS-handled command. */
 export function isTsCommand(argv: readonly string[]): boolean {
@@ -74,10 +75,12 @@ interface SubcommandCtx {
 const OVERLAY_SUBCOMMANDS: Record<string, (ctx: SubcommandCtx) => number> = {
   add: ({ positionals, flags, deps, err }) => {
     if (positionals.length < 1) {
-      err.write("usage: canary overlay add <source> [--ref <tag>]\n");
+      err.write("usage: canary overlay add <source> [--ref <tag>] [--yes]\n");
       return 1;
     }
-    return overlay.add(positionals[0], { ref: refFrom(flags) }, deps);
+    // `--yes` grants command-check consent non-interactively (CI); default prompts.
+    const addDeps = flags.yes === true ? { ...deps, confirm: () => true } : deps;
+    return overlay.add(positionals[0], { ref: refFrom(flags) }, addDeps);
   },
   list: ({ deps }) => overlay.list(deps),
   update: ({ positionals, deps }) => overlay.update(positionals[0] ?? null, deps),
@@ -102,16 +105,20 @@ function runOverlay(args: readonly string[], deps: CommandDeps): number {
 }
 
 /**
- * Dispatch a TS-handled command. Returns the process exit code, or `null` when
- * the command should fall through to the Python binary. `deps` is threaded to
- * the command handlers for testing (real dependencies by default).
+ * Dispatch a TS-handled command. Returns the process exit code (or a Promise of
+ * one for async commands like `doctor`), or `null` when the command should fall
+ * through to the Python binary. `deps` is threaded to the command handlers for
+ * testing (real dependencies by default).
  */
-export function route(argv: readonly string[], deps: CommandDeps = {}): number | null {
+export function route(argv: readonly string[], deps: CommandDeps = {}): number | Promise<number> | null {
   if (!isTsCommand(argv)) {
     return null;
   }
   if (argv[0] === "overlay") {
     return runOverlay(argv.slice(1), deps);
+  }
+  if (argv[0] === "doctor") {
+    return runDoctor(argv.slice(1), deps);
   }
   return null;
 }

@@ -42,9 +42,9 @@ function forwardToBinary(
 }
 
 /**
- * Dispatch one invocation: TS-handled commands (e.g. `overlay`) go to the
- * router; everything else forwards verbatim to the Python binary. Returns the
- * process exit code.
+ * Dispatch one invocation: TS-handled commands (e.g. `overlay`, `doctor`) go to
+ * the router; everything else forwards verbatim to the Python binary. Returns
+ * the process exit code, or a Promise of one for async commands (`doctor`).
  */
 function run(argv, deps = {}) {
   if (isTsCommand(argv)) {
@@ -54,7 +54,8 @@ function run(argv, deps = {}) {
 }
 
 function main() {
-  process.exit(run(process.argv.slice(2)));
+  // `run` may return a number (sync commands) or a Promise<number> (doctor).
+  Promise.resolve(run(process.argv.slice(2))).then((code) => process.exit(code));
 }
 
 module.exports = { getBinaryPath, forwardToBinary, run };

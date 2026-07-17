@@ -740,6 +740,33 @@ def overlay(ctx: typer.Context) -> None:
 
 
 # ---------------------------------------------------------------------------
+# `canary doctor` — handled by the npm shim (TypeScript). The Python entry
+# point only reaches here on pipx installs, where it points at the npm install
+# instead of failing with an unknown-command error.
+# ---------------------------------------------------------------------------
+
+
+@app.command(
+    "doctor",
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+    help="Diagnose your Canary setup (requires the npm install of Canary).",
+)
+def doctor(ctx: typer.Context) -> None:
+    """`canary doctor` is provided by the npm shim, not the Python entry point.
+
+    On an npm install the shim routes ``doctor`` to its TypeScript handler and
+    never reaches here. This command exists so a pipx-installed engine prints a
+    clear pointer instead of a Typer 'No such command' error.
+    """
+    print(
+        "[yellow]`canary doctor` is provided by the npm install of Canary.[/yellow]\n"
+        "Install it with:  [bold]npm install -g canary-test-cli[/bold]\n"
+        "The pipx/Python entry point does not include the doctor command."
+    )
+    raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
 # `canary workflow` — per-project issue-workflow discovery and inspection.
 # ---------------------------------------------------------------------------
 
