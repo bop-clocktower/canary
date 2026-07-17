@@ -120,6 +120,16 @@ class TestResolveOverlay(unittest.TestCase):
             # A separator-bearing value is treated as a path even if no registry.
             self.assertTrue(rel.startswith("./"))
 
+    def test_missing_path_raises(self):
+        # A path-form --from that does not exist fails loudly (symmetry with a
+        # bad name) rather than silently resolving to a non-existent overlay.
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            _add_overlay(home, "real-overlay")
+            missing = str(Path(tmp) / "does" / "not" / "exist")
+            with self.assertRaises(OverlayNotFound):
+                resolve_overlay(missing, home=home)
+
     def test_resolve_by_absolute_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             overlay = Path(tmp) / "abs-overlay"

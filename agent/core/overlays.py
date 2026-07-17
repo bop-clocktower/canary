@@ -25,7 +25,7 @@ from pathlib import Path
 
 
 class OverlayNotFound(Exception):
-    """A ``--from`` overlay name did not match any tracked overlay."""
+    """A ``--from`` value did not resolve to an overlay (bad name or missing path)."""
 
     def __init__(self, name: str, available: list[str]) -> None:
         self.name = name
@@ -34,7 +34,7 @@ class OverlayNotFound(Exception):
             hint = "tracked overlays: " + ", ".join(available)
         else:
             hint = "no overlays are tracked — add one with `canary overlay add <source>`"
-        super().__init__(f"no tracked overlay named '{name}' ({hint})")
+        super().__init__(f"could not resolve overlay '{name}' ({hint})")
 
 
 def _overlays_root(home: Path) -> Path:
@@ -74,13 +74,17 @@ def list_overlays(home: Path | None = None) -> list[str]:
 def resolve_overlay(name_or_path: str, home: Path | None = None) -> Path:
     """Resolve a ``--from`` value to an overlay clone path.
 
-    A value with a path separator is resolved as a path. A bare token is looked
-    up as a tracked-overlay name under ``~/.canary/overlays/``; a miss raises
-    :class:`OverlayNotFound` carrying the available names.
+    A value with a path separator is resolved as a path (which must exist). A
+    bare token is looked up as a tracked-overlay name under
+    ``~/.canary/overlays/``. Either miss raises :class:`OverlayNotFound` carrying
+    the available names.
     """
     home = home or Path.home()
     if _looks_like_path(name_or_path):
-        return Path(name_or_path).resolve()
+        candidate = Path(name_or_path)
+        if candidate.exists():
+            return candidate.resolve()
+        raise OverlayNotFound(name_or_path, list_overlays(home))
     candidate = _overlays_root(home) / name_or_path
     if candidate.is_dir():
         return candidate.resolve()
