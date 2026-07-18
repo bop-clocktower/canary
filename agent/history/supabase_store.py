@@ -39,8 +39,7 @@ class SupabaseHistoryStore(HistoryStore):
 
     @staticmethod
     def _parse_project_url(db_url: str) -> str:
-        # Expect https://<project>.supabase.co as the project URL
-        # or fall through with the raw URL for tests
+        # Expect https://<project>.supabase.co as the project URL.
         if db_url.startswith("https://"):
             return db_url
         # Try to extract host from postgresql+asyncpg://user:pass@host:port/db
@@ -49,7 +48,10 @@ class SupabaseHistoryStore(HistoryStore):
             parsed = urlparse(db_url)
             return f"https://{parsed.hostname}"
         except Exception:
-            return db_url
+            # Fail closed: never fall back to the raw connection string here,
+            # since it embeds credentials (user:pass). A fixed placeholder
+            # keeps the return type a plain str without leaking anything.
+            return "<redacted-unparseable-url>"
 
     def push_run(self, run: RunRecord, results: list[TestResult]) -> None:
         run_data = asdict(run)
