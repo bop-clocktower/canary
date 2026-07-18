@@ -298,6 +298,7 @@ def migrate(
             "preserved_files": report.preserved_files,
             "would_create": report.would_create,
             "manual_followups": report.manual_followups,
+            "config_warnings": report.config_warnings,
             "deployed_skills": [
                 {"skill_name": r.skill_name, "status": r.status, "note": r.note}
                 for r in report.deployed_skills

@@ -704,3 +704,90 @@ class TestNewConfigShapes(unittest.TestCase):
             ctx = self.migrator.detect(root)
             self.assertEqual(ctx.detected_framework, "wdio")
             self.assertEqual(ctx.detected_shape, "mobile")
+
+
+# ── fix #2: config-validation fail-fast (malformed configs warn, not swallow) ──
+
+class TestConfigValidationWarnings(unittest.TestCase):
+    """A malformed (but present) harness.config.json / company.json must
+    produce a clear warning instead of silently behaving as if the file
+    were absent. See agent/core/config_validation.py."""
+
+    def setUp(self):
+        self.migrator = HarnessMigrator()
+
+    def test_malformed_harness_config_json_yields_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "harness.config.json").write_text("{not valid json", encoding="utf-8")
+            (root / ".harness").mkdir()
+            ctx = self.migrator.detect(root)
+            self.assertTrue(ctx.is_harness_project)
+            self.assertTrue(
+                any("harness.config.json" in w for w in ctx.config_warnings),
+                ctx.config_warnings,
+            )
+
+    def test_malformed_harness_config_json_does_not_crash_detection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "harness.config.json").write_text("{not valid json", encoding="utf-8")
+            (root / ".harness").mkdir()
+            # Should not raise, and should fall back to an empty config
+            # (same behavior as before, just with a warning attached now).
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.harness_config, {})
+
+    def test_well_formed_harness_config_json_has_no_warnings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.config_warnings, [])
+
+    def test_malformed_company_json_yields_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            canary_dir = root / ".canary"
+            canary_dir.mkdir()
+            (canary_dir / "company.json").write_text("{broken", encoding="utf-8")
+            ctx = self.migrator.detect(root)
+            self.assertTrue(
+                any("company.json" in w for w in ctx.config_warnings),
+                ctx.config_warnings,
+            )
+
+    def test_config_warnings_propagate_to_migration_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "harness.config.json").write_text("{not valid json", encoding="utf-8")
+            (root / ".harness").mkdir()
+            report = self.migrator.migrate(root, dry_run=True, framework="pytest")
+            self.assertTrue(
+                any("harness.config.json" in w for w in report.config_warnings),
+                report.config_warnings,
+            )
+
+    def test_config_warnings_rendered_in_markdown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "harness.config.json").write_text("{not valid json", encoding="utf-8")
+            (root / ".harness").mkdir()
+            report = self.migrator.migrate(root, dry_run=True, framework="pytest")
+            md = report.to_markdown()
+            self.assertIn("Warning", md)
+            self.assertIn("harness.config.json", md)
+
+    def test_malformed_config_does_not_hard_fail_migrate(self):
+        """A malformed config warns but never raises — CI pipelines with
+        quirky-but-tolerated configs must not break on upgrade."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "harness.config.json").write_text("{not valid json", encoding="utf-8")
+            (root / ".harness").mkdir()
+            try:
+                report = self.migrator.migrate(root, dry_run=True, framework="pytest")
+            except Exception as exc:  # pragma: no cover - assertion is the point
+                self.fail(f"migrate() raised on malformed config: {exc}")
+            self.assertEqual(report.framework, "pytest")

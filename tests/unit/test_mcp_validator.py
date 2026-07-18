@@ -8,7 +8,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent.core.mcp_validator import MCPValidationResult, validate_mcp_servers, _build_registry
+from agent.core.mcp_validator import (
+    MCPValidationResult,
+    validate_mcp_servers,
+    collect_config_warnings,
+    _build_registry,
+)
 
 
 def _write_mcp_json(directory: Path, servers: dict) -> None:
@@ -136,6 +141,52 @@ class TestPluginRegistry(unittest.TestCase):
             (plugin_dir / ".mcp.json").write_text("{broken json", encoding="utf-8")
             with patch("agent.core.mcp_validator.Path.home", return_value=home):
                 results = validate_mcp_servers(["plugin_bad_server"], Path(tmp))
+        self.assertEqual(results[0].status, "not_found")
+
+
+class TestConfigWarnings(unittest.TestCase):
+    """Fix #2: a malformed (but present) .mcp.json must warn, not silently
+    behave as if there were no config at all. See
+    agent/core/config_validation.py — the same helper migrator.py uses."""
+
+    def test_malformed_project_mcp_json_yields_warning(self):
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as home_tmp:
+            root = Path(tmp)
+            (root / ".mcp.json").write_text("{not valid json", encoding="utf-8")
+            with patch("agent.core.mcp_validator.Path.home", return_value=Path(home_tmp)):
+                warnings = collect_config_warnings(root)
+        self.assertTrue(any(".mcp.json" in w for w in warnings), warnings)
+
+    def test_malformed_home_mcp_json_yields_warning(self):
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as home_tmp:
+            (Path(home_tmp) / ".mcp.json").write_text("{broken", encoding="utf-8")
+            with patch("agent.core.mcp_validator.Path.home", return_value=Path(home_tmp)):
+                warnings = collect_config_warnings(Path(tmp))
+        self.assertTrue(any(".mcp.json" in w for w in warnings), warnings)
+
+    def test_well_formed_mcp_json_has_no_warnings(self):
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as home_tmp:
+            root = Path(tmp)
+            _write_mcp_json(root, {"harness": {}})
+            with patch("agent.core.mcp_validator.Path.home", return_value=Path(home_tmp)):
+                warnings = collect_config_warnings(root)
+        self.assertEqual(warnings, [])
+
+    def test_absent_mcp_json_has_no_warnings(self):
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as home_tmp:
+            with patch("agent.core.mcp_validator.Path.home", return_value=Path(home_tmp)):
+                warnings = collect_config_warnings(Path(tmp))
+        self.assertEqual(warnings, [])
+
+    def test_malformed_mcp_json_does_not_crash_validate_mcp_servers(self):
+        """validate_mcp_servers must keep working (degrade to not_found)
+        even when .mcp.json is malformed — warnings are opt-in via the
+        separate collect_config_warnings() pass, never a hard failure."""
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as home_tmp:
+            root = Path(tmp)
+            (root / ".mcp.json").write_text("{not valid json", encoding="utf-8")
+            with patch("agent.core.mcp_validator.Path.home", return_value=Path(home_tmp)):
+                results = validate_mcp_servers(["harness"], root)
         self.assertEqual(results[0].status, "not_found")
 
 
