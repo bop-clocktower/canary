@@ -1,3 +1,16 @@
+---
+name: canary-promote-test
+description: >
+  Move a generated test from `tests/generated/` into the committed test
+  suite — reviews it for correctness, drops the generation header, relocates
+  it to the matching suite directory, and confirms it runs in the project's
+  normal test flow. Use for "promote this test", "commit this generated
+  test", "move this test into the suite", or "keep this test" — always after
+  the generated test has been validated against the SUT, never before. Not
+  for tests needing substantial rewriting (regenerate instead) or throwaway
+  investigation tests (leave in `tests/generated/`).
+---
+
 # Canary: Promote Test
 
 > Move a generated test from `tests/generated/` into the committed test

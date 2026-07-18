@@ -1,3 +1,16 @@
+---
+name: canary-add-framework
+description: >
+  Add a new testing framework to Canary's registry end-to-end — aligns the
+  classifier↔registry contract, authors the `agent/frameworks/registry.json`
+  entry, validates the execution command, and ensures every classifier
+  `test_type` still resolves to a non-null framework. Use for "add support for
+  a new framework", "add k6", "support cypress", "we need Locust", or when a
+  classifier `test_type` exists with no framework backing it (registry gap).
+  Not for choosing between existing frameworks at runtime (that's the
+  recommender's job) or adding a one-off framework name with no real CLI.
+---
+
 # Canary: Add Framework
 
 > Add a new testing framework to Canary's registry end-to-end. Confirms
