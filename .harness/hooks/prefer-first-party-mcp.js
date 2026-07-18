@@ -19,11 +19,14 @@
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
 
-// First-party trusted MCP prefixes: the harness server plus the canary MCP
-// bundle (canary, context7, playwright) and the local IDE bridge. Anything
-// else under mcp__ is third-party and earns the reminder.
+// First-party trusted MCP prefixes: the harness server (which also serves
+// canary's tools as mcp__harness__canary_*), canary's own plugin MCP server
+// (canary-mcp, declared in .claude-plugin/plugin.json → mcp__canary-mcp__*),
+// the canary MCP bundle (canary, context7, playwright), and the local IDE
+// bridge. Anything else under mcp__ is third-party and earns the reminder.
 const TRUSTED_PREFIXES = [
   'mcp__harness__',
+  'mcp__canary-mcp__',
   'mcp__plugin_mcp-bundle_canary__',
   'mcp__plugin_mcp-bundle_context7__',
   'mcp__playwright__',

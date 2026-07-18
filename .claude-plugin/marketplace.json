@@ -10,7 +10,7 @@
     {
       "name": "canary",
       "source": "https://github.com/bop-clocktower/canary",
-      "description": "Canary plugin with four MVP personas (test-author, test-reviewer, framework-advisor, flake-hunter) and the harness MCP server. Personal-source build maintained by Bri Stevenski.",
+      "description": "Canary plugin with four MVP personas (test-author, test-reviewer, framework-advisor, flake-hunter) and the canary-mcp MCP server. Personal-source build maintained by Bri Stevenski.",
       "version": "5.10.1",
       "author": {
         "name": "Bri Stevenski",

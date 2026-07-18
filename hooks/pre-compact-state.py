@@ -9,6 +9,8 @@ import os
 import sys
 from datetime import datetime, timezone
 
+from _harness_dedup import harness_hook_present
+
 
 def read_json_safe(path):
     try:
@@ -39,6 +41,12 @@ def find_active_session(sessions_dir):
 
 
 def main():
+    # Dedup: harness's pre-compact-state.js writes the same summary to the same
+    # path (.harness/state/pre-compact-summary.json). When it is wired, defer so
+    # only one writer runs and the two don't race (see #309).
+    if harness_hook_present("pre-compact-state.js"):
+        sys.exit(0)
+
     try:
         raw = sys.stdin.read()
     except Exception:
