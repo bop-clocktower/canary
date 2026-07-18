@@ -7,9 +7,9 @@ set -euo pipefail
 STAGED_MD=$(git diff --cached --name-only --diff-filter=ACM | grep '\.md$' || true)
 STAGED_MD_FILTERED=$(echo "$STAGED_MD" | grep -v '^agents/agents/' | grep -v '^agents/commands/' || true)
 if [ -n "$STAGED_MD_FILTERED" ]; then
-  if command -v npx &>/dev/null; then
+  if [ -x "node_modules/.bin/markdownlint" ]; then
     echo "[pre-commit] markdownlint: checking staged markdown files..."
-    echo "$STAGED_MD_FILTERED" | xargs npx --no markdownlint-cli
+    echo "$STAGED_MD_FILTERED" | xargs node_modules/.bin/markdownlint
   fi
 fi
 
