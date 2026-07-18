@@ -1,3 +1,19 @@
+---
+name: canary-generate-test
+description: >
+  Generate a framework-appropriate test from a natural-language requirement by
+  routing through Canary's classify → recommend → generate CLI pipeline
+  (`python -m agent.cli generate`), writing the test under `tests/generated/`
+  and optionally executing it. Use for "write a test for X", "I need an API
+  test that does Y", "scaffold a new test from this description", or
+  triaging a bug report into a regression test — when a CLI batch pipeline
+  run (not an interactive session-generated file) is what's wanted. See
+  `agents/canary-test-author.md` (interactive, session-generated, wired to
+  `/canary-write-test`) and `agents/canary-test-generator.md` (MCP
+  write_test_file retry loop) for the other two "write a test" paths. Not for
+  editing existing tests or choosing between frameworks abstractly.
+---
+
 # Canary: Generate Test
 
 > Generate a framework-appropriate test from a natural-language
@@ -16,6 +32,16 @@
 - NOT for choosing between frameworks abstractly — use the
   framework-registry docs, not this skill
 - NOT for running existing tests — use the framework's CLI directly
+
+### Relative to the other "write a test" paths
+
+This skill is the **CLI batch pipeline** (`python -m agent.cli generate`) —
+use it for scripted/CI-driven generation runs consumed programmatically from
+`tests/generated/`. For an interactive, session-generated test with a human
+reviewing framework and code before it lands, use
+`agents/canary-test-author.md` (wired to `/canary-write-test`). For a
+single-file, automatic write-run-revise loop via MCP tools, use
+`agents/canary-test-generator.md`.
 
 ## Process
 

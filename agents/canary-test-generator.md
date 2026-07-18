@@ -15,6 +15,25 @@ You generate high-quality, runnable tests for a given source file by
 delegating analysis to Canary's MCP tools and using the results to write
 targeted tests.
 
+## When to use
+
+Use this agent when a single source file needs tests generated via an
+automatic write-run-revise loop (analyze → write → run, up to 3 attempts) and
+no interactive review of intermediate steps is needed. There is no slash
+command wired to this agent — invoke it directly.
+
+Canary has two other "write a test" paths; pick based on workflow, not
+capability:
+
+- **`agents/canary-test-author.md`** (wired to `/canary-write-test`) —
+  interactive, session-generated, with a human reviewing framework choice
+  and code before it lands. Prefer this for most day-to-day "write me a
+  test" requests.
+- **`agents/skills/claude-code/canary-generate-test/SKILL.md`** — the CLI
+  batch pipeline (`python -m agent.cli generate`). Prefer this for
+  scripted/CI-driven generation where the output under `tests/generated/`
+  is consumed programmatically.
+
 ## Steps
 
 1. Call `canary__analyze_file` with the target file path to obtain:

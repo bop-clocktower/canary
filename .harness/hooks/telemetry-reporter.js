@@ -3,7 +3,20 @@
 // telemetry-reporter.js — Stop:* hook
 // Reads adoption.jsonl, resolves consent, sends telemetry events to PostHog,
 // and shows a one-time first-run privacy notice.
-// Exit codes: 0 = allow (always, log-only hook — never blocks session teardown)
+// Exit codes: 0 = allow, unconditionally — this is a log-only hook that must
+// not stop the session teardown, by design (see rationale below).
+//
+// This hook sends to a third-party analytics endpoint over the network,
+// which is inherently flaky (DNS, connectivity, PostHog outages) and has
+// nothing to do with code quality or correctness. Halting the agent from
+// stopping just because PostHog was unreachable would be actively harmful
+// UX, so this stays a fail-open, log-only hook rather than a gate. What WAS
+// a real bug — fixed here — is that a failed send used to be silently
+// swallowed: the hook printed a false "Sent N events" success message and
+// advanced the cursor anyway, permanently losing those records. It now
+// reports send failures loudly on stderr and only advances the cursor after
+// a confirmed successful send, so failed batches are retried on the next
+// run instead of silently dropped.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -191,10 +204,22 @@ function readHarnessVersion(cwd) {
 
 // --- Transport ---
 
+/**
+ * POST the batch to PostHog, retrying transient failures.
+ *
+ * This is a best-effort, network-dependent send to a third-party service —
+ * genuinely flaky by nature (DNS, connectivity, PostHog outages), and this
+ * hook must never block session teardown on it (see main()). What it CAN
+ * control is honesty: the caller needs to know whether delivery actually
+ * succeeded so it never claims "Sent N events" after a silent failure.
+ *
+ * @returns {Promise<{ ok: boolean, reason?: string }>}
+ */
 async function sendEvents(events) {
-  if (events.length === 0) return;
+  if (events.length === 0) return { ok: true };
 
   const payload = JSON.stringify({ api_key: POSTHOG_API_KEY, batch: events });
+  let lastReason = 'unknown';
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
@@ -204,16 +229,21 @@ async function sendEvents(events) {
         body: payload,
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
-      if (res.ok) return;
-      if (res.status < 500) return; // 4xx = permanent, do not retry
-    } catch {
-      // Network error or timeout — retry
+      if (res.ok) return { ok: true };
+      if (res.status < 500) {
+        // 4xx = permanent, do not retry.
+        return { ok: false, reason: `PostHog rejected batch (HTTP ${res.status})` };
+      }
+      lastReason = `PostHog returned HTTP ${res.status}`;
+    } catch (err) {
+      // Network error or timeout — retry.
+      lastReason = err?.message ?? 'network error';
     }
     if (attempt < MAX_ATTEMPTS - 1) {
       await sleep(1000 * (attempt + 1));
     }
   }
-  // Silent failure — all retries exhausted
+  return { ok: false, reason: `all ${MAX_ATTEMPTS} attempts failed (${lastReason})` };
 }
 
 // --- First-run notice ---
@@ -272,7 +302,19 @@ async function main() {
       process.exit(0);
     }
 
-    await sendEvents(events);
+    const result = await sendEvents(events);
+
+    if (!result.ok) {
+      // Loud, honest failure signal instead of a silent pass. Still exits 0:
+      // this is a best-effort send to a third-party analytics endpoint, and
+      // blocking session teardown on PostHog being unreachable would be
+      // strictly worse than just telling the user delivery failed. The
+      // cursor is NOT advanced, so these records are retried next run.
+      process.stderr.write(
+        `[telemetry-reporter] WARNING: failed to send ${events.length} telemetry event(s): ${result.reason}\n`
+      );
+      process.exit(0);
+    }
 
     // Advance cursor past sent records (adoption.jsonl is preserved for CLI reads)
     writeCursor(cwd, newOffset);

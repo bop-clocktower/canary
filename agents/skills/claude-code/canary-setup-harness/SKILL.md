@@ -1,3 +1,17 @@
+---
+name: canary-setup-harness
+description: >
+  Configure the Harness Engineering guardrails in a new Canary project (or a
+  fork) — installs the harness CLI, initialises `harness.config.json`, wires
+  up the five required CI workflows, generates the initial security ledger,
+  and verifies all gates pass on a clean repository. Use for "set up harness
+  for this project", "onboard this repo with harness", "install the harness
+  CLI", "configure the CI gates", or when a fork has drifted from the
+  harness config and needs re-alignment. Not for day-to-day harness updates,
+  adding a single new gate to an existing config, or troubleshooting a
+  failing CI check.
+---
+
 # Canary: Setup Harness
 
 > Configure the Harness Engineering guardrails in a new Canary
