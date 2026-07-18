@@ -2,7 +2,7 @@
 
 ## 🐦 System Status
 
-Oracle is a functional, autonomous test automation CLI. It can classify
+Canary is a functional, autonomous test automation CLI. It can classify
 user intent, recommend frameworks, generate production-ready code, and
 automatically execute/fix tests via its feedback loop.
 
@@ -16,8 +16,8 @@ automatically execute/fix tests via its feedback loop.
   loop.
 - **LLM Abstraction:** Provider-agnostic factory (OpenAI, Mock) with
   lazy loading.
-- **CLI Interface:** `oracle generate` (with `--run`, `--json`),
-  `oracle run`, `oracle version`.
+- **CLI Interface:** `canary generate` (with `--run`, `--json`),
+  `canary run`, `canary version`.
 - **Test Executor:** Subprocess-based execution with error capture.
 
 ## ⚙️ Architecture Summary
