@@ -1,6 +1,9 @@
 name: canary-critical-areas
-version: "1.0.0"
-description: Test intelligence skill
+version: '1.0.0'
+description:
+  Risk-rank a codebase or diff by git churn, downstream dependents,
+  business-critical signals, and coverage depth; outputs a ranked list with
+  recommended test types per area.
 stability: static
 triggers:
   - manual
@@ -10,4 +13,4 @@ type: rigid
 tools: []
 tier: 1
 depends_on:
-    - canary-ci-ready
+  - canary-ci-ready

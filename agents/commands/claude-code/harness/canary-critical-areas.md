@@ -1,6 +1,6 @@
 ---
 name: harness:canary-critical-areas
-description: Test intelligence skill
+description: Risk-rank a codebase or diff by git churn, downstream dependents, business-critical signals, and coverage depth; outputs a ranked list with recommended test types per area.
 allowed-tools:
   - Read
 ---
@@ -12,7 +12,7 @@ Type: rigid
 </context>
 
 <objective>
-Test intelligence skill
+Risk-rank a codebase or diff by git churn, downstream dependents, business-critical signals, and coverage depth; outputs a ranked list with recommended test types per area.
 </objective>
 
 <execution_context>

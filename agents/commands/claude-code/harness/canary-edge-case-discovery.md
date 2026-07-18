@@ -1,6 +1,6 @@
 ---
 name: harness:canary-edge-case-discovery
-description: Test intelligence skill
+description: Surface edge cases worth testing across six categories from a feature description, function signature, or existing suite; explanation depth scales to user skill level.
 allowed-tools:
   - Read
 ---
@@ -12,7 +12,7 @@ Type: rigid
 </context>
 
 <objective>
-Test intelligence skill
+Surface edge cases worth testing across six categories from a feature description, function signature, or existing suite; explanation depth scales to user skill level.
 </objective>
 
 <execution_context>

@@ -12,6 +12,8 @@ integrity.
 - **Wiki Home:** [Home][wiki-home]
 - **Architecture Deep Dive:** [Architecture Deep Dive][arch-deep-dive]
 - **Harness Integration:** [Harness Integration][harness-int]
+- **Harness + Canary Routing & Ownership:**
+  [Integration Guide](docs/guides/harness-canary-integration.md)
 - **LLM Configuration:** [LLM Providers][llm-config]
 - **Self-Healing Loop:** [Self-Healing Loop][self-healing]
 - **Main README:** [README.md](README.md)
@@ -23,15 +25,14 @@ integrity.
 
 ### Conventions
 
-- **Localized Ignores:** `.gitignore` files should be located in the
-  specific project/folder they apply to (e.g., `.harness/.gitignore`,
-  `tests/.gitignore`) rather than being consolidated into the root
-  `.gitignore`.
+- **Localized Ignores:** `.gitignore` files should be located in the specific
+  project/folder they apply to (e.g., `.harness/.gitignore`, `tests/.gitignore`)
+  rather than being consolidated into the root `.gitignore`.
 - **Deleting a surface = a doc contract.** When you remove a CLI command,
-  module, or env var, grep the *entire* tree (not just `agent/`) for its
-  name and update docs/examples in the **same** change. The v3.0 cut removed
-  the provider layer, orchestrator, and keyed generate command but left months
-  of stale references behind (this drift was the motivation for the guard).
+  module, or env var, grep the _entire_ tree (not just `agent/`) for its name
+  and update docs/examples in the **same** change. The v3.0 cut removed the
+  provider layer, orchestrator, and keyed generate command but left months of
+  stale references behind (this drift was the motivation for the guard).
   `scripts/check_removed_symbols.py` (run in CI via `docs-lint`) now fails the
   build on that drift — add a row there for each newly-removed surface.
 - **Open-core boundary.** This repo is public/open-source. The generic engine
@@ -50,22 +51,23 @@ All branches must follow this pattern: `<prefix>/<kebab-case-slug>`
 
 ##### Allowed prefixes
 
-| Prefix     | Use                                          |
-| ---------- | -------------------------------------------- |
-| `feat/`    | New feature or capability                    |
-| `fix/`     | Bug fix                                      |
-| `chore/`   | Maintenance, dependencies, tooling           |
-| `docs/`    | Documentation only                           |
-| `refactor/`| Code restructuring without behavior change   |
-| `test/`    | Test additions or corrections                |
-| `perf/`    | Performance improvements                     |
+| Prefix      | Use                                        |
+| ----------- | ------------------------------------------ |
+| `feat/`     | New feature or capability                  |
+| `fix/`      | Bug fix                                    |
+| `chore/`    | Maintenance, dependencies, tooling         |
+| `docs/`     | Documentation only                         |
+| `refactor/` | Code restructuring without behavior change |
+| `test/`     | Test additions or corrections              |
+| `perf/`     | Performance improvements                   |
 
 ##### Slug rules
 
 - Separator between prefix and slug: `/` (not `-`)
 - Slug format: kebab-case only — lowercase letters, digits, hyphens
 - Max slug length: 60 characters
-- Ticket/issue IDs are optional but recommended when one exists: `feat/42-short-description`
+- Ticket/issue IDs are optional but recommended when one exists:
+  `feat/42-short-description`
 
 ##### Examples
 
@@ -85,114 +87,113 @@ docs/branching-convention
 
 ### Entry Points
 
-- **CLI:** [agent/cli.py](agent/cli.py) — The primary entry point for
-  the agent. Handles command-line arguments and high-level orchestration.
-  Commands: `recommend`, `run`, `init`, `migrate`, `setup`, `skills list`,
-  `env-setup` (alias for `setup`), `version`.
+- **CLI:** [agent/cli.py](agent/cli.py) — The primary entry point for the agent.
+  Handles command-line arguments and high-level orchestration. Commands:
+  `recommend`, `run`, `init`, `migrate`, `setup`, `skills list`, `env-setup`
+  (alias for `setup`), `version`.
 
 ### Core Services (`agent/core/`)
 
-- **Orchestrator:** removed in v3.0 — LLM generation pipeline is now
-  handled by the `/canary-write-test` slash command in the host session.
+- **Orchestrator:** removed in v3.0 — LLM generation pipeline is now handled by
+  the `/canary-write-test` slash command in the host session.
 - **Classifier:** [agent/core/classifier.py][classifier] — Identifies
   requirement types and selects target frameworks based on tech stack.
-- **Scaffolder:** [agent/core/scaffolder.py][scaffolder] — Generates the
-  initial test files, boilerplate, and project structure.
-- **Executor:** [agent/core/executor.py][executor] — Runs generated tests
-  and captures execution output, logs, and errors.
+- **Scaffolder:** [agent/core/scaffolder.py][scaffolder] — Generates the initial
+  test files, boilerplate, and project structure.
+- **Executor:** [agent/core/executor.py][executor] — Runs generated tests and
+  captures execution output, logs, and errors.
 - **Recommender:** [agent/core/recommender.py][recommender] — Suggests
   frameworks, testing strategies, and LLM providers.
-- **Framework Registry:** [agent/core/framework_registry.py][fw-registry]
-  — Internal registry for managing supported testing frameworks and their
+- **Framework Registry:** [agent/core/framework_registry.py][fw-registry] —
+  Internal registry for managing supported testing frameworks and their
   capabilities.
-- **Metadata Scanner:** [agent/core/metadata_scanner.py](agent/core/metadata_scanner.py)
-  — Reads `package.json`, `tsconfig.json`, `requirements.txt`, and
-  `pyproject.toml` to surface exact dependency versions for the generation
-  prompt. Enables version-accurate generated imports.
-- **Pattern Matcher:** [agent/core/pattern_matcher.py](agent/core/pattern_matcher.py)
-  — Scans existing test files to extract naming conventions, common
-  imports, and assertion style so generated tests match the project's
-  existing patterns.
-- **Domain Scanner:** [agent/core/domain_scanner.py](agent/core/domain_scanner.py)
-  — Scans project source files (not tests) to extract component names,
-  public functions, and API routes for injection into the generation
-  prompt. Prevents the LLM from inventing symbol names.
-- **Fixture Scanner:** [agent/core/fixture_scanner.py](agent/core/fixture_scanner.py)
-  — Scans test fixture and helper modules to extract named exports,
-  injected as a "Project Symbols" section in the prompt so generated
-  tests import real identifiers.
-- **Code Extractor:** removed in v5.0 — stripped LLM response prose; last
-  caller was the orchestrator, which was removed with the keyed CLI surface.
-- **Selector Healer:** removed in v3.0 — DOM-aware selector fix logic was
-  part of the LLM generation pipeline (orchestrator). Replaced by the
+- **Metadata Scanner:**
+  [agent/core/metadata_scanner.py](agent/core/metadata_scanner.py) — Reads
+  `package.json`, `tsconfig.json`, `requirements.txt`, and `pyproject.toml` to
+  surface exact dependency versions for the generation prompt. Enables
+  version-accurate generated imports.
+- **Pattern Matcher:**
+  [agent/core/pattern_matcher.py](agent/core/pattern_matcher.py) — Scans
+  existing test files to extract naming conventions, common imports, and
+  assertion style so generated tests match the project's existing patterns.
+- **Domain Scanner:**
+  [agent/core/domain_scanner.py](agent/core/domain_scanner.py) — Scans project
+  source files (not tests) to extract component names, public functions, and API
+  routes for injection into the generation prompt. Prevents the LLM from
+  inventing symbol names.
+- **Fixture Scanner:**
+  [agent/core/fixture_scanner.py](agent/core/fixture_scanner.py) — Scans test
+  fixture and helper modules to extract named exports, injected as a "Project
+  Symbols" section in the prompt so generated tests import real identifiers.
+- **Code Extractor:** removed in v5.0 — stripped LLM response prose; last caller
+  was the orchestrator, which was removed with the keyed CLI surface.
+- **Selector Healer:** removed in v3.0 — DOM-aware selector fix logic was part
+  of the LLM generation pipeline (orchestrator). Replaced by the
   `/canary-debug-flake` slash command.
-- **Quality Scorer:** [agent/core/quality_scorer.py](agent/core/quality_scorer.py)
-  — Static analysis scorer (coverage breadth, assertion density, flakiness
-  risk) returning a 0–100 composite score with letter grade. **Vestigial as
-  of v3.0:** it was wired into the removed `generate`/orchestrator path and is
-  not currently invoked by any live command. Retained pending a decision to
-  re-wire it into the plugin flow or remove it.
-- **Reporter:** [agent/core/reporter.py](agent/core/reporter.py)
-  — Exports results to JSON or SARIF (Datadog, SonarQube, GitHub Code
-  Scanning). **Vestigial as of v3.0:** it was invoked by the removed
-  `canary generate` path and is not currently wired into any live command.
-- **Migrator:** [agent/core/migrator.py](agent/core/migrator.py)
-  — Detects harness-scaffolded test projects (via `harness.config.json`
-  and `.harness/`) and migrates them to Canary's layout without touching
-  existing test files. Invoked via `canary migrate`.
-- **Skill Registry:** [agent/core/skill_registry.py](agent/core/skill_registry.py)
-  — Discovers bundled default skills and local project overlay skills
-  (from `.canary/skills/`) for slash command resolution via `canary
-  skills list`.
-- **CI Environment:** [agent/core/ci_env.py](agent/core/ci_env.py)
-  — Detects CI environment variables (`CI`, `GITHUB_ACTIONS`, etc.) to
-  enable headless optimizations and force JSON output in pipelines.
-- **Feedback:** removed in v3.0 — was tied to `canary generate`, which is
-  also removed. Share feedback via Claude Code conversation snippets.
+- **Quality Scorer:**
+  [agent/core/quality_scorer.py](agent/core/quality_scorer.py) — Static analysis
+  scorer (coverage breadth, assertion density, flakiness risk) returning a 0–100
+  composite score with letter grade. **Vestigial as of v3.0:** it was wired into
+  the removed `generate`/orchestrator path and is not currently invoked by any
+  live command. Retained pending a decision to re-wire it into the plugin flow
+  or remove it.
+- **Reporter:** [agent/core/reporter.py](agent/core/reporter.py) — Exports
+  results to JSON or SARIF (Datadog, SonarQube, GitHub Code Scanning).
+  **Vestigial as of v3.0:** it was invoked by the removed `canary generate` path
+  and is not currently wired into any live command.
+- **Migrator:** [agent/core/migrator.py](agent/core/migrator.py) — Detects
+  harness-scaffolded test projects (via `harness.config.json` and `.harness/`)
+  and migrates them to Canary's layout without touching existing test files.
+  Invoked via `canary migrate`.
+- **Skill Registry:**
+  [agent/core/skill_registry.py](agent/core/skill_registry.py) — Discovers
+  bundled default skills and local project overlay skills (from
+  `.canary/skills/`) for slash command resolution via `canary skills list`.
+- **CI Environment:** [agent/core/ci_env.py](agent/core/ci_env.py) — Detects CI
+  environment variables (`CI`, `GITHUB_ACTIONS`, etc.) to enable headless
+  optimizations and force JSON output in pipelines.
+- **Feedback:** removed in v3.0 — was tied to `canary generate`, which is also
+  removed. Share feedback via Claude Code conversation snippets.
 
 ### Claude Code Plugin (`.claude-plugin/`)
 
-Canary is also loadable as a Claude Code plugin for in-editor test
-generation via slash commands.
+Canary is also loadable as a Claude Code plugin for in-editor test generation
+via slash commands.
 
-- **MCP server:** [agent/mcp_server.py](agent/mcp_server.py) — FastMCP
-  server exposing six tools to Claude Code:
-  `canary__analyze_file`, `canary__write_test_file`, `canary__run_tests`,
-  `canary__init_suite`, `canary__list_frameworks`, `canary__migrate`.
-- **Manifest:** [.claude-plugin/plugin.json](.claude-plugin/plugin.json).
-  Its `version` (and the `canary` entry's `version` in
-  [.claude-plugin/marketplace.json](.claude-plugin/marketplace.json)) must
-  match `npm/package.json` and `pyproject.toml`. A `chore(release)` bump must
-  touch **all four**; `tests/unit/test_version_consistency.py` fails CI if they
-  drift.
-- **Agents:** `agents/` — seven agent definitions:
-  `canary-test-generator`, `canary-test-author`, `canary-test-reviewer`,
-  `canary-initializer`, `canary-migrator`, `canary-framework-advisor`,
-  `canary-flake-hunter`.
-- **Skills:** `agents/skills/` — three slash commands:
-  `/canary:generate`, `/canary:init`, `/canary:migrate`.
+- **MCP server:** [agent/mcp_server.py](agent/mcp_server.py) — FastMCP server
+  exposing six tools to Claude Code: `canary__analyze_file`,
+  `canary__write_test_file`, `canary__run_tests`, `canary__init_suite`,
+  `canary__list_frameworks`, `canary__migrate`.
+- **Manifest:** [.claude-plugin/plugin.json](.claude-plugin/plugin.json). Its
+  `version` (and the `canary` entry's `version` in
+  [.claude-plugin/marketplace.json](.claude-plugin/marketplace.json)) must match
+  `npm/package.json` and `pyproject.toml`. A `chore(release)` bump must touch
+  **all four**; `tests/unit/test_version_consistency.py` fails CI if they drift.
+- **Agents:** `agents/` — seven agent definitions: `canary-test-generator`,
+  `canary-test-author`, `canary-test-reviewer`, `canary-initializer`,
+  `canary-migrator`, `canary-framework-advisor`, `canary-flake-hunter`.
+- **Skills:** `agents/skills/` — three slash commands: `/canary:generate`,
+  `/canary:init`, `/canary:migrate`.
 - **Activate:** load the repo root as a Claude Code plugin.
 
 ### LLM Layer (`agent/llm/`)
 
-Removed in v3.0. The provider matrix (`anthropic`, `openai`, `gemini`,
-`codex`, `mock`), factory, and client are deleted. LLM generation now
-runs through the host Claude Code session via `/canary-write-test` — no
-API key required.
+Removed in v3.0. The provider matrix (`anthropic`, `openai`, `gemini`, `codex`,
+`mock`), factory, and client are deleted. LLM generation now runs through the
+host Claude Code session via `/canary-write-test` — no API key required.
 
 ### Configuration & Data
 
-- **Framework Metadata:** [agent/frameworks/registry.json][fw-json] —
-  Static definitions for framework capabilities and templates.
-- **Harness Config:** [harness.config.json](harness.config.json) —
-  Defines architectural layers, dependency constraints, and project
-  metadata.
+- **Framework Metadata:** [agent/frameworks/registry.json][fw-json] — Static
+  definitions for framework capabilities and templates.
+- **Harness Config:** [harness.config.json](harness.config.json) — Defines
+  architectural layers, dependency constraints, and project metadata.
 
 ### Generated Artifacts
 
-- **Playwright Tests:** `tests/generated/` — Automated tests generated
-  by the agent. These are considered output artifacts and are generally
-  excluded from manual review.
+- **Playwright Tests:** `tests/generated/` — Automated tests generated by the
+  agent. These are considered output artifacts and are generally excluded from
+  manual review.
 
 ### GitHub Actions (`.github/workflows/`)
 
@@ -209,13 +210,13 @@ Canary integrates with the **Harness Engineering Ecosystem** by:
    generation outputs
 2. **Layered Architecture:** Strictly separating LLM calls from core
    orchestration and CLI logic (enforced by `harness.config.json`)
-3. **Mechanical Verification:** Supporting dry-runs via `--recommend-only`
-   for early validation by other harness agents (like `harness-planner`)
+3. **Mechanical Verification:** Supporting dry-runs via `--recommend-only` for
+   early validation by other harness agents (like `harness-planner`)
 
 ### Recommended Composition Pattern
 
-Canary and Harness skills are **complementary, not competing**. The
-recommended flow for test development combines both:
+Canary and Harness skills are **complementary, not competing**. The recommended
+flow for test development combines both:
 
 ```text
 harness-tdd         → discipline: write failing test first (RED phase)
@@ -224,11 +225,19 @@ harness:test-craft  → quality: 8-axis audit of the generated test
 /canary-review-test → promotion: move from tests/generated/ to committed suite
 ```
 
-`harness-tdd` owns the TDD discipline — write a failing test, watch it
-fail, then implement. `/canary-write-test` can assist the RED phase by
-generating the failing test stub from a description. The two entry points
-serve different workflows: `harness-tdd` when writing tests yourself,
-`/canary-write-test` when generating from a prompt.
+`harness-tdd` owns the TDD discipline — write a failing test, watch it fail,
+then implement. `/canary-write-test` can assist the RED phase by generating the
+failing test stub from a description. The two entry points serve different
+workflows: `harness-tdd` when writing tests yourself, `/canary-write-test` when
+generating from a prompt.
+
+For the full picture when running **both** tools — the skill disambiguation
+matrix (canary-X vs harness-Y for ~10 overlap pairs), the `/canary-X` vs
+`harness:canary-X` double-registration and which to prefer, the config-ownership
+map (`harness.config.json` vs `.canary/` vs `pyproject.toml`/`package.json`),
+the `roadmap.md` ↔ `CANARY_STATE.md` ledger roles, and the "what is the merge
+gate" answer — see the
+[Harness + Canary Integration Guide](docs/guides/harness-canary-integration.md).
 
 ## Agent Behavior
 
@@ -236,20 +245,21 @@ serve different workflows: `harness-tdd` when writing tests yourself,
 
 Before making any code changes, check the current branch:
 
-1. Run `git branch --show-current` (or equivalent) to identify the active branch.
+1. Run `git branch --show-current` (or equivalent) to identify the active
+   branch.
 2. If the current branch is `main`:
    - Do **not** start writing or modifying code yet.
-   - Propose a branch name following the
-     [Branch Naming](#branch-naming) convention based on what the
-     user is asking for.
-   - Ask: *"You're on `main`. Should I create branch
-     `<suggested-name>` for this work?"*
-   - Wait for confirmation, then create and switch to the branch before proceeding.
+   - Propose a branch name following the [Branch Naming](#branch-naming)
+     convention based on what the user is asking for.
+   - Ask: _"You're on `main`. Should I create branch `<suggested-name>` for this
+     work?"_
+   - Wait for confirmation, then create and switch to the branch before
+     proceeding.
 3. If already on a feature/fix/chore branch, proceed normally.
 
-This applies to code changes. Commits that are purely
-documentation-only (e.g., updating `AGENTS.md`, `README.md`) may be
-made directly to `main` if the user has not indicated otherwise.
+This applies to code changes. Commits that are purely documentation-only (e.g.,
+updating `AGENTS.md`, `README.md`) may be made directly to `main` if the user
+has not indicated otherwise.
 
 ### Trusted MCP hierarchy
 
@@ -263,9 +273,8 @@ the first that fits:
    context7, playwright) and the `canary-*` skills. The first choice for
    anything **test-related** (generation, analysis, CI readiness, framework
    migration).
-3. **Third-party MCP** — everything else (`gh`/GitHub, Atlassian, Gmail,
-   Vercel, Supabase, …). Use **only** when no harness or canary option covers
-   the task.
+3. **Third-party MCP** — everything else (`gh`/GitHub, Atlassian, Gmail, Vercel,
+   Supabase, …). Use **only** when no harness or canary option covers the task.
 
 Before reaching for a third-party MCP, confirm no first-party (harness, then
 canary) tool or skill fits. This is enforced advisorily by the
@@ -285,13 +294,12 @@ Run once after cloning to activate the shared pre-commit hook:
 git config core.hooksPath .githooks
 ```
 
-The hook (`.githooks/pre-commit`) does two things automatically on every
-commit:
+The hook (`.githooks/pre-commit`) does two things automatically on every commit:
 
-- Runs `markdownlint` on staged `.md` files — catches MD040 and other
-  violations before they reach CI.
-- Re-runs `python3 scripts/security_ledger.py` whenever non-ledger files
-  are staged — keeps the security ledger fresh without a manual step.
+- Runs `markdownlint` on staged `.md` files — catches MD040 and other violations
+  before they reach CI.
+- Re-runs `python3 scripts/security_ledger.py` whenever non-ledger files are
+  staged — keeps the security ledger fresh without a manual step.
 
 ### Workflow steps
 
@@ -301,14 +309,14 @@ commit:
 3. **Scaffolding:** Canary generates the initial test structure using
    [agent/core/scaffolder.py][scaffolder].
 4. **Execution:** Tests are executed via [agent/core/executor.py][executor].
-5. **Iteration:** Based on test results, the orchestrator handles
-   self-healing using feedback from the executor.
+5. **Iteration:** Based on test results, the orchestrator handles self-healing
+   using feedback from the executor.
 
 ## Key Agents
 
 - **Canary:** The primary test generator.
-- **Harness Sub-agents:** Used for architectural enforcement, planning,
-  and verification of Canary's own codebase.
+- **Harness Sub-agents:** Used for architectural enforcement, planning, and
+  verification of Canary's own codebase.
 
 [wiki-home]: docs/wiki/Home.md
 [arch-deep-dive]: docs/wiki/Architecture-Deep-Dive.md

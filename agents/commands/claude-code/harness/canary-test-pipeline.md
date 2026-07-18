@@ -1,6 +1,6 @@
 ---
 name: harness:canary-test-pipeline
-description: Test intelligence skill
+description: Multi-phase orchestrator chaining canary-critical-areas, edge-case-discovery, failure-impact, ci-ready, and write-test into a convergence loop with a health report.
 allowed-tools:
   - Read
 ---
@@ -12,7 +12,7 @@ Type: rigid
 </context>
 
 <objective>
-Test intelligence skill
+Multi-phase orchestrator chaining canary-critical-areas, edge-case-discovery, failure-impact, ci-ready, and write-test into a convergence loop with a health report.
 </objective>
 
 <execution_context>

@@ -1,6 +1,8 @@
 name: canary-failure-impact
-version: "1.0.0"
-description: Test intelligence skill
+version: '1.0.0'
+description:
+  Trace the downstream blast radius of an undetected failure for a given test,
+  function, or code path and assign a severity label.
 stability: static
 triggers:
   - manual
@@ -10,4 +12,4 @@ type: rigid
 tools: []
 tier: 1
 depends_on:
-    - canary-ci-ready
+  - canary-ci-ready

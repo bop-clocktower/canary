@@ -14,6 +14,8 @@ last_manual_edit: 2026-07-16T05:54:59.642Z
      line by schema contract, so the 80-column line-length rule does not apply.
      Completed work lives in docs/roadmap-archive.md (run: harness roadmap groom). -->
 
+> **Roles:** This roadmap (harness-owned) is authoritative for _forward-looking_ work — planned, in-progress, and blocked features, their specs and blockers. For _backward-looking_ activity (a one-line log of what canary skills have run), see [docs/CANARY_STATE.md](CANARY_STATE.md). The two are cross-referenced, not merged; see the [Harness + Canary Integration Guide](guides/harness-canary-integration.md) for how they relate.
+
 ## Maintenance and Public Readiness
 
 ### Resolve roadmap api-signature doc drift
