@@ -49,24 +49,13 @@ function ownVersion(): string | null {
   }
 }
 
-/**
- * Extract `version` from a registry dist-tag body; null on any parse error
- * or when the parsed shape doesn't match what we expect (SEC-DES-001: the
- * npm registry response is untrusted network input, so JSON.parse alone
- * isn't enough — validate the shape before trusting `version` as a string).
- */
+/** String `version` from a registry body; null on parse error or non-string shape (SEC-DES-001: registry JSON is untrusted). */
 export function parseRegistryVersion(rawBody: string): string | null {
-  let data: unknown;
   try {
-    data = JSON.parse(rawBody);
+    const v = (JSON.parse(rawBody) as { version?: unknown } | null)?.version; return typeof v === "string" ? v : null;
   } catch {
     return null;
   }
-  if (typeof data !== "object" || data === null) {
-    return null;
-  }
-  const version = (data as { version?: unknown }).version;
-  return typeof version === "string" ? version : null;
 }
 
 /** GET the latest published version from the npm registry. null on any error. */
