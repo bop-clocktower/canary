@@ -2,37 +2,6 @@
   "version": 1,
   "snapshots": [
     {
-      "capturedAt": "2026-05-20T23:59:40.197Z",
-      "commitHash": "f1b2b23fc63fe2a26ec4e4a508e17f795e2fcdb0",
-      "securityScore": 100,
-      "totalFindings": 1,
-      "bySeverity": {
-        "error": 0,
-        "warning": 0,
-        "info": 1
-      },
-      "byCategory": {
-        "network": {
-          "findingCount": 1,
-          "errorCount": 0,
-          "warningCount": 0,
-          "infoCount": 1
-        }
-      },
-      "supplyChain": {
-        "critical": 0,
-        "high": 0,
-        "moderate": 0,
-        "low": 0,
-        "info": 0,
-        "total": 0
-      },
-      "suppressionCount": 0,
-      "findingIds": [
-        "f648dc252b6f0cc1"
-      ]
-    },
-    {
       "capturedAt": "2026-05-21T00:41:42.253Z",
       "commitHash": "d3e8680be7d3ae1234d858940ea2f327c28711f7",
       "securityScore": 100,
@@ -934,6 +903,51 @@
         "f648dc252b6f0cc1",
         "792924e09ae3ba3c"
       ]
+    },
+    {
+      "capturedAt": "2026-07-18T22:39:06.426Z",
+      "commitHash": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
+      "securityScore": 97,
+      "totalFindings": 9,
+      "bySeverity": {
+        "error": 0,
+        "warning": 1,
+        "info": 8
+      },
+      "byCategory": {
+        "network": {
+          "findingCount": 8,
+          "errorCount": 0,
+          "warningCount": 0,
+          "infoCount": 8
+        },
+        "deserialization": {
+          "findingCount": 1,
+          "errorCount": 0,
+          "warningCount": 1,
+          "infoCount": 0
+        }
+      },
+      "supplyChain": {
+        "critical": 0,
+        "high": 0,
+        "moderate": 0,
+        "low": 0,
+        "info": 0,
+        "total": 0
+      },
+      "suppressionCount": 0,
+      "findingIds": [
+        "792924e09ae3ba3c",
+        "f648dc252b6f0cc1",
+        "8e82cb420f2c471c",
+        "a2204fcaebf8f638",
+        "11125e20b6fc9350",
+        "d8a567e26f734e65",
+        "20e4cda368c5d4af",
+        "9e44936597887fa9",
+        "dff5570f818b1e40"
+      ]
     }
   ],
   "findingLifecycles": [
@@ -978,6 +992,83 @@
       "file": "tests/unit/test_company_knowledge.py",
       "firstSeenAt": "2026-07-01T01:38:51.762Z",
       "firstSeenCommit": "bf91dc4c4dc5c9df72988a866238883ecb1d915c",
+      "resolvedAt": null,
+      "resolvedCommit": null
+    },
+    {
+      "findingId": "8e82cb420f2c471c",
+      "ruleId": "SEC-NET-003",
+      "category": "network",
+      "severity": "info",
+      "file": "tests/unit/test_canary_instrument.py",
+      "firstSeenAt": "2026-07-18T22:39:06.429Z",
+      "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
+      "resolvedAt": null,
+      "resolvedCommit": null
+    },
+    {
+      "findingId": "a2204fcaebf8f638",
+      "ruleId": "SEC-NET-003",
+      "category": "network",
+      "severity": "info",
+      "file": "tests/unit/test_canary_instrument.py",
+      "firstSeenAt": "2026-07-18T22:39:06.429Z",
+      "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
+      "resolvedAt": null,
+      "resolvedCommit": null
+    },
+    {
+      "findingId": "11125e20b6fc9350",
+      "ruleId": "SEC-NET-003",
+      "category": "network",
+      "severity": "info",
+      "file": "tests/unit/test_canary_instrument.py",
+      "firstSeenAt": "2026-07-18T22:39:06.429Z",
+      "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
+      "resolvedAt": null,
+      "resolvedCommit": null
+    },
+    {
+      "findingId": "d8a567e26f734e65",
+      "ruleId": "SEC-NET-003",
+      "category": "network",
+      "severity": "info",
+      "file": "tests/unit/test_canary_instrument.py",
+      "firstSeenAt": "2026-07-18T22:39:06.429Z",
+      "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
+      "resolvedAt": null,
+      "resolvedCommit": null
+    },
+    {
+      "findingId": "20e4cda368c5d4af",
+      "ruleId": "SEC-NET-003",
+      "category": "network",
+      "severity": "info",
+      "file": "tests/unit/test_canary_instrument.py",
+      "firstSeenAt": "2026-07-18T22:39:06.429Z",
+      "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
+      "resolvedAt": null,
+      "resolvedCommit": null
+    },
+    {
+      "findingId": "9e44936597887fa9",
+      "ruleId": "SEC-NET-003",
+      "category": "network",
+      "severity": "info",
+      "file": "tests/unit/test_canary_instrument.py",
+      "firstSeenAt": "2026-07-18T22:39:06.429Z",
+      "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
+      "resolvedAt": null,
+      "resolvedCommit": null
+    },
+    {
+      "findingId": "dff5570f818b1e40",
+      "ruleId": "SEC-DES-001",
+      "category": "deserialization",
+      "severity": "warning",
+      "file": "npm/src/engine-checks.ts",
+      "firstSeenAt": "2026-07-18T22:39:06.429Z",
+      "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
       "resolvedAt": null,
       "resolvedCommit": null
     }
