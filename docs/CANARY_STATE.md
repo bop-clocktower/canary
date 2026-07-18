@@ -1,34 +1,19 @@
 # Canary — Current State
 
-## 🐦 System Status
+Canary ships as a Claude Code plugin (four personas: `canary-test-author`,
+`canary-test-reviewer`, `canary-framework-advisor`, `canary-flake-hunter`)
+plus a deterministic CLI (`canary recommend/init/run/migrate/version`). See
+the [README](../README.md) for installation and usage, and
+[roadmap.md](roadmap.md) for planned and in-progress work.
 
-Canary is a functional, autonomous test automation CLI. It can classify
-user intent, recommend frameworks, generate production-ready code, and
-automatically execute/fix tests via its feedback loop.
+This file is the project ledger — Canary skills append a one-line entry
+below after generating, promoting, or setting up test infrastructure, so
+downstream sessions can pick up context without re-deriving it.
 
-## ✅ Implemented Components
+## Log
 
-- **Framework Registry:** registry.json with execution commands and
-  multi-extension support.
-- **Test Classifier:** Rule-based intent detection.
-- **Framework Recommender:** Engineering decision layer.
-- **Orchestrator:** End-to-end pipeline with integrated self-healing
-  loop.
-- **LLM Abstraction:** Provider-agnostic factory (OpenAI, Mock) with
-  lazy loading.
-- **CLI Interface:** `canary generate` (with `--run`, `--json`),
-  `canary run`, `canary version`.
-- **Test Executor:** Subprocess-based execution with error capture.
-
-## ⚙️ Architecture Summary
-
-User Prompt → CLI → Orchestrator → Classifier → Recommender → LLM →
-Executor → Error Feedback → LLM (Fix) → Final Test Output
-
-## ❗ Current Limitation
-
-Self-healing is limited to 1 retry attempt in the MVP.
-
-## 🎯 Next Step
-
-Deeper integration with the Engineering Harness and CI/CD pipelines.
+<!-- Skills append one-line entries here, e.g.:
+     2026-07-18 — canary-generate-test: login-flow.spec.ts generated
+     (playwright), pass
+     2026-07-18 — canary-setup-harness: harness setup completed
+     (commit 8a039e4) -->
