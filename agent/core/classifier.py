@@ -5,6 +5,20 @@ Test Classifier - Identifies the intent and test type from user prompts.
 
 This module provides rule-based classification to determine whether a user
 wants to generate E2E, API, Performance, or Unit tests.
+
+CONFIDENCE VALUES ARE NOT CALIBRATED PROBABILITIES.
+The 0.5-0.95 confidence numbers attached to each keyword-match branch below
+are hand-picked heuristic priors, not statistical probabilities computed
+from labeled data. There is no calibration model behind them — a 0.95 was
+chosen by a human because that branch's signal (e.g. an explicit framework
+name or HTTP-verb-plus-path match) felt strong, and a 0.5 because the
+fallback branch felt weak. Building real calibration would require a
+labeled dataset of prompts and outcomes that does not exist yet; this
+docstring is a docs-only stopgap so a caller (including CI automation)
+does not over-trust the ordering of two confidence values as if they were
+drawn from a calibrated probability distribution. Treat `confidence` as a
+coarse, ordinal "how strong did this heuristic's signal look" rank, not as
+P(correct classification).
 """
 
 import re
@@ -106,7 +120,15 @@ class ClassificationResult:
     Attributes:
         intent: The high-level intent (e.g., 'generate_tests').
         test_type: The specific category of test (e.g., 'performance').
-        confidence: The probability score (0.0 to 1.0) of the classification.
+        confidence: A heuristic prior in [0.0, 1.0], NOT a calibrated
+            probability. Each classify() branch has a hardcoded confidence
+            value hand-picked by the branch's author based on how strong
+            its keyword/regex signal looked; none of it is derived from
+            statistical calibration against labeled outcomes. Use it as a
+            coarse, ordinal ranking of signal strength — do not treat the
+            gap between e.g. 0.95 and 0.55 as a meaningful probability
+            delta, and do not gate CI decisions on an absolute threshold
+            without accounting for this.
     """
     intent: str
     test_type: str
@@ -116,6 +138,13 @@ class ClassificationResult:
 class TestClassifier:
     """
     Heuristic-based classifier for natural language requirements.
+
+    Every ClassificationResult.confidence this class returns is a
+    hand-calibrated heuristic prior, not a statistical probability — see
+    the module docstring for the full disclosure. In short: these scores
+    were assigned by a human judging signal strength per branch, not
+    computed from data, so don't over-trust a 0.95 vs. a 0.55 as if they
+    were calibrated.
     """
 
     def classify(self, prompt: str) -> ClassificationResult:

@@ -160,3 +160,8 @@ unrealistic, surface that to the requester before promoting.
   test to make it "run".
 - **When the classifier's confidence is below 0.7:** Treat as a
   clarification trigger, not a generation trigger. Loop back to Phase 1.
+  Note: `confidence` is a hand-calibrated heuristic prior per keyword-match
+  branch in `agent/core/classifier.py`, not a statistically calibrated
+  probability — 0.7 is a coarse "does this branch's signal look weak"
+  cutoff, not P(correct classification) ≥ 0.7. Don't read finer distinctions
+  (e.g. 0.85 vs. 0.95) as meaningfully different confidence levels.
