@@ -3,7 +3,15 @@
 # Install once per clone: git config core.hooksPath .githooks
 set -euo pipefail
 
-# 1. Markdownlint — check staged .md files only
+# 1. Roadmap comment guard — restore the markdownlint-disable block that
+#    `harness roadmap promote` silently strips (canary#273), before linting
+STAGED_ROADMAP=$(git diff --cached --name-only --diff-filter=ACM | grep '^docs/roadmap\.md$' || true)
+if [ -n "$STAGED_ROADMAP" ] && [ -f "scripts/roadmap_comment_guard.py" ]; then
+  python3 scripts/roadmap_comment_guard.py
+  git add docs/roadmap.md
+fi
+
+# 2. Markdownlint — check staged .md files only
 STAGED_MD=$(git diff --cached --name-only --diff-filter=ACM | grep '\.md$' || true)
 STAGED_MD_FILTERED=$(echo "$STAGED_MD" | grep -v '^agents/agents/' | grep -v '^agents/commands/' || true)
 if [ -n "$STAGED_MD_FILTERED" ]; then
@@ -13,7 +21,7 @@ if [ -n "$STAGED_MD_FILTERED" ]; then
   fi
 fi
 
-# 2. Security ledger — regenerate if source files changed, then stage
+# 3. Security ledger — regenerate if source files changed, then stage
 LEDGER_SOURCES=$(git diff --cached --name-only | grep -Ev '^(\.harness/security/timeline\.json|docs/SECURITY_LEDGER\.md)$' || true)
 if [ -n "$LEDGER_SOURCES" ] && [ -f "scripts/security_ledger.py" ]; then
   echo "[pre-commit] refreshing security ledger..."
