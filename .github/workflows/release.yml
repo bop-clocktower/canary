@@ -3,11 +3,11 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
 
 permissions:
-  contents: write   # needed to create/upload release assets
-  id-token: write   # needed for npm provenance
+  contents: write # needed to create/upload release assets
+  id-token: write # needed for npm provenance
 
 jobs:
   build-binaries:
@@ -37,7 +37,7 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
       - name: Install dependencies + PyInstaller
         run: pip install -e ".[dev]"
@@ -81,9 +81,9 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "22"
-          registry-url: "https://registry.npmjs.org"
-          cache: "npm"
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
           cache-dependency-path: npm/package-lock.json
 
       - name: Install npm workspace deps
@@ -99,6 +99,12 @@ jobs:
   publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-latest
+    # npm is the canonical end-user install, so a PyPI misconfig must not red-fail
+    # an otherwise-successful release. Until the ONE-TIME SETUP below is completed
+    # this job fails auth with `invalid-publisher`; keep it non-blocking so the
+    # release still succeeds. Remove continue-on-error once the trusted publisher
+    # is configured.
+    continue-on-error: true
     # Builds the sdist + wheel from pyproject.toml (canary-test-ai) and uploads to
     # PyPI via Trusted Publishing (OIDC) — no long-lived API token secret required.
     #
@@ -118,7 +124,7 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
       - name: Build sdist + wheel
         run: |
