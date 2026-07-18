@@ -55,6 +55,18 @@ adjustments.
   project or fork. Installs the harness CLI, initialises the
   config, wires up CI workflows, and verifies all gates pass.
 
+- [`canary-company-knowledge`](./claude-code/canary-company-knowledge/SKILL.md)
+  — Scaffold `.canary/company.json`, the org-specific pointer file
+  `canary-ci-ready` and `canary-failure-impact` assume already exists;
+  prompts for the fields that can't be inferred.
+
+### Analysis
+
+- [`canary-fleet-health`](./claude-code/canary-fleet-health/SKILL.md)
+  — Fleet-wide flake/spike/regression health summary across suites
+  from the run-history store, condensed to one scannable chat-turn
+  report.
+
 ## SKILL.md Format
 
 Every skill in this tree follows the same structure:
