@@ -179,6 +179,28 @@ export function loadManifest(cloneDir: string): ManifestLoad {
 }
 
 /**
+ * The distinct persona tags declared across a set of checks, in first-seen
+ * order and de-duplicated case-insensitively (original casing preserved for
+ * display). This is the discoverable persona *vocabulary* — the engine ships
+ * none of its own, so it is derived entirely from overlay manifests. Used to
+ * tell a user which `--persona` values actually mean something (issue #294).
+ */
+export function collectPersonas(checks: ManifestCheck[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const check of checks) {
+    for (const tag of check.persona ?? []) {
+      const key = tag.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(tag);
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * Keep checks that should run for `persona`: a null persona runs everything;
  * otherwise keep checks with no persona plus those whose persona list contains
  * the tag (case-insensitive).

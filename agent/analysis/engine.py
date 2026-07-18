@@ -64,7 +64,13 @@ class AnalysisEngine:
         area_rows: list[dict] = []
         for s in suites_to_query:
             summary = self._store.query_summary(suite=s, runs=window * 2)
-            spikes_rows.extend(summary.get("runs", []))
+            # query_summary's run rows omit the suite key, but the downstream
+            # spikes builder groups by row["suite"] — tag each row with the
+            # suite it came from so build_spikes_report doesn't KeyError on
+            # populated data.
+            for row in summary.get("runs", []):
+                row.setdefault("suite", s)
+                spikes_rows.append(row)
 
         common_rows = self._query_common_failures(suite=suite)
 

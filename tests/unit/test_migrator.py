@@ -704,3 +704,147 @@ class TestNewConfigShapes(unittest.TestCase):
             ctx = self.migrator.detect(root)
             self.assertEqual(ctx.detected_framework, "wdio")
             self.assertEqual(ctx.detected_shape, "mobile")
+
+
+# ── fix #3: fail-loud framework detection (#295) ───────────────────────────────
+
+class TestUnknownFrameworkFailsLoud(unittest.TestCase):
+    """When framework detection is uncertain, `migrate` must emit a clear,
+    actionable followup naming the known frameworks and the override flag —
+    not just a bare 'Framework: unknown'. See issue #295."""
+
+    def setUp(self):
+        self.migrator = HarnessMigrator()
+
+    def test_unknown_followup_lists_known_frameworks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="unknown-lang")
+            report = self.migrator.migrate(root, dry_run=True)
+            joined = " ".join(report.manual_followups)
+            self.assertIn("playwright", joined)
+            self.assertIn("pytest", joined)
+            self.assertIn("wdio", joined)
+
+    def test_unknown_followup_mentions_override_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="unknown-lang")
+            report = self.migrator.migrate(root, dry_run=True)
+            joined = " ".join(report.manual_followups)
+            self.assertIn("--framework", joined)
+
+    def test_unknown_followup_is_actionable_not_bare_unknown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="unknown-lang")
+            report = self.migrator.migrate(root, dry_run=True)
+            joined = " ".join(report.manual_followups).lower()
+            self.assertIn("auto-detect", joined)
+
+    def test_deploy_to_all_skills_deploy_even_when_framework_unknown(self):
+        """Issue #295 point 3: a detection miss must not block deploy_to:[all]
+        overlay skills — they should still deploy so migrate degrades
+        gracefully instead of deploying nothing."""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "proj"
+            root.mkdir()
+            _make_harness_project(root, language="unknown-lang")  # framework unknown
+            overlay = base / "overlay"
+            skill_dir = overlay / ".canary" / "skills" / "universal-skill"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: universal-skill\ndeploy_to: [all]\n---\n\n# universal-skill\n",
+                encoding="utf-8",
+            )
+            report = self.migrator.migrate(root, dry_run=True, overlay_path=overlay)
+            deployed_names = [r.skill_name for r in report.deployed_skills]
+            self.assertIn("universal-skill", deployed_names)
+
+
+# ── fix #2: config-validation fail-fast (malformed configs warn, not swallow) ──
+
+class TestConfigValidationWarnings(unittest.TestCase):
+    """A malformed (but present) harness.config.json / company.json must
+    produce a clear warning instead of silently behaving as if the file
+    were absent. See agent/core/config_validation.py."""
+
+    def setUp(self):
+        self.migrator = HarnessMigrator()
+
+    def test_malformed_harness_config_json_yields_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "harness.config.json").write_text("{not valid json", encoding="utf-8")
+            (root / ".harness").mkdir()
+            ctx = self.migrator.detect(root)
+            self.assertTrue(ctx.is_harness_project)
+            self.assertTrue(
+                any("harness.config.json" in w for w in ctx.config_warnings),
+                ctx.config_warnings,
+            )
+
+    def test_malformed_harness_config_json_does_not_crash_detection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "harness.config.json").write_text("{not valid json", encoding="utf-8")
+            (root / ".harness").mkdir()
+            # Should not raise, and should fall back to an empty config
+            # (same behavior as before, just with a warning attached now).
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.harness_config, {})
+
+    def test_well_formed_harness_config_json_has_no_warnings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            ctx = self.migrator.detect(root)
+            self.assertEqual(ctx.config_warnings, [])
+
+    def test_malformed_company_json_yields_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="python")
+            canary_dir = root / ".canary"
+            canary_dir.mkdir()
+            (canary_dir / "company.json").write_text("{broken", encoding="utf-8")
+            ctx = self.migrator.detect(root)
+            self.assertTrue(
+                any("company.json" in w for w in ctx.config_warnings),
+                ctx.config_warnings,
+            )
+
+    def test_config_warnings_propagate_to_migration_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "harness.config.json").write_text("{not valid json", encoding="utf-8")
+            (root / ".harness").mkdir()
+            report = self.migrator.migrate(root, dry_run=True, framework="pytest")
+            self.assertTrue(
+                any("harness.config.json" in w for w in report.config_warnings),
+                report.config_warnings,
+            )
+
+    def test_config_warnings_rendered_in_markdown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "harness.config.json").write_text("{not valid json", encoding="utf-8")
+            (root / ".harness").mkdir()
+            report = self.migrator.migrate(root, dry_run=True, framework="pytest")
+            md = report.to_markdown()
+            self.assertIn("Warning", md)
+            self.assertIn("harness.config.json", md)
+
+    def test_malformed_config_does_not_hard_fail_migrate(self):
+        """A malformed config warns but never raises — CI pipelines with
+        quirky-but-tolerated configs must not break on upgrade."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "harness.config.json").write_text("{not valid json", encoding="utf-8")
+            (root / ".harness").mkdir()
+            try:
+                report = self.migrator.migrate(root, dry_run=True, framework="pytest")
+            except Exception as exc:  # pragma: no cover - assertion is the point
+                self.fail(f"migrate() raised on malformed config: {exc}")
+            self.assertEqual(report.framework, "pytest")

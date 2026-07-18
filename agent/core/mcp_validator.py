@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from agent.core.config_validation import read_json_with_warning
+
 
 @dataclass
 class MCPValidationResult:
@@ -47,6 +49,28 @@ def validate_mcp_servers(
         else:
             results.append(MCPValidationResult(sid, "not_found"))
     return results
+
+
+def collect_config_warnings(root: Optional[Path] = None) -> list[str]:
+    """Fail-loud (but non-blocking) config-validation pass for .mcp.json.
+
+    ``validate_mcp_servers`` silently treats a malformed .mcp.json the same
+    as an absent one (each server resolves to "not_found") — that keeps the
+    validator itself simple and non-crashing, but it means a user with a
+    typo'd .mcp.json gets no signal that their *config* is the problem
+    rather than the server just not being registered. This is a separate,
+    explicit pass a caller can run alongside validate_mcp_servers() to
+    surface that distinction: an existing-but-unparseable .mcp.json
+    (project or home) returns a warning naming the file and the parse
+    error. A genuinely absent .mcp.json is not a warning. Never raises.
+    """
+    root = root or Path.cwd()
+    warnings: list[str] = []
+    for path in (root / ".mcp.json", Path.home() / ".mcp.json"):
+        _data, warning = read_json_with_warning(path)
+        if warning:
+            warnings.append(warning)
+    return warnings
 
 
 # ── registry builder ──────────────────────────────────────────────────────────

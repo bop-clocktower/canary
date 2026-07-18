@@ -13,7 +13,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from agent.core.config_validation import read_json_with_warning
+from agent.core.detection import uncertain_detection_message
 from agent.core.scaffolder import Scaffolder
+
+# Frameworks a user can pass to `canary migrate --framework <name>`. Surfaced
+# in the fail-loud message when auto-detection is uncertain (issue #295).
+KNOWN_FRAMEWORKS = ("playwright", "vitest", "pytest", "k6", "wdio", "locust")
 
 # ---------------------------------------------------------------------------
 # Framework detection probes
@@ -144,6 +150,7 @@ class MigrationContext:
     detected_shape: str = "unknown"
     detection_source: str = "none"
     detection_confidence: str = "none"  # "config" | "content" | "language" | "none"
+    config_warnings: list = field(default_factory=list)
 
 
 @dataclass
@@ -167,11 +174,18 @@ class MigrationReport:
     would_create: list = field(default_factory=list)
     manual_followups: list = field(default_factory=list)
     deployed_skills: list[SkillDeployResult] = field(default_factory=list)
+    config_warnings: list = field(default_factory=list)
 
     def to_markdown(self) -> str:
         lines = ["# Canary Migration Report", ""]
         if self.dry_run:
             lines += ["> **Dry run** — no files were written. Re-run with `--apply` to migrate.", ""]
+
+        if self.config_warnings:
+            lines += ["## ⚠ Config Warnings", ""]
+            for w in self.config_warnings:
+                lines.append(f"- {w}")
+            lines.append("")
 
         lines += [
             f"**Framework:** {self.framework}",
@@ -278,17 +292,24 @@ class HarnessMigrator:
                 is_harness_project=False,
             )
 
-        harness_config = self._load_harness_config(project_root)
+        config_warnings: list[str] = []
+
+        harness_config, warning = read_json_with_warning(project_root / "harness.config.json")
+        if warning:
+            config_warnings.append(warning)
+        harness_config = harness_config or {}
+
         # Merge canary_shape from .canary/company.json into the config dict so
-        # _detect_framework can honour an explicit shape override.
+        # _detect_framework can honour an explicit shape override. A malformed
+        # company.json warns (the file exists — this is a real config
+        # problem) but never blocks detection; it just contributes no override.
         canary_company = project_root / ".canary" / "company.json"
-        if canary_company.exists():
-            try:
-                overlay = json.loads(canary_company.read_text())
-                if "canary_shape" in overlay:
-                    harness_config = {**harness_config, "canary_shape": overlay["canary_shape"]}
-            except (OSError, json.JSONDecodeError):
-                pass
+        overlay, warning = read_json_with_warning(canary_company)
+        if warning:
+            config_warnings.append(warning)
+        if overlay and "canary_shape" in overlay:
+            harness_config = {**harness_config, "canary_shape": overlay["canary_shape"]}
+
         framework, shape, source, confidence = self._detect_framework(project_root, harness_config)
 
         return MigrationContext(
@@ -299,6 +320,7 @@ class HarnessMigrator:
             detected_shape=shape,
             detection_source=source,
             detection_confidence=confidence,
+            config_warnings=config_warnings,
         )
 
     def migrate(
@@ -324,9 +346,19 @@ class HarnessMigrator:
 
         if effective_framework is None:
             followups.append(
-                "Could not auto-detect framework. Run `canary migrate --framework <name>` "
-                "with one of: playwright, vitest, pytest, k6, wdio."
+                uncertain_detection_message(
+                    "test framework",
+                    reason="no config file, dependency, or language marker matched a known framework",
+                    candidates=KNOWN_FRAMEWORKS,
+                    override_hint="`canary migrate --framework <name>`",
+                )
             )
+            # Issue #295 point 3: a detection miss must not block skill
+            # deployment. deploy_to:[all] skills are framework-agnostic, so
+            # deploy them even with an unknown shape rather than deploying
+            # nothing. (Shape-specific skills still can't match an unknown
+            # shape, which is correct — we don't know which to pick.)
+            deployed = self._deploy_skills(shape, overlay_path, project_root, dry_run)
             return MigrationReport(
                 framework="unknown",
                 shape=shape,
@@ -334,6 +366,8 @@ class HarnessMigrator:
                 detection_source=source,
                 detection_confidence=confidence,
                 manual_followups=followups,
+                config_warnings=ctx.config_warnings,
+                deployed_skills=deployed,
             )
 
         preserved = self._find_existing_tests(project_root)
@@ -365,6 +399,7 @@ class HarnessMigrator:
                 preserved_files=preserved,
                 manual_followups=followups,
                 deployed_skills=deployed,
+                config_warnings=ctx.config_warnings,
             )
 
         result = scaffolder.scaffold(effective_framework, project_root=str(project_root))
@@ -381,6 +416,7 @@ class HarnessMigrator:
             preserved_files=preserved,
             manual_followups=followups,
             deployed_skills=deployed,
+            config_warnings=ctx.config_warnings,
         )
 
     # ── private helpers ───────────────────────────────────────────────────────
@@ -465,12 +501,6 @@ class HarnessMigrator:
             results.append(SkillDeployResult(skill_name=info.name, status="copied"))
 
         return results
-
-    def _load_harness_config(self, root: Path) -> dict:
-        try:
-            return json.loads((root / "harness.config.json").read_text())
-        except (OSError, json.JSONDecodeError):
-            return {}
 
     def _detect_framework(
         self, root: Path, config: dict
