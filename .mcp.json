@@ -1,5 +1,8 @@
 {
   "mcpServers": {
+    "canary-mcp": {
+      "command": "canary-mcp"
+    },
     "harness": {
       "command": "harness-mcp"
     },

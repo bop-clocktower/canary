@@ -4,6 +4,7 @@
   "version": "5.10.1",
   "description": "AI-powered test generation for Claude Code — generate, init, and migrate test suites via slash commands.",
   "hooks": "./.claude-plugin/hooks.json",
+  "//": "Canonical canary MCP server identity: 'canary-mcp' (console script canary-mcp → agent/mcp_server.py:main, FastMCP(\"canary\")); tools resolve as mcp__canary-mcp__*. Canary tools also surface via the harness server as mcp__harness__canary_*. Keep .mcp.json and marketplace.json in sync with this name.",
   "mcpServers": {
     "canary-mcp": {
       "command": "canary-mcp",

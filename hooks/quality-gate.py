@@ -8,8 +8,18 @@ import os
 import subprocess
 import sys
 
+from _harness_dedup import harness_hook_present, ruff_config_present
+
 
 def main():
+    # Dedup: harness's quality-warner.js (via format-check.js) also runs ruff —
+    # but only when it detects a standalone .ruff.toml/ruff.toml. When both that
+    # config and the harness hook are present, defer so ruff runs once. With ruff
+    # configured in pyproject.toml (which format-check.js can't see), this hook
+    # is the only Python linter, so it keeps running (see #309).
+    if harness_hook_present("quality-warner.js") and ruff_config_present():
+        sys.exit(0)
+
     try:
         raw = sys.stdin.read()
     except Exception:

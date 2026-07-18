@@ -7,6 +7,8 @@ import json
 import re
 import sys
 
+from _harness_dedup import harness_hook_present
+
 
 def strip_strings_and_comments(cmd):
     cmd = re.sub(r"<<-?\s*['\"]?(\w+)['\"]?[\s\S]*?\n\s*\1\b", " ", cmd)
@@ -26,6 +28,11 @@ def contains_hook_bypass(command):
 
 
 def main():
+    # Dedup: harness's block-no-verify.js enforces the identical policy. When it
+    # is wired, defer to it so the bypass check runs exactly once (see #309).
+    if harness_hook_present("block-no-verify.js"):
+        sys.exit(0)
+
     try:
         raw = sys.stdin.read()
     except Exception:
