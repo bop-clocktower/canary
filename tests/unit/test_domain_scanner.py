@@ -263,3 +263,32 @@ class TestDeduplication(unittest.TestCase):
         (self.root / "big.py").write_text(lines)
         ctx = self.scanner.scan(str(self.root))
         self.assertLessEqual(len(ctx.components), 15)
+
+
+class TestUnreadableFilesSkipped(unittest.TestCase):
+    """Fix #4 (issue #299): a source path that matches the glob but can't be
+    read as text (e.g. a directory named `foo.py`) must be skipped silently
+    rather than crashing the scan. Covers the OSError branch in scan()."""
+
+    def setUp(self):
+        self.scanner = DomainScanner()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_directory_named_like_source_file_is_skipped(self):
+        # A directory whose name ends in .py is matched by the **/*.py glob;
+        # read_text() on it raises IsADirectoryError (an OSError subclass).
+        (self.root / "package.py").mkdir()
+        (self.root / "real.py").write_text("class RealService: pass\n")
+        # Must not raise, and the real file's symbols still come through.
+        ctx = self.scanner.scan(str(self.root))
+        self.assertIn("RealService", ctx.components)
+
+    def test_scan_returns_context_when_all_files_unreadable(self):
+        (self.root / "only.py").mkdir()
+        ctx = self.scanner.scan(str(self.root))
+        self.assertIsInstance(ctx, DomainContext)
+        self.assertEqual(ctx.components, [])
