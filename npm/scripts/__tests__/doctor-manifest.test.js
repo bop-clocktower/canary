@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { loadManifest, filterByPersona } = require("../../dist/doctor-manifest.js");
+const { loadManifest, filterByPersona, collectPersonas } = require("../../dist/doctor-manifest.js");
 
 function tmpClone() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "canary-manifest-"));
@@ -92,5 +92,26 @@ describe("filterByPersona", () => {
   it("keeps only no-persona checks when the tag matches none", () => {
     const ids = filterByPersona(checks, "gamma").map((c) => c.id);
     assert.deepEqual(ids, ["always"]);
+  });
+});
+
+describe("collectPersonas", () => {
+  it("returns [] when no check declares a persona", () => {
+    const checks = [{ id: "a", type: "file-exists", path: "x", remedy: "r" }];
+    assert.deepEqual(collectPersonas(checks), []);
+  });
+  it("collects distinct tags in first-seen order", () => {
+    const checks = [
+      { id: "a", type: "file-exists", path: "x", remedy: "r", persona: ["backend"] },
+      { id: "b", type: "file-exists", path: "y", remedy: "r", persona: ["frontend"] },
+    ];
+    assert.deepEqual(collectPersonas(checks), ["backend", "frontend"]);
+  });
+  it("de-duplicates case-insensitively, keeping first-seen casing", () => {
+    const checks = [
+      { id: "a", type: "file-exists", path: "x", remedy: "r", persona: ["Backend"] },
+      { id: "b", type: "file-exists", path: "y", remedy: "r", persona: ["backend", "qa"] },
+    ];
+    assert.deepEqual(collectPersonas(checks), ["Backend", "qa"]);
   });
 });

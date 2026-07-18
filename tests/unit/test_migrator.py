@@ -706,6 +706,63 @@ class TestNewConfigShapes(unittest.TestCase):
             self.assertEqual(ctx.detected_shape, "mobile")
 
 
+# ── fix #3: fail-loud framework detection (#295) ───────────────────────────────
+
+class TestUnknownFrameworkFailsLoud(unittest.TestCase):
+    """When framework detection is uncertain, `migrate` must emit a clear,
+    actionable followup naming the known frameworks and the override flag —
+    not just a bare 'Framework: unknown'. See issue #295."""
+
+    def setUp(self):
+        self.migrator = HarnessMigrator()
+
+    def test_unknown_followup_lists_known_frameworks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="unknown-lang")
+            report = self.migrator.migrate(root, dry_run=True)
+            joined = " ".join(report.manual_followups)
+            self.assertIn("playwright", joined)
+            self.assertIn("pytest", joined)
+            self.assertIn("wdio", joined)
+
+    def test_unknown_followup_mentions_override_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="unknown-lang")
+            report = self.migrator.migrate(root, dry_run=True)
+            joined = " ".join(report.manual_followups)
+            self.assertIn("--framework", joined)
+
+    def test_unknown_followup_is_actionable_not_bare_unknown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root, language="unknown-lang")
+            report = self.migrator.migrate(root, dry_run=True)
+            joined = " ".join(report.manual_followups).lower()
+            self.assertIn("auto-detect", joined)
+
+    def test_deploy_to_all_skills_deploy_even_when_framework_unknown(self):
+        """Issue #295 point 3: a detection miss must not block deploy_to:[all]
+        overlay skills — they should still deploy so migrate degrades
+        gracefully instead of deploying nothing."""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "proj"
+            root.mkdir()
+            _make_harness_project(root, language="unknown-lang")  # framework unknown
+            overlay = base / "overlay"
+            skill_dir = overlay / ".canary" / "skills" / "universal-skill"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: universal-skill\ndeploy_to: [all]\n---\n\n# universal-skill\n",
+                encoding="utf-8",
+            )
+            report = self.migrator.migrate(root, dry_run=True, overlay_path=overlay)
+            deployed_names = [r.skill_name for r in report.deployed_skills]
+            self.assertIn("universal-skill", deployed_names)
+
+
 # ── fix #2: config-validation fail-fast (malformed configs warn, not swallow) ──
 
 class TestConfigValidationWarnings(unittest.TestCase):

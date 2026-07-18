@@ -97,6 +97,13 @@ The engine ships **no persona vocabulary** — tags are free-form strings the
 overlay owns. An overlay might tag some checks `alpha` and others `beta`; what
 those mean is documented by that overlay, not by Canary.
 
+If you pass a `--persona` value that **no** installed overlay declares, `doctor`
+prints a hint listing the persona tags it actually found (discovered from the
+overlays' manifests) so you can pick a valid one — rather than silently running
+only the untagged checks and leaving you to guess why your filter matched
+nothing. When no overlay defines any personas at all, the hint says so and
+tells you to drop the flag.
+
 ---
 
 ## Consent and `command-succeeds`

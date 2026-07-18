@@ -14,7 +14,12 @@ from pathlib import Path
 from typing import Optional
 
 from agent.core.config_validation import read_json_with_warning
+from agent.core.detection import uncertain_detection_message
 from agent.core.scaffolder import Scaffolder
+
+# Frameworks a user can pass to `canary migrate --framework <name>`. Surfaced
+# in the fail-loud message when auto-detection is uncertain (issue #295).
+KNOWN_FRAMEWORKS = ("playwright", "vitest", "pytest", "k6", "wdio", "locust")
 
 # ---------------------------------------------------------------------------
 # Framework detection probes
@@ -341,9 +346,19 @@ class HarnessMigrator:
 
         if effective_framework is None:
             followups.append(
-                "Could not auto-detect framework. Run `canary migrate --framework <name>` "
-                "with one of: playwright, vitest, pytest, k6, wdio."
+                uncertain_detection_message(
+                    "test framework",
+                    reason="no config file, dependency, or language marker matched a known framework",
+                    candidates=KNOWN_FRAMEWORKS,
+                    override_hint="`canary migrate --framework <name>`",
+                )
             )
+            # Issue #295 point 3: a detection miss must not block skill
+            # deployment. deploy_to:[all] skills are framework-agnostic, so
+            # deploy them even with an unknown shape rather than deploying
+            # nothing. (Shape-specific skills still can't match an unknown
+            # shape, which is correct — we don't know which to pick.)
+            deployed = self._deploy_skills(shape, overlay_path, project_root, dry_run)
             return MigrationReport(
                 framework="unknown",
                 shape=shape,
@@ -352,6 +367,7 @@ class HarnessMigrator:
                 detection_confidence=confidence,
                 manual_followups=followups,
                 config_warnings=ctx.config_warnings,
+                deployed_skills=deployed,
             )
 
         preserved = self._find_existing_tests(project_root)

@@ -13,11 +13,13 @@ import * as os from "node:os";
 import type { CommandDeps } from "./overlay-commands.js";
 import { runEngineChecks, type EngineCheckDeps } from "./engine-checks.js";
 import {
+  collectPersonas,
   commandSucceedsHash,
   filterByPersona,
   loadManifest,
   runCheck,
   type CommandRunner,
+  type ManifestCheck,
   type UrlProbe,
 } from "./doctor-manifest.js";
 import * as registry from "./overlays-registry.js";
@@ -69,6 +71,29 @@ function parsePersona(args: readonly string[]): string | null {
   return null;
 }
 
+/**
+ * Fail-loud hint for an unrecognized `--persona` value (issue #294). Returns
+ * null when there is nothing to say — no persona was passed, or the passed
+ * persona is part of the known vocabulary. Otherwise returns a one-line,
+ * actionable message: the engine ships no persona vocabulary, so this lists
+ * the tags overlays actually declared (or says none are defined) instead of
+ * silently running only the persona-less checks and leaving the user to
+ * guess why their filter matched nothing.
+ */
+export function unknownPersonaHint(persona: string | null, known: readonly string[]): string | null {
+  if (persona === null) {
+    return null;
+  }
+  const want = persona.toLowerCase();
+  if (known.some((p) => p.toLowerCase() === want)) {
+    return null;
+  }
+  if (known.length === 0) {
+    return `--persona '${persona}' matched no checks: no overlay defines any personas, so every check already runs. Drop the flag.`;
+  }
+  return `--persona '${persona}' is not a known persona. Valid options: ${known.join(", ")}. (Omit --persona to run every check.)`;
+}
+
 function renderCheck(r: CheckResult): string {
   const line = `  ${SYMBOL[r.status]} ${r.label}\n`;
   return r.status === "fail" && r.remedy ? `${line}      → ${r.remedy}\n` : line;
@@ -79,11 +104,11 @@ async function overlayResults(
   entry: registry.OverlayEntry,
   deps: DoctorDeps,
   persona: string | null
-): Promise<CheckGroup> {
+): Promise<{ group: CheckGroup; loadedChecks: ManifestCheck[] }> {
   const header = `Overlay: ${entry.name}`;
   const load = loadManifest(entry.path);
   if (!load.ok) {
-    return { header, results: [load.failure] };
+    return { group: { header, results: [load.failure] }, loadedChecks: [] };
   }
   const granted = registry.consentGranted(entry, commandSucceedsHash(load.checks));
   const checks = filterByPersona(load.checks, persona);
@@ -98,7 +123,9 @@ async function overlayResults(
   for (const check of checks) {
     results.push(await runCheck(check, ctx));
   }
-  return { header, results };
+  // Return the full (pre-filter) check set so the caller can build the
+  // persona vocabulary for a fail-loud hint on an unknown --persona.
+  return { group: { header, results }, loadedChecks: load.checks };
 }
 
 /**
@@ -128,11 +155,22 @@ export async function runDoctor(args: readonly string[], deps: DoctorDeps = {}):
   } catch {
     reg = registry.emptyRegistry();
   }
+  const allChecks: ManifestCheck[] = [];
   for (const entry of reg.overlays) {
-    groups.push(await overlayResults(entry, deps, persona));
+    const { group, loadedChecks } = await overlayResults(entry, deps, persona);
+    groups.push(group);
+    allChecks.push(...loadedChecks);
   }
 
   out.write("canary doctor\n");
+
+  // Issue #294: if the user passed a --persona that no overlay declares,
+  // tell them the valid vocabulary instead of silently filtering to only
+  // the persona-less checks and leaving them to wonder why.
+  const personaHint = unknownPersonaHint(persona, collectPersonas(allChecks));
+  if (personaHint) {
+    out.write(`\n! ${personaHint}\n`);
+  }
   let failures = 0;
   for (const group of groups) {
     out.write(`\n${group.header}\n`);
