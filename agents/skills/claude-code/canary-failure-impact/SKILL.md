@@ -23,6 +23,31 @@ help prioritise where to invest test coverage.
 
 - When asked "what's the impact if this breaks?"
 
+## This skill vs. `canary guardian analyze`
+
+This skill's tracing (Steps 2–4 below) is a **grep/graph heuristic**: domain
+keyword matching over dependent file and function names, degrading to plain
+`grep -r` when the harness MCP is unavailable. `canary guardian analyze`
+(`agent/guardian/`, wired to `canary guardian analyze` in `agent/cli.py`) is a
+**real OpenAPI-diff blast-radius engine** — it diffs two OpenAPI specs
+(`--spec-before` / `--spec-after`), extracts the actual added/removed/changed
+endpoints, and maps each to coverage gaps against a `coverage-report.json`.
+For the class of change it covers, guardian is strictly higher-fidelity than
+the heuristics here.
+
+- **Use `canary guardian analyze`** when the change is an API/schema change
+  and you have (or can generate) before/after OpenAPI specs — it gives exact
+  endpoint-level impact and coverage-gap data instead of a keyword guess.
+- **Use this skill** for everything guardian doesn't cover: non-API code
+  paths (services, UI components, internal functions), impact tracing where
+  no OpenAPI spec exists, or when you need the broader
+  billing/auth/compliance domain-severity labeling in Step 3 rather than a
+  strict API diff.
+
+They are complementary, not competing — do not duplicate guardian's spec-diff
+logic here if an OpenAPI change is in scope; delegate to `canary guardian
+analyze` instead.
+
 ## Input
 
 Provide one of:
@@ -116,3 +141,7 @@ Failure impact — src/loyalty/points.service.ts::accruePoints
 - `/canary-write-test` — generates tests for the identified high-impact gaps
 
 - `/canary-test-pipeline` — Phase 3
+
+- `canary guardian analyze` (CLI, `agent/guardian/`) — higher-fidelity
+  OpenAPI-diff blast-radius engine; use instead of this skill's heuristics
+  when the change is an API/schema change with before/after specs available
