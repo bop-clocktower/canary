@@ -1,6 +1,9 @@
 name: canary-edge-case-discovery
-version: "1.0.0"
-description: Test intelligence skill
+version: '1.0.0'
+description:
+  Surface edge cases worth testing across six categories from a feature
+  description, function signature, or existing suite; explanation depth scales
+  to user skill level.
 stability: static
 triggers:
   - manual
@@ -10,4 +13,4 @@ type: rigid
 tools: []
 tier: 1
 depends_on:
-    - canary-ci-ready
+  - canary-ci-ready

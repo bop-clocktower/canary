@@ -1,6 +1,6 @@
 ---
 name: harness:canary-failure-impact
-description: Test intelligence skill
+description: Trace the downstream blast radius of an undetected failure for a given test, function, or code path and assign a severity label.
 allowed-tools:
   - Read
 ---
@@ -12,7 +12,7 @@ Type: rigid
 </context>
 
 <objective>
-Test intelligence skill
+Trace the downstream blast radius of an undetected failure for a given test, function, or code path and assign a severity label.
 </objective>
 
 <execution_context>

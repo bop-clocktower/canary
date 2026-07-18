@@ -1,6 +1,9 @@
 name: canary-ci-ready
 version: '1.0.0'
-description: Test intelligence skill
+description:
+  Analyse a test suite for CI readiness across coverage depth, flakiness,
+  assertion quality, critical-path coverage, and runtime; documented/quarantined
+  failures count as verified.
 stability: static
 triggers:
   - manual

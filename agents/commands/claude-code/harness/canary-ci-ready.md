@@ -1,6 +1,6 @@
 ---
 name: harness:canary-ci-ready
-description: Test intelligence skill
+description: Analyse a test suite for CI readiness across coverage depth, flakiness, assertion quality, critical-path coverage, and runtime; documented/quarantined failures count as verified.
 allowed-tools:
   - Read
 ---
@@ -12,7 +12,7 @@ Type: rigid
 </context>
 
 <objective>
-Test intelligence skill
+Analyse a test suite for CI readiness across coverage depth, flakiness, assertion quality, critical-path coverage, and runtime; documented/quarantined failures count as verified.
 </objective>
 
 <execution_context>
