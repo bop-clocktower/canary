@@ -90,7 +90,7 @@ function classifyError(err) {
   // file). These are usage/infra failures, NOT format violations.
   if (
     /could not determine executable|npm error|command not found|not found|ENOENT|expected at least one|no files matching|usage:/i.test(
-      output
+      output,
     )
   ) {
     return 'infra-error';
@@ -117,7 +117,7 @@ export function runFormatCheck(input, cwd) {
   // Special case: .go files use `gofmt -l`, which lists files needing formatting.
   if (typeof filePath === 'string' && filePath.endsWith('.go')) {
     try {
-      const result = execFileSync('gofmt', ['-l', filePath], {
+      const result = execFileSync('gofmt', ['-l', '--', filePath], {
         encoding: 'utf-8',
         cwd,
         timeout: 10000,
@@ -130,7 +130,12 @@ export function runFormatCheck(input, cwd) {
           message: `gofmt found formatting issues in: ${result.trim()}`,
         };
       }
-      return { status: 'clean', name: 'gofmt', output: '', message: 'gofmt check passed' };
+      return {
+        status: 'clean',
+        name: 'gofmt',
+        output: '',
+        message: 'gofmt check passed',
+      };
     } catch (err) {
       // gofmt not available or failed to run — fail open.
       return {
@@ -145,11 +150,32 @@ export function runFormatCheck(input, cwd) {
   const detector = detectFormatter(cwd);
   if (!detector) {
     // No formatter detected — nothing to check.
-    return { status: 'clean', name: null, output: '', message: 'No formatter detected' };
+    return {
+      status: 'clean',
+      name: null,
+      output: '',
+      message: 'No formatter detected',
+    };
   }
 
+  // Target the edited file specifically. Without this, `prettier --check`
+  // (no path) errors with "No parser and no file path given" but still
+  // exits 0 — so the 'violations' branch below could never be reached and
+  // the check would silently pass every edit regardless of content.
+  //
+  // The `--` separator ends option parsing so a path that happens to start
+  // with a dash (e.g. `./-weird.js`) is treated as a file operand, never as
+  // a formatter flag (option injection). execFileSync already avoids a shell
+  // (no command injection); this closes the remaining argv-level hole. All
+  // detected formatters (Prettier, Biome, Ruff) honor the POSIX `--`
+  // convention.
+  const args =
+    typeof filePath === 'string' && filePath
+      ? [...detector.args, '--', filePath]
+      : detector.args;
+
   try {
-    execFileSync(detector.cmd, detector.args, {
+    execFileSync(detector.cmd, args, {
       encoding: 'utf-8',
       cwd,
       timeout: 30000,

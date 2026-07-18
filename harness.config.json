@@ -22,42 +22,41 @@
     {
       "name": "core",
       "pattern": "agent/core/**",
-      "allowedDependencies": [
-        "llm"
-      ]
+      "allowedDependencies": ["llm"]
     },
     {
       "name": "cli",
       "pattern": "agent/cli.py",
-      "allowedDependencies": [
-        "core",
-        "llm"
-      ]
+      "allowedDependencies": ["core", "llm"]
     },
     {
       "name": "tests",
       "pattern": "tests/**",
-      "allowedDependencies": [
-        "core",
-        "llm"
-      ]
+      "allowedDependencies": ["core", "llm"]
     }
   ],
   "forbiddenImports": [
     {
       "from": "agent/llm/**",
-      "disallow": [
-        "agent/core/**",
-        "agent/cli.py"
-      ],
+      "disallow": ["agent/core/**", "agent/cli.py"],
       "message": "LLM layer must remain isolated from business logic and CLI."
     }
   ],
+  "architecture": {
+    "thresholds": {
+      "module-size": {
+        "maxLoc": 1800,
+        "maxFiles": 12
+      },
+      "dependency-depth": 4,
+      "coupling": {
+        "maxFanOut": 12
+      }
+    }
+  },
   "agentsMapPath": "./AGENTS.md",
   "docsDir": "./docs",
-  "entryPoints": [
-    "agent.cli:app"
-  ],
+  "entryPoints": ["agent.cli:app"],
   "entropy": {
     "rootDir": ".",
     "analyze": {
