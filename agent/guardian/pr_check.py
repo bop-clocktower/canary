@@ -458,6 +458,12 @@ def render(
     return "\n".join(lines)
 
 
+# SC-2 canonical skip examples: docs and markdown never need a covering test, so
+# they are the DEFAULT skip set when a config omits ``skipGlobs`` entirely. An
+# explicit ``skipGlobs`` (even ``[]``) overrides this — see ``load_guardian_config``.
+_DEFAULT_SKIP_GLOBS = ("docs/**", "**/*.md")
+
+
 @dataclass
 class GuardianConfig:
     """Parsed ``canary.guardian`` config block.
@@ -465,6 +471,9 @@ class GuardianConfig:
     Phase 1 stores every field but only ``pr_*`` gate/tier drive behavior.
     ``skip_globs`` and the ``precommit_*``/``coverage_paths`` fields are read
     into the object (scaffold) for later phases (SC-2 skip, SC-5 tier).
+
+    ``skip_globs`` defaults to ``docs/**`` + ``**/*.md`` (FIX B) so docs/markdown
+    changes skip out of the box; an explicit ``skipGlobs`` in config overrides it.
     """
 
     pr_enabled: bool = True
@@ -474,7 +483,7 @@ class GuardianConfig:
     precommit_author_tests: bool = True
     precommit_gate: str = "soft"
     coverage_paths: list[str] = field(default_factory=list)
-    skip_globs: list[str] = field(default_factory=list)
+    skip_globs: list[str] = field(default_factory=lambda: list(_DEFAULT_SKIP_GLOBS))
 
 
 _VALID_GATES = frozenset({"soft", "hard"})
@@ -565,6 +574,10 @@ def load_guardian_config(
     if isinstance(coverage_paths, list):
         config.coverage_paths = [str(p) for p in coverage_paths]
 
+    # FIX B: only override the default (docs/** + **/*.md) when skipGlobs is
+    # PRESENT. `block.get("skipGlobs")` is None iff the key is ABSENT → keep the
+    # default; an explicit list (including empty []) is honored verbatim so a
+    # deliberate `skipGlobs: []` means "skip nothing".
     skip_globs = block.get("skipGlobs")
     if isinstance(skip_globs, list):
         config.skip_globs = [str(g) for g in skip_globs]

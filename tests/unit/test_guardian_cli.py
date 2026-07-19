@@ -190,6 +190,22 @@ class TestPrCheckPost:
         assert "agent/core/foo.py" in paths  # production unit still flagged
         assert "tests/unit/test_foo.py" not in paths  # test file dropped
 
+    def test_docs_only_skips_by_default(self, tmp_path, monkeypatch) -> None:
+        # FIX B: with no config (or no skipGlobs key) a docs/markdown-only diff
+        # skips by default — the guardian no longer flags SKILLS.md-style paths.
+        monkeypatch.chdir(tmp_path)
+        self._use_env(monkeypatch)
+        fake = FakeGitHubClient()
+        monkeypatch.setattr(guardian_cli, "_build_client", lambda *_: fake)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--post-comment"],
+            input=DIFF_DOCS_ONLY,
+        )
+        assert result.exit_code == 0
+        assert "nothing to verify" in result.stdout
+        assert fake.list_comments() == []  # no finding posted
+
     def test_pr_disabled_skips_surface(self, tmp_path, monkeypatch) -> None:
         monkeypatch.chdir(tmp_path)
         self._use_env(monkeypatch)

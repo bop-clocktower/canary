@@ -72,7 +72,8 @@ class TestLoadGuardianConfig:
         assert c.pr_gate == "soft"
         assert c.precommit_enabled is False
         assert c.coverage_paths == []
-        assert c.skip_globs == []
+        # FIX B: skipGlobs now defaults to docs/** and **/*.md out of the box.
+        assert c.skip_globs == ["docs/**", "**/*.md"]
 
     def test_non_int_tier_warns_and_defaults(self, tmp_path) -> None:
         # FIX 4: a non-integer tier must not crash int() — warn loudly (same slot
@@ -106,3 +107,42 @@ class TestLoadGuardianConfig:
         config, warning = load_guardian_config(cfg)
         assert warning is not None
         assert config.pr_tier == GuardianConfig().pr_tier
+
+
+_DEFAULT_SKIP_GLOBS = ["docs/**", "**/*.md"]
+
+
+class TestSkipGlobsDefault:
+    """FIX B: skipGlobs defaults to docs/** and **/*.md when the key is ABSENT,
+    but an explicit value (even []) overrides — absent must be distinguished
+    from present-and-empty (SC-2)."""
+
+    def test_absent_key_falls_back_to_default_globs(self, tmp_path) -> None:
+        # A guardian block that never mentions skipGlobs → default docs/md skip.
+        cfg = tmp_path / "harness.config.json"
+        _write(cfg, {"canary": {"guardian": {"pr": {"gate": "hard"}}}})
+        config, warning = load_guardian_config(cfg)
+        assert warning is None
+        assert config.skip_globs == _DEFAULT_SKIP_GLOBS
+
+    def test_explicit_empty_list_overrides_default(self, tmp_path) -> None:
+        # skipGlobs present as [] means "skip nothing" — honor the empty override.
+        cfg = tmp_path / "harness.config.json"
+        _write(cfg, {"canary": {"guardian": {"skipGlobs": []}}})
+        config, warning = load_guardian_config(cfg)
+        assert warning is None
+        assert config.skip_globs == []
+
+    def test_explicit_globs_used_verbatim(self, tmp_path) -> None:
+        cfg = tmp_path / "harness.config.json"
+        _write(cfg, {"canary": {"guardian": {"skipGlobs": ["build/**"]}}})
+        config, warning = load_guardian_config(cfg)
+        assert warning is None
+        assert config.skip_globs == ["build/**"]
+
+    def test_no_block_uses_default_globs(self, tmp_path) -> None:
+        # No guardian block at all → defaults, which now include the skip globs.
+        cfg = tmp_path / "harness.config.json"
+        _write(cfg, {"something": "else"})
+        config, _ = load_guardian_config(cfg)
+        assert config.skip_globs == _DEFAULT_SKIP_GLOBS
