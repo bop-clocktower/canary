@@ -15,9 +15,10 @@ import json
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from agent.core.config_validation import read_json_with_warning
 from agent.guardian.coverage import ChangedUnit, CoverageResult, Fidelity
 from agent.guardian.impact_mapper import Severity
 
@@ -307,3 +308,71 @@ def render(
         footer += f" - {degraded_notice}"
     lines.append(footer)
     return "\n".join(lines)
+
+
+@dataclass
+class GuardianConfig:
+    """Parsed ``canary.guardian`` config block.
+
+    Phase 1 stores every field but only ``pr_*`` gate/tier drive behavior.
+    ``skip_globs`` and the ``precommit_*``/``coverage_paths`` fields are read
+    into the object (scaffold) for later phases (SC-2 skip, SC-5 tier).
+    """
+
+    pr_enabled: bool = True
+    pr_tier: int = 0
+    pr_gate: str = "soft"
+    precommit_enabled: bool = False
+    precommit_author_tests: bool = True
+    precommit_gate: str = "soft"
+    coverage_paths: list[str] = field(default_factory=list)
+    skip_globs: list[str] = field(default_factory=list)
+
+
+def load_guardian_config(
+    config_path: Path = Path("harness.config.json"),
+) -> tuple[GuardianConfig, str | None]:
+    """Load the ``canary.guardian`` block, distinguishing absent from malformed.
+
+    Uses :func:`read_json_with_warning`. Returns ``(GuardianConfig, warning)``:
+
+      - file absent                    → ``(defaults, None)``  (silent, normal)
+      - malformed JSON                 → ``(defaults, "<warn>")`` (LOUD, SC-8)
+      - valid but no ``canary.guardian`` → ``(defaults, None)``
+      - valid ``canary.guardian``      → ``(parsed, None)``
+    """
+    data, warning = read_json_with_warning(Path(config_path))
+    if warning is not None or not isinstance(data, dict):
+        return GuardianConfig(), warning
+
+    block = data.get("canary", {})
+    block = block.get("guardian", {}) if isinstance(block, dict) else {}
+    if not isinstance(block, dict) or not block:
+        return GuardianConfig(), None
+
+    config = GuardianConfig()
+    pr = block.get("pr", {})
+    if isinstance(pr, dict):
+        config.pr_enabled = bool(pr.get("enabled", config.pr_enabled))
+        config.pr_tier = int(pr.get("tier", config.pr_tier))
+        config.pr_gate = str(pr.get("gate", config.pr_gate))
+
+    precommit = block.get("preCommit", {})
+    if isinstance(precommit, dict):
+        config.precommit_enabled = bool(
+            precommit.get("enabled", config.precommit_enabled)
+        )
+        config.precommit_author_tests = bool(
+            precommit.get("authorTests", config.precommit_author_tests)
+        )
+        config.precommit_gate = str(precommit.get("gate", config.precommit_gate))
+
+    coverage_paths = block.get("coveragePaths")
+    if isinstance(coverage_paths, list):
+        config.coverage_paths = [str(p) for p in coverage_paths]
+
+    skip_globs = block.get("skipGlobs")
+    if isinstance(skip_globs, list):
+        config.skip_globs = [str(g) for g in skip_globs]
+
+    return config, None
