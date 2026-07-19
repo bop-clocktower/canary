@@ -1,0 +1,17 @@
+name: canary-pr-guardian
+version: '1.0.0'
+description:
+  PR/pre-commit test-guardian orchestrator — Tier-0 diff-coverage, Tier-1
+  quality audit via canary-test-reviewer, and at-desk Tier-2 authoring via
+  canary-test-author with stage-and-block-once review.
+stability: static
+triggers:
+  - manual
+platforms:
+  - claude-code
+type: rigid
+tools: []
+tier: 1
+depends_on:
+  - canary-test-reviewer
+  - canary-test-author

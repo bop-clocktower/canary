@@ -1,0 +1,89 @@
+---
+name: canary-pr-guardian
+description: >
+  PR/pre-commit test-guardian orchestrator: runs the deterministic Tier-0
+  diff-coverage pass, audits affected tests via canary-test-reviewer (Tier 1),
+  and — at the desk with authorTests opt-in — authors missing tests via
+  canary-test-author (Tier 2), staging them and blocking the commit once for
+  human review. Use to guard a change's test quality before it lands.
+---
+
+# Canary: PR Guardian
+
+Guards a change's test quality before it lands. Composes the deterministic
+Tier-0 diff-coverage engine with two native agents — `canary-test-reviewer`
+(read-only audit) and `canary-test-author` (authoring) — under a strict
+write-safety model. This is the **Option A** driver: the Python layer never
+calls an LLM; **this skill** invokes the agents in-session and enforces
+stage-and-block-once.
+
+## When to Use
+
+- Before opening or updating a PR, to check that new/changed code is tested.
+- As a pre-commit companion when `preCommit.authorTests: true` is set and you
+  want the guardian to author the missing tests for you (at the desk only).
+- NOT in CI for Tier-2 write-back — that is a NON-GOAL. CI runs Tier-0 only (the
+  `CANARY_GUARDIAN_AGENT` env is unset there).
+
+## Safety model (non-negotiable)
+
+- **NEVER commit or push.** This skill only authors and `git add`s. The human
+  reviews the staged tests and re-commits.
+- **Honor every `skipped` reason** from `author-plan` verbatim (opt-in-off /
+  tier / fork / collision / loop-guard). Never override a skip.
+- **Block once.** When `block.block == true`, print the block message and stop —
+  leave the staged tests for the human. The git hook clears its sentinel on the
+  next commit so the guardian never loops on its own output.
+- **Authoring is opt-in.** No `preCommit.authorTests: true` ⇒ no writes, ever.
+
+## Phases
+
+### Phase 0 — Deterministic scope
+
+Run the Tier-0 pass and read its findings:
+
+```bash
+canary guardian pr-check --format json
+```
+
+Findings are `untested-new-code` gaps. If there are none, report clean and stop.
+
+### Phase 1 — Quality audit (Tier ≥ 1, read-only)
+
+Export the availability signal so the probe reports the ceiling, then audit the
+affected tests with `canary-test-reviewer`:
+
+```bash
+export CANARY_GUARDIAN_AGENT=1   # or 2 when authoring is enabled
+```
+
+Use the `canary-test-reviewer` agent to review the affected tests. This is
+**read-only** — surface weak-test findings; write nothing.
+
+### Phase 2 — Authoring plan (Tier 2 + opt-in)
+
+Ask the Python safety layer for the plan (intents + block decision):
+
+```bash
+canary guardian author-plan --json
+```
+
+The JSON is `{"intents": [...], "block": {...}}`. Each intent carries `status`
+(`planned` | `authored` | `skipped`), `target_path`, `requirement`, and a
+`skip_reason` when skipped. **Do not author anything the plan skipped** — the
+Python guards (opt-in, fork, collision, loop-guard) are authoritative.
+
+### Phase 3 — Author, stage, block once
+
+For each intent with `status: "planned"`, use the `canary-test-author` agent
+with the intent's `requirement` as the task and `target_path` as the
+destination. Then stage the authored files:
+
+```bash
+git add <target_path>
+```
+
+When `block.block == true`, print `block.message` (the "N test(s) authored &
+staged — review and re-commit" notice) and **stop**. Do not commit. The human
+reviews the staged tests and re-commits; the pre-commit hook's sentinel lets
+that re-commit through exactly once.
