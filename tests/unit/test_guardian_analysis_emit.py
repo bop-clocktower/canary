@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
+
+import pytest
 
 from agent.guardian.coverage import Fidelity
 from agent.guardian.impact_mapper import Severity
@@ -18,7 +21,25 @@ from agent.guardian.pr_check import Finding, render
 from agent.guardian.analysis_emit import (
     analysis_filename,
     build_analysis_record,
+    channel_available,
+    emit_analysis,
 )
+
+
+def _write_denied(path: Path) -> bool:
+    """True iff ``chmod(0o555)`` actually denies writes here (not run as root)."""
+    path.mkdir(parents=True, exist_ok=True)
+    path.chmod(0o555)
+    try:
+        probe = path / ".probe"
+        probe.write_text("x", encoding="utf-8")
+    except OSError:
+        return True
+    else:
+        probe.unlink()
+        return False
+    finally:
+        path.chmod(0o755)
 
 
 def _findings() -> list[Finding]:
@@ -143,3 +164,108 @@ class TestFilename:
         name = analysis_filename("a/b\\c:d")
         assert "/" not in name
         assert re.fullmatch(r"[A-Za-z0-9._-]+\.json", name)
+
+
+class TestChannelAvailability:
+    def test_absent_harness_home_is_unavailable(self, tmp_path: Path) -> None:
+        analyses_dir = tmp_path / ".harness" / "analyses"
+        assert channel_available(analyses_dir) is False
+
+    def test_present_harness_home_is_available(self, tmp_path: Path) -> None:
+        (tmp_path / ".harness").mkdir()
+        analyses_dir = tmp_path / ".harness" / "analyses"
+        assert channel_available(analyses_dir) is True
+
+
+class TestEmitWrite:
+    def test_writes_prefixed_record_when_available(self, tmp_path: Path) -> None:
+        (tmp_path / ".harness").mkdir()
+        analyses_dir = tmp_path / ".harness" / "analyses"
+        res = emit_analysis(
+            _findings(),
+            analyses_dir=analyses_dir,
+            ref="pr-3",
+            gate="soft",
+            effective_tier=0,
+            degraded_notice=None,
+            exit_code=0,
+        )
+        assert res.action == "emitted"
+        assert res.notice is None
+        expected = analyses_dir / "canary-pr-guardian-pr-3.json"
+        assert Path(res.path) == expected
+        assert expected.is_file()
+
+
+class TestRoundTrip:
+    def test_stub_consumer_reads_documented_fields(self, tmp_path: Path) -> None:
+        (tmp_path / ".harness").mkdir()
+        analyses_dir = tmp_path / ".harness" / "analyses"
+        findings = _findings()
+        res = emit_analysis(
+            findings,
+            analyses_dir=analyses_dir,
+            ref="pr-3",
+            gate="soft",
+            effective_tier=0,
+            degraded_notice=None,
+            exit_code=0,
+        )
+        # A future harness consumer just json.loads and reads every field.
+        record = json.loads(Path(res.path).read_text(encoding="utf-8"))
+        assert record["schemaVersion"] == "1.0"
+        assert record["source"] == "canary-pr-guardian"
+        assert record["ref"] == "pr-3"
+        assert record["gate"] == "soft"
+        assert record["exitCode"] == 0
+        assert "summary" in record
+        assert "analyzedAt" in record
+        assert record["findings"] == json.loads(
+            render(findings, fmt="json", tier=0)
+        )["findings"]
+
+
+class TestEmitFallback:
+    def test_absent_channel_returns_loud_notice_and_writes_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        # No tmp/.harness → channel unavailable.
+        analyses_dir = tmp_path / ".harness" / "analyses"
+        res = emit_analysis(
+            _findings(),
+            analyses_dir=analyses_dir,
+            ref="pr-3",
+            gate="soft",
+            effective_tier=0,
+            degraded_notice=None,
+            exit_code=0,
+        )
+        assert res.action == "unavailable"
+        assert res.path is None
+        assert "unavailable" in res.notice
+        assert "sticky comment" in res.notice
+        # Nothing written anywhere under tmp_path.
+        assert not any(p.is_file() for p in tmp_path.rglob("*"))
+
+    def test_write_error_returns_loud_notice(self, tmp_path: Path) -> None:
+        harness_home = tmp_path / ".harness"
+        if not _write_denied(harness_home):
+            pytest.skip("chmod does not deny writes here (running as root?)")
+        analyses_dir = harness_home / "analyses"
+        try:
+            harness_home.chmod(0o555)
+            res = emit_analysis(
+                _findings(),
+                analyses_dir=analyses_dir,
+                ref="pr-3",
+                gate="soft",
+                effective_tier=0,
+                degraded_notice=None,
+                exit_code=0,
+            )
+        finally:
+            harness_home.chmod(0o755)
+        assert res.action == "unavailable"
+        assert res.path is None
+        assert "write failed" in res.notice
+        assert "sticky comment" in res.notice

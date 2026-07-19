@@ -23,7 +23,9 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 from agent.guardian.pr_check import Finding, render  # intra-guardian, agent-free
 
@@ -81,3 +83,73 @@ def build_analysis_record(
         "findings": inner["findings"],
         "analyzedAt": analyzed_at or datetime.now(timezone.utc).isoformat(),
     }
+
+
+@dataclass(frozen=True)
+class EmitResult:
+    """Outcome of an emit attempt.
+
+    ``action`` is ``'emitted'`` | ``'unavailable'``. ``path`` is the written file
+    (``None`` when unavailable); ``notice`` is the LOUD fallback message, set only
+    when unavailable (the CLI turns it into the SC-10 sticky-comment fallback).
+    """
+
+    action: str
+    path: str | None
+    notice: str | None = None
+
+
+def channel_available(analyses_dir: Path) -> bool:
+    """True iff the harness home (``analyses_dir.parent``, i.e. ``.harness/``) exists.
+
+    The analyses dir itself is created on demand by :func:`emit_analysis`
+    (mirroring harness ``AnalysisArchive.save``'s recursive ``mkdir``).
+    """
+    return analyses_dir.parent.is_dir()
+
+
+def emit_analysis(
+    findings: list[Finding],
+    *,
+    analyses_dir: Path,
+    ref: str,
+    gate: str,
+    effective_tier: int,
+    degraded_notice: str | None,
+    exit_code: int,
+    analyzed_at: str | None = None,
+) -> EmitResult:
+    """Write one record to ``analyses_dir/<filename>``.
+
+    On an absent channel or an ``OSError`` (read-only FS, permission), return an
+    ``'unavailable'`` :class:`EmitResult` carrying a loud notice — never silently
+    drop the record (SC-10 fallback).
+    """
+    if not channel_available(analyses_dir):
+        return EmitResult(
+            "unavailable",
+            None,
+            notice="guardian: harness analyses channel unavailable "
+            "(.harness/ absent) — falling back to the sticky comment",
+        )
+    record = build_analysis_record(
+        findings,
+        ref=ref,
+        gate=gate,
+        effective_tier=effective_tier,
+        degraded_notice=degraded_notice,
+        exit_code=exit_code,
+        analyzed_at=analyzed_at,
+    )
+    target = analyses_dir / analysis_filename(ref)
+    try:
+        analyses_dir.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    except OSError as exc:
+        return EmitResult(
+            "unavailable",
+            None,
+            notice=f"guardian: analyses write failed ({exc}) — "
+            "falling back to the sticky comment",
+        )
+    return EmitResult("emitted", str(target), None)
