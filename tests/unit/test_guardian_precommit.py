@@ -14,6 +14,7 @@ and prints the LOUD degradation notice in its text report.
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -184,6 +185,64 @@ class TestInstall:
         assert content.startswith("#!/bin/sh\n")
         assert guardian_precommit.GUARDIAN_MARKER in content
         assert (hook.stat().st_mode & 0o777) == 0o755
+
+
+class TestChainExitCode:
+    """C1 — chaining onto an existing hook must PRESERVE a prior command's
+    non-zero exit (e.g. check-proprietary blocking) instead of masking it with
+    the guardian's soft-gate 0. These EXECUTE the assembled script with ``sh``.
+
+    ``_guarded_line(cmd)`` is the exact builder ``install()`` uses; substituting a
+    deterministic ``exit N`` stub for the guardian ``python3`` invocation lets us
+    prove the guard behaviorally (a guardian crash can't masquerade as the block).
+    """
+
+    def test_assembled_script_exits_nonzero_when_prior_blocks(
+        self, tmp_path: Path
+    ) -> None:
+        # Script assembled exactly as install() produces it: shebang, a STUB
+        # prior command that BLOCKS (exit 1, like check-proprietary) WITHOUT
+        # calling `exit`, then the guard-wrapped guardian line. Guardian is a
+        # soft-gate-0 stub — so WITHOUT the guard the block would be masked to 0;
+        # WITH it the hook must still exit non-zero.
+        hook = tmp_path / ".git" / "hooks" / "pre-commit"
+        hook.parent.mkdir(parents=True)
+        hook.write_text(
+            "#!/bin/sh\nfalse\n" + guardian_precommit._guarded_line("exit 0"),
+            encoding="utf-8",
+        )
+        result = subprocess.run(["sh", str(hook)])
+        assert result.returncode != 0  # prior block preserved, guardian short-circuited
+
+    def test_chain_propagates_guardian_failure_when_prior_ok(
+        self, tmp_path: Path
+    ) -> None:
+        hook = tmp_path / "pre-commit"
+        hook.write_text(
+            "#!/bin/sh\ntrue\n" + guardian_precommit._guarded_line("exit 3"),
+            encoding="utf-8",
+        )
+        result = subprocess.run(["sh", str(hook)])
+        assert result.returncode == 3  # guardian's own (hard-gate) exit propagates
+
+    def test_chain_passes_when_prior_ok_and_guardian_ok(self, tmp_path: Path) -> None:
+        hook = tmp_path / "pre-commit"
+        hook.write_text(
+            "#!/bin/sh\ntrue\n" + guardian_precommit._guarded_line("exit 0"),
+            encoding="utf-8",
+        )
+        result = subprocess.run(["sh", str(hook)])
+        assert result.returncode == 0
+
+    def test_install_output_short_circuits_prior_block(self, tmp_path: Path) -> None:
+        # End-to-end via the real install(): the guard fires on the prior block
+        # so the real guardian python line is never reached.
+        hook = tmp_path / ".git" / "hooks" / "pre-commit"
+        hook.parent.mkdir(parents=True)
+        hook.write_text("#!/bin/sh\nfalse\n", encoding="utf-8")
+        guardian_precommit.install(repo_root=tmp_path)
+        result = subprocess.run(["sh", str(hook)])
+        assert result.returncode != 0
 
 
 class TestStagedDiff:

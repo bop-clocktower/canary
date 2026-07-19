@@ -27,6 +27,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 GUARDIAN_MARKER = "# canary-guardian-precommit"
 
+# Preserve any prior hook's failure: in POSIX `sh` with no `set -e`, a chained
+# script exits with its LAST command's status, so a soft-gate-0 guardian would
+# MASK a preceding block (e.g. check-proprietary exiting 1). This guard captures
+# the immediately-preceding command's exit and short-circuits with it before the
+# guardian runs, so the guardian's exit only governs when nothing blocked first.
+_PREV_EXIT_GUARD = '__canary_prev=$?; [ "$__canary_prev" = 0 ] || exit "$__canary_prev"; '
+
+
+def _guarded_line(command: str) -> str:
+    """Build a marker-tagged, exit-preserving pre-commit line for ``command``."""
+    return f"{_PREV_EXIT_GUARD}{command}  {GUARDIAN_MARKER}\n"
+
 
 def requested_tier(config) -> int:
     """Map config to a requested tier.
@@ -135,7 +147,7 @@ def install(repo_root: Path | None = None) -> None:
     """
     root = repo_root or REPO_ROOT
     hook = root / ".git" / "hooks" / "pre-commit"
-    line = f'python3 "{Path(__file__).resolve()}" run  {GUARDIAN_MARKER}\n'
+    line = _guarded_line(f'python3 "{Path(__file__).resolve()}" run')
     if hook.is_file():
         existing = hook.read_text(encoding="utf-8")
         if GUARDIAN_MARKER in existing:
