@@ -607,6 +607,12 @@ _DEFAULT_SKIP_GLOBS = (
     "build/**",
     "**/*.min.js",
     "**/*.snap",
+    # Generated slash-command artifacts and harness state — regenerated from a
+    # tracked source (skill.yaml / graph scans), never hand-authored, so a
+    # covering test makes no sense. The guardian flagged its own generated
+    # command files as noise on its dogfood PR #325.
+    "agents/commands/**",
+    ".harness/**",
 )
 
 

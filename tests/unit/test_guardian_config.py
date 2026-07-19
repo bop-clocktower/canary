@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import json
 
-from agent.guardian.pr_check import GuardianConfig, load_guardian_config
+from agent.guardian.pr_check import (
+    ChangedUnit,
+    GuardianConfig,
+    filter_skipped,
+    load_guardian_config,
+)
 
 
 def _write(path, obj) -> None:
@@ -126,6 +131,10 @@ _DEFAULT_SKIP_GLOBS = [
     "build/**",
     "**/*.min.js",
     "**/*.snap",
+    # Generated slash-command artifacts + harness state — not authored source
+    # (the guardian flagged its own generated commands as noise on PR #325).
+    "agents/commands/**",
+    ".harness/**",
 ]
 
 
@@ -163,3 +172,26 @@ class TestSkipGlobsDefault:
         _write(cfg, {"something": "else"})
         config, _ = load_guardian_config(cfg)
         assert config.skip_globs == _DEFAULT_SKIP_GLOBS
+
+    def test_generated_command_artifact_skipped_by_default(self, tmp_path) -> None:
+        # PR #325: a diff touching only a generated slash-command artifact must
+        # be skipped by the DEFAULT skip set (no finding), the same way lockfiles
+        # and build output are — these are regenerated, not authored source.
+        config = GuardianConfig()
+        unit = ChangedUnit(
+            path="agents/commands/gemini-cli/harness/canary-pr-guardian.toml",
+            added_ranges=[(1, 5)],
+        )
+        kept, skipped = filter_skipped([unit], config.skip_globs)
+        assert kept == []
+        assert [u.path for u in skipped] == [unit.path]
+
+    def test_harness_state_skipped_by_default(self, tmp_path) -> None:
+        # Generated harness state under .harness/ is non-source and must default-skip.
+        config = GuardianConfig()
+        unit = ChangedUnit(
+            path=".harness/skills-index.json", added_ranges=[(1, 3)]
+        )
+        kept, skipped = filter_skipped([unit], config.skip_globs)
+        assert kept == []
+        assert [u.path for u in skipped] == [unit.path]
