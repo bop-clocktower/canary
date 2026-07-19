@@ -14,8 +14,10 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 
-from agent.guardian.coverage import ChangedUnit
+from agent.guardian.coverage import ChangedUnit, CoverageResult, Fidelity
+from agent.guardian.impact_mapper import Severity
 
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
@@ -112,3 +114,56 @@ def read_diff(source: str | None) -> str:
     return subprocess.run(
         ["git", "diff", "--staged"], capture_output=True, text=True, check=False
     ).stdout
+
+
+@dataclass
+class Finding:
+    """A single guardian finding about a changed unit.
+
+    Phase 1 emits only ``untested-new-code`` findings (``weak-test`` is a Tier 1+
+    concern). ``severity`` reuses :class:`agent.guardian.impact_mapper.Severity`;
+    ``fidelity`` carries the confidence tier from the underlying coverage signal.
+    """
+
+    path: str
+    unit: str
+    kind: str = "untested-new-code"
+    fidelity: Fidelity = Fidelity.HEURISTIC
+    severity: Severity = Severity.HIGH
+    evidence: str = ""
+    suggestion: str = ""
+    suppressed: bool = False
+    suppression_reason: str | None = None
+
+
+def build_findings(results: list[CoverageResult]) -> list[Finding]:
+    """Turn uncovered coverage results into fidelity-labeled findings.
+
+    Only **uncovered** results become findings. Severity policy (Phase 1):
+
+      - ``COVERAGE_VERIFIED`` uncovered → ``HIGH``
+      - ``GRAPH_VERIFIED`` uncovered    → ``HIGH``
+      - ``HEURISTIC`` uncovered         → ``MEDIUM`` (lower confidence)
+
+    Results are sorted by :attr:`Severity.sort_key` (critical → low).
+    """
+    findings: list[Finding] = []
+    for result in results:
+        if result.covered:
+            continue
+        severity = (
+            Severity.MEDIUM
+            if result.fidelity is Fidelity.HEURISTIC
+            else Severity.HIGH
+        )
+        unit = result.unit
+        findings.append(
+            Finding(
+                path=unit.path,
+                unit=unit.symbol or unit.path,
+                fidelity=result.fidelity,
+                severity=severity,
+                evidence=result.evidence,
+            )
+        )
+    return sorted(findings, key=lambda f: f.severity.sort_key)

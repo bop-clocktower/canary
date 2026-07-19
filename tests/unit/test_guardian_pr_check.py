@@ -6,8 +6,9 @@ codes, renderers, and the CLI wiring.
 
 from __future__ import annotations
 
-from agent.guardian.coverage import ChangedUnit
-from agent.guardian.pr_check import scope_diff
+from agent.guardian.coverage import ChangedUnit, CoverageResult, Fidelity
+from agent.guardian.impact_mapper import Severity
+from agent.guardian.pr_check import Finding, build_findings, scope_diff
 
 
 DIFF_TWO_FILES = """\
@@ -92,3 +93,50 @@ class TestScopeDiff:
 
     def test_empty_diff(self) -> None:
         assert scope_diff("") == []
+
+
+def _result(covered: bool, fidelity: Fidelity, path: str = "pkg/foo.py",
+            evidence: str = "ev") -> CoverageResult:
+    return CoverageResult(
+        unit=ChangedUnit(path=path, added_ranges=[(1, 3)]),
+        covered=covered,
+        fidelity=fidelity,
+        evidence=evidence,
+    )
+
+
+class TestBuildFindings:
+    def test_covered_result_yields_no_finding(self) -> None:
+        results = [_result(True, Fidelity.COVERAGE_VERIFIED)]
+        assert build_findings(results) == []
+
+    def test_uncovered_heuristic_is_medium(self) -> None:
+        findings = build_findings([_result(False, Fidelity.HEURISTIC)])
+        assert len(findings) == 1
+        assert findings[0].severity is Severity.MEDIUM
+        assert findings[0].fidelity is Fidelity.HEURISTIC
+        assert findings[0].kind == "untested-new-code"
+
+    def test_uncovered_graph_is_high(self) -> None:
+        findings = build_findings([_result(False, Fidelity.GRAPH_VERIFIED)])
+        assert findings[0].severity is Severity.HIGH
+
+    def test_uncovered_report_is_high(self) -> None:
+        findings = build_findings([_result(False, Fidelity.COVERAGE_VERIFIED)])
+        assert findings[0].severity is Severity.HIGH
+
+    def test_findings_sorted_critical_to_low(self) -> None:
+        results = [
+            _result(False, Fidelity.HEURISTIC, path="a.py"),        # MEDIUM
+            _result(False, Fidelity.GRAPH_VERIFIED, path="b.py"),   # HIGH
+        ]
+        findings = build_findings(results)
+        assert [f.severity for f in findings] == [Severity.HIGH, Severity.MEDIUM]
+
+    def test_evidence_and_path_propagated(self) -> None:
+        results = [_result(False, Fidelity.GRAPH_VERIFIED, path="pkg/bar.py",
+                           evidence="no test reaches pkg/bar.py")]
+        finding = build_findings(results)[0]
+        assert finding.path == "pkg/bar.py"
+        assert finding.evidence == "no test reaches pkg/bar.py"
+        assert isinstance(finding, Finding)
