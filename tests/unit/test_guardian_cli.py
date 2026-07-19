@@ -1,4 +1,4 @@
-"""Unit tests for `canary guardian analyze --emit-diff`."""
+"""Unit tests for `canary guardian analyze --emit-diff` and `pr-check` wiring."""
 
 from __future__ import annotations
 
@@ -6,9 +6,53 @@ import json
 
 from typer.testing import CliRunner
 
+from agent.guardian import cli as guardian_cli
 from agent.guardian.cli import guardian_app
+from agent.guardian.pr_comment import STICKY_MARKER, FakeGitHubClient
 
 runner = CliRunner()
+
+DIFF_NEW_UNIT = """\
+diff --git a/pkg/widget.py b/pkg/widget.py
+index 1111111..2222222 100644
+--- a/pkg/widget.py
++++ b/pkg/widget.py
+@@ -0,0 +1,3 @@
++def widget():
++    return 42
++
+"""
+
+DIFF_DOCS_ONLY = """\
+diff --git a/docs/x.md b/docs/x.md
+index 1111111..2222222 100644
+--- a/docs/x.md
++++ b/docs/x.md
+@@ -0,0 +1,2 @@
++# Heading
++prose
+"""
+
+# A diff that adds BOTH a production unit and its test file. The test file must
+# NOT become an "untested new code" finding — a test does not need a test.
+DIFF_SRC_AND_TEST = """\
+diff --git a/agent/core/foo.py b/agent/core/foo.py
+index 1111111..2222222 100644
+--- a/agent/core/foo.py
++++ b/agent/core/foo.py
+@@ -0,0 +1,3 @@
++def foo():
++    return 1
++
+diff --git a/tests/unit/test_foo.py b/tests/unit/test_foo.py
+index 3333333..4444444 100644
+--- a/tests/unit/test_foo.py
++++ b/tests/unit/test_foo.py
+@@ -0,0 +1,3 @@
++def test_foo():
++    assert foo() == 1
++
+"""
 
 _BEFORE = {"openapi": "3.0.0", "paths": {"/members": {"get": {"operationId": "list"}}}}
 _AFTER = {
@@ -55,3 +99,150 @@ def test_without_emit_diff_no_file_written(tmp_path):
     )
     assert res.exit_code == 0
     assert not out.exists()
+
+
+def _write_config(tmp_path, guardian_block: dict) -> str:
+    path = tmp_path / "harness.config.json"
+    path.write_text(json.dumps({"canary": {"guardian": guardian_block}}), encoding="utf-8")
+    return str(path)
+
+
+class TestPrContextFromEnv:
+    """`_pr_context_from_env` resolves (repo, pr) from Actions env, else None."""
+
+    def test_resolves_repo_and_pr_from_ref(self, monkeypatch) -> None:
+        monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+        monkeypatch.setenv("GITHUB_REF", "refs/pull/7/merge")
+        monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+        assert guardian_cli._pr_context_from_env() == ("o/r", 7)
+
+    def test_returns_none_when_unset(self, monkeypatch) -> None:
+        monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+        monkeypatch.delenv("GITHUB_REF", raising=False)
+        monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+        assert guardian_cli._pr_context_from_env() is None
+
+    def test_event_path_fallback_for_pr_number(self, monkeypatch, tmp_path) -> None:
+        event = tmp_path / "event.json"
+        event.write_text(json.dumps({"pull_request": {"number": 42}}), encoding="utf-8")
+        monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+        monkeypatch.setenv("GITHUB_REF", "refs/heads/main")  # unparseable for PR
+        monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+        assert guardian_cli._pr_context_from_env() == ("o/r", 42)
+
+
+class TestPrCheckPost:
+    """SC-1/SC-2/OT-4/OT-5: `--post-comment` pipeline (network-free)."""
+
+    runner = CliRunner()
+
+    def _use_env(self, monkeypatch) -> None:
+        monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+        monkeypatch.setenv("GITHUB_REF", "refs/pull/7/merge")
+        monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+
+    def test_post_creates_single_sticky_comment(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        self._use_env(monkeypatch)
+        fake = FakeGitHubClient()
+        monkeypatch.setattr(guardian_cli, "_build_client", lambda *_: fake)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--post-comment"],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0  # soft gate default
+        marked = [c for c in fake.list_comments() if STICKY_MARKER in c["body"]]
+        assert len(marked) == 1  # SC-1 post path
+
+    def test_docs_only_skips_and_posts_nothing(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        self._use_env(monkeypatch)
+        fake = FakeGitHubClient()
+        monkeypatch.setattr(guardian_cli, "_build_client", lambda *_: fake)
+        cfg = _write_config(tmp_path, {"skipGlobs": ["docs/**"]})
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--config", cfg, "--post-comment"],
+            input=DIFF_DOCS_ONLY,
+        )
+        assert result.exit_code == 0
+        assert "nothing to verify" in result.stdout
+        assert fake.list_comments() == []  # SC-2: no comment
+
+    def test_test_files_never_become_findings(self, tmp_path, monkeypatch) -> None:
+        # FIX A: a diff adding both agent/core/foo.py (untested) and its test
+        # tests/unit/test_foo.py must yield a finding ONLY for foo.py — the test
+        # file is a test-path unit and must be dropped before findings build.
+        (tmp_path / "agent" / "core").mkdir(parents=True)
+        (tmp_path / "agent" / "core" / "foo.py").write_text(
+            "def foo():\n    return 1\n", encoding="utf-8"
+        )
+        monkeypatch.chdir(tmp_path)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--format", "json", "--gate", "soft"],
+            input=DIFF_SRC_AND_TEST,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        paths = {f["path"] for f in data["findings"]}
+        assert "agent/core/foo.py" in paths  # production unit still flagged
+        assert "tests/unit/test_foo.py" not in paths  # test file dropped
+
+    def test_docs_only_skips_by_default(self, tmp_path, monkeypatch) -> None:
+        # FIX B: with no config (or no skipGlobs key) a docs/markdown-only diff
+        # skips by default — the guardian no longer flags SKILLS.md-style paths.
+        monkeypatch.chdir(tmp_path)
+        self._use_env(monkeypatch)
+        fake = FakeGitHubClient()
+        monkeypatch.setattr(guardian_cli, "_build_client", lambda *_: fake)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--post-comment"],
+            input=DIFF_DOCS_ONLY,
+        )
+        assert result.exit_code == 0
+        assert "nothing to verify" in result.stdout
+        assert fake.list_comments() == []  # no finding posted
+
+    def test_pr_disabled_skips_surface(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        self._use_env(monkeypatch)
+        fake = FakeGitHubClient()
+        monkeypatch.setattr(guardian_cli, "_build_client", lambda *_: fake)
+        cfg = _write_config(tmp_path, {"pr": {"enabled": False}})
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--config", cfg, "--post-comment"],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        assert "skipping PR surface" in result.stdout
+        assert fake.list_comments() == []  # OT-5
+
+    def test_read_only_token_degrades_to_warning(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        self._use_env(monkeypatch)
+        fake = FakeGitHubClient(deny_writes=True)
+        monkeypatch.setattr(guardian_cli, "_build_client", lambda *_: fake)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--post-comment"],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0  # OT-4: no crash
+        assert "::warning::" in result.stdout
+
+    def test_no_pr_context_prints_instead(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+        monkeypatch.delenv("GITHUB_REF", raising=False)
+        monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--post-comment"],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        assert STICKY_MARKER in result.stdout  # printed the comment body

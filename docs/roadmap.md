@@ -4,7 +4,7 @@ version: 1
 created: 2026-05-11
 updated: 2026-06-29
 last_synced: 2026-06-29
-last_manual_edit: 2026-07-16T05:54:59.642Z
+last_manual_edit: 2026-07-19T00:34:19.864Z
 ---
 
 # Roadmap
@@ -13,8 +13,6 @@ last_manual_edit: 2026-07-16T05:54:59.642Z
 <!-- Machine-managed by harness roadmap tooling: each feature field is a single
      line by schema contract, so the 80-column line-length rule does not apply.
      Completed work lives in docs/roadmap-archive.md (run: harness roadmap groom). -->
-
-> **Roles:** This roadmap (harness-owned) is authoritative for _forward-looking_ work — planned, in-progress, and blocked features, their specs and blockers. For _backward-looking_ activity (a one-line log of what canary skills have run), see [docs/CANARY_STATE.md](CANARY_STATE.md). The two are cross-referenced, not merged; see the [Harness + Canary Integration Guide](guides/harness-canary-integration.md) for how they relate.
 
 ## Maintenance and Public Readiness
 
@@ -61,3 +59,13 @@ last_manual_edit: 2026-07-16T05:54:59.642Z
 - **Summary:** DONE — shipped as the bundled executable skill `canary-instrument` at `agents/skills/claude-code/canary-instrument/`. Instruments a Playwright run with OpenTelemetry and emits a `run.json` v1 artifact correlating each test to the outbound HTTP requests it made, via OTel span parent/child relationships — no manual bookkeeping in test code. Trace-only v1 (Playwright/Node only; a coverage block and a canary_run_id field were scoped out, YAGNI — never implemented, so neither exists in code today); contract left additive-safe for future pytest/k6/node producers. Default file-based span export needs no OTel collector; opt-in OTLP via the existing `otel_exporter_endpoint` company-knowledge field. Fully de-id'd (dedicated test scans `.py/.md/.mjs/.ts`). 23 dedicated tests. Last item in the "Overlay Upstreaming" milestone — all three items now shipped. [Note: the cut field names above are intentionally left unbackticked so the drift-tracking row does not itself register as drift.] (refs: docs/changes/canary-instrument/, docs/adr/0006-otel-test-side-tracing.md, PR #265)
 - **Blockers:** —
 - **Plan:** docs/changes/canary-instrument/plans/2026-07-15-canary-instrument-plan.md
+
+## Intake
+
+### canary-pr-guardian
+
+- **Status:** planned
+- **Spec:** docs/changes/canary-pr-guardian/proposal.md
+- **Summary:** canary-pr-guardian — PR test-guardian skill
+- **Blockers:** —
+- **Plan:** —

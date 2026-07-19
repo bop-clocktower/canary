@@ -1,0 +1,35 @@
+name: PR Guardian
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: write # commenting; fork PRs get read-only → poster degrades
+concurrency:
+  group: guardian-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  guardian:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install canary
+        run: pip install -e .
+      # OPTIONAL (commented): lift fidelity to graph-verified where harness is present.
+      #   Baseline is heuristic on stock CI (graph.json is gitignored). See plan Assumptions.
+      # - run: npx --yes -p @harness-engineering/cli harness graph
+      - name: Compute PR diff
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin "$BASE"
+          git diff "origin/${BASE}...HEAD" > pr.diff
+      - name: Guardian pr-check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          canary guardian pr-check --diff pr.diff --post-comment
