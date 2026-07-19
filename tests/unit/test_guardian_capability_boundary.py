@@ -126,3 +126,45 @@ def test_no_mcp_tool_references(module_path: Path) -> None:
             f"{module_path.name} references MCP tool '{ref}' in code — SC-11 "
             f"boundary breach (deterministic engine must not reach the agent tier)"
         )
+
+
+# --- Phase 4: the ONE allowed orchestration module must itself stay LLM-free. --
+#
+# `agent_tier.py` is deliberately NOT in `_MODULES` (the Tier-0 boundary set) — it
+# is the one place agent orchestration is permitted. But under Option A even IT
+# must import no LLM SDK: it reaches agents only through the injected
+# `AgentInvoker` port. These two tests pin both halves of SC-11.
+#
+# RED proof (TDD), performed during T6:
+#   1. Add a throwaway `import anthropic` to the top of `agent_tier.py`, run this
+#      file, watch `test_agent_tier_imports_no_llm_sdk` fail; remove it → green.
+#   2. Add a throwaway `from agent.guardian import agent_tier` to
+#      `hooks/guardian_precommit.py`, run this file, watch
+#      `test_engine_still_excludes_agent_tier` (and the parametrized
+#      `_is_agent_tier_token` scan in `test_no_forbidden_imports`) fail; remove
+#      it → green.
+_AGENT_TIER = _REPO_ROOT / "agent" / "guardian" / "agent_tier.py"
+_LLM_SDK_DENYLIST = ("anthropic", "openai", "google.generativeai", "agent.llm")
+
+
+def test_agent_tier_imports_no_llm_sdk() -> None:
+    """agent_tier.py MAY define/reference the AgentInvoker port but must not
+    import an LLM SDK directly (Option A: the SKILL/host session drives agents)."""
+    tree = ast.parse(_AGENT_TIER.read_text(encoding="utf-8"))
+    tokens = {t.lower() for t in _import_tokens(tree)}
+    for token in tokens:
+        for banned in _LLM_SDK_DENYLIST:
+            assert banned not in token, (
+                f"agent_tier.py imports LLM SDK '{token}' — Option A boundary breach"
+            )
+
+
+def test_engine_still_excludes_agent_tier() -> None:
+    """The Tier-0 modules must not import agent_tier (belt-and-braces over the
+    parametrized denylist)."""
+    for module_path in _MODULES:
+        tree = ast.parse(module_path.read_text(encoding="utf-8"))
+        tokens = {t.lower() for t in _import_tokens(tree)}
+        assert not any("agent_tier" in t for t in tokens), (
+            f"{module_path.name} imports agent_tier — SC-11 breach"
+        )
