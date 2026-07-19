@@ -14,6 +14,7 @@ from agent.guardian.pr_comment import (
     GitHubPermissionError,
     STICKY_MARKER,
     UpsertResult,
+    degradation_annotation,
     find_sticky,
     upsert_sticky_comment,
 )
@@ -101,3 +102,34 @@ class TestUpsert:
         assert result.action == "created"
         assert result.comment_id == 5
         assert result.notice is None
+
+
+class TestDegradation:
+    """OT-4 / SC-1+D6: a read-only token degrades loudly — never crashes."""
+
+    def test_create_path_degrades_without_raising(self) -> None:
+        client = FakeGitHubClient(deny_writes=True)
+        result = upsert_sticky_comment(client, _marked("body"))
+        assert result.action == "degraded"
+        assert result.comment_id is None
+        assert result.notice
+
+    def test_update_path_degrades_without_raising(self) -> None:
+        # Seed one existing marked comment so the update branch is taken.
+        client = FakeGitHubClient(
+            comments=[{"id": 1, "body": _marked("old")}], deny_writes=True
+        )
+        result = upsert_sticky_comment(client, _marked("new"))
+        assert result.action == "degraded"
+        assert result.comment_id is None
+        assert result.notice
+
+    def test_permission_error_is_not_propagated(self) -> None:
+        client = FakeGitHubClient(deny_writes=True)
+        try:
+            upsert_sticky_comment(client, _marked("body"))
+        except GitHubPermissionError:  # pragma: no cover - must not happen
+            pytest.fail("upsert must swallow GitHubPermissionError (OT-4)")
+
+    def test_degradation_annotation_format(self) -> None:
+        assert degradation_annotation("x") == "::warning::x"

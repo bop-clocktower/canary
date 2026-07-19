@@ -120,11 +120,28 @@ def upsert_sticky_comment(
     degradation is layered on in T4.)
     """
     existing = find_sticky(client.list_comments(), marker)
-    if existing is not None:
-        updated = client.update_comment(existing["id"], body)
-        return UpsertResult(action="updated", comment_id=updated["id"])
-    created = client.create_comment(body)
-    return UpsertResult(action="created", comment_id=created["id"])
+    try:
+        if existing is not None:
+            updated = client.update_comment(existing["id"], body)
+            return UpsertResult(action="updated", comment_id=updated["id"])
+        created = client.create_comment(body)
+        return UpsertResult(action="created", comment_id=created["id"])
+    except GitHubPermissionError:
+        # OT-4 / SC-1+D6: a read-only token (fork PR?) must degrade loudly, not
+        # crash the job. The caller emits `notice` as a `::warning::` annotation.
+        return UpsertResult(
+            action="degraded",
+            comment_id=None,
+            notice=(
+                "guardian: read-only token (fork PR?) — findings not posted as "
+                "a comment"
+            ),
+        )
+
+
+def degradation_annotation(notice: str) -> str:
+    """Return a GitHub Actions ``::warning::`` annotation line for ``notice``."""
+    return f"::warning::{notice}"
 
 
 class _RestGitHubClient:
