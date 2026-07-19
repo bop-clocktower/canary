@@ -17,11 +17,14 @@ import pytest
 
 from agent.guardian.agent_tier import (
     AgentInvoker,
+    AuthoringContext,
     GeneratedTest,
     InSessionAgentProbe,
     InSessionAgentTier,
     RecordingInvoker,
     ReviewRequest,
+    _target_test_path,
+    plan_authoring,
 )
 from agent.guardian.impact_mapper import Severity
 from agent.guardian.pr_check import Finding
@@ -176,3 +179,85 @@ class TestInSessionAgentProbe:
     ) -> None:
         monkeypatch.setenv("CANARY_GUARDIAN_AGENT", garbage)
         assert InSessionAgentProbe().available_tier() == 0
+
+
+class TestPlanAuthoring:
+    """T4 / D4: the four safety guards, pure — writes nothing, emits intents or
+    skip-records with a reason. ``repo_root`` is ``tmp_path`` so collision checks
+    hit real (test-owned) disk without touching the repo."""
+
+    def _ok_ctx(self, tmp_path: Path) -> AuthoringContext:
+        """Opt-in on, tier 2, not fork, no sentinel — the authorable context."""
+        return AuthoringContext(
+            author_tests_optin=True,
+            effective_tier=2,
+            is_fork=False,
+            repo_root=tmp_path,
+            authored_sentinel_present=False,
+        )
+
+    def test_guard_d_opt_in_off_skips_all(self, tmp_path: Path) -> None:
+        ctx = AuthoringContext(
+            author_tests_optin=False, effective_tier=2, repo_root=tmp_path
+        )
+        results = plan_authoring([_finding()], ctx)
+        assert [r.status for r in results] == ["skipped"]
+        assert "opt-in" in (results[0].skip_reason or "")
+
+    def test_guard_d_tier_below_two_skips(self, tmp_path: Path) -> None:
+        ctx = AuthoringContext(
+            author_tests_optin=True, effective_tier=1, repo_root=tmp_path
+        )
+        results = plan_authoring([_finding()], ctx)
+        assert results[0].status == "skipped"
+        assert "tier" in (results[0].skip_reason or "")
+
+    def test_guard_b_fork_skips_all(self, tmp_path: Path) -> None:
+        ctx = AuthoringContext(
+            author_tests_optin=True,
+            effective_tier=2,
+            is_fork=True,
+            repo_root=tmp_path,
+        )
+        results = plan_authoring([_finding()], ctx)
+        assert all(r.status == "skipped" for r in results)
+        assert "fork" in (results[0].skip_reason or "")
+
+    def test_guard_a_sentinel_skips_all(self, tmp_path: Path) -> None:
+        ctx = AuthoringContext(
+            author_tests_optin=True,
+            effective_tier=2,
+            repo_root=tmp_path,
+            authored_sentinel_present=True,
+        )
+        results = plan_authoring([_finding()], ctx)
+        assert all(r.status == "skipped" for r in results)
+        assert "already authored" in (results[0].skip_reason or "")
+
+    def test_guard_c_collision_when_target_exists(self, tmp_path: Path) -> None:
+        gap = _finding(path="src/foo.py", unit="foo")
+        target = tmp_path / _target_test_path(gap)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("# pre-existing test from another PR\n", encoding="utf-8")
+        results = plan_authoring([gap], self._ok_ctx(tmp_path))
+        assert results[0].status == "skipped"
+        assert "collision" in (results[0].skip_reason or "") or "exists" in (
+            results[0].skip_reason or ""
+        )
+
+    def test_happy_path_emits_one_planned_intent_per_gap(
+        self, tmp_path: Path
+    ) -> None:
+        before = set(tmp_path.rglob("*"))
+        gaps = [
+            _finding(path="src/foo.py", unit="foo"),
+            _finding(path="src/bar.py", unit="bar"),
+        ]
+        results = plan_authoring(gaps, self._ok_ctx(tmp_path))
+        assert [r.status for r in results] == ["planned", "planned"]
+        for r in results:
+            assert r.requirement.strip()
+            assert r.target_path.strip()
+            assert r.skip_reason is None
+        # Pure planning: nothing written to disk.
+        assert set(tmp_path.rglob("*")) == before

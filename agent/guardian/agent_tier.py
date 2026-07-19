@@ -163,3 +163,110 @@ class InSessionAgentProbe:
     def available_tier(self) -> int:
         raw = os.environ.get("CANARY_GUARDIAN_AGENT", "0")
         return int(raw) if raw in {"0", "1", "2"} else 0
+
+
+# --- Tier-2 authoring safety model (D4 guards a–d) — pure, writes nothing. ----
+
+# Language-specific test-path templates (peer-layout mirror).
+_TS_JS_SUFFIXES = {".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"}
+
+
+@dataclass(frozen=True)
+class AuthoringContext:
+    """Everything ``plan_authoring`` needs to apply the four safety guards.
+
+    All fields are supplied by the caller (the ``author-plan`` CLI seam in T7);
+    this keeps the guards pure and deterministic.
+    """
+
+    author_tests_optin: bool  # config.precommit_author_tests (default False) — (d)
+    effective_tier: int  # from resolve_tier (2 == can author)
+    is_fork: bool = False  # reuse Phase-2 fork/403 detection — (b)
+    repo_root: Path = field(default_factory=lambda: Path("."))
+    authored_sentinel_present: bool = False  # loop-guard — (a)
+
+
+def _target_test_path(gap: Finding) -> str:
+    """Deterministic target test path for a gap, mirroring peer test layout.
+
+    - ``.py`` source → ``{parent}/test_{stem}.py`` (pytest convention);
+    - TS/JS source → ``{parent}/{stem}.test{suffix}`` (jest/vitest convention);
+    - anything else → ``{parent}/{stem}.test{suffix}`` as a safe default.
+
+    Returns a repo-relative POSIX path string.
+    """
+    src = Path(gap.path)
+    parent = src.parent
+    if src.suffix == ".py":
+        target = parent / f"test_{src.stem}.py"
+    elif src.suffix in _TS_JS_SUFFIXES:
+        target = parent / f"{src.stem}.test{src.suffix}"
+    else:
+        target = parent / f"{src.stem}.test{src.suffix or ''}"
+    return target.as_posix()
+
+
+def _requirement_for(gap: Finding) -> str:
+    """NL requirement string the ``/canary-write-test`` command consumes as
+    ``$ARGUMENTS`` — names the unit and the untested change."""
+    return (
+        f"Write tests for `{gap.unit}` in `{gap.path}` covering the newly added, "
+        f"currently-untested code (guardian finding: {gap.kind})."
+    )
+
+
+def _authoring_skip_reason(gap: Finding, ctx: AuthoringContext) -> str | None:
+    """Return the first failing guard's reason, or ``None`` if all guards pass.
+
+    Guard order (fail-closed, cheapest/broadest first): (d) opt-in, (d) tier,
+    (b) fork, (a) loop-guard, (c) collision.
+    """
+    if not ctx.author_tests_optin:
+        return "opt-in: preCommit.authorTests is not enabled — authoring is off by default"
+    if ctx.effective_tier < 2:
+        return f"tier: effective tier {ctx.effective_tier} < 2 — cannot author"
+    if ctx.is_fork:
+        return "fork: read-only — guardian never writes on a fork PR"
+    if ctx.authored_sentinel_present:
+        return "loop-guard: guardian tests already authored this run — not re-authoring"
+    target = ctx.repo_root / _target_test_path(gap)
+    if target.exists():
+        return f"collision: {_target_test_path(gap)} exists — another PR/session may own it"
+    return None
+
+
+def plan_authoring(
+    gaps: list[Finding], ctx: AuthoringContext
+) -> list[GeneratedTest]:
+    """Apply the four D4 guards and emit one ``GeneratedTest`` per gap.
+
+    A gap that clears every guard becomes a ``planned`` intent (non-empty
+    ``requirement`` + ``target_path``); any guard failure becomes a ``skipped``
+    record carrying the reason. Pure — reads disk only to detect collisions
+    (guard c) and writes **nothing**.
+    """
+    out: list[GeneratedTest] = []
+    for gap in gaps:
+        target = _target_test_path(gap)
+        requirement = _requirement_for(gap)
+        reason = _authoring_skip_reason(gap, ctx)
+        if reason is None:
+            out.append(
+                GeneratedTest(
+                    gap=gap,
+                    target_path=target,
+                    requirement=requirement,
+                    status="planned",
+                )
+            )
+        else:
+            out.append(
+                GeneratedTest(
+                    gap=gap,
+                    target_path=target,
+                    requirement=requirement,
+                    status="skipped",
+                    skip_reason=reason,
+                )
+            )
+    return out
