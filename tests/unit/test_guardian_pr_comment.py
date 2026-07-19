@@ -13,6 +13,9 @@ from agent.guardian.pr_comment import (
     FakeGitHubClient,
     GitHubPermissionError,
     STICKY_MARKER,
+    UpsertResult,
+    find_sticky,
+    upsert_sticky_comment,
 )
 
 
@@ -55,3 +58,46 @@ class TestFakeClient:
 
     def test_sticky_marker_constant(self) -> None:
         assert STICKY_MARKER == "<!-- canary-pr-guardian -->"
+
+
+def _marked(body: str) -> str:
+    return f"{STICKY_MARKER}\n{body}"
+
+
+class TestUpsert:
+    """SC-9: the sticky comment is upserted by marker — never stacked."""
+
+    def test_create_when_absent(self) -> None:
+        client = FakeGitHubClient()
+        result = upsert_sticky_comment(client, _marked("first"))
+        assert result.action == "created"
+        marked = [c for c in client.list_comments() if STICKY_MARKER in c["body"]]
+        assert len(marked) == 1
+        assert result.comment_id == marked[0]["id"]
+
+    def test_second_run_updates_in_place(self) -> None:
+        client = FakeGitHubClient()
+        upsert_sticky_comment(client, _marked("first"))
+        result = upsert_sticky_comment(client, _marked("second"))
+        assert result.action == "updated"
+        marked = [c for c in client.list_comments() if STICKY_MARKER in c["body"]]
+        assert len(marked) == 1  # SC-9: no stacking
+        assert marked[0]["body"] == _marked("second")
+
+    def test_find_sticky_ignores_non_marker_comments(self) -> None:
+        comments = [
+            {"id": 1, "body": "unrelated chatter"},
+            {"id": 2, "body": _marked("guardian findings")},
+        ]
+        found = find_sticky(comments)
+        assert found is not None
+        assert found["id"] == 2
+
+    def test_find_sticky_returns_none_when_absent(self) -> None:
+        assert find_sticky([{"id": 1, "body": "nope"}]) is None
+
+    def test_upsert_result_shape(self) -> None:
+        result = UpsertResult(action="created", comment_id=5)
+        assert result.action == "created"
+        assert result.comment_id == 5
+        assert result.notice is None

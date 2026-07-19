@@ -88,6 +88,45 @@ class FakeGitHubClient:
         raise KeyError(f"no comment with id {comment_id}")
 
 
+@dataclass
+class UpsertResult:
+    """Outcome of an :func:`upsert_sticky_comment` call.
+
+    ``action`` is ``"created"`` | ``"updated"`` | ``"degraded"``. ``comment_id``
+    is the affected comment id (``None`` when degraded). ``notice`` carries the
+    degradation message and is set **only** when ``action == "degraded"`` (T4).
+    """
+
+    action: str
+    comment_id: int | None
+    notice: str | None = None
+
+
+def find_sticky(comments: list[dict], marker: str = STICKY_MARKER) -> dict | None:
+    """Return the first comment whose body contains ``marker``, else ``None``."""
+    for comment in comments:
+        if marker in comment.get("body", ""):
+            return comment
+    return None
+
+
+def upsert_sticky_comment(
+    client: GitHubClient, body: str, marker: str = STICKY_MARKER
+) -> UpsertResult:
+    """Post or update the single sticky guardian comment (SC-9).
+
+    Locates the existing comment by ``marker``; updates it in place when present,
+    otherwise creates a new one. Never stacks duplicates. (Fork/permission
+    degradation is layered on in T4.)
+    """
+    existing = find_sticky(client.list_comments(), marker)
+    if existing is not None:
+        updated = client.update_comment(existing["id"], body)
+        return UpsertResult(action="updated", comment_id=updated["id"])
+    created = client.create_comment(body)
+    return UpsertResult(action="created", comment_id=created["id"])
+
+
 class _RestGitHubClient:
     """Thin real :class:`GitHubClient` over the GitHub REST API (``urllib``).
 
