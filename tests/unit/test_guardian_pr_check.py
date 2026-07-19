@@ -12,6 +12,7 @@ from agent.guardian.pr_check import (
     Finding,
     apply_suppressions,
     build_findings,
+    compute_exit_code,
     scope_diff,
 )
 
@@ -187,3 +188,39 @@ class TestSuppressions:
         findings = [Finding(path="a.py", unit="a")]
         out = apply_suppressions(findings, repo_root=tmp_path)
         assert len(out) == 1
+
+
+class TestExitCode:
+    def test_hard_unaddressed_high_exits_nonzero(self) -> None:
+        findings = [Finding(path="a.py", unit="a", severity=Severity.HIGH)]
+        assert compute_exit_code(findings, gate="hard") == 1
+
+    def test_hard_unaddressed_critical_exits_nonzero(self) -> None:
+        findings = [Finding(path="a.py", unit="a", severity=Severity.CRITICAL)]
+        assert compute_exit_code(findings, gate="hard") == 1
+
+    def test_hard_suppressed_high_exits_zero(self) -> None:
+        findings = [
+            Finding(path="a.py", unit="a", severity=Severity.HIGH, suppressed=True)
+        ]
+        assert compute_exit_code(findings, gate="hard") == 0
+
+    def test_hard_only_medium_low_exits_zero(self) -> None:
+        findings = [
+            Finding(path="a.py", unit="a", severity=Severity.MEDIUM),
+            Finding(path="b.py", unit="b", severity=Severity.LOW),
+        ]
+        assert compute_exit_code(findings, gate="hard") == 0
+
+    def test_soft_unaddressed_critical_exits_zero(self) -> None:
+        findings = [Finding(path="a.py", unit="a", severity=Severity.CRITICAL)]
+        assert compute_exit_code(findings, gate="soft") == 0
+
+    def test_empty_findings_exits_zero(self) -> None:
+        assert compute_exit_code([], gate="hard") == 0
+
+    def test_hard_wrong_kind_exits_zero(self) -> None:
+        findings = [
+            Finding(path="a.py", unit="a", kind="weak-test", severity=Severity.HIGH)
+        ]
+        assert compute_exit_code(findings, gate="hard") == 0

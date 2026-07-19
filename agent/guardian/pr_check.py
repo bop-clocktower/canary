@@ -194,3 +194,30 @@ def apply_suppressions(
             finding.suppressed = True
             finding.suppression_reason = match.group(1).strip()
     return findings
+
+
+_HARD_GATE_SEVERITIES = frozenset({Severity.CRITICAL, Severity.HIGH})
+
+
+def compute_exit_code(findings: list[Finding], gate: str) -> int:
+    """Compute the soft/hard gate exit code (SC-4).
+
+    - ``gate == "soft"`` → always ``0``.
+    - ``gate == "hard"`` → ``1`` iff any finding is an ``untested-new-code``
+      finding of ``CRITICAL``/``HIGH`` severity that is **not addressed**.
+
+    A finding is *addressed* when it is suppressed (SC-12) or when a covering
+    test was added in the same diff (in which case it never appears in
+    ``findings`` at all — suppressed findings do remain, so the live check is
+    simply ``not suppressed``).
+    """
+    if gate != "hard":
+        return 0
+    for finding in findings:
+        if (
+            finding.kind == "untested-new-code"
+            and finding.severity in _HARD_GATE_SEVERITIES
+            and not finding.suppressed
+        ):
+            return 1
+    return 0
