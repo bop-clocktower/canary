@@ -13,15 +13,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from agent.guardian.agent_tier import (
     AgentInvoker,
     GeneratedTest,
+    InSessionAgentProbe,
     InSessionAgentTier,
     RecordingInvoker,
     ReviewRequest,
 )
 from agent.guardian.impact_mapper import Severity
 from agent.guardian.pr_check import Finding
+from agent.guardian.tier import resolve_tier
 
 
 def _finding(path: str = "src/foo.py", unit: str = "foo") -> Finding:
@@ -125,3 +129,50 @@ class TestAuditTestQuality:
         assert len(findings) == 1
         assert findings[0].path == "tests/foo_test.py"
         assert findings[0].severity is Severity.CRITICAL
+
+
+class TestInSessionAgentProbe:
+    """T3 / SC-5 regression: real probe lifts degradation when present, stays
+    loud when absent. Reads env only — no LLM import, no real agent."""
+
+    def test_env_unset_ceiling_zero_and_degrades(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("CANARY_GUARDIAN_AGENT", raising=False)
+        probe = InSessionAgentProbe()
+        assert probe.available_tier() == 0
+        resolution = resolve_tier(2, probe)
+        assert resolution.effective == 0
+        assert resolution.degraded_notice is not None
+        assert "tier 2" in resolution.degraded_notice
+
+    def test_tier_two_present_no_false_degradation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CANARY_GUARDIAN_AGENT", "2")
+        probe = InSessionAgentProbe()
+        assert probe.available_tier() == 2
+        resolution = resolve_tier(2, probe)
+        assert resolution.effective == 2
+        assert resolution.degraded_notice is None
+
+    def test_tier_one_present_caps_two_loudly_serves_one(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CANARY_GUARDIAN_AGENT", "1")
+        probe = InSessionAgentProbe()
+        assert probe.available_tier() == 1
+        capped = resolve_tier(2, probe)
+        assert capped.effective == 1
+        assert capped.degraded_notice is not None
+        assert "tier 2" in capped.degraded_notice
+        served = resolve_tier(1, probe)
+        assert served.effective == 1
+        assert served.degraded_notice is None
+
+    @pytest.mark.parametrize("garbage", ["9", "x", "", "-1", "1.0"])
+    def test_garbage_value_is_zero(
+        self, monkeypatch: pytest.MonkeyPatch, garbage: str
+    ) -> None:
+        monkeypatch.setenv("CANARY_GUARDIAN_AGENT", garbage)
+        assert InSessionAgentProbe().available_tier() == 0

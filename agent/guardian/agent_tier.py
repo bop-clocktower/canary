@@ -25,6 +25,7 @@ added to ``hooks/guardian_precommit.py`` was watched to fail
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -147,3 +148,18 @@ class InSessionAgentTier:
         parse the transcript into ``weak-test`` Findings. Writes nothing."""
         transcript = self.invoker.review(ReviewRequest(list(affected_tests)))
         return _parse_review_findings(transcript)
+
+
+@dataclass(frozen=True)
+class InSessionAgentProbe:
+    """Reports the agent tier ceiling from an explicit opt-in signal.
+
+    Reads env ``CANARY_GUARDIAN_AGENT`` (``0|1|2``), which the SKILL exports when
+    it runs in-session. Unset or invalid → ``0`` (so CI, where the env is unset,
+    stays Tier-0). Returns an ``int`` only — imports no LLM (SC-11), so it drops
+    into ``resolve_tier`` unchanged as the real ``AgentCapabilityProbe``.
+    """
+
+    def available_tier(self) -> int:
+        raw = os.environ.get("CANARY_GUARDIAN_AGENT", "0")
+        return int(raw) if raw in {"0", "1", "2"} else 0
