@@ -118,6 +118,133 @@ def scope_diff(diff_text: str) -> list[ChangedUnit]:
     return units
 
 
+# FIX 2 (signal-quality): a changed file whose ADDED lines are ONLY imports /
+# re-exports (no real declarations or logic) is a barrel/index file (``index.ts``,
+# ``__init__.py``) and should not be flagged as untested. Seen dogfooding on an
+# external repo where a pure re-export barrel was falsely flagged.
+#
+# Conservative contract: a line counts as re-export/import iff it matches one of
+# these; a real declaration DISQUALIFIES the whole file (flag it). When unsure,
+# treat as NOT a barrel — a false skip is worse than a false flag.
+_REEXPORT_PATTERNS = (
+    # TS/JS.
+    re.compile(r"^\s*import\b"),
+    re.compile(r"^\s*export\s+\*\s+from\b"),
+    re.compile(r"^\s*export\s+\{[^}]*\}\s+from\b"),
+    re.compile(r"^\s*export\s+\{[^}]*\}\s*;?\s*$"),  # local re-export
+    re.compile(r"^\s*export\s+\{?\s*default\b.*\}?\s+from\b"),
+    re.compile(r"^\s*export\s+default\s+\w+\s*;?\s*$"),
+    # Python.
+    re.compile(r"^\s*from\s+\S+\s+import\b"),
+    re.compile(r"^\s*import\s+\w"),
+    re.compile(r"^\s*__all__\s*="),
+)
+
+# Full-line comment leaders / block-comment scaffolding treated as NEUTRAL.
+_COMMENT_LINE_RE = re.compile(r"^\s*(?://|#|/\*|\*)")
+_BLOCK_COMMENT_CLOSE_RE = re.compile(r"\*/\s*$")
+# A bare string entry inside an ``__all__ = [ ... ]`` list (neutral).
+_ALL_LIST_ENTRY_RE = re.compile(r"""^\s*["'][^"']*["']\s*,?\s*$""")
+_ALL_LIST_CLOSE_RE = re.compile(r"^\s*\]")
+
+
+def _is_neutral_line(stripped: str) -> bool:
+    """Return True for blank lines and full-line comments (ignored for barrels)."""
+    if not stripped:
+        return True
+    if _COMMENT_LINE_RE.match(stripped):
+        return True
+    return bool(_BLOCK_COMMENT_CLOSE_RE.search(stripped) and stripped.startswith("*"))
+
+
+def _added_content_by_path(diff_text: str) -> dict[str, list[str]]:
+    """Map each changed file to the CONTENT of its added (``+``) lines.
+
+    Mirrors :func:`scope_diff`'s parser but captures the added-line *text* (the
+    ``+`` stripped) rather than line numbers. Deleted files (``+++ /dev/null``)
+    are excluded; a ``+++ `` line inside a hunk body is added content, not a
+    header (same FIX 7 guard as ``scope_diff``).
+    """
+    added: dict[str, list[str]] = {}
+    current_path: str | None = None
+    skip_current = False
+    in_hunk = False
+
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git"):
+            in_hunk = False
+            current_path = None
+            skip_current = False
+            continue
+        if not in_hunk and line.startswith("+++ "):
+            target = line[4:].strip()
+            if target == "/dev/null":
+                skip_current = True
+                current_path = None
+                continue
+            skip_current = False
+            current_path = target[2:] if target.startswith("b/") else target
+            added.setdefault(current_path, [])
+            continue
+        if not in_hunk and line.startswith("--- "):
+            continue
+        if _HUNK_RE.match(line):
+            in_hunk = True
+            continue
+        if skip_current or current_path is None:
+            continue
+        if line.startswith("+"):
+            added[current_path].append(line[1:])
+    return added
+
+
+def _is_reexport_only(added_lines: list[str]) -> bool:
+    """Return True iff every non-neutral added line is a pure import/re-export.
+
+    Requires at least one actual import/re-export line (a file of only comments
+    is NOT a barrel — conservatively flagged). Any non-neutral line that is not
+    an import/re-export (a real declaration, JSX, or logic) disqualifies the
+    file. Handles a multi-line ``__all__ = [ ... ]`` list: its string entries and
+    closing bracket are neutral.
+    """
+    has_reexport = False
+    in_all_list = False
+    for raw in added_lines:
+        stripped = raw.strip()
+        if in_all_list:
+            if _ALL_LIST_CLOSE_RE.match(stripped):
+                in_all_list = False
+                continue
+            if _is_neutral_line(stripped) or _ALL_LIST_ENTRY_RE.match(stripped):
+                continue
+            return False  # unexpected content inside __all__ → not a barrel
+        if _is_neutral_line(stripped):
+            continue
+        if any(pat.match(stripped) for pat in _REEXPORT_PATTERNS):
+            has_reexport = True
+            # An `__all__ = [` that does not close on the same line opens a list.
+            if stripped.startswith("__all__") and "[" in stripped and "]" not in stripped:
+                in_all_list = True
+            continue
+        return False  # a real declaration / logic line → not a barrel
+    return has_reexport
+
+
+def find_reexport_only(diff_text: str) -> set[str]:
+    """Return the set of file paths whose added lines are ONLY imports/re-exports.
+
+    These are barrel/index files (``index.ts``, ``__init__.py``) that merely
+    forward other modules' symbols and carry no logic of their own, so they
+    should not be flagged as untested (FIX 2). Detection reads the diff's added
+    (``+``) line CONTENT, mirroring :func:`scope_diff`.
+    """
+    return {
+        path
+        for path, lines in _added_content_by_path(diff_text).items()
+        if _is_reexport_only(lines)
+    }
+
+
 def _glob_matches(path: str, pattern: str) -> bool:
     """Return True iff ``path`` matches a glob ``pattern`` supporting ``**``.
 

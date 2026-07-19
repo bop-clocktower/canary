@@ -20,6 +20,7 @@ from agent.guardian.pr_check import (
     build_findings,
     compute_exit_code,
     filter_skipped,
+    find_reexport_only,
     render,
     scope_diff,
 )
@@ -463,3 +464,77 @@ class TestPackageExports:
         assert g.Fidelity is Fidelity
         assert g.Finding is Finding
         assert g.CoverageResult is CoverageResult
+
+
+def _diff_for(path: str, added: str) -> str:
+    """Build a minimal single-file unified diff adding ``added`` to ``path``."""
+    body_lines = added.splitlines()
+    plus = "\n".join("+" + line for line in body_lines)
+    return (
+        f"diff --git a/{path} b/{path}\n"
+        f"index 1111111..2222222 100644\n"
+        f"--- a/{path}\n"
+        f"+++ b/{path}\n"
+        f"@@ -0,0 +1,{len(body_lines)} @@\n"
+        f"{plus}\n"
+    )
+
+
+class TestFindReexportOnly:
+    """FIX 2 (signal-quality): a file whose added lines are ONLY imports /
+    re-exports is a barrel/index file and must not be flagged as untested. A
+    single real declaration DISQUALIFIES the file (flag it) — conservative:
+    when unsure, treat as NOT a barrel."""
+
+    def test_ts_reexport_barrel_detected(self) -> None:
+        diff = _diff_for(
+            "pkg/index.ts",
+            "export { foo } from './foo';\nexport * from './bar';\n",
+        )
+        assert find_reexport_only(diff) == {"pkg/index.ts"}
+
+    def test_ts_local_reexport_and_default(self) -> None:
+        diff = _diff_for(
+            "pkg/index.ts",
+            "import { foo } from './foo';\nexport { foo };\nexport default foo;\n",
+        )
+        assert find_reexport_only(diff) == {"pkg/index.ts"}
+
+    def test_real_declaration_disqualifies(self) -> None:
+        # A real exported function is NOT a barrel — must stay flaggable.
+        diff = _diff_for("pkg/thing.ts", "export function thing() { return 1 }\n")
+        assert find_reexport_only(diff) == set()
+
+    def test_export_const_with_value_disqualifies(self) -> None:
+        diff = _diff_for(
+            "pkg/mix.ts",
+            "export * from './bar';\nexport const X = 5;\n",
+        )
+        assert find_reexport_only(diff) == set()
+
+    def test_python_init_reexport_barrel(self) -> None:
+        diff = _diff_for("pkg/__init__.py", "from .x import Y\nimport os\n")
+        assert find_reexport_only(diff) == {"pkg/__init__.py"}
+
+    def test_python_all_list_barrel(self) -> None:
+        diff = _diff_for(
+            "pkg/__init__.py",
+            'from .x import Y\n__all__ = [\n    "Y",\n]\n',
+        )
+        assert find_reexport_only(diff) == {"pkg/__init__.py"}
+
+    def test_python_def_disqualifies(self) -> None:
+        diff = _diff_for("pkg/mod.py", "from .x import Y\ndef run():\n    return Y\n")
+        assert find_reexport_only(diff) == set()
+
+    def test_comments_and_blanks_are_neutral(self) -> None:
+        diff = _diff_for(
+            "pkg/index.ts",
+            "// barrel\n\nexport * from './bar';\n",
+        )
+        assert find_reexport_only(diff) == {"pkg/index.ts"}
+
+    def test_only_comments_is_not_a_barrel(self) -> None:
+        # No actual re-export line → conservatively NOT a barrel (flag it).
+        diff = _diff_for("pkg/index.ts", "// just a comment\n")
+        assert find_reexport_only(diff) == set()
