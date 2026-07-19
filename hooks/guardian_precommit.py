@@ -32,9 +32,12 @@ GUARDIAN_MARKER = "# canary-guardian-precommit"
 # the NEXT commit (the human re-committing the reviewed, staged, guardian-authored
 # tests) the hook sees the sentinel and passes the commit through exactly once,
 # consuming it — so the guardian never re-authors its own output and never loops.
-# This is a FILESYSTEM-ONLY check: it imports no agent module and keeps
-# ``guardian_precommit.py`` inside the Tier-0 boundary (SC-11).
-_AUTHORED_SENTINEL = ".git/canary-guardian-authored"
+# This is a FILESYSTEM+GIT-ONLY check: it imports no agent module and keeps
+# ``guardian_precommit.py`` inside the Tier-0 boundary (SC-11). The sentinel
+# lives INSIDE the real git dir (resolved via ``git rev-parse --git-dir`` so
+# ``.git``-as-a-file worktrees/submodules work — FIX 7), not a hard-coded
+# ``root/.git`` directory.
+_AUTHORED_SENTINEL_NAME = "canary-guardian-authored"
 
 # Preserve any prior hook's failure: in POSIX `sh` with no `set -e`, a chained
 # script exits with its LAST command's status, so a soft-gate-0 guardian would
@@ -134,18 +137,60 @@ def run_precommit_check(config, diff_text: str, probe=None) -> PrecommitOutcome:
     return PrecommitOutcome(exit_code, report, False, resolution.degraded_notice)
 
 
+def _git_dir(root: Path) -> Path:
+    """Resolve the real git dir for ``root`` via ``git rev-parse --git-dir``.
+
+    Handles ``.git``-as-a-file (worktrees/submodules) instead of assuming
+    ``root/".git"`` is a directory (FIX 7). Relative results resolve against
+    ``root``; falls back to ``root/".git"`` when ``git`` is unavailable or ``root``
+    is not a repo. Git-only — imports no agent module (SC-11)."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            resolved = Path(out.stdout.strip())
+            return resolved if resolved.is_absolute() else (root / resolved)
+    except OSError:
+        pass
+    return root / ".git"
+
+
 def _sentinel_path(root: Path) -> Path:
     """Absolute path to the guardian's authored-tests sentinel under ``root``."""
-    return root / _AUTHORED_SENTINEL
+    return _git_dir(root) / _AUTHORED_SENTINEL_NAME
+
+
+def staged_paths(root: Path | None = None) -> list[str]:
+    """Repo-relative paths currently staged (``git diff --staged --name-only``).
+
+    Used by :func:`authored_recommit_passthrough` to SCOPE the loop-guard to the
+    guardian's own authored tests (FIX 3). Fail-open: returns ``[]`` when ``git``
+    is unavailable so the passthrough simply declines to fire."""
+    try:
+        out = subprocess.run(
+            ["git", "diff", "--staged", "--name-only"],
+            cwd=root or REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return [line for line in out.stdout.splitlines() if line.strip()]
+    except OSError:
+        return []
 
 
 def authored_recommit_passthrough(root: Path | None = None) -> bool:
     """Loop-guard (a): consume the guardian's sentinel and pass THIS commit once.
 
-    If ``.git/canary-guardian-authored`` is present the human is re-committing
-    reviewed, staged, guardian-authored tests, so delete the sentinel and return
-    ``True`` (let the commit through without re-running authoring). Absent, return
-    ``False`` (normal pipeline). Deterministic, filesystem-only — no agent import.
+    If the sentinel is present the human is re-committing reviewed, staged,
+    guardian-authored tests, so delete the sentinel and return ``True`` (let the
+    commit through without re-running authoring). Absent, return ``False`` (normal
+    pipeline). Deterministic, filesystem+git-only — no agent import (SC-11).
     """
     sentinel = _sentinel_path(root or REPO_ROOT)
     if sentinel.is_file():

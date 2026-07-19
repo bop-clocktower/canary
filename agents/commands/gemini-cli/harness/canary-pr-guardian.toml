@@ -96,10 +96,23 @@ destination. Then stage the authored files:
 git add <target_path>
 ```
 
-When `block.block == true`, print `block.message` (the "N test(s) authored &
-staged — review and re-commit" notice) and **stop**. Do not commit. The human
-reviews the staged tests and re-commits; the pre-commit hook's sentinel lets
-that re-commit through exactly once.
+When `block.block == true`, record the guardian-authored paths in the loop-guard
+sentinel BEFORE blocking, by running the deterministic producer command once per
+authored path:
+
+```bash
+canary guardian mark-authored --path <target_path> [--path <target_path> ...]
+```
+
+This is a real CLI step (not something you `touch` yourself): it writes the
+sentinel inside the real git dir and records exactly the paths you authored, so
+the pre-commit hook scopes its one-shot passthrough to those paths only.
+
+Then print `block.message` (the "N test(s) authored & staged — review and
+re-commit" notice) and **stop**. Do not commit. The human reviews the staged
+tests and re-commits; the pre-commit hook's sentinel lets that re-commit through
+exactly once — and only when nothing but the guardian's own authored tests is
+staged.
 
 
 --- skill.yaml (agents/skills/claude-code/canary-pr-guardian/skill.yaml) ---

@@ -214,6 +214,101 @@ class TestSentinelLoopGuard:
         assert not (tmp_path / ".git" / "canary-guardian-authored").exists()
 
 
+def _git_init(root: Path) -> None:
+    """Init a throwaway git repo in ``root`` (local, deterministic — no network)."""
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+
+
+class TestMarkAuthoredProducer:
+    """FIX 2: ``canary guardian mark-authored`` is the DETERMINISTIC sentinel
+    PRODUCER (a CLI step, not LLM markdown). It writes the guardian loop-guard
+    sentinel with the authored test paths (one per line), resolving the sentinel
+    location via the real git dir (``git rev-parse --git-dir`` — handles
+    ``.git``-as-file worktrees). The passthrough (Tier-0 half) then consumes it."""
+
+    def test_mark_authored_writes_sentinel_with_paths(self, tmp_path, monkeypatch):
+        from agent.guardian.cli import guardian_app
+        from typer.testing import CliRunner
+
+        _git_init(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(
+            guardian_app, ["mark-authored", "--path", "pkg/test_foo.py"]
+        )
+        assert result.exit_code == 0
+        sentinel = tmp_path / ".git" / "canary-guardian-authored"
+        assert sentinel.is_file()
+        assert sentinel.read_text(encoding="utf-8").splitlines() == ["pkg/test_foo.py"]
+
+    def test_mark_authored_then_passthrough_round_trip(self, tmp_path, monkeypatch):
+        from agent.guardian.cli import guardian_app
+        from typer.testing import CliRunner
+
+        _git_init(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(
+            guardian_app, ["mark-authored", "--path", "pkg/test_foo.py"]
+        )
+        assert result.exit_code == 0
+        # Re-commit staging EXACTLY the guardian-authored path → pass once.
+        monkeypatch.setattr(
+            guardian_precommit, "staged_paths", lambda: ["pkg/test_foo.py"]
+        )
+        assert guardian_precommit.authored_recommit_passthrough(tmp_path) is True
+        assert not (tmp_path / ".git" / "canary-guardian-authored").exists()
+        # Second call: sentinel consumed → normal path (no loop).
+        assert guardian_precommit.authored_recommit_passthrough(tmp_path) is False
+
+    def test_author_plan_block_then_mark_authored_round_trip(
+        self, tmp_path, monkeypatch
+    ):
+        # End-to-end: author-plan (opt-in on, tier 2) blocks with planned intents →
+        # feed each target_path to mark-authored → the passthrough clears once.
+        import json as _json
+
+        from agent.guardian.cli import guardian_app
+        from typer.testing import CliRunner
+
+        _git_init(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("CANARY_GUARDIAN_AGENT", "2")
+        monkeypatch.delenv("CANARY_GUARDIAN_IS_FORK", raising=False)
+        cfg = tmp_path / "harness.config.json"
+        cfg.write_text(
+            _json.dumps(
+                {"canary": {"guardian": {"preCommit": {"authorTests": True}}}}
+            ),
+            encoding="utf-8",
+        )
+        diff = (
+            "diff --git a/pkg/widget.py b/pkg/widget.py\n"
+            "index 1111111..2222222 100644\n"
+            "--- a/pkg/widget.py\n"
+            "+++ b/pkg/widget.py\n"
+            "@@ -0,0 +1,3 @@\n"
+            "+def widget():\n"
+            "+    return 42\n"
+            "+\n"
+        )
+        runner = CliRunner()
+        plan = runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-", "--config", str(cfg)],
+            input=diff,
+        )
+        assert plan.exit_code == 0
+        data = _json.loads(plan.stdout)
+        assert data["block"]["block"] is True
+        targets = [i["target_path"] for i in data["intents"] if i["status"] != "skipped"]
+        assert targets
+        args = ["mark-authored"]
+        for t in targets:
+            args += ["--path", t]
+        assert runner.invoke(guardian_app, args).exit_code == 0
+        monkeypatch.setattr(guardian_precommit, "staged_paths", lambda: targets)
+        assert guardian_precommit.authored_recommit_passthrough(tmp_path) is True
+
+
 class TestInstall:
     """install() CHAINS onto an existing .git/hooks/pre-commit (owned by
     check-proprietary.py) — it never clobbers, and is idempotent via the marker."""

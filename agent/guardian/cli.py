@@ -7,6 +7,7 @@ Phase 2 (draft PR generation) is behind --phase2 flag and not yet implemented.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -379,6 +380,86 @@ def author_plan(
         "block": decide_block(results).__dict__,
     }
     typer.echo(json.dumps(payload, indent=2))
+
+
+_AUTHORED_SENTINEL_NAME = "canary-guardian-authored"
+
+
+def _git_toplevel() -> Path:
+    """Resolve the repository root via ``git rev-parse --show-toplevel``.
+
+    Falls back to :func:`Path.cwd` when not inside a git repo (FIX 6) — so the
+    collision check and sentinel lookup stay root-relative even when the command
+    is run from a subdirectory. Network-free; only shells local ``git``.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return Path(out.stdout.strip())
+    except OSError:
+        pass
+    return Path.cwd()
+
+
+def _git_dir(root: Path) -> Path:
+    """Resolve the real git dir for ``root`` via ``git rev-parse --git-dir``.
+
+    Handles ``.git``-as-a-file (worktrees/submodules point at the real gitdir)
+    instead of assuming ``root/".git"`` is a directory (FIX 7). Relative results
+    are resolved against ``root``; falls back to ``root/".git"`` when ``git`` is
+    unavailable or ``root`` is not a repo.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            resolved = Path(out.stdout.strip())
+            return resolved if resolved.is_absolute() else (root / resolved)
+    except OSError:
+        pass
+    return root / ".git"
+
+
+def _authored_sentinel_path(root: Path) -> Path:
+    """Absolute path to the guardian's authored-tests sentinel under ``root``."""
+    return _git_dir(root) / _AUTHORED_SENTINEL_NAME
+
+
+@guardian_app.command("mark-authored")
+def mark_authored(
+    path: list[str] = typer.Option(
+        [],
+        "--path",
+        help="An authored test path (repeatable). Recorded one per line.",
+    ),
+) -> None:
+    """Write the guardian loop-guard sentinel with the authored test paths.
+
+    The DETERMINISTIC producer half of the D4 loop-guard (a): after the SKILL
+    authors + ``git add``s the guardian's tests, it calls this so the Tier-0
+    pre-commit hook lets the review re-commit through exactly once — SCOPED to
+    these recorded paths (:func:`hooks.guardian_precommit.authored_recommit_passthrough`).
+    Writes ONLY the sentinel (no test authoring); resolves the location via the
+    real git dir so worktrees/submodules work.
+    """
+    root = _git_toplevel()
+    sentinel = _authored_sentinel_path(root)
+    sentinel.parent.mkdir(parents=True, exist_ok=True)
+    body = "".join(f"{p}\n" for p in path)
+    sentinel.write_text(body, encoding="utf-8")
+    typer.echo(
+        f"guardian: recorded {len(path)} authored path(s) → {sentinel}"
+    )
 
 
 def _is_fork_context() -> bool:
