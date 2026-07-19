@@ -16,10 +16,16 @@ hook. The git-hook entrypoint (:func:`main`) is a thin shell around it (T4).
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from _harness_dedup import harness_hook_present  # house dedup guard (see plan)
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+GUARDIAN_MARKER = "# canary-guardian-precommit"
 
 
 def requested_tier(config) -> int:
@@ -102,3 +108,68 @@ def run_precommit_check(config, diff_text: str, probe=None) -> PrecommitOutcome:
     )
     exit_code = compute_exit_code(findings, gate=config.precommit_gate)
     return PrecommitOutcome(exit_code, report, False, resolution.degraded_notice)
+
+
+def staged_diff() -> str:
+    """Return `git diff --staged` text ('' when nothing staged).
+
+    This is the ONLY git call in the surface; the core takes the diff injected.
+    """
+    return subprocess.run(
+        ["git", "diff", "--staged"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+
+
+def install(repo_root: Path | None = None) -> None:
+    """Install the guardian pre-commit hook, CHAINING onto any existing hook.
+
+    ``.git/hooks/pre-commit`` may already be owned by ``check-proprietary.py``, so
+    this is collision-aware: if the file exists it APPENDS a marker-guarded
+    guardian line (idempotent — a re-install is a no-op when the marker is
+    present), never overwriting the existing content; if absent it writes a fresh
+    ``#!/bin/sh`` + guardian line.
+    """
+    root = repo_root or REPO_ROOT
+    hook = root / ".git" / "hooks" / "pre-commit"
+    line = f'python3 "{Path(__file__).resolve()}" run  {GUARDIAN_MARKER}\n'
+    if hook.is_file():
+        existing = hook.read_text(encoding="utf-8")
+        if GUARDIAN_MARKER in existing:
+            print("guardian pre-commit already installed.")
+            return
+        hook.write_text(existing.rstrip("\n") + "\n" + line, encoding="utf-8")
+    else:
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text("#!/bin/sh\n" + line, encoding="utf-8")
+    hook.chmod(0o755)
+    print(f"Installed guardian pre-commit hook → {hook}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Thin git-hook entrypoint: load config, scope the staged diff, run the
+    Tier 0 core, print the report, and return the gate exit code."""
+    args = list(sys.argv[1:] if argv is None else argv)
+    if "--install" in args:
+        install()
+        return 0
+    # Dedup: defer to a harness JS guardian counterpart if one is ever wired
+    # (none exists in Phase 3, so this never fires — see plan Assumptions).
+    if harness_hook_present("guardian-precommit.js"):
+        return 0
+    from agent.guardian.pr_check import load_guardian_config
+
+    config, warning = load_guardian_config(REPO_ROOT / "harness.config.json")
+    if warning:
+        print(f"WARNING: {warning}", file=sys.stderr)
+    outcome = run_precommit_check(config, staged_diff())
+    if outcome.report:
+        print(outcome.report)
+    return outcome.exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

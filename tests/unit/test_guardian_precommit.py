@@ -146,3 +146,103 @@ class TestRunPrecommitCheck:
         outcome = guardian_precommit.run_precommit_check(config, DIFF_DOCS)
         assert outcome.exit_code == 0
         assert "nothing to verify" in outcome.report
+
+
+_CHECK_PROP_LINE = "python3 /repo/hooks/check-proprietary.py run\n"
+
+
+class TestInstall:
+    """install() CHAINS onto an existing .git/hooks/pre-commit (owned by
+    check-proprietary.py) — it never clobbers, and is idempotent via the marker."""
+
+    def _hook(self, tmp_path: Path) -> Path:
+        return tmp_path / ".git" / "hooks" / "pre-commit"
+
+    def test_chains_onto_existing_hook(self, tmp_path: Path) -> None:
+        hook = self._hook(tmp_path)
+        hook.parent.mkdir(parents=True)
+        hook.write_text("#!/bin/sh\n" + _CHECK_PROP_LINE, encoding="utf-8")
+        guardian_precommit.install(repo_root=tmp_path)
+        content = hook.read_text(encoding="utf-8")
+        assert _CHECK_PROP_LINE in content  # check-proprietary line preserved
+        assert guardian_precommit.GUARDIAN_MARKER in content  # guardian appended
+
+    def test_reinstall_is_idempotent(self, tmp_path: Path) -> None:
+        hook = self._hook(tmp_path)
+        hook.parent.mkdir(parents=True)
+        hook.write_text("#!/bin/sh\n" + _CHECK_PROP_LINE, encoding="utf-8")
+        guardian_precommit.install(repo_root=tmp_path)
+        first = hook.read_text(encoding="utf-8")
+        guardian_precommit.install(repo_root=tmp_path)  # second install: no-op
+        assert hook.read_text(encoding="utf-8") == first
+        assert first.count(guardian_precommit.GUARDIAN_MARKER) == 1
+
+    def test_creates_fresh_hook_when_absent(self, tmp_path: Path) -> None:
+        hook = self._hook(tmp_path)
+        guardian_precommit.install(repo_root=tmp_path)
+        content = hook.read_text(encoding="utf-8")
+        assert content.startswith("#!/bin/sh\n")
+        assert guardian_precommit.GUARDIAN_MARKER in content
+        assert (hook.stat().st_mode & 0o777) == 0o755
+
+
+class TestStagedDiff:
+    """staged_diff() is the single `git diff --staged` seam."""
+
+    def test_returns_stdout_string(self, monkeypatch) -> None:
+        class _Result:
+            stdout = "diff --git a/x b/x\n"
+
+        monkeypatch.setattr(
+            guardian_precommit.subprocess, "run", lambda *a, **k: _Result()
+        )
+        assert guardian_precommit.staged_diff() == "diff --git a/x b/x\n"
+
+
+class TestMain:
+    """The thin git-hook entrypoint shells to the pure core."""
+
+    def test_runs_pipeline_and_prints_report(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(guardian_precommit, "staged_diff", lambda: DIFF_UNTESTED)
+        monkeypatch.setattr(
+            guardian_precommit, "harness_hook_present", lambda *a, **k: False
+        )
+        import agent.guardian.pr_check as prc
+
+        monkeypatch.setattr(
+            prc,
+            "load_guardian_config",
+            lambda *a, **k: (
+                GuardianConfig(
+                    precommit_enabled=True,
+                    precommit_author_tests=False,
+                    precommit_gate="soft",
+                ),
+                None,
+            ),
+        )
+        code = guardian_precommit.main([])
+        assert code == 0
+        assert "widget" in capsys.readouterr().out
+
+    def test_dedup_defers_without_running(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            guardian_precommit, "harness_hook_present", lambda *a, **k: True
+        )
+
+        def _boom() -> str:
+            raise AssertionError("pipeline must not run when dedup defers")
+
+        monkeypatch.setattr(guardian_precommit, "staged_diff", _boom)
+        assert guardian_precommit.main([]) == 0
+
+    def test_install_flag_installs(self, tmp_path, monkeypatch) -> None:
+        called: dict = {}
+        monkeypatch.setattr(
+            guardian_precommit, "install", lambda: called.setdefault("did", True)
+        )
+        assert guardian_precommit.main(["--install"]) == 0
+        assert called.get("did") is True
