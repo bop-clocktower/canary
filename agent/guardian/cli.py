@@ -229,11 +229,31 @@ def pr_check(
     )
     findings = apply_suppressions(build_findings(results))
 
+    # SC-5 (PR half): resolve the requested tier against actual capability. In
+    # Phase 3 no agent runtime exists (NoAgentProbe), so any `pr.tier > 0` drops
+    # to tier 0 with a LOUD degradation notice — fixing the prior silent `tier N`
+    # footer that rendered a requested tier no agent could ever serve.
+    from agent.guardian.tier import resolve_tier
+
+    resolution = resolve_tier(config.pr_tier)
+    if resolution.degraded_notice:
+        # Route the tier-degradation to the loud Actions channel regardless of
+        # `--post-comment` (independent of the fork-403 path handled below).
+        from agent.guardian.pr_comment import degradation_annotation
+
+        typer.echo(degradation_annotation(resolution.degraded_notice))
+        _append_step_summary(resolution.degraded_notice)
+
     if post_comment:
         # The posted body is always `comment` format so it carries the sticky
         # marker for marker-matched upsert (SC-9); `--format` still governs the
         # non-posting local echo below.
-        body = render(findings, fmt="comment", tier=config.pr_tier)
+        body = render(
+            findings,
+            fmt="comment",
+            tier=resolution.effective,
+            degraded_notice=resolution.degraded_notice,
+        )
         ctx = _pr_context_from_env()
         if ctx is None:
             typer.echo("guardian: no PR context in env — printing instead.")
@@ -251,7 +271,14 @@ def pr_check(
                 typer.echo(degradation_annotation(res.notice))
                 _append_step_summary(res.notice)
     else:
-        typer.echo(render(findings, fmt=fmt, tier=config.pr_tier))
+        typer.echo(
+            render(
+                findings,
+                fmt=fmt,
+                tier=resolution.effective,
+                degraded_notice=resolution.degraded_notice,
+            )
+        )
 
     raise typer.Exit(compute_exit_code(findings, gate=effective_gate))
 
