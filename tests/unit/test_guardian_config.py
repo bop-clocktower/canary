@@ -139,6 +139,30 @@ class TestLoadGuardianConfig:
         assert warning is not None
         assert config.graph_coverage_max_depth is None
 
+    def test_non_positive_graph_coverage_max_depth_warns_and_defaults(
+        self, tmp_path
+    ) -> None:
+        # #320 FIX 2: a max_depth <= 0 skips expanding even the depth-0 seeds →
+        # EVERY graph-present unit resolves covered=False at GRAPH_VERIFIED → a
+        # hard gate silently blocks every changed file, even fully-tested ones.
+        # Treat it like a bad value: warn LOUDLY and fall back to None (unbounded).
+        for bad in (0, -3):
+            cfg = tmp_path / "harness.config.json"
+            _write(cfg, {"canary": {"guardian": {"graphCoverageMaxDepth": bad}}})
+            config, warning = load_guardian_config(cfg)
+            assert config.graph_coverage_max_depth is None, bad
+            assert warning is not None, bad
+
+    def test_valid_positive_graph_coverage_max_depth_no_warning(
+        self, tmp_path
+    ) -> None:
+        # A valid int >= 1 is unchanged: parsed verbatim, no warning.
+        cfg = tmp_path / "harness.config.json"
+        _write(cfg, {"canary": {"guardian": {"graphCoverageMaxDepth": 2}}})
+        config, warning = load_guardian_config(cfg)
+        assert config.graph_coverage_max_depth == 2
+        assert warning is None
+
 
 _DEFAULT_SKIP_GLOBS = [
     "docs/**",

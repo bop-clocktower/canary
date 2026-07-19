@@ -667,7 +667,7 @@ def _coerce_tier(raw: object, default: int, warnings: list[str]) -> int:
 
 
 def _coerce_optional_int(
-    raw: object, field_name: str, warnings: list[str]
+    raw: object, field_name: str, warnings: list[str], min_value: int | None = None
 ) -> int | None:
     """Coerce a config value to ``int | None``, warning + defaulting ``None``.
 
@@ -675,21 +675,35 @@ def _coerce_optional_int(
     is accepted; anything else (a float, ``"x"``, ``[]``, ``True``) warns and
     defaults to ``None`` (unbounded) — never raises (#320, SC-8). Mirrors the
     tier/gate coerce+warn pattern so a bad value degrades loudly, not silently.
+
+    When ``min_value`` is given, a parsed int BELOW it is treated as a bad value:
+    warn loudly and fall back to ``None`` (FIX 2, #320). ``graphCoverageMaxDepth``
+    passes ``min_value=1`` — a depth ``<= 0`` would skip expanding even the depth-0
+    seeds, silently marking every graph-present unit uncovered and blocking every
+    changed file under a hard gate. Other optional-int configs stay unclamped.
     """
+    parsed: int | None
     if isinstance(raw, bool):
+        parsed = None
+    elif isinstance(raw, int):
+        parsed = raw
+    else:
+        try:
+            parsed = int(str(raw).strip())
+        except (ValueError, TypeError):
+            parsed = None
+    if parsed is None:
         warnings.append(
             f"guardian {field_name} must be an integer, got {raw!r}; ignoring"
         )
         return None
-    if isinstance(raw, int):
-        return raw
-    try:
-        return int(str(raw).strip())
-    except (ValueError, TypeError):
+    if min_value is not None and parsed < min_value:
         warnings.append(
-            f"guardian {field_name} must be an integer, got {raw!r}; ignoring"
+            f"guardian {field_name} must be >= {min_value}; ignoring {parsed}, "
+            f"using unbounded"
         )
         return None
+    return parsed
 
 
 def _coerce_gate(raw: object, default: str, field_name: str, warnings: list[str]) -> str:
@@ -762,7 +776,8 @@ def load_guardian_config(
     # on both surfaces. A bad value warns loudly (SC-8) and stays None.
     if "graphCoverageMaxDepth" in block:
         config.graph_coverage_max_depth = _coerce_optional_int(
-            block["graphCoverageMaxDepth"], "graphCoverageMaxDepth", warnings
+            block["graphCoverageMaxDepth"], "graphCoverageMaxDepth", warnings,
+            min_value=1,
         )
 
     # FIX B: only override the default (docs/** + **/*.md) when skipGlobs is
