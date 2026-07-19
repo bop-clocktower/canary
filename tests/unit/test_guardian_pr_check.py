@@ -107,6 +107,28 @@ class TestScopeDiff:
     def test_empty_diff(self) -> None:
         assert scope_diff("") == []
 
+    def test_added_body_line_starting_plus_plus_not_phantom_header(self) -> None:
+        # FIX 7: an added content line whose text is `++ evil` appears in the
+        # unified diff as `+++ evil` inside the hunk body. It must be counted as
+        # an added line of the real file, NOT parsed as a `+++ ` file header
+        # (which would spawn a phantom `evil` unit and drop the real add).
+        diff = (
+            "diff --git a/pkg/mod.py b/pkg/mod.py\n"
+            "index 1111111..2222222 100644\n"
+            "--- a/pkg/mod.py\n"
+            "+++ b/pkg/mod.py\n"
+            "@@ -1,2 +1,3 @@\n"
+            " keep\n"
+            "+++ evil\n"
+            " keep2\n"
+        )
+        units = scope_diff(diff)
+        by_path = {u.path: u for u in units}
+        assert "evil" not in by_path  # no phantom file header
+        assert "pkg/mod.py" in by_path
+        # The `+++ evil` add lands on new-file line 2 (after context ` keep`).
+        assert by_path["pkg/mod.py"].added_ranges == [(2, 2)]
+
 
 def _result(covered: bool, fidelity: Fidelity, path: str = "pkg/foo.py",
             evidence: str = "ev") -> CoverageResult:

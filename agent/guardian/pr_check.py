@@ -58,9 +58,21 @@ def scope_diff(diff_text: str) -> list[ChangedUnit]:
     current_path: str | None = None
     new_lineno = 0
     skip_current = False
+    in_hunk = False
 
     for line in diff_text.splitlines():
-        if line.startswith("+++ "):
+        if line.startswith("diff --git"):
+            # New file block begins → leave any prior hunk body; path is set by
+            # the upcoming `+++ ` header.
+            in_hunk = False
+            current_path = None
+            skip_current = False
+            continue
+
+        # `--- `/`+++ ` are file headers ONLY before the first hunk of a file.
+        # Once inside a hunk body a `+++ ...` line is an ADDED content line whose
+        # real text is `++ ...` and must not be mistaken for a header (FIX 7).
+        if not in_hunk and line.startswith("+++ "):
             target = line[4:].strip()
             if target == "/dev/null":
                 skip_current = True
@@ -72,13 +84,14 @@ def scope_diff(diff_text: str) -> list[ChangedUnit]:
             added_by_path.setdefault(current_path, [])
             continue
 
-        if line.startswith("--- "):
+        if not in_hunk and line.startswith("--- "):
             # Old-file header; ignored (path comes from +++).
             continue
 
         hunk = _HUNK_RE.match(line)
         if hunk:
             new_lineno = int(hunk.group(1))
+            in_hunk = True
             continue
 
         if skip_current or current_path is None:
