@@ -204,6 +204,30 @@ class TestResolveFromGraph:
         foo = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 5)])
         assert resolve_from_graph([foo], graph) is None
 
+    def test_non_dict_ndjson_lines_ignored(self, tmp_path: Path) -> None:
+        # FIX 3: valid-JSON but non-object lines (null, a number, an array) must
+        # be skipped, not crash the resolver with AttributeError on `.get`.
+        graph = tmp_path / "graph.json"
+        lines = [
+            '{"kind": "node", "type": "file", "id": "file:pkg/foo.py", '
+            '"path": "pkg/foo.py"}',
+            "5",
+            "[1, 2]",
+            "null",
+            '"a bare string"',
+            '{"kind": "node", "type": "file", "id": "file:tests/test_foo.py", '
+            '"path": "tests/test_foo.py"}',
+            '{"kind": "edge", "from": "file:tests/test_foo.py", '
+            '"to": "file:pkg/foo.py", "type": "imports"}',
+        ]
+        graph.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        foo = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 3)])
+
+        results = resolve_from_graph([foo], graph)
+        assert results is not None
+        # Valid records still resolve → foo is covered by the test import edge.
+        assert results[0].covered is True
+
 
 class TestResolveHeuristic:
     def _repo(self, tmp_path: Path):

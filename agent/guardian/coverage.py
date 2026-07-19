@@ -256,6 +256,10 @@ def resolve_from_graph(
             record = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if not isinstance(record, dict):
+            # Valid JSON but not an object (e.g. `null`, `5`, `[1,2]`, `"x"`) →
+            # not a node/edge record; skip it rather than crash on `.get` (FIX 3).
+            continue
         kind = record.get("kind")
         if kind == "node":
             node_id = record.get("id")
