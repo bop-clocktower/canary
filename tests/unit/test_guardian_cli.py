@@ -54,6 +54,30 @@ index 3333333..4444444 100644
 +
 """
 
+# A lockfile-only diff. A generated dependency lockfile must never trip a
+# coverage gate — it is default-skipped (signal-quality FIX 1).
+DIFF_LOCKFILE_ONLY = """\
+diff --git a/package-lock.json b/package-lock.json
+index 1111111..2222222 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -0,0 +1,3 @@
++{
++  "name": "lego-tracker"
++}
+"""
+
+# A built/bundled artifact under dist/ — also default-skipped (FIX 1).
+DIFF_DIST_BUNDLE = """\
+diff --git a/dist/bundle.js b/dist/bundle.js
+index 1111111..2222222 100644
+--- a/dist/bundle.js
++++ b/dist/bundle.js
+@@ -0,0 +1,2 @@
++function t(){return 42}
++
+"""
+
 _BEFORE = {"openapi": "3.0.0", "paths": {"/members": {"get": {"operationId": "list"}}}}
 _AFTER = {
     "openapi": "3.0.0",
@@ -205,6 +229,47 @@ class TestPrCheckPost:
         assert result.exit_code == 0
         assert "nothing to verify" in result.stdout
         assert fake.list_comments() == []  # no finding posted
+
+    def test_lockfile_only_skips_by_default(self, tmp_path, monkeypatch) -> None:
+        # FIX 1: a generated lockfile (package-lock.json) is default-skipped —
+        # no config, no skipGlobs key → "nothing to verify", NO finding.
+        monkeypatch.chdir(tmp_path)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--format", "json"],
+            input=DIFF_LOCKFILE_ONLY,
+        )
+        assert result.exit_code == 0
+        assert "nothing to verify" in result.stdout
+
+    def test_dist_bundle_skips_by_default(self, tmp_path, monkeypatch) -> None:
+        # FIX 1: a built artifact under dist/ is default-skipped too.
+        monkeypatch.chdir(tmp_path)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--format", "json"],
+            input=DIFF_DIST_BUNDLE,
+        )
+        assert result.exit_code == 0
+        assert "nothing to verify" in result.stdout
+
+    def test_explicit_empty_skipglobs_disables_default_skip(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # FIX 1: an explicit `skipGlobs: []` OVERRIDES the default set, so a
+        # lockfile is NO LONGER skipped — it flows through to a finding. Proves
+        # absent-key (default) is distinguished from present-empty (override).
+        monkeypatch.chdir(tmp_path)
+        cfg = _write_config(tmp_path, {"skipGlobs": []})
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--config", cfg, "--format", "json"],
+            input=DIFF_LOCKFILE_ONLY,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        paths = {f["path"] for f in data["findings"]}
+        assert "package-lock.json" in paths  # override honored: NOT skipped
 
     def test_pr_disabled_skips_surface(self, tmp_path, monkeypatch) -> None:
         monkeypatch.chdir(tmp_path)

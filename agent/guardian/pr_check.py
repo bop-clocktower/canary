@@ -458,10 +458,29 @@ def render(
     return "\n".join(lines)
 
 
-# SC-2 canonical skip examples: docs and markdown never need a covering test, so
-# they are the DEFAULT skip set when a config omits ``skipGlobs`` entirely. An
-# explicit ``skipGlobs`` (even ``[]``) overrides this — see ``load_guardian_config``.
-_DEFAULT_SKIP_GLOBS = ("docs/**", "**/*.md")
+# SC-2 canonical skip set: files no coverage gate should ever fire on. Docs and
+# markdown never need a covering test; generated/dependency artifacts (lockfiles,
+# built bundles under dist/build, minified JS, test snapshots) are not authored
+# code and would only produce noise (signal-quality FIX 1, seen dogfooding on an
+# external repo where package-lock.json was falsely flagged). This is the DEFAULT
+# skip set when a config omits ``skipGlobs`` entirely — an explicit ``skipGlobs``
+# (even ``[]``) overrides it. See ``load_guardian_config``.
+_DEFAULT_SKIP_GLOBS = (
+    "docs/**",
+    "**/*.md",
+    # Dependency lockfiles (generated, never hand-tested).
+    "**/package-lock.json",
+    "**/yarn.lock",
+    "**/pnpm-lock.yaml",
+    "**/poetry.lock",
+    "**/Cargo.lock",
+    "**/*.lock",
+    # Build outputs and generated bundles/snapshots.
+    "dist/**",
+    "build/**",
+    "**/*.min.js",
+    "**/*.snap",
+)
 
 
 @dataclass
@@ -472,8 +491,10 @@ class GuardianConfig:
     ``skip_globs`` and the ``precommit_*``/``coverage_paths`` fields are read
     into the object (scaffold) for later phases (SC-2 skip, SC-5 tier).
 
-    ``skip_globs`` defaults to ``docs/**`` + ``**/*.md`` (FIX B) so docs/markdown
-    changes skip out of the box; an explicit ``skipGlobs`` in config overrides it.
+    ``skip_globs`` defaults to docs/markdown PLUS generated/dependency artifacts
+    (lockfiles, ``dist``/``build`` outputs, minified JS, snapshots — see
+    ``_DEFAULT_SKIP_GLOBS``) so noise-only paths skip out of the box; an explicit
+    ``skipGlobs`` in config (even ``[]``) overrides it.
     """
 
     pr_enabled: bool = True
