@@ -149,6 +149,23 @@ class InSessionAgentTier:
         transcript = self.invoker.review(ReviewRequest(list(affected_tests)))
         return _parse_review_findings(transcript)
 
+    def author_tests(
+        self, gaps: list[Finding], ctx: AuthoringContext | None = None
+    ) -> list[GeneratedTest]:
+        """Tier 2: plan the safe authoring intents, then hand each ``planned``
+        intent to the injected invoker (the ``RecordingInvoker`` default leaves
+        it ``planned`` — Option A; a fake/real invoker returns ``authored``).
+        ``skipped`` records pass through untouched. Absent ``ctx`` the caller
+        gets the fail-closed default (opt-in off, tier 0 → everything skipped)."""
+        plan = plan_authoring(gaps, ctx or AuthoringContext(False, 0))
+        out: list[GeneratedTest] = []
+        for intent in plan:
+            if intent.status == "planned":
+                out.append(self.invoker.author(intent))  # -> authored (fake/real)
+            else:
+                out.append(intent)  # skipped, unchanged
+        return out
+
 
 @dataclass(frozen=True)
 class InSessionAgentProbe:
@@ -270,3 +287,31 @@ def plan_authoring(
                 )
             )
     return out
+
+
+@dataclass(frozen=True)
+class BlockDecision:
+    """The pre-commit block-once decision computed from an authoring run."""
+
+    block: bool
+    message: str
+    authored_count: int
+
+
+def decide_block(results: list[GeneratedTest]) -> BlockDecision:
+    """Block the commit ONCE iff ≥1 test was authored & staged this run.
+
+    An all-``skipped`` run changed nothing, so it never blocks. The message names
+    the count and instructs "review … then re-commit" (D4). The actual sentinel
+    write + ``git add`` happen in the hook/SKILL (T7/T8) — this is pure decision
+    logic.
+    """
+    authored = [r for r in results if r.status == "authored"]
+    count = len(authored)
+    if count == 0:
+        return BlockDecision(block=False, message="", authored_count=0)
+    message = (
+        f"⛔ canary-guardian: {count} test(s) authored & staged — "
+        f"review the generated code, then re-commit."
+    )
+    return BlockDecision(block=True, message=message, authored_count=count)

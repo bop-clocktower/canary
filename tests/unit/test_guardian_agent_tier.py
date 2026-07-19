@@ -24,6 +24,7 @@ from agent.guardian.agent_tier import (
     RecordingInvoker,
     ReviewRequest,
     _target_test_path,
+    decide_block,
     plan_authoring,
 )
 from agent.guardian.impact_mapper import Severity
@@ -261,3 +262,80 @@ class TestPlanAuthoring:
             assert r.skip_reason is None
         # Pure planning: nothing written to disk.
         assert set(tmp_path.rglob("*")) == before
+
+
+class TestAuthorTests:
+    """T5 / SC-6: wire plan_authoring to the injected invoker → authored records
+    for authorable gaps, skipped records preserved. No real agent/LLM/network."""
+
+    def _ok_ctx(self, tmp_path: Path) -> AuthoringContext:
+        return AuthoringContext(
+            author_tests_optin=True, effective_tier=2, repo_root=tmp_path
+        )
+
+    def test_fake_invoker_authors_planned_preserves_skipped(
+        self, tmp_path: Path
+    ) -> None:
+        authorable = _finding(path="src/foo.py", unit="foo")
+        colliding = _finding(path="src/bar.py", unit="bar")
+        # Pre-create the colliding gap's target so guard (c) skips it.
+        target = tmp_path / _target_test_path(colliding)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("# owned by another PR\n", encoding="utf-8")
+
+        invoker = FakeInvoker()
+        tier = InSessionAgentTier(invoker=invoker)
+        results = tier.author_tests([authorable, colliding], self._ok_ctx(tmp_path))
+
+        by_path = {r.gap.path: r for r in results}
+        assert by_path["src/foo.py"].status == "authored"
+        assert by_path["src/foo.py"].written_path == _target_test_path(authorable)
+        assert by_path["src/bar.py"].status == "skipped"
+        # Only planned intents were sent to the invoker (one authorable gap).
+        assert len(invoker.author_calls) == 1
+        assert invoker.author_calls[0].gap.path == "src/foo.py"
+
+    def test_default_recording_invoker_authors_nothing(self, tmp_path: Path) -> None:
+        tier = InSessionAgentTier()  # default RecordingInvoker (Option A)
+        results = tier.author_tests([_finding()], self._ok_ctx(tmp_path))
+        assert [r.status for r in results] == ["planned"]
+        assert results[0].written_path is None
+
+
+class TestDecideBlock:
+    """T5 / D4: block ONCE iff ≥1 test was authored this run; never on all-skip."""
+
+    def _authored(self) -> GeneratedTest:
+        return GeneratedTest(
+            gap=_finding(),
+            target_path="tests/test_foo.py",
+            requirement="r",
+            status="authored",
+            written_path="tests/test_foo.py",
+        )
+
+    def _skipped(self) -> GeneratedTest:
+        return GeneratedTest(
+            gap=_finding(),
+            target_path="tests/test_foo.py",
+            requirement="r",
+            status="skipped",
+            skip_reason="fork: read-only",
+        )
+
+    def test_blocks_once_when_tests_authored(self) -> None:
+        decision = decide_block([self._authored(), self._authored()])
+        assert decision.block is True
+        assert decision.authored_count == 2
+        assert "authored & staged" in decision.message
+        assert "re-commit" in decision.message
+
+    def test_does_not_block_on_all_skipped(self) -> None:
+        decision = decide_block([self._skipped(), self._skipped()])
+        assert decision.block is False
+        assert decision.authored_count == 0
+
+    def test_blocks_on_mixed_counting_only_authored(self) -> None:
+        decision = decide_block([self._authored(), self._skipped()])
+        assert decision.block is True
+        assert decision.authored_count == 1
