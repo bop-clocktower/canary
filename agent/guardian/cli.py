@@ -92,6 +92,54 @@ def analyze(
         _try_post_pr_comment(summary, pr_url=pr)
 
 
+@guardian_app.command("pr-check")
+def pr_check(
+    diff: Optional[str] = typer.Option(
+        None, "--diff", help="Diff file, '-' for stdin, or omit to use `git diff`."
+    ),
+    coverage: Optional[str] = typer.Option(
+        None, "--coverage", help="Coverage report path (lcov/json)."
+    ),
+    fmt: str = typer.Option("comment", "--format", help="comment|json|text"),
+    config_path: str = typer.Option("harness.config.json", "--config"),
+    gate: Optional[str] = typer.Option(
+        None, "--gate", help="Override config gate: soft|hard"
+    ),
+) -> None:
+    """Tier 0 deterministic PR guardian: scope a diff, resolve diff-coverage at
+    the highest available fidelity, render findings, and gate the exit code.
+
+    Agent-free (SC-11): imports no LLM/agent module.
+    """
+    from agent.guardian.coverage import resolve_coverage
+    from agent.guardian.pr_check import (
+        apply_suppressions,
+        build_findings,
+        compute_exit_code,
+        load_guardian_config,
+        read_diff,
+        render,
+        scope_diff,
+    )
+
+    config, warning = load_guardian_config(Path(config_path))
+    if warning is not None:
+        # SC-8: surface the malformed-config warning loudly, never silently.
+        typer.echo(f"WARNING: {warning}", err=True)
+
+    effective_gate = gate or config.pr_gate
+
+    diff_text = read_diff(diff)
+    units = scope_diff(diff_text)
+    results = resolve_coverage(
+        units, coverage_path=Path(coverage) if coverage else None
+    )
+    findings = apply_suppressions(build_findings(results))
+
+    typer.echo(render(findings, fmt=fmt, tier=config.pr_tier))
+    raise typer.Exit(compute_exit_code(findings, gate=effective_gate))
+
+
 @guardian_app.command()
 def watch(
     interval_secs: int = typer.Option(300, "--interval", help="Polling interval in seconds."),

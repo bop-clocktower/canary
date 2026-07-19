@@ -7,7 +7,11 @@ codes, renderers, and the CLI wiring.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+from typer.testing import CliRunner
+
+from agent.guardian.cli import guardian_app
 from agent.guardian.coverage import ChangedUnit, CoverageResult, Fidelity
 from agent.guardian.impact_mapper import Severity
 from agent.guardian.pr_check import (
@@ -267,3 +271,73 @@ class TestRender:
         out = render([_finding()], fmt="text")
         assert "<!--" not in out
         assert "pkg/foo.py" in out
+
+
+DIFF_NEW_UNIT = """\
+diff --git a/pkg/widget.py b/pkg/widget.py
+index 1111111..2222222 100644
+--- a/pkg/widget.py
++++ b/pkg/widget.py
+@@ -0,0 +1,3 @@
++def widget():
++    return 42
++
+"""
+
+
+class TestPrCheckCLI:
+    runner = CliRunner()
+
+    def _seed(self, root: Path) -> None:
+        (root / "pkg").mkdir()
+        (root / "pkg" / "widget.py").write_text(
+            "def widget():\n    return 42\n", encoding="utf-8"
+        )
+
+    def test_json_lists_finding_and_soft_exits_zero(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        self._seed(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--format", "json", "--gate", "soft"],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["tier"] == 0
+        assert len(data["findings"]) >= 1
+        assert data["findings"][0]["path"] == "pkg/widget.py"
+
+    def test_hard_gate_high_uncovered_exits_nonzero(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        self._seed(tmp_path)
+        # Coverage report marks every added line uncovered → HIGH finding.
+        (tmp_path / "cov.info").write_text(
+            "SF:pkg/widget.py\nDA:1,0\nDA:2,0\nDA:3,0\nend_of_record\n",
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp_path)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--coverage", "cov.info",
+             "--gate", "hard"],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code != 0
+
+    def test_help_discoverable(self) -> None:
+        result = self.runner.invoke(guardian_app, ["pr-check", "--help"])
+        assert result.exit_code == 0
+        assert "--diff" in result.stdout
+
+
+class TestPackageExports:
+    def test_exports(self) -> None:
+        import agent.guardian as g
+
+        assert g.Fidelity is Fidelity
+        assert g.Finding is Finding
+        assert g.CoverageResult is CoverageResult
