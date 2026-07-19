@@ -14,6 +14,7 @@ from agent.guardian.coverage import (
     Fidelity,
     resolve_from_graph,
     resolve_from_report,
+    resolve_heuristic,
 )
 
 
@@ -201,3 +202,62 @@ class TestResolveFromGraph:
         graph.write_text("", encoding="utf-8")
         foo = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 5)])
         assert resolve_from_graph([foo], graph) is None
+
+
+class TestResolveHeuristic:
+    def _repo(self, tmp_path: Path):
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "pkg" / "foo.py").write_text(
+            "def do_it():\n    return 1\n", encoding="utf-8"
+        )
+        (tmp_path / "pkg" / "bar.py").write_text(
+            "def other():\n    return 2\n", encoding="utf-8"
+        )
+        (tmp_path / "tests" / "test_foo.py").write_text(
+            "from pkg import foo\n\ndef test_do_it():\n    assert foo.do_it() == 1\n",
+            encoding="utf-8",
+        )
+        return tmp_path
+
+    def test_stem_referenced_by_test_is_covered(self, tmp_path: Path) -> None:
+        repo = self._repo(tmp_path)
+        foo = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 2)])
+        results = resolve_heuristic([foo], repo_root=repo)
+        assert results[0].covered is True
+        assert results[0].fidelity is Fidelity.HEURISTIC
+        assert "test_foo.py" in results[0].evidence
+
+    def test_unreferenced_unit_is_uncovered(self, tmp_path: Path) -> None:
+        repo = self._repo(tmp_path)
+        bar = ChangedUnit(path="pkg/bar.py", added_ranges=[(1, 2)])
+        results = resolve_heuristic([bar], repo_root=repo)
+        assert results[0].covered is False
+        assert results[0].fidelity is Fidelity.HEURISTIC
+
+    def test_symbol_name_reference_covers(self, tmp_path: Path) -> None:
+        # A test that mentions the symbol name (not the module stem) still counts.
+        repo = tmp_path
+        (repo / "pkg").mkdir()
+        (repo / "tests").mkdir()
+        (repo / "pkg" / "widget.py").write_text(
+            "class GadgetMaker:\n    pass\n", encoding="utf-8"
+        )
+        (repo / "tests" / "test_things.py").write_text(
+            "from pkg.widget import GadgetMaker\n\n"
+            "def test_it():\n    assert GadgetMaker()\n",
+            encoding="utf-8",
+        )
+        unit = ChangedUnit(path="pkg/widget.py", added_ranges=[(1, 2)])
+        results = resolve_heuristic([unit], repo_root=repo)
+        assert results[0].covered is True
+
+    def test_always_returns_one_result_per_unit(self, tmp_path: Path) -> None:
+        repo = self._repo(tmp_path)
+        units = [
+            ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 2)]),
+            ChangedUnit(path="pkg/bar.py", added_ranges=[(1, 2)]),
+        ]
+        results = resolve_heuristic(units, repo_root=repo)
+        assert len(results) == 2
+        assert all(r.fidelity is Fidelity.HEURISTIC for r in results)

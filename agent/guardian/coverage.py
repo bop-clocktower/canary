@@ -12,6 +12,7 @@ the ``analyze_diff``/``get_impact`` MCP tools. Graph coverage reads the NDJSON
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from dataclasses import dataclass, field
@@ -321,6 +322,99 @@ def resolve_from_graph(
                 unit=unit,
                 covered=covered,
                 fidelity=Fidelity.GRAPH_VERIFIED,
+                evidence=evidence,
+            )
+        )
+    return results
+
+
+def _extract_symbols(unit_path: str, repo_root: Path) -> set[str]:
+    """Derive candidate symbol names for a unit: the file stem plus top-level
+    ``def``/``class`` names (``ast`` for ``.py``, a cheap regex otherwise)."""
+    stem = Path(unit_path).stem
+    symbols: set[str] = {stem}
+    full = repo_root / unit_path
+    try:
+        source = full.read_text(encoding="utf-8")
+    except OSError:
+        return symbols
+    if unit_path.endswith(".py"):
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return symbols
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                symbols.add(node.name)
+    else:
+        for match in re.finditer(
+            r"\b(?:function|class|def|const|let|var)\s+([A-Za-z_]\w*)", source
+        ):
+            symbols.add(match.group(1))
+    return symbols
+
+
+def _iter_test_files(repo_root: Path):
+    """Yield ``(path, text)`` for every test-looking file under ``repo_root``."""
+    seen: set[Path] = set()
+    for pattern in ("test_*.py", "*.test.*", "*.spec.*"):
+        for path in repo_root.rglob(pattern):
+            if path in seen or not path.is_file():
+                continue
+            seen.add(path)
+            try:
+                yield path, path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+    # Also any file living under a tests/ directory (broader net).
+    for path in repo_root.rglob("*.py"):
+        if path in seen or not path.is_file():
+            continue
+        rel = path.relative_to(repo_root).as_posix()
+        if is_test_path(rel):
+            seen.add(path)
+            try:
+                yield path, path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+
+
+def resolve_heuristic(
+    units: list[ChangedUnit], repo_root: Path = Path(".")
+) -> list[CoverageResult]:
+    """Tier 3: last-resort naming/AST heuristic (``HEURISTIC``, never ``None``).
+
+    A unit is heuristic-covered iff some test file under ``repo_root`` references
+    the unit's file stem or a top-level symbol name (word-boundary scan).
+    """
+    test_files = list(_iter_test_files(repo_root))
+    results: list[CoverageResult] = []
+    for unit in units:
+        symbols = _extract_symbols(unit.path, repo_root)
+        # Avoid pathological single-letter stems matching everything.
+        patterns = {
+            re.compile(rf"\b{re.escape(sym)}\b") for sym in symbols if len(sym) >= 2
+        }
+        covering: str | None = None
+        for test_path, text in test_files:
+            rel = test_path.relative_to(repo_root).as_posix()
+            # A file never counts as covering itself.
+            if rel == unit.path:
+                continue
+            if any(pat.search(text) for pat in patterns):
+                covering = rel
+                break
+        covered = covering is not None
+        evidence = (
+            f"referenced by {covering}"
+            if covered
+            else f"no test file references {Path(unit.path).stem}"
+        )
+        results.append(
+            CoverageResult(
+                unit=unit,
+                covered=covered,
+                fidelity=Fidelity.HEURISTIC,
                 evidence=evidence,
             )
         )
