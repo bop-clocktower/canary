@@ -1,15 +1,18 @@
 """SC-11 capability-boundary architecture test.
 
-The Tier 0 deterministic engine (``agent/guardian/pr_check.py`` and
-``agent/guardian/coverage.py``) must stay **agent-free**: it may import no
+The Tier 0 deterministic engine (``agent/guardian/pr_check.py``,
+``agent/guardian/coverage.py``, and — as of Phase 2 — the comment poster
+``agent/guardian/pr_comment.py``) must stay **agent-free**: it may import no
 ``AgentTier``, ``agent.llm``, or LLM-SDK module, and must never reference the
 ``analyze_diff``/``get_impact`` MCP tools (those are the agent-tier equivalents).
+The poster is deterministic HTTP behind a protocol seam, not an agent.
 
 RED proof (TDD): this test passes immediately on the clean modules, so to prove
-it can fail, temporarily add ``import anthropic`` to the top of
-``agent/guardian/pr_check.py``, run this file, and watch
+it can fail, temporarily add ``import anthropic`` to the top of any scanned
+module (e.g. ``agent/guardian/pr_comment.py``), run this file, and watch
 ``test_no_forbidden_imports`` fail; then remove the throwaway import and watch it
-go green. That RED→GREEN cycle was performed during T13 authoring.
+go green. That RED→GREEN cycle was performed during T13 (pr_check) and T7
+(pr_comment) authoring.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _MODULES = [
     _REPO_ROOT / "agent" / "guardian" / "pr_check.py",
     _REPO_ROOT / "agent" / "guardian" / "coverage.py",
+    _REPO_ROOT / "agent" / "guardian" / "pr_comment.py",
 ]
 
 # Module/symbol tokens the deterministic engine must never import.
