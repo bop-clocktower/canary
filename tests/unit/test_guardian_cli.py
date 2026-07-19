@@ -384,3 +384,69 @@ class TestPrCheckPost:
         )
         assert result.exit_code == 0
         assert STICKY_MARKER in result.stdout  # printed the comment body
+
+
+class TestPrCheckTierDegradation:
+    """SC-5 (PR half): a requested tier>0 with no agent degrades LOUDLY on both
+    the rendered footer AND the Actions `::warning::`/step-summary channel — the
+    silent `tier N` footer bug is fixed."""
+
+    runner = CliRunner()
+
+    def _use_env(self, monkeypatch) -> None:
+        monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+        monkeypatch.setenv("GITHUB_REF", "refs/pull/7/merge")
+        monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+
+    def test_tier_one_degrades_loudly_local(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        cfg = _write_config(tmp_path, {"pr": {"tier": 1}})
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--config", cfg, "--format", "text"],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0  # soft gate default
+        # Loud Actions channel:
+        assert "::warning::" in result.stdout
+        assert "tier 1" in result.stdout
+        assert "degraded" in result.stdout
+        # Rendered footer shows the EFFECTIVE tier (0) with the degraded notice —
+        # never a silent `tier 1` footer with no agent.
+        assert "tier 0" in result.stdout
+
+    def test_tier_zero_no_false_degradation(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        cfg = _write_config(tmp_path, {"pr": {"tier": 0}})
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--config", cfg, "--format", "text"],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        assert "::warning::" not in result.stdout  # no tier-path warning
+        assert "degraded" not in result.stdout  # regression guard
+
+    def test_tier_two_degrades_on_both_channels_when_posting(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        self._use_env(monkeypatch)
+        summary = tmp_path / "step_summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+        fake = FakeGitHubClient()
+        monkeypatch.setattr(guardian_cli, "_build_client", lambda *_: fake)
+        cfg = _write_config(tmp_path, {"pr": {"tier": 2}})
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--config", cfg, "--post-comment"],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        # Channel 1: the posted comment body carries the degraded notice.
+        marked = [c for c in fake.list_comments() if STICKY_MARKER in c["body"]]
+        assert len(marked) == 1
+        assert "⚠ degraded: tier 2" in marked[0]["body"]
+        # Channel 2: the Actions step-summary file receives the notice.
+        assert "tier 2" in summary.read_text(encoding="utf-8")
+        assert "::warning::" in result.stdout
