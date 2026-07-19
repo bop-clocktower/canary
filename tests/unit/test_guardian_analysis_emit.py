@@ -165,6 +165,30 @@ class TestFilename:
         assert "/" not in name
         assert re.fullmatch(r"[A-Za-z0-9._-]+\.json", name)
 
+    def test_long_ref_is_length_capped(self) -> None:
+        """FIX 4: a very long ref must not blow past a filename length bound
+        (ENAMETOOLONG → always degrades, never uses the channel)."""
+        name = analysis_filename("x" * 300)
+        assert name.startswith("canary-pr-guardian-")
+        assert name.endswith(".json")
+        # Bounded: prefix + capped ref (100) + hash suffix stays well under ~120.
+        assert len(name) <= 140
+
+    def test_truncated_refs_disambiguate_via_hash(self) -> None:
+        """Two distinct long refs sharing the first 100 chars must NOT collide —
+        the hash suffix (of the FULL ref) disambiguates them."""
+        shared = "y" * 100
+        a = analysis_filename(shared + "-alpha-tail" + "z" * 200)
+        b = analysis_filename(shared + "-bravo-tail" + "z" * 200)
+        assert a != b
+        assert a.startswith("canary-pr-guardian-")
+        assert b.startswith("canary-pr-guardian-")
+
+    def test_short_ref_unchanged_no_hash_suffix(self) -> None:
+        """Short refs are unchanged — the hash suffix appears ONLY on truncation."""
+        assert analysis_filename("pr-42") == "canary-pr-guardian-pr-42.json"
+        assert analysis_filename("feature-x") == "canary-pr-guardian-feature-x.json"
+
 
 class TestChannelAvailability:
     def test_absent_harness_home_is_unavailable(self, tmp_path: Path) -> None:

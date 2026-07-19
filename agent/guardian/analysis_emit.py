@@ -20,6 +20,7 @@ is scanned by ``tests/unit/test_guardian_capability_boundary.py`` (``_MODULES``)
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -34,6 +35,7 @@ from agent.guardian.pr_check import Finding, render  # intra-guardian, agent-fre
 SCHEMA_VERSION = "1.0"
 SOURCE = "canary-pr-guardian"
 _REF_SAFE = re.compile(r"[^A-Za-z0-9._-]")
+_REF_MAX = 100  # cap the sanitized ref so a long branch never hits ENAMETOOLONG
 
 
 def analysis_filename(ref: str, source: str = SOURCE) -> str:
@@ -41,8 +43,16 @@ def analysis_filename(ref: str, source: str = SOURCE) -> str:
 
     Prefixing namespaces canary records so they never clobber harness's own
     ``<issueId>.json`` records and always pass ``AnalysisArchive.safePath``.
+
+    A very long ref would produce a filename that trips ``ENAMETOOLONG`` (always
+    degrades, never uses the channel), so the sanitized ref is truncated to
+    ``_REF_MAX`` chars with a short hash suffix appended to preserve uniqueness —
+    only when truncation actually happens. Short refs are unchanged.
     """
     safe = _REF_SAFE.sub("-", ref).strip("-") or "local"
+    if len(safe) > _REF_MAX:
+        digest = hashlib.sha1(ref.encode("utf-8")).hexdigest()[:8]
+        safe = f"{safe[:_REF_MAX]}-{digest}"
     return f"{source}-{safe}.json"
 
 
