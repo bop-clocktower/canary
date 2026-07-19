@@ -6,10 +6,13 @@ resolution per changed unit (report > graph > heuristic), each labeled.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from agent.guardian.coverage import (
     ChangedUnit,
     CoverageResult,
     Fidelity,
+    resolve_from_report,
 )
 
 
@@ -54,3 +57,76 @@ class TestShapes:
             evidence="all hit",
         )
         assert result.uncovered_lines == []
+
+
+LCOV_FIXTURE = """\
+SF:pkg/foo.py
+DA:12,3
+DA:13,1
+DA:14,0
+DA:15,2
+end_of_record
+SF:pkg/bar.py
+DA:1,5
+DA:2,4
+end_of_record
+"""
+
+JSON_FIXTURE = {
+    "files": {
+        "pkg/foo.py": {"covered_lines": [12, 13, 15]},
+        "pkg/bar.py": {"covered_lines": [1, 2]},
+    }
+}
+
+
+class TestResolveFromReport:
+    def _units(self):
+        foo = ChangedUnit(path="pkg/foo.py", added_ranges=[(12, 15)])
+        bar = ChangedUnit(path="pkg/bar.py", added_ranges=[(1, 2)])
+        return foo, bar
+
+    def test_lcov_covered_and_uncovered(self, tmp_path: Path) -> None:
+        report = tmp_path / "lcov.info"
+        report.write_text(LCOV_FIXTURE, encoding="utf-8")
+        foo, bar = self._units()
+
+        results = resolve_from_report([foo, bar], report)
+        assert results is not None
+        by_path = {r.unit.path: r for r in results}
+
+        # foo added line 14 has 0 hits → uncovered.
+        assert by_path["pkg/foo.py"].covered is False
+        assert by_path["pkg/foo.py"].uncovered_lines == [14]
+        assert by_path["pkg/foo.py"].fidelity is Fidelity.COVERAGE_VERIFIED
+
+        # bar all added lines hit → covered.
+        assert by_path["pkg/bar.py"].covered is True
+        assert by_path["pkg/bar.py"].uncovered_lines == []
+        assert by_path["pkg/bar.py"].fidelity is Fidelity.COVERAGE_VERIFIED
+
+    def test_json_covered_and_uncovered(self, tmp_path: Path) -> None:
+        import json
+
+        report = tmp_path / "coverage.json"
+        report.write_text(json.dumps(JSON_FIXTURE), encoding="utf-8")
+        foo, bar = self._units()
+
+        results = resolve_from_report([foo, bar], report)
+        assert results is not None
+        by_path = {r.unit.path: r for r in results}
+
+        # foo line 14 absent from covered_lines → uncovered.
+        assert by_path["pkg/foo.py"].covered is False
+        assert by_path["pkg/foo.py"].uncovered_lines == [14]
+        assert by_path["pkg/bar.py"].covered is True
+
+    def test_unrecognized_format_returns_none(self, tmp_path: Path) -> None:
+        report = tmp_path / "coverage.xml"
+        report.write_text("<coverage/>", encoding="utf-8")
+        foo, _ = self._units()
+        assert resolve_from_report([foo], report) is None
+
+    def test_missing_file_returns_none(self, tmp_path: Path) -> None:
+        foo, _ = self._units()
+        assert resolve_from_report([foo], tmp_path / "nope.json") is None
