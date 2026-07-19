@@ -33,6 +33,27 @@ index 1111111..2222222 100644
 +prose
 """
 
+# A diff that adds BOTH a production unit and its test file. The test file must
+# NOT become an "untested new code" finding — a test does not need a test.
+DIFF_SRC_AND_TEST = """\
+diff --git a/agent/core/foo.py b/agent/core/foo.py
+index 1111111..2222222 100644
+--- a/agent/core/foo.py
++++ b/agent/core/foo.py
+@@ -0,0 +1,3 @@
++def foo():
++    return 1
++
+diff --git a/tests/unit/test_foo.py b/tests/unit/test_foo.py
+index 3333333..4444444 100644
+--- a/tests/unit/test_foo.py
++++ b/tests/unit/test_foo.py
+@@ -0,0 +1,3 @@
++def test_foo():
++    assert foo() == 1
++
+"""
+
 _BEFORE = {"openapi": "3.0.0", "paths": {"/members": {"get": {"operationId": "list"}}}}
 _AFTER = {
     "openapi": "3.0.0",
@@ -148,6 +169,26 @@ class TestPrCheckPost:
         assert result.exit_code == 0
         assert "nothing to verify" in result.stdout
         assert fake.list_comments() == []  # SC-2: no comment
+
+    def test_test_files_never_become_findings(self, tmp_path, monkeypatch) -> None:
+        # FIX A: a diff adding both agent/core/foo.py (untested) and its test
+        # tests/unit/test_foo.py must yield a finding ONLY for foo.py — the test
+        # file is a test-path unit and must be dropped before findings build.
+        (tmp_path / "agent" / "core").mkdir(parents=True)
+        (tmp_path / "agent" / "core" / "foo.py").write_text(
+            "def foo():\n    return 1\n", encoding="utf-8"
+        )
+        monkeypatch.chdir(tmp_path)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--format", "json", "--gate", "soft"],
+            input=DIFF_SRC_AND_TEST,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        paths = {f["path"] for f in data["findings"]}
+        assert "agent/core/foo.py" in paths  # production unit still flagged
+        assert "tests/unit/test_foo.py" not in paths  # test file dropped
 
     def test_pr_disabled_skips_surface(self, tmp_path, monkeypatch) -> None:
         monkeypatch.chdir(tmp_path)

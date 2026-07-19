@@ -184,6 +184,7 @@ def pr_check(
         build_findings,
         compute_exit_code,
         filter_skipped,
+        filter_test_units,
         load_guardian_config,
         read_diff,
         render,
@@ -208,9 +209,12 @@ def pr_check(
 
     # SC-2: drop docs/config-only units matching skipGlobs.
     kept, skipped = filter_skipped(units, config.skip_globs)
+    # FIX A: drop test-path units — a test does not itself need a test.
+    kept, test_units = filter_test_units(kept)
     if not kept:
         typer.echo(
-            f"guardian: nothing to verify ({len(skipped)} path(s) skipped)."
+            f"guardian: nothing to verify "
+            f"({len(skipped) + len(test_units)} path(s) skipped)."
         )
         raise typer.Exit(0)
 

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from agent.core.config_validation import read_json_with_warning
-from agent.guardian.coverage import ChangedUnit, CoverageResult, Fidelity
+from agent.guardian.coverage import ChangedUnit, CoverageResult, Fidelity, is_test_path
 from agent.guardian.impact_mapper import Severity
 
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
@@ -174,6 +174,28 @@ def filter_skipped(
         else:
             kept.append(unit)
     return kept, skipped
+
+
+def filter_test_units(
+    units: list[ChangedUnit],
+) -> tuple[list[ChangedUnit], list[ChangedUnit]]:
+    """Partition ``units`` into ``(kept, test_units)`` by test-path (FIX A).
+
+    A test file does not itself need a test, so a changed unit whose path looks
+    like a test (``tests/**``, ``test_*.py``, ``*.test.*``, ``*.spec.*`` — the
+    single :func:`agent.guardian.coverage.is_test_path` predicate reused by the
+    graph resolver) is dropped before findings are built. Order-preserving in
+    both partitions. Importing ``is_test_path`` from the sibling ``coverage``
+    module is an intra-guardian import, not an agent/LLM import (SC-11 intact).
+    """
+    kept: list[ChangedUnit] = []
+    test_units: list[ChangedUnit] = []
+    for unit in units:
+        if is_test_path(unit.path):
+            test_units.append(unit)
+        else:
+            kept.append(unit)
+    return kept, test_units
 
 
 def read_diff(source: str | None) -> str:
