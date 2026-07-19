@@ -19,6 +19,7 @@ from agent.guardian.pr_check import (
     apply_suppressions,
     build_findings,
     compute_exit_code,
+    filter_skipped,
     render,
     scope_diff,
 )
@@ -427,6 +428,32 @@ class TestPrCheckCLI:
         result = self.runner.invoke(guardian_app, ["pr-check", "--help"])
         assert result.exit_code == 0
         assert "--diff" in result.stdout
+
+
+class TestFilterSkipped:
+    """SC-2: skipGlobs excludes docs/config-only changed units."""
+
+    def test_skips_matching_globs_order_preserving(self) -> None:
+        units = [
+            ChangedUnit(path="docs/guide.md", added_ranges=[(1, 2)]),
+            ChangedUnit(path="README.md", added_ranges=[(1, 2)]),
+            ChangedUnit(path="agent/core/foo.py", added_ranges=[(1, 2)]),
+        ]
+        kept, skipped = filter_skipped(units, ["docs/**", "**/*.md"])
+        assert [u.path for u in kept] == ["agent/core/foo.py"]
+        assert [u.path for u in skipped] == ["docs/guide.md", "README.md"]
+
+    def test_empty_globs_keeps_all(self) -> None:
+        units = [ChangedUnit(path="agent/core/foo.py", added_ranges=[(1, 2)])]
+        kept, skipped = filter_skipped(units, [])
+        assert kept == units
+        assert skipped == []
+
+    def test_double_star_matches_nested(self) -> None:
+        units = [ChangedUnit(path="docs/a/b/c.md", added_ranges=[(1, 2)])]
+        kept, skipped = filter_skipped(units, ["docs/**"])
+        assert kept == []
+        assert [u.path for u in skipped] == ["docs/a/b/c.md"]
 
 
 class TestPackageExports:

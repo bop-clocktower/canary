@@ -118,6 +118,64 @@ def scope_diff(diff_text: str) -> list[ChangedUnit]:
     return units
 
 
+def _glob_matches(path: str, pattern: str) -> bool:
+    """Return True iff ``path`` matches a glob ``pattern`` supporting ``**``.
+
+    Translation rules (segment-aware, forward-slash paths):
+
+    - ``**`` matches any number of characters including ``/`` (any depth, incl.
+      zero directories). ``docs/**`` matches ``docs/x.md`` and ``docs/a/b.md``;
+      a leading ``**/`` also matches zero leading segments so ``**/*.md`` matches
+      both ``x.md`` and ``a/b/c.md``.
+    - ``*`` matches any run of characters *within a single segment* (no ``/``).
+    - ``?`` matches a single non-``/`` character.
+
+    The pattern is anchored to the full path (implicit ``^...$``).
+    """
+    regex_parts: list[str] = []
+    i = 0
+    while i < len(pattern):
+        char = pattern[i]
+        if pattern.startswith("**/", i):
+            # `**/` → any leading segments including none.
+            regex_parts.append("(?:.*/)?")
+            i += 3
+        elif pattern.startswith("**", i):
+            regex_parts.append(".*")
+            i += 2
+        elif char == "*":
+            regex_parts.append("[^/]*")
+            i += 1
+        elif char == "?":
+            regex_parts.append("[^/]")
+            i += 1
+        else:
+            regex_parts.append(re.escape(char))
+            i += 1
+    return re.fullmatch("".join(regex_parts), path) is not None
+
+
+def filter_skipped(
+    units: list[ChangedUnit], skip_globs: list[str]
+) -> tuple[list[ChangedUnit], list[ChangedUnit]]:
+    """Partition ``units`` into ``(kept, skipped)`` by ``skip_globs`` (SC-2).
+
+    A unit is *skipped* iff its ``.path`` matches ANY glob in ``skip_globs``.
+    Order-preserving in both partitions. An empty ``skip_globs`` keeps every
+    unit (``(units, [])``).
+    """
+    if not skip_globs:
+        return units, []
+    kept: list[ChangedUnit] = []
+    skipped: list[ChangedUnit] = []
+    for unit in units:
+        if any(_glob_matches(unit.path, glob) for glob in skip_globs):
+            skipped.append(unit)
+        else:
+            kept.append(unit)
+    return kept, skipped
+
+
 def read_diff(source: str | None) -> str:
     """Return raw unified-diff text from a source.
 
