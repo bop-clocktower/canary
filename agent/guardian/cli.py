@@ -385,7 +385,7 @@ def _build_gaps(
     diff_text: str,
     config,
     coverage_path: Optional[Path],
-    graph_max_depth: int | None = None,
+    graph_max_depth: int | None,
 ):
     """Build Tier-0 ``untested-new-code`` findings from ``diff_text`` using the
     SAME pipeline as ``pr-check`` (scope → skip/test/re-export filters → resolve
