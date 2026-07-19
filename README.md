@@ -163,6 +163,12 @@ detail (When to Use, process, escalation) lives in
 | --- | --- |
 | `/canary-test-pipeline [--continue] [--threshold <depth>]` | Claude Code — chains critical-areas → edge-cases → failure-impact → write-test → ci-ready, looping until green. |
 
+### I want a per-change PR gate
+
+| Tool | What it does |
+| --- | --- |
+| `/canary-pr-guardian` | Claude Code — per-diff test-guardian: fidelity-labeled diff-coverage → sticky PR comment (+ pre-commit), agentless Tier 0 on stock CI, authors missing tests at the desk. See [PR guardian guide](docs/guides/pr-guardian.md). |
+
 ### I want fleet-wide health, not a single suite
 
 | Tool | What it does |
