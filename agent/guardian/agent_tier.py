@@ -25,10 +25,12 @@ added to ``hooks/guardian_precommit.py`` was watched to fail
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from agent.guardian.impact_mapper import Severity
 from agent.guardian.pr_check import Finding  # Tier-0 type reuse (safe: no cycle)
 
 
@@ -91,3 +93,57 @@ class AgentTier(Protocol):
 
     def author_tests(self, gaps: list[Finding]) -> list[GeneratedTest]:
         ...
+
+
+# A canary-test-reviewer transcript line: `[severity] path:line <message>`.
+# The message tail is optional and captured as evidence.
+_REVIEW_LINE_RE = re.compile(
+    r"^\s*\[(?P<severity>[^\]]+)\]\s+(?P<path>\S+?):(?P<line>\d+)(?:\s+(?P<msg>.*))?$"
+)
+
+# Case-insensitive lookup of a reviewer severity token → the Tier-0 Severity enum.
+_SEVERITY_BY_NAME = {s.value: s for s in Severity}
+
+
+def _parse_review_findings(transcript: str) -> list[Finding]:
+    """Parse ``canary-test-reviewer``'s ``[severity] path:line`` lines into
+    ``weak-test`` Findings.
+
+    A malformed line (no ``[severity] path:line`` shape) or an unknown severity
+    token is skipped, never raised. An empty transcript (the ``RecordingInvoker``
+    default) yields ``[]`` — the SKILL reports its review directly in-session.
+    """
+    findings: list[Finding] = []
+    for raw in transcript.splitlines():
+        match = _REVIEW_LINE_RE.match(raw)
+        if match is None:
+            continue
+        severity = _SEVERITY_BY_NAME.get(match.group("severity").strip().lower())
+        if severity is None:
+            continue
+        path = match.group("path")
+        findings.append(
+            Finding(
+                path=path,
+                unit=path,
+                kind="weak-test",
+                severity=severity,
+                evidence=(match.group("msg") or "").strip(),
+            )
+        )
+    return findings
+
+
+@dataclass
+class InSessionAgentTier:
+    """v1 ``AgentTier``: drives ``canary-test-reviewer``/``-author`` via an
+    injected invoker. Calls NO LLM itself (Option A) — the invoker is the port.
+    """
+
+    invoker: AgentInvoker = field(default_factory=RecordingInvoker)
+
+    def audit_test_quality(self, affected_tests: list[Path]) -> list[Finding]:
+        """Tier 1 (read-only): ask the reviewer to audit ``affected_tests`` and
+        parse the transcript into ``weak-test`` Findings. Writes nothing."""
+        transcript = self.invoker.review(ReviewRequest(list(affected_tests)))
+        return _parse_review_findings(transcript)
