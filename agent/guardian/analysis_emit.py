@@ -134,17 +134,19 @@ def emit_analysis(
             notice="guardian: harness analyses channel unavailable "
             "(.harness/ absent) — falling back to the sticky comment",
         )
-    record = build_analysis_record(
-        findings,
-        ref=ref,
-        gate=gate,
-        effective_tier=effective_tier,
-        degraded_notice=degraded_notice,
-        exit_code=exit_code,
-        analyzed_at=analyzed_at,
-    )
     target = analyses_dir / analysis_filename(ref)
     try:
+        # Build INSIDE the try: a non-OSError (TypeError/ValueError from
+        # json.dumps/render) would otherwise crash pr-check instead of degrading.
+        record = build_analysis_record(
+            findings,
+            ref=ref,
+            gate=gate,
+            effective_tier=effective_tier,
+            degraded_notice=degraded_notice,
+            exit_code=exit_code,
+            analyzed_at=analyzed_at,
+        )
         analyses_dir.mkdir(parents=True, exist_ok=True)
         # Atomic write: stage into a same-dir temp then os.replace (atomic rename
         # on one filesystem). A torn/partial file would break the harness consumer
@@ -164,11 +166,14 @@ def emit_analysis(
             except OSError:
                 pass
             raise
-    except OSError as exc:
+    except Exception as exc:  # noqa: BLE001 — degrade on ANY build/write error.
+        # Broadened beyond OSError: any build/render/write failure degrades to the
+        # LOUD fallback rather than crashing pr-check (the CLI turns this notice
+        # into a `::warning::` + sticky comment).
         return EmitResult(
             "unavailable",
             None,
-            notice=f"guardian: analyses write failed ({exc}) — "
+            notice=f"guardian: analyses build/write failed ({exc}) — "
             "falling back to the sticky comment",
         )
     return EmitResult("emitted", str(target), None)

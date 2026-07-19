@@ -360,3 +360,34 @@ class TestEmitFallback:
         assert res.path is None
         assert "write failed" in res.notice
         assert "sticky comment" in res.notice
+
+    def test_build_error_degrades_not_crashes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """FIX 3: a NON-OSError during record build/render (e.g. ValueError from
+        json.dumps/render) must degrade to the fallback, NOT crash pr-check.
+        ``build_analysis_record`` runs inside the try and the except is broad."""
+        import agent.guardian.analysis_emit as emit_mod
+
+        (tmp_path / ".harness").mkdir()
+        analyses_dir = tmp_path / ".harness" / "analyses"
+
+        def _boom(*_args, **_kwargs):
+            raise ValueError("simulated build failure")
+
+        monkeypatch.setattr(emit_mod, "build_analysis_record", _boom)
+        res = emit_analysis(
+            _findings(),
+            analyses_dir=analyses_dir,
+            ref="pr-3",
+            gate="soft",
+            effective_tier=0,
+            degraded_notice=None,
+            exit_code=0,
+        )
+        assert res.action == "unavailable"
+        assert res.path is None
+        assert res.notice is not None
+        assert "sticky comment" in res.notice
+        # Nothing written — the build failed before any file materialized.
+        assert not any(p.is_file() for p in analyses_dir.rglob("*"))
