@@ -184,12 +184,22 @@ class TestSentinelLoopGuard:
 
     def test_present_sentinel_is_consumed_once(self, tmp_path: Path) -> None:
         sentinel = self._sentinel(tmp_path)
-        sentinel.write_text("", encoding="utf-8")
-        # First re-commit: sentinel present → pass once, file consumed.
-        assert guardian_precommit.authored_recommit_passthrough(tmp_path) is True
+        sentinel.write_text("pkg/test_foo.py\n", encoding="utf-8")
+        # First re-commit staging EXACTLY the recorded path → pass once, consumed.
+        assert (
+            guardian_precommit.authored_recommit_passthrough(
+                tmp_path, staged=["pkg/test_foo.py"]
+            )
+            is True
+        )
         assert not sentinel.exists()
         # Second re-commit: no sentinel → normal path (no infinite loop).
-        assert guardian_precommit.authored_recommit_passthrough(tmp_path) is False
+        assert (
+            guardian_precommit.authored_recommit_passthrough(
+                tmp_path, staged=["pkg/test_foo.py"]
+            )
+            is False
+        )
 
     def test_absent_sentinel_returns_false(self, tmp_path: Path) -> None:
         assert guardian_precommit.authored_recommit_passthrough(tmp_path) is False
@@ -198,7 +208,10 @@ class TestSentinelLoopGuard:
         self, tmp_path, monkeypatch, capsys
     ) -> None:
         monkeypatch.setattr(guardian_precommit, "REPO_ROOT", tmp_path)
-        self._sentinel(tmp_path).write_text("", encoding="utf-8")
+        self._sentinel(tmp_path).write_text("pkg/test_foo.py\n", encoding="utf-8")
+        monkeypatch.setattr(
+            guardian_precommit, "staged_paths", lambda *a, **k: ["pkg/test_foo.py"]
+        )
 
         def _boom() -> str:
             raise AssertionError("pipeline must not run when the sentinel passes")
@@ -212,6 +225,66 @@ class TestSentinelLoopGuard:
         assert "authored tests re-committed" in capsys.readouterr().out
         # Sentinel consumed → a subsequent commit runs the pipeline again.
         assert not (tmp_path / ".git" / "canary-guardian-authored").exists()
+
+
+class TestSentinelScope:
+    """FIX 3: the loop-guard passthrough is SCOPED to the guardian's own authored
+    paths. A blanket bypass (any commit passes once the sentinel exists) let a
+    human sneak untested prod code past Tier-0, and a dangling sentinel let the
+    next UNRELATED commit silently pass. Now the re-commit passes ONLY when every
+    staged path is a recorded guardian-authored path."""
+
+    def _sentinel(self, root: Path) -> Path:
+        p = root / ".git" / "canary-guardian-authored"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+
+    def test_passes_when_staged_is_exactly_recorded(self, tmp_path: Path) -> None:
+        self._sentinel(tmp_path).write_text("pkg/test_foo.py\n", encoding="utf-8")
+        assert (
+            guardian_precommit.authored_recommit_passthrough(
+                tmp_path, staged=["pkg/test_foo.py"]
+            )
+            is True
+        )
+        assert not (tmp_path / ".git" / "canary-guardian-authored").exists()
+
+    def test_extra_prod_file_does_not_pass_and_keeps_sentinel(
+        self, tmp_path: Path
+    ) -> None:
+        # Human staged new UNTESTED prod code alongside the reviewed tests → do NOT
+        # bypass Tier-0, and do NOT consume the sentinel so a later clean re-commit
+        # of just the tests still passes.
+        sentinel = self._sentinel(tmp_path)
+        sentinel.write_text("pkg/test_foo.py\n", encoding="utf-8")
+        assert (
+            guardian_precommit.authored_recommit_passthrough(
+                tmp_path, staged=["pkg/test_foo.py", "pkg/newcode.py"]
+            )
+            is False
+        )
+        assert sentinel.is_file()  # preserved
+        # Later clean re-commit of only the tests → passes, consuming it.
+        assert (
+            guardian_precommit.authored_recommit_passthrough(
+                tmp_path, staged=["pkg/test_foo.py"]
+            )
+            is True
+        )
+        assert not sentinel.exists()
+
+    def test_unrelated_staged_only_does_not_pass(self, tmp_path: Path) -> None:
+        # Dangling sentinel (skill wrote it, human aborted) must NOT let the next
+        # UNRELATED commit through.
+        sentinel = self._sentinel(tmp_path)
+        sentinel.write_text("pkg/test_foo.py\n", encoding="utf-8")
+        assert (
+            guardian_precommit.authored_recommit_passthrough(
+                tmp_path, staged=["src/unrelated.py"]
+            )
+            is False
+        )
+        assert sentinel.is_file()  # not consumed
 
 
 def _git_init(root: Path) -> None:
@@ -252,7 +325,7 @@ class TestMarkAuthoredProducer:
         assert result.exit_code == 0
         # Re-commit staging EXACTLY the guardian-authored path → pass once.
         monkeypatch.setattr(
-            guardian_precommit, "staged_paths", lambda: ["pkg/test_foo.py"]
+            guardian_precommit, "staged_paths", lambda *a, **k: ["pkg/test_foo.py"]
         )
         assert guardian_precommit.authored_recommit_passthrough(tmp_path) is True
         assert not (tmp_path / ".git" / "canary-guardian-authored").exists()
@@ -305,7 +378,9 @@ class TestMarkAuthoredProducer:
         for t in targets:
             args += ["--path", t]
         assert runner.invoke(guardian_app, args).exit_code == 0
-        monkeypatch.setattr(guardian_precommit, "staged_paths", lambda: targets)
+        monkeypatch.setattr(
+            guardian_precommit, "staged_paths", lambda *a, **k: targets
+        )
         assert guardian_precommit.authored_recommit_passthrough(tmp_path) is True
 
 

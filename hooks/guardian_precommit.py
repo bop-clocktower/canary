@@ -184,16 +184,35 @@ def staged_paths(root: Path | None = None) -> list[str]:
         return []
 
 
-def authored_recommit_passthrough(root: Path | None = None) -> bool:
-    """Loop-guard (a): consume the guardian's sentinel and pass THIS commit once.
+def authored_recommit_passthrough(
+    root: Path | None = None, staged: list[str] | None = None
+) -> bool:
+    """Loop-guard (a): pass THIS commit once iff it stages ONLY guardian tests.
 
-    If the sentinel is present the human is re-committing reviewed, staged,
-    guardian-authored tests, so delete the sentinel and return ``True`` (let the
-    commit through without re-running authoring). Absent, return ``False`` (normal
-    pipeline). Deterministic, filesystem+git-only — no agent import (SC-11).
+    The sentinel (written by ``canary guardian mark-authored``) records the exact
+    set of guardian-authored paths. We pass — and consume (unlink) the sentinel —
+    ONLY when every currently-staged path is one of those recorded paths (FIX 3):
+    the re-commit contains nothing but the guardian's own reviewed tests. If the
+    staged set contains anything else — extra untested prod code, an unrelated
+    file, or a dangling sentinel from an aborted run — we do NOT consume the
+    sentinel and do NOT pass, so the guardian runs Tier-0 normally and a later
+    clean re-commit of just the tests still passes. Absent sentinel → ``False``
+    (normal pipeline). Deterministic, filesystem+git-only — no agent import
+    (SC-11).
     """
-    sentinel = _sentinel_path(root or REPO_ROOT)
-    if sentinel.is_file():
+    r = root or REPO_ROOT
+    sentinel = _sentinel_path(r)
+    if not sentinel.is_file():
+        return False
+    recorded = {
+        line.strip()
+        for line in sentinel.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    }
+    changed = set(staged if staged is not None else staged_paths(r))
+    # Pass only when the staged set is non-empty and a subset of the recorded
+    # guardian-authored paths (nothing but the guardian's own tests).
+    if changed and changed <= recorded:
         sentinel.unlink()
         return True
     return False
