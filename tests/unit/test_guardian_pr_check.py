@@ -6,6 +6,8 @@ codes, renderers, and the CLI wiring.
 
 from __future__ import annotations
 
+import json
+
 from agent.guardian.coverage import ChangedUnit, CoverageResult, Fidelity
 from agent.guardian.impact_mapper import Severity
 from agent.guardian.pr_check import (
@@ -13,6 +15,7 @@ from agent.guardian.pr_check import (
     apply_suppressions,
     build_findings,
     compute_exit_code,
+    render,
     scope_diff,
 )
 
@@ -224,3 +227,43 @@ class TestExitCode:
             Finding(path="a.py", unit="a", kind="weak-test", severity=Severity.HIGH)
         ]
         assert compute_exit_code(findings, gate="hard") == 0
+
+
+def _finding(**kw) -> Finding:
+    base = dict(path="pkg/foo.py", unit="foo", severity=Severity.HIGH,
+                fidelity=Fidelity.GRAPH_VERIFIED, evidence="no test reaches foo")
+    base.update(kw)
+    return Finding(**base)
+
+
+class TestRender:
+    def test_comment_has_sticky_marker_and_fidelity(self) -> None:
+        out = render([_finding()], fmt="comment")
+        assert "<!-- canary-pr-guardian -->" in out
+        assert "graph-verified" in out
+        assert "pkg/foo.py" in out
+
+    def test_comment_marks_suppressed(self) -> None:
+        out = render([_finding(suppressed=True, suppression_reason="legacy")],
+                     fmt="comment")
+        assert "suppressed" in out.lower()
+
+    def test_comment_footer_shows_tier_and_degraded(self) -> None:
+        out = render([_finding()], fmt="comment", degraded_notice="graph stale")
+        assert "tier 0" in out.lower()
+        assert "graph stale" in out
+
+    def test_json_round_trips_all_findings(self) -> None:
+        findings = [_finding(path="a.py", unit="a"),
+                    _finding(path="b.py", unit="b", severity=Severity.MEDIUM,
+                             fidelity=Fidelity.HEURISTIC)]
+        out = render(findings, fmt="json")
+        data = json.loads(out)
+        assert data["tier"] == 0
+        assert len(data["findings"]) == 2
+        assert {f["path"] for f in data["findings"]} == {"a.py", "b.py"}
+
+    def test_text_has_no_html_marker(self) -> None:
+        out = render([_finding()], fmt="text")
+        assert "<!--" not in out
+        assert "pkg/foo.py" in out

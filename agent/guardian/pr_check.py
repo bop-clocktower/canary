@@ -11,6 +11,7 @@ references the ``analyze_diff``/``get_impact`` MCP tools.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -221,3 +222,88 @@ def compute_exit_code(findings: list[Finding], gate: str) -> int:
         ):
             return 1
     return 0
+
+
+_STICKY_MARKER = "<!-- canary-pr-guardian -->"
+
+
+def _finding_dict(finding: Finding) -> dict:
+    """Serialize a :class:`Finding` to a stable JSON-friendly dict."""
+    return {
+        "path": finding.path,
+        "unit": finding.unit,
+        "kind": finding.kind,
+        "fidelity": finding.fidelity.value,
+        "severity": finding.severity.value,
+        "evidence": finding.evidence,
+        "suggestion": finding.suggestion,
+        "suppressed": finding.suppressed,
+        "suppression_reason": finding.suppression_reason,
+    }
+
+
+def render(
+    findings: list[Finding],
+    fmt: str,
+    tier: int = 0,
+    degraded_notice: str | None = None,
+) -> str:
+    """Render findings as a sticky PR ``comment``, ``json``, or plain ``text``.
+
+    - ``comment``: leads with the sticky marker ``<!-- canary-pr-guardian -->``,
+      a fidelity-labeled summary line, then severity-ranked findings (each
+      showing path/unit, severity, fidelity, evidence). Suppressed findings are
+      rendered but visually marked ``suppressed``. Footer states ``tier 0`` and
+      appends ``degraded_notice`` when present.
+    - ``json``: ``{"findings": [...], "tier": <n>}`` — stable schema.
+    - ``text``: plain, markdown-free, for local/CLI output.
+    """
+    ordered = sorted(findings, key=lambda f: f.severity.sort_key)
+
+    if fmt == "json":
+        payload: dict = {
+            "findings": [_finding_dict(f) for f in ordered],
+            "tier": tier,
+        }
+        if degraded_notice:
+            payload["degraded_notice"] = degraded_notice
+        return json.dumps(payload, indent=2)
+
+    active = [f for f in ordered if not f.suppressed]
+    suppressed = [f for f in ordered if f.suppressed]
+
+    if fmt == "comment":
+        lines = [_STICKY_MARKER, "## Canary PR Guardian"]
+        lines.append(
+            f"**{len(active)} unaddressed** / {len(suppressed)} suppressed "
+            f"finding(s) — fidelity-labeled below."
+        )
+        for finding in ordered:
+            mark = " _(suppressed)_" if finding.suppressed else ""
+            lines.append(
+                f"- **{finding.severity.value}** `{finding.path}` "
+                f"({finding.unit}) — _{finding.fidelity.value}_ — "
+                f"{finding.evidence}{mark}"
+            )
+        footer = f"_tier {tier}_"
+        if degraded_notice:
+            footer += f" — {degraded_notice}"
+        lines.append(footer)
+        return "\n".join(lines)
+
+    # fmt == "text" (default fallback): plain, no markdown/HTML.
+    lines = [
+        f"Canary PR Guardian — {len(active)} unaddressed, "
+        f"{len(suppressed)} suppressed"
+    ]
+    for finding in ordered:
+        mark = " (suppressed)" if finding.suppressed else ""
+        lines.append(
+            f"[{finding.severity.value}] {finding.path} ({finding.unit}) "
+            f"[{finding.fidelity.value}] {finding.evidence}{mark}"
+        )
+    footer = f"tier {tier}"
+    if degraded_notice:
+        footer += f" - {degraded_notice}"
+    lines.append(footer)
+    return "\n".join(lines)
