@@ -31,5 +31,17 @@ jobs:
       - name: Guardian pr-check
         env:
           GITHUB_TOKEN: ${{ github.token }}
+        # `--emit-analysis` writes the finding record to the .harness/analyses/
+        # channel (the #899 harness reverse-handoff producer); `--post-comment`
+        # keeps findings visible while the harness consumer (#899) is pending —
+        # once harness surfaces the record in `pre-merge-brief`, drop
+        # `--post-comment`. On an unavailable channel the emit degrades LOUDLY
+        # and falls back to the sticky comment (SC-10) — never a silent drop.
         run: |
-          canary guardian pr-check --diff pr.diff --post-comment
+          canary guardian pr-check --diff pr.diff --emit-analysis --post-comment
+      # Required-check (#311, "one gate not two"): under `canary.guardian.pr.gate:
+      # hard` this job exits non-zero on unaddressed critical/high findings. A repo
+      # admin registers the check "PR Guardian / guardian" (workflow `name:` + job
+      # id, both kept stable) as a REQUIRED status check in branch protection,
+      # alongside harness/validate/enforce. Repo-admin action — full guide in
+      # Phase 6.
