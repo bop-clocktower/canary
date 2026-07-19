@@ -323,12 +323,35 @@ class TestDecideBlock:
             skip_reason="fork: read-only",
         )
 
+    def _planned(self) -> GeneratedTest:
+        return GeneratedTest(
+            gap=_finding(),
+            target_path="tests/test_foo.py",
+            requirement="r",
+            status="planned",
+        )
+
     def test_blocks_once_when_tests_authored(self) -> None:
         decision = decide_block([self._authored(), self._authored()])
         assert decision.block is True
         assert decision.authored_count == 2
         assert "authored & staged" in decision.message
         assert "re-commit" in decision.message
+
+    def test_blocks_on_planned_actionable_intents(self) -> None:
+        # FIX 1 (production path): under Option A the default RecordingInvoker
+        # leaves intents ``planned`` — the SKILL authors every non-skipped intent,
+        # so a planned intent is ACTIONABLE and must block (not only "authored").
+        decision = decide_block([self._planned(), self._planned()])
+        assert decision.block is True
+        assert decision.authored_count == 2
+        assert "review" in decision.message
+        assert "re-commit" in decision.message
+
+    def test_blocks_on_planned_plus_skipped_counts_actionable_only(self) -> None:
+        decision = decide_block([self._planned(), self._skipped()])
+        assert decision.block is True
+        assert decision.authored_count == 1
 
     def test_does_not_block_on_all_skipped(self) -> None:
         decision = decide_block([self._skipped(), self._skipped()])

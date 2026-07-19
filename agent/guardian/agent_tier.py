@@ -299,15 +299,20 @@ class BlockDecision:
 
 
 def decide_block(results: list[GeneratedTest]) -> BlockDecision:
-    """Block the commit ONCE iff ≥1 test was authored & staged this run.
+    """Block the commit ONCE iff ≥1 ACTIONABLE (non-``skipped``) intent this run.
 
-    An all-``skipped`` run changed nothing, so it never blocks. The message names
-    the count and instructs "review … then re-commit" (D4). The actual sentinel
-    write + ``git add`` happen in the hook/SKILL (T7/T8) — this is pure decision
-    logic.
+    Under Option A the production ``RecordingInvoker`` leaves every intent
+    ``planned`` — the SKILL then authors each non-``skipped`` intent in-session —
+    so blocking only on ``authored`` would never gate the real path (the bug FIX 1
+    fixes). An intent is actionable when its ``status != "skipped"`` (``planned``
+    OR ``authored``); an all-``skipped`` run changed nothing, so it never blocks.
+    ``authored_count`` counts those actionable intents (the field name the
+    CLI/JSON/SKILL read). The message instructs "review … then re-commit" (D4);
+    the actual sentinel write + ``git add`` happen in the hook/SKILL — this is pure
+    decision logic.
     """
-    authored = [r for r in results if r.status == "authored"]
-    count = len(authored)
+    actionable = [r for r in results if r.status != "skipped"]
+    count = len(actionable)
     if count == 0:
         return BlockDecision(block=False, message="", authored_count=0)
     message = (

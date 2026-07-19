@@ -523,6 +523,34 @@ class TestAuthorPlan:
         assert data["block"]["authored_count"] >= 1
         assert "re-commit" in data["block"]["message"]
 
+    def test_optin_on_production_path_recording_invoker_blocks(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # FIX 1 (production path): NO fake author invoker — the DEFAULT
+        # RecordingInvoker leaves intents ``planned`` (Option A). With opt-in on
+        # and a signalled tier-2 runtime, an untested gap must produce a
+        # ``planned`` intent AND block, so the SKILL actually gates. This is the
+        # real path that the old ``_FakeAuthorInvoker`` masked.
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("CANARY_GUARDIAN_AGENT", "2")
+        monkeypatch.delenv("CANARY_GUARDIAN_IS_FORK", raising=False)
+        cfg = _write_config(
+            tmp_path, {"preCommit": {"enabled": True, "authorTests": True}}
+        )
+        result = self.runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-", "--config", cfg],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        planned = [i for i in data["intents"] if i["status"] == "planned"]
+        assert len(planned) >= 1  # RecordingInvoker keeps it planned
+        assert data["block"]["block"] is True
+        assert data["block"]["authored_count"] >= 1
+        assert "review" in data["block"]["message"]
+        assert "re-commit" in data["block"]["message"]
+
     def test_optin_on_without_agent_degrades_to_skip(
         self, tmp_path, monkeypatch
     ) -> None:
