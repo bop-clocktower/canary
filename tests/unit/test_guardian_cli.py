@@ -457,6 +457,85 @@ class TestPrCheckPost:
         assert STICKY_MARKER in result.stdout  # printed the comment body
 
 
+# A diff adding a real (untested) unit `pkg/foo.py`. Its ONLY graph coverage is
+# purely transitive (test_a→b→foo) — no direct test→foo edge — so a direct-edge
+# (hard-gate) depth bound must flag it while the unbounded soft default does not.
+DIFF_FOO_UNIT = """\
+diff --git a/pkg/foo.py b/pkg/foo.py
+index 1111111..2222222 100644
+--- a/pkg/foo.py
++++ b/pkg/foo.py
+@@ -0,0 +1,3 @@
++def foo():
++    return 42
++
+"""
+
+_TRANSITIVE_GRAPH_NDJSON = "\n".join(
+    json.dumps(r)
+    for r in (
+        {"kind": "node", "type": "file", "id": "file:pkg/foo.py", "path": "pkg/foo.py"},
+        {"kind": "node", "type": "file", "id": "file:pkg/b.py", "path": "pkg/b.py"},
+        {"kind": "node", "type": "file", "id": "file:tests/test_a.py",
+         "path": "tests/test_a.py"},
+        {"kind": "edge", "from": "file:tests/test_a.py",
+         "to": "file:pkg/b.py", "type": "imports"},
+        {"kind": "edge", "from": "file:pkg/b.py",
+         "to": "file:pkg/foo.py", "type": "imports"},
+    )
+) + "\n"
+
+
+def _write_transitive_graph(tmp_path) -> None:
+    """Drop a purely-transitive `.harness/graph/graph.json` under ``tmp_path``."""
+    graph_dir = tmp_path / ".harness" / "graph"
+    graph_dir.mkdir(parents=True)
+    (graph_dir / "graph.json").write_text(_TRANSITIVE_GRAPH_NDJSON, encoding="utf-8")
+
+
+class TestPrCheckGraphDepth:
+    """#320: the gate-derived graph-depth default. Under `--gate hard` the graph
+    tier requires a DIRECT test→source edge, so a purely-transitive reach is
+    flagged uncovered; under `--gate soft` the unbounded BFS still credits it."""
+
+    runner = CliRunner()
+
+    def test_hard_gate_flags_transitive_only_coverage(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        _write_transitive_graph(tmp_path)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--format", "json", "--gate", "hard"],
+            input=DIFF_FOO_UNIT,
+        )
+        # Hard gate → direct-edge depth 1 → transitive reach does NOT cover → the
+        # unit is flagged (GRAPH_VERIFIED, HIGH) and the hard gate blocks (exit 1).
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        paths = {f["path"] for f in data["findings"]}
+        assert "pkg/foo.py" in paths
+        assert data["findings"][0]["fidelity"] == "graph-verified"
+
+    def test_soft_gate_credits_transitive_coverage(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        _write_transitive_graph(tmp_path)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--format", "json", "--gate", "soft"],
+            input=DIFF_FOO_UNIT,
+        )
+        # Soft gate → unbounded BFS → transitive reach credits foo as covered →
+        # no finding, exit 0 (the current soft-default behavior is unchanged).
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        paths = {f["path"] for f in data["findings"]}
+        assert "pkg/foo.py" not in paths
+
+
 class TestPrCheckTierDegradation:
     """SC-5 (PR half): a requested tier>0 with no agent degrades LOUDLY on both
     the rendered footer AND the Actions `::warning::`/step-summary channel — the

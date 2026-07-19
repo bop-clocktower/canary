@@ -80,6 +80,9 @@ class TestLoadGuardianConfig:
         # commit would degrade tier 2→0 loudly (noise). Opt in with authorTests: true.
         assert c.precommit_author_tests is False
         assert c.coverage_paths == []
+        # #320: graph-coverage depth defaults to None (unbounded) — the gate
+        # derives 1 vs None; an explicit config value overrides.
+        assert c.graph_coverage_max_depth is None
         # FIX B + signal-quality: skipGlobs defaults to docs/markdown AND
         # generated/lockfiles (lockfiles, dist/build, minified, snapshots).
         assert c.skip_globs == _DEFAULT_SKIP_GLOBS
@@ -116,6 +119,25 @@ class TestLoadGuardianConfig:
         config, warning = load_guardian_config(cfg)
         assert warning is not None
         assert config.pr_tier == GuardianConfig().pr_tier
+
+    def test_graph_coverage_max_depth_parsed(self, tmp_path) -> None:
+        # #320: graphCoverageMaxDepth parses to an int override.
+        cfg = tmp_path / "harness.config.json"
+        _write(cfg, {"canary": {"guardian": {"graphCoverageMaxDepth": 2}}})
+        config, warning = load_guardian_config(cfg)
+        assert warning is None
+        assert config.graph_coverage_max_depth == 2
+
+    def test_bad_graph_coverage_max_depth_warns_and_defaults(
+        self, tmp_path
+    ) -> None:
+        # #320/SC-8: a non-int graphCoverageMaxDepth must warn loudly (never
+        # crash) and fall back to the default None (unbounded).
+        cfg = tmp_path / "harness.config.json"
+        _write(cfg, {"canary": {"guardian": {"graphCoverageMaxDepth": "x"}}})
+        config, warning = load_guardian_config(cfg)
+        assert warning is not None
+        assert config.graph_coverage_max_depth is None
 
 
 _DEFAULT_SKIP_GLOBS = [
@@ -195,3 +217,26 @@ class TestSkipGlobsDefault:
         kept, skipped = filter_skipped([unit], config.skip_globs)
         assert kept == []
         assert [u.path for u in skipped] == [unit.path]
+
+
+class TestEffectiveGraphDepth:
+    """#320: the gate-derived graph-depth default — hard→1 (direct edge), soft→
+    None (unbounded), and an explicit config override wins over the gate."""
+
+    def test_hard_gate_defaults_to_direct_edge(self) -> None:
+        from agent.guardian.pr_check import effective_graph_depth
+
+        assert effective_graph_depth(GuardianConfig(), "hard") == 1
+
+    def test_soft_gate_defaults_to_unbounded(self) -> None:
+        from agent.guardian.pr_check import effective_graph_depth
+
+        assert effective_graph_depth(GuardianConfig(), "soft") is None
+
+    def test_explicit_override_wins_over_gate(self) -> None:
+        from agent.guardian.pr_check import effective_graph_depth
+
+        config = GuardianConfig(graph_coverage_max_depth=3)
+        # Explicit value wins regardless of the gate.
+        assert effective_graph_depth(config, "hard") == 3
+        assert effective_graph_depth(config, "soft") == 3
