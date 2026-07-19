@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
+import pytest
 from typer.testing import CliRunner
 
+from agent.guardian import agent_tier as guardian_agent_tier
 from agent.guardian import cli as guardian_cli
+from agent.guardian.agent_tier import GeneratedTest
 from agent.guardian.cli import guardian_app
 from agent.guardian.pr_comment import STICKY_MARKER, FakeGitHubClient
 
@@ -185,6 +189,52 @@ class TestPrContextFromEnv:
         monkeypatch.setenv("GITHUB_REF", "refs/heads/main")  # unparseable for PR
         monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
         assert guardian_cli._pr_context_from_env() == ("o/r", 42)
+
+
+class TestForkContext:
+    """FIX 4: fork detection FAILS CLOSED on ambiguity. Only two safe sentinels
+    mean "not a fork" — unset OR exactly ``"0"`` (after strip). ANY other
+    non-empty value (``"1"``, ``"true"``, whitespace-wrapped, garbage) is treated
+    as a fork so authoring is SKIPPED (guard b) rather than fail-open writing."""
+
+    def test_unset_is_not_fork(self, monkeypatch) -> None:
+        monkeypatch.delenv("CANARY_GUARDIAN_IS_FORK", raising=False)
+        assert guardian_cli._is_fork_context() is False
+
+    def test_zero_is_not_fork(self, monkeypatch) -> None:
+        monkeypatch.setenv("CANARY_GUARDIAN_IS_FORK", "0")
+        assert guardian_cli._is_fork_context() is False
+
+    def test_zero_whitespace_wrapped_is_not_fork(self, monkeypatch) -> None:
+        monkeypatch.setenv("CANARY_GUARDIAN_IS_FORK", "  0  ")
+        assert guardian_cli._is_fork_context() is False
+
+    @pytest.mark.parametrize("value", ["1", "true", "yes", "  1 ", "x"])
+    def test_any_other_value_is_fork(self, monkeypatch, value) -> None:
+        monkeypatch.setenv("CANARY_GUARDIAN_IS_FORK", value)
+        assert guardian_cli._is_fork_context() is True
+
+    def test_author_plan_forks_skip_authoring(self, tmp_path, monkeypatch) -> None:
+        # Wire through plan_authoring via author-plan: opt-in on + tier 2 signalled,
+        # but IS_FORK armed → every intent is skipped with a "fork" reason, no block.
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("CANARY_GUARDIAN_AGENT", "2")
+        monkeypatch.setenv("CANARY_GUARDIAN_IS_FORK", "true")
+        cfg = _write_config(
+            tmp_path, {"preCommit": {"enabled": True, "authorTests": True}}
+        )
+        result = self.runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-", "--config", cfg],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert all(i["status"] == "skipped" for i in data["intents"])
+        assert "fork" in data["intents"][0]["skip_reason"]
+        assert data["block"]["block"] is False
+
+    runner = CliRunner()
 
 
 class TestPrCheckPost:
@@ -450,3 +500,157 @@ class TestPrCheckTierDegradation:
         # Channel 2: the Actions step-summary file receives the notice.
         assert "tier 2" in summary.read_text(encoding="utf-8")
         assert "::warning::" in result.stdout
+
+
+class _FakeAuthorInvoker:
+    """Network-free invoker: ``author`` returns an ``authored`` record so the
+    author-plan seam is exercised end-to-end without a real agent/LLM (Option A
+    test double). ``review`` is unused here."""
+
+    def review(self, request) -> str:  # pragma: no cover - not exercised
+        return ""
+
+    def author(self, intent: GeneratedTest) -> GeneratedTest:
+        return replace(intent, status="authored", written_path=intent.target_path)
+
+
+class TestAuthorPlan:
+    """T7: the in-session ``author-plan --json`` seam. Builds gaps via the SAME
+    Tier-0 pipeline as pr-check, resolves the tier with ``InSessionAgentProbe``,
+    applies the safety model, and emits ``{"intents": [...], "block": {...}}``.
+    Every agent interaction goes through an injected fake — no real agent/LLM."""
+
+    runner = CliRunner()
+
+    def test_optin_off_skips_all_intents_no_block(self, tmp_path, monkeypatch) -> None:
+        # (d) opt-in default off: an untested new unit yields a skipped intent and
+        # no block — authoring never fires without the explicit opt-in.
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("CANARY_GUARDIAN_AGENT", raising=False)
+        result = self.runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-"],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["intents"], "expected one intent for the untested unit"
+        assert all(i["status"] == "skipped" for i in data["intents"])
+        assert "opt-in" in data["intents"][0]["skip_reason"]
+        assert data["block"]["block"] is False
+        assert data["block"]["authored_count"] == 0
+
+    def test_optin_on_with_agent_authors_and_blocks(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # Opt-in on + a signalled tier-2 runtime + a fake author invoker → the gap
+        # is authored & staged (block once). No collision (target does not exist).
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("CANARY_GUARDIAN_AGENT", "2")
+        cfg = _write_config(
+            tmp_path, {"preCommit": {"enabled": True, "authorTests": True}}
+        )
+        real_cls = guardian_agent_tier.InSessionAgentTier
+        monkeypatch.setattr(
+            guardian_agent_tier,
+            "InSessionAgentTier",
+            lambda *a, **k: real_cls(invoker=_FakeAuthorInvoker()),
+        )
+        result = self.runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-", "--config", cfg],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        authored = [i for i in data["intents"] if i["status"] == "authored"]
+        assert len(authored) >= 1
+        assert authored[0]["written_path"]
+        assert data["block"]["block"] is True
+        assert data["block"]["authored_count"] >= 1
+        assert "re-commit" in data["block"]["message"]
+
+    def test_optin_on_production_path_recording_invoker_blocks(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # FIX 1 (production path): NO fake author invoker — the DEFAULT
+        # RecordingInvoker leaves intents ``planned`` (Option A). With opt-in on
+        # and a signalled tier-2 runtime, an untested gap must produce a
+        # ``planned`` intent AND block, so the SKILL actually gates. This is the
+        # real path that the old ``_FakeAuthorInvoker`` masked.
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("CANARY_GUARDIAN_AGENT", "2")
+        monkeypatch.delenv("CANARY_GUARDIAN_IS_FORK", raising=False)
+        cfg = _write_config(
+            tmp_path, {"preCommit": {"enabled": True, "authorTests": True}}
+        )
+        result = self.runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-", "--config", cfg],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        planned = [i for i in data["intents"] if i["status"] == "planned"]
+        assert len(planned) >= 1  # RecordingInvoker keeps it planned
+        assert data["block"]["block"] is True
+        assert data["block"]["authored_count"] >= 1
+        assert "review" in data["block"]["message"]
+        assert "re-commit" in data["block"]["message"]
+
+    def test_repo_root_resolved_from_git_toplevel_not_cwd(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # FIX 6: run author-plan from a SUBDIR of a git repo. The target test for
+        # the untested unit already exists at the repo ROOT, so the collision guard
+        # must skip it — proving repo_root is resolved from `git rev-parse
+        # --show-toplevel`, not Path.cwd() (which would be the subdir and miss the
+        # root-relative file, a false negative that authors over another's file).
+        import subprocess as _sp
+
+        _sp.run(["git", "init", "-q", str(tmp_path)], check=True)
+        (tmp_path / "pkg").mkdir()
+        # DIFF_NEW_UNIT adds pkg/widget.py → target is pkg/test_widget.py.
+        (tmp_path / "pkg" / "test_widget.py").write_text(
+            "# owned by another PR/session\n", encoding="utf-8"
+        )
+        cfg = _write_config(
+            tmp_path, {"preCommit": {"enabled": True, "authorTests": True}}
+        )
+        subdir = tmp_path / "nested" / "deep"
+        subdir.mkdir(parents=True)
+        monkeypatch.chdir(subdir)
+        monkeypatch.setenv("CANARY_GUARDIAN_AGENT", "2")
+        monkeypatch.delenv("CANARY_GUARDIAN_IS_FORK", raising=False)
+        result = self.runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-", "--config", cfg],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert all(i["status"] == "skipped" for i in data["intents"])
+        reason = data["intents"][0]["skip_reason"] or ""
+        assert "collision" in reason or "exists" in reason
+        assert data["block"]["block"] is False
+
+    def test_optin_on_without_agent_degrades_to_skip(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # Opt-in on but NO runtime signalled (env unset) → effective tier 0 →
+        # the tier guard skips authoring; nothing is authored, no block.
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("CANARY_GUARDIAN_AGENT", raising=False)
+        cfg = _write_config(
+            tmp_path, {"preCommit": {"enabled": True, "authorTests": True}}
+        )
+        result = self.runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-", "--config", cfg],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert all(i["status"] == "skipped" for i in data["intents"])
+        assert "tier" in data["intents"][0]["skip_reason"]
+        assert data["block"]["block"] is False

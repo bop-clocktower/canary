@@ -169,6 +169,221 @@ class TestRunPrecommitCheck:
 _CHECK_PROP_LINE = "python3 /repo/hooks/check-proprietary.py run\n"
 
 
+class TestSentinelLoopGuard:
+    """D4 guard (a), Tier-0 half: a filesystem-only sentinel lets the guardian's
+    own authored+staged tests re-commit exactly ONCE.
+
+    ``authored_recommit_passthrough`` is deterministic and imports no agent
+    module (SC-11) — it only checks/consumes ``.git/canary-guardian-authored``.
+    """
+
+    def _sentinel(self, root: Path) -> Path:
+        p = root / ".git" / "canary-guardian-authored"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+
+    def test_present_sentinel_is_consumed_once(self, tmp_path: Path) -> None:
+        sentinel = self._sentinel(tmp_path)
+        sentinel.write_text("pkg/test_foo.py\n", encoding="utf-8")
+        # First re-commit staging EXACTLY the recorded path → pass once, consumed.
+        assert (
+            guardian_precommit.authored_recommit_passthrough(
+                tmp_path, staged=["pkg/test_foo.py"]
+            )
+            is True
+        )
+        assert not sentinel.exists()
+        # Second re-commit: no sentinel → normal path (no infinite loop).
+        assert (
+            guardian_precommit.authored_recommit_passthrough(
+                tmp_path, staged=["pkg/test_foo.py"]
+            )
+            is False
+        )
+
+    def test_absent_sentinel_returns_false(self, tmp_path: Path) -> None:
+        assert guardian_precommit.authored_recommit_passthrough(tmp_path) is False
+
+    def test_main_passes_once_without_running_pipeline(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.setattr(guardian_precommit, "REPO_ROOT", tmp_path)
+        self._sentinel(tmp_path).write_text("pkg/test_foo.py\n", encoding="utf-8")
+        monkeypatch.setattr(
+            guardian_precommit, "staged_paths", lambda *a, **k: ["pkg/test_foo.py"]
+        )
+
+        def _boom() -> str:
+            raise AssertionError("pipeline must not run when the sentinel passes")
+
+        monkeypatch.setattr(guardian_precommit, "staged_diff", _boom)
+        monkeypatch.setattr(
+            guardian_precommit, "harness_hook_present", lambda *a, **k: False
+        )
+        code = guardian_precommit.main([])
+        assert code == 0
+        assert "authored tests re-committed" in capsys.readouterr().out
+        # Sentinel consumed → a subsequent commit runs the pipeline again.
+        assert not (tmp_path / ".git" / "canary-guardian-authored").exists()
+
+
+class TestSentinelScope:
+    """FIX 3: the loop-guard passthrough is SCOPED to the guardian's own authored
+    paths. A blanket bypass (any commit passes once the sentinel exists) let a
+    human sneak untested prod code past Tier-0, and a dangling sentinel let the
+    next UNRELATED commit silently pass. Now the re-commit passes ONLY when every
+    staged path is a recorded guardian-authored path."""
+
+    def _sentinel(self, root: Path) -> Path:
+        p = root / ".git" / "canary-guardian-authored"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+
+    def test_passes_when_staged_is_exactly_recorded(self, tmp_path: Path) -> None:
+        self._sentinel(tmp_path).write_text("pkg/test_foo.py\n", encoding="utf-8")
+        assert (
+            guardian_precommit.authored_recommit_passthrough(
+                tmp_path, staged=["pkg/test_foo.py"]
+            )
+            is True
+        )
+        assert not (tmp_path / ".git" / "canary-guardian-authored").exists()
+
+    def test_extra_prod_file_does_not_pass_and_keeps_sentinel(
+        self, tmp_path: Path
+    ) -> None:
+        # Human staged new UNTESTED prod code alongside the reviewed tests → do NOT
+        # bypass Tier-0, and do NOT consume the sentinel so a later clean re-commit
+        # of just the tests still passes.
+        sentinel = self._sentinel(tmp_path)
+        sentinel.write_text("pkg/test_foo.py\n", encoding="utf-8")
+        assert (
+            guardian_precommit.authored_recommit_passthrough(
+                tmp_path, staged=["pkg/test_foo.py", "pkg/newcode.py"]
+            )
+            is False
+        )
+        assert sentinel.is_file()  # preserved
+        # Later clean re-commit of only the tests → passes, consuming it.
+        assert (
+            guardian_precommit.authored_recommit_passthrough(
+                tmp_path, staged=["pkg/test_foo.py"]
+            )
+            is True
+        )
+        assert not sentinel.exists()
+
+    def test_unrelated_staged_only_does_not_pass(self, tmp_path: Path) -> None:
+        # Dangling sentinel (skill wrote it, human aborted) must NOT let the next
+        # UNRELATED commit through.
+        sentinel = self._sentinel(tmp_path)
+        sentinel.write_text("pkg/test_foo.py\n", encoding="utf-8")
+        assert (
+            guardian_precommit.authored_recommit_passthrough(
+                tmp_path, staged=["src/unrelated.py"]
+            )
+            is False
+        )
+        assert sentinel.is_file()  # not consumed
+
+
+def _git_init(root: Path) -> None:
+    """Init a throwaway git repo in ``root`` (local, deterministic — no network)."""
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+
+
+class TestMarkAuthoredProducer:
+    """FIX 2: ``canary guardian mark-authored`` is the DETERMINISTIC sentinel
+    PRODUCER (a CLI step, not LLM markdown). It writes the guardian loop-guard
+    sentinel with the authored test paths (one per line), resolving the sentinel
+    location via the real git dir (``git rev-parse --git-dir`` — handles
+    ``.git``-as-file worktrees). The passthrough (Tier-0 half) then consumes it."""
+
+    def test_mark_authored_writes_sentinel_with_paths(self, tmp_path, monkeypatch):
+        from agent.guardian.cli import guardian_app
+        from typer.testing import CliRunner
+
+        _git_init(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(
+            guardian_app, ["mark-authored", "--path", "pkg/test_foo.py"]
+        )
+        assert result.exit_code == 0
+        sentinel = tmp_path / ".git" / "canary-guardian-authored"
+        assert sentinel.is_file()
+        assert sentinel.read_text(encoding="utf-8").splitlines() == ["pkg/test_foo.py"]
+
+    def test_mark_authored_then_passthrough_round_trip(self, tmp_path, monkeypatch):
+        from agent.guardian.cli import guardian_app
+        from typer.testing import CliRunner
+
+        _git_init(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(
+            guardian_app, ["mark-authored", "--path", "pkg/test_foo.py"]
+        )
+        assert result.exit_code == 0
+        # Re-commit staging EXACTLY the guardian-authored path → pass once.
+        monkeypatch.setattr(
+            guardian_precommit, "staged_paths", lambda *a, **k: ["pkg/test_foo.py"]
+        )
+        assert guardian_precommit.authored_recommit_passthrough(tmp_path) is True
+        assert not (tmp_path / ".git" / "canary-guardian-authored").exists()
+        # Second call: sentinel consumed → normal path (no loop).
+        assert guardian_precommit.authored_recommit_passthrough(tmp_path) is False
+
+    def test_author_plan_block_then_mark_authored_round_trip(
+        self, tmp_path, monkeypatch
+    ):
+        # End-to-end: author-plan (opt-in on, tier 2) blocks with planned intents →
+        # feed each target_path to mark-authored → the passthrough clears once.
+        import json as _json
+
+        from agent.guardian.cli import guardian_app
+        from typer.testing import CliRunner
+
+        _git_init(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("CANARY_GUARDIAN_AGENT", "2")
+        monkeypatch.delenv("CANARY_GUARDIAN_IS_FORK", raising=False)
+        cfg = tmp_path / "harness.config.json"
+        cfg.write_text(
+            _json.dumps(
+                {"canary": {"guardian": {"preCommit": {"authorTests": True}}}}
+            ),
+            encoding="utf-8",
+        )
+        diff = (
+            "diff --git a/pkg/widget.py b/pkg/widget.py\n"
+            "index 1111111..2222222 100644\n"
+            "--- a/pkg/widget.py\n"
+            "+++ b/pkg/widget.py\n"
+            "@@ -0,0 +1,3 @@\n"
+            "+def widget():\n"
+            "+    return 42\n"
+            "+\n"
+        )
+        runner = CliRunner()
+        plan = runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-", "--config", str(cfg)],
+            input=diff,
+        )
+        assert plan.exit_code == 0
+        data = _json.loads(plan.stdout)
+        assert data["block"]["block"] is True
+        targets = [i["target_path"] for i in data["intents"] if i["status"] != "skipped"]
+        assert targets
+        args = ["mark-authored"]
+        for t in targets:
+            args += ["--path", t]
+        assert runner.invoke(guardian_app, args).exit_code == 0
+        monkeypatch.setattr(
+            guardian_precommit, "staged_paths", lambda *a, **k: targets
+        )
+        assert guardian_precommit.authored_recommit_passthrough(tmp_path) is True
+
+
 class TestInstall:
     """install() CHAINS onto an existing .git/hooks/pre-commit (owned by
     check-proprietary.py) — it never clobbers, and is idempotent via the marker."""

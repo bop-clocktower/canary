@@ -7,6 +7,7 @@ Phase 2 (draft PR generation) is behind --phase2 flag and not yet implemented.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -281,6 +282,203 @@ def pr_check(
         )
 
     raise typer.Exit(compute_exit_code(findings, gate=effective_gate))
+
+
+def _build_gaps(diff_text: str, config, coverage_path: Optional[Path]):
+    """Build Tier-0 ``untested-new-code`` findings from ``diff_text`` using the
+    SAME pipeline as ``pr-check`` (scope → skip/test/re-export filters → resolve
+    coverage → build/suppress findings). Agent-free (SC-11)."""
+    from agent.guardian.coverage import resolve_coverage
+    from agent.guardian.pr_check import (
+        apply_suppressions,
+        build_findings,
+        filter_skipped,
+        filter_test_units,
+        find_reexport_only,
+        scope_diff,
+    )
+
+    units = scope_diff(diff_text)
+    kept, _skipped = filter_skipped(units, config.skip_globs)
+    kept, _test_units = filter_test_units(kept)
+    reexport_paths = find_reexport_only(diff_text)
+    kept = [u for u in kept if u.path not in reexport_paths]
+    if not kept:
+        return []
+    results = resolve_coverage(kept, coverage_path=coverage_path)
+    return apply_suppressions(build_findings(results))
+
+
+def _intent_dict(intent) -> dict:
+    """Serialize a ``GeneratedTest`` intent for the SKILL (JSON-safe)."""
+    return {
+        "path": intent.gap.path,
+        "unit": intent.gap.unit,
+        "target_path": intent.target_path,
+        "requirement": intent.requirement,
+        "status": intent.status,
+        "written_path": intent.written_path,
+        "skip_reason": intent.skip_reason,
+    }
+
+
+@guardian_app.command("author-plan")
+def author_plan(
+    diff: Optional[str] = typer.Option(
+        None, "--diff", help="Diff file, '-' for stdin, or omit to use `git diff`."
+    ),
+    coverage: Optional[str] = typer.Option(
+        None, "--coverage", help="Coverage report path (lcov/json)."
+    ),
+    config_path: str = typer.Option("harness.config.json", "--config"),
+    output_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Emit the at-desk authoring plan (intents + block decision) for the SKILL to
+    fulfil in-session. NOT run by CI.
+
+    Builds gaps via the SAME Tier-0 pipeline as ``pr-check``, resolves the tier
+    with :class:`InSessionAgentProbe`, applies the four safety guards, and prints
+    ``{"intents": [...], "block": {...}}``. Authors NOTHING itself (Option A): the
+    default ``RecordingInvoker`` records planned intents and the SKILL fulfils
+    them. ``agent_tier`` is imported LAZILY so the Tier-0 ``pr-check`` command
+    stays agent-free at import (SC-11).
+    """
+    from agent.guardian.agent_tier import (
+        AuthoringContext,
+        InSessionAgentProbe,
+        InSessionAgentTier,
+        decide_block,
+    )
+    from agent.guardian.pr_check import load_guardian_config, read_diff
+    from agent.guardian.tier import resolve_tier
+
+    config, warning = load_guardian_config(Path(config_path))
+    if warning is not None:
+        typer.echo(f"WARNING: {warning}", err=True)
+
+    diff_text = read_diff(diff)
+    gaps = _build_gaps(
+        diff_text, config, Path(coverage) if coverage else None
+    )
+
+    requested = 2 if config.precommit_author_tests else 0
+    effective = resolve_tier(requested, InSessionAgentProbe()).effective
+
+    # FIX 6: resolve the repo root from the git top-level (not Path.cwd()), so the
+    # collision check and sentinel lookup stay root-relative when author-plan runs
+    # from a subdirectory. Falls back to cwd when not in a git repo.
+    repo_root = _git_toplevel()
+    ctx = AuthoringContext(
+        author_tests_optin=config.precommit_author_tests,
+        effective_tier=effective,
+        is_fork=_is_fork_context(),
+        repo_root=repo_root,
+        authored_sentinel_present=_authored_sentinel_path(repo_root).is_file(),
+    )
+    results = InSessionAgentTier().author_tests(gaps, ctx)
+    payload = {
+        "intents": [_intent_dict(r) for r in results],
+        "block": decide_block(results).__dict__,
+    }
+    typer.echo(json.dumps(payload, indent=2))
+
+
+_AUTHORED_SENTINEL_NAME = "canary-guardian-authored"
+
+
+def _git_toplevel() -> Path:
+    """Resolve the repository root via ``git rev-parse --show-toplevel``.
+
+    Falls back to :func:`Path.cwd` when not inside a git repo (FIX 6) — so the
+    collision check and sentinel lookup stay root-relative even when the command
+    is run from a subdirectory. Network-free; only shells local ``git``.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return Path(out.stdout.strip())
+    except OSError:
+        pass
+    return Path.cwd()
+
+
+def _git_dir(root: Path) -> Path:
+    """Resolve the real git dir for ``root`` via ``git rev-parse --git-dir``.
+
+    Handles ``.git``-as-a-file (worktrees/submodules point at the real gitdir)
+    instead of assuming ``root/".git"`` is a directory (FIX 7). Relative results
+    are resolved against ``root``; falls back to ``root/".git"`` when ``git`` is
+    unavailable or ``root`` is not a repo.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            resolved = Path(out.stdout.strip())
+            return resolved if resolved.is_absolute() else (root / resolved)
+    except OSError:
+        pass
+    return root / ".git"
+
+
+def _authored_sentinel_path(root: Path) -> Path:
+    """Absolute path to the guardian's authored-tests sentinel under ``root``."""
+    return _git_dir(root) / _AUTHORED_SENTINEL_NAME
+
+
+@guardian_app.command("mark-authored")
+def mark_authored(
+    path: list[str] = typer.Option(
+        [],
+        "--path",
+        help="An authored test path (repeatable). Recorded one per line.",
+    ),
+) -> None:
+    """Write the guardian loop-guard sentinel with the authored test paths.
+
+    The DETERMINISTIC producer half of the D4 loop-guard (a): after the SKILL
+    authors + ``git add``s the guardian's tests, it calls this so the Tier-0
+    pre-commit hook lets the review re-commit through exactly once — SCOPED to
+    these recorded paths (:func:`hooks.guardian_precommit.authored_recommit_passthrough`).
+    Writes ONLY the sentinel (no test authoring); resolves the location via the
+    real git dir so worktrees/submodules work.
+    """
+    root = _git_toplevel()
+    sentinel = _authored_sentinel_path(root)
+    sentinel.parent.mkdir(parents=True, exist_ok=True)
+    body = "".join(f"{p}\n" for p in path)
+    sentinel.write_text(body, encoding="utf-8")
+    typer.echo(
+        f"guardian: recorded {len(path)} authored path(s) → {sentinel}"
+    )
+
+
+def _is_fork_context() -> bool:
+    """At-desk fork signal (guard b), FAIL-CLOSED on ambiguity.
+
+    Only two safe sentinels mean "not a fork": ``CANARY_GUARDIAN_IS_FORK`` UNSET,
+    or exactly ``"0"`` (after strip) — the common at-desk default. ANY other
+    non-empty value (``"1"``, ``"true"``, ``"yes"``, whitespace-wrapped, or
+    garbage) is treated as a fork, so authoring is SKIPPED rather than fail-open
+    writing to a fork/untrusted checkout. The SKILL exports this on a fork
+    checkout so the guard actually arms. Deterministic and network-free — the CI
+    fork/403 path is a separate NON-GOAL."""
+    import os
+
+    raw = os.environ.get("CANARY_GUARDIAN_IS_FORK")
+    if raw is None:
+        return False  # unset → the common at-desk default: not a fork
+    return raw.strip() != "0"  # only "0" is the other safe sentinel; else fork
 
 
 @guardian_app.command()
