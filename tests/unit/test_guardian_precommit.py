@@ -274,6 +274,16 @@ class TestStagedDiff:
         )
         assert guardian_precommit.staged_diff() == "diff --git a/x b/x\n"
 
+    def test_returns_empty_when_git_missing(self, monkeypatch) -> None:
+        # L2: `git` not on PATH → subprocess.run raises FileNotFoundError. An
+        # advisory gate must fail OPEN (return "" → "nothing to verify"), not
+        # explode with a traceback and spuriously block the commit.
+        def _boom(*a, **k):
+            raise FileNotFoundError("git")
+
+        monkeypatch.setattr(guardian_precommit.subprocess, "run", _boom)
+        assert guardian_precommit.staged_diff() == ""
+
 
 class TestMain:
     """The thin git-hook entrypoint shells to the pure core."""

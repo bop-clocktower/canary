@@ -129,14 +129,20 @@ def staged_diff() -> str:
     """Return `git diff --staged` text ('' when nothing staged).
 
     This is the ONLY git call in the surface; the core takes the diff injected.
+    Fail-open: if ``git`` is not on PATH (``FileNotFoundError``) or otherwise
+    unspawnable (``OSError``), return "" so an advisory gate degrades to "nothing
+    to verify" instead of blocking the commit with a traceback.
     """
-    return subprocess.run(
-        ["git", "diff", "--staged"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout
+    try:
+        return subprocess.run(
+            ["git", "diff", "--staged"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+    except OSError:
+        return ""
 
 
 def install(repo_root: Path | None = None) -> None:
