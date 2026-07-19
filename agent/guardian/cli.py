@@ -92,6 +92,68 @@ def analyze(
         _try_post_pr_comment(summary, pr_url=pr)
 
 
+def _pr_context_from_env() -> "Optional[tuple[str, int]]":
+    """Resolve ``(repo, pr_number)`` from GitHub Actions env, else ``None``.
+
+    ``repo`` comes from ``GITHUB_REPOSITORY`` (``owner/repo``). The PR number is
+    parsed from ``GITHUB_REF`` (``refs/pull/<n>/merge``); when that is not a PR
+    ref, it falls back to the ``pull_request.number`` field of the event JSON at
+    ``GITHUB_EVENT_PATH``. Returns ``None`` if either piece cannot be resolved
+    (``--post-comment`` then degrades to printing the body — no crash).
+    """
+    import os
+    import re
+
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    if not repo or "/" not in repo:
+        return None
+
+    ref = os.environ.get("GITHUB_REF", "")
+    match = re.match(r"refs/pull/(\d+)/", ref)
+    if match:
+        return repo, int(match.group(1))
+
+    event_path = os.environ.get("GITHUB_EVENT_PATH")
+    if event_path:
+        try:
+            with open(event_path, encoding="utf-8") as handle:
+                event = json.load(handle)
+            number = event.get("pull_request", {}).get("number")
+            if isinstance(number, int):
+                return repo, number
+        except (OSError, json.JSONDecodeError, AttributeError):
+            return None
+    return None
+
+
+def _build_client(repo: str, pr_number: int):
+    """Factory for the real GitHub comment client (monkeypatched in tests).
+
+    Network lives entirely in ``_RestGitHubClient``; unit tests replace this
+    factory with one returning a ``FakeGitHubClient``.
+    """
+    import os
+
+    from agent.guardian.pr_comment import _RestGitHubClient
+
+    token = os.environ.get("GITHUB_TOKEN", "")
+    return _RestGitHubClient(repo, pr_number, token)
+
+
+def _append_step_summary(notice: str) -> None:
+    """Append ``notice`` to the ``$GITHUB_STEP_SUMMARY`` file when set (no-op otherwise)."""
+    import os
+
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not summary_path:
+        return
+    try:
+        with open(summary_path, "a", encoding="utf-8") as handle:
+            handle.write(f"\n> {notice}\n")
+    except OSError:
+        pass
+
+
 @guardian_app.command("pr-check")
 def pr_check(
     diff: Optional[str] = typer.Option(
@@ -105,6 +167,11 @@ def pr_check(
     gate: Optional[str] = typer.Option(
         None, "--gate", help="Override config gate: soft|hard"
     ),
+    post_comment: bool = typer.Option(
+        False,
+        "--post-comment",
+        help="Post/update the sticky PR comment via the GitHub API (CI).",
+    ),
 ) -> None:
     """Tier 0 deterministic PR guardian: scope a diff, resolve diff-coverage at
     the highest available fidelity, render findings, and gate the exit code.
@@ -116,6 +183,7 @@ def pr_check(
         apply_suppressions,
         build_findings,
         compute_exit_code,
+        filter_skipped,
         load_guardian_config,
         read_diff,
         render,
@@ -127,16 +195,54 @@ def pr_check(
         # SC-8: surface the malformed-config warning loudly, never silently.
         typer.echo(f"WARNING: {warning}", err=True)
 
+    # OT-5: while pr.enabled == false, `--post-comment` skips the PR surface
+    # entirely (no diff scoped, no comment posted, exit 0).
+    if post_comment and not config.pr_enabled:
+        typer.echo("guardian: pr.enabled is false — skipping PR surface.")
+        raise typer.Exit(0)
+
     effective_gate = gate or config.pr_gate
 
     diff_text = read_diff(diff)
     units = scope_diff(diff_text)
+
+    # SC-2: drop docs/config-only units matching skipGlobs.
+    kept, skipped = filter_skipped(units, config.skip_globs)
+    if not kept:
+        typer.echo(
+            f"guardian: nothing to verify ({len(skipped)} path(s) skipped)."
+        )
+        raise typer.Exit(0)
+
     results = resolve_coverage(
-        units, coverage_path=Path(coverage) if coverage else None
+        kept, coverage_path=Path(coverage) if coverage else None
     )
     findings = apply_suppressions(build_findings(results))
 
-    typer.echo(render(findings, fmt=fmt, tier=config.pr_tier))
+    if post_comment:
+        # The posted body is always `comment` format so it carries the sticky
+        # marker for marker-matched upsert (SC-9); `--format` still governs the
+        # non-posting local echo below.
+        body = render(findings, fmt="comment", tier=config.pr_tier)
+        ctx = _pr_context_from_env()
+        if ctx is None:
+            typer.echo("guardian: no PR context in env — printing instead.")
+            typer.echo(body)
+        else:
+            from agent.guardian.pr_comment import (
+                degradation_annotation,
+                upsert_sticky_comment,
+            )
+
+            client = _build_client(*ctx)
+            res = upsert_sticky_comment(client, body)
+            if res.action == "degraded" and res.notice:
+                # OT-4 / SC-1+D6: loud `::warning::` + step-summary, exit per gate.
+                typer.echo(degradation_annotation(res.notice))
+                _append_step_summary(res.notice)
+    else:
+        typer.echo(render(findings, fmt=fmt, tier=config.pr_tier))
+
     raise typer.Exit(compute_exit_code(findings, gate=effective_gate))
 
 
