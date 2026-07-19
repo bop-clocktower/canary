@@ -197,6 +197,97 @@ class TestEmitWrite:
         assert expected.is_file()
 
 
+class TestAtomicWrite:
+    """FIX 1: the record write must be atomic — no torn/partial file for the
+    harness consumer (``AnalysisArchive.list()`` re-throws ONE bad record's
+    parse error, breaking ALL). Write to a same-dir temp then ``os.replace``."""
+
+    def test_no_torn_file_and_no_leftover_temp(self, tmp_path: Path) -> None:
+        (tmp_path / ".harness").mkdir()
+        analyses_dir = tmp_path / ".harness" / "analyses"
+        res = emit_analysis(
+            _findings(),
+            analyses_dir=analyses_dir,
+            ref="pr-3",
+            gate="soft",
+            effective_tier=0,
+            degraded_notice=None,
+            exit_code=0,
+        )
+        assert res.action == "emitted"
+        target = analyses_dir / "canary-pr-guardian-pr-3.json"
+        # (a) the final file parses as complete JSON.
+        record = json.loads(target.read_text(encoding="utf-8"))
+        assert record["source"] == "canary-pr-guardian"
+        # (b) the final record is the ONLY file in the dir — no leftover temp.
+        assert [p.name for p in analyses_dir.iterdir()] == [target.name]
+
+    def test_uses_os_replace_from_temp_to_target(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Spy on ``os.replace``: the writer renames a *different* temp path in the
+        SAME dir onto the final target (atomic rename on one filesystem)."""
+        import os as _os
+
+        import agent.guardian.analysis_emit as emit_mod
+
+        (tmp_path / ".harness").mkdir()
+        analyses_dir = tmp_path / ".harness" / "analyses"
+        target = analyses_dir / "canary-pr-guardian-pr-3.json"
+        calls: list[tuple[str, str]] = []
+        real_replace = _os.replace
+
+        def _spy(src, dst):
+            calls.append((str(src), str(dst)))
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(emit_mod.os, "replace", _spy)
+        res = emit_analysis(
+            _findings(),
+            analyses_dir=analyses_dir,
+            ref="pr-3",
+            gate="soft",
+            effective_tier=0,
+            degraded_notice=None,
+            exit_code=0,
+        )
+        assert res.action == "emitted"
+        assert len(calls) == 1
+        src, dst = calls[0]
+        assert Path(dst) == target
+        assert src != str(target)  # a distinct temp path was renamed
+        assert Path(src).parent == analyses_dir  # same-dir temp (atomic rename)
+
+    def test_temp_cleaned_up_when_replace_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When ``os.replace`` raises, degrade LOUDLY (OSError contract) AND leave
+        no leftover temp file behind."""
+        import agent.guardian.analysis_emit as emit_mod
+
+        (tmp_path / ".harness").mkdir()
+        analyses_dir = tmp_path / ".harness" / "analyses"
+
+        def _boom(src, dst):
+            raise OSError("simulated rename failure")
+
+        monkeypatch.setattr(emit_mod.os, "replace", _boom)
+        res = emit_analysis(
+            _findings(),
+            analyses_dir=analyses_dir,
+            ref="pr-3",
+            gate="soft",
+            effective_tier=0,
+            degraded_notice=None,
+            exit_code=0,
+        )
+        assert res.action == "unavailable"
+        assert res.path is None
+        assert "sticky comment" in res.notice
+        # No target and no leftover temp file remain.
+        assert list(analyses_dir.iterdir()) == []
+
+
 class TestRoundTrip:
     def test_stub_consumer_reads_documented_fields(self, tmp_path: Path) -> None:
         (tmp_path / ".harness").mkdir()

@@ -21,7 +21,9 @@ is scanned by ``tests/unit/test_guardian_capability_boundary.py`` (``_MODULES``)
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -144,7 +146,24 @@ def emit_analysis(
     target = analyses_dir / analysis_filename(ref)
     try:
         analyses_dir.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        # Atomic write: stage into a same-dir temp then os.replace (atomic rename
+        # on one filesystem). A torn/partial file would break the harness consumer
+        # (AnalysisArchive.list() re-throws ONE bad record's parse error → ALL
+        # records fail). Same-dir temp keeps the rename on a single filesystem.
+        fd, tmp_name = tempfile.mkstemp(
+            dir=analyses_dir, prefix=".tmp-", suffix=".json"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, indent=2))
+            os.replace(tmp_name, target)
+        except OSError:
+            # Clean up the staged temp so a failed replace leaves no leftover.
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
     except OSError as exc:
         return EmitResult(
             "unavailable",
