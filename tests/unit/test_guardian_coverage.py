@@ -330,6 +330,78 @@ class TestResolveFromGraph:
         assert results == []
 
 
+# A DIRECT test→source edge: test_foo.py imports foo.py straight (one hop).
+_DIRECT_EDGE_GRAPH = _ndjson(
+    {"kind": "node", "type": "file", "id": "file:pkg/foo.py", "path": "pkg/foo.py"},
+    {"kind": "node", "type": "file", "id": "file:tests/test_foo.py",
+     "path": "tests/test_foo.py"},
+    {"kind": "edge", "from": "file:tests/test_foo.py",
+     "to": "file:pkg/foo.py", "type": "imports"},
+)
+
+# A PURELY-TRANSITIVE reach: test_a.py imports b.py, b.py imports foo.py. There
+# is NO direct test→foo edge — only an indirect two-hop path. Unbounded BFS
+# over-credits foo as covered; a depth-1 gate must treat it as uncovered.
+_TRANSITIVE_GRAPH = _ndjson(
+    {"kind": "node", "type": "file", "id": "file:pkg/foo.py", "path": "pkg/foo.py"},
+    {"kind": "node", "type": "file", "id": "file:pkg/b.py", "path": "pkg/b.py"},
+    {"kind": "node", "type": "file", "id": "file:tests/test_a.py",
+     "path": "tests/test_a.py"},
+    {"kind": "edge", "from": "file:tests/test_a.py",
+     "to": "file:pkg/b.py", "type": "imports"},
+    {"kind": "edge", "from": "file:pkg/b.py",
+     "to": "file:pkg/foo.py", "type": "imports"},
+)
+
+
+class TestResolveFromGraphDepth:
+    """#320: a bounded reverse-BFS can require a direct (or shallow) test→source
+    edge. ``max_depth=1`` = direct edge only; ``max_depth=2`` = one hop of
+    indirection; ``max_depth=None`` = unbounded (today's behavior, unchanged)."""
+
+    def test_direct_edge_covered_at_depth_1(self, tmp_path: Path) -> None:
+        # A direct test→source import edge is reached within 1 hop → covered.
+        graph = tmp_path / "graph.json"
+        graph.write_text(_DIRECT_EDGE_GRAPH, encoding="utf-8")
+        foo = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 3)])
+        results = resolve_from_graph([foo], graph, max_depth=1)
+        assert results is not None
+        assert results[0].covered is True
+        assert results[0].fidelity is Fidelity.GRAPH_VERIFIED
+
+    def test_purely_transitive_uncovered_at_depth_1(self, tmp_path: Path) -> None:
+        # THE FIX: a purely-transitive test path (test→b→foo, no direct test→foo
+        # edge) must NOT count as covering foo under a depth-1 gate.
+        graph = tmp_path / "graph.json"
+        graph.write_text(_TRANSITIVE_GRAPH, encoding="utf-8")
+        foo = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 3)])
+
+        bounded = resolve_from_graph([foo], graph, max_depth=1)
+        assert bounded is not None
+        assert bounded[0].covered is False  # direct-edge gate: uncovered
+
+        # PROOF the old (unbounded) behavior over-credited: the SAME fixture with
+        # max_depth=None reaches test_a two hops out and marks foo covered.
+        unbounded = resolve_from_graph([foo], graph, max_depth=None)
+        assert unbounded is not None
+        assert unbounded[0].covered is True
+
+    def test_depth_boundary_two_hops(self, tmp_path: Path) -> None:
+        # The transitive fixture is covered at depth 2 (one hop of indirection is
+        # allowed) but uncovered at depth 1 (direct edge only).
+        graph = tmp_path / "graph.json"
+        graph.write_text(_TRANSITIVE_GRAPH, encoding="utf-8")
+        foo = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 3)])
+
+        covered_at_2 = resolve_from_graph([foo], graph, max_depth=2)
+        assert covered_at_2 is not None
+        assert covered_at_2[0].covered is True
+
+        uncovered_at_1 = resolve_from_graph([foo], graph, max_depth=1)
+        assert uncovered_at_1 is not None
+        assert uncovered_at_1[0].covered is False
+
+
 class TestResolveHeuristic:
     def _repo(self, tmp_path: Path):
         (tmp_path / "pkg").mkdir()

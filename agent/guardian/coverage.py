@@ -243,6 +243,7 @@ def is_test_path(path: str) -> bool:
 def resolve_from_graph(
     units: list[ChangedUnit],
     graph_path: Path = Path(".harness/graph/graph.json"),
+    max_depth: int | None = None,
 ) -> list[CoverageResult] | None:
     """Tier 2: derive coverage from the harness knowledge graph (``GRAPH_VERIFIED``).
 
@@ -250,6 +251,15 @@ def resolve_from_graph(
     **derived**: a changed file is graph-covered iff some **test-path node**
     reaches the file's node (or a symbol node it ``contains``) via a
     ``calls``/``imports`` edge. Conservative by design (edge present → covered).
+
+    ``max_depth`` bounds the reverse-BFS hop distance from the changed unit's
+    node(s) to the covering test node (#320). The changed unit's nodes are
+    depth 0; their direct predecessors (a test with a ``calls``/``imports`` edge
+    straight into a target node or a ``contains``-symbol of it) are depth 1; one
+    hop of indirection is depth 2; and so on. A test-path node reached within
+    ``max_depth`` hops counts as covering. ``max_depth=1`` therefore requires a
+    DIRECT test→source edge; ``max_depth=None`` is unbounded (today's behavior,
+    byte-for-byte unchanged).
 
     Reads the NDJSON ``graph.json`` directly. Does **not** shell
     ``impact-preview`` (staged-only) or import the ``analyze_diff``/``get_impact``
@@ -336,20 +346,26 @@ def resolve_from_graph(
                     frontier.append(child)
 
         # Reverse-BFS over calls/imports; a reached test-path node → covered.
+        # ``max_depth`` bounds how far a covering test may sit from a target: a
+        # target node is depth 0, its direct predecessors depth 1, etc. A node at
+        # ``depth >= max_depth`` cannot be expanded (its predecessors would exceed
+        # the bound). ``max_depth=None`` never bounds — unchanged behavior (#320).
         covering_test: str | None = None
         seen = set(targets)
-        queue = list(targets)
+        queue: list[tuple[str, int]] = [(t, 0) for t in targets]
         while queue and covering_test is None:
-            node = queue.pop()
+            node, depth = queue.pop()
+            if max_depth is not None and depth >= max_depth:
+                continue  # cannot expand deeper — predecessors would exceed bound
             for source in reach_rev.get(node, []):
                 if source in seen:
                     continue
                 seen.add(source)
                 source_path = id_to_path.get(source, "")
                 if source_path and is_test_path(source_path) and source not in targets:
-                    covering_test = source_path
+                    covering_test = source_path  # test reached within max_depth
                     break
-                queue.append(source)
+                queue.append((source, depth + 1))
 
         covered = covering_test is not None
         evidence = (
