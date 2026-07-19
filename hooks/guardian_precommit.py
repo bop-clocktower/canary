@@ -103,11 +103,14 @@ def run_precommit_check(config, diff_text: str, probe=None) -> PrecommitOutcome:
     kept = [u for u in kept if u.path not in reexport]
     if not kept:
         n = len(skipped) + len(test_units) + len(barrels)
+        # No unit was actually checked, so no tier degradation is claimed here —
+        # surfacing a ⚠ notice on a "nothing to verify" report would be a dangling
+        # warning about a check that never ran (L1).
         return PrecommitOutcome(
             0,
             f"guardian: nothing to verify ({n} path(s) skipped).",
             False,
-            resolution.degraded_notice,
+            None,
         )
 
     results = resolve_coverage(kept)  # heuristic/graph fidelity, no report path

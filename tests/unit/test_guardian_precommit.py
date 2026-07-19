@@ -148,6 +148,23 @@ class TestRunPrecommitCheck:
         assert outcome.exit_code == 0
         assert "nothing to verify" in outcome.report
 
+    def test_nothing_to_verify_claims_no_degradation(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # L1: authorTests=True requests tier 2 (would degrade), but the diff
+        # filters to nothing → no check ran, so no degradation is claimed and the
+        # dangling ⚠ notice must NOT leak into the plain "nothing to verify" text.
+        monkeypatch.chdir(tmp_path)
+        config = GuardianConfig(
+            precommit_enabled=True,
+            precommit_author_tests=True,
+            precommit_gate="soft",
+        )
+        outcome = guardian_precommit.run_precommit_check(config, DIFF_DOCS)
+        assert "nothing to verify" in outcome.report
+        assert outcome.degraded_notice is None
+        assert "⚠" not in outcome.report
+
 
 _CHECK_PROP_LINE = "python3 /repo/hooks/check-proprietary.py run\n"
 
