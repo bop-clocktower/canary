@@ -1,10 +1,12 @@
 <!-- markdownlint-disable MD024 -->
+
 # Changelog
 
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project adheres to
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 This changelog starts at **v4.0.0**. Earlier releases (v1.0.0–v3.0.0, published
 under the project's former name) are documented in the
@@ -12,29 +14,79 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [5.11.0] - 2026-07-19
+
+> This entry consolidates user-facing changes since the last changelog entry
+> (5.7.0). Interim tags 5.8–5.10 were published without changelog entries; the
+> `canary-instrument` skill below shipped in that window and is recorded here
+> for continuity.
+
 ### Added
 
+- **`canary-pr-guardian`** — A PR test-coverage guardian. A deterministic Tier-0
+  diff-coverage engine (`canary guardian pr-check`) posts fidelity-labeled
+  findings (coverage-verified › graph-verified › heuristic) with no agent,
+  secret, or write token. Ships a GitHub Actions workflow with a sticky PR
+  comment, a pre-commit hook, an at-desk agent orchestrator
+  (`/canary-pr-guardian`), and harness-check analysis emit (`--emit-analysis`).
+  The gate defaults to **soft** (advisory); promote to hard per-repo once trust
+  is earned. The Tier-0 engine imports no agent/LLM by construction.
+- **`canary-init` and `canary-migrate` slash commands** — first-run entry points
+  so a brand-new user can initialize or migrate a project without knowing an
+  agent by name.
+- **`canary-company-knowledge` skill** — bootstraps `.canary/company.json`,
+  scaffolding and prompting for the non-inferable org-specific fields.
+- **`canary-fleet-health` skill** — compact fleet-wide flake/health summary,
+  distinct from single-test diagnosis.
 - **`canary-instrument` skill** — Upstreamed the OTel test-instrumentation
-  capability to a bundled skill in
-  `agents/skills/claude-code/canary-instrument`. Instruments a Playwright run
-  with OpenTelemetry and emits a `run.json` v1 artifact correlating each test
-  to the outbound HTTP requests it made, via OTel span parent/child
-  relationships — no manual bookkeeping in test code. Trace-only in this v1
-  (no `coverage` block); default file-based span export needs no OTel
-  collector. Last item in the "Overlay Upstreaming" milestone.
+  capability to `agents/skills/claude-code/canary-instrument`. Instruments a
+  Playwright run with OpenTelemetry and emits a `run.json` v1 artifact
+  correlating each test to the outbound HTTP requests it made, via OTel span
+  parent/child relationships. Trace-only in this v1; default file-based span
+  export needs no OTel collector.
+
+### Changed
+
+- **Fail-loud on uncertain auto-detection** — `canary migrate` framework
+  detection and `canary doctor --persona` now surface uncertainty instead of
+  silently doing less than expected.
+- **Quality-gate hooks now block** — `quality-warner` and `telemetry-reporter`
+  no longer unconditionally `exit 0`; a hook that cannot fail is no safety net.
+- **Config validation** — malformed `harness.config.json` / `.mcp.json` now warn
+  loudly instead of silently falling back to defaults.
+- **Classifier confidence** — scores are documented as heuristic priors, not
+  calibrated probabilities, so CI users don't over-trust them.
+- **Architecture thresholds** — `maxFanOut` / dependency-depth thresholds set
+  just above the measured baseline as a regression ratchet.
+
+### Fixed
+
+- History store now fails closed on unparseable Supabase connection URLs.
+- npm engine-check validates JSON shape before trusting a registry version.
+- Numerous `canary-pr-guardian` robustness fixes (atomic analysis writes,
+  git-absent ref resolution, degrade-on-error, per-unit coverage fidelity,
+  bounded graph-coverage BFS depth).
+- Skill/agent routing and discoverability: backfilled YAML frontmatter for
+  headless `SKILL.md` files; canonicalized the three "write a test" paths.
+
+### Security
+
+- Redact-on-parse-failure leak: the history-store redaction path now fails
+  closed rather than risk leaking credentials into logs/output.
+- Added a JSON shape guard before `JSON.parse` in `npm/src/engine-checks.ts`.
 
 ## [5.7.0] - 2026-07-13
 
-Bundled fail-fast CI gate capability, Sentinel scope optimization, PyPI
-Trusted Publishing integration, and MCP selection hook.
+Bundled fail-fast CI gate capability, Sentinel scope optimization, PyPI Trusted
+Publishing integration, and MCP selection hook.
 
 ### Added
 
 - **`canary-fail-fast` skill** — Upstreamed the fail-fast CI gate capability to
   a bundled skill in `agents/skills/claude-code/canary-fail-fast`. It audits
-  Playwright configs for `maxFailures`, `forbidOnly`, and `retries`, parses
-  test run results, outputs structured digests with GitHub Actions error
-  annotations, and fails the build on test failures.
+  Playwright configs for `maxFailures`, `forbidOnly`, and `retries`, parses test
+  run results, outputs structured digests with GitHub Actions error annotations,
+  and fails the build on test failures.
 - **First-party MCP hook** — Added a `prefer-first-party-mcp` hook to nudge the
   LLM to use first-party MCP tools (harness, canary) over third-party
   alternatives.
@@ -90,8 +142,8 @@ A content and tooling release — no change to the shipped CLI binary's behavior
   and Vitest: LEGO-collection reconciliation, price normalizer,
   subscription-expiry checker, access-policy (RBAC) evaluator, interval merger,
   semver comparison, and a marginal tax-bracket calculator (#228, #229, #232).
-- **Brand refresh ("The Cry")** — new `cry-mark` icon set (gold / dark /
-  outline / favicon), a self-contained `docs/branding/brand-system.html` page,
+- **Brand refresh ("The Cry")** — new `cry-mark` icon set (gold / dark / outline
+  / favicon), a self-contained `docs/branding/brand-system.html` page,
   verdict-colored Slack announcement banners, and three new "flock" voice
   profiles: Black Canary, Huntress, and Batgirl (#233).
 
@@ -102,8 +154,8 @@ A content and tooling release — no change to the shipped CLI binary's behavior
   `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`) agree and are
   semver-shaped, so a future release bump that forgets a file fails CI. The
   four-file bump requirement is documented in `AGENTS.md` (#234).
-- Spec-craft and naming-craft quality fixes across specs and identifiers
-  (#225, #227), and refreshed GitHub issue templates (#230).
+- Spec-craft and naming-craft quality fixes across specs and identifiers (#225,
+  #227), and refreshed GitHub issue templates (#230).
 
 ### Fixed
 
@@ -133,30 +185,32 @@ A content and tooling release — no change to the shipped CLI binary's behavior
 ### Security
 
 - **npm install redirect host pinning** — binary download now validates every
-  HTTP redirect against an allowlist (`github.com`, `objects.githubusercontent.com`).
-  Redirects to any other host are rejected immediately, preventing a
-  man-in-the-middle from substituting a malicious binary during `volta install canary-test-cli`.
+  HTTP redirect against an allowlist (`github.com`,
+  `objects.githubusercontent.com`). Redirects to any other host are rejected
+  immediately, preventing a man-in-the-middle from substituting a malicious
+  binary during `volta install canary-test-cli`.
 
 ## [5.1.0] - 2026-06-21
 
 ### Added
 
 - `volta install canary-test-cli` — self-contained native binary distribution
-  via npm. No Python required. Binaries built for linux-x64, darwin-arm64, win32-x64.
+  via npm. No Python required. Binaries built for linux-x64, darwin-arm64,
+  win32-x64.
 
 ## [5.0.0] - 2026-06-07
 
-> **Breaking change.** The `canary generate`, `canary feedback`, and the
-> GitHub Action have been removed. See the migration guide below.
+> **Breaking change.** The `canary generate`, `canary feedback`, and the GitHub
+> Action have been removed. See the migration guide below.
 
 ### Migration guide
 
-| Removed surface | Replacement |
-| --- | --- |
-| `canary generate "<prompt>"` | `/canary-write-test` in Claude Code (no API key) |
-| `canary generate "<prompt>" --recommend-only` | `canary recommend "<prompt>"` |
-| `canary feedback` | no replacement — feedback loop is built into the slash commands |
-| GitHub Action (`uses: bop-clocktower/canary@vN`) | `/canary-write-test` in Claude Code |
+| Removed surface                                  | Replacement                                                     |
+| ------------------------------------------------ | --------------------------------------------------------------- |
+| `canary generate "<prompt>"`                     | `/canary-write-test` in Claude Code (no API key)                |
+| `canary generate "<prompt>" --recommend-only`    | `canary recommend "<prompt>"`                                   |
+| `canary feedback`                                | no replacement — feedback loop is built into the slash commands |
+| GitHub Action (`uses: bop-clocktower/canary@vN`) | `/canary-write-test` in Claude Code                             |
 
 Pin to `@v4` or earlier to keep the old action while you migrate. The action
 file at this version is a hard-error shim that exits 1 with a migration message.
@@ -180,11 +234,12 @@ file at this version is a hard-error shim that exits 1 with a migration message.
     consumed by the other analysis skills.
   - **`/canary-edge-cases`** — surfaces edge cases across 6 categories (boundary
     values, race conditions, locale/timezone, partial network, unexpected input
-    shapes, accessibility). Output depth scales with `--level sdet|junior|manual`;
-    focuses on critical areas when `critical-areas.json` is present.
-  - **`/canary-failure-impact`** — traces downstream effects of a test, function,
-    or code path failing undetected. Domain heuristics boost severity for
-    billing/auth/compliance paths. Produces a Critical/High/Medium/Low label
+    shapes, accessibility). Output depth scales with
+    `--level sdet|junior|manual`; focuses on critical areas when
+    `critical-areas.json` is present.
+  - **`/canary-failure-impact`** — traces downstream effects of a test,
+    function, or code path failing undetected. Domain heuristics boost severity
+    for billing/auth/compliance paths. Produces a Critical/High/Medium/Low label
     with an affected-dependency list and suggested next action.
 - **`canary --version` / `canary -V`** — conventional version flag via Typer
   callback, alongside the existing `canary version` subcommand (PR #204).
@@ -199,9 +254,10 @@ file at this version is a hard-error shim that exits 1 with a migration message.
 
 ### Changed
 
-- `.py` skill CLIs now run under canary's own venv interpreter (`sys.executable`)
-  instead of the system Python resolved by their shebang — skills that depend on
-  venv packages (e.g. `openpyxl`) no longer require manual injection (PR #203).
+- `.py` skill CLIs now run under canary's own venv interpreter
+  (`sys.executable`) instead of the system Python resolved by their shebang —
+  skills that depend on venv packages (e.g. `openpyxl`) no longer require manual
+  injection (PR #203).
 
 ### Fixed
 
@@ -210,13 +266,17 @@ file at this version is a hard-error shim that exits 1 with a migration message.
 
 ### Removed
 
-- **`canary generate`** — deprecated in v4.1.0; removed. Use `/canary-write-test`.
+- **`canary generate`** — deprecated in v4.1.0; removed. Use
+  `/canary-write-test`.
 - **`canary feedback`** — deprecated in v4.1.0; removed.
-- **`agent/llm/`** — entire LLM provider matrix (`anthropic`, `openai`, `gemini`,
-  `codex`, `mock`). No callers remain after the orchestrator was removed.
-- **`agent/core/orchestrator.py`** — `CanaryOrchestrator` and all private helpers.
+- **`agent/llm/`** — entire LLM provider matrix (`anthropic`, `openai`,
+  `gemini`, `codex`, `mock`). No callers remain after the orchestrator was
+  removed.
+- **`agent/core/orchestrator.py`** — `CanaryOrchestrator` and all private
+  helpers.
 - **`agent/core/selector_healer.py`**, **`agent/core/feedback.py`**,
-  **`agent/core/code_extractor.py`** — last stranded modules from the keyed path.
+  **`agent/core/code_extractor.py`** — last stranded modules from the keyed
+  path.
 
 ## [4.1.0] - 2026-06-01
 
@@ -258,15 +318,16 @@ file at this version is a hard-error shim that exits 1 with a migration message.
 
 ## [4.0.0] - 2026-06-01
 
-First release of the rebranded **Canary** plugin. Continues the existing
-release line (descends from v3.0.0); no prior release was modified.
+First release of the rebranded **Canary** plugin. Continues the existing release
+line (descends from v3.0.0); no prior release was modified.
 
 ### Changed
 
 - **Rebranded Oracle → Canary** across the project: Python package
   (`canary-test-ai`), CLI (`canary` / `canary-mcp`), plugin name (`canary`),
   slash commands, and branding assets.
-- Relocated the plugin to the **repository root** (previously `plugins/oracle/`).
+- Relocated the plugin to the **repository root** (previously
+  `plugins/oracle/`).
 - Reconciled the version across all manifests (`pyproject.toml`,
   `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`) to `4.0.0`.
 - Bumped `actions/setup-python` from v5 to v6 in CI.
@@ -277,8 +338,8 @@ release line (descends from v3.0.0); no prior release was modified.
 
 ### Security
 
-- Added an open-core proprietary guard and company-leak scrub, enforced by a
-  CI guard (removed-symbol / proprietary-denylist checks).
+- Added an open-core proprietary guard and company-leak scrub, enforced by a CI
+  guard (removed-symbol / proprietary-denylist checks).
 
 [Unreleased]: https://github.com/bop-clocktower/canary/compare/v5.3.0...HEAD
 [5.3.0]: https://github.com/bop-clocktower/canary/compare/v5.2.0...v5.3.0
