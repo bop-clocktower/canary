@@ -283,6 +283,113 @@ def pr_check(
     raise typer.Exit(compute_exit_code(findings, gate=effective_gate))
 
 
+def _build_gaps(diff_text: str, config, coverage_path: Optional[Path]):
+    """Build Tier-0 ``untested-new-code`` findings from ``diff_text`` using the
+    SAME pipeline as ``pr-check`` (scope → skip/test/re-export filters → resolve
+    coverage → build/suppress findings). Agent-free (SC-11)."""
+    from agent.guardian.coverage import resolve_coverage
+    from agent.guardian.pr_check import (
+        apply_suppressions,
+        build_findings,
+        filter_skipped,
+        filter_test_units,
+        find_reexport_only,
+        scope_diff,
+    )
+
+    units = scope_diff(diff_text)
+    kept, _skipped = filter_skipped(units, config.skip_globs)
+    kept, _test_units = filter_test_units(kept)
+    reexport_paths = find_reexport_only(diff_text)
+    kept = [u for u in kept if u.path not in reexport_paths]
+    if not kept:
+        return []
+    results = resolve_coverage(kept, coverage_path=coverage_path)
+    return apply_suppressions(build_findings(results))
+
+
+def _intent_dict(intent) -> dict:
+    """Serialize a ``GeneratedTest`` intent for the SKILL (JSON-safe)."""
+    return {
+        "path": intent.gap.path,
+        "unit": intent.gap.unit,
+        "target_path": intent.target_path,
+        "requirement": intent.requirement,
+        "status": intent.status,
+        "written_path": intent.written_path,
+        "skip_reason": intent.skip_reason,
+    }
+
+
+@guardian_app.command("author-plan")
+def author_plan(
+    diff: Optional[str] = typer.Option(
+        None, "--diff", help="Diff file, '-' for stdin, or omit to use `git diff`."
+    ),
+    coverage: Optional[str] = typer.Option(
+        None, "--coverage", help="Coverage report path (lcov/json)."
+    ),
+    config_path: str = typer.Option("harness.config.json", "--config"),
+    output_json: bool = typer.Option(True, "--json"),
+) -> None:
+    """Emit the at-desk authoring plan (intents + block decision) for the SKILL to
+    fulfil in-session. NOT run by CI.
+
+    Builds gaps via the SAME Tier-0 pipeline as ``pr-check``, resolves the tier
+    with :class:`InSessionAgentProbe`, applies the four safety guards, and prints
+    ``{"intents": [...], "block": {...}}``. Authors NOTHING itself (Option A): the
+    default ``RecordingInvoker`` records planned intents and the SKILL fulfils
+    them. ``agent_tier`` is imported LAZILY so the Tier-0 ``pr-check`` command
+    stays agent-free at import (SC-11).
+    """
+    from agent.guardian.agent_tier import (
+        AuthoringContext,
+        InSessionAgentProbe,
+        InSessionAgentTier,
+        decide_block,
+    )
+    from agent.guardian.pr_check import load_guardian_config, read_diff
+    from agent.guardian.tier import resolve_tier
+
+    config, warning = load_guardian_config(Path(config_path))
+    if warning is not None:
+        typer.echo(f"WARNING: {warning}", err=True)
+
+    diff_text = read_diff(diff)
+    gaps = _build_gaps(
+        diff_text, config, Path(coverage) if coverage else None
+    )
+
+    requested = 2 if config.precommit_author_tests else 0
+    effective = resolve_tier(requested, InSessionAgentProbe()).effective
+
+    repo_root = Path.cwd()
+    ctx = AuthoringContext(
+        author_tests_optin=config.precommit_author_tests,
+        effective_tier=effective,
+        is_fork=_is_fork_context(),
+        repo_root=repo_root,
+        authored_sentinel_present=(
+            repo_root / ".git" / "canary-guardian-authored"
+        ).is_file(),
+    )
+    results = InSessionAgentTier().author_tests(gaps, ctx)
+    payload = {
+        "intents": [_intent_dict(r) for r in results],
+        "block": decide_block(results).__dict__,
+    }
+    typer.echo(json.dumps(payload, indent=2))
+
+
+def _is_fork_context() -> bool:
+    """Best-effort at-desk fork signal (guard b). The SKILL exports
+    ``CANARY_GUARDIAN_IS_FORK=1`` on a fork checkout; unset/``0`` → not a fork.
+    Deterministic and network-free — the CI fork/403 path is a separate NON-GOAL."""
+    import os
+
+    return os.environ.get("CANARY_GUARDIAN_IS_FORK", "0") == "1"
+
+
 @guardian_app.command()
 def watch(
     interval_secs: int = typer.Option(300, "--interval", help="Polling interval in seconds."),

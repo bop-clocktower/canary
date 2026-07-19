@@ -169,6 +169,51 @@ class TestRunPrecommitCheck:
 _CHECK_PROP_LINE = "python3 /repo/hooks/check-proprietary.py run\n"
 
 
+class TestSentinelLoopGuard:
+    """D4 guard (a), Tier-0 half: a filesystem-only sentinel lets the guardian's
+    own authored+staged tests re-commit exactly ONCE.
+
+    ``authored_recommit_passthrough`` is deterministic and imports no agent
+    module (SC-11) — it only checks/consumes ``.git/canary-guardian-authored``.
+    """
+
+    def _sentinel(self, root: Path) -> Path:
+        p = root / ".git" / "canary-guardian-authored"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+
+    def test_present_sentinel_is_consumed_once(self, tmp_path: Path) -> None:
+        sentinel = self._sentinel(tmp_path)
+        sentinel.write_text("", encoding="utf-8")
+        # First re-commit: sentinel present → pass once, file consumed.
+        assert guardian_precommit.authored_recommit_passthrough(tmp_path) is True
+        assert not sentinel.exists()
+        # Second re-commit: no sentinel → normal path (no infinite loop).
+        assert guardian_precommit.authored_recommit_passthrough(tmp_path) is False
+
+    def test_absent_sentinel_returns_false(self, tmp_path: Path) -> None:
+        assert guardian_precommit.authored_recommit_passthrough(tmp_path) is False
+
+    def test_main_passes_once_without_running_pipeline(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.setattr(guardian_precommit, "REPO_ROOT", tmp_path)
+        self._sentinel(tmp_path).write_text("", encoding="utf-8")
+
+        def _boom() -> str:
+            raise AssertionError("pipeline must not run when the sentinel passes")
+
+        monkeypatch.setattr(guardian_precommit, "staged_diff", _boom)
+        monkeypatch.setattr(
+            guardian_precommit, "harness_hook_present", lambda *a, **k: False
+        )
+        code = guardian_precommit.main([])
+        assert code == 0
+        assert "authored tests re-committed" in capsys.readouterr().out
+        # Sentinel consumed → a subsequent commit runs the pipeline again.
+        assert not (tmp_path / ".git" / "canary-guardian-authored").exists()
+
+
 class TestInstall:
     """install() CHAINS onto an existing .git/hooks/pre-commit (owned by
     check-proprietary.py) — it never clobbers, and is idempotent via the marker."""

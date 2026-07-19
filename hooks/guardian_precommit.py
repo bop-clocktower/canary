@@ -27,6 +27,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 GUARDIAN_MARKER = "# canary-guardian-precommit"
 
+# D4 loop-guard (a), Tier-0 half. When the ``canary-pr-guardian`` SKILL authors
+# and stages tests it drops this sentinel, then blocks the commit for review. On
+# the NEXT commit (the human re-committing the reviewed, staged, guardian-authored
+# tests) the hook sees the sentinel and passes the commit through exactly once,
+# consuming it — so the guardian never re-authors its own output and never loops.
+# This is a FILESYSTEM-ONLY check: it imports no agent module and keeps
+# ``guardian_precommit.py`` inside the Tier-0 boundary (SC-11).
+_AUTHORED_SENTINEL = ".git/canary-guardian-authored"
+
 # Preserve any prior hook's failure: in POSIX `sh` with no `set -e`, a chained
 # script exits with its LAST command's status, so a soft-gate-0 guardian would
 # MASK a preceding block (e.g. check-proprietary exiting 1). This guard captures
@@ -125,6 +134,26 @@ def run_precommit_check(config, diff_text: str, probe=None) -> PrecommitOutcome:
     return PrecommitOutcome(exit_code, report, False, resolution.degraded_notice)
 
 
+def _sentinel_path(root: Path) -> Path:
+    """Absolute path to the guardian's authored-tests sentinel under ``root``."""
+    return root / _AUTHORED_SENTINEL
+
+
+def authored_recommit_passthrough(root: Path | None = None) -> bool:
+    """Loop-guard (a): consume the guardian's sentinel and pass THIS commit once.
+
+    If ``.git/canary-guardian-authored`` is present the human is re-committing
+    reviewed, staged, guardian-authored tests, so delete the sentinel and return
+    ``True`` (let the commit through without re-running authoring). Absent, return
+    ``False`` (normal pipeline). Deterministic, filesystem-only — no agent import.
+    """
+    sentinel = _sentinel_path(root or REPO_ROOT)
+    if sentinel.is_file():
+        sentinel.unlink()
+        return True
+    return False
+
+
 def staged_diff() -> str:
     """Return `git diff --staged` text ('' when nothing staged).
 
@@ -176,6 +205,12 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if "--install" in args:
         install()
+        return 0
+    # D4 loop-guard (a): if the guardian's own authored tests are being
+    # re-committed, pass this commit through once (consuming the sentinel) BEFORE
+    # running any coverage pipeline — the guardian never re-authors its own output.
+    if authored_recommit_passthrough():
+        print("guardian: authored tests re-committed — passing once.")
         return 0
     # Dedup: defer to a harness JS guardian counterpart if one is ever wired
     # (none exists in Phase 3, so this never fires — see plan Assumptions).

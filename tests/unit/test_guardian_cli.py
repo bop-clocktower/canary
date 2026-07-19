@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 from typer.testing import CliRunner
 
+from agent.guardian import agent_tier as guardian_agent_tier
 from agent.guardian import cli as guardian_cli
+from agent.guardian.agent_tier import GeneratedTest
 from agent.guardian.cli import guardian_app
 from agent.guardian.pr_comment import STICKY_MARKER, FakeGitHubClient
 
@@ -450,3 +453,93 @@ class TestPrCheckTierDegradation:
         # Channel 2: the Actions step-summary file receives the notice.
         assert "tier 2" in summary.read_text(encoding="utf-8")
         assert "::warning::" in result.stdout
+
+
+class _FakeAuthorInvoker:
+    """Network-free invoker: ``author`` returns an ``authored`` record so the
+    author-plan seam is exercised end-to-end without a real agent/LLM (Option A
+    test double). ``review`` is unused here."""
+
+    def review(self, request) -> str:  # pragma: no cover - not exercised
+        return ""
+
+    def author(self, intent: GeneratedTest) -> GeneratedTest:
+        return replace(intent, status="authored", written_path=intent.target_path)
+
+
+class TestAuthorPlan:
+    """T7: the in-session ``author-plan --json`` seam. Builds gaps via the SAME
+    Tier-0 pipeline as pr-check, resolves the tier with ``InSessionAgentProbe``,
+    applies the safety model, and emits ``{"intents": [...], "block": {...}}``.
+    Every agent interaction goes through an injected fake — no real agent/LLM."""
+
+    runner = CliRunner()
+
+    def test_optin_off_skips_all_intents_no_block(self, tmp_path, monkeypatch) -> None:
+        # (d) opt-in default off: an untested new unit yields a skipped intent and
+        # no block — authoring never fires without the explicit opt-in.
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("CANARY_GUARDIAN_AGENT", raising=False)
+        result = self.runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-"],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["intents"], "expected one intent for the untested unit"
+        assert all(i["status"] == "skipped" for i in data["intents"])
+        assert "opt-in" in data["intents"][0]["skip_reason"]
+        assert data["block"]["block"] is False
+        assert data["block"]["authored_count"] == 0
+
+    def test_optin_on_with_agent_authors_and_blocks(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # Opt-in on + a signalled tier-2 runtime + a fake author invoker → the gap
+        # is authored & staged (block once). No collision (target does not exist).
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("CANARY_GUARDIAN_AGENT", "2")
+        cfg = _write_config(
+            tmp_path, {"preCommit": {"enabled": True, "authorTests": True}}
+        )
+        real_cls = guardian_agent_tier.InSessionAgentTier
+        monkeypatch.setattr(
+            guardian_agent_tier,
+            "InSessionAgentTier",
+            lambda *a, **k: real_cls(invoker=_FakeAuthorInvoker()),
+        )
+        result = self.runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-", "--config", cfg],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        authored = [i for i in data["intents"] if i["status"] == "authored"]
+        assert len(authored) >= 1
+        assert authored[0]["written_path"]
+        assert data["block"]["block"] is True
+        assert data["block"]["authored_count"] >= 1
+        assert "re-commit" in data["block"]["message"]
+
+    def test_optin_on_without_agent_degrades_to_skip(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # Opt-in on but NO runtime signalled (env unset) → effective tier 0 →
+        # the tier guard skips authoring; nothing is authored, no block.
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("CANARY_GUARDIAN_AGENT", raising=False)
+        cfg = _write_config(
+            tmp_path, {"preCommit": {"enabled": True, "authorTests": True}}
+        )
+        result = self.runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-", "--config", cfg],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert all(i["status"] == "skipped" for i in data["intents"])
+        assert "tier" in data["intents"][0]["skip_reason"]
+        assert data["block"]["block"] is False
