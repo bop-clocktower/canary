@@ -73,3 +73,36 @@ class TestLoadGuardianConfig:
         assert c.precommit_enabled is False
         assert c.coverage_paths == []
         assert c.skip_globs == []
+
+    def test_non_int_tier_warns_and_defaults(self, tmp_path) -> None:
+        # FIX 4: a non-integer tier must not crash int() — warn loudly (same slot
+        # as malformed JSON) and fall back to the default tier.
+        cfg = tmp_path / "harness.config.json"
+        _write(cfg, {"canary": {"guardian": {"pr": {"tier": "medium"}}}})
+        config, warning = load_guardian_config(cfg)
+        assert warning is not None  # loud, echoed by the CLI
+        assert config.pr_tier == GuardianConfig().pr_tier  # default
+
+    def test_fractional_tier_warns_and_defaults(self, tmp_path) -> None:
+        # FIX 4: a fractional tier is not a valid integer tier → warn + default.
+        cfg = tmp_path / "harness.config.json"
+        _write(cfg, {"canary": {"guardian": {"pr": {"tier": 1.5}}}})
+        config, warning = load_guardian_config(cfg)
+        assert warning is not None
+        assert config.pr_tier == GuardianConfig().pr_tier
+
+    def test_unknown_gate_warns_and_defaults(self, tmp_path) -> None:
+        # FIX 4: a gate outside {soft, hard} must warn and fall back to default.
+        cfg = tmp_path / "harness.config.json"
+        _write(cfg, {"canary": {"guardian": {"pr": {"gate": "banana"}}}})
+        config, warning = load_guardian_config(cfg)
+        assert warning is not None
+        assert config.pr_gate == GuardianConfig().pr_gate  # default "soft"
+
+    def test_list_tier_warns_and_defaults(self, tmp_path) -> None:
+        # FIX 4: a non-scalar tier must not crash and falls back to default.
+        cfg = tmp_path / "harness.config.json"
+        _write(cfg, {"canary": {"guardian": {"pr": {"tier": []}}}})
+        config, warning = load_guardian_config(cfg)
+        assert warning is not None
+        assert config.pr_tier == GuardianConfig().pr_tier

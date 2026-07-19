@@ -378,6 +378,43 @@ class GuardianConfig:
     skip_globs: list[str] = field(default_factory=list)
 
 
+_VALID_GATES = frozenset({"soft", "hard"})
+
+
+def _coerce_tier(raw: object, default: int, warnings: list[str]) -> int:
+    """Coerce a config ``tier`` to an int, warning + defaulting on bad input.
+
+    A plain int is taken as-is; a clean integer string (``"2"``) is accepted;
+    anything else (``"medium"``, ``1.5``, ``[]``, ``True``) warns and defaults —
+    never raises (FIX 4, SC-8).
+    """
+    if isinstance(raw, bool):
+        warnings.append(f"guardian pr.tier must be an integer, got {raw!r}; using {default}")
+        return default
+    if isinstance(raw, int):
+        return raw
+    try:
+        return int(str(raw).strip())
+    except (ValueError, TypeError):
+        warnings.append(f"guardian pr.tier must be an integer, got {raw!r}; using {default}")
+        return default
+
+
+def _coerce_gate(raw: object, default: str, field_name: str, warnings: list[str]) -> str:
+    """Validate a config gate against ``{soft, hard}``, warning + defaulting.
+
+    Normalizes case/whitespace; anything outside the set warns and defaults
+    (FIX 4/FIX 5 — an unknown gate must never silently disable enforcement).
+    """
+    normalized = str(raw).strip().lower()
+    if normalized in _VALID_GATES:
+        return normalized
+    warnings.append(
+        f"guardian {field_name} must be 'soft' or 'hard', got {raw!r}; using {default}"
+    )
+    return default
+
+
 def load_guardian_config(
     config_path: Path = Path("harness.config.json"),
 ) -> tuple[GuardianConfig, str | None]:
@@ -389,6 +426,9 @@ def load_guardian_config(
       - malformed JSON                 → ``(defaults, "<warn>")`` (LOUD, SC-8)
       - valid but no ``canary.guardian`` → ``(defaults, None)``
       - valid ``canary.guardian``      → ``(parsed, None)``
+      - valid block, bad ``tier``/``gate`` → ``(defaults for those fields,
+        "<warn>")`` — coercion never raises and the warning rides the same loud
+        slot the CLI echoes (FIX 4).
     """
     data, warning = read_json_with_warning(Path(config_path))
     if warning is not None or not isinstance(data, dict):
@@ -400,11 +440,14 @@ def load_guardian_config(
         return GuardianConfig(), None
 
     config = GuardianConfig()
+    warnings: list[str] = []
     pr = block.get("pr", {})
     if isinstance(pr, dict):
         config.pr_enabled = bool(pr.get("enabled", config.pr_enabled))
-        config.pr_tier = int(pr.get("tier", config.pr_tier))
-        config.pr_gate = str(pr.get("gate", config.pr_gate))
+        if "tier" in pr:
+            config.pr_tier = _coerce_tier(pr["tier"], config.pr_tier, warnings)
+        if "gate" in pr:
+            config.pr_gate = _coerce_gate(pr["gate"], config.pr_gate, "pr.gate", warnings)
 
     precommit = block.get("preCommit", {})
     if isinstance(precommit, dict):
@@ -414,7 +457,10 @@ def load_guardian_config(
         config.precommit_author_tests = bool(
             precommit.get("authorTests", config.precommit_author_tests)
         )
-        config.precommit_gate = str(precommit.get("gate", config.precommit_gate))
+        if "gate" in precommit:
+            config.precommit_gate = _coerce_gate(
+                precommit["gate"], config.precommit_gate, "preCommit.gate", warnings
+            )
 
     coverage_paths = block.get("coveragePaths")
     if isinstance(coverage_paths, list):
@@ -424,4 +470,4 @@ def load_guardian_config(
     if isinstance(skip_globs, list):
         config.skip_globs = [str(g) for g in skip_globs]
 
-    return config, None
+    return config, ("; ".join(warnings) if warnings else None)
