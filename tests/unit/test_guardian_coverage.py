@@ -12,6 +12,7 @@ from agent.guardian.coverage import (
     ChangedUnit,
     CoverageResult,
     Fidelity,
+    resolve_from_graph,
     resolve_from_report,
 )
 
@@ -130,3 +131,73 @@ class TestResolveFromReport:
     def test_missing_file_returns_none(self, tmp_path: Path) -> None:
         foo, _ = self._units()
         assert resolve_from_report([foo], tmp_path / "nope.json") is None
+
+
+def _ndjson(*records) -> str:
+    import json
+
+    return "\n".join(json.dumps(r) for r in records) + "\n"
+
+
+GRAPH_FIXTURE = _ndjson(
+    {"kind": "node", "type": "file", "id": "file:pkg/foo.py", "path": "pkg/foo.py"},
+    {"kind": "node", "type": "function", "id": "function:pkg/foo.py:do_it",
+     "path": "pkg/foo.py"},
+    {"kind": "node", "type": "file", "id": "file:pkg/bar.py", "path": "pkg/bar.py"},
+    {"kind": "node", "type": "file", "id": "file:tests/test_foo.py",
+     "path": "tests/test_foo.py"},
+    # source file contains its symbol
+    {"kind": "edge", "from": "file:pkg/foo.py", "to": "function:pkg/foo.py:do_it",
+     "type": "contains"},
+    # test calls the source symbol → foo is graph-covered (derived)
+    {"kind": "edge", "from": "file:tests/test_foo.py",
+     "to": "function:pkg/foo.py:do_it", "type": "calls"},
+    # bar has no inbound test edge → uncovered
+)
+
+
+class TestResolveFromGraph:
+    def test_covered_via_test_calls_edge(self, tmp_path: Path) -> None:
+        graph = tmp_path / "graph.json"
+        graph.write_text(GRAPH_FIXTURE, encoding="utf-8")
+        foo = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 5)])
+        bar = ChangedUnit(path="pkg/bar.py", added_ranges=[(1, 5)])
+
+        results = resolve_from_graph([foo, bar], graph)
+        assert results is not None
+        by_path = {r.unit.path: r for r in results}
+
+        assert by_path["pkg/foo.py"].covered is True
+        assert by_path["pkg/foo.py"].fidelity is Fidelity.GRAPH_VERIFIED
+        assert "tests/test_foo.py" in by_path["pkg/foo.py"].evidence
+
+        assert by_path["pkg/bar.py"].covered is False
+        assert by_path["pkg/bar.py"].fidelity is Fidelity.GRAPH_VERIFIED
+
+    def test_direct_file_import_edge_covers(self, tmp_path: Path) -> None:
+        graph = tmp_path / "graph.json"
+        graph.write_text(
+            _ndjson(
+                {"kind": "node", "type": "file", "id": "file:pkg/baz.py",
+                 "path": "pkg/baz.py"},
+                {"kind": "node", "type": "file", "id": "file:tests/test_baz.py",
+                 "path": "tests/test_baz.py"},
+                {"kind": "edge", "from": "file:tests/test_baz.py",
+                 "to": "file:pkg/baz.py", "type": "imports"},
+            ),
+            encoding="utf-8",
+        )
+        baz = ChangedUnit(path="pkg/baz.py", added_ranges=[(1, 3)])
+        results = resolve_from_graph([baz], graph)
+        assert results is not None
+        assert results[0].covered is True
+
+    def test_missing_graph_returns_none(self, tmp_path: Path) -> None:
+        foo = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 5)])
+        assert resolve_from_graph([foo], tmp_path / "absent.json") is None
+
+    def test_empty_graph_returns_none(self, tmp_path: Path) -> None:
+        graph = tmp_path / "graph.json"
+        graph.write_text("", encoding="utf-8")
+        foo = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 5)])
+        assert resolve_from_graph([foo], graph) is None

@@ -13,6 +13,7 @@ the ``analyze_diff``/``get_impact`` MCP tools. Graph coverage reads the NDJSON
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -194,3 +195,133 @@ def _ranges_str(ranges: list[tuple[int, int]]) -> str:
     for start, end in ranges:
         parts.append(str(start) if start == end else f"{start}-{end}")
     return ", ".join(parts)
+
+
+# Edge types that indicate a test exercises a source unit (see graph-derivation
+# assumption in the Phase 1 plan). The live graph carries no explicit
+# `tests`/`covers` edge, so coverage is *derived* from calls/imports reach.
+_REACH_EDGE_TYPES = frozenset({"calls", "imports"})
+
+_TEST_PATH_RE = re.compile(
+    r"(^|/)tests?/|(^|/)test_[^/]*\.py$|\.test\.[^/]+$|\.spec\.[^/]+$"
+)
+
+
+def is_test_path(path: str) -> bool:
+    """True if ``path`` looks like a test file (``tests/**``, ``test_*.py``,
+    ``*.test.*``, ``*.spec.*``)."""
+    return bool(_TEST_PATH_RE.search(path))
+
+
+def resolve_from_graph(
+    units: list[ChangedUnit],
+    graph_path: Path = Path(".harness/graph/graph.json"),
+) -> list[CoverageResult] | None:
+    """Tier 2: derive coverage from the harness knowledge graph (``GRAPH_VERIFIED``).
+
+    The graph has no explicit ``tests``/``covers`` edge, so coverage is
+    **derived**: a changed file is graph-covered iff some **test-path node**
+    reaches the file's node (or a symbol node it ``contains``) via a
+    ``calls``/``imports`` edge. Conservative by design (edge present → covered).
+
+    Reads the NDJSON ``graph.json`` directly. Does **not** shell
+    ``impact-preview`` (staged-only) or import the ``analyze_diff``/``get_impact``
+    MCP tools (SC-11). Missing/empty graph → ``None`` (never blocks).
+    """
+    try:
+        if not graph_path.exists():
+            return None
+        text = graph_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not text.strip():
+        return None
+
+    id_to_path: dict[str, str] = {}
+    contains_fwd: dict[str, list[str]] = {}
+    reach_rev: dict[str, list[str]] = {}  # to -> [from] over calls/imports
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        kind = record.get("kind")
+        if kind == "node":
+            node_id = record.get("id")
+            if node_id is not None:
+                id_to_path[node_id] = record.get("path", "")
+        elif kind == "edge":
+            etype = record.get("type")
+            src, dst = record.get("from"), record.get("to")
+            if src is None or dst is None:
+                continue
+            if etype == "contains":
+                contains_fwd.setdefault(src, []).append(dst)
+            elif etype in _REACH_EDGE_TYPES:
+                reach_rev.setdefault(dst, []).append(src)
+
+    if not id_to_path:
+        return None
+
+    # Index file/symbol node ids by path (exact + suffix match support).
+    path_to_ids: dict[str, list[str]] = {}
+    for node_id, node_path in id_to_path.items():
+        if node_path:
+            path_to_ids.setdefault(node_path, []).append(node_id)
+
+    def _ids_for_path(path: str) -> list[str]:
+        if path in path_to_ids:
+            return path_to_ids[path]
+        matches: list[str] = []
+        for node_path, ids in path_to_ids.items():
+            if node_path.endswith(path) or path.endswith(node_path):
+                matches.extend(ids)
+        return matches
+
+    results: list[CoverageResult] = []
+    for unit in units:
+        # Target set: the file node(s) for this unit + all symbols they contain.
+        targets: set[str] = set(_ids_for_path(unit.path))
+        frontier = list(targets)
+        while frontier:
+            node = frontier.pop()
+            for child in contains_fwd.get(node, []):
+                if child not in targets:
+                    targets.add(child)
+                    frontier.append(child)
+
+        # Reverse-BFS over calls/imports; a reached test-path node → covered.
+        covering_test: str | None = None
+        seen = set(targets)
+        queue = list(targets)
+        while queue and covering_test is None:
+            node = queue.pop()
+            for source in reach_rev.get(node, []):
+                if source in seen:
+                    continue
+                seen.add(source)
+                source_path = id_to_path.get(source, "")
+                if source_path and is_test_path(source_path) and source not in targets:
+                    covering_test = source_path
+                    break
+                queue.append(source)
+
+        covered = covering_test is not None
+        evidence = (
+            f"reached by test {covering_test}"
+            if covered
+            else f"no test node reaches {unit.path} via calls/imports"
+        )
+        results.append(
+            CoverageResult(
+                unit=unit,
+                covered=covered,
+                fidelity=Fidelity.GRAPH_VERIFIED,
+                evidence=evidence,
+            )
+        )
+    return results
