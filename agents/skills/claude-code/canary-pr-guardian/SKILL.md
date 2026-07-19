@@ -89,7 +89,11 @@ Python guards (opt-in, fork, collision, loop-guard) are authoritative.
 
 For each intent with `status: "planned"`, use the `canary-test-author` agent
 with the intent's `requirement` as the task and `target_path` as the
-destination. Then stage the authored files:
+destination. **Never overwrite an existing file at `target_path`.** The Python
+collision guard runs at plan time, so between planning and writing another
+PR/session may have created the file (a TOCTOU window). If the target already
+exists at write time, skip that intent and report it — do not clobber it. Then
+stage the authored files:
 
 ```bash
 git add <target_path>
