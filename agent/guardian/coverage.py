@@ -419,3 +419,31 @@ def resolve_heuristic(
             )
         )
     return results
+
+
+def resolve_coverage(
+    units: list[ChangedUnit],
+    coverage_path: Path | None = None,
+    graph_path: Path = Path(".harness/graph/graph.json"),
+    repo_root: Path = Path("."),
+) -> list[CoverageResult]:
+    """SC-3 orchestrator: resolve each unit at the highest available fidelity.
+
+    First available signal wins (per the fidelity ladder):
+
+    1. ``coverage_path`` present & report parses → ``COVERAGE_VERIFIED``
+    2. else a populated graph                    → ``GRAPH_VERIFIED``
+    3. else the naming heuristic                 → ``HEURISTIC`` (always returns)
+
+    Returns exactly one :class:`CoverageResult` per input unit, fidelity-labeled.
+    """
+    if coverage_path is not None:
+        report = resolve_from_report(units, Path(coverage_path))
+        if report is not None:
+            return report
+
+    graph = resolve_from_graph(units, graph_path)
+    if graph is not None:
+        return graph
+
+    return resolve_heuristic(units, repo_root)

@@ -12,6 +12,7 @@ from agent.guardian.coverage import (
     ChangedUnit,
     CoverageResult,
     Fidelity,
+    resolve_coverage,
     resolve_from_graph,
     resolve_from_report,
     resolve_heuristic,
@@ -261,3 +262,83 @@ class TestResolveHeuristic:
         results = resolve_heuristic(units, repo_root=repo)
         assert len(results) == 2
         assert all(r.fidelity is Fidelity.HEURISTIC for r in results)
+
+
+class TestResolveCoverage:
+    """SC-3 fidelity ladder: report > graph > heuristic, first available wins."""
+
+    def _build_repo(self, tmp_path: Path):
+        # Source + test files (heuristic tier always available here).
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "pkg" / "foo.py").write_text(
+            "def do_it():\n    return 1\n", encoding="utf-8"
+        )
+        (tmp_path / "tests" / "test_foo.py").write_text(
+            "from pkg import foo\n\ndef test_do_it():\n    assert foo.do_it() == 1\n",
+            encoding="utf-8",
+        )
+        # Graph tier artifact.
+        graph = tmp_path / "graph.json"
+        graph.write_text(
+            _ndjson(
+                {"kind": "node", "type": "file", "id": "file:pkg/foo.py",
+                 "path": "pkg/foo.py"},
+                {"kind": "node", "type": "file", "id": "file:tests/test_foo.py",
+                 "path": "tests/test_foo.py"},
+                {"kind": "edge", "from": "file:tests/test_foo.py",
+                 "to": "file:pkg/foo.py", "type": "imports"},
+            ),
+            encoding="utf-8",
+        )
+        # Report tier artifact.
+        import json
+
+        report = tmp_path / "coverage.json"
+        report.write_text(
+            json.dumps({"files": {"pkg/foo.py": {"covered_lines": [1, 2]}}}),
+            encoding="utf-8",
+        )
+        return graph, report
+
+    def test_report_wins_when_all_present(self, tmp_path: Path) -> None:
+        graph, report = self._build_repo(tmp_path)
+        unit = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 2)])
+        results = resolve_coverage(
+            [unit], coverage_path=report, graph_path=graph, repo_root=tmp_path
+        )
+        assert len(results) == 1
+        assert results[0].fidelity is Fidelity.COVERAGE_VERIFIED
+
+    def test_graph_wins_when_no_report(self, tmp_path: Path) -> None:
+        graph, _ = self._build_repo(tmp_path)
+        unit = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 2)])
+        results = resolve_coverage(
+            [unit], coverage_path=None, graph_path=graph, repo_root=tmp_path
+        )
+        assert len(results) == 1
+        assert results[0].fidelity is Fidelity.GRAPH_VERIFIED
+
+    def test_heuristic_when_no_report_no_graph(self, tmp_path: Path) -> None:
+        self._build_repo(tmp_path)
+        unit = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 2)])
+        results = resolve_coverage(
+            [unit],
+            coverage_path=None,
+            graph_path=tmp_path / "absent.json",
+            repo_root=tmp_path,
+        )
+        assert len(results) == 1
+        assert results[0].fidelity is Fidelity.HEURISTIC
+
+    def test_exactly_one_result_per_unit(self, tmp_path: Path) -> None:
+        graph, report = self._build_repo(tmp_path)
+        units = [
+            ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 2)]),
+            ChangedUnit(path="pkg/missing.py", added_ranges=[(1, 2)]),
+        ]
+        results = resolve_coverage(
+            [*units], coverage_path=report, graph_path=graph, repo_root=tmp_path
+        )
+        assert len(results) == len(units)
+        assert [r.unit.path for r in results] == [u.path for u in units]
