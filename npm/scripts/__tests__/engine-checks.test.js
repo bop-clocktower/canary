@@ -10,6 +10,7 @@ const {
   checkOverlays,
   checkProjectConfig,
   checkMcpConfig,
+  parseRegistryVersion,
 } = require("../../dist/engine-checks.js");
 const registry = require("../../dist/overlays-registry.js");
 
@@ -40,6 +41,30 @@ describe("checkVersion", () => {
   it("degrades to info (not fail) when latest is unknown/offline", async () => {
     const r = await checkVersion({ currentVersion: "5.9.0", getLatestVersion: async () => null });
     assert.equal(r.status, "info");
+  });
+});
+
+describe("parseRegistryVersion", () => {
+  it("extracts version from a well-formed registry body", () => {
+    assert.equal(parseRegistryVersion('{"version":"5.10.1"}'), "5.10.1");
+  });
+  it("returns null on unparseable JSON", () => {
+    assert.equal(parseRegistryVersion("{ not json"), null);
+  });
+  it("returns null when the body is valid JSON but not an object", () => {
+    assert.equal(parseRegistryVersion("null"), null);
+    assert.equal(parseRegistryVersion('"just-a-string"'), null);
+    assert.equal(parseRegistryVersion("[1,2,3]"), null);
+  });
+  it("returns null when version is present but not a string", () => {
+    // A malicious or malformed registry response should never make it
+    // downstream as a non-string "version" — isOlder() calls .split on it.
+    assert.equal(parseRegistryVersion('{"version":12345}'), null);
+    assert.equal(parseRegistryVersion('{"version":{"nested":true}}'), null);
+    assert.equal(parseRegistryVersion('{"version":["5","10","1"]}'), null);
+  });
+  it("returns null when version is absent", () => {
+    assert.equal(parseRegistryVersion('{"name":"canary-test-cli"}'), null);
   });
 });
 

@@ -49,10 +49,10 @@ function ownVersion(): string | null {
   }
 }
 
-/** Extract `version` from a registry dist-tag body; null on any parse error. */
-function parseRegistryVersion(body: string): string | null {
+/** String `version` from a registry body; null on parse error or non-string shape (SEC-DES-001: registry JSON is untrusted). */
+export function parseRegistryVersion(rawBody: string): string | null {
   try {
-    return (JSON.parse(body) as { version?: string }).version ?? null;
+    const v = (JSON.parse(rawBody) as { version?: unknown } | null)?.version; return typeof v === "string" ? v : null;
   } catch {
     return null;
   }
