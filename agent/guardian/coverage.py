@@ -170,7 +170,13 @@ def resolve_from_report(
 
     results: list[CoverageResult] = []
     for unit in units:
-        hits = _match_hits(unit.path, index) or {}
+        hits = _match_hits(unit.path, index)
+        if hits is None:
+            # Unit path is nowhere in the report index → "not instrumented",
+            # which is NOT the same as "instrumented and unhit". Emit no
+            # COVERAGE_VERIFIED result so the orchestrator falls through to a
+            # lower-fidelity tier for this unit (FIX 2).
+            continue
         added = _expand_ranges(unit.added_ranges)
         uncovered = [ln for ln in added if hits.get(ln, 0) <= 0]
         covered = not uncovered
@@ -286,7 +292,12 @@ def resolve_from_graph(
     results: list[CoverageResult] = []
     for unit in units:
         # Target set: the file node(s) for this unit + all symbols they contain.
-        targets: set[str] = set(_ids_for_path(unit.path))
+        seed_ids = _ids_for_path(unit.path)
+        if not seed_ids:
+            # Unit has no node in the graph → no graph signal. Emit nothing so
+            # the orchestrator falls through to the heuristic tier (FIX 2).
+            continue
+        targets: set[str] = set(seed_ids)
         frontier = list(targets)
         while frontier:
             node = frontier.pop()
@@ -429,21 +440,34 @@ def resolve_coverage(
 ) -> list[CoverageResult]:
     """SC-3 orchestrator: resolve each unit at the highest available fidelity.
 
-    First available signal wins (per the fidelity ladder):
+    The ladder is applied **per unit** (SC-3: "highest available fidelity per
+    unit"), not per batch. For each unit the first tier that has a signal for
+    *that* unit wins:
 
-    1. ``coverage_path`` present & report parses → ``COVERAGE_VERIFIED``
-    2. else a populated graph                    → ``GRAPH_VERIFIED``
-    3. else the naming heuristic                 → ``HEURISTIC`` (always returns)
+    1. ``coverage_path`` lists the unit's path → ``COVERAGE_VERIFIED``
+    2. else a graph node for the unit exists   → ``GRAPH_VERIFIED``
+    3. else the naming heuristic               → ``HEURISTIC`` (always returns)
 
-    Returns exactly one :class:`CoverageResult` per input unit, fidelity-labeled.
+    A unit absent from the report is NOT judged COVERAGE_VERIFIED-uncovered; it
+    falls through to the graph then heuristic tier (FIX 2). Returns exactly one
+    :class:`CoverageResult` per input unit, in input order, fidelity-labeled.
     """
+    resolved: dict[int, CoverageResult] = {}
+    remaining: list[ChangedUnit] = list(units)
+
     if coverage_path is not None:
-        report = resolve_from_report(units, Path(coverage_path))
-        if report is not None:
-            return report
+        report = resolve_from_report(remaining, Path(coverage_path))
+        if report:
+            resolved.update({id(r.unit): r for r in report})
+            remaining = [u for u in remaining if id(u) not in resolved]
 
-    graph = resolve_from_graph(units, graph_path)
-    if graph is not None:
-        return graph
+    if remaining:
+        graph = resolve_from_graph(remaining, graph_path)
+        if graph:
+            resolved.update({id(r.unit): r for r in graph})
+            remaining = [u for u in remaining if id(u) not in resolved]
 
-    return resolve_heuristic(units, repo_root)
+    if remaining:
+        resolved.update({id(r.unit): r for r in resolve_heuristic(remaining, repo_root)})
+
+    return [resolved[id(unit)] for unit in units]

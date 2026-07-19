@@ -342,3 +342,46 @@ class TestResolveCoverage:
         )
         assert len(results) == len(units)
         assert [r.unit.path for r in results] == [u.path for u in units]
+
+    def test_unit_absent_from_report_falls_through_per_unit(
+        self, tmp_path: Path
+    ) -> None:
+        # FIX 2: a report that lists pkg/a.py but NOT pkg/NEW.py must not judge
+        # NEW.py as COVERAGE_VERIFIED-uncovered (HIGH from absent data). NEW.py
+        # has a graph signal (reached by a test) → resolves GRAPH_VERIFIED, and
+        # the reported unit stays COVERAGE_VERIFIED.
+        import json
+
+        report = tmp_path / "coverage.json"
+        report.write_text(
+            json.dumps({"files": {"pkg/a.py": {"covered_lines": [1]}}}),
+            encoding="utf-8",
+        )
+        graph = tmp_path / "graph.json"
+        graph.write_text(
+            _ndjson(
+                {"kind": "node", "type": "file", "id": "file:pkg/NEW.py",
+                 "path": "pkg/NEW.py"},
+                {"kind": "node", "type": "file", "id": "file:tests/test_new.py",
+                 "path": "tests/test_new.py"},
+                {"kind": "edge", "from": "file:tests/test_new.py",
+                 "to": "file:pkg/NEW.py", "type": "imports"},
+            ),
+            encoding="utf-8",
+        )
+        reported = ChangedUnit(path="pkg/a.py", added_ranges=[(1, 1)])
+        new_unit = ChangedUnit(path="pkg/NEW.py", added_ranges=[(1, 3)])
+
+        results = resolve_coverage(
+            [reported, new_unit],
+            coverage_path=report,
+            graph_path=graph,
+            repo_root=tmp_path,
+        )
+        by_path = {r.unit.path: r for r in results}
+
+        assert by_path["pkg/a.py"].fidelity is Fidelity.COVERAGE_VERIFIED
+        # NEW.py is absent from the report → NOT COVERAGE_VERIFIED, not HIGH from
+        # fabricated "uncovered" data; it falls through to the graph tier.
+        assert by_path["pkg/NEW.py"].fidelity is Fidelity.GRAPH_VERIFIED
+        assert by_path["pkg/NEW.py"].covered is True
