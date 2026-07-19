@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from agent.guardian.coverage import ChangedUnit, CoverageResult, Fidelity
 from agent.guardian.impact_mapper import Severity
-from agent.guardian.pr_check import Finding, build_findings, scope_diff
+from agent.guardian.pr_check import (
+    Finding,
+    apply_suppressions,
+    build_findings,
+    scope_diff,
+)
 
 
 DIFF_TWO_FILES = """\
@@ -140,3 +145,45 @@ class TestBuildFindings:
         assert finding.path == "pkg/bar.py"
         assert finding.evidence == "no test reaches pkg/bar.py"
         assert isinstance(finding, Finding)
+
+
+class TestSuppressions:
+    def test_hash_annotation_suppresses(self, tmp_path) -> None:
+        src = tmp_path / "pkg" / "foo.py"
+        src.parent.mkdir(parents=True)
+        src.write_text(
+            "def foo():\n    return 1  # canary:allow-untested legacy shim\n",
+            encoding="utf-8",
+        )
+        findings = [Finding(path="pkg/foo.py", unit="foo")]
+        out = apply_suppressions(findings, repo_root=tmp_path)
+        assert out[0].suppressed is True
+        assert out[0].suppression_reason == "legacy shim"
+
+    def test_slash_annotation_suppresses(self, tmp_path) -> None:
+        src = tmp_path / "pkg" / "foo.ts"
+        src.parent.mkdir(parents=True)
+        src.write_text(
+            "export function foo() {} // canary:allow-untested vendor code\n",
+            encoding="utf-8",
+        )
+        findings = [Finding(path="pkg/foo.ts", unit="foo")]
+        out = apply_suppressions(findings, repo_root=tmp_path)
+        assert out[0].suppressed is True
+        assert out[0].suppression_reason == "vendor code"
+
+    def test_no_annotation_not_suppressed(self, tmp_path) -> None:
+        src = tmp_path / "pkg" / "bar.py"
+        src.parent.mkdir(parents=True)
+        src.write_text("def bar():\n    return 2\n", encoding="utf-8")
+        findings = [Finding(path="pkg/bar.py", unit="bar")]
+        out = apply_suppressions(findings, repo_root=tmp_path)
+        assert out[0].suppressed is False
+        assert out[0].suppression_reason is None
+
+    def test_suppressed_finding_stays_in_list(self, tmp_path) -> None:
+        src = tmp_path / "a.py"
+        src.write_text("x = 1  # canary:allow-untested reason\n", encoding="utf-8")
+        findings = [Finding(path="a.py", unit="a")]
+        out = apply_suppressions(findings, repo_root=tmp_path)
+        assert len(out) == 1

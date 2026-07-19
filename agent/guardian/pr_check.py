@@ -15,11 +15,15 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 from agent.guardian.coverage import ChangedUnit, CoverageResult, Fidelity
 from agent.guardian.impact_mapper import Severity
 
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+
+# Suppression annotation: `// canary:allow-untested <reason>` or the `#` variant.
+_SUPPRESS_RE = re.compile(r"canary:allow-untested\s+(.+)")
 
 
 def _merge_lines(lines: list[int]) -> list[tuple[int, int]]:
@@ -167,3 +171,26 @@ def build_findings(results: list[CoverageResult]) -> list[Finding]:
             )
         )
     return sorted(findings, key=lambda f: f.severity.sort_key)
+
+
+def apply_suppressions(
+    findings: list[Finding], repo_root: Path = Path(".")
+) -> list[Finding]:
+    """Honor ``canary:allow-untested <reason>`` annotations (SC-12).
+
+    Scans each finding's source file for a ``canary:allow-untested <reason>``
+    annotation (both ``//`` and ``#`` comment leaders are accepted). When
+    present, the finding is marked ``suppressed`` with its ``suppression_reason``
+    captured. Suppressed findings **remain** in the returned list so they stay
+    visible in rendered output — only the hard-gate exit calc ignores them.
+    """
+    for finding in findings:
+        try:
+            source = (repo_root / finding.path).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        match = _SUPPRESS_RE.search(source)
+        if match:
+            finding.suppressed = True
+            finding.suppression_reason = match.group(1).strip()
+    return findings
