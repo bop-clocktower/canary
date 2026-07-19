@@ -261,8 +261,14 @@ def compute_exit_code(findings: list[Finding], gate: str) -> int:
     test was added in the same diff (in which case it never appears in
     ``findings`` at all — suppressed findings do remain, so the live check is
     simply ``not suppressed``).
+
+    The gate is normalized (``strip().lower()``) before the comparison so a
+    mistyped ``"Hard"`` / ``" hard "`` still enforces rather than silently
+    failing open (FIX 5). Config-load validation (:func:`load_guardian_config`)
+    is the primary guard against unknown gate values.
     """
-    if gate != "hard":
+    normalized_gate = gate.strip().lower() if isinstance(gate, str) else gate
+    if normalized_gate != "hard":
         return 0
     for finding in findings:
         if (

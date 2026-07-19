@@ -295,6 +295,16 @@ class TestExitCode:
         ]
         assert compute_exit_code(findings, gate="hard") == 0
 
+    def test_hard_mixed_case_still_enforces(self) -> None:
+        # FIX 5: a mistyped "Hard" must NOT fail open — normalize before compare.
+        findings = [Finding(path="a.py", unit="a", severity=Severity.HIGH)]
+        assert compute_exit_code(findings, gate="Hard") == 1
+
+    def test_hard_padded_still_enforces(self) -> None:
+        # FIX 5: surrounding whitespace must not disable enforcement.
+        findings = [Finding(path="a.py", unit="a", severity=Severity.HIGH)]
+        assert compute_exit_code(findings, gate=" hard ") == 1
+
 
 def _finding(**kw) -> Finding:
     base = dict(path="pkg/foo.py", unit="foo", severity=Severity.HIGH,
