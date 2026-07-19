@@ -60,6 +60,32 @@ class TestGuardianWorkflow:
             "guardian pr-check" in b and "--post-comment" in b for b in blocks
         )
 
+    def test_invokes_pr_check_with_emit_analysis(self) -> None:
+        # SC-10 / #899: CI writes the finding record to the analyses channel.
+        blocks = _run_blocks(_load())
+        assert any(
+            "guardian pr-check" in b and "--emit-analysis" in b for b in blocks
+        )
+
+    def test_still_posts_comment_while_899_pending(self) -> None:
+        # The same block emits AND posts: findings stay visible until the harness
+        # consumer (#899) surfaces the record in `pre-merge-brief`.
+        blocks = _run_blocks(_load())
+        assert any(
+            "guardian pr-check" in b
+            and "--emit-analysis" in b
+            and "--post-comment" in b
+            for b in blocks
+        )
+
+    def test_stable_job_and_workflow_name(self) -> None:
+        # The required-check name "PR Guardian / guardian" (#311) is keyed on the
+        # workflow `name:` + job id; both must stay stable so branch protection
+        # can register it.
+        wf = _load()
+        assert wf["name"] == "PR Guardian"
+        assert "guardian" in wf["jobs"]
+
     def test_three_dot_base_ref_diff(self) -> None:
         blocks = _run_blocks(_load())
         assert any("git diff" in b and "origin/" in b and "...HEAD" in b for b in blocks)
