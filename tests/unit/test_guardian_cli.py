@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 
+import pytest
 from typer.testing import CliRunner
 
 from agent.guardian import agent_tier as guardian_agent_tier
@@ -188,6 +189,52 @@ class TestPrContextFromEnv:
         monkeypatch.setenv("GITHUB_REF", "refs/heads/main")  # unparseable for PR
         monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
         assert guardian_cli._pr_context_from_env() == ("o/r", 42)
+
+
+class TestForkContext:
+    """FIX 4: fork detection FAILS CLOSED on ambiguity. Only two safe sentinels
+    mean "not a fork" — unset OR exactly ``"0"`` (after strip). ANY other
+    non-empty value (``"1"``, ``"true"``, whitespace-wrapped, garbage) is treated
+    as a fork so authoring is SKIPPED (guard b) rather than fail-open writing."""
+
+    def test_unset_is_not_fork(self, monkeypatch) -> None:
+        monkeypatch.delenv("CANARY_GUARDIAN_IS_FORK", raising=False)
+        assert guardian_cli._is_fork_context() is False
+
+    def test_zero_is_not_fork(self, monkeypatch) -> None:
+        monkeypatch.setenv("CANARY_GUARDIAN_IS_FORK", "0")
+        assert guardian_cli._is_fork_context() is False
+
+    def test_zero_whitespace_wrapped_is_not_fork(self, monkeypatch) -> None:
+        monkeypatch.setenv("CANARY_GUARDIAN_IS_FORK", "  0  ")
+        assert guardian_cli._is_fork_context() is False
+
+    @pytest.mark.parametrize("value", ["1", "true", "yes", "  1 ", "x"])
+    def test_any_other_value_is_fork(self, monkeypatch, value) -> None:
+        monkeypatch.setenv("CANARY_GUARDIAN_IS_FORK", value)
+        assert guardian_cli._is_fork_context() is True
+
+    def test_author_plan_forks_skip_authoring(self, tmp_path, monkeypatch) -> None:
+        # Wire through plan_authoring via author-plan: opt-in on + tier 2 signalled,
+        # but IS_FORK armed → every intent is skipped with a "fork" reason, no block.
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("CANARY_GUARDIAN_AGENT", "2")
+        monkeypatch.setenv("CANARY_GUARDIAN_IS_FORK", "true")
+        cfg = _write_config(
+            tmp_path, {"preCommit": {"enabled": True, "authorTests": True}}
+        )
+        result = self.runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-", "--config", cfg],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert all(i["status"] == "skipped" for i in data["intents"])
+        assert "fork" in data["intents"][0]["skip_reason"]
+        assert data["block"]["block"] is False
+
+    runner = CliRunner()
 
 
 class TestPrCheckPost:

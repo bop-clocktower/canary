@@ -57,6 +57,18 @@ affected tests with `canary-test-reviewer`:
 export CANARY_GUARDIAN_AGENT=1   # or 2 when authoring is enabled
 ```
 
+If this checkout is a **fork** (an untrusted/read-only context — detect it, e.g.
+`git config --get remote.origin.url` pointing at a fork, or a CI fork PR), arm
+the fork guard so the Python safety layer never authors on it:
+
+```bash
+export CANARY_GUARDIAN_IS_FORK=1   # any value other than "0"/unset means fork
+```
+
+Leave `CANARY_GUARDIAN_IS_FORK` unset (or `0`) at your own desk on a trusted
+checkout. The guard fails CLOSED: any ambiguous value is treated as a fork and
+authoring is skipped.
+
 Use the `canary-test-reviewer` agent to review the affected tests. This is
 **read-only** — surface weak-test findings; write nothing.
 

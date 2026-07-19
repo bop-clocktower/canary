@@ -463,12 +463,21 @@ def mark_authored(
 
 
 def _is_fork_context() -> bool:
-    """Best-effort at-desk fork signal (guard b). The SKILL exports
-    ``CANARY_GUARDIAN_IS_FORK=1`` on a fork checkout; unset/``0`` → not a fork.
-    Deterministic and network-free — the CI fork/403 path is a separate NON-GOAL."""
+    """At-desk fork signal (guard b), FAIL-CLOSED on ambiguity.
+
+    Only two safe sentinels mean "not a fork": ``CANARY_GUARDIAN_IS_FORK`` UNSET,
+    or exactly ``"0"`` (after strip) — the common at-desk default. ANY other
+    non-empty value (``"1"``, ``"true"``, ``"yes"``, whitespace-wrapped, or
+    garbage) is treated as a fork, so authoring is SKIPPED rather than fail-open
+    writing to a fork/untrusted checkout. The SKILL exports this on a fork
+    checkout so the guard actually arms. Deterministic and network-free — the CI
+    fork/403 path is a separate NON-GOAL."""
     import os
 
-    return os.environ.get("CANARY_GUARDIAN_IS_FORK", "0") == "1"
+    raw = os.environ.get("CANARY_GUARDIAN_IS_FORK")
+    if raw is None:
+        return False  # unset → the common at-desk default: not a fork
+    return raw.strip() != "0"  # only "0" is the other safe sentinel; else fork
 
 
 @guardian_app.command()
