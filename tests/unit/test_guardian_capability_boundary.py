@@ -1,9 +1,11 @@
 """SC-11 capability-boundary architecture test.
 
 The Tier 0 deterministic engine (``agent/guardian/pr_check.py``,
-``agent/guardian/coverage.py``, the comment poster ``agent/guardian/pr_comment.py``
-and — as of Phase 3 — the tier-resolution seam ``agent/guardian/tier.py`` and the
-pre-commit surface ``hooks/guardian_precommit.py``) must stay **agent-free**: it
+``agent/guardian/coverage.py``, the comment poster ``agent/guardian/pr_comment.py``,
+as of Phase 3 the tier-resolution seam ``agent/guardian/tier.py`` and the
+pre-commit surface ``hooks/guardian_precommit.py``, and as of Phase 5 the
+harness-handoff emit module ``agent/guardian/analysis_emit.py`` — deterministic
+filesystem/JSON only) must stay **agent-free**: it
 may import no ``AgentTier``, ``agent.llm``, or LLM-SDK module, and must never
 reference the ``analyze_diff``/``get_impact`` MCP tools (those are the agent-tier
 equivalents). The poster is deterministic HTTP behind a protocol seam, not an
@@ -17,7 +19,9 @@ module (e.g. ``agent/guardian/pr_comment.py``), run this file, and watch
 go green. That RED→GREEN cycle was performed during T13 (pr_check) and T7
 (pr_comment) authoring, and again during Phase-3 T6 for ``tier.py`` and
 ``guardian_precommit.py`` (throwaway ``import anthropic`` added to each in turn,
-watched fail, removed, watched go green).
+watched fail, removed, watched go green), and again during Phase-5 T3 for
+``analysis_emit.py`` (throwaway ``import anthropic`` added, watched
+``test_no_forbidden_imports[analysis_emit.py]`` fail, removed, watched go green).
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ _MODULES = [
     _REPO_ROOT / "agent" / "guardian" / "pr_comment.py",
     _REPO_ROOT / "agent" / "guardian" / "tier.py",  # + Phase 3 (SC-11)
     _REPO_ROOT / "hooks" / "guardian_precommit.py",  # + Phase 3 (SC-11)
+    _REPO_ROOT / "agent" / "guardian" / "analysis_emit.py",  # + Phase 5 (SC-11)
 ]
 
 # Module/symbol tokens the deterministic engine must never import.
