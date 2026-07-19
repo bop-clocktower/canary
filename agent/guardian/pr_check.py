@@ -628,7 +628,7 @@ class GuardianConfig:
     pr_tier: int = 0
     pr_gate: str = "soft"
     precommit_enabled: bool = False
-    precommit_author_tests: bool = True
+    precommit_author_tests: bool = False
     precommit_gate: str = "soft"
     coverage_paths: list[str] = field(default_factory=list)
     skip_globs: list[str] = field(default_factory=lambda: list(_DEFAULT_SKIP_GLOBS))

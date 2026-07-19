@@ -71,6 +71,9 @@ class TestLoadGuardianConfig:
         assert c.pr_tier == 0
         assert c.pr_gate == "soft"
         assert c.precommit_enabled is False
+        # Default off until Phase 4 ships a real authoring agent — otherwise every
+        # commit would degrade tier 2→0 loudly (noise). Opt in with authorTests: true.
+        assert c.precommit_author_tests is False
         assert c.coverage_paths == []
         # FIX B + signal-quality: skipGlobs defaults to docs/markdown AND
         # generated/lockfiles (lockfiles, dist/build, minified, snapshots).
