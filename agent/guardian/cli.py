@@ -258,6 +258,7 @@ def pr_check(
         apply_suppressions,
         build_findings,
         compute_exit_code,
+        effective_graph_depth,
         filter_skipped,
         filter_test_units,
         find_reexport_only,
@@ -300,7 +301,11 @@ def pr_check(
         raise typer.Exit(0)
 
     results = resolve_coverage(
-        kept, coverage_path=Path(coverage) if coverage else None
+        kept,
+        coverage_path=Path(coverage) if coverage else None,
+        # #320: under a hard gate the graph tier requires a DIRECT test→source
+        # edge (depth 1); soft stays unbounded. An explicit config value wins.
+        graph_max_depth=effective_graph_depth(config, effective_gate),
     )
     findings = apply_suppressions(build_findings(results))
 
@@ -376,10 +381,18 @@ def pr_check(
     raise typer.Exit(exit_code)
 
 
-def _build_gaps(diff_text: str, config, coverage_path: Optional[Path]):
+def _build_gaps(
+    diff_text: str,
+    config,
+    coverage_path: Optional[Path],
+    graph_max_depth: int | None,
+):
     """Build Tier-0 ``untested-new-code`` findings from ``diff_text`` using the
     SAME pipeline as ``pr-check`` (scope → skip/test/re-export filters → resolve
-    coverage → build/suppress findings). Agent-free (SC-11)."""
+    coverage → build/suppress findings). Agent-free (SC-11).
+
+    ``graph_max_depth`` bounds the graph tier's reverse-BFS (#320); callers pass
+    the gate-derived depth so author-plan mirrors the pre-commit surface."""
     from agent.guardian.coverage import resolve_coverage
     from agent.guardian.pr_check import (
         apply_suppressions,
@@ -397,7 +410,9 @@ def _build_gaps(diff_text: str, config, coverage_path: Optional[Path]):
     kept = [u for u in kept if u.path not in reexport_paths]
     if not kept:
         return []
-    results = resolve_coverage(kept, coverage_path=coverage_path)
+    results = resolve_coverage(
+        kept, coverage_path=coverage_path, graph_max_depth=graph_max_depth
+    )
     return apply_suppressions(build_findings(results))
 
 
@@ -441,7 +456,11 @@ def author_plan(
         InSessionAgentTier,
         decide_block,
     )
-    from agent.guardian.pr_check import load_guardian_config, read_diff
+    from agent.guardian.pr_check import (
+        effective_graph_depth,
+        load_guardian_config,
+        read_diff,
+    )
     from agent.guardian.tier import resolve_tier
 
     config, warning = load_guardian_config(Path(config_path))
@@ -450,7 +469,12 @@ def author_plan(
 
     diff_text = read_diff(diff)
     gaps = _build_gaps(
-        diff_text, config, Path(coverage) if coverage else None
+        diff_text,
+        config,
+        Path(coverage) if coverage else None,
+        # #320: author-plan is the pre-commit authoring surface — use the same
+        # gate-derived graph depth the pre-commit hook computes (preCommit.gate).
+        graph_max_depth=effective_graph_depth(config, config.precommit_gate),
     )
 
     requested = 2 if config.precommit_author_tests else 0

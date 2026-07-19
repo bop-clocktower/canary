@@ -88,6 +88,7 @@ def run_precommit_check(config, diff_text: str, probe=None) -> PrecommitOutcome:
         apply_suppressions,
         build_findings,
         compute_exit_code,
+        effective_graph_depth,
         filter_skipped,
         filter_test_units,
         find_reexport_only,
@@ -125,7 +126,12 @@ def run_precommit_check(config, diff_text: str, probe=None) -> PrecommitOutcome:
             None,
         )
 
-    results = resolve_coverage(kept)  # heuristic/graph fidelity, no report path
+    # #320: bound the graph tier's reverse-BFS by the pre-commit gate (hard→1
+    # direct edge, soft→unbounded); an explicit config value overrides.
+    results = resolve_coverage(
+        kept,
+        graph_max_depth=effective_graph_depth(config, config.precommit_gate),
+    )  # heuristic/graph fidelity, no report path
     findings = apply_suppressions(build_findings(results))
     report = render(
         findings,

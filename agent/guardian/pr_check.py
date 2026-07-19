@@ -638,6 +638,10 @@ class GuardianConfig:
     precommit_gate: str = "soft"
     coverage_paths: list[str] = field(default_factory=list)
     skip_globs: list[str] = field(default_factory=lambda: list(_DEFAULT_SKIP_GLOBS))
+    # #320: bound the graph-coverage reverse-BFS. ``None`` means "gate-derived"
+    # (see :func:`effective_graph_depth` — hard→1 direct edge, soft→unbounded);
+    # an explicit int here overrides the gate default on BOTH surfaces.
+    graph_coverage_max_depth: int | None = None
 
 
 _VALID_GATES = frozenset({"soft", "hard"})
@@ -660,6 +664,46 @@ def _coerce_tier(raw: object, default: int, warnings: list[str]) -> int:
     except (ValueError, TypeError):
         warnings.append(f"guardian pr.tier must be an integer, got {raw!r}; using {default}")
         return default
+
+
+def _coerce_optional_int(
+    raw: object, field_name: str, warnings: list[str], min_value: int | None = None
+) -> int | None:
+    """Coerce a config value to ``int | None``, warning + defaulting ``None``.
+
+    A plain int (not ``bool``) is taken as-is; a clean integer string (``"2"``)
+    is accepted; anything else (a float, ``"x"``, ``[]``, ``True``) warns and
+    defaults to ``None`` (unbounded) — never raises (#320, SC-8). Mirrors the
+    tier/gate coerce+warn pattern so a bad value degrades loudly, not silently.
+
+    When ``min_value`` is given, a parsed int BELOW it is treated as a bad value:
+    warn loudly and fall back to ``None`` (FIX 2, #320). ``graphCoverageMaxDepth``
+    passes ``min_value=1`` — a depth ``<= 0`` would skip expanding even the depth-0
+    seeds, silently marking every graph-present unit uncovered and blocking every
+    changed file under a hard gate. Other optional-int configs stay unclamped.
+    """
+    parsed: int | None
+    if isinstance(raw, bool):
+        parsed = None
+    elif isinstance(raw, int):
+        parsed = raw
+    else:
+        try:
+            parsed = int(str(raw).strip())
+        except (ValueError, TypeError):
+            parsed = None
+    if parsed is None:
+        warnings.append(
+            f"guardian {field_name} must be an integer, got {raw!r}; ignoring"
+        )
+        return None
+    if min_value is not None and parsed < min_value:
+        warnings.append(
+            f"guardian {field_name} must be >= {min_value}; ignoring {parsed}, "
+            f"using unbounded"
+        )
+        return None
+    return parsed
 
 
 def _coerce_gate(raw: object, default: str, field_name: str, warnings: list[str]) -> str:
@@ -728,6 +772,14 @@ def load_guardian_config(
     if isinstance(coverage_paths, list):
         config.coverage_paths = [str(p) for p in coverage_paths]
 
+    # #320: an explicit graphCoverageMaxDepth overrides the gate-derived default
+    # on both surfaces. A bad value warns loudly (SC-8) and stays None.
+    if "graphCoverageMaxDepth" in block:
+        config.graph_coverage_max_depth = _coerce_optional_int(
+            block["graphCoverageMaxDepth"], "graphCoverageMaxDepth", warnings,
+            min_value=1,
+        )
+
     # FIX B: only override the default (docs/** + **/*.md) when skipGlobs is
     # PRESENT. `block.get("skipGlobs")` is None iff the key is ABSENT → keep the
     # default; an explicit list (including empty []) is honored verbatim so a
@@ -737,3 +789,19 @@ def load_guardian_config(
         config.skip_globs = [str(g) for g in skip_globs]
 
     return config, ("; ".join(warnings) if warnings else None)
+
+
+def effective_graph_depth(config: GuardianConfig, gate: str) -> int | None:
+    """Resolve the graph-coverage BFS depth for a given ``gate`` (#320).
+
+    An explicit ``config.graph_coverage_max_depth`` always wins (the operator
+    opted in). Otherwise the depth is DERIVED from the gate: a ``hard`` gate
+    requires a DIRECT test→source edge (depth ``1``), while a ``soft`` gate stays
+    unbounded (``None``) — byte-for-byte the current soft-default behavior. The
+    gate is normalized (``strip().lower()``) so a mistyped ``"Hard"`` still bounds.
+    Shared by the CLI (``pr-check``/``author-plan``) and the pre-commit hook.
+    """
+    if config.graph_coverage_max_depth is not None:
+        return config.graph_coverage_max_depth
+    normalized = gate.strip().lower() if isinstance(gate, str) else gate
+    return 1 if normalized == "hard" else None
