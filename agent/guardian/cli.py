@@ -155,6 +155,61 @@ def _append_step_summary(notice: str) -> None:
         pass
 
 
+def _post_sticky_comment(findings, resolution) -> None:
+    """Upsert the Phase-2 sticky PR comment (behavior-preserving extraction).
+
+    The posted body is always ``comment`` format so it carries the sticky marker
+    for marker-matched upsert (SC-9). When no PR context is resolvable from env,
+    it prints the body instead of crashing; a read-only-token degradation is
+    surfaced LOUDLY (``::warning::`` + step-summary). Reused by both the explicit
+    ``--post-comment`` path and the SC-10 emit fallback.
+    """
+    from agent.guardian.pr_check import render
+
+    body = render(
+        findings,
+        fmt="comment",
+        tier=resolution.effective,
+        degraded_notice=resolution.degraded_notice,
+    )
+    ctx = _pr_context_from_env()
+    if ctx is None:
+        typer.echo("guardian: no PR context in env — printing instead.")
+        typer.echo(body)
+        return
+    from agent.guardian.pr_comment import (
+        degradation_annotation,
+        upsert_sticky_comment,
+    )
+
+    client = _build_client(*ctx)
+    res = upsert_sticky_comment(client, body)
+    if res.action == "degraded" and res.notice:
+        # OT-4 / SC-1+D6: loud `::warning::` + step-summary, exit per gate.
+        typer.echo(degradation_annotation(res.notice))
+        _append_step_summary(res.notice)
+
+
+def _resolve_analysis_ref() -> str:
+    """Resolve the analyses record ``<ref>``: PR number (``pr-<n>``) from CI env,
+    else the short HEAD sha, else ``"local"``.
+
+    Reuses :func:`_pr_context_from_env` for the CI signal; network-free (only
+    shells local ``git``). The final sanitization to ``[A-Za-z0-9._-]`` lives in
+    ``analysis_emit.analysis_filename`` (a blank/garbage ref → ``local``).
+    """
+    ctx = _pr_context_from_env()
+    if ctx is not None:
+        return f"pr-{ctx[1]}"
+    out = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    return out or "local"
+
+
 @guardian_app.command("pr-check")
 def pr_check(
     diff: Optional[str] = typer.Option(
@@ -172,6 +227,19 @@ def pr_check(
         False,
         "--post-comment",
         help="Post/update the sticky PR comment via the GitHub API (CI).",
+    ),
+    emit_analysis_flag: bool = typer.Option(
+        False,
+        "--emit-analysis",
+        help="Write the finding record to the .harness/analyses/ channel "
+        "(harness handoff, #899); falls back LOUDLY to the sticky comment "
+        "when the channel is unavailable.",
+    ),
+    analyses_dir_opt: Optional[str] = typer.Option(
+        None,
+        "--analyses-dir",
+        hidden=True,
+        help="Override the analyses dir (tests).",
     ),
 ) -> None:
     """Tier 0 deterministic PR guardian: scope a diff, resolve diff-coverage at
@@ -245,33 +313,51 @@ def pr_check(
         typer.echo(degradation_annotation(resolution.degraded_notice))
         _append_step_summary(resolution.degraded_notice)
 
-    if post_comment:
-        # The posted body is always `comment` format so it carries the sticky
-        # marker for marker-matched upsert (SC-9); `--format` still governs the
-        # non-posting local echo below.
-        body = render(
-            findings,
-            fmt="comment",
-            tier=resolution.effective,
-            degraded_notice=resolution.degraded_notice,
-        )
-        ctx = _pr_context_from_env()
-        if ctx is None:
-            typer.echo("guardian: no PR context in env — printing instead.")
-            typer.echo(body)
-        else:
-            from agent.guardian.pr_comment import (
-                degradation_annotation,
-                upsert_sticky_comment,
-            )
+    # Compute the gate result once, up front: the emitted record carries it
+    # (`exitCode`) so a consumer knows pass/fail without recompute, and it is the
+    # process exit at the end (SC-4 — emit never changes the exit logic).
+    exit_code = compute_exit_code(findings, gate=effective_gate)
 
-            client = _build_client(*ctx)
-            res = upsert_sticky_comment(client, body)
-            if res.action == "degraded" and res.notice:
-                # OT-4 / SC-1+D6: loud `::warning::` + step-summary, exit per gate.
-                typer.echo(degradation_annotation(res.notice))
-                _append_step_summary(res.notice)
-    else:
+    comment_posted = False
+    if emit_analysis_flag:
+        # SC-10 producer half: write ONE record to the analyses channel. On an
+        # unavailable channel `emit_analysis` returns a LOUD notice and we fall
+        # back to the sticky comment — the record is never silently dropped.
+        from agent.guardian.analysis_emit import emit_analysis
+
+        analyses_dir = (
+            Path(analyses_dir_opt)
+            if analyses_dir_opt
+            else _git_toplevel() / ".harness" / "analyses"
+        )
+        res = emit_analysis(
+            findings,
+            analyses_dir=analyses_dir,
+            ref=_resolve_analysis_ref(),
+            gate=effective_gate,
+            effective_tier=resolution.effective,
+            degraded_notice=resolution.degraded_notice,
+            exit_code=exit_code,
+        )
+        if res.action == "emitted":
+            typer.echo(f"guardian: wrote analysis record → {res.path}")
+        else:
+            # LOUD fallback: `::warning::` + step-summary + stderr, then the
+            # Phase-2 sticky comment so findings stay visible (SC-10 fallback).
+            from agent.guardian.pr_comment import degradation_annotation
+
+            typer.echo(degradation_annotation(res.notice))
+            _append_step_summary(res.notice)
+            typer.echo(res.notice, err=True)
+            _post_sticky_comment(findings, resolution)
+            comment_posted = True
+
+    if post_comment and not comment_posted:
+        # Explicit `--post-comment` (the CI combo, or emit-less Phase-2 path):
+        # post/upsert unless the SC-10 fallback already posted this run.
+        _post_sticky_comment(findings, resolution)
+    elif not emit_analysis_flag and not post_comment:
+        # Local, non-posting default: render to stdout in `--format`.
         typer.echo(
             render(
                 findings,
@@ -281,7 +367,7 @@ def pr_check(
             )
         )
 
-    raise typer.Exit(compute_exit_code(findings, gate=effective_gate))
+    raise typer.Exit(exit_code)
 
 
 def _build_gaps(diff_text: str, config, coverage_path: Optional[Path]):

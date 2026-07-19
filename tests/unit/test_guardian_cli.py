@@ -502,6 +502,125 @@ class TestPrCheckTierDegradation:
         assert "::warning::" in result.stdout
 
 
+class TestPrCheckEmitAnalysis:
+    """SC-10: `--emit-analysis` writes one schema-valid record to the analyses
+    channel; when the channel is unavailable it degrades LOUDLY and falls back to
+    the sticky comment. `--emit-analysis --post-comment` fires BOTH surfaces
+    (findings stay visible while #899 pends). Network-free: `tmp_path` for the
+    channel, `FakeGitHubClient` for the comment."""
+
+    runner = CliRunner()
+
+    def _use_env(self, monkeypatch) -> None:
+        monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+        monkeypatch.setenv("GITHUB_REF", "refs/pull/7/merge")
+        monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+
+    def test_emit_to_available_channel_writes_record_no_comment(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # `.harness/` present → channel available. The record is written and the
+        # path is printed; NO comment is posted (emit-only success, no --post-comment).
+        (tmp_path / ".harness").mkdir()
+        analyses_dir = tmp_path / ".harness" / "analyses"
+        monkeypatch.chdir(tmp_path)
+        fake = FakeGitHubClient()
+        monkeypatch.setattr(guardian_cli, "_build_client", lambda *_: fake)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--emit-analysis",
+             "--analyses-dir", str(analyses_dir)],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0  # soft gate default
+        assert "wrote analysis record" in result.stdout
+        written = list(analyses_dir.glob("canary-pr-guardian-*.json"))
+        assert len(written) == 1
+        record = json.loads(written[0].read_text(encoding="utf-8"))
+        assert record["source"] == "canary-pr-guardian"
+        assert len(record["findings"]) >= 1
+        assert fake.list_comments() == []  # emit-only: no comment surface
+
+    def test_emit_to_absent_channel_warns_and_falls_back_to_comment(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # The analyses dir's `.harness/` parent does NOT exist → unavailable. The
+        # guardian must NOT silently drop: it emits a LOUD `::warning::` notice and
+        # falls back to upserting the sticky comment (SC-10 fallback).
+        absent = tmp_path / "no-harness" / "analyses"  # parent missing
+        monkeypatch.chdir(tmp_path)
+        self._use_env(monkeypatch)
+        fake = FakeGitHubClient()
+        monkeypatch.setattr(guardian_cli, "_build_client", lambda *_: fake)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--emit-analysis",
+             "--analyses-dir", str(absent)],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0  # soft gate default — no crash
+        assert "::warning::" in result.stdout
+        assert "falling back" in result.stdout
+        assert not absent.exists()  # nothing written to the absent channel
+        marked = [c for c in fake.list_comments() if STICKY_MARKER in c["body"]]
+        assert len(marked) == 1  # SC-10 fallback: sticky comment posted
+
+    def test_emit_and_post_comment_fire_both_surfaces(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # The CI combo: `--emit-analysis --post-comment` with an available channel
+        # writes the record AND upserts the sticky comment (visible while #899 pends).
+        (tmp_path / ".harness").mkdir()
+        analyses_dir = tmp_path / ".harness" / "analyses"
+        monkeypatch.chdir(tmp_path)
+        self._use_env(monkeypatch)
+        fake = FakeGitHubClient()
+        monkeypatch.setattr(guardian_cli, "_build_client", lambda *_: fake)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--emit-analysis", "--post-comment",
+             "--analyses-dir", str(analyses_dir)],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        assert "wrote analysis record" in result.stdout
+        written = list(analyses_dir.glob("canary-pr-guardian-*.json"))
+        assert len(written) == 1  # record written
+        marked = [c for c in fake.list_comments() if STICKY_MARKER in c["body"]]
+        assert len(marked) == 1  # AND the comment posted
+
+    def test_emit_preserves_hard_gate_exit_and_records_exit_code(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # SC-4 regression under emit: a HIGH unaddressed finding under `--gate hard`
+        # still exits 1, and the emitted record's `exitCode` mirrors that gate result.
+        (tmp_path / ".harness").mkdir()
+        (tmp_path / "pkg").mkdir()
+        (tmp_path / "pkg" / "widget.py").write_text(
+            "def widget():\n    return 42\n", encoding="utf-8"
+        )
+        # Coverage marks every added line uncovered → HIGH (not MEDIUM heuristic).
+        (tmp_path / "cov.info").write_text(
+            "SF:pkg/widget.py\nDA:1,0\nDA:2,0\nDA:3,0\nend_of_record\n",
+            encoding="utf-8",
+        )
+        analyses_dir = tmp_path / ".harness" / "analyses"
+        monkeypatch.chdir(tmp_path)
+        result = self.runner.invoke(
+            guardian_app,
+            ["pr-check", "--diff", "-", "--coverage", "cov.info",
+             "--gate", "hard", "--emit-analysis",
+             "--analyses-dir", str(analyses_dir)],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 1  # SC-4: hard-gate exit preserved
+        written = list(analyses_dir.glob("canary-pr-guardian-*.json"))
+        assert len(written) == 1
+        record = json.loads(written[0].read_text(encoding="utf-8"))
+        assert record["exitCode"] == 1  # consumer reads pass/fail without recompute
+        assert record["gate"] == "hard"
+
+
 class _FakeAuthorInvoker:
     """Network-free invoker: ``author`` returns an ``authored`` record so the
     author-plan seam is exercised end-to-end without a real agent/LLM (Option A
