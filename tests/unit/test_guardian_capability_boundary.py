@@ -1,18 +1,23 @@
 """SC-11 capability-boundary architecture test.
 
 The Tier 0 deterministic engine (``agent/guardian/pr_check.py``,
-``agent/guardian/coverage.py``, and — as of Phase 2 — the comment poster
-``agent/guardian/pr_comment.py``) must stay **agent-free**: it may import no
-``AgentTier``, ``agent.llm``, or LLM-SDK module, and must never reference the
-``analyze_diff``/``get_impact`` MCP tools (those are the agent-tier equivalents).
-The poster is deterministic HTTP behind a protocol seam, not an agent.
+``agent/guardian/coverage.py``, the comment poster ``agent/guardian/pr_comment.py``
+and — as of Phase 3 — the tier-resolution seam ``agent/guardian/tier.py`` and the
+pre-commit surface ``hooks/guardian_precommit.py``) must stay **agent-free**: it
+may import no ``AgentTier``, ``agent.llm``, or LLM-SDK module, and must never
+reference the ``analyze_diff``/``get_impact`` MCP tools (those are the agent-tier
+equivalents). The poster is deterministic HTTP behind a protocol seam, not an
+agent; the tier probe is a Protocol whose Phase-3 impl (``NoAgentProbe``) reports
+"no agent" deterministically without importing one.
 
 RED proof (TDD): this test passes immediately on the clean modules, so to prove
 it can fail, temporarily add ``import anthropic`` to the top of any scanned
 module (e.g. ``agent/guardian/pr_comment.py``), run this file, and watch
 ``test_no_forbidden_imports`` fail; then remove the throwaway import and watch it
 go green. That RED→GREEN cycle was performed during T13 (pr_check) and T7
-(pr_comment) authoring.
+(pr_comment) authoring, and again during Phase-3 T6 for ``tier.py`` and
+``guardian_precommit.py`` (throwaway ``import anthropic`` added to each in turn,
+watched fail, removed, watched go green).
 """
 
 from __future__ import annotations
@@ -27,6 +32,8 @@ _MODULES = [
     _REPO_ROOT / "agent" / "guardian" / "pr_check.py",
     _REPO_ROOT / "agent" / "guardian" / "coverage.py",
     _REPO_ROOT / "agent" / "guardian" / "pr_comment.py",
+    _REPO_ROOT / "agent" / "guardian" / "tier.py",  # + Phase 3 (SC-11)
+    _REPO_ROOT / "hooks" / "guardian_precommit.py",  # + Phase 3 (SC-11)
 ]
 
 # Module/symbol tokens the deterministic engine must never import.
@@ -74,6 +81,24 @@ def _code_identifiers(tree: ast.AST) -> set[str]:
     return idents
 
 
+def _is_agent_tier_token(token: str) -> bool:
+    """True for an ``AgentTier``-style coupling of "agent" + "tier".
+
+    Segment-aware so the *deterministic* seam ``agent.guardian.tier`` (guardian's
+    own tier-resolution module, imported by ``hooks/guardian_precommit.py`` and
+    ``agent/guardian/cli.py``) is NOT a false positive, while a real agent-tier
+    import still trips: a single segment carrying both (``AgentTier``,
+    ``agent_tier``, ``InSessionAgentTier``) or adjacent ``agent*`` → ``*tier*``
+    segments (``agent.tier``, ``agent.tiers.AgentTier``). The intervening
+    ``guardian`` segment is what distinguishes the legitimate seam from an agent
+    tier.
+    """
+    segments = token.split(".")
+    if any("agent" in seg and "tier" in seg for seg in segments):
+        return True
+    return any("agent" in a and "tier" in b for a, b in zip(segments, segments[1:]))
+
+
 @pytest.mark.parametrize("module_path", _MODULES, ids=lambda p: p.name)
 def test_no_forbidden_imports(module_path: Path) -> None:
     source = module_path.read_text(encoding="utf-8")
@@ -85,8 +110,9 @@ def test_no_forbidden_imports(module_path: Path) -> None:
                 f"{module_path.name} imports forbidden token '{token}' "
                 f"(matched denylist '{banned}') — SC-11 boundary breach"
             )
-        # Catch any *agent*tier* pattern beyond the literal token.
-        assert not ("agent" in token and "tier" in token), (
+        # Catch any *agent*tier* coupling beyond the literal token (but allow the
+        # deterministic `agent.guardian.tier` seam — see `_is_agent_tier_token`).
+        assert not _is_agent_tier_token(token), (
             f"{module_path.name} imports an agent-tier module '{token}' — SC-11"
         )
 
