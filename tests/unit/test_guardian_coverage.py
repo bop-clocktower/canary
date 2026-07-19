@@ -134,6 +134,60 @@ class TestResolveFromReport:
         foo, _ = self._units()
         assert resolve_from_report([foo], tmp_path / "nope.json") is None
 
+    def test_exact_report_path_preferred_over_suffix(self, tmp_path: Path) -> None:
+        # FIX 6 (guard): duplicate basenames must resolve against the EXACT path,
+        # not a same-basename sibling.
+        import json
+
+        report = tmp_path / "coverage.json"
+        report.write_text(
+            json.dumps({"files": {
+                "models/foo.py": {"covered_lines": [1]},   # hit
+                "utils/foo.py": {"covered_lines": []},      # line 1 unhit
+            }}),
+            encoding="utf-8",
+        )
+        unit = ChangedUnit(path="utils/foo.py", added_ranges=[(1, 1)])
+        results = resolve_from_report([unit], report)
+        assert results is not None
+        by = {r.unit.path: r for r in results}
+        assert by["utils/foo.py"].covered is False  # not models/foo.py's hit
+
+    def test_report_suffix_requires_separator_boundary(
+        self, tmp_path: Path
+    ) -> None:
+        # FIX 6: a report entry 'lib/foobar.py' must NOT loosely suffix-match a
+        # distinct unit 'bar.py' (no path-separator boundary) → no false cover.
+        import json
+
+        report = tmp_path / "coverage.json"
+        report.write_text(
+            json.dumps({"files": {"lib/foobar.py": {"covered_lines": [1]}}}),
+            encoding="utf-8",
+        )
+        unit = ChangedUnit(path="bar.py", added_ranges=[(1, 1)])
+        results = resolve_from_report([unit], report)
+        # No boundary match → no report signal for bar.py → it is skipped so the
+        # orchestrator falls through (not falsely COVERAGE_VERIFIED-covered).
+        assert results == []
+
+    def test_report_ambiguous_basename_skips(self, tmp_path: Path) -> None:
+        # FIX 6: a bare-basename unit that suffix-matches multiple report entries
+        # is ambiguous → no report signal (skip), not first-match-wins.
+        import json
+
+        report = tmp_path / "coverage.json"
+        report.write_text(
+            json.dumps({"files": {
+                "a/foo.py": {"covered_lines": [1]},
+                "b/foo.py": {"covered_lines": [1]},
+            }}),
+            encoding="utf-8",
+        )
+        unit = ChangedUnit(path="foo.py", added_ranges=[(1, 1)])
+        results = resolve_from_report([unit], report)
+        assert results == []
+
 
 def _ndjson(*records) -> str:
     import json
@@ -227,6 +281,53 @@ class TestResolveFromGraph:
         assert results is not None
         # Valid records still resolve → foo is covered by the test import edge.
         assert results[0].covered is True
+
+    def test_graph_suffix_requires_separator_boundary(
+        self, tmp_path: Path
+    ) -> None:
+        # FIX 6: a node 'x/foobar.py' reached by a test must NOT loosely
+        # suffix-match a distinct changed unit 'bar.py' (no separator boundary).
+        graph = tmp_path / "graph.json"
+        graph.write_text(
+            _ndjson(
+                {"kind": "node", "type": "file", "id": "file:x/foobar.py",
+                 "path": "x/foobar.py"},
+                {"kind": "node", "type": "file", "id": "file:tests/test_x.py",
+                 "path": "tests/test_x.py"},
+                {"kind": "edge", "from": "file:tests/test_x.py",
+                 "to": "file:x/foobar.py", "type": "imports"},
+            ),
+            encoding="utf-8",
+        )
+        unit = ChangedUnit(path="bar.py", added_ranges=[(1, 3)])
+        results = resolve_from_graph([unit], graph)
+        # No boundary match → no graph node for bar.py → no graph signal (skip).
+        assert results == []
+
+    def test_graph_ambiguous_basename_not_unioned(
+        self, tmp_path: Path
+    ) -> None:
+        # FIX 6: a test reaching an unrelated 'a/foo.py' must NOT mark a distinct
+        # 'b/foo.py' covered by unioning same-basename nodes for a bare unit.
+        graph = tmp_path / "graph.json"
+        graph.write_text(
+            _ndjson(
+                {"kind": "node", "type": "file", "id": "file:a/foo.py",
+                 "path": "a/foo.py"},
+                {"kind": "node", "type": "file", "id": "file:b/foo.py",
+                 "path": "b/foo.py"},
+                {"kind": "node", "type": "file", "id": "file:tests/test_a.py",
+                 "path": "tests/test_a.py"},
+                {"kind": "edge", "from": "file:tests/test_a.py",
+                 "to": "file:a/foo.py", "type": "imports"},
+            ),
+            encoding="utf-8",
+        )
+        unit = ChangedUnit(path="foo.py", added_ranges=[(1, 3)])
+        results = resolve_from_graph([unit], graph)
+        # Ambiguous suffix (a/foo.py and b/foo.py) → no confident node → skip,
+        # rather than unioning both and falsely covering via a/foo.py's test.
+        assert results == []
 
 
 class TestResolveHeuristic:

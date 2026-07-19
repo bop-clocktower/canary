@@ -68,17 +68,37 @@ def _expand_ranges(ranges: list[tuple[int, int]]) -> list[int]:
     return sorted(set(lines))
 
 
+def _path_boundary_match(candidate: str, target: str) -> bool:
+    """True iff ``candidate`` and ``target`` name the same file path suffix.
+
+    Exact match, or one is a suffix of the other on a **path-separator boundary**
+    (``a/b/foo.py`` vs ``foo.py``). Rejects loose substring collisions such as
+    ``foobar.py`` vs ``bar.py`` and ``usermodels.py`` vs ``models.py`` (FIX 6).
+    """
+    return (
+        candidate == target
+        or candidate.endswith("/" + target)
+        or target.endswith("/" + candidate)
+    )
+
+
 def _match_hits(path: str, index: dict[str, dict[int, int]]) -> dict[int, int] | None:
     """Look up per-line hit counts for ``path`` in a report index.
 
-    Tries exact match first, then a suffix match either direction (report paths
-    may be absolute, ``./``-prefixed, or repo-relative).
+    Prefers an EXACT path match. Otherwise falls back to a **boundary** suffix
+    match (report paths may be absolute, ``./``-prefixed, or repo-relative). On
+    multiple boundary matches (duplicate basenames) the lookup is ambiguous and
+    returns ``None`` — the unit is then skipped and falls through rather than
+    binding to an arbitrary first match (FIX 6).
     """
     if path in index:
         return index[path]
-    for report_path, hits in index.items():
-        if report_path.endswith(path) or path.endswith(report_path):
-            return hits
+    matches = [
+        hits for report_path, hits in index.items()
+        if _path_boundary_match(report_path, path)
+    ]
+    if len(matches) == 1:
+        return matches[0]
     return None
 
 
@@ -287,11 +307,16 @@ def resolve_from_graph(
     def _ids_for_path(path: str) -> list[str]:
         if path in path_to_ids:
             return path_to_ids[path]
-        matches: list[str] = []
-        for node_path, ids in path_to_ids.items():
-            if node_path.endswith(path) or path.endswith(node_path):
-                matches.extend(ids)
-        return matches
+        # Boundary suffix match only; on a unique matched path use its ids. On
+        # multiple distinct matched paths (duplicate basenames) treat as
+        # ambiguous and return no ids — do NOT union unrelated nodes (FIX 6).
+        matched_paths = [
+            node_path for node_path in path_to_ids
+            if _path_boundary_match(node_path, path)
+        ]
+        if len(matched_paths) == 1:
+            return path_to_ids[matched_paths[0]]
+        return []
 
     results: list[CoverageResult] = []
     for unit in units:
