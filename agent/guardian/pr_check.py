@@ -25,7 +25,13 @@ from agent.guardian.impact_mapper import Severity
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 # Suppression annotation: `// canary:allow-untested <reason>` or the `#` variant.
-_SUPPRESS_RE = re.compile(r"canary:allow-untested\s+(.+)")
+# A comment leader (`//` or `#`) is REQUIRED immediately before the token so a
+# bare occurrence inside a string literal, docstring, or prose never clears the
+# gate (FIX 1).
+_SUPPRESS_RE = re.compile(r"(?://|#)\s*canary:allow-untested\s+(.+)")
+
+# Trailing inline-comment closers stripped from a captured reason.
+_INLINE_COMMENT_CLOSERS = ("*/", "-->")
 
 
 def _merge_lines(lines: list[int]) -> list[tuple[int, int]]:
@@ -140,6 +146,11 @@ class Finding:
     suggestion: str = ""
     suppressed: bool = False
     suppression_reason: str | None = None
+    # Inclusive 1-based (start, end) ranges the diff ADDED for this unit. Carried
+    # from the ``CoverageResult``/``ChangedUnit`` so suppression can be scoped to
+    # only the changed lines (FIX 1). Empty → suppression falls back to a
+    # whole-file scan (still comment-leader gated).
+    added_ranges: list[tuple[int, int]] = field(default_factory=list)
 
 
 def build_findings(results: list[CoverageResult]) -> list[Finding]:
@@ -170,9 +181,35 @@ def build_findings(results: list[CoverageResult]) -> list[Finding]:
                 fidelity=result.fidelity,
                 severity=severity,
                 evidence=result.evidence,
+                added_ranges=list(unit.added_ranges),
             )
         )
     return sorted(findings, key=lambda f: f.severity.sort_key)
+
+
+def _lines_in_ranges(ranges: list[tuple[int, int]]) -> list[int]:
+    """Flatten inclusive ``(start, end)`` ranges into a sorted list of line numbers."""
+    lines: set[int] = set()
+    for start, end in ranges:
+        lines.update(range(start, end + 1))
+    return sorted(lines)
+
+
+def _suppression_reason(line: str) -> str | None:
+    """Return the captured reason iff ``line`` carries a comment-led annotation.
+
+    Requires a ``//``/``#`` comment leader (FIX 1), strips a trailing
+    inline-comment close (e.g. ``*/``), and trims surrounding whitespace.
+    """
+    match = _SUPPRESS_RE.search(line)
+    if match is None:
+        return None
+    reason = match.group(1)
+    for closer in _INLINE_COMMENT_CLOSERS:
+        idx = reason.find(closer)
+        if idx != -1:
+            reason = reason[:idx]
+    return reason.strip()
 
 
 def apply_suppressions(
@@ -180,21 +217,33 @@ def apply_suppressions(
 ) -> list[Finding]:
     """Honor ``canary:allow-untested <reason>`` annotations (SC-12).
 
-    Scans each finding's source file for a ``canary:allow-untested <reason>``
-    annotation (both ``//`` and ``#`` comment leaders are accepted). When
-    present, the finding is marked ``suppressed`` with its ``suppression_reason``
-    captured. Suppressed findings **remain** in the returned list so they stay
-    visible in rendered output — only the hard-gate exit calc ignores them.
+    Scans the finding's source **only within the unit's added line ranges** for a
+    comment-led ``canary:allow-untested <reason>`` annotation (both ``//`` and
+    ``#`` leaders accepted). A bare occurrence inside a string literal, docstring,
+    or an untouched line therefore never clears the gate (FIX 1). When the
+    finding carries no ``added_ranges`` the scan falls back to the whole file
+    (still comment-leader gated). Suppressed findings **remain** in the returned
+    list so they stay visible in rendered output — only the hard-gate exit calc
+    ignores them.
     """
     for finding in findings:
         try:
             source = (repo_root / finding.path).read_text(encoding="utf-8")
         except OSError:
             continue
-        match = _SUPPRESS_RE.search(source)
-        if match:
-            finding.suppressed = True
-            finding.suppression_reason = match.group(1).strip()
+        source_lines = source.splitlines()
+        if finding.added_ranges:
+            candidates = _lines_in_ranges(finding.added_ranges)
+        else:
+            candidates = range(1, len(source_lines) + 1)
+        for lineno in candidates:
+            if not 1 <= lineno <= len(source_lines):
+                continue
+            reason = _suppression_reason(source_lines[lineno - 1])
+            if reason is not None:
+                finding.suppressed = True
+                finding.suppression_reason = reason
+                break
     return findings
 
 

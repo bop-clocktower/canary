@@ -196,6 +196,69 @@ class TestSuppressions:
         out = apply_suppressions(findings, repo_root=tmp_path)
         assert len(out) == 1
 
+    def test_string_literal_token_does_not_suppress(self, tmp_path) -> None:
+        # FIX 1: the token inside a string literal (no comment leader) must NOT
+        # clear the gate — it is prose/data, not an author annotation.
+        src = tmp_path / "pkg" / "foo.py"
+        src.parent.mkdir(parents=True)
+        src.write_text(
+            'def foo():\n    x = "canary:allow-untested bypass"\n    return x\n',
+            encoding="utf-8",
+        )
+        findings = [
+            Finding(path="pkg/foo.py", unit="foo", added_ranges=[(1, 3)])
+        ]
+        out = apply_suppressions(findings, repo_root=tmp_path)
+        assert out[0].suppressed is False
+        assert out[0].suppression_reason is None
+
+    def test_comment_leader_on_added_line_suppresses(self, tmp_path) -> None:
+        # FIX 1: a genuine comment annotation on an added line clears the gate.
+        src = tmp_path / "pkg" / "foo.py"
+        src.parent.mkdir(parents=True)
+        src.write_text(
+            "def foo():\n    return 1  # canary:allow-untested legacy shim\n",
+            encoding="utf-8",
+        )
+        findings = [
+            Finding(path="pkg/foo.py", unit="foo", added_ranges=[(2, 2)])
+        ]
+        out = apply_suppressions(findings, repo_root=tmp_path)
+        assert out[0].suppressed is True
+        assert out[0].suppression_reason == "legacy shim"
+
+    def test_annotation_outside_added_range_ignored(self, tmp_path) -> None:
+        # FIX 1: an annotation on a line the diff did NOT touch must not suppress
+        # the finding — suppression is scoped to the unit's changed lines.
+        src = tmp_path / "pkg" / "foo.py"
+        src.parent.mkdir(parents=True)
+        src.write_text(
+            "def foo():  # canary:allow-untested unrelated old comment\n"
+            "    added = 1\n"
+            "    return added\n",
+            encoding="utf-8",
+        )
+        findings = [
+            Finding(path="pkg/foo.py", unit="foo", added_ranges=[(2, 3)])
+        ]
+        out = apply_suppressions(findings, repo_root=tmp_path)
+        assert out[0].suppressed is False
+
+    def test_inline_comment_close_stripped_from_reason(self, tmp_path) -> None:
+        # FIX 1: a trailing inline-comment close is stripped from the reason.
+        src = tmp_path / "pkg" / "foo.ts"
+        src.parent.mkdir(parents=True)
+        src.write_text(
+            "export const x = 1;  // canary:allow-untested vendor code */\n",
+            encoding="utf-8",
+        )
+        findings = [
+            Finding(path="pkg/foo.ts", unit="x", added_ranges=[(1, 1)])
+        ]
+        out = apply_suppressions(findings, repo_root=tmp_path)
+        assert out[0].suppressed is True
+        assert out[0].suppression_reason == "vendor code"
+
 
 class TestExitCode:
     def test_hard_unaddressed_high_exits_nonzero(self) -> None:
