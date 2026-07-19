@@ -64,8 +64,8 @@ last_manual_edit: 2026-07-19T00:34:19.864Z
 
 ### canary-pr-guardian
 
-- **Status:** planned
+- **Status:** done
 - **Spec:** docs/changes/canary-pr-guardian/proposal.md
-- **Summary:** canary-pr-guardian — PR test-guardian skill
+- **Summary:** DONE (#312) — shipped as the PR test-guardian: a deterministic Tier-0 diff-coverage engine (`agent/guardian/pr_check.py` + `coverage.py`, CLI `canary guardian pr-check`) that posts fidelity-labeled findings (coverage-verified › graph-verified › heuristic) with no agent/secret/write-token, plus a PR surface (`.github/workflows/guardian.yml` + sticky comment), a pre-commit hook (`hooks/guardian_precommit.py`), an at-desk agent orchestrator (`agent/guardian/agent_tier.py` + `agents/skills/claude-code/canary-pr-guardian/` + `/canary-pr-guardian`), and harness-check emit (`agent/guardian/analysis_emit.py`, `--emit-analysis`). Gate defaults to soft; promote to hard per-repo once trust is earned. Capability boundary (SC-11): the Tier-0 engine imports no agent/LLM. Phases 1–6 all shipped. (refs: docs/changes/canary-pr-guardian/, docs/adr/0007-guardian-agent-capability-boundary.md, docs/adr/0008-guardian-canary-owned.md, docs/guides/pr-guardian.md)
 - **Blockers:** —
-- **Plan:** —
+- **Plan:** docs/changes/canary-pr-guardian/plans/
