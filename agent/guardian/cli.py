@@ -364,15 +364,16 @@ def author_plan(
     requested = 2 if config.precommit_author_tests else 0
     effective = resolve_tier(requested, InSessionAgentProbe()).effective
 
-    repo_root = Path.cwd()
+    # FIX 6: resolve the repo root from the git top-level (not Path.cwd()), so the
+    # collision check and sentinel lookup stay root-relative when author-plan runs
+    # from a subdirectory. Falls back to cwd when not in a git repo.
+    repo_root = _git_toplevel()
     ctx = AuthoringContext(
         author_tests_optin=config.precommit_author_tests,
         effective_tier=effective,
         is_fork=_is_fork_context(),
         repo_root=repo_root,
-        authored_sentinel_present=(
-            repo_root / ".git" / "canary-guardian-authored"
-        ).is_file(),
+        authored_sentinel_present=_authored_sentinel_path(repo_root).is_file(),
     )
     results = InSessionAgentTier().author_tests(gaps, ctx)
     payload = {

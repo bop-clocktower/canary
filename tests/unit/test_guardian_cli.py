@@ -598,6 +598,42 @@ class TestAuthorPlan:
         assert "review" in data["block"]["message"]
         assert "re-commit" in data["block"]["message"]
 
+    def test_repo_root_resolved_from_git_toplevel_not_cwd(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        # FIX 6: run author-plan from a SUBDIR of a git repo. The target test for
+        # the untested unit already exists at the repo ROOT, so the collision guard
+        # must skip it — proving repo_root is resolved from `git rev-parse
+        # --show-toplevel`, not Path.cwd() (which would be the subdir and miss the
+        # root-relative file, a false negative that authors over another's file).
+        import subprocess as _sp
+
+        _sp.run(["git", "init", "-q", str(tmp_path)], check=True)
+        (tmp_path / "pkg").mkdir()
+        # DIFF_NEW_UNIT adds pkg/widget.py → target is pkg/test_widget.py.
+        (tmp_path / "pkg" / "test_widget.py").write_text(
+            "# owned by another PR/session\n", encoding="utf-8"
+        )
+        cfg = _write_config(
+            tmp_path, {"preCommit": {"enabled": True, "authorTests": True}}
+        )
+        subdir = tmp_path / "nested" / "deep"
+        subdir.mkdir(parents=True)
+        monkeypatch.chdir(subdir)
+        monkeypatch.setenv("CANARY_GUARDIAN_AGENT", "2")
+        monkeypatch.delenv("CANARY_GUARDIAN_IS_FORK", raising=False)
+        result = self.runner.invoke(
+            guardian_app,
+            ["author-plan", "--diff", "-", "--config", cfg],
+            input=DIFF_NEW_UNIT,
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert all(i["status"] == "skipped" for i in data["intents"])
+        reason = data["intents"][0]["skip_reason"] or ""
+        assert "collision" in reason or "exists" in reason
+        assert data["block"]["block"] is False
+
     def test_optin_on_without_agent_degrades_to_skip(
         self, tmp_path, monkeypatch
     ) -> None:
