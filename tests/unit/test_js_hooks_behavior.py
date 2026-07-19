@@ -141,6 +141,50 @@ class TestFormatCheckStatusContract(unittest.TestCase):
 
 
 @unittest.skipUnless(_HAVE_NODE, "node required to exercise the JS hooks")
+class TestClassifyNoParser(unittest.TestCase):
+    """#317: Prettier's 'No parser could be inferred' on a .py file is a
+    usage/infra error (Prettier can't format Python), NOT a format violation —
+    it must classify as infra-error so the blocking hook fails open."""
+
+    def _classify(self, err: dict) -> str:
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = Path(tmp)
+        fc_url = (_HOOKS / "format-check.js").as_uri()
+        driver = root / "driver.mjs"
+        driver.write_text(
+            f"import {{ classifyError }} from {json.dumps(fc_url)};\n"
+            "const err = JSON.parse(process.argv[2]);\n"
+            "process.stdout.write(classifyError(err));\n",
+            encoding="utf-8",
+        )
+        cp = subprocess.run(
+            ["node", str(driver), json.dumps(err)],
+            text=True,
+            capture_output=True,
+        )
+        return cp.stdout.strip()
+
+    def test_no_parser_inferred_is_infra_error(self):
+        """The exact Prettier message on a .py edit must fail open, not block."""
+        err = {
+            "status": 2,
+            "stdout": "",
+            "stderr": '[error] No parser could be inferred for file "/x/mod.py".',
+        }
+        self.assertEqual(self._classify(err), "infra-error")
+
+    def test_real_prettier_violation_still_blocks(self):
+        """Guard: a genuine style violation (parseable file) stays 'violations'."""
+        err = {
+            "status": 1,
+            "stdout": "app.js\n",
+            "stderr": "[warn] Code style issues found in the above file. Run Prettier to fix.",
+        }
+        self.assertEqual(self._classify(err), "violations")
+
+
+@unittest.skipUnless(_HAVE_NODE, "node required to exercise the JS hooks")
 class TestPreferFirstPartyMcp(unittest.TestCase):
     """The routing nudge fires for third-party MCP, stays silent for first-party."""
 

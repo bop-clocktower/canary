@@ -40,7 +40,10 @@ const DETECTORS = [
       'prettier.config.mjs',
     ],
     cmd: 'npx',
-    args: ['prettier', '--check'],
+    // --ignore-unknown makes Prettier silently skip files it has no parser for
+    // (e.g. .py) instead of erroring, so a Python edit under a repo-wide
+    // .prettierrc reports clean rather than a false blocking failure (#317).
+    args: ['prettier', '--check', '--ignore-unknown'],
     name: 'Prettier',
   },
   {
@@ -77,7 +80,7 @@ function errorOutput(err) {
  * default to `infra-error` (fail open) unless we can positively identify
  * parseable violation output.
  */
-function classifyError(err) {
+export function classifyError(err) {
   // The command binary itself is missing / not spawnable.
   if (err?.code === 'ENOENT') return 'infra-error';
   // Killed by a signal — almost always our own timeout.
@@ -87,9 +90,11 @@ function classifyError(err) {
 
   // npx/npm could not locate or run the underlying tool, or the tool was
   // invoked without a target it requires (e.g. `prettier --check` with no
-  // file). These are usage/infra failures, NOT format violations.
+  // file). "No parser could be inferred" is Prettier's usage error for a file
+  // type it cannot format (e.g. a .py edit under a repo-wide .prettierrc) — a
+  // usage/infra failure, NOT a style violation (#317). All fail open.
   if (
-    /could not determine executable|npm error|command not found|not found|ENOENT|expected at least one|no files matching|usage:/i.test(
+    /could not determine executable|npm error|command not found|not found|ENOENT|expected at least one|no files matching|no parser could be inferred|usage:/i.test(
       output,
     )
   ) {
