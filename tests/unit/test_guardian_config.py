@@ -72,8 +72,9 @@ class TestLoadGuardianConfig:
         assert c.pr_gate == "soft"
         assert c.precommit_enabled is False
         assert c.coverage_paths == []
-        # FIX B: skipGlobs now defaults to docs/** and **/*.md out of the box.
-        assert c.skip_globs == ["docs/**", "**/*.md"]
+        # FIX B + signal-quality: skipGlobs defaults to docs/markdown AND
+        # generated/lockfiles (lockfiles, dist/build, minified, snapshots).
+        assert c.skip_globs == _DEFAULT_SKIP_GLOBS
 
     def test_non_int_tier_warns_and_defaults(self, tmp_path) -> None:
         # FIX 4: a non-integer tier must not crash int() — warn loudly (same slot
@@ -109,13 +110,26 @@ class TestLoadGuardianConfig:
         assert config.pr_tier == GuardianConfig().pr_tier
 
 
-_DEFAULT_SKIP_GLOBS = ["docs/**", "**/*.md"]
+_DEFAULT_SKIP_GLOBS = [
+    "docs/**",
+    "**/*.md",
+    "**/package-lock.json",
+    "**/yarn.lock",
+    "**/pnpm-lock.yaml",
+    "**/poetry.lock",
+    "**/Cargo.lock",
+    "**/*.lock",
+    "dist/**",
+    "build/**",
+    "**/*.min.js",
+    "**/*.snap",
+]
 
 
 class TestSkipGlobsDefault:
-    """FIX B: skipGlobs defaults to docs/** and **/*.md when the key is ABSENT,
-    but an explicit value (even []) overrides — absent must be distinguished
-    from present-and-empty (SC-2)."""
+    """FIX B + signal-quality: skipGlobs defaults to docs/markdown AND
+    generated/lockfiles when the key is ABSENT, but an explicit value (even [])
+    overrides — absent must be distinguished from present-and-empty (SC-2)."""
 
     def test_absent_key_falls_back_to_default_globs(self, tmp_path) -> None:
         # A guardian block that never mentions skipGlobs → default docs/md skip.

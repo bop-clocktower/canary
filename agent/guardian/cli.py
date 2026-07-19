@@ -185,6 +185,7 @@ def pr_check(
         compute_exit_code,
         filter_skipped,
         filter_test_units,
+        find_reexport_only,
         load_guardian_config,
         read_diff,
         render,
@@ -211,10 +212,15 @@ def pr_check(
     kept, skipped = filter_skipped(units, config.skip_globs)
     # FIX A: drop test-path units — a test does not itself need a test.
     kept, test_units = filter_test_units(kept)
+    # FIX 2: drop pure re-export/barrel files (index.ts, __init__.py) — a file
+    # that only forwards other modules' symbols carries no logic to test.
+    reexport_paths = find_reexport_only(diff_text)
+    barrel_units = [u for u in kept if u.path in reexport_paths]
+    kept = [u for u in kept if u.path not in reexport_paths]
     if not kept:
         typer.echo(
             f"guardian: nothing to verify "
-            f"({len(skipped) + len(test_units)} path(s) skipped)."
+            f"({len(skipped) + len(test_units) + len(barrel_units)} path(s) skipped)."
         )
         raise typer.Exit(0)
 
