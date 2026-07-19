@@ -482,6 +482,7 @@ def resolve_coverage(
     coverage_path: Path | None = None,
     graph_path: Path = Path(".harness/graph/graph.json"),
     repo_root: Path = Path("."),
+    graph_max_depth: int | None = None,
 ) -> list[CoverageResult]:
     """SC-3 orchestrator: resolve each unit at the highest available fidelity.
 
@@ -496,6 +497,11 @@ def resolve_coverage(
     A unit absent from the report is NOT judged COVERAGE_VERIFIED-uncovered; it
     falls through to the graph then heuristic tier (FIX 2). Returns exactly one
     :class:`CoverageResult` per input unit, in input order, fidelity-labeled.
+
+    ``graph_max_depth`` bounds the graph tier's reverse-BFS hop distance (#320):
+    ``1`` requires a direct test→source edge, ``None`` (default) is unbounded —
+    byte-for-byte today's behavior, so existing soft-default results are
+    unchanged. Forwarded verbatim to :func:`resolve_from_graph`.
     """
     resolved: dict[int, CoverageResult] = {}
     remaining: list[ChangedUnit] = list(units)
@@ -507,7 +513,7 @@ def resolve_coverage(
             remaining = [u for u in remaining if id(u) not in resolved]
 
     if remaining:
-        graph = resolve_from_graph(remaining, graph_path)
+        graph = resolve_from_graph(remaining, graph_path, max_depth=graph_max_depth)
         if graph:
             resolved.update({id(r.unit): r for r in graph})
             remaining = [u for u in remaining if id(u) not in resolved]

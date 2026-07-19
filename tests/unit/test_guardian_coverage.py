@@ -582,3 +582,34 @@ class TestResolveCoverage:
         # fabricated "uncovered" data; it falls through to the graph tier.
         assert by_path["pkg/NEW.py"].fidelity is Fidelity.GRAPH_VERIFIED
         assert by_path["pkg/NEW.py"].covered is True
+
+    def test_graph_max_depth_threaded_to_graph_resolver(
+        self, tmp_path: Path
+    ) -> None:
+        # #320: resolve_coverage forwards graph_max_depth to resolve_from_graph.
+        # A purely-transitive reach (test_a→b→foo, no direct test→foo edge) is
+        # covered unbounded but uncovered under a depth-1 gate — the unit stays
+        # at the GRAPH_VERIFIED tier either way (its node exists in the graph).
+        graph = tmp_path / "graph.json"
+        graph.write_text(_TRANSITIVE_GRAPH, encoding="utf-8")
+        foo = ChangedUnit(path="pkg/foo.py", added_ranges=[(1, 3)])
+
+        bounded = resolve_coverage(
+            [foo],
+            coverage_path=None,
+            graph_path=graph,
+            repo_root=tmp_path,
+            graph_max_depth=1,
+        )
+        assert bounded[0].fidelity is Fidelity.GRAPH_VERIFIED
+        assert bounded[0].covered is False
+
+        unbounded = resolve_coverage(
+            [foo],
+            coverage_path=None,
+            graph_path=graph,
+            repo_root=tmp_path,
+            graph_max_depth=None,
+        )
+        assert unbounded[0].fidelity is Fidelity.GRAPH_VERIFIED
+        assert unbounded[0].covered is True
