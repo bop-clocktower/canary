@@ -191,6 +191,27 @@ class TestPrContextFromEnv:
         assert guardian_cli._pr_context_from_env() == ("o/r", 42)
 
 
+class TestResolveAnalysisRef:
+    """FIX 2: `_resolve_analysis_ref` must fail-safe to ``local`` when the `git`
+    binary is absent — a missing binary raises FileNotFoundError, which would
+    otherwise crash pr-check on the emit path (bypassing the fallback + exit code)."""
+
+    def _no_ci(self, monkeypatch) -> None:
+        # Force the git-shell branch: no PR context resolvable from env.
+        monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+        monkeypatch.delenv("GITHUB_REF", raising=False)
+        monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+
+    def test_git_absent_returns_local(self, monkeypatch) -> None:
+        self._no_ci(monkeypatch)
+
+        def _no_git(*_args, **_kwargs):
+            raise FileNotFoundError("git not found")
+
+        monkeypatch.setattr(guardian_cli.subprocess, "run", _no_git)
+        assert guardian_cli._resolve_analysis_ref() == "local"
+
+
 class TestForkContext:
     """FIX 4: fork detection FAILS CLOSED on ambiguity. Only two safe sentinels
     mean "not a fork" — unset OR exactly ``"0"`` (after strip). ANY other

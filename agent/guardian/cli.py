@@ -201,12 +201,18 @@ def _resolve_analysis_ref() -> str:
     ctx = _pr_context_from_env()
     if ctx is not None:
         return f"pr-{ctx[1]}"
-    out = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout.strip()
+    # Mirror `_git_toplevel`: a missing `git` binary raises OSError
+    # (FileNotFoundError). Wrap so the emit path fails safe to "local" instead of
+    # crashing pr-check and bypassing the fallback + computed exit code.
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+    except OSError:
+        return "local"
     return out or "local"
 
 
