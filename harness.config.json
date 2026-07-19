@@ -71,6 +71,16 @@
   "adoption": {
     "enabled": true
   },
+  "agent": {
+    "backends": {
+      "craft": { "type": "claude" }
+    }
+  },
+  "craft": {
+    "llm": {
+      "backend": "craft"
+    }
+  },
   "roadmap": {
     "tracker": {
       "kind": "github",
