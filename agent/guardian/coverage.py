@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -350,11 +351,18 @@ def resolve_from_graph(
         # target node is depth 0, its direct predecessors depth 1, etc. A node at
         # ``depth >= max_depth`` cannot be expanded (its predecessors would exceed
         # the bound). ``max_depth=None`` never bounds — unchanged behavior (#320).
+        #
+        # FIX 1 (#320): a genuine FIFO BFS (``deque.popleft``) — NOT a LIFO stack.
+        # All targets are seeded at depth 0 and BFS visits in non-decreasing depth,
+        # so first-discovery depth IS the minimum. A LIFO/DFS frontier could stamp
+        # an intermediate node at a non-minimal depth via a longer path explored
+        # first, then prune it before a shorter path arrives — under-crediting real
+        # coverage at ``max_depth >= 3``. FIFO makes ``seen``-at-discovery correct.
         covering_test: str | None = None
         seen = set(targets)
-        queue: list[tuple[str, int]] = [(t, 0) for t in targets]
+        queue: deque[tuple[str, int]] = deque((t, 0) for t in targets)
         while queue and covering_test is None:
-            node, depth = queue.pop()
+            node, depth = queue.popleft()
             if max_depth is not None and depth >= max_depth:
                 continue  # cannot expand deeper — predecessors would exceed bound
             for source in reach_rev.get(node, []):

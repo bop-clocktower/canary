@@ -401,6 +401,76 @@ class TestResolveFromGraphDepth:
         assert uncovered_at_1 is not None
         assert uncovered_at_1[0].covered is False
 
+    def test_shortest_path_bfs_not_dfs_at_depth_3(self, tmp_path: Path) -> None:
+        # #320 FIX 1: the reverse traversal must be a genuine shortest-path BFS.
+        # This adversarial graph has a decoy LONGER path that a LIFO/DFS frontier
+        # explores first, stamping an intermediate node (s1) at a NON-minimal
+        # depth and pruning it before the shorter path reaches it — under-crediting
+        # a truly-covered file at max_depth>=3. Shortest test→s0 path:
+        #   s0 <- s3(1) <- s1(2) <- t0(3)  == depth 3.
+        graph = tmp_path / "graph.json"
+        graph.write_text(
+            _ndjson(
+                {"kind": "node", "type": "file", "id": "file:pkg/s0.py",
+                 "path": "pkg/s0.py"},
+                {"kind": "node", "type": "file", "id": "file:pkg/s1.py",
+                 "path": "pkg/s1.py"},
+                {"kind": "node", "type": "file", "id": "file:pkg/s2.py",
+                 "path": "pkg/s2.py"},
+                {"kind": "node", "type": "file", "id": "file:pkg/s3.py",
+                 "path": "pkg/s3.py"},
+                {"kind": "node", "type": "file", "id": "file:pkg/s4.py",
+                 "path": "pkg/s4.py"},
+                {"kind": "node", "type": "file", "id": "file:pkg/s5.py",
+                 "path": "pkg/s5.py"},
+                {"kind": "node", "type": "file", "id": "file:tests/t0.test.ts",
+                 "path": "tests/t0.test.ts"},
+                # imports edges (from -> to)
+                {"kind": "edge", "from": "file:pkg/s2.py", "to": "file:pkg/s0.py",
+                 "type": "imports"},
+                {"kind": "edge", "from": "file:pkg/s3.py", "to": "file:pkg/s0.py",
+                 "type": "imports"},
+                {"kind": "edge", "from": "file:pkg/s5.py", "to": "file:pkg/s0.py",
+                 "type": "imports"},
+                {"kind": "edge", "from": "file:tests/t0.test.ts",
+                 "to": "file:pkg/s1.py", "type": "imports"},
+                {"kind": "edge", "from": "file:pkg/s2.py", "to": "file:pkg/s1.py",
+                 "type": "imports"},
+                {"kind": "edge", "from": "file:pkg/s5.py", "to": "file:pkg/s1.py",
+                 "type": "imports"},
+                {"kind": "edge", "from": "file:pkg/s1.py", "to": "file:pkg/s3.py",
+                 "type": "imports"},
+                {"kind": "edge", "from": "file:pkg/s1.py", "to": "file:pkg/s4.py",
+                 "type": "imports"},
+                {"kind": "edge", "from": "file:pkg/s2.py", "to": "file:pkg/s5.py",
+                 "type": "imports"},
+                {"kind": "edge", "from": "file:pkg/s4.py", "to": "file:pkg/s5.py",
+                 "type": "imports"},
+                {"kind": "edge", "from": "file:pkg/s5.py", "to": "file:pkg/s3.py",
+                 "type": "imports"},
+                {"kind": "edge", "from": "file:pkg/s5.py", "to": "file:tests/t0.test.ts",
+                 "type": "imports"},
+            ),
+            encoding="utf-8",
+        )
+        s0 = ChangedUnit(path="pkg/s0.py", added_ranges=[(1, 3)])
+
+        # BFS reaches t0 via the minimal 3-hop path → covered at depth 3.
+        # (The old LIFO/DFS frontier returns False here — the RED that proves it.)
+        covered_at_3 = resolve_from_graph([s0], graph, max_depth=3)
+        assert covered_at_3 is not None
+        assert covered_at_3[0].covered is True
+
+        # t0 sits exactly 3 hops out → out of range at depth 2.
+        covered_at_2 = resolve_from_graph([s0], graph, max_depth=2)
+        assert covered_at_2 is not None
+        assert covered_at_2[0].covered is False
+
+        # Unbounded always reaches it.
+        covered_none = resolve_from_graph([s0], graph, max_depth=None)
+        assert covered_none is not None
+        assert covered_none[0].covered is True
+
 
 class TestResolveHeuristic:
     def _repo(self, tmp_path: Path):
