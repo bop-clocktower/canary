@@ -67,15 +67,16 @@ Overlay: example-org-example-overlay
 
 These run with no overlay present and need no configuration:
 
-| Check                    | Passes when                                                               | On failure                                                                   |
-| ------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `engine:version`         | Installed CLI matches the latest published version                        | Points at `npm install -g …@latest`. Offline → an `ℹ` line, never a failure. |
-| `engine:git`             | `git` is on `PATH`                                                        | Install git — `overlay add`/`update` need it.                                |
-| `overlay:<name>:present` | The registered clone still exists on disk                                 | Re-add the overlay.                                                          |
-| `overlay:<name>:fresh`   | The clone is up to date with its last-known remote state                  | Run `canary overlay update <name>`. Does **not** hit the network.            |
-| `overlay:<name>:clean`   | The clone has no local modifications                                      | Commit/stash, or remove and re-add.                                          |
-| `engine:project-config`  | `.canary/company.json` (and any `company.<env>.json`) parse as JSON       | Skipped when there is no project `.canary/`.                                 |
-| `engine:mcp`             | Project and home `.mcp.json` parse and their `mcpServers` entries resolve | Skipped when no `.mcp.json` exists.                                          |
+| Check                      | Passes when                                                               | On failure                                                                                          |
+| -------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `engine:version`           | Installed CLI matches the latest published version                        | Points at `npm install -g …@latest`. Offline → an `ℹ` line, never a failure.                        |
+| `engine:git`               | `git` is on `PATH`                                                        | Install git — `overlay add`/`update` need it.                                                       |
+| `overlay:<name>:present`   | The registered clone still exists on disk                                 | Re-add the overlay.                                                                                 |
+| `overlay:<name>:fresh`     | The clone is up to date with its last-known remote state                  | Run `canary overlay update <name>`. Does **not** hit the network.                                   |
+| `overlay:<name>:clean`     | The clone has no local modifications                                      | Commit/stash, or remove and re-add.                                                                 |
+| `engine:overlay-conflicts` | No two overlays ship the same skill name with equal precedence            | Set a higher `precedence` on the overlay that should win, or run `canary overlay list --conflicts`. |
+| `engine:project-config`    | `.canary/company.json` (and any `company.<env>.json`) parse as JSON       | Skipped when there is no project `.canary/`.                                                        |
+| `engine:mcp`               | Project and home `.mcp.json` parse and their `mcpServers` entries resolve | Skipped when no `.mcp.json` exists.                                                                 |
 
 ### Tier 2 — overlay checks (data-driven)
 

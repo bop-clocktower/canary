@@ -17,6 +17,7 @@ import {
   type GitResult,
 } from './overlay-commands.js';
 import * as registry from './overlays-registry.js';
+import { detectSkillConflicts } from './overlay-conflicts.js';
 
 /** The published npm package name (mirrors the install remedy in the shim). */
 const PKG = 'canary-test-cli';
@@ -356,6 +357,55 @@ export function checkMcpConfig(deps: EngineCheckDeps = {}): CheckResult {
   return { id: 'engine:mcp', status: 'pass', label: 'MCP config resolves' };
 }
 
+/**
+ * Skill-name collisions across registered overlays are resolved by a declared
+ * precedence (#333). A collision with no precedence winner is a `fail` — which
+ * definition wins is otherwise accidental (directory-name order). No overlays
+ * or no collisions → an informational/passing line, never a false alarm.
+ */
+export function checkOverlayConflicts(deps: EngineCheckDeps = {}): CheckResult {
+  const homeDir = deps.homeDir ?? os.homedir();
+  let reg;
+  try {
+    reg = registry.read(homeDir);
+  } catch {
+    // The dedicated engine:overlays check already reports an unreadable
+    // registry; don't double-fail here.
+    return {
+      id: 'engine:overlay-conflicts',
+      status: 'skip',
+      label: 'overlay skill conflicts: registry unreadable',
+    };
+  }
+  const conflicts = detectSkillConflicts(reg);
+  const unresolved = conflicts.filter((c) => !c.resolved);
+  if (unresolved.length > 0) {
+    const names = unresolved.map((c) => c.skill).join(', ');
+    return {
+      id: 'engine:overlay-conflicts',
+      status: 'fail',
+      label: `overlay skill conflicts unresolved: ${names}`,
+      remedy:
+        'Two overlays ship these skill name(s) with equal precedence — the ' +
+        'winner is accidental. Set a higher `precedence` on the overlay you ' +
+        'want to win in ~/.canary/overlays.json, or run ' +
+        '`canary overlay list --conflicts` for details.',
+    };
+  }
+  if (conflicts.length > 0) {
+    return {
+      id: 'engine:overlay-conflicts',
+      status: 'pass',
+      label: `overlay skill conflicts: ${conflicts.length} resolved by precedence`,
+    };
+  }
+  return {
+    id: 'engine:overlay-conflicts',
+    status: 'pass',
+    label: 'no overlay skill conflicts',
+  };
+}
+
 /** Run every engine check, in display order. */
 export async function runEngineChecks(
   deps: EngineCheckDeps = {},
@@ -364,6 +414,7 @@ export async function runEngineChecks(
     await checkVersion(deps),
     checkGit(deps),
     ...checkOverlays(deps),
+    checkOverlayConflicts(deps),
     checkProjectConfig(deps),
     checkMcpConfig(deps),
   ];

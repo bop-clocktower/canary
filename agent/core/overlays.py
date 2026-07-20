@@ -54,6 +54,31 @@ def _registry_order(home: Path) -> list[str]:
     return [o["name"] for o in overlays if isinstance(o, dict) and isinstance(o.get("name"), str)]
 
 
+def registry_precedence(home: Path) -> dict[str, int]:
+    """Map overlay name -> declared precedence from ``overlays.json`` (#333).
+
+    A null/absent/non-numeric precedence is 0. An unreadable or malformed
+    registry yields an empty map, so callers fall back to directory-name order.
+    Higher precedence wins a skill-name collision — the winner rule mirrors the
+    TS side (``npm/src/overlay-conflicts.ts``) so both runtimes agree.
+    """
+    registry = home / ".canary" / "overlays.json"
+    try:
+        data = json.loads(registry.read_text(encoding="utf-8"))
+        overlays = data["overlays"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+    if not isinstance(overlays, list):
+        return {}
+    result: dict[str, int] = {}
+    for o in overlays:
+        if not isinstance(o, dict) or not isinstance(o.get("name"), str):
+            continue
+        p = o.get("precedence")
+        result[o["name"]] = p if isinstance(p, (int, float)) and not isinstance(p, bool) else 0
+    return result
+
+
 def list_overlays(home: Path | None = None) -> list[str]:
     """Names of tracked overlays (clone dirs under ``~/.canary/overlays/``).
 
