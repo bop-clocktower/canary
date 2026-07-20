@@ -53,8 +53,7 @@
     {
       "name": "pytest",
       "display_name": "pytest",
-      "category": "python_unit",
-      "categories": ["python_unit", "api"],
+      "category": "api",
       "languages": ["python"],
       "file_extensions": ["py"],
       "file_patterns": ["test_*.py", "*_test.py"],
@@ -80,7 +79,7 @@
       "name": "schemathesis",
       "display_name": "Schemathesis",
       "category": "api",
-      "categories": ["api"],
+      "categories": ["api", "contract"],
       "languages": ["python"],
       "file_extensions": ["py"],
       "file_patterns": ["test_*.py", "*_test.py"],
@@ -488,6 +487,169 @@
       "avoid_when": [
         "no org license scope set — prefer the OSS default (Playwright)"
       ]
+    },
+    {
+      "name": "mutmut",
+      "display_name": "mutmut",
+      "category": "mutation",
+      "languages": ["python"],
+      "file_extensions": ["py"],
+      "file_patterns": ["test_*.py", "*_test.py"],
+      "execution_command": "mutmut run",
+      "ci_flags": [],
+      "ecosystems": ["python", "pytest"],
+      "status": "supported",
+      "license": "BSD-3-Clause",
+      "maturity": "high",
+      "community_size": "medium",
+      "recommended_for": [
+        "mutation testing for Python suites",
+        "measuring whether pytest assertions actually catch regressions"
+      ],
+      "strengths": [
+        "The de-facto Python mutation runner (closes the Python-mutation routing gap Stryker cannot serve)",
+        "Reads pytest configuration — no separate test harness",
+        "Reveals assertions that never fail"
+      ],
+      "avoid_when": [
+        "suites too slow to tolerate the mutation runtime multiplier",
+        "TypeScript/JavaScript projects (use Stryker)"
+      ]
+    },
+    {
+      "name": "wdio",
+      "display_name": "Appium + WebdriverIO",
+      "category": "mobile",
+      "languages": ["typescript", "javascript"],
+      "file_extensions": ["spec.ts", "spec.js"],
+      "execution_command": "npx --yes wdio run wdio.conf.ts --spec {file}",
+      "ci_flags": [],
+      "ecosystems": ["android", "ios", "react-native", "appium"],
+      "status": "supported",
+      "license": "MIT",
+      "maturity": "high",
+      "community_size": "large",
+      "recommended_for": [
+        "deep native-instrumentation mobile testing (Android/iOS) via Appium",
+        "cross-platform mobile suites needing real element interaction"
+      ],
+      "strengths": [
+        "Full Appium capability access (native selectors, gestures, contexts)",
+        "Mature WebdriverIO runner with rich reporter/service ecosystem",
+        "TypeScript-first authoring; `canary init wdio` scaffolds wdio.conf plus a capabilities stub"
+      ],
+      "avoid_when": [
+        "simple UI-flow smoke tests where Maestro's YAML flows are enough"
+      ]
+    },
+    {
+      "name": "hurl",
+      "display_name": "Hurl",
+      "category": "api",
+      "categories": ["api"],
+      "languages": ["hurl"],
+      "file_extensions": ["hurl"],
+      "file_patterns": ["*.hurl"],
+      "execution_command": "hurl --test {file}",
+      "ci_flags": ["--report-junit", "hurl-report.xml"],
+      "ecosystems": ["api", "rest", "http"],
+      "status": "supported",
+      "license": "Apache-2.0",
+      "maturity": "high",
+      "community_size": "medium",
+      "recommended_for": [
+        "single-file plain-text HTTP API tests",
+        "API checks for less-technical personas — no programming language required"
+      ],
+      "strengths": [
+        "One `.hurl` file per test fits the one-file execution model exactly",
+        "Human-readable HTTP DSL with assertions and captures",
+        "Fast native runner, no runtime dependency to install per project"
+      ],
+      "avoid_when": [
+        "complex programmatic setup/teardown is needed (use pytest or Playwright request)"
+      ]
+    },
+    {
+      "name": "fast-check",
+      "display_name": "fast-check",
+      "category": "property",
+      "languages": ["typescript", "javascript"],
+      "file_extensions": ["test.ts", "test.js", "spec.ts", "spec.js"],
+      "execution_command": "npx --yes vitest run {file}",
+      "ci_flags": ["--reporter=verbose"],
+      "ecosystems": ["node", "vitest", "jest"],
+      "status": "preferred",
+      "license": "MIT",
+      "maturity": "high",
+      "community_size": "large",
+      "recommended_for": [
+        "property-based / invariant testing in TypeScript and JavaScript",
+        "finding edge cases hand-written examples miss via generated inputs"
+      ],
+      "strengths": [
+        "Piggybacks the existing host runner (Vitest/Jest) — no new runner",
+        "Shrinking reports the minimal failing case",
+        "Rich arbitraries for structured input generation"
+      ],
+      "avoid_when": [
+        "behavior has no expressible invariant (example-based tests fit better)"
+      ]
+    },
+    {
+      "name": "hypothesis",
+      "display_name": "Hypothesis",
+      "category": "property",
+      "languages": ["python"],
+      "file_extensions": ["py"],
+      "file_patterns": ["test_*.py", "*_test.py"],
+      "execution_command": "pytest {file}",
+      "ci_flags": ["--tb=short", "-p", "no:cacheprovider"],
+      "ecosystems": ["python", "pytest"],
+      "status": "supported",
+      "license": "MPL-2.0",
+      "maturity": "very_high",
+      "community_size": "large",
+      "recommended_for": [
+        "property-based / invariant testing in Python",
+        "generative edge-case discovery over pytest suites"
+      ],
+      "strengths": [
+        "Runs inside pytest as the host runner — no new harness",
+        "Automatic shrinking to a minimal failing example",
+        "Strategy library for composing input generators"
+      ],
+      "avoid_when": [
+        "behavior has no expressible invariant (example-based tests fit better)"
+      ]
+    },
+    {
+      "name": "promptfoo",
+      "display_name": "promptfoo",
+      "category": "llm_eval",
+      "languages": ["yaml"],
+      "file_extensions": ["yaml", "yml"],
+      "file_patterns": ["promptfooconfig.yaml", "*.promptfoo.yaml"],
+      "execution_command": "npx --yes promptfoo eval -c {file}",
+      "ci_flags": ["--no-progress-bar"],
+      "ecosystems": ["llm", "prompts"],
+      "status": "supported",
+      "license": "MIT",
+      "maturity": "high",
+      "community_size": "medium",
+      "recommended_for": [
+        "LLM-behavior regression testing across prompts and model versions",
+        "assertion-based eval of prompt outputs (quality, format, safety)"
+      ],
+      "strengths": [
+        "Declarative YAML eval config — versioned alongside prompts",
+        "Model-agnostic assertions with side-by-side comparison",
+        "CI-friendly pass/fail gating on eval thresholds"
+      ],
+      "avoid_when": [
+        "no LLM under test (this is not a general functional-testing tool)"
+      ],
+      "provider_access_note": "Route provider access through the agent-plugin path — never embed raw API keys in the eval config or CI."
     }
   ]
 }

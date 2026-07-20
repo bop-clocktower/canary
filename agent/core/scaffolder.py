@@ -75,17 +75,30 @@ python_functions = test_*
         "files": {
             "wdio.conf.ts": """import type { Options } from "@wdio/types";
 
+// Appium + WebdriverIO config. Fill in the capabilities stub below for the
+// device/platform under test (Android shown; add an iOS entry as needed).
 export const config: Options.Testrunner = {
   runner: "local",
   specs: ["./tests/**/*.spec.ts"],
   maxInstances: 1,
+  // Appium capabilities stub — replace deviceName / app / versions to match
+  // your emulator or real device.
+  capabilities: [
+    {
+      platformName: "Android",
+      "appium:automationName": "UiAutomator2",
+      "appium:deviceName": "Android Emulator",
+      "appium:app": "./app/build/outputs/apk/debug/app-debug.apk",
+    },
+  ],
   framework: "mocha",
   mochaOpts: {
     ui: "bdd",
     timeout: 60000,
   },
   reporters: ["spec"],
-  services: [],
+  // Requires the Appium service: `npm i -D @wdio/appium-service appium`.
+  services: ["appium"],
 };
 """
         },
