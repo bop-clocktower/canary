@@ -263,14 +263,30 @@ cleanly decoupled and depends on none of this. The consumed subcommands are:
 | `cleanup`          | `harness-quality.yml`                              |
 | `check-phase-gate` | `harness-quality.yml`                              |
 | `check-arch`       | `refresh-arch-baseline.yml`                        |
+| `snapshot capture` | `arch-snapshot.yml`                                |
 
 **Pinning (#318 A).** Every gate installs the CLI at a **pinned major** via one
 workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@9'` — rather
 than an unpinned `@latest`. A harness-major bump (e.g. a subcommand rename) is
 therefore a **deliberate PR** that edits that one line per workflow, not a
 silent CI break with nothing to roll back to. When bumping the major, update
-`HARNESS_CLI` in all five workflows and re-verify the subcommands above still
+`HARNESS_CLI` in all six workflows and re-verify the subcommands above still
 exist and behave as expected.
+
+**Generated hooks carry local edits (#318 C).** Several hooks under
+`.harness/hooks/` are **harness-generated** but hand-edited in canary (commit
+`6be522e`): `quality-warner.js` blocks on real violations, `format-check.js`
+targets the edited file (else the block is a no-op), and `telemetry-reporter.js`
+is kept non-blocking. A `harness init`/regeneration would silently clobber
+these. `scripts/check_hook_customizations.py` (run in `harness-quality.yml`, and
+as a unit test) turns that into a **loud CI failure** — if it trips, re-apply
+the edits from `git show 6be522e`. The durable fix is generator-side
+preservation, filed upstream.
+
+**Arch trend surface (#318 C).** `arch-snapshot.yml` runs
+`harness snapshot capture` weekly and commits `.harness/arch/timeline.json` —
+the architecture time-series that feeds `harness snapshot trends`, mirroring the
+committed `.harness/security/timeline.json` ledger.
 
 ## Agent Behavior
 

@@ -1,0 +1,53 @@
+name: Arch Timeline Snapshot
+
+# Capture a periodic architecture-metrics snapshot into the arch trend surface
+# (`.harness/arch/timeline.json`), the time-series counterpart to the committed
+# `.harness/security/timeline.json` ledger (#318 C). harness gives itself this
+# surface via `harness snapshot capture`; canary previously skipped it, so
+# `harness snapshot trends` had no history to draw on. Runs weekly and on manual
+# dispatch, and commits the appended timeline to main.
+
+on:
+  schedule:
+    - cron: '0 7 * * 1' # Mondays 07:00 UTC (after refresh-arch-baseline's 06:00)
+  workflow_dispatch:
+
+concurrency:
+  group: arch-snapshot
+  cancel-in-progress: false
+
+# Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
+env:
+  HARNESS_CLI: '@harness-engineering/cli@9'
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Capture architecture snapshot
+        run: npx --yes -p "$HARNESS_CLI" harness snapshot capture
+
+      - name: Commit the appended timeline if it changed
+        run: |
+          if git diff --quiet -- .harness/arch/timeline.json; then
+            echo "No new architecture snapshot to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .harness/arch/timeline.json
+          git commit -m "chore(arch): capture architecture timeline snapshot"
+          git push origin HEAD:main || \
+            echo "Push skipped — branch protection on main prevents direct push. Snapshot will be captured on the next run."
