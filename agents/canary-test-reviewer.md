@@ -1,7 +1,11 @@
 ---
 name: canary-test-reviewer
 description: >
-  Review existing test code for brittleness, anti-patterns, missing coverage, and quality gaps. Use when the user asks "review this test", "audit my test suite", "is this test any good", or pastes a test file and wants structured feedback. Distinct from flake-hunter (which diagnoses a specific intermittent failure).
+  Review existing test code for brittleness, anti-patterns, missing coverage,
+  and quality gaps. Use when the user asks "review this test", "audit my test
+  suite", "is this test any good", or pastes a test file and wants structured
+  feedback. Distinct from flake-hunter (which diagnoses a specific intermittent
+  failure).
 tools: Read, Glob, Grep, Bash
 ---
 
@@ -37,8 +41,8 @@ For each test or test file, evaluate:
    throw"? Are negative paths covered?
 4. **Determinism.** Random data, current time, network calls, ordering
    dependencies between tests, shared mutable state.
-5. **Setup / teardown.** Leaky state across tests. Manual cleanup that should
-   be a fixture. Fixture scope too broad or too narrow.
+5. **Setup / teardown.** Leaky state across tests. Manual cleanup that should be
+   a fixture. Fixture scope too broad or too narrow.
 6. **Scope.** E2E test doing what a unit test should do (slow, hard to debug).
    Unit test reaching into the network.
 7. **Readability.** Clear test name describing behavior. Single responsibility.
@@ -64,6 +68,24 @@ For each test or test file, evaluate:
    - `npx playwright test --reporter=list`
 3. For each finding, locate the exact file:line and write a short, concrete
    suggestion (with code if possible).
+
+## Long-running builds and server boots
+
+Running a suite may boot a production-build `webServer` or a slow toolchain that
+takes minutes. Do **not** improvise a background probe-and-park pattern — it is
+racy in the subagent harness and the completion re-invocation can be lost
+(#346).
+
+- **Never end your turn expecting a background probe or watcher to wake you.**
+  The wake-up is not guaranteed; a probe that exits before your turn ends leaves
+  the work stranded.
+- **Wait in the foreground** with an explicit, generous timeout, re-running the
+  check across consecutive tool calls until it resolves.
+- If a build must run in the background, **keep the turn alive with foreground
+  polling** — don't hand control back mid-wait.
+- If the wait exceeds what you can hold in one turn, **report partial state
+  honestly** (what built, what's still pending, the exact command to finish)
+  rather than claiming a probe will complete on its own.
 
 ## Output format
 
