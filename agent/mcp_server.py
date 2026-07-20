@@ -245,7 +245,10 @@ def _init_suite_impl(framework: str, target_dir: str) -> dict:
 def _list_frameworks_impl() -> dict:
     registry = FrameworkRegistry()
     names = [f["name"] for f in registry.get_all_frameworks()]
-    return {"frameworks": names}
+    # `frameworks` stays a name list for backward compatibility; `details`
+    # additively exposes each framework's run-command (#357) so an MCP consumer
+    # can use the registry as a framework → run-command source.
+    return {"frameworks": names, "details": registry.summaries()}
 
 
 def _migrate_impl(target_dir: str, apply: bool) -> dict:

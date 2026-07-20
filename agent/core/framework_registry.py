@@ -98,6 +98,39 @@ class FrameworkRegistry:
                 return f
         return None
 
+    def execution_info(self, name: str) -> Optional[Dict[str, Any]]:
+        """Run-command metadata for a framework: ``execution_command`` (with a
+        ``{file}`` placeholder to substitute the test path) and ``ci_flags``
+        (#357). Returns None for an unknown framework so callers can distinguish
+        "no such framework" from "framework with no command".
+        """
+        f = self.find_by_name(name)
+        if f is None:
+            return None
+        return {
+            "execution_command": f.get("execution_command"),
+            "ci_flags": f.get("ci_flags", []),
+        }
+
+    def summaries(self) -> List[Dict[str, Any]]:
+        """Programmatic dump of every framework's identity + run-command fields
+        (#357) — the registry as an authoritative framework→run-command source.
+        ``execution_command`` uses a ``{file}`` placeholder for the test path.
+        """
+        return [
+            {
+                "name": f.get("name"),
+                "category": f.get("category"),
+                "categories": f.get("categories", []),
+                "languages": f.get("languages", []),
+                "file_extensions": f.get("file_extensions", []),
+                "execution_command": f.get("execution_command"),
+                "ci_flags": f.get("ci_flags", []),
+                "status": f.get("status"),
+            }
+            for f in self.get_all_frameworks()
+        ]
+
     def match_by_language(self, language: str) -> List[Dict]:
         """
         Filters frameworks by supported programming language.
