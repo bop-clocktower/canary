@@ -47,6 +47,7 @@ _FRAMEWORK_HINTS = {
     "vitest": "frontend_unit",
     "jest": "frontend_unit",
     "pytest": "api",
+    "hurl": "api",
     "k6": "performance",
     # Stage 1 — specialized-category tools. A named tool is a strong signal
     # for its category even when the prompt is otherwise generic.
@@ -64,12 +65,19 @@ _FRAMEWORK_HINTS = {
     "opentelemetry": "observability",
     "maestro": "mobile",
     "appium": "mobile",
+    "wdio": "mobile",
+    "webdriverio": "mobile",
     "locust": "load",
     "gatling": "load",
     "stryker": "mutation",
     "mutmut": "mutation",
     "semgrep": "static_analysis",
     "testcontainers": "integration",
+    # Tier-1 categories (issue #335): property-based + LLM-eval tools.
+    "fast-check": "property",
+    "fastcheck": "property",
+    "hypothesis": "property",
+    "promptfoo": "llm_eval",
 }
 
 # Stage 1 — specialized test categories keyed by high-specificity phrases.
@@ -99,6 +107,11 @@ _CATEGORY_KEYWORDS = (
     ("load", ("soak test", "spike test", "concurrent users", "load profile")),
     ("integration", ("integration test", "integration testing",
                      "end-to-end integration")),
+    # Tier-1 categories (issue #335).
+    ("property", ("property-based", "property based", "property test",
+                  "invariant test", "quickcheck", "generative test")),
+    ("llm_eval", ("llm eval", "llm evaluation", "prompt regression",
+                  "prompt eval", "llm behavior", "llm regression")),
 )
 _FRAMEWORK_HINT_RE = re.compile(
     r"\b(" + "|".join(re.escape(k) for k in _FRAMEWORK_HINTS) + r")\b",

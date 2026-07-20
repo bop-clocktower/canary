@@ -8,7 +8,11 @@ Two contracts locked here:
 
 import unittest
 
-from agent.core.classifier import TestClassifier, _CATEGORY_KEYWORDS
+from agent.core.classifier import (
+    TestClassifier,
+    _CATEGORY_KEYWORDS,
+    _FRAMEWORK_HINTS,
+)
 from agent.core.framework_registry import FrameworkRegistry
 
 
@@ -57,6 +61,19 @@ class TestClassifierRegistryContract(unittest.TestCase):
                 self.assertTrue(
                     frameworks,
                     f"no framework resolves for test_type {test_type!r}",
+                )
+
+    def test_every_framework_hint_resolves_to_a_framework(self):
+        """Every framework-name hint routes to a test_type that resolves to at
+        least one registry entry — no hint degrades to an empty category
+        (issue #335 Tier-0 audit of hint-only tools)."""
+        registry = FrameworkRegistry()
+        for hint, test_type in _FRAMEWORK_HINTS.items():
+            with self.subTest(hint=hint, test_type=test_type):
+                frameworks = registry.get_by_category(test_type)
+                self.assertTrue(
+                    frameworks,
+                    f"hint {hint!r} -> test_type {test_type!r} resolves to no framework",
                 )
 
 

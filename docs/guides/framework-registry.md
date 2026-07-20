@@ -16,10 +16,19 @@ can emit must resolve to at least one framework entry**. A null framework is
 treated as a registry bug and raises `ValueError` in the orchestrator — it never
 produces a silent fallback.
 
-This is enforced in `tests/unit/test_orchestrator.py` — cases such as
-`test_api_prompt_resolves_to_real_framework` assert that an API-classified
-prompt resolves to a real framework (`pytest`), not silently to
-`framework=None`.
+This is enforced in `tests/unit/test_classifier_stage1_categories.py` —
+`TestClassifierRegistryContract` asserts that (a) every `test_type` the
+classifier can emit resolves to at least one framework, and (b) every
+framework-name **hint** in `_FRAMEWORK_HINTS` routes to a category that resolves
+to at least one framework. The second check guards against hint-only tools
+degrading to an empty category: a hint that names a tool with no registry entry
+(e.g. `cypress`, `jest`, `pa11y`, `percy`, `gatling`) is acceptable **only**
+because it routes to a category served by an OSS default
+(`cypress → e2e_ui → playwright`, `gatling → load → locust`, etc.).
+
+A framework with **no** classifier routing path — neither a category keyword nor
+a name hint — is a **dead entry**. Every registry addition must ship a reachable
+path.
 
 ### 2. Entry Schema
 
@@ -27,10 +36,13 @@ Each entry in `frameworks[]` is a JSON object with these fields:
 
 - **`name`** — unique identifier (e.g., `playwright`). Used as the key in code.
 - **`display_name`** — human-readable name for output.
-- **`category`** — primary category (e.g., `e2e_ui`, `python_unit`, `api`,
-  `performance`). Matches a `test_type` from the classifier.
+- **`category`** — primary category (e.g., `e2e_ui`, `api`, `performance`,
+  `mobile`, `mutation`, `property`, `llm_eval`). Matches a `test_type` from the
+  classifier.
 - **`categories`** _(optional)_ — array of additional categories the framework
   also serves. Lookup matches either `category` or membership in `categories`.
+  Example: `schemathesis` serves both `api` and `contract`, so the
+  `schemathesis → contract` hint resolves.
 - **`languages`** — list of programming languages supported.
 - **`file_extensions`** — file extensions the generator should emit.
 - **`file_patterns`** _(optional)_ — discovery patterns for test runners (e.g.,
@@ -137,7 +149,9 @@ entry, and `--execute` runs without setup errors.
 - **`execution_command` missing `{file}`.** The executor will run with no file
   argument, which usually means the framework runs every test it can discover.
   Lint catches this if you add the corresponding test; otherwise it surfaces at
-  first execution.
+  first execution. Exception: **mutation runners** (`stryker`, `mutmut`)
+  legitimately run against the whole source tree from their own config, so their
+  commands carry no `{file}` by design.
 - **Stale entries.** A framework whose `status: preferred` is genuinely
   deprecated will be picked over a newer alternative. Demote to `legacy` rather
   than deleting if any generated tests still depend on it.
