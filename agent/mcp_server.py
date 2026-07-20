@@ -253,6 +253,10 @@ def _migrate_impl(target_dir: str, apply: bool) -> dict:
     migrator = HarnessMigrator()
     ctx = migrator.detect(root)
     if not ctx.is_harness_project:
+        # #319 C: distinguish "config present but not a test project" (e.g. a
+        # skills/docs overlay) from a genuinely missing config.
+        if ctx.not_test_project_reason:
+            return {"error": ctx.not_test_project_reason}
         return {"error": "no harness.config.json found"}
     report = migrator.migrate(root, dry_run=not apply)
     if report.dry_run:

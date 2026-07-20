@@ -241,9 +241,12 @@ class TestInitSuite(unittest.TestCase):
 
 class TestMigrate(unittest.TestCase):
 
-    def _mock_ctx(self, is_harness=True):
+    def _mock_ctx(self, is_harness=True, not_test_project_reason=None):
         ctx = MagicMock()
         ctx.is_harness_project = is_harness
+        # Real MigrationContext defaults this to None; without it a MagicMock
+        # attribute is truthy and would spuriously take the overlay branch.
+        ctx.not_test_project_reason = not_test_project_reason
         return ctx
 
     def _mock_dry_report(self):

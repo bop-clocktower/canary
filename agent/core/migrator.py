@@ -21,6 +21,43 @@ from agent.core.scaffolder import Scaffolder
 # in the fail-loud message when auto-detection is uncertain (issue #295).
 KNOWN_FRAMEWORKS = ("playwright", "vitest", "pytest", "k6", "wdio", "locust")
 
+# Layer names that mark a skills/docs *overlay* rather than a test suite. Used
+# by the non-test-repo guard (#319 C): an overlay ships harness.config.json +
+# .harness/ (so it looks migratable) but declares no test entry points and only
+# these documentation/skills layers.
+_DOC_SKILL_LAYER_NAMES = frozenset(
+    {"skills", "docs", "guides", "agents", "overlays", "commands", "prompts"}
+)
+
+
+def _skills_docs_overlay_reason(config: dict) -> Optional[str]:
+    """Return a human reason when `config` describes a skills/docs overlay
+    (not a migratable test suite), else None.
+
+    Conservative by design — fires only on a *clear* overlay signal so a real
+    test suite is never blocked: no test ``entryPoints`` AND at least one
+    declared layer, with every declared layer being a docs/skills layer. A
+    project with any code/test layer, or with entry points, is left alone.
+    """
+    if config.get("entryPoints"):
+        return None
+    layers = config.get("layers") or []
+    names = {
+        (layer.get("name") or "").lower()
+        for layer in layers
+        if isinstance(layer, dict)
+    }
+    names.discard("")
+    if not names or not names <= _DOC_SKILL_LAYER_NAMES:
+        return None
+    return (
+        "harness.config.json and .harness/ are present, but this looks like a "
+        "skills/docs overlay (no test entryPoints; layers are only "
+        f"{', '.join(sorted(names))}), not a test suite. `canary migrate` "
+        "scaffolds a test suite and has nothing to migrate here."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Framework detection probes
 # ---------------------------------------------------------------------------
@@ -151,6 +188,10 @@ class MigrationContext:
     detection_source: str = "none"
     detection_confidence: str = "none"  # "config" | "content" | "language" | "none"
     config_warnings: list = field(default_factory=list)
+    # When a repo HAS harness.config.json + .harness/ but is not a migratable
+    # test suite (e.g. a skills/docs overlay), this carries the human reason so
+    # callers can say "not a test project" instead of "no config". (#319 C)
+    not_test_project_reason: Optional[str] = None
 
 
 @dataclass
@@ -310,6 +351,20 @@ class HarnessMigrator:
         if overlay and "canary_shape" in overlay:
             harness_config = {**harness_config, "canary_shape": overlay["canary_shape"]}
 
+        # #319 C: a skills/docs overlay has harness.config.json + .harness/ too,
+        # but is not a migratable test suite. Refuse it here with a distinct
+        # reason so callers don't scaffold a suite into it or mislabel the
+        # refusal as "no config found".
+        overlay_reason = _skills_docs_overlay_reason(harness_config)
+        if overlay_reason:
+            return MigrationContext(
+                project_root=project_root,
+                is_harness_project=False,
+                harness_config=harness_config,
+                config_warnings=config_warnings,
+                not_test_project_reason=overlay_reason,
+            )
+
         framework, shape, source, confidence = self._detect_framework(project_root, harness_config)
 
         return MigrationContext(
@@ -333,6 +388,8 @@ class HarnessMigrator:
     ) -> MigrationReport:
         ctx = self.detect(project_root)
         if not ctx.is_harness_project:
+            if ctx.not_test_project_reason:
+                raise ValueError(ctx.not_test_project_reason)
             raise ValueError(
                 f"No harness project detected at {project_root}. "
                 "Expected harness.config.json and .harness/ directory."
