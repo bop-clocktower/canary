@@ -49,6 +49,27 @@ they are two doors into one room.
 > skills advertised as the placeholder "Test intelligence skill"; the fix was to
 > populate `skill.yaml` descriptions and regenerate (#308).
 
+### Canonical capability names
+
+One capability is registered on up to three surfaces — a **slash command** (what
+you type), an **agent** (who executes it), and a **skill directory** (where it
+lives). Where those names differ, the **slash command is canonical**; the agent
+and skill-dir names are aliases for the same capability. Use the canonical name
+in routing docs, disambiguation tables, and natural-language routing so a router
+that matches one surface does not miss the capability under another name (#319).
+
+| Capability              | Canonical (slash)        | Agent                      | Skill dir                    |
+| ----------------------- | ------------------------ | -------------------------- | ---------------------------- |
+| Write a test            | `/canary-write-test`     | `canary-test-author`       | `canary-generate-test`       |
+| Review / promote a test | `/canary-review-test`    | `canary-test-reviewer`     | `canary-promote-test`        |
+| Pick a framework        | `/canary-pick-framework` | `canary-framework-advisor` | `canary-add-framework`       |
+| Discover edge cases     | `/canary-edge-cases`     | — (dispatches to skill)    | `canary-edge-case-discovery` |
+| Onboard onto harness    | — (no slash command)     | —                          | `canary-setup-harness`       |
+
+Capabilities whose slash command and skill dir already share one name
+(`canary-failure-impact`, `canary-critical-areas`, `canary-ci-ready`,
+`canary-pr-guardian`, `canary-test-pipeline`) need no disambiguation.
+
 ### Disambiguation matrix — canary skill vs harness skill
 
 Many canary and harness skills overlap in intent. Reach for the **canary** skill
@@ -56,16 +77,16 @@ when the job is _test-suite-shaped_ (a suite, a framework, a test's blast
 radius). Reach for the **harness** skill when the job is _codebase/graph-shaped_
 (architecture, whole-repo impact, release readiness).
 
-| Canary skill                                  | Harness counterpart                                | Reach for canary when…                                                                                                                                        | Reach for harness when…                                                                                                                  |
-| --------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `canary-failure-impact`                       | `harness:impact-analysis`                          | You want the **blast radius of a failing/undetected test** on a specific function or code path, with a test-severity label.                                   | You want the **graph-wide "if I change X, what breaks?"** across modules and dependents, independent of tests.                           |
-| `canary-critical-areas`                       | `harness:test-advisor`, `harness:hotspot-detector` | You want a **ranked list of where to add tests** (churn × dependents × business-critical × coverage depth) with recommended **test types**.                   | You want structural **risk hotspots** (co-change/churn) or the harness graph's **"what should I run / what's untested"** coverage audit. |
-| `canary-ci-ready`                             | `harness:verify`, `harness:release-readiness`      | You want a **test-suite readiness score** (coverage depth, flakiness, assertion quality, critical-path coverage, runtime).                                    | You want the **binary pass/fail quick gate** (`verify`) or a **npm/release-publish readiness** audit (`release-readiness`).              |
-| `canary-generate-test` / `/canary-write-test` | `harness:tdd`                                      | You want the **AI to write the test** from a natural-language description (CLI batch or session).                                                             | You want the **TDD discipline loop** — write a failing test first, watch it fail, then implement. See the composition pattern below.     |
-| `/canary-review-test`                         | `harness:test-craft`, `harness:code-review`        | You want a **test-specific review** (brittleness, anti-patterns, coverage gaps) and/or to **promote** a generated test into the committed suite.              | You want the **8-axis LLM test-quality critique** (`test-craft`) or a **multi-persona code review** of the diff.                         |
-| `canary-edge-case-discovery`                  | `harness:test-craft`                               | You want to **surface untested edge cases** across six categories from a feature/function/suite.                                                              | You want a **quality critique of tests that already exist**.                                                                             |
-| `canary-setup-harness`                        | `harness:initialize-*`                             | You are **onboarding an existing canary fork** onto the harness guardrails (installs CLI, writes `harness.config.json`, wires CI, seeds the security ledger). | You are **scaffolding a brand-new harness project** or test-suite from scratch (`initialize-project`, `initialize-test-suite-project`).  |
-| `canary-pr-guardian`                          | `harness:review-ci`, `harness:pre-merge-brief`     | Per-change PR gate: is the **diff's** new code tested? Labeled diff-coverage → sticky comment, agentless on CI. Sibling of on-demand `canary-test-pipeline`.  | Generic PR gate — multi-persona review (`review-ci`) or merge brief (`pre-merge-brief`); guardian feeds these via `--emit-analysis`.     |
+| Canary (canonical)       | Harness counterpart                                | Reach for canary when…                                                                                                                                        | Reach for harness when…                                                                                                                  |
+| ------------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `/canary-failure-impact` | `harness:impact-analysis`                          | You want the **blast radius of a failing/undetected test** on a specific function or code path, with a test-severity label.                                   | You want the **graph-wide "if I change X, what breaks?"** across modules and dependents, independent of tests.                           |
+| `/canary-critical-areas` | `harness:test-advisor`, `harness:hotspot-detector` | You want a **ranked list of where to add tests** (churn × dependents × business-critical × coverage depth) with recommended **test types**.                   | You want structural **risk hotspots** (co-change/churn) or the harness graph's **"what should I run / what's untested"** coverage audit. |
+| `/canary-ci-ready`       | `harness:verify`, `harness:release-readiness`      | You want a **test-suite readiness score** (coverage depth, flakiness, assertion quality, critical-path coverage, runtime).                                    | You want the **binary pass/fail quick gate** (`verify`) or a **npm/release-publish readiness** audit (`release-readiness`).              |
+| `/canary-write-test`     | `harness:tdd`                                      | You want the **AI to write the test** from a natural-language description (CLI batch or session).                                                             | You want the **TDD discipline loop** — write a failing test first, watch it fail, then implement. See the composition pattern below.     |
+| `/canary-review-test`    | `harness:test-craft`, `harness:code-review`        | You want a **test-specific review** (brittleness, anti-patterns, coverage gaps) and/or to **promote** a generated test into the committed suite.              | You want the **8-axis LLM test-quality critique** (`test-craft`) or a **multi-persona code review** of the diff.                         |
+| `/canary-edge-cases`     | `harness:test-craft`                               | You want to **surface untested edge cases** across six categories from a feature/function/suite.                                                              | You want a **quality critique of tests that already exist**.                                                                             |
+| `canary-setup-harness`   | `harness:initialize-*`                             | You are **onboarding an existing canary fork** onto the harness guardrails (installs CLI, writes `harness.config.json`, wires CI, seeds the security ledger). | You are **scaffolding a brand-new harness project** or test-suite from scratch (`initialize-project`, `initialize-test-suite-project`).  |
+| `/canary-pr-guardian`    | `harness:review-ci`, `harness:pre-merge-brief`     | Per-change PR gate: is the **diff's** new code tested? Labeled diff-coverage → sticky comment, agentless on CI. Sibling of on-demand `canary-test-pipeline`.  | Generic PR gate — multi-persona review (`review-ci`) or merge brief (`pre-merge-brief`); guardian feeds these via `--emit-analysis`.     |
 
 **Rule of thumb:** if the noun is a _test_, a _suite_, or a _framework_, start
 with canary. If the noun is a _module_, the _graph_, the _release_, or the
