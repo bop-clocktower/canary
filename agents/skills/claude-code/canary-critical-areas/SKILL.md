@@ -3,8 +3,8 @@ name: canary-critical-areas
 description: >
   Risk-based test prioritisation. Given a codebase or diff, identifies which
   areas carry the most risk using git churn, downstream dependents,
-  business-critical signals, and existing coverage depth. Produces a ranked
-  list with recommended test types per area.
+  business-critical signals, and existing coverage depth. Produces a ranked list
+  with recommended test types per area.
 ---
 
 # Canary: Critical Areas
@@ -25,11 +25,19 @@ is unavailable.
 
 ## Signals
 
-Collect all available signals, score each area, and rank by composite risk score.
+Collect all available signals, score each area, and rank by composite risk
+score.
 
-### 1. Git churn (always available)
+### 1. Churn / hotspot (always available)
 
-```bash
+**With harness MCP available:** call `detect_anomalies` (metric `hotspotScore`,
+plus its co-change / single-point-of-failure signals). Harness's hotspot score
+already blends churn with structural risk, so use it directly as this signal and
+skip the raw `git log` pass. Normalise the returned scores to 0–1.
+
+**Fallback (no MCP):**
+
+````bash
 git log --stat --since="90 days ago" -- <path> | grep -c "^"
 ```text
 
@@ -38,19 +46,25 @@ Files changed most frequently in the last 90 days score higher. Normalise to
 
 ### 2. Downstream dependents
 
-**With harness MCP available:** call `get_relationships` for each candidate file
-and count inbound `imports` / `depends_on` edges.
+**With harness MCP available:** call `get_impact` for each candidate file
+(`filePath`, `mode: "summary"`) and read the affected-node counts it returns
+(tests / docs / code grouped by type). This is the purpose-built impact
+primitive — do **not** hand-walk `get_relationships` edge-by-edge; `get_impact`
+already computes the transitive downstream set. More affected nodes ⇒ higher
+score.
 
 **Fallback (no MCP):** scan for `import` statements referencing each file using
 `grep -r`. Count unique files that import each candidate.
 
 Files with more inbound dependents score higher — a change here breaks more.
 
-### 3. Business-critical flags
+### 3. Business-critical / critical-path flags
 
-**With harness MCP available:** query `ask_graph` for `business_fact` nodes
-associated with each area. Any business-critical annotation adds a fixed boost
-(+0.3) to the risk score.
+**With harness MCP available:** call `get_critical_paths` and add a fixed boost
+(+0.3) to any area whose functions appear in the returned perf-critical set.
+Also query `ask_graph` for `business_fact` nodes associated with each area; any
+business-critical annotation adds the same +0.3 boost (apply the boost once,
+whichever signal fires).
 
 **Fallback:** skip this signal silently (do not penalise the score).
 
@@ -126,3 +140,4 @@ This file is consumed as opt-in context by `/canary-edge-cases` and
 - `/canary-failure-impact` — focuses tracing on critical paths when JSON present
 
 - `/canary-test-pipeline` — Phase 1
+````
