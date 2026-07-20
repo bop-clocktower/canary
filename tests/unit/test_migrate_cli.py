@@ -141,6 +141,26 @@ class TestMigrateOverlayResolution(unittest.TestCase):
             self.assertIn("typo-overlay", result.output)
             self.assertIn("real-overlay", result.output)
 
+    def test_skills_docs_overlay_repo_refused_with_distinct_message(self):
+        """#319 C: running `canary migrate` in a skills/docs overlay repo must
+        say 'not a test suite', not the misleading 'no config' message."""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            project, home = base / "proj", base / "home"
+            project.mkdir()
+            # An overlay repo: harness markers present, but no test entryPoints
+            # and only docs/skills layers.
+            (project / "harness.config.json").write_text(
+                '{"entryPoints": [], "layers": [{"name": "skills"},'
+                ' {"name": "docs"}]}',
+                encoding="utf-8",
+            )
+            (project / ".harness").mkdir()
+            result = self._run(project, home)
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertIn("overlay", result.output.lower())
+            self.assertNotIn("No harness project detected", result.output)
+
 
 if __name__ == "__main__":
     unittest.main()

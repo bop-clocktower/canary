@@ -265,10 +265,15 @@ def migrate(
         raise typer.Exit(1)
 
     if not ctx.is_harness_project:
-        print(
-            f"\n[bold red]✗[/bold red] No harness project detected at [bold]{root}[/bold].\n"
-            "Expected [dim]harness.config.json[/dim] and [dim].harness/[/dim] directory."
-        )
+        # #319 C: a skills/docs overlay has the harness markers but is not a
+        # test suite — say so, rather than the misleading "no config" message.
+        if ctx.not_test_project_reason:
+            print(f"\n[bold red]✗[/bold red] {ctx.not_test_project_reason}")
+        else:
+            print(
+                f"\n[bold red]✗[/bold red] No harness project detected at [bold]{root}[/bold].\n"
+                "Expected [dim]harness.config.json[/dim] and [dim].harness/[/dim] directory."
+            )
         raise typer.Exit(1)
 
     dry_run = not apply
