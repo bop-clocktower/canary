@@ -3,19 +3,23 @@ name: Security Reviewer
 on:
   pull_request:
     paths:
-      - "agent/**"
-      - "tests/**"
-      - "pyproject.toml"
+      - 'agent/**'
+      - 'tests/**'
+      - 'pyproject.toml'
   push:
     branches:
       - main
     paths:
-      - "agent/**"
-      - "tests/**"
-      - "pyproject.toml"
+      - 'agent/**'
+      - 'tests/**'
+      - 'pyproject.toml'
 
 permissions:
   contents: write
+
+# Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
+env:
+  HARNESS_CLI: '@harness-engineering/cli@9'
 
 jobs:
   security:
@@ -25,21 +29,21 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: '20'
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Validate architecture
-        run: npx --yes -p @harness-engineering/cli harness validate
+        run: npx --yes -p "$HARNESS_CLI" harness validate
 
       - name: Check dependencies
-        run: npx --yes -p @harness-engineering/cli harness check-deps
+        run: npx --yes -p "$HARNESS_CLI" harness check-deps
 
       - name: Run security scan
         run: |
-          npx --yes -p @harness-engineering/cli harness check-security \
+          npx --yes -p "$HARNESS_CLI" harness check-security \
             --severity error
 
       - name: Refresh security ledger

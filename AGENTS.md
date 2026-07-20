@@ -239,6 +239,31 @@ the `roadmap.md` ↔ `CANARY_STATE.md` ledger roles, and the "what is the merge
 gate" answer — see the
 [Harness + Canary Integration Guide](docs/guides/harness-canary-integration.md).
 
+### Harness dependency surface
+
+Canary's **dev-time CI gates** consume the harness CLI
+(`@harness-engineering/cli`). The runtime CLI shipped to users (`npm/`) stays
+cleanly decoupled and depends on none of this. The consumed subcommands are:
+
+| Subcommand         | Used by (workflow)                                 |
+| ------------------ | -------------------------------------------------- |
+| `ci check`         | `harness.yml`                                      |
+| `validate`         | `harness-architecture.yml`, `harness-security.yml` |
+| `check-deps`       | `harness-architecture.yml`, `harness-security.yml` |
+| `check-security`   | `harness-security.yml`                             |
+| `check-docs`       | `harness-quality.yml`                              |
+| `cleanup`          | `harness-quality.yml`                              |
+| `check-phase-gate` | `harness-quality.yml`                              |
+| `check-arch`       | `refresh-arch-baseline.yml`                        |
+
+**Pinning (#318 A).** Every gate installs the CLI at a **pinned major** via one
+workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@9'` — rather
+than an unpinned `@latest`. A harness-major bump (e.g. a subcommand rename) is
+therefore a **deliberate PR** that edits that one line per workflow, not a
+silent CI break with nothing to roll back to. When bumping the major, update
+`HARNESS_CLI` in all five workflows and re-verify the subcommands above still
+exist and behave as expected.
+
 ## Agent Behavior
 
 ### Branch Hygiene Before Code Changes

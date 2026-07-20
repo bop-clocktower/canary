@@ -3,15 +3,19 @@ name: Architecture Enforcer
 on:
   pull_request:
     paths:
-      - "agent/**"
-      - "tests/**"
-      - "harness.config.json"
-      - "AGENTS.md"
+      - 'agent/**'
+      - 'tests/**'
+      - 'harness.config.json'
+      - 'AGENTS.md'
   push:
     branches:
       - main
   schedule:
-    - cron: "0 6 * * 1"
+    - cron: '0 6 * * 1'
+
+# Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
+env:
+  HARNESS_CLI: '@harness-engineering/cli@9'
 
 jobs:
   enforce:
@@ -20,6 +24,6 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
-          node-version: "20"
-      - run: npx --yes -p @harness-engineering/cli harness check-deps
-      - run: npx --yes -p @harness-engineering/cli harness validate
+          node-version: '20'
+      - run: npx --yes -p "$HARNESS_CLI" harness check-deps
+      - run: npx --yes -p "$HARNESS_CLI" harness validate
