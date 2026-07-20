@@ -1,8 +1,8 @@
-"use strict";
+'use strict';
 
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 /**
  * Reader/writer for `~/.canary/overlays.json` — the tracked-overlay registry.
@@ -49,23 +49,26 @@ export interface OverlayRegistry {
 export class RegistryError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "RegistryError";
+    this.name = 'RegistryError';
   }
 }
 
 export function canaryHome(homeDir: string = os.homedir()): string {
-  return path.join(homeDir, ".canary");
+  return path.join(homeDir, '.canary');
 }
 
 export function registryPath(homeDir: string = os.homedir()): string {
-  return path.join(canaryHome(homeDir), "overlays.json");
+  return path.join(canaryHome(homeDir), 'overlays.json');
 }
 
 export function overlaysDir(homeDir: string = os.homedir()): string {
-  return path.join(canaryHome(homeDir), "overlays");
+  return path.join(canaryHome(homeDir), 'overlays');
 }
 
-export function clonePath(name: string, homeDir: string = os.homedir()): string {
+export function clonePath(
+  name: string,
+  homeDir: string = os.homedir(),
+): string {
   return path.join(overlaysDir(homeDir), name);
 }
 
@@ -82,9 +85,9 @@ export function emptyRegistry(): OverlayRegistry {
 function parseRegistryFile(file: string): OverlayRegistry {
   let raw: string;
   try {
-    raw = fs.readFileSync(file, "utf8");
+    raw = fs.readFileSync(file, 'utf8');
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       return emptyRegistry();
     }
     throw new RegistryError(`cannot read ${file}: ${(err as Error).message}`);
@@ -96,21 +99,34 @@ function parseRegistryFile(file: string): OverlayRegistry {
     throw new RegistryError(`malformed ${file}: ${(err as Error).message}`);
   }
   const overlays = (parsed as { overlays?: unknown } | null)?.overlays;
-  if (typeof parsed !== "object" || parsed === null || !Array.isArray(overlays)) {
-    throw new RegistryError(`malformed ${file}: expected { schemaVersion, overlays: [] }`);
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    !Array.isArray(overlays)
+  ) {
+    throw new RegistryError(
+      `malformed ${file}: expected { schemaVersion, overlays: [] }`,
+    );
   }
   return parsed as OverlayRegistry;
 }
 
 /** Normalize forward-added optional fields so callers never see `undefined`. */
 function normalizeEntry(o: OverlayEntry): OverlayEntry {
-  return { ...o, consent: o.consent ?? null, consentCommandsHash: o.consentCommandsHash ?? null };
+  return {
+    ...o,
+    consent: o.consent ?? null,
+    consentCommandsHash: o.consentCommandsHash ?? null,
+  };
 }
 
 export function read(homeDir: string = os.homedir()): OverlayRegistry {
   const reg = parseRegistryFile(registryPath(homeDir));
   return {
-    schemaVersion: typeof reg.schemaVersion === "number" ? reg.schemaVersion : SCHEMA_VERSION,
+    schemaVersion:
+      typeof reg.schemaVersion === 'number'
+        ? reg.schemaVersion
+        : SCHEMA_VERSION,
     overlays: reg.overlays.map(normalizeEntry),
   };
 }
@@ -121,20 +137,33 @@ export function read(homeDir: string = os.homedir()): OverlayRegistry {
  * (`liveHash` matching the recorded fingerprint). A changed manifest (hash
  * mismatch) revokes consent until it is re-confirmed at `overlay add`.
  */
-export function consentGranted(entry: OverlayEntry, liveHash: string | null): boolean {
-  return entry.consent === true && liveHash !== null && entry.consentCommandsHash === liveHash;
+export function consentGranted(
+  entry: OverlayEntry,
+  liveHash: string | null,
+): boolean {
+  return (
+    entry.consent === true &&
+    liveHash !== null &&
+    entry.consentCommandsHash === liveHash
+  );
 }
 
 /** Write the registry atomically (temp file + rename), creating `~/.canary`. */
-export function write(registry: OverlayRegistry, homeDir: string = os.homedir()): void {
+export function write(
+  registry: OverlayRegistry,
+  homeDir: string = os.homedir(),
+): void {
   fs.mkdirSync(canaryHome(homeDir), { recursive: true });
   const file = registryPath(homeDir);
   const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+  fs.writeFileSync(tmp, `${JSON.stringify(registry, null, 2)}\n`, 'utf8');
   fs.renameSync(tmp, file);
 }
 
-export function get(registry: OverlayRegistry, name: string): OverlayEntry | null {
+export function get(
+  registry: OverlayRegistry,
+  name: string,
+): OverlayEntry | null {
   return registry.overlays.find((o) => o.name === name) ?? null;
 }
 
@@ -143,7 +172,10 @@ export function list(registry: OverlayRegistry): OverlayEntry[] {
 }
 
 /** Add an entry. Throws if one with the same name is already registered. */
-export function add(registry: OverlayRegistry, entry: OverlayEntry): OverlayRegistry {
+export function add(
+  registry: OverlayRegistry,
+  entry: OverlayEntry,
+): OverlayRegistry {
   if (get(registry, entry.name)) {
     throw new RegistryError(`overlay "${entry.name}" is already registered`);
   }
@@ -153,7 +185,7 @@ export function add(registry: OverlayRegistry, entry: OverlayEntry): OverlayRegi
 /** Remove an entry by name. Returns the new registry and whether it existed. */
 export function remove(
   registry: OverlayRegistry,
-  name: string
+  name: string,
 ): { registry: OverlayRegistry; removed: boolean } {
   const kept = registry.overlays.filter((o) => o.name !== name);
   return {

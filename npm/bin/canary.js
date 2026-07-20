@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-"use strict";
+'use strict';
 
-const { execFileSync } = require("node:child_process");
-const path = require("node:path");
-const fs = require("node:fs");
-const { isTsCommand, route } = require("../dist/router.js");
+const { execFileSync } = require('node:child_process');
+const path = require('node:path');
+const fs = require('node:fs');
+const { isTsCommand, route } = require('../dist/router.js');
 
 function getBinaryPath(platform) {
-  const name = platform === "win32" ? "canary.exe" : "canary";
+  const name = platform === 'win32' ? 'canary.exe' : 'canary';
   return path.join(__dirname, name);
 }
 
@@ -23,18 +23,18 @@ function forwardToBinary(
     existsSync = fs.existsSync,
     platform = process.platform,
     stderr = process.stderr,
-  } = {}
+  } = {},
 ) {
   const binaryPath = getBinaryPath(platform);
   if (!existsSync(binaryPath)) {
     stderr.write(
       `canary binary not found at ${binaryPath}.\n` +
-        `Try reinstalling: npm install -g canary-test-cli\n`
+        `Try reinstalling: npm install -g canary-test-cli\n`,
     );
     return 1;
   }
   try {
-    execFile(binaryPath, argv, { stdio: "inherit" });
+    execFile(binaryPath, argv, { stdio: 'inherit' });
     return 0;
   } catch (err) {
     return err.status ?? 1;
@@ -55,7 +55,9 @@ function run(argv, deps = {}) {
 
 function main() {
   // `run` may return a number (sync commands) or a Promise<number> (doctor).
-  Promise.resolve(run(process.argv.slice(2))).then((code) => process.exit(code));
+  Promise.resolve(run(process.argv.slice(2))).then((code) =>
+    process.exit(code),
+  );
 }
 
 module.exports = { getBinaryPath, forwardToBinary, run };

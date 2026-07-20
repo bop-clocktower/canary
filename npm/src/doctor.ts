@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 /**
  * `canary doctor` — environment self-check (Phase 2).
@@ -18,9 +18,9 @@
  * build a parser that assumes the two JSON shapes are interchangeable.
  */
 
-import * as os from "node:os";
-import type { CommandDeps } from "./overlay-commands.js";
-import { runEngineChecks, type EngineCheckDeps } from "./engine-checks.js";
+import * as os from 'node:os';
+import type { CommandDeps } from './overlay-commands.js';
+import { runEngineChecks, type EngineCheckDeps } from './engine-checks.js';
 import {
   collectPersonas,
   commandSucceedsHash,
@@ -30,11 +30,11 @@ import {
   type CommandRunner,
   type ManifestCheck,
   type UrlProbe,
-} from "./doctor-manifest.js";
-import * as registry from "./overlays-registry.js";
+} from './doctor-manifest.js';
+import * as registry from './overlays-registry.js';
 
 /** Outcome of a single doctor check. */
-export type CheckStatus = "pass" | "fail" | "skip" | "info";
+export type CheckStatus = 'pass' | 'fail' | 'skip' | 'info';
 
 /** A single doctor check result, rendered as one output line. */
 export interface CheckResult {
@@ -91,22 +91,27 @@ export interface JsonReport {
   warnings: string[];
 }
 
-const SYMBOL: Record<CheckStatus, string> = { pass: "✓", fail: "✗", skip: "-", info: "ℹ" };
+const SYMBOL: Record<CheckStatus, string> = {
+  pass: '✓',
+  fail: '✗',
+  skip: '-',
+  info: 'ℹ',
+};
 
 /** `--json` requests machine output on stdout instead of the human report. */
 export function parseJsonFlag(args: readonly string[]): boolean {
-  return args.includes("--json");
+  return args.includes('--json');
 }
 
 /** `--persona <tag>` / `--persona=<tag>`, or null when unset. */
 function parsePersona(args: readonly string[]): string | null {
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
-    if (a === "--persona") {
+    if (a === '--persona') {
       return args[i + 1] ?? null;
     }
-    if (a.startsWith("--persona=")) {
-      return a.slice("--persona=".length);
+    if (a.startsWith('--persona=')) {
+      return a.slice('--persona='.length);
     }
   }
   return null;
@@ -121,7 +126,10 @@ function parsePersona(args: readonly string[]): string | null {
  * silently running only the persona-less checks and leaving the user to
  * guess why their filter matched nothing.
  */
-export function unknownPersonaHint(persona: string | null, known: readonly string[]): string | null {
+export function unknownPersonaHint(
+  persona: string | null,
+  known: readonly string[],
+): string | null {
   if (persona === null) {
     return null;
   }
@@ -132,26 +140,31 @@ export function unknownPersonaHint(persona: string | null, known: readonly strin
   if (known.length === 0) {
     return `--persona '${persona}' matched no checks: no overlay defines any personas, so every check already runs. Drop the flag.`;
   }
-  return `--persona '${persona}' is not a known persona. Valid options: ${known.join(", ")}. (Omit --persona to run every check.)`;
+  return `--persona '${persona}' is not a known persona. Valid options: ${known.join(', ')}. (Omit --persona to run every check.)`;
 }
 
 function renderCheck(r: CheckResult): string {
   const line = `  ${SYMBOL[r.status]} ${r.label}\n`;
-  return r.status === "fail" && r.remedy ? `${line}      → ${r.remedy}\n` : line;
+  return r.status === 'fail' && r.remedy
+    ? `${line}      → ${r.remedy}\n`
+    : line;
 }
 
 /** Load, persona-filter, and run one overlay's manifest checks. */
 async function overlayResults(
   entry: registry.OverlayEntry,
   deps: DoctorDeps,
-  persona: string | null
+  persona: string | null,
 ): Promise<{ group: CheckGroup; loadedChecks: ManifestCheck[] }> {
   const header = `Overlay: ${entry.name}`;
   const load = loadManifest(entry.path);
   if (!load.ok) {
     return { group: { header, results: [load.failure] }, loadedChecks: [] };
   }
-  const granted = registry.consentGranted(entry, commandSucceedsHash(load.checks));
+  const granted = registry.consentGranted(
+    entry,
+    commandSucceedsHash(load.checks),
+  );
   const checks = filterByPersona(load.checks, persona);
   const ctx = {
     cloneDir: entry.path,
@@ -174,7 +187,10 @@ async function overlayResults(
  * or was skipped/info, non-zero when any check failed. A malformed manifest for
  * one overlay never blocks engine checks or other overlays.
  */
-export async function runDoctor(args: readonly string[], deps: DoctorDeps = {}): Promise<number> {
+export async function runDoctor(
+  args: readonly string[],
+  deps: DoctorDeps = {},
+): Promise<number> {
   const out = deps.out ?? process.stdout;
   const persona = parsePersona(args);
   const homeDir = deps.homeDir ?? os.homedir();
@@ -188,7 +204,9 @@ export async function runDoctor(args: readonly string[], deps: DoctorDeps = {}):
     timeoutMs: deps.timeoutMs,
   };
 
-  const groups: CheckGroup[] = [{ header: "Engine", results: await runEngineChecks(engineDeps) }];
+  const groups: CheckGroup[] = [
+    { header: 'Engine', results: await runEngineChecks(engineDeps) },
+  ];
 
   let reg: registry.OverlayRegistry;
   try {
@@ -209,8 +227,8 @@ export async function runDoctor(args: readonly string[], deps: DoctorDeps = {}):
   const personaHint = unknownPersonaHint(persona, collectPersonas(allChecks));
 
   const failures = groups.reduce(
-    (n, g) => n + g.results.filter((r) => r.status === "fail").length,
-    0
+    (n, g) => n + g.results.filter((r) => r.status === 'fail').length,
+    0,
   );
 
   // Issue #318: `--json` emits the canary-owned machine contract instead of
@@ -226,7 +244,7 @@ export async function runDoctor(args: readonly string[], deps: DoctorDeps = {}):
           label: r.label,
           ...(r.remedy !== undefined ? { remedy: r.remedy } : {}),
           group: g.header,
-        }))
+        })),
       ),
       allPassed: failures === 0,
       warnings: personaHint ? [personaHint] : [],
@@ -235,7 +253,7 @@ export async function runDoctor(args: readonly string[], deps: DoctorDeps = {}):
     return failures === 0 ? 0 : 1;
   }
 
-  out.write("canary doctor\n");
+  out.write('canary doctor\n');
   if (personaHint) {
     out.write(`\n! ${personaHint}\n`);
   }
@@ -245,6 +263,8 @@ export async function runDoctor(args: readonly string[], deps: DoctorDeps = {}):
       out.write(renderCheck(result));
     }
   }
-  out.write(`\n${failures === 0 ? "All checks passed." : `${failures} check(s) failed.`}\n`);
+  out.write(
+    `\n${failures === 0 ? 'All checks passed.' : `${failures} check(s) failed.`}\n`,
+  );
   return failures === 0 ? 0 : 1;
 }
