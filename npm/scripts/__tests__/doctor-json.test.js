@@ -68,15 +68,29 @@ describe('doctor --json output contract', () => {
     );
   });
 
-  it('surfaces an unknown-persona hint as a warning, not silent', async () => {
+  it('surfaces an unknown --audience hint as a warning, not silent', async () => {
     const cap = capture();
-    // No overlays installed, so any persona is unknown → hint.
+    // No overlays installed, so any audience is unknown → hint.
+    await runDoctor(
+      ['--audience', 'ghost', '--json'],
+      baseDeps({ out: cap.out }),
+    );
+    const payload = JSON.parse(cap.text());
+    assert.ok(Array.isArray(payload.warnings));
+    assert.ok(
+      payload.warnings.some((w) => w.includes('ghost')),
+      payload.warnings.join('|'),
+    );
+  });
+
+  it('honors the legacy --persona flag as an alias for --audience (#319 B)', async () => {
+    const cap = capture();
     await runDoctor(
       ['--persona', 'ghost', '--json'],
       baseDeps({ out: cap.out }),
     );
     const payload = JSON.parse(cap.text());
-    assert.ok(Array.isArray(payload.warnings));
+    // Same behavior as --audience: the unknown value is surfaced.
     assert.ok(
       payload.warnings.some((w) => w.includes('ghost')),
       payload.warnings.join('|'),

@@ -7,7 +7,7 @@ const { isTsCommand, TS_COMMANDS, route } = require('../../dist/router.js');
 describe('doctor router wiring', () => {
   it("recognizes 'doctor' as TS-handled", () => {
     assert.equal(isTsCommand(['doctor']), true);
-    assert.equal(isTsCommand(['doctor', '--persona', 'alpha']), true);
+    assert.equal(isTsCommand(['doctor', '--audience', 'alpha']), true);
     assert.ok(TS_COMMANDS.includes('doctor'));
   });
 

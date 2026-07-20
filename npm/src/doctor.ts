@@ -22,9 +22,9 @@ import * as os from 'node:os';
 import type { CommandDeps } from './overlay-commands.js';
 import { runEngineChecks, type EngineCheckDeps } from './engine-checks.js';
 import {
-  collectPersonas,
+  collectAudiences,
   commandSucceedsHash,
-  filterByPersona,
+  filterByAudience,
   loadManifest,
   runCheck,
   type CommandRunner,
@@ -87,7 +87,7 @@ export interface JsonReport {
   checks: JsonReportCheck[];
   /** True iff no check failed — mirrors `harness doctor --json`'s one shared field. */
   allPassed: boolean;
-  /** Non-fatal advisories (e.g. an unknown `--persona`); empty when none. */
+  /** Non-fatal advisories (e.g. an unknown `--audience`); empty when none. */
   warnings: string[];
 }
 
@@ -103,44 +103,51 @@ export function parseJsonFlag(args: readonly string[]): boolean {
   return args.includes('--json');
 }
 
-/** `--persona <tag>` / `--persona=<tag>`, or null when unset. */
-function parsePersona(args: readonly string[]): string | null {
-  for (let i = 0; i < args.length; i += 1) {
-    const a = args[i];
-    if (a === '--persona') {
-      return args[i + 1] ?? null;
-    }
-    if (a.startsWith('--persona=')) {
-      return a.slice('--persona='.length);
+/**
+ * `--audience <tag>` / `--audience=<tag>`, or null when unset (#319 B). The
+ * former name `--persona` is accepted as a legacy alias so existing invocations
+ * keep working; `--audience` is canonical. (Renamed to end the collision with
+ * harness's unrelated persona system.)
+ */
+function parseAudience(args: readonly string[]): string | null {
+  for (const flag of ['--audience', '--persona']) {
+    for (let i = 0; i < args.length; i += 1) {
+      const a = args[i];
+      if (a === flag) {
+        return args[i + 1] ?? null;
+      }
+      if (a.startsWith(`${flag}=`)) {
+        return a.slice(flag.length + 1);
+      }
     }
   }
   return null;
 }
 
 /**
- * Fail-loud hint for an unrecognized `--persona` value (issue #294). Returns
- * null when there is nothing to say — no persona was passed, or the passed
- * persona is part of the known vocabulary. Otherwise returns a one-line,
- * actionable message: the engine ships no persona vocabulary, so this lists
+ * Fail-loud hint for an unrecognized `--audience` value (issue #294). Returns
+ * null when there is nothing to say — no audience was passed, or the passed
+ * audience is part of the known vocabulary. Otherwise returns a one-line,
+ * actionable message: the engine ships no audience vocabulary, so this lists
  * the tags overlays actually declared (or says none are defined) instead of
- * silently running only the persona-less checks and leaving the user to
+ * silently running only the audience-less checks and leaving the user to
  * guess why their filter matched nothing.
  */
-export function unknownPersonaHint(
-  persona: string | null,
+export function unknownAudienceHint(
+  audience: string | null,
   known: readonly string[],
 ): string | null {
-  if (persona === null) {
+  if (audience === null) {
     return null;
   }
-  const want = persona.toLowerCase();
+  const want = audience.toLowerCase();
   if (known.some((p) => p.toLowerCase() === want)) {
     return null;
   }
   if (known.length === 0) {
-    return `--persona '${persona}' matched no checks: no overlay defines any personas, so every check already runs. Drop the flag.`;
+    return `--audience '${audience}' matched no checks: no overlay defines any audiences, so every check already runs. Drop the flag.`;
   }
-  return `--persona '${persona}' is not a known persona. Valid options: ${known.join(', ')}. (Omit --persona to run every check.)`;
+  return `--audience '${audience}' is not a known audience. Valid options: ${known.join(', ')}. (Omit --audience to run every check.)`;
 }
 
 function renderCheck(r: CheckResult): string {
@@ -150,11 +157,11 @@ function renderCheck(r: CheckResult): string {
     : line;
 }
 
-/** Load, persona-filter, and run one overlay's manifest checks. */
+/** Load, audience-filter, and run one overlay's manifest checks. */
 async function overlayResults(
   entry: registry.OverlayEntry,
   deps: DoctorDeps,
-  persona: string | null,
+  audience: string | null,
 ): Promise<{ group: CheckGroup; loadedChecks: ManifestCheck[] }> {
   const header = `Overlay: ${entry.name}`;
   const load = loadManifest(entry.path);
@@ -165,7 +172,7 @@ async function overlayResults(
     entry,
     commandSucceedsHash(load.checks),
   );
-  const checks = filterByPersona(load.checks, persona);
+  const checks = filterByAudience(load.checks, audience);
   const ctx = {
     cloneDir: entry.path,
     consentGranted: granted,
@@ -178,7 +185,7 @@ async function overlayResults(
     results.push(await runCheck(check, ctx));
   }
   // Return the full (pre-filter) check set so the caller can build the
-  // persona vocabulary for a fail-loud hint on an unknown --persona.
+  // audience vocabulary for a fail-loud hint on an unknown --audience.
   return { group: { header, results }, loadedChecks: load.checks };
 }
 
@@ -192,7 +199,7 @@ export async function runDoctor(
   deps: DoctorDeps = {},
 ): Promise<number> {
   const out = deps.out ?? process.stdout;
-  const persona = parsePersona(args);
+  const audience = parseAudience(args);
   const homeDir = deps.homeDir ?? os.homedir();
 
   const engineDeps: EngineCheckDeps = {
@@ -216,15 +223,18 @@ export async function runDoctor(
   }
   const allChecks: ManifestCheck[] = [];
   for (const entry of reg.overlays) {
-    const { group, loadedChecks } = await overlayResults(entry, deps, persona);
+    const { group, loadedChecks } = await overlayResults(entry, deps, audience);
     groups.push(group);
     allChecks.push(...loadedChecks);
   }
 
-  // Issue #294: if the user passed a --persona that no overlay declares,
+  // Issue #294: if the user passed a --audience that no overlay declares,
   // tell them the valid vocabulary instead of silently filtering to only
-  // the persona-less checks and leaving them to wonder why.
-  const personaHint = unknownPersonaHint(persona, collectPersonas(allChecks));
+  // the audience-less checks and leaving them to wonder why.
+  const audienceHint = unknownAudienceHint(
+    audience,
+    collectAudiences(allChecks),
+  );
 
   const failures = groups.reduce(
     (n, g) => n + g.results.filter((r) => r.status === 'fail').length,
@@ -247,15 +257,15 @@ export async function runDoctor(
         })),
       ),
       allPassed: failures === 0,
-      warnings: personaHint ? [personaHint] : [],
+      warnings: audienceHint ? [audienceHint] : [],
     };
     out.write(`${JSON.stringify(report, null, 2)}\n`);
     return failures === 0 ? 0 : 1;
   }
 
   out.write('canary doctor\n');
-  if (personaHint) {
-    out.write(`\n! ${personaHint}\n`);
+  if (audienceHint) {
+    out.write(`\n! ${audienceHint}\n`);
   }
   for (const group of groups) {
     out.write(`\n${group.header}\n`);

@@ -26,7 +26,7 @@ filtered, and gated.
       "type": "file-exists",
       "path": ".canary/skills",
       "remedy": "This overlay is missing its skills directory — re-clone it.",
-      "persona": ["alpha"]
+      "audience": ["alpha"]
     },
     {
       "id": "api-reachable",
@@ -39,7 +39,7 @@ filtered, and gated.
       "type": "command-succeeds",
       "command": ["npm", "run", "smoke"],
       "remedy": "Install dependencies (npm ci) before running doctor.",
-      "persona": ["beta"]
+      "audience": ["beta"]
     }
   ]
 }
@@ -55,12 +55,12 @@ simply contributes no tier-2 checks).
 
 ## Common fields (every check)
 
-| Field     | Required | Description                                                                                                                                                         |
-| --------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`      | yes      | Non-empty string. Stable identifier shown on the check line.                                                                                                        |
-| `type`    | yes      | One of `file-exists`, `url-reachable`, `command-succeeds`.                                                                                                          |
-| `remedy`  | yes      | Non-empty string. Shown indented under the line when the check fails.                                                                                               |
-| `persona` | no       | Array of free-form strings. A check with no `persona` runs for every persona; otherwise it runs only when `--persona <tag>` matches one of them (case-insensitive). |
+| Field      | Required | Description                                                                                                                                                                                                                                             |
+| ---------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`       | yes      | Non-empty string. Stable identifier shown on the check line.                                                                                                                                                                                            |
+| `type`     | yes      | One of `file-exists`, `url-reachable`, `command-succeeds`.                                                                                                                                                                                              |
+| `remedy`   | yes      | Non-empty string. Shown indented under the line when the check fails.                                                                                                                                                                                   |
+| `audience` | no       | Array of free-form strings (canary check-grouping tags — **not** harness personas). A check with no `audience` runs for every audience; otherwise it runs only when `--audience <tag>` matches one of them (case-insensitive). Legacy alias: `persona`. |
 
 ---
 
@@ -121,5 +121,6 @@ engine checks or any other overlay's checks.
   manifest.
 - Write `remedy` as an imperative the user can act on ("Run `npm ci`", "Set
   `apiBaseUrl` in `.canary/company.json`"), not a restatement of the failure.
-- `persona` tags are yours to define. Document them in your overlay's own docs;
-  Canary neither validates nor interprets the strings.
+- `audience` tags are yours to define. Document them in your overlay's own docs;
+  Canary neither validates nor interprets the strings. (Legacy `persona:` is
+  still accepted, but prefer `audience:` — see the doctor guide for why.)

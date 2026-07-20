@@ -3,7 +3,7 @@
 /**
  * Overlay check manifest — `<clone>/.canary/doctor.json` (Phase 2, tier 2).
  *
- * This module loads and validates the manifest and filters checks by persona.
+ * This module loads and validates the manifest and filters checks by audience.
  * Execution of the individual check types lives in the runner (added in a
  * later task). A malformed manifest never throws: {@link loadManifest} returns
  * a single failing {@link CheckResult} so `doctor` can report it and carry on.
@@ -30,8 +30,16 @@ export interface ManifestCheck {
   type: CheckType;
   /** Shown under the check line when it fails. */
   remedy: string;
-  /** Free-form persona tags; a check with none runs for every persona. */
-  persona?: string[];
+  /**
+   * Free-form audience tags (#319 B). A check with none runs for every
+   * audience; otherwise it runs only when `--audience <tag>` matches one.
+   * Declared as `audience:` in doctor.json (legacy alias: `persona:`).
+   *
+   * NB: unrelated to harness's persona system (`run_persona` /
+   * `generate_persona_artifacts`). This is a canary-local check-grouping tag;
+   * the field was renamed off "persona" to end that collision.
+   */
+  audience?: string[];
   /** `file-exists`: path relative to the overlay clone. */
   path?: string;
   /** `url-reachable`: the URL to probe. */
@@ -93,7 +101,12 @@ function validateTypeField(
   return null;
 }
 
-/** Validate the id/type/remedy/persona fields common to every check type. */
+/** The audience tags on a raw check: `audience:` (canonical) or `persona:` (legacy). */
+function rawAudience(c: Record<string, unknown>): unknown {
+  return c.audience !== undefined ? c.audience : c.persona;
+}
+
+/** Validate the id/type/remedy/audience fields common to every check type. */
 function validateCommonFields(
   c: Record<string, unknown>,
   index: number,
@@ -110,8 +123,9 @@ function validateCommonFields(
   if (typeof c.remedy !== 'string' || c.remedy === '') {
     return `check "${c.id}" is missing a string "remedy"`;
   }
-  if (c.persona !== undefined && !isStringArray(c.persona)) {
-    return `check "${c.id}" has a non-string persona list`;
+  const audience = rawAudience(c);
+  if (audience !== undefined && !isStringArray(audience)) {
+    return `check "${c.id}" has a non-string audience list`;
   }
   return null;
 }
@@ -135,7 +149,7 @@ function validateCheck(raw: unknown, index: number): ManifestCheck | string {
     id: c.id as string,
     type,
     remedy: c.remedy as string,
-    persona: c.persona as string[] | undefined,
+    audience: rawAudience(c) as string[] | undefined,
     path: c.path as string | undefined,
     url: c.url as string | undefined,
     command: c.command as string[] | undefined,
@@ -197,17 +211,17 @@ export function loadManifest(cloneDir: string): ManifestLoad {
 }
 
 /**
- * The distinct persona tags declared across a set of checks, in first-seen
+ * The distinct audience tags declared across a set of checks, in first-seen
  * order and de-duplicated case-insensitively (original casing preserved for
- * display). This is the discoverable persona *vocabulary* — the engine ships
+ * display). This is the discoverable audience *vocabulary* — the engine ships
  * none of its own, so it is derived entirely from overlay manifests. Used to
- * tell a user which `--persona` values actually mean something (issue #294).
+ * tell a user which `--audience` values actually mean something (issue #294).
  */
-export function collectPersonas(checks: ManifestCheck[]): string[] {
+export function collectAudiences(checks: ManifestCheck[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const check of checks) {
-    for (const tag of check.persona ?? []) {
+    for (const tag of check.audience ?? []) {
       const key = tag.toLowerCase();
       if (!seen.has(key)) {
         seen.add(key);
@@ -219,23 +233,23 @@ export function collectPersonas(checks: ManifestCheck[]): string[] {
 }
 
 /**
- * Keep checks that should run for `persona`: a null persona runs everything;
- * otherwise keep checks with no persona plus those whose persona list contains
- * the tag (case-insensitive).
+ * Keep checks that should run for `audience`: a null audience runs everything;
+ * otherwise keep checks with no audience plus those whose audience list
+ * contains the tag (case-insensitive).
  */
-export function filterByPersona(
+export function filterByAudience(
   checks: ManifestCheck[],
-  persona: string | null,
+  audience: string | null,
 ): ManifestCheck[] {
-  if (persona === null) {
+  if (audience === null) {
     return [...checks];
   }
-  const want = persona.toLowerCase();
+  const want = audience.toLowerCase();
   return checks.filter(
     (c) =>
-      !c.persona ||
-      c.persona.length === 0 ||
-      c.persona.some((p) => p.toLowerCase() === want),
+      !c.audience ||
+      c.audience.length === 0 ||
+      c.audience.some((p) => p.toLowerCase() === want),
   );
 }
 
