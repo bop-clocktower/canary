@@ -156,8 +156,17 @@ docs/branching-convention
 - **CI Environment:** [agent/core/ci_env.py](agent/core/ci_env.py) — Detects CI
   environment variables (`CI`, `GITHUB_ACTIONS`, etc.) to enable headless
   optimizations and force JSON output in pipelines.
-- **Feedback:** removed in v3.0 — was tied to `canary generate`, which is also
-  removed. Share feedback via Claude Code conversation snippets.
+- **Environment Detection:**
+  [agent/core/environment_detect.py](agent/core/environment_detect.py) —
+  Context-aware persona/environment detection (#341): `BASE_URL` from `.env` +
+  `playwright.config.*`, suite-type hints, and an auditable SDET-vs-manual
+  user-level heuristic (cwd + open files). Surfaced additively as the
+  `environment` block on the MCP `analyze_file` response. Browser-tab detection
+  is deferred to the Chrome Extension MCP Bridge (#343).
+- **Feedback:** [agent/core/feedback.py](agent/core/feedback.py) — Builds a
+  pre-filled GitHub issue for `canary feedback` (#345) with non-sensitive
+  context (version/OS/Python/install); never env vars or file contents. (The old
+  v3.0 `canary generate`-tied feedback path is gone; this is the new one.)
 
 ### Claude Code Plugin (`.claude-plugin/`)
 
