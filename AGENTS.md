@@ -231,6 +231,14 @@ failing test stub from a description. The two entry points serve different
 workflows: `harness-tdd` when writing tests yourself, `/canary-write-test` when
 generating from a prompt.
 
+One capability can carry different names across its slash-command, agent, and
+skill-directory surfaces (e.g. `/canary-write-test` → agent `canary-test-author`
+→ skill dir `canary-generate-test`). The **slash command is canonical**; use it
+in routing docs and NL routing. The authoritative mapping lives in the
+integration guide's
+[Canonical capability names](docs/guides/harness-canary-integration.md#canonical-capability-names)
+table (#319).
+
 For the full picture when running **both** tools — the skill disambiguation
 matrix (canary-X vs harness-Y for ~10 overlap pairs), the `/canary-X` vs
 `harness:canary-X` double-registration and which to prefer, the config-ownership
