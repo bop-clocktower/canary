@@ -89,8 +89,8 @@ docs/branching-convention
 
 - **CLI:** [agent/cli.py](agent/cli.py) — The primary entry point for the agent.
   Handles command-line arguments and high-level orchestration. Commands:
-  `recommend`, `frameworks`, `run`, `init`, `migrate`, `setup`, `skills list`,
-  `env-setup` (alias for `setup`), `version`.
+  `recommend`, `frameworks`, `feedback`, `run`, `init`, `migrate`, `setup`,
+  `skills list`, `env-setup` (alias for `setup`), `version`.
 
 ### Core Services (`agent/core/`)
 

@@ -138,6 +138,58 @@ def frameworks(
 
 
 @app.command()
+def feedback(
+    message: Optional[str] = typer.Argument(None, help="Your feedback message."),
+    category: str = typer.Option("idea", "--category", help="bug | ux | docs | idea"),
+    output_json: bool = typer.Option(False, "--json", help="Emit the payload + issue URL as JSON."),
+    open_browser: bool = typer.Option(False, "--open", help="Open the pre-filled issue in a browser."),
+):
+    """
+    Report a bug, UX issue, doc gap, or idea — no need to hunt for the tracker.
+
+    Builds a pre-filled GitHub issue with non-sensitive context (canary version,
+    OS, Python, install method) already attached. Never includes environment
+    variables or file contents. Nothing is submitted automatically — you review
+    and submit the issue yourself (`--open` opens it in a browser).
+    """
+    from agent.core.feedback import VALID_CATEGORIES, build_feedback
+
+    if category not in VALID_CATEGORIES:
+        print(
+            f"[bold red]✗[/bold red] Unknown --category '{category}'. "
+            f"Choose one of: {', '.join(VALID_CATEGORIES)}."
+        )
+        raise typer.Exit(1)
+    if not message or not message.strip():
+        print(
+            "[bold red]✗[/bold red] A feedback message is required.\n"
+            "Usage: [bold]canary feedback \"<message>\" [--category bug|ux|docs|idea][/bold]"
+        )
+        raise typer.Exit(1)
+
+    fb = build_feedback(message.strip(), category)
+
+    if output_json:
+        _sys.stdout.write(json.dumps(fb, indent=2) + "\n")
+        return
+
+    print("[bold green]Canary Feedback[/bold green]\n")
+    print(f"[bold]Category:[/bold] {fb['category']}")
+    print(f"[bold]Message:[/bold] {fb['message']}")
+    print("\n[bold]Attached context[/bold] (no env vars, no file contents):")
+    for k, v in fb["context"].items():
+        print(f"  - {k}: {v}")
+    print("\n[bold]Open this pre-filled issue to submit:[/bold]")
+    print(fb["issue_url"])
+
+    if open_browser:
+        import webbrowser
+
+        webbrowser.open(fb["issue_url"])
+        print("\n[dim]Opened in your browser — review and submit there.[/dim]")
+
+
+@app.command()
 def run(
     file_path: str,
     framework: str = typer.Argument(..., help="Framework to use (e.g., playwright, pytest)")
