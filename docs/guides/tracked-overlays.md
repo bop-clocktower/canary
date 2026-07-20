@@ -39,6 +39,7 @@ No API key is needed — all LLM work runs through your agent session.
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `canary overlay add <source> [--ref <tag>]` | Clone `<source>` into `~/.canary/overlays/<owner>-<repo>/` and register it. `--ref` pins a tag or branch. Idempotent — re-adding is a no-op with a hint to `update`.  |
 | `canary overlay list`                       | Name, source, ref, freshness (`up to date` / `N commits behind`), and skill count for each overlay. Does **not** hit the network — freshness reflects the last fetch. |
+| `canary overlay lint <name\|path> [--json]` | Validate an overlay against the authoring contract (frontmatter floor, `deploy_to` targets, `cli:` paths, `doctor.json`). Exits non-zero on any error. See below.     |
 | `canary overlay update [name]`              | Fast-forward the clone (`git pull --ff-only`, or fetch + checkout when pinned). No name updates all. Refuses on local modifications or a non-fast-forward.            |
 | `canary overlay remove <name>`              | Deregister the overlay and delete its clone.                                                                                                                          |
 
@@ -120,6 +121,47 @@ win in `~/.canary/overlays.json`:
 Both runtimes honor this identically: the TS diagnostics above and the Python
 skill loader compute the **same** winner, so `doctor` never reports a winner the
 loader disagrees with.
+
+---
+
+## Linting an overlay
+
+`canary overlay lint <name|path>` validates an overlay clone against the
+authoring contract, so frontmatter chaos, dead `cli:` paths, and invalid doctor
+manifests are caught mechanically instead of at a consumer's first run. It
+checks, per skill under `<overlay>/.canary/skills/<name>/SKILL.md`:
+
+1. **Frontmatter floor** — `name` and a non-empty `description` are present.
+2. **`deploy_to` targets** — every value is a known migration target (`api`,
+   `e2e_ui`, `frontend_unit`, `load`, `performance`, or the `all` sentinel).
+3. **`cli:` paths** — the script exists and resolves _inside_ the skill
+   directory (a path that escapes is rejected).
+
+Plus one overlay-level check: **`.canary/doctor.json`** (if present) must pass
+manifest validation — the same `loadManifest` `canary doctor` uses, so the lint
+and doctor never disagree.
+
+Errors exit non-zero; warnings (e.g. a directory with no `SKILL.md`) are
+advisory and don't fail. `--json` emits `{ overlay, skillsChecked, findings }`
+for tooling. The target is a tracked overlay **name** or a filesystem **path**
+(same name-vs-path rule as `--from`).
+
+**Wire it into CI** — an unenforced lint is shelf-ware. In the overlay repo:
+
+```yaml
+# .github/workflows/overlay-lint.yml
+name: Overlay Lint
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npx --yes canary-test-cli overlay lint . # the repo root IS the overlay
+```
 
 ---
 
