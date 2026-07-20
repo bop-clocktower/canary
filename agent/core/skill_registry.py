@@ -44,6 +44,12 @@ class SkillInfo:
     # "frontend_unit", etc. Empty list means the skill is not auto-deployed.
     # Use ["all"] to deploy regardless of shape.
     deploy_to: list[str] = field(default_factory=list)
+    # Runtime tools the skill needs, declared in frontmatter (#336):
+    # ``requires: [python3>=3.10, node>=20]``. Each token is a command with an
+    # optional version constraint. `canary doctor` verifies these for installed
+    # skills. Distinct from harness's planned `capabilities:` (tool-permission
+    # bounds) — this is the runtime-environment axis. Empty means none declared.
+    requires: list[str] = field(default_factory=list)
     # Validation error captured at discovery time. When set, the skill is
     # still listed (so users can see the bad config) but ``canary skills
     # run`` will refuse to invoke it.
@@ -264,6 +270,7 @@ class SkillRegistry:
             cli=fm.get("cli"),
             entry=fm.get("entry"),
             deploy_to=self._parse_deploy_to(fm),
+            requires=self._parse_str_list(fm, "requires"),
             error=self._validate_executable_fields(fm),
         )
 
@@ -285,12 +292,19 @@ class SkillRegistry:
             cli=fm.get("cli"),
             entry=fm.get("entry"),
             deploy_to=self._parse_deploy_to(fm),
+            requires=self._parse_str_list(fm, "requires"),
             error=self._validate_executable_fields(fm),
         )
 
     @staticmethod
     def _parse_deploy_to(fm: dict) -> list[str]:
-        raw = fm.get("deploy_to", [])
+        return SkillRegistry._parse_str_list(fm, "deploy_to")
+
+    @staticmethod
+    def _parse_str_list(fm: dict, key: str) -> list[str]:
+        """Normalize a frontmatter field to ``list[str]``, accepting either a
+        flow list (``[a, b]``) or a bare scalar (``a``)."""
+        raw = fm.get(key, [])
         if isinstance(raw, list):
             return [str(v).strip() for v in raw if str(v).strip()]
         if isinstance(raw, str) and raw:

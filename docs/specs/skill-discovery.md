@@ -14,9 +14,9 @@ overlay repositories to extend Canary's behavior with zero application code.
 
 **Goals:**
 
-1. **Zero-fork extensibility** — Teams with company-specific test workflows extend
-   Canary by dropping skill files into `.canary/skills/` without forking or
-   patching Canary's source code.
+1. **Zero-fork extensibility** — Teams with company-specific test workflows
+   extend Canary by dropping skill files into `.canary/skills/` without forking
+   or patching Canary's source code.
 2. **Filesystem-based discovery** — Canary walks from CWD to the nearest `.git`
    boundary and collects all `.canary/skills/` directories, making skills from
    any ancestor directory automatically visible.
@@ -29,9 +29,10 @@ overlay repositories to extend Canary's behavior with zero application code.
 5. **Bundled executable skills** — Overlay skills may ship deterministic code
    alongside prose (via `cli:` / `entry:` frontmatter) and invoke it via
    `canary skills run`.
-6. **Auto-deployment via `canary migrate`** — Skills declare which project shapes
-   they target via `deploy_to` frontmatter; `canary migrate --overlay <path>`
-   copies matching skills into the target repo automatically.
+6. **Auto-deployment via `canary migrate`** — Skills declare which project
+   shapes they target via `deploy_to` frontmatter;
+   `canary migrate --overlay <path>` copies matching skills into the target repo
+   automatically.
 7. **CI safety for executable skills** — In non-interactive / CI contexts,
    executable skills require explicit opt-in (`--allow-executable-skills`) to
    prevent silent code execution from untrusted overlays.
@@ -41,8 +42,8 @@ overlay repositories to extend Canary's behavior with zero application code.
 1. **Discovery completeness:** `canary skills list` from any subdirectory of a
    project returns all skills reachable by walking to the `.git` boundary —
    bundled and overlay, in precedence order.
-2. **Precedence correctness:** When a local overlay and a bundled skill share the
-   same `name`, `canary skills list` and `canary skills run` resolve to the
+2. **Precedence correctness:** When a local overlay and a bundled skill share
+   the same `name`, `canary skills list` and `canary skills run` resolve to the
    overlay skill.
 3. **Path-escape rejection:** Any `cli:` path that resolves outside the skill
    directory after symlink resolution causes `canary skills run` to fail with a
@@ -63,20 +64,20 @@ overlay repositories to extend Canary's behavior with zero application code.
 - **Filesystem access:** Canary reads `.canary/skills/` directories; write
   access is not required for discovery or prose skills.
 - **No auto-install:** `cli:` skill dependencies are the skill's responsibility
-  to declare and install; Canary does not manage them.
+  to declare (via `requires:`) and install; Canary **verifies** declared runtime
+  requirements (`canary doctor`) but never installs them.
 
 ## Background
 
 Canary ships bundled skills (slash commands, harness-prescriptive agents) that
-live inside the `canary-test-ai-agent` repository. Teams who need company-specific
-test generation workflows — custom frameworks, internal conventions, house-style
-assertions — should not fork Canary. Instead they place skill files in a
-well-known directory and Canary discovers them at runtime.
+live inside the `canary-test-ai-agent` repository. Teams who need
+company-specific test generation workflows — custom frameworks, internal
+conventions, house-style assertions — should not fork Canary. Instead they place
+skill files in a well-known directory and Canary discovers them at runtime.
 
-This mirrors the engine ↔ company-overlay relationship (e.g. an
-`engine` repo and a separate `company-overlay` repo): the engine is separate
-from the overlay. Extension is a filesystem convention, not a Python
-entry-point or subclass.
+This mirrors the engine ↔ company-overlay relationship (e.g. an `engine` repo
+and a separate `company-overlay` repo): the engine is separate from the overlay.
+Extension is a filesystem convention, not a Python entry-point or subclass.
 
 ## Skill File Format
 
@@ -87,6 +88,7 @@ Every discoverable skill is a Markdown file with YAML frontmatter:
 name: <skill-name>
 description: One-line description shown in canary skills list
 deploy_to: [api, e2e_ui]   # optional — shapes this skill deploys to via canary migrate
+requires: [python3>=3.10]  # optional — runtime tools doctor verifies (see below)
 cli: scripts/cli.py        # optional — see "Bundled Executable Code"
 # or:
 # entry: my_pkg.cli:main   # optional — alternative to cli, mutually exclusive
@@ -99,7 +101,7 @@ Skill body — prescriptive instructions for the agent.
 
 The `name` field is the identifier used for deduplication and override. The
 `description` field is surfaced by `canary skills list`. The `deploy_to`,
-`cli`, and `entry` fields are optional — see the sections below.
+`requires`, `cli`, and `entry` fields are optional — see the sections below.
 
 ### `deploy_to` — auto-deployment targeting
 
@@ -110,17 +112,45 @@ Skills that should be automatically copied into consuming repos during
 deploy_to: [api, e2e_ui]
 ```
 
-| Value | Deploys to |
-| --- | --- |
-| `api` | pytest / Playwright API shape |
-| `e2e_ui` | Playwright E2E / browser shape |
-| `load` | k6 / locust load shape |
-| `frontend_unit` | vitest / jest shape |
-| `all` | any detected shape |
-| *(absent)* | never auto-deployed |
+| Value           | Deploys to                     |
+| --------------- | ------------------------------ |
+| `api`           | pytest / Playwright API shape  |
+| `e2e_ui`        | Playwright E2E / browser shape |
+| `load`          | k6 / locust load shape         |
+| `frontend_unit` | vitest / jest shape            |
+| `all`           | any detected shape             |
+| _(absent)_      | never auto-deployed            |
 
-A skill with no `deploy_to` is still discoverable via `canary skills list`
-from within a checkout — it just won't be copied during migration.
+A skill with no `deploy_to` is still discoverable via `canary skills list` from
+within a checkout — it just won't be copied during migration.
+
+### `requires` — runtime requirements (verified by `canary doctor`)
+
+A skill may declare the runtime tools it needs so `canary doctor` can verify
+them in a consuming repo and report a named, remediable failure — instead of the
+skill failing cryptically at first run:
+
+```yaml
+requires: [python3>=3.10, node>=20]
+```
+
+- Each entry is a token: a **command** (`node`) with an optional **version**
+  constraint using `>=`, `>`, or `==` and a dotted numeric version
+  (`python3>=3.10`). Presence is checked against `PATH`; a version is read
+  best-effort from `<command> --version`.
+- `canary doctor` verifies the `requires` of every **installed** skill (overlay
+  / global / local) via its `engine:skill-requirements` check. A missing or
+  too-old command is a failure; a present command whose version can't be read
+  never fails. Bundled skills ship inside the engine and are out of scope for
+  that check, but still declare `requires` so the contract stays fully adopted.
+- **Distinct from harness `capabilities:`.** This is the runtime-environment
+  axis (is the interpreter installed?). Harness's _planned_ `capabilities:`
+  field (Intense-Visions/harness-engineering#558) is a different, orthogonal
+  axis — the Claude Code tool/network/file access a skill is _permitted_ to use.
+  The field names are kept separate on purpose.
+- **Provisional (v1).** Only command-presence + version tokens are defined.
+  Non-command capability tokens (e.g. browser bundles) are intentionally not yet
+  invented; an unparseable token is reported as unverifiable, never a failure.
 
 The `cli` / `entry` fields are optional and let a skill declare bundled
 executable code — see the next section.
@@ -146,41 +176,41 @@ A skill that bundles executable code looks like:
 Two ways to declare the entry point in frontmatter — exactly one, never both:
 
 - **`cli:`** — filesystem path, relative to the skill directory, of an
-  executable script or binary. Canary invokes it as a subprocess with CWD
-  set to the skill directory so relative paths inside the bundled code
-  resolve correctly. The script chooses its own runtime (`#!/usr/bin/env
-  python3`, `#!/usr/bin/env node`, a compiled binary, etc.). This is the
-  primary form — used by filesystem-local overlay skills.
+  executable script or binary. Canary invokes it as a subprocess with CWD set to
+  the skill directory so relative paths inside the bundled code resolve
+  correctly. The script chooses its own runtime (`#!/usr/bin/env python3`,
+  `#!/usr/bin/env node`, a compiled binary, etc.). This is the primary form —
+  used by filesystem-local overlay skills.
 
-- **`entry:`** — Python `module:callable` string. Canary imports the
-  module and calls the callable in-process with `argv` forwarded. Reserved
-  for skills bundled as installed Python packages where Canary is already
-  running in a Python environment that has the module on `sys.path`.
-  Canary does **not** auto-install dependencies for `entry` skills.
+- **`entry:`** — Python `module:callable` string. Canary imports the module and
+  calls the callable in-process with `argv` forwarded. Reserved for skills
+  bundled as installed Python packages where Canary is already running in a
+  Python environment that has the module on `sys.path`. Canary does **not**
+  auto-install dependencies for `entry` skills.
 
 The directory shape under `scripts/` is otherwise unstructured — overlay
-maintainers pick the language and package layout that fits the work.
-`scripts/` is convention, not enforcement; the only requirement is that
-the path declared in `cli:` resolves inside the skill directory after
-symlink resolution (see Security below).
+maintainers pick the language and package layout that fits the work. `scripts/`
+is convention, not enforcement; the only requirement is that the path declared
+in `cli:` resolves inside the skill directory after symlink resolution (see
+Security below).
 
 ### Discovery semantics
 
 - Skills with `cli:` / `entry:` are discovered the same way as markdown-only
   skills (filesystem walk, precedence rules below).
-- The markdown body of an executable skill is **still consumed by agents** —
-  the executable is additive, not a replacement. An agent reading the skill
-  to learn how to behave does not need to invoke the bundled code; a workflow
-  that needs the deterministic behavior calls `canary skills run <name>`.
+- The markdown body of an executable skill is **still consumed by agents** — the
+  executable is additive, not a replacement. An agent reading the skill to learn
+  how to behave does not need to invoke the bundled code; a workflow that needs
+  the deterministic behavior calls `canary skills run <name>`.
 
 ## Bundled Skills
 
 Canary ships two layers of bundled skills:
 
-| Location | Format | Purpose |
-| --- | --- | --- |
-| `agents/skills/canary:*.md` | Flat `.md` | Claude Code slash commands (`/canary:init`, `/canary:migrate`) |
-| `agents/skills/claude-code/<name>/SKILL.md` | Nested directory | Prescriptive harness skills invoked by harness agents |
+| Location                                    | Format           | Purpose                                                        |
+| ------------------------------------------- | ---------------- | -------------------------------------------------------------- |
+| `agents/skills/canary:*.md`                 | Flat `.md`       | Claude Code slash commands (`/canary:init`, `/canary:migrate`) |
+| `agents/skills/claude-code/<name>/SKILL.md` | Nested directory | Prescriptive harness skills invoked by harness agents          |
 
 ## Local Overlay Convention
 
@@ -201,8 +231,8 @@ This means a skill placed at the repo root is visible from any subdirectory.
 ### Example overlay repository
 
 An overlay repo contains only skill directories — no application code, no
-`pyproject.toml` at the root, no `canary` dependency declaration. Skills can
-be markdown-only or ship bundled code via `scripts/`:
+`pyproject.toml` at the root, no `canary` dependency declaration. Skills can be
+markdown-only or ship bundled code via `scripts/`:
 
 ```text
 acme-overlay/
@@ -230,18 +260,18 @@ skills are read as prose; code-bearing skills are invocable via
 
 Canary discovers skills from four tiers, lowest to highest priority:
 
-| Tier | Location | Source label | Notes |
-| --- | --- | --- | --- |
-| **Bundled** | Shipped with the canary package | `bundled` | Slash commands + harness prescriptive skills |
-| **Overlay** | `~/.canary/overlays/<overlay>/.canary/skills/` | `overlay` | Tracked overlays added via `canary overlay add`; each overlay is a git clone |
-| **Global** | `~/.canary/skills/` | `global` | Available in every session; install here for Claude web extension use |
-| **Local** | `.canary/skills/` walking up to git root | `local` | Project- or repo-specific; highest priority |
+| Tier        | Location                                       | Source label | Notes                                                                        |
+| ----------- | ---------------------------------------------- | ------------ | ---------------------------------------------------------------------------- |
+| **Bundled** | Shipped with the canary package                | `bundled`    | Slash commands + harness prescriptive skills                                 |
+| **Overlay** | `~/.canary/overlays/<overlay>/.canary/skills/` | `overlay`    | Tracked overlays added via `canary overlay add`; each overlay is a git clone |
+| **Global**  | `~/.canary/skills/`                            | `global`     | Available in every session; install here for Claude web extension use        |
+| **Local**   | `.canary/skills/` walking up to git root       | `local`      | Project- or repo-specific; highest priority                                  |
 
 Overlay skills are discovered by scanning the clone directories under
-`~/.canary/overlays/` — the loader never reads `~/.canary/overlays.json`
-(that registry is written only by the `overlay` commands). An overlay clone is
-laid out exactly like a project checkout, so its `.canary/skills/` are found by
-the same nested-skill scanner.
+`~/.canary/overlays/` — the loader never reads `~/.canary/overlays.json` (that
+registry is written only by the `overlay` commands). An overlay clone is laid
+out exactly like a project checkout, so its `.canary/skills/` are found by the
+same nested-skill scanner.
 
 ### Installing a skill globally
 
@@ -256,13 +286,13 @@ extension or a scratch directory.
 
 ## Precedence Rules
 
-1. Local project skills always win over global, overlay, and bundled skills
-   with the same `name`.
+1. Local project skills always win over global, overlay, and bundled skills with
+   the same `name`.
 2. Global home-dir skills win over overlay and bundled skills with the same
    `name`.
 3. Overlay skills win over bundled skills with the same `name`. Among multiple
-   overlays, they are visited in sorted directory-name order and a later
-   overlay overrides an earlier one of the same skill name.
+   overlays, they are visited in sorted directory-name order and a later overlay
+   overrides an earlier one of the same skill name.
 4. Among multiple `.canary/skills/` directories found while walking to the git
    root, the one closest to CWD wins (most-specific wins).
 5. Among bundled skills, slash-command skills (`canary:*.md`) take precedence
@@ -284,9 +314,9 @@ canary skills list --verbose
 canary skills run <name> [-- arg1 arg2 ...]
 ```
 
-`canary skills list` groups skills by tier and marks code-bearing skills
-with `[cli]` or `[entry]` so the distinction from markdown-only skills is
-visible at a glance:
+`canary skills list` groups skills by tier and marks code-bearing skills with
+`[cli]` or `[entry]` so the distinction from markdown-only skills is visible at
+a glance:
 
 ```text
 Bundled skills:
@@ -306,39 +336,39 @@ Local overlay skills (override global):
   /acme-dashboard-sink   Post test reports to an internal dashboard.  [cli]
 ```
 
-`canary skills run <name>` resolves the skill via the precedence rules,
-verifies the declared `cli:`/`entry:` target is inside the skill directory,
-and invokes it with the remaining args forwarded.
+`canary skills run <name>` resolves the skill via the precedence rules, verifies
+the declared `cli:`/`entry:` target is inside the skill directory, and invokes
+it with the remaining args forwarded.
 
 ### CI safety
 
 Discovery is automatic, but **execution of bundled code from a freshly cloned
 overlay is not**. In non-interactive contexts (no TTY, or `CI=true` in the
 environment), `canary skills run` refuses to invoke `cli:`/`entry:` skills
-unless the caller passes `--allow-executable-skills`. This prevents a
-drive-by `git pull` of a malicious overlay from silently executing code on
-the next CI run. Markdown skills are unaffected — discovery and prose
-consumption work normally.
+unless the caller passes `--allow-executable-skills`. This prevents a drive-by
+`git pull` of a malicious overlay from silently executing code on the next CI
+run. Markdown skills are unaffected — discovery and prose consumption work
+normally.
 
 ## Security
 
 - `cli:` paths must resolve **inside the skill directory** after symlink
   resolution. Paths that escape (`..`, absolute paths, symlinks that point
-  outside the skill dir) are rejected at discovery time with a clear error.
-  The skill is still listed, but `canary skills run` will fail.
+  outside the skill dir) are rejected at discovery time with a clear error. The
+  skill is still listed, but `canary skills run` will fail.
 - `entry:` is only honored when Canary is running inside a Python environment
   that already has the module on `sys.path`. Canary does not auto-install
   dependencies for entry skills.
-- The bundled code's own runtime dependencies are the skill's responsibility
-  to declare (`pyproject.toml`, `package.json`, etc.) and to install. Canary
-  does not manage them.
+- The bundled code's own runtime dependencies are the skill's responsibility to
+  declare (`pyproject.toml`, `package.json`, etc.) and to install. Canary does
+  not manage them.
 - In CI contexts, executable skills require `--allow-executable-skills` as
   described above.
 
 ## Installation
 
-Canary ships as a self-contained native binary via npm (no Python required)
-and as a Python package for contributors:
+Canary ships as a self-contained native binary via npm (no Python required) and
+as a Python package for contributors:
 
 ```bash
 # Native binary — recommended for end users
@@ -356,19 +386,19 @@ available on `PATH` after the Python install.
 
 - Hot-reload of skills — discovery runs once per `canary skills` invocation.
 - Remote skill registries — all discovery is filesystem-local.
-- Cross-skill imports — each skill's bundled code is self-contained. A skill
-  may not import from another skill's `scripts/` tree.
-- Auto-installing skill runtime dependencies — `cli:` skills are responsible
-  for declaring and installing their own deps via `pyproject.toml`,
-  `package.json`, etc.
+- Cross-skill imports — each skill's bundled code is self-contained. A skill may
+  not import from another skill's `scripts/` tree.
+- Auto-installing skill runtime dependencies — `cli:` skills are responsible for
+  declaring and installing their own deps via `pyproject.toml`, `package.json`,
+  etc.
 
-> **Note (version 1 → 2):** "Skill execution from the CLI" was previously
-> listed as out of scope. Version 2 adds it via the `cli:` / `entry:`
-> frontmatter fields described above, matching the Harness overlay pattern.
-> Markdown-only skills behave identically to version 1 — the new fields are
-> additive and optional.
+> **Note (version 1 → 2):** "Skill execution from the CLI" was previously listed
+> as out of scope. Version 2 adds it via the `cli:` / `entry:` frontmatter
+> fields described above, matching the Harness overlay pattern. Markdown-only
+> skills behave identically to version 1 — the new fields are additive and
+> optional.
 >
-> **Note (version 2 → 3):** Adds the global `~/.canary/skills/` discovery
-> tier (available everywhere, including the Claude web extension), the
-> `deploy_to` frontmatter field for `canary migrate --overlay` auto-deployment,
-> and the updated `canary skills list` output showing all three tiers.
+> **Note (version 2 → 3):** Adds the global `~/.canary/skills/` discovery tier
+> (available everywhere, including the Claude web extension), the `deploy_to`
+> frontmatter field for `canary migrate --overlay` auto-deployment, and the
+> updated `canary skills list` output showing all three tiers.
