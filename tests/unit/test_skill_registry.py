@@ -44,6 +44,25 @@ def _make_git_root(tmp: str) -> Path:
 
 
 class TestBundledSkills(unittest.TestCase):
+    """Facts about the shipped *bundled* catalog.
+
+    These assertions must be deterministic regardless of what the developer
+    has installed under their real ``~/.canary``. The ``overlay`` and global
+    home-dir source tiers are discovered from ``Path.home()`` (see #349), so
+    without isolation an installed overlay leaks a ``source == "overlay"``
+    skill into ``discover()`` and flakes these tests. ``setUp`` points home at
+    an empty temp dir so only bundled skills are discovered.
+    """
+
+    def setUp(self):
+        self._home = tempfile.TemporaryDirectory()
+        patcher = patch(
+            "agent.core.skill_registry.Path.home",
+            return_value=Path(self._home.name),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self._home.cleanup)
 
     def test_all_bundled_skills_have_paths(self):
         for skill in SkillRegistry().discover():
@@ -59,6 +78,26 @@ class TestBundledSkills(unittest.TestCase):
         skills = SkillRegistry().discover()
         names = [s.name for s in skills]
         self.assertEqual(names, sorted(names))
+
+    def test_isolated_from_installed_home_overlays(self):
+        """Regression for #349.
+
+        Simulates ``canary overlay add`` having installed an overlay under
+        the (isolated) home and asserts the overlay skill is discoverable —
+        i.e. the leak is real — while the bundled-source assertions above stay
+        green because ``setUp`` isolates home. Guards against a future refactor
+        that drops the isolation and silently reintroduces the flake.
+        """
+        overlays = Path(self._home.name) / ".canary" / "overlays"
+        sk = overlays / "acme-overlay" / ".canary" / "skills" / "ov-skill"
+        sk.mkdir(parents=True)
+        (sk / "SKILL.md").write_text(
+            "---\nname: ov-skill\n---\n\n# ov-skill\n", encoding="utf-8"
+        )
+        sources = {s.name: s.source for s in SkillRegistry().discover()}
+        # The overlay tier IS a legitimate source — the bug was the test
+        # reading real home, not discovery returning "overlay".
+        self.assertEqual(sources.get("ov-skill"), "overlay")
 
 
 class TestLocalOverlaySkills(unittest.TestCase):
