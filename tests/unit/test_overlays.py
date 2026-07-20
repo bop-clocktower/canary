@@ -16,6 +16,7 @@ from pathlib import Path
 from agent.core.overlays import (
     OverlayNotFound,
     list_overlays,
+    registry_precedence,
     resolve_overlay,
 )
 
@@ -81,6 +82,42 @@ class TestListOverlays(unittest.TestCase):
             _write_registry(home, ["alpha-repo"])
             # Registry-ordered names first, then unlisted extras sorted.
             self.assertEqual(list_overlays(home), ["alpha-repo", "gamma-repo"])
+
+
+class TestRegistryPrecedence(unittest.TestCase):
+    """`registry_precedence` reads overlays.json for #333 arbitration."""
+
+    def _write(self, home: Path, entries: list[dict]) -> None:
+        reg = home / ".canary" / "overlays.json"
+        reg.parent.mkdir(parents=True, exist_ok=True)
+        reg.write_text(json.dumps({"schemaVersion": 1, "overlays": entries}), encoding="utf-8")
+
+    def test_reads_declared_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            self._write(home, [{"name": "a", "precedence": 10}, {"name": "b", "precedence": 2}])
+            self.assertEqual(registry_precedence(home), {"a": 10, "b": 2})
+
+    def test_absent_or_null_precedence_is_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            self._write(home, [{"name": "a"}, {"name": "b", "precedence": None}])
+            self.assertEqual(registry_precedence(home), {"a": 0, "b": 0})
+
+    def test_bool_precedence_is_not_treated_as_numeric(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            # JSON true would coerce to 1 under a naive isinstance(int) check.
+            self._write(home, [{"name": "a", "precedence": True}])
+            self.assertEqual(registry_precedence(home), {"a": 0})
+
+    def test_missing_or_malformed_registry_is_empty_map(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            self.assertEqual(registry_precedence(home), {})  # no file
+            (home / ".canary").mkdir(parents=True)
+            (home / ".canary" / "overlays.json").write_text("{ not json", encoding="utf-8")
+            self.assertEqual(registry_precedence(home), {})
 
 
 class TestResolveOverlay(unittest.TestCase):

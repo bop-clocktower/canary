@@ -80,19 +80,65 @@ group, one per overlay.
 
 ---
 
+## Arbitration: when two overlays ship the same skill name
+
+With more than one overlay registered, two overlays can ship a skill of the
+**same name**. Which definition wins is decided by a declared **`precedence`**:
+
+- Each overlay entry in `overlays.json` may carry a numeric `precedence`.
+  **Higher wins.** An absent or `null` precedence counts as **0**.
+- A collision is **resolved** only when exactly one contending overlay holds the
+  highest precedence. If two overlays tie (e.g. both undeclared, both 0), the
+  winner is **accidental** (falls back to directory-name order) — that is the
+  case you want to eliminate.
+
+Diagnostics:
+
+```bash
+canary overlay list --conflicts   # list every skill-name collision + both sources
+canary doctor                     # fails on any UNRESOLVED collision, with a remedy
+```
+
+`overlay list --conflicts` prints each colliding skill, every overlay that ships
+it (with its effective precedence), and whether it is resolved; it exits
+non-zero when any collision is unresolved, so it doubles as a CI gate.
+`canary doctor` surfaces the same as a failing `engine:overlay-conflicts` check.
+
+**To resolve a collision**, set a higher `precedence` on the overlay you want to
+win in `~/.canary/overlays.json`:
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "overlays": [
+    { "name": "org-primary-overlay", "precedence": 10 /* … */ },
+    { "name": "org-legacy-overlay", "precedence": 1 /* … */ },
+  ],
+}
+```
+
+Both runtimes honor this identically: the TS diagnostics above and the Python
+skill loader compute the **same** winner, so `doctor` never reports a winner the
+loader disagrees with.
+
+---
+
 ## On-disk layout
 
 ```text
 ~/.canary/
   overlays/
     example-org-example-overlay/   # full git clone
-  overlays.json                    # registry: name, source, ref, path, addedDate
+  overlays.json                    # registry: name, source, ref, path, addedDate, precedence
   skills/                          # legacy hand-installed global skills — still work
 ```
 
-`overlays.json` is managed entirely by the `overlay` commands — you do not edit
-it by hand, and the skill loader never reads it (it scans the clone directories
-directly).
+`overlays.json` is managed by the `overlay` commands. You normally do not edit
+it by hand — the exception is `precedence` (see
+[Arbitration](#arbitration-when-two-overlays-ship-the-same-skill-name)), which
+you may set to declare a collision winner. The skill loader scans the clone
+directories directly for skills and reads `overlays.json` **read-only**, solely
+for that precedence ordering.
 
 ---
 

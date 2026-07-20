@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import { parseSource, SourceSpecError } from './source-spec.js';
 import * as registry from './overlays-registry.js';
 import { commandSucceedsHash, loadManifest } from './doctor-manifest.js';
+import { detectSkillConflicts } from './overlay-conflicts.js';
 
 /** Result of running a git subcommand. */
 export interface GitResult {
@@ -240,6 +241,9 @@ export function add(
     addedDate: stamp(),
     consent,
     consentCommandsHash,
+    // Undeclared precedence (#333). Set a number in overlays.json to declare
+    // which overlay wins a skill-name collision; higher wins.
+    precedence: null,
   };
   try {
     registry.write(registry.add(reg, entry), homeDir);
@@ -318,7 +322,13 @@ export function freshness(
  * `canary overlay list` — one block per registered overlay: name, source, ref,
  * freshness, and skill count.
  */
-export function list(deps: CommandDeps = {}): number {
+/** Options for {@link list}. */
+export interface ListOptions {
+  /** `--conflicts`: report skill-name collisions across overlays (#333). */
+  conflicts?: boolean;
+}
+
+export function list(deps: CommandDeps = {}, opts: ListOptions = {}): number {
   const git = deps.git ?? defaultGit;
   const homeDir = deps.homeDir ?? os.homedir();
   const out = deps.out ?? process.stdout;
@@ -330,6 +340,10 @@ export function list(deps: CommandDeps = {}): number {
   } catch (e) {
     err.write(`canary overlay list: ${(e as Error).message}\n`);
     return 1;
+  }
+
+  if (opts.conflicts) {
+    return listConflicts(reg, out);
   }
 
   if (reg.overlays.length === 0) {
@@ -347,6 +361,39 @@ export function list(deps: CommandDeps = {}): number {
     out.write(`  skills:  ${skillCount(o.path)}\n`);
   }
   return 0;
+}
+
+/**
+ * Print the skill-name conflict report (`overlay list --conflicts`, #333).
+ * Returns 0 when there are no *unresolved* conflicts, 1 when at least one skill
+ * name collides with no declared precedence winner — so the flag doubles as a
+ * scriptable gate.
+ */
+function listConflicts(reg: registry.OverlayRegistry, out: Writer): number {
+  const conflicts = detectSkillConflicts(reg);
+  if (conflicts.length === 0) {
+    out.write('No skill-name conflicts across registered overlays.\n');
+    return 0;
+  }
+  let unresolved = 0;
+  for (const c of conflicts) {
+    const sources = c.contenders
+      .map((ct) => `${ct.overlay} (precedence ${ct.precedence})`)
+      .join(', ');
+    if (c.resolved) {
+      out.write(
+        `✓ ${c.skill}: ${sources}\n      → resolved: ${c.winner} wins\n`,
+      );
+    } else {
+      unresolved += 1;
+      out.write(
+        `✗ ${c.skill}: ${sources}\n      → UNRESOLVED (tie) — set a higher ` +
+          `precedence on the overlay you want to win in overlays.json\n`,
+      );
+    }
+  }
+  out.write(`\n${conflicts.length} conflict(s), ${unresolved} unresolved.\n`);
+  return unresolved === 0 ? 0 : 1;
 }
 
 /** Update one overlay clone. Returns 0 on success, 1 on refusal/failure. */

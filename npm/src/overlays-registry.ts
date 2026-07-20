@@ -38,6 +38,15 @@ export interface OverlayEntry {
    * live manifest's fingerprint no longer matches this.
    */
   consentCommandsHash: string | null;
+  /**
+   * Declared arbitration priority when two overlays ship the same skill name
+   * (#333). Higher wins; null/absent is treated as 0. A collision is only
+   * *resolved* when exactly one contending overlay holds the highest
+   * precedence — otherwise which definition wins is accidental and `doctor`
+   * flags it. Both runtimes read this: TS diagnostics and the Python skill
+   * loader must agree on the winner.
+   */
+  precedence: number | null;
 }
 
 export interface OverlayRegistry {
@@ -117,6 +126,7 @@ function normalizeEntry(o: OverlayEntry): OverlayEntry {
     ...o,
     consent: o.consent ?? null,
     consentCommandsHash: o.consentCommandsHash ?? null,
+    precedence: typeof o.precedence === 'number' ? o.precedence : null,
   };
 }
 

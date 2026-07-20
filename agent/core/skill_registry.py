@@ -168,20 +168,31 @@ class SkillRegistry:
 
         Each overlay is a git clone managed by ``canary overlay add`` (the
         TypeScript shim). Discovery is a directory scan of
-        ``~/.canary/overlays/<overlay>/.canary/skills/<name>/SKILL.md`` — it
-        never reads ``overlays.json`` (written solely by the TS side, per the
-        cross-runtime contract). Overlays are visited in sorted directory-name
-        order; a later overlay overrides an earlier one of the same skill name.
-        Overlay skills override bundled skills and are overridden by global
-        (``~/.canary/skills/``) and local skills.
+        ``~/.canary/overlays/<overlay>/.canary/skills/<name>/SKILL.md``.
+
+        When two overlays ship the same skill name, the winner is declared by
+        ``precedence`` in ``overlays.json`` (#333): overlays are visited in
+        ascending ``(precedence, dir-name)`` order and ``discover()`` lets the
+        last writer win, so the **highest-precedence** overlay wins (ties broken
+        by dir-name, the pre-#333 behavior). ``overlays.json`` is read
+        **read-only** for precedence (it is still written solely by the TS
+        side); an absent/malformed registry means every precedence is 0 and the
+        old pure dir-name order applies. This ordering matches the TS conflict
+        detector (``npm/src/overlay-conflicts.ts``) so ``canary doctor`` never
+        reports a winner the loader disagrees with. Overlay skills override
+        bundled skills and are overridden by global and local skills.
         """
+        from agent.core import overlays as _overlays
+
         results: list[SkillInfo] = []
-        overlays_root = Path.home() / ".canary" / "overlays"
+        home = Path.home()
+        overlays_root = home / ".canary" / "overlays"
         if not overlays_root.is_dir():
             return results
-        for overlay_dir in sorted(overlays_root.iterdir()):
-            if not overlay_dir.is_dir():
-                continue
+        precedence = _overlays.registry_precedence(home)
+        overlay_dirs = [d for d in overlays_root.iterdir() if d.is_dir()]
+        overlay_dirs.sort(key=lambda d: (precedence.get(d.name, 0), d.name))
+        for overlay_dir in overlay_dirs:
             skills_dir = overlay_dir / ".canary" / "skills"
             if not skills_dir.is_dir():
                 continue
