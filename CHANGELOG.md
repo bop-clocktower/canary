@@ -14,6 +14,74 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [5.12.0] - 2026-07-20
+
+A large **additive** release — no breaking changes. The `canary doctor`
+`--persona` flag was renamed to `--audience`, but `--persona` (and the
+`persona:` doctor-manifest field) keep working as legacy aliases.
+
+### Added
+
+- **`canary doctor --json`** — a machine-readable report
+  (`{ version, checks, allPassed, warnings }`) on stdout, with a documented
+  canary-owned contract. The human report no longer claims parity with
+  `harness doctor` — only the top-level `allPassed` intentionally matches.
+- **Overlay skill-name conflict detection + declared precedence** — when two
+  overlays ship the same skill name, a numeric `precedence` in `overlays.json`
+  decides the winner (higher wins). `canary overlay list --conflicts` reports
+  collisions, and `canary doctor` fails on an unresolved one. Both runtimes
+  resolve the same winner.
+- **Skill runtime-requirement verification** — skills declare
+  `requires: [python3>=3.10, node>=20]` in frontmatter; `canary doctor` verifies
+  the tools are installed (and new enough) for every installed skill.
+- **`canary overlay lint`** — validates an overlay against the authoring
+  contract (frontmatter floor, `deploy_to` targets, `cli:` paths, `doctor.json`)
+  and exits non-zero on any error, for CI.
+- **`canary frameworks`** and **run-command exposure** — a new command dumps the
+  framework registry, and `canary recommend --json` now includes the chosen
+  framework's `execution_command` (with a `{file}` placeholder) and `ci_flags`.
+- **`canary feedback`** — opens a pre-filled GitHub issue with non-sensitive
+  context (version/OS/Python/install); never environment variables or file
+  contents.
+- **`canary migrate --check`** — a no-write overlay freshness gate (exit 0 in
+  sync / 1 drift / 2 a deployed skill has local edits; `--json` for CI).
+  Deployment is now strictly one-way via a
+  `.canary/skills/.deploy-manifest.json` content hash, so an update never
+  clobbers local edits.
+- **Framework-registry expansion** — five new frameworks (mutmut, WebdriverIO /
+  Appium, Hurl, property-testing via fast-check/hypothesis, LLM-eval via
+  promptfoo) plus Tier-0 contract repairs (every framework hint now resolves).
+- **Context-aware environment detection** — `agent/core/environment_detect.py`
+  derives `BASE_URL`, suite type, and an auditable SDET-vs-manual user-level
+  signal, surfaced additively as an `environment` block on the MCP
+  `analyze_file` response.
+- **Harness impact primitives** — `canary-critical-areas` and
+  `canary-failure-impact` call harness's `get_impact` / `compute_blast_radius` /
+  `get_critical_paths` / `detect_anomalies` when the MCP is present, with the
+  grep/`git log` fallbacks preserved.
+
+### Changed
+
+- **`canary doctor --persona` → `--audience`** — ends a semantic collision with
+  harness's persona system. `--persona` and the `persona:` manifest field remain
+  as documented legacy aliases.
+- **Pinned the harness CLI to a major** (`@harness-engineering/cli@9`) across
+  all dev-gate workflows, so an upstream rename is a deliberate PR, not a silent
+  break.
+- Canonicalized capability names across the routing docs; adopted Prettier on
+  the hand-maintained `npm/` TypeScript bundle; added long-running-build
+  guidance to the suite-executing agents; and added a guard against regeneration
+  clobbering canary-local hook edits plus a weekly architecture-timeline
+  snapshot.
+
+### Fixed
+
+- **`canary migrate`** no longer misclassifies a skills/docs overlay repo as a
+  migratable test suite — the error now distinguishes "not a test project" from
+  "no config."
+- Isolated the bundled-skill tests from the developer's real `~/.canary`
+  overlays, so an installed overlay no longer flakes them.
+
 ## [5.11.0] - 2026-07-19
 
 > This entry consolidates user-facing changes since the last changelog entry
