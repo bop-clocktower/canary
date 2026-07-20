@@ -165,8 +165,8 @@ docs/branching-convention
   is deferred to the Chrome Extension MCP Bridge (#343).
 - **Feedback:** [agent/core/feedback.py](agent/core/feedback.py) — Builds a
   pre-filled GitHub issue for `canary feedback` (#345) with non-sensitive
-  context (version/OS/Python/install); never env vars or file contents. (The old
-  v3.0 `canary generate`-tied feedback path is gone; this is the new one.)
+  context (version/OS/Python/install); never env vars or file contents. (New in
+  v5.12; unrelated to the removed-in-v3.0 generate-era feedback path.)
 
 ### Claude Code Plugin (`.claude-plugin/`)
 
