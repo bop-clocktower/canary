@@ -6,6 +6,10 @@ on:
     branches:
       - main
 
+# Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
+env:
+  HARNESS_CLI: '@harness-engineering/cli@9'
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -13,27 +17,27 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: '20'
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install dependencies
         run: pip install -e . pytest
-      
+
       - name: Run Unit Tests
         run: python3 -m unittest discover tests/unit
-      
+
       - name: Harness Docs Coverage
-        run: npx --yes -p @harness-engineering/cli harness check-docs
+        run: npx --yes -p "$HARNESS_CLI" harness check-docs
         continue-on-error: true # allow warnings for now as we transition
 
       - name: Harness Cleanup (Entropy Scan)
-        run: npx --yes -p @harness-engineering/cli harness cleanup
+        run: npx --yes -p "$HARNESS_CLI" harness cleanup
         continue-on-error: true # entropy analysis requires entry-point config; surface findings without blocking
 
       - name: Harness Phase Gate
-        run: npx --yes -p @harness-engineering/cli harness check-phase-gate
+        run: npx --yes -p "$HARNESS_CLI" harness check-phase-gate
 
       - name: Security Ledger Freshness
         run: |

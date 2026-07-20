@@ -18,6 +18,10 @@ concurrency:
   group: refresh-baseline-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+# Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
+env:
+  HARNESS_CLI: '@harness-engineering/cli@9'
+
 jobs:
   refresh:
     # Only for our opt-in label, and only for same-repo PRs — fork PRs get a
@@ -40,7 +44,7 @@ jobs:
         with:
           node-version: '22'
 
-      - run: npm install -g @harness-engineering/cli
+      - run: npm install -g "$HARNESS_CLI"
 
       - name: Refresh baseline
         run: harness check-arch --update-baseline
