@@ -10,6 +10,7 @@ from fastmcp import FastMCP
 
 from agent.core.pattern_matcher import PatternMatcher
 from agent.core.domain_scanner import DomainScanner
+from agent.core.environment_detect import detect_environment
 from agent.core.executor import CanaryTestExecutor
 from agent.core.framework_registry import FrameworkRegistry
 from agent.core.scaffolder import Scaffolder
@@ -182,6 +183,14 @@ def _analyze_file_impl(file_path: str) -> dict:
     except OSError:
         context_snippets = []
 
+    # Context-aware persona & environment detection (#341): attach the
+    # detected BASE_URL, suite type, and SDET-vs-manual user level so the
+    # host session can route skills and tailor output. The file under
+    # analysis is itself an "open file" signal for the user-level heuristic.
+    environment = detect_environment(
+        str(project_root), open_files=[str(path)]
+    ).to_dict()
+
     return {
         "framework": framework,
         "framework_source": framework_source,
@@ -194,6 +203,7 @@ def _analyze_file_impl(file_path: str) -> dict:
         "file_functions": _extract_file_functions(path),
         "existing_tests": _find_existing_tests(project_root, framework),
         "context_snippets": context_snippets,
+        "environment": environment,
     }
 
 
