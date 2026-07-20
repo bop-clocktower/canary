@@ -21,13 +21,16 @@ cleanly into a setup script or CI gate.
 ```bash
 canary doctor                 # run every check
 canary doctor --persona alpha # run only the checks tagged for a persona
+canary doctor --json          # machine-readable report on stdout
 ```
 
 Exit code is **0 when every check passed** (skipped and informational lines do
 not count as failures) and **non-zero when at least one check failed**.
 
-Output adopts the `harness doctor` shape — one symbol per line, remedy indented
-under a failure:
+The human report is one symbol per line, remedy indented under a failure. Its
+layout is _loosely_ modeled on `harness doctor`, but the two are **not** a
+shared contract and have diverged — see [`--json`](#--json) for the machine
+format and how it differs from `harness doctor --json`.
 
 ```text
 canary doctor
@@ -101,8 +104,41 @@ If you pass a `--persona` value that **no** installed overlay declares, `doctor`
 prints a hint listing the persona tags it actually found (discovered from the
 overlays' manifests) so you can pick a valid one — rather than silently running
 only the untagged checks and leaving you to guess why your filter matched
-nothing. When no overlay defines any personas at all, the hint says so and
-tells you to drop the flag.
+nothing. When no overlay defines any personas at all, the hint says so and tells
+you to drop the flag.
+
+---
+
+## `--json`
+
+`--json` emits a single machine-readable JSON object on stdout instead of the
+human report; nothing else is written, so the whole stream parses as one object.
+The exit code is unchanged (0 = all passed, non-zero = a check failed), so
+`--json` drops into a CI step that both parses the result and gates on the code.
+
+```jsonc
+{
+  "version": 1, // contract version — bumps on a breaking change
+  "checks": [
+    {
+      "id": "engine:git", // stable check id
+      "status": "pass", // pass | fail | skip | info
+      "label": "git present (git version 2.44.0)",
+      "group": "Engine", // section: "Engine" or "Overlay: <name>"
+      "remedy": "Install git — …", // present only when the check did not pass
+    },
+  ],
+  "allPassed": true,
+  "warnings": [], // non-fatal advisories, e.g. an unknown --persona
+}
+```
+
+**This is a canary-owned contract, not `harness doctor --json`.** Only the
+top-level `allPassed` boolean intentionally matches harness's shape. The
+per-check fields (`id` / `label` / `remedy` / `group`) and the `skip` status
+tier are canary's own — harness uses `name` / `message` / `fix` and a `warn`
+tier canary lacks. Do not build a parser that assumes the two are
+interchangeable; branch on `version` if you consume both.
 
 ---
 
