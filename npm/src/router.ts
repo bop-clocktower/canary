@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 /**
  * Router for TS-handled `canary` subcommands — the strangler seam (Decision 10).
@@ -11,12 +11,12 @@
  * TS-handled and the shim should fall through to the Python binary.
  */
 
-import * as overlay from "./overlay-commands.js";
-import type { CommandDeps, Writer } from "./overlay-commands.js";
-import { runDoctor } from "./doctor.js";
+import * as overlay from './overlay-commands.js';
+import type { CommandDeps, Writer } from './overlay-commands.js';
+import { runDoctor } from './doctor.js';
 
 /** Subcommands handled in TypeScript rather than forwarded to the binary. */
-export const TS_COMMANDS: readonly string[] = ["overlay", "doctor"];
+export const TS_COMMANDS: readonly string[] = ['overlay', 'doctor'];
 
 /** True when `argv` (process.argv.slice(2)) targets a TS-handled command. */
 export function isTsCommand(argv: readonly string[]): boolean {
@@ -34,14 +34,14 @@ function parseArgs(args: readonly string[]): ParsedArgs {
   const flags: Record<string, string | boolean> = {};
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
-    if (a.startsWith("--")) {
-      const eq = a.indexOf("=");
+    if (a.startsWith('--')) {
+      const eq = a.indexOf('=');
       if (eq !== -1) {
         flags[a.slice(2, eq)] = a.slice(eq + 1);
       } else {
         const key = a.slice(2);
         const next = args[i + 1];
-        if (next !== undefined && !next.startsWith("--")) {
+        if (next !== undefined && !next.startsWith('--')) {
           flags[key] = next;
           i += 1;
         } else {
@@ -57,12 +57,12 @@ function parseArgs(args: readonly string[]): ParsedArgs {
 
 function refFrom(flags: Record<string, string | boolean>): string | null {
   const ref = flags.ref;
-  return typeof ref === "string" ? ref : null;
+  return typeof ref === 'string' ? ref : null;
 }
 
 const OVERLAY_USAGE =
-  "usage: canary overlay <add|list|update|remove> [args]\n" +
-  "  add <source> [--ref <tag>]   list   update [name]   remove <name>\n";
+  'usage: canary overlay <add|list|update|remove> [args]\n' +
+  '  add <source> [--ref <tag>]   list   update [name]   remove <name>\n';
 
 interface SubcommandCtx {
   positionals: string[];
@@ -75,18 +75,20 @@ interface SubcommandCtx {
 const OVERLAY_SUBCOMMANDS: Record<string, (ctx: SubcommandCtx) => number> = {
   add: ({ positionals, flags, deps, err }) => {
     if (positionals.length < 1) {
-      err.write("usage: canary overlay add <source> [--ref <tag>] [--yes]\n");
+      err.write('usage: canary overlay add <source> [--ref <tag>] [--yes]\n');
       return 1;
     }
     // `--yes` grants command-check consent non-interactively (CI); default prompts.
-    const addDeps = flags.yes === true ? { ...deps, confirm: () => true } : deps;
+    const addDeps =
+      flags.yes === true ? { ...deps, confirm: () => true } : deps;
     return overlay.add(positionals[0], { ref: refFrom(flags) }, addDeps);
   },
   list: ({ deps }) => overlay.list(deps),
-  update: ({ positionals, deps }) => overlay.update(positionals[0] ?? null, deps),
+  update: ({ positionals, deps }) =>
+    overlay.update(positionals[0] ?? null, deps),
   remove: ({ positionals, deps, err }) => {
     if (positionals.length < 1) {
-      err.write("usage: canary overlay remove <name>\n");
+      err.write('usage: canary overlay remove <name>\n');
       return 1;
     }
     return overlay.remove(positionals[0], deps);
@@ -97,7 +99,9 @@ function runOverlay(args: readonly string[], deps: CommandDeps): number {
   const err = deps.err ?? process.stderr;
   const handler = OVERLAY_SUBCOMMANDS[args[0]];
   if (!handler) {
-    err.write(`canary overlay: unknown subcommand ${args[0] ? `'${args[0]}'` : "(none)"}\n${OVERLAY_USAGE}`);
+    err.write(
+      `canary overlay: unknown subcommand ${args[0] ? `'${args[0]}'` : '(none)'}\n${OVERLAY_USAGE}`,
+    );
     return 1;
   }
   const { positionals, flags } = parseArgs(args.slice(1));
@@ -110,14 +114,17 @@ function runOverlay(args: readonly string[], deps: CommandDeps): number {
  * through to the Python binary. `deps` is threaded to the command handlers for
  * testing (real dependencies by default).
  */
-export function route(argv: readonly string[], deps: CommandDeps = {}): number | Promise<number> | null {
+export function route(
+  argv: readonly string[],
+  deps: CommandDeps = {},
+): number | Promise<number> | null {
   if (!isTsCommand(argv)) {
     return null;
   }
-  if (argv[0] === "overlay") {
+  if (argv[0] === 'overlay') {
     return runOverlay(argv.slice(1), deps);
   }
-  if (argv[0] === "doctor") {
+  if (argv[0] === 'doctor') {
     return runDoctor(argv.slice(1), deps);
   }
   return null;

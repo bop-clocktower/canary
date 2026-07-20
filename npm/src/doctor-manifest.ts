@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 /**
  * Overlay check manifest — `<clone>/.canary/doctor.json` (Phase 2, tier 2).
@@ -9,15 +9,19 @@
  * a single failing {@link CheckResult} so `doctor` can report it and carry on.
  */
 
-import { createHash } from "node:crypto";
-import * as fs from "node:fs";
-import * as http from "node:http";
-import * as https from "node:https";
-import * as path from "node:path";
-import { spawnSync } from "node:child_process";
-import type { CheckResult } from "./doctor.js";
+import { createHash } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as http from 'node:http';
+import * as https from 'node:https';
+import * as path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import type { CheckResult } from './doctor.js';
 
-export const CHECK_TYPES = ["file-exists", "url-reachable", "command-succeeds"] as const;
+export const CHECK_TYPES = [
+  'file-exists',
+  'url-reachable',
+  'command-succeeds',
+] as const;
 export type CheckType = (typeof CHECK_TYPES)[number];
 
 /** A single validated check from an overlay's `doctor.json`. */
@@ -38,12 +42,11 @@ export interface ManifestCheck {
 
 /** Result of loading a manifest: either its checks, or a single failing check. */
 export type ManifestLoad =
-  | { ok: true; checks: ManifestCheck[] }
-  | { ok: false; failure: CheckResult };
+  { ok: true; checks: ManifestCheck[] } | { ok: false; failure: CheckResult };
 
 /** Path to an overlay's manifest. */
 export function manifestPath(cloneDir: string): string {
-  return path.join(cloneDir, ".canary", "doctor.json");
+  return path.join(cloneDir, '.canary', 'doctor.json');
 }
 
 /**
@@ -53,46 +56,58 @@ export function manifestPath(cloneDir: string): string {
  */
 export function commandSucceedsHash(checks: ManifestCheck[]): string | null {
   const cmds = checks
-    .filter((c) => c.type === "command-succeeds")
+    .filter((c) => c.type === 'command-succeeds')
     .map((c) => ({ id: c.id, command: c.command ?? [] }))
     .sort((a, b) => a.id.localeCompare(b.id));
   if (cmds.length === 0) {
     return null;
   }
-  return createHash("sha256").update(JSON.stringify(cmds)).digest("hex");
+  return createHash('sha256').update(JSON.stringify(cmds)).digest('hex');
 }
 
 /** True when `v` is a non-empty array of strings. */
 function isStringArray(v: unknown): v is string[] {
-  return Array.isArray(v) && v.every((a) => typeof a === "string");
+  return Array.isArray(v) && v.every((a) => typeof a === 'string');
 }
 
 /**
  * Validate the type-specific field of a check. Returns an error string, or
  * null when the field is well-formed for the given type.
  */
-function validateTypeField(type: CheckType, c: Record<string, unknown>): string | null {
-  if (type === "file-exists" && typeof c.path !== "string") {
+function validateTypeField(
+  type: CheckType,
+  c: Record<string, unknown>,
+): string | null {
+  if (type === 'file-exists' && typeof c.path !== 'string') {
     return `check "${c.id}" (file-exists) is missing a string "path"`;
   }
-  if (type === "url-reachable" && typeof c.url !== "string") {
+  if (type === 'url-reachable' && typeof c.url !== 'string') {
     return `check "${c.id}" (url-reachable) is missing a string "url"`;
   }
-  if (type === "command-succeeds" && !(isStringArray(c.command) && c.command.length > 0)) {
+  if (
+    type === 'command-succeeds' &&
+    !(isStringArray(c.command) && c.command.length > 0)
+  ) {
     return `check "${c.id}" (command-succeeds) needs a non-empty string[] "command"`;
   }
   return null;
 }
 
 /** Validate the id/type/remedy/persona fields common to every check type. */
-function validateCommonFields(c: Record<string, unknown>, index: number): string | null {
-  if (typeof c.id !== "string" || c.id === "") {
+function validateCommonFields(
+  c: Record<string, unknown>,
+  index: number,
+): string | null {
+  if (typeof c.id !== 'string' || c.id === '') {
     return `check[${index}] is missing a string "id"`;
   }
-  if (typeof c.type !== "string" || !CHECK_TYPES.includes(c.type as CheckType)) {
-    return `check "${c.id}" has an unknown type (expected one of: ${CHECK_TYPES.join(", ")})`;
+  if (
+    typeof c.type !== 'string' ||
+    !CHECK_TYPES.includes(c.type as CheckType)
+  ) {
+    return `check "${c.id}" has an unknown type (expected one of: ${CHECK_TYPES.join(', ')})`;
   }
-  if (typeof c.remedy !== "string" || c.remedy === "") {
+  if (typeof c.remedy !== 'string' || c.remedy === '') {
     return `check "${c.id}" is missing a string "remedy"`;
   }
   if (c.persona !== undefined && !isStringArray(c.persona)) {
@@ -103,7 +118,7 @@ function validateCommonFields(c: Record<string, unknown>, index: number): string
 
 /** Validate one raw check entry. Returns the typed check or an error string. */
 function validateCheck(raw: unknown, index: number): ManifestCheck | string {
-  if (typeof raw !== "object" || raw === null) {
+  if (typeof raw !== 'object' || raw === null) {
     return `check[${index}] is not an object`;
   }
   const c = raw as Record<string, unknown>;
@@ -134,7 +149,7 @@ function manifestFailure(cloneDir: string, detail: string): ManifestLoad {
     ok: false,
     failure: {
       id: `manifest:${file}`,
-      status: "fail",
+      status: 'fail',
       label: `doctor.json is invalid (${file})`,
       remedy: detail,
     },
@@ -150,9 +165,9 @@ export function loadManifest(cloneDir: string): ManifestLoad {
   const file = manifestPath(cloneDir);
   let raw: string;
   try {
-    raw = fs.readFileSync(file, "utf8");
+    raw = fs.readFileSync(file, 'utf8');
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
       return { ok: true, checks: [] };
     }
     return manifestFailure(cloneDir, (e as Error).message);
@@ -165,12 +180,15 @@ export function loadManifest(cloneDir: string): ManifestLoad {
   }
   const checksRaw = (parsed as { checks?: unknown }).checks;
   if (!Array.isArray(checksRaw)) {
-    return manifestFailure(cloneDir, 'expected an object with a "checks" array');
+    return manifestFailure(
+      cloneDir,
+      'expected an object with a "checks" array',
+    );
   }
   const checks: ManifestCheck[] = [];
   for (let i = 0; i < checksRaw.length; i += 1) {
     const result = validateCheck(checksRaw[i], i);
-    if (typeof result === "string") {
+    if (typeof result === 'string') {
       return manifestFailure(cloneDir, result);
     }
     checks.push(result);
@@ -205,13 +223,19 @@ export function collectPersonas(checks: ManifestCheck[]): string[] {
  * otherwise keep checks with no persona plus those whose persona list contains
  * the tag (case-insensitive).
  */
-export function filterByPersona(checks: ManifestCheck[], persona: string | null): ManifestCheck[] {
+export function filterByPersona(
+  checks: ManifestCheck[],
+  persona: string | null,
+): ManifestCheck[] {
   if (persona === null) {
     return [...checks];
   }
   const want = persona.toLowerCase();
   return checks.filter(
-    (c) => !c.persona || c.persona.length === 0 || c.persona.some((p) => p.toLowerCase() === want)
+    (c) =>
+      !c.persona ||
+      c.persona.length === 0 ||
+      c.persona.some((p) => p.toLowerCase() === want),
   );
 }
 
@@ -224,7 +248,7 @@ export type UrlProbe = (url: string, timeoutMs: number) => Promise<boolean>;
 export type CommandRunner = (
   command: string[],
   cwd: string,
-  timeoutMs: number
+  timeoutMs: number,
 ) => { ok: boolean; timedOut: boolean; detail?: string };
 
 /** Context for executing checks against one overlay clone. */
@@ -241,7 +265,7 @@ function defaultProbeUrl(url: string, timeoutMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     let mod: typeof http | typeof https;
     try {
-      mod = new URL(url).protocol === "http:" ? http : https;
+      mod = new URL(url).protocol === 'http:' ? http : https;
     } catch {
       resolve(false);
       return;
@@ -251,7 +275,7 @@ function defaultProbeUrl(url: string, timeoutMs: number): Promise<boolean> {
       res.resume();
       resolve(s >= 200 && s < 400);
     });
-    req.on("error", () => resolve(false));
+    req.on('error', () => resolve(false));
     req.setTimeout(timeoutMs, () => {
       req.destroy();
       resolve(false);
@@ -260,55 +284,84 @@ function defaultProbeUrl(url: string, timeoutMs: number): Promise<boolean> {
 }
 
 const defaultRunCommand: CommandRunner = (command, cwd, timeoutMs) => {
-  const r = spawnSync(command[0], command.slice(1), { cwd, timeout: timeoutMs, encoding: "utf8" });
+  const r = spawnSync(command[0], command.slice(1), {
+    cwd,
+    timeout: timeoutMs,
+    encoding: 'utf8',
+  });
   if (r.error) {
     const code = (r.error as NodeJS.ErrnoException).code;
-    return { ok: false, timedOut: code === "ETIMEDOUT" || r.signal === "SIGTERM", detail: String(r.error.message) };
+    return {
+      ok: false,
+      timedOut: code === 'ETIMEDOUT' || r.signal === 'SIGTERM',
+      detail: String(r.error.message),
+    };
   }
-  if (r.signal === "SIGTERM") {
+  if (r.signal === 'SIGTERM') {
     return { ok: false, timedOut: true };
   }
-  return { ok: r.status === 0, timedOut: false, detail: r.status === 0 ? undefined : `exit ${r.status}` };
+  return {
+    ok: r.status === 0,
+    timedOut: false,
+    detail: r.status === 0 ? undefined : `exit ${r.status}`,
+  };
 };
 
 function pass(check: ManifestCheck, label: string): CheckResult {
-  return { id: check.id, status: "pass", label };
+  return { id: check.id, status: 'pass', label };
 }
 function fail(check: ManifestCheck, label: string): CheckResult {
-  return { id: check.id, status: "fail", label, remedy: check.remedy };
+  return { id: check.id, status: 'fail', label, remedy: check.remedy };
 }
 
 function runFileExists(check: ManifestCheck, cloneDir: string): CheckResult {
-  const target = path.join(cloneDir, check.path ?? "");
+  const target = path.join(cloneDir, check.path ?? '');
   return fs.existsSync(target)
     ? pass(check, `${check.id}: ${check.path} exists`)
     : fail(check, `${check.id}: ${check.path} is missing`);
 }
 
-async function runUrlReachable(check: ManifestCheck, ctx: RunContext, timeoutMs: number): Promise<CheckResult> {
+async function runUrlReachable(
+  check: ManifestCheck,
+  ctx: RunContext,
+  timeoutMs: number,
+): Promise<CheckResult> {
   const probe = ctx.probeUrl ?? defaultProbeUrl;
-  const reachable = await probe(check.url ?? "", timeoutMs);
+  const reachable = await probe(check.url ?? '', timeoutMs);
   return reachable
     ? pass(check, `${check.id}: ${check.url} reachable`)
     : fail(check, `${check.id}: ${check.url} unreachable`);
 }
 
 function skipped(check: ManifestCheck, reason: string): CheckResult {
-  return { id: check.id, status: "skip", label: `${check.id}: skipped (${reason})` };
+  return {
+    id: check.id,
+    status: 'skip',
+    label: `${check.id}: skipped (${reason})`,
+  };
 }
 
-function runCommandSucceeds(check: ManifestCheck, ctx: RunContext, timeoutMs: number): CheckResult {
+function runCommandSucceeds(
+  check: ManifestCheck,
+  ctx: RunContext,
+  timeoutMs: number,
+): CheckResult {
   if (!ctx.consentGranted) {
-    return skipped(check, "command checks need consent — re-run 'canary overlay add'");
+    return skipped(
+      check,
+      "command checks need consent — re-run 'canary overlay add'",
+    );
   }
   const command = check.command ?? [];
-  const cmd = `\`${command.join(" ")}\``;
+  const cmd = `\`${command.join(' ')}\``;
   const runner = ctx.runCommand ?? defaultRunCommand;
   const r = runner(command, ctx.cloneDir, timeoutMs);
   if (r.ok) {
     return pass(check, `${check.id}: ${cmd} succeeded`);
   }
-  const why = r.timedOut ? `timed out after ${timeoutMs}ms` : (r.detail ?? "failed");
+  const why = r.timedOut
+    ? `timed out after ${timeoutMs}ms`
+    : (r.detail ?? 'failed');
   return fail(check, `${check.id}: ${cmd} ${why}`);
 }
 
@@ -317,12 +370,15 @@ function runCommandSucceeds(check: ManifestCheck, ctx: RunContext, timeoutMs: nu
  * timeout. `command-succeeds` is skipped (not failed) unless consent is
  * granted. Never throws.
  */
-export async function runCheck(check: ManifestCheck, ctx: RunContext): Promise<CheckResult> {
+export async function runCheck(
+  check: ManifestCheck,
+  ctx: RunContext,
+): Promise<CheckResult> {
   const timeoutMs = ctx.timeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS;
-  if (check.type === "file-exists") {
+  if (check.type === 'file-exists') {
     return runFileExists(check, ctx.cloneDir);
   }
-  if (check.type === "url-reachable") {
+  if (check.type === 'url-reachable') {
     return runUrlReachable(check, ctx, timeoutMs);
   }
   return runCommandSucceeds(check, ctx, timeoutMs);
