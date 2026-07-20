@@ -229,3 +229,102 @@ Resolution:
 > `migrate` at an overlay checked out as a filesystem sibling) still works but
 > prints a deprecation notice — use `--from` instead. If both are given,
 > `--from` wins.
+
+---
+
+## Freshness gate & drift (`migrate --check`)
+
+Deployed overlay skills go stale silently: a consuming repo only refreshes them
+when someone remembers to re-run `migrate`.
+`canary migrate --from <overlay> --check` is the gate that makes drift loud. It
+reports (without writing) how the target's deployed skills compare to the
+overlay that owns them and exits with a drift-aware code:
+
+| Exit | Meaning                                                                                          |
+| ---- | ------------------------------------------------------------------------------------------------ |
+| `0`  | In sync — every deployed overlay skill is current.                                               |
+| `1`  | **Drift** — the overlay carries newer deployable skills (`stale`) or ones the target is missing. |
+| `2`  | **Local edits** — a deployed skill was hand-modified; one-way ownership refuses to overwrite it. |
+
+```bash
+canary migrate --from example-org-example-overlay --check          # human-readable
+canary migrate --from example-org-example-overlay --check --json   # machine-readable
+```
+
+`--json` emits a machine-readable summary, where each skill's `status` is
+`current` \| `stale` \| `missing` \| `local_edit`:
+
+```text
+{ shape, overlay_path, in_sync, has_drift, has_local_edits, exit_code,
+  skills: [{ skill_name, dir_name, status, detail }] }
+```
+
+### One-way ownership (the safety guarantee)
+
+Deployment is **strictly one-way**: the overlay owns every file it deploys.
+`migrate --apply` refreshes a skill only when the deployed copy still matches
+what was last deployed (tracked in `.canary/skills/.deploy-manifest.json`) and
+the overlay has moved on. If the deployed copy has **local edits** — it differs
+from both the overlay and the recorded deployment, or was hand-placed with no
+provenance — `--apply` skips it and `--check` reports it as `local_edit` (exit
+`2`). An automated update PR can therefore never clobber hand modifications:
+reconcile them first (revert, or upstream the change into the overlay).
+
+### Scheduled auto-update recipe
+
+Wire the gate into a cron workflow in the **consuming** repo so drift opens a PR
+instead of rotting. On drift (exit `1`) it applies the refresh and opens a PR; a
+local-edit stop (exit `2`) fails the run for a human instead of forcing an
+overwrite.
+
+```yaml
+# .github/workflows/overlay-freshness.yml
+name: Overlay Freshness
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+  workflow_dispatch:
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pipx install canary-test-ai
+      - name: Check overlay freshness
+        id: check
+        run: |
+          set +e
+          canary migrate --from example-org-example-overlay --check --json > freshness.json
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+      - name: Fail on local edits (needs a human)
+        if: steps.check.outputs.code == '2'
+        run: |
+          echo "::error::A deployed overlay skill has local edits — reconcile before auto-update." 
+          cat freshness.json
+          exit 1
+      - name: Apply refresh and open PR
+        if: steps.check.outputs.code == '1'
+        run: canary migrate --from example-org-example-overlay --apply
+      - name: Open PR
+        if: steps.check.outputs.code == '1'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/overlay-freshness
+          title:
+            'chore: refresh overlay skills from example-org-example-overlay'
+          commit-message:
+            'chore: refresh overlay skills (canary migrate --apply)'
+          body: |
+            Automated overlay freshness update. The tracked overlay carries newer
+            deployable skills than this repo carried; `canary migrate --apply`
+            refreshed them. Deployment is one-way — skills with local edits were
+            left untouched.
+```
+
+> Replace `example-org-example-overlay` with your tracked overlay name (or a
+> path). `create-pull-request` is a third-party action; swap in your team's PR
+> tooling if you prefer. `ACME`-style placeholder names are fine in your own
+> copy — the gate cares only about the overlay reference you pass to `--from`.

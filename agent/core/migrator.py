@@ -7,11 +7,58 @@ Canary Migrator — detects harness-scaffolded test-suite projects and migrates
 them to Canary's layout without touching existing test files.
 """
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+# Records the content hash of each skill at deploy time so the freshness gate can
+# tell an untouched deployment (safe to refresh) from a hand-edited one (must not
+# be overwritten). Lives beside the deployed skills; never a deployable skill
+# itself (leading dot → skipped by the skill scanner).
+DEPLOY_MANIFEST_NAME = ".deploy-manifest.json"
+
+
+def _hash_skill_dir(skill_dir: Path) -> str:
+    """Return a stable content hash of every file under *skill_dir*.
+
+    Hashes the sorted (relative-path, bytes) pairs so any change to any file in
+    the skill — not just SKILL.md — counts as a change. The deployable unit is
+    the whole directory, matching how ``_deploy_skills`` copies it.
+    """
+    h = hashlib.sha256()
+    for path in sorted(p for p in skill_dir.rglob("*") if p.is_file()):
+        h.update(path.relative_to(skill_dir).as_posix().encode("utf-8"))
+        h.update(b"\0")
+        try:
+            h.update(path.read_bytes())
+        except OSError:
+            pass
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def _read_deploy_manifest(target_skills_dir: Path) -> dict:
+    """Return ``{dir_name: {"name": str, "hash": str}}`` from the manifest, or
+    ``{}`` when it is absent or unreadable (provenance is best-effort)."""
+    manifest_path = target_skills_dir / DEPLOY_MANIFEST_NAME
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    skills = data.get("skills") if isinstance(data, dict) else None
+    return skills if isinstance(skills, dict) else {}
+
+
+def _write_deploy_manifest(target_skills_dir: Path, skills: dict) -> None:
+    manifest_path = target_skills_dir / DEPLOY_MANIFEST_NAME
+    target_skills_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps({"schemaVersion": 1, "skills": skills}, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 from agent.core.config_validation import read_json_with_warning
 from agent.core.detection import uncertain_detection_message
@@ -197,8 +244,108 @@ class MigrationContext:
 @dataclass
 class SkillDeployResult:
     skill_name: str
-    status: str   # "copied" | "skipped" | "dry_run"
+    status: str   # "copied" | "updated" | "skipped" | "dry_run"
     note: str = ""
+
+
+@dataclass
+class SkillFreshnessResult:
+    skill_name: str
+    dir_name: str
+    # "current"    — deployed copy matches the overlay
+    # "stale"      — overlay has a newer version; deployed copy untouched (safe to refresh)
+    # "missing"    — overlay ships a matching skill the target does not carry
+    # "local_edit" — deployed copy differs from the overlay AND from what was deployed
+    #                (or has no provenance); one-way ownership refuses to overwrite it
+    status: str
+    detail: str = ""
+
+
+@dataclass
+class FreshnessReport:
+    """Result of `canary migrate --check` — how a target's deployed overlay
+    skills compare to the overlay that owns them."""
+
+    shape: str
+    overlay_path: Optional[str] = None
+    results: list[SkillFreshnessResult] = field(default_factory=list)
+
+    @property
+    def stale(self) -> list[SkillFreshnessResult]:
+        return [r for r in self.results if r.status in ("stale", "missing")]
+
+    @property
+    def local_edits(self) -> list[SkillFreshnessResult]:
+        return [r for r in self.results if r.status == "local_edit"]
+
+    @property
+    def has_drift(self) -> bool:
+        return bool(self.stale)
+
+    @property
+    def has_local_edits(self) -> bool:
+        return bool(self.local_edits)
+
+    @property
+    def in_sync(self) -> bool:
+        return not self.has_drift and not self.has_local_edits
+
+    def exit_code(self) -> int:
+        """0 in sync · 1 drift · 2 local edits (safety refusal wins)."""
+        if self.has_local_edits:
+            return 2
+        if self.has_drift:
+            return 1
+        return 0
+
+    def to_dict(self) -> dict:
+        return {
+            "shape": self.shape,
+            "overlay_path": self.overlay_path,
+            "in_sync": self.in_sync,
+            "has_drift": self.has_drift,
+            "has_local_edits": self.has_local_edits,
+            "exit_code": self.exit_code(),
+            "skills": [
+                {"skill_name": r.skill_name, "dir_name": r.dir_name,
+                 "status": r.status, "detail": r.detail}
+                for r in self.results
+            ],
+        }
+
+    def to_markdown(self) -> str:
+        lines = ["# Overlay Freshness", "", f"**Shape:** {self.shape}", ""]
+        if not self.results:
+            lines += ["_No overlay skills match this project's shape._", ""]
+            return "\n".join(lines)
+
+        if self.in_sync:
+            lines += ["✅ In sync — every deployed overlay skill is current.", ""]
+
+        stale = [r for r in self.results if r.status == "stale"]
+        missing = [r for r in self.results if r.status == "missing"]
+        edits = self.local_edits
+
+        if missing:
+            lines += ["## Missing (overlay ships, target does not carry)", ""]
+            lines += [f"- `{r.skill_name}`" for r in missing] + [""]
+        if stale:
+            lines += ["## Stale (overlay has a newer version)", ""]
+            lines += [f"- `{r.skill_name}` — {r.detail}" for r in stale] + [""]
+        if edits:
+            lines += ["## ⚠ Local edits (refused — one-way ownership)", ""]
+            lines += [f"- `{r.skill_name}` — {r.detail}" for r in edits] + [""]
+
+        if self.has_drift and not self.has_local_edits:
+            lines += ["Run `canary migrate --from <overlay> --apply` to refresh.", ""]
+        elif self.has_local_edits:
+            lines += [
+                "Deployed skills are owned by the overlay. Reconcile the local "
+                "edits above (revert them, or upstream them into the overlay) "
+                "before the freshness gate can pass.",
+                "",
+            ]
+        return "\n".join(lines)
 
 
 @dataclass
@@ -293,13 +440,14 @@ class MigrationReport:
                 lines.append("")
 
         if self.deployed_skills:
-            copied = [r for r in self.deployed_skills if r.status in ("copied", "dry_run")]
+            copied = [r for r in self.deployed_skills if r.status in ("copied", "dry_run", "updated")]
             skipped = [r for r in self.deployed_skills if r.status == "skipped"]
             section = "## Skills (would deploy)" if self.dry_run else "## Skills Deployed"
             lines += [section, ""]
             for r in copied:
                 prefix = "(dry run) " if r.status == "dry_run" else ""
-                lines.append(f"- `{r.skill_name}` — {prefix}copied to `.canary/skills/`")
+                verb = "refreshed in" if r.status == "updated" else "copied to"
+                lines.append(f"- `{r.skill_name}` — {prefix}{verb} `.canary/skills/`")
             for r in skipped:
                 lines.append(f"- `{r.skill_name}` — skipped ({r.note})")
             lines.append("")
@@ -478,27 +626,17 @@ class HarnessMigrator:
 
     # ── private helpers ───────────────────────────────────────────────────────
 
-    def _deploy_skills(
-        self,
-        shape: str,
-        overlay_path: Optional[Path],
-        target_root: Path,
-        dry_run: bool,
-    ) -> list[SkillDeployResult]:
-        """Copy skills from *overlay_path*/.canary/skills/ that match *shape*.
+    def _collect_overlay_skills(
+        self, shape: str, overlay_path: Optional[Path]
+    ) -> list:
+        """Return ``[(SkillInfo, skill_dir), …]`` for overlay skills whose
+        ``deploy_to`` matches *shape* (or the ``all`` sentinel).
 
-        A skill is deployed when its ``deploy_to`` frontmatter list includes
-        the detected shape or the sentinel value ``all``. Skills already
-        present in the target are skipped (not overwritten).
-
-        When *overlay_path* is None and ``~/.canary/skills/`` does not exist,
-        returns an empty list silently.
+        Sources: *overlay_path* first, then ``~/.canary/skills/`` if present.
+        The first definition of a given skill name wins (overlay before home).
         """
         from agent.core.skill_registry import SkillRegistry
 
-        results: list[SkillDeployResult] = []
-
-        # Collect overlay skill directories to inspect.
         candidate_roots: list[Path] = []
         if overlay_path is not None:
             candidate_roots.append(overlay_path)
@@ -506,7 +644,7 @@ class HarnessMigrator:
         if home_skills.is_dir():
             candidate_roots.append(home_skills.parent.parent)  # registry walks up
 
-        skills_to_deploy: list = []
+        collected: list = []
         seen_names: set[str] = set()
 
         for root in candidate_roots:
@@ -533,31 +671,152 @@ class HarnessMigrator:
                 if shape not in info.deploy_to and "all" not in info.deploy_to:
                     continue
                 seen_names.add(info.name)
-                skills_to_deploy.append((info, skill_dir))
+                collected.append((info, skill_dir))
+
+        return collected
+
+    def _deploy_skills(
+        self,
+        shape: str,
+        overlay_path: Optional[Path],
+        target_root: Path,
+        dry_run: bool,
+    ) -> list[SkillDeployResult]:
+        """Copy skills from *overlay_path*/.canary/skills/ that match *shape*.
+
+        A skill is deployed when its ``deploy_to`` frontmatter list includes the
+        detected shape or the sentinel value ``all``. Deployment is strictly
+        one-way — the overlay owns deployed files (#334):
+
+        - missing in target → copied.
+        - present and identical to the overlay → skipped (already current).
+        - present, differs from the overlay, but still matches what we last
+          deployed (deploy manifest) → **updated** (refreshed from the overlay).
+        - present, differs from both the overlay and the last deployment, or has
+          no provenance → **skipped** with a local-edit note; never overwritten.
+
+        When *overlay_path* is None and ``~/.canary/skills/`` does not exist,
+        returns an empty list silently.
+        """
+        import shutil
+
+        results: list[SkillDeployResult] = []
+        skills_to_deploy = self._collect_overlay_skills(shape, overlay_path)
 
         target_skills_dir = target_root / ".canary" / "skills"
+        manifest = _read_deploy_manifest(target_skills_dir)
+        manifest_dirty = False
 
         for info, skill_dir in skills_to_deploy:
             dest = target_skills_dir / skill_dir.name
+            overlay_hash = _hash_skill_dir(skill_dir)
+
             if dest.exists():
-                results.append(SkillDeployResult(
-                    skill_name=info.name,
-                    status="skipped",
-                    note="already present",
-                ))
+                target_hash = _hash_skill_dir(dest)
+                if target_hash == overlay_hash:
+                    results.append(SkillDeployResult(
+                        skill_name=info.name, status="skipped", note="already current"
+                    ))
+                    if manifest.get(skill_dir.name, {}).get("hash") != overlay_hash:
+                        manifest[skill_dir.name] = {"name": info.name, "hash": overlay_hash}
+                        manifest_dirty = True
+                    continue
+                recorded = manifest.get(skill_dir.name, {}).get("hash")
+                if recorded is None or target_hash != recorded:
+                    # Hand-edited (or unprovenanced) — one-way ownership refuses
+                    # to clobber it.
+                    results.append(SkillDeployResult(
+                        skill_name=info.name, status="skipped",
+                        note="local edits — not overwritten",
+                    ))
+                    continue
+                # Untouched since deploy; overlay moved on → safe to refresh.
+                if dry_run:
+                    results.append(SkillDeployResult(
+                        skill_name=info.name, status="dry_run", note="would update"
+                    ))
+                    continue
+                shutil.rmtree(dest)
+                shutil.copytree(skill_dir, dest)
+                manifest[skill_dir.name] = {"name": info.name, "hash": overlay_hash}
+                manifest_dirty = True
+                results.append(SkillDeployResult(skill_name=info.name, status="updated"))
                 continue
+
             if dry_run:
-                results.append(SkillDeployResult(
-                    skill_name=info.name,
-                    status="dry_run",
-                ))
+                results.append(SkillDeployResult(skill_name=info.name, status="dry_run"))
                 continue
-            import shutil
             target_skills_dir.mkdir(parents=True, exist_ok=True)
             shutil.copytree(skill_dir, dest)
+            manifest[skill_dir.name] = {"name": info.name, "hash": overlay_hash}
+            manifest_dirty = True
             results.append(SkillDeployResult(skill_name=info.name, status="copied"))
 
+        if manifest_dirty and not dry_run:
+            _write_deploy_manifest(target_skills_dir, manifest)
+
         return results
+
+    def check_freshness(
+        self,
+        project_root: Path,
+        *,
+        overlay_path: Optional[Path],
+        framework: Optional[str] = None,
+    ) -> FreshnessReport:
+        """Compare the overlay's deployable skills against what *project_root*
+        carries, without writing anything (#334).
+
+        Classifies each matching overlay skill as current / stale / missing /
+        local_edit. Drift (stale + missing) means the overlay has newer
+        deployable skills the target should refresh; a local edit is a
+        one-way-ownership safety stop that must be reconciled by hand.
+        """
+        ctx = self.detect(project_root)
+        if not ctx.is_harness_project:
+            if ctx.not_test_project_reason:
+                raise ValueError(ctx.not_test_project_reason)
+            raise ValueError(
+                f"No harness project detected at {project_root}. "
+                "Expected harness.config.json and .harness/ directory."
+            )
+
+        shape = ctx.detected_shape
+        skills = self._collect_overlay_skills(shape, overlay_path)
+        target_skills_dir = project_root / ".canary" / "skills"
+        manifest = _read_deploy_manifest(target_skills_dir)
+
+        results: list[SkillFreshnessResult] = []
+        for info, skill_dir in skills:
+            dest = target_skills_dir / skill_dir.name
+            if not dest.exists():
+                results.append(SkillFreshnessResult(
+                    info.name, skill_dir.name, "missing",
+                    "overlay ships this skill; target does not carry it",
+                ))
+                continue
+            overlay_hash = _hash_skill_dir(skill_dir)
+            target_hash = _hash_skill_dir(dest)
+            if target_hash == overlay_hash:
+                results.append(SkillFreshnessResult(info.name, skill_dir.name, "current"))
+                continue
+            recorded = manifest.get(skill_dir.name, {}).get("hash")
+            if recorded is not None and target_hash == recorded:
+                results.append(SkillFreshnessResult(
+                    info.name, skill_dir.name, "stale",
+                    "overlay has a newer version",
+                ))
+            else:
+                results.append(SkillFreshnessResult(
+                    info.name, skill_dir.name, "local_edit",
+                    "deployed skill has local edits; refusing to overwrite",
+                ))
+
+        return FreshnessReport(
+            shape=shape,
+            overlay_path=str(overlay_path) if overlay_path is not None else None,
+            results=results,
+        )
 
     def _detect_framework(
         self, root: Path, config: dict
