@@ -73,11 +73,19 @@ def recommend(
     alternatives = [r["framework"] for r in results[1:]]
 
     if output_json:
+        # #357: expose the registry's run-command for the chosen framework so a
+        # downstream consumer can both pick AND run it. `{file}` is the test-path
+        # placeholder. Unknown/None framework → null command, [] flags.
+        from agent.core.framework_registry import FrameworkRegistry
+
+        exec_info = FrameworkRegistry().execution_info(result["framework"]) or {}
         payload = {
             "status": "success",
             "test_type": classification.test_type,
             "framework": result["framework"],
             "file_extension": result["file_extension"],
+            "execution_command": exec_info.get("execution_command"),
+            "ci_flags": exec_info.get("ci_flags", []),
             "reasoning": result["reason"],
             "alternatives": alternatives,
         }
@@ -97,6 +105,36 @@ def recommend(
         print(f"\n[yellow]⚠ License: {result['warning']}[/yellow]")
     if alternatives:
         print(f"\n[bold]Alternatives:[/bold] {', '.join(alternatives)}")
+
+
+@app.command()
+def frameworks(
+    output_json: bool = typer.Option(False, "--json", help="Dump the registry as JSON for tool integration."),
+):
+    """
+    List the supported testing frameworks and how to run each (#357).
+
+    Exposes the framework registry as an authoritative framework → run-command
+    source: name, category, languages, file extensions, `execution_command`
+    (with a `{file}` placeholder for the test path), `ci_flags`, and status.
+    """
+    from agent.core.framework_registry import FrameworkRegistry
+
+    summaries = FrameworkRegistry().summaries()
+
+    if output_json:
+        _sys.stdout.write(json.dumps({"frameworks": summaries}, indent=2) + "\n")
+        return
+
+    print("[bold green]Canary Frameworks[/bold green]\n")
+    for f in summaries:
+        status = f" [dim]({f['status']})[/dim]" if f.get("status") else ""
+        print(f"[bold]{f['name']}[/bold]{status} — {f.get('category') or 'n/a'}")
+        cmd = f.get("execution_command") or "(no run command)"
+        print(f"  run: {cmd}")
+        if f.get("ci_flags"):
+            print(f"  ci:  {' '.join(f['ci_flags'])}")
+    print("\n[dim]`{file}` in a run command is the test-file path placeholder.[/dim]")
 
 
 @app.command()
