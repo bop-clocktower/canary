@@ -1,0 +1,9 @@
+# The npm/ JS/TS runtime bundle is hand-maintained in a consistent
+# double-quote, wider-than-80-col style and has never been prettier-formatted
+# (CI runs no prettier check over it). Excluding it here keeps the repo's
+# prettier config — which exists for Markdown/prose (proseWrap: always) — from
+# flagging the entire bundle and blocking the local quality hook on every edit.
+npm/src/
+npm/scripts/
+npm/bin/
+npm/dist/
