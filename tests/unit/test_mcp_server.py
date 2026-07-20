@@ -66,6 +66,25 @@ class TestAnalyzeFile(unittest.TestCase):
         self.assertEqual(result["framework"], "playwright")
         self.assertEqual(result["framework_source"], "config")
 
+    def test_analyze_file_includes_environment_context(self):
+        """analyze_file wires in #341 environment/persona detection."""
+        from agent import mcp_server as srv
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".git").mkdir()
+            (root / ".env").write_text("BASE_URL=https://app.example.com\n")
+            (root / "playwright.config.ts").write_text(
+                "export default { testDir: './tests/e2e' };\n"
+            )
+            target = root / "tests" / "e2e" / "login.spec.ts"
+            target.parent.mkdir(parents=True)
+            target.write_text("import { test } from '@playwright/test';\n")
+            result = srv._analyze_file_impl(str(target))
+        env = result["environment"]
+        self.assertEqual(env["base_url"], "https://app.example.com")
+        self.assertEqual(env["suite_type"], "e2e")
+        self.assertEqual(env["user_level"], "sdet")
+
     def test_analyze_file_framework_source_suffix_fallback(self):
         """Without a config file, framework_source is 'suffix' and the value is
         still the conventional suffix mapping."""
