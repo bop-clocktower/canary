@@ -4,9 +4,18 @@
  * `canary doctor` — environment self-check (Phase 2).
  *
  * Runs two tiers of checks and prints each as pass/fail with a remedy line
- * under every failure, adopting the `harness doctor` output shape; the process
- * exits non-zero when any check fails. Tier 1 is built-in engine checks; tier 2
- * is data-driven checks read from each tracked overlay's `.canary/doctor.json`.
+ * under every failure; the process exits non-zero when any check fails. Tier 1
+ * is built-in engine checks; tier 2 is data-driven checks read from each
+ * tracked overlay's `.canary/doctor.json`.
+ *
+ * Output shape (issue #318): the human text is loosely modeled on
+ * `harness doctor`, but the two are NOT a shared contract and have diverged —
+ * canary uses richer per-check fields (`id`/`label`/`remedy`) and a `skip`
+ * status tier that harness lacks. `--json` therefore emits a *canary-owned*
+ * machine contract, `{ version, checks, allPassed, warnings }`, documented in
+ * `JsonReport` below. Only the top-level `allPassed` boolean intentionally
+ * matches `harness doctor --json`; per-check fields are canary's own. Do not
+ * build a parser that assumes the two JSON shapes are interchangeable.
  */
 
 import * as os from "node:os";
@@ -55,7 +64,39 @@ interface CheckGroup {
   results: CheckResult[];
 }
 
+/**
+ * The `canary doctor --json` machine contract (issue #318). Canary-owned and
+ * intentionally distinct from `harness doctor --json`: only `allPassed` matches
+ * harness's top-level shape; per-check fields (`id`/`label`/`remedy`/`group`)
+ * and the `skip` status tier are canary's own. `version` guards the contract so
+ * consumers can detect a breaking change.
+ */
+export interface JsonReportCheck {
+  /** Stable check identifier (engine check id, or the manifest check's `id`). */
+  id: string;
+  status: CheckStatus;
+  label: string;
+  /** Present only when the check did not pass. */
+  remedy?: string;
+  /** The section the check belongs to, e.g. `"Engine"` or `"Overlay: acme"`. */
+  group: string;
+}
+
+export interface JsonReport {
+  version: 1;
+  checks: JsonReportCheck[];
+  /** True iff no check failed — mirrors `harness doctor --json`'s one shared field. */
+  allPassed: boolean;
+  /** Non-fatal advisories (e.g. an unknown `--persona`); empty when none. */
+  warnings: string[];
+}
+
 const SYMBOL: Record<CheckStatus, string> = { pass: "✓", fail: "✗", skip: "-", info: "ℹ" };
+
+/** `--json` requests machine output on stdout instead of the human report. */
+export function parseJsonFlag(args: readonly string[]): boolean {
+  return args.includes("--json");
+}
 
 /** `--persona <tag>` / `--persona=<tag>`, or null when unset. */
 function parsePersona(args: readonly string[]): string | null {
@@ -162,22 +203,45 @@ export async function runDoctor(args: readonly string[], deps: DoctorDeps = {}):
     allChecks.push(...loadedChecks);
   }
 
-  out.write("canary doctor\n");
-
   // Issue #294: if the user passed a --persona that no overlay declares,
   // tell them the valid vocabulary instead of silently filtering to only
   // the persona-less checks and leaving them to wonder why.
   const personaHint = unknownPersonaHint(persona, collectPersonas(allChecks));
+
+  const failures = groups.reduce(
+    (n, g) => n + g.results.filter((r) => r.status === "fail").length,
+    0
+  );
+
+  // Issue #318: `--json` emits the canary-owned machine contract instead of
+  // the human report — nothing else is written to stdout, so the whole stream
+  // parses as one JSON object.
+  if (parseJsonFlag(args)) {
+    const report: JsonReport = {
+      version: 1,
+      checks: groups.flatMap((g) =>
+        g.results.map((r) => ({
+          id: r.id,
+          status: r.status,
+          label: r.label,
+          ...(r.remedy !== undefined ? { remedy: r.remedy } : {}),
+          group: g.header,
+        }))
+      ),
+      allPassed: failures === 0,
+      warnings: personaHint ? [personaHint] : [],
+    };
+    out.write(`${JSON.stringify(report, null, 2)}\n`);
+    return failures === 0 ? 0 : 1;
+  }
+
+  out.write("canary doctor\n");
   if (personaHint) {
     out.write(`\n! ${personaHint}\n`);
   }
-  let failures = 0;
   for (const group of groups) {
     out.write(`\n${group.header}\n`);
     for (const result of group.results) {
-      if (result.status === "fail") {
-        failures += 1;
-      }
       out.write(renderCheck(result));
     }
   }
