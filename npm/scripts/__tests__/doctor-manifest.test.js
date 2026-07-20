@@ -5,8 +5,8 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   loadManifest,
-  filterByPersona,
-  collectPersonas,
+  filterByAudience,
+  collectAudiences,
 } = require('../../dist/doctor-manifest.js');
 
 function tmpClone() {
@@ -44,7 +44,7 @@ describe('loadManifest', () => {
           id: 'reachable',
           type: 'url-reachable',
           url: 'https://example.com',
-          persona: ['alpha'],
+          audience: ['alpha'],
           remedy: 'req access',
         },
         {
@@ -59,6 +59,42 @@ describe('loadManifest', () => {
     assert.equal(r.ok, true);
     assert.equal(r.checks.length, 3);
     assert.equal(r.checks[0].type, 'file-exists');
+    assert.deepEqual(r.checks[1].audience, ['alpha']);
+  });
+
+  it('accepts the legacy `persona:` field as an alias for `audience:` (#319 B)', () => {
+    writeManifest(clone, {
+      checks: [
+        {
+          id: 'legacy',
+          type: 'file-exists',
+          path: 'x',
+          remedy: 'r',
+          persona: ['backend'],
+        },
+      ],
+    });
+    const r = loadManifest(clone);
+    assert.equal(r.ok, true);
+    // The legacy field is normalized onto `audience`.
+    assert.deepEqual(r.checks[0].audience, ['backend']);
+  });
+
+  it('rejects a non-string legacy persona list with an audience error', () => {
+    writeManifest(clone, {
+      checks: [
+        {
+          id: 'x',
+          type: 'file-exists',
+          path: 'p',
+          remedy: 'r',
+          persona: 'nope',
+        },
+      ],
+    });
+    const r = loadManifest(clone);
+    assert.equal(r.ok, false);
+    assert.match(r.failure.remedy, /non-string audience list/);
   });
 
   it('degrades malformed JSON to a single failing check (no throw)', () => {
@@ -104,7 +140,7 @@ describe('loadManifest', () => {
   });
 });
 
-describe('filterByPersona', () => {
+describe('filterByAudience', () => {
   const checks = [
     { id: 'always', type: 'file-exists', path: 'a', remedy: 'r' },
     {
@@ -112,34 +148,34 @@ describe('filterByPersona', () => {
       type: 'file-exists',
       path: 'b',
       remedy: 'r',
-      persona: ['alpha'],
+      audience: ['alpha'],
     },
     {
       id: 'beta-only',
       type: 'file-exists',
       path: 'c',
       remedy: 'r',
-      persona: ['Beta'],
+      audience: ['Beta'],
     },
   ];
 
-  it('keeps everything when persona is null', () => {
-    assert.equal(filterByPersona(checks, null).length, 3);
+  it('keeps everything when audience is null', () => {
+    assert.equal(filterByAudience(checks, null).length, 3);
   });
-  it('keeps no-persona checks plus matching-tag checks (case-insensitive)', () => {
-    const ids = filterByPersona(checks, 'beta').map((c) => c.id);
+  it('keeps no-audience checks plus matching-tag checks (case-insensitive)', () => {
+    const ids = filterByAudience(checks, 'beta').map((c) => c.id);
     assert.deepEqual(ids, ['always', 'beta-only']);
   });
-  it('keeps only no-persona checks when the tag matches none', () => {
-    const ids = filterByPersona(checks, 'gamma').map((c) => c.id);
+  it('keeps only no-audience checks when the tag matches none', () => {
+    const ids = filterByAudience(checks, 'gamma').map((c) => c.id);
     assert.deepEqual(ids, ['always']);
   });
 });
 
-describe('collectPersonas', () => {
-  it('returns [] when no check declares a persona', () => {
+describe('collectAudiences', () => {
+  it('returns [] when no check declares an audience', () => {
     const checks = [{ id: 'a', type: 'file-exists', path: 'x', remedy: 'r' }];
-    assert.deepEqual(collectPersonas(checks), []);
+    assert.deepEqual(collectAudiences(checks), []);
   });
   it('collects distinct tags in first-seen order', () => {
     const checks = [
@@ -148,17 +184,17 @@ describe('collectPersonas', () => {
         type: 'file-exists',
         path: 'x',
         remedy: 'r',
-        persona: ['backend'],
+        audience: ['backend'],
       },
       {
         id: 'b',
         type: 'file-exists',
         path: 'y',
         remedy: 'r',
-        persona: ['frontend'],
+        audience: ['frontend'],
       },
     ];
-    assert.deepEqual(collectPersonas(checks), ['backend', 'frontend']);
+    assert.deepEqual(collectAudiences(checks), ['backend', 'frontend']);
   });
   it('de-duplicates case-insensitively, keeping first-seen casing', () => {
     const checks = [
@@ -167,16 +203,16 @@ describe('collectPersonas', () => {
         type: 'file-exists',
         path: 'x',
         remedy: 'r',
-        persona: ['Backend'],
+        audience: ['Backend'],
       },
       {
         id: 'b',
         type: 'file-exists',
         path: 'y',
         remedy: 'r',
-        persona: ['backend', 'qa'],
+        audience: ['backend', 'qa'],
       },
     ];
-    assert.deepEqual(collectPersonas(checks), ['Backend', 'qa']);
+    assert.deepEqual(collectAudiences(checks), ['Backend', 'qa']);
   });
 });

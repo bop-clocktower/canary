@@ -92,22 +92,30 @@ other overlay's checks, and never crashes `doctor`.
 
 ---
 
-## `--persona <tag>`
+## `--audience <tag>`
 
-`--persona <tag>` (or `--persona=<tag>`) runs only the overlay checks whose
-`persona` list contains `<tag>` (case-insensitive), **plus** every check that
-has no `persona` field. With no flag, all checks run.
+`--audience <tag>` (or `--audience=<tag>`) runs only the overlay checks whose
+`audience` list contains `<tag>` (case-insensitive), **plus** every check that
+has no `audience` field. With no flag, all checks run.
 
-The engine ships **no persona vocabulary** — tags are free-form strings the
+> **Not harness personas.** `--audience` is a canary-local **check-grouping**
+> filter — an overlay tags its own doctor checks so a user can run a relevant
+> subset. It is **unrelated** to harness's persona system (`run_persona` /
+> `generate_persona_artifacts`, which generate agent artifacts). The flag was
+> named `--persona` before v5.11; that name still works as a **legacy alias**,
+> but `--audience` is canonical (issue #319). The manifest field is likewise
+> `audience:` with `persona:` accepted as a legacy alias.
+
+The engine ships **no audience vocabulary** — tags are free-form strings the
 overlay owns. An overlay might tag some checks `alpha` and others `beta`; what
 those mean is documented by that overlay, not by Canary.
 
-If you pass a `--persona` value that **no** installed overlay declares, `doctor`
-prints a hint listing the persona tags it actually found (discovered from the
-overlays' manifests) so you can pick a valid one — rather than silently running
-only the untagged checks and leaving you to guess why your filter matched
-nothing. When no overlay defines any personas at all, the hint says so and tells
-you to drop the flag.
+If you pass an `--audience` value that **no** installed overlay declares,
+`doctor` prints a hint listing the audience tags it actually found (discovered
+from the overlays' manifests) so you can pick a valid one — rather than silently
+running only the untagged checks and leaving you to guess why your filter
+matched nothing. When no overlay defines any audiences at all, the hint says so
+and tells you to drop the flag.
 
 ---
 
