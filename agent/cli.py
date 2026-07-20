@@ -311,6 +311,35 @@ def _resolve_migrate_overlay(from_overlay: Optional[str], overlay: Optional[str]
     return None
 
 
+def _migrate_check(migrator, root, overlay_path, output_json: bool) -> None:
+    """Run the freshness gate and exit with a drift-aware code (#334).
+
+    Always raises ``typer.Exit``: 0 in sync, 1 on drift (overlay carries newer
+    deployable skills), 2 when a deployed skill has local edits (the one-way
+    ownership safety refusal).
+    """
+    if overlay_path is None:
+        print(
+            "\n[yellow]No overlay to check against.[/yellow] Track one with "
+            "[bold]canary overlay add[/bold] or pass [bold]--from <overlay>[/bold]."
+        )
+        raise typer.Exit(0)
+
+    try:
+        report = migrator.check_freshness(root, overlay_path=overlay_path)
+    except ValueError as e:
+        print(f"\n[bold red]✗[/bold red] {e}")
+        raise typer.Exit(1)
+
+    if output_json:
+        import json as _json
+        _sys.stdout.write(_json.dumps(report.to_dict(), indent=2) + "\n")
+    else:
+        print(report.to_markdown())
+
+    raise typer.Exit(report.exit_code())
+
+
 @app.command()
 def migrate(
     path: str = typer.Option(".", "--path", "-p", help="Project root to migrate (default: current directory)."),
@@ -328,7 +357,13 @@ def migrate(
              "deployed into the target.",
     ),
     apply: bool = typer.Option(False, "--apply", help="Write files. Without this flag the command is a dry run."),
-    output_json: bool = typer.Option(False, "--json", help="Emit the migration report as JSON."),
+    check: bool = typer.Option(
+        False, "--check",
+        help="Freshness gate: report (without writing) whether the overlay carries newer "
+             "deployable skills than the target. Exit 0 in sync, 1 on drift, 2 when a "
+             "deployed skill has local edits (one-way ownership refuses to overwrite it).",
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Emit the report as JSON."),
 ):
     """
     Migrate a harness-scaffolded test-suite project to Canary's layout.
@@ -347,6 +382,10 @@ def migrate(
     root = _Path(path).resolve()
     overlay_path = _resolve_migrate_overlay(from_overlay, overlay)
     migrator = HarnessMigrator()
+
+    if check:
+        _migrate_check(migrator, root, overlay_path, output_json)
+        return  # unreachable — _migrate_check always raises typer.Exit
 
     try:
         ctx = migrator.detect(root)
