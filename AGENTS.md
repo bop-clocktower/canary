@@ -144,7 +144,11 @@ docs/branching-convention
 - **Migrator:** [agent/core/migrator.py](agent/core/migrator.py) — Detects
   harness-scaffolded test projects (via `harness.config.json` and `.harness/`)
   and migrates them to Canary's layout without touching existing test files.
-  Invoked via `canary migrate`.
+  Invoked via `canary migrate`. `canary migrate --from <overlay> --check` is a
+  no-write **freshness gate** (exit 0 in sync / 1 drift / 2 a deployed skill has
+  local edits; `--json` for CI). Deployment is one-way: a per-skill content hash
+  in `.canary/skills/.deploy-manifest.json` lets `--apply` refresh only
+  unmodified deployed copies, never clobbering local edits.
 - **Skill Registry:**
   [agent/core/skill_registry.py](agent/core/skill_registry.py) — Discovers
   bundled default skills and local project overlay skills (from
@@ -235,9 +239,8 @@ One capability can carry different names across its slash-command, agent, and
 skill-directory surfaces (e.g. `/canary-write-test` → agent `canary-test-author`
 → skill dir `canary-generate-test`). The **slash command is canonical**; use it
 in routing docs and NL routing. The authoritative mapping lives in the
-integration guide's
-[Canonical capability names](docs/guides/harness-canary-integration.md#canonical-capability-names)
-table (#319).
+[Integration Guide](docs/guides/harness-canary-integration.md)'s "Canonical
+capability names" table (#319).
 
 For the full picture when running **both** tools — the skill disambiguation
 matrix (canary-X vs harness-Y for ~10 overlap pairs), the `/canary-X` vs
