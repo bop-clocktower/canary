@@ -18,6 +18,12 @@ import {
 } from './overlay-commands.js';
 import * as registry from './overlays-registry.js';
 import { detectSkillConflicts } from './overlay-conflicts.js';
+import {
+  parseRequiresField,
+  parseRequirement,
+  checkRequirement,
+  type CommandProbe,
+} from './skill-requirements.js';
 
 /** The published npm package name (mirrors the install remedy in the shim). */
 const PKG = 'canary-test-cli';
@@ -33,6 +39,8 @@ export interface EngineCheckDeps {
   /** Latest published version, or null when unknown/offline. Injectable. */
   getLatestVersion?: () => Promise<string | null>;
   timeoutMs?: number;
+  /** Probe a command's presence + version (#336). Injectable for tests. */
+  skillProbe?: CommandProbe;
 }
 
 const realGit: GitRunner = (args, opts = {}) => {
@@ -406,6 +414,127 @@ export function checkOverlayConflicts(deps: EngineCheckDeps = {}): CheckResult {
   };
 }
 
+/** Real command probe (#336): `<cmd> --version`, extract the first x.y[.z]. */
+const realProbe: CommandProbe = (command) => {
+  const { spawnSync } =
+    require('node:child_process') as typeof import('node:child_process');
+  const r = spawnSync(command, ['--version'], {
+    encoding: 'utf8',
+    timeout: DEFAULT_TIMEOUT_MS,
+  });
+  // ENOENT (not on PATH) sets r.error; a non-zero exit does not — the command
+  // exists, it just may not print a parseable version.
+  if (r.error) return { present: false, version: null };
+  const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  const m = out.match(/(\d+\.\d+(?:\.\d+)?)/);
+  return { present: true, version: m ? m[1] : null };
+};
+
+/** One installed skill that declares runtime requirements. */
+interface SkillRequires {
+  name: string;
+  /** Where it came from, for the failure line: `overlay:<n>`, `global`, `local`. */
+  source: string;
+  requires: string[];
+}
+
+/** SKILL.md paths + source labels for skills installed in a consuming repo. */
+function skillMdRoots(homeDir: string, cwd: string): Array<[string, string]> {
+  const roots: Array<[string, string]> = [];
+  const overlays = path.join(homeDir, '.canary', 'overlays');
+  for (const ov of safeDirs(overlays)) {
+    roots.push([path.join(overlays, ov, '.canary', 'skills'), `overlay:${ov}`]);
+  }
+  roots.push([path.join(homeDir, '.canary', 'skills'), 'global']);
+  roots.push([path.join(cwd, '.canary', 'skills'), 'local']);
+  return roots;
+}
+
+/** Directory entries (names) under `dir`, or [] when it is absent/unreadable. */
+function safeDirs(dir: string): string[] {
+  try {
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return [];
+  }
+}
+
+/** Collect `requires` declarations from every skill installed in this repo. */
+function scanSkillRequirements(homeDir: string, cwd: string): SkillRequires[] {
+  const found: SkillRequires[] = [];
+  for (const [skillsDir, source] of skillMdRoots(homeDir, cwd)) {
+    for (const name of safeDirs(skillsDir)) {
+      const md = path.join(skillsDir, name, 'SKILL.md');
+      let text: string;
+      try {
+        text = fs.readFileSync(md, 'utf8');
+      } catch {
+        continue;
+      }
+      const requires = parseRequiresField(text);
+      if (requires.length > 0) found.push({ name, source, requires });
+    }
+  }
+  return found;
+}
+
+/**
+ * Verify the runtime requirements declared by installed skills (#336). Reads
+ * `requires:` from each overlay/global/local skill's SKILL.md and checks every
+ * declared command (and optional version) against the environment. A missing
+ * or too-old requirement is a `fail` naming the skill and command; a bare
+ * presence check that passes, or a token whose version cannot be read, never
+ * fails. No declarations at all → an informational line (not a false "all
+ * good"). Bundled skills ship inside the engine and are out of scope here.
+ */
+export function checkSkillRequirements(
+  deps: EngineCheckDeps = {},
+): CheckResult {
+  const homeDir = deps.homeDir ?? os.homedir();
+  const cwd = deps.cwd ?? process.cwd();
+  const probe = deps.skillProbe ?? realProbe;
+
+  const skills = scanSkillRequirements(homeDir, cwd);
+  if (skills.length === 0) {
+    return {
+      id: 'engine:skill-requirements',
+      status: 'info',
+      label: 'no installed skill declares runtime requirements',
+    };
+  }
+
+  const failures: string[] = [];
+  let checked = 0;
+  for (const skill of skills) {
+    for (const token of skill.requires) {
+      checked += 1;
+      const r = checkRequirement(parseRequirement(token), probe);
+      if (r.status === 'missing' || r.status === 'too-old') {
+        failures.push(
+          `${skill.source}/${skill.name} needs ${token}: ${r.detail}`,
+        );
+      }
+    }
+  }
+
+  if (failures.length > 0) {
+    return {
+      id: 'engine:skill-requirements',
+      status: 'fail',
+      label: `skill runtime requirements unmet: ${failures.length} of ${checked}`,
+      remedy: `Install/upgrade the missing tools — ${failures.join('; ')}`,
+    };
+  }
+  return {
+    id: 'engine:skill-requirements',
+    status: 'pass',
+    label: `skill runtime requirements: ${checked} satisfied across ${skills.length} skill(s)`,
+  };
+}
+
 /** Run every engine check, in display order. */
 export async function runEngineChecks(
   deps: EngineCheckDeps = {},
@@ -415,6 +544,7 @@ export async function runEngineChecks(
     checkGit(deps),
     ...checkOverlays(deps),
     checkOverlayConflicts(deps),
+    checkSkillRequirements(deps),
     checkProjectConfig(deps),
     checkMcpConfig(deps),
   ];

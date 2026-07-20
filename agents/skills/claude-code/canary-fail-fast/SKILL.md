@@ -7,6 +7,7 @@ description:
   signal can't be missed. Self-contained (bundles its own Playwright JSON parser
   and failure categorizer).
 cli: scripts/cli.py
+requires: [python3>=3.10]
 ---
 
 # Canary Fail-Fast
@@ -60,7 +61,8 @@ when the test step already failed:
 
 ```yaml
 - name: Run Playwright
-  run: npx playwright test --reporter=json --output-file=test-results/results.json
+  run:
+    npx playwright test --reporter=json --output-file=test-results/results.json
 
 - name: Fail-fast digest
   if: always()

@@ -1,7 +1,13 @@
 ---
 name: canary-test-reporter
-description: Playwright JSON results → Markdown + JSON test report. Summarises passed, failed, flaky, and skipped counts with a per-failure error block and a summary table. Exits non-zero when any test failed so the CI step fails on real failures. Complements canary-fail-fast (which aborts early); this skill summarises the full run at the end.
+description:
+  Playwright JSON results → Markdown + JSON test report. Summarises passed,
+  failed, flaky, and skipped counts with a per-failure error block and a summary
+  table. Exits non-zero when any test failed so the CI step fails on real
+  failures. Complements canary-fail-fast (which aborts early); this skill
+  summarises the full run at the end.
 cli: scripts/cli.py
+requires: [python3>=3.10]
 ---
 
 # Canary Test Reporter
@@ -33,8 +39,8 @@ canary skills run canary-test-reporter -- \
   --json-out test-results/report.json
 ```
 
-**Exit code:** `1` when any test failed; `0` otherwise. Flaky tests and
-skipped tests never affect the exit code.
+**Exit code:** `1` when any test failed; `0` otherwise. Flaky tests and skipped
+tests never affect the exit code.
 
 ## Output formats
 
@@ -76,22 +82,36 @@ Received: 200
 {
   "version": 1,
   "generated_at": "2026-07-13T20:07:00Z",
-  "summary": { "total": 18, "passed": 14, "failed": 2, "flaky": 1, "skipped": 1, "duration_ms": 12400 },
+  "summary": {
+    "total": 18,
+    "passed": 14,
+    "failed": 2,
+    "flaky": 1,
+    "skipped": 1,
+    "duration_ms": 12400
+  },
   "results": [
-    { "title": "suite > spec > test", "status": "failed", "file": "tests/auth.spec.ts",
-      "line": 42, "duration_ms": 1823, "error": "Expected: 401\nReceived: 200" }
+    {
+      "title": "suite > spec > test",
+      "status": "failed",
+      "file": "tests/auth.spec.ts",
+      "line": 42,
+      "duration_ms": 1823,
+      "error": "Expected: 401\nReceived: 200"
+    }
   ]
 }
 ```
 
-The `version` field pins the contract for downstream tooling.
-`results` includes **all** tests so external tools can compute their own views.
+The `version` field pins the contract for downstream tooling. `results` includes
+**all** tests so external tools can compute their own views.
 
 ## CI wiring (GitHub Actions)
 
 ```yaml
 - name: Run Playwright
-  run: npx playwright test --reporter=json --output-file=test-results/results.json
+  run:
+    npx playwright test --reporter=json --output-file=test-results/results.json
 
 - name: Test report
   if: always()
@@ -111,5 +131,5 @@ The `version` field pins the contract for downstream tooling.
 
 ## Related skills
 
-- `canary-fail-fast` — aborts the run early and emits `::error` annotations;
-  use with this skill for complete CI coverage (abort fast + summarise at end)
+- `canary-fail-fast` — aborts the run early and emits `::error` annotations; use
+  with this skill for complete CI coverage (abort fast + summarise at end)
