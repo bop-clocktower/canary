@@ -8,6 +8,7 @@ import { parseSource, SourceSpecError } from './source-spec.js';
 import * as registry from './overlays-registry.js';
 import { commandSucceedsHash, loadManifest } from './doctor-manifest.js';
 import { detectSkillConflicts } from './overlay-conflicts.js';
+import { lintOverlay, type LintFinding } from './overlay-lint.js';
 
 /** Result of running a git subcommand. */
 export interface GitResult {
@@ -394,6 +395,78 @@ function listConflicts(reg: registry.OverlayRegistry, out: Writer): number {
   }
   out.write(`\n${conflicts.length} conflict(s), ${unresolved} unresolved.\n`);
   return unresolved === 0 ? 0 : 1;
+}
+
+/** Resolve an overlay `<name|path>` to a clone directory, or null if absent. */
+function resolveOverlayDir(nameOrPath: string, homeDir: string): string | null {
+  // A value with a path separator, or `.`/`..`/a dot-relative form, is a path;
+  // a bare token is a tracked overlay name (mirrors agent/core/overlays.py's
+  // disambiguation, extended so the natural CI form `overlay lint .` works).
+  const looksLikePath =
+    nameOrPath.includes('/') ||
+    nameOrPath.includes(path.sep) ||
+    nameOrPath === '.' ||
+    nameOrPath === '..' ||
+    nameOrPath.startsWith('.');
+  const dir = looksLikePath
+    ? path.resolve(nameOrPath)
+    : registry.clonePath(nameOrPath, homeDir);
+  return fs.existsSync(dir) ? dir : null;
+}
+
+/** Options for {@link lint}. */
+export interface LintOptions {
+  json?: boolean;
+}
+
+/**
+ * `canary overlay lint <name|path>` (#332) — validate an overlay against the
+ * authoring contract. Exits 0 when there are no errors (warnings are advisory),
+ * 1 on any error or an unresolvable target.
+ */
+export function lint(
+  nameOrPath: string | undefined,
+  deps: CommandDeps = {},
+  opts: LintOptions = {},
+): number {
+  const homeDir = deps.homeDir ?? os.homedir();
+  const out = deps.out ?? process.stdout;
+  const err = deps.err ?? process.stderr;
+
+  if (!nameOrPath) {
+    err.write('usage: canary overlay lint <name|path> [--json]\n');
+    return 1;
+  }
+  const dir = resolveOverlayDir(nameOrPath, homeDir);
+  if (dir === null) {
+    err.write(
+      `canary overlay lint: no overlay found for "${nameOrPath}" (not a tracked name or an existing path).\n`,
+    );
+    return 1;
+  }
+
+  const result = lintOverlay(dir);
+  const errors = result.findings.filter((f) => f.level === 'error');
+
+  if (opts.json) {
+    out.write(`${JSON.stringify(result, null, 2)}\n`);
+    return errors.length === 0 ? 0 : 1;
+  }
+
+  const symbol = (f: LintFinding) => (f.level === 'error' ? '✗' : '⚠');
+  out.write(`canary overlay lint: ${nameOrPath}\n`);
+  if (result.findings.length === 0) {
+    out.write(`\n✓ ${result.skillsChecked} skill(s) — no issues.\n`);
+    return 0;
+  }
+  for (const f of result.findings) {
+    out.write(`  ${symbol(f)} ${f.skill}: ${f.message}\n`);
+  }
+  const warnings = result.findings.length - errors.length;
+  out.write(
+    `\n${result.skillsChecked} skill(s) checked — ${errors.length} error(s), ${warnings} warning(s).\n`,
+  );
+  return errors.length === 0 ? 0 : 1;
 }
 
 /** Update one overlay clone. Returns 0 on success, 1 on refusal/failure. */

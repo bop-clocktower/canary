@@ -61,8 +61,8 @@ function refFrom(flags: Record<string, string | boolean>): string | null {
 }
 
 const OVERLAY_USAGE =
-  'usage: canary overlay <add|list|update|remove> [args]\n' +
-  '  add <source> [--ref <tag>]   list [--conflicts]   update [name]   remove <name>\n';
+  'usage: canary overlay <add|list|lint|update|remove> [args]\n' +
+  '  add <source> [--ref <tag>]   list [--conflicts]   lint <name|path> [--json]   update [name]   remove <name>\n';
 
 interface SubcommandCtx {
   positionals: string[];
@@ -85,6 +85,8 @@ const OVERLAY_SUBCOMMANDS: Record<string, (ctx: SubcommandCtx) => number> = {
   },
   list: ({ flags, deps }) =>
     overlay.list(deps, { conflicts: flags.conflicts === true }),
+  lint: ({ positionals, flags, deps }) =>
+    overlay.lint(positionals[0], deps, { json: flags.json === true }),
   update: ({ positionals, deps }) =>
     overlay.update(positionals[0] ?? null, deps),
   remove: ({ positionals, deps, err }) => {
