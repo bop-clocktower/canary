@@ -251,9 +251,13 @@ canary migrate --from example-org-example-overlay --check          # human-reada
 canary migrate --from example-org-example-overlay --check --json   # machine-readable
 ```
 
-`--json` emits
-`{ shape, overlay_path, in_sync, has_drift, has_local_edits, exit_code, skills: [{ skill_name, dir_name, status, detail }] }`,
-where `status` is `current` \| `stale` \| `missing` \| `local_edit`.
+`--json` emits a machine-readable summary, where each skill's `status` is
+`current` \| `stale` \| `missing` \| `local_edit`:
+
+```text
+{ shape, overlay_path, in_sync, has_drift, has_local_edits, exit_code,
+  skills: [{ skill_name, dir_name, status, detail }] }
+```
 
 ### One-way ownership (the safety guarantee)
 
