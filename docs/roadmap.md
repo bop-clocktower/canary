@@ -287,9 +287,15 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 ### canary-katana — deleted-test quarantine
 
-- **Status:** backlog
+- **Status:** done
 - **Spec:** —
-- **Summary:** Ideation rank 1 (score 6.75) from
+- **Summary:** DONE — shipped on feat/bop-skills-batch-1 as
+  agents/skills/claude-code/canary-katana/ (SKILL.md + Tier-0 scripts
+  diffscan/ledger/alarm/cli, 65 unit tests). Silent-by-default: records every
+  deleted/skipped test to an append-only, deduped provenance ledger and alarms
+  only on last-coverage loss of a critical-area symbol; degrades to
+  recording-only (never fails, even under --strict) when critical-area data is
+  absent. Original ideation: rank 1 (score 6.75) from
   docs/ideation/bop-themed-canary-skills-2026-07-21.md. Capture every deleted or
   skipped test with provenance (who, when, what it covered) instead of letting
   it vanish silently, and alarm when a deletion drops the LAST coverage on a
@@ -325,9 +331,11 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 ### canary-blackhawk — temporal-dependency linter
 
-- **Status:** backlog
+- **Status:** done
 - **Spec:** —
-- **Summary:** Ideation rank 3 (score 6.75) from
+- **Summary:** DONE — shipped on feat/bop-skills-batch-1 as
+  agents/skills/claude-code/canary-blackhawk/ (SKILL.md + Tier-0 scripts
+  rules/scanner/cli). Original ideation: rank 3 (score 6.75) from
   docs/ideation/bop-themed-canary-skills-2026-07-21.md. Statically flag tests
   depending on wall-clock, timezone, or DST - the ones that pass all day and
   fail at midnight, across a DST boundary, or on a leap day. Accepted risk to
