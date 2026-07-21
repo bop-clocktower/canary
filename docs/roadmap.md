@@ -4,7 +4,7 @@ version: 1
 created: 2026-05-11
 updated: 2026-06-29
 last_synced: 2026-06-29
-last_manual_edit: 2026-07-19T12:58:15.477Z
+last_manual_edit: 2026-07-21T21:28:28.000Z
 ---
 
 # Roadmap
@@ -174,7 +174,12 @@ last_manual_edit: 2026-07-19T12:58:15.477Z
   Accepted risk to handle in spec: historical run JSON is not persisted anywhere
   today - scope v1 to consume a caller-supplied set of run artifacts (stateless)
   and defer any persistence/ingest tier; validates the analysis before investing
-  in storage. Medium effort. Next: /harness:brainstorming to spec.
+  in storage. Medium effort. Next: /harness:brainstorming to spec. UPDATE
+  2026-07-21: canary-clocktower (this same Intake section) is the persistence
+  tier this item defers - if clocktower ships first, the stateless-v1 constraint
+  can be dropped. Suggested themed name if the BoP suite lands: `canary-misfit`
+  (teleports between pass and fail); naming only, no scope change. (refs:
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md)
 - **Blockers:** —
 - **Plan:** —
 
@@ -235,4 +240,299 @@ last_manual_edit: 2026-07-19T12:58:15.477Z
   Revisit only if a diff-scoped mutation spike proves tractable. High effort /
   low confidence. Next: spike before /harness:brainstorming.
 - **Blockers:** —
+- **Plan:** —
+
+### canary-cry — pre-launch "try to break it" exploratory sweep
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** New skill (`agents/skills/claude-code/canary-cry/`,
+  `/canary-cry`) for timeboxed adversarial exploration ahead of a launch, so a
+  sales demo never has to explain away a bug. Targets real-world abuse of
+  ordinary user flows rather than function-level inputs: impatient
+  double/triple-submit of a CTA on a degraded network, back-button or
+  force-close midway through a multi-form flow that already wrote partial rows,
+  a second user on a shared machine signing out and signing up as themselves
+  against stale session/cache/autofill state, plus duplicated-tab,
+  token-expiry-mid-flow, and stale-optimistic-UI variants. Success criterion is
+  state corruption ("platform left in a bad state"), not merely a rendering
+  defect. Tiered execution: always emits a ranked scenario matrix (works with
+  zero infra); when a live non-prod target plus credentials are supplied it
+  additionally drives the app (Playwright MCP) and reports what actually broke,
+  degrading loudly rather than silently skipping (per the #294/#295 fail-loud
+  pattern). Timeboxed via an `--amplitude` dial where amplitude is how hard each
+  flow is pushed and radius is how many flows are hit: `whisper`
+  (narrow/shallow, ~30-60 min, routine major release) / `shout` (moderate, ~2-4
+  hrs, new-client onboarding) / `scream` (full radius, max depth, unbounded —
+  initial launch and demo hardening). Composes rather than forks:
+  canary-edge-case-discovery for case generation, canary-critical-areas +
+  canary-failure-impact for radius ranking, canary-company-knowledge for
+  org-specific flows and the user catalog, canary-test-reporter for output.
+  Accepted risks to handle in spec: (1) `scream` against a live target is
+  genuinely destructive — spammed CTAs and killed mid-write flows can corrupt
+  shared data and fire real emails/payments/webhooks, so require an explicit
+  non-prod target allowlist, refuse prod by default, and print a dry-run
+  manifest before the first write; (2) an unbounded `scream` is a token and
+  wall-clock bomb — needs convergence criteria (stop after K consecutive barren
+  rounds) and resumable checkpoints rather than "explore until done"; (3) a
+  finding without a deterministic repro is noise — every finding must carry
+  replayable steps plus seed/state, or it cannot be triaged before the launch it
+  was run for. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+
+### canary-katana — deleted-test quarantine
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 1 (score 6.75) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Capture every deleted or
+  skipped test with provenance (who, when, what it covered) instead of letting
+  it vanish silently, and alarm when a deletion drops the LAST coverage on a
+  critical-area symbol. Test deletion is an untracked coverage-regression
+  vector. Accepted risk to handle in spec: most deletions are legitimate (dead
+  feature removal, genuine dedup), so alarming on every one becomes nag fatigue
+  and a muted gate is worse than no gate - ship silent-by-default, firing only
+  on last-coverage-of-critical-area. Deterministic/Tier-0 (git diff + coverage
+  set math, no LLM). Low effort / high confidence. Next: /harness:brainstorming
+  to spec.
+- **Blockers:** —
+- **Plan:** —
+
+### canary-savant — test order-dependence and isolation detector
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 2 (score 6.75) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Shuffle and
+  run-alone-repeat the suite to surface tests that only pass in a specific
+  order, exposing shared-state leakage - a classic hidden flake source. Accepted
+  risk to handle in spec: test-isolation work already shipped in v5.11.0, so
+  this may be re-solving a solved problem under a new name (the rename-not-idea
+  failure) - VERIFY FIRST whether that work was canary's own suite hygiene or a
+  user-facing capability, and drop this item if the latter.
+  Deterministic/Tier-0. Low effort / high confidence. Next: verify overlap, then
+  /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+
+### canary-blackhawk — temporal-dependency linter
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 3 (score 6.75) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Statically flag tests
+  depending on wall-clock, timezone, or DST - the ones that pass all day and
+  fail at midnight, across a DST boundary, or on a leap day. Accepted risk to
+  handle in spec: frozen-clock idioms differ per framework (vi.useFakeTimers,
+  freezegun, jest.setSystemTime), so a naive AST rule false-positives on tests
+  that already handle time correctly - condition the rule on the detected
+  framework via agent/frameworks/registry.json rather than applying it
+  universally. Deterministic/Tier-0. Low effort / high confidence. Next:
+  /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+
+### canary-signal — QA impact digest
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 4 (score 6.75) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Broadcast a periodic
+  digest of what testing actually caught - bugs prevented, sweeps run, escapes
+  avoided - to Slack, Teams, or a PR comment, so the work of testing is visible
+  to people who do not open the code. Serves STRATEGY.md track 5 (Quality made
+  legible). Accepted risk to handle in spec: without canary-clocktower it can
+  only describe the latest run, which UNDERSELLS QA and inverts the goal (a
+  digest reading "1 run, 0 escapes" says "QA did nothing this week") - do not
+  ship before the history substrate exists. Low effort / medium confidence.
+  Next: /harness:brainstorming to spec, AFTER canary-clocktower.
+- **Blockers:** canary-clocktower (needs persisted run history; single-run
+  digest is worse than no digest)
+- **Plan:** —
+
+### canary-clocktower — persistent run-history substrate
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 5 (score 5.25) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. A durable store plus
+  query API over canary-test-reporter run artifacts, which are stateless and
+  ephemeral today. LOAD-BEARING: unblocks canary-signal, canary-hawk-dove, the
+  non-fakeable half of canary-batgirl, and the existing "Flakiness detector
+  skill over test-reporter history" item, which defers explicitly because
+  historical run JSON is not persisted anywhere. Despite ranking 5th it should
+  likely be built FIRST among that cluster. Accepted risk to handle in spec:
+  canary is deliberately stateless and secret-free, and a datastore adds
+  retention, PII, and ops burden that opposes the adoption track - ship as a
+  local, opt-in, single-file store (reuse the YAML+SQLite TCM precedent) with no
+  server and an explicit prune policy. Medium effort / high confidence. Next:
+  /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+
+### canary-manhunter — release quality dossier
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 6 (score 5.25) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Assemble the full
+  evidentiary case for a release - coverage tiers, guardian findings, sweep
+  results, escape history - into one signed report aimed at client-success and
+  delivery staff. Serves STRATEGY.md track 5 (Quality made legible). Accepted
+  risk to handle in spec: reporting with no decision attached is theater and
+  becomes a PDF nobody opens, the most common way quality tooling dies - the
+  dossier must gate something real (a release checklist item) or answer a
+  question someone is already asking under time pressure, or it should not be
+  built. Medium effort / high confidence. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+
+### canary-cassandra — vacuous-test detection
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 7 (score 3.00) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Diff execution traces
+  (from canary-instrument's OTel) against each test's declared target to find
+  tests that PASS WITHOUT EVER INVOKING the code they claim to cover. Addresses
+  the STRATEGY.md target problem more directly than any other candidate in the
+  batch; its mid rank is driven by effort and confidence, not relevance.
+  Accepted risk to handle in spec: "declared target" is not declared anywhere
+  and must be inferred from test names/imports - precisely the heuristic tier
+  the strategy distrusts, and it will confidently flag a correct integration
+  test as vacuous when the call sits several frames deeper. Needs an explicit
+  @covers annotation or trace-to-symbol resolution good enough to earn
+  graph-verified rather than heuristic. Medium effort / medium confidence. Next:
+  /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+
+### canary-question — test-bug vs product-bug triage
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 8 (score 3.00) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Interrogate a failure
+  and classify it as a false-fail (test defect) or a real SUT defect, showing
+  its reasoning - the "is this a test bug or a real bug" question that currently
+  costs triage time on every red build. Accepted risk to handle in spec: a wrong
+  triage is WORSE than no triage - "it's just a flaky test" stamped on a genuine
+  product bug is exactly how defects escape, and it would degrade the
+  escaped-defect headline metric while appearing to help. Must never emit a
+  confident verdict: fidelity-labeled hypothesis plus evidence, never a
+  disposition. Medium effort / medium confidence. Next: /harness:brainstorming
+  to spec.
+- **Blockers:** —
+- **Plan:** —
+
+### canary-judomaster — incident to regression test
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 9 (score 3.00) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Turn a production
+  failure (stack trace, repro, incident record) into a failing regression test
+  that pins the defect - using the failure's own force. Directly serves the
+  STRATEGY.md headline metric (escaped-defect ratio) by converting escapes into
+  permanent coverage. Accepted risk to handle in spec: it needs structured
+  incident input most orgs lack in machine-readable form (in practice you get a
+  Slack thread and a screenshot), so it demos well then sits unused - ship a
+  degraded path that accepts a pasted stack trace alone. Medium effort / medium
+  confidence. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+
+### canary-ivy — suite overgrowth and pruning
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 10 (score 2.00) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Detect metastasized
+  suites: duplicated fixtures, tests covering nothing not already covered, and
+  runtime creep over time. PREMISE NEEDS RESHAPING BEFORE SPEC - the objection
+  is severe enough to invalidate the current framing. Accepted risk to handle in
+  spec: recommending test DELETION is the most dangerous advice a test tool can
+  give, because a "redundant by coverage" test may be the only one asserting the
+  behavior that breaks - line coverage does not capture assertion intent, and
+  this directly contradicts canary's own target problem (coverage overlap is not
+  equivalent proof). Reframe toward runtime/duplication reporting without
+  deletion recommendations, or drop. Medium effort / medium confidence. Next:
+  reshape premise, then /harness:brainstorming.
+- **Blockers:** —
+- **Plan:** —
+
+### canary-harley — property-based and fuzz test generation
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 11 (score 2.00) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Generate property-based
+  tests (fast-check, Hypothesis) with shrinking rather than example-based cases
+  - input-level chaos, distinct from canary-cry's user-flow exploration and from
+    canary-edge-case-discovery's reasoning about named cases. Accepted risk to
+    handle in spec: property-based testing needs an INVARIANT, and articulating
+    the invariant is the entire hard part - generating framework boilerplate
+    around a weak or wrong property produces confident nonsense that shrinks to
+    a meaningless minimal case. The real output should be a proposed invariant
+    the human confirms, with codegen downstream of that confirmation. Medium
+    effort / medium confidence. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+
+### canary-huntress — targeted regression pursuit
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 12 (score 2.00) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Hunt one specific defect
+  CLASS across the entire suite and its history, rather than exploring broadly.
+  First attempt to give the previously reserved canary-huntress name a scope; it
+  did not clear the bar, so the name remains reserved. Accepted risk to handle
+  in spec: git bisect already finds WHEN a regression entered and canary-cry
+  explores broadly, so the remaining slice (find every OTHER place this same bug
+  shape exists) may be too narrow to justify a skill rather than a flag on an
+  existing one - this is a reserved name looking for a job, which is the wrong
+  direction of fit. Medium effort / medium confidence. Next: find a genuinely
+  distinct scope before speccing, or leave the name reserved.
+- **Blockers:** —
+- **Plan:** —
+
+### canary-hawk-dove — gate threshold auto-tuner
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 13 (score 1.00) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Balance aggression
+  against noise by tuning gate thresholds from the historical false-positive vs.
+  escaped-defect record - the recurring "erodes trust" worry across the guardian
+  items, solved with data instead of guesswork. Accepted risk to handle in spec:
+  it requires ground-truth labels on past findings (was this finding real?) that
+  nobody records, so without them it tunes on noise and produces a confidently
+  wrong threshold - it is blocked behind both a history substrate and a labeling
+  ritual humans will not reliably perform. High effort / low confidence; treat
+  as a stretch item. Next: spike the labeling question before
+  /harness:brainstorming.
+- **Blockers:** canary-clocktower (needs finding history); no ground-truth
+  outcome labels exist on past findings
+- **Plan:** —
+
+### canary-batgirl — developer and team quality scorecard
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Ideation rank 14 (score 1.00) from
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Streaks, badges, and
+  rank derived from canary audit scores, recognizing sound and stable code.
+  Serves STRATEGY.md track 5 (Quality made legible); the track legitimizes the
+  goal but does not resolve the objection, which is why confidence stays low.
+  Accepted risk to handle in spec - THE SHARPEST IN THE BATCH: Goodhart's law
+  points this at canary itself. Scoring engineers on canary metrics makes them
+  optimize the score, and the cheapest way to raise almost any coverage-derived
+  score is to write more assertion-free tests - so a naive reward system would
+  actively MANUFACTURE canary's own target problem. Safe only if it scores
+  things that are expensive to fake (escaped-defect ratio, coverage-verified
+  finding share) and never anything a developer can inflate by adding green.
+  Medium effort / low confidence. Next: /harness:brainstorming to spec.
+- **Blockers:** canary-clocktower (non-fakeable metrics require history)
 - **Plan:** —
