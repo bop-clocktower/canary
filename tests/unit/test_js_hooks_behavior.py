@@ -139,6 +139,21 @@ class TestFormatCheckStatusContract(unittest.TestCase):
         status = self._status(driver, {"tool_input": {"file_path": str(root / "bad.py")}}, root)
         self.assertEqual(status, "violations")
 
+    @unittest.skipUnless(_HAVE_RUFF, "ruff required to prove the skip beats a real violation")
+    def test_file_outside_project_root_is_skipped(self):
+        """A file outside cwd is skipped ('clean') even when it WOULD violate the
+        project's formatter — the hook only owns files inside the project root
+        (e.g. ~/.claude memory / scratchpad writes must not be blocked)."""
+        root, driver = self._driver()
+        (root / "ruff.toml").write_text("line-length = 100\n", encoding="utf-8")
+        # A file that would fail ruff (F401), but living OUTSIDE the project root.
+        outside = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        bad = Path(outside) / "bad.py"
+        bad.write_text("import os\n", encoding="utf-8")
+        status = self._status(driver, {"tool_input": {"file_path": str(bad)}}, root)
+        self.assertEqual(status, "clean")
+
 
 @unittest.skipUnless(_HAVE_NODE, "node required to exercise the JS hooks")
 class TestClassifyNoParser(unittest.TestCase):

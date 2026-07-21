@@ -14,8 +14,8 @@
 // gate blocks only on `violations`; everything ambiguous defaults to
 // `infra-error` so the gate fails open rather than walling off every edit.
 
-import { accessSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { accessSync, readFileSync, realpathSync } from 'node:fs';
+import { join, relative, isAbsolute, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 // Detection order: first match wins
@@ -53,6 +53,40 @@ const DETECTORS = [
     name: 'Ruff',
   },
 ];
+
+/**
+ * Resolve `p` to a canonical absolute path, following symlinks when it exists.
+ * Falls back to a plain resolve when the path can't be stat'd (shouldn't happen
+ * for a just-edited file, but keeps the containment check total).
+ */
+function canonicalize(p) {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+}
+
+/**
+ * Is `filePath` inside the project root `cwd`? The hook is a *project*
+ * formatter — it must only lint files that belong to the project. Edits to
+ * files outside the root (e.g. an agent scratchpad or ~/.claude memory write)
+ * were being checked against the repo's own formatter config, producing
+ * spurious blocking failures on files the project has no say over.
+ *
+ * Both sides are canonicalized first: Node's `process.cwd()` follows symlinks
+ * (e.g. macOS `/var` → `/private/var`) while the edited path arrives verbatim,
+ * so comparing them raw would falsely place an in-repo file "outside" whenever
+ * the root is reached through a symlink. A relative `filePath` resolves against
+ * `cwd` and is inside by definition; an absolute path is inside only when its
+ * path relative to the root neither escapes upward (`..`) nor lands on another
+ * root/drive.
+ */
+export function isInsideProject(filePath, cwd) {
+  if (!filePath) return true;
+  const rel = relative(canonicalize(cwd), canonicalize(filePath));
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+}
 
 export function detectFormatter(cwd) {
   for (const detector of DETECTORS) {
@@ -118,6 +152,23 @@ export function classifyError(err) {
  */
 export function runFormatCheck(input, cwd) {
   const filePath = input?.tool_input?.file_path ?? '';
+
+  // Only lint files that live inside the project root. An edit to a file
+  // outside the repo (scratchpad, ~/.claude memory, etc.) is not the project's
+  // to format — checking it against the repo's config only yields false
+  // blocking failures.
+  if (
+    typeof filePath === 'string' &&
+    filePath &&
+    !isInsideProject(filePath, cwd)
+  ) {
+    return {
+      status: 'clean',
+      name: null,
+      output: '',
+      message: 'Skipped: file outside project root',
+    };
+  }
 
   // Special case: .go files use `gofmt -l`, which lists files needing formatting.
   if (typeof filePath === 'string' && filePath.endsWith('.go')) {
