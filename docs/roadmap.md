@@ -171,15 +171,19 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
   docs/ideation/deepen-core-test-intelligence-2026-07-19.md. A skill that
   ingests N canary-test-reporter run JSON artifacts and statistically flags
   flaky tests (pass/fail alternation) rather than diagnosing a single run.
-  Accepted risk to handle in spec: historical run JSON is not persisted anywhere
-  today - scope v1 to consume a caller-supplied set of run artifacts (stateless)
-  and defer any persistence/ingest tier; validates the analysis before investing
-  in storage. Medium effort. Next: /harness:brainstorming to spec. UPDATE
-  2026-07-21: canary-clocktower (this same Intake section) is the persistence
-  tier this item defers - if clocktower ships first, the stateless-v1 constraint
-  can be dropped. Suggested themed name if the BoP suite lands: `canary-misfit`
-  (teleports between pass and fail); naming only, no scope change. (refs:
-  docs/ideation/bop-themed-canary-skills-2026-07-21.md)
+  CORRECTED 2026-07-21 - THE STATED RISK WAS FACTUALLY WRONG WHEN WRITTEN. This
+  entry claimed "historical run JSON is not persisted anywhere today" and scoped
+  v1 to stateless caller-supplied artifacts on that basis. But `agent/history/`
+  shipped 2026-06-10 (commit 72e884b), five weeks before this entry was
+  authored, and already provides persistence (`canary history push`), queries
+  (`flaky`/`timeline`/`summary`), AND flake-trend classification in
+  agent/history/detector.py. Rescope: determine what detector.py does NOT yet
+  cover (pass/fail alternation vs. trend classification) and wire a skill over
+  the existing store rather than building a stateless v1. Effort likely LOWER
+  than the original medium estimate. Suggested themed name: `canary-misfit`
+  (teleports between pass and fail); naming only, no scope change. Next: gap
+  analysis against detector.py, then /harness:brainstorming. (refs:
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md; agent/history/)
 - **Blockers:** —
 - **Plan:** —
 
@@ -306,12 +310,15 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 - **Summary:** Ideation rank 2 (score 6.75) from
   docs/ideation/bop-themed-canary-skills-2026-07-21.md. Shuffle and
   run-alone-repeat the suite to surface tests that only pass in a specific
-  order, exposing shared-state leakage - a classic hidden flake source. Accepted
-  risk to handle in spec: test-isolation work already shipped in v5.11.0, so
-  this may be re-solving a solved problem under a new name (the rename-not-idea
-  failure) - VERIFY FIRST whether that work was canary's own suite hygiene or a
-  user-facing capability, and drop this item if the latter.
-  Deterministic/Tier-0. Low effort / high confidence. Next: verify overlap, then
+  order, exposing shared-state leakage - a classic hidden flake source. OVERLAP
+  VERIFIED AND CLEARED 2026-07-21: the v5.11.0 concern was commit 8c5835f, which
+  touched exactly one file (tests/unit/test_skill_registry.py, +39 lines) to
+  isolate one test class from home overlays - canary's own suite hygiene, not a
+  user-facing capability. No shuffle or order-dependence code exists anywhere in
+  agent/. This is a genuine, distinct idea. Accepted risk to handle in spec: a
+  shuffled re-run doubles suite wall-clock, so it must be opt-in/scheduled
+  rather than a per-PR default, and it must report the seed so a failure is
+  reproducible. Deterministic/Tier-0. Low effort / high confidence. Next:
   /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
@@ -342,32 +349,38 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
   digest of what testing actually caught - bugs prevented, sweeps run, escapes
   avoided - to Slack, Teams, or a PR comment, so the work of testing is visible
   to people who do not open the code. Serves STRATEGY.md track 5 (Quality made
-  legible). Accepted risk to handle in spec: without canary-clocktower it can
-  only describe the latest run, which UNDERSELLS QA and inverts the goal (a
-  digest reading "1 run, 0 escapes" says "QA did nothing this week") - do not
-  ship before the history substrate exists. Low effort / medium confidence.
-  Next: /harness:brainstorming to spec, AFTER canary-clocktower.
-- **Blockers:** canary-clocktower (needs persisted run history; single-run
-  digest is worse than no digest)
+  legible). CORRECTED 2026-07-21: the original entry blocked this on
+  canary-clocktower on the belief that no run history is persisted. That belief
+  was FALSE - `agent/history/` (shipped 2026-06-10, commit 72e884b) already
+  provides a persisted store with `canary history push|flaky|timeline|summary`.
+  This item is NOT blocked; it is a formatter/broadcaster over existing query
+  output. Accepted risk to handle in spec: the digest must degrade honestly when
+  history is thin - a digest reading "1 run, 0 escapes" UNDERSELLS QA and
+  inverts the goal, so state the window size and sample count explicitly rather
+  than implying a quiet week. Low effort / medium confidence. Next:
+  /harness:brainstorming to spec.
+- **Blockers:** —
 - **Plan:** —
 
-### canary-clocktower — persistent run-history substrate
+### canary-clocktower — run-history gap analysis (NOT a greenfield build)
 
 - **Status:** backlog
 - **Spec:** —
 - **Summary:** Ideation rank 5 (score 5.25) from
-  docs/ideation/bop-themed-canary-skills-2026-07-21.md. A durable store plus
-  query API over canary-test-reporter run artifacts, which are stateless and
-  ephemeral today. LOAD-BEARING: unblocks canary-signal, canary-hawk-dove, the
-  non-fakeable half of canary-batgirl, and the existing "Flakiness detector
-  skill over test-reporter history" item, which defers explicitly because
-  historical run JSON is not persisted anywhere. Despite ranking 5th it should
-  likely be built FIRST among that cluster. Accepted risk to handle in spec:
-  canary is deliberately stateless and secret-free, and a datastore adds
-  retention, PII, and ops burden that opposes the adoption track - ship as a
-  local, opt-in, single-file store (reuse the YAML+SQLite TCM precedent) with no
-  server and an explicit prune policy. Medium effort / high confidence. Next:
-  /harness:brainstorming to spec.
+  docs/ideation/bop-themed-canary-skills-2026-07-21.md. CORRECTED 2026-07-21 -
+  THE ORIGINAL PREMISE WAS FALSE. The ideation claimed run artifacts "are
+  stateless and ephemeral today" and framed this as a greenfield substrate. In
+  fact `agent/history/` shipped 2026-06-10 (commit 72e884b) with schema.py,
+  store.py (abstract + factory), local_store.py, supabase_store.py, detector.py
+  (flake-trend classification), a `canary history` CLI
+  (push/flaky/timeline/summary/migrate), and four unit-test files. The ideation
+  was generated from roadmap/doc text that had itself drifted, and the false
+  claim propagated into this entry. Rescope to a GAP ANALYSIS: what does
+  canary-test-reporter NOT yet push into history, and which consumers
+  (canary-signal, the flakiness item) are not yet wired to query it. Accepted
+  risk to handle in spec: do not rebuild what exists - the deliverable is wiring
+  plus a documented gap list, not a second store. Effort unknown until the gap
+  analysis runs. Next: gap analysis, then /harness:brainstorming.
 - **Blockers:** —
 - **Plan:** —
 
@@ -513,8 +526,9 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
   ritual humans will not reliably perform. High effort / low confidence; treat
   as a stretch item. Next: spike the labeling question before
   /harness:brainstorming.
-- **Blockers:** canary-clocktower (needs finding history); no ground-truth
-  outcome labels exist on past findings
+- **Blockers:** no ground-truth outcome labels exist on past findings (the
+  history store itself EXISTS - agent/history/, 2026-06-10 - so the substrate is
+  not the blocker; the missing labels are)
 - **Plan:** —
 
 ### canary-batgirl — developer and team quality scorecard
@@ -534,5 +548,6 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
   things that are expensive to fake (escaped-defect ratio, coverage-verified
   finding share) and never anything a developer can inflate by adding green.
   Medium effort / low confidence. Next: /harness:brainstorming to spec.
-- **Blockers:** canary-clocktower (non-fakeable metrics require history)
+- **Blockers:** — (history substrate EXISTS: agent/history/, 2026-06-10; the
+  Goodhart objection remains the real gate, not a missing store)
 - **Plan:** —
