@@ -27,6 +27,7 @@ import type {
 } from './rows.js';
 import { detectRegressions } from '../history/detector.js';
 import type { HistoryStore } from '../history/ndjson-store.js';
+import { def } from '../util/coalesce.js';
 
 /** A store that additionally exposes the raw records (the local NDJSON store). */
 interface ReadableStore extends HistoryStore {
@@ -44,6 +45,24 @@ interface ReadableStore extends HistoryStore {
 
 function isReadable(store: HistoryStore): store is ReadableStore {
   return typeof (store as ReadableStore).readAll === 'function';
+}
+
+type RawRecord = ReturnType<ReadableStore['readAll']>[number];
+type RawTest = NonNullable<RawRecord['tests']>[number];
+
+function isFailureWithError(t: RawTest): boolean {
+  return (
+    (t.status === 'failed' || t.status === 'flaky') && Boolean(t.error_text)
+  );
+}
+
+function toCommonFailureRow(record: RawRecord, t: RawTest): CommonFailureRow {
+  return {
+    test_name: t.test_name,
+    suite: def(record.suite, ''),
+    failure_category: def(t.failure_category, 'other'),
+    error_text: t.error_text as string,
+  };
 }
 
 export interface AnalysisResult {
@@ -90,7 +109,7 @@ export class AnalysisEngine {
     const spikesRows: SpikeRow[] = [];
     for (const s of suitesToQuery) {
       const summary = this.store.querySummary(s, window * 2);
-      for (const row of summary.runs ?? []) {
+      for (const row of def(summary.runs, [])) {
         // query_summary rows omit suite; the spikes builder groups by it, so
         // tag each pooled row with the suite it came from (matches Python).
         spikesRows.push({
@@ -160,15 +179,8 @@ export class AnalysisEngine {
     const rows: CommonFailureRow[] = [];
     for (const record of this.store.readAll()) {
       if (suite && record.suite !== suite) continue;
-      for (const t of record.tests ?? []) {
-        if ((t.status === 'failed' || t.status === 'flaky') && t.error_text) {
-          rows.push({
-            test_name: t.test_name,
-            suite: record.suite ?? '',
-            failure_category: t.failure_category ?? 'other',
-            error_text: t.error_text,
-          });
-        }
+      for (const t of def(record.tests, [])) {
+        if (isFailureWithError(t)) rows.push(toCommonFailureRow(record, t));
       }
     }
     return rows;
@@ -183,7 +195,7 @@ export class AnalysisEngine {
     const testNames = new Set<string>();
     for (const record of this.store.readAll()) {
       if (suite && record.suite !== suite) continue;
-      for (const t of record.tests ?? []) testNames.add(t.test_name);
+      for (const t of def(record.tests, [])) testNames.add(t.test_name);
     }
 
     const candidates: RegressionRow[] = [];

@@ -13,6 +13,7 @@
 
 import { readFileSync } from 'node:fs';
 
+import { def } from '../util/coalesce.js';
 import { round1 } from '../util/round.js';
 import { SCHEMA_VERSION } from './record.js';
 import type { RunRecord, TestResultRecord, TimelineEntry } from './record.js';
@@ -98,28 +99,14 @@ export class NdjsonHistoryStore implements HistoryStore {
 
     const counts = new Map<string, Omit<FlakyQueryRow, 'flake_rate_pct'>>();
     for (const record of records) {
-      for (const t of record.tests ?? []) {
-        const name = t.test_name;
-        let c = counts.get(name);
+      for (const t of def(record.tests, [])) {
+        let c = counts.get(t.test_name);
         if (!c) {
-          c = {
-            test_name: name,
-            test_file: t.test_file ?? '',
-            suite: t.suite ?? record.suite ?? '',
-            area: t.area ?? null,
-            flake_count: 0,
-            pass_count: 0,
-            fail_count: 0,
-            total_runs: 0,
-            last_seen_run: null,
-          };
-          counts.set(name, c);
+          c = newFlakyCounter(record, t);
+          counts.set(t.test_name, c);
         }
         c.total_runs += 1;
-        const status = t.status ?? '';
-        if (status === 'flaky') c.flake_count += 1;
-        else if (status === 'passed') c.pass_count += 1;
-        else if (status === 'failed') c.fail_count += 1;
+        applyStatus(c, def(t.status, ''));
         c.last_seen_run = record.run_id;
       }
     }
@@ -135,62 +122,98 @@ export class NdjsonHistoryStore implements HistoryStore {
   }
 
   queryTimeline(testName: string): TimelineEntry[] {
-    const records = this.readAll();
     const timeline: TimelineEntry[] = [];
-    for (const record of records) {
-      for (const t of record.tests ?? []) {
-        if (t.test_name === testName) {
-          timeline.push({
-            run_id: record.run_id,
-            suite: record.suite ?? '',
-            branch: record.branch ?? '',
-            commit_sha: record.commit_sha ?? '',
-            timestamp: record.timestamp ?? '',
-            status: t.status ?? '',
-            failure_category: t.failure_category ?? null,
-            error_text: t.error_text ?? null,
-            retry_count: t.retry_count ?? 0,
-          });
-        }
+    for (const record of this.readAll()) {
+      for (const t of def(record.tests, [])) {
+        if (t.test_name === testName) timeline.push(toTimelineEntry(record, t));
       }
     }
     return timeline.sort((a, b) => cmp(a.timestamp, b.timestamp));
   }
 
   querySummary(suite: string, runs: number): SummaryResult {
-    const records = this.readAll();
-    const suiteRecords = records.filter((r) => r.suite === suite);
+    const suiteRecords = this.readAll().filter((r) => r.suite === suite);
     const recent = runs > 0 ? suiteRecords.slice(-runs) : suiteRecords;
     if (recent.length === 0) {
       return { suite, total_runs: 0, avg_pass_rate: 0.0 };
     }
-
-    const rates: number[] = [];
-    for (const r of recent) {
-      const total = r.total ?? 0;
-      const passed = r.passed ?? 0;
-      if (total > 0) rates.push((passed / total) * 100);
-    }
-    const avg =
-      rates.length > 0
-        ? round1(rates.reduce((a, b) => a + b, 0) / rates.length)
-        : 0.0;
-
     return {
       suite,
       total_runs: recent.length,
-      avg_pass_rate: avg,
-      runs: recent.map((r) => ({
-        run_id: r.run_id,
-        branch: r.branch ?? '',
-        timestamp: r.timestamp ?? '',
-        passed: r.passed ?? 0,
-        failed: r.failed ?? 0,
-        flaky: r.flaky ?? 0,
-        total: r.total ?? 0,
-      })),
+      avg_pass_rate: avgPassRate(recent),
+      runs: recent.map(toSummaryRun),
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Row-mapping helpers — extracted so the query methods stay under the arch
+// complexity threshold. Each isolates one dense `??`-fallback cluster.
+// ---------------------------------------------------------------------------
+
+function newFlakyCounter(
+  record: RunRecord,
+  t: TestResultRecord,
+): Omit<FlakyQueryRow, 'flake_rate_pct'> {
+  return {
+    test_name: t.test_name,
+    test_file: def(t.test_file, ''),
+    suite: def(t.suite, def(record.suite, '')),
+    area: def(t.area, null),
+    flake_count: 0,
+    pass_count: 0,
+    fail_count: 0,
+    total_runs: 0,
+    last_seen_run: null,
+  };
+}
+
+function applyStatus(
+  c: Omit<FlakyQueryRow, 'flake_rate_pct'>,
+  status: string,
+): void {
+  if (status === 'flaky') c.flake_count += 1;
+  else if (status === 'passed') c.pass_count += 1;
+  else if (status === 'failed') c.fail_count += 1;
+}
+
+function toTimelineEntry(
+  record: RunRecord,
+  t: TestResultRecord,
+): TimelineEntry {
+  return {
+    run_id: record.run_id,
+    suite: def(record.suite, ''),
+    branch: def(record.branch, ''),
+    commit_sha: def(record.commit_sha, ''),
+    timestamp: def(record.timestamp, ''),
+    status: def(t.status, ''),
+    failure_category: def(t.failure_category, null),
+    error_text: def(t.error_text, null),
+    retry_count: def(t.retry_count, 0),
+  };
+}
+
+function toSummaryRun(r: RunRecord): SummaryRunRow {
+  return {
+    run_id: r.run_id,
+    branch: def(r.branch, ''),
+    timestamp: def(r.timestamp, ''),
+    passed: def(r.passed, 0),
+    failed: def(r.failed, 0),
+    flaky: def(r.flaky, 0),
+    total: def(r.total, 0),
+  };
+}
+
+function avgPassRate(recent: RunRecord[]): number {
+  const rates: number[] = [];
+  for (const r of recent) {
+    const total = def(r.total, 0);
+    if (total > 0) rates.push((def(r.passed, 0) / total) * 100);
+  }
+  if (rates.length === 0) return 0.0;
+  return round1(rates.reduce((a, b) => a + b, 0) / rates.length);
 }
 
 function cmp(a: string, b: string): number {
