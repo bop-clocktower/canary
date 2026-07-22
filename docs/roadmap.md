@@ -289,23 +289,22 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 - **Status:** done
 - **Spec:** —
-- **Summary:** DONE — shipped on feat/bop-skills-batch-1 as
-  agents/skills/claude-code/canary-katana/ (SKILL.md + Tier-0 scripts
-  diffscan/ledger/alarm/cli, 65 unit tests). Silent-by-default: records every
-  deleted/skipped test to an append-only, deduped provenance ledger and alarms
-  only on last-coverage loss of a critical-area symbol; degrades to
-  recording-only (never fails, even under --strict) when critical-area data is
-  absent. Original ideation: rank 1 (score 6.75) from
-  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Capture every deleted or
-  skipped test with provenance (who, when, what it covered) instead of letting
-  it vanish silently, and alarm when a deletion drops the LAST coverage on a
-  critical-area symbol. Test deletion is an untracked coverage-regression
-  vector. Accepted risk to handle in spec: most deletions are legitimate (dead
-  feature removal, genuine dedup), so alarming on every one becomes nag fatigue
-  and a muted gate is worse than no gate - ship silent-by-default, firing only
-  on last-coverage-of-critical-area. Deterministic/Tier-0 (git diff + coverage
-  set math, no LLM). Low effort / high confidence. Next: /harness:brainstorming
-  to spec.
+- **Summary:** DONE (#381) — shipped as agents/skills/claude-code/canary-katana/
+  (SKILL.md + Tier-0 scripts diffscan/ledger/alarm/cli, 66 unit tests).
+  Silent-by-default: records every deleted/skipped test to an append-only,
+  deduped provenance ledger and alarms only on last-coverage loss of a
+  critical-area symbol; degrades to recording-only (never fails, even under
+  --strict) when critical-area data is absent. Original ideation: rank 1 (score
+  6.75) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Capture every
+  deleted or skipped test with provenance (who, when, what it covered) instead
+  of letting it vanish silently, and alarm when a deletion drops the LAST
+  coverage on a critical-area symbol. Test deletion is an untracked
+  coverage-regression vector. Accepted risk to handle in spec: most deletions
+  are legitimate (dead feature removal, genuine dedup), so alarming on every one
+  becomes nag fatigue and a muted gate is worse than no gate - ship
+  silent-by-default, firing only on last-coverage-of-critical-area.
+  Deterministic/Tier-0 (git diff + coverage set math, no LLM). Low effort / high
+  confidence. Next: /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
 
@@ -333,7 +332,7 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 - **Status:** done
 - **Spec:** —
-- **Summary:** DONE — shipped on feat/bop-skills-batch-1 as
+- **Summary:** DONE (#381) — shipped as
   agents/skills/claude-code/canary-blackhawk/ (SKILL.md + Tier-0 scripts
   rules/scanner/cli). Original ideation: rank 3 (score 6.75) from
   docs/ideation/bop-themed-canary-skills-2026-07-21.md. Statically flag tests
