@@ -208,6 +208,30 @@ host Claude Code session via `/canary-write-test` — no API key required.
   agent. These are considered output artifacts and are generally excluded from
   manual review.
 
+### TypeScript pilot (`ts/`)
+
+**Strangler migration in progress.** The Python engine (`agent/`) is being
+ported to TypeScript incrementally — Python stays the shipping product at every
+step. `ts/` is an isolated pilot workspace (deliberately **not** the npm shim in
+`npm/`) proving the toolchain and the cross-language boundary before larger
+subsystems move.
+
+- **Scope so far:** `agent/analysis/` (flaky/spikes/area-health/common-failures/
+  regression/digest reports + the `AnalysisEngine`).
+- **Toolchain:** TypeScript (strict) + Vitest (v8 coverage gate, lines 90 /
+  branches 85) + Prettier. No ESLint (the repo uses none; the `protect-config`
+  hook blocks AI-authored linter configs). CI job: `ts-validate` in
+  `harness-quality.yml`, parallel to and independent of the Python `validate`.
+- **The seam:** the TS analysis reads the **same on-disk run history** the
+  Python `HistoryStore` writes — `test-results/reports/history-v2.jsonl`
+  (NDJSON, one run-record per line). No FFI or subprocess coupling; the file
+  format is the contract.
+- **Parity:** `ts/test/parity.test.ts` asserts the TS reports match Python
+  golden output (`ts/test/fixtures/golden/`) byte-for-byte after normalization;
+  regenerate the golden files with `scripts/capture_analysis_golden.py`.
+- **Plan & decision gate:**
+  [docs/plans/2026-07-22-ts-migration-pilot-analysis-plan.md](docs/plans/2026-07-22-ts-migration-pilot-analysis-plan.md).
+
 ### GitHub Actions (`.github/workflows/`)
 
 The composite action (`action.yml`) was removed in v3.0 — it called

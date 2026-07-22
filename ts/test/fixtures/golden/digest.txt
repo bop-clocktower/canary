@@ -1,0 +1,45 @@
+# Fleet Health Digest
+
+---
+## Flaky Tests
+
+## Fleet-wide Flaky Tests (top 20, window: 30 runs, threshold: ≥ 10.0%)
+
+| Test | Suite | Area | Flake % | Flake/Total |
+|------|-------|------|---------|-------------|
+| test_login | api | auth | 37.5% | 3/8 |
+
+---
+## Spikes
+
+## Failure Spikes (threshold: ≥ 20.0pp increase)
+
+| Suite | Early Fail % | Recent Fail % | Increase | Since |
+|-------|-------------|--------------|----------|-------|
+| api | 0.0% | 80.0% | +80.0pp | 2026-06-05 |
+
+---
+## Area Health
+
+No area health data available.
+
+---
+## Common Failures
+
+## Common Failures (appearing in ≥ 2 suites)
+
+### `TimeoutError: page load exceeded 30s…`
+
+- **Suites:** api, web
+- **Category:** timeout
+- **Affected tests:** 1
+
+---
+## Regression Candidates
+
+## Regression Candidates
+
+| Test | Suite | Area | Green Streak | First Failure |
+|------|-------|------|-------------|---------------|
+| test_checkout | api | — | 5 runs | c6def123 |
+

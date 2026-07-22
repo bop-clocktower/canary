@@ -7,6 +7,7 @@ codes, renderers, and the CLI wiring.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -428,7 +429,12 @@ class TestPrCheckCLI:
     def test_help_discoverable(self) -> None:
         result = self.runner.invoke(guardian_app, ["pr-check", "--help"])
         assert result.exit_code == 0
-        assert "--diff" in result.stdout
+        # Rich styles option names with ANSI escapes when color is forced
+        # (GitHub Actions sets FORCE_COLOR), which splits the literal "--diff"
+        # token. Strip ANSI before the substring check so the assertion is
+        # deterministic regardless of the runner's color detection.
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+        assert "--diff" in plain
 
 
 class TestFilterSkipped:

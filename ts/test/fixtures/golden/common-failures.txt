@@ -1,0 +1,8 @@
+## Common Failures (appearing in ≥ 2 suites)
+
+### `TimeoutError: page load exceeded 30s…`
+
+- **Suites:** api, web
+- **Category:** timeout
+- **Affected tests:** 1
+

@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "updatedAt": "2026-07-18T23:41:16.376Z",
-  "updatedFrom": "72fa4f5",
+  "updatedAt": "2026-07-22T17:09:03.594Z",
+  "updatedFrom": "f686bfd",
   "metrics": {
     "circular-deps": {
       "value": 0,
@@ -12,8 +12,10 @@
       "violationIds": []
     },
     "complexity": {
-      "value": 0,
-      "violationIds": []
+      "value": 1,
+      "violationIds": [
+        "00de11d8d787701f496aed8b7ca3e660557d2ea69e1108ff776be7f478a13be0"
+      ]
     },
     "coupling": {
       "value": 0,
@@ -24,8 +26,10 @@
       "violationIds": []
     },
     "module-size": {
-      "value": 1545,
-      "violationIds": []
+      "value": 3881,
+      "violationIds": [
+        "0ce917cfa1195435f48f1a62370fee6d7161d2c77ce70c2ef30109ac3fda89de"
+      ]
     },
     "dependency-depth": {
       "value": 0,

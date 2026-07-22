@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
       - uses: actions/setup-python@v6
@@ -23,10 +23,18 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -e . pytest
+        # Surgical install: the quality job only needs the test + coverage
+        # tooling, not the full dev extra (which pulls in pyinstaller).
+        run: pip install -e . pytest coverage
 
-      - name: Run Unit Tests
-        run: python3 -m unittest discover tests/unit
+      - name: Run Unit Tests (with coverage gate)
+        # Run under pytest so the full suite executes (unittest discover only
+        # collects TestCase classes and silently skipped the pytest
+        # function-style tests). `coverage report` enforces the fail_under
+        # floor from pyproject's [tool.coverage.report].
+        run: |
+          coverage run -m pytest tests/unit -q
+          coverage report
 
       - name: Hook customization guard
         # Fail loudly if a harness regeneration clobbered a canary-local hook
@@ -56,3 +64,33 @@ jobs:
             echo "Run \`python3 scripts/security_ledger.py\` locally and commit the diff."
             exit 1
           fi
+
+  ts-validate:
+    # Pilot of the Python→TS strangler migration (docs/plans/2026-07-22-ts-
+    # migration-pilot-analysis-plan.md). Independent of the Python `validate`
+    # job — the two run in parallel and the Python engine is unaffected.
+    name: TS engine (pilot)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          # Node 22+ required: @supabase/supabase-js's realtime client needs a
+          # native global WebSocket (absent in Node 20).
+          node-version: '22'
+
+      - name: Install TS pilot deps
+        working-directory: ts
+        run: npm ci
+
+      - name: Typecheck (tsc strict)
+        working-directory: ts
+        run: npm run typecheck
+
+      - name: Format check (prettier)
+        working-directory: ts
+        run: npm run format:check
+
+      - name: Test + coverage gate (vitest)
+        working-directory: ts
+        run: npm test

@@ -1,0 +1,6 @@
+## Fleet-wide Flaky Tests (top 20, window: 30 runs, threshold: ≥ 10.0%)
+
+| Test | Suite | Area | Flake % | Flake/Total |
+|------|-------|------|---------|-------------|
+| test_login | api | auth | 37.5% | 3/8 |
+

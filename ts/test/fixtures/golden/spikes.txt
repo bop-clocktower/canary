@@ -1,0 +1,6 @@
+## Failure Spikes (threshold: ≥ 20.0pp increase)
+
+| Suite | Early Fail % | Recent Fail % | Increase | Since |
+|-------|-------------|--------------|----------|-------|
+| api | 0.0% | 80.0% | +80.0pp | 2026-06-05 |
+

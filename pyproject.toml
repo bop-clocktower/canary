@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "canary-test-ai"
-version = "5.12.0"
+version = "5.13.0"
 description = "AI-powered test automation agent"
 license = { text = "MIT" }
 authors = [{ name = "Bri Stevenski", email = "b.stevenski.eng@pm.me" }]
@@ -21,6 +21,8 @@ history = ["supabase>=2.0,<3"]
 dev = [
     "pyinstaller>=6,<7",
     "ruff>=0.15,<1",
+    "pytest>=8,<9",
+    "coverage>=7,<8",
 ]
 
 [project.scripts]
@@ -44,4 +46,20 @@ ignore = ["E402"]  # deferred/conditional imports are intentional (path setup, o
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]  # intentional re-exports
+
+# --------------------------------------------------------------------------
+# Coverage gate (#382 follow-up). Enforces a line-coverage floor on the Python
+# engine (agent/) in CI. This is a RATCHET: the floor is set just under the
+# current measured coverage so it passes today and blocks regressions, and is
+# bumped upward as coverage improves. Target: 90% (tracked in a follow-up).
+# Measure locally with: coverage run -m pytest tests/unit && coverage report
+# --------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["agent"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+# Current floor ~81.67%. Ratcheting toward 90 — bump this as tests land.
+fail_under = 81
 
