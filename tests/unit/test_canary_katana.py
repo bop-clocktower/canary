@@ -289,6 +289,46 @@ def test_deletion_to_dict_is_json_safe():
     json.dumps(payload)
 
 
+PENDING_SKIP_NO_DEF = """\
+diff --git a/tests/test_orphan.py b/tests/test_orphan.py
+--- a/tests/test_orphan.py
++++ b/tests/test_orphan.py
+@@ -1,2 +1,6 @@
+ import pytest
++@pytest.mark.skip(reason="later")
++
++# a note, not a def
++x = 1
+"""
+
+
+def test_pending_skip_marker_without_a_following_def_is_dropped(tmp_path):
+    # A `+@pytest.mark.skip` whose following `+` lines are a blank line, a
+    # comment, and an assignment -- never a `def` -- must not be mis-attached to
+    # some later symbol. The dangling marker is dropped cleanly.
+    found = diffscan.find_deletions(PENDING_SKIP_NO_DEF)
+    assert found == []
+
+
+NO_NEWLINE_AT_EOF = """\
+diff --git a/tests/test_eof.py b/tests/test_eof.py
+--- a/tests/test_eof.py
++++ b/tests/test_eof.py
+@@ -1,2 +1,1 @@
+-def test_gone():
+-    assert True
+\\ No newline at end of file
+"""
+
+
+def test_no_newline_at_eof_marker_is_handled(tmp_path):
+    # A hunk carrying a `\\ No newline at end of file` marker must be parsed
+    # without error, and the removed test around it still captured.
+    found = diffscan.find_deletions(NO_NEWLINE_AT_EOF)
+    assert [d.name for d in found] == ["test_gone"]
+    assert found[0].kind == diffscan.Kind.REMOVED
+
+
 # --------------------------------------------------------------------------
 # ledger
 # --------------------------------------------------------------------------
@@ -528,6 +568,56 @@ diff --git a/tests/loyalty/test_misc.py b/tests/loyalty/test_misc.py
     assert len(findings) == 1
     assert findings[0].fidelity == alarm.Fidelity.HEURISTIC
     assert findings[0].severity == alarm.Severity.MEDIUM
+
+
+def test_no_alarm_when_dir_coverage_remains_in_the_area_directory(tmp_path):
+    # Directory-heuristic twin of the symbol-match suppression test: the deleted
+    # test matched a critical area only by living in its significant directory
+    # (`loyalty`), but another test in that same directory still exists, so the
+    # dir-level coverage is intact and katana stays silent.
+    diff = """\
+diff --git a/tests/loyalty/test_misc.py b/tests/loyalty/test_misc.py
+--- a/tests/loyalty/test_misc.py
++++ b/tests/loyalty/test_misc.py
+@@ -1,3 +1,1 @@
+-def test_something_else():
+-    assert True
+ x = 1
+"""
+    repo = _repo_with(tmp_path, {
+        "tests/loyalty/test_misc.py": "x = 1\n",
+        "tests/loyalty/test_other.py": "def test_other():\n    pass\n",
+    })
+    areas = alarm.load_critical_areas(_areas_file(
+        tmp_path, [{"path": "src/loyalty/points.service.ts", "risk_score": 0.92}]
+    ))
+    assert alarm.build_findings(diffscan.find_deletions(diff), areas, repo) == []
+
+
+def test_deletion_matching_multiple_areas_keeps_the_highest_fidelity_finding(tmp_path):
+    # One deletion can match several critical areas. build_findings keeps only
+    # the best candidate per deletion: a name-matched critical loss outranks a
+    # weaker directory-heuristic medium for a second area, and the incumbent is
+    # not displaced by the lower-ranked candidate.
+    diff = """\
+diff --git a/tests/loyalty/test_points.py b/tests/loyalty/test_points.py
+--- a/tests/loyalty/test_points.py
++++ b/tests/loyalty/test_points.py
+@@ -1,3 +1,1 @@
+-def test_points_service_earns():
+-    assert True
+ x = 1
+"""
+    repo = _repo_with(tmp_path, {"tests/loyalty/test_points.py": "x = 1\n"})
+    areas = alarm.load_critical_areas(_areas_file(tmp_path, [
+        {"path": "src/loyalty/points.service.ts", "risk_score": 0.92},
+        {"path": "src/loyalty/refunds.gateway.ts", "risk_score": 0.92},
+    ]))
+    findings = alarm.build_findings(diffscan.find_deletions(diff), areas, repo)
+    assert len(findings) == 1
+    assert findings[0].fidelity == alarm.Fidelity.NAME_MATCHED
+    assert findings[0].severity == alarm.Severity.CRITICAL
+    assert findings[0].area == "src/loyalty/points.service.ts"
 
 
 def test_fidelity_rank_orders_name_match_above_heuristic():
@@ -789,6 +879,15 @@ def test_cli_corrupt_ledger_returns_1(tmp_path, capsys):
     ])
     assert code == 1
     assert "canary-katana:" in capsys.readouterr().err
+
+
+def test_cli_git_diff_failure_returns_1(tmp_path, capsys):
+    # No --diff-file means the diff is computed from git history. In a directory
+    # that is not a git repo, resolve_base raises; the CLI surfaces that loudly
+    # rather than crashing, and returns 1.
+    code = cli.main(["--repo", str(tmp_path)])
+    assert code == 1
+    assert "canary-katana: could not read diff:" in capsys.readouterr().err
 
 
 def test_cli_uses_git_when_no_diff_file(fixture_repo, capsys):

@@ -98,6 +98,12 @@ def test_zero_or_symbolic_delays_are_not_flagged(line, name):
     assert "BH002-real-delay" not in _ids(line, name)
 
 
+def test_underscore_separated_delay_is_flagged():
+    # Python numeric separators (`1_000`) are legal syntax; the positivity guard
+    # strips underscores before parsing, so a very long real sleep still fires.
+    assert "BH002-real-delay" in _ids("time.sleep(1_000)", "test_a.py")
+
+
 # --------------------------------------------------------------------------
 # BH003 — local timezone
 # --------------------------------------------------------------------------
@@ -306,6 +312,28 @@ def test_findings_are_ordered_by_file_then_line(tmp_path):
     assert [(Path(f.file).name, f.line) for f in findings] == [
         ("a.spec.ts", 1), ("b.spec.ts", 1), ("b.spec.ts", 2),
     ]
+
+
+def test_directory_walk_skips_dependency_dirs(tmp_path):
+    # A test-named file buried in node_modules is a vendored artifact, not our
+    # code: the walk must never descend into _SKIP_DIRS, so it is neither
+    # scanned nor flagged.
+    vendored = tmp_path / "node_modules" / "pkg"
+    vendored.mkdir(parents=True)
+    (vendored / "thing.spec.ts").write_text("const t = Date.now();\n", encoding="utf-8")
+    result = scanner.scan_paths([tmp_path])
+    assert result.files_scanned == 0
+    assert result.findings == []
+
+
+def test_overlapping_paths_are_scanned_once(tmp_path):
+    # A directory and a file inside it name the same target; de-duplication by
+    # resolved path means the file is counted and scanned exactly once.
+    p = tmp_path / "clock.spec.ts"
+    p.write_text("const t = Date.now();\n", encoding="utf-8")
+    result = scanner.scan_paths([tmp_path, p])
+    assert result.files_scanned == 1
+    assert len(result.findings) == 1
 
 
 # --------------------------------------------------------------------------
