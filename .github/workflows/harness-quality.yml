@@ -75,7 +75,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          # Node 22+ required: @supabase/supabase-js's realtime client needs a
+          # native global WebSocket (absent in Node 20).
+          node-version: '22'
 
       - name: Install TS pilot deps
         working-directory: ts
