@@ -881,10 +881,16 @@ def test_cli_corrupt_ledger_returns_1(tmp_path, capsys):
     assert "canary-katana:" in capsys.readouterr().err
 
 
-def test_cli_git_diff_failure_returns_1(tmp_path, capsys):
-    # No --diff-file means the diff is computed from git history. In a directory
-    # that is not a git repo, resolve_base raises; the CLI surfaces that loudly
-    # rather than crashing, and returns 1.
+def test_cli_git_diff_failure_returns_1(tmp_path, capsys, monkeypatch):
+    # No --diff-file means the diff is computed from git history. When git base
+    # resolution fails, the CLI surfaces that loudly rather than crashing, and
+    # returns 1. Force the failure via monkeypatch rather than relying on
+    # tmp_path being outside a git repo -- that environmental assumption breaks
+    # if a runner nests its temp dir inside a checkout (#382).
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("fatal: not a git repository")
+
+    monkeypatch.setattr(diffscan, "resolve_base", _boom)
     code = cli.main(["--repo", str(tmp_path)])
     assert code == 1
     assert "canary-katana: could not read diff:" in capsys.readouterr().err
