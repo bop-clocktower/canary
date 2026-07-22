@@ -11,12 +11,15 @@
  * future-version history fails loudly rather than silently analysing nothing.
  */
 
-import { readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 import { def } from '../util/coalesce.js';
 import { round1 } from '../util/round.js';
 import { SCHEMA_VERSION } from './record.js';
 import type { RunRecord, TestResultRecord, TimelineEntry } from './record.js';
+import { serializeLocalRecord } from './schema.js';
+import type { RunInput, TestResultInput } from './schema.js';
 
 export interface FlakyQueryRow {
   test_name: string;
@@ -86,6 +89,20 @@ export class NdjsonHistoryStore implements HistoryStore {
       records.push(record);
     }
     return records;
+  }
+
+  /**
+   * Append a run + its results as one NDJSON line. Idempotent: a run whose
+   * `run_id` is already present is silently skipped (matches Python
+   * `LocalHistoryStore.push_run`).
+   */
+  pushRun(run: RunInput, results: TestResultInput[]): void {
+    const existingIds = new Set(this.readAll().map((r) => r.run_id));
+    if (existingIds.has(run.run_id)) return;
+
+    const record = serializeLocalRecord(run, results);
+    mkdirSync(dirname(this.path), { recursive: true });
+    appendFileSync(this.path, JSON.stringify(record) + '\n', 'utf-8');
   }
 
   queryFlaky(
