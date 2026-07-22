@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/plugin.schema.json",
   "name": "canary",
-  "version": "5.13.0",
+  "version": "5.14.0",
   "description": "AI-powered test generation for Claude Code — generate, init, and migrate test suites via slash commands.",
   "hooks": "./.claude-plugin/hooks.json",
   "//": "Canonical canary MCP server identity: 'canary-mcp' (console script canary-mcp → agent/mcp_server.py:main, FastMCP(\"canary\")); tools resolve as mcp__canary-mcp__*. Canary tools also surface via the harness server as mcp__harness__canary_*. Keep .mcp.json and marketplace.json in sync with this name.",

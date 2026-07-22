@@ -11,7 +11,7 @@
       "name": "canary",
       "source": ".",
       "description": "Canary plugin with four MVP personas (test-author, test-reviewer, framework-advisor, flake-hunter) and the canary-mcp MCP server. Personal-source build maintained by Bri Stevenski.",
-      "version": "5.13.0",
+      "version": "5.14.0",
       "author": {
         "name": "Bri Stevenski",
         "url": "https://github.com/bri-stevenski"
