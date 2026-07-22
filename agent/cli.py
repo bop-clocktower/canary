@@ -219,16 +219,56 @@ def run(
         print(f"\n[dim]Output:[/dim]\n{stdout}")
 
 
+def _company_json_present() -> bool:
+    """True when the current repo already has a project-local company.json."""
+    return (Path.cwd() / ".canary" / "company.json").exists()
+
+
+def _print_init_signpost() -> None:
+    """Guidance for a bare ``canary init`` (#344).
+
+    ``canary init`` reads like "set up canary in this repo" (cf. ``neo init`` /
+    ``harness init``), but it historically required a framework arg and
+    scaffolded a test suite. Running it with no arg now points to both paths
+    instead of erroring.
+    """
+    print("\n[bold cyan]canary init[/bold cyan] — what would you like to do?\n")
+    if not _company_json_present():
+        print(
+            "[yellow]This repo has no [bold].canary/company.json[/bold] yet — "
+            "agents that rely on it run degraded.[/yellow]\n"
+        )
+    print("[bold]Set up canary in this repo[/bold] (recommended first step):")
+    print(
+        "  [bold green]canary setup[/bold green]  "
+        "[dim]alias for `canary company-knowledge init`[/dim]\n"
+    )
+    print("[bold]Scaffold a test suite:[/bold]")
+    print(
+        "  [bold green]canary init <framework>[/bold green]  "
+        "[dim]playwright | vitest | pytest | k6[/dim]\n"
+    )
+
+
 @app.command()
 def init(
-    framework: str = typer.Argument(..., help="Framework to scaffold (e.g., playwright, vitest, pytest, k6)")
+    framework: Optional[str] = typer.Argument(
+        None,
+        help="Framework to scaffold (playwright, vitest, pytest, k6). "
+        "Omit to see setup vs. scaffold options.",
+    )
 ):
     """
-    Initialize a test suite with Gold Standard scaffolding and config.
+    Scaffold a test suite (Gold Standard layout), or — with no framework —
+    show how to set canary up in this repo.
 
     Args:
-        framework: The framework to initialize (playwright, vitest, pytest, or k6).
+        framework: playwright, vitest, pytest, or k6. Omit for guidance.
     """
+    if framework is None:
+        _print_init_signpost()
+        return
+
     from agent.core.scaffolder import Scaffolder
     
     print(f"\n[bold cyan]🛠 Canary Initializing {framework} Scaffold...[/bold cyan]\n")
@@ -269,6 +309,21 @@ def init(
     except ValueError as e:
         print(f"\n[bold red]❌ Error: {str(e)}[/bold red]")
         print("[yellow]Supported frameworks: playwright, vitest, pytest, k6[/yellow]")
+
+
+@app.command("setup")
+def setup(
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite an existing .canary/company.json."
+    ),
+) -> None:
+    """
+    Set up canary in this repo — interactive .canary/company.json wizard.
+
+    Alias for `canary company-knowledge init`, surfaced at the top level so the
+    repo-setup step is discoverable from `canary --help` (#344).
+    """
+    ck_init(force=force)
 
 
 def _resolve_migrate_overlay(from_overlay: Optional[str], overlay: Optional[str]):
