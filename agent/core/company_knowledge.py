@@ -62,7 +62,11 @@ _KNOWN_KEYS = {
     "dashboard_token_env",
     "otel_exporter_endpoint",
     "notes",
+    "brand",
 }
+
+_HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+_BRAND_TEXT_MAX = 200
 
 
 def _validate_strings(
@@ -130,11 +134,98 @@ def _validate_otel_endpoint(raw: object, field_name: str, warnings: list[str]) -
     return raw
 
 
+def _validate_hex_color(raw: object, field_name: str, warnings: list[str]) -> str:
+    """Accept #RGB / #RRGGBB (any case); drop anything else with a warning."""
+    if not isinstance(raw, str) or not raw:
+        return ""
+    if _HEX_COLOR_RE.match(raw):
+        return raw
+    warnings.append(f"{field_name}: dropped invalid hex color {raw!r}")
+    return ""
+
+
+def _brand_text(raw: object, field_name: str, warnings: list[str]) -> str:
+    """A short free-text brand field. Rejects secret-prefixed values; caps length."""
+    if not isinstance(raw, str):
+        if raw is not None:
+            warnings.append(f"{field_name}: expected string, got {type(raw).__name__} — skipped")
+        return ""
+    if _SECRET_PREFIX.match(raw):
+        raise _SecretDetected(field_name, raw)
+    return raw.strip()[:_BRAND_TEXT_MAX]
+
+
 class _SecretDetected(Exception):
     def __init__(self, field_name: str, value: str) -> None:
         self.field_name = field_name
         self.value = value
         super().__init__(f"secret-like value in {field_name!r}")
+
+
+# ── brand assets (customer-facing report theming, #340c) ──────────────────────
+
+
+@dataclass
+class Brand:
+    """Brand assets a customer-facing report generator may consult.
+
+    Pointers/styling only — a logo URL and colors, never binary assets or
+    secrets. The engine surfaces these; the report generator (a skill or a
+    downstream overlay) owns the actual HTML/visual skin.
+    """
+    company_name: str = ""
+    logo_url: str = ""
+    primary_color: str = ""
+    secondary_color: str = ""
+    footer_note: str = ""
+
+    @property
+    def is_empty(self) -> bool:
+        return not any([
+            self.company_name,
+            self.logo_url,
+            self.primary_color,
+            self.secondary_color,
+            self.footer_note,
+        ])
+
+    def to_dict(self) -> dict:
+        return {
+            "company_name": self.company_name,
+            "logo_url": self.logo_url,
+            "primary_color": self.primary_color,
+            "secondary_color": self.secondary_color,
+            "footer_note": self.footer_note,
+        }
+
+
+def _parse_brand(raw: object, warnings: list[str]) -> Brand:
+    """Validate a raw ``brand`` object. Absent/non-dict → empty Brand (no error)."""
+    if not isinstance(raw, dict):
+        if raw is not None:
+            warnings.append(f"brand: expected object, got {type(raw).__name__} — skipped")
+        return Brand()
+    logo_url = _validate_url(raw["logo_url"], "brand.logo_url", warnings) if "logo_url" in raw else ""
+    return Brand(
+        company_name=_brand_text(raw.get("company_name"), "brand.company_name", warnings),
+        logo_url=logo_url,
+        primary_color=_validate_hex_color(raw.get("primary_color", ""), "brand.primary_color", warnings),
+        secondary_color=_validate_hex_color(raw.get("secondary_color", ""), "brand.secondary_color", warnings),
+        footer_note=_brand_text(raw.get("footer_note"), "brand.footer_note", warnings),
+    )
+
+
+def _merge_brand(layers: "list[_Layer]") -> Brand:
+    """Merge brand per-field: highest-priority layer that sets a field wins."""
+    b = Brand()
+    for layer in layers:
+        lb = layer.brand
+        b.company_name = lb.company_name or b.company_name
+        b.logo_url = lb.logo_url or b.logo_url
+        b.primary_color = lb.primary_color or b.primary_color
+        b.secondary_color = lb.secondary_color or b.secondary_color
+        b.footer_note = lb.footer_note or b.footer_note
+    return b
 
 
 # ── raw validated layer ───────────────────────────────────────────────────────
@@ -153,6 +244,7 @@ class _Layer:
     dashboard_token_env: str = ""
     otel_exporter_endpoint: str = ""
     notes: str = ""
+    brand: Brand = field(default_factory=Brand)
     warnings: list[str] = field(default_factory=list)
     source: str = ""
 
@@ -220,6 +312,8 @@ def _parse_layer(data: dict, source: str) -> _Layer:
         if isinstance(raw_notes, str):
             notes = _FENCE_RE.sub("", raw_notes).strip()[:_NOTES_MAX]
 
+    brand = _parse_brand(data.get("brand"), warns)
+
     for k in sorted(set(data) - _KNOWN_KEYS):
         warns.append(f"ignored unknown field: {k}")
 
@@ -234,6 +328,7 @@ def _parse_layer(data: dict, source: str) -> _Layer:
         dashboard_token_env=dashboard_token_env,
         otel_exporter_endpoint=otel_exporter_endpoint,
         notes=notes,
+        brand=brand,
         warnings=warns,
         source=source,
     )
@@ -318,6 +413,7 @@ def _merge_layers(layers: list[_Layer]) -> dict:
         dashboard_token_env=dashboard_token_env,
         otel_exporter_endpoint=otel_exporter_endpoint,
         notes=notes,
+        brand=_merge_brand(layers),
         warnings=warns,
         sources=sources,
     )
@@ -338,6 +434,7 @@ class CompanyKnowledge:
     dashboard_token_env: str = ""
     otel_exporter_endpoint: str = ""
     notes: str = ""
+    brand: Brand = field(default_factory=Brand)
     warnings: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     error: str = ""
@@ -353,6 +450,7 @@ class CompanyKnowledge:
             self.claude_code_skills,
             self.dashboard_url,
             self.notes,
+            not self.brand.is_empty,
         ])
 
     # ── factory ──────────────────────────────────────────────────────────────
@@ -472,13 +570,60 @@ class CompanyKnowledge:
             "dashboard_token_env": self.dashboard_token_env,
             "otel_exporter_endpoint": self.otel_exporter_endpoint,
             "notes": self.notes,
+            "brand": self.brand.to_dict(),
             "sources": self.sources,
             "warnings": self.warnings,
             **({"error": self.error} if self.error else {}),
         }
 
+    # ── report branding hook (#340c) ───────────────────────────────────────────
+
+    def report_branding(self, flavor: Optional[bool] = None) -> dict:
+        """Brand assets + attribution for a customer-facing report generator.
+
+        Report generators (a skill or a downstream overlay) call this when
+        producing external/customer-facing output, then apply the assets as
+        their own visual skin — the engine supplies the data, the overlay owns
+        the pixels.
+
+        ``attribution`` ("made with Canary") is always present. ``voice_line``
+        is optional garnish, included only when *flavor* is on. Flavor
+        resolution: explicit *flavor* arg wins; otherwise a truthy
+        ``CANARY_NO_FLAVOR`` / ``NO_FLAVOR`` env var turns it off; default on.
+        """
+        on = _resolve_flavor(flavor)
+        return {
+            "company_name": self.brand.company_name,
+            "logo_url": self.brand.logo_url,
+            "primary_color": self.brand.primary_color,
+            "secondary_color": self.brand.secondary_color,
+            "footer_note": self.brand.footer_note,
+            "attribution": _ATTRIBUTION,
+            "voice_line": _VOICE_LINE if on else "",
+            "flavor": on,
+        }
+
 
 # ── internal helpers ──────────────────────────────────────────────────────────
+
+_ATTRIBUTION = "made with Canary"
+# Voice is garnish, never load-bearing (#340). One tasteful Oracle line.
+_VOICE_LINE = "Oracle: eyes on every test."
+_FLAVOR_OFF_ENV = ("CANARY_NO_FLAVOR", "NO_FLAVOR")
+_FALSEY = {"", "0", "false", "no", "off"}
+
+
+def _env_truthy(val: Optional[str]) -> bool:
+    return val is not None and val.strip().lower() not in _FALSEY
+
+
+def _resolve_flavor(flavor: Optional[bool]) -> bool:
+    """Explicit arg wins; else a truthy off-switch env var disables; else on."""
+    if flavor is not None:
+        return flavor
+    if any(_env_truthy(os.environ.get(var)) for var in _FLAVOR_OFF_ENV):
+        return False
+    return True
 
 
 def _warn(msg: str) -> None:
