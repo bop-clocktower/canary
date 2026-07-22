@@ -1,0 +1,22 @@
+{
+  "js_dependencies": {
+    "react": "^18.3.0",
+    "express": "^4.18.0",
+    "vitest": "^2.1.0"
+  },
+  "python_packages": {
+    "flask": "==2.3.0",
+    "requests": ">=2.28",
+    "pytest": ""
+  },
+  "tsconfig": {
+    "strict": true,
+    "target": "ES2022",
+    "module": "NodeNext"
+  },
+  "detected_languages": [
+    "javascript",
+    "python",
+    "typescript"
+  ]
+}

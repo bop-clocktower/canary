@@ -1,0 +1,15 @@
+{
+  "by_module": {
+    "tests/fixtures/data.py": [
+      "build_fixture",
+      "SampleData"
+    ],
+    "tests/fixtures/helpers.ts": [
+      "makeUser",
+      "seedDatabase",
+      "TestHarness",
+      "publicThing"
+    ]
+  },
+  "files_scanned": 2
+}

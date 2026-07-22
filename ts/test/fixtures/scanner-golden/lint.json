@@ -1,0 +1,74 @@
+[
+  {
+    "file": "tests/lint-target.spec.ts",
+    "line": 6,
+    "rule": "FLAKE-001",
+    "severity": "critical",
+    "message": "Hardcoded sleep/wait detected.",
+    "suggestion": "Replace with an event-based wait (e.g. expect(locator).toBeVisible(), page.waitForResponse(), waitFor())."
+  },
+  {
+    "file": "tests/lint-target.spec.ts",
+    "line": 6,
+    "rule": "LINT-005",
+    "severity": "info",
+    "message": "Magic number 3000.",
+    "suggestion": "Extract to a named constant or derive from test data."
+  },
+  {
+    "file": "tests/lint-target.spec.ts",
+    "line": 7,
+    "rule": "FLAKE-002",
+    "severity": "critical",
+    "message": "setTimeout used without a corresponding waitFor.",
+    "suggestion": "Wrap in page.waitForFunction() or replace with an awaitable assertion."
+  },
+  {
+    "file": "tests/lint-target.spec.ts",
+    "line": 8,
+    "rule": "FLAKE-003",
+    "severity": "warning",
+    "message": "Non-deterministic random value in test.",
+    "suggestion": "Use a fixed seed or a static fixture value instead."
+  },
+  {
+    "file": "tests/lint-target.spec.ts",
+    "line": 9,
+    "rule": "FLAKE-004",
+    "severity": "warning",
+    "message": "Timestamp-dependent value detected.",
+    "suggestion": "Mock Date.now()/datetime.now() or use a fixed reference date."
+  },
+  {
+    "file": "tests/lint-target.spec.ts",
+    "line": 10,
+    "rule": "LINT-001",
+    "severity": "warning",
+    "message": "CSS class selector is brittle.",
+    "suggestion": "Prefer getByRole(), getByLabel(), or data-testid attributes."
+  },
+  {
+    "file": "tests/lint-target.spec.ts",
+    "line": 11,
+    "rule": "LINT-004",
+    "severity": "critical",
+    "message": "Playwright action called without await.",
+    "suggestion": "Add `await` before the call to ensure it completes before the next step."
+  },
+  {
+    "file": "tests/lint-target.spec.ts",
+    "line": 12,
+    "rule": "LINT-005",
+    "severity": "info",
+    "message": "Magic number 42.",
+    "suggestion": "Extract to a named constant or derive from test data."
+  },
+  {
+    "file": "tests/lint-target.spec.ts",
+    "line": 15,
+    "rule": "LINT-006",
+    "severity": "warning",
+    "message": "Test \"empty test with no assertions\" contains no assertions.",
+    "suggestion": "Add an expect() call; a test that never asserts always passes."
+  }
+]
