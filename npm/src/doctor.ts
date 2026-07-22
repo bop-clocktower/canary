@@ -175,6 +175,7 @@ async function overlayResults(
   const checks = filterByAudience(load.checks, audience);
   const ctx = {
     cloneDir: entry.path,
+    invocationDir: deps.cwd ?? process.cwd(),
     consentGranted: granted,
     timeoutMs: deps.timeoutMs,
     probeUrl: deps.probeUrl,
