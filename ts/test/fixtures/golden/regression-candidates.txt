@@ -1,0 +1,6 @@
+## Regression Candidates
+
+| Test | Suite | Area | Green Streak | First Failure |
+|------|-------|------|-------------|---------------|
+| test_checkout | api | — | 5 runs | c6def123 |
+

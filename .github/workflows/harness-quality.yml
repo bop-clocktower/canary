@@ -64,3 +64,31 @@ jobs:
             echo "Run \`python3 scripts/security_ledger.py\` locally and commit the diff."
             exit 1
           fi
+
+  ts-validate:
+    # Pilot of the Python→TS strangler migration (docs/plans/2026-07-22-ts-
+    # migration-pilot-analysis-plan.md). Independent of the Python `validate`
+    # job — the two run in parallel and the Python engine is unaffected.
+    name: TS engine (pilot)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install TS pilot deps
+        working-directory: ts
+        run: npm ci
+
+      - name: Typecheck (tsc strict)
+        working-directory: ts
+        run: npm run typecheck
+
+      - name: Format check (prettier)
+        working-directory: ts
+        run: npm run format:check
+
+      - name: Test + coverage gate (vitest)
+        working-directory: ts
+        run: npm test
