@@ -24,6 +24,17 @@ export function num1(x: number): string {
   return round1(x).toFixed(1);
 }
 
+/** Python-compatible `round(x)` to the nearest integer, half-to-even. */
+export function roundHalfEvenInt(x: number): number {
+  const floor = Math.floor(x);
+  const diff = x - floor;
+  const eps = 1e-9;
+  if (Math.abs(diff - 0.5) < eps) {
+    return floor % 2 === 0 ? floor : floor + 1;
+  }
+  return Math.round(x);
+}
+
 /**
  * Render a float the way Python's `str(float)` would: an integer-valued float
  * keeps a trailing ".0" (Python `str(10.0)` → "10.0", whereas JS `${10.0}`
