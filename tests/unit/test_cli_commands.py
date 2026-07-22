@@ -151,5 +151,59 @@ class TestWorkflowDiscoverCommand(unittest.TestCase):
         self.assertIn("ACME", result.output)
 
 
+class TestInitSetupUX(unittest.TestCase):
+    """#344 — `canary init` signposts repo setup vs suite scaffolding."""
+
+    def setUp(self):
+        self.runner = CliRunner()
+
+    def test_bare_init_signposts_instead_of_erroring(self):
+        with _chdir_tmp():
+            result = self.runner.invoke(app, ["init"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        # Points to both paths by name.
+        self.assertIn("canary setup", result.output)
+        self.assertIn("canary init <framework>", result.output)
+
+    def test_bare_init_warns_when_company_json_absent(self):
+        with _chdir_tmp():
+            result = self.runner.invoke(app, ["init"])
+        self.assertIn("company.json", result.output)
+        self.assertIn("degraded", result.output)
+
+    def test_bare_init_omits_warning_when_configured(self):
+        with _chdir_tmp() as tmp:
+            (tmp / ".canary").mkdir()
+            (tmp / ".canary" / "company.json").write_text("{}", encoding="utf-8")
+            result = self.runner.invoke(app, ["init"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("canary setup", result.output)  # still signposts
+        self.assertNotIn("degraded", result.output)  # but no not-configured warning
+
+    def test_init_with_framework_still_scaffolds(self):
+        with patch("agent.core.scaffolder.Scaffolder") as MockScaffolder:
+            MockScaffolder.return_value.scaffold.return_value = {
+                "created_dirs": ["tests/"],
+                "created_files": ["tests/example.spec.ts"],
+                "skipped_files": [],
+            }
+            result = self.runner.invoke(app, ["init", "playwright"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        MockScaffolder.return_value.scaffold.assert_called_once_with("playwright")
+        self.assertIn("Scaffolding Complete", result.output)
+
+    def test_setup_aliases_company_knowledge_init(self):
+        with patch("agent.cli.ck_init") as mock_ck_init:
+            result = self.runner.invoke(app, ["setup"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_ck_init.assert_called_once_with(force=False)
+
+    def test_setup_forwards_force_flag(self):
+        with patch("agent.cli.ck_init") as mock_ck_init:
+            result = self.runner.invoke(app, ["setup", "--force"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_ck_init.assert_called_once_with(force=True)
+
+
 if __name__ == "__main__":
     unittest.main()
