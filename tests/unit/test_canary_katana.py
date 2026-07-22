@@ -282,6 +282,36 @@ def test_skip_supersedes_removal_of_the_same_test():
     assert all(d.kind == diffscan.Kind.SKIPPED for d in found)
 
 
+# #400: Playwright `.fixme` conversions (test.fixme / test.describe.fixme) are
+# quarantines, not deletions (repro reduced from a real consuming-repo PR).
+FIXME_CONVERSION = """\
+diff --git a/tests/checkout.spec.ts b/tests/checkout.spec.ts
+index 1111111..2222222 100644
+--- a/tests/checkout.spec.ts
++++ b/tests/checkout.spec.ts
+@@ -1,6 +1,6 @@
+-test.describe('Checkout Flow', () => {
++test.describe.fixme('Checkout Flow', () => {
+   beforeEach(async ({ page }) => { await page.goto('/'); });
+-  test('Verify cart totals update', async () => {
++  test.fixme('Verify cart totals update', async () => {
+     await expect(page).toHaveTitle(/Cart/);
+   });
+"""
+
+
+def test_fixme_conversion_is_skipped_not_removed():
+    # #400: `test(...)`→`test.fixme(...)` and `test.describe`→`test.describe.fixme`
+    # are quarantines. They must classify as SKIPPED (superseding the `-` line's
+    # removal), never REMOVED — otherwise katana fires false last-coverage alarms
+    # on merely-skipped tests.
+    found = diffscan.find_deletions(FIXME_CONVERSION)
+    by_name = {d.name: d for d in found}
+    assert set(by_name) == {"Checkout Flow", "Verify cart totals update"}
+    assert all(d.kind == diffscan.Kind.SKIPPED for d in found)
+    assert all("fixme" in d.marker for d in found)
+
+
 def test_deletion_to_dict_is_json_safe():
     d = diffscan.find_deletions(JS_SKIP)[0]
     payload = d.to_dict()

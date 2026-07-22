@@ -80,7 +80,7 @@ _JS_DECL = re.compile(
     r"\b(?:describe|context|it|test)(?:\.\w+)?\s*\(\s*(['\"`])(.*?)\1"
 )
 _JS_SKIP = re.compile(
-    r"\b(xit|xdescribe|fit|fdescribe|(?:it|test|describe|context)\.(?:skip|only))"
+    r"\b(xit|xdescribe|fit|fdescribe|(?:it|test|describe|context)\.(?:skip|only|fixme))"
     r"\s*\(\s*(['\"`])(.*?)\2"
 )
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
