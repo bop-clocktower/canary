@@ -98,6 +98,7 @@ def find_deletions(diff: str) -> list[Deletion]:
     skipped: dict[tuple[str, str], Deletion] = {}
 
     current_file: Optional[str] = None
+    minus_file: Optional[str] = None
     in_test_file = False
     in_hunk = False
     old_ln = new_ln = 0
@@ -119,19 +120,26 @@ def find_deletions(diff: str) -> list[Deletion]:
         if raw.startswith("diff --git"):
             in_hunk = False
             current_file = None
+            minus_file = None
             in_test_file = False
             pending_py_marker = None
             continue
         if raw.startswith("--- "):
+            target = _strip_ab(raw[4:].strip())
+            minus_file = None if target == "/dev/null" else target
             continue
         if raw.startswith("+++ "):
             target = _strip_ab(raw[4:].strip())
-            if target == "/dev/null":
+            # A wholesale file deletion shows `+++ /dev/null`; the path lives on
+            # the `--- a/...` side. Fall back to it so deleting an entire test
+            # file -- the most severe quarantine case -- is still captured.
+            resolved = minus_file if target == "/dev/null" else target
+            if resolved is None:
                 current_file = None
                 in_test_file = False
             else:
-                current_file = target
-                in_test_file = is_test_file(target)
+                current_file = resolved
+                in_test_file = is_test_file(resolved)
             in_hunk = False
             pending_py_marker = None
             continue

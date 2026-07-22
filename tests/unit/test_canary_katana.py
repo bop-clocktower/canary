@@ -207,6 +207,30 @@ def test_ignores_deletions_in_non_test_files():
     assert diffscan.find_deletions(NON_TEST_FILE) == []
 
 
+WHOLE_FILE_REMOVAL = """\
+diff --git a/tests/test_points.py b/tests/test_points.py
+deleted file mode 100644
+index 1111111..0000000
+--- a/tests/test_points.py
++++ /dev/null
+@@ -1,4 +0,0 @@
+-def test_earns_points():
+-    assert True
+-def test_points_expire():
+-    assert True
+"""
+
+
+def test_finds_tests_in_a_wholesale_deleted_file():
+    # A deleted file shows `+++ /dev/null`; the path is on the `--- a/...` side.
+    # Deleting an entire test file is the most severe quarantine case and must
+    # still be captured, not silently dropped.
+    found = diffscan.find_deletions(WHOLE_FILE_REMOVAL)
+    assert [d.name for d in found] == ["test_earns_points", "test_points_expire"]
+    assert all(d.file == "tests/test_points.py" for d in found)
+    assert all(d.kind == diffscan.Kind.REMOVED for d in found)
+
+
 def test_records_line_numbers_for_removed_tests():
     found = diffscan.find_deletions(PY_REMOVAL)
     assert found[0].line == 3
