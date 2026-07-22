@@ -1,0 +1,25 @@
+{
+  "source_files": 2,
+  "modules": [
+    "src/app",
+    "src/widget"
+  ],
+  "components": [
+    "UserService",
+    "Button",
+    "Card"
+  ],
+  "functions": [
+    "create_user",
+    "list_users",
+    "add_user",
+    "helper",
+    "util"
+  ],
+  "api_routes": [
+    "GET /users",
+    "POST /users",
+    "GET /items",
+    "POST /items"
+  ]
+}
