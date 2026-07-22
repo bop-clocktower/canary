@@ -1,0 +1,18 @@
+import pytest
+
+
+def test_login_succeeds():
+    result = login("user", "pw")
+    assert result.ok
+    assert result.status == 200
+
+
+def test_login_invalid_password_raises():
+    with pytest.raises(AuthError):
+        login("user", "wrong")
+
+
+@pytest.mark.parametrize("bad", ["", None, "   "])
+def test_login_empty_username_rejected(bad):
+    assert login(bad, "pw").error == "missing username"
+    assert login(bad, "pw").retries == 3

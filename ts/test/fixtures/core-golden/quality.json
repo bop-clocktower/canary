@@ -1,0 +1,42 @@
+[
+  {
+    "sample": "pytest_sample.txt",
+    "framework": "pytest",
+    "score": {
+      "score": 76,
+      "grade": "B",
+      "coverage_breadth": 85,
+      "assertion_density": 55,
+      "flakiness_risk": 100,
+      "magic_numbers": 0,
+      "details": [
+        "3 test functions found",
+        "Covers error/invalid paths",
+        "Parametrized test cases detected",
+        "5 assertions, 1.7 per test",
+        "No flakiness signals detected",
+        "No magic numbers detected"
+      ]
+    }
+  },
+  {
+    "sample": "vitest_sample.txt",
+    "framework": "vitest",
+    "score": {
+      "score": 65,
+      "grade": "C",
+      "coverage_breadth": 55,
+      "assertion_density": 75,
+      "flakiness_risk": 80,
+      "magic_numbers": 1,
+      "details": [
+        "2 test functions found",
+        "Covers error/invalid paths",
+        "4 assertions, 2.0 per test",
+        "1 hardcoded wait detected",
+        "1 magic number(s) detected",
+        "line 12: magic number 250 \u2014 name it or derive it"
+      ]
+    }
+  }
+]

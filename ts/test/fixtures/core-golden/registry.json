@@ -1,0 +1,521 @@
+{
+  "summaries": [
+    {
+      "name": "playwright",
+      "category": "e2e_ui",
+      "categories": [
+        "e2e_ui",
+        "api"
+      ],
+      "languages": [
+        "typescript",
+        "javascript"
+      ],
+      "file_extensions": [
+        "spec.ts",
+        "spec.js",
+        "test.ts",
+        "test.js"
+      ],
+      "execution_command": "npx --yes playwright test {file}",
+      "ci_flags": [
+        "--reporter=list"
+      ],
+      "status": "preferred"
+    },
+    {
+      "name": "vitest",
+      "category": "frontend_unit",
+      "categories": [],
+      "languages": [
+        "typescript",
+        "javascript"
+      ],
+      "file_extensions": [
+        "test.ts",
+        "test.js",
+        "spec.ts",
+        "spec.js"
+      ],
+      "execution_command": "npx --yes vitest run {file}",
+      "ci_flags": [
+        "--reporter=verbose"
+      ],
+      "status": "preferred"
+    },
+    {
+      "name": "pytest",
+      "category": "api",
+      "categories": [],
+      "languages": [
+        "python"
+      ],
+      "file_extensions": [
+        "py"
+      ],
+      "execution_command": "pytest {file}",
+      "ci_flags": [
+        "--tb=short",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "status": "preferred"
+    },
+    {
+      "name": "schemathesis",
+      "category": "api",
+      "categories": [
+        "api",
+        "contract"
+      ],
+      "languages": [
+        "python"
+      ],
+      "file_extensions": [
+        "py"
+      ],
+      "execution_command": "schemathesis run {file}",
+      "ci_flags": [
+        "--checks",
+        "all",
+        "--max-response-time",
+        "2000"
+      ],
+      "status": "supported"
+    },
+    {
+      "name": "k6",
+      "category": "performance",
+      "categories": [],
+      "languages": [
+        "javascript"
+      ],
+      "file_extensions": [
+        "js"
+      ],
+      "execution_command": "k6 run {file}",
+      "ci_flags": [],
+      "status": "preferred"
+    },
+    {
+      "name": "axe-core",
+      "category": "accessibility",
+      "categories": [],
+      "languages": [
+        "typescript",
+        "javascript"
+      ],
+      "file_extensions": [
+        "spec.ts",
+        "spec.js"
+      ],
+      "execution_command": "npx --yes playwright test {file}",
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "zap",
+      "category": "security",
+      "categories": [],
+      "languages": [
+        "any"
+      ],
+      "file_extensions": [],
+      "execution_command": "zap-baseline.py -t {target}",
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "backstopjs",
+      "category": "visual",
+      "categories": [],
+      "languages": [
+        "javascript",
+        "typescript"
+      ],
+      "file_extensions": [
+        "js",
+        "json"
+      ],
+      "execution_command": "npx --yes backstop test",
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "pact",
+      "category": "contract",
+      "categories": [],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python",
+        "java"
+      ],
+      "file_extensions": [],
+      "execution_command": "npx --yes pact verify",
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "chaos-toolkit",
+      "category": "chaos",
+      "categories": [],
+      "languages": [
+        "python"
+      ],
+      "file_extensions": [
+        "json",
+        "yaml"
+      ],
+      "execution_command": "chaos run {file}",
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "sdv",
+      "category": "synthetic_data",
+      "categories": [],
+      "languages": [
+        "python"
+      ],
+      "file_extensions": [],
+      "execution_command": "python -m pytest {file}",
+      "ci_flags": [],
+      "status": "preferred"
+    },
+    {
+      "name": "faker",
+      "category": "synthetic_data",
+      "categories": [],
+      "languages": [
+        "python",
+        "javascript",
+        "typescript"
+      ],
+      "file_extensions": [],
+      "execution_command": "python -m pytest {file}",
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "opentelemetry",
+      "category": "observability",
+      "categories": [],
+      "languages": [
+        "any"
+      ],
+      "file_extensions": [],
+      "execution_command": null,
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "maestro",
+      "category": "mobile",
+      "categories": [],
+      "languages": [
+        "yaml"
+      ],
+      "file_extensions": [
+        "yaml",
+        "yml"
+      ],
+      "execution_command": "maestro test {file}",
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "locust",
+      "category": "load",
+      "categories": [],
+      "languages": [
+        "python"
+      ],
+      "file_extensions": [
+        "py"
+      ],
+      "execution_command": "locust -f {file} --headless",
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "stryker",
+      "category": "mutation",
+      "categories": [],
+      "languages": [
+        "typescript",
+        "javascript"
+      ],
+      "file_extensions": [
+        "js",
+        "ts"
+      ],
+      "execution_command": "npx --yes stryker run",
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "semgrep",
+      "category": "static_analysis",
+      "categories": [],
+      "languages": [
+        "any"
+      ],
+      "file_extensions": [
+        "yaml",
+        "yml"
+      ],
+      "execution_command": "semgrep --config auto {target}",
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "testcontainers",
+      "category": "integration",
+      "categories": [],
+      "languages": [
+        "python",
+        "typescript",
+        "javascript",
+        "java",
+        "go"
+      ],
+      "file_extensions": [],
+      "execution_command": "pytest {file}",
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "tosca",
+      "category": "e2e_ui",
+      "categories": [],
+      "languages": [
+        "any"
+      ],
+      "file_extensions": [],
+      "execution_command": null,
+      "ci_flags": [],
+      "status": "commercial"
+    },
+    {
+      "name": "neoload",
+      "category": "performance",
+      "categories": [],
+      "languages": [
+        "any"
+      ],
+      "file_extensions": [],
+      "execution_command": null,
+      "ci_flags": [],
+      "status": "commercial"
+    },
+    {
+      "name": "lambdatest",
+      "category": "e2e_ui",
+      "categories": [],
+      "languages": [
+        "any"
+      ],
+      "file_extensions": [],
+      "execution_command": null,
+      "ci_flags": [],
+      "status": "commercial"
+    },
+    {
+      "name": "mutmut",
+      "category": "mutation",
+      "categories": [],
+      "languages": [
+        "python"
+      ],
+      "file_extensions": [
+        "py"
+      ],
+      "execution_command": "mutmut run",
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "wdio",
+      "category": "mobile",
+      "categories": [],
+      "languages": [
+        "typescript",
+        "javascript"
+      ],
+      "file_extensions": [
+        "spec.ts",
+        "spec.js"
+      ],
+      "execution_command": "npx --yes wdio run wdio.conf.ts --spec {file}",
+      "ci_flags": [],
+      "status": "supported"
+    },
+    {
+      "name": "hurl",
+      "category": "api",
+      "categories": [
+        "api"
+      ],
+      "languages": [
+        "hurl"
+      ],
+      "file_extensions": [
+        "hurl"
+      ],
+      "execution_command": "hurl --test {file}",
+      "ci_flags": [
+        "--report-junit",
+        "hurl-report.xml"
+      ],
+      "status": "supported"
+    },
+    {
+      "name": "fast-check",
+      "category": "property",
+      "categories": [],
+      "languages": [
+        "typescript",
+        "javascript"
+      ],
+      "file_extensions": [
+        "test.ts",
+        "test.js",
+        "spec.ts",
+        "spec.js"
+      ],
+      "execution_command": "npx --yes vitest run {file}",
+      "ci_flags": [
+        "--reporter=verbose"
+      ],
+      "status": "preferred"
+    },
+    {
+      "name": "hypothesis",
+      "category": "property",
+      "categories": [],
+      "languages": [
+        "python"
+      ],
+      "file_extensions": [
+        "py"
+      ],
+      "execution_command": "pytest {file}",
+      "ci_flags": [
+        "--tb=short",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "status": "supported"
+    },
+    {
+      "name": "promptfoo",
+      "category": "llm_eval",
+      "categories": [],
+      "languages": [
+        "yaml"
+      ],
+      "file_extensions": [
+        "yaml",
+        "yml"
+      ],
+      "execution_command": "npx --yes promptfoo eval -c {file}",
+      "ci_flags": [
+        "--no-progress-bar"
+      ],
+      "status": "supported"
+    }
+  ],
+  "byCategory": {
+    "e2e_ui": [
+      "playwright",
+      "tosca",
+      "lambdatest"
+    ],
+    "api": [
+      "playwright",
+      "pytest",
+      "schemathesis",
+      "hurl"
+    ],
+    "observability": [
+      "opentelemetry"
+    ],
+    "synthetic_data": [
+      "sdv",
+      "faker"
+    ]
+  },
+  "preferred": {
+    "e2e_ui": "playwright",
+    "api": "playwright",
+    "observability": "opentelemetry",
+    "synthetic_data": "sdv"
+  },
+  "findByName": {
+    "playwright": "playwright",
+    "pytest": "pytest",
+    "opentelemetry": "opentelemetry",
+    "does-not-exist": null
+  },
+  "executionInfo": {
+    "playwright": {
+      "execution_command": "npx --yes playwright test {file}",
+      "ci_flags": [
+        "--reporter=list"
+      ]
+    },
+    "pytest": {
+      "execution_command": "pytest {file}",
+      "ci_flags": [
+        "--tb=short",
+        "-p",
+        "no:cacheprovider"
+      ]
+    },
+    "opentelemetry": {
+      "execution_command": null,
+      "ci_flags": []
+    },
+    "does-not-exist": null
+  },
+  "matchByLanguage": {
+    "python": [
+      "pytest",
+      "schemathesis",
+      "pact",
+      "chaos-toolkit",
+      "sdv",
+      "faker",
+      "locust",
+      "testcontainers",
+      "mutmut",
+      "hypothesis"
+    ],
+    "typescript": [
+      "playwright",
+      "vitest",
+      "axe-core",
+      "backstopjs",
+      "pact",
+      "faker",
+      "stryker",
+      "testcontainers",
+      "wdio",
+      "fast-check"
+    ],
+    "javascript": [
+      "playwright",
+      "vitest",
+      "k6",
+      "axe-core",
+      "backstopjs",
+      "pact",
+      "faker",
+      "stryker",
+      "testcontainers",
+      "wdio",
+      "fast-check"
+    ]
+  }
+}

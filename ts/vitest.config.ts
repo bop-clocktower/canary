@@ -2,7 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
+    // Fixture files under test/fixtures/** are inputs, not suites — keep the
+    // test/ glob shallow so a fixture named *.test.ts is never collected.
+    include: ['src/**/*.test.ts', 'test/*.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json'],

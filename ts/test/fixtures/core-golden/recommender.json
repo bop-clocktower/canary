@@ -1,0 +1,239 @@
+[
+  {
+    "test_type": "e2e_ui",
+    "confidence": 0.9,
+    "framework_hint": null,
+    "metadata_languages": null,
+    "result": [
+      {
+        "framework": "playwright",
+        "category": "e2e_ui",
+        "file_extension": "spec.ts",
+        "reason": [
+          "end-to-end testing",
+          "cross-browser testing",
+          "modern frontend applications",
+          "Reliable auto-waiting",
+          "Strong TypeScript support",
+          "Maturity level: high"
+        ],
+        "confidence": 0.9
+      }
+    ]
+  },
+  {
+    "test_type": "api",
+    "confidence": 0.85,
+    "framework_hint": null,
+    "metadata_languages": null,
+    "result": [
+      {
+        "framework": "playwright",
+        "category": "e2e_ui",
+        "file_extension": "spec.ts",
+        "reason": [
+          "end-to-end testing",
+          "cross-browser testing",
+          "modern frontend applications",
+          "Reliable auto-waiting",
+          "Strong TypeScript support",
+          "Maturity level: high"
+        ],
+        "confidence": 0.85
+      },
+      {
+        "framework": "pytest",
+        "category": "api",
+        "file_extension": "py",
+        "reason": [
+          "python backend testing",
+          "api testing",
+          "integration testing",
+          "Extremely mature ecosystem",
+          "Powerful fixtures",
+          "Maturity level: very_high"
+        ],
+        "confidence": 0.85
+      },
+      {
+        "framework": "schemathesis",
+        "category": "api",
+        "file_extension": "py",
+        "reason": [
+          "property-based API testing",
+          "OpenAPI fuzz testing",
+          "finding schema/implementation drift",
+          "Automatically generates test cases from OpenAPI schemas",
+          "Finds coercion bugs and undocumented responses hand-written tests miss",
+          "Maturity level: high"
+        ],
+        "confidence": 0.85
+      }
+    ]
+  },
+  {
+    "test_type": "api",
+    "confidence": 0.85,
+    "framework_hint": "pytest",
+    "metadata_languages": null,
+    "result": [
+      {
+        "framework": "pytest",
+        "category": "api",
+        "file_extension": "py",
+        "reason": [
+          "prompt-named framework (pytest)",
+          "python backend testing",
+          "api testing",
+          "integration testing",
+          "Extremely mature ecosystem",
+          "Powerful fixtures",
+          "Maturity level: very_high"
+        ],
+        "confidence": 0.85
+      },
+      {
+        "framework": "playwright",
+        "category": "e2e_ui",
+        "file_extension": "spec.ts",
+        "reason": [
+          "end-to-end testing",
+          "cross-browser testing",
+          "modern frontend applications",
+          "Reliable auto-waiting",
+          "Strong TypeScript support",
+          "Maturity level: high"
+        ],
+        "confidence": 0.85
+      },
+      {
+        "framework": "schemathesis",
+        "category": "api",
+        "file_extension": "py",
+        "reason": [
+          "property-based API testing",
+          "OpenAPI fuzz testing",
+          "finding schema/implementation drift",
+          "Automatically generates test cases from OpenAPI schemas",
+          "Finds coercion bugs and undocumented responses hand-written tests miss",
+          "Maturity level: high"
+        ],
+        "confidence": 0.85
+      }
+    ]
+  },
+  {
+    "test_type": "api",
+    "confidence": 0.9,
+    "framework_hint": null,
+    "metadata_languages": [
+      "python"
+    ],
+    "result": [
+      {
+        "framework": "pytest",
+        "category": "api",
+        "file_extension": "py",
+        "reason": [
+          "python backend testing",
+          "api testing",
+          "integration testing",
+          "Extremely mature ecosystem",
+          "Powerful fixtures",
+          "Maturity level: very_high"
+        ],
+        "confidence": 0.9
+      },
+      {
+        "framework": "schemathesis",
+        "category": "api",
+        "file_extension": "py",
+        "reason": [
+          "property-based API testing",
+          "OpenAPI fuzz testing",
+          "finding schema/implementation drift",
+          "Automatically generates test cases from OpenAPI schemas",
+          "Finds coercion bugs and undocumented responses hand-written tests miss",
+          "Maturity level: high"
+        ],
+        "confidence": 0.9
+      }
+    ]
+  },
+  {
+    "test_type": "synthetic_data",
+    "confidence": 0.88,
+    "framework_hint": null,
+    "metadata_languages": null,
+    "result": [
+      {
+        "framework": "sdv",
+        "category": "synthetic_data",
+        "file_extension": "py",
+        "reason": [
+          "\u26a0 BSL-1.1: review against your license policy",
+          "statistically faithful synthetic datasets",
+          "schema-aware multi-table data preserving distributions and correlations",
+          "Learns real-data distributions and cross-column relationships",
+          "Relational / multi-table synthesis",
+          "Maturity level: high"
+        ],
+        "confidence": 0.88,
+        "license": "BSL-1.1",
+        "warning": "Business Source License \u2014 source-available, not OSI open-source. Internal test-data generation is generally within permitted use, but BSL carries a production-use restriction. Downstream adopters must review BSL against their own business/procurement rules before relying on it; fall back to Faker if BSL is unacceptable."
+      },
+      {
+        "framework": "faker",
+        "category": "synthetic_data",
+        "file_extension": "py",
+        "reason": [
+          "generating realistic synthetic test data",
+          "seeding fixtures without production data",
+          "Permissive MIT license",
+          "Huge provider catalog",
+          "Maturity level: very_high"
+        ],
+        "confidence": 0.88
+      }
+    ]
+  },
+  {
+    "test_type": "observability",
+    "confidence": 0.9,
+    "framework_hint": null,
+    "metadata_languages": null,
+    "result": [
+      {
+        "framework": "reportportal",
+        "category": "observability",
+        "file_extension": "",
+        "reason": [
+          "self-hosted OSS reporting sink \u2014 default for observability output"
+        ],
+        "confidence": 0.9,
+        "kind": "reporting-sink"
+      },
+      {
+        "framework": "opentelemetry",
+        "category": "observability",
+        "file_extension": "ts",
+        "reason": [
+          "instrumentation and telemetry assertions",
+          "validating traces/metrics/logs emitted under test",
+          "Vendor-neutral standard",
+          "Traces, metrics, and logs in one SDK",
+          "Maturity level: high"
+        ],
+        "confidence": 0.9,
+        "kind": "instrumentation"
+      }
+    ]
+  },
+  {
+    "test_type": "no_such_category",
+    "confidence": 0.9,
+    "framework_hint": null,
+    "metadata_languages": null,
+    "result": []
+  }
+]

@@ -1,0 +1,119 @@
+[
+  {
+    "prompt": "test the performance under heavy traffic",
+    "result": {
+      "intent": "generate_tests",
+      "test_type": "performance",
+      "confidence": 0.95
+    },
+    "hint": null
+  },
+  {
+    "prompt": "load test the checkout with k6",
+    "result": {
+      "intent": "generate_tests",
+      "test_type": "performance",
+      "confidence": 0.95
+    },
+    "hint": "k6"
+  },
+  {
+    "prompt": "write a Playwright test for /api/orders/{id}",
+    "result": {
+      "intent": "generate_tests",
+      "test_type": "e2e_ui",
+      "confidence": 0.95
+    },
+    "hint": "playwright"
+  },
+  {
+    "prompt": "GET /users returns the user list",
+    "result": {
+      "intent": "generate_tests",
+      "test_type": "api",
+      "confidence": 0.95
+    },
+    "hint": null
+  },
+  {
+    "prompt": "POST new records to the queue",
+    "result": {
+      "intent": "generate_tests",
+      "test_type": "api",
+      "confidence": 0.85
+    },
+    "hint": null
+  },
+  {
+    "prompt": "accessibility audit with axe",
+    "result": {
+      "intent": "generate_tests",
+      "test_type": "accessibility",
+      "confidence": 0.88
+    },
+    "hint": "axe"
+  },
+  {
+    "prompt": "vitest unit test for validateEmail",
+    "result": {
+      "intent": "generate_tests",
+      "test_type": "frontend_unit",
+      "confidence": 0.95
+    },
+    "hint": "vitest"
+  },
+  {
+    "prompt": "test the login flow end to end",
+    "result": {
+      "intent": "generate_tests",
+      "test_type": "e2e_ui",
+      "confidence": 0.8
+    },
+    "hint": null
+  },
+  {
+    "prompt": "check the api endpoint responses",
+    "result": {
+      "intent": "generate_tests",
+      "test_type": "api",
+      "confidence": 0.85
+    },
+    "hint": null
+  },
+  {
+    "prompt": "render the React component",
+    "result": {
+      "intent": "generate_tests",
+      "test_type": "frontend_unit",
+      "confidence": 0.9
+    },
+    "hint": null
+  },
+  {
+    "prompt": "just test something basic",
+    "result": {
+      "intent": "generate_tests",
+      "test_type": "e2e_ui",
+      "confidence": 0.5
+    },
+    "hint": null
+  },
+  {
+    "prompt": "property-based testing of the parser",
+    "result": {
+      "intent": "generate_tests",
+      "test_type": "property",
+      "confidence": 0.88
+    },
+    "hint": null
+  },
+  {
+    "prompt": "contract test between the two services",
+    "result": {
+      "intent": "generate_tests",
+      "test_type": "contract",
+      "confidence": 0.88
+    },
+    "hint": null
+  }
+]

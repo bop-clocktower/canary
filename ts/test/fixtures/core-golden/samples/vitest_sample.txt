@@ -1,0 +1,14 @@
+import { describe, it, expect } from "vitest";
+
+describe("cart", () => {
+  it("adds an item", async () => {
+    await new Promise((r) => setTimeout(r, 500));
+    const cart = addItem(emptyCart(), "sku-1");
+    expect(cart.count).toBe(1);
+  });
+
+  it("total reflects quantity", () => {
+    const cart = addItem(emptyCart(), "sku-1", 4);
+    expect(cart.total).toEqual(4 * 250);
+  });
+});
