@@ -86,10 +86,14 @@ canary company-knowledge show --env uat
   "notes": "Free-text guidance for the LLM. No secrets.",
   "brand": {
     "company_name": "Acme Corp",
-    "logo_url": "https://acme.example.com/logo.svg",
-    "primary_color": "#0A5FFF",
-    "secondary_color": "#0A0A0A",
-    "footer_note": "Acme QA report"
+    "logo_path": "assets/logo-horizontal.svg",
+    "primary_color": "#26A9E1",
+    "secondary_color": "#F4A114",
+    "text_color": "#212121",
+    "background_color": "#FFF8EC",
+    "accents": ["#78BD31", "#23959A"],
+    "footer_note": "Acme QA report",
+    "tagline": "Trusted testing"
   }
 }
 ```
@@ -107,38 +111,52 @@ canary company-knowledge show --env uat
 
 ### Brand assets (customer-facing reports)
 
-The optional `brand` block holds **pointers and styling only** — a logo URL and
-colors, never binary assets or secrets. A report generator (a skill or a
-downstream overlay) consults these when producing **customer-facing** output and
-applies them as its own visual skin: the engine supplies the data, the overlay
-owns the pixels.
+The optional `brand` block holds **pointers and styling only** — colors, logo
+paths/URLs, text — never binary assets or secrets. It is an **open map**: canary
+ingests whatever brand assets you have and uses what's present. Nothing is
+required; missing fields are simply omitted.
 
-| `brand` field     | Validation                                              |
-| ----------------- | ------------------------------------------------------- |
-| `company_name`    | Free text (≤200 chars); secret-prefixed values rejected |
-| `logo_url`        | Must parse as `http(s)://...`                           |
-| `primary_color`   | `#RGB` or `#RRGGBB` hex; invalid dropped with a warning |
-| `secondary_color` | `#RGB` or `#RRGGBB` hex; invalid dropped with a warning |
-| `footer_note`     | Free text (≤200 chars); secret-prefixed values rejected |
+- **Recognized keys** are validated/typed: `company_name`, `logo_url`,
+  `logo_path`, `primary_color`, `secondary_color`, `text_color`,
+  `background_color`, `accents` (list of hex), `badge_label_color`,
+  `badge_accent`, `logo_variants` (a `name → path` map), `footer_note`.
+- **Any other key is passed through** (lightly validated — `#hex` if it looks
+  like a color, `http(s)://…` if it looks like a URL, secret-prefixed values
+  rejected, ≤200 chars). So a brand's own extras (`tagline`, product hues, …)
+  ingest without a schema change.
 
-Each `brand` sub-field merges independently across the cascade (an org-wide logo
-composes with a project-local footer note).
+Validation notes: every color (including each `accents` entry and the badge
+colors) must be `#RGB`/`#RRGGBB` — invalid values are dropped with a warning.
+`logo_url` must be an `http(s)` URL. **`logo_path` / `logo_variants` paths
+resolve relative to the consuming repo** (the directory of `.canary/`), because
+brand assets are expected to live in the repo — not an absolute machine path.
+Each key merges independently across the cascade (an org-wide logo composes with
+a project-local footer note; a higher-priority layer overrides per key).
 
 **The `report_branding()` hook.**
-`CompanyKnowledge.report_branding(flavor=None)` returns the brand assets plus an
-`attribution` line (`"made with Canary"`, always present) and an optional
-`voice_line` (garnish). Flavor resolution: an explicit `flavor` argument wins;
-otherwise a truthy `CANARY_NO_FLAVOR` / `NO_FLAVOR` environment variable turns
-garnish off (for CI logs / formal contexts); default on. Attribution is never
-suppressed — only the voice line is.
+`CompanyKnowledge.report_branding(flavor=None)` returns **every brand asset that
+is present** (recognized keys + passthrough extras) plus an `attribution` line
+(`"made with Canary"`, always present) and an optional `voice_line` (garnish).
+When `logo_path` is set, a repo-resolved `logo_path_resolved` is added. Flavor
+resolution: an explicit `flavor` argument wins; otherwise a truthy
+`CANARY_NO_FLAVOR` / `NO_FLAVOR` environment variable turns garnish off (for CI
+logs / formal contexts); default on. Attribution is never suppressed — only the
+voice line is.
 
 ```python
 from agent.core.company_knowledge import CompanyKnowledge
 
 brand = CompanyKnowledge.load().report_branding()
-# → {company_name, logo_url, primary_color, secondary_color, footer_note,
-#    attribution: "made with Canary", voice_line: "..."|"", flavor: bool}
+# → { ...all present brand keys..., logo_path_resolved?,
+#     attribution: "made with Canary", voice_line: "..."|"", flavor: bool }
 ```
+
+**Rendering — leverage the UI-polish skills.** The engine supplies the brand
+**data**; it does not render HTML. A report generator (a skill or a downstream
+overlay) should feed `report_branding()` into the available UI-polish skills —
+`frontend-design` (HTML/CSS skin), `dataviz` (charts), `artifact-design`
+(shareable pages) — to produce the polished, client-branded report. The engine
+owns the data; the skills/overlay own the pixels.
 
 ### Secrets
 
