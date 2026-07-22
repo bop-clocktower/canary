@@ -6,8 +6,8 @@ created: 2026-06-01
 # Company Knowledge Guide
 
 Canary can ground AI generation in your organisation's internal context —
-Confluence spaces, Jira project keys, internal doc URLs, MCP servers, and
-Claude Code skills — without committing any proprietary content to a repo.
+Confluence spaces, Jira project keys, internal doc URLs, MCP servers, and Claude
+Code skills — without committing any proprietary content to a repo.
 
 All this is configured via `.canary/company.json`, which stores **pointers
 only**. The actual content is fetched at runtime by the AI agent through your
@@ -34,18 +34,18 @@ canary company-knowledge show --validate-mcp
 
 Canary loads three sources and merges them, lowest to highest priority:
 
-| Priority | File | Purpose |
-| --- | --- | --- |
-| **1 (lowest)** | `~/.canary/company.json` | Org-wide defaults shared across all your local projects |
-| **2** | `.canary/company.json` | Project-local config (committed) |
-| **3 (highest)** | `.canary/company.<env>.json` | Environment override (e.g. `company.uat.json`) |
+| Priority        | File                         | Purpose                                                 |
+| --------------- | ---------------------------- | ------------------------------------------------------- |
+| **1 (lowest)**  | `~/.canary/company.json`     | Org-wide defaults shared across all your local projects |
+| **2**           | `.canary/company.json`       | Project-local config (committed)                        |
+| **3 (highest)** | `.canary/company.<env>.json` | Environment override (e.g. `company.uat.json`)          |
 
 **List fields** (`confluence_spaces`, `jira_projects`, `internal_doc_urls`,
-`internal_domains`, `mcp_servers`, `claude_code_skills`) are **unioned** —
-each layer adds to the set.
+`internal_domains`, `mcp_servers`, `claude_code_skills`) are **unioned** — each
+layer adds to the set.
 
-**Scalar fields** (`dashboard_url`, `dashboard_token_env`,
-`notes`) are **replaced** by the highest-priority source that sets them.
+**Scalar fields** (`dashboard_url`, `dashboard_token_env`, `notes`) are
+**replaced** by the highest-priority source that sets them.
 
 > **Naming convention (contract):** Public code carries no client/employer
 > identifiers. `company.json` scalar fields (`dashboard_url`,
@@ -83,27 +83,70 @@ canary company-knowledge show --env uat
   "internal_domains": ["acme.example.com", "partner.example.com"],
   "mcp_servers": ["plugin_atlassian_atlassian", "harness"],
   "claude_code_skills": ["acme:ui", "acme:e2e"],
-  "notes": "Free-text guidance for the LLM. No secrets."
+  "notes": "Free-text guidance for the LLM. No secrets.",
+  "brand": {
+    "company_name": "Acme Corp",
+    "logo_url": "https://acme.example.com/logo.svg",
+    "primary_color": "#0A5FFF",
+    "secondary_color": "#0A0A0A",
+    "footer_note": "Acme QA report"
+  }
 }
 ```
 
-| Field | Validation | Notes |
-| --- | --- | --- |
-| `confluence_spaces` | Uppercase alphanumeric, ≤32 chars, deduped | |
-| `jira_projects` | Uppercase alphanumeric, ≤32 chars, deduped | |
-| `internal_doc_urls` | Must parse as `http(s)://...` | Invalid entries dropped with a warning |
-| `internal_domains` | `^[a-z0-9.-]+\.[a-z]{2,}$`, lowercased | |
-| `mcp_servers` | `^[A-Za-z0-9_-]+$` | |
-| `claude_code_skills` | Bare (`verify`) or scoped (`acme:ui`) slugs | |
-| `notes` | Free text, capped at 2048 chars | Triple-backtick fences stripped |
+| Field                | Validation                                  | Notes                                  |
+| -------------------- | ------------------------------------------- | -------------------------------------- |
+| `confluence_spaces`  | Uppercase alphanumeric, ≤32 chars, deduped  |                                        |
+| `jira_projects`      | Uppercase alphanumeric, ≤32 chars, deduped  |                                        |
+| `internal_doc_urls`  | Must parse as `http(s)://...`               | Invalid entries dropped with a warning |
+| `internal_domains`   | `^[a-z0-9.-]+\.[a-z]{2,}$`, lowercased      |                                        |
+| `mcp_servers`        | `^[A-Za-z0-9_-]+$`                          |                                        |
+| `claude_code_skills` | Bare (`verify`) or scoped (`acme:ui`) slugs |                                        |
+| `notes`              | Free text, capped at 2048 chars             | Triple-backtick fences stripped        |
+| `brand`              | Nested object (see below)                   | Assets for customer-facing reports     |
+
+### Brand assets (customer-facing reports)
+
+The optional `brand` block holds **pointers and styling only** — a logo URL and
+colors, never binary assets or secrets. A report generator (a skill or a
+downstream overlay) consults these when producing **customer-facing** output and
+applies them as its own visual skin: the engine supplies the data, the overlay
+owns the pixels.
+
+| `brand` field     | Validation                                              |
+| ----------------- | ------------------------------------------------------- |
+| `company_name`    | Free text (≤200 chars); secret-prefixed values rejected |
+| `logo_url`        | Must parse as `http(s)://...`                           |
+| `primary_color`   | `#RGB` or `#RRGGBB` hex; invalid dropped with a warning |
+| `secondary_color` | `#RGB` or `#RRGGBB` hex; invalid dropped with a warning |
+| `footer_note`     | Free text (≤200 chars); secret-prefixed values rejected |
+
+Each `brand` sub-field merges independently across the cascade (an org-wide logo
+composes with a project-local footer note).
+
+**The `report_branding()` hook.**
+`CompanyKnowledge.report_branding(flavor=None)` returns the brand assets plus an
+`attribution` line (`"made with Canary"`, always present) and an optional
+`voice_line` (garnish). Flavor resolution: an explicit `flavor` argument wins;
+otherwise a truthy `CANARY_NO_FLAVOR` / `NO_FLAVOR` environment variable turns
+garnish off (for CI logs / formal contexts); default on. Attribution is never
+suppressed — only the voice line is.
+
+```python
+from agent.core.company_knowledge import CompanyKnowledge
+
+brand = CompanyKnowledge.load().report_branding()
+# → {company_name, logo_url, primary_color, secondary_color, footer_note,
+#    attribution: "made with Canary", voice_line: "..."|"", flavor: bool}
+```
 
 ### Secrets
 
 The module **rejects** any value that looks like a secret — values matching
-`sk-`, `api_key`, `token`, `secret`, `bearer` prefixes, or longer than 128
-chars in non-`notes` fields. Detected secrets cause the whole file to be
-rejected with a clear error. Keep secrets in environment variables; reference
-them by env-var name (e.g. `"dashboard_token_env": "MY_TOKEN_VAR"`).
+`sk-`, `api_key`, `token`, `secret`, `bearer` prefixes, or longer than 128 chars
+in non-`notes` fields. Detected secrets cause the whole file to be rejected with
+a clear error. Keep secrets in environment variables; reference them by env-var
+name (e.g. `"dashboard_token_env": "MY_TOKEN_VAR"`).
 
 ---
 
@@ -139,11 +182,11 @@ Output includes a `sources:` header showing which files were loaded.
 
 Checks each `mcp_servers` entry against locally registered sources:
 
-| Status | Meaning |
-| --- | --- |
-| ✓ `registered` | Found in `.mcp.json` or an installed Claude Code plugin |
-| ⚠ `plugin_disabled` | Plugin installed but not enabled in Claude Code settings |
-| ✗ `not_found` | Not found locally (may still work at runtime if registered elsewhere) |
+| Status              | Meaning                                                               |
+| ------------------- | --------------------------------------------------------------------- |
+| ✓ `registered`      | Found in `.mcp.json` or an installed Claude Code plugin               |
+| ⚠ `plugin_disabled` | Plugin installed but not enabled in Claude Code settings              |
+| ✗ `not_found`       | Not found locally (may still work at runtime if registered elsewhere) |
 
 The check is local-only — no network calls.
 
@@ -187,8 +230,8 @@ Create `.canary/company.<env>.json` for environment-specific config:
 }
 ```
 
-The env layer's `notes` replaces the project layer's `notes` when active.
-List fields (like `confluence_spaces`) would be unioned on top.
+The env layer's `notes` replaces the project layer's `notes` when active. List
+fields (like `confluence_spaces`) would be unioned on top.
 
 ---
 
@@ -215,26 +258,25 @@ context isn't covered above, say so in a comment rather than guessing.
 
 ## Usage examples
 
-Fields are validated and merged, but Canary itself never auto-consumes
-most of them beyond the prompt-injection block above — skills that want a
-pointer read it explicitly. `otel_exporter_endpoint` has one such consumer:
+Fields are validated and merged, but Canary itself never auto-consumes most of
+them beyond the prompt-injection block above — skills that want a pointer read
+it explicitly. `otel_exporter_endpoint` has one such consumer:
 
 ### `canary-instrument` — OTLP collector endpoint
 
 The `canary-instrument` skill's `otel_bootstrap/instrument.mjs` reads the
 standard `OTEL_EXPORTER_OTLP_ENDPOINT` env var directly — it has no code
-dependency on this module. Populate that env var from company-knowledge
-before your test run if you want spans additionally streamed to a
-collector (the file-based export `canary-instrument` relies on for
-correlation works either way):
+dependency on this module. Populate that env var from company-knowledge before
+your test run if you want spans additionally streamed to a collector (the
+file-based export `canary-instrument` relies on for correlation works either
+way):
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="$(canary company-knowledge show --json | jq -r '.otel_exporter_endpoint')"
 npx playwright test
 ```
 
-See `agents/skills/claude-code/canary-instrument/SKILL.md` for the full
-setup.
+See `agents/skills/claude-code/canary-instrument/SKILL.md` for the full setup.
 
 ---
 
@@ -244,8 +286,8 @@ setup.
 `.canary/company.json` is **not committed** by default — it's a per-clone
 artifact.
 
-If you want the project-level config committed (it contains only pointers,
-no secrets), add an exception:
+If you want the project-level config committed (it contains only pointers, no
+secrets), add an exception:
 
 ```gitignore
 .canary/
