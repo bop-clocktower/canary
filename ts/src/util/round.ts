@@ -23,3 +23,12 @@ export function round1(x: number): number {
 export function num1(x: number): string {
   return round1(x).toFixed(1);
 }
+
+/**
+ * Render a float the way Python's `str(float)` would: an integer-valued float
+ * keeps a trailing ".0" (Python `str(10.0)` → "10.0", whereas JS `${10.0}`
+ * yields "10"). Used for threshold parameters interpolated raw into headers.
+ */
+export function pyFloat(x: number): string {
+  return Number.isInteger(x) ? `${x}.0` : `${x}`;
+}
