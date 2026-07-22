@@ -23,10 +23,18 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -e . pytest
+        # Surgical install: the quality job only needs the test + coverage
+        # tooling, not the full dev extra (which pulls in pyinstaller).
+        run: pip install -e . pytest coverage
 
-      - name: Run Unit Tests
-        run: python3 -m unittest discover tests/unit
+      - name: Run Unit Tests (with coverage gate)
+        # Run under pytest so the full suite executes (unittest discover only
+        # collects TestCase classes and silently skipped the pytest
+        # function-style tests). `coverage report` enforces the fail_under
+        # floor from pyproject's [tool.coverage.report].
+        run: |
+          coverage run -m pytest tests/unit -q
+          coverage report
 
       - name: Hook customization guard
         # Fail loudly if a harness regeneration clobbered a canary-local hook
