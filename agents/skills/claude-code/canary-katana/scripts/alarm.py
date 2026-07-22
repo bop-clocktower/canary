@@ -13,6 +13,7 @@ muted gate is worse than no gate.
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -135,13 +136,27 @@ def _name_covers(test_name: str, norm_symbols: set) -> bool:
     return any(sym in normalized for sym in norm_symbols)
 
 
+# Heavy/ignored directories never worth walking for test files. Pruning these
+# keeps the alarm scan usable on real monorepos -- an unpruned rglob over
+# node_modules times out (#395). Mirrors canary-blackhawk's _SKIP_DIRS, plus
+# JS-monorepo build/cache dirs.
+_SKIP_DIRS = frozenset({
+    ".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build",
+    ".mypy_cache", ".pytest_cache", ".tox", "coverage", ".next", ".turbo",
+})
+
+
 def _repo_test_files(repo: Path):
-    for path in sorted(repo.rglob("*")):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(repo).as_posix()
-        if diffscan.is_test_file(rel):
-            yield rel, path
+    for dirpath, dirnames, filenames in os.walk(repo):
+        # Prune ignored dirs in place so os.walk never descends into them.
+        # Sorting keeps enumeration deterministic across platforms.
+        dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS)
+        base = Path(dirpath)
+        for name in sorted(filenames):
+            path = base / name
+            rel = path.relative_to(repo).as_posix()
+            if diffscan.is_test_file(rel):
+                yield rel, path
 
 
 _PY_TEST_DEF = re.compile(r"^\s*(?:async\s+)?def\s+(test\w*)\s*\(", re.MULTILINE)
@@ -160,7 +175,9 @@ def _name_coverage_remains(repo: Path, norm_symbols: set) -> bool:
     for _rel, path in _repo_test_files(repo):
         try:
             text = path.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeDecodeError):
+            # Unreadable or non-UTF-8 (e.g. a binary asset under a test/ dir) --
+            # can't hold test names, so skip rather than crash the pass (#395).
             continue
         if any(_name_covers(name, norm_symbols) for name in _test_names(text)):
             return True
@@ -173,7 +190,8 @@ def _dir_coverage_remains(repo: Path, area_dirs: set) -> bool:
             continue
         try:
             text = path.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeDecodeError):
+            # Unreadable or non-UTF-8 file under an area dir -- skip, don't crash.
             continue
         if _test_names(text):
             return True
