@@ -88,6 +88,14 @@ simply contributes no tier-2 checks).
 > cloned manifest cannot inject shell syntax. Chain steps with a script the
 > overlay ships (e.g. `["npm", "run", "smoke"]`), not with `&&`, pipes, or
 > globs.
+>
+> **Reaching the consuming repo.** The command runs with cwd = the overlay
+> clone, so a relative path resolves inside the clone — not the repo where
+> `canary doctor` was invoked. To validate a consuming-repo artifact (e.g. a
+> generated `.canary/test-inventory.json` freshness check), read
+> **`CANARY_INVOCATION_DIR`** from the environment: it is set to the directory
+> `canary doctor` was launched from. Anchor to `$CANARY_INVOCATION_DIR` inside a
+> script the overlay ships rather than assuming cwd (#378).
 
 ---
 

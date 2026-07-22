@@ -263,11 +263,19 @@ export type CommandRunner = (
   command: string[],
   cwd: string,
   timeoutMs: number,
+  extraEnv?: NodeJS.ProcessEnv,
 ) => { ok: boolean; timedOut: boolean; detail?: string };
 
 /** Context for executing checks against one overlay clone. */
 export interface RunContext {
   cloneDir: string;
+  /**
+   * Directory `canary doctor` was invoked from (the consuming repo root).
+   * Exposed to `command-succeeds` checks as `CANARY_INVOCATION_DIR` so a check
+   * can anchor to consuming-repo runtime artifacts instead of the overlay
+   * clone, which is always the cwd (#378).
+   */
+  invocationDir?: string;
   /** Whether this overlay's `command-succeeds` checks may execute. */
   consentGranted: boolean;
   timeoutMs?: number;
@@ -297,11 +305,17 @@ function defaultProbeUrl(url: string, timeoutMs: number): Promise<boolean> {
   });
 }
 
-const defaultRunCommand: CommandRunner = (command, cwd, timeoutMs) => {
+const defaultRunCommand: CommandRunner = (
+  command,
+  cwd,
+  timeoutMs,
+  extraEnv,
+) => {
   const r = spawnSync(command[0], command.slice(1), {
     cwd,
     timeout: timeoutMs,
     encoding: 'utf8',
+    env: extraEnv ? { ...process.env, ...extraEnv } : process.env,
   });
   if (r.error) {
     const code = (r.error as NodeJS.ErrnoException).code;
@@ -369,7 +383,10 @@ function runCommandSucceeds(
   const command = check.command ?? [];
   const cmd = `\`${command.join(' ')}\``;
   const runner = ctx.runCommand ?? defaultRunCommand;
-  const r = runner(command, ctx.cloneDir, timeoutMs);
+  const extraEnv = ctx.invocationDir
+    ? { CANARY_INVOCATION_DIR: ctx.invocationDir }
+    : undefined;
+  const r = runner(command, ctx.cloneDir, timeoutMs, extraEnv);
   if (r.ok) {
     return pass(check, `${check.id}: ${cmd} succeeded`);
   }

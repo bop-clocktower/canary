@@ -126,3 +126,65 @@ describe('runCheck: command-succeeds', () => {
     assert.match(r.label, /timed out after 50ms/);
   });
 });
+
+describe('runCheck: command-succeeds exposes the invocation dir (#378)', () => {
+  const check = {
+    id: 'c',
+    type: 'command-succeeds',
+    command: ['echo', 'x'],
+    remedy: 'r',
+  };
+
+  it('threads CANARY_INVOCATION_DIR (consuming-repo dir) into the runner env', async () => {
+    let seenEnv;
+    await runCheck(
+      check,
+      ctx({
+        consentGranted: true,
+        invocationDir: '/repo/consuming',
+        runCommand: (_cmd, _cwd, _t, extraEnv) => (
+          (seenEnv = extraEnv),
+          { ok: true, timedOut: false }
+        ),
+      }),
+    );
+    assert.equal(seenEnv?.CANARY_INVOCATION_DIR, '/repo/consuming');
+  });
+
+  it('passes no extra env when no invocation dir is set', async () => {
+    let seenEnv = 'unset';
+    await runCheck(
+      check,
+      ctx({
+        consentGranted: true,
+        runCommand: (_cmd, _cwd, _t, extraEnv) => (
+          (seenEnv = extraEnv),
+          { ok: true, timedOut: false }
+        ),
+      }),
+    );
+    assert.equal(seenEnv, undefined);
+  });
+
+  it('the real runner sets CANARY_INVOCATION_DIR in the spawned process env', async () => {
+    // End-to-end: no injected runCommand, so defaultRunCommand actually spawns.
+    // The command exits 0 only when the env var is visible to the child.
+    const probe = {
+      id: 'e',
+      type: 'command-succeeds',
+      command: [
+        process.execPath,
+        '-e',
+        'process.exit(process.env.CANARY_INVOCATION_DIR ? 0 : 1)',
+      ],
+      remedy: 'r',
+    };
+    const withDir = await runCheck(
+      probe,
+      ctx({ consentGranted: true, invocationDir: clone }),
+    );
+    assert.equal(withDir.status, 'pass');
+    const withoutDir = await runCheck(probe, ctx({ consentGranted: true }));
+    assert.equal(withoutDir.status, 'fail');
+  });
+});
