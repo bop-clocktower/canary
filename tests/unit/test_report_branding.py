@@ -1,8 +1,10 @@
-"""Tests for the #340c brand-assets + report_branding hook on CompanyKnowledge."""
+"""Tests for the #340c flexible brand-ingest + report_branding hook."""
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,51 +19,82 @@ def _write(tmp: Path, data: dict, name: str = "company.json") -> None:
     (canary / name).write_text(json.dumps(data), encoding="utf-8")
 
 
+@contextlib.contextmanager
+def _chdir(path: Path):
+    prev = os.getcwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(prev)
+
+
 _FULL_BRAND = {
     "company_name": "Acme Corp",
-    "logo_url": "https://acme.example.com/logo.svg",
-    "primary_color": "#0A5FFF",
-    "secondary_color": "#0A0A0A",
+    "logo_path": "assets/logo.svg",
+    "primary_color": "#26A9E1",
+    "secondary_color": "#F4A114",
+    "text_color": "#212121",
+    "background_color": "#FFF8EC",
     "footer_note": "Acme QA report",
 }
 
 
 class TestBrandParsing(unittest.TestCase):
-    def test_valid_brand_round_trips(self):
+    def test_recognized_fields_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
             _write(Path(tmp), {"brand": _FULL_BRAND})
             ck = CompanyKnowledge.load(Path(tmp))
-        self.assertEqual(ck.brand.company_name, "Acme Corp")
-        self.assertEqual(ck.brand.logo_url, "https://acme.example.com/logo.svg")
-        self.assertEqual(ck.brand.primary_color, "#0A5FFF")
-        self.assertEqual(ck.brand.footer_note, "Acme QA report")
+        a = ck.brand.assets
+        self.assertEqual(a["company_name"], "Acme Corp")
+        self.assertEqual(a["primary_color"], "#26A9E1")
+        self.assertEqual(a["text_color"], "#212121")
+        self.assertEqual(a["background_color"], "#FFF8EC")
+        self.assertEqual(a["logo_path"], "assets/logo.svg")
         self.assertEqual(ck.warnings, [])
 
-    def test_short_hex_color_accepted(self):
+    def test_unknown_key_passes_through(self):
         with tempfile.TemporaryDirectory() as tmp:
-            _write(Path(tmp), {"brand": {"primary_color": "#ABC"}})
+            _write(Path(tmp), {"brand": {"tagline": "Trusted testing", "product_hue": "#695189"}})
             ck = CompanyKnowledge.load(Path(tmp))
-        self.assertEqual(ck.brand.primary_color, "#ABC")
+        # Plain-text extra kept as-is; color-looking extra validated as hex.
+        self.assertEqual(ck.brand.assets["tagline"], "Trusted testing")
+        self.assertEqual(ck.brand.assets["product_hue"], "#695189")
 
-    def test_invalid_hex_color_dropped_with_warning(self):
+    def test_extra_that_looks_like_bad_color_is_dropped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write(Path(tmp), {"brand": {"product_hue": "#zzzz"}})
+            ck = CompanyKnowledge.load(Path(tmp))
+        self.assertNotIn("product_hue", ck.brand.assets)
+        self.assertTrue(any("product_hue" in w for w in ck.warnings))
+
+    def test_invalid_hex_in_recognized_field_dropped_with_warning(self):
         with tempfile.TemporaryDirectory() as tmp:
             _write(Path(tmp), {"brand": {"primary_color": "blue"}})
             ck = CompanyKnowledge.load(Path(tmp))
-        self.assertEqual(ck.brand.primary_color, "")
+        self.assertNotIn("primary_color", ck.brand.assets)
         self.assertTrue(any("primary_color" in w for w in ck.warnings))
 
-    def test_invalid_logo_url_dropped_with_warning(self):
+    def test_accents_list_filters_invalid(self):
         with tempfile.TemporaryDirectory() as tmp:
-            _write(Path(tmp), {"brand": {"logo_url": "not-a-url"}})
+            _write(Path(tmp), {"brand": {"accents": ["#F4A114", "nope", "#78BD31"]}})
             ck = CompanyKnowledge.load(Path(tmp))
-        self.assertEqual(ck.brand.logo_url, "")
-        self.assertTrue(any("logo_url" in w for w in ck.warnings))
+        self.assertEqual(ck.brand.assets["accents"], ["#F4A114", "#78BD31"])
 
-    def test_secret_in_brand_field_is_rejected(self):
+    def test_badge_and_logo_variants(self):
         with tempfile.TemporaryDirectory() as tmp:
-            _write(Path(tmp), {"brand": {"company_name": "sk-live-abc123"}})
+            _write(Path(tmp), {"brand": {
+                "badge_accent": "#26A9E1",
+                "logo_variants": {"horizontal": "logos/horizontal.svg", "stacked": "logos/stacked.svg"},
+            }})
             ck = CompanyKnowledge.load(Path(tmp))
-        # The layer is skipped and an error is surfaced; brand stays empty.
+        self.assertEqual(ck.brand.assets["badge_accent"], "#26A9E1")
+        self.assertEqual(ck.brand.assets["logo_variants"]["horizontal"], "logos/horizontal.svg")
+
+    def test_secret_in_extra_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write(Path(tmp), {"brand": {"api_hint": "sk-live-abc123"}})
+            ck = CompanyKnowledge.load(Path(tmp))
         self.assertTrue(ck.brand.is_empty)
         self.assertIn("secret", ck.error.lower())
 
@@ -74,28 +107,29 @@ class TestBrandParsing(unittest.TestCase):
 
 
 class TestBrandMerge(unittest.TestCase):
-    def test_per_field_merge_env_over_project(self):
+    def test_per_key_merge_env_over_project(self):
         with tempfile.TemporaryDirectory() as tmp:
-            # project layer: logo + primary
-            _write(Path(tmp), {"brand": {
-                "logo_url": "https://acme.example.com/logo.svg",
-                "primary_color": "#111111",
-            }})
-            # env override layer: primary (wins) + footer (new)
-            _write(Path(tmp), {"brand": {
-                "primary_color": "#222222",
-                "footer_note": "UAT build",
-            }}, name="company.uat.json")
+            _write(Path(tmp), {"brand": {"logo_path": "assets/logo.svg", "primary_color": "#111111"}})
+            _write(Path(tmp), {"brand": {"primary_color": "#222222", "footer_note": "UAT build"}},
+                   name="company.uat.json")
             ck = CompanyKnowledge.load(Path(tmp), env="uat")
-        self.assertEqual(ck.brand.logo_url, "https://acme.example.com/logo.svg")  # project
-        self.assertEqual(ck.brand.primary_color, "#222222")  # env wins
-        self.assertEqual(ck.brand.footer_note, "UAT build")  # env-only
+        a = ck.brand.assets
+        self.assertEqual(a["logo_path"], "assets/logo.svg")   # project-only survives
+        self.assertEqual(a["primary_color"], "#222222")       # env overrides
+        self.assertEqual(a["footer_note"], "UAT build")       # env-only
+
+    def test_extras_merge_by_key_too(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write(Path(tmp), {"brand": {"tagline": "org tagline"}})
+            _write(Path(tmp), {"brand": {"tagline": "project tagline"}}, name="company.uat.json")
+            ck = CompanyKnowledge.load(Path(tmp), env="uat")
+        self.assertEqual(ck.brand.assets["tagline"], "project tagline")
 
 
 class TestToDictAndEmptiness(unittest.TestCase):
-    def test_to_dict_includes_nested_brand(self):
-        ck = CompanyKnowledge(brand=Brand(company_name="Acme"))
-        self.assertEqual(ck.to_dict()["brand"]["company_name"], "Acme")
+    def test_to_dict_emits_flat_brand_map(self):
+        ck = CompanyKnowledge(brand=Brand({"company_name": "Acme", "tagline": "hi"}))
+        self.assertEqual(ck.to_dict()["brand"], {"company_name": "Acme", "tagline": "hi"})
 
     def test_brand_only_config_is_not_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -109,21 +143,32 @@ class TestToDictAndEmptiness(unittest.TestCase):
 
 class TestReportBranding(unittest.TestCase):
     def _ck(self) -> CompanyKnowledge:
-        return CompanyKnowledge(brand=Brand(**_FULL_BRAND))
+        return CompanyKnowledge(brand=Brand(dict(_FULL_BRAND)))
 
-    def test_assets_pass_through_and_attribution_always_present(self):
+    def test_present_assets_pass_through_with_attribution(self):
         b = self._ck().report_branding(flavor=True)
         self.assertEqual(b["company_name"], "Acme Corp")
-        self.assertEqual(b["primary_color"], "#0A5FFF")
+        self.assertEqual(b["primary_color"], "#26A9E1")
         self.assertEqual(b["attribution"], "made with Canary")
         self.assertTrue(b["flavor"])
-        self.assertTrue(b["voice_line"])  # garnish present when flavor on
+        self.assertTrue(b["voice_line"])
 
     def test_flavor_off_drops_voice_but_keeps_attribution(self):
         b = self._ck().report_branding(flavor=False)
         self.assertEqual(b["voice_line"], "")
         self.assertEqual(b["attribution"], "made with Canary")
         self.assertFalse(b["flavor"])
+
+    def test_logo_path_resolved_against_cwd(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _chdir(Path(tmp)):
+                b = self._ck().report_branding(flavor=False)
+                expected = str(Path.cwd() / "assets/logo.svg")
+            self.assertEqual(b["logo_path_resolved"], expected)
+
+    def test_no_logo_path_no_resolved_key(self):
+        ck = CompanyKnowledge(brand=Brand({"company_name": "Acme"}))
+        self.assertNotIn("logo_path_resolved", ck.report_branding())
 
     def test_env_off_switch_disables_flavor(self):
         for var in ("CANARY_NO_FLAVOR", "NO_FLAVOR"):
