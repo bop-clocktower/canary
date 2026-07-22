@@ -62,7 +62,11 @@ _KNOWN_KEYS = {
     "dashboard_token_env",
     "otel_exporter_endpoint",
     "notes",
+    "brand",
 }
+
+_HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+_BRAND_TEXT_MAX = 200
 
 
 def _validate_strings(
@@ -130,11 +134,157 @@ def _validate_otel_endpoint(raw: object, field_name: str, warnings: list[str]) -
     return raw
 
 
+def _validate_hex_color(raw: object, field_name: str, warnings: list[str]) -> str:
+    """Accept #RGB / #RRGGBB (any case); drop anything else with a warning."""
+    if not isinstance(raw, str) or not raw:
+        return ""
+    if _HEX_COLOR_RE.match(raw):
+        return raw
+    warnings.append(f"{field_name}: dropped invalid hex color {raw!r}")
+    return ""
+
+
+def _brand_text(raw: object, field_name: str, warnings: list[str]) -> str:
+    """A short free-text brand field. Rejects secret-prefixed values; caps length."""
+    if not isinstance(raw, str):
+        if raw is not None:
+            warnings.append(f"{field_name}: expected string, got {type(raw).__name__} — skipped")
+        return ""
+    if _SECRET_PREFIX.match(raw):
+        raise _SecretDetected(field_name, raw)
+    return raw.strip()[:_BRAND_TEXT_MAX]
+
+
 class _SecretDetected(Exception):
     def __init__(self, field_name: str, value: str) -> None:
         self.field_name = field_name
         self.value = value
         super().__init__(f"secret-like value in {field_name!r}")
+
+
+# ── brand assets (customer-facing report theming, #340c) ──────────────────────
+
+
+# Recognized brand keys get typed validation; any *other* key the user supplies
+# is passed through as-is (lightly validated) so canary ingests whatever brand
+# assets a client actually has, and uses what's present (#340).
+_BRAND_COLOR_KEYS = frozenset({
+    "primary_color", "secondary_color", "text_color", "background_color",
+    "badge_label_color", "badge_accent",
+})
+# Free-text / path keys (paths resolve relative to the consuming repo).
+_BRAND_TEXT_KEYS = frozenset({"company_name", "footer_note", "logo_path"})
+
+
+@dataclass
+class Brand:
+    """Brand assets a customer-facing report generator may consult.
+
+    An **open** map, not a fixed record: recognized keys are validated/typed and
+    any other key is passed through (see :func:`_parse_brand`). Pointers/styling
+    only — colors, logo paths/URLs, text — never binary assets or secrets. The
+    engine surfaces these; the report generator (a skill or downstream overlay)
+    owns the visual skin and should feed them into the available UI-polish skills
+    (frontend-design / dataviz / artifact-design).
+    """
+    assets: dict = field(default_factory=dict)
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.assets
+
+    def to_dict(self) -> dict:
+        return dict(self.assets)
+
+
+def _looks_like_color(val: str) -> bool:
+    return val.startswith("#")
+
+
+def _looks_like_url(val: str) -> bool:
+    return "://" in val
+
+
+def _clean_accents(raw: object, warnings: list[str]) -> list:
+    """A list of hex colors; invalid entries dropped with a warning."""
+    if not isinstance(raw, list):
+        warnings.append("brand.accents: expected a list — skipped")
+        return []
+    out = []
+    for i, item in enumerate(raw):
+        color = _validate_hex_color(item, f"brand.accents[{i}]", warnings)
+        if color:
+            out.append(color)
+    return out
+
+
+def _clean_variants(raw: object, warnings: list[str]) -> dict:
+    """A name->path map of logo variants (paths kept as strings)."""
+    if not isinstance(raw, dict):
+        warnings.append("brand.logo_variants: expected an object — skipped")
+        return {}
+    out = {}
+    for name, path in raw.items():
+        text = _brand_text(path, f"brand.logo_variants.{name}", warnings)
+        if text:
+            out[str(name)] = text
+    return out
+
+
+def _clean_brand_extra(val: object, field_name: str, warnings: list[str]) -> str:
+    """An unrecognized brand key: validate as a color/URL when it looks like
+    one, else keep the string (secret-rejected, length-capped)."""
+    if not isinstance(val, str):
+        warnings.append(f"{field_name}: expected string — skipped")
+        return ""
+    if _looks_like_color(val):
+        return _validate_hex_color(val, field_name, warnings)
+    if _looks_like_url(val):
+        return _validate_url(val, field_name, warnings)
+    return _brand_text(val, field_name, warnings)
+
+
+def _clean_brand_value(key: str, val: object, warnings: list[str]) -> object:
+    """Validate one brand entry by key; recognized keys are typed, the rest
+    fall through to light passthrough validation."""
+    field_name = f"brand.{key}"
+    if key in _BRAND_COLOR_KEYS:
+        return _validate_hex_color(val, field_name, warnings)
+    if key == "accents":
+        return _clean_accents(val, warnings)
+    if key == "logo_variants":
+        return _clean_variants(val, warnings)
+    if key == "logo_url":
+        return _validate_url(val, field_name, warnings) if isinstance(val, str) else ""
+    if key in _BRAND_TEXT_KEYS:
+        return _brand_text(val, field_name, warnings)
+    return _clean_brand_extra(val, field_name, warnings)
+
+
+def _parse_brand(raw: object, warnings: list[str]) -> Brand:
+    """Ingest a raw ``brand`` object. Recognized keys are validated/typed; every
+    other key is passed through. Absent/non-dict → empty Brand (no error).
+    Empty/dropped values are omitted so ``is_empty`` and merges stay clean.
+    """
+    if not isinstance(raw, dict):
+        if raw is not None:
+            warnings.append(f"brand: expected object, got {type(raw).__name__} — skipped")
+        return Brand()
+    assets: dict = {}
+    for key, val in raw.items():
+        cleaned = _clean_brand_value(str(key), val, warnings)
+        if cleaned not in (None, "", [], {}):
+            assets[str(key)] = cleaned
+    return Brand(assets)
+
+
+def _merge_brand(layers: "list[_Layer]") -> Brand:
+    """Merge brand per key; a later (higher-priority) layer overrides an
+    earlier one for the keys it sets."""
+    merged: dict = {}
+    for layer in layers:
+        merged.update(layer.brand.assets)
+    return Brand(merged)
 
 
 # ── raw validated layer ───────────────────────────────────────────────────────
@@ -153,6 +303,7 @@ class _Layer:
     dashboard_token_env: str = ""
     otel_exporter_endpoint: str = ""
     notes: str = ""
+    brand: Brand = field(default_factory=Brand)
     warnings: list[str] = field(default_factory=list)
     source: str = ""
 
@@ -220,6 +371,8 @@ def _parse_layer(data: dict, source: str) -> _Layer:
         if isinstance(raw_notes, str):
             notes = _FENCE_RE.sub("", raw_notes).strip()[:_NOTES_MAX]
 
+    brand = _parse_brand(data.get("brand"), warns)
+
     for k in sorted(set(data) - _KNOWN_KEYS):
         warns.append(f"ignored unknown field: {k}")
 
@@ -234,6 +387,7 @@ def _parse_layer(data: dict, source: str) -> _Layer:
         dashboard_token_env=dashboard_token_env,
         otel_exporter_endpoint=otel_exporter_endpoint,
         notes=notes,
+        brand=brand,
         warnings=warns,
         source=source,
     )
@@ -318,6 +472,7 @@ def _merge_layers(layers: list[_Layer]) -> dict:
         dashboard_token_env=dashboard_token_env,
         otel_exporter_endpoint=otel_exporter_endpoint,
         notes=notes,
+        brand=_merge_brand(layers),
         warnings=warns,
         sources=sources,
     )
@@ -338,6 +493,7 @@ class CompanyKnowledge:
     dashboard_token_env: str = ""
     otel_exporter_endpoint: str = ""
     notes: str = ""
+    brand: Brand = field(default_factory=Brand)
     warnings: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     error: str = ""
@@ -353,6 +509,7 @@ class CompanyKnowledge:
             self.claude_code_skills,
             self.dashboard_url,
             self.notes,
+            not self.brand.is_empty,
         ])
 
     # ── factory ──────────────────────────────────────────────────────────────
@@ -472,13 +629,63 @@ class CompanyKnowledge:
             "dashboard_token_env": self.dashboard_token_env,
             "otel_exporter_endpoint": self.otel_exporter_endpoint,
             "notes": self.notes,
+            "brand": self.brand.to_dict(),
             "sources": self.sources,
             "warnings": self.warnings,
             **({"error": self.error} if self.error else {}),
         }
 
+    # ── report branding hook (#340c) ───────────────────────────────────────────
+
+    def report_branding(self, flavor: Optional[bool] = None) -> dict:
+        """Brand assets + attribution for a customer-facing report generator.
+
+        Report generators (a skill or a downstream overlay) call this when
+        producing external/customer-facing output, then apply the assets as
+        their own visual skin — the engine supplies the data, the overlay owns
+        the pixels.
+
+        Returns every brand asset that is present (recognized keys + any
+        passed-through extras) — nothing is required, so callers use what's
+        there. When ``logo_path`` is set, ``logo_path_resolved`` is added,
+        resolved against the consuming repo (cwd) since assets live in-repo.
+
+        ``attribution`` ("made with Canary") is always present. ``voice_line``
+        is optional garnish, included only when *flavor* is on. Flavor
+        resolution: explicit *flavor* arg wins; otherwise a truthy
+        ``CANARY_NO_FLAVOR`` / ``NO_FLAVOR`` env var turns it off; default on.
+        """
+        on = _resolve_flavor(flavor)
+        out = dict(self.brand.assets)
+        logo_path = out.get("logo_path")
+        if isinstance(logo_path, str) and logo_path:
+            out["logo_path_resolved"] = str(Path.cwd() / logo_path)
+        out["attribution"] = _ATTRIBUTION
+        out["voice_line"] = _VOICE_LINE if on else ""
+        out["flavor"] = on
+        return out
+
 
 # ── internal helpers ──────────────────────────────────────────────────────────
+
+_ATTRIBUTION = "made with Canary"
+# Voice is garnish, never load-bearing (#340). One tasteful Oracle line.
+_VOICE_LINE = "Oracle: eyes on every test."
+_FLAVOR_OFF_ENV = ("CANARY_NO_FLAVOR", "NO_FLAVOR")
+_FALSEY = {"", "0", "false", "no", "off"}
+
+
+def _env_truthy(val: Optional[str]) -> bool:
+    return val is not None and val.strip().lower() not in _FALSEY
+
+
+def _resolve_flavor(flavor: Optional[bool]) -> bool:
+    """Explicit arg wins; else a truthy off-switch env var disables; else on."""
+    if flavor is not None:
+        return flavor
+    if any(_env_truthy(os.environ.get(var)) for var in _FLAVOR_OFF_ENV):
+        return False
+    return True
 
 
 def _warn(msg: str) -> None:
