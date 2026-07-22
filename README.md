@@ -73,9 +73,9 @@ pip install -e .
 
 ### Claude Code plugin
 
-Canary ships as a Claude Code plugin: 8 agents, 12 skills, and 10 slash
-commands, plus the `harness` MCP server. See [Usage](#-usage) below for the full
-surface organized by use case, or the exhaustive catalog in
+Canary ships as a Claude Code plugin: 15 agents, 17 skills, and a suite of
+`/canary-*` slash commands, plus the `harness` MCP server. See [Usage](#-usage)
+below for the full surface organized by use case, or the exhaustive catalog in
 [agents/skills/README.md](agents/skills/README.md). Add it as a local
 marketplace:
 
