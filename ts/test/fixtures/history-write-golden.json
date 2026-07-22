@@ -1,0 +1,33 @@
+{
+  "run_id": "api-abc12345-1700000000",
+  "suite": "api",
+  "repo": "acme/app",
+  "branch": "main",
+  "commit_sha": "abc12345def",
+  "timestamp": "2026-06-01T00:00:00Z",
+  "total": 10,
+  "passed": 8,
+  "failed": 1,
+  "flaky": 1,
+  "skipped": 0,
+  "commit_message": null,
+  "env": null,
+  "base_url": null,
+  "duration_ms": null,
+  "tests": [
+    {
+      "run_id": "api-abc12345-1700000000",
+      "suite": "api",
+      "repo": "acme/app",
+      "test_name": "test_login",
+      "test_file": "tests/test_login.py",
+      "status": "flaky",
+      "area": null,
+      "failure_category": null,
+      "error_text": null,
+      "retry_count": 0,
+      "duration_ms": null,
+      "tags": []
+    }
+  ]
+}
