@@ -1,0 +1,94 @@
+[
+  {
+    "framework": "pytest",
+    "test_type": "",
+    "profile": {
+      "test_count": 2,
+      "language": "python",
+      "naming_style": "function-based pytest, test_should_* convention",
+      "assertion_style": "pytest assert statements",
+      "uses_classes": false,
+      "uses_fixtures": true,
+      "uses_describe": false,
+      "common_imports": [
+        "pytest",
+        "myapp"
+      ],
+      "sample_names": [
+        "test_should_login_with_valid_credentials",
+        "test_should_reject_invalid_password",
+        "test_should_add_item",
+        "test_should_total_reflect_quantity"
+      ]
+    }
+  },
+  {
+    "framework": "vitest",
+    "test_type": "",
+    "profile": {
+      "test_count": 2,
+      "language": "javascript",
+      "naming_style": "describe/it blocks, imperative names",
+      "assertion_style": "expect().toBe() / toEqual() assertions",
+      "uses_classes": false,
+      "uses_fixtures": false,
+      "uses_describe": true,
+      "common_imports": [
+        "@playwright/test",
+        "vitest",
+        "@testing-library/react",
+        "../src/widget"
+      ],
+      "sample_names": [
+        "button navigates home",
+        "renders the label"
+      ]
+    }
+  },
+  {
+    "framework": "playwright",
+    "test_type": "",
+    "profile": {
+      "test_count": 2,
+      "language": "javascript",
+      "naming_style": "describe/it blocks, imperative names",
+      "assertion_style": "expect().toBe() / toEqual() assertions",
+      "uses_classes": false,
+      "uses_fixtures": false,
+      "uses_describe": true,
+      "common_imports": [
+        "@playwright/test",
+        "vitest",
+        "@testing-library/react",
+        "../src/widget"
+      ],
+      "sample_names": [
+        "button navigates home",
+        "renders the label"
+      ]
+    }
+  },
+  {
+    "framework": "",
+    "test_type": "api",
+    "profile": {
+      "test_count": 2,
+      "language": "python",
+      "naming_style": "function-based pytest, test_should_* convention",
+      "assertion_style": "pytest assert statements",
+      "uses_classes": false,
+      "uses_fixtures": true,
+      "uses_describe": false,
+      "common_imports": [
+        "pytest",
+        "myapp"
+      ],
+      "sample_names": [
+        "test_should_login_with_valid_credentials",
+        "test_should_reject_invalid_password",
+        "test_should_add_item",
+        "test_should_total_reflect_quantity"
+      ]
+    }
+  }
+]
