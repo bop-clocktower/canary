@@ -165,67 +165,126 @@ class _SecretDetected(Exception):
 # ── brand assets (customer-facing report theming, #340c) ──────────────────────
 
 
+# Recognized brand keys get typed validation; any *other* key the user supplies
+# is passed through as-is (lightly validated) so canary ingests whatever brand
+# assets a client actually has, and uses what's present (#340).
+_BRAND_COLOR_KEYS = frozenset({
+    "primary_color", "secondary_color", "text_color", "background_color",
+    "badge_label_color", "badge_accent",
+})
+# Free-text / path keys (paths resolve relative to the consuming repo).
+_BRAND_TEXT_KEYS = frozenset({"company_name", "footer_note", "logo_path"})
+
+
 @dataclass
 class Brand:
     """Brand assets a customer-facing report generator may consult.
 
-    Pointers/styling only — a logo URL and colors, never binary assets or
-    secrets. The engine surfaces these; the report generator (a skill or a
-    downstream overlay) owns the actual HTML/visual skin.
+    An **open** map, not a fixed record: recognized keys are validated/typed and
+    any other key is passed through (see :func:`_parse_brand`). Pointers/styling
+    only — colors, logo paths/URLs, text — never binary assets or secrets. The
+    engine surfaces these; the report generator (a skill or downstream overlay)
+    owns the visual skin and should feed them into the available UI-polish skills
+    (frontend-design / dataviz / artifact-design).
     """
-    company_name: str = ""
-    logo_url: str = ""
-    primary_color: str = ""
-    secondary_color: str = ""
-    footer_note: str = ""
+    assets: dict = field(default_factory=dict)
 
     @property
     def is_empty(self) -> bool:
-        return not any([
-            self.company_name,
-            self.logo_url,
-            self.primary_color,
-            self.secondary_color,
-            self.footer_note,
-        ])
+        return not self.assets
 
     def to_dict(self) -> dict:
-        return {
-            "company_name": self.company_name,
-            "logo_url": self.logo_url,
-            "primary_color": self.primary_color,
-            "secondary_color": self.secondary_color,
-            "footer_note": self.footer_note,
-        }
+        return dict(self.assets)
+
+
+def _looks_like_color(val: str) -> bool:
+    return val.startswith("#")
+
+
+def _looks_like_url(val: str) -> bool:
+    return "://" in val
+
+
+def _clean_accents(raw: object, warnings: list[str]) -> list:
+    """A list of hex colors; invalid entries dropped with a warning."""
+    if not isinstance(raw, list):
+        warnings.append("brand.accents: expected a list — skipped")
+        return []
+    out = []
+    for i, item in enumerate(raw):
+        color = _validate_hex_color(item, f"brand.accents[{i}]", warnings)
+        if color:
+            out.append(color)
+    return out
+
+
+def _clean_variants(raw: object, warnings: list[str]) -> dict:
+    """A name->path map of logo variants (paths kept as strings)."""
+    if not isinstance(raw, dict):
+        warnings.append("brand.logo_variants: expected an object — skipped")
+        return {}
+    out = {}
+    for name, path in raw.items():
+        text = _brand_text(path, f"brand.logo_variants.{name}", warnings)
+        if text:
+            out[str(name)] = text
+    return out
+
+
+def _clean_brand_extra(val: object, field_name: str, warnings: list[str]) -> str:
+    """An unrecognized brand key: validate as a color/URL when it looks like
+    one, else keep the string (secret-rejected, length-capped)."""
+    if not isinstance(val, str):
+        warnings.append(f"{field_name}: expected string — skipped")
+        return ""
+    if _looks_like_color(val):
+        return _validate_hex_color(val, field_name, warnings)
+    if _looks_like_url(val):
+        return _validate_url(val, field_name, warnings)
+    return _brand_text(val, field_name, warnings)
+
+
+def _clean_brand_value(key: str, val: object, warnings: list[str]) -> object:
+    """Validate one brand entry by key; recognized keys are typed, the rest
+    fall through to light passthrough validation."""
+    field_name = f"brand.{key}"
+    if key in _BRAND_COLOR_KEYS:
+        return _validate_hex_color(val, field_name, warnings)
+    if key == "accents":
+        return _clean_accents(val, warnings)
+    if key == "logo_variants":
+        return _clean_variants(val, warnings)
+    if key == "logo_url":
+        return _validate_url(val, field_name, warnings) if isinstance(val, str) else ""
+    if key in _BRAND_TEXT_KEYS:
+        return _brand_text(val, field_name, warnings)
+    return _clean_brand_extra(val, field_name, warnings)
 
 
 def _parse_brand(raw: object, warnings: list[str]) -> Brand:
-    """Validate a raw ``brand`` object. Absent/non-dict → empty Brand (no error)."""
+    """Ingest a raw ``brand`` object. Recognized keys are validated/typed; every
+    other key is passed through. Absent/non-dict → empty Brand (no error).
+    Empty/dropped values are omitted so ``is_empty`` and merges stay clean.
+    """
     if not isinstance(raw, dict):
         if raw is not None:
             warnings.append(f"brand: expected object, got {type(raw).__name__} — skipped")
         return Brand()
-    logo_url = _validate_url(raw["logo_url"], "brand.logo_url", warnings) if "logo_url" in raw else ""
-    return Brand(
-        company_name=_brand_text(raw.get("company_name"), "brand.company_name", warnings),
-        logo_url=logo_url,
-        primary_color=_validate_hex_color(raw.get("primary_color", ""), "brand.primary_color", warnings),
-        secondary_color=_validate_hex_color(raw.get("secondary_color", ""), "brand.secondary_color", warnings),
-        footer_note=_brand_text(raw.get("footer_note"), "brand.footer_note", warnings),
-    )
+    assets: dict = {}
+    for key, val in raw.items():
+        cleaned = _clean_brand_value(str(key), val, warnings)
+        if cleaned not in (None, "", [], {}):
+            assets[str(key)] = cleaned
+    return Brand(assets)
 
 
 def _merge_brand(layers: "list[_Layer]") -> Brand:
-    """Merge brand per-field: highest-priority layer that sets a field wins."""
-    b = Brand()
+    """Merge brand per key; a later (higher-priority) layer overrides an
+    earlier one for the keys it sets."""
+    merged: dict = {}
     for layer in layers:
-        lb = layer.brand
-        b.company_name = lb.company_name or b.company_name
-        b.logo_url = lb.logo_url or b.logo_url
-        b.primary_color = lb.primary_color or b.primary_color
-        b.secondary_color = lb.secondary_color or b.secondary_color
-        b.footer_note = lb.footer_note or b.footer_note
-    return b
+        merged.update(layer.brand.assets)
+    return Brand(merged)
 
 
 # ── raw validated layer ───────────────────────────────────────────────────────
@@ -586,22 +645,25 @@ class CompanyKnowledge:
         their own visual skin — the engine supplies the data, the overlay owns
         the pixels.
 
+        Returns every brand asset that is present (recognized keys + any
+        passed-through extras) — nothing is required, so callers use what's
+        there. When ``logo_path`` is set, ``logo_path_resolved`` is added,
+        resolved against the consuming repo (cwd) since assets live in-repo.
+
         ``attribution`` ("made with Canary") is always present. ``voice_line``
         is optional garnish, included only when *flavor* is on. Flavor
         resolution: explicit *flavor* arg wins; otherwise a truthy
         ``CANARY_NO_FLAVOR`` / ``NO_FLAVOR`` env var turns it off; default on.
         """
         on = _resolve_flavor(flavor)
-        return {
-            "company_name": self.brand.company_name,
-            "logo_url": self.brand.logo_url,
-            "primary_color": self.brand.primary_color,
-            "secondary_color": self.brand.secondary_color,
-            "footer_note": self.brand.footer_note,
-            "attribution": _ATTRIBUTION,
-            "voice_line": _VOICE_LINE if on else "",
-            "flavor": on,
-        }
+        out = dict(self.brand.assets)
+        logo_path = out.get("logo_path")
+        if isinstance(logo_path, str) and logo_path:
+            out["logo_path_resolved"] = str(Path.cwd() / logo_path)
+        out["attribution"] = _ATTRIBUTION
+        out["voice_line"] = _VOICE_LINE if on else ""
+        out["flavor"] = on
+        return out
 
 
 # ── internal helpers ──────────────────────────────────────────────────────────

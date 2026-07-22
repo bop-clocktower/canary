@@ -1457,7 +1457,7 @@ def ck_show(
     if ck.notes:
         print(f"[bold]Notes:[/bold] {ck.notes}")
     if not ck.brand.is_empty:
-        label = ck.brand.company_name or "(unnamed)"
+        label = ck.brand.assets.get("company_name") or "(unnamed)"
         print(f"[bold]Brand:[/bold]            {label}  [dim](customer-facing reports)[/dim]")
     if ck.error:
         print(f"\n[yellow]⚠[/yellow] {ck.error}")
@@ -1558,17 +1558,22 @@ def ck_init(
     notes = notes_raw[:2048] if notes_raw else ""
 
     print("\n[bold]Brand assets[/bold] [dim](for customer-facing reports; all optional)[/dim]")
-    brand = {
-        k: v
-        for k, v in {
-            "company_name": _prompt_str("Company name", existing.brand.company_name, "e.g. Acme Corp"),
-            "logo_url": _prompt_str("Logo URL", existing.brand.logo_url, "https://..."),
-            "primary_color": _prompt_str("Primary color", existing.brand.primary_color, "#RRGGBB"),
-            "secondary_color": _prompt_str("Secondary color", existing.brand.secondary_color, "#RRGGBB"),
-            "footer_note": _prompt_str("Report footer note", existing.brand.footer_note, "e.g. Acme QA report"),
-        }.items()
-        if v
+    existing_brand = existing.brand.assets
+    # Preserve any hand-added extra keys; overlay the prompted common fields.
+    brand = dict(existing_brand)
+    prompted = {
+        "company_name": _prompt_str("Company name", existing_brand.get("company_name", ""), "e.g. Acme Corp"),
+        "logo_path": _prompt_str("Logo path (in-repo)", existing_brand.get("logo_path", ""), "e.g. assets/logo.svg"),
+        "logo_url": _prompt_str("Logo URL (if hosted)", existing_brand.get("logo_url", ""), "https://..."),
+        "primary_color": _prompt_str("Primary color", existing_brand.get("primary_color", ""), "#RRGGBB"),
+        "secondary_color": _prompt_str("Secondary color", existing_brand.get("secondary_color", ""), "#RRGGBB"),
+        "text_color": _prompt_str("Text color", existing_brand.get("text_color", ""), "#RRGGBB"),
+        "background_color": _prompt_str("Background color", existing_brand.get("background_color", ""), "#RRGGBB"),
+        "footer_note": _prompt_str("Report footer note", existing_brand.get("footer_note", ""), "e.g. Acme QA report"),
     }
+    for _k, _v in prompted.items():
+        if _v:
+            brand[_k] = _v
 
     # Build output dict (omit empty lists/strings).
     out: dict = {}
