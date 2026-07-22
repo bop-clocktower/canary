@@ -524,6 +524,47 @@ diff --git a/tests/test_points.py b/tests/test_points.py
     assert alarm.build_findings(diffscan.find_deletions(diff), areas, repo) == []
 
 
+def test_alarm_scan_skips_non_utf8_files_without_crashing(tmp_path):
+    # #395 bug 1: a non-UTF-8 file whose path matches a test dir (e.g. a binary
+    # asset under tests/) must be skipped, not crash the alarm pass with a
+    # UnicodeDecodeError. The alarm still fires because the only real coverage
+    # (the deleted test) is gone.
+    diff = """\
+diff --git a/tests/test_points.py b/tests/test_points.py
+--- a/tests/test_points.py
++++ b/tests/test_points.py
+@@ -1,5 +1,1 @@
+-def test_points_service_earns():
+-    assert earn(100) == 10
+-
+ x = 1
+"""
+    repo = _repo_with(tmp_path, {"tests/test_points.py": "x = 1\n"})
+    binary = tmp_path / "tests" / "assets" / "logo.png"
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"\xff\xfe\x00\x01 not valid utf-8 \xff\xfe")
+    areas = alarm.load_critical_areas(_areas_file(
+        tmp_path, [{"path": "src/loyalty/points.service.ts", "risk_score": 0.92}]
+    ))
+    findings = alarm.build_findings(diffscan.find_deletions(diff), areas, repo)
+    assert len(findings) == 1
+    assert findings[0].kind == "last-coverage-removed"
+
+
+def test_repo_test_files_prunes_heavy_ignored_dirs(tmp_path):
+    # #395 bug 2: the scan must not descend into node_modules/.git/dist/etc.,
+    # or it times out on a real monorepo. A test-named file vendored under
+    # node_modules is neither enumerated nor counted as coverage.
+    repo = _repo_with(tmp_path, {
+        "tests/real.test.js": "it('real', () => {})\n",
+        "node_modules/pkg/vendored.test.js": "it('vendored', () => {})\n",
+        "dist/bundle.test.js": "it('built', () => {})\n",
+    })
+    rels = [rel for rel, _ in alarm._repo_test_files(repo)]
+    assert "tests/real.test.js" in rels
+    assert not any("node_modules" in r or r.startswith("dist/") for r in rels)
+
+
 def test_no_alarm_when_deletion_is_unrelated_to_any_area(tmp_path):
     repo = _repo_with(tmp_path, {"tests/checkout.spec.ts": "// gone\n"})
     areas = alarm.load_critical_areas(_areas_file(
