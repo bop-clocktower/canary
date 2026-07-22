@@ -53,7 +53,7 @@ removed test was the **last coverage** of a symbol listed in
 When `critical-areas.json` is missing or malformed, katana records everything
 but alarms on nothing, printing:
 
-```
+```text
 critical-area data unavailable, recording only, not alarming
 ```
 
