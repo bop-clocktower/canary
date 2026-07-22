@@ -55,7 +55,7 @@ changing the release pipeline. Python keeps building and shipping throughout.
 
 ## File map
 
-```
+```text
 CREATE ts/package.json                     (deps: typescript, vitest, @vitest/coverage-v8, eslint)
 CREATE ts/tsconfig.json                    (strict)
 CREATE ts/vitest.config.ts                 (coverage: v8, thresholds lines=90)
