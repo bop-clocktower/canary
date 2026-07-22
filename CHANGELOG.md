@@ -14,6 +14,29 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [5.13.0] - 2026-07-22
+
+An **additive** release — no breaking changes. Ships the first batch of
+BoP-themed test-intelligence skills plus a hook-scoping fix.
+
+### Added
+
+- **`canary-katana` skill** — deleted-test quarantine. Scans a diff for removed
+  or skipped tests, records them in a ledger, and raises a severity-ranked alarm
+  when a deletion removes the last coverage of a critical area (by name match or
+  directory heuristic). Ships with a CLI (`--diff-file`, `--critical-areas`,
+  `--json`, `--strict`).
+- **`canary-blackhawk` skill** — flaky-test anti-pattern scanner. Flags
+  flakiness-inducing patterns in test code (real `sleep`-based delays,
+  local-timezone dependence, and related smells) with a CLI and JSON output.
+
+### Fixed
+
+- **format-check hook no longer blocks out-of-repo writes.** Files edited
+  outside the project root (e.g. `~/.claude` memory or scratchpad writes) are
+  now skipped instead of failing the hook. Symlinked project roots are
+  normalized so in-repo files are still linted (#380).
+
 ## [5.12.0] - 2026-07-20
 
 A large **additive** release — no breaking changes. The `canary doctor`
@@ -409,7 +432,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v5.3.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v5.13.0...HEAD
+[5.13.0]: https://github.com/bop-clocktower/canary/compare/v5.12.0...v5.13.0
 [5.3.0]: https://github.com/bop-clocktower/canary/compare/v5.2.0...v5.3.0
 [5.2.0]: https://github.com/bop-clocktower/canary/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/bop-clocktower/canary/compare/v5.0.0...v5.1.0
