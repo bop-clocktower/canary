@@ -24,8 +24,12 @@ language requirements into high-quality, framework-aware test code.
 
 ## 🛠 Installation
 
-> Package names differ by registry: npm/Volta package is `canary-test-cli` ·
-> PyPI package is `canary-test-ai`.
+> Package names differ by registry: the npm/Volta package is `canary-test-cli`.
+> A PyPI package (`canary-test-ai`) is **planned but not yet published** — until
+> it is, `pip install canary-test-ai` / `pipx install canary-test-ai` will not
+> work. Python users should install via **npm** or **git**
+> (`pipx install git+https://github.com/bop-clocktower/canary@latest`), per the
+> pipx section below.
 
 ### Volta (recommended)
 
