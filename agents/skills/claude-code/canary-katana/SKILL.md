@@ -7,8 +7,8 @@ description:
   deletion removed the last coverage of a symbol critical-areas.json marks
   high-risk. Silent by default, degrades to recording-only when critical-area
   data is missing. Self-contained, deterministic, advisory by default.
-cli: scripts/cli.py
-requires: [python3>=3.10]
+cli: scripts/cli.mjs
+requires: [node>=20]
 ---
 
 # Canary Katana
