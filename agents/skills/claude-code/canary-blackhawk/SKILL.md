@@ -6,8 +6,8 @@ description:
   all day and fail at midnight, across a DST boundary, or on Feb 29. Suppresses
   itself when the file already installs a frozen clock (fake timers, freezegun,
   time_machine, MockDate). Self-contained, deterministic, advisory by default.
-cli: scripts/cli.py
-requires: [python3>=3.10]
+cli: scripts/cli.mjs
+requires: [node>=20]
 ---
 
 # Canary Blackhawk
@@ -21,12 +21,12 @@ any other skill.
 
 ## Rules
 
-| Rule | Severity | Fires on |
-| --- | --- | --- |
-| `BH001-wall-clock` | high | `Date.now()`, bare `new Date()`, `moment()`, `datetime.now()` / `.today()` / `.utcnow()`, `date.today()`, `time.time()`, `pd.Timestamp.now()` |
-| `BH002-real-delay` | medium | `time.sleep(n)` and `setTimeout(fn, n)` with a literal `n > 0` |
-| `BH003-local-timezone` | medium | `toLocaleString` / `toLocaleDateString` / `toLocaleTimeString`, `strftime('…%Z…')` or `%z` |
-| `BH004-naive-datetime-compare` | low | a comparison against `datetime(2024, …)` or `strptime(…)` with no `tzinfo` / `timezone.utc` / `ZoneInfo` / `pytz` on the line |
+| Rule                           | Severity | Fires on                                                                                                                                      |
+| ------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BH001-wall-clock`             | high     | `Date.now()`, bare `new Date()`, `moment()`, `datetime.now()` / `.today()` / `.utcnow()`, `date.today()`, `time.time()`, `pd.Timestamp.now()` |
+| `BH002-real-delay`             | medium   | `time.sleep(n)` and `setTimeout(fn, n)` with a literal `n > 0`                                                                                |
+| `BH003-local-timezone`         | medium   | `toLocaleString` / `toLocaleDateString` / `toLocaleTimeString`, `strftime('…%Z…')` or `%z`                                                    |
+| `BH004-naive-datetime-compare` | low      | a comparison against `datetime(2024, …)` or `strptime(…)` with no `tzinfo` / `timezone.utc` / `ZoneInfo` / `pytz` on the line                 |
 
 A pinned constructor is never flagged: `new Date('2024-01-01T00:00:00Z')`,
 `moment('2024-01-01')`, and `datetime(2024, 1, 1)` on its own are all fine.
@@ -34,9 +34,9 @@ A pinned constructor is never flagged: `new Date('2024-01-01T00:00:00Z')`,
 ## Framework-conditioned suppression (the important part)
 
 The single biggest failure mode of a temporal linter is firing on tests that
-**already handle time correctly**. So when a file installs a frozen clock,
-every clock-dependent rule (`BH001`, `BH002`, `BH004`) goes quiet for that
-file. Markers:
+**already handle time correctly**. So when a file installs a frozen clock, every
+clock-dependent rule (`BH001`, `BH002`, `BH004`) goes quiet for that file.
+Markers:
 
 `vi.useFakeTimers` · `vi.setSystemTime` · `jest.useFakeTimers` ·
 `jest.setSystemTime` · `sinon.useFakeTimers` · `MockDate` · `freeze_time` /
@@ -46,21 +46,42 @@ Two deliberate choices inside that:
 
 - **Suppression is file-wide, not block-scoped.** `vi.useFakeTimers()` inside a
   `beforeEach` governs tests declared above it, and answering "is the clock
-  frozen *here*" accurately needs a real parser. Blackhawk errs toward silence.
-- **`BH003` is never suppressed.** Freezing the clock pins *when* a test runs,
-  never *where*. A frozen clock does not stop `toLocaleString()` from returning
+  frozen _here_" accurately needs a real parser. Blackhawk errs toward silence.
+- **`BH003` is never suppressed.** Freezing the clock pins _when_ a test runs,
+  never _where_. A frozen clock does not stop `toLocaleString()` from returning
   a different string on a developer laptop than on a UTC runner.
+
+## Inline suppression (per-line escape hatch)
+
+File-wide frozen-clock suppression is too coarse when one intentional real wait
+sits among otherwise-deterministic tests. An inline pragma silences a single
+finding:
+
+```js
+// blackhawk-ignore BH002 -- real MongoDB claim race; deterministic wait impossible
+await new Promise((r) => setTimeout(r, 25));
+```
+
+- **Reason required** (the `-- reason` tail) — keeps suppressions honest and
+  greppable, like `eslint-disable-next-line` / `# noqa`.
+- **Rule-scoped** (`BH002`, or the full `BH002-real-delay`) so it never
+  blanket-silences the line; a `BH001` on the same line still fires.
+- **Placement:** the pragma may trail the offending line or sit on the line
+  directly above it. Comma-separate ids to suppress several (`BH002,BH004`).
+- **Counted separately:** suppressed findings are reported as `N suppressed`,
+  out of the actionable total — so a genuinely clean suite can read zero
+  findings while the known-OK waits stay visible.
 
 ## Fidelity limits (regex/AST-lite, on purpose)
 
 Blackhawk is a line scanner with no TypeScript parser dependency, so it ships
-anywhere `python3` does. The cost, stated plainly:
+anywhere `node` does. The cost, stated plainly:
 
-- **Line-scoped.** A call split across lines (`setTimeout(\n  fn,\n  500\n)`)
-  is missed, as is a `setTimeout` whose callback body contains a comma.
+- **Line-scoped.** A call split across lines (`setTimeout(\n  fn,\n  500\n)`) is
+  missed, as is a `setTimeout` whose callback body contains a comma.
 - **Comment-blind, one level deep.** Lines starting with `#`, `//`, `*`, `/*`,
-  or a docstring quote are skipped; a multi-line block comment whose inner
-  lines do not start with `*` is still scanned.
+  or a docstring quote are skipped; a multi-line block comment whose inner lines
+  do not start with `*` is still scanned.
 - **String-blind.** `Date.now()` inside a string literal or a fixture blob is
   flagged like real code.
 - **No type awareness.** `.toLocaleString()` on a `Number` reads the same as on
@@ -108,7 +129,12 @@ canary skills run canary-blackhawk -- tests --strict
       "why": "reads the wall clock, so the assertion depends on when the suite runs..."
     }
   ],
-  "summary": { "files_scanned": 8, "findings": 1, "by_severity": { "high": 1 } }
+  "summary": {
+    "files_scanned": 8,
+    "findings": 1,
+    "by_severity": { "high": 1 },
+    "suppressed": 0
+  }
 }
 ```
 
@@ -120,16 +146,15 @@ signal is trusted — the same path every canary gate takes.
 ```yaml
 - name: Temporal-dependency lint (advisory)
   run: canary skills run canary-blackhawk -- tests
-
 # Once clean, add --strict to make new offenders fail the PR:
 # run: canary skills run canary-blackhawk -- tests --strict
 ```
 
 ## Fixing what it finds
 
-| Finding | Fix |
-| --- | --- |
-| `BH001` | Freeze the clock (`vi.useFakeTimers()` + `vi.setSystemTime(...)`, `@freeze_time("2024-01-01")`) or inject a clock the test controls. |
-| `BH002` | Advance a fake timer (`vi.advanceTimersByTime(500)`) or await the real condition instead of a duration. |
+| Finding | Fix                                                                                                                                              |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BH001` | Freeze the clock (`vi.useFakeTimers()` + `vi.setSystemTime(...)`, `@freeze_time("2024-01-01")`) or inject a clock the test controls.             |
+| `BH002` | Advance a fake timer (`vi.advanceTimersByTime(500)`) or await the real condition instead of a duration.                                          |
 | `BH003` | Assert on a UTC representation (`toISOString()`, `strftime('%Y-%m-%dT%H:%M:%SZ')` on a UTC datetime), or pin the locale and timezone explicitly. |
-| `BH004` | Attach a timezone: `datetime(2024, 1, 1, tzinfo=timezone.utc)`. |
+| `BH004` | Attach a timezone: `datetime(2024, 1, 1, tzinfo=timezone.utc)`.                                                                                  |

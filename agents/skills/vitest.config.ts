@@ -11,7 +11,10 @@ export default defineConfig({
       // scripts glob here — do NOT broaden to all skills, or an untested JS
       // file from an unrelated skill (e.g. canary-instrument's otel bootstrap)
       // silently drags the gate down.
-      include: ['claude-code/canary-savant/scripts/**/*.mjs'],
+      include: [
+        'claude-code/canary-savant/scripts/**/*.mjs',
+        'claude-code/canary-blackhawk/scripts/**/*.mjs',
+      ],
       exclude: ['**/*.test.*'],
       // Fresh-code floor, matching the ts/ engine port. Ratchets up over time.
       thresholds: {
