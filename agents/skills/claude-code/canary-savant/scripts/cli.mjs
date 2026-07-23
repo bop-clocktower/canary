@@ -18,7 +18,7 @@
 
 import fs from 'node:fs';
 import { scanPaths, toJson } from './scanner.mjs';
-import { confirm } from './runner.mjs';
+import { confirm, locatePolluters, realPolluterSeams } from './runner.mjs';
 
 export const SCHEMA_VERSION = 1;
 
@@ -82,10 +82,25 @@ export function renderConfirm(dyn) {
   if (!dyn.victims.length) {
     lines.push('  No order-dependence confirmed under this seed.');
   } else {
+    let namedAny = false;
     for (const v of dyn.victims) {
       lines.push(`  order-dependent: ${v.victim}`);
+      if (v.polluter) {
+        lines.push(`    polluted by: ${v.polluter}`);
+        if (v.reproduce) lines.push(`    reproduce: ${v.reproduce}`);
+        namedAny = true;
+      } else if (v.note) {
+        lines.push(`    ${v.note}`);
+      } else if (v.exhausted) {
+        lines.push(
+          `    no single culprit isolated; smallest reproducing prefix: ` +
+            `${v.minimalPrefix?.length ?? '?'} test(s)`,
+        );
+      }
     }
-    lines.push(`  reproduce: ${dyn.reproduce}`);
+    if (!namedAny && dyn.reproduce) {
+      lines.push(`  reproduce: ${dyn.reproduce}`);
+    }
   }
   if (dyn.nondeterministic.length) {
     lines.push(
@@ -113,6 +128,15 @@ export function main(argv = []) {
       ? opts.seed
       : Math.floor(Math.random() * 1e6);
     dyn = confirm(paths, { seed });
+    // Phase 3: name the polluter behind each confirmed victim (real subprocess
+    // seams; only reachable when a shuffle plugin produced victims).
+    if (dyn.status === 'ok' && dyn.victims.length) {
+      dyn.victims = locatePolluters(
+        dyn.victims,
+        dyn.order,
+        realPolluterSeams(),
+      );
+    }
   }
 
   if (opts.json) {

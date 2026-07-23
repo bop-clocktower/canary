@@ -1,12 +1,13 @@
 ---
 name: canary-savant
 description:
-  Order-dependence and isolation detector for test suites. Phase 1 (this
-  release) is a Tier-1 static scanner that flags the shared-state smells which
-  predict order-dependent tests - a module-level mutable a test writes to, a
-  setup with no matching teardown, a mutated process singleton, an order-coupled
-  name - with no test execution, so it runs anywhere node does and on every PR.
-  Advisory by default, framework-conditioned for pytest and vitest idioms.
+  Order-dependence and isolation detector for test suites. A Tier-1 static
+  scanner flags the shared-state smells which predict order-dependent tests - a
+  module-level mutable a test writes to, a setup with no matching teardown, a
+  mutated process singleton, an order-coupled name - with no test execution, so
+  it runs anywhere node does and on every PR. An opt-in Tier-2 confirmer
+  (--confirm) shuffles the suite under a pinned seed and bisects the prefix to
+  name the polluting test. Advisory by default; pytest and vitest idioms.
 cli: scripts/cli.mjs
 requires: [node>=20]
 ---
@@ -14,10 +15,10 @@ requires: [node>=20]
 # Canary Savant
 
 A test that only passes because of the tests that ran before it is a lie that
-passes CI. Savant finds shared-state leakage and names the culprit. This release
-ships **Tier 1** — the cheap, static half that runs on every PR and points at
-the _suspects_. The dynamic confirmer that proves a leak by shuffling the suite
-and bisecting the polluter is **Tier 2**, opt-in, and lands in a later phase.
+passes CI. Savant finds shared-state leakage and names the culprit. **Tier 1**
+is the cheap, static half that runs on every PR and points at the _suspects_.
+**Tier 2** (`--confirm`, opt-in) proves a leak by shuffling the suite under a
+pinned seed and bisecting the prefix to name the polluter — not just the victim.
 
 Tier-0 in the real sense: no LLM, no network, no secrets, no dependency on any
 other skill.
@@ -83,6 +84,26 @@ canary skills run canary-savant -- tests --json
 canary skills run canary-savant -- tests --strict
 ```
 
+### Tier 2 — dynamic confirmation (`--confirm`, opt-in)
+
+`--confirm` runs the suite in declared order, re-runs it shuffled under a pinned
+seed, and for each order-dependent victim runs it alone and **bisects the prefix
+to name the polluter** — the earlier test whose state leaked. Opt-in because a
+shuffled re-run at least doubles wall-clock; always prints the seed and a
+copy-pasteable reproduce command.
+
+```bash
+# Confirm order-dependence, pinning the seed for reproducibility:
+canary skills run canary-savant -- tests --confirm --seed 424242
+```
+
+Requires a pytest shuffle plugin (`pytest-randomly` or `pytest-random-order`);
+if none is installed, Tier 2 declines loudly and Tier 1 still runs. Node drives
+the project's _own_ pytest — savant orchestrates the runner, it does not run in
+the target's language. **Known limit:** the polluter re-runs map the shuffle
+report's `classname::name` back to a pytest node id assuming a function-level
+(module-path) classname; class-based test layouts are a Phase 4 gap.
+
 `--json` shape:
 
 ```json
@@ -117,8 +138,8 @@ canary skills run canary-savant -- tests --strict
 
 ## Roadmap
 
-- **Tier 2 (next):** opt-in dynamic confirmer — baseline in declared order,
-  re-run shuffled under a pinned seed, run suspects alone, and bisect the prefix
-  to name the polluter (not just the victim), with a copy-pasteable reproduce
-  command. pytest first, then vitest. See
+- **Shipped:** Tier 1 static scan; Tier 2 dynamic confirmer (baseline → shuffle
+  → classify) and isolation + polluter bisect, pytest-first.
+- **Next (Phase 4):** vitest as a Tier-2 target (`--sequence.shuffle`), and real
+  pytest node-id capture to close the class-based-classname gap. See
   `docs/changes/canary-savant/proposal.md`.
