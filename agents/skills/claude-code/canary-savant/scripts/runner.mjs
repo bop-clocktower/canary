@@ -127,11 +127,25 @@ export function runPytestSuite(cmd, junitPath) {
 }
 
 /**
+ * @typedef {Object} ConfirmResult
+ * @property {string} status 'ok' | 'no_plugin' | 'baseline_red'
+ * @property {number} seed
+ * @property {string|null} plugin
+ * @property {{victim: string, classification: string}[]} victims
+ * @property {{victim: string, classification: string}[]} nondeterministic
+ * @property {string[]} baselineFailures
+ * @property {string} reproduce
+ * @property {string[]} [order]
+ * @property {string} [message]
+ */
+
+/**
  * Orchestrate the dynamic confirmation.
  * @param {string[]} paths
  * @param {{seed: number, plugin?: string|null,
  *          runSuite?: (cmd: string[]) => Record<string,string>,
  *          probe?: (name: string) => boolean}} [options]
+ * @returns {ConfirmResult}
  */
 export function confirm(paths, options = {}) {
   const { seed, runSuite, probe } = options;
@@ -189,5 +203,194 @@ export function confirm(paths, options = {}) {
       (f) => f.classification === 'nondeterministic',
     ),
     reproduce: shuffleCmd.join(' '),
+    // Shuffled execution order (JUnit testcase order under the seed). Phase 3
+    // uses this to derive each victim's prefix for polluter bisection.
+    order: Object.keys(s1),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: isolation re-run + polluter bisect (name the culprit, not just the
+// victim). Algorithms are pure; the subprocess seams live in realPolluterSeams.
+// ---------------------------------------------------------------------------
+
+/** True when the victim passed every alone-run - i.e. the leak is external. */
+export function isolationConfirms(outcomes) {
+  return outcomes.length > 0 && outcomes.every((o) => o === 'passed');
+}
+
+/**
+ * Binary-search the ordered prefix for the single test whose presence flips
+ * the victim from pass to fail. `reproduces(subset)` returns whether the victim
+ * fails when exactly `subset` (in order) runs before it.
+ *
+ * Assumes near-monotonic reproduction (a single polluter). When that does not
+ * hold, the invariant check fails and we report the smallest reproducing prefix
+ * with `polluter: null, exhausted: true` rather than blame the wrong test.
+ *
+ * @param {string[]} prefix ordered test ids that ran before the victim
+ * @param {(subset: string[]) => boolean} reproduces
+ * @param {{maxSteps?: number}} [options]
+ */
+export function bisectPolluter(prefix, reproduces, options = {}) {
+  const n = prefix.length;
+  const maxSteps = options.maxSteps ?? Math.ceil(Math.log2(Math.max(2, n))) + 2;
+  let steps = 0;
+  const rep = (len) => {
+    steps += 1;
+    return reproduces(prefix.slice(0, len));
+  };
+  // Lower-bound search: smallest L in [1..n] whose prefix reproduces.
+  let lo = 1;
+  let hi = n;
+  while (lo < hi && steps < maxSteps) {
+    const mid = (lo + hi) >> 1;
+    if (rep(mid)) hi = mid;
+    else lo = mid + 1;
+  }
+  const minimalPrefix = prefix.slice(0, lo);
+  const atLo = rep(lo);
+  const below = lo > 1 ? rep(lo - 1) : false;
+  if (atLo && !below) {
+    return { polluter: prefix[lo - 1], minimalPrefix, steps, exhausted: false };
+  }
+  return { polluter: null, minimalPrefix, steps, exhausted: true };
+}
+
+/** Run one test alone, in-order, capturing its outcome. */
+export function buildIsolateCmd(victimNodeId, junitPath) {
+  return [
+    'python3',
+    '-m',
+    'pytest',
+    victimNodeId,
+    '-p',
+    'no:randomly',
+    '--tb=no',
+    '-q',
+    `--junitxml=${junitPath}`,
+  ];
+}
+
+/** Run an explicit ordered set of node ids in the given order (no shuffle). */
+export function buildOrderedSubsetCmd(nodeIds, junitPath) {
+  return [
+    'python3',
+    '-m',
+    'pytest',
+    ...nodeIds,
+    '-p',
+    'no:randomly',
+    '--tb=no',
+    '-q',
+    `--junitxml=${junitPath}`,
+  ];
+}
+
+/**
+ * @typedef {Object} EnrichedVictim
+ * @property {string} victim
+ * @property {string} classification
+ * @property {boolean} [passesAlone]
+ * @property {string|null} [polluter]
+ * @property {string} [note]
+ * @property {string[]} [minimalPrefix]
+ * @property {number} [bisectSteps]
+ * @property {boolean} [exhausted]
+ * @property {string} [reproduce]
+ */
+
+/**
+ * Enrich each order-dependent victim with an isolation verdict and, when it
+ * passes alone, the bisected polluter.
+ * @param {{victim: string, classification: string}[]} victims
+ * @param {string[]} order shuffled execution order (from confirm().order)
+ * @param {{runVictimAlone: (v: string) => string,
+ *          reproducesInPrefix: (prefix: string[], v: string) => boolean,
+ *          isolateRepeats?: number, bisectMaxSteps?: number}} seams
+ * @returns {EnrichedVictim[]}
+ */
+export function locatePolluters(victims, order, seams) {
+  const { runVictimAlone, reproducesInPrefix } = seams;
+  const isolateRepeats = seams.isolateRepeats ?? 3;
+  return victims.map((v) => {
+    const idx = order.indexOf(v.victim);
+    const prefix = idx > 0 ? order.slice(0, idx) : [];
+    const alone = Array.from({ length: isolateRepeats }, () =>
+      runVictimAlone(v.victim),
+    );
+    if (!isolationConfirms(alone)) {
+      return {
+        ...v,
+        passesAlone: false,
+        polluter: null,
+        note: 'fails in isolation - the test is broken or flaky on its own, not an order-leak victim',
+      };
+    }
+    if (prefix.length === 0) {
+      return {
+        ...v,
+        passesAlone: true,
+        polluter: null,
+        note: 'ran first under this seed - no earlier test to blame',
+      };
+    }
+    const b = bisectPolluter(
+      prefix,
+      (subset) => reproducesInPrefix(subset, v.victim),
+      { maxSteps: seams.bisectMaxSteps },
+    );
+    return {
+      ...v,
+      passesAlone: true,
+      polluter: b.polluter,
+      minimalPrefix: b.minimalPrefix,
+      bisectSteps: b.steps,
+      exhausted: b.exhausted,
+      reproduce: b.polluter
+        ? `python3 -m pytest -p no:randomly ${b.polluter} ${v.victim}`
+        : undefined,
+    };
+  });
+}
+
+// Canonical ids come from the JUnit report as `classname::name`. To RUN a test
+// pytest needs a path node id (`path/to/file.py::name`). For function-level
+// tests classname is the dotted module path, so dots -> slashes + `.py` recovers
+// the path. Class-based tests (classname includes the class) are a known gap ->
+// Phase 4. Results are matched back by trailing `::name`, which is robust to the
+// classname/path duality.
+function canonicalToNodeId(id) {
+  const i = id.lastIndexOf('::');
+  if (i < 0) return id;
+  return `${id.slice(0, i).replace(/\./g, '/')}.py::${id.slice(i + 2)}`;
+}
+
+function outcomeFor(outcomes, id) {
+  if (id in outcomes) return outcomes[id];
+  const name = id.slice(id.lastIndexOf('::') + 2);
+  const key = Object.keys(outcomes).find((k) => k.endsWith(`::${name}`));
+  return key ? outcomes[key] : undefined;
+}
+
+/** Real subprocess seams for locatePolluters (needs no shuffle plugin). */
+export function realPolluterSeams(junitPath = '.savant-polluter.xml') {
+  return {
+    isolateRepeats: 3,
+    runVictimAlone: (victim) => {
+      const out = runPytestSuite(
+        buildIsolateCmd(canonicalToNodeId(victim), junitPath),
+        junitPath,
+      );
+      return outcomeFor(out, victim);
+    },
+    reproducesInPrefix: (prefix, victim) => {
+      const ids = [...prefix, victim].map(canonicalToNodeId);
+      const out = runPytestSuite(
+        buildOrderedSubsetCmd(ids, junitPath),
+        junitPath,
+      );
+      return FAILED.has(outcomeFor(out, victim));
+    },
   };
 }
