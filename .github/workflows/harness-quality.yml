@@ -94,3 +94,39 @@ jobs:
       - name: Test + coverage gate (vitest)
         working-directory: ts
         run: npm test
+
+  skills-validate:
+    # First JS skill (canary-savant) and the template test harness for skills
+    # migrating off Python (canary mirrors harness, which is TS/Node). Runs in
+    # parallel; the Python `validate` job is unaffected. Python + pytest are
+    # installed because savant's Tier-2 integration test spawns a real pytest
+    # baseline to exercise the JUnit parse.
+    name: Skills (JS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install pytest (for the Tier-2 spawn integration test)
+        run: pip install pytest
+
+      - name: Install skills harness deps
+        working-directory: agents/skills
+        run: npm ci
+
+      - name: Typecheck (tsc strict)
+        working-directory: agents/skills
+        run: npm run typecheck
+
+      - name: Format check (prettier)
+        working-directory: agents/skills
+        run: npm run format:check
+
+      - name: Test + coverage gate (vitest)
+        working-directory: agents/skills
+        run: npm test

@@ -5,10 +5,10 @@ description:
   release) is a Tier-1 static scanner that flags the shared-state smells which
   predict order-dependent tests - a module-level mutable a test writes to, a
   setup with no matching teardown, a mutated process singleton, an order-coupled
-  name - with no test execution, so it runs anywhere python3 does and on every
-  PR. Advisory by default, framework-conditioned for pytest and vitest idioms.
-cli: scripts/cli.py
-requires: [python3>=3.10]
+  name - with no test execution, so it runs anywhere node does and on every PR.
+  Advisory by default, framework-conditioned for pytest and vitest idioms.
+cli: scripts/cli.mjs
+requires: [node>=20]
 ---
 
 # Canary Savant
@@ -44,7 +44,7 @@ each file is judged by its own ecosystem's conventions.
 ## Fidelity limits (AST-lite, on purpose)
 
 Savant Tier 1 is a scanner with no parser dependency, so it ships anywhere
-`python3` does. The cost, stated plainly:
+`node` does. The cost, stated plainly:
 
 - **`SV001` mutation is file-scoped, not flow-scoped.** Any in-place mutation of
   a module-level name anywhere in the file indicts the declaration, even if the
