@@ -98,26 +98,44 @@ describe('SV001 module-mutable-global', () => {
 // --- SV002 -----------------------------------------------------------------
 
 describe('SV002 missing-teardown', () => {
-  it.each(['setup_method', 'setup_class', 'setUp', 'setUpClass'])(
-    'flags pytest %s with no teardown',
+  // Only CLASS/ALL-scoped setup leaks (shared across a class's tests). Per-test
+  // setup (setUp/setup_method/beforeEach) rebuilds state each test, so a missing
+  // teardown there is not a leak - and firing on it was the top false-positive
+  // source when dogfooding on canary's own suite (Phase 5).
+  it.each(['setup_class', 'setUpClass'])(
+    'flags class-scoped pytest %s with no teardown',
     (setup) => {
-      const text = `class TestX:\n    def ${setup}(self):\n        self.db = open_db()\n`;
+      const text = `class TestX:\n    def ${setup}(cls):\n        cls.db = open_db()\n`;
       expect(ids(text)).toContain('SV002-missing-teardown');
     },
   );
 
-  it('does not flag pytest setup that has a teardown', () => {
+  it.each(['setUp', 'setup_method'])(
+    'does not flag per-test pytest %s (fresh instance per test)',
+    (setup) => {
+      const text = `class TestX:\n    def ${setup}(self):\n        self.db = open_db()\n`;
+      expect(ids(text)).not.toContain('SV002-missing-teardown');
+    },
+  );
+
+  it('does not flag class setup that has a teardown', () => {
     const text =
       'class TestX:\n' +
-      '    def setup_method(self):\n        self.db = open_db()\n' +
-      '    def teardown_method(self):\n        self.db.close()\n';
+      '    def setup_class(cls):\n        cls.db = open_db()\n' +
+      '    def teardown_class(cls):\n        cls.db.close()\n';
     expect(ids(text)).not.toContain('SV002-missing-teardown');
   });
 
-  it('flags vitest beforeEach with no afterEach', () => {
+  it('flags vitest beforeAll with no afterAll', () => {
+    expect(
+      ids('beforeAll(() => { db = openDb(); });\n', 'a.spec.ts'),
+    ).toContain('SV002-missing-teardown');
+  });
+
+  it('does not flag per-test beforeEach', () => {
     expect(
       ids('beforeEach(() => { db = openDb(); });\n', 'a.spec.ts'),
-    ).toContain('SV002-missing-teardown');
+    ).not.toContain('SV002-missing-teardown');
   });
 
   it('does not flag beforeAll paired with afterAll', () => {
@@ -156,16 +174,22 @@ describe('SV004 order-coupled-name', () => {
   it.each([
     ['def test_1_creates_user():', 'test_a.py'],
     ['def test_first():', 'test_a.py'],
-    ['def test_last_cleanup():', 'test_a.py'],
+    ['def test_last():', 'test_a.py'],
     ['# must run before test_b', 'test_a.py'],
     ["it('creates admin (must run first)', () => {", 'a.spec.ts'],
   ])('flags %s', (line, name) => {
     expect(ids(line, name)).toContain('SV004-order-coupled-name');
   });
 
+  // Ordinal WORDS used as adjectives are not ordering directives. These were
+  // false positives on canary's own suite (Phase 5): the ordinal must be the
+  // terminal segment of the name (test_first(), not test_first_match_wins()).
   it.each([
     'def test_creates_user():',
     'def test_number_of_items():',
+    'def test_first_match_wins():',
+    'def test_second_run_updates_in_place():',
+    'def test_third_party_gets_reminder():',
     '# creates a user and asserts the role',
   ])('does not flag ordinary %s', (line) => {
     expect(ids(line, 'test_a.py')).not.toContain('SV004-order-coupled-name');

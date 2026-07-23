@@ -310,21 +310,24 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 ### canary-savant — test order-dependence and isolation detector
 
-- **Status:** backlog
-- **Spec:** —
-- **Summary:** Ideation rank 2 (score 6.75) from
-  docs/ideation/bop-themed-canary-skills-2026-07-21.md. Shuffle and
-  run-alone-repeat the suite to surface tests that only pass in a specific
-  order, exposing shared-state leakage - a classic hidden flake source. OVERLAP
-  VERIFIED AND CLEARED 2026-07-21: the v5.11.0 concern was commit 8c5835f, which
-  touched exactly one file (tests/unit/test_skill_registry.py, +39 lines) to
-  isolate one test class from home overlays - canary's own suite hygiene, not a
-  user-facing capability. No shuffle or order-dependence code exists anywhere in
-  agent/. This is a genuine, distinct idea. Accepted risk to handle in spec: a
-  shuffled re-run doubles suite wall-clock, so it must be opt-in/scheduled
-  rather than a per-PR default, and it must report the seed so a failure is
-  reproducible. Deterministic/Tier-0. Low effort / high confidence. Next:
-  /harness:brainstorming to spec.
+- **Status:** done
+- **Spec:** docs/changes/canary-savant/proposal.md
+- **Summary:** DONE (PRs #405-#408 + Phase 5) — shipped as the FIRST JS/Node
+  skill (agents/skills/claude-code/canary-savant/, cli.mjs, requires node>=20),
+  establishing the agents/skills vitest test harness + `Skills (JS)` CI job that
+  future JS skills reuse (canary mirrors harness, which is Node/TS; see the
+  js/ts-going-forward decision). Ideation rank 2 (score 6.75). Two tiers: Tier 1
+  static suspect scan (SV001-SV004, always-on, advisory) and Tier 2 opt-in
+  dynamic confirmer (`--confirm`) that runs baseline -> shuffle-under-pinned-seed
+  -> classify, then for pytest isolates each victim and BISECTS the prefix to
+  name the polluter (not just the victim), with a reproduce command. pytest +
+  vitest classify; polluter bisect is pytest-only (vitest lacks CLI-driven
+  ordered per-test execution). Dogfooded advisory on canary's own suite in CI;
+  rule tuning cut the backlog 37 -> 6 (SV002 narrowed to class/all-scoped
+  setup, SV004 ordinals must be terminal). Remaining: flip the advisory gate to
+  `--strict` once the 6 suspects are triaged. (refs:
+  docs/changes/canary-savant/proposal.md; the Python Phase-1 #405 was superseded
+  by the JS port #406.)
 - **Blockers:** —
 - **Plan:** —
 

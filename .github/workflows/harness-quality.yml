@@ -130,3 +130,10 @@ jobs:
       - name: Test + coverage gate (vitest)
         working-directory: agents/skills
         run: npm test
+
+      # Dogfood: run canary-savant's Tier-1 static scan over canary's OWN test
+      # suite. Advisory (always exits 0) - it surfaces order-dependence suspects
+      # in the log without failing the build. Promote to `--strict` once the
+      # backlog is triaged and the signal is trusted (see the skill's SKILL.md).
+      - name: Order-dependence suspects (canary-savant, advisory)
+        run: node agents/skills/claude-code/canary-savant/scripts/cli.mjs tests
