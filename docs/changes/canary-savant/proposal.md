@@ -3,7 +3,8 @@
 - **Status:** proposed
 - **Roadmap:** BoP-themed skills batch, ideation rank 2 (score 6.75),
   `docs/ideation/bop-themed-canary-skills-2026-07-21.md`
-- **Siblings for pattern reference:** `agents/skills/claude-code/canary-blackhawk/`,
+- **Siblings for pattern reference:**
+  `agents/skills/claude-code/canary-blackhawk/`,
   `agents/skills/claude-code/canary-katana/`
 
 ## Problem
@@ -11,11 +12,10 @@
 A test that only passes because of the tests that ran before it is a lie that
 passes CI. It leaks: a module-level global, an un-torn-down fixture, a shared
 singleton, a row left in a table. The suite is green today because the runner
-happens to visit the polluter before the victim. Reorder the suite — a new
-test file, a parallel shard, a different machine — and the victim fails for
-reasons that have nothing to do with the victim's own code. This is one of the
-most expensive classes of flake because the failing test is never the guilty
-test.
+happens to visit the polluter before the victim. Reorder the suite — a new test
+file, a parallel shard, a different machine — and the victim fails for reasons
+that have nothing to do with the victim's own code. This is one of the most
+expensive classes of flake because the failing test is never the guilty test.
 
 Savant finds order-dependence and shared-state leakage, and — the part that
 makes it worth building over a stock shuffle plugin — **names the polluter, not
@@ -24,21 +24,21 @@ just the victim.**
 ## Why this is not a rename of the v5.11.0 isolation work
 
 Verified and cleared during ideation (2026-07-21): the v5.11.0 concern was
-commit `8c5835f`, which isolated one test class in canary's *own* suite
+commit `8c5835f`, which isolated one test class in canary's _own_ suite
 (`tests/unit/test_skill_registry.py`, +39 lines). That was suite hygiene, not a
 user-facing capability. No shuffle or order-dependence code exists anywhere in
 `agent/`. Savant is a genuinely new capability.
 
 ## Why this is not a rename of `pytest-randomly`
 
-A stock shuffle plugin tells you *that* a run failed under seed N. It does not
-tell you *which earlier test* poisoned the state, and it does not run anywhere
+A stock shuffle plugin tells you _that_ a run failed under seed N. It does not
+tell you _which earlier test_ poisoned the state, and it does not run anywhere
 the plugin is not installed. Savant's differentiators:
 
 1. **Polluter identification** — once a victim is found, savant minimizes the
    prefix of tests-run-before it to name the specific culprit (see Tier 2).
-2. **A cheap static tier** that flags likely offenders with no test execution
-   at all, so there is signal even before (and without) a dynamic run.
+2. **A cheap static tier** that flags likely offenders with no test execution at
+   all, so there is signal even before (and without) a dynamic run.
 3. **Framework-conditioned** orchestration via `agent/frameworks/registry.json`,
    consistent with blackhawk.
 
@@ -47,7 +47,7 @@ the plugin is not installed. Savant's differentiators:
 blackhawk and katana are static scanners; they never execute the system under
 test, so they are deterministic in the ordinary sense. Savant executes the
 suite, and the entire point is to surface non-deterministic outcomes. So for
-savant, **"deterministic" means the *tool* is reproducible, not that outcomes
+savant, **"deterministic" means the _tool_ is reproducible, not that outcomes
 are**: given a seed, savant produces the same shuffle order and therefore the
 same finding. Every dynamic finding ships with the seed and an exact reproduce
 command. Tier-0 still holds in its real sense — **no LLM, no network, no
@@ -57,22 +57,21 @@ secrets** — savant only ever shells out to the project's own test runner.
 
 ### Tier 1 — static suspect scan (always-on, per-PR, runs anywhere)
 
-A line/AST-lite scanner in the blackhawk mold: no test execution, ships
-wherever `python3` does, cheap enough to run on every PR. It flags shared-state
-smells that *predict* order-dependence.
+A line/AST-lite scanner in the blackhawk mold: no test execution, ships wherever
+`python3` does, cheap enough to run on every PR. It flags shared-state smells
+that _predict_ order-dependence.
 
-| Rule | Severity | Fires on |
-| --- | --- | --- |
-| `SV001-module-mutable-global` | medium | A module-scope mutable (`list`/`dict`/`set` literal, or a bare `=` reassign to a module global) that a test body mutates. |
-| `SV002-missing-teardown` | medium | A fixture / `beforeAll` / `setUpClass` that acquires state (opens, connects, writes, `.append`, monkeypatch) with no matching teardown (`yield`+after, `afterAll`, `tearDownClass`). |
-| `SV003-shared-singleton-mutation` | low | Mutation of a known process-global singleton (env via `os.environ[...] =`, `sys.modules`, a cached module-level client) inside a test without restore. |
-| `SV004-order-coupled-name` | low | A test name or comment that encodes ordering intent (`test_1_`, `test_first`, `# must run before`). |
+| Rule                              | Severity | Fires on                                                                                                                                                                             |
+| --------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SV001-module-mutable-global`     | medium   | A module-scope mutable (`list`/`dict`/`set` literal, or a bare `=` reassign to a module global) that a test body mutates.                                                            |
+| `SV002-missing-teardown`          | medium   | A fixture / `beforeAll` / `setUpClass` that acquires state (opens, connects, writes, `.append`, monkeypatch) with no matching teardown (`yield`+after, `afterAll`, `tearDownClass`). |
+| `SV003-shared-singleton-mutation` | low      | Mutation of a known process-global singleton (env via `os.environ[...] =`, `sys.modules`, a cached module-level client) inside a test without restore.                               |
+| `SV004-order-coupled-name`        | low      | A test name or comment that encodes ordering intent (`test_1_`, `test_first`, `# must run before`).                                                                                  |
 
 Tier 1 is advisory-only and framework-conditioned for its markers (pytest vs
 vitest teardown idioms differ). It shares blackhawk's stated fidelity limits
-(line-scoped, comment-blind one level deep, string-blind, substring
-suppression) and inherits the same "a missed finding costs less than a false
-one" bias.
+(line-scoped, comment-blind one level deep, string-blind, substring suppression)
+and inherits the same "a missed finding costs less than a false one" bias.
 
 ### Tier 2 — dynamic confirmer (opt-in / scheduled)
 
@@ -82,25 +81,25 @@ by default. It is invoked explicitly (`--confirm`) or on a schedule. Algorithm:
 1. **Baseline.** Run the suite in declared order, record the pass/fail set `B`.
    If a test already fails in-order, it is not an order problem — report and
    exclude it.
-2. **Shuffle.** Run the suite under a pinned seed using the framework's *own*
+2. **Shuffle.** Run the suite under a pinned seed using the framework's _own_
    shuffle (never reimplemented):
-   - pytest → `-p randomly --randomly-seed=<N>` (fallback:
-     `pytest-random-order` `--random-order-seed=<N>`).
-   - vitest → `--sequence.shuffle --sequence.seed=<N>`.
-   Record pass/fail set `S`.
+   - pytest → `-p randomly --randomly-seed=<N>` (fallback: `pytest-random-order`
+     `--random-order-seed=<N>`).
+   - vitest → `--sequence.shuffle --sequence.seed=<N>`. Record pass/fail set
+     `S`.
 3. **Classify** each test:
    - passed in `B`, failed in `S` → **order-dependent victim** (candidate).
    - failed in both same-seed reruns → **nondeterministic flake**, not order;
      labeled and handed off (out of savant's fix scope).
-4. **Isolate.** Re-run each victim *alone* (repeated `--isolate-repeats`, default
-   3×). Passes alone → confirms shared-state leakage from another test.
+4. **Isolate.** Re-run each victim _alone_ (repeated `--isolate-repeats`,
+   default 3×). Passes alone → confirms shared-state leakage from another test.
 5. **Bisect the polluter.** For a confirmed victim, take the ordered list of
    tests that ran before it under seed `N` and bisect: run
    `[prefix-half] + [victim]`, halve toward the minimal prefix that still
    reproduces the failure. The last test whose presence flips the victim from
-   pass to fail is reported as the **polluter**. Bounded by
-   `--bisect-max-steps` (default `log2(n)+2`); on exhaustion, report the
-   smallest reproducing prefix instead of a single culprit, stated honestly.
+   pass to fail is reported as the **polluter**. Bounded by `--bisect-max-steps`
+   (default `log2(n)+2`); on exhaustion, report the smallest reproducing prefix
+   instead of a single culprit, stated honestly.
 
 Every Tier-2 finding carries: seed, victim, polluter (or minimal prefix), and a
 copy-pasteable reproduce command.
@@ -117,18 +116,17 @@ decline loudly**, never guess:
   runs.
 - Framework detected but unsupported in v1 (playwright, wdio, jest, …) → "Tier 2
   supports pytest and vitest in v1; detected `<other>`" message, non-zero only
-  under
-  `--strict`.
+  under `--strict`.
 - Baseline itself red → "suite is not green in declared order; fix that first",
   since order-dependence is undefined over an already-failing suite.
 
 ## Framework support matrix (v1)
 
-| Framework | Tier 1 static | Tier 2 dynamic | Mechanism |
-| --- | --- | --- | --- |
-| pytest | yes | yes | `-p randomly --randomly-seed` / `--random-order-seed` |
-| vitest | yes | yes | `--sequence.shuffle --sequence.seed` |
-| others (detected) | best-effort markers | declined w/ message | — |
+| Framework         | Tier 1 static       | Tier 2 dynamic      | Mechanism                                             |
+| ----------------- | ------------------- | ------------------- | ----------------------------------------------------- |
+| pytest            | yes                 | yes                 | `-p randomly --randomly-seed` / `--random-order-seed` |
+| vitest            | yes                 | yes                 | `--sequence.shuffle --sequence.seed`                  |
+| others (detected) | best-effort markers | declined w/ message | —                                                     |
 
 ## Invocation
 
@@ -147,8 +145,8 @@ canary skills run canary-savant -- tests --confirm --strict
 ```
 
 Flags: `--confirm` (enable Tier 2), `--seed N` (pin; default derived and always
-printed), `--isolate-repeats K` (default 3), `--bisect-max-steps M`,
-`--strict` (non-zero exit on findings), `--json`.
+printed), `--isolate-repeats K` (default 3), `--bisect-max-steps M`, `--strict`
+(non-zero exit on findings), `--json`.
 
 ## `--json` shape
 
@@ -179,7 +177,9 @@ printed), `--isolate-repeats K` (default 3), `--bisect-max-steps M`,
     "framework": "pytest",
     "tier2_ran": true,
     "static": { "medium": 1 },
-    "victims": 1, "polluters_named": 1, "nondeterministic": 0
+    "victims": 1,
+    "polluters_named": 1,
+    "nondeterministic": 0
   }
 }
 ```
@@ -192,15 +192,15 @@ printed), `--isolate-repeats K` (default 3), `--bisect-max-steps M`,
   `canary-signal` territory; savant is stateless per run.
 - **No suite parallelization or speed work.** Savant characterizes ordering, it
   does not optimize the run.
-- **No general flake hunting.** Nondeterministic-but-order-independent flakes are
-  labeled and handed off, not diagnosed.
+- **No general flake hunting.** Nondeterministic-but-order-independent flakes
+  are labeled and handed off, not diagnosed.
 
 ## Soundness risks
 
 1. **Bisect cost blow-up** on large suites → bounded by `--bisect-max-steps`;
    degrade to "smallest reproducing prefix" rather than an unbounded search.
 2. **False polluter under multi-test collusion** (state accreted across several
-   tests) → bisect reports the minimal *set*/prefix, and the report states
+   tests) → bisect reports the minimal _set_/prefix, and the report states
    explicitly when a single culprit could not be isolated.
 3. **Tier-1 false positives** (a global that is actually reset) → advisory-only,
    low/medium severity, blackhawk-style substring suppression when a teardown
