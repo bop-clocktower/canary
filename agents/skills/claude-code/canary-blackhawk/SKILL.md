@@ -6,8 +6,8 @@ description:
   all day and fail at midnight, across a DST boundary, or on Feb 29. Suppresses
   itself when the file already installs a frozen clock (fake timers, freezegun,
   time_machine, MockDate). Self-contained, deterministic, advisory by default.
-cli: scripts/cli.py
-requires: [python3>=3.10]
+cli: scripts/cli.mjs
+requires: [node>=20]
 ---
 
 # Canary Blackhawk
@@ -54,7 +54,7 @@ Two deliberate choices inside that:
 ## Fidelity limits (regex/AST-lite, on purpose)
 
 Blackhawk is a line scanner with no TypeScript parser dependency, so it ships
-anywhere `python3` does. The cost, stated plainly:
+anywhere `node` does. The cost, stated plainly:
 
 - **Line-scoped.** A call split across lines (`setTimeout(\n  fn,\n  500\n)`)
   is missed, as is a `setTimeout` whose callback body contains a comma.
