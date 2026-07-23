@@ -292,7 +292,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pipx install canary-test-ai
+      # PyPI (`canary-test-ai`) is not published yet — install from git.
+      - run: pipx install git+https://github.com/bop-clocktower/canary@latest
       - name: Check overlay freshness
         id: check
         run: |
