@@ -14,6 +14,7 @@ export default defineConfig({
       include: [
         'claude-code/canary-savant/scripts/**/*.mjs',
         'claude-code/canary-blackhawk/scripts/**/*.mjs',
+        'claude-code/canary-katana/scripts/**/*.mjs',
       ],
       exclude: ['**/*.test.*'],
       // Fresh-code floor, matching the ts/ engine port. Ratchets up over time.
