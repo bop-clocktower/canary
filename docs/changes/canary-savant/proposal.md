@@ -1,8 +1,9 @@
 # canary-savant — order-dependence and isolation detector
 
-- **Status:** in progress — Phases 1-4 shipped (static scan, dynamic confirmer,
-  isolation + polluter bisect, vitest classify + pytest node-id fidelity); Phase
-  5 (CI `--strict` promotion) remains
+- **Status:** shipped — all 5 phases delivered (static scan, dynamic confirmer,
+  isolation + polluter bisect, vitest classify + pytest node-id fidelity,
+  advisory CI gate). Only the advisory→`--strict` flip remains, gated on
+  triaging the small suspect backlog.
 - **Roadmap:** BoP-themed skills batch, ideation rank 2 (score 6.75),
   `docs/ideation/bop-themed-canary-skills-2026-07-21.md`
 - **Siblings for pattern reference:**
@@ -240,5 +241,8 @@ printed), `--isolate-repeats K` (default 3), `--bisect-max-steps M`, `--strict`
    plugin) + **pytest node-id capture** via `--collect-only` (fixes class-based
    re-runs). _(shipped.)_ Polluter bisect stays pytest-only: vitest has no
    CLI-driven ordered per-test execution.
-5. **Docs + CI wiring** (advisory → `--strict` promotion path) + roadmap flip to
-   done.
+5. ✅ **Docs + CI wiring.** Advisory Tier-1 gate dogfooded on canary's own suite
+   in the `Skills (JS)` CI job; tuning against that real suite cut the backlog
+   37 → 6 (SV002 narrowed to class/all-scoped, SV004 ordinals must be terminal).
+   `--strict` promotion is a one-line follow-up once the 6 remaining suspects
+   are triaged. _(shipped.)_

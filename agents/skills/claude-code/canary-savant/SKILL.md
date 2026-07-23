@@ -28,9 +28,9 @@ other skill.
 | Rule                              | Severity | Fires on                                                                                                                                                                                                                                                     |
 | --------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `SV001-module-mutable-global`     | medium   | A module-scope mutable (`= {}`, `= []`, `set()`, `dict()`, `list()`, or a top-level JS `let`/`var`/`const` object/array) that some line later mutates in place (`.append`/`.add`/`[...] =`/`+=`/`.attr =`). Fires on the **declaration**, the leak's source. |
-| `SV002-missing-teardown`          | medium   | A setup marker whose matching teardown is absent from the file: pytest `setup_method`/`setup_class`/`setUp`/`setUpClass`, or vitest/jest `beforeEach`/`beforeAll`.                                                                                           |
+| `SV002-missing-teardown`          | medium   | A **class/all-scoped** setup whose matching teardown is absent: pytest `setup_class`/`setUpClass`, or vitest/jest `beforeAll`. Per-test setup (`setUp`/`setup_method`/`beforeEach`) is excluded - it rebuilds state each test, so it does not leak.          |
 | `SV003-shared-singleton-mutation` | low      | A process-global singleton assigned without restore: `os.environ[...] =`, `sys.modules[...] =`, `process.env.X =`. Reads and `==` comparisons never fire.                                                                                                    |
-| `SV004-order-coupled-name`        | low      | A test name or comment that encodes ordering: `test_1_…`, `test_first`, `must run before …`, `it('… run first')`.                                                                                                                                            |
+| `SV004-order-coupled-name`        | low      | A test name or comment that encodes ordering: `test_1_…`, a **terminal** ordinal (`test_first()`, `test_last()` - not `test_first_match_wins`), `must run before …`, `it('… run first')`.                                                                    |
 
 A finding is a **suspect, not a verdict.** A module dict that is only ever read
 is a legitimate constant and does not fire; only a _mutated_ one does.
@@ -51,8 +51,11 @@ Savant Tier 1 is a scanner with no parser dependency, so it ships anywhere
   a module-level name anywhere in the file indicts the declaration, even if the
   mutation sits in a helper rather than a test body. A shared-state leak is a
   shared-state leak regardless of which function does the writing.
-- **`SV002` is presence-based, not pairing-based.** A file with one `setUp` and
-  one `tearDown` is considered balanced even if a _second_ class lacks teardown.
+- **`SV002` is presence-based, not pairing-based.** A file with one `setUpClass`
+  and one `tearDownClass` is considered balanced even if a _second_ class lacks
+  teardown. It also only judges class/all-scoped setup, so a genuinely leaky
+  per-test setup (rare) is missed - the deliberate false-positive/false-negative
+  trade from dogfooding.
 - **Comment-blind for code rules.** `SV003` skips commented-out lines; `SV004`
   deliberately does not, because an ordering note in a comment is exactly the
   self-reported dependence it looks for.
@@ -142,12 +145,23 @@ correctly.
 | `SV003` | Use a restoring helper — pytest `monkeypatch.setenv`, or save/restore around the test — instead of assigning the global directly.               |
 | `SV004` | Make the test self-contained so order stops mattering, then drop the ordering hint from the name/comment.                                       |
 
+## Dogfooding and the `--strict` promotion path
+
+canary runs savant's Tier-1 scan over its **own** test suite on every PR
+(`.github/workflows/harness-quality.yml`, the `Skills (JS)` job), **advisory**:
+it prints suspects to the log and always exits 0. Tuning the rules against that
+real suite dropped the backlog from 37 findings to a handful of genuine
+suspects. Promote to blocking by appending `--strict` to that step once the
+remaining suspects are triaged (fixed or confirmed benign) - the same
+advisory-first path every canary gate takes.
+
 ## Roadmap
 
 - **Shipped:** Tier 1 static scan; Tier 2 dynamic confirmer (baseline → shuffle
   → classify) with isolation + polluter bisect (pytest); vitest as a Tier-2
-  classify target; pytest node-id capture for class-based layouts.
-- **Next (Phase 5):** promote the advisory gate to `--strict` in CI once the
-  signal is trusted, then flip the roadmap to done. vitest polluter naming is
-  out of scope until vitest gains ordered per-test execution. See
-  `docs/changes/canary-savant/proposal.md`.
+  classify target; pytest node-id capture for class-based layouts; advisory CI
+  gate dogfooded on canary's own suite (rules tuned to kill the dominant false
+  positives).
+- **Remaining:** flip the advisory gate to `--strict` once the suspect backlog
+  is triaged; vitest polluter naming is out of scope until vitest gains ordered
+  per-test execution. See `docs/changes/canary-savant/proposal.md`.

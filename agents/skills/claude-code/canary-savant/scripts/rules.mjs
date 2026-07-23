@@ -67,20 +67,19 @@ export const SV003_PATTERN =
 //   "must run before ..."     -> self-reported ordering note
 //   "runs before ..."
 export const SV004_PATTERN =
-  /\bdef\s+test_\d+_|\bdef\s+test_(?:first|second|third|fourth|fifth|sixth|seventh|last|initial|final)(?![a-z0-9])|\bit\s*\(\s*['"][^'"]*\b(?:run|runs|running)\s+(?:first|last|before|after)\b|\bmust\s+run\s+(?:before|after|first|last)\b|\bruns?\s+(?:before|after)\b/i;
+  /\bdef\s+test_\d+_|\bdef\s+test_(?:first|second|third|fourth|fifth|sixth|seventh|last|initial|final)\s*[(:]|\bit\s*\(\s*['"][^'"]*\b(?:run|runs|running)\s+(?:first|last|before|after)\b|\bmust\s+run\s+(?:before|after|first|last)\b|\bruns?\s+(?:before|after)\b/i;
 
-// SV002: framework-conditioned setup/teardown pairs. A setup present without
-// its teardown anywhere in the file fires.
+// SV002: framework-conditioned setup/teardown pairs. Only CLASS/ALL-scoped
+// setup is included: it manages state shared across a class's tests, so a
+// missing teardown genuinely leaks. Per-test setup (setUp / setup_method /
+// beforeEach) rebuilds state for each test, so a missing teardown there is not a
+// leak - and firing on it was the dominant false positive when dogfooding on
+// canary's own suite (Phase 5). A setup present without its teardown fires.
 export const PYTHON_SETUP_TEARDOWN = [
-  ['setup_method', 'teardown_method'],
   ['setup_class', 'teardown_class'],
-  ['setUp', 'tearDown'],
   ['setUpClass', 'tearDownClass'],
 ];
-export const JS_SETUP_TEARDOWN = [
-  ['beforeEach', 'afterEach'],
-  ['beforeAll', 'afterAll'],
-];
+export const JS_SETUP_TEARDOWN = [['beforeAll', 'afterAll']];
 
 // SV001: mutable-literal declarations and the mutations that indict them.
 //   Python:  NAME = {} | [] | set() | dict() | list()   (optional trailing #comment)
