@@ -14,6 +14,52 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [5.14.0] - 2026-07-22
+
+An **additive** release — no breaking changes. New repo-setup and
+customer-facing report-branding surfaces, two `canary-katana` correctness fixes,
+and an overlay-doctor scoping fix. Also lands the internal Python→TS engine
+migration (isolated `ts/` sandbox; the shipping product is unchanged).
+
+### Added
+
+- **`canary setup`** — top-level alias for the `company-knowledge init` wizard,
+  so repo setup is discoverable from `canary --help`. Bare `canary init` (no
+  framework) now prints a setup-vs-scaffold signpost instead of an arg error,
+  and warns when `.canary/company.json` is absent (#344).
+- **Brand assets + `report_branding()`** — `.canary/company.json` accepts an
+  open `brand` block (recognized keys validated, any extras passed through;
+  asset paths resolve relative to the repo).
+  `CompanyKnowledge.report_branding()` hands report generators the brand data
+  plus a "made with Canary" attribution and an optional voice line
+  (`CANARY_NO_FLAVOR` off-switch). Intended to be rendered through the UI-polish
+  skills; the engine supplies data, overlays own the pixels (#340).
+- **`CANARY_INVOCATION_DIR`** — overlay `doctor.json` `command-succeeds` checks
+  now receive the directory `canary doctor` was launched from, so a check can
+  validate consuming-repo runtime artifacts rather than only the overlay clone
+  (#378).
+
+### Fixed
+
+- **`canary-katana`: survives real monorepos** — the alarm scan no longer
+  crashes on non-UTF-8 files under test dirs, and prunes `node_modules`/`.git`/
+  build/cache dirs instead of walking the whole tree (which timed out) (#395).
+- **`canary-katana`: `.fixme` conversions are quarantines, not deletions** —
+  `test.fixme` / `test.describe.fixme` no longer misclassify as removed tests,
+  which had fired spurious "last-coverage-removed" alarms (#400).
+- **Overlay marketplace install** — the `canary` plugin uses a relative
+  `source: "."`, fixing a misleading "source type not supported" install failure
+  (#376).
+
+### Internal
+
+- Python→TypeScript engine migration, subsystems 1–4 (analysis, history, core
+  framework-recommendation, core scanners) ported into an isolated, parity-
+  tested `ts/` workspace behind a new `ts-validate` CI job. The shipping Python
+  engine is unchanged (#388, #389, #392, #394).
+- Ratcheting engine coverage gate in CI (#386); `actions/setup-node` bumped to
+  v7 (#322).
+
 ## [5.13.0] - 2026-07-22
 
 An **additive** release — no breaking changes. Ships the first batch of
@@ -432,7 +478,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v5.13.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v5.14.0...HEAD
+[5.14.0]: https://github.com/bop-clocktower/canary/compare/v5.13.0...v5.14.0
 [5.13.0]: https://github.com/bop-clocktower/canary/compare/v5.12.0...v5.13.0
 [5.3.0]: https://github.com/bop-clocktower/canary/compare/v5.2.0...v5.3.0
 [5.2.0]: https://github.com/bop-clocktower/canary/compare/v5.1.0...v5.2.0

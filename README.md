@@ -1,6 +1,6 @@
 # ![Canary](docs/assets/icon-gold.svg) Canary
 
-![version](https://img.shields.io/badge/version-5.12.0-F0C040?style=flat-square&labelColor=0A0A0A&color=F0C040)
+![version](https://img.shields.io/badge/version-5.14.0-F0C040?style=flat-square&labelColor=0A0A0A&color=F0C040)
 ![python](https://img.shields.io/badge/python-3.11+-F5F5F5?style=flat-square&labelColor=1C1C1C&color=2E2E2E)
 ![tests](https://img.shields.io/badge/tests-passing-28C840?style=flat-square&labelColor=1C1C1C&color=1C1C1C&logoColor=28C840)
 ![frameworks](https://img.shields.io/badge/playwright_·_vitest_·_pytest-F0C040?style=flat-square&labelColor=C09018&color=F0C040)
@@ -73,9 +73,9 @@ pip install -e .
 
 ### Claude Code plugin
 
-Canary ships as a Claude Code plugin: 8 agents, 12 skills, and 10 slash
-commands, plus the `harness` MCP server. See [Usage](#-usage) below for the full
-surface organized by use case, or the exhaustive catalog in
+Canary ships as a Claude Code plugin: 15 agents, 17 skills, and a suite of
+`/canary-*` slash commands, plus the `harness` MCP server. See [Usage](#-usage)
+below for the full surface organized by use case, or the exhaustive catalog in
 [agents/skills/README.md](agents/skills/README.md). Add it as a local
 marketplace:
 
