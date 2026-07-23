@@ -77,11 +77,51 @@ export function toJson(f) {
   };
 }
 
-/** Scan source text, returning findings ordered by line then rule id. */
-export function scanText(text, file = '<text>') {
+// Inline suppression pragma (#393): `blackhawk-ignore <RULE>[,<RULE>] -- reason`
+// in a comment. Rule-scoped (so it never blanket-silences a line) and the reason
+// is required (keeps suppressions honest and greppable). A pragma covers the
+// finding on its own line (trailing comment) and the next line (comment above
+// the code) - the two idioms teams reach for.
+const PRAGMA = /\bblackhawk-ignore\s+([A-Za-z0-9,\s-]*?)\s*--\s*(\S.*)$/;
+
+function parsePragmas(lines) {
+  const map = new Map();
+  const add = (ln, tokens) => {
+    if (!map.has(ln)) map.set(ln, new Set());
+    for (const t of tokens) map.get(ln).add(t);
+  };
+  lines.forEach((raw, i) => {
+    const m = PRAGMA.exec(raw);
+    if (!m || !m[2].trim()) return; // reason required
+    const tokens = m[1].split(/[,\s]+/).filter(Boolean);
+    if (!tokens.length) return; // rule-scoped: must name a rule
+    add(i + 1, tokens); // same-line (trailing pragma)
+    add(i + 2, tokens); // next line (pragma above the code)
+  });
+  return map;
+}
+
+// A `BH002` token matches `BH002-real-delay`; the full id also matches.
+const tokenMatches = (ruleId, token) =>
+  ruleId === token || ruleId.split('-')[0] === token;
+
+/**
+ * @typedef {{file: string, line: number, ruleId: string, severity: string,
+ *            snippet: string, why: string}} Finding
+ */
+
+/**
+ * Scan source text. Returns kept `findings` plus `suppressed` findings silenced
+ * by an inline pragma, both ordered by line then rule id.
+ * @returns {{findings: Finding[], suppressed: Finding[]}}
+ */
+export function scanTextFull(text, file = '<text>') {
+  const lines = splitLines(text);
   const frozen = frozenClockMarkers(text).length > 0;
+  const pragmas = parsePragmas(lines);
   const findings = [];
-  splitLines(text).forEach((raw, i) => {
+  const suppressed = [];
+  lines.forEach((raw, i) => {
     const stripped = raw.trim();
     if (!stripped || isComment(stripped)) return;
     for (const rule of RULES) {
@@ -89,28 +129,43 @@ export function scanText(text, file = '<text>') {
       const match = rule.pattern.exec(stripped);
       if (!match) continue;
       if (rule.keep && !rule.keep(match)) continue;
-      findings.push({
+      const finding = {
         file,
         line: i + 1,
         ruleId: rule.ruleId,
         severity: rule.severity,
         snippet: stripped.slice(0, SNIPPET_LIMIT),
         why: rule.why,
-      });
+      };
+      const tokens = pragmas.get(i + 1);
+      if (tokens && [...tokens].some((t) => tokenMatches(rule.ruleId, t))) {
+        suppressed.push(finding);
+      } else {
+        findings.push(finding);
+      }
     }
   });
-  return findings;
+  return { findings, suppressed };
 }
 
-/** Scan one file. Unreadable files yield no findings. */
-export function scanFile(filePath) {
+/** Scan source text, returning kept findings (back-compat wrapper). */
+export function scanText(text, file = '<text>') {
+  return scanTextFull(text, file).findings;
+}
+
+/** Scan one file. Unreadable files yield nothing. */
+export function scanFileFull(filePath) {
   let text;
   try {
     text = fs.readFileSync(filePath, 'utf8');
   } catch {
-    return [];
+    return { findings: [], suppressed: [] };
   }
-  return scanText(text, filePath);
+  return scanTextFull(text, filePath);
+}
+
+export function scanFile(filePath) {
+  return scanFileFull(filePath).findings;
 }
 
 /** Yield the files a path contributes: explicit files win, dirs are filtered. */
@@ -153,13 +208,16 @@ export function scanPaths(paths) {
   const seen = new Set();
   const findings = [];
   let scanned = 0;
+  let suppressed = 0;
   for (const entry of paths) {
     for (const filePath of iterFiles(entry)) {
       const resolved = path.resolve(filePath);
       if (seen.has(resolved)) continue;
       seen.add(resolved);
       scanned += 1;
-      findings.push(...scanFile(filePath));
+      const r = scanFileFull(filePath);
+      findings.push(...r.findings);
+      suppressed += r.suppressed.length;
     }
   }
   findings.sort(
@@ -168,5 +226,5 @@ export function scanPaths(paths) {
       a.line - b.line ||
       a.ruleId.localeCompare(b.ruleId),
   );
-  return { findings, filesScanned: scanned };
+  return { findings, filesScanned: scanned, suppressed };
 }

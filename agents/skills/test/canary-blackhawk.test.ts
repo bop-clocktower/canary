@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   scanText,
+  scanTextFull,
   scanPaths,
   frozenClockMarkers,
   toJson,
@@ -400,6 +401,7 @@ describe('cli', () => {
       files_scanned: 0,
       findings: 0,
       by_severity: {},
+      suppressed: 0,
     });
   });
 
@@ -476,6 +478,95 @@ describe('cli', () => {
       ]),
     ).toBe(0);
     expect(JSON.parse(out.join('\n')).summary.files_scanned).toBe(2);
+  });
+});
+
+// --- Inline suppression pragma (#393) --------------------------------------
+
+describe('inline suppression pragma', () => {
+  const ruleIds = (fs2: { ruleId: string }[]) => fs2.map((f) => f.ruleId);
+
+  it('suppresses a rule via a same-line trailing pragma', () => {
+    const r = scanTextFull(
+      'setTimeout(done, 500); // blackhawk-ignore BH002 -- intentional real wait',
+      'a.spec.ts',
+    );
+    expect(ruleIds(r.findings)).not.toContain('BH002-real-delay');
+    expect(ruleIds(r.suppressed)).toContain('BH002-real-delay');
+  });
+
+  it('suppresses a finding on the following line', () => {
+    const text =
+      '// blackhawk-ignore BH002 -- real MongoDB claim race\n' +
+      'await new Promise((r) => setTimeout(r, 25));';
+    const r = scanTextFull(text, 'a.spec.ts');
+    expect(r.findings).toEqual([]);
+    expect(r.suppressed.length).toBe(1);
+  });
+
+  it('requires a reason (a bare directive does not suppress)', () => {
+    const r = scanTextFull(
+      'setTimeout(done, 500); // blackhawk-ignore BH002',
+      'a.spec.ts',
+    );
+    expect(ruleIds(r.findings)).toContain('BH002-real-delay');
+    expect(r.suppressed).toEqual([]);
+  });
+
+  it('is rule-scoped: a BH002 pragma does not silence a BH001 on the line', () => {
+    const r = scanTextFull(
+      'const t = Date.now(); // blackhawk-ignore BH002 -- unrelated',
+      'a.spec.ts',
+    );
+    expect(ruleIds(r.findings)).toContain('BH001-wall-clock');
+  });
+
+  it('accepts the full rule id', () => {
+    const r = scanTextFull(
+      'time.sleep(2)  # blackhawk-ignore BH002-real-delay -- deliberate',
+      'test_a.py',
+    );
+    expect(r.suppressed.length).toBe(1);
+    expect(r.findings).toEqual([]);
+  });
+
+  it('scanPaths counts suppressions separately from findings', () => {
+    const tmp = mkTmp();
+    try {
+      fs.writeFileSync(
+        path.join(tmp, 'a.spec.ts'),
+        'setTimeout(done, 500); // blackhawk-ignore BH002 -- ok\n' +
+          'const t = Date.now();\n',
+      );
+      const r = scanPaths([tmp]);
+      expect(r.findings.length).toBe(1); // BH001 remains
+      expect(r.findings[0].ruleId).toBe('BH001-wall-clock');
+      expect(r.suppressed).toBe(1);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('cli reports the suppressed count (human + json)', () => {
+    const tmp = mkTmp();
+    const out: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((s?: unknown) => {
+      out.push(String(s));
+    });
+    try {
+      fs.writeFileSync(
+        path.join(tmp, 'a.spec.ts'),
+        'setTimeout(done, 500); // blackhawk-ignore BH002 -- ok\n',
+      );
+      expect(main([tmp, '--json'])).toBe(0);
+      expect(JSON.parse(out.join('\n')).summary.suppressed).toBe(1);
+      out.length = 0;
+      expect(main([tmp])).toBe(0);
+      expect(out.join('\n')).toContain('1 suppressed');
+    } finally {
+      vi.restoreAllMocks();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 

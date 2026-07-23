@@ -28,7 +28,15 @@ function summary(result) {
     files_scanned: result.filesScanned,
     findings: result.findings.length,
     by_severity: bySeverity,
+    suppressed: result.suppressed ?? 0,
   };
+}
+
+// A trailing "N suppressed" note keeps inline-ignored lines visible but out of
+// the actionable total - the pattern the PR-guardian sticky comment uses.
+function suppressedNote(result) {
+  const n = result.suppressed ?? 0;
+  return n ? `\n${n} suppressed (inline blackhawk-ignore).` : '';
 }
 
 function renderText(result) {
@@ -36,7 +44,10 @@ function renderText(result) {
   const files = result.filesScanned;
   const fp = files === 1 ? '' : 's';
   if (!count) {
-    return `No temporal-dependency findings (${files} file${fp} scanned).`;
+    return (
+      `No temporal-dependency findings (${files} file${fp} scanned).` +
+      suppressedNote(result)
+    );
   }
   const sp = count === 1 ? '' : 's';
   const lines = [
@@ -52,7 +63,7 @@ function renderText(result) {
   lines.push(
     'Advisory by default. Re-run with --strict to fail the step on findings.',
   );
-  return lines.join('\n');
+  return lines.join('\n') + suppressedNote(result);
 }
 
 function parseArgs(argv) {
