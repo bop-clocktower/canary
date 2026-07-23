@@ -7,6 +7,19 @@
   `agents/skills/claude-code/canary-blackhawk/`,
   `agents/skills/claude-code/canary-katana/`
 
+## Implementation language (JS/Node)
+
+canary-savant is implemented in **ESM JavaScript** (`cli: scripts/cli.mjs`,
+`requires: [node>=20]`), per the project decision that new work is JS/TS —
+canary is meant to mirror harness, and harness is a Node/TS package. The skill
+scripts are directly-runnable `.mjs` (the skill runner execs `cli:` via its
+shebang), and the vitest suite lives in the `agents/skills/` project. This is
+the first JS skill; its test harness is the template future JS skills adopt. The
+blackhawk/katana siblings are still Python (pre-decision) and are tracked
+separately for migration. Savant still shells out to the _project's own_ pytest
+or vitest for Tier 2 — it orchestrates the target's runner, it does not run in
+the target's language.
+
 ## Problem
 
 A test that only passes because of the tests that ran before it is a lie that
@@ -58,8 +71,8 @@ secrets** — savant only ever shells out to the project's own test runner.
 ### Tier 1 — static suspect scan (always-on, per-PR, runs anywhere)
 
 A line/AST-lite scanner in the blackhawk mold: no test execution, ships wherever
-`python3` does, cheap enough to run on every PR. It flags shared-state smells
-that _predict_ order-dependence.
+`node` does, cheap enough to run on every PR. It flags shared-state smells that
+_predict_ order-dependence.
 
 | Rule                              | Severity | Fires on                                                                                                                                                                             |
 | --------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

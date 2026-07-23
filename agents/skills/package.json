@@ -1,0 +1,22 @@
+{
+  "name": "@canary/skills",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-contained canary skill runtimes (ESM JS) and their vitest suites. Skill sources are directly-runnable .mjs (the skill runner execs cli: via shebang); this project only provides the test/typecheck/format harness.",
+  "scripts": {
+    "test": "vitest run --coverage",
+    "typecheck": "tsc -p . --noEmit",
+    "format:check": "prettier --check \"claude-code/canary-savant/scripts/**/*.mjs\" \"test/**/*.ts\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "prettier": "^3.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.10"
+  }
+}
