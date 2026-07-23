@@ -1,7 +1,8 @@
 # canary-savant — order-dependence and isolation detector
 
-- **Status:** in progress — Phases 1-3 shipped (static scan, dynamic confirmer,
-  isolation + polluter bisect); Phases 4-5 remain
+- **Status:** in progress — Phases 1-4 shipped (static scan, dynamic confirmer,
+  isolation + polluter bisect, vitest classify + pytest node-id fidelity); Phase
+  5 (CI `--strict` promotion) remains
 - **Roadmap:** BoP-themed skills batch, ideation rank 2 (score 6.75),
   `docs/ideation/bop-themed-canary-skills-2026-07-21.md`
 - **Siblings for pattern reference:**
@@ -235,7 +236,9 @@ printed), `--isolate-repeats K` (default 3), `--bisect-max-steps M`, `--strict`
    `bisectPolluter`/`isolationConfirms` + injectable `locatePolluters`; real
    subprocess seams in `realPolluterSeams`. Known gap: class-based classname →
    node-id mapping (see Phase 4).
-4. **vitest support** for both tiers, plus real pytest node-id capture to close
-   the class-based-classname gap in polluter re-runs.
+4. ✅ **vitest as a Tier-2 classify target** (built-in `--sequence.shuffle`, no
+   plugin) + **pytest node-id capture** via `--collect-only` (fixes class-based
+   re-runs). _(shipped.)_ Polluter bisect stays pytest-only: vitest has no
+   CLI-driven ordered per-test execution.
 5. **Docs + CI wiring** (advisory → `--strict` promotion path) + roadmap flip to
    done.
