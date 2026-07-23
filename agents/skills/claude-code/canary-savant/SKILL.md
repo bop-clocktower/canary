@@ -97,12 +97,18 @@ copy-pasteable reproduce command.
 canary skills run canary-savant -- tests --confirm --seed 424242
 ```
 
-Requires a pytest shuffle plugin (`pytest-randomly` or `pytest-random-order`);
-if none is installed, Tier 2 declines loudly and Tier 1 still runs. Node drives
-the project's _own_ pytest — savant orchestrates the runner, it does not run in
-the target's language. **Known limit:** the polluter re-runs map the shuffle
-report's `classname::name` back to a pytest node id assuming a function-level
-(module-path) classname; class-based test layouts are a Phase 4 gap.
+**pytest and vitest** are both supported; savant auto-detects from the target
+(extensions, then a directory scan, then config files). pytest needs a shuffle
+plugin (`pytest-randomly` or `pytest-random-order`) and declines loudly if none
+is installed; vitest's shuffle is built in (`--sequence.shuffle`), so no plugin
+is required. Node drives the project's _own_ runner — savant orchestrates it, it
+does not run in the target's language.
+
+**Polluter bisect is pytest-only.** vitest has no CLI-driven ordered per-test
+execution, so a vitest target gets victim _detection_ (which tests break under
+shuffle) but not culprit _naming_. For pytest, node ids are captured via
+`--collect-only`, so class-based layouts (`file.py::Class::test`) re-run
+correctly.
 
 `--json` shape:
 
@@ -139,7 +145,9 @@ report's `classname::name` back to a pytest node id assuming a function-level
 ## Roadmap
 
 - **Shipped:** Tier 1 static scan; Tier 2 dynamic confirmer (baseline → shuffle
-  → classify) and isolation + polluter bisect, pytest-first.
-- **Next (Phase 4):** vitest as a Tier-2 target (`--sequence.shuffle`), and real
-  pytest node-id capture to close the class-based-classname gap. See
+  → classify) with isolation + polluter bisect (pytest); vitest as a Tier-2
+  classify target; pytest node-id capture for class-based layouts.
+- **Next (Phase 5):** promote the advisory gate to `--strict` in CI once the
+  signal is trusted, then flip the roadmap to done. vitest polluter naming is
+  out of scope until vitest gains ordered per-test execution. See
   `docs/changes/canary-savant/proposal.md`.

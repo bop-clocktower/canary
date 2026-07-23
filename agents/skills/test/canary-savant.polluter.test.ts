@@ -238,9 +238,11 @@ describe('realPolluterSeams (integration)', () => {
       // Canonical ids as they'd arrive from the shuffle report (classname::name).
       const victim = 'test_leak::test_victim';
       const polluter = 'test_leak::test_polluter';
-      const seams = runner.realPolluterSeams(path.join(tmp, 'pj.xml'));
-
       process.chdir(tmp); // seams translate classname -> relative path node id
+      const seams = runner.realPolluterSeams(
+        ['test_leak.py'],
+        path.join(tmp, 'pj.xml'),
+      );
       // Victim alone: the flag is unset, so it fails in isolation.
       expect(seams.runVictimAlone(victim)).toBe('failed');
       // Alone it fails -> "reproduces"; with the polluter first it passes -> not.

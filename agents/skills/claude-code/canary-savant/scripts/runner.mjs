@@ -11,7 +11,13 @@
 // Phase 3 and are deliberately absent here.
 
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+
+// JUnit artifacts go to the OS temp dir, never the user's repo root.
+const TMP_JUNIT = path.join(os.tmpdir(), 'savant-junit.xml');
+const TMP_POLLUTER = path.join(os.tmpdir(), 'savant-polluter.xml');
 
 const FAILED = new Set(['failed', 'error']);
 
@@ -94,6 +100,89 @@ export function buildShuffleCmd(paths, junitPath, seed, plugin) {
 }
 
 /**
+ * Detect the test framework for a target: pytest or vitest. File extensions win;
+ * a bare directory falls back to config-file markers (injectable `exists`).
+ * @param {string[]} paths
+ * @param {{exists?: (f: string) => boolean}} [options]
+ * @returns {'pytest'|'vitest'|null}
+ */
+export function detectFramework(paths, options = {}) {
+  const isPy = (p) => p.endsWith('.py');
+  const isJsTest = (p) => /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(p);
+  const isJs = (p) => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(p);
+
+  // 1) An explicitly named file's extension wins.
+  if (paths.some(isPy)) return 'pytest';
+  if (paths.some(isJs)) return 'vitest';
+
+  // 2) Otherwise scan the target's own contents (NOT cwd, which may hold an
+  //    unrelated config in a monorepo/this test harness).
+  const readdir = options.readdir || defaultReaddir;
+  for (const p of paths) {
+    const files = readdir(p);
+    if (files.some(isPy)) return 'pytest';
+    if (files.some(isJsTest)) return 'vitest';
+  }
+
+  // 3) Last resort: config-file markers.
+  const exists = options.exists || ((f) => fs.existsSync(f));
+  if (
+    ['vitest.config.ts', 'vitest.config.js', 'vitest.config.mjs'].some(exists)
+  ) {
+    return 'vitest';
+  }
+  if (
+    ['pytest.ini', 'pyproject.toml', 'conftest.py', 'setup.cfg'].some(exists)
+  ) {
+    return 'pytest';
+  }
+  return null;
+}
+
+// Shallow-recursive file listing of a directory (bounded; skips vendor dirs).
+// Returns [] for a non-directory or on error.
+function defaultReaddir(root, depth = 3) {
+  let entries;
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const e of entries) {
+    if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+    const full = `${root}/${e.name}`;
+    if (e.isFile()) out.push(full);
+    else if (e.isDirectory() && depth > 0)
+      out.push(...defaultReaddir(full, depth - 1));
+  }
+  return out;
+}
+
+const vitestBase = (paths, junitPath) => [
+  'npx',
+  'vitest',
+  'run',
+  ...paths,
+  '--reporter=junit',
+  `--outputFile=${junitPath}`,
+];
+
+/** In-order vitest baseline (declared order; no shuffle). */
+export function buildVitestBaselineCmd(paths, junitPath) {
+  return vitestBase(paths, junitPath);
+}
+
+/** Shuffled vitest run with a pinned seed (built-in, no plugin needed). */
+export function buildVitestShuffleCmd(paths, junitPath, seed) {
+  return [
+    ...vitestBase(paths, junitPath),
+    '--sequence.shuffle',
+    `--sequence.seed=${seed}`,
+  ];
+}
+
+/**
  * Classify tests green-in-baseline by their two same-seed shuffled reruns.
  * Fail in both -> order-dependent (reproducible under that order). Disagree
  * -> nondeterministic (flaky, not order). Passed in both -> clean.
@@ -128,8 +217,9 @@ export function runPytestSuite(cmd, junitPath) {
 
 /**
  * @typedef {Object} ConfirmResult
- * @property {string} status 'ok' | 'no_plugin' | 'baseline_red'
+ * @property {string} status 'ok' | 'no_plugin' | 'baseline_red' | 'unknown_framework'
  * @property {number} seed
+ * @property {'pytest'|'vitest'|null} [framework]
  * @property {string|null} plugin
  * @property {{victim: string, classification: string}[]} victims
  * @property {{victim: string, classification: string}[]} nondeterministic
@@ -143,40 +233,71 @@ export function runPytestSuite(cmd, junitPath) {
  * Orchestrate the dynamic confirmation.
  * @param {string[]} paths
  * @param {{seed: number, plugin?: string|null,
+ *          framework?: 'pytest'|'vitest',
  *          runSuite?: (cmd: string[]) => Record<string,string>,
  *          probe?: (name: string) => boolean}} [options]
  * @returns {ConfirmResult}
  */
 export function confirm(paths, options = {}) {
   const { seed, runSuite, probe } = options;
-  const plugin =
-    options.plugin !== undefined ? options.plugin : detectShufflePlugin(probe);
+  // Passing an explicit plugin (Phase 2/3 call sites) implies pytest; otherwise
+  // detect from the paths. The test cwd owns a vitest.config, so relying on
+  // detection alone there would misroute pytest cases.
+  const framework =
+    options.framework ??
+    (options.plugin !== undefined ? 'pytest' : detectFramework(paths));
 
   const base = {
     status: 'ok',
     seed,
-    plugin,
+    framework,
+    plugin: null,
     victims: [],
     nondeterministic: [],
     baselineFailures: [],
     reproduce: '',
   };
 
-  if (!plugin) {
+  if (framework !== 'pytest' && framework !== 'vitest') {
     return {
       ...base,
-      status: 'no_plugin',
+      status: 'unknown_framework',
       message:
-        'Tier 2 needs a pytest shuffle plugin. Install pytest-randomly (or ' +
-        'pytest-random-order) to enable order-dependence confirmation.',
+        'Could not detect pytest or vitest for the given paths. ' +
+        'Pass the framework explicitly to run Tier 2.',
     };
   }
 
   // A temp path is only needed by the real runner; the injected stub ignores it.
-  const junit = '.savant-junit.xml';
+  const junit = TMP_JUNIT;
   const run = runSuite || ((cmd) => runPytestSuite(cmd, junit));
 
-  const baseline = run(buildBaselineCmd(paths, junit, plugin));
+  let baselineCmd;
+  let shuffleCmd;
+  if (framework === 'vitest') {
+    // vitest shuffle is built in - no plugin gate.
+    baselineCmd = buildVitestBaselineCmd(paths, junit);
+    shuffleCmd = buildVitestShuffleCmd(paths, junit, seed);
+  } else {
+    const plugin =
+      options.plugin !== undefined
+        ? options.plugin
+        : detectShufflePlugin(probe);
+    base.plugin = plugin;
+    if (!plugin) {
+      return {
+        ...base,
+        status: 'no_plugin',
+        message:
+          'Tier 2 needs a pytest shuffle plugin. Install pytest-randomly (or ' +
+          'pytest-random-order) to enable order-dependence confirmation.',
+      };
+    }
+    baselineCmd = buildBaselineCmd(paths, junit, plugin);
+    shuffleCmd = buildShuffleCmd(paths, junit, seed, plugin);
+  }
+
+  const baseline = run(baselineCmd);
   const baselineFailures = Object.entries(baseline)
     .filter(([, o]) => FAILED.has(o))
     .map(([t]) => t);
@@ -191,9 +312,8 @@ export function confirm(paths, options = {}) {
     };
   }
 
-  const shuffleCmd = buildShuffleCmd(paths, junit, seed, plugin);
   const s1 = run(shuffleCmd);
-  const s2 = run(buildShuffleCmd(paths, junit, seed, plugin));
+  const s2 = run(shuffleCmd);
   const findings = classify(baseline, s1, s2, seed);
 
   return {
@@ -354,12 +474,57 @@ export function locatePolluters(victims, order, seams) {
   });
 }
 
-// Canonical ids come from the JUnit report as `classname::name`. To RUN a test
-// pytest needs a path node id (`path/to/file.py::name`). For function-level
-// tests classname is the dotted module path, so dots -> slashes + `.py` recovers
-// the path. Class-based tests (classname includes the class) are a known gap ->
-// Phase 4. Results are matched back by trailing `::name`, which is robust to the
-// classname/path duality.
+/**
+ * Convert a pytest node id (`path/to/file.py::Class::name`) to the JUnit key
+ * pytest reports for it (`path.to.file.Class::name`). Deterministic, so a map
+ * built from `--collect-only` correctly translates a canonical (report) id back
+ * to a runnable node id - including class-based layouts (the Phase 3 gap).
+ * @param {string} nodeId
+ */
+export function nodeIdToKey(nodeId) {
+  const parts = nodeId.split('::');
+  const file = parts[0];
+  const rest = parts.slice(1);
+  const name = rest[rest.length - 1];
+  const classSegs = rest.slice(0, -1);
+  const module = file.replace(/\.py$/, '').replace(/\//g, '.');
+  return `${[module, ...classSegs].join('.')}::${name}`;
+}
+
+/**
+ * Map each canonical JUnit key to its runnable pytest node id.
+ * @param {string[]} nodeIds
+ * @returns {Record<string, string>}
+ */
+export function buildNodeIdMap(nodeIds) {
+  const map = {};
+  for (const id of nodeIds) map[nodeIdToKey(id)] = id;
+  return map;
+}
+
+/** Run pytest --collect-only and return the authoritative node ids. */
+export function collectPytestNodeIds(paths) {
+  const res = spawnSync(
+    'python3',
+    [
+      '-m',
+      'pytest',
+      ...paths,
+      '--collect-only',
+      '-q',
+      '-p',
+      'no:cacheprovider',
+    ],
+    { encoding: 'utf8' },
+  );
+  return (res.stdout || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.includes('::') && !l.includes(' '));
+}
+
+// Fallback when a node id is absent from the collect map (function-level: the
+// dotted classname is the module path, so dots -> slashes + `.py` recovers it).
 function canonicalToNodeId(id) {
   const i = id.lastIndexOf('::');
   if (i < 0) return id;
@@ -373,19 +538,27 @@ function outcomeFor(outcomes, id) {
   return key ? outcomes[key] : undefined;
 }
 
-/** Real subprocess seams for locatePolluters (needs no shuffle plugin). */
-export function realPolluterSeams(junitPath = '.savant-polluter.xml') {
+/**
+ * Real subprocess seams for locatePolluters (pytest; needs no shuffle plugin).
+ * A node-id map from `--collect-only` translates canonical report ids to
+ * runnable node ids, so class-based layouts re-run correctly.
+ * @param {string[]} [paths] target paths (enables the collect-only node-id map)
+ * @param {string} [junitPath]
+ */
+export function realPolluterSeams(paths = [], junitPath = TMP_POLLUTER) {
+  const map = paths.length ? buildNodeIdMap(collectPytestNodeIds(paths)) : {};
+  const toNodeId = (id) => map[id] || canonicalToNodeId(id);
   return {
     isolateRepeats: 3,
     runVictimAlone: (victim) => {
       const out = runPytestSuite(
-        buildIsolateCmd(canonicalToNodeId(victim), junitPath),
+        buildIsolateCmd(toNodeId(victim), junitPath),
         junitPath,
       );
       return outcomeFor(out, victim);
     },
     reproducesInPrefix: (prefix, victim) => {
-      const ids = [...prefix, victim].map(canonicalToNodeId);
+      const ids = [...prefix, victim].map(toNodeId);
       const out = runPytestSuite(
         buildOrderedSubsetCmd(ids, junitPath),
         junitPath,

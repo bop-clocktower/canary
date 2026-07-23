@@ -75,7 +75,11 @@ function parseArgs(argv) {
 }
 
 export function renderConfirm(dyn) {
-  if (dyn.status === 'no_plugin' || dyn.status === 'baseline_red') {
+  if (
+    dyn.status === 'no_plugin' ||
+    dyn.status === 'baseline_red' ||
+    dyn.status === 'unknown_framework'
+  ) {
     return `\nTier 2 (dynamic): skipped - ${dyn.message}`;
   }
   const lines = [`\nTier 2 (dynamic): seed ${dyn.seed}`];
@@ -100,6 +104,11 @@ export function renderConfirm(dyn) {
     }
     if (!namedAny && dyn.reproduce) {
       lines.push(`  reproduce: ${dyn.reproduce}`);
+    }
+    if (dyn.framework === 'vitest') {
+      lines.push(
+        '  (vitest: victims detected; polluter bisect is pytest-only)',
+      );
     }
   }
   if (dyn.nondeterministic.length) {
@@ -128,13 +137,18 @@ export function main(argv = []) {
       ? opts.seed
       : Math.floor(Math.random() * 1e6);
     dyn = confirm(paths, { seed });
-    // Phase 3: name the polluter behind each confirmed victim (real subprocess
-    // seams; only reachable when a shuffle plugin produced victims).
-    if (dyn.status === 'ok' && dyn.victims.length) {
+    // Phase 3: name the polluter behind each confirmed victim. pytest only -
+    // vitest has no CLI-driven ordered per-test execution, so it gets victim
+    // detection (Phase 2) but not polluter bisection.
+    if (
+      dyn.status === 'ok' &&
+      dyn.victims.length &&
+      dyn.framework === 'pytest'
+    ) {
       dyn.victims = locatePolluters(
         dyn.victims,
         dyn.order,
-        realPolluterSeams(),
+        realPolluterSeams(paths),
       );
     }
   }
