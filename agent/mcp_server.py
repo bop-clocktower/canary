@@ -246,10 +246,17 @@ def _init_suite_impl(framework: str, target_dir: str) -> dict:
     target = target_dir or _WORKING_DIR
     scaffolder = Scaffolder()
     result = scaffolder.scaffold(framework, project_root=target)
-    return {
+    out = {
         "files_created": result["created_files"] + result["created_dirs"],
         "framework": framework,
+        "status": result.get("status", "scaffolded"),
     }
+    if result.get("status") == "unsupported":
+        # Degraded: no template — surface the actionable guidance rather than
+        # implying an empty-but-successful scaffold.
+        out["guidance"] = result.get("guidance")
+        out["execution_command"] = result.get("execution_command")
+    return out
 
 
 def _list_frameworks_impl() -> dict:
