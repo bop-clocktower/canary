@@ -76,10 +76,18 @@ flakes occurred, that is a TestTracker display choice, not a reporter change.)
 
 ## Idempotency
 
-The run is idempotent on `(canary_run_id, suite)`. `canary_run_id` is
+The run is idempotent on the **composite** `(canary_run_id, suite)` (server
+arbiter index `(tenant_id, canary_run_id, suite)`). `canary_run_id` is
 `GITHUB_RUN_ID` (plus `-GITHUB_RUN_ATTEMPT` when set), so retries within a CI run
 dedupe and a manual re-run creates a distinct run. Outside CI it falls back to a
 `<sha>-<uuid>` / `local-<uuid>` id.
+
+`canary_run_id` intentionally does **not** include the suite — the suite is
+already part of the dedup key, so different suites in the same workflow run
+(`capwell-api` + `capwell-web`, both `run_id=42`) are distinct records. The
+corollary: do not push the **same** suite from multiple matrix legs of one
+workflow run, or they collide on the composite key — push once per suite (for
+sharded suites, at the `merge-reports` step below).
 
 ## Sharded suites (merge-reports)
 

@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { mapStatus, resolveTestStatus, resolveConfig, buildPayload, shouldPush } = require("../../dist/reporters/testtracker.js");
+const { mapStatus, resolveTestStatus, runStatus, resolveConfig, buildPayload, shouldPush } = require("../../dist/reporters/testtracker.js");
 
 test("mapStatus collapses PW statuses", () => {
   assert.equal(mapStatus("passed"), "passed");
@@ -76,6 +76,28 @@ test("resolveTestStatus reports a recovered flake as flaky, else the attempt sta
   assert.equal(resolveTestStatus("unexpected", "failed"), "failed");
   assert.equal(resolveTestStatus("unexpected", "timedOut"), "failed");
   assert.equal(resolveTestStatus("skipped", "skipped"), "skipped");
+});
+
+test("runStatus folds Playwright's FullResult status so an aborted run isn't green", () => {
+  // A globally interrupted / timed-out run did not complete → never "passed".
+  assert.equal(runStatus({ failed: 0, flaky: 0 }, "interrupted"), "cancelled");
+  assert.equal(runStatus({ failed: 0, flaky: 0 }, "timedout"), "failed");
+  assert.equal(runStatus({ failed: 0, flaky: 0 }, "failed"), "failed");
+  // "passed"/undefined → trust the buckets.
+  assert.equal(runStatus({ failed: 0, flaky: 0 }, "passed"), "passed");
+  assert.equal(runStatus({ failed: 0, flaky: 1 }, "passed"), "flaky");
+  assert.equal(runStatus({ failed: 2, flaky: 0 }, undefined), "failed");
+});
+
+test("buildPayload with a timed-out run reports failed even when buckets look green", () => {
+  const cfg = resolveConfig({ suite: "s" }, {});
+  const results = [
+    { full_title: "a", test_file: "a.spec.ts", status: "passed", retries: 0, tags: [] },
+  ];
+  const p = buildPayload(results, cfg, { startedAt: "x", finishedAt: "y" }, {}, "timedout");
+  assert.equal(p.totals.passed, 1);
+  assert.equal(p.totals.failed, 0);
+  assert.equal(p.status, "failed"); // FullResult.status wins over the buckets
 });
 
 test("a recovered flake is flaky per-test but does NOT fail the run", () => {

@@ -13,12 +13,13 @@
   "exports": {
     "./reporter": {
       "types": "./dist/reporters/testtracker.d.ts",
+      "require": "./dist/reporters/testtracker.js",
       "default": "./dist/reporters/testtracker.js"
     },
     "./package.json": "./package.json"
   },
   "peerDependencies": {
-    "@playwright/test": ">=1.40.0"
+    "@playwright/test": ">=1.42.0"
   },
   "peerDependenciesMeta": {
     "@playwright/test": {

@@ -1,9 +1,13 @@
-import type { Reporter, TestCase, TestResult } from "@playwright/test/reporter";
+import type {
+  FullResult,
+  Reporter,
+  TestCase,
+  TestResult,
+} from "@playwright/test/reporter";
 import crypto from "node:crypto";
 
 // Optional .env load — MUST NOT crash the suite if dotenv is absent.
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   require("dotenv").config();
 } catch {
   /* dotenv not installed — use ambient env */
@@ -38,6 +42,31 @@ export interface ResultEntry {
   error_stack?: string;
   retries: number;
   tags: string[];
+}
+
+/**
+ * The wire contract POSTed to `/api/ingest/runs`. Declared explicitly (rather
+ * than inferred from the object literal) so `declaration: true` ships a stable,
+ * reviewable public type and an accidental field change is a compile error.
+ */
+export interface IngestPayload {
+  canary_run_id: string;
+  suite: string;
+  branch: string;
+  commit_sha?: string;
+  workflow: string;
+  environment?: string;
+  status: "passed" | "failed" | "flaky" | "cancelled";
+  started_at: string;
+  finished_at: string;
+  totals: {
+    passed: number;
+    failed: number;
+    flaky: number;
+    skipped: number;
+    total: number;
+  };
+  results: ResultEntry[];
 }
 
 export function mapStatus(pw: string): string {
@@ -108,18 +137,36 @@ function stableRunId(env: NodeJS.ProcessEnv): string {
   return (sha ? `${sha}-` : "local-") + crypto.randomUUID();
 }
 
+/**
+ * Overall run status. When Playwright reports the run as interrupted or timed
+ * out, the run did NOT complete — do not derive a green status from whatever
+ * per-test buckets happened to fill before the abort. `fullResultStatus` is
+ * Playwright's `FullResult.status` (`passed` | `failed` | `timedout` | `interrupted`).
+ */
+export function runStatus(
+  totals: { failed: number; flaky: number },
+  fullResultStatus?: string,
+): "passed" | "failed" | "flaky" | "cancelled" {
+  if (fullResultStatus === "interrupted") return "cancelled";
+  if (fullResultStatus === "timedout" || fullResultStatus === "failed") return "failed";
+  // "passed" or unknown → trust the per-test buckets.
+  if (totals.failed > 0) return "failed";
+  if (totals.flaky > 0) return "flaky";
+  return "passed";
+}
+
 export function buildPayload(
   results: ResultEntry[],
   cfg: ResolvedConfig,
   timing: { startedAt: string; finishedAt: string },
   env: NodeJS.ProcessEnv = process.env,
-) {
+  fullResultStatus?: string,
+): IngestPayload {
   const count = (s: string) => results.filter((r) => r.status === s).length;
   const passed = count("passed");
   const failed = count("failed");
   const flaky = count("flaky");
   const skipped = count("skipped");
-  const status = failed > 0 ? "failed" : flaky > 0 ? "flaky" : "passed";
   return {
     canary_run_id: stableRunId(env),
     suite: cfg.suite,
@@ -127,7 +174,7 @@ export function buildPayload(
     commit_sha: env.GITHUB_SHA,
     workflow: cfg.workflow,
     environment: cfg.environment,
-    status,
+    status: runStatus({ failed, flaky }, fullResultStatus),
     started_at: timing.startedAt,
     finished_at: timing.finishedAt,
     totals: { passed, failed, flaky, skipped, total: results.length },
@@ -157,33 +204,49 @@ export default class TestTrackerReporter implements Reporter {
 
   onTestEnd(test: TestCase, result: TestResult) {
     if (!this.cfg) return;
-    const fullTitle = test.titlePath().filter(Boolean).join(" > ");
-    const tags = test.tags.map((t) => t.replace(/^@/, ""));
-    // onTestEnd fires once per attempt; last write wins for the final status.
-    // Preserve the FIRST failing attempt's error so a recovered flake still
-    // shows the SDET why it flaked (the final passing attempt carries no error).
-    const prior = this.results.get(fullTitle);
-    this.results.set(fullTitle, {
-      full_title: fullTitle,
-      test_file: test.location.file.startsWith(this.cfg.testFilePrefix)
-        ? test.location.file.slice(this.cfg.testFilePrefix.length)
-        : test.location.file,
-      status: resolveTestStatus(test.outcome(), result.status),
-      duration_ms: result.duration,
-      error_message: prior?.error_message ?? result.errors[0]?.message,
-      error_stack: prior?.error_stack ?? result.errors[0]?.stack,
-      retries: result.retry,
-      tags,
-    });
+    // A reporter hook must never fail the suite — guard the whole body.
+    try {
+      const fullTitle = test.titlePath().filter(Boolean).join(" > ");
+      // `test.tags` requires Playwright >= 1.42; guard for the peer floor.
+      const tags = (test.tags ?? []).map((t) => t.replace(/^@/, ""));
+      // Keyed by the session-unique `test.id` (NOT the title) so `--repeat-each`
+      // and duplicate-title executions don't collapse into one entry. Retries
+      // share one TestCase (same id), so last-write-wins for the final status
+      // and first-failing-attempt error preservation both still hold — a
+      // recovered flake keeps the error that shows the SDET why it flaked.
+      const prior = this.results.get(test.id);
+      this.results.set(test.id, {
+        full_title: fullTitle,
+        test_file: test.location.file.startsWith(this.cfg.testFilePrefix)
+          ? test.location.file.slice(this.cfg.testFilePrefix.length)
+          : test.location.file,
+        status: resolveTestStatus(test.outcome(), result.status),
+        duration_ms: result.duration,
+        error_message: prior?.error_message ?? result.errors[0]?.message,
+        error_stack: prior?.error_stack ?? result.errors[0]?.stack,
+        retries: result.retry,
+        tags,
+      });
+    } catch (err) {
+      console.log(
+        `\nTestTracker: skipped a result — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
-  async onEnd() {
+  async onEnd(result: FullResult) {
     if (!this.cfg || !shouldPush(this.cfg)) return;
-    const payload = buildPayload([...this.results.values()], this.cfg, {
-      startedAt: new Date(this.startTime).toISOString(),
-      finishedAt: new Date().toISOString(),
-    });
     try {
+      const payload = buildPayload(
+        [...this.results.values()],
+        this.cfg,
+        {
+          startedAt: new Date(this.startTime).toISOString(),
+          finishedAt: new Date().toISOString(),
+        },
+        process.env,
+        result?.status,
+      );
       const resp = await fetch(`${this.cfg.url}/api/ingest/runs`, {
         method: "POST",
         headers: {
