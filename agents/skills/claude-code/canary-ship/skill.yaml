@@ -1,0 +1,16 @@
+name: canary-ship
+version: '1.0.0'
+description: >-
+  Run the canary ship gate on a finished, locally-green change - spawn parallel
+  adversarial reviewers on the diff, resolve every confirmed finding with a
+  regression test, then commit, open a PR, and squash-merge while watching
+  CI to green. Bakes in this repo's conventions (no co-author trailer, squash,
+  prettier, exclude local IDE churn, update the roadmap).
+stability: static
+triggers:
+  - manual
+platforms:
+  - claude-code
+type: rigid
+tools: []
+tier: 2
