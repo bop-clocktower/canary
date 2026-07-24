@@ -142,16 +142,26 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 ### Coverage-json producer contract doc + validator
 
-- **Status:** backlog
-- **Spec:** —
-- **Summary:** Ideation pick (score 6.00) from
-  docs/ideation/deepen-core-test-intelligence-2026-07-19.md. Document + validate
-  the canary coverage-json format that agent/guardian/coverage.py consumes, so
-  third-party tools can emit canary-consumable coverage. Accepted risk to handle
-  in spec: documenting today's accidental shape freezes its warts - do a minimal
-  shape review first, frame as version:1 with additive-safe evolution (mirrors
-  test-reporter/instrument contracts). Low effort / high confidence. Next:
-  /harness:brainstorming to spec.
+- **Status:** done
+- **Spec:** docs/specs/coverage-json-contract.md
+- **Summary:** DONE — documented the coverage-json format
+  agent/guardian/coverage.py consumes as a frozen v1 contract
+  (docs/specs/coverage-json-contract.md, mirroring the api-delta-contract style)
+  so third-party tools can emit canary-consumable coverage. Shape review first
+  surfaced the warts and froze them deliberately: `line_hits` is authoritative
+  (only it expresses hits=0 = instrumented-but-unhit), `covered_lines`
+  documented as a shorthand for hits>=1, optional `schema_version` (absent ⇒ 1
+  so today's producers stay valid; additive-safe, unknown keys ignored). Added
+  `validate_coverage_json()` in coverage.py (co-located with the parser so they
+  can't drift) + `canary guardian validate-coverage <file>` — LOUD where the
+  parser is silent, two-tier: error = parser drops it (coverage lost, exit 1) vs
+  warning = sub-part ignored (degraded, exit 0 / 1 under --strict);
+  missing/non-JSON exits 2. A binding test asserts the validator's verdict
+  matches what the parser actually does. 26 new tests, full suite green.
+  Ideation pick (score 6.00) from
+  docs/ideation/deepen-core-test-intelligence-2026-07-19.md. (refs:
+  agent/guardian/coverage.py, agent/guardian/cli.py; docs/guides/pr-guardian.md
+  formats note)
 - **Blockers:** —
 - **Plan:** —
 

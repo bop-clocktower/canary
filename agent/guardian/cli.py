@@ -93,6 +93,80 @@ def analyze(
         _try_post_pr_comment(summary, pr_url=pr)
 
 
+@guardian_app.command("validate-coverage")
+def validate_coverage(
+    path: str = typer.Argument(..., help="Path to a coverage-json file to validate."),
+    strict: bool = typer.Option(
+        False, "--strict", help="Treat warnings as failures (exit 1)."
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Emit problems as JSON."),
+) -> None:
+    """Validate a coverage-json file against the producer contract.
+
+    Reports, loudly, what the guardian's parser would silently drop. Exit 0 when
+    valid (warnings alone don't fail unless --strict); 1 on contract errors (or
+    warnings under --strict); 2 when the file is missing, too large, or not
+    JSON. See docs/specs/coverage-json-contract.md.
+    """
+    from rich.markup import escape
+
+    from agent.guardian.coverage import validate_coverage_json
+
+    # The file is untrusted producer output, so guard the read: cap size before
+    # loading, and treat any decode/parse failure (including a RecursionError
+    # from pathologically-nested JSON) as "not usable" → exit 2.
+    _MAX_BYTES = 25 * 1024 * 1024
+    p = Path(path)
+    try:
+        if p.is_dir() or p.stat().st_size > _MAX_BYTES:
+            print(f"[bold red]✗ cannot read {escape(path)}:[/bold red] not a readable file within the size limit")
+            raise typer.Exit(2)
+        text = p.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"[bold red]✗ cannot read {escape(path)}:[/bold red] {escape(str(exc))}")
+        raise typer.Exit(2)
+    try:
+        data = json.loads(text)
+    except (ValueError, RecursionError) as exc:  # JSONDecodeError is a ValueError
+        print(f"[bold red]✗ {escape(path)} is not valid JSON:[/bold red] {escape(str(exc))}")
+        raise typer.Exit(2)
+
+    problems = validate_coverage_json(data)
+    errors = [p for p in problems if p.severity == "error"]
+    warnings = [p for p in problems if p.severity == "warning"]
+    valid = not errors
+
+    if output_json:
+        # Plain stdout, NOT rich.print — producer-controlled keys must not be
+        # interpreted as console markup, and the payload must stay valid JSON.
+        typer.echo(json.dumps(
+            {
+                "valid": valid,
+                "problems": [
+                    {"severity": pr.severity, "location": pr.location, "message": pr.message}
+                    for pr in problems
+                ],
+            },
+            indent=2,
+        ))
+    else:
+        # Escape the producer-controlled location/message so a path key like
+        # "[/]" can't corrupt the styled output or crash the markup parser.
+        for pr in errors:
+            print(f"[bold red]error[/bold red] {escape(pr.location)}: {escape(pr.message)}")
+        for pr in warnings:
+            print(f"[yellow]warning[/yellow] {escape(pr.location)}: {escape(pr.message)}")
+        if valid and not warnings:
+            print(f"[bold green]✓ {escape(path)} is a valid coverage-json document.[/bold green]")
+        elif valid:
+            print(f"[green]✓ valid[/green] with {len(warnings)} warning(s) — coverage is usable but degraded.")
+        else:
+            print(f"[bold red]✗ invalid[/bold red] — {len(errors)} error(s); this coverage would be dropped.")
+
+    if errors or (strict and warnings):
+        raise typer.Exit(1)
+
+
 def _pr_context_from_env() -> "Optional[tuple[str, int]]":
     """Resolve ``(repo, pr_number)`` from GitHub Actions env, else ``None``.
 
