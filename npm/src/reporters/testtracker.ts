@@ -57,6 +57,19 @@ export function mapStatus(pw: string): string {
   }
 }
 
+/**
+ * Final per-test status, flaky-aware. Playwright's per-attempt
+ * `result.status` is NEVER "flaky" — flakiness is derived at the test level
+ * (a test that failed then passed on retry). `test.outcome()` is the canonical
+ * signal, so a recovered flake is reported as "flaky" (SDET-visible) rather
+ * than the last attempt's "passed". A recovered flake does NOT count as a
+ * failure at the run level (see buildPayload) — management sees a good run.
+ */
+export function resolveTestStatus(outcome: string, lastAttemptStatus: string): string {
+  if (outcome === "flaky") return "flaky";
+  return mapStatus(lastAttemptStatus);
+}
+
 export function resolveConfig(
   opts: TestTrackerReporterOptions = {},
   env: NodeJS.ProcessEnv = process.env,
@@ -146,15 +159,19 @@ export default class TestTrackerReporter implements Reporter {
     if (!this.cfg) return;
     const fullTitle = test.titlePath().filter(Boolean).join(" > ");
     const tags = test.tags.map((t) => t.replace(/^@/, ""));
+    // onTestEnd fires once per attempt; last write wins for the final status.
+    // Preserve the FIRST failing attempt's error so a recovered flake still
+    // shows the SDET why it flaked (the final passing attempt carries no error).
+    const prior = this.results.get(fullTitle);
     this.results.set(fullTitle, {
       full_title: fullTitle,
       test_file: test.location.file.startsWith(this.cfg.testFilePrefix)
         ? test.location.file.slice(this.cfg.testFilePrefix.length)
         : test.location.file,
-      status: mapStatus(result.status),
+      status: resolveTestStatus(test.outcome(), result.status),
       duration_ms: result.duration,
-      error_message: result.errors[0]?.message,
-      error_stack: result.errors[0]?.stack,
+      error_message: prior?.error_message ?? result.errors[0]?.message,
+      error_stack: prior?.error_stack ?? result.errors[0]?.stack,
       retries: result.retry,
       tags,
     });

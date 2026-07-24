@@ -61,6 +61,19 @@ TESTTRACKER_API_TOKEN=tt_xxxxxxxx        # per-tenant, scope ingest:runs
   silently**. It never fails a test run: a config or network error is logged as a
   single line and swallowed.
 
+## Status semantics (flaky)
+
+Per-test status uses Playwright's `test.outcome()`, not the per-attempt
+`result.status` (which is never `flaky`). So a test that **failed then passed on
+retry** is reported as `flaky` — visible to SDETs in the per-test results, with
+the first failing attempt's error preserved so they can see *why* it flaked.
+
+At the **run** level a recovered flake is **not** counted as a failure: with no
+hard failures, the run status is `flaky` (never `failed`). Clients / management
+reading the top line see a non-failing run; the flaky count is the SDET signal.
+(If a deployment prefers the run headline to read a flat `passed` when only
+flakes occurred, that is a TestTracker display choice, not a reporter change.)
+
 ## Idempotency
 
 The run is idempotent on `(canary_run_id, suite)`. `canary_run_id` is

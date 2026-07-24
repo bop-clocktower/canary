@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { mapStatus, resolveConfig, buildPayload, shouldPush } = require("../../dist/reporters/testtracker.js");
+const { mapStatus, resolveTestStatus, resolveConfig, buildPayload, shouldPush } = require("../../dist/reporters/testtracker.js");
 
 test("mapStatus collapses PW statuses", () => {
   assert.equal(mapStatus("passed"), "passed");
@@ -66,4 +66,28 @@ test("timedOut counts as failed in totals", () => {
   const p = buildPayload(results, cfg, { startedAt: "x", finishedAt: "y" }, {});
   assert.equal(p.totals.failed, 1);
   assert.equal(p.status, "failed");
+});
+
+test("resolveTestStatus reports a recovered flake as flaky, else the attempt status", () => {
+  // outcome 'flaky' wins even though the last attempt passed
+  assert.equal(resolveTestStatus("flaky", "passed"), "flaky");
+  // non-flaky outcomes fall through to the last-attempt mapping
+  assert.equal(resolveTestStatus("expected", "passed"), "passed");
+  assert.equal(resolveTestStatus("unexpected", "failed"), "failed");
+  assert.equal(resolveTestStatus("unexpected", "timedOut"), "failed");
+  assert.equal(resolveTestStatus("skipped", "skipped"), "skipped");
+});
+
+test("a recovered flake is flaky per-test but does NOT fail the run", () => {
+  const cfg = resolveConfig({ suite: "s" }, {});
+  const results = [
+    { full_title: "a", test_file: "a.spec.ts", status: "passed", retries: 0, tags: [] },
+    { full_title: "b", test_file: "b.spec.ts", status: "flaky", retries: 1, tags: [] },
+  ];
+  const p = buildPayload(results, cfg, { startedAt: "x", finishedAt: "y" }, {});
+  assert.equal(p.totals.flaky, 1);
+  assert.equal(p.totals.failed, 0);
+  // no hard failure → run is NOT "failed" (management sees a good run); the
+  // flaky count carries the SDET signal.
+  assert.equal(p.status, "flaky");
 });
