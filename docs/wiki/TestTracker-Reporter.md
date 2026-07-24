@@ -80,3 +80,25 @@ npx playwright merge-reports --reporter "canary-test-cli/reporter" ./blob-report
 
 with `TESTTRACKER_URL`, `TESTTRACKER_API_TOKEN`, and `TESTTRACKER_SUITE` set in
 that step's environment. This yields exactly one run per suite per CI run.
+
+## Convergence
+
+This reporter is the **interim** delivery. The canonical design (see the
+`unified-reporting.md` spec in `canary-capillary`) is a `canary publish` command
+that binds to the frozen `test-report.json` envelope produced by `canary report`
+(unified-reporting **Phase 2a**). That "QA Intelligence Dashboard live
+integration" is a roadmap item **blocked on Phase 2a**, which has not shipped yet.
+
+Migration path once `canary publish` lands:
+
+1. Replace `["canary-test-cli/reporter", …]` in `playwright.config.ts` with a
+   post-run CI step: `canary report` → `canary publish`.
+2. This reporter is deprecated for one minor release (kept for migration), then
+   removed.
+
+**Impedance mismatch the successor must resolve:** the ingest API wants **per-test
+rows** (`full_title`, `test_file`, per-test status/tags/area); the frozen
+`test-report.json` is **aggregate-first** (summary + area_health + failures +
+quarantined). `canary publish` must either extend the envelope with a per-test
+array or push from raw Playwright JSON. This interim reporter sidesteps the issue
+by reading Playwright's own `onTestEnd` per-test data directly.
