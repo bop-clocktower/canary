@@ -407,6 +407,93 @@ def build_findings(results: list[CoverageResult]) -> list[Finding]:
     return sorted(findings, key=lambda f: f.severity.sort_key)
 
 
+# Map a test file's extension to the framework whose assertion/test patterns
+# the quality scorer should use. Unknown → pytest (the scorer's own fallback).
+_TEST_FRAMEWORK_BY_EXT = {
+    ".py": "pytest",
+    ".ts": "vitest",
+    ".tsx": "vitest",
+    ".js": "vitest",
+    ".jsx": "vitest",
+    ".mjs": "vitest",
+    ".cjs": "vitest",
+}
+
+
+def _framework_for_test_path(path: str) -> str:
+    from os.path import splitext
+
+    return _TEST_FRAMEWORK_BY_EXT.get(splitext(path)[1].lower(), "pytest")
+
+
+# A test-function signature / decorator / block-close / comment — lines that are
+# not a test *body*. If a diff's added lines are ONLY these (e.g. a rename that
+# adds just `def test_new():` while the asserting body stays as context), there
+# is no added body to judge and we must not flag it.
+_TEST_SIGNATURE_RE = re.compile(
+    r"^\s*(?:async\s+)?def\s+test\w*\s*\(|^\s*(?:it|test|describe)\s*\("
+)
+
+
+def _has_added_test_body(added: list[str]) -> bool:
+    """True iff the added lines contain a real body line — not just a test
+    signature, decorator, comment, or a bare block delimiter."""
+    for line in added:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(("#", "//", "@", "*", "/*")):
+            continue
+        if stripped in {"})", "});", "}", ")", "{"}:
+            continue
+        if _TEST_SIGNATURE_RE.search(line):
+            continue
+        return True
+    return False
+
+
+def build_weak_test_findings(
+    test_units: list[ChangedUnit], diff_text: str
+) -> list[Finding]:
+    """Advisory ``weak-test`` findings for ADDED tests that assert nothing.
+
+    Consumes the test-path units :func:`filter_test_units` sets aside (a test
+    file needs no test of its own, but an added test that asserts nothing is
+    itself a gap). Scores only the diff's *added* lines per test file via
+    :func:`agent.core.quality_scorer.is_assertion_free_test` — a high-precision
+    signal (a real test function with zero assertions), so snapshot/table-driven
+    tests are not flagged. These findings are ``LOW``/``weak-test`` and are
+    **never** gated (see :func:`compute_exit_code`): they surface, never block.
+    """
+    from agent.core.quality_scorer import is_assertion_free_test
+
+    added_by_path = _added_content_by_path(diff_text)
+    findings: list[Finding] = []
+    for unit in test_units:
+        added = added_by_path.get(unit.path)
+        if not added:
+            continue
+        # A rename adds only the signature line (body is unchanged context) —
+        # nothing new to judge, so don't flag it (FP guard).
+        if not _has_added_test_body(added):
+            continue
+        code = "\n".join(added)
+        framework = _framework_for_test_path(unit.path)
+        if is_assertion_free_test(code, framework):
+            findings.append(
+                Finding(
+                    path=unit.path,
+                    unit=unit.path,
+                    kind="weak-test",
+                    fidelity=Fidelity.HEURISTIC,
+                    severity=Severity.LOW,
+                    evidence="added test asserts nothing (advisory — never blocks the gate)",
+                    added_ranges=list(unit.added_ranges),
+                )
+            )
+    return findings
+
+
 def _lines_in_ranges(ranges: list[tuple[int, int]]) -> list[int]:
     """Flatten inclusive ``(start, end)`` ranges into a sorted list of line numbers."""
     lines: set[int] = set()
@@ -633,6 +720,9 @@ class GuardianConfig:
     pr_enabled: bool = True
     pr_tier: int = 0
     pr_gate: str = "soft"
+    # Emit advisory `weak-test` findings for added tests that assert nothing.
+    # Non-gating always; default on (it only surfaces a comment, never blocks).
+    weak_tests: bool = True
     precommit_enabled: bool = False
     precommit_author_tests: bool = False
     precommit_gate: str = "soft"
@@ -754,6 +844,7 @@ def load_guardian_config(
             config.pr_tier = _coerce_tier(pr["tier"], config.pr_tier, warnings)
         if "gate" in pr:
             config.pr_gate = _coerce_gate(pr["gate"], config.pr_gate, "pr.gate", warnings)
+        config.weak_tests = bool(pr.get("weakTests", config.weak_tests))
 
     precommit = block.get("preCommit", {})
     if isinstance(precommit, dict):
