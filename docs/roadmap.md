@@ -167,17 +167,33 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 ### Guardian hard-gate rollout automation
 
-- **Status:** backlog
+- **Status:** done
 - **Spec:** —
-- **Summary:** Ideation pick (score 4.00) from
-  docs/ideation/deepen-core-test-intelligence-2026-07-19.md. Automate the
-  soft->hard guardian gate flip: required-check registration + operator playbook
-  (memory: hard-gate needs admin required-check registration). Accepted risk to
-  handle in spec: branch-protection required-checks need admin scope and vary
-  across GH Free/Team/Enterprise - detect plan/permission and fail loud with a
-  manual-steps fallback rather than silently no-op (consistent with the
-  fail-loud pattern from #294/#295). Medium effort. Next: /harness:brainstorming
-  to spec.
+- **Summary:** DONE (adversarially reviewed) — `canary guardian harden-gate`
+  automates the admin step the operator guide said the guardian couldn't do:
+  registering the guardian status check (`guardian` job, `--check` overridable)
+  as a REQUIRED check in branch protection, which is what makes a `gate: hard`
+  finding block the merge button. Dry-run by default (shows plan + manual
+  steps); `--apply` PATCHes branch protection MERGING into existing rules (never
+  clobbers), or PUTs minimal protection if none exists. Fail-loud per #294/#295:
+  no admin scope / unsupported plan / missing token → prints a manual playbook
+  (Settings URL + ready-to-paste `gh api`) and exits non-zero, never a silent
+  no-op. Structure mirrors pr_comment (BranchProtection Protocol +
+  FakeBranchProtectionClient + urllib RestBranchProtectionClient), so the pure
+  planner (plan_hard_gate) and apply path are fully network-free-testable.
+  Adversarial review caught two CRITICALs, both fixed: (1) a 404 on the
+  required_status_checks sub-resource is ambiguous (unprotected vs
+  protected-without-checks) — collapsing both to create/PUT would have WIPED
+  existing reviews/enforce_admins/restrictions, so apply now disambiguates via
+  the parent /protection endpoint and only PUT-creates when genuinely
+  unprotected (else PATCHes the sub-resource, preserving other protection); (2)
+  a wrong check-context registers a phantom required check that blocks EVERY
+  merge — so apply now verifies the context against a recent commit's actually-
+  reported check runs and refuses (listing the real ones) unless --force. Also
+  hardened error handling (401/network/5xx/nonexistent-branch → HardGateBlocked
+  playbook, never a traceback). Docs: guide Soft→hard section walks the command
+  - both safety rails. 22 new tests, full suite green. (refs:
+    agent/guardian/hard_gate.py, cli.py; docs/guides/pr-guardian.md)
 - **Blockers:** —
 - **Plan:** —
 

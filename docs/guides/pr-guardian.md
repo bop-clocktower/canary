@@ -130,11 +130,35 @@ The gate starts **soft** and earns its way to **hard** — do not flip a repo to
   covering test was added in the same diff (the finding no longer reproduces on
   re-run) or an explicit `// canary:allow-untested` suppression.
 
-Promotion is **per-repo** and has one human-admin step the guardian cannot do
-for you: **register the guardian's required status check in the branch
-protection rules**. Until that check is required, `gate: hard` blocks the
-guardian's own exit code but not the merge button. Set `gate: hard`, confirm a
-few PRs behave, then add the check to branch protection.
+Promotion is **per-repo** and has two parts: the **exit gate** (`gate: hard` in
+config, which makes `canary guardian pr-check` exit non-zero on an unaddressed
+finding) and the **required status check** in branch protection (what actually
+blocks the merge button). Until the check is required, `gate: hard` blocks the
+guardian's own exit code but not the merge.
+
+Register the required check with:
+
+```bash
+canary guardian harden-gate                 # dry-run: shows the plan + manual steps
+canary guardian harden-gate --apply         # register it (needs an admin token)
+```
+
+It requires the guardian's status-check context (`guardian` by default; pass
+`--check` if your workflow job differs) on the branch, **merging** into any
+existing protection rather than replacing it — it only ever creates fresh
+protection when the branch is genuinely unprotected, so a branch that already
+requires reviews keeps them. Two safety rails:
+
+- **Phantom-context guard.** Before registering, it verifies the context is one
+  a recent commit actually reported. Requiring a check that never runs would
+  leave every PR permanently un-mergeable, so if the context isn't found it
+  refuses and lists the real ones (override with `--force` only if you know the
+  context will report). Confirm the exact name from a recent PR's checks.
+- **Fail-loud.** No admin scope, an unsupported plan, a bad token, or a network
+  error → it prints the exact manual steps and exits non-zero, never a silent
+  no-op.
+
+Then set `gate: hard` in config, confirm a few PRs behave, and you're promoted.
 
 ## Related
 

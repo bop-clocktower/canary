@@ -167,6 +167,94 @@ def validate_coverage(
         raise typer.Exit(1)
 
 
+def _branch_protection_client(repo: str, token: str):
+    """Build the real branch-protection client (seam for tests to fake)."""
+    from agent.guardian.hard_gate import RestBranchProtectionClient
+
+    return RestBranchProtectionClient(repo, token)
+
+
+@guardian_app.command("harden-gate")
+def harden_gate(
+    apply: bool = typer.Option(
+        False, "--apply", help="Register the required check (default: dry-run)."
+    ),
+    repo: Optional[str] = typer.Option(
+        None, "--repo", envvar="GITHUB_REPOSITORY", help="owner/repo."
+    ),
+    branch: str = typer.Option("main", "--branch", help="Branch to protect."),
+    check: str = typer.Option(
+        "guardian", "--check", help="Status-check context to require (the guardian workflow job)."
+    ),
+    token: Optional[str] = typer.Option(
+        None, "--token", envvar="GITHUB_TOKEN", help="Admin token for --apply."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Skip the check-context-exists verification (risky)."
+    ),
+) -> None:
+    """Promote the guardian gate to hard: require its status check in branch
+    protection — the admin step that makes a `gate: hard` finding actually block
+    the merge button.
+
+    Dry-run by default (no writes); `--apply` performs the registration, merging
+    into existing protection (never clobbering) and creating minimal protection
+    only when the branch is genuinely unprotected. Before registering it
+    verifies the check context is one a recent commit actually reported —
+    requiring a check that never runs would block every merge — and refuses
+    (listing the real contexts) unless `--force`. Exits 1 when blocked (no admin
+    scope / unsupported plan / unverified context / network) after printing a
+    manual playbook; 2 on misuse (no repo, or --apply without a token). See
+    docs/guides/pr-guardian.md.
+    """
+    from agent.guardian.hard_gate import (
+        HardGateBlocked,
+        apply_hard_gate,
+        render_playbook,
+    )
+
+    if not repo:
+        print("[bold red]✗ no repo[/bold red] — pass --repo owner/repo or set GITHUB_REPOSITORY.")
+        raise typer.Exit(2)
+
+    playbook = render_playbook(repo, branch, check)
+
+    if not apply:
+        print(f"[bold]Dry run[/bold] — would require the '{check}' check on {repo}@{branch}.")
+        print(
+            "On --apply this merges into existing protection (or creates minimal "
+            "protection if the branch is unprotected) and first verifies the "
+            "context is real. Re-run with [bold]--apply[/bold] (needs an admin "
+            "token), or do it manually:\n"
+        )
+        print(playbook)
+        return
+
+    if not token:
+        print("[bold red]✗ --apply needs an admin token[/bold red] (pass --token or set GITHUB_TOKEN).\n")
+        print(playbook)
+        raise typer.Exit(2)
+
+    client = _branch_protection_client(repo, token)
+    try:
+        plan = apply_hard_gate(client, repo, branch, check, force=force)
+    except HardGateBlocked as exc:
+        print(f"[bold red]✗ {exc.reason}[/bold red]\n")
+        print(exc.playbook)
+        raise typer.Exit(1)
+
+    if plan.already_required:
+        print(f"[green]✓ '{check}' is already required on {repo}@{branch} — nothing to do.[/green]")
+    else:
+        verb = "created protection and required" if plan.creates_protection else "required"
+        print(f"[bold green]✓ {verb} '{check}' on {repo}@{branch}.[/bold green]")
+    print(
+        "[dim]Finish the flip: set the exit gate to hard too — "
+        'canary.guardian.pr.gate = "hard" in harness.config.json '
+        "(or run pr-check --gate hard).[/dim]"
+    )
+
+
 def _pr_context_from_env() -> "Optional[tuple[str, int]]":
     """Resolve ``(repo, pr_number)`` from GitHub Actions env, else ``None``.
 
