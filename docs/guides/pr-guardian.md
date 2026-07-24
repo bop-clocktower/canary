@@ -76,11 +76,13 @@ guess as execution truth. Highest available fidelity wins per unit:
 | `heuristic`         | naming/AST                                             | no `*.test.*`/`test_*.py` references the changed symbol — weakest |
 
 Recognized coverage-report formats: `lcov.info` (`DA:` records), the canary
-coverage-json shape, and Cobertura `coverage.xml` (line-level; the canonical
-`<class filename><line number hits>` shape emitted by coverage.py, Istanbul,
-SimpleCov, and Jacoco→Cobertura converters — branch data is not yet consumed). A
-well-formed XML that is not Cobertura is rejected rather than guessed at, and
-falls through to the next tier.
+coverage-json shape ([contract](../specs/coverage-json-contract.md); validate a
+producer with `canary guardian validate-coverage <file>`), and Cobertura
+`coverage.xml` (line-level; the canonical `<class filename><line number hits>`
+shape emitted by coverage.py, Istanbul, SimpleCov, and Jacoco→Cobertura
+converters — branch data is not yet consumed). A well-formed XML that is not
+Cobertura is rejected rather than guessed at, and falls through to the next
+tier.
 
 If no coverage report exists, the guardian falls back to the graph; with no
 graph, it falls back to the heuristic. Absence degrades — it never blocks.
