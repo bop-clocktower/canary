@@ -5,7 +5,7 @@
 //
 // Default: writes one JSON span per line to
 //   test-results/trace/otel-spans.<TEST_WORKER_INDEX>.jsonl
-// (no collector required — this is what scripts/span_reader.py reads).
+// (no collector required — this is what scripts/span_reader.mjs reads).
 // When OTEL_EXPORTER_OTLP_ENDPOINT is set, spans are *additionally*
 // streamed to that collector via OTLPTraceExporter; the file path above is
 // unaffected either way.
@@ -40,7 +40,7 @@ const outFd = fs.openSync(
   'a',
 );
 
-/** Minimal file exporter — one JSON span per line, matches span_reader.py. */
+/** Minimal file exporter — one JSON span per line, matches span_reader.mjs. */
 class JsonlFileSpanExporter {
   export(spans, resultCallback) {
     for (const span of spans) {
