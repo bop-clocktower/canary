@@ -455,7 +455,18 @@ def pr_check(
     reexport_paths = find_reexport_only(diff_text)
     barrel_units = [u for u in kept if u.path in reexport_paths]
     kept = [u for u in kept if u.path not in reexport_paths]
-    if not kept:
+
+    # Advisory weak-test findings for added tests that assert nothing. Computed
+    # from the set-aside test units, and never gating — so a PR that ONLY adds a
+    # weak test still surfaces it rather than short-circuiting at "nothing to
+    # verify" below.
+    from agent.guardian.pr_check import build_weak_test_findings
+
+    weak_findings = (
+        build_weak_test_findings(test_units, diff_text) if config.weak_tests else []
+    )
+
+    if not kept and not weak_findings:
         typer.echo(
             f"guardian: nothing to verify "
             f"({len(skipped) + len(test_units) + len(barrel_units)} path(s) skipped)."
@@ -469,7 +480,7 @@ def pr_check(
         # edge (depth 1); soft stays unbounded. An explicit config value wins.
         graph_max_depth=effective_graph_depth(config, effective_gate),
     )
-    findings = apply_suppressions(build_findings(results))
+    findings = apply_suppressions(build_findings(results)) + weak_findings
 
     # SC-5 (PR half): resolve the requested tier against actual capability. In
     # Phase 3 no agent runtime exists (NoAgentProbe), so any `pr.tier > 0` drops

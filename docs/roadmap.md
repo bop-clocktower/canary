@@ -199,18 +199,32 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 ### Wire quality_scorer into the guardian gate
 
-- **Status:** backlog
+- **Status:** done
 - **Spec:** —
-- **Summary:** Ideation pick (score 3.00) from
-  docs/ideation/deepen-core-test-intelligence-2026-07-19.md.
-  agent/core/quality_scorer.py scores assertions/flakiness/magic-numbers but
-  that signal is not consumed by the guardian gate, which only flags ABSENT
-  tests, not WEAK ones (e.g. an added test that asserts nothing passes green).
-  Accepted risk to handle in spec: a weak-test heuristic firing on legit
-  table-driven/snapshot tests erodes trust - ship as advisory (non-blocking)
-  fidelity-labeled finding first with a conservative high-precision threshold
-  before any gate promotion. Medium effort. Next: /harness:brainstorming to
-  spec.
+- **Summary:** DONE (adversarially reviewed) — the guardian now emits an
+  advisory `weak-test` finding for an added test that defines a test function
+  but asserts nothing (the "asserts-nothing passes green" gap). New
+  quality_scorer.is_assertion_free_test(code, framework) predicate — co-located
+  with the assertion/test-fn patterns so it can't drift — requires BOTH a test
+  function AND zero assertions (high precision: a snapshot/table-driven test
+  matches an assertion pattern and is NOT flagged, per the roadmap's
+  trust-erosion risk). pr_check.build_weak_test_findings consumes the test-path
+  units filter_test_units already sets aside, scoring only the diff's ADDED
+  lines. The finding is LOW/`weak-test` and NEVER gates — compute_exit_code
+  gates only `untested-new-code`, so it's advisory by construction (advisory
+  first, before any gate promotion). A weak-test-only diff no longer
+  short-circuits at "nothing to verify". Config toggle
+  canary.guardian.pr.weakTests (default true; non-blocking so on by default).
+  Adversarial review confirmed the non-gating guarantee airtight but caught
+  precision gaps (the roadmap's trust risk); fixed by broadening assertion
+  patterns (chai `.should` / node `assert.equal` / `assert_*` helpers now count
+  as asserting) and skipping a rename that adds only a signature line (no added
+  body to judge). Residual lexical limits (per-file-blob granularity; a
+  non-`assert`-named helper) documented in the guide; advisory-only so the
+  escape hatch is the toggle. ~28 new tests, full suite green. Ideation pick
+  (score 3.00) from docs/ideation/deepen-core-test-intelligence-2026-07-19.md.
+  (refs: agent/core/quality_scorer.py, agent/guardian/pr_check.py, cli.py;
+  docs/guides/pr-guardian.md)
 - **Blockers:** —
 - **Plan:** —
 

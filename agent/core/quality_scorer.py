@@ -29,7 +29,11 @@ _TEST_FN: Dict[str, re.Pattern] = {
 # Patterns that identify assertions per framework
 _ASSERTIONS: Dict[str, re.Pattern] = {
     "pytest": re.compile(
-        r"\bassert\b|\bpytest\.raises\b|\bself\.assert\w+\b"
+        # `assert x`, pytest.raises, unittest self.assert*, AND a call to any
+        # assert*-named helper (e.g. `assert_valid(...)`) — the last so a test
+        # that delegates its check to a custom assert helper isn't misread as
+        # asserting nothing.
+        r"\bassert\b|\bpytest\.raises\b|\bself\.assert\w+\b|\bassert\w*\s*\("
     ),
     "playwright": re.compile(
         r"\bexpect\s*\(|\btoBeVisible\b|\btoHaveText\b"
@@ -39,6 +43,9 @@ _ASSERTIONS: Dict[str, re.Pattern] = {
     "vitest": re.compile(
         r"\bexpect\s*\(|\btoBe\s*\(|\btoEqual\s*\(|\btoThrow\b"
         r"|\btoContain\s*\(|\btoBeNull\b|\btoBeUndefined\b|\btoMatchObject\b"
+        # Non-`expect` assertion styles common in JS/TS: node:assert / vitest
+        # `assert(...)` / `assert.equal(...)`, and chai BDD `x.should.equal`.
+        r"|\bassert\s*\(|\bassert\.\w+|\.should\b"
     ),
     "k6": re.compile(
         r"\bcheck\s*\(|'[^']+'\s*:\s*\([^)]*\)\s*=>"
@@ -243,6 +250,24 @@ def _grade(score: int) -> str:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+def is_assertion_free_test(code: str, framework: str) -> bool:
+    """True iff ``code`` defines at least one test function but contains no
+    assertions — a test that asserts nothing.
+
+    The high-precision "weak test" signal the PR guardian consumes: it requires
+    BOTH a test function (so a non-test helper added to a test file isn't
+    flagged) AND zero assertions. A snapshot or table-driven test still matches
+    an assertion pattern (``expect(`` / ``assert``), so it is not flagged —
+    keeping false positives, and the trust cost of them, low.
+    """
+    fw = framework.lower()
+    fn_pat = _TEST_FN.get(fw, _TEST_FN["pytest"])
+    assert_pat = _ASSERTIONS.get(fw, _ASSERTIONS["pytest"])
+    has_test = fn_pat.search(code) is not None
+    has_assertion = assert_pat.search(code) is not None
+    return has_test and not has_assertion
+
 
 class QualityScorer:
     """Scores Canary-generated test files via static analysis."""

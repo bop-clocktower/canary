@@ -29,6 +29,20 @@ the design rationale.
 - **Emits a harness analysis** (`--emit-analysis`) so the result surfaces inside
   the harness gate flow rather than as an orphaned parallel comment.
 - **Authors tests** at the desk (in-session / pre-commit) when a runtime exists.
+- **Flags weak added tests** — an added test that defines a test function but
+  asserts nothing gets an **advisory** `weak-test` finding. It is **never
+  gating**, even under `gate: hard` — it surfaces the gap, never blocks the
+  merge. Disable with `canary.guardian.pr.weakTests: false`.
+
+  The signal is tuned for precision over recall (it should not nag on correct
+  tests): snapshot/table-driven tests and the common assertion styles (`expect`,
+  `assert`, chai `.should`, `pytest.raises`, `assert_*` helpers) all count as
+  asserting, and a rename that adds only a signature line is ignored. Known
+  limits — it scores a file's _added lines as a whole_ (so if a diff adds one
+  asserting and one assertion-free test to the same file, neither is flagged),
+  and a test whose only check is a custom helper _not_ named `assert*` (e.g.
+  `verify_response(resp)`) may be flagged; since the finding is advisory, the
+  escape hatch is the `weakTests` toggle.
 
 ## Surfaces and how to enable them
 
