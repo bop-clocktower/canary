@@ -85,17 +85,25 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 ### Cobertura XML coverage parser for guardian
 
-- **Status:** backlog
+- **Status:** done
 - **Spec:** —
-- **Summary:** Ideation top pick (score 6.00) from
-  docs/ideation/deepen-core-test-intelligence-2026-07-19.md. Extend the guardian
-  coverage-verified tier to parse Cobertura coverage.xml, which
-  agent/guardian/coverage.py currently falls through on (unrecognized format ->
-  drops to graph/heuristic tier). Broadens coverage-verified fidelity to
-  Java/.NET/JS-Istanbul pipelines. Accepted risk to handle in spec: Cobertura is
-  not one format (Jacoco vs Istanbul dialects differ in DTD/rate attrs) - pin to
-  a named dialect and reject unrecognized shapes loudly rather than guess. Low
-  effort / high confidence. Next: /harness:brainstorming to spec.
+- **Summary:** DONE — `_parse_cobertura` added to agent/guardian/coverage.py
+  (dispatched from `resolve_from_report` on `.xml`), broadening the
+  coverage-verified tier to Cobertura `coverage.xml` and thus Java/.NET/JS-
+  Istanbul pipelines that previously fell through to graph/heuristic. Pinned to
+  the canonical line-level shape (`<class filename><line number hits>`) emitted
+  by coverage.py/Istanbul/SimpleCov/Jacoco→Cobertura converters; branch/
+  condition data intentionally deferred (downstream index is line-hits). Windows
+  `\` paths normalized so .NET/coverlet reports resolve. Non-Cobertura XML is
+  rejected (returns None → falls through) rather than guessed at, honoring the
+  absence-never-blocks contract. Security (adversarially reviewed): stdlib
+  ElementTree kept (Tier-0 no-deps posture preserved — no defusedxml) with a
+  full-text (not windowed) guard rejecting DOCTYPE `<!ENTITY>` declarations +
+  oversize input, `(OSError, UnicodeDecodeError)`→None on the read path, and
+  ParseError→None on malformed input; legit SYSTEM DOCTYPEs still parse. 11 new
+  TDD tests (43 in test_guardian_coverage). Original ideation: top pick (score
+  6.00) from docs/ideation/deepen-core-test-intelligence-2026-07-19.md. (refs:
+  agent/guardian/coverage.py; docs/guides/pr-guardian.md fidelity table)
 - **Blockers:** —
 - **Plan:** —
 
@@ -318,14 +326,14 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
   future JS skills reuse (canary mirrors harness, which is Node/TS; see the
   js/ts-going-forward decision). Ideation rank 2 (score 6.75). Two tiers: Tier 1
   static suspect scan (SV001-SV004, always-on, advisory) and Tier 2 opt-in
-  dynamic confirmer (`--confirm`) that runs baseline -> shuffle-under-pinned-seed
-  -> classify, then for pytest isolates each victim and BISECTS the prefix to
-  name the polluter (not just the victim), with a reproduce command. pytest +
-  vitest classify; polluter bisect is pytest-only (vitest lacks CLI-driven
-  ordered per-test execution). Dogfooded advisory on canary's own suite in CI;
-  rule tuning cut the backlog 37 -> 6 (SV002 narrowed to class/all-scoped
-  setup, SV004 ordinals must be terminal). Remaining: flip the advisory gate to
-  `--strict` once the 6 suspects are triaged. (refs:
+  dynamic confirmer (`--confirm`) that runs baseline ->
+  shuffle-under-pinned-seed -> classify, then for pytest isolates each victim
+  and BISECTS the prefix to name the polluter (not just the victim), with a
+  reproduce command. pytest + vitest classify; polluter bisect is pytest-only
+  (vitest lacks CLI-driven ordered per-test execution). Dogfooded advisory on
+  canary's own suite in CI; rule tuning cut the backlog 37 -> 6 (SV002 narrowed
+  to class/all-scoped setup, SV004 ordinals must be terminal). Remaining: flip
+  the advisory gate to `--strict` once the 6 suspects are triaged. (refs:
   docs/changes/canary-savant/proposal.md; the Python Phase-1 #405 was superseded
   by the JS port #406.)
 - **Blockers:** —

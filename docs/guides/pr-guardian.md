@@ -22,8 +22,8 @@ the design rationale.
 
 - **Scopes the diff** (`git diff`), filtering out non-source paths via
   `skipGlobs` (docs, lockfiles, build output, generated command artifacts).
-- **Resolves coverage** at the highest available fidelity per changed unit
-  (see [Fidelity labels](#fidelity-labels)).
+- **Resolves coverage** at the highest available fidelity per changed unit (see
+  [Fidelity labels](#fidelity-labels)).
 - **Renders findings** ranked by severity onto a sticky PR comment (upsert by
   marker `<!-- canary-pr-guardian -->`, so re-runs replace rather than stack).
 - **Emits a harness analysis** (`--emit-analysis`) so the result surfaces inside
@@ -69,22 +69,29 @@ runtime-less desk degrades quietly rather than blocking every commit.
 Every finding is labeled by **how it was derived** — never treat a heuristic
 guess as execution truth. Highest available fidelity wins per unit:
 
-| Label | Derived from | Meaning |
-| --- | --- | --- |
-| `coverage-verified` | a coverage report (`coverage.xml`/`lcov.info`/`.json`) | changed lines mapped to covered/uncovered — strongest |
-| `graph-verified` | the harness graph (`.harness/graph/`, via CLI/file) | a changed file has no covering-test edge |
-| `heuristic` | naming/AST | no `*.test.*`/`test_*.py` references the changed symbol — weakest |
+| Label               | Derived from                                           | Meaning                                                           |
+| ------------------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| `coverage-verified` | a coverage report (`coverage.xml`/`lcov.info`/`.json`) | changed lines mapped to covered/uncovered — strongest             |
+| `graph-verified`    | the harness graph (`.harness/graph/`, via CLI/file)    | a changed file has no covering-test edge                          |
+| `heuristic`         | naming/AST                                             | no `*.test.*`/`test_*.py` references the changed symbol — weakest |
+
+Recognized coverage-report formats: `lcov.info` (`DA:` records), the canary
+coverage-json shape, and Cobertura `coverage.xml` (line-level; the canonical
+`<class filename><line number hits>` shape emitted by coverage.py, Istanbul,
+SimpleCov, and Jacoco→Cobertura converters — branch data is not yet consumed). A
+well-formed XML that is not Cobertura is rejected rather than guessed at, and
+falls through to the next tier.
 
 If no coverage report exists, the guardian falls back to the graph; with no
 graph, it falls back to the heuristic. Absence degrades — it never blocks.
 
 ## The tier ladder
 
-| Tier  | Adds                     | Runtime           | Write | Status                    |
-| ----- | ------------------------ | ----------------- | ----- | ------------------------- |
-| **0** | diff-coverage → comment  | none              | no    | default, ships now        |
-| **1** | + LLM test-quality audit | agent (read-only) | no    | opt-in (desk in v1)       |
-| **2** | + author + push tests    | agent             | yes   | opt-in (desk authoring)   |
+| Tier  | Adds                     | Runtime           | Write | Status                  |
+| ----- | ------------------------ | ----------------- | ----- | ----------------------- |
+| **0** | diff-coverage → comment  | none              | no    | default, ships now      |
+| **1** | + LLM test-quality audit | agent (read-only) | no    | opt-in (desk in v1)     |
+| **2** | + author + push tests    | agent             | yes   | opt-in (desk authoring) |
 
 `pr.tier` defaults to `0`. Tiers 1/2 are opt-in and require a Claude-compatible
 runtime. The agent tiers sit behind the `AgentTier` capability boundary
@@ -104,9 +111,9 @@ To accept an untested unit deliberately, annotate it in the diff:
 // canary:allow-untested <reason>
 ```
 
-A suppressed finding is cleared from the `gate: hard` exit calculation but
-stays **visible** in the comment (labeled `suppressed`), so the decision is
-auditable rather than hidden.
+A suppressed finding is cleared from the `gate: hard` exit calculation but stays
+**visible** in the comment (labeled `suppressed`), so the decision is auditable
+rather than hidden.
 
 ## Soft → hard promotion
 
@@ -117,7 +124,7 @@ The gate starts **soft** and earns its way to **hard** — do not flip a repo to
   advisory: they post to the PR and emit an analysis, but never block a merge.
   Run here until the team trusts the findings on real PRs.
 - **`gate: hard`.** The CLI exits non-zero when an unaddressed `critical`/`high`
-  `untested-new-code` finding remains — where *addressed* means either a
+  `untested-new-code` finding remains — where _addressed_ means either a
   covering test was added in the same diff (the finding no longer reproduces on
   re-run) or an explicit `// canary:allow-untested` suppression.
 

@@ -82,6 +82,90 @@ JSON_FIXTURE = {
     }
 }
 
+# Canonical Cobertura XML — line-level shape shared across the Jacoco,
+# coverage.py, Istanbul and SimpleCov dialects. Mirrors LCOV_FIXTURE so the
+# covered/uncovered assertions line up (foo line 14 has 0 hits).
+COBERTURA_FIXTURE = """\
+<?xml version="1.0" ?>
+<coverage version="1.0">
+  <sources><source>.</source></sources>
+  <packages>
+    <package name="pkg">
+      <classes>
+        <class name="foo" filename="pkg/foo.py">
+          <lines>
+            <line number="12" hits="3"/>
+            <line number="13" hits="1"/>
+            <line number="14" hits="0"/>
+            <line number="15" hits="2"/>
+          </lines>
+        </class>
+        <class name="bar" filename="pkg/bar.py">
+          <lines>
+            <line number="1" hits="5"/>
+            <line number="2" hits="4"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>
+"""
+
+# Jacoco-style deep source root — the class filename carries a prefix
+# (src/main/java/...) that the unit path lacks. Path-boundary suffix matching
+# must still connect them.
+COBERTURA_DEEP_PATH_FIXTURE = """\
+<?xml version="1.0" ?>
+<coverage>
+  <packages><package name="com.foo"><classes>
+    <class filename="src/main/java/com/foo/Bar.java">
+      <lines>
+        <line number="7" hits="2"/>
+        <line number="8" hits="0"/>
+      </lines>
+    </class>
+  </classes></package></packages>
+</coverage>
+"""
+
+# Well-formed XML that is NOT a coverage report (e.g. a JUnit result).
+NON_COVERAGE_XML = """\
+<?xml version="1.0" ?>
+<testsuite name="unit" tests="3" failures="0">
+  <testcase classname="pkg.foo" name="test_a"/>
+</testsuite>
+"""
+
+# Real-world coverage.py / Jacoco output carries a SYSTEM DOCTYPE (pointing at
+# the cobertura DTD) but declares NO entities — it must parse, not be rejected.
+COBERTURA_WITH_DOCTYPE = """\
+<?xml version="1.0" ?>
+<!DOCTYPE coverage SYSTEM 'http://cobertura.sourceforge.net/xml/coverage-04.dtd'>
+<coverage version="6.5.0">
+  <packages><package name="pkg"><classes>
+    <class filename="pkg/foo.py"><lines>
+      <line number="12" hits="1"/>
+      <line number="14" hits="0"/>
+    </lines></class>
+  </classes></package></packages>
+</coverage>
+"""
+
+# Entity-expansion ("billion laughs") payload — must be rejected before parse.
+COBERTURA_ENTITY_BOMB = """\
+<?xml version="1.0" ?>
+<!DOCTYPE coverage [
+  <!ENTITY lol "lol">
+  <!ENTITY lol2 "&lol;&lol;&lol;&lol;">
+]>
+<coverage><packages><package><classes>
+  <class filename="pkg/foo.py"><lines>
+    <line number="12" hits="&lol2;"/>
+  </lines></class>
+</classes></package></packages></coverage>
+"""
+
 
 class TestResolveFromReport:
     def _units(self):
@@ -125,14 +209,147 @@ class TestResolveFromReport:
         assert by_path["pkg/bar.py"].covered is True
 
     def test_unrecognized_format_returns_none(self, tmp_path: Path) -> None:
-        report = tmp_path / "coverage.xml"
-        report.write_text("<coverage/>", encoding="utf-8")
+        # A well-formed XML that is not a coverage report must fall through,
+        # not be mistaken for (empty) Cobertura coverage.
+        report = tmp_path / "results.xml"
+        report.write_text(NON_COVERAGE_XML, encoding="utf-8")
         foo, _ = self._units()
         assert resolve_from_report([foo], report) is None
 
     def test_missing_file_returns_none(self, tmp_path: Path) -> None:
         foo, _ = self._units()
         assert resolve_from_report([foo], tmp_path / "nope.json") is None
+
+    # ----- Cobertura XML (coverage-verified tier) -----
+
+    def test_cobertura_covered_and_uncovered(self, tmp_path: Path) -> None:
+        report = tmp_path / "coverage.xml"
+        report.write_text(COBERTURA_FIXTURE, encoding="utf-8")
+        foo, bar = self._units()
+
+        results = resolve_from_report([foo, bar], report)
+        assert results is not None
+        by_path = {r.unit.path: r for r in results}
+
+        # foo added line 14 has 0 hits → uncovered.
+        assert by_path["pkg/foo.py"].covered is False
+        assert by_path["pkg/foo.py"].uncovered_lines == [14]
+        assert by_path["pkg/foo.py"].fidelity is Fidelity.COVERAGE_VERIFIED
+
+        # bar all added lines hit → covered.
+        assert by_path["pkg/bar.py"].covered is True
+        assert by_path["pkg/bar.py"].uncovered_lines == []
+        assert by_path["pkg/bar.py"].fidelity is Fidelity.COVERAGE_VERIFIED
+
+    def test_cobertura_deep_source_root_path_match(self, tmp_path: Path) -> None:
+        # Jacoco-style prefix on the class filename still resolves via the
+        # existing path-boundary suffix match.
+        report = tmp_path / "cobertura.xml"
+        report.write_text(COBERTURA_DEEP_PATH_FIXTURE, encoding="utf-8")
+        unit = ChangedUnit(path="com/foo/Bar.java", added_ranges=[(7, 8)])
+
+        results = resolve_from_report([unit], report)
+        assert results is not None
+        assert len(results) == 1
+        assert results[0].covered is False
+        assert results[0].uncovered_lines == [8]
+        assert results[0].fidelity is Fidelity.COVERAGE_VERIFIED
+
+    def test_cobertura_non_coverage_xml_returns_none(self, tmp_path: Path) -> None:
+        report = tmp_path / "coverage.xml"
+        report.write_text(NON_COVERAGE_XML, encoding="utf-8")
+        foo, _ = self._units()
+        assert resolve_from_report([foo], report) is None
+
+    def test_cobertura_malformed_xml_returns_none(self, tmp_path: Path) -> None:
+        report = tmp_path / "coverage.xml"
+        report.write_text("<coverage><packages></coverage", encoding="utf-8")
+        foo, _ = self._units()
+        # Malformed XML must never raise out of the guardian path.
+        assert resolve_from_report([foo], report) is None
+
+    def test_cobertura_system_doctype_allowed(self, tmp_path: Path) -> None:
+        # A legit SYSTEM DOCTYPE (no entity declarations) must still parse.
+        report = tmp_path / "coverage.xml"
+        report.write_text(COBERTURA_WITH_DOCTYPE, encoding="utf-8")
+        unit = ChangedUnit(path="pkg/foo.py", added_ranges=[(12, 14)])
+
+        results = resolve_from_report([unit], report)
+        assert results is not None
+        assert len(results) == 1
+        assert results[0].covered is False
+        assert results[0].uncovered_lines == [13, 14]
+        assert results[0].fidelity is Fidelity.COVERAGE_VERIFIED
+
+    def test_cobertura_entity_bomb_rejected(self, tmp_path: Path) -> None:
+        report = tmp_path / "coverage.xml"
+        report.write_text(COBERTURA_ENTITY_BOMB, encoding="utf-8")
+        foo, _ = self._units()
+        assert resolve_from_report([foo], report) is None
+
+    def test_cobertura_entity_bomb_past_4k_window_rejected(
+        self, tmp_path: Path
+    ) -> None:
+        # A leading comment pushes the DOCTYPE past byte 4096; a windowed guard
+        # would miss it. The full-text scan must still reject it. Entities kept
+        # tiny so a regression fails via a wrong verdict, not an OOM.
+        payload = (
+            '<?xml version="1.0" ?>\n'
+            + "<!-- " + ("x" * 5000) + " -->\n"
+            + "<!DOCTYPE coverage [\n"
+            + '  <!ENTITY a "aaaaaaaaaa">\n'
+            + '  <!ENTITY b "&a;&a;&a;&a;&a;">\n]>\n'
+            + "<coverage><packages><package><classes>"
+            + '<class filename="pkg/foo.py"><lines>'
+            + '<line number="12" hits="&b;"/></lines></class>'
+            + "</classes></package></packages></coverage>"
+        )
+        assert payload.index("<!DOCTYPE") > 4096  # guard the guard
+        report = tmp_path / "coverage.xml"
+        report.write_text(payload, encoding="utf-8")
+        foo, _ = self._units()
+        assert resolve_from_report([foo], report) is None
+
+    def test_cobertura_windows_separators_match(self, tmp_path: Path) -> None:
+        # .NET/coverlet emits backslash paths; they must resolve against the
+        # POSIX-style diff unit path.
+        xml = (
+            '<?xml version="1.0" ?><coverage><packages><package><classes>'
+            '<class filename="pkg\\foo.py"><lines>'
+            '<line number="12" hits="1"/><line number="13" hits="0"/>'
+            "</lines></class></classes></package></packages></coverage>"
+        )
+        report = tmp_path / "coverage.xml"
+        report.write_text(xml, encoding="utf-8")
+        unit = ChangedUnit(path="pkg/foo.py", added_ranges=[(12, 13)])
+
+        results = resolve_from_report([unit], report)
+        assert results is not None
+        assert len(results) == 1
+        assert results[0].uncovered_lines == [13]
+        assert results[0].fidelity is Fidelity.COVERAGE_VERIFIED
+
+    def test_report_non_utf8_returns_none(self, tmp_path: Path) -> None:
+        # A non-UTF-8 report must fall through, not raise UnicodeDecodeError
+        # out of the gate. Affects the shared read path (all formats).
+        report = tmp_path / "coverage.xml"
+        report.write_bytes(
+            b'<coverage>\xff\xfe<class filename="pkg/foo.py"/></coverage>'
+        )
+        foo, _ = self._units()
+        assert resolve_from_report([foo], report) is None
+
+    def test_cobertura_oversize_rejected(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import agent.guardian.coverage as cov
+
+        # Shrink the size cap so the fixture trips it without a huge file.
+        monkeypatch.setattr(cov, "_MAX_REPORT_BYTES", 32)
+        report = tmp_path / "coverage.xml"
+        report.write_text(COBERTURA_FIXTURE, encoding="utf-8")
+        foo, _ = self._units()
+        assert resolve_from_report([foo], report) is None
 
     def test_exact_report_path_preferred_over_suffix(self, tmp_path: Path) -> None:
         # FIX 6 (guard): duplicate basenames must resolve against the EXACT path,

@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import xml.etree.ElementTree as ET
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
@@ -157,20 +158,87 @@ def _parse_coverage_json(data: object) -> dict[str, dict[int, int]] | None:
     return index
 
 
+# Coverage reports are semi-trusted CI artifacts, but canary distrusts input by
+# default: cap size so a pathological XML cannot exhaust memory during parse.
+_MAX_REPORT_BYTES = 25 * 1024 * 1024  # 25 MiB
+
+
+def _parse_cobertura(text: str) -> dict[str, dict[int, int]] | None:
+    """Parse a Cobertura ``coverage.xml`` into ``{path: {line: hits}}``.
+
+    Line-level only — branch/``condition-coverage`` data is intentionally
+    dropped, since the downstream index is line-hits (a future additive
+    enhancement can carry branch data). Pins to the canonical Cobertura shape
+    emitted by coverage.py, Istanbul, SimpleCov and Jacoco→Cobertura
+    converters: a ``<coverage>`` root with ``<class filename=...>`` elements
+    carrying nested ``<line number= hits=>``. (Native Jacoco XML uses a
+    ``<report>`` root and is *not* Cobertura — it correctly returns ``None``.)
+    Any other XML → ``None`` so the caller falls through to a lower fidelity
+    tier (absence never blocks).
+
+    Security: rejects oversize input and DOCTYPE entity definitions *before*
+    parsing (guards against entity-expansion / "billion laughs").
+    ``ElementTree`` does not resolve external entities, so XXE is not in scope.
+    """
+    if len(text) > _MAX_REPORT_BYTES:
+        return None
+    # Reject any internal-subset DOCTYPE that declares entities. Scan the FULL
+    # (already size-capped) text: a leading comment can push the DOCTYPE past
+    # any fixed window, so a windowed check is bypassable.
+    if "<!DOCTYPE" in text and "<!ENTITY" in text:
+        return None
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return None
+    # Pin to the canonical (namespace-free) Cobertura root; anything else is a
+    # different XML format and is rejected rather than guessed at.
+    if root.tag != "coverage":
+        return None
+
+    index: dict[str, dict[int, int]] = {}
+    for cls in root.iter("class"):
+        filename = cls.get("filename")
+        if not filename:
+            continue
+        # Normalize Windows separators so .NET/coverlet reports resolve against
+        # POSIX-style diff paths (the path matcher only recognizes "/").
+        filename = filename.replace("\\", "/")
+        hits_by_line = index.setdefault(filename, {})
+        for line in cls.iter("line"):
+            num = line.get("number")
+            if num is None:
+                continue
+            try:
+                lineno = int(num)
+                hits = int(line.get("hits", "0"))
+            except ValueError:
+                continue
+            # A line can appear at both method and class scope; keep the max.
+            hits_by_line[lineno] = max(hits_by_line.get(lineno, 0), hits)
+
+    # Drop classes that yielded no parseable lines; require at least one.
+    index = {path: hits for path, hits in index.items() if hits}
+    return index or None
+
+
 def resolve_from_report(
     units: list[ChangedUnit], report_path: Path
 ) -> list[CoverageResult] | None:
     """Tier 1: resolve coverage from an explicit report (``COVERAGE_VERIFIED``).
 
-    Supports ``lcov.info`` (``DA:<line>,<hits>``) and the canary coverage-json
-    shape. Unrecognized/empty/unreadable → ``None`` (caller falls through to a
-    lower fidelity tier — absence never blocks).
+    Supports ``lcov.info`` (``DA:<line>,<hits>``), the canary coverage-json
+    shape, and Cobertura ``coverage.xml`` (line-level). Unrecognized/empty/
+    unreadable → ``None`` (caller falls through to a lower fidelity tier —
+    absence never blocks).
     """
     try:
         if not report_path.exists():
             return None
         text = report_path.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        # UnicodeDecodeError is a ValueError, not OSError — a non-UTF-8 report
+        # must fall through, never raise out of the guardian gate.
         return None
 
     name = report_path.name.lower()
@@ -182,8 +250,10 @@ def resolve_from_report(
             return None
     elif name.endswith(".info") or "lcov" in name:
         index = _parse_lcov(text)
+    elif name.endswith(".xml"):
+        index = _parse_cobertura(text)
     else:
-        # Unrecognized format (e.g. Cobertura coverage.xml) → fall through.
+        # Unrecognized format → fall through to a lower fidelity tier.
         return None
 
     if not index:
