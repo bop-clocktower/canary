@@ -13,17 +13,24 @@ it), see [Guides](../../docs/guides/index.md).
 
 ```text
 agents/skills/
-├── claude-code/                    # Claude Code skills (see Available Skills below)
+├── claude-code/                    # Claude Code skills (19)
 │   ├── canary-add-framework/
+│   ├── canary-blackhawk/
 │   ├── canary-ci-ready/
+│   ├── canary-company-knowledge/
 │   ├── canary-critical-areas/
 │   ├── canary-edge-case-discovery/
 │   ├── canary-fail-fast/
 │   ├── canary-failure-impact/
+│   ├── canary-fleet-health/
 │   ├── canary-generate-test/
 │   ├── canary-instrument/
+│   ├── canary-katana/
+│   ├── canary-pr-guardian/
 │   ├── canary-promote-test/
+│   ├── canary-savant/
 │   ├── canary-setup-harness/
+│   ├── canary-ship/
 │   ├── canary-test-pipeline/
 │   └── canary-test-reporter/
 └── README.md                       # this file
@@ -82,6 +89,24 @@ slash-command entry points.
   Complements `canary-fail-fast` (which aborts early) by summarising the full
   run at the end.
 
+### Test hygiene & reliability
+
+- [`canary-savant`](./claude-code/canary-savant/SKILL.md) — Order-dependence &
+  isolation detector. A Tier-1 static scan flags shared-state smells that
+  predict order-dependent tests; an opt-in dynamic confirmer shuffles the suite
+  under a pinned seed and (for pytest) bisects the prefix to name the polluter.
+  The first JS/Node skill (`requires: node>=20`).
+- [`canary-katana`](./claude-code/canary-katana/SKILL.md) — Quarantines deleted
+  and newly-skipped tests into an append-only provenance ledger, alarming in
+  exactly one case: the deletion dropped the last coverage of a critical-area
+  symbol. Silent by default; degrades to recording-only when critical-area data
+  is absent.
+- [`canary-blackhawk`](./claude-code/canary-blackhawk/SKILL.md) —
+  Temporal-dependency linter. Statically flags tests that lean on wall-clock
+  time, a real delay, or the local timezone — the ones that pass all day and
+  fail at midnight, across a DST boundary, or on Feb 29 — suppressing itself
+  when a frozen-clock idiom is already in use.
+
 ### Orchestration
 
 - [`canary-test-pipeline`](./claude-code/canary-test-pipeline/SKILL.md) —
@@ -92,6 +117,11 @@ slash-command entry points.
 
 ### Integration & shipping
 
+- [`canary-pr-guardian`](./claude-code/canary-pr-guardian/SKILL.md) — PR /
+  pre-commit test-guardian. Runs a deterministic Tier-0 diff-coverage pass and
+  posts fidelity-labeled findings (coverage-verified › graph-verified ›
+  heuristic) on a sticky PR comment, with optional at-desk authoring of missing
+  tests. Gate defaults to soft. Invoked by `/canary-pr-guardian`.
 - [`canary-ship`](./claude-code/canary-ship/SKILL.md) — The ship gate for a
   finished, locally-green change: parallel adversarial review of the diff,
   resolve confirmed findings with regression tests, then commit, PR, and
@@ -151,7 +181,7 @@ pages.
 
 ### Claude Code
 
-Invoke by referencing the skill name in conversation, or via one of the 10
+Invoke by referencing the skill name in conversation, or via one of the 13
 registered slash commands (`commands/*.md`) that wrap a skill or agent — e.g.
 `/canary-write-test`, `/canary-ci-ready`, `/canary-critical-areas`. See
 [README.md's Usage section](../../README.md#-usage) for the full
