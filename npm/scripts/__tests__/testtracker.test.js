@@ -38,3 +38,32 @@ test("buildPayload computes totals + stable run id", () => {
   assert.deepEqual(p.totals, { passed: 1, failed: 1, flaky: 0, skipped: 0, total: 2 });
   assert.equal(p.results.length, 2);
 });
+
+test("shouldPush is false without url or token", () => {
+  assert.equal(shouldPush({ url: "u", token: "" }, { CI: "true" }), false);
+  assert.equal(shouldPush({ url: "", token: "" }, { TESTTRACKER_PUSH: "true" }), false);
+});
+
+test("canary_run_id falls back to a local id when GITHUB_RUN_ID absent", () => {
+  const cfg = resolveConfig({ suite: "s" }, {});
+  const timing = { startedAt: "2026-07-24T00:00:00Z", finishedAt: "2026-07-24T00:00:01Z" };
+  const withSha = buildPayload([], cfg, timing, { GITHUB_SHA: "abcdef1234567" });
+  assert.match(withSha.canary_run_id, /^abcdef1-/);
+  const local = buildPayload([], cfg, timing, {});
+  assert.match(local.canary_run_id, /^local-/);
+});
+
+test("resolveConfig default testFilePrefix is <cwd>/", () => {
+  const c = resolveConfig({ suite: "s" }, {});
+  assert.equal(c.testFilePrefix, `${process.cwd()}/`);
+});
+
+test("timedOut counts as failed in totals", () => {
+  const cfg = resolveConfig({ suite: "s" }, {});
+  const results = [
+    { full_title: "t", test_file: "t.spec.ts", status: mapStatus("timedOut"), retries: 0, tags: [] },
+  ];
+  const p = buildPayload(results, cfg, { startedAt: "x", finishedAt: "y" }, {});
+  assert.equal(p.totals.failed, 1);
+  assert.equal(p.status, "failed");
+});
