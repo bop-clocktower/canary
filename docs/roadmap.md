@@ -109,17 +109,34 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 ### Framework-registry depth audit + capability tiers
 
-- **Status:** backlog
+- **Status:** done
+- **Summary:** DONE (adversarially reviewed) — a new
+  `FrameworkRegistry.capabilities` method derives an honest per-framework
+  support level from CODE signals, never the subjective status/maturity prose.
+  `scaffold` = a scaffolder template exists (scaffoldable_frameworks). `execute`
+  = a command the executor can actually RUN — since the executor substitutes
+  only `{file}`, this requires `{file}` present OR no placeholder (suite
+  runner); a stray `{target}` (zap, semgrep) that would reach the shell
+  unsubstituted is NOT counted, so the tier never overpromises. Headline `tier`:
+  full (scaffold+execute) / executable / catalog. Case-insensitive. Audit of the
+  27 (not 21) advertised frameworks: 5 full, 16 executable, 6 catalog
+  (zap/semgrep demoted to catalog for the broken placeholder). Static analysis
+  deliberately excluded as a tier signal — the linter's scans are largely
+  framework-agnostic, not a per-framework differentiator (avoids re-creating the
+  hand-maintained matrix the roadmap warned against). Exposed via summaries() →
+  `canary frameworks` (tier column) + MCP list_frameworks. Adopter-hits-a-stub
+  fixed across ALL callers: scaffold() degrades loudly (status=unsupported +
+  guidance + run command) for a known-no- template framework; `canary init`/MCP
+  surface it; `canary migrate` records a manual follow-up instead of a false
+  "Migration complete" (review caught this silent-success regression); unknown
+  frameworks still raise. Anti-drift: test_framework_capability_tiers.py derives
+  tiers from code and fails on orphan templates, un-tierable entries, or a
+  scaffoldable-but-unrunnable quadrant. ~19 new tests, full suite green.
+  Ideation pick (score 6.00) from
+  docs/ideation/deepen-core-test-intelligence-2026-07-19.md. (refs:
+  agent/core/framework_registry.py, scaffolder.py, migrator.py;
+  docs/guides/framework-registry.md capability-tiers section)
 - **Spec:** —
-- **Summary:** Ideation pick (score 6.00) from
-  docs/ideation/deepen-core-test-intelligence-2026-07-19.md.
-  agent/frameworks/registry.json lists 21 frameworks but breadth exceeds depth;
-  audit which have real generation/analysis support vs name-only and publish
-  honest capability tiers so adopters do not hit a stub. Accepted risk to handle
-  in spec: a point-in-time matrix rots - pair it with a coverage test that
-  derives tiers from the registry rather than hand-maintained prose (drift-bait
-  otherwise, ironic for canary). Low effort / high confidence. Next:
-  /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
 

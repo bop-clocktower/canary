@@ -70,8 +70,11 @@ Each entry in `frameworks[]` is a JSON object with these fields:
 - `match_by_language(language)` — all frameworks for a language
 - `execution_info(name)` — the `{execution_command, ci_flags}` run-command
   metadata for one framework, or `None`
+- `capabilities(name)` — the code-**derived** capability verdict for one
+  framework (`{scaffold, execute, tier}`), or `None` (see
+  [Capability tiers](#capability-tiers))
 - `summaries()` — programmatic dump of every framework's identity + run-command
-  fields
+  fields, plus its `capabilities` and headline `tier`
 
 The recommender uses `get_by_category` followed by an internal selection step;
 the executor uses `find_by_name` to resolve the `execution_command`.
@@ -84,12 +87,55 @@ so downstream tools need not duplicate the map or read `registry.json` directly:
 - **`canary recommend "<prompt>" --json`** now includes `execution_command` and
   `ci_flags` for the chosen framework (additive; existing fields unchanged).
 - **`canary frameworks [--json]`** dumps every entry (`name`, `category`,
-  `languages`, `file_extensions`, `execution_command`, `ci_flags`, `status`).
+  `languages`, `file_extensions`, `execution_command`, `ci_flags`, `status`)
+  plus its code-derived `capabilities` and headline `tier`.
 - The MCP `list_frameworks` tool adds a `details` array with the same fields.
 
 In every `execution_command`, **`{file}` is the placeholder for the test-file
 path** — substitute it before running (e.g. `npx --yes playwright test {file}` →
 `npx --yes playwright test tests/login.spec.ts`).
+
+#### Capability tiers
+
+The registry advertises more frameworks than canary can fully support, so
+`capabilities(name)` reports an **honest, code-derived** support level rather
+than the subjective `status`/`maturity` prose. Each signal is read from the code
+that actually provides it, so the verdict cannot drift from reality:
+
+- **`scaffold`** — a `Scaffolder` template exists
+  (`scaffolder.scaffoldable_frameworks()`): canary can bootstrap the suite.
+- **`execute`** — the entry carries a command the executor can actually **run**.
+  Because `CanaryTestExecutor` substitutes only `{file}`, this is true iff the
+  `execution_command` carries `{file}` or has no placeholder at all (a
+  whole-suite runner). A command with a different placeholder (e.g. `zap`'s
+  `{target}`) would reach the shell unsubstituted, so it is **not** counted as
+  executable — the tier never claims more than the code can do.
+
+The headline `tier` collapses these two adopter-facing signals:
+
+| Tier         | Meaning                                                  |
+| ------------ | -------------------------------------------------------- |
+| `full`       | scaffold **and** execute — canary sets it up and runs it |
+| `executable` | execute only — canary runs it, no scaffold boilerplate   |
+| `catalog`    | neither — listed for detection/recommendation only       |
+
+As of this writing: 5 `full`, 16 `executable`, 6 `catalog` across 27 entries.
+(Static analysis is deliberately **not** a tier signal: the linter's core scans
+apply across frameworks rather than being gated per-framework, so it is not a
+per-framework differentiator.)
+
+Picking an `executable`/`catalog` framework for `canary init` (or
+`canary migrate`) **degrades loudly** — `init`/MCP return actionable guidance
+plus the run command, and `migrate` records a manual follow-up instead of
+reporting a false "Migration complete" — rather than crashing or silently
+no-op'ing. An adopter never hits a silent stub. A framework not in the registry
+at all is genuinely invalid input and still raises `ValueError`.
+
+Drift is prevented by `tests/unit/test_framework_capability_tiers.py`: it
+derives every tier from the code signals and fails if a scaffold template names
+a framework with no registry entry, if any registered framework has no derivable
+capability, or if a framework is scaffoldable-but-not-runnable (a quadrant the
+tier logic has no name for). The matrix is never hand-maintained.
 
 ### 4. Categories Are Stable
 

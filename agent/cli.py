@@ -117,6 +117,10 @@ def frameworks(
     Exposes the framework registry as an authoritative framework → run-command
     source: name, category, languages, file extensions, `execution_command`
     (with a `{file}` placeholder for the test path), `ci_flags`, and status.
+    Also shows each framework's code-derived capability `tier` — `full`
+    (canary scaffolds + runs it), `executable` (runs, no scaffold), or
+    `catalog` (listed for detection/recommendation only) — so adopters see
+    honest support before picking one.
     """
     from agent.core.framework_registry import FrameworkRegistry
 
@@ -126,15 +130,19 @@ def frameworks(
         _sys.stdout.write(json.dumps({"frameworks": summaries}, indent=2) + "\n")
         return
 
+    _TIER_STYLE = {"full": "green", "executable": "cyan", "catalog": "yellow"}
     print("[bold green]Canary Frameworks[/bold green]\n")
     for f in summaries:
         status = f" [dim]({f['status']})[/dim]" if f.get("status") else ""
-        print(f"[bold]{f['name']}[/bold]{status} — {f.get('category') or 'n/a'}")
+        tier = f.get("tier") or "catalog"
+        tier_label = f"[{_TIER_STYLE.get(tier, 'white')}]{tier}[/]"
+        print(f"[bold]{f['name']}[/bold] {tier_label}{status} — {f.get('category') or 'n/a'}")
         cmd = f.get("execution_command") or "(no run command)"
         print(f"  run: {cmd}")
         if f.get("ci_flags"):
             print(f"  ci:  {' '.join(f['ci_flags'])}")
-    print("\n[dim]`{file}` in a run command is the test-file path placeholder.[/dim]")
+    print("\n[dim]tier: full=scaffold+run · executable=run only · catalog=listed only.[/dim]")
+    print("[dim]`{file}` in a run command is the test-file path placeholder.[/dim]")
 
 
 @app.command()
@@ -276,9 +284,13 @@ def init(
     try:
         scaffolder = Scaffolder()
         result = scaffolder.scaffold(framework)
-        
+
+        if result.get("status") == "unsupported":
+            print(f"[bold yellow]⚠ {result['guidance']}[/bold yellow]")
+            return
+
         print("[bold green]✅ Scaffolding Complete[/bold green]\n")
-        
+
         if result["created_dirs"]:
             print("[bold]Directories Created:[/bold]")
             for d in result["created_dirs"]:

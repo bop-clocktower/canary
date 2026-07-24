@@ -49,8 +49,32 @@ class TestScaffolder(unittest.TestCase):
         self.assertTrue((self.test_root / "tests").is_dir())
 
     def test_invalid_framework(self):
+        # A framework that is not even in the registry is genuinely invalid
+        # input and must still raise.
         with self.assertRaises(ValueError):
             self.scaffolder.scaffold("nonexistent", project_root=str(self.test_root))
+
+    def test_known_framework_without_template_degrades(self):
+        # schemathesis is a real registry framework with no scaffold template.
+        # It must degrade loudly (actionable result), NOT crash — the adopter
+        # should still learn how to run it, not hit a stub.
+        result = self.scaffolder.scaffold(
+            "schemathesis", project_root=str(self.test_root)
+        )
+        self.assertEqual(result["status"], "unsupported")
+        self.assertEqual(result["framework"], "schemathesis")
+        self.assertEqual(result["created_files"], [])
+        self.assertEqual(result["created_dirs"], [])
+        # Actionable: a non-empty guidance string and the run command canary
+        # does know for this framework.
+        self.assertTrue(result["guidance"])
+        self.assertIn("schemathesis", result["execution_command"])
+
+    def test_degrade_never_writes_files(self):
+        before = set(p.name for p in self.test_root.iterdir())
+        self.scaffolder.scaffold("locust", project_root=str(self.test_root))
+        after = set(p.name for p in self.test_root.iterdir())
+        self.assertEqual(before, after)
 
 if __name__ == '__main__':
     unittest.main()

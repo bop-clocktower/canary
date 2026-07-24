@@ -575,6 +575,28 @@ class HarnessMigrator:
                 deployed_skills=deployed,
             )
 
+        # A framework canary knows but cannot scaffold gets no config
+        # boilerplate. Surface that loudly as a follow-up (which also suppresses
+        # the "Migration complete" status) instead of reporting a silent no-op —
+        # matching the scaffold() degrade contract for these frameworks.
+        from agent.core.framework_registry import FrameworkRegistry
+        from agent.core.scaffolder import scaffoldable_frameworks
+
+        _reg = FrameworkRegistry()
+        if (
+            _reg.find_by_name(effective_framework) is not None
+            and effective_framework not in scaffoldable_frameworks()
+        ):
+            _cmd = (_reg.execution_info(effective_framework) or {}).get(
+                "execution_command"
+            )
+            _run = f" Run its tests via `{_cmd}`." if _cmd else ""
+            followups.append(
+                f"No scaffold template for '{effective_framework}' yet — the "
+                f"layout and skills were migrated, but test config was not "
+                f"scaffolded; set it up manually.{_run}"
+            )
+
         preserved = self._find_existing_tests(project_root)
         scaffolder = Scaffolder()
         deployed = self._deploy_skills(shape, overlay_path, project_root, dry_run)

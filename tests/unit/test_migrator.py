@@ -848,3 +848,46 @@ class TestConfigValidationWarnings(unittest.TestCase):
             except Exception as exc:  # pragma: no cover - assertion is the point
                 self.fail(f"migrate() raised on malformed config: {exc}")
             self.assertEqual(report.framework, "pytest")
+
+
+class TestMigrateUnsupportedFrameworkDegrades(unittest.TestCase):
+    """A framework canary knows but cannot scaffold must degrade loudly, not
+    report a silent 'Migration complete' with an empty, no-op report.
+    """
+
+    def setUp(self):
+        self.migrator = HarnessMigrator()
+
+    def _followup_text(self, report) -> str:
+        return " ".join(report.manual_followups).lower()
+
+    def test_apply_surfaces_followup_not_silent_complete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root)
+            # locust is in the registry (runnable) but has NO scaffold template.
+            report = self.migrator.migrate(root, dry_run=False, framework="locust")
+
+            self.assertEqual(report.created_files, [])
+            followup = self._followup_text(report)
+            self.assertIn("scaffold template", followup)
+            self.assertIn("locust", followup)
+            # The false "Migration complete" status must not appear.
+            self.assertNotIn("Migration complete", report.to_markdown())
+
+    def test_dry_run_does_not_claim_already_migrated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root)
+            report = self.migrator.migrate(root, dry_run=True, framework="locust")
+            self.assertIn("scaffold template", self._followup_text(report))
+            self.assertNotIn("Migration complete", report.to_markdown())
+
+    def test_supported_framework_still_reports_complete(self):
+        # Guard the guardrail: a scaffoldable framework is unaffected.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make_harness_project(root)
+            report = self.migrator.migrate(root, dry_run=False, framework="pytest")
+            followup = self._followup_text(report)
+            self.assertNotIn("scaffold template", followup)

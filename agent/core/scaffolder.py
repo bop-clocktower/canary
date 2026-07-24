@@ -8,7 +8,7 @@ and configuration files for supported testing frameworks.
 """
 
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict, Set
 
 TEMPLATES = {
     "playwright": {
@@ -128,7 +128,7 @@ class Scaffolder:
         """
         framework = framework.lower()
         if framework not in TEMPLATES:
-            raise ValueError(f"No scaffolding template found for framework: '{framework}'")
+            return self._degrade(framework)
 
         template = TEMPLATES[framework]
         root = Path(project_root).resolve()
@@ -152,7 +152,53 @@ class Scaffolder:
 
         return {
             "framework": framework,
+            "status": "scaffolded",
             "created_files": created_files,
             "created_dirs": created_dirs,
             "skipped_files": [f for f in template.get("files", {}) if f not in created_files]
         }
+
+    def _degrade(self, framework: str) -> Dict[str, Any]:
+        """No scaffold template for this framework.
+
+        A framework canary knows (registry entry) degrades loudly with
+        actionable guidance instead of crashing — the adopter still learns how
+        to run it (#294/#295 fail-loud). A framework canary does *not* know is
+        genuinely invalid input and raises ``ValueError``.
+        """
+        from agent.core.framework_registry import FrameworkRegistry
+
+        entry = FrameworkRegistry().find_by_name(framework)
+        if entry is None:
+            raise ValueError(
+                f"Unknown framework: '{framework}'. "
+                "Run `canary frameworks list` to see supported frameworks."
+            )
+
+        exec_cmd = entry.get("execution_command")
+        run_note = (
+            f"canary can run it via: {exec_cmd}"
+            if exec_cmd
+            else "canary does not yet have a run command for it either"
+        )
+        guidance = (
+            f"No scaffold template for '{framework}' yet — canary won't create "
+            f"boilerplate for it. Set the suite up manually; {run_note}. "
+            "See `canary frameworks list` for capability tiers."
+        )
+        return {
+            "framework": framework,
+            "status": "unsupported",
+            "created_files": [],
+            "created_dirs": [],
+            "skipped_files": [],
+            "guidance": guidance,
+            "execution_command": exec_cmd,
+        }
+
+
+def scaffoldable_frameworks() -> Set[str]:
+    """Frameworks canary can scaffold — the single source of truth for the
+    ``scaffold`` capability, derived from the templates that actually exist.
+    """
+    return set(TEMPLATES)
