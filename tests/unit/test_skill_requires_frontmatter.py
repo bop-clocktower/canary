@@ -76,7 +76,7 @@ class TestExecutableSkillsDeclareRequires(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home:
             with patch("agent.core.skill_registry.Path.home", return_value=Path(home)):
                 skills = {s.name: s for s in SkillRegistry().discover()}
-            for name in ("canary-fail-fast", "canary-instrument", "canary-test-reporter"):
+            for name in ("canary-instrument", "canary-test-reporter"):
                 self.assertIn(name, skills)
                 joined = " ".join(skills[name].requires)
                 self.assertIn("python3", joined, f"{name} should require python3")

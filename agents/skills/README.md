@@ -80,7 +80,7 @@ slash-command entry points.
   quality, critical-path coverage, runtime). Invoked by `/canary-ci-ready`; also
   the gate/convergence check of `canary-test-pipeline`.
 - [`canary-fail-fast`](./claude-code/canary-fail-fast/SKILL.md) — Bundled
-  executable skill (`scripts/cli.py`). Audits a Playwright config for fail-fast
+  executable skill (`scripts/cli.mjs`). Audits a Playwright config for fail-fast
   knobs and prints a loud, categorized CI failure digest with GitHub `::error`
   annotations, failing the step so a real failure can't be missed.
 - [`canary-test-reporter`](./claude-code/canary-test-reporter/SKILL.md) —
@@ -194,13 +194,14 @@ Use the canary-generate-test skill to write a load test for /v1/search.
 ### Programmatic
 
 Most skills here are documentation, not executable artifacts — they describe
-_how an agent should behave_, not a function to call. Three are bundled
-executable skills with their own CLI entry point (`cli: scripts/cli.py` in
-frontmatter): `canary-fail-fast`, `canary-instrument`, and
-`canary-test-reporter`. Run those directly, e.g.:
+_how an agent should behave_, not a function to call. Several are bundled
+executable skills with their own CLI entry point (`cli:` in frontmatter).
+`canary-fail-fast`, `canary-katana`, and `canary-blackhawk` ship a Node entry
+(`scripts/cli.mjs`); `canary-instrument` and `canary-test-reporter` ship a
+Python entry (`scripts/cli.py`). Run those directly, e.g.:
 
 ```bash
-python agents/skills/claude-code/canary-fail-fast/scripts/cli.py --help
+node agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs --help
 ```
 
 For the rest — generation, review, healing, and analysis — there is no

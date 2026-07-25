@@ -20,6 +20,7 @@ export default defineConfig({
         // live OTel SDK and stays out of the coverage gate (see the note
         // above about not dragging the gate down with untested JS).
         'claude-code/canary-instrument/scripts/*.mjs',
+        'claude-code/canary-fail-fast/scripts/**/*.mjs',
       ],
       exclude: ['**/*.test.*'],
       // Fresh-code floor, matching the ts/ engine port. Ratchets up over time.

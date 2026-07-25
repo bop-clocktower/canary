@@ -6,8 +6,8 @@ description:
   digest to the CI log + ::error annotations at run end, failing the step so the
   signal can't be missed. Self-contained (bundles its own Playwright JSON parser
   and failure categorizer).
-cli: scripts/cli.py
-requires: [python3>=3.10]
+cli: scripts/cli.mjs
+requires: [node>=20]
 ---
 
 # Canary Fail-Fast
