@@ -76,7 +76,10 @@ class TestExecutableSkillsDeclareRequires(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home:
             with patch("agent.core.skill_registry.Path.home", return_value=Path(home)):
                 skills = {s.name: s for s in SkillRegistry().discover()}
-            for name in ("canary-instrument", "canary-test-reporter"):
+            # canary-instrument and canary-fail-fast were ported to JS
+            # (requires node>=20); canary-test-reporter is the last python3 CLI
+            # skill until its own port lands.
+            for name in ("canary-test-reporter",):
                 self.assertIn(name, skills)
                 joined = " ".join(skills[name].requires)
                 self.assertIn("python3", joined, f"{name} should require python3")
