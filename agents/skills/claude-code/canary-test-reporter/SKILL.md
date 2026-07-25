@@ -6,8 +6,8 @@ description:
   table. Exits non-zero when any test failed so the CI step fails on real
   failures. Complements canary-fail-fast (which aborts early); this skill
   summarises the full run at the end.
-cli: scripts/cli.py
-requires: [python3>=3.10]
+cli: scripts/cli.mjs
+requires: [node>=20]
 ---
 
 # Canary Test Reporter

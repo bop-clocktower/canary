@@ -21,6 +21,7 @@ export default defineConfig({
         // above about not dragging the gate down with untested JS).
         'claude-code/canary-instrument/scripts/*.mjs',
         'claude-code/canary-fail-fast/scripts/**/*.mjs',
+        'claude-code/canary-test-reporter/scripts/**/*.mjs',
       ],
       exclude: ['**/*.test.*'],
       // Fresh-code floor, matching the ts/ engine port. Ratchets up over time.
