@@ -14,6 +14,67 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [5.15.0] - 2026-07-25
+
+A large **additive** release centered on the PR guardian and the completion of
+the skill-side move to Node. The `canary` CLI is unchanged and still runs on
+Python — the one behavior change is that the **bundled skills now require
+`node>=20`** instead of `python3` (they are agent-invoked; the skill runner
+honors each skill's `requires:`). The engine's own Python→TS migration continues
+in the `ts/` sandbox and is reserved for a future major.
+
+### Added
+
+- **Guardian — Cobertura coverage** (#412): `coverage.xml` is parsed into the
+  **coverage-verified** tier, extending the strongest fidelity label to
+  Java/.NET/JS-Istanbul pipelines. Pinned to the canonical line-level shape;
+  non-Cobertura XML falls through rather than being guessed at.
+- **Guardian — coverage-json contract + validator** (#417): the coverage-json
+  format the guardian consumes is now a frozen v1 contract
+  (`docs/specs/coverage-json-contract.md`), plus
+  `canary guardian validate-coverage <file>` — loud where the parser is silent
+  (error = coverage lost, warning = degraded), so a producer can gate its CI.
+- **Guardian — `canary guardian harden-gate`** (#418): automates the admin step
+  of the soft→hard promotion — registers the guardian status check as a required
+  check in branch protection (merging, never clobbering), verifies the check
+  context actually reports before requiring it, and fails loudly with a manual
+  playbook when it can't (no admin scope / unsupported plan).
+- **Guardian — advisory weak-test finding** (#419): flags an added test that
+  defines a test function but asserts nothing. Advisory (never gates), tuned for
+  precision (snapshot/table-driven and `assert`/`expect`/chai/`assert_*`-helper
+  tests are not flagged). Toggle `canary.guardian.pr.weakTests`.
+- **Framework capability tiers** (#414): `canary frameworks` now shows a
+  code-derived support tier per framework — `full` (scaffold + run) /
+  `executable` (run only) / `catalog` (listed only) — instead of subjective
+  prose, with a drift guard that keeps the tiers honest.
+- **`canary-ship` skill** (#415): a review-gated ship gate (parallel adversarial
+  review → resolve → commit → PR → merge → watch CI).
+
+### Changed
+
+- **Skills moved to Node** — `canary-savant`, `-blackhawk`, `-katana`,
+  `-instrument`, `-fail-fast`, and `-test-reporter` are ported Python→ESM
+  (`requires: [node>=20]`); no bundled skill ships Python. Behavior is preserved
+  byte-for-byte (themed reporter output, JSON artifacts, digests).
+- **Framework scaffolding degrades gracefully** (#414): scaffolding a known
+  framework that has no template now returns actionable guidance (and the run
+  command) instead of raising; `canary migrate` records it as a follow-up rather
+  than reporting a false "migration complete".
+- **Coverage-json parsing tightened** (#417): hit counts and line numbers must
+  be genuine JSON integers — a stringly-typed or fractional value is rejected
+  (loudly, via the validator) rather than silently coerced/truncated.
+
+### Fixed
+
+- **README skills index** synced to the installed skill set and command count
+  (#416).
+- Docs: warn that the PyPI package (`canary-test-ai`) is not yet published
+  (#404).
+
+### Dependencies
+
+- Bump the `npm_and_yarn` group (#391).
+
 ## [5.14.0] - 2026-07-22
 
 An **additive** release — no breaking changes. New repo-setup and
