@@ -1,8 +1,71 @@
 import { describe, expect, it } from 'vitest';
 
-import { QualityScorer } from './quality-scorer.js';
+import { QualityScorer, isAssertionFreeTest } from './quality-scorer.js';
 
 const scorer = new QualityScorer();
+
+describe('isAssertionFreeTest', () => {
+  it('flags a pytest test that asserts nothing', () => {
+    const code = 'def test_widget():\n    w = make_widget()\n    print(w)';
+    expect(isAssertionFreeTest(code, 'pytest')).toBe(true);
+  });
+
+  it('does not flag a pytest test with an assertion', () => {
+    const code =
+      'def test_widget():\n    w = make_widget()\n    assert w.size == 1';
+    expect(isAssertionFreeTest(code, 'pytest')).toBe(false);
+  });
+
+  it('flags a vitest test that asserts nothing', () => {
+    const code =
+      "it('builds a widget', () => {\n  const w = makeWidget()\n  console.log(w)\n})";
+    expect(isAssertionFreeTest(code, 'vitest')).toBe(true);
+  });
+
+  it('does not flag a vitest test with expect(', () => {
+    const code =
+      "it('builds a widget', () => {\n  expect(makeWidget()).toBe(1)\n})";
+    expect(isAssertionFreeTest(code, 'vitest')).toBe(false);
+  });
+
+  it('requires a test function — helper-only code is not flagged', () => {
+    const code = 'def make_widget():\n    return 1';
+    expect(isAssertionFreeTest(code, 'pytest')).toBe(false);
+  });
+
+  it('does not flag a snapshot-style assertion as weak', () => {
+    const code = 'def test_snap():\n    assert snapshot == golden';
+    expect(isAssertionFreeTest(code, 'pytest')).toBe(false);
+  });
+
+  it('falls back to pytest patterns for an unknown framework', () => {
+    const code = 'def test_x():\n    do_thing()';
+    expect(isAssertionFreeTest(code, 'unknown-fw')).toBe(true);
+  });
+
+  // #419: the ASSERTIONS maps were broadened in the shipped Python; these
+  // custom-helper / node:assert / chai forms must count as assertions so they
+  // are NOT reported weak (they were false positives before the sync).
+  it('counts a pytest custom assert* helper call as an assertion', () => {
+    const code = 'def test_x():\n    assert_valid(x)';
+    expect(isAssertionFreeTest(code, 'pytest')).toBe(false);
+  });
+
+  it('counts vitest node:assert `assert.equal(...)` as an assertion', () => {
+    const code = "it('x', () => {\n  assert.equal(a, b)\n})";
+    expect(isAssertionFreeTest(code, 'vitest')).toBe(false);
+  });
+
+  it('counts vitest chai `x.should.equal(...)` as an assertion', () => {
+    const code = "it('x', () => {\n  result.should.equal(1)\n})";
+    expect(isAssertionFreeTest(code, 'vitest')).toBe(false);
+  });
+
+  it('counts vitest bare `assert(...)` as an assertion', () => {
+    const code = "it('x', () => {\n  assert(a === b)\n})";
+    expect(isAssertionFreeTest(code, 'vitest')).toBe(false);
+  });
+});
 
 describe('QualityScorer edge branches', () => {
   it('k6 uses the "check" label and check-based counting', () => {
