@@ -1,0 +1,44 @@
+[
+  {
+    "what": "test framework",
+    "reason": null,
+    "candidates": null,
+    "override_hint": null,
+    "message": "Could not confidently auto-detect the test framework."
+  },
+  {
+    "what": "test framework",
+    "reason": "no config file or dependency matched",
+    "candidates": [
+      "pytest",
+      "vitest",
+      "playwright"
+    ],
+    "override_hint": "--framework <name>",
+    "message": "Could not confidently auto-detect the test framework. Reason: no config file or dependency matched. Known test framework(s): pytest, vitest, playwright. Set it explicitly with --framework <name>."
+  },
+  {
+    "what": "doctor persona",
+    "reason": null,
+    "candidates": [],
+    "override_hint": "--persona <tag>",
+    "message": "Could not confidently auto-detect the doctor persona. Set it explicitly with --persona <tag>."
+  },
+  {
+    "what": "doctor persona",
+    "reason": "multiple overlays declared personas",
+    "candidates": [
+      "backend",
+      "frontend"
+    ],
+    "override_hint": null,
+    "message": "Could not confidently auto-detect the doctor persona. Reason: multiple overlays declared personas. Known doctor persona(s): backend, frontend."
+  },
+  {
+    "what": "CI provider",
+    "reason": "ambiguous signals",
+    "candidates": null,
+    "override_hint": null,
+    "message": "Could not confidently auto-detect the CI provider. Reason: ambiguous signals."
+  }
+]
