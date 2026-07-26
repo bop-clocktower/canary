@@ -47,7 +47,9 @@ interface Template {
   dirs: string[];
 }
 
-const TEMPLATES: Record<string, Template> = {
+// Exported so the migrator port can compute would-create / already-present sets
+// in its dry-run path (Python: `from agent.core.scaffolder import TEMPLATES`).
+export const TEMPLATES: Record<string, Template> = {
   playwright: {
     files: {
       'playwright.config.ts': `import { defineConfig, devices } from '@playwright/test';

@@ -393,11 +393,10 @@ export class SkillRegistry {
     });
   }
 
-  private parseNested(
-    path: string,
-    dirName: string,
-    source: string,
-  ): SkillInfo | null {
+  // Public (Python `_parse_nested` is underscore-private but used cross-module):
+  // the migrator port parses overlay SKILL.md files directly through this, as
+  // `agent/core/migrator.py::_collect_overlay_skills` does with `reg._parse_nested`.
+  parseNested(path: string, dirName: string, source: string): SkillInfo | null {
     let text: string;
     try {
       text = readFileSync(path, 'utf-8');
