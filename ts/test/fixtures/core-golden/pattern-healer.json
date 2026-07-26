@@ -1,0 +1,94 @@
+[
+  {
+    "name": "time_sleep",
+    "code": "import time\n\n\ndef test_flow():\n    time.sleep(2)\n    assert True\n",
+    "patched_content": "import time\n\n\ndef test_flow():\n    # TODO(canary): replace with an event-based wait (e.g. waitFor, wait_for_selector)\n\n    assert True\n",
+    "changes": [
+      {
+        "line": 5,
+        "rule": "HEAL-001",
+        "before": "    time.sleep(2)",
+        "after": "    # TODO(canary): replace with an event-based wait (e.g. waitFor, wait_for_selector)",
+        "description": "Replaced time.sleep() with a TODO comment."
+      }
+    ],
+    "skipped": []
+  },
+  {
+    "name": "wait_for_timeout",
+    "code": "test('nav', async ({ page }) => {\n  await page.waitForTimeout(1000);\n});\n",
+    "patched_content": "test('nav', async ({ page }) => {\n  // TODO(canary): replace with an event-based wait (e.g. await expect(locator).toBeVisible())\n\n});\n",
+    "changes": [
+      {
+        "line": 2,
+        "rule": "HEAL-002",
+        "before": "  await page.waitForTimeout(1000);",
+        "after": "  // TODO(canary): replace with an event-based wait (e.g. await expect(locator).toBeVisible())",
+        "description": "Replaced page.waitForTimeout() with a TODO comment."
+      }
+    ],
+    "skipped": []
+  },
+  {
+    "name": "missing_await",
+    "code": "test('go', async ({ page }) => {\n  page.click(target);\n});\n",
+    "patched_content": "test('go', async ({ page }) => {\n  await page.click(target);\n});\n",
+    "changes": [
+      {
+        "line": 2,
+        "rule": "HEAL-003",
+        "before": "  page.click(target)",
+        "after": "  await page.click(target)",
+        "description": "Added missing `await` before `page.click(target)`."
+      }
+    ],
+    "skipped": []
+  },
+  {
+    "name": "brittle_selector",
+    "code": "const sel = '.submit-button';\nconst id = '#main';\n",
+    "patched_content": "const sel = '.submit-button';\nconst id = '#main';\n",
+    "changes": [],
+    "skipped": [
+      "Brittle selectors detected but not auto-fixed \u2014 selector swaps require DOM context. Use /canary-heal-test in Claude Code for selector repair."
+    ]
+  },
+  {
+    "name": "clean",
+    "code": "def test_ok():\n    assert 1 + 1 == 2\n",
+    "patched_content": "def test_ok():\n    assert 1 + 1 == 2\n",
+    "changes": [],
+    "skipped": []
+  },
+  {
+    "name": "multi_fix",
+    "code": "import time\n\nasync def scenario(page):\n    time.sleep(3)\n    await page.waitForTimeout(500)\n    page.fill('#email', value)\n",
+    "patched_content": "import time\n\nasync def scenario(page):\n    # TODO(canary): replace with an event-based wait (e.g. waitFor, wait_for_selector)\n\n    // TODO(canary): replace with an event-based wait (e.g. await expect(locator).toBeVisible())\n\n    await page.fill('#email', value)\n",
+    "changes": [
+      {
+        "line": 4,
+        "rule": "HEAL-001",
+        "before": "    time.sleep(3)",
+        "after": "    # TODO(canary): replace with an event-based wait (e.g. waitFor, wait_for_selector)",
+        "description": "Replaced time.sleep() with a TODO comment."
+      },
+      {
+        "line": 5,
+        "rule": "HEAL-002",
+        "before": "\n    await page.waitForTimeout(500)",
+        "after": "\n    // TODO(canary): replace with an event-based wait (e.g. await expect(locator).toBeVisible())",
+        "description": "Replaced page.waitForTimeout() with a TODO comment."
+      },
+      {
+        "line": 7,
+        "rule": "HEAL-003",
+        "before": "\n    page.fill('#email', value)",
+        "after": "\n    await page.fill('#email', value)",
+        "description": "Added missing `await` before `page.fill('#email', value)`."
+      }
+    ],
+    "skipped": [
+      "Brittle selectors detected but not auto-fixed \u2014 selector swaps require DOM context. Use /canary-heal-test in Claude Code for selector repair."
+    ]
+  }
+]

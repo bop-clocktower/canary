@@ -1,0 +1,60 @@
+{
+  "issue_url": [
+    {
+      "category": "bug",
+      "message": "Crash on startup with a broken config",
+      "context": {
+        "version": "5.12.0",
+        "os": "Linux 6.1",
+        "python": "3.11",
+        "install": "pip/npm"
+      },
+      "endpoint": "https://github.com/bop-clocktower/canary/issues/new",
+      "title": "[bug] Crash on startup with a broken config",
+      "body": "Crash on startup with a broken config\n\n---\n_Submitted via `canary feedback`._\n\n**Environment**\n- version: 5.12.0\n- os: Linux 6.1\n- python: 3.11\n- install: pip/npm",
+      "labels": "bug"
+    },
+    {
+      "category": "idea",
+      "message": "Add a dark mode toggle",
+      "context": {},
+      "endpoint": "https://github.com/bop-clocktower/canary/issues/new",
+      "title": "[idea] Add a dark mode toggle",
+      "body": "Add a dark mode toggle\n\n---\n_Submitted via `canary feedback`._\n\n**Environment**",
+      "labels": "idea"
+    },
+    {
+      "category": "docs",
+      "message": "The quick brown fox jumps over the lazy dog and then keeps on running",
+      "context": {
+        "os": "Darwin 27.0.0"
+      },
+      "endpoint": "https://github.com/bop-clocktower/canary/issues/new",
+      "title": "[docs] The quick brown fox jumps over the lazy dog and then keeps o",
+      "body": "The quick brown fox jumps over the lazy dog and then keeps on running\n\n---\n_Submitted via `canary feedback`._\n\n**Environment**\n- os: Darwin 27.0.0",
+      "labels": "docs"
+    }
+  ],
+  "build": [
+    {
+      "category": "ux",
+      "message": "The --scope flag is confusing",
+      "context_keys": [
+        "version",
+        "os",
+        "python",
+        "install"
+      ]
+    },
+    {
+      "category": "bug",
+      "message": "Null pointer in the reporter",
+      "context_keys": [
+        "version",
+        "os",
+        "python",
+        "install"
+      ]
+    }
+  ]
+}
