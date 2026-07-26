@@ -89,9 +89,21 @@ export async function invokeCanary(
 
   return {
     code,
-    stdout: out.join('\n') + (out.length ? '\n' : ''),
-    stderr: err.join('\n') + (err.length ? '\n' : ''),
+    stdout: stripAnsi(out.join('\n') + (out.length ? '\n' : '')),
+    stderr: stripAnsi(err.join('\n') + (err.length ? '\n' : '')),
   };
+}
+
+/**
+ * Strip ANSI SGR (color) escapes from captured output. picocolors decides to
+ * colorize from the ambient environment: under vitest it sees FORCE_COLOR on CI
+ * (color emitted) but not locally (stripped), so a content assertion like
+ * toContain('Migrated 1 runs') would pass locally and fail on CI when a word is
+ * wrapped in color. The CLI's color is presentation, not a contract, so tests
+ * assert on the color-stripped content.
+ */
+function stripAnsi(s: string): string {
+  return s.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
 function restore(
