@@ -99,7 +99,7 @@ function walk(dir: string, out: string[]): void {
   }
 }
 
-function findTestFiles(
+export function findTestFiles(
   root: string,
   framework: string,
   testType: string,

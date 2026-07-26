@@ -2,37 +2,6 @@
   "version": 1,
   "snapshots": [
     {
-      "capturedAt": "2026-05-21T00:50:35.685Z",
-      "commitHash": "ee54a849eea5fcf66fdd94c10e8986f3fc44762e",
-      "securityScore": 100,
-      "totalFindings": 1,
-      "bySeverity": {
-        "error": 0,
-        "warning": 0,
-        "info": 1
-      },
-      "byCategory": {
-        "network": {
-          "findingCount": 1,
-          "errorCount": 0,
-          "warningCount": 0,
-          "infoCount": 1
-        }
-      },
-      "supplyChain": {
-        "critical": 0,
-        "high": 0,
-        "moderate": 0,
-        "low": 0,
-        "info": 0,
-        "total": 0
-      },
-      "suppressionCount": 0,
-      "findingIds": [
-        "f648dc252b6f0cc1"
-      ]
-    },
-    {
       "capturedAt": "2026-05-21T00:59:27.594Z",
       "commitHash": "dc62e7cde0f8b98a4840bdd39d27336df0e0328b",
       "securityScore": 100,
@@ -974,6 +943,52 @@
         "9e44936597887fa9",
         "dff5570f818b1e40"
       ]
+    },
+    {
+      "capturedAt": "2026-07-26T18:52:34.082Z",
+      "commitHash": "f4381095f01c3fd9dc0db01e3b43dcbadd09c0fa",
+      "securityScore": 78,
+      "totalFindings": 10,
+      "bySeverity": {
+        "error": 7,
+        "warning": 0,
+        "info": 3
+      },
+      "byCategory": {
+        "agent-config": {
+          "findingCount": 7,
+          "errorCount": 7,
+          "warningCount": 0,
+          "infoCount": 0
+        },
+        "network": {
+          "findingCount": 3,
+          "errorCount": 0,
+          "warningCount": 0,
+          "infoCount": 3
+        }
+      },
+      "supplyChain": {
+        "critical": 0,
+        "high": 0,
+        "moderate": 0,
+        "low": 0,
+        "info": 0,
+        "total": 0
+      },
+      "suppressionCount": 0,
+      "findingIds": [
+        "cbb02bee0533d75e",
+        "db8ca629a7dbe625",
+        "f04bd871cb9f75d5",
+        "6bf64be568188def",
+        "f2be8de5ac6d35f0",
+        "1c8d929bd23a81ba",
+        "477fef606835df0b",
+        "8df90114e9d1fe13",
+        "792924e09ae3ba3c",
+        "f648dc252b6f0cc1"
+      ]
     }
   ],
   "findingLifecycles": [
@@ -1029,8 +1044,8 @@
       "file": "tests/unit/test_canary_instrument.py",
       "firstSeenAt": "2026-07-18T22:39:06.429Z",
       "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-26T18:52:33.408Z",
+      "resolvedCommit": "f4381095f01c3fd9dc0db01e3b43dcbadd09c0fa"
     },
     {
       "findingId": "a2204fcaebf8f638",
@@ -1040,8 +1055,8 @@
       "file": "tests/unit/test_canary_instrument.py",
       "firstSeenAt": "2026-07-18T22:39:06.429Z",
       "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-26T18:52:33.408Z",
+      "resolvedCommit": "f4381095f01c3fd9dc0db01e3b43dcbadd09c0fa"
     },
     {
       "findingId": "11125e20b6fc9350",
@@ -1051,8 +1066,8 @@
       "file": "tests/unit/test_canary_instrument.py",
       "firstSeenAt": "2026-07-18T22:39:06.429Z",
       "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-26T18:52:33.408Z",
+      "resolvedCommit": "f4381095f01c3fd9dc0db01e3b43dcbadd09c0fa"
     },
     {
       "findingId": "d8a567e26f734e65",
@@ -1062,8 +1077,8 @@
       "file": "tests/unit/test_canary_instrument.py",
       "firstSeenAt": "2026-07-18T22:39:06.429Z",
       "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-26T18:52:33.408Z",
+      "resolvedCommit": "f4381095f01c3fd9dc0db01e3b43dcbadd09c0fa"
     },
     {
       "findingId": "20e4cda368c5d4af",
@@ -1073,8 +1088,8 @@
       "file": "tests/unit/test_canary_instrument.py",
       "firstSeenAt": "2026-07-18T22:39:06.429Z",
       "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-26T18:52:33.408Z",
+      "resolvedCommit": "f4381095f01c3fd9dc0db01e3b43dcbadd09c0fa"
     },
     {
       "findingId": "9e44936597887fa9",
@@ -1084,8 +1099,8 @@
       "file": "tests/unit/test_canary_instrument.py",
       "firstSeenAt": "2026-07-18T22:39:06.429Z",
       "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-26T18:52:33.408Z",
+      "resolvedCommit": "f4381095f01c3fd9dc0db01e3b43dcbadd09c0fa"
     },
     {
       "findingId": "dff5570f818b1e40",
@@ -1095,8 +1110,8 @@
       "file": "npm/src/engine-checks.ts",
       "firstSeenAt": "2026-07-18T22:39:06.429Z",
       "firstSeenCommit": "b82e007b120c2ac4614e5e8ae66355d8c80e0215",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-26T18:52:33.408Z",
+      "resolvedCommit": "f4381095f01c3fd9dc0db01e3b43dcbadd09c0fa"
     },
     {
       "findingId": "cbb02bee0533d75e",
@@ -1161,6 +1176,28 @@
       "file": "tests/unit/test_hooks.py",
       "firstSeenAt": "2026-07-18T23:39:37.206Z",
       "firstSeenCommit": "72fa4f544e6afc0b5401e174fba8cc177806de69",
+      "resolvedAt": null,
+      "resolvedCommit": null
+    },
+    {
+      "findingId": "477fef606835df0b",
+      "ruleId": "SEC-AGT-006",
+      "category": "agent-config",
+      "severity": "error",
+      "file": "tests/unit/test_hooks.py",
+      "firstSeenAt": "2026-07-26T18:52:33.408Z",
+      "firstSeenCommit": "f4381095f01c3fd9dc0db01e3b43dcbadd09c0fa",
+      "resolvedAt": null,
+      "resolvedCommit": null
+    },
+    {
+      "findingId": "8df90114e9d1fe13",
+      "ruleId": "SEC-NET-003",
+      "category": "network",
+      "severity": "info",
+      "file": "tests/unit/test_guardian_coverage.py",
+      "firstSeenAt": "2026-07-26T18:52:33.408Z",
+      "firstSeenCommit": "f4381095f01c3fd9dc0db01e3b43dcbadd09c0fa",
       "resolvedAt": null,
       "resolvedCommit": null
     }

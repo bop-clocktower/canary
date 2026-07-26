@@ -5,7 +5,8 @@
   "type": "module",
   "description": "TypeScript pilot port of the Canary analysis engine (strangler migration).",
   "bin": {
-    "canary": "bin/canary.js"
+    "canary": "bin/canary.js",
+    "canary-mcp": "bin/canary-mcp.js"
   },
   "scripts": {
     "build": "tsc -p .",
@@ -17,10 +18,12 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@supabase/supabase-js": "^2.45.0",
     "commander": "^15.0.0",
     "js-yaml": "^5.2.2",
-    "picocolors": "^1.1.1"
+    "picocolors": "^1.1.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
