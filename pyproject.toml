@@ -21,7 +21,7 @@ history = ["supabase>=2.0,<3"]
 dev = [
     "pyinstaller>=6,<7",
     "ruff>=0.15,<1",
-    "pytest>=8,<9",
+    "pytest>=8,<10",
     "coverage>=7,<8",
 ]
 
