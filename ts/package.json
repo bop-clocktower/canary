@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "TypeScript pilot port of the Canary analysis engine (strangler migration).",
+  "bin": {
+    "canary": "bin/canary.js"
+  },
   "scripts": {
     "build": "tsc -p .",
     "typecheck": "tsc -p . --noEmit",
