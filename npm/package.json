@@ -27,10 +27,9 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/build-engine.mjs",
     "prepare": "npm run build",
-    "postinstall": "node scripts/install.js",
-    "test": "npm run build && node --test \"scripts/__tests__/*.test.js\""
+    "test": "tsc && node --test \"scripts/__tests__/*.test.js\""
   },
   "engines": {
     "node": ">=18"
@@ -38,8 +37,16 @@
   "files": [
     "bin/",
     "dist/",
-    "scripts/install.js"
+    "agent/frameworks/registry.json"
   ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "commander": "^15.0.0",
+    "js-yaml": "^5.2.2",
+    "picocolors": "^1.1.1",
+    "zod": "^4.4.3"
+  },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@types/node": "^22.0.0",

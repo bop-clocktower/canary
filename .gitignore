@@ -30,6 +30,9 @@ dist/
 *.egg-info/
 *.egg
 
+# Bundled engine data artifact staged by npm/scripts/build-engine.mjs
+/npm/agent/
+
 # Virtual environments
 .venv/
 venv/

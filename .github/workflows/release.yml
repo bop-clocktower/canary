@@ -10,85 +10,40 @@ permissions:
   id-token: write # needed for npm provenance
 
 jobs:
-  build-binaries:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            platform_key: linux-x64
-            binary_name: canary-linux-x64
-          - os: macos-14
-            platform_key: darwin-arm64
-            binary_name: canary-darwin-arm64
-          - os: windows-2022
-            platform_key: win32-x64
-            binary_name: canary-win32-x64.exe
-
-    steps:
-      - name: Allow colon in filenames (Windows NTFS)
-        if: runner.os == 'Windows'
-        run: git config --global core.protectNTFS false
-        shell: bash
-
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies + PyInstaller
-        run: pip install -e ".[dev]"
-
-      - name: Build binary
-        run: pyinstaller canary.spec --clean --noconfirm
-
-      - name: Rename binary to platform name
-        shell: bash
-        run: |
-          if [[ "${{ matrix.platform_key }}" == "win32-x64" ]]; then
-            mv dist/canary.exe dist/${{ matrix.binary_name }}
-          else
-            mv dist/canary dist/${{ matrix.binary_name }}
-          fi
-
-      - name: Upload binary as artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.binary_name }}
-          path: dist/${{ matrix.binary_name }}
-
+  # canary v6 (stage 1): the npm package now bundles and runs the TypeScript
+  # engine (ts/ -> npm/dist/engine/), so there is no per-OS binary to build. The
+  # retired PyInstaller path (canary.spec + the old per-OS build matrix) is no
+  # longer part of the release; it stays in-tree for stage 2.
   publish:
-    name: Publish to GitHub Releases + npm
-    needs: build-binaries
+    name: Build engine + publish (GitHub Release + npm)
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v7
-
-      - name: Download all binaries
-        uses: actions/download-artifact@v8
-        with:
-          path: dist/
-
-      - name: Create GitHub Release and upload assets
-        uses: softprops/action-gh-release@v3
-        with:
-          files: dist/**/*
-          generate_release_notes: true
 
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
-          cache-dependency-path: npm/package-lock.json
+          cache-dependency-path: |
+            ts/package-lock.json
+            npm/package-lock.json
 
-      - name: Install npm workspace deps
-        working-directory: npm
-        run: npm ci
+      - name: Build the TypeScript engine
+        run: |
+          npm --prefix ts ci
+          npm --prefix ts run build
+
+      - name: Build the npm package (stages the engine into dist/engine)
+        run: |
+          npm --prefix npm ci
+          npm --prefix npm run build
+
+      - name: Create GitHub Release (changelog only)
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
 
       - name: Publish npm package
         working-directory: npm
