@@ -142,16 +142,26 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 ### Coverage-json producer contract doc + validator
 
-- **Status:** backlog
-- **Spec:** —
-- **Summary:** Ideation pick (score 6.00) from
-  docs/ideation/deepen-core-test-intelligence-2026-07-19.md. Document + validate
-  the canary coverage-json format that agent/guardian/coverage.py consumes, so
-  third-party tools can emit canary-consumable coverage. Accepted risk to handle
-  in spec: documenting today's accidental shape freezes its warts - do a minimal
-  shape review first, frame as version:1 with additive-safe evolution (mirrors
-  test-reporter/instrument contracts). Low effort / high confidence. Next:
-  /harness:brainstorming to spec.
+- **Status:** done
+- **Spec:** docs/specs/coverage-json-contract.md
+- **Summary:** DONE — documented the coverage-json format
+  agent/guardian/coverage.py consumes as a frozen v1 contract
+  (docs/specs/coverage-json-contract.md, mirroring the api-delta-contract style)
+  so third-party tools can emit canary-consumable coverage. Shape review first
+  surfaced the warts and froze them deliberately: `line_hits` is authoritative
+  (only it expresses hits=0 = instrumented-but-unhit), `covered_lines`
+  documented as a shorthand for hits>=1, optional `schema_version` (absent ⇒ 1
+  so today's producers stay valid; additive-safe, unknown keys ignored). Added
+  `validate_coverage_json()` in coverage.py (co-located with the parser so they
+  can't drift) + `canary guardian validate-coverage <file>` — LOUD where the
+  parser is silent, two-tier: error = parser drops it (coverage lost, exit 1) vs
+  warning = sub-part ignored (degraded, exit 0 / 1 under --strict);
+  missing/non-JSON exits 2. A binding test asserts the validator's verdict
+  matches what the parser actually does. 26 new tests, full suite green.
+  Ideation pick (score 6.00) from
+  docs/ideation/deepen-core-test-intelligence-2026-07-19.md. (refs:
+  agent/guardian/coverage.py, agent/guardian/cli.py; docs/guides/pr-guardian.md
+  formats note)
 - **Blockers:** —
 - **Plan:** —
 
@@ -173,34 +183,64 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 ### Guardian hard-gate rollout automation
 
-- **Status:** backlog
+- **Status:** done
 - **Spec:** —
-- **Summary:** Ideation pick (score 4.00) from
-  docs/ideation/deepen-core-test-intelligence-2026-07-19.md. Automate the
-  soft->hard guardian gate flip: required-check registration + operator playbook
-  (memory: hard-gate needs admin required-check registration). Accepted risk to
-  handle in spec: branch-protection required-checks need admin scope and vary
-  across GH Free/Team/Enterprise - detect plan/permission and fail loud with a
-  manual-steps fallback rather than silently no-op (consistent with the
-  fail-loud pattern from #294/#295). Medium effort. Next: /harness:brainstorming
-  to spec.
+- **Summary:** DONE (adversarially reviewed) — `canary guardian harden-gate`
+  automates the admin step the operator guide said the guardian couldn't do:
+  registering the guardian status check (`guardian` job, `--check` overridable)
+  as a REQUIRED check in branch protection, which is what makes a `gate: hard`
+  finding block the merge button. Dry-run by default (shows plan + manual
+  steps); `--apply` PATCHes branch protection MERGING into existing rules (never
+  clobbers), or PUTs minimal protection if none exists. Fail-loud per #294/#295:
+  no admin scope / unsupported plan / missing token → prints a manual playbook
+  (Settings URL + ready-to-paste `gh api`) and exits non-zero, never a silent
+  no-op. Structure mirrors pr_comment (BranchProtection Protocol +
+  FakeBranchProtectionClient + urllib RestBranchProtectionClient), so the pure
+  planner (plan_hard_gate) and apply path are fully network-free-testable.
+  Adversarial review caught two CRITICALs, both fixed: (1) a 404 on the
+  required_status_checks sub-resource is ambiguous (unprotected vs
+  protected-without-checks) — collapsing both to create/PUT would have WIPED
+  existing reviews/enforce_admins/restrictions, so apply now disambiguates via
+  the parent /protection endpoint and only PUT-creates when genuinely
+  unprotected (else PATCHes the sub-resource, preserving other protection); (2)
+  a wrong check-context registers a phantom required check that blocks EVERY
+  merge — so apply now verifies the context against a recent commit's actually-
+  reported check runs and refuses (listing the real ones) unless --force. Also
+  hardened error handling (401/network/5xx/nonexistent-branch → HardGateBlocked
+  playbook, never a traceback). Docs: guide Soft→hard section walks the command
+  - both safety rails. 22 new tests, full suite green. (refs:
+    agent/guardian/hard_gate.py, cli.py; docs/guides/pr-guardian.md)
 - **Blockers:** —
 - **Plan:** —
 
 ### Wire quality_scorer into the guardian gate
 
-- **Status:** backlog
+- **Status:** done
 - **Spec:** —
-- **Summary:** Ideation pick (score 3.00) from
-  docs/ideation/deepen-core-test-intelligence-2026-07-19.md.
-  agent/core/quality_scorer.py scores assertions/flakiness/magic-numbers but
-  that signal is not consumed by the guardian gate, which only flags ABSENT
-  tests, not WEAK ones (e.g. an added test that asserts nothing passes green).
-  Accepted risk to handle in spec: a weak-test heuristic firing on legit
-  table-driven/snapshot tests erodes trust - ship as advisory (non-blocking)
-  fidelity-labeled finding first with a conservative high-precision threshold
-  before any gate promotion. Medium effort. Next: /harness:brainstorming to
-  spec.
+- **Summary:** DONE (adversarially reviewed) — the guardian now emits an
+  advisory `weak-test` finding for an added test that defines a test function
+  but asserts nothing (the "asserts-nothing passes green" gap). New
+  quality_scorer.is_assertion_free_test(code, framework) predicate — co-located
+  with the assertion/test-fn patterns so it can't drift — requires BOTH a test
+  function AND zero assertions (high precision: a snapshot/table-driven test
+  matches an assertion pattern and is NOT flagged, per the roadmap's
+  trust-erosion risk). pr_check.build_weak_test_findings consumes the test-path
+  units filter_test_units already sets aside, scoring only the diff's ADDED
+  lines. The finding is LOW/`weak-test` and NEVER gates — compute_exit_code
+  gates only `untested-new-code`, so it's advisory by construction (advisory
+  first, before any gate promotion). A weak-test-only diff no longer
+  short-circuits at "nothing to verify". Config toggle
+  canary.guardian.pr.weakTests (default true; non-blocking so on by default).
+  Adversarial review confirmed the non-gating guarantee airtight but caught
+  precision gaps (the roadmap's trust risk); fixed by broadening assertion
+  patterns (chai `.should` / node `assert.equal` / `assert_*` helpers now count
+  as asserting) and skipping a rename that adds only a signature line (no added
+  body to judge). Residual lexical limits (per-file-blob granularity; a
+  non-`assert`-named helper) documented in the guide; advisory-only so the
+  escape hatch is the toggle. ~28 new tests, full suite green. Ideation pick
+  (score 3.00) from docs/ideation/deepen-core-test-intelligence-2026-07-19.md.
+  (refs: agent/core/quality_scorer.py, agent/guardian/pr_check.py, cli.py;
+  docs/guides/pr-guardian.md)
 - **Blockers:** —
 - **Plan:** —
 

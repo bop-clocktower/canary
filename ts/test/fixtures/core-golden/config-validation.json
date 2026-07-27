@@ -1,0 +1,48 @@
+[
+  {
+    "name": "absent",
+    "content": null,
+    "data": null,
+    "warning_is_null": true
+  },
+  {
+    "name": "valid_object",
+    "content": "{\"a\": 1, \"b\": \"two\", \"nested\": {\"x\": true}}",
+    "data": {
+      "a": 1,
+      "b": "two",
+      "nested": {
+        "x": true
+      }
+    },
+    "warning_is_null": true
+  },
+  {
+    "name": "malformed",
+    "content": "{ \"a\": 1, ",
+    "data": null,
+    "warning_is_null": false
+  },
+  {
+    "name": "array_root",
+    "content": "[1, 2, 3]",
+    "data": [
+      1,
+      2,
+      3
+    ],
+    "warning_is_null": true
+  },
+  {
+    "name": "null_root",
+    "content": "null",
+    "data": null,
+    "warning_is_null": true
+  },
+  {
+    "name": "scalar",
+    "content": "42",
+    "data": 42,
+    "warning_is_null": true
+  }
+]

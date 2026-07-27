@@ -1,0 +1,51 @@
+{
+  "frameworks": [
+    "k6",
+    "playwright",
+    "pytest",
+    "vitest",
+    "wdio"
+  ],
+  "templates": {
+    "playwright": {
+      "files": {
+        "playwright.config.ts": "import { defineConfig, devices } from '@playwright/test';\n\nexport default defineConfig({\n  testDir: './tests/e2e',\n  fullyParallel: true,\n  forbidOnly: !!process.env.CI,\n  retries: process.env.CI ? 2 : 0,\n  workers: process.env.CI ? 1 : undefined,\n  reporter: 'html',\n  use: {\n    trace: 'on-first-retry',\n  },\n  projects: [\n    {\n      name: 'chromium',\n      use: { ...devices['Desktop Chrome'] },\n    },\n  ],\n});\n"
+      },
+      "dirs": [
+        "tests/e2e"
+      ]
+    },
+    "vitest": {
+      "files": {
+        "vitest.config.ts": "import { defineConfig } from 'vitest/config';\n\nexport default defineConfig({\n  test: {\n    environment: 'node',\n    include: ['tests/unit/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],\n  },\n});\n"
+      },
+      "dirs": [
+        "tests/unit"
+      ]
+    },
+    "pytest": {
+      "files": {
+        "pytest.ini": "[pytest]\ntestpaths = tests\npython_files = test_*.py *_test.py\npython_classes = Test*\npython_functions = test_*\n"
+      },
+      "dirs": [
+        "tests"
+      ]
+    },
+    "k6": {
+      "files": {
+        "k6.config.js": "export const options = {\n  vus: 10,\n  duration: '30s',\n};\n"
+      },
+      "dirs": [
+        "tests/performance"
+      ]
+    },
+    "wdio": {
+      "files": {
+        "wdio.conf.ts": "import type { Options } from \"@wdio/types\";\n\n// Appium + WebdriverIO config. Fill in the capabilities stub below for the\n// device/platform under test (Android shown; add an iOS entry as needed).\nexport const config: Options.Testrunner = {\n  runner: \"local\",\n  specs: [\"./tests/**/*.spec.ts\"],\n  maxInstances: 1,\n  // Appium capabilities stub \u2014 replace deviceName / app / versions to match\n  // your emulator or real device.\n  capabilities: [\n    {\n      platformName: \"Android\",\n      \"appium:automationName\": \"UiAutomator2\",\n      \"appium:deviceName\": \"Android Emulator\",\n      \"appium:app\": \"./app/build/outputs/apk/debug/app-debug.apk\",\n    },\n  ],\n  framework: \"mocha\",\n  mochaOpts: {\n    ui: \"bdd\",\n    timeout: 60000,\n  },\n  reporters: [\"spec\"],\n  // Requires the Appium service: `npm i -D @wdio/appium-service appium`.\n  services: [\"appium\"],\n};\n"
+      },
+      "dirs": [
+        "tests"
+      ]
+    }
+  }
+}

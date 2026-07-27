@@ -93,6 +93,168 @@ def analyze(
         _try_post_pr_comment(summary, pr_url=pr)
 
 
+@guardian_app.command("validate-coverage")
+def validate_coverage(
+    path: str = typer.Argument(..., help="Path to a coverage-json file to validate."),
+    strict: bool = typer.Option(
+        False, "--strict", help="Treat warnings as failures (exit 1)."
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Emit problems as JSON."),
+) -> None:
+    """Validate a coverage-json file against the producer contract.
+
+    Reports, loudly, what the guardian's parser would silently drop. Exit 0 when
+    valid (warnings alone don't fail unless --strict); 1 on contract errors (or
+    warnings under --strict); 2 when the file is missing, too large, or not
+    JSON. See docs/specs/coverage-json-contract.md.
+    """
+    from rich.markup import escape
+
+    from agent.guardian.coverage import validate_coverage_json
+
+    # The file is untrusted producer output, so guard the read: cap size before
+    # loading, and treat any decode/parse failure (including a RecursionError
+    # from pathologically-nested JSON) as "not usable" → exit 2.
+    _MAX_BYTES = 25 * 1024 * 1024
+    p = Path(path)
+    try:
+        if p.is_dir() or p.stat().st_size > _MAX_BYTES:
+            print(f"[bold red]✗ cannot read {escape(path)}:[/bold red] not a readable file within the size limit")
+            raise typer.Exit(2)
+        text = p.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"[bold red]✗ cannot read {escape(path)}:[/bold red] {escape(str(exc))}")
+        raise typer.Exit(2)
+    try:
+        data = json.loads(text)
+    except (ValueError, RecursionError) as exc:  # JSONDecodeError is a ValueError
+        print(f"[bold red]✗ {escape(path)} is not valid JSON:[/bold red] {escape(str(exc))}")
+        raise typer.Exit(2)
+
+    problems = validate_coverage_json(data)
+    errors = [p for p in problems if p.severity == "error"]
+    warnings = [p for p in problems if p.severity == "warning"]
+    valid = not errors
+
+    if output_json:
+        # Plain stdout, NOT rich.print — producer-controlled keys must not be
+        # interpreted as console markup, and the payload must stay valid JSON.
+        typer.echo(json.dumps(
+            {
+                "valid": valid,
+                "problems": [
+                    {"severity": pr.severity, "location": pr.location, "message": pr.message}
+                    for pr in problems
+                ],
+            },
+            indent=2,
+        ))
+    else:
+        # Escape the producer-controlled location/message so a path key like
+        # "[/]" can't corrupt the styled output or crash the markup parser.
+        for pr in errors:
+            print(f"[bold red]error[/bold red] {escape(pr.location)}: {escape(pr.message)}")
+        for pr in warnings:
+            print(f"[yellow]warning[/yellow] {escape(pr.location)}: {escape(pr.message)}")
+        if valid and not warnings:
+            print(f"[bold green]✓ {escape(path)} is a valid coverage-json document.[/bold green]")
+        elif valid:
+            print(f"[green]✓ valid[/green] with {len(warnings)} warning(s) — coverage is usable but degraded.")
+        else:
+            print(f"[bold red]✗ invalid[/bold red] — {len(errors)} error(s); this coverage would be dropped.")
+
+    if errors or (strict and warnings):
+        raise typer.Exit(1)
+
+
+def _branch_protection_client(repo: str, token: str):
+    """Build the real branch-protection client (seam for tests to fake)."""
+    from agent.guardian.hard_gate import RestBranchProtectionClient
+
+    return RestBranchProtectionClient(repo, token)
+
+
+@guardian_app.command("harden-gate")
+def harden_gate(
+    apply: bool = typer.Option(
+        False, "--apply", help="Register the required check (default: dry-run)."
+    ),
+    repo: Optional[str] = typer.Option(
+        None, "--repo", envvar="GITHUB_REPOSITORY", help="owner/repo."
+    ),
+    branch: str = typer.Option("main", "--branch", help="Branch to protect."),
+    check: str = typer.Option(
+        "guardian", "--check", help="Status-check context to require (the guardian workflow job)."
+    ),
+    token: Optional[str] = typer.Option(
+        None, "--token", envvar="GITHUB_TOKEN", help="Admin token for --apply."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Skip the check-context-exists verification (risky)."
+    ),
+) -> None:
+    """Promote the guardian gate to hard: require its status check in branch
+    protection — the admin step that makes a `gate: hard` finding actually block
+    the merge button.
+
+    Dry-run by default (no writes); `--apply` performs the registration, merging
+    into existing protection (never clobbering) and creating minimal protection
+    only when the branch is genuinely unprotected. Before registering it
+    verifies the check context is one a recent commit actually reported —
+    requiring a check that never runs would block every merge — and refuses
+    (listing the real contexts) unless `--force`. Exits 1 when blocked (no admin
+    scope / unsupported plan / unverified context / network) after printing a
+    manual playbook; 2 on misuse (no repo, or --apply without a token). See
+    docs/guides/pr-guardian.md.
+    """
+    from agent.guardian.hard_gate import (
+        HardGateBlocked,
+        apply_hard_gate,
+        render_playbook,
+    )
+
+    if not repo:
+        print("[bold red]✗ no repo[/bold red] — pass --repo owner/repo or set GITHUB_REPOSITORY.")
+        raise typer.Exit(2)
+
+    playbook = render_playbook(repo, branch, check)
+
+    if not apply:
+        print(f"[bold]Dry run[/bold] — would require the '{check}' check on {repo}@{branch}.")
+        print(
+            "On --apply this merges into existing protection (or creates minimal "
+            "protection if the branch is unprotected) and first verifies the "
+            "context is real. Re-run with [bold]--apply[/bold] (needs an admin "
+            "token), or do it manually:\n"
+        )
+        print(playbook)
+        return
+
+    if not token:
+        print("[bold red]✗ --apply needs an admin token[/bold red] (pass --token or set GITHUB_TOKEN).\n")
+        print(playbook)
+        raise typer.Exit(2)
+
+    client = _branch_protection_client(repo, token)
+    try:
+        plan = apply_hard_gate(client, repo, branch, check, force=force)
+    except HardGateBlocked as exc:
+        print(f"[bold red]✗ {exc.reason}[/bold red]\n")
+        print(exc.playbook)
+        raise typer.Exit(1)
+
+    if plan.already_required:
+        print(f"[green]✓ '{check}' is already required on {repo}@{branch} — nothing to do.[/green]")
+    else:
+        verb = "created protection and required" if plan.creates_protection else "required"
+        print(f"[bold green]✓ {verb} '{check}' on {repo}@{branch}.[/bold green]")
+    print(
+        "[dim]Finish the flip: set the exit gate to hard too — "
+        'canary.guardian.pr.gate = "hard" in harness.config.json '
+        "(or run pr-check --gate hard).[/dim]"
+    )
+
+
 def _pr_context_from_env() -> "Optional[tuple[str, int]]":
     """Resolve ``(repo, pr_number)`` from GitHub Actions env, else ``None``.
 
@@ -293,7 +455,18 @@ def pr_check(
     reexport_paths = find_reexport_only(diff_text)
     barrel_units = [u for u in kept if u.path in reexport_paths]
     kept = [u for u in kept if u.path not in reexport_paths]
-    if not kept:
+
+    # Advisory weak-test findings for added tests that assert nothing. Computed
+    # from the set-aside test units, and never gating — so a PR that ONLY adds a
+    # weak test still surfaces it rather than short-circuiting at "nothing to
+    # verify" below.
+    from agent.guardian.pr_check import build_weak_test_findings
+
+    weak_findings = (
+        build_weak_test_findings(test_units, diff_text) if config.weak_tests else []
+    )
+
+    if not kept and not weak_findings:
         typer.echo(
             f"guardian: nothing to verify "
             f"({len(skipped) + len(test_units) + len(barrel_units)} path(s) skipped)."
@@ -307,7 +480,7 @@ def pr_check(
         # edge (depth 1); soft stays unbounded. An explicit config value wins.
         graph_max_depth=effective_graph_depth(config, effective_gate),
     )
-    findings = apply_suppressions(build_findings(results))
+    findings = apply_suppressions(build_findings(results)) + weak_findings
 
     # SC-5 (PR half): resolve the requested tier against actual capability. In
     # Phase 3 no agent runtime exists (NoAgentProbe), so any `pr.tier > 0` drops

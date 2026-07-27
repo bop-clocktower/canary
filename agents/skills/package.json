@@ -7,7 +7,7 @@
   "scripts": {
     "test": "vitest run --coverage",
     "typecheck": "tsc -p . --noEmit",
-    "format:check": "prettier --check \"claude-code/canary-savant/scripts/**/*.mjs\" \"test/**/*.ts\""
+    "format:check": "prettier --check \"claude-code/canary-savant/scripts/**/*.mjs\" \"claude-code/canary-instrument/scripts/*.mjs\" \"claude-code/canary-fail-fast/scripts/**/*.mjs\" \"claude-code/canary-test-reporter/scripts/**/*.mjs\" \"test/**/*.ts\""
   },
   "engines": {
     "node": ">=20"

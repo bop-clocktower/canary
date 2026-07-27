@@ -21,7 +21,13 @@
       "ci_flags": [
         "--reporter=list"
       ],
-      "status": "preferred"
+      "status": "preferred",
+      "capabilities": {
+        "scaffold": true,
+        "execute": true,
+        "tier": "full"
+      },
+      "tier": "full"
     },
     {
       "name": "vitest",
@@ -41,7 +47,13 @@
       "ci_flags": [
         "--reporter=verbose"
       ],
-      "status": "preferred"
+      "status": "preferred",
+      "capabilities": {
+        "scaffold": true,
+        "execute": true,
+        "tier": "full"
+      },
+      "tier": "full"
     },
     {
       "name": "pytest",
@@ -59,7 +71,13 @@
         "-p",
         "no:cacheprovider"
       ],
-      "status": "preferred"
+      "status": "preferred",
+      "capabilities": {
+        "scaffold": true,
+        "execute": true,
+        "tier": "full"
+      },
+      "tier": "full"
     },
     {
       "name": "schemathesis",
@@ -81,7 +99,13 @@
         "--max-response-time",
         "2000"
       ],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "k6",
@@ -95,7 +119,13 @@
       ],
       "execution_command": "k6 run {file}",
       "ci_flags": [],
-      "status": "preferred"
+      "status": "preferred",
+      "capabilities": {
+        "scaffold": true,
+        "execute": true,
+        "tier": "full"
+      },
+      "tier": "full"
     },
     {
       "name": "axe-core",
@@ -111,7 +141,13 @@
       ],
       "execution_command": "npx --yes playwright test {file}",
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "zap",
@@ -123,7 +159,13 @@
       "file_extensions": [],
       "execution_command": "zap-baseline.py -t {target}",
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": false,
+        "tier": "catalog"
+      },
+      "tier": "catalog"
     },
     {
       "name": "backstopjs",
@@ -139,7 +181,13 @@
       ],
       "execution_command": "npx --yes backstop test",
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "pact",
@@ -154,7 +202,13 @@
       "file_extensions": [],
       "execution_command": "npx --yes pact verify",
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "chaos-toolkit",
@@ -169,7 +223,13 @@
       ],
       "execution_command": "chaos run {file}",
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "sdv",
@@ -181,7 +241,13 @@
       "file_extensions": [],
       "execution_command": "python -m pytest {file}",
       "ci_flags": [],
-      "status": "preferred"
+      "status": "preferred",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "faker",
@@ -195,7 +261,13 @@
       "file_extensions": [],
       "execution_command": "python -m pytest {file}",
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "opentelemetry",
@@ -207,7 +279,13 @@
       "file_extensions": [],
       "execution_command": null,
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": false,
+        "tier": "catalog"
+      },
+      "tier": "catalog"
     },
     {
       "name": "maestro",
@@ -222,7 +300,13 @@
       ],
       "execution_command": "maestro test {file}",
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "locust",
@@ -236,7 +320,13 @@
       ],
       "execution_command": "locust -f {file} --headless",
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "stryker",
@@ -252,7 +342,13 @@
       ],
       "execution_command": "npx --yes stryker run",
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "semgrep",
@@ -267,7 +363,13 @@
       ],
       "execution_command": "semgrep --config auto {target}",
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": false,
+        "tier": "catalog"
+      },
+      "tier": "catalog"
     },
     {
       "name": "testcontainers",
@@ -283,7 +385,13 @@
       "file_extensions": [],
       "execution_command": "pytest {file}",
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "tosca",
@@ -295,7 +403,13 @@
       "file_extensions": [],
       "execution_command": null,
       "ci_flags": [],
-      "status": "commercial"
+      "status": "commercial",
+      "capabilities": {
+        "scaffold": false,
+        "execute": false,
+        "tier": "catalog"
+      },
+      "tier": "catalog"
     },
     {
       "name": "neoload",
@@ -307,7 +421,13 @@
       "file_extensions": [],
       "execution_command": null,
       "ci_flags": [],
-      "status": "commercial"
+      "status": "commercial",
+      "capabilities": {
+        "scaffold": false,
+        "execute": false,
+        "tier": "catalog"
+      },
+      "tier": "catalog"
     },
     {
       "name": "lambdatest",
@@ -319,7 +439,13 @@
       "file_extensions": [],
       "execution_command": null,
       "ci_flags": [],
-      "status": "commercial"
+      "status": "commercial",
+      "capabilities": {
+        "scaffold": false,
+        "execute": false,
+        "tier": "catalog"
+      },
+      "tier": "catalog"
     },
     {
       "name": "mutmut",
@@ -333,7 +459,13 @@
       ],
       "execution_command": "mutmut run",
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "wdio",
@@ -349,7 +481,13 @@
       ],
       "execution_command": "npx --yes wdio run wdio.conf.ts --spec {file}",
       "ci_flags": [],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": true,
+        "execute": true,
+        "tier": "full"
+      },
+      "tier": "full"
     },
     {
       "name": "hurl",
@@ -368,7 +506,13 @@
         "--report-junit",
         "hurl-report.xml"
       ],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "fast-check",
@@ -388,7 +532,13 @@
       "ci_flags": [
         "--reporter=verbose"
       ],
-      "status": "preferred"
+      "status": "preferred",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "hypothesis",
@@ -406,7 +556,13 @@
         "-p",
         "no:cacheprovider"
       ],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     },
     {
       "name": "promptfoo",
@@ -423,7 +579,13 @@
       "ci_flags": [
         "--no-progress-bar"
       ],
-      "status": "supported"
+      "status": "supported",
+      "capabilities": {
+        "scaffold": false,
+        "execute": true,
+        "tier": "executable"
+      },
+      "tier": "executable"
     }
   ],
   "byCategory": {

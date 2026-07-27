@@ -127,12 +127,21 @@ def _parse_lcov(text: str) -> dict[str, dict[int, int]]:
 
 
 def _parse_coverage_json(data: object) -> dict[str, dict[int, int]] | None:
-    """Parse the canary/plan coverage-json shape into ``{path: {line: hits}}``.
+    """Parse the canary coverage-json shape into ``{path: {line: hits}}``.
 
     Supports ``{"files": {"<path>": {"covered_lines": [...]}}}`` and the same
-    with an explicit ``line_hits`` mapping. Unrecognized structure → ``None``.
+    with an explicit ``line_hits`` mapping. Unrecognized structure, or a
+    ``schema_version`` this build does not understand, → ``None``. The v1
+    contract is enforced strictly (integers only, 1-based lines, non-negative
+    hits) so this parser and :func:`validate_coverage_json` stay in lockstep —
+    see docs/specs/coverage-json-contract.md.
     """
     if not isinstance(data, dict):
+        return None
+    # Refuse a version we don't understand rather than silently consuming its
+    # v1-compatible parts and mislabeling the result coverage-verified.
+    version = data.get("schema_version")
+    if version is not None and not (_is_int(version) and version == COVERAGE_JSON_SCHEMA_VERSION):
         return None
     files = data.get("files")
     if not isinstance(files, dict):
@@ -142,20 +151,160 @@ def _parse_coverage_json(data: object) -> dict[str, dict[int, int]] | None:
         if not isinstance(entry, dict):
             continue
         hits: dict[int, int] = {}
+        authoritative: set[int] = set()  # lines line_hits recorded (may be 0)
         line_hits = entry.get("line_hits")
         if isinstance(line_hits, dict):
             for k, v in line_hits.items():
+                # Integers only, 1-based line, non-negative hits (see docstring).
+                if not (_is_int(v) and v >= 0):
+                    continue
                 try:
-                    hits[int(k)] = int(v)
+                    lineno = int(k)
                 except (ValueError, TypeError):
                     continue
+                if lineno < 1:
+                    continue
+                hits[lineno] = v
+                authoritative.add(lineno)
         covered = entry.get("covered_lines")
         if isinstance(covered, list):
             for lineno in covered:
-                if isinstance(lineno, int):
-                    hits[lineno] = max(hits.get(lineno, 0), 1)
+                if not (_is_int(lineno) and lineno >= 1):
+                    continue
+                # line_hits is authoritative: covered_lines may add a line it
+                # didn't mention, but never override an explicit hit count
+                # (so a `{"14": 0}` unhit line stays uncovered).
+                if lineno not in authoritative:
+                    hits[lineno] = 1
         index[str(path)] = hits
     return index
+
+
+# The coverage-json contract version this build understands. Bumped only on a
+# breaking change; the shape evolves additively (see
+# docs/specs/coverage-json-contract.md).
+COVERAGE_JSON_SCHEMA_VERSION = 1
+
+
+@dataclass
+class CoverageProblem:
+    """One issue found validating a coverage-json document against the contract.
+
+    ``error``   — :func:`_parse_coverage_json` cannot use this (whole doc → None,
+    or a file entry is dropped): coverage is *lost*.
+    ``warning`` — the parser ignores a sub-part but still uses the rest:
+    coverage is *degraded*, not lost.
+    """
+
+    severity: str  # "error" | "warning"
+    location: str
+    message: str
+
+
+def _is_int(value: object) -> bool:
+    # bool is an int subclass; a JSON true/false is not a valid line/hit count.
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def validate_coverage_json(data: object) -> list[CoverageProblem]:
+    """Validate a coverage-json document against the v1 producer contract.
+
+    Reports, loudly, exactly what :func:`_parse_coverage_json` would silently
+    accept-and-drop, at two severities (see :class:`CoverageProblem`). Never
+    raises and never mutates — it is a lint for producers, mirroring the parser
+    it lives beside so the two cannot drift.
+    """
+    problems: list[CoverageProblem] = []
+
+    def err(loc: str, msg: str) -> None:
+        problems.append(CoverageProblem("error", loc, msg))
+
+    def warn(loc: str, msg: str) -> None:
+        problems.append(CoverageProblem("warning", loc, msg))
+
+    if not isinstance(data, dict):
+        err("(root)", "top-level value must be a JSON object")
+        return problems
+
+    version = data.get("schema_version")
+    if version is not None and not (
+        _is_int(version) and version == COVERAGE_JSON_SCHEMA_VERSION
+    ):
+        err(
+            "schema_version",
+            f"unsupported schema_version {version!r}; this build understands "
+            f"v{COVERAGE_JSON_SCHEMA_VERSION} (omit the field to default to it)",
+        )
+
+    files = data.get("files")
+    if files is None:
+        err("files", "missing required 'files' object")
+        return problems
+    if not isinstance(files, dict):
+        err("files", "'files' must be an object mapping path -> coverage")
+        return problems
+
+    for path, entry in files.items():
+        loc = f"files['{path}']"
+        if not isinstance(entry, dict):
+            err(loc, "entry must be an object; this file's coverage is dropped")
+            continue
+
+        line_hits = entry.get("line_hits")
+        covered = entry.get("covered_lines")
+        # Mirror the parser's surviving hit map so the verdict is bound to what
+        # the parser actually keeps.
+        recorded: dict[int, int] = {}
+
+        if line_hits is not None:
+            if not isinstance(line_hits, dict):
+                warn(f"{loc}.line_hits", "must be an object mapping line -> hits; ignored")
+            else:
+                for k, v in line_hits.items():
+                    kloc = f"{loc}.line_hits['{k}']"
+                    if not _is_int(v):
+                        warn(kloc, f"hits {v!r} is not an integer; dropped")
+                        continue
+                    if v < 0:
+                        warn(kloc, f"hits {v} is negative; dropped")
+                        continue
+                    try:
+                        lineno = int(k)
+                    except (ValueError, TypeError):
+                        warn(kloc, "line key is not an integer; dropped")
+                        continue
+                    if lineno < 1:
+                        warn(kloc, "line number must be >= 1; dropped")
+                        continue
+                    recorded[lineno] = v
+
+        if covered is not None:
+            if not isinstance(covered, list):
+                warn(f"{loc}.covered_lines", "must be an array of line numbers; ignored")
+            else:
+                for i, lineno in enumerate(covered):
+                    cloc = f"{loc}.covered_lines[{i}]"
+                    if not _is_int(lineno):
+                        warn(cloc, f"{lineno!r} is not an integer; dropped")
+                        continue
+                    if lineno < 1:
+                        warn(cloc, "line number must be >= 1; dropped")
+                        continue
+                    if lineno in recorded:
+                        if recorded[lineno] == 0:
+                            warn(
+                                cloc,
+                                f"line {lineno} is also in line_hits as unhit (0); "
+                                "line_hits wins, so it stays uncovered",
+                            )
+                        # a positive line_hits count makes this entry redundant
+                    else:
+                        recorded[lineno] = 1
+
+        if not recorded:
+            warn(loc, "no usable coverage lines; contributes nothing")
+
+    return problems
 
 
 # Coverage reports are semi-trusted CI artifacts, but canary distrusts input by

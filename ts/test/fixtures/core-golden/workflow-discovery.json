@@ -1,0 +1,157 @@
+{
+  "toJson": [
+    {
+      "name": "full",
+      "input": {
+        "project_key": "ACME",
+        "source": "jira",
+        "discovered_at": "2026-01-01T00:00:00+00:00",
+        "issue_types": [
+          {
+            "id": "10001",
+            "name": "Story",
+            "statuses": [
+              {
+                "id": "1",
+                "name": "To Do",
+                "category": "new"
+              },
+              {
+                "id": "2",
+                "name": "In Progress",
+                "category": "indeterminate"
+              },
+              {
+                "id": "3",
+                "name": "Done",
+                "category": "done"
+              }
+            ],
+            "transitions": [
+              {
+                "id": "11",
+                "name": "Start",
+                "from": "To Do",
+                "to": "In Progress"
+              },
+              {
+                "id": "12",
+                "name": "Finish",
+                "from": "In Progress",
+                "to": "Done"
+              }
+            ]
+          }
+        ],
+        "semantic_roles": {
+          "in_progress": {
+            "status_name": "In Progress",
+            "issue_type": "Story"
+          }
+        },
+        "role_annotations_confirmed": true,
+        "atlassian_url": "https://acme.atlassian.net"
+      },
+      "json": "{\n  \"$schema\": \"https://github.com/bop-clocktower/canary/schemas/workflow-mapping/v1\",\n  \"project_key\": \"ACME\",\n  \"source\": \"jira\",\n  \"discovered_at\": \"2026-01-01T00:00:00+00:00\",\n  \"issue_types\": [\n    {\n      \"id\": \"10001\",\n      \"name\": \"Story\",\n      \"statuses\": [\n        {\n          \"id\": \"1\",\n          \"name\": \"To Do\",\n          \"category\": \"new\"\n        },\n        {\n          \"id\": \"2\",\n          \"name\": \"In Progress\",\n          \"category\": \"indeterminate\"\n        },\n        {\n          \"id\": \"3\",\n          \"name\": \"Done\",\n          \"category\": \"done\"\n        }\n      ],\n      \"transitions\": [\n        {\n          \"id\": \"11\",\n          \"name\": \"Start\",\n          \"from\": \"To Do\",\n          \"to\": \"In Progress\"\n        },\n        {\n          \"id\": \"12\",\n          \"name\": \"Finish\",\n          \"from\": \"In Progress\",\n          \"to\": \"Done\"\n        }\n      ]\n    }\n  ],\n  \"semantic_roles\": {\n    \"in_progress\": {\n      \"status_name\": \"In Progress\",\n      \"issue_type\": \"Story\"\n    }\n  },\n  \"role_annotations_confirmed\": true,\n  \"atlassian_url\": \"https://acme.atlassian.net\"\n}"
+    },
+    {
+      "name": "minimal_no_url",
+      "input": {
+        "project_key": "MIN",
+        "source": "github",
+        "discovered_at": "2026-01-01T00:00:00+00:00",
+        "issue_types": [],
+        "semantic_roles": {},
+        "role_annotations_confirmed": false
+      },
+      "json": "{\n  \"$schema\": \"https://github.com/bop-clocktower/canary/schemas/workflow-mapping/v1\",\n  \"project_key\": \"MIN\",\n  \"source\": \"github\",\n  \"discovered_at\": \"2026-01-01T00:00:00+00:00\",\n  \"issue_types\": [],\n  \"semantic_roles\": {},\n  \"role_annotations_confirmed\": false\n}"
+    }
+  ],
+  "heuristics": [
+    {
+      "name": "assign_many",
+      "input": {
+        "project_key": "HEUR",
+        "source": "jira",
+        "discovered_at": "2026-01-01T00:00:00+00:00",
+        "issue_types": [
+          {
+            "id": "1",
+            "name": "Bug",
+            "statuses": [
+              {
+                "id": "a",
+                "name": "Backlog",
+                "category": "new"
+              },
+              {
+                "id": "b",
+                "name": "In Progress",
+                "category": "indeterminate"
+              },
+              {
+                "id": "c",
+                "name": "In Review",
+                "category": "indeterminate"
+              },
+              {
+                "id": "d",
+                "name": "QA Testing",
+                "category": "indeterminate"
+              },
+              {
+                "id": "e",
+                "name": "Verified",
+                "category": "indeterminate"
+              },
+              {
+                "id": "f",
+                "name": "Done",
+                "category": "done"
+              }
+            ],
+            "transitions": []
+          }
+        ],
+        "semantic_roles": {},
+        "role_annotations_confirmed": false
+      },
+      "result": "{\n  \"$schema\": \"https://github.com/bop-clocktower/canary/schemas/workflow-mapping/v1\",\n  \"project_key\": \"HEUR\",\n  \"source\": \"jira\",\n  \"discovered_at\": \"2026-01-01T00:00:00+00:00\",\n  \"issue_types\": [\n    {\n      \"id\": \"1\",\n      \"name\": \"Bug\",\n      \"statuses\": [\n        {\n          \"id\": \"a\",\n          \"name\": \"Backlog\",\n          \"category\": \"new\"\n        },\n        {\n          \"id\": \"b\",\n          \"name\": \"In Progress\",\n          \"category\": \"indeterminate\"\n        },\n        {\n          \"id\": \"c\",\n          \"name\": \"In Review\",\n          \"category\": \"indeterminate\"\n        },\n        {\n          \"id\": \"d\",\n          \"name\": \"QA Testing\",\n          \"category\": \"indeterminate\"\n        },\n        {\n          \"id\": \"e\",\n          \"name\": \"Verified\",\n          \"category\": \"indeterminate\"\n        },\n        {\n          \"id\": \"f\",\n          \"name\": \"Done\",\n          \"category\": \"done\"\n        }\n      ],\n      \"transitions\": []\n    }\n  ],\n  \"semantic_roles\": {\n    \"qa_passed\": {\n      \"status_name\": \"Verified\",\n      \"issue_type\": \"Bug\"\n    },\n    \"ready_to_deploy\": {\n      \"status_name\": \"Done\",\n      \"issue_type\": \"Bug\"\n    },\n    \"in_qa\": {\n      \"status_name\": \"QA Testing\",\n      \"issue_type\": \"Bug\"\n    },\n    \"in_review\": {\n      \"status_name\": \"In Review\",\n      \"issue_type\": \"Bug\"\n    },\n    \"in_progress\": {\n      \"status_name\": \"In Progress\",\n      \"issue_type\": \"Bug\"\n    }\n  },\n  \"role_annotations_confirmed\": false\n}"
+    },
+    {
+      "name": "preset_not_overridden",
+      "input": {
+        "project_key": "PRE",
+        "source": "jira",
+        "discovered_at": "2026-01-01T00:00:00+00:00",
+        "issue_types": [
+          {
+            "id": "1",
+            "name": "Task",
+            "statuses": [
+              {
+                "id": "a",
+                "name": "In Progress",
+                "category": "indeterminate"
+              },
+              {
+                "id": "b",
+                "name": "Blocked",
+                "category": "indeterminate"
+              }
+            ],
+            "transitions": []
+          }
+        ],
+        "semantic_roles": {
+          "in_progress": {
+            "status_name": "Custom WIP",
+            "issue_type": "Task"
+          }
+        },
+        "role_annotations_confirmed": true
+      },
+      "result": "{\n  \"$schema\": \"https://github.com/bop-clocktower/canary/schemas/workflow-mapping/v1\",\n  \"project_key\": \"PRE\",\n  \"source\": \"jira\",\n  \"discovered_at\": \"2026-01-01T00:00:00+00:00\",\n  \"issue_types\": [\n    {\n      \"id\": \"1\",\n      \"name\": \"Task\",\n      \"statuses\": [\n        {\n          \"id\": \"a\",\n          \"name\": \"In Progress\",\n          \"category\": \"indeterminate\"\n        },\n        {\n          \"id\": \"b\",\n          \"name\": \"Blocked\",\n          \"category\": \"indeterminate\"\n        }\n      ],\n      \"transitions\": []\n    }\n  ],\n  \"semantic_roles\": {\n    \"blocked\": {\n      \"status_name\": \"Blocked\",\n      \"issue_type\": \"Task\"\n    },\n    \"in_progress\": {\n      \"status_name\": \"Custom WIP\",\n      \"issue_type\": \"Task\"\n    }\n  },\n  \"role_annotations_confirmed\": true\n}"
+    }
+  ]
+}

@@ -5,9 +5,9 @@ description:
   correlating every test to the outbound HTTP requests it made — "which test
   made which request?" — with zero manual bookkeeping in test code. Trace-only
   v1 contract, additive-safe for future pytest/k6/node producers. Self-contained
-  (bundles its own dataclasses and span reader).
-cli: scripts/cli.py
-requires: [python3>=3.10]
+  (bundles its own run-type factories and span reader).
+cli: scripts/cli.mjs
+requires: [node>=20]
 ---
 
 # Canary Instrument

@@ -16,11 +16,18 @@ const TEST_FN: Record<string, RegExp> = {
 };
 
 const ASSERTIONS: Record<string, RegExp> = {
-  pytest: /\bassert\b|\bpytest\.raises\b|\bself\.assert\w+\b/g,
+  // `assert x`, pytest.raises, unittest self.assert*, AND a call to any
+  // assert*-named helper (e.g. `assert_valid(...)`) — the last so a test that
+  // delegates its check to a custom assert helper isn't misread as asserting
+  // nothing. (`\bassert\b` alone does NOT match `assert_valid`: `_` is a word
+  // char, so the `\b` after `assert` fails there.)
+  pytest: /\bassert\b|\bpytest\.raises\b|\bself\.assert\w+\b|\bassert\w*\s*\(/g,
   playwright:
     /\bexpect\s*\(|\btoBeVisible\b|\btoHaveText\b|\btoHaveTitle\b|\btoHaveURL\b|\btoBeEnabled\b|\btoBeDisabled\b|\btoBeChecked\b|\btoHaveValue\b|\btoHaveCount\b/g,
+  // Plus non-`expect` assertion styles common in JS/TS: node:assert / vitest
+  // `assert(...)` / `assert.equal(...)`, and chai BDD `x.should.equal`.
   vitest:
-    /\bexpect\s*\(|\btoBe\s*\(|\btoEqual\s*\(|\btoThrow\b|\btoContain\s*\(|\btoBeNull\b|\btoBeUndefined\b|\btoMatchObject\b/g,
+    /\bexpect\s*\(|\btoBe\s*\(|\btoEqual\s*\(|\btoThrow\b|\btoContain\s*\(|\btoBeNull\b|\btoBeUndefined\b|\btoMatchObject\b|\bassert\s*\(|\bassert\.\w+|\.should\b/g,
   k6: /\bcheck\s*\(|'[^']+'\s*:\s*\([^)]*\)\s*=>/g,
 };
 
@@ -178,6 +185,26 @@ function grade(score: number): string {
 function magicDetails(findings: string[]): string[] {
   if (findings.length === 0) return ['No magic numbers detected'];
   return [`${findings.length} magic number(s) detected`, ...findings];
+}
+
+/**
+ * True iff `code` defines at least one test function but contains no assertions
+ * — a test that asserts nothing.
+ *
+ * Faithful port of `is_assertion_free_test`. The high-precision "weak test"
+ * signal the PR guardian consumes: it requires BOTH a test function (so a
+ * non-test helper added to a test file isn't flagged) AND zero assertions. A
+ * snapshot or table-driven test still matches an assertion pattern (`expect(` /
+ * `assert`), so it is not flagged — keeping false positives, and the trust cost
+ * of them, low. Reuses the module's {@link TEST_FN}/{@link ASSERTIONS} maps.
+ */
+export function isAssertionFreeTest(code: string, framework: string): boolean {
+  const fw = framework.toLowerCase();
+  const fnPat = TEST_FN[fw] ?? TEST_FN['pytest']!;
+  const assertPat = ASSERTIONS[fw] ?? ASSERTIONS['pytest']!;
+  const hasTest = countMatches(fnPat, code) > 0;
+  const hasAssertion = countMatches(assertPat, code) > 0;
+  return hasTest && !hasAssertion;
 }
 
 export class QualityScorer {
