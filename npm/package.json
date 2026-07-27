@@ -1,7 +1,7 @@
 {
   "name": "canary-test-cli",
   "version": "5.15.0",
-  "description": "Canary — AI-powered test automation agent",
+  "description": "Canary \u2014 AI-powered test automation agent",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -35,7 +35,7 @@
     "node": ">=18"
   },
   "files": [
-    "bin/",
+    "bin/canary.js",
     "dist/",
     "agent/frameworks/registry.json"
   ],
