@@ -10,10 +10,10 @@ permissions:
   id-token: write # needed for npm provenance
 
 jobs:
-  # canary v6 (stage 1): the npm package now bundles and runs the TypeScript
-  # engine (ts/ -> npm/dist/engine/), so there is no per-OS binary to build. The
-  # retired PyInstaller path (canary.spec + the old per-OS build matrix) is no
-  # longer part of the release; it stays in-tree for stage 2.
+  # canary v6: the npm package bundles and runs the TypeScript engine
+  # (ts/ -> npm/dist/engine/), so there is no per-OS binary and no PyPI package.
+  # The Python engine, PyInstaller spec, and PyPI publish job were removed in the
+  # stage-2 cutover; npm is the sole distribution channel.
   publish:
     name: Build engine + publish (GitHub Release + npm)
     runs-on: ubuntu-latest
@@ -65,44 +65,6 @@ jobs:
           fi
           echo "publishing under dist-tag: $DIST_TAG"
           npm publish --access public --provenance --tag "$DIST_TAG"
-
-  publish-pypi:
-    name: Publish to PyPI
-    runs-on: ubuntu-latest
-    # npm is the canonical end-user install, so a PyPI misconfig must not red-fail
-    # an otherwise-successful release. Until the ONE-TIME SETUP below is completed
-    # this job fails auth with `invalid-publisher`; keep it non-blocking so the
-    # release still succeeds. Remove continue-on-error once the trusted publisher
-    # is configured.
-    continue-on-error: true
-    # Builds the sdist + wheel from pyproject.toml (canary-test-ai) and uploads to
-    # PyPI via Trusted Publishing (OIDC) — no long-lived API token secret required.
-    #
-    # ONE-TIME SETUP on PyPI (pypi.org → project "canary-test-ai" → Publishing, or a
-    # "pending publisher" if the project does not exist yet): add a GitHub trusted
-    # publisher with owner=bop-clocktower, repo=canary, workflow=release.yml. Until
-    # that is configured this job will fail auth.
-    #
-    # TOKEN FALLBACK (if you prefer a token over OIDC): drop the `id-token` perm,
-    # add repo secret PYPI_API_TOKEN, and give the publish step
-    #   with: { password: ${{ secrets.PYPI_API_TOKEN }} }
-    permissions:
-      id-token: write # OIDC token for PyPI Trusted Publishing
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-
-      - name: Build sdist + wheel
-        run: |
-          python -m pip install --upgrade build
-          python -m build
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
 
   advance-latest:
     name: Advance latest → ${{ github.ref_name }}

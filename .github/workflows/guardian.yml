@@ -14,11 +14,14 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-node@v7
         with:
-          python-version: '3.11'
-      - name: Install canary
-        run: pip install -e .
+          # Node 22+ required by the bundled engine deps (see harness-quality.yml).
+          node-version: '22'
+      - name: Build the TypeScript engine
+        run: |
+          npm --prefix ts ci
+          npm --prefix ts run build
       # OPTIONAL (commented): lift fidelity to graph-verified where harness is present.
       #   Baseline is heuristic on stock CI (graph.json is gitignored). See plan Assumptions.
       # - run: npx --yes -p @harness-engineering/cli harness graph
@@ -38,7 +41,7 @@ jobs:
         # `--post-comment`. On an unavailable channel the emit degrades LOUDLY
         # and falls back to the sticky comment (SC-10) — never a silent drop.
         run: |
-          canary guardian pr-check --diff pr.diff --emit-analysis --post-comment
+          node ts/bin/canary.js guardian pr-check --diff pr.diff --emit-analysis --post-comment
       # Required-check (#311, "one gate not two"): under `canary.guardian.pr.gate:
       # hard` this job exits non-zero on unaddressed critical/high findings. A repo
       # admin registers the check "PR Guardian / guardian" (workflow `name:` + job

@@ -2,8 +2,8 @@
 
 The Framework Registry is Canary's single source of truth for which testing
 frameworks exist, what they're good for, and how to invoke them. It lives in
-`agent/frameworks/registry.json` and is loaded by `FrameworkRegistry`
-(`agent/core/framework_registry.py`). Every framework choice in the Canary
+`ts/src/data/frameworks/registry.json` and is loaded by `FrameworkRegistry`
+(`ts/src/core/framework-registry.ts`). Every framework choice in the Canary
 pipeline resolves through this registry — no caller hard-codes framework names.
 
 ## Core Concepts
@@ -154,10 +154,11 @@ classifier rule first — frameworks without a routing path are dead entries.
 
 ### 2. Author the Entry
 
-Add a new object to `frameworks[]` in `agent/frameworks/registry.json`. Required
-fields: `name`, `display_name`, `category`, `languages`, `file_extensions`,
-`execution_command`, `status`. Optional metadata fields are encouraged — they
-show up in the recommender's reasoning and help future maintainers.
+Add a new object to `frameworks[]` in `ts/src/data/frameworks/registry.json`.
+Required fields: `name`, `display_name`, `category`, `languages`,
+`file_extensions`, `execution_command`, `status`. Optional metadata fields are
+encouraged — they show up in the recommender's reasoning and help future
+maintainers.
 
 ### 3. Validate the Execution Command
 

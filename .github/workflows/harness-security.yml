@@ -3,16 +3,18 @@ name: Security Reviewer
 on:
   pull_request:
     paths:
-      - 'agent/**'
-      - 'tests/**'
-      - 'pyproject.toml'
+      - 'ts/**'
+      - 'npm/**'
+      - 'agents/skills/**'
+      - 'scripts/**'
   push:
     branches:
       - main
     paths:
-      - 'agent/**'
-      - 'tests/**'
-      - 'pyproject.toml'
+      - 'ts/**'
+      - 'npm/**'
+      - 'agents/skills/**'
+      - 'scripts/**'
 
 permissions:
   contents: write

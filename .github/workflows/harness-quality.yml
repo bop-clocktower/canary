@@ -20,21 +20,11 @@ jobs:
           node-version: '20'
       - uses: actions/setup-python@v7
         with:
+          # Python 3.11 for the stdlib-only maintenance scripts below (hook guard,
+          # security ledger). The engine is TypeScript now — its tests run in the
+          # `ts-validate` job (vitest), which also carries the repo-structure
+          # invariant tests ported from the retired pytest suite.
           python-version: '3.11'
-
-      - name: Install dependencies
-        # Surgical install: the quality job only needs the test + coverage
-        # tooling, not the full dev extra (which pulls in pyinstaller).
-        run: pip install -e . pytest coverage
-
-      - name: Run Unit Tests (with coverage gate)
-        # Run under pytest so the full suite executes (unittest discover only
-        # collects TestCase classes and silently skipped the pytest
-        # function-style tests). `coverage report` enforces the fail_under
-        # floor from pyproject's [tool.coverage.report].
-        run: |
-          coverage run -m pytest tests/unit -q
-          coverage report
 
       - name: Hook customization guard
         # Fail loudly if a harness regeneration clobbered a canary-local hook

@@ -9,7 +9,9 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json'],
       include: ['src/**'],
-      exclude: ['src/**/*.test.ts'],
+      // Exclude non-code: test files and bundled data (the framework registry
+      // JSON, which v8 otherwise reports as a 0%-covered "source file").
+      exclude: ['src/**/*.test.ts', 'src/data/**'],
       // Fresh-port floor: higher than the Python engine's 81 ratchet because
       // this is new code with tests written alongside. Ratchets up over time.
       thresholds: {
