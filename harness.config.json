@@ -56,7 +56,7 @@
   },
   "agentsMapPath": "./AGENTS.md",
   "docsDir": "./docs",
-  "entryPoints": ["agent.cli:app"],
+  "entryPoints": ["ts/bin/canary.js"],
   "entropy": {
     "rootDir": ".",
     "analyze": {

@@ -7,8 +7,8 @@
  *   - `CommanderError` -> process.exit(exitCode) (usage errors: 2; --help/-V: 0)
  *   - anything else    -> print + exit 1        (unexpected crash)
  *
- * Additive: `pyproject.toml` stays on `agent.cli:app` until a later cutover, so
- * this bin does not replace the Python console script yet.
+ * This is the sole `canary` entry point; the Python console script was retired
+ * in the v6 cutover.
  */
 
 import { createRequire } from 'node:module';

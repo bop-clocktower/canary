@@ -1,9 +1,9 @@
 /**
- * The main `canary` command -- faithful commander port of `agent/cli.py`
- * (`app`), the culmination of the CLI wave. Mounts the already-ported sub-apps
- * (`guardian`, `history`, `analyze`) plus the inline `skills` / `workflow` /
- * `company-knowledge` sub-apps, and the ~15 top-level commands. Additive: the
- * Python `agent.cli:app` stays the shipping entry point until a later cutover.
+ * The main `canary` command -- the commander CLI, culmination of the CLI wave.
+ * Mounts the sub-apps (`guardian`, `history`, `analyze`) plus the inline
+ * `skills` / `workflow` / `company-knowledge` sub-apps, and the ~15 top-level
+ * commands. This is the sole shipping entry point (the Python engine was
+ * retired in the v6 cutover).
  *
  * Conventions follow `guardian/cli.ts` (see `cli-common.ts`): a
  * {@link createCanaryCommand} factory wired to an injectable {@link MainDeps},
