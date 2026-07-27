@@ -26,13 +26,13 @@ test("shouldPush gates on url+token and (CI or force)", () => {
 });
 
 test("buildPayload computes totals + stable run id", () => {
-  const cfg = resolveConfig({ suite: "capwell-api" }, {});
+  const cfg = resolveConfig({ suite: "consumer-b-api" }, {});
   const results = [
     { full_title: "a", test_file: "a.spec.ts", status: "passed", retries: 0, tags: [] },
     { full_title: "b", test_file: "b.spec.ts", status: "failed", retries: 1, tags: ["smoke"] },
   ];
   const p = buildPayload(results, cfg, { startedAt: "2026-07-24T00:00:00Z", finishedAt: "2026-07-24T00:01:00Z" }, { GITHUB_RUN_ID: "42", GITHUB_RUN_ATTEMPT: "1" });
-  assert.equal(p.suite, "capwell-api");
+  assert.equal(p.suite, "consumer-b-api");
   assert.equal(p.canary_run_id, "42-1");
   assert.equal(p.status, "failed");
   assert.deepEqual(p.totals, { passed: 1, failed: 1, flaky: 0, skipped: 0, total: 2 });
