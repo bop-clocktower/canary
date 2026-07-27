@@ -1,0 +1,159 @@
+#!/usr/bin/env node
+/**
+ * Stage the TypeScript engine (`../ts`, package `@canary/engine-ts`) into this
+ * npm package so `canary-test-cli` ships and runs the engine directly instead
+ * of downloading a per-OS PyInstaller binary (canary v6 cutover, stage 1).
+ *
+ * Pipeline (all output lands under `dist/engine/`, which `package.json#files`
+ * already ships via `dist/`):
+ *   1. Ensure the engine's own deps are installed (`npm ci` in ../ts, only when
+ *      node_modules is absent) and compile it (`npm run build` -> ts/dist).
+ *   2. Copy the compiled `*.js` from ts/dist -> dist/engine (runtime only; the
+ *      .d.ts/.map are left behind to keep the tarball lean).
+ *   3. The engine is ESM (`"type": "module"`) but this npm package is CommonJS,
+ *      so drop a `dist/engine/package.json` marking the bundle as ESM.
+ *   4. The compiled `cli.js` only *exports* `createCanaryCommand` -- it is not
+ *      runnable on its own. Rename it to `cli.core.js` and generate a runnable
+ *      `cli.js` entry (the shim's `enginePath`) that mirrors ts/bin/canary.js
+ *      but reads the published version from THIS package's package.json.
+ *   5. The engine's `FrameworkRegistry` resolves `registry.json` at a path
+ *      relative to its own compiled location (`<pkgroot>/agent/frameworks/
+ *      registry.json`). Bundle that data file at the matching location so
+ *      `frameworks` / `recommend` work from a global install with no Python.
+ *
+ * Additive + reversible: nothing here touches ../ts sources, agent/, pyproject,
+ * or canary.spec.
+ */
+'use strict';
+
+import { spawnSync } from 'node:child_process';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const npmRoot = resolve(scriptDir, '..');
+const repoRoot = resolve(npmRoot, '..');
+const tsRoot = resolve(repoRoot, 'ts');
+const tsDist = resolve(tsRoot, 'dist');
+const engineOut = resolve(npmRoot, 'dist', 'engine');
+const registrySrc = resolve(repoRoot, 'agent', 'frameworks', 'registry.json');
+const registryDest = resolve(npmRoot, 'agent', 'frameworks', 'registry.json');
+
+function run(cmd, args, cwd) {
+  const res = spawnSync(cmd, args, { cwd, stdio: 'inherit', shell: false });
+  if (res.status !== 0) {
+    throw new Error(
+      `\`${cmd} ${args.join(' ')}\` (in ${cwd}) exited ${res.status}`,
+    );
+  }
+}
+
+function buildEngine() {
+  if (!existsSync(tsRoot)) {
+    throw new Error(
+      `engine source not found at ${tsRoot}; cannot bundle @canary/engine-ts`,
+    );
+  }
+
+  // 1. Install the engine's deps only when missing (keeps repeat local builds
+  //    fast); always recompile so dist/engine is never stale.
+  if (!existsSync(resolve(tsRoot, 'node_modules'))) {
+    process.stdout.write('[build-engine] installing engine deps (npm ci)...\n');
+    run('npm', ['ci'], tsRoot);
+  }
+  process.stdout.write('[build-engine] compiling engine (npm run build)...\n');
+  run('npm', ['run', 'build'], tsRoot);
+
+  if (!existsSync(resolve(tsDist, 'cli.js'))) {
+    throw new Error(`engine build produced no cli.js at ${tsDist}`);
+  }
+
+  // 2. Stage compiled JS.
+  rmSync(engineOut, { recursive: true, force: true });
+  mkdirSync(engineOut, { recursive: true });
+  cpSync(tsDist, engineOut, {
+    recursive: true,
+    // Copy directories (to recurse) and runtime .js only; skip .d.ts/.map and
+    // the compiled *.test.js (tsc emits them from src but they never run here).
+    filter: (src) =>
+      statSync(src).isDirectory() ||
+      (src.endsWith('.js') && !src.endsWith('.test.js')),
+  });
+
+  // 3. Mark the bundle as ESM.
+  writeFileSync(
+    resolve(engineOut, 'package.json'),
+    `${JSON.stringify({ type: 'module', private: true }, null, 2)}\n`,
+  );
+
+  // 4. Make cli.js runnable: keep the compiled command module as cli.core.js
+  //    and write the executable wrapper as cli.js.
+  renameSync(resolve(engineOut, 'cli.js'), resolve(engineOut, 'cli.core.js'));
+  writeFileSync(resolve(engineOut, 'cli.js'), RUNNER);
+
+  // 5. Bundle the framework registry where the engine resolves it
+  //    (<pkgroot>/agent/frameworks/registry.json, three levels up from
+  //    dist/engine/core -- see ts/src/core/framework-registry.ts).
+  if (!existsSync(registrySrc)) {
+    throw new Error(`framework registry not found at ${registrySrc}`);
+  }
+  mkdirSync(dirname(registryDest), { recursive: true });
+  cpSync(registrySrc, registryDest);
+
+  process.stdout.write(`[build-engine] engine staged at ${engineOut}\n`);
+}
+
+/**
+ * Runnable entry generated at dist/engine/cli.js. Mirrors ts/bin/canary.js: it
+ * builds the command with the published version injected and maps the CLI's
+ * business/usage exits to a process exit code. `../../package.json` resolves to
+ * this package's manifest (dist/engine/cli.js -> npm/package.json).
+ */
+const RUNNER = `#!/usr/bin/env node
+// GENERATED by npm/scripts/build-engine.mjs -- do not edit by hand.
+// Executable counterpart of the compiled command module (cli.core.js), which
+// only exports createCanaryCommand. Mirrors ts/bin/canary.js.
+import { createRequire } from 'node:module';
+
+import { CommanderError } from 'commander';
+
+import { createCanaryCommand } from './cli.core.js';
+import { CliExit } from './cli-common.js';
+
+const require = createRequire(import.meta.url);
+
+function readVersion() {
+  try {
+    return require('../../package.json').version || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+const program = createCanaryCommand({ pkgVersion: () => readVersion() });
+
+try {
+  await program.parseAsync(process.argv.slice(2), { from: 'user' });
+} catch (err) {
+  if (err instanceof CliExit) process.exit(err.code);
+  if (err instanceof CommanderError) process.exit(err.exitCode);
+  console.error(err);
+  process.exit(1);
+}
+`;
+
+try {
+  buildEngine();
+} catch (err) {
+  process.stderr.write(`[build-engine] ${err.message}\n`);
+  process.exit(1);
+}

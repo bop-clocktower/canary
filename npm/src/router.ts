@@ -3,12 +3,12 @@
 /**
  * Router for TS-handled `canary` subcommands — the strangler seam (Decision 10).
  *
- * The npm shim (`bin/canary.js`) forwards every command to the bundled Python
- * binary except the ones handled here in TypeScript. Phase 1 wires `overlay`;
- * `doctor` slots into the same table in Phase 2.
+ * The npm shim (`bin/canary.js`) forwards every command to the bundled
+ * TypeScript engine (`dist/engine/cli.js`) except the ones handled here
+ * natively: `overlay` and `doctor`.
  *
  * `route()` returns a process exit code, or `null` when the command is not
- * TS-handled and the shim should fall through to the Python binary.
+ * TS-handled and the shim should fall through to the bundled engine.
  */
 
 import * as overlay from './overlay-commands.js';

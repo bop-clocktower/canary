@@ -25,7 +25,7 @@ describe('doctor router wiring', () => {
     assert.equal(await result, 0);
   });
 
-  it("routes 'doctor' to the TS handler without exec'ing the Python binary", async () => {
+  it("routes 'doctor' to the TS handler without exec'ing the engine", async () => {
     let execCalled = false;
     const code = await run(['doctor'], {
       execFile: () => {
@@ -39,15 +39,11 @@ describe('doctor router wiring', () => {
       getLatestVersion: async () => null,
       git: () => ({ status: 0, stdout: 'git version test', stderr: '' }),
     });
-    assert.equal(
-      execCalled,
-      false,
-      'the Python binary must not run for doctor',
-    );
+    assert.equal(execCalled, false, 'the engine must not run for doctor');
     assert.equal(code, 0);
   });
 
-  it('still forwards a non-TS command to the binary unchanged', () => {
+  it('still forwards a non-TS command to the engine unchanged', () => {
     let received;
     const code = run(['skills', 'list'], {
       execFile: (bin, args) => {
@@ -56,7 +52,9 @@ describe('doctor router wiring', () => {
       existsSync: () => true,
       stderr: { write() {} },
     });
-    assert.deepEqual(received.args, ['skills', 'list']);
+    // Forwarded under `node <enginePath> ...argv`; argv is preserved verbatim
+    // after the engine entry.
+    assert.deepEqual(received.args.slice(1), ['skills', 'list']);
     assert.equal(code, 0);
   });
 });
