@@ -72,16 +72,44 @@ class TestVersionConsistency(unittest.TestCase):
                 )
 
     def test_all_versions_match(self):
-        reference_label, reference_accessor = _SOURCES[0]
-        reference = reference_accessor()
-        for label, accessor in _SOURCES[1:]:
-            with self.subTest(source=label):
-                self.assertEqual(
-                    accessor(), reference,
-                    f"{label} version '{accessor()}' != {reference_label} "
-                    f"version '{reference}' — bump every version declaration "
-                    f"together (see chore(release) workflow).",
-                )
+        npm = _npm_version()
+        pyproject = _pyproject_version()
+        plugin = _plugin_version()
+        marketplace = _marketplace_version()
+
+        # npm + pyproject are the publishable pair (what gets released) — always
+        # exact, including for pre-releases.
+        self.assertEqual(
+            pyproject, npm,
+            f"pyproject.toml version '{pyproject}' != npm/package.json version "
+            f"'{npm}' — bump every version declaration together "
+            f"(see chore(release) workflow).",
+        )
+        # The two .claude-plugin manifests always agree with each other.
+        self.assertEqual(
+            marketplace, plugin,
+            f".claude-plugin/marketplace.json version '{marketplace}' != "
+            f".claude-plugin/plugin.json version '{plugin}'.",
+        )
+
+        # The plugin schema forbids pre-release versions (^X.Y.Z$), and the
+        # marketplace should only ever advertise a real release — so during an
+        # npm PRE-RELEASE (e.g. 6.0.0-rc.1) the manifests stay at the last STABLE
+        # release rather than tracking the pre-release. They must still be a
+        # stable X.Y.Z; for a stable npm release all four match exactly.
+        if "-" in npm:
+            self.assertRegex(
+                plugin, r"^\d+\.\d+\.\d+$",
+                f".claude-plugin version '{plugin}' must be a stable X.Y.Z "
+                f"while npm is a pre-release ('{npm}').",
+            )
+        else:
+            self.assertEqual(
+                plugin, npm,
+                f".claude-plugin version '{plugin}' != npm/package.json version "
+                f"'{npm}' — bump every version declaration together "
+                f"(see chore(release) workflow).",
+            )
 
 
 if __name__ == "__main__":
