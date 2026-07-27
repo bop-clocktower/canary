@@ -16,13 +16,12 @@
  *      runnable on its own. Rename it to `cli.core.js` and generate a runnable
  *      `cli.js` entry (the shim's `enginePath`) that mirrors ts/bin/canary.js
  *      but reads the published version from THIS package's package.json.
- *   5. The engine's `FrameworkRegistry` resolves `registry.json` at a path
- *      relative to its own compiled location (`<pkgroot>/agent/frameworks/
- *      registry.json`). Bundle that data file at the matching location so
- *      `frameworks` / `recommend` work from a global install with no Python.
- *
- * Additive + reversible: nothing here touches ../ts sources, agent/, pyproject,
- * or canary.spec.
+ *   5. The engine's `FrameworkRegistry` resolves `registry.json` as
+ *      `../data/frameworks/registry.json` relative to its own compiled location
+ *      (`dist/engine/core`). `ts/dist/data/` already contains it (the engine's
+ *      own build copies `src/data` -> `dist/data`), so staging `.json` files
+ *      alongside the compiled `.js` bundles it at the matching location with no
+ *      Python and no separate copy step.
  */
 'use strict';
 
@@ -45,8 +44,6 @@ const repoRoot = resolve(npmRoot, '..');
 const tsRoot = resolve(repoRoot, 'ts');
 const tsDist = resolve(tsRoot, 'dist');
 const engineOut = resolve(npmRoot, 'dist', 'engine');
-const registrySrc = resolve(repoRoot, 'agent', 'frameworks', 'registry.json');
-const registryDest = resolve(npmRoot, 'agent', 'frameworks', 'registry.json');
 
 function run(cmd, args, cwd) {
   const res = spawnSync(cmd, args, { cwd, stdio: 'inherit', shell: false });
@@ -82,11 +79,13 @@ function buildEngine() {
   mkdirSync(engineOut, { recursive: true });
   cpSync(tsDist, engineOut, {
     recursive: true,
-    // Copy directories (to recurse) and runtime .js only; skip .d.ts/.map and
-    // the compiled *.test.js (tsc emits them from src but they never run here).
+    // Copy directories (to recurse), runtime .js, and data .json (e.g.
+    // data/frameworks/registry.json); skip .d.ts/.map and the compiled
+    // *.test.js (tsc emits them from src but they never run here).
     filter: (src) =>
       statSync(src).isDirectory() ||
-      (src.endsWith('.js') && !src.endsWith('.test.js')),
+      (src.endsWith('.js') && !src.endsWith('.test.js')) ||
+      src.endsWith('.json'),
   });
 
   // 3. Mark the bundle as ESM.
@@ -100,14 +99,13 @@ function buildEngine() {
   renameSync(resolve(engineOut, 'cli.js'), resolve(engineOut, 'cli.core.js'));
   writeFileSync(resolve(engineOut, 'cli.js'), RUNNER);
 
-  // 5. Bundle the framework registry where the engine resolves it
-  //    (<pkgroot>/agent/frameworks/registry.json, three levels up from
-  //    dist/engine/core -- see ts/src/core/framework-registry.ts).
-  if (!existsSync(registrySrc)) {
-    throw new Error(`framework registry not found at ${registrySrc}`);
+  // 5. The framework registry (data/frameworks/registry.json) was already
+  //    staged in step 2 alongside the compiled .js -- see the header comment.
+  if (!existsSync(resolve(engineOut, 'data', 'frameworks', 'registry.json'))) {
+    throw new Error(
+      `framework registry missing from staged engine at ${engineOut}/data`,
+    );
   }
-  mkdirSync(dirname(registryDest), { recursive: true });
-  cpSync(registrySrc, registryDest);
 
   process.stdout.write(`[build-engine] engine staged at ${engineOut}\n`);
 }
