@@ -10,6 +10,22 @@
   "bin": {
     "canary": "./bin/canary.js"
   },
+  "exports": {
+    "./reporter": {
+      "types": "./dist/reporters/testtracker.d.ts",
+      "require": "./dist/reporters/testtracker.js",
+      "default": "./dist/reporters/testtracker.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.42.0"
+  },
+  "peerDependenciesMeta": {
+    "@playwright/test": {
+      "optional": true
+    }
+  },
   "scripts": {
     "build": "tsc",
     "prepare": "npm run build",
@@ -25,6 +41,7 @@
     "scripts/install.js"
   ],
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0"
   }
