@@ -722,6 +722,15 @@ export function computeExitCode(findings: Finding[], gate: string): number {
 
 const STICKY_MARKER = '<!-- canary-pr-guardian -->';
 
+// Severity → status icon for the sticky comment (encodes severity in form, not
+// just text, so the most urgent findings read at a glance).
+const SEVERITY_ICON: Record<string, string> = {
+  [Severity.CRITICAL]: '🔴',
+  [Severity.HIGH]: '🔴',
+  [Severity.MEDIUM]: '🟡',
+  [Severity.LOW]: '⚪',
+};
+
 /**
  * Escape every non-ASCII (>= U+0080) code unit to a `\uXXXX` sequence, matching
  * Python's `json.dumps(..., ensure_ascii=True)` (the library default). `JSON`
@@ -785,39 +794,79 @@ export function render(
   const active = ordered.filter((f) => !f.suppressed);
   const suppressed = ordered.filter((f) => f.suppressed);
 
+  // A finding's file label shows the path once, appending the unit only when
+  // it is a distinct symbol within the file (never `path (path)`).
+  const fileLabel = (f: Finding): string =>
+    f.unit && f.unit !== f.path
+      ? `\`${f.path}\` → \`${f.unit}\``
+      : `\`${f.path}\``;
+  const cell = (s: string): string => s.replace(/\|/g, '\\|');
+  const CONFIDENCE_NOTE =
+    'Confidence — **coverage-verified**: measured from a real coverage run · ' +
+    '**graph-verified**: inferred from the call graph · **heuristic**: filename ' +
+    `guess (lowest). tier ${tier}: deterministic check, no LLM.`;
+
   if (fmt === 'comment') {
-    const lines = [STICKY_MARKER, '## Canary PR Guardian'];
-    lines.push(
-      `**${active.length} unaddressed** / ${suppressed.length} suppressed ` +
-        `finding(s) — fidelity-labeled below.`,
-    );
-    for (const finding of ordered) {
-      const mark = finding.suppressed ? ' _(suppressed)_' : '';
+    const fileCount = new Set(active.map((f) => f.path)).size;
+    const lines = [STICKY_MARKER];
+
+    if (active.length === 0) {
+      lines.push('## 🐤 Canary PR Guardian — ✅ no test-coverage gaps');
+      if (suppressed.length) {
+        lines.push(
+          `_${suppressed.length} finding(s) suppressed as intentional._`,
+        );
+      }
+    } else {
+      const noun = fileCount === 1 ? 'file needs' : 'files need';
       lines.push(
-        `- **${finding.severity}** \`${finding.path}\` ` +
-          `(${finding.unit}) — _${finding.fidelity}_ — ` +
-          `${finding.evidence}${mark}`,
+        `## 🐤 Canary PR Guardian — ${fileCount} ${noun} test coverage`,
       );
+      lines.push(
+        'These lines were changed by this PR but no test exercises them. Add or ' +
+          'extend a test that covers them, or reply ' +
+          '`/guardian suppress <file> <reason>` if they are intentionally untested.',
+      );
+      lines.push(
+        '',
+        '| Sev | File | What’s uncovered | Confidence |',
+        '| --- | --- | --- | --- |',
+      );
+      for (const f of active) {
+        lines.push(
+          `| ${SEVERITY_ICON[f.severity] ?? ''} ${f.severity} | ${cell(fileLabel(f))} | ${cell(f.evidence)} | ${f.fidelity} |`,
+        );
+      }
+      if (suppressed.length) {
+        lines.push(
+          '',
+          `<sub>${suppressed.length} finding(s) suppressed as intentional and not counted above.</sub>`,
+        );
+      }
     }
-    let footer = `_tier ${tier}_`;
-    if (degradedNotice) footer += ` — ${degradedNotice}`;
-    lines.push(footer);
+
+    lines.push(
+      '',
+      `<sub>${CONFIDENCE_NOTE}${degradedNotice ? ` — ${degradedNotice}` : ''}</sub>`,
+    );
     return lines.join('\n');
   }
 
   // fmt == "text" (default fallback): plain, no markdown/HTML.
   const lines = [
-    `Canary PR Guardian — ${active.length} unaddressed, ` +
-      `${suppressed.length} suppressed`,
+    active.length === 0
+      ? 'Canary PR Guardian — no test-coverage gaps'
+      : `Canary PR Guardian — ${new Set(active.map((f) => f.path)).size} file(s) need test coverage`,
   ];
   for (const finding of ordered) {
+    const unit =
+      finding.unit && finding.unit !== finding.path ? ` → ${finding.unit}` : '';
     const mark = finding.suppressed ? ' (suppressed)' : '';
     lines.push(
-      `[${finding.severity}] ${finding.path} (${finding.unit}) ` +
-        `[${finding.fidelity}] ${finding.evidence}${mark}`,
+      `[${finding.severity}] ${finding.path}${unit} — ${finding.evidence} (${finding.fidelity})${mark}`,
     );
   }
-  let footer = `tier ${tier}`;
+  let footer = `tier ${tier}: deterministic check, no LLM`;
   if (degradedNotice) footer += ` - ${degradedNotice}`;
   lines.push(footer);
   return lines.join('\n');
@@ -846,9 +895,30 @@ export const DEFAULT_SKIP_GLOBS: readonly string[] = [
   '**/*.snap',
   // Generated slash-command artifacts and harness state — regenerated from a
   // tracked source (skill.yaml / graph scans), never hand-authored, so a
-  // covering test makes no sense.
+  // covering test makes no sense. `**/.harness/**` also catches harness state
+  // nested under a subproject (e.g. `services/neo/.harness/…`), which the
+  // top-level `.harness/**` misses (#413).
   'agents/commands/**',
   '.harness/**',
+  '**/.harness/**',
+  // Dotfile config/metadata at any depth (.gitignore, .env, .eslintrc,
+  // .neorc*, .dockerignore, .npmrc, …). None carry testable code, so the
+  // heuristic tier's "no test file references this" is a false positive on them
+  // (#413 — observed on `.gitignore` / `.neorc.dev`). Matches only files whose
+  // basename starts with a dot, not source inside a dot-directory.
+  '**/.*',
+  // Build/tooling config files (not authored product logic).
+  '**/*.config.js',
+  '**/*.config.ts',
+  '**/*.config.mjs',
+  '**/*.config.cjs',
+  // Test fixtures / mocks and generated code — noise, not logic under test.
+  '**/fixtures/**',
+  '**/__fixtures__/**',
+  '**/__mocks__/**',
+  '**/testdata/**',
+  '**/generated/**',
+  '**/__generated__/**',
 ];
 
 /**
