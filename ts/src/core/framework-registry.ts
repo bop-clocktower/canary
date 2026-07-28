@@ -1,9 +1,12 @@
 /**
  * Framework Registry — queries the collection of supported testing frameworks.
  *
- * Faithful TypeScript port of `agent/core/framework_registry.py`. Reads the same
- * `agent/frameworks/registry.json` the Python engine uses. The default path is
- * resolved relative to this file (../../.. → repo root, then agent/frameworks).
+ * Reads the framework catalog from `data/frameworks/registry.json`, resolved
+ * relative to this module. The source-of-truth lives at
+ * `ts/src/data/frameworks/registry.json`; `scripts/copy-data.mjs` mirrors it to
+ * `dist/data/` after `tsc`, and the offset `../data/frameworks/registry.json` is
+ * stable across all three runtimes: vitest (from `src/core/`), the dev CLI (from
+ * `dist/core/`), and the shipped npm bundle (from `dist/engine/core/`).
  */
 
 import { readFileSync } from 'node:fs';
@@ -62,19 +65,11 @@ export interface FrameworkSummary {
   tier: string | null;
 }
 
-/** Default registry path: <repo>/agent/frameworks/registry.json. */
+/** Default registry path: `<module dir>/../data/frameworks/registry.json`. */
 export function defaultRegistryPath(): string {
   const here = dirname(fileURLToPath(import.meta.url));
-  // here = ts/src/core → repo root is three levels up.
-  return resolve(
-    here,
-    '..',
-    '..',
-    '..',
-    'agent',
-    'frameworks',
-    'registry.json',
-  );
+  // here = <core> → sibling data/ dir (src/data in vitest, dist/data at runtime).
+  return resolve(here, '..', 'data', 'frameworks', 'registry.json');
 }
 
 export class FrameworkRegistry {

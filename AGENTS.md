@@ -87,42 +87,42 @@ docs/branching-convention
 
 ### Entry Points
 
-- **CLI:** [agent/cli.py](agent/cli.py) — The primary entry point for the agent.
-  Handles command-line arguments and high-level orchestration. Commands:
+- **CLI:** [ts/src/cli.ts](ts/src/cli.ts) — The primary entry point for the
+  agent. Handles command-line arguments and high-level orchestration. Commands:
   `recommend`, `frameworks`, `feedback`, `run`, `init`, `migrate`, `setup`,
   `skills list`, `env-setup` (alias for `setup`), `version`.
 
-### Core Services (`agent/core/`)
+### Core Services (`ts/src/core/`)
 
 - **Orchestrator:** removed in v3.0 — LLM generation pipeline is now handled by
   the `/canary-write-test` slash command in the host session.
-- **Classifier:** [agent/core/classifier.py][classifier] — Identifies
+- **Classifier:** [ts/src/core/classifier.ts][classifier] — Identifies
   requirement types and selects target frameworks based on tech stack.
-- **Scaffolder:** [agent/core/scaffolder.py][scaffolder] — Generates the initial
-  test files, boilerplate, and project structure.
-- **Executor:** [agent/core/executor.py][executor] — Runs generated tests and
+- **Scaffolder:** [ts/src/core/scaffolder.ts][scaffolder] — Generates the
+  initial test files, boilerplate, and project structure.
+- **Executor:** [ts/src/core/executor.ts][executor] — Runs generated tests and
   captures execution output, logs, and errors.
-- **Recommender:** [agent/core/recommender.py][recommender] — Suggests
+- **Recommender:** [ts/src/core/recommender.ts][recommender] — Suggests
   frameworks, testing strategies, and LLM providers.
-- **Framework Registry:** [agent/core/framework_registry.py][fw-registry] —
+- **Framework Registry:** [ts/src/core/framework-registry.ts][fw-registry] —
   Internal registry for managing supported testing frameworks and their
   capabilities.
 - **Metadata Scanner:**
-  [agent/core/metadata_scanner.py](agent/core/metadata_scanner.py) — Reads
+  [ts/src/core/metadata-scanner.ts](ts/src/core/metadata-scanner.ts) — Reads
   `package.json`, `tsconfig.json`, `requirements.txt`, and `pyproject.toml` to
   surface exact dependency versions for the generation prompt. Enables
   version-accurate generated imports.
 - **Pattern Matcher:**
-  [agent/core/pattern_matcher.py](agent/core/pattern_matcher.py) — Scans
+  [ts/src/core/pattern-matcher.ts](ts/src/core/pattern-matcher.ts) — Scans
   existing test files to extract naming conventions, common imports, and
   assertion style so generated tests match the project's existing patterns.
 - **Domain Scanner:**
-  [agent/core/domain_scanner.py](agent/core/domain_scanner.py) — Scans project
+  [ts/src/core/domain-scanner.ts](ts/src/core/domain-scanner.ts) — Scans project
   source files (not tests) to extract component names, public functions, and API
   routes for injection into the generation prompt. Prevents the LLM from
   inventing symbol names.
 - **Fixture Scanner:**
-  [agent/core/fixture_scanner.py](agent/core/fixture_scanner.py) — Scans test
+  [ts/src/core/fixture-scanner.ts](ts/src/core/fixture-scanner.ts) — Scans test
   fixture and helper modules to extract named exports, injected as a "Project
   Symbols" section in the prompt so generated tests import real identifiers.
 - **Code Extractor:** removed in v5.0 — stripped LLM response prose; last caller
@@ -131,17 +131,17 @@ docs/branching-convention
   of the LLM generation pipeline (orchestrator). Replaced by the
   `/canary-debug-flake` slash command.
 - **Quality Scorer:**
-  [agent/core/quality_scorer.py](agent/core/quality_scorer.py) — Static analysis
-  scorer (coverage breadth, assertion density, flakiness risk) returning a 0–100
-  composite score with letter grade. **Vestigial as of v3.0:** it was wired into
-  the removed `generate`/orchestrator path and is not currently invoked by any
-  live command. Retained pending a decision to re-wire it into the plugin flow
-  or remove it.
-- **Reporter:** [agent/core/reporter.py](agent/core/reporter.py) — Exports
+  [ts/src/core/quality-scorer.ts](ts/src/core/quality-scorer.ts) — Static
+  analysis scorer (coverage breadth, assertion density, flakiness risk)
+  returning a 0–100 composite score with letter grade. **Vestigial as of v3.0:**
+  it was wired into the removed `generate`/orchestrator path and is not
+  currently invoked by any live command. Retained pending a decision to re-wire
+  it into the plugin flow or remove it.
+- **Reporter:** [ts/src/core/reporter.ts](ts/src/core/reporter.ts) — Exports
   results to JSON or SARIF (Datadog, SonarQube, GitHub Code Scanning).
   **Vestigial as of v3.0:** it was invoked by the removed `canary generate` path
   and is not currently wired into any live command.
-- **Migrator:** [agent/core/migrator.py](agent/core/migrator.py) — Detects
+- **Migrator:** [ts/src/core/migrator.ts](ts/src/core/migrator.ts) — Detects
   harness-scaffolded test projects (via `harness.config.json` and `.harness/`)
   and migrates them to Canary's layout without touching existing test files.
   Invoked via `canary migrate`. `canary migrate --from <overlay> --check` is a
@@ -150,20 +150,20 @@ docs/branching-convention
   in `.canary/skills/.deploy-manifest.json` lets `--apply` refresh only
   unmodified deployed copies, never clobbering local edits.
 - **Skill Registry:**
-  [agent/core/skill_registry.py](agent/core/skill_registry.py) — Discovers
+  [ts/src/core/skill-registry.ts](ts/src/core/skill-registry.ts) — Discovers
   bundled default skills and local project overlay skills (from
   `.canary/skills/`) for slash command resolution via `canary skills list`.
-- **CI Environment:** [agent/core/ci_env.py](agent/core/ci_env.py) — Detects CI
-  environment variables (`CI`, `GITHUB_ACTIONS`, etc.) to enable headless
+- **CI Environment:** [ts/src/core/ci-env.ts](ts/src/core/ci-env.ts) — Detects
+  CI environment variables (`CI`, `GITHUB_ACTIONS`, etc.) to enable headless
   optimizations and force JSON output in pipelines.
 - **Environment Detection:**
-  [agent/core/environment_detect.py](agent/core/environment_detect.py) —
+  [ts/src/core/environment-detect.ts](ts/src/core/environment-detect.ts) —
   Context-aware persona/environment detection (#341): `BASE_URL` from `.env` +
   `playwright.config.*`, suite-type hints, and an auditable SDET-vs-manual
   user-level heuristic (cwd + open files). Surfaced additively as the
   `environment` block on the MCP `analyze_file` response. Browser-tab detection
   is deferred to the Chrome Extension MCP Bridge (#343).
-- **Feedback:** [agent/core/feedback.py](agent/core/feedback.py) — Builds a
+- **Feedback:** [ts/src/core/feedback.ts](ts/src/core/feedback.ts) — Builds a
   pre-filled GitHub issue for `canary feedback` (#345) with non-sensitive
   context (version/OS/Python/install); never env vars or file contents. (New in
   v5.12; unrelated to the removed-in-v3.0 generate-era feedback path.)
@@ -173,7 +173,7 @@ docs/branching-convention
 Canary is also loadable as a Claude Code plugin for in-editor test generation
 via slash commands.
 
-- **MCP server:** [agent/mcp_server.py](agent/mcp_server.py) — FastMCP server
+- **MCP server:** [ts/src/mcp-server.ts](ts/src/mcp-server.ts) — FastMCP server
   exposing six tools to Claude Code: `canary__analyze_file`,
   `canary__write_test_file`, `canary__run_tests`, `canary__init_suite`,
   `canary__list_frameworks`, `canary__migrate`.
@@ -197,8 +197,8 @@ host Claude Code session via `/canary-write-test` — no API key required.
 
 ### Configuration & Data
 
-- **Framework Metadata:** [agent/frameworks/registry.json][fw-json] — Static
-  definitions for framework capabilities and templates.
+- **Framework Metadata:** [ts/src/data/frameworks/registry.json][fw-json] —
+  Static definitions for framework capabilities and templates.
 - **Harness Config:** [harness.config.json](harness.config.json) — Defines
   architectural layers, dependency constraints, and project metadata.
 
@@ -390,10 +390,10 @@ The hook (`.githooks/pre-commit`) does two things automatically on every commit:
 
 1. **Requirement Analysis:** User provides natural language requirements.
 2. **Classification:** Canary identifies the target testing framework and
-   language using [agent/core/classifier.py][classifier].
+   language using [ts/src/core/classifier.ts][classifier].
 3. **Scaffolding:** Canary generates the initial test structure using
-   [agent/core/scaffolder.py][scaffolder].
-4. **Execution:** Tests are executed via [agent/core/executor.py][executor].
+   [ts/src/core/scaffolder.ts][scaffolder].
+4. **Execution:** Tests are executed via [ts/src/core/executor.ts][executor].
 5. **Iteration:** Based on test results, the orchestrator handles self-healing
    using feedback from the executor.
 
@@ -408,9 +408,9 @@ The hook (`.githooks/pre-commit`) does two things automatically on every commit:
 [harness-int]: docs/wiki/Harness-Engineering-Integration.md
 [llm-config]: docs/wiki/LLM-Providers-and-Configuration.md
 [self-healing]: docs/wiki/Self-Healing-and-Feedback-Loop.md
-[classifier]: agent/core/classifier.py
-[scaffolder]: agent/core/scaffolder.py
-[executor]: agent/core/executor.py
-[recommender]: agent/core/recommender.py
-[fw-registry]: agent/core/framework_registry.py
-[fw-json]: agent/frameworks/registry.json
+[classifier]: ts/src/core/classifier.ts
+[scaffolder]: ts/src/core/scaffolder.ts
+[executor]: ts/src/core/executor.ts
+[recommender]: ts/src/core/recommender.ts
+[fw-registry]: ts/src/core/framework-registry.ts
+[fw-json]: ts/src/data/frameworks/registry.json

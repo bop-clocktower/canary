@@ -3,8 +3,9 @@ name: Architecture Enforcer
 on:
   pull_request:
     paths:
-      - 'agent/**'
-      - 'tests/**'
+      - 'ts/**'
+      - 'npm/**'
+      - 'agents/skills/**'
       - 'harness.config.json'
       - 'AGENTS.md'
   push:

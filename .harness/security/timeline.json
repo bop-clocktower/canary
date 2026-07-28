@@ -2,37 +2,6 @@
   "version": 1,
   "snapshots": [
     {
-      "capturedAt": "2026-05-21T00:59:27.594Z",
-      "commitHash": "dc62e7cde0f8b98a4840bdd39d27336df0e0328b",
-      "securityScore": 100,
-      "totalFindings": 1,
-      "bySeverity": {
-        "error": 0,
-        "warning": 0,
-        "info": 1
-      },
-      "byCategory": {
-        "network": {
-          "findingCount": 1,
-          "errorCount": 0,
-          "warningCount": 0,
-          "infoCount": 1
-        }
-      },
-      "supplyChain": {
-        "critical": 0,
-        "high": 0,
-        "moderate": 0,
-        "low": 0,
-        "info": 0,
-        "total": 0
-      },
-      "suppressionCount": 0,
-      "findingIds": [
-        "f648dc252b6f0cc1"
-      ]
-    },
-    {
       "capturedAt": "2026-05-21T01:54:57.635Z",
       "commitHash": "ecfef28212713a416d2b6d1b2acd904029b37c7b",
       "securityScore": 100,
@@ -989,6 +958,28 @@
         "792924e09ae3ba3c",
         "f648dc252b6f0cc1"
       ]
+    },
+    {
+      "capturedAt": "2026-07-27T23:27:13.189Z",
+      "commitHash": "c0259310f95732b139ae70fff35692660bcc6aeb",
+      "securityScore": 100,
+      "totalFindings": 0,
+      "bySeverity": {
+        "error": 0,
+        "warning": 0,
+        "info": 0
+      },
+      "byCategory": {},
+      "supplyChain": {
+        "critical": 0,
+        "high": 0,
+        "moderate": 0,
+        "low": 0,
+        "info": 0,
+        "total": 0
+      },
+      "suppressionCount": 0,
+      "findingIds": []
     }
   ],
   "findingLifecycles": [
@@ -1022,8 +1013,8 @@
       "file": "tests/unit/test_ci_env.py",
       "firstSeenAt": "2026-05-15T23:08:15.248Z",
       "firstSeenCommit": "fbf26fe2bc12099ddca22d605163ae364535e5e2",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-27T23:27:13.193Z",
+      "resolvedCommit": "c0259310f95732b139ae70fff35692660bcc6aeb"
     },
     {
       "findingId": "792924e09ae3ba3c",
@@ -1033,8 +1024,8 @@
       "file": "tests/unit/test_company_knowledge.py",
       "firstSeenAt": "2026-07-01T01:38:51.762Z",
       "firstSeenCommit": "bf91dc4c4dc5c9df72988a866238883ecb1d915c",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-27T23:27:13.193Z",
+      "resolvedCommit": "c0259310f95732b139ae70fff35692660bcc6aeb"
     },
     {
       "findingId": "8e82cb420f2c471c",
@@ -1121,8 +1112,8 @@
       "file": "hooks/block-no-verify.py",
       "firstSeenAt": "2026-07-18T23:39:37.206Z",
       "firstSeenCommit": "72fa4f544e6afc0b5401e174fba8cc177806de69",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-27T23:27:13.193Z",
+      "resolvedCommit": "c0259310f95732b139ae70fff35692660bcc6aeb"
     },
     {
       "findingId": "db8ca629a7dbe625",
@@ -1132,8 +1123,8 @@
       "file": "hooks/block-no-verify.py",
       "firstSeenAt": "2026-07-18T23:39:37.206Z",
       "firstSeenCommit": "72fa4f544e6afc0b5401e174fba8cc177806de69",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-27T23:27:13.193Z",
+      "resolvedCommit": "c0259310f95732b139ae70fff35692660bcc6aeb"
     },
     {
       "findingId": "f04bd871cb9f75d5",
@@ -1143,8 +1134,8 @@
       "file": "hooks/block-no-verify.py",
       "firstSeenAt": "2026-07-18T23:39:37.206Z",
       "firstSeenCommit": "72fa4f544e6afc0b5401e174fba8cc177806de69",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-27T23:27:13.193Z",
+      "resolvedCommit": "c0259310f95732b139ae70fff35692660bcc6aeb"
     },
     {
       "findingId": "6bf64be568188def",
@@ -1154,8 +1145,8 @@
       "file": "tests/unit/test_hooks.py",
       "firstSeenAt": "2026-07-18T23:39:37.206Z",
       "firstSeenCommit": "72fa4f544e6afc0b5401e174fba8cc177806de69",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-27T23:27:13.193Z",
+      "resolvedCommit": "c0259310f95732b139ae70fff35692660bcc6aeb"
     },
     {
       "findingId": "f2be8de5ac6d35f0",
@@ -1165,8 +1156,8 @@
       "file": "tests/unit/test_hooks.py",
       "firstSeenAt": "2026-07-18T23:39:37.206Z",
       "firstSeenCommit": "72fa4f544e6afc0b5401e174fba8cc177806de69",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-27T23:27:13.193Z",
+      "resolvedCommit": "c0259310f95732b139ae70fff35692660bcc6aeb"
     },
     {
       "findingId": "1c8d929bd23a81ba",
@@ -1176,8 +1167,8 @@
       "file": "tests/unit/test_hooks.py",
       "firstSeenAt": "2026-07-18T23:39:37.206Z",
       "firstSeenCommit": "72fa4f544e6afc0b5401e174fba8cc177806de69",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-27T23:27:13.193Z",
+      "resolvedCommit": "c0259310f95732b139ae70fff35692660bcc6aeb"
     },
     {
       "findingId": "477fef606835df0b",
@@ -1187,8 +1178,8 @@
       "file": "tests/unit/test_hooks.py",
       "firstSeenAt": "2026-07-26T18:52:33.408Z",
       "firstSeenCommit": "f4381095f01c3fd9dc0db01e3b43dcbadd09c0fa",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-27T23:27:13.193Z",
+      "resolvedCommit": "c0259310f95732b139ae70fff35692660bcc6aeb"
     },
     {
       "findingId": "8df90114e9d1fe13",
@@ -1198,8 +1189,8 @@
       "file": "tests/unit/test_guardian_coverage.py",
       "firstSeenAt": "2026-07-26T18:52:33.408Z",
       "firstSeenCommit": "f4381095f01c3fd9dc0db01e3b43dcbadd09c0fa",
-      "resolvedAt": null,
-      "resolvedCommit": null
+      "resolvedAt": "2026-07-27T23:27:13.193Z",
+      "resolvedCommit": "c0259310f95732b139ae70fff35692660bcc6aeb"
     }
   ]
 }

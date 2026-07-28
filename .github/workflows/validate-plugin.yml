@@ -21,24 +21,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - uses: actions/setup-node@v7
         with:
-          python-version: '3.11'
+          node-version: '22'
 
-      - name: Install jsonschema
-        run: pip install jsonschema==4.23.0
-
-      - name: Validate plugin manifest
+      - name: Validate plugin manifest (ajv, draft-07)
+        # ajv-cli (ajv v8) validates the draft-07 schema natively; no Python.
         run: |
-          python3 - <<'PYEOF'
-          import json, jsonschema, sys
-          schema   = json.load(open('.claude-plugin/schemas/plugin.schema.json'))
-          manifest = json.load(open('.claude-plugin/plugin.json'))
-          try:
-              jsonschema.validate(manifest, schema)
-              print("plugin.json is valid")
-          except jsonschema.ValidationError as e:
-              print(f"Validation FAILED: {e.message}", file=sys.stderr)
-              sys.exit(1)
-          PYEOF
+          npx --yes ajv-cli@5 validate \
+            -s .claude-plugin/schemas/plugin.schema.json \
+            -d .claude-plugin/plugin.json
