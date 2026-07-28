@@ -6,8 +6,8 @@ set -euo pipefail
 # 1. Roadmap comment guard — restore the markdownlint-disable block that
 #    `harness roadmap promote` silently strips (canary#273), before linting
 STAGED_ROADMAP=$(git diff --cached --name-only --diff-filter=ACM | grep '^docs/roadmap\.md$' || true)
-if [ -n "$STAGED_ROADMAP" ] && [ -f "scripts/roadmap_comment_guard.py" ]; then
-  python3 scripts/roadmap_comment_guard.py
+if [ -n "$STAGED_ROADMAP" ] && [ -f "scripts/roadmap_comment_guard.mjs" ]; then
+  node scripts/roadmap_comment_guard.mjs
   git add docs/roadmap.md
 fi
 
@@ -23,8 +23,8 @@ fi
 
 # 3. Security ledger — regenerate if source files changed, then stage
 LEDGER_SOURCES=$(git diff --cached --name-only | grep -Ev '^(\.harness/security/timeline\.json|docs/SECURITY_LEDGER\.md)$' || true)
-if [ -n "$LEDGER_SOURCES" ] && [ -f "scripts/security_ledger.py" ]; then
+if [ -n "$LEDGER_SOURCES" ] && [ -f "scripts/security_ledger.mjs" ]; then
   echo "[pre-commit] refreshing security ledger..."
-  python3 scripts/security_ledger.py 2>/dev/null || true
+  node scripts/security_ledger.mjs 2>/dev/null || true
   git add .harness/security/timeline.json docs/SECURITY_LEDGER.md 2>/dev/null || true
 fi

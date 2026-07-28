@@ -33,10 +33,6 @@ jobs:
         with:
           node-version: '20'
 
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.11'
-
       - name: Validate architecture
         run: npx --yes -p "$HARNESS_CLI" harness validate
 
@@ -49,7 +45,7 @@ jobs:
             --severity error
 
       - name: Refresh security ledger
-        run: python3 scripts/security_ledger.py
+        run: node scripts/security_ledger.mjs
 
       - name: Commit ledger if changed (push to main only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
