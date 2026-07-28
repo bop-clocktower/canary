@@ -3,7 +3,7 @@
 <!-- markdownlint-disable-file MD013 -->
 
 Auto-generated summary of `.harness/security/timeline.json`.
-Do not edit by hand — run `python scripts/security_ledger.py`
+Do not edit by hand — run `node scripts/security_ledger.mjs`
 to refresh.
 
 ## Latest Snapshot

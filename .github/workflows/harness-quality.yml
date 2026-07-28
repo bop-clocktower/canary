@@ -18,19 +18,12 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '20'
-      - uses: actions/setup-python@v7
-        with:
-          # Python 3.11 for the stdlib-only maintenance scripts below (hook guard,
-          # security ledger). The engine is TypeScript now — its tests run in the
-          # `ts-validate` job (vitest), which also carries the repo-structure
-          # invariant tests ported from the retired pytest suite.
-          python-version: '3.11'
 
       - name: Hook customization guard
         # Fail loudly if a harness regeneration clobbered a canary-local hook
         # edit (the blocking quality gate, the formatter path-fix, or the
         # non-blocking telemetry decision). See #318 C.
-        run: python3 scripts/check_hook_customizations.py
+        run: node scripts/check_hook_customizations.mjs
 
       - name: Harness Docs Coverage
         run: npx --yes -p "$HARNESS_CLI" harness check-docs
@@ -45,13 +38,13 @@ jobs:
 
       - name: Security Ledger Freshness
         run: |
-          python3 scripts/security_ledger.py
+          node scripts/security_ledger.mjs
           if ! git diff --exit-code -- \
               .harness/security/timeline.json \
               docs/SECURITY_LEDGER.md; then
             echo
             echo "::error::Security ledger is stale."
-            echo "Run \`python3 scripts/security_ledger.py\` locally and commit the diff."
+            echo "Run \`node scripts/security_ledger.mjs\` locally and commit the diff."
             exit 1
           fi
 

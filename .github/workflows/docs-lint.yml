@@ -6,7 +6,7 @@ on:
       - '**/*.md'
       - '.markdownlint.json'
       - '.github/workflows/docs-lint.yml'
-      - 'scripts/check_removed_symbols.py'
+      - 'scripts/check_removed_symbols.mjs'
   push:
     branches:
       - main
@@ -29,9 +29,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-node@v7
         with:
-          python-version: '3.11'
+          node-version: '20'
       - name: Check for removed-symbol drift and proprietary leaks
         # The company denylist is supplied privately via a repo secret so the
         # public workflow names no company. If the secret is unset, only the
@@ -39,4 +39,4 @@ jobs:
         env:
           CANARY_PROPRIETARY_DENYLIST:
             ${{ secrets.CANARY_PROPRIETARY_DENYLIST }}
-        run: python3 scripts/check_removed_symbols.py
+        run: node scripts/check_removed_symbols.mjs
