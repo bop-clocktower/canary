@@ -30,12 +30,12 @@ primitive when the MCP is present (degrading to plain `grep -r` when it is not),
 then applies a **domain-keyword heuristic** (Steps 3–4 below) to turn that
 dependent set into a severity label. The severity labeling is the heuristic part
 — keyword matching over dependent file and function names.
-`canary guardian analyze` (`agent/guardian/`, wired to `canary guardian analyze`
-in `agent/cli.py`) is a **real OpenAPI-diff blast-radius engine** — it diffs two
-OpenAPI specs (`--spec-before` / `--spec-after`), extracts the actual
-added/removed/changed endpoints, and maps each to coverage gaps against a
-`coverage-report.json`. For the class of change it covers, guardian is strictly
-higher-fidelity than the heuristics here.
+`canary guardian analyze` (`ts/src/guardian/`, wired to
+`canary guardian analyze` in `ts/src/cli.ts`) is a **real OpenAPI-diff
+blast-radius engine** — it diffs two OpenAPI specs (`--spec-before` /
+`--spec-after`), extracts the actual added/removed/changed endpoints, and maps
+each to coverage gaps against a `coverage-report.json`. For the class of change
+it covers, guardian is strictly higher-fidelity than the heuristics here.
 
 - **Use `canary guardian analyze`** when the change is an API/schema change and
   you have (or can generate) before/after OpenAPI specs — it gives exact
@@ -148,7 +148,7 @@ Failure impact — src/loyalty/points.service.ts::accruePoints
 
 - `/canary-test-pipeline` — Phase 3
 
-- `canary guardian analyze` (CLI, `agent/guardian/`) — higher-fidelity
+- `canary guardian analyze` (CLI, `ts/src/guardian/`) — higher-fidelity
   OpenAPI-diff blast-radius engine; use instead of this skill's heuristics
   when the change is an API/schema change with before/after specs available
 ````

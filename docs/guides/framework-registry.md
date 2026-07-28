@@ -176,14 +176,11 @@ must resolve to at least one entry.
 
 ### 5. Sanity-Check the Generator
 
-Run:
+Run the `/canary-write-test` slash command in Claude Code with a prompt that
+routes to the new framework.
 
-```bash
-python -m agent.cli generate "<prompt routing to new framework>"
-```
-
-Confirm the output has the right extension, the recommender chose your new
-entry, and `--execute` runs without setup errors.
+Confirm the output has the right extension and the recommender chose your new
+entry.
 
 ## Failure Modes
 

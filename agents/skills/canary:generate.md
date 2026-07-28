@@ -1,12 +1,14 @@
 ---
 name: canary:generate
-description: Generate a framework-appropriate test for the active editor file using Canary's analysis pipeline.
+description:
+  Generate a framework-appropriate test for the active editor file using
+  Canary's analysis pipeline.
 ---
 
 # canary:generate
 
-Invoke the `canary-test-generator` agent with the active editor file as
-the analysis target.
+Invoke the `canary-test-generator` agent with the active editor file as the
+analysis target.
 
 ## Usage
 
@@ -34,7 +36,7 @@ Analysis instructions:
      (e.g. `expect().toBe()` for Playwright/Vitest, `assert` for pytest)
 3. Write the test file adjacent to the source file, e.g.:
    - src/auth/login.ts  →  tests/auth/login.spec.ts
-   - agent/core/util.py →  tests/unit/test_util.py
+   - ts/src/core/classifier.ts →  ts/src/core/classifier.test.ts
 4. Run the test file and fix failures (up to 3 attempts).
 5. Report the final test file path and pass/fail status.
 ```
@@ -43,5 +45,5 @@ Analysis instructions:
 
 - The generated test file exists at the expected path.
 - `canary__run_tests` returns `exit_code == 0` on the final attempt.
-- If tests could not be made to pass after 3 attempts, the agent
-  reports the last failure output and the test file path.
+- If tests could not be made to pass after 3 attempts, the agent reports the
+  last failure output and the test file path.

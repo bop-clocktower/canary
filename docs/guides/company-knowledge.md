@@ -143,12 +143,12 @@ resolution: an explicit `flavor` argument wins; otherwise a truthy
 logs / formal contexts); default on. Attribution is never suppressed — only the
 voice line is.
 
-```python
-from agent.core.company_knowledge import CompanyKnowledge
+```ts
+import { CompanyKnowledge } from 'ts/src/core/company-knowledge';
 
-brand = CompanyKnowledge.load().report_branding()
-# → { ...all present brand keys..., logo_path_resolved?,
-#     attribution: "made with Canary", voice_line: "..."|"", flavor: bool }
+const brand = CompanyKnowledge.load().reportBranding();
+// → { ...all present brand keys..., logo_path_resolved?,
+//     attribution: "made with Canary", voice_line: "..."|"", flavor: bool }
 ```
 
 **Rendering — leverage the UI-polish skills.** The engine supplies the brand
