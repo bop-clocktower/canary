@@ -36,6 +36,18 @@ const DEFAULT_SKIP_GLOBS = [
   '**/*.snap',
   'agents/commands/**',
   '.harness/**',
+  '**/.harness/**',
+  '**/.*',
+  '**/*.config.js',
+  '**/*.config.ts',
+  '**/*.config.mjs',
+  '**/*.config.cjs',
+  '**/fixtures/**',
+  '**/__fixtures__/**',
+  '**/__mocks__/**',
+  '**/testdata/**',
+  '**/generated/**',
+  '**/__generated__/**',
 ];
 
 let dir: string;

@@ -18,6 +18,7 @@ import {
 } from '../src/guardian/coverage.js';
 import { Severity } from '../src/guardian/impact-mapper.js';
 import {
+  DEFAULT_SKIP_GLOBS,
   Finding,
   applySuppressions,
   buildFindings,
@@ -462,6 +463,37 @@ describe('render', () => {
     expect(out).toContain('graph stale');
   });
 
+  it('comment is actionable — header count, what-to-do, suppress hint', () => {
+    const out = render([finding()], 'comment');
+    expect(out).toContain('need'); // "1 file needs test coverage"
+    expect(out).toContain('/guardian suppress');
+    expect(out).toContain('| Sev | File'); // scannable table
+    expect(out).toContain('coverage-verified'); // plain-English confidence note
+    expect(out).toContain('deterministic check, no LLM'); // demystified tier
+  });
+
+  it('comment does not print the path twice for a file-level finding', () => {
+    const out = render(
+      [finding({ path: 'pkg/foo.py', unit: 'pkg/foo.py' })],
+      'comment',
+    );
+    expect(out).not.toContain('pkg/foo.py` → `pkg/foo.py'); // no self-arrow
+    expect(out).not.toContain('(pkg/foo.py)'); // no `path (path)` duplication
+    expect(out).toContain('`pkg/foo.py`');
+  });
+
+  it('comment shows the unit only when it differs from the path', () => {
+    const out = render(
+      [finding({ path: 'pkg/foo.py', unit: 'do_it' })],
+      'comment',
+    );
+    expect(out).toContain('`pkg/foo.py` → `do_it`');
+  });
+
+  it('comment is clean when there are no active findings', () => {
+    expect(render([], 'comment')).toContain('no test-coverage gaps');
+  });
+
   it('json round-trips all findings', () => {
     const findings = [
       finding({ path: 'a.py', unit: 'a' }),
@@ -538,6 +570,26 @@ describe('filterSkipped', () => {
     const [kept, skipped] = filterSkipped(units, []);
     expect(kept).toEqual(units);
     expect(skipped).toEqual([]);
+  });
+
+  // #413: the default skip set must cover the dotfile/config/nested-harness FPs
+  // a downstream overlay saw in its first guardian round (`.gitignore`,
+  // `.neorc.dev`, nested `.harness/`).
+  it('DEFAULT_SKIP_GLOBS skips dotfiles, nested harness, config, and fixtures', () => {
+    const units: ChangedUnit[] = [
+      { path: 'services/neo/.harness/.gitignore', added_ranges: [[1, 1]] },
+      { path: 'services/neo/.neorc.dev', added_ranges: [[1, 1]] },
+      { path: 'services/neo/.harness/state.json', added_ranges: [[1, 1]] },
+      { path: 'vite.config.ts', added_ranges: [[1, 1]] },
+      { path: 'src/__fixtures__/user.ts', added_ranges: [[1, 1]] },
+      { path: 'packages/ui/src/Button.tsx', added_ranges: [[1, 1]] }, // real source
+    ];
+    const [kept, skipped] = filterSkipped(units, [...DEFAULT_SKIP_GLOBS]);
+    expect(kept.map((u) => u.path)).toEqual(['packages/ui/src/Button.tsx']);
+    expect(skipped.map((u) => u.path)).toContain('services/neo/.neorc.dev');
+    expect(skipped.map((u) => u.path)).toContain(
+      'services/neo/.harness/.gitignore',
+    );
   });
 
   it('double-star matches nested', () => {
