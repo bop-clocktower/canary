@@ -1,0 +1,32 @@
+{
+  "//": "Example shadow-parity config: the v6 cutover check (TS engine vs Python reference). Copy, point baseline/candidate at your two implementations, and edit `cases`. Run: node cli.mjs --cases cases.example.json",
+  "baseline": ["python3", "-m", "agent.cli"],
+  "candidate": ["node", "ts/bin/canary.js"],
+  "env": { "PYTHONPATH": "." },
+  "normalize": ["ansi", "version", "timestamp", "tmppath", "sha"],
+  "accept": {
+    "skills list": "Python `rich` soft-wraps long skill descriptions at 80 cols; the TS port emits them unwrapped. Same content + names, different line breaks — a documented, intentional presentation deviation, not a contract."
+  },
+  "cases": [
+    { "label": "frameworks --json", "argv": ["frameworks", "--json"] },
+    { "label": "frameworks", "argv": ["frameworks"] },
+    {
+      "label": "recommend e2e --json",
+      "argv": ["recommend", "test a login form", "--json"]
+    },
+    { "label": "recommend prose", "argv": ["recommend", "test a login form"] },
+    { "label": "skills list", "argv": ["skills", "list"] },
+    {
+      "label": "bad: unknown option (exit 2)",
+      "argv": ["frameworks", "--nope"]
+    },
+    { "label": "bad: missing arg (exit 2)", "argv": ["recommend"] },
+    { "label": "bad: unknown command (exit 2)", "argv": ["frobnicate"] },
+    { "label": "analyze flaky --json", "argv": ["analyze", "flaky", "--json"] },
+    {
+      "label": "init playwright (isolated cwd)",
+      "argv": ["init", "playwright"],
+      "isolate": true
+    }
+  ]
+}
