@@ -38,11 +38,11 @@ Canary has three "write a test" entry points; they are not interchangeable:
 - **This agent (`canary-test-author`, wired to `/canary-write-test`)** —
   interactive, session-generated. Use when a human is in the loop to review
   framework choice, fixture reuse, and generated code before it lands.
-- **`agents/skills/claude-code/canary-generate-test/SKILL.md`** — the CLI batch
-  pipeline (`python -m agent.cli generate`). Use for scripted/CI-driven
-  generation runs where the classify → recommend → generate pipeline output
-  under `tests/generated/` is consumed programmatically, not reviewed
-  turn-by-turn in a session.
+- **`agents/skills/claude-code/canary-generate-test/SKILL.md`** — the batch
+  generation path (the `/canary-write-test` slash command). Use for
+  scripted/CI-driven generation runs where the classify → recommend → generate
+  pipeline output under `tests/generated/` is consumed programmatically, not
+  reviewed turn-by-turn in a session.
 - **`agents/canary-test-generator.md`** — the MCP `write_test_file` retry loop
   (analyze → write → run, up to 3 attempts, no slash command). Use when a single
   source file needs tests generated with an automatic write-run-revise loop

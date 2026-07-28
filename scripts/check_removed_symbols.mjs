@@ -41,6 +41,14 @@ const REMOVED_SYMBOLS = [
     '\\bset your API key\\b',
     'no API key is required — LLM work runs through the Claude Code session',
   ],
+  [
+    '\\bagent/(core|cli|mcp_server|guardian|history|analysis|frameworks|ui|llm)\\b',
+    'the Python engine (agent/) was retired in the v6 cutover — the engine is now TypeScript under ts/src/ (registry data at ts/src/data/frameworks/)',
+  ],
+  [
+    '\\bagent\\.(cli|mcp_server|core|guardian)\\b',
+    'the Python engine module (agent.*) was retired in the v6 cutover — reference the TypeScript engine under ts/src/ instead',
+  ],
 ];
 
 const INCLUDE_PATHS = [

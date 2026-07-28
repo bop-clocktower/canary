@@ -111,7 +111,7 @@ graph, it falls back to the heuristic. Absence degrades — it never blocks.
 
 `pr.tier` defaults to `0`. Tiers 1/2 are opt-in and require a Claude-compatible
 runtime. The agent tiers sit behind the `AgentTier` capability boundary
-(`agent/guardian/agent_tier.py`); the Tier 0 engine never imports them. The
+(`ts/src/guardian/agent-tier.ts`); the Tier 0 engine never imports them. The
 `CANARY_GUARDIAN_AGENT` environment marker signals when an agent runtime is
 present so the guardian can engage Tiers 1/2.
 

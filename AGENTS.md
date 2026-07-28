@@ -189,7 +189,7 @@ via slash commands.
   `/canary:init`, `/canary:migrate`.
 - **Activate:** load the repo root as a Claude Code plugin.
 
-### LLM Layer (`agent/llm/`)
+### LLM Layer (removed in v3.0)
 
 Removed in v3.0. The provider matrix (`anthropic`, `openai`, `gemini`, `codex`,
 `mock`), factory, and client are deleted. LLM generation now runs through the
@@ -216,8 +216,9 @@ step. `ts/` is an isolated pilot workspace (deliberately **not** the npm shim in
 `npm/`) proving the toolchain and the cross-language boundary before larger
 subsystems move.
 
-- **Scope so far:** `agent/analysis/` (flaky/spikes/area-health/common-failures/
-  regression/digest reports + the `AnalysisEngine`).
+- **Scope so far:** `ts/src/analysis/`
+  (flaky/spikes/area-health/common-failures/ regression/digest reports + the
+  `AnalysisEngine`).
 - **Toolchain:** TypeScript (strict) + Vitest (v8 coverage gate, lines 90 /
   branches 85) + Prettier. No ESLint (the repo uses none; the `protect-config`
   hook blocks AI-authored linter configs). CI job: `ts-validate` in
