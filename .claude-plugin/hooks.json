@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/block-no-verify.py\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/block-no-verify.mjs\""
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/protect-config.py\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/protect-config.mjs\""
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/quality-gate.py\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/quality-gate.mjs\""
           }
         ]
       }
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact-state.py\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact-state.mjs\""
           }
         ]
       }
