@@ -61,6 +61,22 @@ defaults).
 }
 ```
 
+Two different exclusion knobs, easily confused:
+
+| Key                   | Scope                   | Effect                                                                                                                                                |
+| --------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skipGlobs`           | the whole gate          | The path is dropped before any tier runs — no finding at any fidelity.                                                                                |
+| `pr.heuristicExclude` | the heuristic tier only | The path is still scored; only an **uncovered heuristic** verdict is suppressed. A coverage- or graph-verified finding on that same path still fires. |
+
+Reach for `heuristicExclude` when a path _can_ carry real coverage evidence but
+the naming heuristic would only guess (generated clients, ambient `.d.ts`
+declarations). Reach for `skipGlobs` when the path should never be judged at
+all.
+
+Both follow the same present-vs-absent contract: omit the key to keep the
+built-in default, or supply an explicit list — including `[]`, which means
+"nothing" rather than "use the default".
+
 ### PR check
 
 Set `canary.guardian.pr.enabled: true`. The stock workflow

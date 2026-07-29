@@ -750,6 +750,97 @@ export function isTestPath(path: string): boolean {
 }
 
 /**
+ * Extensions that denote hand-authored, executable program source (#413).
+ *
+ * The membership rule is deliberately simple and defensible: **a programming
+ * language belongs; data, config, markup, and style do not.** `.sh` is in (it is
+ * executable logic — bats/shunit2 exist); `.json`, `.yaml`, `.sql`, `.css`, and
+ * `.html` are out (nothing a naming heuristic could meaningfully judge).
+ *
+ * A repo that disagrees at the margins tunes the glob layer
+ * (`canary.guardian.pr.heuristicExclude`) rather than this list.
+ */
+const SOURCE_EXTENSIONS: ReadonlySet<string> = new Set([
+  // TS/JS + component dialects.
+  '.ts',
+  '.tsx',
+  '.mts',
+  '.cts',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.vue',
+  '.svelte',
+  '.astro',
+  // Python / Ruby / PHP / Perl / Lua.
+  '.py',
+  '.pyi',
+  '.rb',
+  '.php',
+  '.pl',
+  '.pm',
+  '.lua',
+  // JVM + .NET.
+  '.java',
+  '.kt',
+  '.kts',
+  '.scala',
+  '.groovy',
+  '.clj',
+  '.cljs',
+  '.cs',
+  '.fs',
+  '.vb',
+  // Systems.
+  '.go',
+  '.rs',
+  '.c',
+  '.h',
+  '.cc',
+  '.cpp',
+  '.cxx',
+  '.hpp',
+  '.hh',
+  '.m',
+  '.mm',
+  '.swift',
+  // Functional / scientific / other.
+  '.ex',
+  '.exs',
+  '.erl',
+  '.dart',
+  '.r',
+  '.jl',
+  // Shell.
+  '.sh',
+  '.bash',
+  '.zsh',
+  '.ps1',
+  '.psm1',
+]);
+
+/**
+ * True if `path` looks like hand-authored program source (#413).
+ *
+ * Used to gate the Tier-3 naming heuristic. That heuristic asks "does any test
+ * file reference this file's stem or a top-level symbol?" — for a config
+ * dotfile, a lockfile, or a data blob there are no symbols and no test will
+ * ever name it, so the verdict is structurally always "uncovered": a guaranteed
+ * false positive rather than a signal. An extension-less file (`Makefile`,
+ * `Dockerfile`) and a bare dotfile (`.eslintrc`) are both non-source.
+ */
+export function isSourcePath(path: string): boolean {
+  const base = basename(path);
+  // `.eslintrc` — `extname` calls this '' already, but a dotfile WITH a real
+  // extension (`.eslintrc.json`) must be judged on that extension, which the
+  // normal path handles.
+  const ext = extname(base).toLowerCase();
+  if (!ext) return false;
+  return SOURCE_EXTENSIONS.has(ext);
+}
+
+/**
  * Tier 2: derive coverage from the harness knowledge graph (`GRAPH_VERIFIED`).
  *
  * The graph has no explicit `tests`/`covers` edge, so coverage is **derived**:

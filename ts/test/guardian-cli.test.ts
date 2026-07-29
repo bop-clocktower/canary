@@ -73,6 +73,18 @@ index 1111111..2222222 100644
 +}
 `;
 
+// A default-skipped path (`dist/**`) that still carries a SOURCE extension, so
+// re-admitting it via `skipGlobs: []` genuinely produces a finding (#413).
+const DIFF_DIST_BUNDLE_JS = `diff --git a/dist/bundle.js b/dist/bundle.js
+index 1111111..2222222 100644
+--- a/dist/bundle.js
++++ b/dist/bundle.js
+@@ -0,0 +1,3 @@
++function bundled() {
++  return 1;
++}
+`;
+
 const DIFF_BARREL_INDEX_TS = `diff --git a/pkg/index.ts b/pkg/index.ts
 index 1111111..2222222 100644
 --- a/pkg/index.ts
@@ -393,15 +405,33 @@ describe('pr-check post pipeline', () => {
   });
 
   it('explicit empty skipGlobs disables the default skip', async () => {
+    // Vehicle is a default-skipped path with a SOURCE extension (`dist/**`), so
+    // this asserts the skipGlobs override alone. It used to use the lockfile,
+    // which #413's heuristic source floor now suppresses independently — see
+    // the companion test below.
+    const cfg = writeConfig({ skipGlobs: [] });
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--config', cfg, '--format', 'json'],
+      { input: DIFF_DIST_BUNDLE_JS, cwd: tmp },
+    );
+    expect(res.code).toBe(0);
+    const data = JSON.parse(res.stdout);
+    const paths = new Set(data.findings.map((f: { path: string }) => f.path));
+    expect(paths.has('dist/bundle.js')).toBe(true);
+  });
+
+  it('empty skipGlobs still cannot force a heuristic finding on a lockfile', async () => {
+    // #413 BEHAVIOR CHANGE: the heuristic source floor is not config-defeatable.
+    // `skipGlobs: []` re-admits the lockfile to the gate, but the naming
+    // heuristic has nothing to judge on it, so no finding is manufactured.
+    // Real evidence (a coverage row / graph edge) would still fire.
     const cfg = writeConfig({ skipGlobs: [] });
     const res = await invokeGuardian(
       ['pr-check', '--diff', '-', '--config', cfg, '--format', 'json'],
       { input: DIFF_LOCKFILE_ONLY, cwd: tmp },
     );
     expect(res.code).toBe(0);
-    const data = JSON.parse(res.stdout);
-    const paths = new Set(data.findings.map((f: { path: string }) => f.path));
-    expect(paths.has('package-lock.json')).toBe(true);
+    expect(res.stdout).toContain('nothing to verify');
   });
 
   it('barrel index.ts is not flagged', async () => {

@@ -35,6 +35,7 @@ import {
   CoverageResult,
   Fidelity,
   LineRange,
+  isSourcePath,
   isTestPath,
 } from './coverage.js';
 import { Severity, severitySortKey } from './impact-mapper.js';
@@ -375,6 +376,62 @@ export function filterTestUnits(
     }
   }
   return [kept, testUnits];
+}
+
+/**
+ * Default glob layer over the {@link isSourcePath} extension floor (#413).
+ *
+ * These paths carry a *source* extension but still have nothing a naming
+ * heuristic could judge: ambient type declarations have no runtime behavior,
+ * and generated clients/stubs are regenerated from a schema rather than
+ * hand-authored. An explicit `heuristicExclude` in config (even `[]`) replaces
+ * this list; the extension floor is NOT config-defeatable.
+ */
+export const DEFAULT_HEURISTIC_EXCLUDE_GLOBS: readonly string[] = [
+  '**/*.d.ts',
+  '**/__generated__/**',
+  '**/generated/**',
+  '**/*.generated.*',
+  '**/*_pb2.py',
+  '**/*.pb.go',
+];
+
+/**
+ * Partition coverage results, dropping heuristic false positives (#413).
+ *
+ * A result is dropped iff ALL of:
+ *
+ *   - its fidelity is `HEURISTIC` (the last-resort naming tier), AND
+ *   - it is **uncovered** (a covered result raises no finding anyway), AND
+ *   - its path is not program source ({@link isSourcePath}) OR it matches an
+ *     `excludeGlobs` entry.
+ *
+ * The narrowness is the point. A `COVERAGE_VERIFIED` or `GRAPH_VERIFIED`
+ * verdict on the very same path rests on real evidence (an lcov row, a graph
+ * edge) and still fires — the suppression is scoped to the tier, never to the
+ * path. Returns `[kept, dropped]`, order-preserving in both.
+ *
+ * Why this matters beyond noise: the soft→hard gate promotion is earned by
+ * reviewer adjudication feeding `precision = TP / (TP + FP)`. A repo that
+ * routinely touches config files accumulated 👎 on findings that could never
+ * have been true, holding it below its promotion bar indefinitely.
+ */
+export function filterHeuristicNoise(
+  results: CoverageResult[],
+  excludeGlobs: string[],
+): [CoverageResult[], CoverageResult[]] {
+  const kept: CoverageResult[] = [];
+  const dropped: CoverageResult[] = [];
+  for (const result of results) {
+    const ineligible =
+      result.fidelity === Fidelity.Heuristic &&
+      !result.covered &&
+      (!isSourcePath(result.unit.path) ||
+        excludeGlobs.some((glob) => globMatches(result.unit.path, glob)));
+    if (ineligible) dropped.push(result);
+    else kept.push(result);
+  }
+  return [kept, dropped];
 }
 
 /**
@@ -818,6 +875,10 @@ export class GuardianConfig {
   precommit_gate: string;
   coverage_paths: string[];
   skip_globs: string[];
+  // #413: glob layer suppressing the HEURISTIC tier only (a source path that
+  // still has nothing a naming heuristic can judge). Distinct from
+  // `skip_globs`, which drops a path from the gate entirely at every tier.
+  heuristic_exclude: string[];
   // #320: bound the graph-coverage reverse-BFS. `null` means "gate-derived"
   // (see {@link effectiveGraphDepth} — hard→1 direct edge, soft→unbounded); an
   // explicit int here overrides the gate default on BOTH surfaces.
@@ -833,6 +894,9 @@ export class GuardianConfig {
     this.precommit_gate = init.precommit_gate ?? 'soft';
     this.coverage_paths = init.coverage_paths ?? [];
     this.skip_globs = init.skip_globs ?? [...DEFAULT_SKIP_GLOBS];
+    this.heuristic_exclude = init.heuristic_exclude ?? [
+      ...DEFAULT_HEURISTIC_EXCLUDE_GLOBS,
+    ];
     this.graph_coverage_max_depth = init.graph_coverage_max_depth ?? null;
   }
 }
@@ -847,6 +911,7 @@ interface GuardianConfigFields {
   precommit_gate: string;
   coverage_paths: string[];
   skip_globs: string[];
+  heuristic_exclude: string[];
   graph_coverage_max_depth: number | null;
 }
 
@@ -1050,6 +1115,14 @@ export function loadGuardianConfig(
       );
     }
     config.weak_tests = pyTruthy(pyGet(pr, 'weakTests', config.weak_tests));
+    // #413: same present-vs-absent contract as `skipGlobs` (FIX B) — absent
+    // keeps the built-in default, an explicit list (including `[]`) is honored
+    // verbatim so `heuristicExclude: []` means "no glob layer". The
+    // {@link isSourcePath} extension floor is unaffected either way.
+    const heuristicExclude = pr['heuristicExclude'];
+    if (Array.isArray(heuristicExclude)) {
+      config.heuristic_exclude = heuristicExclude.map((g) => String(g));
+    }
   }
 
   const precommit = pyGet(block, 'preCommit', {});
