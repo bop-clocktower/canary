@@ -384,21 +384,31 @@ function isCiContext(env: NodeJS.ProcessEnv): boolean {
   return Boolean(env['GITHUB_ACTIONS'] || env['CI']);
 }
 
-/** Read `pull_request.base.sha` from the Actions event payload, if present. */
+/** Shape of the slice of the Actions event payload we read. */
+interface PullRequestEvent {
+  pull_request?: { base?: { sha?: unknown } };
+}
+
+/**
+ * Read `pull_request.base.sha` from the Actions event payload, if present.
+ *
+ * Optional chaining over a narrow interface (rather than an `unknown` +
+ * `typeof` ladder) keeps this at one branch per real failure mode: unreadable
+ * file, unparseable JSON, or a payload without a usable sha.
+ */
 function eventBaseSha(env: NodeJS.ProcessEnv): string | null {
   const eventPath = env['GITHUB_EVENT_PATH'];
   if (!eventPath) return null;
+  let sha: unknown;
   try {
-    const event = JSON.parse(readFileSync(eventPath, 'utf-8')) as unknown;
-    const sha =
-      typeof event === 'object' && event !== null
-        ? (event as { pull_request?: { base?: { sha?: unknown } } })
-            .pull_request?.base?.sha
-        : undefined;
-    return typeof sha === 'string' && sha.trim() ? sha.trim() : null;
+    const event = JSON.parse(
+      readFileSync(eventPath, 'utf-8'),
+    ) as PullRequestEvent | null;
+    sha = event?.pull_request?.base?.sha;
   } catch {
     return null;
   }
+  return typeof sha === 'string' && sha.trim() ? sha.trim() : null;
 }
 
 /**
