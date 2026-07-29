@@ -336,10 +336,12 @@ describe('SV003 restoration suppression (#493)', () => {
 //
 // SV003's anchor (os.environ / process.env / sys.modules) is code, so a match
 // starting inside a string literal is fixture data -- the dominant self-scan
-// false positive. SV004 is split: name-pattern alternatives (def test_1_...)
-// are code-anchored and get the same rejection; directive-text alternatives
-// ("must run before", it-titles) deliberately live inside strings and
-// comments, so they stay unfiltered.
+// false positive. SV004 is split: name-pattern alternatives (ordinal-indexed
+// or ordinal-named defs) are code-anchored and get the same rejection;
+// directive-text alternatives (must-run-before notes, it-titles) deliberately
+// live inside strings and comments, so they stay unfiltered. This comment
+// spells those triggers with hyphens so savant's self-scan does not flag its
+// own suite's documentation.
 
 describe('string-literal rejection (#493)', () => {
   it.each([

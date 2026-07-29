@@ -25,12 +25,12 @@ other skill.
 
 ## Rules (Tier 1 — static suspects)
 
-| Rule                              | Severity | Fires on                                                                                                                                                                                                                                                     |
-| --------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SV001-module-mutable-global`     | medium   | A module-scope mutable (`= {}`, `= []`, `set()`, `dict()`, `list()`, or a top-level JS `let`/`var`/`const` object/array) that some line later mutates in place (`.append`/`.add`/`[...] =`/`+=`/`.attr =`). Fires on the **declaration**, the leak's source. |
-| `SV002-missing-teardown`          | medium   | A **class/all-scoped** setup whose matching teardown is absent: pytest `setup_class`/`setUpClass`, or vitest/jest `beforeAll`. Per-test setup (`setUp`/`setup_method`/`beforeEach`) is excluded - it rebuilds state each test, so it does not leak.          |
-| `SV003-shared-singleton-mutation` | low      | A process-global singleton assigned without restore: `os.environ[...] =`, `sys.modules[...] =`, `process.env.X =`. Reads and `==` comparisons never fire.                                                                                                    |
-| `SV004-order-coupled-name`        | low      | A test name or comment that encodes ordering: `test_1_…`, a **terminal** ordinal (`test_first()`, `test_last()` - not `test_first_match_wins`), `must run before …`, `it('… run first')`.                                                                    |
+| Rule                              | Severity | Fires on                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SV001-module-mutable-global`     | medium   | A module-scope mutable (`= {}`, `= []`, `set()`, `dict()`, `list()`, or a top-level JS `let`/`var`/`const` object/array) that some line later mutates in place (`.append`/`.add`/`[...] =`/`+=`/`.attr =`). Fires on the **declaration**, the leak's source.                                                                                                                          |
+| `SV002-missing-teardown`          | medium   | A **class/all-scoped** setup whose matching teardown is absent: pytest `setup_class`/`setUpClass`, or vitest/jest `beforeAll`. Per-test setup (`setUp`/`setup_method`/`beforeEach`) is excluded - it rebuilds state each test, so it does not leak.                                                                                                                                   |
+| `SV003-shared-singleton-mutation` | low      | A process-global singleton assigned without restore: `os.environ[...] =`, `sys.modules[...] =`, `process.env.X =`. Reads and `==` comparisons never fire, and neither does a file that demonstrably restores the global — a same-key (or computed-loop) restore in `afterEach`/`afterAll`/teardown/post-`yield` fixture code, or a write-back from a snapshot saved from that global. |
+| `SV004-order-coupled-name`        | low      | A test name or comment that encodes ordering: `test_1_…`, a **terminal** ordinal (`test_first()`, `test_last()` - not `test_first_match_wins`), `must run before …`, `it('… run first')`.                                                                                                                                                                                             |
 
 A finding is a **suspect, not a verdict.** A module dict that is only ever read
 is a legitimate constant and does not fire; only a _mutated_ one does.
@@ -59,6 +59,15 @@ Savant Tier 1 is a scanner with no parser dependency, so it ships anywhere
 - **Comment-blind for code rules.** `SV003` skips commented-out lines; `SV004`
   deliberately does not, because an ordering note in a comment is exactly the
   self-reported dependence it looks for.
+- **String-aware for code anchors.** An `SV003` (or `SV004` name-pattern) match
+  that _starts_ inside a string literal on its own line is rejected as fixture
+  data. `SV004`'s directive-text alternatives stay unfiltered on purpose: their
+  signal (test titles, docstrings) legitimately lives inside strings.
+- **Restoration check is file-level.** `SV003` suppression cannot verify that a
+  fixture actually applies to the mutating test, and a computed-key loop restore
+  is assumed to cover the whole family — the same file-wide trade blackhawk
+  makes for frozen clocks. `vi.unstubAllEnvs`/`monkeypatch` never suppress a
+  direct assignment: they only undo their own mutations.
 - **Line-scoped.** A declaration or call split across lines can be missed.
 - **A missed suspect costs less than a false one** — the same bias as
   canary-blackhawk.
