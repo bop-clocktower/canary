@@ -10,6 +10,56 @@ That boundary is the single most important thing to understand about this
 codebase, and it is enforced, not merely intended: the Tier-0 guardian engine
 imports no agent/LLM module at all (`SC-11`).
 
+## Engine architecture
+
+Two entry points, one set of libraries. Everything the CLI can do, the MCP
+server can do, because both call the same modules through the same injected
+seams (`main-deps.ts`) — which is also why the whole engine is testable without
+a shell, a network, or a model.
+
+```mermaid
+flowchart TB
+  subgraph entry [Entry points]
+    CLI["cli.ts (commander)"]
+    MCP["mcp-server.ts (MCP tools)"]
+  end
+
+  CLI --> DEPS["main-deps.ts — injected seams<br/>(git, gh, fs, clock, sinks)"]
+  MCP --> DEPS
+
+  DEPS --> CORE
+  DEPS --> GUARD
+  DEPS --> ANA
+
+  subgraph CORE ["core/ — classify, recommend, scan, adopt"]
+    CL[classifier]
+    RE[recommender]
+    EX[executor]
+    CK[company-knowledge]
+    MIG[migrator + overlays]
+  end
+
+  subgraph GUARD ["guardian/ — diff-scoped test gating"]
+    PC[pr-check]
+    CVG[coverage tiers]
+    CMT[pr-comment]
+    EMT[analysis-emit]
+  end
+
+  subgraph ANA ["analysis/ — run-history reporting"]
+    AE[AnalysisEngine]
+    RPT[reports]
+  end
+
+  RE --> REG[("data/frameworks/registry.json")]
+  AE --> HIST[("history/ — run store<br/>history-v2.jsonl")]
+  EMT --> ARCH[(".harness/analyses/")]
+  CMT --> GH[("GitHub PR comment")]
+```
+
+`ui/` and `util/` are shared leaf helpers and are omitted; they depend on
+nothing above them.
+
 ## The pipeline
 
 ### 1. Test Classifier (`ts/src/core/classifier.ts`)
@@ -97,6 +147,52 @@ flowchart LR
 Solid arrows are engine work. **Dashed arrows cross into the host session** —
 that is where model judgement lives, and the engine never reaches across that
 line itself.
+
+## Guardian `pr-check` flow
+
+The most involved deterministic path in the engine, and a good worked example of
+the fidelity principle below. Every stage is agent-free.
+
+```mermaid
+flowchart TB
+  START["canary guardian pr-check"] --> RD{"--diff given?"}
+  RD -->|"yes"| SCOPE
+  RD -->|"no, in CI"| BASE["git diff base...HEAD<br/>(merge-base, triple-dot)"]
+  RD -->|"no, at desk"| WT["git diff (working tree)"]
+  BASE --> SCOPE["scopeDiff — added lines per file"]
+  WT --> SCOPE
+
+  SCOPE --> F1["drop skipGlobs<br/>(docs, lockfiles, build output)"]
+  F1 --> F2["drop test files"]
+  F2 --> F3["drop barrel / re-export-only files"]
+
+  F3 --> RES{"resolveCoverage<br/>highest fidelity per unit"}
+  RES -->|"lcov / Cobertura / coverage-json"| T1["coverage-verified"]
+  RES -->|"knowledge graph"| T2["graph-verified"]
+  RES -->|"naming heuristic"| T3["heuristic"]
+
+  T3 --> HN["drop non-source paths<br/>(heuristic can't judge them)"]
+  T1 --> FIND["buildFindings"]
+  T2 --> FIND
+  HN --> FIND
+
+  FIND --> SUP["applySuppressions<br/>canary:allow-untested"]
+  SUP --> GATE{"gate"}
+  GATE -->|"soft"| Z["exit 0 — advisory"]
+  GATE -->|"hard + unaddressed high/critical"| NZ["exit 1 — blocks merge"]
+
+  SUP --> CMT["sticky PR comment<br/>(upsert; size-capped)"]
+  SUP --> EMT[(".harness/analyses/<br/>--emit-analysis")]
+```
+
+Two behaviours worth knowing, both learned the hard way:
+
+- **In CI with `--diff` omitted, the base-ref path is the correct one.** A bare
+  working-tree `git diff` is empty on a clean checkout, so the gate would scope
+  zero paths and exit 0 — a green check that never evaluated anything.
+- **The comment is capped.** GitHub rejects a body over 65,536 characters, and a
+  rejected post is indistinguishable from a clean run. Findings are filled to a
+  budget most-severe-first; the uncapped set lives in the analyses record.
 
 ## Fidelity, not guesses
 
