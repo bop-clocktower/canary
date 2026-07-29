@@ -13,8 +13,8 @@ description: >
 Guards a change's test quality before it lands. Composes the deterministic
 Tier-0 diff-coverage engine with two native agents — `canary-test-reviewer`
 (read-only audit) and `canary-test-author` (authoring) — under a strict
-write-safety model. This is the **Option A** driver: the Python layer never
-calls an LLM; **this skill** invokes the agents in-session and enforces
+write-safety model. This is the **Option A** driver: the engine never calls an
+LLM; **this skill** invokes the agents in-session and enforces
 stage-and-block-once.
 
 ## When to Use
@@ -32,8 +32,11 @@ stage-and-block-once.
 - **Honor every `skipped` reason** from `author-plan` verbatim (opt-in-off /
   tier / fork / collision / loop-guard). Never override a skip.
 - **Block once.** When `block.block == true`, print the block message and stop —
-  leave the staged tests for the human. The git hook clears its sentinel on the
-  next commit so the guardian never loops on its own output.
+  leave the staged tests for the human. The loop-guard sentinel you write in
+  Phase 3 is what stops the guardian re-authoring over its own output on the
+  next run. **Note:** nothing clears that sentinel today (the component that did
+  was removed in #449), so authoring stays off in this clone until it is deleted
+  by hand — see the operator guide's "Known limitation".
 - **Authoring is opt-in.** No `preCommit.authorTests: true` ⇒ no writes, ever.
 
 ## Phases
@@ -59,7 +62,7 @@ export CANARY_GUARDIAN_AGENT=1   # or 2 when authoring is enabled
 
 If this checkout is a **fork** (an untrusted/read-only context — detect it, e.g.
 `git config --get remote.origin.url` pointing at a fork, or a CI fork PR), arm
-the fork guard so the Python safety layer never authors on it:
+the fork guard so the engine's safety layer never authors on it:
 
 ```bash
 export CANARY_GUARDIAN_IS_FORK=1   # any value other than "0"/unset means fork
@@ -74,7 +77,7 @@ Use the `canary-test-reviewer` agent to review the affected tests. This is
 
 ### Phase 2 — Authoring plan (Tier 2 + opt-in)
 
-Ask the Python safety layer for the plan (intents + block decision):
+Ask the engine's safety layer for the plan (intents + block decision):
 
 ```bash
 canary guardian author-plan --json
@@ -83,13 +86,13 @@ canary guardian author-plan --json
 The JSON is `{"intents": [...], "block": {...}}`. Each intent carries `status`
 (`planned` | `authored` | `skipped`), `target_path`, `requirement`, and a
 `skip_reason` when skipped. **Do not author anything the plan skipped** — the
-Python guards (opt-in, fork, collision, loop-guard) are authoritative.
+Engine guards (opt-in, fork, collision, loop-guard) are authoritative.
 
 ### Phase 3 — Author, stage, block once
 
 For each intent with `status: "planned"`, use the `canary-test-author` agent
 with the intent's `requirement` as the task and `target_path` as the
-destination. **Never overwrite an existing file at `target_path`.** The Python
+destination. **Never overwrite an existing file at `target_path`.** The engine's
 collision guard runs at plan time, so between planning and writing another
 PR/session may have created the file (a TOCTOU window). If the target already
 exists at write time, skip that intent and report it — do not clobber it. Then
@@ -108,11 +111,10 @@ canary guardian mark-authored --path <target_path> [--path <target_path> ...]
 ```
 
 This is a real CLI step (not something you `touch` yourself): it writes the
-sentinel inside the real git dir and records exactly the paths you authored, so
-the pre-commit hook scopes its one-shot passthrough to those paths only.
+sentinel inside the real git dir and records exactly the paths you authored.
+`author-plan` reads it on the next run and returns a `loop-guard` skip, so the
+guardian never authors on top of its own output.
 
 Then print `block.message` (the "N test(s) authored & staged — review and
 re-commit" notice) and **stop**. Do not commit. The human reviews the staged
-tests and re-commits; the pre-commit hook's sentinel lets that re-commit through
-exactly once — and only when nothing but the guardian's own authored tests is
-staged.
+tests and re-commits.

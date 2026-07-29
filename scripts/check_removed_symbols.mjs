@@ -49,6 +49,10 @@ const REMOVED_SYMBOLS = [
     '\\bagent\\.(cli|mcp_server|core|guardian)\\b',
     'the Python engine module (agent.*) was retired in the v6 cutover — reference the TypeScript engine under ts/src/ instead',
   ],
+  [
+    '\\bhooks/[\\w-]+\\.py\\b',
+    'the plugin hooks were ported to Node ESM in v6.1.0 (hooks/*.mjs) and guardian_precommit.py was deleted as dead code (#449) — reference the .mjs hook, or .githooks/pre-commit for the repo git hook',
+  ],
 ];
 
 const INCLUDE_PATHS = [
