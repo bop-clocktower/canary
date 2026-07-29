@@ -61,23 +61,17 @@ coverage** (`npm test` in `ts/` prints the v8 summary) and branch:
   `canary-ci-ready` and the guardian's `weak-test` finding exist to catch. Do
   not let a coverage target manufacture the tests it measures.
 
-## Tier 2 — one decision away
+## Tier 2 — decided 2026-07-29, now ready
 
-Each needs a single answer, then becomes Tier 1. These are the highest-leverage
-things to resolve, because the unblocking cost is one sentence each.
+All four decisions are made and recorded on the issues. These are Tier 1 in
+practice; the recommendation column is what was chosen.
 
-| Issue    | The decision                                  | Recommendation                                                                                                                                                                                                                                                            |
-| -------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **#456** | How is the authored-sentinel cleared?         | **HEAD-stamped sentinel** — record `HEAD` when writing; the loop guard fires only while `HEAD` is unchanged. Restores the deleted hook's "clears on the next commit" semantics with no hook, needs no cooperation from the skill, and makes the guard's own message true. |
-| **#459** | What owns `.github/workflows/` on install?    | **Write only when absent; on version mismatch report, never overwrite; `--force` for the deliberate case.** `migrate`'s one-way "overlay owns deployed files" rule (#334) must NOT extend to a consumer's CI.                                                             |
-| **#342** | Carve out the opt-in `--reasoning` flag?      | **Yes.** It needs no skill-level signal, no persistence, and no privacy surface — most of the value, none of the blocked design. Leave `auto` mode waiting on #341.                                                                                                       |
-| **#452** | When N surfaces disagree, which is divergent? | **Report the disagreement set without electing a winner**; let fixture-intent be the only thing that can name a culprit. Majority-wins is wrong at N=2 and wrong whenever one surface is the write path.                                                                  |
-
-### #456 also carries a rider
-
-Whatever mechanism wins, the acceptance criteria must include: **a stale or
-malformed sentinel fails OPEN** (authoring allowed). The current failure is
-fail-closed-forever, and a fix that preserves that shape is not a fix.
+| Issue    | Decision                                                                                                                                                                                                                                                                                                                                               |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **#456** | **HEAD-stamped sentinel.** Record `HEAD` when writing; the guard fires only while `HEAD` is unchanged. Restores the deleted hook's semantics with no hook, and makes the guard's own message true. **Rider:** a stale or malformed sentinel must fail **OPEN** — the current bug is fail-closed-forever, and a fix preserving that shape is not a fix. |
+| **#459** | **Write only when absent**; on version mismatch report, never overwrite; `--force` for the deliberate case. `migrate`'s one-way overlay ownership (#334) must NOT extend to a consumer's CI. Prerequisites unchanged: add the two `company.json` path fields, then fix the templates, then install.                                                    |
+| **#342** | **Carve out the opt-in `--reasoning` flag now.** No skill-level signal, no persistence, no privacy surface. `auto` mode stays blocked on #341.                                                                                                                                                                                                         |
+| **#338** | **Closed**; the blocked `promote-test` bullet re-filed as **#477**.                                                                                                                                                                                                                                                                                    |
 
 ## Tier 3 — needs a spike before any plan is meaningful
 
