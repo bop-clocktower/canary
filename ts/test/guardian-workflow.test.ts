@@ -4,8 +4,14 @@
  * Ported from `tests/unit/test_guardian_workflow.py`. Offline: parses
  * `.github/workflows/guardian.yml` with js-yaml and asserts the DURABLE,
  * agentless contract — no secret beyond GITHUB_TOKEN, `pull_request` trigger,
- * write permission for commenting, three-dot base-ref diff, and the
- * `guardian pr-check --post-comment` invocation. It never runs the workflow.
+ * write permission for commenting, the `guardian pr-check --post-comment`
+ * invocation, and (since #485) that the job dogfoods the CONSUMER path by
+ * omitting `--diff`. It never runs the workflow.
+ *
+ * The three-dot base-ref diff used to be asserted here, when the workflow
+ * computed it. That responsibility moved into `readPrDiff`; the exact
+ * `diff origin/<base>...HEAD` invocation is asserted in
+ * `guardian-pr-check-ci-diff.test.ts`.
  *
  * v6 note: this workflow is being repointed from `pip install -e .` + Python
  * `canary guardian pr-check` to the TS engine in the same PR. Every assertion
@@ -120,15 +126,30 @@ describe('guardian workflow', () => {
     expect(wf.jobs).toHaveProperty('guardian');
   });
 
-  it('three-dot base-ref diff', () => {
+  // The workflow no longer computes the diff itself. It used to run
+  // `git diff origin/<base>...HEAD > pr.diff` and pass `--diff pr.diff`, which
+  // meant canary's own dogfood exercised a path its CONSUMERS do not -- and is
+  // exactly why #369 escaped: that bug lived in the base-ref resolution taken
+  // when `--diff` is absent, so this job could never have caught it.
+  //
+  // The three-dot merge-base guarantee did not disappear; it moved into
+  // `readPrDiff`, where `guardian-pr-check-ci-diff.test.ts` asserts the exact
+  // `diff origin/<base>...HEAD` invocation. What this file now protects is the
+  // dogfood property: that the workflow keeps taking the consumer path.
+  it('dogfoods the consumer path — no --diff, so pr-check resolves the base ref', () => {
+    const blocks = runBlocks(load());
+    const prCheck = blocks.find((b) => b.includes('guardian pr-check'));
+    expect(prCheck).toBeDefined();
+    expect(prCheck).not.toContain('--diff');
+  });
+
+  it('fetches the base branch so origin/<base> is resolvable', () => {
+    // pr-check tries `origin/$GITHUB_BASE_REF` first; without this fetch it
+    // would fall through to the working-tree diff, which is empty on a clean
+    // checkout -- the #369 no-op.
     const blocks = runBlocks(load());
     expect(
-      blocks.some(
-        (b) =>
-          b.includes('git diff') &&
-          b.includes('origin/') &&
-          b.includes('...HEAD'),
-      ),
+      blocks.some((b) => b.includes('git fetch') && b.includes('origin')),
     ).toBe(true);
   });
 
