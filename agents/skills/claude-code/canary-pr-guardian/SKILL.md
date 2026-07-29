@@ -34,9 +34,8 @@ stage-and-block-once.
 - **Block once.** When `block.block == true`, print the block message and stop —
   leave the staged tests for the human. The loop-guard sentinel you write in
   Phase 3 is what stops the guardian re-authoring over its own output on the
-  next run. **Note:** nothing clears that sentinel today (the component that did
-  was removed in #449), so authoring stays off in this clone until it is deleted
-  by hand — see the operator guide's "Known limitation".
+  next run. It is stamped with the current `HEAD` and expires by itself once the
+  human's review commit moves `HEAD` — never delete it yourself.
 - **Authoring is opt-in.** No `preCommit.authorTests: true` ⇒ no writes, ever.
 
 ## Phases
@@ -111,9 +110,11 @@ canary guardian mark-authored --path <target_path> [--path <target_path> ...]
 ```
 
 This is a real CLI step (not something you `touch` yourself): it writes the
-sentinel inside the real git dir and records exactly the paths you authored.
-`author-plan` reads it on the next run and returns a `loop-guard` skip, so the
-guardian never authors on top of its own output.
+sentinel inside the real git dir and records exactly the paths you authored,
+stamped with the current `HEAD`. `author-plan` reads it on the next run and
+returns a `loop-guard` skip **while `HEAD` is unchanged**, so the guardian never
+authors on top of its own output — and once the human commits the reviewed
+tests, `HEAD` moves and authoring re-enables itself.
 
 Then print `block.message` (the "N test(s) authored & staged — review and
 re-commit" notice) and **stop**. Do not commit. The human reviews the staged

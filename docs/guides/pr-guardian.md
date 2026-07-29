@@ -110,16 +110,14 @@ they are read by `author-plan`, **not** by any git hook. The repo's own git hook
 runs markdownlint, the roadmap comment guard, and the security ledger; it does
 not invoke the guardian.
 
-> **Known limitation.** The sentinel is written but never cleared. The component
-> that cleared it on each commit (`hooks/guardian_precommit.py`) was removed as
-> dead code in #449, and nothing replaced that half of the contract. So once
-> authoring has run in a clone, `author-plan` reports
-> `loop-guard: guardian tests already authored this run` and will not author
-> again until the sentinel is deleted by hand:
->
-> ```bash
-> rm "$(git rev-parse --git-dir)/canary-guardian-authored"
-> ```
+**The loop guard expires on your next commit.** `mark-authored` stamps the
+sentinel with the `HEAD` it authored at (a `HEAD <sha>` header above the paths),
+and `author-plan` honors the guard **only while `HEAD` still matches**. Review
+the staged tests, commit them, and `HEAD` moves — the stamp stops matching and
+authoring is available again with no manual step. Nothing needs to clear the
+file. Any sentinel that cannot be verified — missing, unreadable, no `HEAD`
+header, or an unresolvable `HEAD` — **fails open**, so a stale file can never
+wedge authoring off (#456).
 
 ## Fidelity labels
 

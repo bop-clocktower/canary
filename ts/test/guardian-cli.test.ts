@@ -847,7 +847,11 @@ describe('author-plan (T7)', () => {
 // --- mark-authored + watch ----------------------------------------------------
 
 describe('mark-authored', () => {
-  it('writes the sentinel with one path per line', async () => {
+  // A freshly `git init`ed repo has no commits, so `rev-parse HEAD` fails and
+  // the #456 `HEAD <sha>` header is omitted -- leaving the bare paths-per-line
+  // body asserted here. The stamped body (and the fail-open consequence of an
+  // unstamped one) is covered in `guardian-loop-guard.test.ts`.
+  it('writes the sentinel with one path per line (no HEAD to stamp)', async () => {
     execFileSync('git', ['init', '-q', tmp]);
     const res = await invokeGuardian(
       ['mark-authored', '--path', 'a/test_x.py', '--path', 'b/test_y.py'],

@@ -347,6 +347,61 @@ function authoredSentinelPath(deps: GuardianDeps, root: string): string {
   return join(gitDir(deps, root), AUTHORED_SENTINEL_NAME);
 }
 
+// The sentinel's FIRST line stamps the HEAD the guardian authored at:
+// `HEAD <sha>`. Every line after it is one authored path. Anchored at the start
+// of the body and hex-only, with a trailing `[ \t\r]*` so a CRLF-written file
+// still parses -- anything else reads as malformed, which fails OPEN.
+const SENTINEL_HEAD_RE = /^HEAD ([0-9a-fA-F]{7,64})[ \t\r]*(?:\n|$)/;
+
+/**
+ * Parse the `HEAD <sha>` stamp off a sentinel body; `null` when malformed.
+ *
+ * Malformed covers empty, headerless (the pre-#456 paths-only format), and any
+ * unparseable first line. Callers MUST treat `null` as "cannot verify" and fail
+ * OPEN -- an unreadable sentinel must never wedge authoring off (#456).
+ */
+function sentinelHeadStamp(text: string): string | null {
+  const match = SENTINEL_HEAD_RE.exec(text);
+  return match === null ? null : match[1]!.toLowerCase();
+}
+
+/** Current `HEAD` sha for `root`, or `null` when git/HEAD is unavailable. */
+function headSha(deps: GuardianDeps, root: string): string | null {
+  const res = deps.runGit(['rev-parse', 'HEAD'], root);
+  if (res === null || res.code !== 0) return null; // no git / no commits
+  return res.stdout.trim().toLowerCase() || null;
+}
+
+/**
+ * Is the loop guard live -- i.e. does a sentinel stamped at the CURRENT `HEAD`
+ * exist?
+ *
+ * This is the surviving half of the stage-and-block-once contract (#456). The
+ * component that CLEARED the sentinel on the next commit
+ * (`hooks/guardian_precommit.py`) was deleted as dead code in #449, which left
+ * `author-plan` fail-closed forever: author once in a clone and Tier-2 authoring
+ * never ran again. Stamping HEAD makes the guard self-expiring -- once the human
+ * reviews and commits the staged tests, `HEAD` moves, the stamp stops matching,
+ * and authoring re-enables itself with no manual step and no hook.
+ *
+ * Every unverifiable state FAILS OPEN (returns `false`, authoring allowed):
+ * missing or unreadable sentinel, a malformed/absent `HEAD` header, or a `HEAD`
+ * we cannot resolve. Fail-closed here is exactly the bug being fixed.
+ */
+function authoredSentinelActive(deps: GuardianDeps, root: string): boolean {
+  let body: string;
+  try {
+    body = readFileSync(authoredSentinelPath(deps, root), 'utf-8');
+  } catch {
+    return false; // absent or unreadable -> fail open
+  }
+  const stamp = sentinelHeadStamp(body);
+  if (stamp === null) return false; // malformed -> fail open
+  const head = headSha(deps, root);
+  if (head === null) return false; // unverifiable -> fail open
+  return head === stamp;
+}
+
 /**
  * Return raw unified-diff text from a source.
  *
@@ -1090,7 +1145,8 @@ function authorPlanCmd(opts: AuthorPlanOptions, deps: GuardianDeps): void {
   const ctx = new AuthoringContext(config.precommit_author_tests, effective, {
     is_fork: isForkContext(deps.env),
     repo_root: repoRoot,
-    authored_sentinel_present: existsSync(authoredSentinelPath(deps, repoRoot)),
+    // #456: HEAD-stamped, so the guard expires on the next commit by itself.
+    authored_sentinel_present: authoredSentinelActive(deps, repoRoot),
   });
   const results = deps.makeAgentTier().author_tests(gaps, ctx);
   const decision = decideBlock(results);
@@ -1111,11 +1167,23 @@ interface MarkAuthoredOptions {
   path: string[];
 }
 
+/**
+ * Record the authored paths in the loop-guard sentinel, stamped with the HEAD
+ * they were authored at (#456).
+ *
+ * The `HEAD <sha>` header is what makes the guard self-expiring: `author-plan`
+ * honors it only while `HEAD` still matches, so the human's review commit clears
+ * it implicitly. When `HEAD` cannot be resolved (a repo with no commits, or no
+ * git at all) the header is omitted -- an unstamped sentinel reads as malformed
+ * and FAILS OPEN, which is the safe direction.
+ */
 function markAuthoredCmd(opts: MarkAuthoredOptions, deps: GuardianDeps): void {
   const root = gitToplevel(deps);
   const sentinel = authoredSentinelPath(deps, root);
   mkdirSync(dirname(sentinel), { recursive: true });
-  const body = opts.path.map((p) => `${p}\n`).join('');
+  const head = headSha(deps, root);
+  const header = head === null ? '' : `HEAD ${head}\n`;
+  const body = header + opts.path.map((p) => `${p}\n`).join('');
   writeFileSync(sentinel, body, 'utf-8');
   deps.out(
     `guardian: recorded ${opts.path.length} authored path(s) ${RIGHT_ARROW} ${sentinel}`,

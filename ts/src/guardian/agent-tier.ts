@@ -230,7 +230,11 @@ export class AuthoringContext {
   effective_tier: number; // from resolveTier (2 == can author)
   is_fork: boolean; // reuse Phase-2 fork/403 detection -- (b)
   repo_root: string; // collision + sentinel base
-  authored_sentinel_present: boolean; // loop-guard -- (a)
+  // loop-guard -- (a). True only when a sentinel stamped at the CURRENT HEAD
+  // exists (#456): the caller resolves the stamp, and every unverifiable state
+  // (missing/unreadable/malformed sentinel, unresolvable HEAD) passes `false`
+  // so authoring fails OPEN.
+  authored_sentinel_present: boolean;
 
   constructor(
     author_tests_optin: boolean,
@@ -327,7 +331,10 @@ function authoringSkipReason(
     return `fork: read-only ${EM_DASH} guardian never writes on a fork PR`;
   }
   if (ctx.authored_sentinel_present) {
-    return `loop-guard: guardian tests already authored this run ${EM_DASH} not re-authoring`;
+    return (
+      `loop-guard: guardian tests already authored at this HEAD ${EM_DASH} ` +
+      `review and commit them to re-enable authoring`
+    );
   }
   const target = joinPosix(ctx.repo_root, targetTestPath(gap));
   if (existsSync(target)) {
