@@ -351,13 +351,158 @@ function authoredSentinelPath(deps: GuardianDeps, root: string): string {
  *
  * `source === '-'` reads stdin; a path reads that file; `null` runs `git diff`
  * and falls back to `git diff --staged` when the worktree is clean.
+ *
+ * This is the AT-DESK resolution: the working tree is the subject. `pr-check`
+ * uses {@link readPrDiff} instead, which prefers the PR diff in CI (#369).
  */
 function readDiff(source: string | null, deps: GuardianDeps): string {
   if (source === '-') return deps.readStdin();
   if (source !== null) return readFileSync(source, 'utf-8');
+  return readWorktreeDiff(deps);
+}
+
+/** `git diff`, falling back to `git diff --staged` on a clean worktree. */
+function readWorktreeDiff(deps: GuardianDeps): string {
   const unstaged = deps.runGit(['diff'])?.stdout ?? '';
   if (unstaged.trim()) return unstaged;
   return deps.runGit(['diff', '--staged'])?.stdout ?? '';
+}
+
+/** Where an omitted-`--diff` resolution ended up (#369). */
+export type DiffOrigin = 'stdin' | 'file' | 'ci-base' | 'worktree';
+
+/** A resolved diff plus the provenance the caller needs to warn accurately. */
+export interface ResolvedDiff {
+  text: string;
+  origin: DiffOrigin;
+  /** The git rev the diff was taken against; only set for `ci-base`. */
+  base: string | null;
+}
+
+/** True when the process looks like a CI runner rather than a dev worktree. */
+function isCiContext(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env['GITHUB_ACTIONS'] || env['CI']);
+}
+
+/** Read `pull_request.base.sha` from the Actions event payload, if present. */
+function eventBaseSha(env: NodeJS.ProcessEnv): string | null {
+  const eventPath = env['GITHUB_EVENT_PATH'];
+  if (!eventPath) return null;
+  try {
+    const event = JSON.parse(readFileSync(eventPath, 'utf-8')) as unknown;
+    const sha =
+      typeof event === 'object' && event !== null
+        ? (event as { pull_request?: { base?: { sha?: unknown } } })
+            .pull_request?.base?.sha
+        : undefined;
+    return typeof sha === 'string' && sha.trim() ? sha.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Base-rev candidates for the PR diff, most-preferred first.
+ *
+ * `origin/<ref>` leads because `actions/checkout` fetches the base branch under
+ * the remote namespace and usually does NOT create a local branch for it; the
+ * bare `<ref>` covers checkouts that do. The event payload's `base.sha` is the
+ * last resort — exact, but only present on `pull_request` events.
+ */
+function baseRefCandidates(env: NodeJS.ProcessEnv): string[] {
+  const candidates: string[] = [];
+  const baseRef = env['GITHUB_BASE_REF']?.trim();
+  if (baseRef) candidates.push(`origin/${baseRef}`, baseRef);
+  const sha = eventBaseSha(env);
+  if (sha) candidates.push(sha);
+  return candidates;
+}
+
+/**
+ * Return the first base candidate that actually resolves to a commit locally.
+ *
+ * A shallow clone (`fetch-depth: 1`, the `actions/checkout` default) will NOT
+ * have the base commit, so every candidate fails `rev-parse` and we return
+ * `null` — the caller then falls back to the worktree diff and warns.
+ */
+function resolveBaseRev(deps: GuardianDeps): string | null {
+  for (const candidate of baseRefCandidates(deps.env)) {
+    const res = deps.runGit([
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      `${candidate}^{commit}`,
+    ]);
+    if (res !== null && res.code === 0 && res.stdout.trim()) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Resolve the diff `pr-check` should scope, preferring the PR diff in CI (#369).
+ *
+ * An explicit `--diff` (stdin or file) always wins and never shells out. With
+ * `--diff` omitted:
+ *
+ *   - **In CI** with a resolvable base rev → `git diff <base>...HEAD`. The
+ *     TRIPLE-dot form diffs against the merge base, so commits that land on the
+ *     base branch mid-PR never appear as part of this PR's changed surface.
+ *   - **Otherwise** → the at-desk working-tree diff ({@link readWorktreeDiff}).
+ *
+ * The legacy behavior was the working-tree diff unconditionally, which is empty
+ * on a clean CI checkout — the gate then scoped zero paths and exited 0, so an
+ * adopting repo could not tell a working gate from a broken one.
+ */
+export function readPrDiff(
+  source: string | null,
+  deps: GuardianDeps,
+): ResolvedDiff {
+  if (source === '-') {
+    return { text: deps.readStdin(), origin: 'stdin', base: null };
+  }
+  if (source !== null) {
+    return { text: readFileSync(source, 'utf-8'), origin: 'file', base: null };
+  }
+  if (isCiContext(deps.env)) {
+    const base = resolveBaseRev(deps);
+    if (base !== null) {
+      const res = deps.runGit(['diff', `${base}...HEAD`]);
+      if (res !== null && res.code === 0) {
+        return { text: res.stdout, origin: 'ci-base', base };
+      }
+    }
+  }
+  return { text: readWorktreeDiff(deps), origin: 'worktree', base: null };
+}
+
+const EMPTY_CI_DIFF_NOTICE =
+  'guardian: 0 changed paths — fell back to a working-tree `git diff`, which ' +
+  'is empty on a clean CI checkout, so NOTHING was verified. Pass ' +
+  '`--diff <base>...<head>`, or checkout with `fetch-depth: 0` so the PR base ' +
+  'ref resolves automatically.';
+
+/**
+ * Warn LOUDLY when a CI run scoped zero paths off the worktree fallback (#369).
+ *
+ * Fires only for the exact broken shape — `--diff` omitted, CI detected, base
+ * rev unresolvable, and zero changed paths. A diff that DID carry paths which
+ * were then all skipped is a legitimate no-op and stays quiet.
+ *
+ * Deliberately non-blocking: it annotates (`::warning::` + step summary +
+ * stderr) rather than exiting non-zero, so adopting an engine upgrade never
+ * flips a green build red — but a silent green no-op becomes impossible.
+ */
+function warnIfEmptyCiDiff(
+  resolved: ResolvedDiff,
+  unitCount: number,
+  deps: GuardianDeps,
+): void {
+  if (resolved.origin !== 'worktree') return;
+  if (unitCount > 0) return;
+  if (!isCiContext(deps.env)) return;
+  deps.out(degradationAnnotation(EMPTY_CI_DIFF_NOTICE));
+  appendStepSummary(deps.env, EMPTY_CI_DIFF_NOTICE);
+  deps.err(EMPTY_CI_DIFF_NOTICE);
 }
 
 // --- analyze ------------------------------------------------------------------
@@ -738,8 +883,12 @@ async function prCheckCmd(
 
   const effectiveGate = opts.gate ?? config.pr_gate;
 
-  const diffText = readDiff(opts.diff ?? null, deps);
+  // #369: in CI an omitted `--diff` resolves the PR diff from the base ref;
+  // the working-tree fallback is empty on a clean checkout.
+  const resolvedDiff = readPrDiff(opts.diff ?? null, deps);
+  const diffText = resolvedDiff.text;
   const units = scopeDiff(diffText);
+  warnIfEmptyCiDiff(resolvedDiff, units.length, deps);
 
   // SC-2: drop docs/config-only units matching skipGlobs.
   const [keptSkip, skipped] = filterSkipped(units, config.skip_globs);
@@ -1054,7 +1203,8 @@ export function createGuardianCommand(
     .description('Tier 0 deterministic PR guardian: scope, resolve, gate.')
     .option(
       '--diff <diff>',
-      "Diff file, '-' for stdin, or omit to use `git diff`.",
+      "Diff file, '-' for stdin, or omit to auto-resolve: the PR diff " +
+        '(`<base>...HEAD`) in CI, else the local working-tree `git diff`.',
     )
     .option('--coverage <path>', 'Coverage report path (lcov/json).')
     .addOption(

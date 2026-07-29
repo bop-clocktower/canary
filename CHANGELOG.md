@@ -14,6 +14,25 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **Guardian — `pr-check` no longer silently no-ops in CI** (#369): with
+  `--diff` omitted, `pr-check` ran a bare `git diff` (working tree vs. index),
+  which is **empty on a clean `actions/checkout`** — so the gate scoped zero
+  paths, exited 0, and posted nothing. An adopting repo saw a green check that
+  had never evaluated a PR (confirmed across ~5 real downstream PRs). Now, in a
+  CI context, an omitted `--diff` resolves the PR diff from the base ref
+  (`origin/$GITHUB_BASE_REF`, `$GITHUB_BASE_REF`, then the event payload's
+  `pull_request.base.sha`) and runs `git diff <base>...HEAD` — the triple-dot
+  merge-base form, so commits landing on the base branch mid-PR are excluded.
+  When no base rev resolves (a shallow `fetch-depth: 1` clone) **and** the
+  fallback diff yields zero changed paths, the run now warns LOUDLY
+  (`::warning::` annotation + job step summary + stderr) instead of reporting a
+  silent success. The warning is non-blocking, so upgrading never flips a green
+  build red — but a broken gate is no longer indistinguishable from a clean one.
+  At-desk behavior (and `author-plan`, whose subject really is the working tree)
+  is unchanged.
+
 ## [5.15.0] - 2026-07-25
 
 A large **additive** release centered on the PR guardian and the completion of

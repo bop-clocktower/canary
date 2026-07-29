@@ -26,6 +26,11 @@ import {
 const GUARDIAN_ENV_KEYS = [
   'GITHUB_REPOSITORY',
   'GITHUB_REF',
+  // #369: CI/base-ref detection for the auto-resolved PR diff. Cleared so a
+  // host CI runner never makes a local test take the ci-base branch.
+  'GITHUB_ACTIONS',
+  'CI',
+  'GITHUB_BASE_REF',
   'GITHUB_EVENT_PATH',
   'GITHUB_TOKEN',
   'GITHUB_STEP_SUMMARY',
