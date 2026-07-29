@@ -82,8 +82,12 @@ anywhere `node` does. The cost, stated plainly:
 - **Comment-blind, one level deep.** Lines starting with `#`, `//`, `*`, `/*`,
   or a docstring quote are skipped; a multi-line block comment whose inner lines
   do not start with `*` is still scanned.
-- **String-blind.** `Date.now()` inside a string literal or a fixture blob is
-  flagged like real code.
+- **String-aware, one line deep.** A match that _starts_ inside a string literal
+  on its own line is rejected as fixture data (`pyFile('time.sleep(1)')` does
+  not fire), while an anchor whose pattern merely reaches into quotes
+  (`strftime('..%Z')`) still does; template `${...}` interpolation is code. A
+  string spanning lines is only seen on its opening line, so a fixture blob's
+  continuation lines are still scanned like code.
 - **No type awareness.** `.toLocaleString()` on a `Number` reads the same as on
   a `Date`.
 - **Suppression is a substring match.** A mention of `freezegun` in a comment

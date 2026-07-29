@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { FROZEN_CLOCK_MARKERS, RULES } from './rules.mjs';
+import { stringLiteralRanges, execOutsideStrings } from './string-literals.mjs';
 
 export const SNIPPET_LIMIT = 120;
 
@@ -124,9 +125,13 @@ export function scanTextFull(text, file = '<text>') {
   lines.forEach((raw, i) => {
     const stripped = raw.trim();
     if (!stripped || isComment(stripped)) return;
+    // #493: a match starting inside a string literal is fixture data, not
+    // code. Computed once per line; every rule's anchor token is code, even
+    // when the pattern's tail reaches into quotes (BH003's strftime('..%Z')).
+    const ranges = stringLiteralRanges(stripped);
     for (const rule of RULES) {
       if (frozen && rule.clockDependent) continue;
-      const match = rule.pattern.exec(stripped);
+      const match = execOutsideStrings(rule.pattern, stripped, ranges);
       if (!match) continue;
       if (rule.keep && !rule.keep(match)) continue;
       const finding = {

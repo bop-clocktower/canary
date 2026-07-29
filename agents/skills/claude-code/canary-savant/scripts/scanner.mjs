@@ -12,14 +12,20 @@ import path from 'node:path';
 import {
   SEVERITY,
   WHY,
-  SV003_PATTERN,
-  SV004_PATTERN,
+  SV004_CODE_PATTERN,
+  SV004_TEXT_PATTERN,
   PYTHON_SETUP_TEARDOWN,
   JS_SETUP_TEARDOWN,
   PY_MODULE_MUTABLE,
   JS_MODULE_MUTABLE,
   mutationPattern,
 } from './rules.mjs';
+import {
+  analyzeRestoration,
+  classifyMutation,
+  isSnapshotWriteBack,
+} from './restoration.mjs';
+import { stringLiteralRanges, execOutsideStrings } from './string-literals.mjs';
 
 export const SNIPPET_LIMIT = 120;
 
@@ -140,6 +146,10 @@ export function scanText(text, file = '<text>') {
   const isPy = file.endsWith('.py');
   const lines = splitLines(text);
   const findings = [];
+  // #493 root cause 2: SV003's why asserts persistence, so a file that
+  // restores the global (teardown restore or snapshot write-back) must not
+  // be flagged. Computed once per file.
+  const restoration = analyzeRestoration(text);
 
   findings.push(...sv001ModuleMutables(lines, file, isPy, text));
   findings.push(...sv002MissingTeardown(lines, file, isPy, text));
@@ -147,17 +157,31 @@ export function scanText(text, file = '<text>') {
   lines.forEach((raw, i) => {
     const stripped = raw.trim();
     if (!stripped) return;
+    // #493: a match starting inside a string literal is fixture data, not
+    // code. SV003 and SV004's code-anchored alternatives reject those; the
+    // SV004 text alternatives stay unfiltered because their signal (titles,
+    // docstrings, comments) legitimately lives inside strings.
+    const ranges = stringLiteralRanges(stripped);
     // SV004 is self-reported ordering: it fires on comments and code alike.
-    if (SV004_PATTERN.test(stripped)) {
+    if (
+      execOutsideStrings(SV004_CODE_PATTERN, stripped, ranges) ||
+      SV004_TEXT_PATTERN.test(stripped)
+    ) {
       findings.push(
         makeFinding(file, i + 1, 'SV004-order-coupled-name', stripped),
       );
     }
     if (isComment(stripped)) return;
-    if (SV003_PATTERN.test(stripped)) {
-      findings.push(
-        makeFinding(file, i + 1, 'SV003-shared-singleton-mutation', stripped),
-      );
+    const mutation = classifyMutation(stripped, ranges);
+    if (mutation) {
+      const restored =
+        isSnapshotWriteBack(mutation, lines) ||
+        restoration.restores(mutation.family, mutation.key);
+      if (!restored) {
+        findings.push(
+          makeFinding(file, i + 1, 'SV003-shared-singleton-mutation', stripped),
+        );
+      }
     }
   });
 

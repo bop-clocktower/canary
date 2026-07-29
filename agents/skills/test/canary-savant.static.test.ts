@@ -197,6 +197,199 @@ describe('SV004 order-coupled-name', () => {
   });
 });
 
+// --- SV003 restoration suppression (#493) ------------------------------------
+//
+// SV003's why asserts persistence ("the change persists across tests"), so a
+// file that restores the global in teardown must not be flagged -- 37 of 51
+// self-scan findings were the textbook save-in-beforeEach / restore-in-
+// afterEach pattern. Suppression needs positive evidence (same family, same
+// key or a computed loop restore, inside a teardown region or a snapshot
+// write-back); anything less stays flagged, because a false skip hides real
+// pollution.
+
+describe('SV003 restoration suppression (#493)', () => {
+  it('does not flag the save/restore loop pattern (ci-env shape)', () => {
+    const text = [
+      'const saved = {};',
+      'beforeEach(() => {',
+      '  for (const v of VARS) {',
+      '    saved[v] = process.env[v];',
+      '    delete process.env[v];',
+      '  }',
+      '});',
+      'afterEach(() => {',
+      '  for (const v of VARS) {',
+      '    if (saved[v] === undefined) delete process.env[v];',
+      '    else process.env[v] = saved[v];',
+      '  }',
+      '});',
+      "it('x', () => {",
+      "  process.env.CI = 'true';",
+      '  expect(isCi()).toBe(true);',
+      '});',
+    ].join('\n');
+    expect(ids(text, 'a.spec.ts')).not.toContain(
+      'SV003-shared-singleton-mutation',
+    );
+  });
+
+  it('does not flag a literal-key mutation restored by a literal-key afterEach', () => {
+    const text = [
+      'afterEach(() => {',
+      '  if (origCI === undefined) delete process.env.CI;',
+      '  else process.env.CI = origCI;',
+      '});',
+      "it('x', () => {",
+      "  process.env.CI = 'true';",
+      '});',
+    ].join('\n');
+    expect(ids(text, 'a.spec.ts')).not.toContain(
+      'SV003-shared-singleton-mutation',
+    );
+  });
+
+  it('still flags a mutation of a key the teardown does not restore', () => {
+    const text = [
+      'afterEach(() => {',
+      '  delete process.env.CI;',
+      '});',
+      "it('x', () => {",
+      "  process.env.OTHER = 'leaks';",
+      '});',
+    ].join('\n');
+    expect(ids(text, 'a.spec.ts')).toContain('SV003-shared-singleton-mutation');
+  });
+
+  it('still flags a genuinely unrestored mutation (no teardown at all)', () => {
+    expect(ids("process.env.API_KEY = 'x';", 'a.spec.ts')).toContain(
+      'SV003-shared-singleton-mutation',
+    );
+  });
+
+  it('a restore-shaped assignment outside teardown does not launder a mutation', () => {
+    const text = [
+      "it('x', () => {",
+      "  process.env.CI = 'true';",
+      "  process.env.CI = 'later';",
+      '});',
+    ].join('\n');
+    expect(ids(text, 'a.spec.ts')).toContain('SV003-shared-singleton-mutation');
+  });
+
+  it('does not flag the snapshot write-back line itself (testkit shape)', () => {
+    const text = [
+      'const savedEnv = {};',
+      'for (const k of KEYS) savedEnv[k] = process.env[k];',
+      'function restore() {',
+      '  for (const k of KEYS) {',
+      '    if (savedEnv[k] === undefined) delete process.env[k];',
+      '    else process.env[k] = savedEnv[k];',
+      '  }',
+      '}',
+    ].join('\n');
+    expect(ids(text, 'a.spec.ts')).not.toContain(
+      'SV003-shared-singleton-mutation',
+    );
+  });
+
+  it('does not flag a pytest teardown-restored os.environ mutation', () => {
+    const text = [
+      'class TestX:',
+      '    def setup_method(self):',
+      "        self.saved = os.environ.get('API_KEY')",
+      '    def teardown_method(self):',
+      "        os.environ['API_KEY'] = self.saved",
+      '    def test_a(self):',
+      "        os.environ['API_KEY'] = 'x'",
+    ].join('\n');
+    expect(ids(text)).not.toContain('SV003-shared-singleton-mutation');
+  });
+
+  it('does not flag a yield-fixture-restored os.environ mutation', () => {
+    const text = [
+      '@pytest.fixture(autouse=True)',
+      'def env():',
+      '    old = os.environ.copy()',
+      '    yield',
+      '    os.environ.clear()',
+      '    os.environ.update(old)',
+      '',
+      'def test_a():',
+      "    os.environ['API_KEY'] = 'x'",
+    ].join('\n');
+    expect(ids(text)).not.toContain('SV003-shared-singleton-mutation');
+  });
+
+  it('an os.environ teardown does not launder a sys.modules mutation', () => {
+    const text = [
+      'def teardown_function():',
+      '    os.environ.clear()',
+      '',
+      'def test_a():',
+      "    sys.modules['fake'] = stub",
+    ].join('\n');
+    expect(ids(text)).toContain('SV003-shared-singleton-mutation');
+  });
+});
+
+// --- String-literal rejection (#493) ----------------------------------------
+//
+// SV003's anchor (os.environ / process.env / sys.modules) is code, so a match
+// starting inside a string literal is fixture data -- the dominant self-scan
+// false positive. SV004 is split: name-pattern alternatives (ordinal-indexed
+// or ordinal-named defs) are code-anchored and get the same rejection;
+// directive-text alternatives (must-run-before notes, it-titles) deliberately
+// live inside strings and comments, so they stay unfiltered. This comment
+// spells those triggers with hyphens so savant's self-scan does not flag its
+// own suite's documentation.
+
+describe('string-literal rejection (#493)', () => {
+  it.each([
+    ["[\"os.environ['API_KEY'] = 'x'\", 'test_a.py'],", 'a.spec.ts'],
+    ["\"    os.environ['SAVANT_FLAG'] = '1'\",", 'a.spec.ts'],
+    ["const f = scan(\"os.environ['X'] = '1'\")[0];", 'a.spec.ts'],
+    ["'process.env.API_KEY = 1;',", 'a.spec.ts'],
+    ["fs.writeFileSync(p, \"os.environ['X'] = '1'\\n\");", 'a.spec.ts'],
+  ])('does not flag SV003 fixture data %s', (line, name) => {
+    expect(ids(line, name)).not.toContain('SV003-shared-singleton-mutation');
+  });
+
+  it('retries past an in-string match to a later code match', () => {
+    const line = "const s = 'process.env.A = 1'; process.env.B = 'x';";
+    expect(ids(line, 'a.spec.ts')).toContain('SV003-shared-singleton-mutation');
+  });
+
+  it.each([
+    ["['def test_1_creates_user():', 'test_a.py'],", 'a.spec.ts'],
+    ["['def test_first():', 'test_a.py'],", 'a.spec.ts'],
+    ["['def test_last():', 'test_a.py'],", 'a.spec.ts'],
+  ])('does not flag SV004 name-pattern fixture data %s', (line, name) => {
+    expect(ids(line, name)).not.toContain('SV004-order-coupled-name');
+  });
+
+  // Directive text stays string-native by design: titles and docstrings ARE
+  // strings in real code, and comments carry the note.
+  it.each([
+    ["it('creates admin (must run first)', () => {", 'a.spec.ts'],
+    ['"""must run before test_b"""', 'test_a.py'],
+    ['# must run before test_b', 'test_a.py'],
+  ])('still flags directive text %s', (line, name) => {
+    expect(ids(line, name)).toContain('SV004-order-coupled-name');
+  });
+
+  it('still flags a real ordinal test def (code position)', () => {
+    expect(ids('def test_first():', 'test_a.py')).toContain(
+      'SV004-order-coupled-name',
+    );
+  });
+
+  it('still flags a genuine singleton mutation (code position)', () => {
+    expect(ids("os.environ['API_KEY'] = 'x'", 'test_a.py')).toContain(
+      'SV003-shared-singleton-mutation',
+    );
+  });
+});
+
 // --- Finding shape ---------------------------------------------------------
 
 describe('finding shape', () => {

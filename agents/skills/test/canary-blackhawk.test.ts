@@ -143,6 +143,64 @@ describe('BH004 naive-datetime-compare', () => {
   });
 });
 
+// --- String-literal rejection (#493) ----------------------------------------
+//
+// A match whose START INDEX falls inside a string literal is data, not code
+// (the dominant self-scan false positive: detectors flagging their own test
+// fixtures). A match that merely CONTAINS a string (strftime('..%Z')) keeps
+// firing, because its anchor token is code.
+
+describe('string-literal rejection (#493)', () => {
+  it.each([
+    ["const f = pyFile('time.sleep(1)\\n');", 'a.spec.ts'],
+    ["'setTimeout(fn, 100);',", 'a.spec.ts'],
+    ["'const t = Date.now();',", 'a.spec.ts'],
+    ["[\"assert d.strftime('%Y %Z') == 'UTC'\", 'test_a.py'],", 'a.spec.ts'],
+    [
+      '"vi.useFakeTimers();\\nexpect(d.toLocaleString()).toBe(\'x\');";',
+      'a.spec.ts',
+    ],
+    [
+      "const findings = lint('b.spec.ts', 'setTimeout(() => waitFor(x), 10);');",
+      'a.spec.ts',
+    ],
+  ])('does not flag fixture data %s', (line, name) => {
+    expect(ids(line, name)).toEqual(new Set());
+  });
+
+  // True positives that must survive: the anchor is code even when the
+  // pattern's tail reaches into a string.
+  it('still flags strftime whose tz directive is inside the quotes', () => {
+    expect(ids("assert d.strftime('%Y %Z') == 'UTC'", 'test_a.py')).toContain(
+      'BH003-local-timezone',
+    );
+  });
+
+  it('still flags a real await-setTimeout delay', () => {
+    expect(
+      ids('await new Promise((r) => setTimeout(r, 5));', 'a.spec.ts'),
+    ).toContain('BH002-real-delay');
+  });
+
+  it('still flags Date.now inside a template interpolation (code region)', () => {
+    expect(ids('const t = `now: ${Date.now()}`;', 'a.spec.ts')).toContain(
+      'BH001-wall-clock',
+    );
+  });
+
+  it('retries past an in-string match to a later code match on the line', () => {
+    expect(
+      ids("const s = 'Date.now()'; const t = Date.now();", 'a.spec.ts'),
+    ).toContain('BH001-wall-clock');
+  });
+
+  it('rejects an anchor after an unterminated quote (multi-line string opener)', () => {
+    expect(ids('x = "opened here time.sleep(1)', 'test_a.py')).toEqual(
+      new Set(),
+    );
+  });
+});
+
 // --- Frozen-clock suppression ----------------------------------------------
 
 describe('frozen-clock suppression', () => {
