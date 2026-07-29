@@ -55,9 +55,15 @@ describe.each([
     ) => RegExpExecArray | null;
   };
 
-  const ranges = (line: string) => stringLiteralRanges(line);
-  const inStr = (line: string, i: number) =>
-    inStringLiteral(stringLiteralRanges(line), i);
+  // Braced bodies on purpose: harness's functionLength heuristic scans for
+  // the first `{` after a declaration, so a concise arrow here would be
+  // "measured" as running through the next describe block (#495 round 2).
+  const ranges = (line: string) => {
+    return stringLiteralRanges(line);
+  };
+  const inStr = (line: string, i: number) => {
+    return inStringLiteral(stringLiteralRanges(line), i);
+  };
 
   describe('stringLiteralRanges', () => {
     it('returns no ranges for a quote-free line', () => {

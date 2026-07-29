@@ -17,10 +17,16 @@ import {
 } from '../claude-code/canary-savant/scripts/restoration.mjs';
 import { stringLiteralRanges } from '../claude-code/canary-savant/scripts/string-literals.mjs';
 
-const classify = (line: string) =>
-  classifyMutation(line, stringLiteralRanges(line));
+// Braced bodies on purpose: harness's functionLength heuristic scans for the
+// first `{` after a declaration, so a concise arrow here would be "measured"
+// as running through the next describe block (#495 round 2).
+const classify = (line: string) => {
+  return classifyMutation(line, stringLiteralRanges(line));
+};
 
-const lines = (text: string) => text.split('\n');
+const lines = (text: string) => {
+  return text.split('\n');
+};
 
 // --- classifyMutation --------------------------------------------------------
 
