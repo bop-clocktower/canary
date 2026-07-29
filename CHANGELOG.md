@@ -16,6 +16,24 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Guardian — sticky comment no longer risks exceeding GitHub's size limit**
+  (#457): the PR comment rendered every finding in full with no cap. GitHub
+  rejects a comment body over **65,536 characters**, and the post path reports
+  that as "could not post" — so on a large PR the gate would silently produce
+  nothing, exactly the silent-green failure mode #369 was filed for. A
+  downstream audit already saw a 27,316-char comment (141 findings), ~42% of the
+  ceiling. Rows are now filled against a 60,000-char budget in severity order,
+  so a critical finding is never dropped to make room for a low one, and an
+  overflow line states how many were omitted and where the full set lives. The
+  `--emit-analysis` JSON record is never truncated.
+- **Guardian — comment no longer prints every path twice** (#458): each finding
+  line rendered `path (path)`. The unit is now appended only when it is a
+  distinct symbol within the file. The comment is also restructured into a table
+  with a plain-English confidence footnote, an actionable header, and severity
+  icons.
+
+### Fixed
+
 - **Guardian — `pr-check` no longer silently no-ops in CI** (#369): with
   `--diff` omitted, `pr-check` ran a bare `git diff` (working tree vs. index),
   which is **empty on a clean `actions/checkout`** — so the gate scoped zero
