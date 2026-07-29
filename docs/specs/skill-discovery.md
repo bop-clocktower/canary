@@ -88,6 +88,8 @@ Every discoverable skill is a Markdown file with YAML frontmatter:
 name: <skill-name>
 description: One-line description shown in canary skills list
 deploy_to: [api, e2e_ui]   # optional — shapes this skill deploys to via canary migrate
+install_workflows: [templates/ci.yml]  # optional — see "Workflow templates"
+workflow_template_version: 1           # optional — stamped into the deploy manifest
 requires: [python3>=3.10]  # optional — runtime tools doctor verifies (see below)
 cli: scripts/cli.py        # optional — see "Bundled Executable Code"
 # or:
@@ -123,6 +125,26 @@ deploy_to: [api, e2e_ui]
 
 A skill with no `deploy_to` is still discoverable via `canary skills list` from
 within a checkout — it just won't be copied during migration.
+
+### `install_workflows` — GitHub Actions templates
+
+A deployable skill may also ship workflow templates that `canary migrate`
+installs into the consuming repo's `.github/workflows/`, so adoption produces a
+running workflow rather than an inert file under `.canary/skills/`:
+
+```yaml
+install_workflows: [templates/canary-guardian.yml]
+workflow_template_version: 2
+```
+
+Paths are relative to the skill directory and may carry a `<shape>:` prefix to
+select a variant (`api:templates/guardian-api.yml`); the shape is the same one
+`deploy_to` matches against. Install is one-directional but **not**
+overlay-owned: absent → written, identical → no-op, different → reported and
+left alone unless `--force` is passed. `workflow_template_version` is recorded
+in `.canary/skills/.deploy-manifest.json` so a corrected template can be offered
+to repos that already adopted an earlier one. Full rules:
+[Tracked Overlays — Workflow templates](../guides/tracked-overlays.md).
 
 ### `requires` — runtime requirements (verified by `canary doctor`)
 

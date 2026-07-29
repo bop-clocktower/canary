@@ -14,6 +14,30 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **Workflow templates install during `canary migrate`** (#459): an overlay
+  skill may declare `install_workflows: [templates/<file>.yml]` (optionally
+  `<shape>:`-prefixed to pick a variant, plus a `workflow_template_version`) and
+  `migrate` installs the template into the consuming repo's
+  `.github/workflows/`. Previously the template bytes did reach the consumer —
+  whole skill directories are copied — but sat inert under `.canary/skills/`, so
+  adopting repos ended up with skills and no running guardian.
+
+  **A consumer's CI is theirs.** Unlike deployed skills, which the overlay owns
+  one-way (#334), a workflow that differs from the template is **reported and
+  never overwritten**; `--force` is the deliberate opt-in. Workflow status also
+  never changes the `migrate --check` exit code, so the gate cannot nag about a
+  hand-tuned workflow. The template version recorded in
+  `.canary/skills/.deploy-manifest.json` is what lets a corrected template (e.g.
+  the #369 guardian gate that silently no-ops) be offered to repos that already
+  adopted a broken one.
+
+- **`coverage_report_path` / `sut_controllers_path` in `.canary/company.json`**
+  (#459): repo-relative pointers for generated workflow YAML. Both are validated
+  as repo-relative — an absolute path or one containing `..` is dropped with a
+  warning, since the value is interpolated into generated CI.
+
 ## [6.2.0] - 2026-07-29
 
 A **guardian-correctness** release. Three of the four fixes address failures

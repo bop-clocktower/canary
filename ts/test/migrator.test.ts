@@ -20,6 +20,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -1673,3 +1674,455 @@ function collectAll(root: string): string[] {
   walk(root);
   return out;
 }
+
+// ===========================================================================
+// Workflow template install (#459)
+// ===========================================================================
+//
+// Overlays already SHIP workflow templates as skill assets -- whole skill
+// directories are copied, so `.canary/skills/<skill>/templates/*.yml` reaches
+// the consumer today. What was missing is the install step that puts them where
+// GitHub Actions looks, which is why adopting repos ended up with skills but no
+// running guardian.
+//
+// The ownership policy is the load-bearing part and deliberately DIFFERS from
+// the one-way overlay ownership `deploySkills` applies (#334): a consumer's CI
+// is their own territory. Absent -> write; identical -> no-op; DIFFERENT ->
+// report and never overwrite; `--force` -> overwrite for the deliberate case.
+
+/** An overlay skill that declares workflow templates to install. */
+function makeWorkflowSkill(
+  overlay: string,
+  name: string,
+  opts: {
+    deployTo?: string[];
+    install?: string[];
+    version?: string;
+    templates?: Record<string, string>;
+  } = {},
+): string {
+  const skillDir = join(overlay, '.canary', 'skills', name);
+  mkdirSync(skillDir, { recursive: true });
+  const fm = [
+    `name: ${name}`,
+    `deploy_to: [${(opts.deployTo ?? ['all']).join(', ')}]`,
+  ];
+  if (opts.install) fm.push(`install_workflows: [${opts.install.join(', ')}]`);
+  if (opts.version) fm.push(`workflow_template_version: ${opts.version}`);
+  write(
+    join(skillDir, 'SKILL.md'),
+    `---\n${fm.join('\n')}\n---\n\n# ${name}\n`,
+  );
+  for (const [rel, content] of Object.entries(opts.templates ?? {})) {
+    const path = join(skillDir, ...rel.split('/'));
+    mkdirSync(dirname(path), { recursive: true });
+    write(path, content);
+  }
+  return skillDir;
+}
+
+const GUARDIAN_YML = 'name: guardian\non: pull_request\njobs: {}\n';
+const HAND_TUNED_YML = 'name: guardian\non: [push]\njobs:\n  mine: {}\n';
+
+function workflowPath(target: string, file: string): string {
+  return join(target, '.github', 'workflows', file);
+}
+
+function isDirSync(path: string): boolean {
+  return statSync(path).isDirectory();
+}
+
+describe('TestInstallWorkflows', () => {
+  function run<T>(fn: (s: { target: string; overlay: string }) => T): T {
+    const root = mkTmp();
+    try {
+      const target = join(root, 'target');
+      const overlay = join(root, 'overlay');
+      mkdirSync(target);
+      mkdirSync(overlay);
+      return fn({ target, overlay });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  const guardianSkill = (
+    overlay: string,
+    extra: Record<string, unknown> = {},
+  ) =>
+    makeWorkflowSkill(overlay, 'canary-pr-guardian', {
+      install: ['templates/canary-guardian.yml'],
+      templates: { 'templates/canary-guardian.yml': GUARDIAN_YML },
+      ...extra,
+    });
+
+  it('installs a declared template when the target has no such workflow', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay);
+      const results = mig().installWorkflows('api', overlay, target, false);
+      expect(results.length).toBe(1);
+      expect(results[0]!.status).toBe('installed');
+      expect(results[0]!.workflow).toBe('canary-guardian.yml');
+      expect(results[0]!.skill_name).toBe('canary-pr-guardian');
+      expect(
+        readFileSync(workflowPath(target, 'canary-guardian.yml'), 'utf-8'),
+      ).toBe(GUARDIAN_YML);
+    }));
+
+  it('dry run reports what would be installed and writes nothing', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay);
+      const results = mig().installWorkflows('api', overlay, target, true);
+      expect(results[0]!.status).toBe('dry_run');
+      expect(results[0]!.detail).toContain('would install');
+      expect(existsSync(join(target, '.github'))).toBe(false);
+    }));
+
+  it('an identical target workflow is a no-op', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay);
+      mkdirSync(join(target, '.github', 'workflows'), { recursive: true });
+      write(workflowPath(target, 'canary-guardian.yml'), GUARDIAN_YML);
+      const results = mig().installWorkflows('api', overlay, target, false);
+      expect(results[0]!.status).toBe('skipped');
+      expect(results[0]!.detail).toContain('already current');
+    }));
+
+  // THE load-bearing case. A consumer's hand-tuned CI must survive untouched;
+  // the command reports and moves on. Asserting the exit status is not enough --
+  // this asserts the BYTES on disk are the consumer's, not the overlay's.
+  it('a DIFFERENT target workflow is reported and never overwritten', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay);
+      mkdirSync(join(target, '.github', 'workflows'), { recursive: true });
+      write(workflowPath(target, 'canary-guardian.yml'), HAND_TUNED_YML);
+      const results = mig().installWorkflows('api', overlay, target, false);
+      // The bytes on disk are the FIRST assertion on purpose: a status check
+      // alone would still pass if the file were quietly rewritten.
+      expect(
+        readFileSync(workflowPath(target, 'canary-guardian.yml'), 'utf-8'),
+      ).toBe(HAND_TUNED_YML);
+      expect(['installed', 'updated']).not.toContain(results[0]!.status);
+      expect(results[0]!.status).toBe('conflict');
+    }));
+
+  it('--force overwrites a differing workflow (the deliberate case)', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay);
+      mkdirSync(join(target, '.github', 'workflows'), { recursive: true });
+      write(workflowPath(target, 'canary-guardian.yml'), HAND_TUNED_YML);
+      const results = mig().installWorkflows(
+        'api',
+        overlay,
+        target,
+        false,
+        true,
+      );
+      expect(results[0]!.status).toBe('updated');
+      expect(
+        readFileSync(workflowPath(target, 'canary-guardian.yml'), 'utf-8'),
+      ).toBe(GUARDIAN_YML);
+    }));
+
+  it('--force in dry run still writes nothing', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay);
+      mkdirSync(join(target, '.github', 'workflows'), { recursive: true });
+      write(workflowPath(target, 'canary-guardian.yml'), HAND_TUNED_YML);
+      const results = mig().installWorkflows(
+        'api',
+        overlay,
+        target,
+        true,
+        true,
+      );
+      expect(results[0]!.status).toBe('dry_run');
+      expect(results[0]!.detail).toContain('would overwrite');
+      expect(
+        readFileSync(workflowPath(target, 'canary-guardian.yml'), 'utf-8'),
+      ).toBe(HAND_TUNED_YML);
+    }));
+
+  it('records the template version in the deploy manifest', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay, { version: '2' });
+      mig().installWorkflows('api', overlay, target, false);
+      const manifest = JSON.parse(
+        readFileSync(
+          join(target, '.canary', 'skills', '.deploy-manifest.json'),
+          'utf-8',
+        ),
+      );
+      const entry = manifest.workflows['canary-guardian.yml'];
+      expect(entry.version).toBe('2');
+      expect(entry.skill).toBe('canary-pr-guardian');
+      expect(typeof entry.hash).toBe('string');
+    }));
+
+  // Why the version matters (#369): a shipped template with a real defect (a
+  // guardian gate missing --diff, so it silently no-ops) must be fixable in
+  // every already-adopted repo. The recorded version is what lets the report
+  // say "you have v1, the overlay ships v2, and you have not touched it".
+  it('an unmodified install whose overlay moved on reports as outdated, not conflict', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay, { version: '1' });
+      mig().installWorkflows('api', overlay, target, false);
+      // Overlay ships a corrected v2.
+      const fixed = GUARDIAN_YML.replace('jobs: {}', 'jobs:\n  gate: {}');
+      makeWorkflowSkill(overlay, 'canary-pr-guardian', {
+        install: ['templates/canary-guardian.yml'],
+        version: '2',
+        templates: { 'templates/canary-guardian.yml': fixed },
+      });
+      const results = mig().installWorkflows('api', overlay, target, false);
+      expect(results[0]!.status).toBe('outdated');
+      expect(results[0]!.detail).toContain('v1');
+      expect(results[0]!.detail).toContain('v2');
+      expect(results[0]!.detail).toContain('--force');
+      // Still not overwritten -- reporting is the whole point.
+      expect(
+        readFileSync(workflowPath(target, 'canary-guardian.yml'), 'utf-8'),
+      ).toBe(GUARDIAN_YML);
+    }));
+
+  it('a workflow edited after install reports as a conflict, not outdated', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay, { version: '1' });
+      mig().installWorkflows('api', overlay, target, false);
+      write(workflowPath(target, 'canary-guardian.yml'), HAND_TUNED_YML);
+      const results = mig().installWorkflows('api', overlay, target, false);
+      expect(results[0]!.status).toBe('conflict');
+      expect(
+        readFileSync(workflowPath(target, 'canary-guardian.yml'), 'utf-8'),
+      ).toBe(HAND_TUNED_YML);
+    }));
+
+  // An unreadable target (here: a directory sitting where the workflow file
+  // should be) must land in the report, not throw and abort the migration --
+  // and it must NOT be treated as "absent" and written over.
+  it('an unreadable target workflow is reported as a conflict', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay);
+      mkdirSync(workflowPath(target, 'canary-guardian.yml'), {
+        recursive: true,
+      });
+      const results = mig().installWorkflows('api', overlay, target, false);
+      expect(results[0]!.status).toBe('conflict');
+      expect(isDirSync(workflowPath(target, 'canary-guardian.yml'))).toBe(true);
+    }));
+
+  it('is idempotent: a second run is a no-op', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay);
+      mig().installWorkflows('api', overlay, target, false);
+      const second = mig().installWorkflows('api', overlay, target, false);
+      expect(second.map((r) => r.status)).toEqual(['skipped']);
+    }));
+
+  // Shape-awareness reuses the SAME canary_shape resolution that drives
+  // deploy_to matching -- a skill that does not deploy to this shape installs
+  // no workflow either.
+  it('a skill that does not match the shape installs nothing', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay, { deployTo: ['e2e_ui'] });
+      expect(mig().installWorkflows('api', overlay, target, false)).toEqual([]);
+      expect(existsSync(join(target, '.github'))).toBe(false);
+    }));
+
+  it('a shape-prefixed entry selects the variant for the resolved shape', () =>
+    run(({ target, overlay }) => {
+      makeWorkflowSkill(overlay, 'guardian', {
+        install: [
+          'api:templates/guardian-api.yml',
+          'e2e_ui:templates/guardian-ui.yml',
+        ],
+        templates: {
+          'templates/guardian-api.yml': 'name: api\n',
+          'templates/guardian-ui.yml': 'name: ui\n',
+        },
+      });
+      const results = mig().installWorkflows('api', overlay, target, false);
+      expect(results.map((r) => r.workflow)).toEqual(['guardian-api.yml']);
+      expect(existsSync(workflowPath(target, 'guardian-ui.yml'))).toBe(false);
+    }));
+
+  it("an 'all'-prefixed entry installs for any shape", () =>
+    run(({ target, overlay }) => {
+      makeWorkflowSkill(overlay, 'guardian', {
+        install: ['all:templates/base.yml'],
+        templates: { 'templates/base.yml': 'name: base\n' },
+      });
+      const results = mig().installWorkflows('load', overlay, target, false);
+      expect(results[0]!.status).toBe('installed');
+      expect(results[0]!.workflow).toBe('base.yml');
+    }));
+
+  it('a declared template the overlay does not ship is reported as missing', () =>
+    run(({ target, overlay }) => {
+      makeWorkflowSkill(overlay, 'guardian', {
+        install: ['templates/absent.yml'],
+      });
+      const results = mig().installWorkflows('api', overlay, target, false);
+      expect(results[0]!.status).toBe('missing');
+      expect(existsSync(join(target, '.github'))).toBe(false);
+    }));
+
+  it('a template path escaping the skill directory is refused', () =>
+    run(({ target, overlay }) => {
+      const skillDir = makeWorkflowSkill(overlay, 'evil', {
+        install: ['../../../etc/passwd'],
+      });
+      write(join(dirname(skillDir), 'sibling.yml'), 'name: sibling\n');
+      const results = mig().installWorkflows('api', overlay, target, false);
+      expect(results[0]!.status).toBe('invalid');
+      expect(existsSync(join(target, '.github'))).toBe(false);
+    }));
+
+  it('an absolute template path is refused', () =>
+    run(({ target, overlay }) => {
+      makeWorkflowSkill(overlay, 'evil', { install: ['/etc/passwd'] });
+      expect(
+        mig().installWorkflows('api', overlay, target, false)[0]!.status,
+      ).toBe('invalid');
+    }));
+
+  it('a skill with no install_workflows declares no workflows', () =>
+    run(({ target, overlay }) => {
+      makeOverlaySkill(overlay, 'plain', ['api']);
+      expect(mig().installWorkflows('api', overlay, target, false)).toEqual([]);
+    }));
+
+  it('installing workflows preserves the skills section of the manifest', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay);
+      const m = mig();
+      m.deploySkills('api', overlay, target, false);
+      m.installWorkflows('api', overlay, target, false);
+      const manifest = JSON.parse(
+        readFileSync(
+          join(target, '.canary', 'skills', '.deploy-manifest.json'),
+          'utf-8',
+        ),
+      );
+      expect(Object.keys(manifest.skills)).toContain('canary-pr-guardian');
+      expect(Object.keys(manifest.workflows)).toContain('canary-guardian.yml');
+    }));
+});
+
+describe('TestMigrateInstallsWorkflows', () => {
+  function project(root: string, overlay: string): void {
+    makeHarnessProject(root, { language: 'python' });
+    makeWorkflowSkill(overlay, 'canary-pr-guardian', {
+      install: ['templates/canary-guardian.yml'],
+      templates: { 'templates/canary-guardian.yml': GUARDIAN_YML },
+    });
+  }
+
+  it('apply installs the workflow and reports it', () =>
+    withTmp((base) => {
+      const root = join(base, 'proj');
+      const overlay = join(base, 'overlay');
+      mkdirSync(root);
+      project(root, overlay);
+      const report = mig().migrate(root, {
+        dryRun: false,
+        overlayPath: overlay,
+      });
+      expect(report.installed_workflows.map((r) => r.status)).toEqual([
+        'installed',
+      ]);
+      expect(existsSync(workflowPath(root, 'canary-guardian.yml'))).toBe(true);
+      const md = report.to_markdown();
+      expect(md).toContain('canary-guardian.yml');
+      expect(md).toContain('.github/workflows/');
+    }));
+
+  it('dry run reports the workflow without writing it', () =>
+    withTmp((base) => {
+      const root = join(base, 'proj');
+      const overlay = join(base, 'overlay');
+      mkdirSync(root);
+      project(root, overlay);
+      const report = mig().migrate(root, {
+        dryRun: true,
+        overlayPath: overlay,
+      });
+      expect(report.installed_workflows[0]!.status).toBe('dry_run');
+      expect(existsSync(join(root, '.github'))).toBe(false);
+      expect(report.to_markdown()).toContain(
+        'Workflows (would install into `.github/workflows/`)',
+      );
+    }));
+
+  it('--force is threaded through migrate', () =>
+    withTmp((base) => {
+      const root = join(base, 'proj');
+      const overlay = join(base, 'overlay');
+      mkdirSync(root);
+      project(root, overlay);
+      mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
+      write(workflowPath(root, 'canary-guardian.yml'), HAND_TUNED_YML);
+      const report = mig().migrate(root, {
+        dryRun: false,
+        overlayPath: overlay,
+        force: true,
+      });
+      expect(report.installed_workflows[0]!.status).toBe('updated');
+      expect(
+        readFileSync(workflowPath(root, 'canary-guardian.yml'), 'utf-8'),
+      ).toBe(GUARDIAN_YML);
+    }));
+
+  it('a framework-detection miss still installs workflows', () =>
+    withTmp((base) => {
+      const root = join(base, 'proj');
+      const overlay = join(base, 'overlay');
+      mkdirSync(root);
+      // harness project with no framework marker at all -> framework unknown.
+      harnessProject(root, { version: 1, name: 'x' });
+      makeWorkflowSkill(overlay, 'canary-pr-guardian', {
+        install: ['templates/canary-guardian.yml'],
+        templates: { 'templates/canary-guardian.yml': GUARDIAN_YML },
+      });
+      const report = mig().migrate(root, {
+        dryRun: false,
+        overlayPath: overlay,
+      });
+      expect(report.framework).toBe('unknown');
+      expect(report.installed_workflows[0]!.status).toBe('installed');
+    }));
+});
+
+describe('TestCheckReportsWorkflowsWithoutNagging', () => {
+  // A consumer's CI is their territory. `--check` must SAY what is missing or
+  // differs, but must never fail the gate over it -- an exit code that nags
+  // about a hand-tuned workflow is exactly the failure this design refuses.
+  it('reports a would-be-installed workflow without changing the exit code', () =>
+    withTmp((base) => {
+      const root = join(base, 'proj');
+      const overlay = join(base, 'overlay');
+      mkdirSync(root);
+      makeFreshnessProject(root);
+      makeWorkflowSkill(overlay, 'guardian', {
+        install: ['templates/canary-guardian.yml'],
+        templates: { 'templates/canary-guardian.yml': GUARDIAN_YML },
+      });
+      const m = mig();
+      m.migrate(root, { dryRun: false, overlayPath: overlay });
+      // Skills are in sync; the consumer then hand-edits their workflow.
+      write(workflowPath(root, 'canary-guardian.yml'), HAND_TUNED_YML);
+      const report = m.checkFreshness(root, { overlayPath: overlay });
+      expect(report.exit_code()).toBe(0);
+      expect(report.in_sync).toBe(true);
+      expect(report.workflows.map((r) => r.status)).toEqual(['conflict']);
+      expect(report.to_markdown()).toContain('canary-guardian.yml');
+      expect(
+        (report.to_dict()['workflows'] as Array<Record<string, unknown>>)[0]!
+          .status,
+      ).toBe('conflict');
+      // And nothing was written by the check.
+      expect(
+        readFileSync(workflowPath(root, 'canary-guardian.yml'), 'utf-8'),
+      ).toBe(HAND_TUNED_YML);
+    }));
+});

@@ -13,9 +13,11 @@
  *   2. .canary/company.json            -- project-local config
  *   3. .canary/company.<env>.json      -- environment override (CANARY_ENV or explicit)
  *
- * List fields are unioned across sources; scalar fields (dashboard_url,
- * dashboard_token_env, notes) are replaced by the highest-priority source that
- * sets them.
+ * List fields ({@link _LIST_FIELDS}) are unioned across sources; scalar fields
+ * ({@link _SCALAR_FIELDS}) are replaced by the highest-priority source that
+ * sets a non-empty value. Those two arrays are the single place a new field
+ * opts into a merge rule, and both are checked for exhaustiveness at compile
+ * time.
  *
  * Python->TS nuances:
  *   - Python patches `Path.home()` in its tests to isolate the home tier. There
@@ -123,6 +125,12 @@ const _KNOWN_KEYS = new Set([
   // warning that it is told anyone adopting an overlay that the single field
   // driving their adoption does nothing.
   'canary_shape',
+  // #459: repo-relative pointers a generated workflow interpolates (the
+  // coverage report the guardian reads; the controllers dir it scopes SUT
+  // analysis to). See `validateRepoRelativePath` for why they are validated
+  // rather than stored verbatim.
+  'coverage_report_path',
+  'sut_controllers_path',
 ]);
 
 const _HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
@@ -268,6 +276,60 @@ function validateOtelEndpoint(
     return '';
   }
   return raw;
+}
+
+// A path that is absolute in any flavour git checkouts run under: POSIX
+// (`/x`), UNC / Windows-separator (`\x`), or drive-qualified (`C:x`, `C:/x`).
+// Drive-relative `C:x` is included deliberately -- it is not repo-relative.
+const _ABSOLUTE_PATH_RE = /^(?:[/\\]|[A-Za-z]:)/;
+// Newlines would break out of the scalar these values are interpolated into
+// when a workflow template is generated, so they are refused outright rather
+// than escaped -- no legitimate repo path contains one.
+const _PATH_CONTROL_RE = /[\r\n\t\0]/;
+
+/**
+ * A repo-relative path pointer (#459: `coverage_report_path`,
+ * `sut_controllers_path`).
+ *
+ * These are interpolated into generated GitHub Actions YAML, so validation is
+ * a safety boundary, not tidiness: an absolute path aims the generated CI at
+ * something outside the checkout, and a `..` segment escapes the repo. Both are
+ * dropped with a warning (the module's degrade-never-throw convention); a
+ * secret-like value raises so the whole layer is refused, exactly as every
+ * other non-notes field does.
+ *
+ * `..` is rejected as a SUBSTRING, not just as a path component. A component
+ * check would have to agree with the separator handling of whatever consumes
+ * the value later (shell, Actions expression, node `path`); refusing the two
+ * characters outright cannot disagree with anything. The cost is rejecting the
+ * vanishingly rare legitimate `report..xml`.
+ */
+function validateRepoRelativePath(
+  raw: unknown,
+  fieldName: string,
+  warnings: Warnings,
+): string {
+  if (typeof raw !== 'string') {
+    warnings.push(
+      `${fieldName}: expected string, got ${pyTypeName(raw)} ${EMDASH} skipped`,
+    );
+    return '';
+  }
+  const value = raw.trim();
+  if (!value) return '';
+  if (looksLikeSecret(value)) throw new SecretDetected(fieldName, value);
+  if (
+    _ABSOLUTE_PATH_RE.test(value) ||
+    value.includes('..') ||
+    _PATH_CONTROL_RE.test(value)
+  ) {
+    warnings.push(
+      `${fieldName}: dropped invalid repo-relative path ${pyRepr(raw)} ` +
+        `${EMDASH} must stay inside the repo (no absolute path, no '..')`,
+    );
+    return '';
+  }
+  return value;
 }
 
 /** Accept #RGB / #RRGGBB (any case); drop anything else with a warning. */
@@ -458,6 +520,8 @@ interface Layer {
   dashboard_url: string;
   dashboard_token_env: string;
   otel_exporter_endpoint: string;
+  coverage_report_path: string;
+  sut_controllers_path: string;
   notes: string;
   brand: Brand;
   warnings: string[];
@@ -554,6 +618,24 @@ function parseLayer(data: Record<string, unknown>, source: string): Layer {
     );
   }
 
+  let coverage_report_path = '';
+  if (Object.prototype.hasOwnProperty.call(data, 'coverage_report_path')) {
+    coverage_report_path = validateRepoRelativePath(
+      data['coverage_report_path'],
+      'coverage_report_path',
+      warns,
+    );
+  }
+
+  let sut_controllers_path = '';
+  if (Object.prototype.hasOwnProperty.call(data, 'sut_controllers_path')) {
+    sut_controllers_path = validateRepoRelativePath(
+      data['sut_controllers_path'],
+      'sut_controllers_path',
+      warns,
+    );
+  }
+
   let notes = '';
   if (Object.prototype.hasOwnProperty.call(data, 'notes')) {
     const rawNotes = data['notes'];
@@ -582,6 +664,8 @@ function parseLayer(data: Record<string, unknown>, source: string): Layer {
     dashboard_url,
     dashboard_token_env,
     otel_exporter_endpoint,
+    coverage_report_path,
+    sut_controllers_path,
     notes,
     brand,
     warnings: warns,
@@ -649,56 +733,123 @@ interface MergedFields {
   dashboard_url: string;
   dashboard_token_env: string;
   otel_exporter_endpoint: string;
+  coverage_report_path: string;
+  sut_controllers_path: string;
   notes: string;
   brand: Brand;
   warnings: string[];
   sources: string[];
 }
 
-function mergeLayers(layers: Layer[]): MergedFields {
-  let confluence_spaces: string[] = [];
-  let jira_projects: string[] = [];
-  let internal_doc_urls: string[] = [];
-  let internal_domains: string[] = [];
-  let mcp_servers: string[] = [];
-  let claude_code_skills: string[] = [];
-  let dashboard_url = '';
-  let dashboard_token_env = '';
-  let otel_exporter_endpoint = '';
-  let notes = '';
-  const warns: string[] = [];
-  const sources: string[] = [];
+// ---------------------------------------------------------------------------
+// merge (two semantics, one field list each)
+// ---------------------------------------------------------------------------
+//
+// The cascade has exactly two merge rules, and every field obeys one of them.
+// They are expressed as field SETS rather than as a statement per field: the
+// previous shape named each field three times (declare, merge, return), so it
+// grew ~3 lines per config field and would have re-crossed any function-length
+// threshold on the next addition. Adding a field is now a one-line change to
+// the relevant array.
+//
+// Type safety is preserved deliberately: the arrays are `keyof`-constrained via
+// `satisfies` (a typo is a compile error) AND checked for exhaustiveness below
+// (an omission is a compile error). A `Record<string, unknown>`-driven merge
+// would have been shorter and much worse.
 
+/** Keys of `T` whose value type is exactly `V`. */
+type FieldsOfType<T, V> = {
+  [K in keyof T]-?: T[K] extends V ? (V extends T[K] ? K : never) : never;
+}[keyof T];
+
+/**
+ * List fields: unioned across layers, order-preserving and deduped.
+ *
+ * `warnings` is excluded on purpose -- it CONCATENATES (every layer's warnings
+ * are all worth seeing, duplicates included), so it is not a union field.
+ */
+type ListField = Exclude<
+  Extract<FieldsOfType<Layer, string[]>, FieldsOfType<MergedFields, string[]>>,
+  'warnings'
+>;
+
+/** Scalar fields: the highest-priority layer with a non-empty value wins. */
+type ScalarField = Extract<
+  FieldsOfType<Layer, string>,
+  FieldsOfType<MergedFields, string>
+>;
+
+const _LIST_FIELDS = [
+  'confluence_spaces',
+  'jira_projects',
+  'internal_doc_urls',
+  'internal_domains',
+  'mcp_servers',
+  'claude_code_skills',
+] as const satisfies readonly ListField[];
+
+const _SCALAR_FIELDS = [
+  'dashboard_url',
+  'dashboard_token_env',
+  'otel_exporter_endpoint',
+  'coverage_report_path',
+  'sut_controllers_path',
+  'notes',
+] as const satisfies readonly ScalarField[];
+
+/** `true` only when every member of `Union` appears in `Listed`, else `never`. */
+type CoversAll<Union, Listed> =
+  Exclude<Union, Listed> extends never ? true : never;
+
+// Compile-time exhaustiveness: adding a field to `Layer`/`MergedFields` without
+// adding it to the matching array above fails the build here (the assertion
+// type collapses to `never`) rather than silently dropping the field at merge.
+const _LIST_FIELDS_EXHAUSTIVE: CoversAll<
+  ListField,
+  (typeof _LIST_FIELDS)[number]
+> = true;
+const _SCALAR_FIELDS_EXHAUSTIVE: CoversAll<
+  ScalarField,
+  (typeof _SCALAR_FIELDS)[number]
+> = true;
+void _LIST_FIELDS_EXHAUSTIVE;
+void _SCALAR_FIELDS_EXHAUSTIVE;
+
+function mergeListFields(layers: Layer[]): Pick<MergedFields, ListField> {
+  const out = {} as Pick<MergedFields, ListField>;
+  for (const field of _LIST_FIELDS) {
+    let merged: string[] = [];
+    for (const layer of layers) merged = union(merged, layer[field]);
+    out[field] = merged;
+  }
+  return out;
+}
+
+function mergeScalarFields(layers: Layer[]): Pick<MergedFields, ScalarField> {
+  const out = {} as Pick<MergedFields, ScalarField>;
+  for (const field of _SCALAR_FIELDS) {
+    let merged = '';
+    // Highest-priority non-empty wins. A layer whose value was DROPPED as
+    // invalid contributes '' and therefore leaves the lower layer's valid value
+    // standing (degrade, never blank out) -- load-bearing, and pinned by tests.
+    for (const layer of layers) if (layer[field]) merged = layer[field];
+    out[field] = merged;
+  }
+  return out;
+}
+
+function mergeLayers(layers: Layer[]): MergedFields {
+  const warnings: string[] = [];
+  const sources: string[] = [];
   for (const layer of layers) {
-    confluence_spaces = union(confluence_spaces, layer.confluence_spaces);
-    jira_projects = union(jira_projects, layer.jira_projects);
-    internal_doc_urls = union(internal_doc_urls, layer.internal_doc_urls);
-    internal_domains = union(internal_domains, layer.internal_domains);
-    mcp_servers = union(mcp_servers, layer.mcp_servers);
-    claude_code_skills = union(claude_code_skills, layer.claude_code_skills);
-    if (layer.dashboard_url) dashboard_url = layer.dashboard_url;
-    if (layer.dashboard_token_env)
-      dashboard_token_env = layer.dashboard_token_env;
-    if (layer.otel_exporter_endpoint)
-      otel_exporter_endpoint = layer.otel_exporter_endpoint;
-    if (layer.notes) notes = layer.notes;
-    warns.push(...layer.warnings);
+    warnings.push(...layer.warnings);
     if (layer.source) sources.push(layer.source);
   }
-
   return {
-    confluence_spaces,
-    jira_projects,
-    internal_doc_urls,
-    internal_domains,
-    mcp_servers,
-    claude_code_skills,
-    dashboard_url,
-    dashboard_token_env,
-    otel_exporter_endpoint,
-    notes,
+    ...mergeListFields(layers),
+    ...mergeScalarFields(layers),
     brand: mergeBrand(layers),
-    warnings: warns,
+    warnings,
     sources,
   };
 }
@@ -737,6 +888,8 @@ export interface CompanyKnowledgeInit {
   dashboard_url?: string;
   dashboard_token_env?: string;
   otel_exporter_endpoint?: string;
+  coverage_report_path?: string;
+  sut_controllers_path?: string;
   notes?: string;
   brand?: Brand;
   warnings?: string[];
@@ -754,6 +907,10 @@ export class CompanyKnowledge {
   dashboard_url: string;
   dashboard_token_env: string;
   otel_exporter_endpoint: string;
+  /** Repo-relative path to the coverage report a generated workflow reads. */
+  coverage_report_path: string;
+  /** Repo-relative path to the SUT controllers dir analysis is scoped to. */
+  sut_controllers_path: string;
   notes: string;
   brand: Brand;
   warnings: string[];
@@ -770,6 +927,8 @@ export class CompanyKnowledge {
     this.dashboard_url = init.dashboard_url ?? '';
     this.dashboard_token_env = init.dashboard_token_env ?? '';
     this.otel_exporter_endpoint = init.otel_exporter_endpoint ?? '';
+    this.coverage_report_path = init.coverage_report_path ?? '';
+    this.sut_controllers_path = init.sut_controllers_path ?? '';
     this.notes = init.notes ?? '';
     this.brand = init.brand ?? new Brand();
     this.warnings = init.warnings ?? [];
@@ -924,6 +1083,8 @@ export class CompanyKnowledge {
       dashboard_url: this.dashboard_url,
       dashboard_token_env: this.dashboard_token_env,
       otel_exporter_endpoint: this.otel_exporter_endpoint,
+      coverage_report_path: this.coverage_report_path,
+      sut_controllers_path: this.sut_controllers_path,
       notes: this.notes,
       brand: this.brand.toDict(),
       sources: this.sources,

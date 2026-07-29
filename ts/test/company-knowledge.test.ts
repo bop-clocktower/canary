@@ -291,6 +291,141 @@ describe('TestFieldValidation', () => {
   });
 });
 
+// -- repo-relative path fields (#459) -----------------------------------------
+//
+// `coverage_report_path` / `sut_controllers_path` are interpolated into
+// generated workflow YAML, so an absolute path or a `..` escape is a real
+// hazard (it points the generated CI at a file outside the checkout), not a
+// style nit. Both are validated the same way and share one validator.
+
+describe('TestRepoRelativePathFields', () => {
+  const FIELDS = ['coverage_report_path', 'sut_controllers_path'] as const;
+
+  function withTmp<T>(fn: (tmp: string) => T): T {
+    const tmp = mkTmp();
+    try {
+      return fn(tmp);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  // Both fields share one validator, so every case runs against both. `it.each`
+  // rather than a `for` loop wrapping `it`: same coverage, but each case is a
+  // top-level statement in the describe (vitest also reports the parameter in
+  // the test name, so a failure names the field without a template literal).
+  const each = it.each(FIELDS);
+
+  each('%s: a repo-relative path is accepted verbatim', (field) => {
+    const ck = loadData({ [field]: 'reports/coverage/lcov.info' });
+    expect(ck[field]).toBe('reports/coverage/lcov.info');
+    expect(ck.warnings).toEqual([]);
+  });
+
+  each('%s: is not reported as an ignored unknown field', (field) => {
+    const ck = loadData({ [field]: 'reports/lcov.info' });
+    expect(
+      ck.warnings.some((w) => w.includes(`ignored unknown field: ${field}`)),
+    ).toBe(false);
+  });
+
+  each('%s: surrounding whitespace is trimmed', (field) =>
+    expect(loadData({ [field]: '  reports/lcov.info  ' })[field]).toBe(
+      'reports/lcov.info',
+    ),
+  );
+
+  each('%s: an absolute POSIX path is dropped with a warning', (field) => {
+    const ck = loadData({ [field]: '/etc/passwd' });
+    expect(ck[field]).toBe('');
+    expect(ck.warnings.some((w) => w.includes(`${field}: dropped`))).toBe(true);
+    expect(ck.error).toBe('');
+  });
+
+  each('%s: a Windows drive-absolute path is dropped', (field) =>
+    expect(loadData({ [field]: 'C:\\coverage\\lcov.info' })[field]).toBe(''),
+  );
+
+  each('%s: a leading-backslash path is dropped', (field) =>
+    expect(loadData({ [field]: '\\\\server\\share\\cov.xml' })[field]).toBe(''),
+  );
+
+  each("%s: a leading '..' traversal is dropped", (field) =>
+    expect(loadData({ [field]: '../../etc/passwd' })[field]).toBe(''),
+  );
+
+  each("%s: an interior '..' traversal is dropped", (field) =>
+    expect(loadData({ [field]: 'reports/../../secrets.txt' })[field]).toBe(''),
+  );
+
+  each('%s: an embedded newline is dropped (YAML injection guard)', (field) =>
+    expect(loadData({ [field]: 'cov.xml\n      run: rm -rf /' })[field]).toBe(
+      '',
+    ),
+  );
+
+  each('%s: a non-string value warns and degrades to empty', (field) => {
+    const ck = loadData({ [field]: 123 });
+    expect(ck[field]).toBe('');
+    expect(
+      ck.warnings.some((w) => w.includes('expected string, got int')),
+    ).toBe(true);
+  });
+
+  each('%s: an empty string is a silent default', (field) => {
+    const ck = loadData({ [field]: '', confluence_spaces: ['QA'] });
+    expect(ck[field]).toBe('');
+    expect(ck.warnings).toEqual([]);
+    expect(ck.error).toBe('');
+  });
+
+  each('%s: a secret-like value is rejected, not stored', (field) => {
+    const ck = loadData({ [field]: 'sk-not-a-path-at-all' });
+    expect(ck.error).toContain('secret');
+    expect(ck[field]).toBe('');
+  });
+
+  each('%s: is surfaced in toDict', (field) =>
+    expect(loadData({ [field]: 'cov/lcov.info' }).toDict()[field]).toBe(
+      'cov/lcov.info',
+    ),
+  );
+
+  each('%s: a higher-priority layer replaces a lower one', (field) =>
+    withTmp((tmp) => {
+      writeCompanyJson(tmp, { [field]: 'base/path.xml' });
+      writeCompanyJson(tmp, { [field]: 'uat/path.xml' }, 'company.uat.json');
+      expect(load(tmp, 'uat')[field]).toBe('uat/path.xml');
+    }),
+  );
+
+  each('%s: an invalid override degrades to the lower layer', (field) =>
+    withTmp((tmp) => {
+      writeCompanyJson(tmp, { [field]: 'base/path.xml' });
+      writeCompanyJson(tmp, { [field]: '/abs/path.xml' }, 'company.uat.json');
+      expect(load(tmp, 'uat')[field]).toBe('base/path.xml');
+    }),
+  );
+
+  it('both path fields coexist on one config', () => {
+    const ck = loadData({
+      coverage_report_path: 'build/reports/lcov.info',
+      sut_controllers_path: 'src/main/java/com/acme/controllers',
+    });
+    expect(ck.coverage_report_path).toBe('build/reports/lcov.info');
+    expect(ck.sut_controllers_path).toBe('src/main/java/com/acme/controllers');
+    expect(ck.warnings).toEqual([]);
+  });
+
+  // A path field alone is a pointer, not "company knowledge" -- it follows
+  // `otel_exporter_endpoint` / `dashboard_token_env`, which are also excluded
+  // from the is_empty signal set.
+  it('a path field alone does not make the config non-empty', () =>
+    expect(loadData({ coverage_report_path: 'cov/lcov.info' }).isEmpty).toBe(
+      true,
+    ));
+});
+
 // -- secret rejection ---------------------------------------------------------
 
 describe('TestSecretRejection', () => {

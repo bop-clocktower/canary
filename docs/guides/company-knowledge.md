@@ -44,8 +44,9 @@ Canary loads three sources and merges them, lowest to highest priority:
 `internal_domains`, `mcp_servers`, `claude_code_skills`) are **unioned** — each
 layer adds to the set.
 
-**Scalar fields** (`dashboard_url`, `dashboard_token_env`, `notes`) are
-**replaced** by the highest-priority source that sets them.
+**Scalar fields** (`dashboard_url`, `dashboard_token_env`,
+`coverage_report_path`, `sut_controllers_path`, `notes`) are **replaced** by the
+highest-priority source that sets them.
 
 > **Naming convention (contract):** Public code carries no client/employer
 > identifiers. `company.json` scalar fields (`dashboard_url`,
@@ -83,6 +84,8 @@ canary company-knowledge show --env uat
   "internal_domains": ["acme.example.com", "partner.example.com"],
   "mcp_servers": ["plugin_atlassian_atlassian", "harness"],
   "claude_code_skills": ["acme:ui", "acme:e2e"],
+  "coverage_report_path": "build/reports/jacoco/test/jacocoTestReport.xml",
+  "sut_controllers_path": "src/main/java/com/acme/controllers",
   "notes": "Free-text guidance for the LLM. No secrets.",
   "brand": {
     "company_name": "Acme Corp",
@@ -98,16 +101,27 @@ canary company-knowledge show --env uat
 }
 ```
 
-| Field                | Validation                                  | Notes                                  |
-| -------------------- | ------------------------------------------- | -------------------------------------- |
-| `confluence_spaces`  | Uppercase alphanumeric, ≤32 chars, deduped  |                                        |
-| `jira_projects`      | Uppercase alphanumeric, ≤32 chars, deduped  |                                        |
-| `internal_doc_urls`  | Must parse as `http(s)://...`               | Invalid entries dropped with a warning |
-| `internal_domains`   | `^[a-z0-9.-]+\.[a-z]{2,}$`, lowercased      |                                        |
-| `mcp_servers`        | `^[A-Za-z0-9_-]+$`                          |                                        |
-| `claude_code_skills` | Bare (`verify`) or scoped (`acme:ui`) slugs |                                        |
-| `notes`              | Free text, capped at 2048 chars             | Triple-backtick fences stripped        |
-| `brand`              | Nested object (see below)                   | Assets for customer-facing reports     |
+| Field                  | Validation                                    | Notes                                       |
+| ---------------------- | --------------------------------------------- | ------------------------------------------- |
+| `confluence_spaces`    | Uppercase alphanumeric, ≤32 chars, deduped    |                                             |
+| `jira_projects`        | Uppercase alphanumeric, ≤32 chars, deduped    |                                             |
+| `internal_doc_urls`    | Must parse as `http(s)://...`                 | Invalid entries dropped with a warning      |
+| `internal_domains`     | `^[a-z0-9.-]+\.[a-z]{2,}$`, lowercased        |                                             |
+| `mcp_servers`          | `^[A-Za-z0-9_-]+$`                            |                                             |
+| `claude_code_skills`   | Bare (`verify`) or scoped (`acme:ui`) slugs   |                                             |
+| `coverage_report_path` | Repo-relative path; no absolute path, no `..` | Where your suite writes its coverage report |
+| `sut_controllers_path` | Repo-relative path; no absolute path, no `..` | Controllers dir SUT analysis is scoped to   |
+| `notes`                | Free text, capped at 2048 chars               | Triple-backtick fences stripped             |
+| `brand`                | Nested object (see below)                     | Assets for customer-facing reports          |
+
+`coverage_report_path` and `sut_controllers_path` are pointers a generated
+GitHub Actions workflow interpolates (see
+[Workflow templates](tracked-overlays.md)). Because the value ends up inside
+generated YAML, an absolute path or one containing `..` is **dropped with a
+warning** rather than stored — it would aim the generated CI at something
+outside the checkout. Everything else degrades the same way the other fields do:
+a non-string warns, a secret-like value is refused, and an invalid override in a
+higher layer leaves the lower layer's valid value standing.
 
 ### Brand assets (customer-facing reports)
 
