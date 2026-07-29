@@ -117,6 +117,12 @@ const _KNOWN_KEYS = new Set([
   'otel_exporter_endpoint',
   'notes',
   'brand',
+  // #459: read by the migrator (`_detectFramework` / overlay `deploy_to`
+  // matching) to decide which overlay skills deploy. It is NOT parsed into a
+  // `CompanyKnowledge` field, but it is emphatically not "ignored" either --
+  // warning that it is told anyone adopting an overlay that the single field
+  // driving their adoption does nothing.
+  'canary_shape',
 ]);
 
 const _HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;

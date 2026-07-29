@@ -241,6 +241,19 @@ describe('TestFieldValidation', () => {
       false,
     );
   });
+
+  // #459: `canary_shape` is read by the migrator (migrator.ts) and decides
+  // which overlay skills deploy. Warning "ignored unknown field" is not merely
+  // noisy, it is FALSE -- and it tells someone adopting an overlay that the one
+  // field driving their adoption does nothing.
+  it('canary_shape is not reported as an ignored unknown field', () => {
+    const ck = loadData({ canary_shape: 'api' });
+    expect(
+      ck.warnings.some((w) =>
+        w.includes('ignored unknown field: canary_shape'),
+      ),
+    ).toBe(false);
+  });
   it('otel exporter endpoint http accepted', () =>
     expect(
       loadData({ otel_exporter_endpoint: 'http://localhost:4318' })
