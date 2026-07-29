@@ -86,6 +86,7 @@ import {
   buildWeakTestFindings,
   computeExitCode,
   effectiveGraphDepth,
+  filterHeuristicNoise,
   filterSkipped,
   filterTestUnits,
   findReexportOnly,
@@ -863,8 +864,14 @@ async function postStickyComment(
   }
 }
 
+/** The gate's no-op line, shared by the pre- and post-filter exits. */
+function nothingToVerify(skippedCount: number): string {
+  return `guardian: nothing to verify (${skippedCount} path(s) skipped).`;
+}
+
 interface PrCheckOptions {
   diff?: string;
+  heuristicExclude?: string[];
   coverage?: string;
   format: string;
   config: string;
@@ -914,11 +921,11 @@ async function prCheckCmd(
     ? buildWeakTestFindings(testUnits, diffText)
     : [];
 
+  const preFilterSkipped =
+    skipped.length + testUnits.length + barrelUnits.length;
+
   if (kept.length === 0 && weakFindings.length === 0) {
-    deps.out(
-      `guardian: nothing to verify ` +
-        `(${skipped.length + testUnits.length + barrelUnits.length} path(s) skipped).`,
-    );
+    deps.out(nothingToVerify(preFilterSkipped));
     throw new CliExit(0);
   }
 
@@ -928,10 +935,25 @@ async function prCheckCmd(
     // (depth 1); soft stays unbounded. An explicit config value wins.
     graphMaxDepth: effectiveGraphDepth(config, effectiveGate),
   });
+  // #413: drop uncovered HEURISTIC verdicts on paths a naming heuristic can
+  // never judge (non-source, or an excluded glob). Coverage/graph-verified
+  // verdicts on the same paths are real evidence and survive.
+  const [scoredResults, noiseResults] = filterHeuristicNoise(
+    results,
+    opts.heuristicExclude ?? config.heuristic_exclude,
+  );
   const findings = [
-    ...applySuppressions(buildFindings(results)),
+    ...applySuppressions(buildFindings(scoredResults)),
     ...weakFindings,
   ];
+
+  // #413: if the heuristic filter consumed every scorable unit, report it as a
+  // SKIP rather than rendering an empty "0 unaddressed" report -- an adopter
+  // must be able to tell "nothing was judgeable" from "everything passed".
+  if (scoredResults.length === 0 && findings.length === 0) {
+    deps.out(nothingToVerify(preFilterSkipped + noiseResults.length));
+    throw new CliExit(0);
+  }
 
   // SC-5 (PR half): resolve the requested tier against actual capability. No
   // agent runtime exists (default NoAgentProbe), so any `pr.tier > 0` drops to
@@ -1014,7 +1036,10 @@ function buildGaps(
   const kept = keptTest.filter((u) => !reexportPaths.has(u.path));
   if (kept.length === 0) return [];
   const results = resolveCoverage(kept, { coveragePath, graphMaxDepth });
-  return applySuppressions(buildFindings(results));
+  // #413: never hand the authoring tier a heuristic FP -- a generated "test" for
+  // a config dotfile is worse noise than the finding was.
+  const [scored] = filterHeuristicNoise(results, config.heuristic_exclude);
+  return applySuppressions(buildFindings(scored));
 }
 
 /** Serialize a {@link GeneratedTest} intent for the SKILL (JSON-safe). */
@@ -1222,6 +1247,13 @@ export function createGuardianCommand(
     )
     .addOption(new Option('--config <path>').default('harness.config.json'))
     .option('--gate <gate>', 'Override config gate: soft|hard')
+    .option(
+      '--heuristic-exclude <glob>',
+      'Glob whose paths never produce a heuristic-tier finding (repeatable). ' +
+        'Replaces canary.guardian.pr.heuristicExclude for this run. ' +
+        'Coverage/graph-verified findings are unaffected.',
+      (value: string, previous?: string[]) => [...(previous ?? []), value],
+    )
     .option(
       '--post-comment',
       'Post/update the sticky PR comment via the GitHub API (CI).',

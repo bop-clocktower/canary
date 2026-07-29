@@ -32,6 +32,32 @@ under the project's former name) are documented in the
   build red — but a broken gate is no longer indistinguishable from a clean one.
   At-desk behavior (and `author-plan`, whose subject really is the working tree)
   is unchanged.
+- **Guardian — heuristic tier no longer manufactures gaps on non-source paths**
+  (#413): the Tier-3 naming heuristic asks "does any test file reference this
+  file's stem or a top-level symbol?". On a config dotfile, a lockfile, or a
+  data blob there are no symbols and no test will ever name it, so the verdict
+  was **structurally always "uncovered"** — a guaranteed false positive, not a
+  signal. Those FPs are doubly expensive: they train reviewers to ignore the
+  sticky comment, and every 👎 adjudication drives `precision = TP / (TP + FP)`
+  down, so a repo that routinely touches config could be held below its
+  soft→hard promotion bar indefinitely even with excellent coverage-verified
+  findings. An uncovered **heuristic** verdict is now suppressed unless the path
+  carries a known program-source extension (`isSourcePath`) and clears the glob
+  layer. New `canary.guardian.pr.heuristicExclude` (defaults to `**/*.d.ts`,
+  `**/__generated__/**`, `**/generated/**`, `**/*.generated.*`, `**/*_pb2.py`,
+  `**/*.pb.go`; an explicit list, including `[]`, replaces it) plus a repeatable
+  `--heuristic-exclude <glob>` flag.
+
+  The suppression is scoped to the **tier**, never to the path: a
+  `coverage-verified` or `graph-verified` finding on the very same file rests on
+  real evidence and still fires. Paths suppressed this way are reported in the
+  `nothing to verify (N path(s) skipped)` count rather than silently passing.
+  The same filter guards `author-plan`, so the authoring tier is never handed a
+  false gap to write a test for.
+
+  **Behavior change:** the extension floor is not config-defeatable —
+  `skipGlobs: []` re-admits a lockfile to the gate but no longer produces a
+  heuristic finding on it.
 
 ## [5.15.0] - 2026-07-25
 
