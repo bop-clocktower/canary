@@ -21,7 +21,43 @@ if [ -n "$STAGED_MD_FILTERED" ]; then
   fi
 fi
 
-# 3. Security ledger — regenerate if source files changed, then stage
+# 3. Prettier — mirror the CI format gates for the packages this commit touches.
+#
+#    Deliberately runs the SAME `format:check` script CI runs rather than a
+#    hand-rolled file list, so the hook can never disagree with CI about what
+#    "formatted" means — the failure mode that motivated adding this at all.
+#
+#    Scope matters: only `ts/` and `agents/skills/` are format-gated in CI
+#    (.github/workflows/harness-quality.yml). ~184 other tracked files are not
+#    prettier-clean and are not meant to be — notably the golden JSON fixtures
+#    under `ts/test/fixtures/`, which are byte-compared test DATA and would be
+#    corrupted by reformatting. A repo-wide gate would block unrelated commits
+#    and invite exactly that damage.
+#
+#    Check-only, never `--write`: auto-formatting and re-staging would also
+#    stage unstaged hunks of a partially staged file.
+fmt_gate() { # <package-dir> <label>
+  if [ ! -x "$1/node_modules/.bin/prettier" ]; then
+    return 0 # deps not installed in this clone — skip, like markdownlint does
+  fi
+  echo "[pre-commit] prettier: checking $2..."
+  if ! (cd "$1" && npm run --silent format:check); then
+    echo ""
+    echo "[pre-commit] Formatting issues in $2 — CI would fail on these."
+    echo "             Fix with: (cd $1 && npx prettier --write <file>)"
+    return 1
+  fi
+}
+
+STAGED_ALL=$(git diff --cached --name-only --diff-filter=ACM || true)
+if echo "$STAGED_ALL" | grep -q '^ts/'; then
+  fmt_gate ts "ts/ (engine)"
+fi
+if echo "$STAGED_ALL" | grep -q '^agents/skills/'; then
+  fmt_gate agents/skills "agents/skills/"
+fi
+
+# 4. Security ledger — regenerate if source files changed, then stage
 LEDGER_SOURCES=$(git diff --cached --name-only | grep -Ev '^(\.harness/security/timeline\.json|docs/SECURITY_LEDGER\.md)$' || true)
 if [ -n "$LEDGER_SOURCES" ] && [ -f "scripts/security_ledger.mjs" ]; then
   echo "[pre-commit] refreshing security ledger..."
