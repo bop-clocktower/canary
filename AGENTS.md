@@ -21,6 +21,35 @@ integrity.
 - **State:** [CANARY_STATE.md](docs/CANARY_STATE.md)
 - **Engineering Learnings:** [CANARY_LEARNINGS.md](docs/CANARY_LEARNINGS.md)
 
+### Diagrams
+
+Architecture and flow diagrams live as **Mermaid fenced blocks inside the wiki
+page they document** (`docs/wiki/**`) — never as checked-in images. The GitHub
+Wiki renders Mermaid natively, so the source stays diff-reviewable, versioned
+with the code it describes, and editable without a drawing tool.
+
+Rules:
+
+- **Put the diagram next to the prose it illustrates.** A diagram in a separate
+  file drifts from the text within one release.
+- **Update the diagram in the same PR as the behaviour it shows.** A stale
+  diagram is worse than none: it is trusted more and checked less.
+- **Diagram what exists, not what is planned.** If a component is aspirational,
+  say so in prose instead of drawing it.
+- **CI renders every chart** (`Docs Lint` → `Wiki diagrams render`). The Wiki
+  renders Mermaid natively, which means a malformed chart ships _silently_ — the
+  job turns that into a PR-time failure. Preview locally with:
+
+  ```bash
+  npx --yes @mermaid-js/mermaid-cli@11 -i docs/wiki/<Page>.md -o /tmp/out.md
+  ```
+
+Beware the failure mode this repo has already hit: a doc sweep once refreshed
+file _paths_ to the current tree without checking whether the components they
+named still existed, leaving a page that looked maintained while describing a
+long-deleted architecture. When editing, verify described **behaviour** against
+the code, not just the paths.
+
 ## Repository Structure
 
 ### Conventions
@@ -33,7 +62,7 @@ integrity.
   and update docs/examples in the **same** change. The v3.0 cut removed the
   provider layer, orchestrator, and keyed generate command but left months of
   stale references behind (this drift was the motivation for the guard).
-  `scripts/check_removed_symbols.py` (run in CI via `docs-lint`) now fails the
+  `scripts/check_removed_symbols.mjs` (run in CI via `docs-lint`) now fails the
   build on that drift — add a row there for each newly-removed surface.
 - **Open-core boundary.** This repo is public/open-source. The generic engine
   lives here; **company-specific content** (client names, internal domains,
@@ -208,30 +237,33 @@ host Claude Code session via `/canary-write-test` — no API key required.
   agent. These are considered output artifacts and are generally excluded from
   manual review.
 
-### TypeScript pilot (`ts/`)
+### TypeScript engine (`ts/`)
 
-**Strangler migration in progress.** The Python engine (`agent/`) is being
-ported to TypeScript incrementally — Python stays the shipping product at every
-step. `ts/` is an isolated pilot workspace (deliberately **not** the npm shim in
-`npm/`) proving the toolchain and the cross-language boundary before larger
-subsystems move.
+**Migration complete.** `ts/` **is** the engine. The strangler port finished in
+the v6 cutover: the Python engine was deleted, and v6.1.0 removed the last
+Python from the plugin hooks and maintenance scripts. There is no longer a
+"pilot", a shipping Python product, or a cross-language boundary to preserve.
 
-- **Scope so far:** `ts/src/analysis/`
-  (flaky/spikes/area-health/common-failures/ regression/digest reports + the
-  `AnalysisEngine`).
+- **Scope:** all of `ts/src/` — `core/` (classify, recommend, scan, adopt),
+  `guardian/`, `analysis/`, `history/`, `cli.ts`, `mcp-server.ts`.
 - **Toolchain:** TypeScript (strict) + Vitest (v8 coverage gate, lines 90 /
   branches 85) + Prettier. No ESLint (the repo uses none; the `protect-config`
-  hook blocks AI-authored linter configs). CI job: `ts-validate` in
-  `harness-quality.yml`, parallel to and independent of the Python `validate`.
-- **The seam:** the TS analysis reads the **same on-disk run history** the
-  Python `HistoryStore` writes — `test-results/reports/history-v2.jsonl`
-  (NDJSON, one run-record per line). No FFI or subprocess coupling; the file
-  format is the contract.
-- **Parity:** `ts/test/parity.test.ts` asserts the TS reports match Python
-  golden output (`ts/test/fixtures/golden/`) byte-for-byte after normalization;
-  regenerate the golden files with `scripts/capture_analysis_golden.py`.
-- **Plan & decision gate:**
-  [docs/plans/2026-07-22-ts-migration-pilot-analysis-plan.md](docs/plans/2026-07-22-ts-migration-pilot-analysis-plan.md).
+  hook blocks AI-authored linter configs). CI job id `ts-validate` in
+  `harness-quality.yml` (displayed as **TS engine (pilot)** — the label is a
+  leftover from the migration, not a statement of status).
+- **Run history:** `test-results/reports/history-v2.jsonl` (NDJSON, one
+  run-record per line) remains the on-disk contract between the executor, the
+  history store, and `analysis/`.
+- **Golden fixtures:** `ts/test/parity.test.ts` compares `AnalysisEngine` output
+  against frozen captures in `ts/test/fixtures/golden/`. These began as
+  TS↔Python parity captures; with Python gone they are now **regression**
+  snapshots. Note the capture script they cite
+  (`scripts/capture_analysis_golden.py`) no longer exists, so there is currently
+  **no supported way to regenerate them** — treat a mismatch as a TS regression
+  to fix, not a fixture to refresh, unless you first restore a capture path.
+- **Historical plan:**
+  [docs/plans/2026-07-22-ts-migration-pilot-analysis-plan.md](docs/plans/2026-07-22-ts-migration-pilot-analysis-plan.md)
+  (describes the migration as it was planned; kept as a record).
 
 ### GitHub Actions (`.github/workflows/`)
 

@@ -24,6 +24,44 @@ jobs:
           npx --yes markdownlint-cli "**/*.md" --ignore node_modules --ignore
           plugins --ignore agents/agents --ignore agents/commands
 
+  mermaid:
+    name: Wiki diagrams render
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      # The GitHub Wiki renders Mermaid natively, so a malformed chart fails
+      # SILENTLY -- it ships and simply shows as a code block or an error box to
+      # readers. Rendering every chart here turns that into a hard failure at PR
+      # time. Output goes to a temp dir and is discarded; only the exit code
+      # matters.
+      - name: Render every Mermaid chart in docs/wiki
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/mermaid"
+          status=0
+          found=0
+          # NUL-delimited so a filename with spaces cannot split the loop. Paths
+          # come from the checkout, never from event payload, so there is no
+          # untrusted interpolation here.
+          while IFS= read -r -d '' f; do
+            grep -q '^```mermaid' "$f" || continue
+            found=1
+            echo "::group::$f"
+            if ! npx --yes @mermaid-js/mermaid-cli@11 \
+                  -i "$f" -o "$RUNNER_TEMP/mermaid/$(basename "$f")"; then
+              echo "::error file=$f::Mermaid chart failed to render"
+              status=1
+            fi
+            echo "::endgroup::"
+          done < <(find docs/wiki -name '*.md' -type f -print0)
+          if [ "$found" -eq 0 ]; then
+            echo "No Mermaid charts in docs/wiki -- nothing to validate."
+          fi
+          exit $status
+
   removed-symbols:
     name: No removed-symbol or proprietary leaks
     runs-on: ubuntu-latest
