@@ -11,6 +11,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -690,6 +691,38 @@ describe('cli', () => {
     expect(main([])).toBe(2);
   });
 
+  // On a plain object literal every inherited key resolves truthy, so
+  // `VALUE_FLAGS['toString']` was Object.prototype.toString and the token was
+  // consumed as a value flag. This is the worst symptom in the family: katana
+  // and fail-fast at least exit non-zero, but here the run SUCCEEDS -- rc 0,
+  // the report written, and the user's tokens silently discarded.
+  it.each([
+    'toString',
+    'constructor',
+    'valueOf',
+    '__proto__',
+    'hasOwnProperty',
+  ])(
+    'rejects the inherited key %s instead of silently discarding it',
+    (key) => {
+      const tmp = mkTmp();
+      const results = resultsFile(tmp, 1, 0);
+      const md = path.join(tmp, 'report.md');
+      const { err } = captureIO();
+      // Control: the same argv without the junk succeeds and writes the report,
+      // so the assertions below cannot pass vacuously.
+      expect(main(['--results', results, '--markdown-out', md])).toBe(0);
+      expect(fs.existsSync(md)).toBe(true);
+      fs.rmSync(md);
+
+      expect(
+        main(['--results', results, '--markdown-out', md, key, 'GARBAGE']),
+      ).toBe(2);
+      expect(err.join('\n')).toContain(`unrecognized arguments: ${key}`);
+      expect(fs.existsSync(md)).toBe(false);
+    },
+  );
+
   it('results file not found exits 1', () => {
     const { err } = captureIO();
     expect(main(['--results', path.join(mkTmp(), 'nope.json')])).toBe(1);
@@ -805,6 +838,19 @@ describe('packaging', () => {
     expect(head).toContain('name: canary-test-reporter');
     expect(head).toContain('cli: scripts/cli.mjs');
     expect(head).toContain('node>=20');
+  });
+
+  // The skill runner spawns the `cli:` target directly (ts/src/skills-cli.ts
+  // execs the file, relying on its shebang), so a cli.mjs without the exec bit
+  // makes the documented `canary skills run canary-test-reporter -- --help` fail with no
+  // output at all. Assert the bit AND a real spawn, not just the file's text.
+  it('cli.mjs is executable and runs when spawned directly', () => {
+    const cli = path.join(SCRIPTS, 'cli.mjs');
+    expect(fs.statSync(cli).mode & 0o111).toBeTruthy();
+    const res = spawnSync(cli, ['--help'], { encoding: 'utf8' });
+    expect(res.error).toBeUndefined();
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('usage:');
   });
 
   it('scripts are ascii-only (no emoji/glyphs in source)', () => {

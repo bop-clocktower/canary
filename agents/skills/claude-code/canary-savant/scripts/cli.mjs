@@ -19,8 +19,36 @@
 import fs from 'node:fs';
 import { scanPaths, toJson } from './scanner.mjs';
 import { confirm, locatePolluters, realPolluterSeams } from './runner.mjs';
+import { RULES } from './rules.mjs';
 
 export const SCHEMA_VERSION = 1;
+
+const PREFIX = 'canary-savant:';
+
+/** A well-formed integer literal, sign optional. Used for --seed. */
+const INT_RE = /^[+-]?\d+$/;
+
+// The rules block is GENERATED from RULES, never hand-typed, so a new rule
+// appears in --help the moment it is registered.
+const USAGE =
+  'usage: canary-savant [-h] [--json] [--strict] [--confirm] [--seed N] [--]\n' +
+  '                     [path ...]\n' +
+  '\n' +
+  'Order-dependence and isolation detector: flags the shared-state smells that\n' +
+  'predict order-dependent tests, and optionally confirms them dynamically.\n' +
+  '\n' +
+  'positional arguments:\n' +
+  '  path        files or directories to scan (default: the current directory)\n' +
+  '\n' +
+  'options:\n' +
+  '  -h, --help  show this help message and exit\n' +
+  '  --json      emit machine-readable findings instead of human text\n' +
+  '  --strict    exit 1 when there are findings (default is advisory: exit 0)\n' +
+  '  --confirm   run the opt-in Tier-2 dynamic confirmer (executes the suite)\n' +
+  '  --seed N    shuffle seed for --confirm (default: random)\n' +
+  '\n' +
+  'rules:\n' +
+  RULES.map((r) => `  ${r.ruleId} (${r.severity})`).join('\n');
 
 function summary(result) {
   const bySeverity = {};
@@ -58,17 +86,90 @@ function renderText(result) {
   return lines.join('\n');
 }
 
+/**
+ * Match argparse's contract for the exit paths a hand-rolled loop has to
+ * honour: `-h`/`--help` prints usage and exits 0; an unknown flag exits 2. A
+ * bare `--` is the end-of-options terminator, after which every token is a
+ * path; a lone `-` stays a positional, as argparse treats it.
+ */
 function parseArgs(argv) {
   const paths = [];
-  const opts = { json: false, strict: false, confirm: false, seed: undefined };
+  const opts = {
+    json: false,
+    strict: false,
+    confirm: false,
+    seed: undefined,
+    help: false,
+    error: null,
+  };
+  let noMoreFlags = false;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '--json') opts.json = true;
+    if (noMoreFlags) {
+      paths.push(arg);
+      continue;
+    }
+    // `--flag=value`, matching canary-instrument and canary-fail-fast so all
+    // four ported CLIs accept the same two spellings.
+    const eq = arg.startsWith('--') ? arg.indexOf('=') : -1;
+    const inlineFlag = eq !== -1 ? arg.slice(0, eq) : null;
+
+    if (arg === '-h' || arg === '--help') {
+      opts.help = true;
+      return { paths, opts };
+    } else if (arg === '--') noMoreFlags = true;
+    else if (arg === '--json') opts.json = true;
     else if (arg === '--strict') opts.strict = true;
     else if (arg === '--confirm') opts.confirm = true;
-    else if (arg === '--seed') {
-      opts.seed = Number(argv[i + 1]);
-      i += 1;
+    else if (arg === '--seed' || inlineFlag === '--seed') {
+      // --seed is a DETERMINISM flag, so every bad spelling has to be loud.
+      // `Number(argv[i + 1])` used to yield NaN for BOTH a missing value and a
+      // non-numeric one; NaN then failed the `Number.isFinite` guard in main
+      // and fell through to `Math.floor(Math.random() * 1e6)` -- the one flag
+      // whose whole purpose is reproducibility, silently randomizing at exit 0.
+      let raw;
+      if (inlineFlag === '--seed') {
+        raw = arg.slice(eq + 1); // `--seed=-5` keeps its sign
+      } else {
+        const next = argv[i + 1];
+        // A leading '-' normally means "this is the next flag, not my value",
+        // but negative seeds are legitimate -- so a token that is itself a
+        // well-formed integer counts as the value. Without this, `--seed -5`
+        // died with "expected one argument" (a false statement: an argument
+        // WAS supplied) while `--seed=-5` worked, splitting two spellings the
+        // SKILL.md calls equivalent.
+        if (
+          next === undefined ||
+          (next.startsWith('-') && !INT_RE.test(next))
+        ) {
+          opts.error = `argument --seed: expected one argument`;
+          return { paths, opts };
+        }
+        raw = next;
+        i += 1;
+      }
+      // Validate the VALUE, not just its presence: reject anything that is not
+      // a finite integer ('abc', '3.7', '1e999', '', '0x10') the way argparse's
+      // `type=int` would, instead of letting it decay to a random seed.
+      if (!INT_RE.test(raw)) {
+        opts.error = `argument --seed: invalid int value: '${raw}'`;
+        return { paths, opts };
+      }
+      // Syntactically an integer is not enough: Number() silently rounds past
+      // 2^53-1, so `--seed 9007199254740993` would RUN with ...992 -- the seed
+      // used differing from the seed asked for, which is the exact class of
+      // lie this flag must not tell. (Bigger values reach 1e26, which
+      // runner.mjs interpolates as `--randomly-seed=1e+26` and pytest-randomly
+      // rejects at runtime.)
+      const parsed = Number(raw);
+      if (!Number.isSafeInteger(parsed)) {
+        opts.error = `argument --seed: seed out of safe integer range: '${raw}'`;
+        return { paths, opts };
+      }
+      opts.seed = parsed;
+    } else if (arg.startsWith('-') && arg !== '-') {
+      opts.error = `unrecognized arguments: ${arg}`;
+      return { paths, opts };
     } else paths.push(arg);
   }
   return { paths: paths.length ? paths : ['.'], opts };
@@ -122,9 +223,20 @@ export function renderConfirm(dyn) {
 export function main(argv = []) {
   const { paths, opts } = parseArgs(argv);
 
+  // Usage and parse errors resolve before any filesystem work, so `--help`
+  // never reports a missing path and a typo never half-runs a scan.
+  if (opts.help) {
+    console.log(USAGE);
+    return 0;
+  }
+  if (opts.error) {
+    console.error(`${PREFIX} ${opts.error}`);
+    return 2;
+  }
+
   for (const entry of paths) {
     if (!fs.existsSync(entry)) {
-      console.error(`canary-savant: path not found: ${entry}`);
+      console.error(`${PREFIX} path not found: ${entry}`);
       return 1;
     }
   }

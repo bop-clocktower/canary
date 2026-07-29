@@ -28,7 +28,13 @@ const USAGE =
   '\n' +
   'Fail-fast config audit + loud run-end failure digest.';
 
-const VALUE_FLAGS = { '--results': 'results', '--config': 'config' };
+// Null-prototype: on a plain object literal every inherited key resolves
+// truthy, so `VALUE_FLAGS['toString']` would be Object.prototype.toString and
+// the token `toString` would be swallowed as a value flag instead of rejected.
+const VALUE_FLAGS = Object.assign(Object.create(null), {
+  '--results': 'results',
+  '--config': 'config',
+});
 
 /**
  * Match argparse's contract for the two exit paths the hand-rolled loop must

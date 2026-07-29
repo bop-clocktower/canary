@@ -112,7 +112,13 @@ canary skills run canary-blackhawk -- tests --json
 
 # Fail the step on any finding:
 canary skills run canary-blackhawk -- tests --strict
+
+# Usage, options, and the full rule list (exits 0):
+canary skills run canary-blackhawk -- --help
 ```
+
+An unknown flag is rejected with `unrecognized arguments: <flag>` and exit 2;
+use `--` to end option parsing when a path itself starts with a dash.
 
 `--json` shape:
 

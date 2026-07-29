@@ -59,7 +59,14 @@ under it automatically — no manual span code in individual tests.
 canary skills run canary-instrument -- \
   --spans test-results/trace --output test-results \
   [--suite-type e2e_ui]
+
+# Usage and options (exits 0; --spans/--output are not required for --help):
+canary skills run canary-instrument -- --help
 ```
+
+An unknown flag, a missing required flag, and a value-flag left without its
+value are all usage errors (exit 2). `--help` short-circuits ahead of the
+required-argument check, so it never complains about `--spans`/`--output`.
 
 Writes `test-results/run.json`. Creates `--output` if it doesn't exist.
 Missing/empty `--spans` produces `trace: {spans_total: 0, by_test: []}`, not a

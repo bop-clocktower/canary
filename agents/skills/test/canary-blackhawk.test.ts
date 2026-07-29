@@ -7,6 +7,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -479,6 +480,77 @@ describe('cli', () => {
     ).toBe(0);
     expect(JSON.parse(out.join('\n')).summary.files_scanned).toBe(2);
   });
+
+  // --- argparse-parity surface (#...): --help, unknown flags, `--` ---------
+
+  it('--help prints usage and exits zero', () => {
+    capture();
+    expect(main(['--help'])).toBe(0);
+    expect(out.join('\n')).toContain('usage: canary-blackhawk');
+    expect(err.join('\n')).toBe('');
+  });
+
+  it('-h is the same as --help', () => {
+    capture();
+    expect(main(['-h'])).toBe(0);
+    expect(out.join('\n')).toContain('usage: canary-blackhawk');
+  });
+
+  // Anti-drift: the usage rules block is generated from RULES, so a fifth
+  // rule cannot land with a stale hand-typed help text (BH004 was already
+  // missing from the docs once).
+  it('usage lists every rule id', () => {
+    capture();
+    expect(main(['--help'])).toBe(0);
+    const text = out.join('\n');
+    for (const rule of RULES) expect(text).toContain(rule.ruleId);
+  });
+
+  // Every diagnostic goes through the one PREFIX constant, so the two error
+  // paths cannot drift apart in wording.
+  it('prefixes both error paths identically', () => {
+    capture();
+    expect(main(['--bogus'])).toBe(2);
+    expect(err.join('\n')).toMatch(/^canary-blackhawk: /);
+    capture();
+    expect(main(['/definitely/not/here'])).toBe(1);
+    expect(err.join('\n')).toMatch(/^canary-blackhawk: /);
+  });
+
+  it('rejects an unknown flag with exit 2 before touching the filesystem', () => {
+    capture();
+    expect(main(['--bogus'])).toBe(2);
+    const text = err.join('\n');
+    expect(text).toContain('unrecognized');
+    expect(text).toContain('--bogus');
+    expect(text).not.toContain('path not found');
+  });
+
+  it('-h short-circuits even when a bad path is also given', () => {
+    capture();
+    expect(main(['/definitely/not/here', '--help'])).toBe(0);
+  });
+
+  it('`--` stops flag parsing so a dash-leading path is a path', () => {
+    capture();
+    // After `--`, `--json` is a positional -- and a nonexistent one, which is
+    // the observable proof it was not parsed as the JSON flag.
+    expect(main(['--', '--json'])).toBe(1);
+    expect(err.join('\n')).toContain('path not found: --json');
+  });
+
+  it('a lone `-` is a positional, not a flag', () => {
+    capture();
+    expect(main(['-'])).toBe(1);
+    expect(err.join('\n')).toContain('path not found: -');
+  });
+
+  it('still accepts a bare path with --json and --strict (regression)', () => {
+    const root = tree(tmp());
+    capture();
+    expect(main([root, '--json', '--strict'])).toBe(1);
+    expect(JSON.parse(out.join('\n')).summary.findings).toBe(2);
+  });
 });
 
 // --- Inline suppression pragma (#393) --------------------------------------
@@ -580,6 +652,19 @@ describe('packaging', () => {
     expect(head).toContain('name: canary-blackhawk');
     expect(head).toContain('cli: scripts/cli.mjs');
     expect(head).toContain('node>=20');
+  });
+
+  // The skill runner spawns the `cli:` target directly (ts/src/skills-cli.ts
+  // execs the file, relying on its shebang), so a cli.mjs without the exec bit
+  // makes the documented `canary skills run canary-blackhawk -- --help` fail with no
+  // output at all. Assert the bit AND a real spawn, not just the file's text.
+  it('cli.mjs is executable and runs when spawned directly', () => {
+    const cli = path.join(SCRIPTS, 'cli.mjs');
+    expect(fs.statSync(cli).mode & 0o111).toBeTruthy();
+    const res = spawnSync(cli, ['--help'], { encoding: 'utf8' });
+    expect(res.error).toBeUndefined();
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('usage:');
   });
 
   it('scripts are ascii-only (no emoji)', () => {

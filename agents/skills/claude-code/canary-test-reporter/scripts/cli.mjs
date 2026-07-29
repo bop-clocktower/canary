@@ -25,11 +25,16 @@ const USAGE =
   '\n' +
   'Playwright JSON results -> Markdown + JSON test report.';
 
-const VALUE_FLAGS = {
+// Null-prototype: on a plain object literal every inherited key resolves
+// truthy, so `VALUE_FLAGS['toString']` would be Object.prototype.toString and
+// the token `toString` would be consumed as a value flag. That is the worst
+// failure in this family -- unlike the other CLIs, this one would then exit 0
+// with the report written and the user's tokens silently discarded.
+const VALUE_FLAGS = Object.assign(Object.create(null), {
   '--results': 'results',
   '--markdown-out': 'markdownOut',
   '--json-out': 'jsonOut',
-};
+});
 
 /**
  * Hand-rolled argparse-parity parser. `--help`/`-h` prints usage and exits 0;

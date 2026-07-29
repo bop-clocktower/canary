@@ -10,6 +10,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -397,6 +398,33 @@ describe('cli', () => {
     expect(out.join('\n')).toContain('Fail-fast config OK.');
   });
 
+  // On a plain object literal every inherited key resolves truthy, so
+  // `VALUE_FLAGS['toString']` was Object.prototype.toString and the token was
+  // swallowed as a value flag -- the run then fell through to "nothing to do"
+  // (exit 1) instead of rejecting the argument (exit 2).
+  it.each([
+    'toString',
+    'constructor',
+    'valueOf',
+    '__proto__',
+    'hasOwnProperty',
+  ])('rejects the inherited key %s instead of swallowing it', (key) => {
+    const { err } = captureLog();
+    expect(main([key, 'x'])).toBe(2);
+    expect(err.join('\n')).toContain(`unrecognized arguments: ${key}`);
+  });
+
+  // Note: there is deliberately no inline-form twin of the case above. The
+  // inline branch only runs for tokens starting with '--' and looks up
+  // `a.slice(0, eq)`, which therefore always starts with '--' -- and no
+  // Object.prototype key does. An inline prototype-key case is unreachable by
+  // construction, so a test for it would pass against pre-fix code too.
+  it('rejects an unknown inline flag', () => {
+    const { err } = captureLog();
+    expect(main(['--bogus=x'])).toBe(2);
+    expect(err.join('\n')).toContain('unrecognized arguments: --bogus=x');
+  });
+
   it('unreadable config (a directory) returns 1 cleanly', () => {
     const d = path.join(mkTmp(), 'a_dir.config');
     fs.mkdirSync(d);
@@ -510,6 +538,19 @@ describe('packaging', () => {
     expect(head).toContain('name: canary-fail-fast');
     expect(head).toContain('cli: scripts/cli.mjs');
     expect(head).toContain('node>=20');
+  });
+
+  // The skill runner spawns the `cli:` target directly (ts/src/skills-cli.ts
+  // execs the file, relying on its shebang), so a cli.mjs without the exec bit
+  // makes the documented `canary skills run canary-fail-fast -- --help` fail with no
+  // output at all. Assert the bit AND a real spawn, not just the file's text.
+  it('cli.mjs is executable and runs when spawned directly', () => {
+    const cli = path.join(SCRIPTS, 'cli.mjs');
+    expect(fs.statSync(cli).mode & 0o111).toBeTruthy();
+    const res = spawnSync(cli, ['--help'], { encoding: 'utf8' });
+    expect(res.error).toBeUndefined();
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('usage:');
   });
 
   it('scripts are ascii-only (no emoji in source)', () => {
