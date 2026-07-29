@@ -256,7 +256,7 @@ root cause being fixed, but keep the volta fix for users on older checkouts:
 
 Replace the section body with:
 
-```markdown
+````markdown
 **Note:** This error is resolved in the current repo — the plugin source was
 moved to the repo root (eliminating the `git-subdir` format that required a
 specific Node runtime). If you are on an older checkout or a fork that still
@@ -265,7 +265,7 @@ uses `git-subdir`, install Volta to fix the Node version:
 ```bash
 brew install volta
 volta install node
-```
+````
 
 In `docs/CANARY_LEARNINGS.md`, update entry #11:
 
