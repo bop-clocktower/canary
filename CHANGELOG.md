@@ -14,6 +14,45 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [6.3.0] - 2026-07-29
+
+Two live user-facing fixes plus the overlay-adoption feature. Both fixes are for
+failures that were **silent** — a shipped feature permanently disabling itself,
+and a usage request mutating the working tree.
+
+### Fixed
+
+- **Guardian — Tier-2 authoring no longer disables itself permanently** (#456):
+  the stage-and-block-once loop guard had two halves and only one survived. The
+  half that CLEARED the `canary-guardian-authored` sentinel on the next commit
+  was deleted as dead code in #449, and nothing replaced it — so once the
+  guardian authored tests in a clone **even once**, authoring was silently dead
+  in that clone forever, with `author-plan` reporting a `loop-guard` skip that
+  claimed "this run" while meaning _forever_. The sentinel now records `HEAD`
+  and the guard fires only while `HEAD` still matches, so committing the staged
+  tests re-enables authoring with no manual step. Every failure path (absent,
+  unreadable, malformed, unresolvable `HEAD`) **fails open** — the original bug
+  was fail-closed-forever, so a fix preserving that shape would not have been a
+  fix.
+- **Skill CLIs — `--help`, unknown flags, and value arity restored** (#472): the
+  Python→JS ports dropped argparse and with it three behaviours. Six skill CLIs
+  now share one contract — `--help`/`-h` to stdout at exit 0, unknown flag →
+  `unrecognized arguments:` at exit 2, missing/invalid value → exit 2, and
+  `--flag=value` accepted.
+
+  Three of the bugs found were worse than the one reported.
+  **`canary-katana --help` ran the full scan and wrote
+  `.canary/quarantine.json`** — a usage request mutating the working tree.
+  **`canary-savant --seed` silently fell back to a random seed** on a missing
+  _or_ invalid value, and truncated `9007199254740993` to `…992`, so the seed
+  used differed from the seed asked for. **`canary-test-reporter` discarded
+  typed arguments at exit 0** while reporting success. Three CLIs also shipped
+  non-executable, so `canary skills run <skill> -- --help` failed with a bare
+  exit 1 and no output.
+
+  `canary-shadow` is deliberately **not** covered — it needs a contract decision
+  rather than a fix (#478).
+
 ### Added
 
 - **Workflow templates install during `canary migrate`** (#459): an overlay
