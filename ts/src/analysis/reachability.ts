@@ -317,7 +317,9 @@ export async function sweepLinksAsync(
   const results: LinkResult[] = [];
   for (const { link, scoped } of planSweep(hrefs, base, allowExternal)) {
     results.push(
-      scoped ? resolveOutcome(link, await probe(link.url)) : skippedResult(link),
+      scoped
+        ? resolveOutcome(link, await probe(link.url))
+        : skippedResult(link),
     );
   }
   return { results, summary: summarize(results) };
@@ -354,12 +356,11 @@ export function createHttpProbe(
         });
         return { kind: 'status', status: res.status };
       } catch (err) {
-        const reason =
-          controller.signal.aborted
-            ? `timeout after ${timeoutMs}ms`
-            : err instanceof Error
-              ? err.message
-              : String(err);
+        const reason = controller.signal.aborted
+          ? `timeout after ${timeoutMs}ms`
+          : err instanceof Error
+            ? err.message
+            : String(err);
         return { kind: 'failed', reason };
       } finally {
         clearTimeout(timer);
@@ -367,7 +368,10 @@ export function createHttpProbe(
     };
 
     const head = await attempt('HEAD');
-    if (head.kind === 'status' && (head.status === 405 || head.status === 501)) {
+    if (
+      head.kind === 'status' &&
+      (head.status === 405 || head.status === 501)
+    ) {
       return attempt('GET');
     }
     return head;
