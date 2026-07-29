@@ -197,6 +197,62 @@ describe('SV004 order-coupled-name', () => {
   });
 });
 
+// --- String-literal rejection (#493) ----------------------------------------
+//
+// SV003's anchor (os.environ / process.env / sys.modules) is code, so a match
+// starting inside a string literal is fixture data -- the dominant self-scan
+// false positive. SV004 is split: name-pattern alternatives (def test_1_...)
+// are code-anchored and get the same rejection; directive-text alternatives
+// ("must run before", it-titles) deliberately live inside strings and
+// comments, so they stay unfiltered.
+
+describe('string-literal rejection (#493)', () => {
+  it.each([
+    ["[\"os.environ['API_KEY'] = 'x'\", 'test_a.py'],", 'a.spec.ts'],
+    ["\"    os.environ['SAVANT_FLAG'] = '1'\",", 'a.spec.ts'],
+    ["const f = scan(\"os.environ['X'] = '1'\")[0];", 'a.spec.ts'],
+    ["'process.env.API_KEY = 1;',", 'a.spec.ts'],
+    ["fs.writeFileSync(p, \"os.environ['X'] = '1'\\n\");", 'a.spec.ts'],
+  ])('does not flag SV003 fixture data %s', (line, name) => {
+    expect(ids(line, name)).not.toContain('SV003-shared-singleton-mutation');
+  });
+
+  it('retries past an in-string match to a later code match', () => {
+    const line = "const s = 'process.env.A = 1'; process.env.B = 'x';";
+    expect(ids(line, 'a.spec.ts')).toContain('SV003-shared-singleton-mutation');
+  });
+
+  it.each([
+    ["['def test_1_creates_user():', 'test_a.py'],", 'a.spec.ts'],
+    ["['def test_first():', 'test_a.py'],", 'a.spec.ts'],
+    ["['def test_last():', 'test_a.py'],", 'a.spec.ts'],
+  ])('does not flag SV004 name-pattern fixture data %s', (line, name) => {
+    expect(ids(line, name)).not.toContain('SV004-order-coupled-name');
+  });
+
+  // Directive text stays string-native by design: titles and docstrings ARE
+  // strings in real code, and comments carry the note.
+  it.each([
+    ["it('creates admin (must run first)', () => {", 'a.spec.ts'],
+    ['"""must run before test_b"""', 'test_a.py'],
+    ['# must run before test_b', 'test_a.py'],
+  ])('still flags directive text %s', (line, name) => {
+    expect(ids(line, name)).toContain('SV004-order-coupled-name');
+  });
+
+  it('still flags a real ordinal test def (code position)', () => {
+    expect(ids('def test_first():', 'test_a.py')).toContain(
+      'SV004-order-coupled-name',
+    );
+  });
+
+  it('still flags a genuine singleton mutation (code position)', () => {
+    expect(ids("os.environ['API_KEY'] = 'x'", 'test_a.py')).toContain(
+      'SV003-shared-singleton-mutation',
+    );
+  });
+});
+
 // --- Finding shape ---------------------------------------------------------
 
 describe('finding shape', () => {

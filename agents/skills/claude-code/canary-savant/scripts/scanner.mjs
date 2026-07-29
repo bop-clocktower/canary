@@ -13,13 +13,15 @@ import {
   SEVERITY,
   WHY,
   SV003_PATTERN,
-  SV004_PATTERN,
+  SV004_CODE_PATTERN,
+  SV004_TEXT_PATTERN,
   PYTHON_SETUP_TEARDOWN,
   JS_SETUP_TEARDOWN,
   PY_MODULE_MUTABLE,
   JS_MODULE_MUTABLE,
   mutationPattern,
 } from './rules.mjs';
+import { stringLiteralRanges, execOutsideStrings } from './string-literals.mjs';
 
 export const SNIPPET_LIMIT = 120;
 
@@ -147,14 +149,22 @@ export function scanText(text, file = '<text>') {
   lines.forEach((raw, i) => {
     const stripped = raw.trim();
     if (!stripped) return;
+    // #493: a match starting inside a string literal is fixture data, not
+    // code. SV003 and SV004's code-anchored alternatives reject those; the
+    // SV004 text alternatives stay unfiltered because their signal (titles,
+    // docstrings, comments) legitimately lives inside strings.
+    const ranges = stringLiteralRanges(stripped);
     // SV004 is self-reported ordering: it fires on comments and code alike.
-    if (SV004_PATTERN.test(stripped)) {
+    if (
+      execOutsideStrings(SV004_CODE_PATTERN, stripped, ranges) ||
+      SV004_TEXT_PATTERN.test(stripped)
+    ) {
       findings.push(
         makeFinding(file, i + 1, 'SV004-order-coupled-name', stripped),
       );
     }
     if (isComment(stripped)) return;
-    if (SV003_PATTERN.test(stripped)) {
+    if (execOutsideStrings(SV003_PATTERN, stripped, ranges)) {
       findings.push(
         makeFinding(file, i + 1, 'SV003-shared-singleton-mutation', stripped),
       );

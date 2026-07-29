@@ -61,13 +61,22 @@ export const SV003_PATTERN =
   /\bos\.environ\s*\[[^\]]+\]\s*=(?!=)|\bsys\.modules\s*\[[^\]]+\]\s*=(?!=)|\bprocess\.env\.\w+\s*=(?!=)|\bprocess\.env\s*\[[^\]]+\]\s*=(?!=)/;
 
 // SV004: order-coupled name or comment (fires on code and comment lines).
+// Split in two (#493) because the alternatives anchor differently:
+//
+// CODE-anchored: the token is source code in real usage, so a match starting
+// inside a string literal is fixture data and is rejected.
 //   def test_1_...            -> ordinal-indexed test
 //   def test_first / test_last(_more)  -> ordinal test name (not test_firstname)
-//   it('... run first')       -> ordering inside an it() title
+//   it('... run first')       -> ordering inside an it() title (anchor: `it(`)
+export const SV004_CODE_PATTERN =
+  /\bdef\s+test_\d+_|\bdef\s+test_(?:first|second|third|fourth|fifth|sixth|seventh|last|initial|final)\s*[(:]|\bit\s*\(\s*['"][^'"]*\b(?:run|runs|running)\s+(?:first|last|before|after)\b/i;
+//
+// TEXT-anchored: the directive legitimately lives inside strings (test
+// titles, docstrings) and comments, so it is NOT string-literal filtered.
 //   "must run before ..."     -> self-reported ordering note
 //   "runs before ..."
-export const SV004_PATTERN =
-  /\bdef\s+test_\d+_|\bdef\s+test_(?:first|second|third|fourth|fifth|sixth|seventh|last|initial|final)\s*[(:]|\bit\s*\(\s*['"][^'"]*\b(?:run|runs|running)\s+(?:first|last|before|after)\b|\bmust\s+run\s+(?:before|after|first|last)\b|\bruns?\s+(?:before|after)\b/i;
+export const SV004_TEXT_PATTERN =
+  /\bmust\s+run\s+(?:before|after|first|last)\b|\bruns?\s+(?:before|after)\b/i;
 
 // SV002: framework-conditioned setup/teardown pairs. Only CLASS/ALL-scoped
 // setup is included: it manages state shared across a class's tests, so a
