@@ -14,6 +14,15 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [6.2.0] - 2026-07-29
+
+A **guardian-correctness** release. Three of the four fixes address failures
+that were _silent_ — a gate that reported success without ever evaluating
+anything, a comment that could vanish on large PRs, and findings that could
+never have been true. Also lands the first reachability primitive and closes a
+long-standing gap where the wiki described an engine that had not existed since
+v3.0.
+
 ### Added
 
 - **Reachability sweep primitive** (#452): `ts/src/analysis/reachability.ts` — a
@@ -31,68 +40,132 @@ under the project's former name) are documented in the
   auth-walled, not missing). Ships with `createHttpProbe`, so callers do not
   re-implement (and quietly lose) that distinction themselves.
 
-### Fixed
-
-- **Guardian — sticky comment no longer risks exceeding GitHub's size limit**
-  (#457): the PR comment rendered every finding in full with no cap. GitHub
-  rejects a comment body over **65,536 characters**, and the post path reports
-  that as "could not post" — so on a large PR the gate would silently produce
-  nothing, exactly the silent-green failure mode #369 was filed for. A
-  downstream audit already saw a 27,316-char comment (141 findings), ~42% of the
-  ceiling. Rows are now filled against a 60,000-char budget in severity order,
-  so a critical finding is never dropped to make room for a low one, and an
-  overflow line states how many were omitted and where the full set lives. The
-  `--emit-analysis` JSON record is never truncated.
-- **Guardian — comment no longer prints every path twice** (#458): each finding
-  line rendered `path (path)`. The unit is now appended only when it is a
-  distinct symbol within the file. The comment is also restructured into a table
-  with a plain-English confidence footnote, an actionable header, and severity
-  icons.
+- **Guardian — `canary.guardian.pr.heuristicExclude`** and a repeatable
+  `--heuristic-exclude <glob>` flag (#413), suppressing the heuristic tier for
+  paths a naming heuristic cannot judge, without dropping them from the gate
+  entirely the way `skipGlobs` does.
+- **`canary-ci-ready` scores suite runtime against perf baselines** (#338): with
+  the harness MCP available, check 5 compares p95 to `get_perf_baselines` and
+  records the run back, instead of judging against an absolute clock that cannot
+  tell a suite that always took 11 minutes from one that regressed to it. "No
+  baseline yet" is a **skip** (baseline capture), not a failure.
+- **`canary-test-pipeline` probes harness once** in Phase 0 and threads the
+  verdict, then writes its health report to `.harness/analyses/` (#338).
+  Per-phase rediscovery allowed a _mixed-fidelity_ run whose report was
+  comparable to nothing.
+- **CI: Markdown code-fence guard** (`scripts/check_doc_fences.mjs`) and **wiki
+  Mermaid render check** — two failure modes that were previously silent.
+- **Pre-commit prettier gate** mirroring the exact `format:check` CI runs, for
+  the packages a commit touches.
 
 ### Fixed
 
 - **Guardian — `pr-check` no longer silently no-ops in CI** (#369): with
-  `--diff` omitted, `pr-check` ran a bare `git diff` (working tree vs. index),
-  which is **empty on a clean `actions/checkout`** — so the gate scoped zero
-  paths, exited 0, and posted nothing. An adopting repo saw a green check that
-  had never evaluated a PR (confirmed across ~5 real downstream PRs). Now, in a
-  CI context, an omitted `--diff` resolves the PR diff from the base ref
-  (`origin/$GITHUB_BASE_REF`, `$GITHUB_BASE_REF`, then the event payload's
-  `pull_request.base.sha`) and runs `git diff <base>...HEAD` — the triple-dot
-  merge-base form, so commits landing on the base branch mid-PR are excluded.
-  When no base rev resolves (a shallow `fetch-depth: 1` clone) **and** the
-  fallback diff yields zero changed paths, the run now warns LOUDLY
-  (`::warning::` annotation + job step summary + stderr) instead of reporting a
-  silent success. The warning is non-blocking, so upgrading never flips a green
-  build red — but a broken gate is no longer indistinguishable from a clean one.
-  At-desk behavior (and `author-plan`, whose subject really is the working tree)
-  is unchanged.
+  `--diff` omitted it ran a bare `git diff` (working tree vs. index), which is
+  **empty on a clean `actions/checkout`** — so the gate scoped zero paths,
+  exited 0, and posted nothing. An adopting repo saw a green check that had
+  never evaluated a PR (confirmed across ~5 real downstream PRs). In CI an
+  omitted `--diff` now resolves the PR diff from the base ref and runs
+  `git diff <base>...HEAD` — the triple-dot merge-base form, so commits landing
+  on the base branch mid-PR are excluded. When no base rev resolves **and** the
+  fallback yields zero paths, the run warns loudly instead of reporting success.
 - **Guardian — heuristic tier no longer manufactures gaps on non-source paths**
-  (#413): the Tier-3 naming heuristic asks "does any test file reference this
-  file's stem or a top-level symbol?". On a config dotfile, a lockfile, or a
-  data blob there are no symbols and no test will ever name it, so the verdict
-  was **structurally always "uncovered"** — a guaranteed false positive, not a
-  signal. Those FPs are doubly expensive: they train reviewers to ignore the
-  sticky comment, and every 👎 adjudication drives `precision = TP / (TP + FP)`
-  down, so a repo that routinely touches config could be held below its
-  soft→hard promotion bar indefinitely even with excellent coverage-verified
-  findings. An uncovered **heuristic** verdict is now suppressed unless the path
-  carries a known program-source extension (`isSourcePath`) and clears the glob
-  layer. New `canary.guardian.pr.heuristicExclude` (defaults to `**/*.d.ts`,
-  `**/__generated__/**`, `**/generated/**`, `**/*.generated.*`, `**/*_pb2.py`,
-  `**/*.pb.go`; an explicit list, including `[]`, replaces it) plus a repeatable
-  `--heuristic-exclude <glob>` flag.
+  (#413): for a config dotfile or lockfile there are no symbols and no test will
+  ever name it, so the heuristic verdict was **structurally always "uncovered"**
+  — a guaranteed false positive. Every 👎 on such a finding also drove
+  `precision = TP / (TP + FP)` down, holding a repo below its soft→hard
+  promotion bar for findings that could never have been true. Suppression is
+  scoped to the **tier**, never the path: a coverage- or graph-verified finding
+  on the same file still fires.
 
-  The suppression is scoped to the **tier**, never to the path: a
-  `coverage-verified` or `graph-verified` finding on the very same file rests on
-  real evidence and still fires. Paths suppressed this way are reported in the
-  `nothing to verify (N path(s) skipped)` count rather than silently passing.
-  The same filter guards `author-plan`, so the authoring tier is never handed a
-  false gap to write a test for.
-
-  **Behavior change:** the extension floor is not config-defeatable —
+  **Behaviour change:** the extension floor is not config-defeatable —
   `skipGlobs: []` re-admits a lockfile to the gate but no longer produces a
   heuristic finding on it.
+
+- **Guardian — sticky comment no longer risks exceeding GitHub's size limit**
+  (#457): GitHub rejects a body over 65,536 characters and the post path reports
+  that as "could not post", so a large PR silently produced nothing. Rows now
+  fill against a 60,000-char budget in severity order — a critical finding is
+  never dropped to make room for a low one — with an overflow line pointing at
+  the analysis record, which is never truncated.
+- **Guardian — comment no longer prints every path twice** (#458): findings
+  rendered `path (path)`. The comment is also restructured into a table with a
+  plain-English confidence footnote and an actionable header.
+- **`canary_shape` is no longer reported as an ignored unknown field** (#459):
+  it decides which overlay skills deploy, so warning that it was "ignored" told
+  adopters the one field driving their adoption did nothing.
+- **Corrupted code fences in four shipped docs** (#464): a fence closed with a
+  language tag opens a _new_ block, so the rest of the document renders as code.
+  `canary-critical-areas` had ~100 lines — its entire scoring methodology —
+  swallowed this way.
+
+### Documentation
+
+- **`Architecture-Deep-Dive` corrected** (#465): the canonical architecture page
+  described an in-process orchestrator calling an LLM — removed in **v3.0** —
+  contradicted itself two paragraphs apart, pointed at a module that does not
+  exist, and documented a `_sanitize_extension` security layer that is absent
+  from the codebase. Rewritten around the real boundary (deterministic
+  model-free engine; LLM judgement in the host session), with Mermaid diagrams
+  for engine architecture, data flow, and the guardian `pr-check` flow.
+- **PR-guardian guide corrected**: it documented the pre-commit surface as
+  running via `hooks/guardian_precommit.py`, deleted as dead code in #449. Also
+  discloses a live limitation — the authored-sentinel is never cleared, so
+  Tier-2 authoring stops after its first run in a clone (tracked in #456).
+- **AGENTS.md**: new **Diagrams** convention; the "TypeScript pilot" section
+  corrected (the migration finished in v6 — `ts/` _is_ the engine).
+
+## [6.1.0] - 2026-07-27
+
+**Python-zero.** Completes the v6 cutover: no Python remains in anything a user
+or plugin consumer installs or runs.
+
+### Changed
+
+- **Plugin hooks ported Python → Node ESM** (#449) — `block-no-verify`,
+  `protect-config`, `quality-gate`, `pre-compact-state`, and the shared
+  `_harness_dedup` helper, each parity-verified against its original. This
+  removed the last Python that **plugin users** would have needed installed.
+- **The four maintenance scripts ported Python → Node** (#448).
+
+### Added
+
+- **`canary-shadow`** — differential parity-testing skill (#447).
+- **Removed-symbol guard extended** to flag `agent/` engine references, with the
+  doc drift it found fixed in the same change (#450).
+
+### Removed
+
+- `hooks/guardian_precommit.py` and `check-proprietary.py`, deleted as dead code
+  — unwired, with no live config referencing them (#449). **Note:** the guardian
+  authored-sentinel loop guard depended on the former to clear it; that half was
+  not replaced. See #456.
+
+## [6.0.0] - 2026-07-27
+
+**The TypeScript engine ships.** The Python engine is retired and the npm
+package now bundles and runs the TS engine directly.
+
+### Changed
+
+- **BREAKING — the engine is TypeScript** (#442, #446). `agent/` is deleted,
+  pytest is dropped, and the npm package ships `ts/` → `npm/dist/engine/`.
+- **BREAKING — no per-OS binary and no PyPI package.** The PyInstaller spec and
+  the PyPI publish job are gone; **npm is the sole distribution channel**. This
+  also removed the ~29 MB postinstall binary download that could hang an
+  `npm install` for over 20 minutes (#379).
+- `npm` `files` narrowed to `bin/canary.js` so no stray binary can ship (#443).
+
+### Added
+
+- **The full engine port**, landed as waves: guardian API-diff, coverage,
+  pr-comment/hard-gate, and pr-check (#426–#429); the core clusters — env/CI
+  detection, reporting/feedback/validation, scaffolder/skill-registry,
+  workflow-discovery/ticket-updater, company-knowledge/migrator (#430–#436);
+  then the guardian CLI (#438), the MCP server (#439), and the main CLI (#440).
+- **Golden-parity harness** extended across detection, pattern-healer, reporter,
+  scaffolder, feedback, config-validation, and workflow-discovery (#437).
+- **TestTracker ingest reporter** (#420).
 
 ## [5.15.0] - 2026-07-25
 
