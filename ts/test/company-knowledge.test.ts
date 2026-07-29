@@ -310,95 +310,102 @@ describe('TestRepoRelativePathFields', () => {
     }
   }
 
-  for (const field of FIELDS) {
-    it(`${field}: a repo-relative path is accepted verbatim`, () => {
-      const ck = loadData({ [field]: 'reports/coverage/lcov.info' });
-      expect(ck[field]).toBe('reports/coverage/lcov.info');
-      expect(ck.warnings).toEqual([]);
-    });
+  // Both fields share one validator, so every case runs against both. `it.each`
+  // rather than a `for` loop wrapping `it`: same coverage, but each case is a
+  // top-level statement in the describe (vitest also reports the parameter in
+  // the test name, so a failure names the field without a template literal).
+  const each = it.each(FIELDS);
 
-    it(`${field}: is not reported as an ignored unknown field`, () => {
-      const ck = loadData({ [field]: 'reports/lcov.info' });
-      expect(
-        ck.warnings.some((w) => w.includes(`ignored unknown field: ${field}`)),
-      ).toBe(false);
-    });
+  each('%s: a repo-relative path is accepted verbatim', (field) => {
+    const ck = loadData({ [field]: 'reports/coverage/lcov.info' });
+    expect(ck[field]).toBe('reports/coverage/lcov.info');
+    expect(ck.warnings).toEqual([]);
+  });
 
-    it(`${field}: surrounding whitespace is trimmed`, () =>
-      expect(loadData({ [field]: '  reports/lcov.info  ' })[field]).toBe(
-        'reports/lcov.info',
-      ));
+  each('%s: is not reported as an ignored unknown field', (field) => {
+    const ck = loadData({ [field]: 'reports/lcov.info' });
+    expect(
+      ck.warnings.some((w) => w.includes(`ignored unknown field: ${field}`)),
+    ).toBe(false);
+  });
 
-    it(`${field}: an absolute POSIX path is dropped with a warning`, () => {
-      const ck = loadData({ [field]: '/etc/passwd' });
-      expect(ck[field]).toBe('');
-      expect(ck.warnings.some((w) => w.includes(`${field}: dropped`))).toBe(
-        true,
-      );
-      expect(ck.error).toBe('');
-    });
+  each('%s: surrounding whitespace is trimmed', (field) =>
+    expect(loadData({ [field]: '  reports/lcov.info  ' })[field]).toBe(
+      'reports/lcov.info',
+    ),
+  );
 
-    it(`${field}: a Windows drive-absolute path is dropped`, () =>
-      expect(loadData({ [field]: 'C:\\coverage\\lcov.info' })[field]).toBe(''));
+  each('%s: an absolute POSIX path is dropped with a warning', (field) => {
+    const ck = loadData({ [field]: '/etc/passwd' });
+    expect(ck[field]).toBe('');
+    expect(ck.warnings.some((w) => w.includes(`${field}: dropped`))).toBe(true);
+    expect(ck.error).toBe('');
+  });
 
-    it(`${field}: a leading-backslash path is dropped`, () =>
-      expect(loadData({ [field]: '\\\\server\\share\\cov.xml' })[field]).toBe(
-        '',
-      ));
+  each('%s: a Windows drive-absolute path is dropped', (field) =>
+    expect(loadData({ [field]: 'C:\\coverage\\lcov.info' })[field]).toBe(''),
+  );
 
-    it(`${field}: a leading '..' traversal is dropped`, () =>
-      expect(loadData({ [field]: '../../etc/passwd' })[field]).toBe(''));
+  each('%s: a leading-backslash path is dropped', (field) =>
+    expect(loadData({ [field]: '\\\\server\\share\\cov.xml' })[field]).toBe(''),
+  );
 
-    it(`${field}: an interior '..' traversal is dropped`, () =>
-      expect(loadData({ [field]: 'reports/../../secrets.txt' })[field]).toBe(
-        '',
-      ));
+  each("%s: a leading '..' traversal is dropped", (field) =>
+    expect(loadData({ [field]: '../../etc/passwd' })[field]).toBe(''),
+  );
 
-    it(`${field}: an embedded newline is dropped (YAML injection guard)`, () =>
-      expect(loadData({ [field]: 'cov.xml\n      run: rm -rf /' })[field]).toBe(
-        '',
-      ));
+  each("%s: an interior '..' traversal is dropped", (field) =>
+    expect(loadData({ [field]: 'reports/../../secrets.txt' })[field]).toBe(''),
+  );
 
-    it(`${field}: a non-string value warns and degrades to empty`, () => {
-      const ck = loadData({ [field]: 123 });
-      expect(ck[field]).toBe('');
-      expect(
-        ck.warnings.some((w) => w.includes('expected string, got int')),
-      ).toBe(true);
-    });
+  each('%s: an embedded newline is dropped (YAML injection guard)', (field) =>
+    expect(loadData({ [field]: 'cov.xml\n      run: rm -rf /' })[field]).toBe(
+      '',
+    ),
+  );
 
-    it(`${field}: an empty string is a silent default`, () => {
-      const ck = loadData({ [field]: '', confluence_spaces: ['QA'] });
-      expect(ck[field]).toBe('');
-      expect(ck.warnings).toEqual([]);
-      expect(ck.error).toBe('');
-    });
+  each('%s: a non-string value warns and degrades to empty', (field) => {
+    const ck = loadData({ [field]: 123 });
+    expect(ck[field]).toBe('');
+    expect(
+      ck.warnings.some((w) => w.includes('expected string, got int')),
+    ).toBe(true);
+  });
 
-    it(`${field}: a secret-like value is rejected, not stored`, () => {
-      const ck = loadData({ [field]: 'sk-not-a-path-at-all' });
-      expect(ck.error).toContain('secret');
-      expect(ck[field]).toBe('');
-    });
+  each('%s: an empty string is a silent default', (field) => {
+    const ck = loadData({ [field]: '', confluence_spaces: ['QA'] });
+    expect(ck[field]).toBe('');
+    expect(ck.warnings).toEqual([]);
+    expect(ck.error).toBe('');
+  });
 
-    it(`${field}: is surfaced in toDict`, () =>
-      expect(loadData({ [field]: 'cov/lcov.info' }).toDict()[field]).toBe(
-        'cov/lcov.info',
-      ));
+  each('%s: a secret-like value is rejected, not stored', (field) => {
+    const ck = loadData({ [field]: 'sk-not-a-path-at-all' });
+    expect(ck.error).toContain('secret');
+    expect(ck[field]).toBe('');
+  });
 
-    it(`${field}: a higher-priority layer replaces a lower one`, () =>
-      withTmp((tmp) => {
-        writeCompanyJson(tmp, { [field]: 'base/path.xml' });
-        writeCompanyJson(tmp, { [field]: 'uat/path.xml' }, 'company.uat.json');
-        expect(load(tmp, 'uat')[field]).toBe('uat/path.xml');
-      }));
+  each('%s: is surfaced in toDict', (field) =>
+    expect(loadData({ [field]: 'cov/lcov.info' }).toDict()[field]).toBe(
+      'cov/lcov.info',
+    ),
+  );
 
-    it(`${field}: an invalid override degrades to the lower layer`, () =>
-      withTmp((tmp) => {
-        writeCompanyJson(tmp, { [field]: 'base/path.xml' });
-        writeCompanyJson(tmp, { [field]: '/abs/path.xml' }, 'company.uat.json');
-        expect(load(tmp, 'uat')[field]).toBe('base/path.xml');
-      }));
-  }
+  each('%s: a higher-priority layer replaces a lower one', (field) =>
+    withTmp((tmp) => {
+      writeCompanyJson(tmp, { [field]: 'base/path.xml' });
+      writeCompanyJson(tmp, { [field]: 'uat/path.xml' }, 'company.uat.json');
+      expect(load(tmp, 'uat')[field]).toBe('uat/path.xml');
+    }),
+  );
+
+  each('%s: an invalid override degrades to the lower layer', (field) =>
+    withTmp((tmp) => {
+      writeCompanyJson(tmp, { [field]: 'base/path.xml' });
+      writeCompanyJson(tmp, { [field]: '/abs/path.xml' }, 'company.uat.json');
+      expect(load(tmp, 'uat')[field]).toBe('base/path.xml');
+    }),
+  );
 
   it('both path fields coexist on one config', () => {
     const ck = loadData({
