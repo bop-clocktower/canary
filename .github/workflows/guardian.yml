@@ -25,12 +25,13 @@ jobs:
       # OPTIONAL (commented): lift fidelity to graph-verified where harness is present.
       #   Baseline is heuristic on stock CI (graph.json is gitignored). See plan Assumptions.
       # - run: npx --yes -p @harness-engineering/cli harness graph
-      - name: Compute PR diff
+      # Fetch the base branch so pr-check's own base-ref resolution can find it.
+      # `fetch-depth: 0` above already gives full history; this makes sure the
+      # `origin/<base>` ref exists, which is the first candidate pr-check tries.
+      - name: Fetch the base branch
         env:
           BASE: ${{ github.base_ref }}
-        run: |
-          git fetch --no-tags origin "$BASE"
-          git diff "origin/${BASE}...HEAD" > pr.diff
+        run: git fetch --no-tags origin "$BASE"
       - name: Guardian pr-check
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -40,8 +41,15 @@ jobs:
         # once harness surfaces the record in `pre-merge-brief`, drop
         # `--post-comment`. On an unavailable channel the emit degrades LOUDLY
         # and falls back to the sticky comment (SC-10) — never a silent drop.
+        #
+        # `--diff` is deliberately OMITTED so this dogfood exercises the same
+        # code path a consumer takes. It used to pass `--diff pr.diff`, which is
+        # why #369 escaped: the bug was in the base-ref resolution that runs when
+        # `--diff` is absent, so canary's own guardian could never have caught
+        # it. It silently no-op'd on ~5 downstream PRs while this job stayed
+        # green, because we exercised a privileged path our users do not.
         run: |
-          node ts/bin/canary.js guardian pr-check --diff pr.diff --emit-analysis --post-comment
+          node ts/bin/canary.js guardian pr-check --emit-analysis --post-comment
       # Required-check (#311, "one gate not two"): under `canary.guardian.pr.gate:
       # hard` this job exits non-zero on unaddressed critical/high findings. A repo
       # admin registers the check "PR Guardian / guardian" (workflow `name:` + job
