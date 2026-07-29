@@ -2,15 +2,16 @@
 name: canary-ci-ready
 description: >
   Analyses a test suite for CI readiness: coverage depth, flakiness, assertion
-  quality, critical path coverage, and suite runtime. Accepts documented failures
-  (quarantined tests with linked open issues count as verified). Investigates
-  config/auth failures using the consuming repo's declared user_catalog_skill.
+  quality, critical path coverage, and suite runtime. Accepts documented
+  failures (quarantined tests with linked open issues count as verified).
+  Investigates config/auth failures using the consuming repo's declared
+  user_catalog_skill.
 ---
 
 # Canary: CI Ready
 
-Analyses a test suite across five dimensions and produces a readiness score.
-Use this before promoting a suite to CI, or as the convergence gate in
+Analyses a test suite across five dimensions and produces a readiness score. Use
+this before promoting a suite to CI, or as the convergence gate in
 `/canary-test-pipeline`.
 
 ## When to Use
@@ -84,25 +85,47 @@ Cross-reference the top 5 risk-scored areas from `critical-areas.json` against
 
 Read `test-results/run-history.ndjson`. Use the p95 of the last 10 runs.
 
+**With harness MCP available:** score the p95 against trend history rather than
+an absolute clock. Call `get_perf_baselines` and compare this run's p95 to the
+recorded baseline for the suite:
+
+- **pass** — p95 within the baseline's tolerance, or an improvement
+- **warn** — p95 regressed past tolerance but under 2× the baseline
+- **fail** — p95 at or over 2× the baseline
+- **skip** — no baseline recorded yet (this is a baseline-capture run, not a
+  failure — say so in the output)
+
+After scoring, record the run back into the baseline with
+`update_perf_baselines` so the trend keeps moving. Do **not** record a run that
+failed for unrelated reasons — a broken run's runtime is not a data point.
+
+Regression beats absolute here. A suite that has always taken 11 minutes is a
+fact of life; a suite that went from 3 minutes to 11 this week is the actual
+signal, and an absolute threshold cannot tell those apart — it fails the first
+forever and stays silent on the second until it crosses the line.
+
+**Fallback (no MCP):** judge against absolute thresholds.
+
 - **pass** — p95 under the configured timeout (default: 5 minutes)
-
 - **warn** — p95 between 5–10 minutes
-
 - **fail** — p95 over 10 minutes, or no run history (cannot assess)
+
+State which mode was used in the output — "runtime vs. baseline" or "runtime vs.
+absolute threshold" — so a reader knows whether a pass means "no regression" or
+merely "under the clock".
 
 ## User Catalog Investigation
 
 When a test fails with an auth, permission, or configuration error:
 
 1. Read `user_catalog_skill` from `.canary/company.json`
-2. If present: invoke `canary skills run <user_catalog_skill>` with the
-   required attributes from the error context; surface any matching user as a
-   suggestion
+2. If present: invoke `canary skills run <user_catalog_skill>` with the required
+   attributes from the error context; surface any matching user as a suggestion
 3. If absent, or no matching user found: present constructively —
 
-   > "This failure may be a test user or test data configuration issue.
-   > Check your user catalog if you have one, or set up the required test data
-   > before re-running."
+   > "This failure may be a test user or test data configuration issue. Check
+   > your user catalog if you have one, or set up the required test data before
+   > re-running."
 
 Never reference a specific catalog skill by name in output.
 
@@ -116,8 +139,10 @@ CI Readiness — <repo-name>
 
   Score: N/5 — CI-READY  or  NOT CI-READY
 
+  Runtime scored vs. baseline  |  vs. absolute threshold
+
   <gap list with suggested next actions>
-```text
+```
 
 Score of 5/5 = CI-READY. Any fail = NOT CI-READY. Warns do not block.
 
@@ -127,8 +152,10 @@ Score of 5/5 = CI-READY. Any fail = NOT CI-READY. Warns do not block.
 
 ## Related skills
 
-- `/canary-test-pipeline` — orchestrates this skill as Phase 0 and convergence gate
+- `/canary-test-pipeline` — orchestrates this skill as Phase 0 and convergence
+  gate
 
 - `/canary-critical-areas` — produces `critical-areas.json` used by check 4
 
-- `canary-unquarantine` (overlay) — resolves quarantined tests once bugs are fixed
+- `canary-unquarantine` (overlay) — resolves quarantined tests once bugs are
+  fixed
