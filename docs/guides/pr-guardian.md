@@ -84,15 +84,42 @@ Set `canary.guardian.pr.enabled: true`. The stock workflow
 `canary guardian pr-check --post-comment` (Tier 0). Docs/config-only diffs
 (matching `skipGlobs`) are skipped with a "nothing to verify" notice.
 
-### Pre-commit check
+### At-desk check and authoring (the `preCommit` surface)
 
-Set `canary.guardian.preCommit.enabled: true`. The hook
-(`hooks/guardian_precommit.py`, wired through `hooks/_harness_dedup.py`) runs
-Tier 0 locally. Opt in to authoring with `authorTests: true`: when new code is
-untested the guardian invokes `canary-write-test`, `git add`s the result, and
-**blocks the commit once** with a "N tests authored & staged — review and
-re-commit" message. No autonomous push. `authorTests` defaults to `false` so a
-runtime-less desk degrades quietly rather than blocking every commit.
+Set `canary.guardian.preCommit.enabled: true`, and opt in to authoring with
+`authorTests: true`. When new code is untested the guardian authors the missing
+tests, `git add`s them, and **stops once** with a "N tests authored & staged —
+review and re-commit" message. No autonomous commit, no push. `authorTests`
+defaults to `false` so a runtime-less desk degrades quietly.
+
+**There is no bundled git hook.** This surface is driven **in-session by the
+`canary-pr-guardian` skill**, which calls the engine through two CLI seams:
+
+- `canary guardian author-plan --json` — the authoritative plan (per-gap intents
+  plus the block decision). The engine's guards (opt-in, tier, fork, collision,
+  loop-guard) are decided here; the skill honors every `skipped` reason verbatim
+  and never overrides one.
+- `canary guardian mark-authored --path <p> …` — records the authored paths in a
+  loop-guard sentinel (`canary-guardian-authored`, inside the real git dir)
+  before stopping.
+
+The `preCommit.*` config keys are live and govern this surface — `authorTests`
+sets the requested tier, `preCommit.gate` sets the graph-coverage depth — but
+they are read by `author-plan`, **not** by any git hook. The repo's own git hook
+(`.githooks/pre-commit`, installed with `git config core.hooksPath .githooks`)
+runs markdownlint, the roadmap comment guard, and the security ledger; it does
+not invoke the guardian.
+
+> **Known limitation.** The sentinel is written but never cleared. The component
+> that cleared it on each commit (`hooks/guardian_precommit.py`) was removed as
+> dead code in #449, and nothing replaced that half of the contract. So once
+> authoring has run in a clone, `author-plan` reports
+> `loop-guard: guardian tests already authored this run` and will not author
+> again until the sentinel is deleted by hand:
+>
+> ```bash
+> rm "$(git rev-parse --git-dir)/canary-guardian-authored"
+> ```
 
 ## Fidelity labels
 
