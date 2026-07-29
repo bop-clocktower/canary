@@ -54,11 +54,42 @@ export const SEVERITY = Object.fromEntries(
 );
 
 // SV003: singleton / env mutation (assignment, never a read or comparison).
-// A trailing negative lookahead on `=` keeps `==` comparisons out.
+// A trailing negative lookahead on `=` keeps `==` comparisons out. One entry
+// per process-global family (#493): `assign` detects the mutation (and, in a
+// teardown region, the restore); `deletes` and `restoreAll` are restore-only
+// idioms. Group 1/2 of `assign` and `deletes` capture the key (dot-property
+// or bracket expression) so restoration.mjs can match restores per key.
 //   os.environ['X'] = ... | sys.modules['m'] = ... | process.env.X = ...
 //   | process.env['X'] = ...
-export const SV003_PATTERN =
-  /\bos\.environ\s*\[[^\]]+\]\s*=(?!=)|\bsys\.modules\s*\[[^\]]+\]\s*=(?!=)|\bprocess\.env\.\w+\s*=(?!=)|\bprocess\.env\s*\[[^\]]+\]\s*=(?!=)/;
+export const SINGLETON_FAMILIES = [
+  {
+    id: 'process.env',
+    token: 'process\\.env',
+    assign: /\bprocess\.env\s*(?:\.(\w+)|\[([^\]]+)\])\s*=(?!=)/,
+    deletes: [/\bdelete\s+process\.env\s*(?:\.(\w+)|\[([^\]]+)\])/],
+    restoreAll: [/\bObject\.assign\s*\(\s*process\.env\s*,/],
+  },
+  {
+    id: 'os.environ',
+    token: 'os\\.environ',
+    assign: /\bos\.environ\s*\[([^\]]+)\]\s*=(?!=)/,
+    deletes: [
+      /\bdel\s+os\.environ\s*\[([^\]]+)\]/,
+      /\bos\.environ\.pop\s*\(\s*([^,)]+)/,
+    ],
+    restoreAll: [/\bos\.environ\.(?:update|clear)\s*\(/],
+  },
+  {
+    id: 'sys.modules',
+    token: 'sys\\.modules',
+    assign: /\bsys\.modules\s*\[([^\]]+)\]\s*=(?!=)/,
+    deletes: [
+      /\bdel\s+sys\.modules\s*\[([^\]]+)\]/,
+      /\bsys\.modules\.pop\s*\(\s*([^,)]+)/,
+    ],
+    restoreAll: [/\bsys\.modules\.update\s*\(/],
+  },
+];
 
 // SV004: order-coupled name or comment (fires on code and comment lines).
 // Split in two (#493) because the alternatives anchor differently:
