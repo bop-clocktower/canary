@@ -28,7 +28,8 @@ Provide one of:
 
 - A feature description: `"points accrual on tier upgrade"`
 
-- A function signature: `accruePoints(memberId: string, amount: number): Promise<Result>`
+- A function signature:
+  `accruePoints(memberId: string, amount: number): Promise<Result>`
 
 - A test file path: `tests/loyalty/points.spec.ts`
 
@@ -43,14 +44,14 @@ For each category, generate specific, actionable cases — not generic advice.
 
 ### 1. Boundary values
 
-Zero, negative, max integer, empty string, null, undefined, one-off-by-one.
-For amounts: 0, 1, MAX_SAFE_INTEGER, -1, 0.001 (floating point).
-For strings: empty string, whitespace-only, max-length + 1 character.
+Zero, negative, max integer, empty string, null, undefined, one-off-by-one. For
+amounts: 0, 1, MAX_SAFE_INTEGER, -1, 0.001 (floating point). For strings: empty
+string, whitespace-only, max-length + 1 character.
 
 ### 2. Race conditions
 
-Concurrent writes to the same resource. Double-submit (user clicks twice).
-Stale reads after an update. Lock contention. Out-of-order async responses.
+Concurrent writes to the same resource. Double-submit (user clicks twice). Stale
+reads after an update. Lock contention. Out-of-order async responses.
 
 ### 3. Locale and timezone
 
@@ -73,7 +74,7 @@ objects. Arrays where scalars expected.
 
 Keyboard-only navigation paths. Missing ARIA labels. Focus trap conditions.
 Screen reader text for dynamic content. Colour contrast for status indicators.
-*(Only include if the input is a UI feature or test.)*
+_(Only include if the input is a UI feature or test.)_
 
 ## Output Depth
 
@@ -85,10 +86,10 @@ Governed by `--level` flag. Infer from context when not specified:
 
 - User mentions manual testing or is non-technical → `manual`
 
-| Level | Audience | Output style |
-| ------- | ---------- | ------------- |
-| `sdet` | Senior SDETs | Bullet list of cases only |
-| `junior` | Junior SDETs | Cases + one-line *why this matters* |
+| Level    | Audience       | Output style                        |
+| -------- | -------------- | ----------------------------------- |
+| `sdet`   | Senior SDETs   | Bullet list of cases only           |
+| `junior` | Junior SDETs   | Cases + one-line _why this matters_ |
 | `manual` | Manual testers | Cases + numbered reproduction steps |
 
 ## Output Format (`sdet` example)
@@ -109,7 +110,7 @@ Edge cases — points accrual on tier upgrade
   ...
 
   Suggested next: /canary-write-test "add edge case tests for accruePoints boundary values"
-```text
+```
 
 ## Flags
 

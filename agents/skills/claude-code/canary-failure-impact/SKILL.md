@@ -123,7 +123,7 @@ configuration error:
 
 ## Output Format
 
-````text
+```text
 Failure impact — src/loyalty/points.service.ts::accruePoints
 
   Severity: HIGH
@@ -136,7 +136,7 @@ Failure impact — src/loyalty/points.service.ts::accruePoints
 
   Priority: write failure-path tests before next release
   Suggested: /canary-write-test "test failure paths for accruePoints"
-```text
+```
 
 ## Related skills
 
@@ -149,6 +149,5 @@ Failure impact — src/loyalty/points.service.ts::accruePoints
 - `/canary-test-pipeline` — Phase 3
 
 - `canary guardian analyze` (CLI, `ts/src/guardian/`) — higher-fidelity
-  OpenAPI-diff blast-radius engine; use instead of this skill's heuristics
-  when the change is an API/schema change with before/after specs available
-````
+  OpenAPI-diff blast-radius engine; use instead of this skill's heuristics when
+  the change is an API/schema change with before/after specs available

@@ -37,12 +37,12 @@ skip the raw `git log` pass. Normalise the returned scores to 0–1.
 
 **Fallback (no MCP):**
 
-````bash
+```bash
 git log --stat --since="90 days ago" -- <path> | grep -c "^"
-```text
+```
 
-Files changed most frequently in the last 90 days score higher. Normalise to
-0–1 across all files in scope.
+Files changed most frequently in the last 90 days score higher. Normalise to 0–1
+across all files in scope.
 
 ### 2. Downstream dependents
 
@@ -70,15 +70,15 @@ whichever signal fires).
 
 ### 4. Coverage depth boost
 
-If `.canary/test-inventory.json` is present: files whose endpoints are at
-depth 0 or 1 receive a boost (+0.15) — low depth in a high-churn file is
-especially risky.
+If `.canary/test-inventory.json` is present: files whose endpoints are at depth
+0 or 1 receive a boost (+0.15) — low depth in a high-churn file is especially
+risky.
 
 ## Risk Score
 
 ```text
 risk_score = (churn * 0.35) + (dependents * 0.35) + (business_critical * 0.30) + depth_boost
-```text
+```
 
 Capped at 1.0. Round to 2 decimal places.
 
@@ -96,15 +96,15 @@ Critical areas — <repo> (<N> files analysed)
      recommended: api tests · /canary-failure-impact suggested
 
   ...
-```text
+```
 
-Show at most 10 areas. If more than 10 qualify, note the total and offer to
-show all.
+Show at most 10 areas. If more than 10 qualify, note the total and offer to show
+all.
 
 ## Optional Artifact
 
-When `--save` flag is passed (or when invoked by `/canary-test-pipeline`),
-write `.canary/critical-areas.json`:
+When `--save` flag is passed (or when invoked by `/canary-test-pipeline`), write
+`.canary/critical-areas.json`:
 
 ```json
 {
@@ -119,7 +119,7 @@ write `.canary/critical-areas.json`:
     }
   ]
 }
-```text
+```
 
 This file is consumed as opt-in context by `/canary-edge-cases` and
 `/canary-failure-impact`.
@@ -140,4 +140,3 @@ This file is consumed as opt-in context by `/canary-edge-cases` and
 - `/canary-failure-impact` — focuses tracing on critical paths when JSON present
 
 - `/canary-test-pipeline` — Phase 1
-````
