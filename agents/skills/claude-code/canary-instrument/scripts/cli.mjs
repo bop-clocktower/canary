@@ -21,6 +21,19 @@ import path from 'node:path';
 import { RunArtifact } from './run_types.mjs';
 import { readTraces } from './span_reader.mjs';
 
+const USAGE =
+  'usage: canary-instrument [-h] --spans PATH --output PATH\n' +
+  '                         [--suite-type TYPE]\n' +
+  '\n' +
+  "Correlate a Playwright run's tests to their outbound HTTP spans and write a\n" +
+  'run.json v1 artifact.\n' +
+  '\n' +
+  'options:\n' +
+  '  -h, --help         show this help message and exit\n' +
+  '  --spans PATH       directory of OTel span JSONL files to read\n' +
+  '  --output PATH      directory to write run.json into (created if missing)\n' +
+  '  --suite-type TYPE  suite label recorded in the artifact (e.g. e2e_ui)';
+
 /**
  * Parse argv into { spans, output, suiteType }. Supports both `--flag value`
  * and `--flag=value`. Throws a usage error (matching argparse's behavior) when
@@ -35,10 +48,17 @@ import { readTraces } from './span_reader.mjs';
  *       spans path simply yields an empty trace rather than globbing the CWD.
  */
 function parseArgs(argv) {
-  const opts = { spans: null, output: null, suiteType: '' };
+  const opts = { spans: null, output: null, suiteType: '', help: false };
   for (let i = 0; i < argv.length; i += 1) {
     let flag = argv[i];
     let inlineVal = null;
+    // --help short-circuits BEFORE the required-argument check below, so
+    // `canary-instrument --help` prints usage instead of complaining that
+    // --spans/--output are missing.
+    if (flag === '-h' || flag === '--help') {
+      opts.help = true;
+      return opts;
+    }
     if (flag.startsWith('--')) {
       const eq = flag.indexOf('=');
       if (eq !== -1) {
@@ -115,6 +135,11 @@ export function main(argv = []) {
   } catch (exc) {
     console.error(`canary-instrument: error: ${exc.message}`);
     return 2; // argparse exits 2 on a usage/argument error
+  }
+
+  if (args.help) {
+    console.log(USAGE);
+    return 0;
   }
 
   const spansDir = args.spans;

@@ -85,7 +85,28 @@ canary skills run canary-savant -- tests --json
 
 # Fail the step on any suspect:
 canary skills run canary-savant -- tests --strict
+
+# Usage, options, and the full rule list (exits 0):
+canary skills run canary-savant -- --help
 ```
+
+An unknown flag is rejected with `unrecognized arguments: <flag>` and exit 2.
+`--seed` is validated as a determinism flag rather than being allowed to decay
+into a random seed. All three failures exit 2:
+
+| Input                              | Error                                                        |
+| ---------------------------------- | ------------------------------------------------------------ |
+| missing value, or a following flag | `argument --seed: expected one argument`                     |
+| `abc`, `3.7`, `1e999`, `0x10`, ``  | `argument --seed: invalid int value: '<value>'`              |
+| beyond ±(2^53 − 1)                 | `argument --seed: seed out of safe integer range: '<value>'` |
+
+The last one matters because `Number()` rounds silently above 2^53 − 1, so the
+seed actually used would differ from the seed asked for — the same lie the whole
+flag exists to prevent.
+
+`--seed 42` and `--seed=42` are equivalent, and both accept negative seeds
+(`--seed -5`, `--seed=-5`). Use `--` to end option parsing when a path itself
+starts with a dash.
 
 ### Tier 2 — dynamic confirmation (`--confirm`, opt-in)
 

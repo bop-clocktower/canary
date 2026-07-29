@@ -11,6 +11,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -451,6 +452,97 @@ describe('cli', () => {
       process.chdir(cwd);
     }
   });
+
+  // --- argparse-parity surface: --help, unknown flags, `--` ----------------
+
+  it('--help prints usage and exits zero', () => {
+    capture();
+    expect(main(['--help'])).toBe(0);
+    expect(out.join('\n')).toContain('usage: canary-savant');
+    expect(err.join('\n')).toBe('');
+  });
+
+  it('-h is the same as --help', () => {
+    capture();
+    expect(main(['-h'])).toBe(0);
+    expect(out.join('\n')).toContain('usage: canary-savant');
+  });
+
+  // Anti-drift: the rules block is generated from RULES, so a new rule cannot
+  // land behind a stale hand-typed help text.
+  it('usage lists every rule id', () => {
+    capture();
+    expect(main(['--help'])).toBe(0);
+    const text = out.join('\n');
+    for (const rule of RULES) expect(text).toContain(rule.ruleId);
+  });
+
+  it('rejects an unknown flag with exit 2 before touching the filesystem', () => {
+    capture();
+    expect(main(['--bogus'])).toBe(2);
+    const text = err.join('\n');
+    expect(text).toContain('unrecognized');
+    expect(text).toContain('--bogus');
+    expect(text).not.toContain('path not found');
+  });
+
+  it('-h short-circuits even when a bad path is also given', () => {
+    capture();
+    expect(main(['/definitely/not/here', '--help'])).toBe(0);
+  });
+
+  it('`--` stops flag parsing so a dash-leading path is a path', () => {
+    capture();
+    expect(main(['--', '--json'])).toBe(1);
+    expect(err.join('\n')).toContain('path not found: --json');
+  });
+
+  it('a lone `-` is a positional, not a flag', () => {
+    capture();
+    expect(main(['-'])).toBe(1);
+    expect(err.join('\n')).toContain('path not found: -');
+  });
+
+  it('still accepts a bare path with --json and --strict (regression)', () => {
+    const root = makeTree(tmp());
+    capture();
+    expect(main([root, '--json', '--strict'])).toBe(1);
+    expect(JSON.parse(out.join('\n')).summary.findings).toBeGreaterThanOrEqual(
+      2,
+    );
+  });
+
+  // --- --seed arity --------------------------------------------------------
+
+  // Not cosmetic: `--seed` with no value used to be Number(undefined) -> NaN,
+  // which fell through to a RANDOM seed. A determinism flag that silently
+  // randomizes is a correctness bug, so it must be a usage error instead.
+  it('--seed with no value is a usage error (exit 2), not a random seed', () => {
+    // Scoped to a tmp dir: parsing must fail before the scan, so a repo-wide
+    // walk (or a dynamic suite run) never starts.
+    const root = tmp();
+    capture();
+    expect(main([root, '--confirm', '--seed'])).toBe(2);
+    expect(err.join('\n')).toContain('argument --seed: expected one argument');
+    // Proof it did not silently randomize: the dynamic tier never ran.
+    expect(out.join('\n')).not.toContain('Tier 2 (dynamic)');
+  });
+
+  it('--seed followed by another flag is a usage error', () => {
+    const root = tmp();
+    capture();
+    expect(main([root, '--seed', '--json'])).toBe(2);
+    expect(err.join('\n')).toContain('argument --seed: expected one argument');
+  });
+
+  // No --confirm case here on purpose. Driving --confirm through main() runs
+  // the REAL confirm(), whose detectShufflePlugin() interrogates the ambient
+  // python3 rather than this repo -- so on a machine with pytest-randomly
+  // installed it shells out to `python3 -m pytest` three times and asserting
+  // "skipped" fails. It also writes a fixed $TMPDIR/savant-junit.xml, which
+  // collides under parallel workers. canary-savant.seed.test.ts stubs the
+  // confirmer and covers the real property (the seed asked for is the seed
+  // used) deterministically.
 });
 
 // --- Packaging -------------------------------------------------------------
@@ -462,6 +554,19 @@ describe('packaging', () => {
     expect(head).toContain('name: canary-savant');
     expect(head).toContain('cli: scripts/cli.mjs');
     expect(head).toContain('node>=20');
+  });
+
+  // The skill runner spawns the `cli:` target directly (ts/src/skills-cli.ts
+  // execs the file, relying on its shebang), so a cli.mjs without the exec bit
+  // makes the documented `canary skills run canary-savant -- --help` fail with no
+  // output at all. Assert the bit AND a real spawn, not just the file's text.
+  it('cli.mjs is executable and runs when spawned directly', () => {
+    const cli = path.join(SCRIPTS, 'cli.mjs');
+    expect(fs.statSync(cli).mode & 0o111).toBeTruthy();
+    const res = spawnSync(cli, ['--help'], { encoding: 'utf8' });
+    expect(res.error).toBeUndefined();
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('usage:');
   });
 
   it('scripts are ascii-only (no emoji)', () => {

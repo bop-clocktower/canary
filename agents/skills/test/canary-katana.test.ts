@@ -1025,6 +1025,199 @@ describe('cli', () => {
     expect(e.author).toBe('unknown');
     expect(e.commit).toBe('');
   });
+
+  // --- argparse-parity surface: --help, unknown flags ----------------------
+
+  it('--help prints usage and exits zero', () => {
+    const { out, err } = captureLog();
+    expect(main(['--help'])).toBe(0);
+    expect(out.join('\n')).toContain('usage: canary-katana');
+    expect(err.join('\n')).toBe('');
+  });
+
+  it('-h is the same as --help', () => {
+    const { out } = captureLog();
+    expect(main(['-h'])).toBe(0);
+    expect(out.join('\n')).toContain('usage: canary-katana');
+  });
+
+  it('usage names every option', () => {
+    const { out } = captureLog();
+    expect(main(['--help'])).toBe(0);
+    const text = out.join('\n');
+    for (const flag of [
+      '--repo',
+      '--diff-file',
+      '--ledger',
+      '--critical-areas',
+      '--json',
+      '--strict',
+      '--no-write',
+    ]) {
+      expect(text).toContain(flag);
+    }
+  });
+
+  // Load-bearing: --help used to be swallowed silently, so the full scan ran
+  // and the ledger was WRITTEN TO DISK. A usage request must never mutate the
+  // working tree.
+  // A no-write assertion is only worth anything if the write was REACHABLE.
+  // On a bare tmpdir katana exits 1 out of loadDiff/resolveBase (not a git
+  // repo) long before the ledger write, so `existsSync(...) === false` passes
+  // against buggy and fixed code alike. Every case below therefore passes
+  // --diff-file, and proves reachability with a control run in the same test.
+  const ledgerIn = (dir: string) =>
+    path.join(dir, '.canary', 'quarantine.json');
+
+  const controlWritesLedger = (tmp: string, df: string) => {
+    expect(main(['--repo', tmp, '--diff-file', df])).toBe(0);
+    expect(fs.existsSync(ledgerIn(tmp))).toBe(true);
+    fs.rmSync(ledgerIn(tmp));
+  };
+
+  it('--help does not write the ledger', () => {
+    const tmp = mkTmp();
+    const df = diffFile(tmp, PY_REMOVAL);
+    captureLog();
+    controlWritesLedger(tmp, df); // same argv minus --help DOES write
+    expect(main(['--help', '--repo', tmp, '--diff-file', df])).toBe(0);
+    expect(fs.existsSync(ledgerIn(tmp))).toBe(false);
+  });
+
+  it('rejects an unknown flag with exit 2 and writes nothing', () => {
+    const tmp = mkTmp();
+    const df = diffFile(tmp, PY_REMOVAL);
+    const { err } = captureLog();
+    controlWritesLedger(tmp, df);
+    expect(main(['--bogus', '--repo', tmp, '--diff-file', df])).toBe(2);
+    const text = err.join('\n');
+    expect(text).toContain('unrecognized');
+    expect(text).toContain('--bogus');
+    expect(fs.existsSync(ledgerIn(tmp))).toBe(false);
+  });
+
+  it('treats a bare positional as an unrecognized argument', () => {
+    const { err } = captureLog();
+    expect(main(['stray'])).toBe(2);
+    expect(err.join('\n')).toContain('unrecognized arguments: stray');
+  });
+
+  // Object-prototype keys must not resolve as value flags. With a plain object
+  // literal, `VALUE_FLAGS['toString']` is the inherited function -- truthy --
+  // so `toString` was swallowed as a value flag instead of rejected, and
+  // inside a real repo that runs a scan and appends to the ledger.
+  //
+  // The junk key MUST be handed a value it can swallow. With `[key, '--repo',
+  // ...]` the buggy code reads next='--repo', which starts with '-', so it
+  // exits 2 with no write anyway -- 2 of the 3 assertions would pass against
+  // the bug. Giving it 'v' to eat makes buggy code run to completion (rc 0,
+  // ledger written), so every assertion below discriminates.
+  it.each([
+    'toString',
+    'constructor',
+    'valueOf',
+    '__proto__',
+    'hasOwnProperty',
+  ])('treats the inherited key %s as an unrecognized argument', (key) => {
+    const tmp = mkTmp();
+    const df = diffFile(tmp, PY_REMOVAL);
+    const { err } = captureLog();
+    controlWritesLedger(tmp, df);
+    expect(main([key, 'v', '--repo', tmp, '--diff-file', df])).toBe(2);
+    expect(err.join('\n')).toContain(`unrecognized arguments: ${key}`);
+    expect(fs.existsSync(ledgerIn(tmp))).toBe(false);
+  });
+
+  // --- value-flag arity ----------------------------------------------------
+
+  it.each(['--repo', '--diff-file', '--ledger', '--critical-areas'])(
+    '%s as the last token is a usage error (exit 2)',
+    (flag) => {
+      const { err } = captureLog();
+      expect(main([flag])).toBe(2);
+      expect(err.join('\n')).toContain(
+        `argument ${flag}: expected one argument`,
+      );
+    },
+  );
+
+  it('a value-flag followed by another flag is a usage error', () => {
+    const { err } = captureLog();
+    expect(main(['--repo', '--json'])).toBe(2);
+    expect(err.join('\n')).toContain('argument --repo: expected one argument');
+  });
+
+  it('an arity error writes no ledger', () => {
+    const tmp = mkTmp();
+    const df = diffFile(tmp, PY_REMOVAL);
+    captureLog();
+    controlWritesLedger(tmp, df);
+    expect(main(['--repo', tmp, '--diff-file', df, '--ledger'])).toBe(2);
+    expect(fs.existsSync(ledgerIn(tmp))).toBe(false);
+  });
+
+  // --- `--flag=value` (parity with canary-instrument / canary-fail-fast) ----
+
+  it('accepts the inline --flag=value form', () => {
+    const tmp = mkTmp();
+    const ledgerPath = path.join(tmp, 'q.json');
+    const { out } = captureLog();
+    expect(
+      main([
+        `--repo=${tmp}`,
+        `--diff-file=${diffFile(tmp, PY_REMOVAL)}`,
+        `--ledger=${ledgerPath}`,
+      ]),
+    ).toBe(0);
+    expect(out.join('\n')).toContain('2 deletion(s) captured');
+    expect(JSON.parse(fs.readFileSync(ledgerPath, 'utf8')).entries.length).toBe(
+      2,
+    );
+  });
+
+  it('rejects an unknown inline flag', () => {
+    const { err } = captureLog();
+    expect(main(['--bogus=1'])).toBe(2);
+    expect(err.join('\n')).toContain('unrecognized arguments: --bogus=1');
+  });
+
+  it('an inline value-flag with an empty value is a usage error', () => {
+    const { err } = captureLog();
+    expect(main(['--repo='])).toBe(2);
+    expect(err.join('\n')).toContain('argument --repo: expected one argument');
+  });
+
+  // `--repo=` is the spelling nobody types; `--repo "$UNSET_VAR"` is the one
+  // shells actually produce, and it used to be accepted as repo='' -- so
+  // path.join('', '.canary', 'quarantine.json') wrote the ledger into the
+  // PROCESS CWD rather than the target repo. Guard both spellings.
+  it.each(['--repo', '--diff-file', '--ledger', '--critical-areas'])(
+    '%s with an empty separate-token value is a usage error',
+    (flag) => {
+      const { err } = captureLog();
+      expect(main([flag, ''])).toBe(2);
+      expect(err.join('\n')).toContain(
+        `argument ${flag}: expected one argument`,
+      );
+    },
+  );
+
+  it('an empty --repo never writes a ledger into the process CWD', () => {
+    const tmp = mkTmp();
+    const df = diffFile(tmp, PY_REMOVAL);
+    const cwd = process.cwd();
+    const sandbox = mkTmp();
+    process.chdir(sandbox);
+    try {
+      captureLog();
+      expect(main(['--repo', '', '--diff-file', df])).toBe(2);
+      expect(fs.existsSync(path.join(sandbox, '.canary'))).toBe(false);
+    } finally {
+      process.chdir(cwd);
+      fs.rmSync(sandbox, { recursive: true, force: true });
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
 
 // --- skill packaging contract ----------------------------------------------
@@ -1037,6 +1230,19 @@ describe('packaging', () => {
     expect(head).toContain('name: canary-katana');
     expect(head).toContain('cli: scripts/cli.mjs');
     expect(head).toContain('node>=20');
+  });
+
+  // The skill runner spawns the `cli:` target directly (ts/src/skills-cli.ts
+  // execs the file, relying on its shebang), so a cli.mjs without the exec bit
+  // makes the documented `canary skills run canary-katana -- --help` fail with no
+  // output at all. Assert the bit AND a real spawn, not just the file's text.
+  it('cli.mjs is executable and runs when spawned directly', () => {
+    const cli = path.join(SCRIPTS, 'cli.mjs');
+    expect(fs.statSync(cli).mode & 0o111).toBeTruthy();
+    const res = spawnSync(cli, ['--help'], { encoding: 'utf8' });
+    expect(res.error).toBeUndefined();
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('usage:');
   });
 
   it('scripts are ascii-only (no emoji)', () => {

@@ -10,6 +10,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import * as runTypes from '../claude-code/canary-instrument/scripts/run_types.mjs';
@@ -608,6 +609,56 @@ describe('cli', () => {
     expect(main(['--spans', '--output', 'o'])).toBe(2);
     expect(err.join('\n')).toContain('expected one argument');
   });
+
+  // --- --help --------------------------------------------------------------
+
+  // The trap: --help must short-circuit BEFORE the required-argument check,
+  // or a naive fix returns 2 with "the following arguments are required".
+  it('--help exits zero without --spans/--output and says nothing on stderr', () => {
+    const { out, err } = captureLog();
+    expect(main(['--help'])).toBe(0);
+    expect(out.join('\n')).toContain('usage: canary-instrument');
+    expect(err.join('\n')).toBe('');
+  });
+
+  it('-h behaves the same as --help', () => {
+    const { out, err } = captureLog();
+    expect(main(['-h'])).toBe(0);
+    expect(out.join('\n')).toContain('usage: canary-instrument');
+    expect(err.join('\n')).toBe('');
+  });
+
+  it('usage names every option', () => {
+    const { out } = captureLog();
+    expect(main(['--help'])).toBe(0);
+    const text = out.join('\n');
+    for (const flag of ['--spans', '--output', '--suite-type']) {
+      expect(text).toContain(flag);
+    }
+  });
+
+  it('--help wins over a trailing unrecognized flag', () => {
+    const { err } = captureLog();
+    expect(main(['--help', '--bogus'])).toBe(0);
+    expect(err.join('\n')).toBe('');
+  });
+
+  // The unrecognized-flag case is already covered above; what was untested is
+  // that --help short-circuits ahead of the ARTIFACT WRITE, not just ahead of
+  // the required-argument check. The control run proves the write is reachable
+  // with this exact argv, so the assertion cannot pass vacuously.
+  it('--help does not write run.json', () => {
+    const tmp = mkTmp();
+    const spansDir = path.join(tmp, 'spans');
+    const outDir = path.join(tmp, 'out');
+    const argv = ['--spans', spansDir, '--output', outDir];
+    captureLog();
+    expect(main(argv)).toBe(0);
+    expect(fs.existsSync(path.join(outDir, 'run.json'))).toBe(true);
+    fs.rmSync(outDir, { recursive: true });
+    expect(main(['--help', ...argv])).toBe(0);
+    expect(fs.existsSync(path.join(outDir, 'run.json'))).toBe(false);
+  });
 });
 
 // --- run.json byte-level contract fidelity ---------------------------------
@@ -695,6 +746,19 @@ describe('packaging', () => {
     expect(head).toContain('name: canary-instrument');
     expect(head).toContain('cli: scripts/cli.mjs');
     expect(head).toContain('node>=20');
+  });
+
+  // The skill runner spawns the `cli:` target directly (ts/src/skills-cli.ts
+  // execs the file, relying on its shebang), so a cli.mjs without the exec bit
+  // makes the documented `canary skills run canary-instrument -- --help` fail with no
+  // output at all. Assert the bit AND a real spawn, not just the file's text.
+  it('cli.mjs is executable and runs when spawned directly', () => {
+    const cli = path.join(SCRIPTS, 'cli.mjs');
+    expect(fs.statSync(cli).mode & 0o111).toBeTruthy();
+    const res = spawnSync(cli, ['--help'], { encoding: 'utf8' });
+    expect(res.error).toBeUndefined();
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('usage:');
   });
 
   it('ported scripts are ascii-only (no emoji)', () => {

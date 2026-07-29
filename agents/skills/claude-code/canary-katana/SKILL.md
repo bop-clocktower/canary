@@ -101,7 +101,26 @@ canary skills run canary-katana -- --json
 
 # Fail the step only when a critical path loses its last coverage:
 canary skills run canary-katana -- --strict
+
+# Usage and options (exits 0, and writes nothing to the ledger):
+canary skills run canary-katana -- --help
 ```
+
+Value flags (`--repo`, `--diff-file`, `--ledger`, `--critical-areas`) accept
+both `--repo <path>` and `--repo=<path>`, matching `canary-instrument` and
+`canary-fail-fast`.
+
+An unknown flag is rejected with `unrecognized arguments: <flag>` and exit 2,
+and a value flag left without a usable value is
+`argument <flag>: expected one argument` (exit 2). That covers all three ways
+the value can go missing: the flag is last, the next token is another flag, or
+the value is empty — in either the `--repo=` spelling or, the one shells
+actually produce, `--repo "$UNSET_VAR"`. Empty is rejected rather than accepted
+because `--repo ''` would resolve the ledger to `path.join('', '.canary', ...)`
+and write it into the process CWD instead of the target repo.
+
+All of these are decided before any diff is read or ledger entry is appended, so
+a usage request or a typo never mutates the working tree.
 
 `--json` shape:
 

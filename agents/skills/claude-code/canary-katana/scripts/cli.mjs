@@ -22,6 +22,24 @@ import * as ledger from './ledger.mjs';
 
 const PREFIX = 'canary-katana:';
 
+const USAGE =
+  'usage: canary-katana [-h] [--repo PATH] [--diff-file PATH] [--ledger PATH]\n' +
+  '                     [--critical-areas PATH] [--json] [--strict] [--no-write]\n' +
+  '\n' +
+  'Quarantine deleted and newly-skipped tests into an append-only ledger with\n' +
+  'provenance, and alarm when a removal drops the last coverage of a critical\n' +
+  'area.\n' +
+  '\n' +
+  'options:\n' +
+  '  -h, --help             show this help message and exit\n' +
+  '  --repo PATH            repository to inspect (default: .)\n' +
+  '  --diff-file PATH       read the diff from a file instead of git\n' +
+  '  --ledger PATH          ledger location (default: <repo>/.canary/quarantine.json)\n' +
+  '  --critical-areas PATH  critical-areas.json used to raise alarms\n' +
+  '  --json                 emit machine-readable output instead of human text\n' +
+  '  --strict               exit 1 on a real alarm (degraded runs stay 0)\n' +
+  '  --no-write             do not append to the ledger (read-only run)';
+
 /** A required-value option flag error surfaces like argparse. */
 function parseArgs(argv) {
   const opts = {
@@ -32,16 +50,68 @@ function parseArgs(argv) {
     json: false,
     strict: false,
     noWrite: false,
+    help: false,
+    error: null,
   };
+  // Null-prototype: on a plain object literal every inherited key resolves
+  // truthy, so `VALUE_FLAGS['toString']` would be Object.prototype.toString
+  // and the token `toString` would be swallowed as a value flag instead of
+  // rejected -- which, inside a real repo, runs a scan and appends to the
+  // ledger.
+  const VALUE_FLAGS = Object.assign(Object.create(null), {
+    '--repo': 'repo',
+    '--diff-file': 'diffFile',
+    '--ledger': 'ledger',
+    '--critical-areas': 'criticalAreas',
+  });
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
-    if (a === '--json') opts.json = true;
+
+    // `--flag=value`, matching canary-instrument and canary-fail-fast so all
+    // four ported CLIs accept the same two spellings.
+    const eq = a.startsWith('--') ? a.indexOf('=') : -1;
+    const inlineKey = eq !== -1 ? VALUE_FLAGS[a.slice(0, eq)] : undefined;
+
+    if (a === '-h' || a === '--help') {
+      opts.help = true;
+      return opts;
+    } else if (a === '--json') opts.json = true;
     else if (a === '--strict') opts.strict = true;
     else if (a === '--no-write') opts.noWrite = true;
-    else if (a === '--repo') opts.repo = argv[(i += 1)];
-    else if (a === '--diff-file') opts.diffFile = argv[(i += 1)];
-    else if (a === '--ledger') opts.ledger = argv[(i += 1)];
-    else if (a === '--critical-areas') opts.criticalAreas = argv[(i += 1)];
+    else if (inlineKey !== undefined) {
+      const value = a.slice(eq + 1);
+      // An empty value is the missing-value case wearing a disguise:
+      // `--repo=` would silently retarget the ledger from <repo>/.canary to
+      // the process CWD.
+      if (!value) {
+        opts.error = `argument ${a.slice(0, eq)}: expected one argument`;
+        return opts;
+      }
+      opts[inlineKey] = value;
+    } else if (VALUE_FLAGS[a] !== undefined) {
+      // A value is required; argparse errors when it is missing (the flag was
+      // last) or looks like another option. Consuming a flag as a value would
+      // silently point --repo/--ledger somewhere nonsensical.
+      //
+      // Empty is rejected here too, and this is the spelling that actually
+      // bites: `--repo=` is typed by nobody, but `--repo "$UNSET_VAR"` expands
+      // to `--repo ''` in any shell, and that used to be accepted as repo=''
+      // -- writing the ledger to path.join('', '.canary', ...), i.e. the
+      // process CWD instead of the target repo.
+      const next = argv[i + 1];
+      if (next === undefined || next === '' || next.startsWith('-')) {
+        opts.error = `argument ${a}: expected one argument`;
+        return opts;
+      }
+      opts[VALUE_FLAGS[a]] = next;
+      i += 1;
+    }
+    // katana takes no positionals, so any leftover token -- dashed or not --
+    // is a usage error rather than something silently ignored.
+    else {
+      opts.error = `unrecognized arguments: ${a}`;
+      return opts;
+    }
   }
   return opts;
 }
@@ -109,10 +179,28 @@ function renderText(deletions, findings, degraded) {
 
 export function main(argv = []) {
   const args = parseArgs(argv);
+
+  // FIRST, before loadDiff and before any ledger write: a usage request or a
+  // typo must never mutate the working tree.
+  if (args.help) {
+    console.log(USAGE);
+    return 0;
+  }
+  if (args.error) {
+    console.error(`${PREFIX} ${args.error}`);
+    return 2;
+  }
+
   const repo = args.repo;
-  const ledgerPath = args.ledger
-    ? args.ledger
-    : path.join(repo, '.canary', 'quarantine.json');
+  // `!= null`, not a truthiness test: "--ledger was not given" and "--ledger
+  // was given an empty path" are different situations, and only the first one
+  // may fall back to the default. (An empty value is rejected at parse time,
+  // so this branch is now unreachable with '' -- the explicit null check keeps
+  // it that way if the parser ever loosens.)
+  const ledgerPath =
+    args.ledger != null
+      ? args.ledger
+      : path.join(repo, '.canary', 'quarantine.json');
 
   let diff;
   let base;

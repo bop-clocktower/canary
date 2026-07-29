@@ -16,8 +16,31 @@
 
 import fs from 'node:fs';
 import { scanPaths, toJson } from './scanner.mjs';
+import { RULES } from './rules.mjs';
 
 export const SCHEMA_VERSION = 1;
+
+const PREFIX = 'canary-blackhawk:';
+
+// The rules block is GENERATED from RULES, never hand-typed: a new rule shows
+// up in --help the moment it is registered, so the help text cannot drift
+// behind the linter as rules are added.
+const USAGE =
+  'usage: canary-blackhawk [-h] [--json] [--strict] [--] [path ...]\n' +
+  '\n' +
+  'Temporal-dependency linter for test files: flags tests that depend on the\n' +
+  'wall clock, a real delay, or the local timezone.\n' +
+  '\n' +
+  'positional arguments:\n' +
+  '  path        files or directories to scan (default: the current directory)\n' +
+  '\n' +
+  'options:\n' +
+  '  -h, --help  show this help message and exit\n' +
+  '  --json      emit machine-readable findings instead of human text\n' +
+  '  --strict    exit 1 when there are findings (default is advisory: exit 0)\n' +
+  '\n' +
+  'rules:\n' +
+  RULES.map((r) => `  ${r.ruleId} (${r.severity})`).join('\n');
 
 function summary(result) {
   const bySeverity = {};
@@ -66,13 +89,32 @@ function renderText(result) {
   return lines.join('\n') + suppressedNote(result);
 }
 
+/**
+ * Match argparse's contract for the two exit paths a hand-rolled loop has to
+ * honour: `-h`/`--help` prints usage and exits 0; an unknown flag exits 2. A
+ * bare `--` is the end-of-options terminator, after which every token is a
+ * path (so a file literally named `--json` is reachable). A lone `-` stays a
+ * positional, as argparse treats it.
+ */
 function parseArgs(argv) {
   const paths = [];
-  const opts = { json: false, strict: false };
+  const opts = { json: false, strict: false, help: false, error: null };
+  let noMoreFlags = false;
   for (const arg of argv) {
-    if (arg === '--json') opts.json = true;
+    if (noMoreFlags) {
+      paths.push(arg);
+      continue;
+    }
+    if (arg === '-h' || arg === '--help') {
+      opts.help = true;
+      return { paths, opts };
+    } else if (arg === '--') noMoreFlags = true;
+    else if (arg === '--json') opts.json = true;
     else if (arg === '--strict') opts.strict = true;
-    else paths.push(arg);
+    else if (arg.startsWith('-') && arg !== '-') {
+      opts.error = `unrecognized arguments: ${arg}`;
+      return { paths, opts };
+    } else paths.push(arg);
   }
   return { paths: paths.length ? paths : ['.'], opts };
 }
@@ -80,9 +122,20 @@ function parseArgs(argv) {
 export function main(argv = []) {
   const { paths, opts } = parseArgs(argv);
 
+  // Usage and parse errors resolve before any filesystem work, so `--help`
+  // never reports a missing path and a typo never half-runs a scan.
+  if (opts.help) {
+    console.log(USAGE);
+    return 0;
+  }
+  if (opts.error) {
+    console.error(`${PREFIX} ${opts.error}`);
+    return 2;
+  }
+
   for (const entry of paths) {
     if (!fs.existsSync(entry)) {
-      console.error(`canary-blackhawk: path not found: ${entry}`);
+      console.error(`${PREFIX} path not found: ${entry}`);
       return 1;
     }
   }
