@@ -724,11 +724,48 @@ const STICKY_MARKER = '<!-- canary-pr-guardian -->';
 
 // Severity → status icon for the sticky comment (encodes severity in form, not
 // just text, so the most urgent findings read at a glance).
+//
+// Written as `\u{...}` escapes, not literal glyphs: this file is `.ts`, and the
+// house rule keeps emitted non-ASCII out of non-Markdown source (see the
+// "Output data glyphs" block in `cli.ts`). They are emitted verbatim.
+/**
+ * Character budget for a rendered sticky comment (#457).
+ *
+ * GitHub rejects an issue/PR comment body over **65,536** characters. The post
+ * path reports that as "could not post", so an over-long body means the gate
+ * silently produces nothing on exactly the large PRs that need it most -- the
+ * same silent-green failure #369 was filed for.
+ *
+ * 60,000 leaves ~5.5k of headroom for anything appended outside `render`
+ * (degradation annotations, upsert wrappers) without inviting a body that only
+ * *just* fits and then breaks when a filename grows.
+ *
+ * The cap applies ONLY to the comment. The `--emit-analysis` JSON record is the
+ * authoritative complete set and is never truncated.
+ */
+export const COMMENT_CHAR_BUDGET = 60_000;
+
+/** The line that accounts for findings the budget could not fit (#457). */
+function overflowNote(omitted: number): string {
+  return (
+    `<sub>${EM_DASH} and ${omitted} more finding(s) omitted to keep this ` +
+    `comment under GitHub's size limit. The full set is in the analysis ` +
+    `record (\`--emit-analysis\`) and the CI logs.</sub>`
+  );
+}
+
+const EM_DASH = '\u{2014}';
+const RED_CIRCLE = '\u{1F534}';
+const YELLOW_CIRCLE = '\u{1F7E1}';
+const WHITE_CIRCLE = '\u{26AA}';
+const BABY_CHICK = '\u{1F424}';
+const WHITE_CHECK = '\u{2705}';
+
 const SEVERITY_ICON: Record<string, string> = {
-  [Severity.CRITICAL]: '🔴',
-  [Severity.HIGH]: '🔴',
-  [Severity.MEDIUM]: '🟡',
-  [Severity.LOW]: '⚪',
+  [Severity.CRITICAL]: RED_CIRCLE,
+  [Severity.HIGH]: RED_CIRCLE,
+  [Severity.MEDIUM]: YELLOW_CIRCLE,
+  [Severity.LOW]: WHITE_CIRCLE,
 };
 
 /**
@@ -806,12 +843,17 @@ export function render(
     '**graph-verified**: inferred from the call graph · **heuristic**: filename ' +
     `guess (lowest). tier ${tier}: deterministic check, no LLM.`;
 
+  const footerLine = `<sub>${CONFIDENCE_NOTE}${degradedNotice ? ` ${EM_DASH} ${degradedNotice}` : ''}</sub>`;
+
   if (fmt === 'comment') {
     const fileCount = new Set(active.map((f) => f.path)).size;
     const lines = [STICKY_MARKER];
 
     if (active.length === 0) {
-      lines.push('## 🐤 Canary PR Guardian — ✅ no test-coverage gaps');
+      lines.push(
+        `## ${BABY_CHICK} Canary PR Guardian ${EM_DASH} ` +
+          `${WHITE_CHECK} no test-coverage gaps`,
+      );
       if (suppressed.length) {
         lines.push(
           `_${suppressed.length} finding(s) suppressed as intentional._`,
@@ -820,7 +862,8 @@ export function render(
     } else {
       const noun = fileCount === 1 ? 'file needs' : 'files need';
       lines.push(
-        `## 🐤 Canary PR Guardian — ${fileCount} ${noun} test coverage`,
+        `## ${BABY_CHICK} Canary PR Guardian ${EM_DASH} ` +
+          `${fileCount} ${noun} test coverage`,
       );
       lines.push(
         'These lines were changed by this PR but no test exercises them. Add or ' +
@@ -829,14 +872,37 @@ export function render(
       );
       lines.push(
         '',
-        '| Sev | File | What’s uncovered | Confidence |',
+        '| Sev | File | What is uncovered | Confidence |',
         '| --- | --- | --- | --- |',
       );
+      // #457: fill rows against a character budget instead of emitting all of
+      // them. `active` is already severity-ordered, so the rows that survive
+      // are the most severe -- a critical finding is never dropped to make room
+      // for a low one.
+      const suppressedNote = suppressed.length
+        ? `\n\n<sub>${suppressed.length} finding(s) suppressed as intentional and not counted above.</sub>`
+        : '';
+      // Reserved so the tail always fits: footer, suppressed note, and a
+      // worst-case overflow line (the real one is shorter).
+      const reserve =
+        footerLine.length +
+        suppressedNote.length +
+        overflowNote(active.length).length +
+        4;
+
+      let used = lines.join('\n').length;
+      let shown = 0;
       for (const f of active) {
-        lines.push(
-          `| ${SEVERITY_ICON[f.severity] ?? ''} ${f.severity} | ${cell(fileLabel(f))} | ${cell(f.evidence)} | ${f.fidelity} |`,
-        );
+        const row = `| ${SEVERITY_ICON[f.severity] ?? ''} ${f.severity} | ${cell(fileLabel(f))} | ${cell(f.evidence)} | ${f.fidelity} |`;
+        if (used + row.length + 1 + reserve > COMMENT_CHAR_BUDGET) break;
+        lines.push(row);
+        used += row.length + 1;
+        shown += 1;
       }
+
+      const omitted = active.length - shown;
+      if (omitted > 0) lines.push('', overflowNote(omitted));
+
       if (suppressed.length) {
         lines.push(
           '',
@@ -845,10 +911,7 @@ export function render(
       }
     }
 
-    lines.push(
-      '',
-      `<sub>${CONFIDENCE_NOTE}${degradedNotice ? ` — ${degradedNotice}` : ''}</sub>`,
-    );
+    lines.push('', footerLine);
     return lines.join('\n');
   }
 
