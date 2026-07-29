@@ -168,6 +168,10 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
       'Write files. Without this flag the command is a dry run.',
     )
     .option('--check', 'Freshness gate: report drift without writing.')
+    .option(
+      '--force',
+      'Overwrite a .github/workflows/ file that differs from the overlay template. Without this flag a difference is only reported -- your CI is never rewritten behind your back.',
+    )
     .option('--json', 'Emit the report as JSON.')
     .action(
       (opts: {
@@ -177,6 +181,7 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
         overlay?: string;
         apply?: boolean;
         check?: boolean;
+        force?: boolean;
         json?: boolean;
       }) => {
         migrateCmd(opts, deps);

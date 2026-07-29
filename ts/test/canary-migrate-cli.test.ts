@@ -10,7 +10,7 @@
  * `patch(Path.home)`, which maps to injecting `deps.home()` here.
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -327,6 +327,126 @@ describe('canary migrate --check', () => {
       expect(payload).toHaveProperty('has_drift');
       expect(payload.has_drift).toBe(true);
       expect(payload.skills[0].status).toBe('missing');
+    } finally {
+      rmTmp(base);
+    }
+  });
+});
+
+// --- workflow install (#459) -------------------------------------------------
+
+const WORKFLOW_YML = 'name: guardian\non: pull_request\njobs: {}\n';
+
+/** An overlay whose skill declares a workflow template to install. */
+function overlayWithWorkflow(base: string): string {
+  const overlay = join(base, 'overlay');
+  const skillDir = join(overlay, '.canary', 'skills', 'guardian');
+  mkdirSync(join(skillDir, 'templates'), { recursive: true });
+  writeFileSync(
+    join(skillDir, 'SKILL.md'),
+    '---\nname: guardian\ndeploy_to: [all]\n' +
+      'install_workflows: [templates/canary-guardian.yml]\n' +
+      'workflow_template_version: 1\n---\n\n# guardian\n',
+    'utf-8',
+  );
+  writeFileSync(
+    join(skillDir, 'templates', 'canary-guardian.yml'),
+    WORKFLOW_YML,
+    'utf-8',
+  );
+  return overlay;
+}
+
+describe('canary migrate -- workflow install', () => {
+  it('--apply installs the declared workflow', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+      const overlay = overlayWithWorkflow(base);
+      const res = await run(project, home, '--from', overlay, '--apply');
+      expect(res.code).toBe(0);
+      expect(
+        readFileSync(
+          join(project, '.github', 'workflows', 'canary-guardian.yml'),
+          'utf-8',
+        ),
+      ).toBe(WORKFLOW_YML);
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  // The CLI must not offer a path that silently replaces a consumer's CI: the
+  // default run reports the difference and leaves the file byte-identical.
+  it('leaves a differing workflow alone, and replaces it only with --force', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+      const overlay = overlayWithWorkflow(base);
+      const dest = join(project, '.github', 'workflows');
+      mkdirSync(dest, { recursive: true });
+      const mine = 'name: mine\non: [push]\njobs: {}\n';
+      writeFileSync(join(dest, 'canary-guardian.yml'), mine, 'utf-8');
+
+      const reported = await run(project, home, '--from', overlay, '--apply');
+      expect(readFileSync(join(dest, 'canary-guardian.yml'), 'utf-8')).toBe(
+        mine,
+      );
+      expect(reported.stdout).toContain('canary-guardian.yml');
+      expect(reported.stdout).toContain('--force');
+
+      const forced = await run(
+        project,
+        home,
+        '--from',
+        overlay,
+        '--apply',
+        '--force',
+      );
+      expect(forced.code).toBe(0);
+      expect(readFileSync(join(dest, 'canary-guardian.yml'), 'utf-8')).toBe(
+        WORKFLOW_YML,
+      );
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('--json lists installed workflows', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+      const overlay = overlayWithWorkflow(base);
+      const res = await run(
+        project,
+        home,
+        '--from',
+        overlay,
+        '--apply',
+        '--json',
+      );
+      const payload = JSON.parse(
+        res.stdout.slice(
+          res.stdout.indexOf('{'),
+          res.stdout.lastIndexOf('}') + 1,
+        ),
+      );
+      expect(payload.installed_workflows[0].workflow).toBe(
+        'canary-guardian.yml',
+      );
+      expect(payload.installed_workflows[0].status).toBe('installed');
     } finally {
       rmTmp(base);
     }

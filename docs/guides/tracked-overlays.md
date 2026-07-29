@@ -270,6 +270,55 @@ provenance — `--apply` skips it and `--check` reports it as `local_edit` (exit
 `2`). An automated update PR can therefore never clobber hand modifications:
 reconcile them first (revert, or upstream the change into the overlay).
 
+---
+
+## Workflow templates (`.github/workflows/`)
+
+An overlay can ship GitHub Actions workflow templates as skill assets and have
+`migrate` install them, so an adopting repo ends up with a **running** guardian
+rather than skills and no CI. Declare them in the skill's frontmatter:
+
+```yaml
+---
+name: canary-pr-guardian
+deploy_to: [api, e2e_ui]
+install_workflows: [templates/canary-guardian.yml]
+workflow_template_version: 2
+---
+```
+
+- Paths are **relative to the skill directory**; one that escapes it (absolute,
+  or climbing out with `..`) is refused, because an overlay is third-party
+  content.
+- An entry may carry a **shape prefix** to pick a variant —
+  `install_workflows: [api:templates/guardian-api.yml, e2e_ui:templates/guardian-ui.yml]`.
+  The shape is the same resolved `canary_shape` that drives `deploy_to`, so a
+  skill that does not deploy to this shape installs no workflow either.
+- The file is installed as `basename(template)` under `.github/workflows/`.
+- `workflow_template_version` is recorded in
+  `.canary/skills/.deploy-manifest.json`. It is what lets a **corrected**
+  template reach repos that already adopted a broken one — without it, the
+  report could only say "these differ".
+
+### Your CI is yours (the other ownership rule)
+
+Workflow install deliberately does **not** follow the one-way overlay ownership
+above. A consumer's `.github/workflows/` is their territory:
+
+| Target state                              | What `migrate --apply` does                     |
+| ----------------------------------------- | ----------------------------------------------- |
+| absent                                    | writes the template (`installed`)               |
+| byte-identical                            | nothing (`skipped`)                             |
+| differs, unmodified since canary wrote it | **reports** `outdated` (vN installed, vM ships) |
+| differs, edited locally / no provenance   | **reports** `conflict`                          |
+| any of the above with `--force`           | overwrites (`updated`) — the deliberate case    |
+
+Nothing is ever overwritten without `--force`, and workflow status **never
+changes the `migrate --check` exit code**: `--check` reports what it would
+install (in the `workflows` array of `--json`), but does not fail your build
+over a workflow you tuned yourself. Clobbering hand-tuned CI, or nagging that it
+is "stale", would be a worse failure than the partial adoption this solves.
+
 ### Scheduled auto-update recipe
 
 Wire the gate into a cron workflow in the **consuming** repo so drift opens a PR

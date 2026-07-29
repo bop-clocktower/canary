@@ -409,6 +409,7 @@ interface MigrateOptions {
   overlay?: string;
   apply?: boolean;
   check?: boolean;
+  force?: boolean;
   json?: boolean;
 }
 
@@ -540,6 +541,7 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
       dryRun,
       framework: opts.framework || null,
       overlayPath,
+      force: opts.force ?? false,
     });
   } catch (e) {
     deps.out(
@@ -566,6 +568,7 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
           status: r.status,
           note: r.note,
         })),
+        installed_workflows: report.installed_workflows.map((r) => r.to_dict()),
       }),
     );
     return;

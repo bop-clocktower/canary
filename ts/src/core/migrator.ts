@@ -49,7 +49,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, relative, resolve, sep } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { readJsonWithWarning } from './config-validation.js';
 import { uncertainDetectionMessage } from './detection.js';
@@ -98,6 +98,29 @@ export const DEPLOY_MANIFEST_NAME = '.deploy-manifest.json';
 
 type ManifestEntry = { name: string; hash: string };
 type Manifest = Record<string, ManifestEntry>;
+
+/**
+ * Provenance for one installed workflow (#459), keyed by the file name under
+ * `.github/workflows/`.
+ *
+ * `version` is the load-bearing field. Workflow install NEVER overwrites a
+ * differing file, so without a recorded version a corrected template could
+ * never be pushed to a repo that already adopted a broken one: the report
+ * could only say "these differ". With it, the report can distinguish "you have
+ * v1, the overlay ships v2, and you have not touched it" (safe to take with
+ * `--force`) from "you edited this yourself". #369 is the concrete case -- a
+ * shipped guardian template whose gate silently no-ops.
+ */
+type WorkflowManifestEntry = {
+  skill: string;
+  template: string;
+  version: string;
+  hash: string;
+};
+type WorkflowManifest = Record<string, WorkflowManifestEntry>;
+
+/** The whole manifest document: skill provenance plus workflow provenance. */
+type ManifestDoc = { skills: Manifest; workflows: WorkflowManifest };
 
 /**
  * Order two POSIX-style relative paths the way Python orders `Path` objects:
@@ -165,33 +188,135 @@ function collectRelFiles(dir: string): string[] {
   return out;
 }
 
+/** An object-valued manifest section, or `{}` when absent/malformed. */
+function manifestSection<T>(data: unknown, key: string): T {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    return {} as T;
+  }
+  const section = (data as Record<string, unknown>)[key];
+  if (
+    section === null ||
+    typeof section !== 'object' ||
+    Array.isArray(section)
+  ) {
+    return {} as T;
+  }
+  return section as T;
+}
+
 /**
- * Return `{dirName: {name, hash}}` from the manifest, or `{}` when absent or
- * unreadable (provenance is best-effort).
+ * Read the whole manifest document (skills + workflows). Both sections default
+ * to `{}` when the file is absent, unreadable, or malformed -- provenance is
+ * best-effort and never blocks a deploy.
  */
-function readDeployManifest(targetSkillsDir: string): Manifest {
+function readManifestDoc(targetSkillsDir: string): ManifestDoc {
   const manifestPath = join(targetSkillsDir, DEPLOY_MANIFEST_NAME);
   let data: unknown;
   try {
     data = JSON.parse(readFileSync(manifestPath, 'utf-8'));
   } catch {
-    return {};
+    return { skills: {}, workflows: {} };
   }
-  if (data === null || typeof data !== 'object' || Array.isArray(data))
-    return {};
-  const skills = (data as Record<string, unknown>)['skills'];
-  if (skills === null || typeof skills !== 'object' || Array.isArray(skills)) {
-    return {};
-  }
-  return skills as Manifest;
+  return {
+    skills: manifestSection<Manifest>(data, 'skills'),
+    workflows: manifestSection<WorkflowManifest>(data, 'workflows'),
+  };
 }
 
-function writeDeployManifest(targetSkillsDir: string, skills: Manifest): void {
+/**
+ * Write the manifest. Read-modify-write of the whole document, because the
+ * skill-deploy phase and the workflow-install phase each own one section and
+ * both write this one file. `workflows` is omitted entirely when empty so a
+ * skills-only manifest keeps its historical bytes.
+ */
+function writeManifestDoc(targetSkillsDir: string, doc: ManifestDoc): void {
   const manifestPath = join(targetSkillsDir, DEPLOY_MANIFEST_NAME);
   mkdirSync(targetSkillsDir, { recursive: true });
-  const body =
-    ensureAscii(JSON.stringify({ schemaVersion: 1, skills }, null, 2)) + '\n';
+  const payload: Record<string, unknown> = {
+    schemaVersion: 1,
+    skills: doc.skills,
+  };
+  if (Object.keys(doc.workflows).length > 0)
+    payload['workflows'] = doc.workflows;
+  const body = ensureAscii(JSON.stringify(payload, null, 2)) + '\n';
   writeFileSync(manifestPath, body, 'utf-8');
+}
+
+// ---------------------------------------------------------------------------
+// Workflow templates (#459)
+// ---------------------------------------------------------------------------
+
+/** Frontmatter key: templates this skill installs into `.github/workflows/`. */
+const WORKFLOW_DECL_KEY = 'install_workflows';
+/** Frontmatter key: the version stamped into the deploy manifest. */
+const WORKFLOW_VERSION_KEY = 'workflow_template_version';
+/** Default when a skill declares templates but no explicit version. */
+const WORKFLOW_DEFAULT_VERSION = '1';
+
+/**
+ * An optional `<shape>:` prefix on a declared entry, e.g.
+ * `api:templates/guardian-api.yml`. Two or more leading characters are required
+ * so a Windows drive letter (`C:\...`) can never be mistaken for a shape -- such
+ * a path is refused by {@link resolveTemplatePath} instead.
+ */
+const _WORKFLOW_ENTRY_RE = /^([A-Za-z][A-Za-z0-9_-]+):(.+)$/;
+
+function sha256(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+/** File bytes, or null when unreadable (e.g. the path is a directory). */
+function readBytesOrNull(path: string): Buffer | null {
+  try {
+    return readFileSync(path);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The workflow declaration in a skill's SKILL.md frontmatter.
+ *
+ * Parsed here rather than on {@link SkillInfo} because these fields are
+ * migrator-specific: the registry's job is discovery, and every other consumer
+ * of `SkillInfo` would carry two fields it never reads.
+ */
+function readWorkflowDeclaration(skillMd: string): {
+  entries: string[];
+  version: string;
+} {
+  const text = readTextOrNull(skillMd);
+  if (text === null) return { entries: [], version: WORKFLOW_DEFAULT_VERSION };
+  const fm = SkillRegistry.parseFrontmatter(text);
+  const entries = SkillRegistry.parseStrList(fm, WORKFLOW_DECL_KEY);
+  const rawVersion = fm[WORKFLOW_VERSION_KEY];
+  const version =
+    typeof rawVersion === 'string' && rawVersion.trim()
+      ? rawVersion.trim()
+      : WORKFLOW_DEFAULT_VERSION;
+  return { entries, version };
+}
+
+/** Split `[<shape>:]<relative-path>` into its shape filter and path. */
+function parseWorkflowEntry(entry: string): [string | null, string] {
+  const m = _WORKFLOW_ENTRY_RE.exec(entry.trim());
+  if (m === null) return [null, entry.trim()];
+  return [m[1]!.toLowerCase(), m[2]!.trim()];
+}
+
+/**
+ * Resolve a declared template path inside *skillDir*, or null when it escapes.
+ *
+ * An overlay is third-party content, so a declared path is untrusted input: an
+ * absolute path or a `..` climb would let an overlay copy an arbitrary file
+ * from the machine running `migrate` into the consumer's CI directory.
+ */
+function resolveTemplatePath(skillDir: string, rel: string): string | null {
+  if (!rel || isAbsolute(rel) || /^[A-Za-z]:/.test(rel)) return null;
+  const base = resolve(skillDir);
+  const full = resolve(base, rel);
+  if (full !== base && !full.startsWith(base + sep)) return null;
+  return full;
 }
 
 // ---------------------------------------------------------------------------
@@ -469,6 +594,51 @@ export class SkillDeployResult {
   }
 }
 
+/**
+ * The outcome of installing one declared workflow template (#459).
+ *
+ * `status` is one of:
+ *   - `installed` -- the target had no such workflow; it was written
+ *   - `skipped`   -- byte-identical to the template; nothing to do
+ *   - `outdated`  -- differs, but is unmodified since canary installed it, so
+ *                    the overlay simply moved on (a template fix is waiting)
+ *   - `conflict`  -- differs and was edited locally / has unknown provenance
+ *   - `updated`   -- differed and `--force` replaced it
+ *   - `dry_run`   -- what an `--apply` run would have done
+ *   - `missing`   -- the overlay declares a template it does not ship
+ *   - `invalid`   -- the declared path escapes the skill directory (refused)
+ *
+ * `outdated` and `conflict` are REPORTS. Neither ever writes.
+ */
+export class WorkflowInstallResult {
+  /** File name under `.github/workflows/`. */
+  workflow: string;
+  skill_name: string;
+  status: string;
+  detail: string;
+
+  constructor(
+    workflow: string,
+    skill_name: string,
+    status: string,
+    detail = '',
+  ) {
+    this.workflow = workflow;
+    this.skill_name = skill_name;
+    this.status = status;
+    this.detail = detail;
+  }
+
+  to_dict(): Record<string, unknown> {
+    return {
+      workflow: this.workflow,
+      skill_name: this.skill_name,
+      status: this.status,
+      detail: this.detail,
+    };
+  }
+}
+
 export class SkillFreshnessResult {
   skill_name: string;
   dir_name: string;
@@ -493,15 +663,27 @@ export class FreshnessReport {
   shape: string;
   overlay_path: string | null;
   results: SkillFreshnessResult[];
+  /**
+   * What a workflow install WOULD do (#459) -- informational only.
+   *
+   * Deliberately excluded from `has_drift` / `has_local_edits` / `exit_code`:
+   * the freshness gate speaks for overlay-owned skills, and a consumer's
+   * `.github/workflows/` is not overlay-owned. Failing CI because someone
+   * hand-tuned their own workflow, or has not adopted one at all, would be
+   * nagging about something canary has no claim over.
+   */
+  workflows: WorkflowInstallResult[];
 
   constructor(
     shape: string,
     overlay_path: string | null = null,
     results: SkillFreshnessResult[] = [],
+    workflows: WorkflowInstallResult[] = [],
   ) {
     this.shape = shape;
     this.overlay_path = overlay_path;
     this.results = results;
+    this.workflows = workflows;
   }
 
   get stale(): SkillFreshnessResult[] {
@@ -547,6 +729,7 @@ export class FreshnessReport {
         status: r.status,
         detail: r.detail,
       })),
+      workflows: this.workflows.map((r) => r.to_dict()),
     };
   }
 
@@ -559,6 +742,7 @@ export class FreshnessReport {
     ];
     if (this.results.length === 0) {
       lines.push("_No overlay skills match this project's shape._", '');
+      lines.push(...workflowMarkdown(this.workflows, false));
       return lines.join('\n');
     }
 
@@ -608,8 +792,42 @@ export class FreshnessReport {
         '',
       );
     }
+    lines.push(...workflowMarkdown(this.workflows, false));
     return lines.join('\n');
   }
+}
+
+/**
+ * Render the workflow-install section shared by both reports.
+ *
+ * The closing note is not decoration: it is the only place a consumer is told
+ * that a reported difference will never be applied behind their back, and how
+ * to opt in when they do want the overlay's version.
+ */
+function workflowMarkdown(
+  results: WorkflowInstallResult[],
+  dryRun: boolean,
+): string[] {
+  if (results.length === 0) return [];
+  const heading = dryRun
+    ? '## Workflows (would install into `.github/workflows/`)'
+    : '## Workflows (`.github/workflows/`)';
+  const lines: string[] = [heading, ''];
+  // Every result carries a detail; the status alone would not tell a consumer
+  // which file was touched or what to do next.
+  for (const r of results) {
+    lines.push(`- \`${r.workflow}\` ${EMDASH} ${r.detail}`);
+  }
+  lines.push('');
+  if (results.some((r) => r.status === 'conflict' || r.status === 'outdated')) {
+    lines.push(
+      `${WARN} Your CI is yours: canary never overwrites a workflow that ` +
+        'differs from the template. Re-run with `--force` to take the ' +
+        "overlay's version.",
+      '',
+    );
+  }
+  return lines;
 }
 
 export interface MigrationReportInit {
@@ -625,6 +843,7 @@ export interface MigrationReportInit {
   would_create?: string[];
   manual_followups?: string[];
   deployed_skills?: SkillDeployResult[];
+  installed_workflows?: WorkflowInstallResult[];
   config_warnings?: string[];
 }
 
@@ -641,6 +860,7 @@ export class MigrationReport {
   would_create: string[];
   manual_followups: string[];
   deployed_skills: SkillDeployResult[];
+  installed_workflows: WorkflowInstallResult[];
   config_warnings: string[];
 
   constructor(init: MigrationReportInit) {
@@ -656,6 +876,7 @@ export class MigrationReport {
     this.would_create = init.would_create ?? [];
     this.manual_followups = init.manual_followups ?? [];
     this.deployed_skills = init.deployed_skills ?? [];
+    this.installed_workflows = init.installed_workflows ?? [];
     this.config_warnings = init.config_warnings ?? [];
   }
 
@@ -781,6 +1002,8 @@ export class MigrationReport {
       lines.push('');
     }
 
+    lines.push(...workflowMarkdown(this.installed_workflows, this.dry_run));
+
     if (this.manual_followups.length > 0) {
       lines.push('## Manual Follow-ups Required', '');
       for (const item of this.manual_followups) lines.push(`- ${item}`);
@@ -806,6 +1029,11 @@ export interface MigrateOptions {
   dryRun?: boolean;
   framework?: string | null;
   overlayPath?: string | null;
+  /**
+   * Overwrite a `.github/workflows/` file that differs from the overlay's
+   * template (#459). Off by default -- the differing case is a report.
+   */
+  force?: boolean;
 }
 
 export interface CheckFreshnessOptions {
@@ -893,6 +1121,7 @@ export class HarnessMigrator {
     const dryRun = options.dryRun ?? true;
     const framework = options.framework ?? null;
     const overlayPath = options.overlayPath ?? null;
+    const force = options.force ?? false;
 
     const ctx = this.detect(projectRoot);
     if (!ctx.is_harness_project) {
@@ -923,7 +1152,9 @@ export class HarnessMigrator {
           overrideHint: '`canary migrate --framework <name>`',
         }),
       );
-      // Issue #295 point 3: a detection miss must not block skill deployment.
+      // Issue #295 point 3: a detection miss must not block skill deployment --
+      // nor, for the same reason, the workflow install (#459). The guardian
+      // workflow is exactly what an unrecognised repo most needs.
       const deployed = this.deploySkills(
         shape,
         overlayPath,
@@ -939,6 +1170,13 @@ export class HarnessMigrator {
         manual_followups: followups,
         config_warnings: ctx.config_warnings,
         deployed_skills: deployed,
+        installed_workflows: this.installWorkflows(
+          shape,
+          overlayPath,
+          projectRoot,
+          dryRun,
+          force,
+        ),
       });
     }
 
@@ -962,6 +1200,15 @@ export class HarnessMigrator {
     const preserved = this.findExistingTests(projectRoot);
     const scaffolder = new Scaffolder();
     const deployed = this.deploySkills(shape, overlayPath, projectRoot, dryRun);
+    // Post-copy install phase: the template bytes already landed under
+    // .canary/skills/ with the skill; this puts them where Actions looks.
+    const installedWorkflows = this.installWorkflows(
+      shape,
+      overlayPath,
+      projectRoot,
+      dryRun,
+      force,
+    );
 
     if (dryRun) {
       const tmpl = TEMPLATES[effectiveFramework];
@@ -985,6 +1232,7 @@ export class HarnessMigrator {
         preserved_files: preserved,
         manual_followups: followups,
         deployed_skills: deployed,
+        installed_workflows: installedWorkflows,
         config_warnings: ctx.config_warnings,
       });
     }
@@ -1003,6 +1251,7 @@ export class HarnessMigrator {
       preserved_files: preserved,
       manual_followups: followups,
       deployed_skills: deployed,
+      installed_workflows: installedWorkflows,
       config_warnings: ctx.config_warnings,
     });
   }
@@ -1083,7 +1332,8 @@ export class HarnessMigrator {
     const skillsToDeploy = this.collectOverlaySkills(shape, overlayPath);
 
     const targetSkillsDir = join(targetRoot, '.canary', 'skills');
-    const manifest = readDeployManifest(targetSkillsDir);
+    const doc = readManifestDoc(targetSkillsDir);
+    const manifest = doc.skills;
     let manifestDirty = false;
 
     for (const [info, skillDir] of skillsToDeploy) {
@@ -1141,8 +1391,166 @@ export class HarnessMigrator {
       results.push(new SkillDeployResult(info.name, 'copied'));
     }
 
-    if (manifestDirty && !dryRun)
-      writeDeployManifest(targetSkillsDir, manifest);
+    if (manifestDirty && !dryRun) writeManifestDoc(targetSkillsDir, doc);
+
+    return results;
+  }
+
+  /**
+   * Install the workflow templates the shape-matching overlay skills declare
+   * into the target's `.github/workflows/` (#459).
+   *
+   * This runs AFTER the skill copy and is a distinct phase, not an extension of
+   * it: the bytes already arrive (whole skill dirs are copied, templates
+   * included) -- what was missing is putting them where GitHub Actions looks.
+   *
+   * **Ownership deliberately differs from `deploySkills`.** Deployed skills are
+   * owned one-way by the overlay (#334); a consumer's CI is NOT. Absent ->
+   * write. Byte-identical -> no-op. Different -> report and leave alone, always,
+   * whatever the provenance. `force` is the deliberate escape hatch. Clobbering
+   * a hand-tuned workflow -- or nagging that it is "stale" via an exit code --
+   * would be a worse failure than the partial adoption this fixes.
+   *
+   * Shape selection reuses the same resolved `canary_shape` that drives
+   * `deploy_to` matching: skills are gated by {@link collectOverlaySkills}, and
+   * an entry may additionally carry a `<shape>:` prefix to pick a variant.
+   */
+  installWorkflows(
+    shape: string,
+    overlayPath: string | null,
+    targetRoot: string,
+    dryRun: boolean,
+    force = false,
+  ): WorkflowInstallResult[] {
+    const results: WorkflowInstallResult[] = [];
+    const skills = this.collectOverlaySkills(shape, overlayPath);
+    const targetSkillsDir = join(targetRoot, '.canary', 'skills');
+    const doc = readManifestDoc(targetSkillsDir);
+    const workflowsDir = join(targetRoot, '.github', 'workflows');
+    let manifestDirty = false;
+
+    for (const [info, skillDir] of skills) {
+      const { entries, version } = readWorkflowDeclaration(info.path);
+      for (const entry of entries) {
+        const [wantShape, rel] = parseWorkflowEntry(entry);
+        if (wantShape !== null && wantShape !== shape && wantShape !== 'all') {
+          continue;
+        }
+
+        const src = resolveTemplatePath(skillDir, rel);
+        if (src === null) {
+          results.push(
+            new WorkflowInstallResult(
+              basename(rel),
+              info.name,
+              'invalid',
+              `declared template '${rel}' resolves outside the skill directory ` +
+                `${EMDASH} refused`,
+            ),
+          );
+          continue;
+        }
+        if (!isFile(src)) {
+          results.push(
+            new WorkflowInstallResult(
+              basename(rel),
+              info.name,
+              'missing',
+              `the overlay declares '${rel}' but does not ship it`,
+            ),
+          );
+          continue;
+        }
+
+        const name = basename(src);
+        const dest = join(workflowsDir, name);
+        const templateBytes = readFileSync(src);
+        const templateHash = sha256(templateBytes);
+        const record = (): void => {
+          doc.workflows[name] = {
+            skill: info.name,
+            template: rel,
+            version,
+            hash: templateHash,
+          };
+          manifestDirty = true;
+        };
+        const install = (): void => {
+          mkdirSync(workflowsDir, { recursive: true });
+          writeFileSync(dest, templateBytes);
+          record();
+        };
+        const push = (status: string, detail: string): void => {
+          results.push(
+            new WorkflowInstallResult(name, info.name, status, detail),
+          );
+        };
+
+        if (!existsSync(dest)) {
+          if (dryRun) {
+            push(
+              'dry_run',
+              `would install .github/workflows/${name} (v${version})`,
+            );
+            continue;
+          }
+          install();
+          push(
+            'installed',
+            `installed .github/workflows/${name} (v${version})`,
+          );
+          continue;
+        }
+
+        const installedBytes = readBytesOrNull(dest);
+        if (installedBytes !== null && installedBytes.equals(templateBytes)) {
+          // Back-fill provenance for a hand-placed but identical file so a later
+          // template fix can be reported as `outdated` rather than `conflict`.
+          if (doc.workflows[name]?.hash !== templateHash) record();
+          push('skipped', `.github/workflows/${name} already current`);
+          continue;
+        }
+
+        if (force) {
+          if (dryRun) {
+            push(
+              'dry_run',
+              `would overwrite .github/workflows/${name} with v${version} (--force)`,
+            );
+            continue;
+          }
+          install();
+          push(
+            'updated',
+            `overwrote .github/workflows/${name} with v${version} (--force)`,
+          );
+          continue;
+        }
+
+        const recorded = doc.workflows[name];
+        const untouched =
+          installedBytes !== null &&
+          recorded !== undefined &&
+          recorded.hash === sha256(installedBytes);
+        if (untouched) {
+          push(
+            'outdated',
+            `.github/workflows/${name} is at v${recorded.version}, the overlay ` +
+              `ships v${version} ${EMDASH} unmodified since install, so re-run ` +
+              'with --force to take the update',
+          );
+          continue;
+        }
+        push(
+          'conflict',
+          `.github/workflows/${name} differs from the overlay template and was ` +
+            `left untouched ${EMDASH} your CI is yours; re-run with --force to ` +
+            'replace it',
+        );
+      }
+    }
+
+    if (manifestDirty && !dryRun) writeManifestDoc(targetSkillsDir, doc);
 
     return results;
   }
@@ -1169,7 +1577,7 @@ export class HarnessMigrator {
     const shape = ctx.detected_shape;
     const skills = this.collectOverlaySkills(shape, overlayPath);
     const targetSkillsDir = join(projectRoot, '.canary', 'skills');
-    const manifest = readDeployManifest(targetSkillsDir);
+    const manifest = readManifestDoc(targetSkillsDir).skills;
 
     const results: SkillFreshnessResult[] = [];
     for (const [info, skillDir] of skills) {
@@ -1218,6 +1626,9 @@ export class HarnessMigrator {
       shape,
       overlayPath !== null ? String(overlayPath) : null,
       results,
+      // dryRun = true: `--check` reports what an install WOULD do and never
+      // writes. Informational only -- see FreshnessReport.workflows.
+      this.installWorkflows(shape, overlayPath, projectRoot, true, false),
     );
   }
 
