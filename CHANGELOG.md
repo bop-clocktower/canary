@@ -14,6 +14,23 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **Reachability sweep primitive** (#452): `ts/src/analysis/reachability.ts` — a
+  generic crawl primitive that enumerates links on a surface and asserts each
+  resolves, with a configurable external-host allowlist (matching subdomains but
+  never lookalikes). Catches dangling routes and 404s that targeted tests never
+  look for.
+
+  Its defining property is that **a dead link and a slow link are never
+  confusable**. A 404 is `broken` and is a defect; a timeout, DNS failure, or
+  refused connection is `unreachable` and is explicitly _inconclusive_ — carried
+  with its reason and never asserted on. Conflating the two is how a broad sweep
+  becomes a flaky test teams learn to ignore. The same principle separates 5xx
+  (`server-error` — the target exists and is unwell) and 401/403 (`ok` —
+  auth-walled, not missing). Ships with `createHttpProbe`, so callers do not
+  re-implement (and quietly lose) that distinction themselves.
+
 ### Fixed
 
 - **Guardian — sticky comment no longer risks exceeding GitHub's size limit**
