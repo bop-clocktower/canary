@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   scanText,
+  scanTextFull,
   scanPaths,
   toJson,
   SNIPPET_LIMIT,
@@ -176,7 +177,9 @@ describe('SV004 order-coupled-name', () => {
     ['def test_1_creates_user():', 'test_a.py'],
     ['def test_first():', 'test_a.py'],
     ['def test_last():', 'test_a.py'],
+    // savant-ignore SV004 -- fixture: comment-directive input this rule detects
     ['# must run before test_b', 'test_a.py'],
+    // savant-ignore SV004 -- fixture: it-title directive input this rule detects
     ["it('creates admin (must run first)', () => {", 'a.spec.ts'],
   ])('flags %s', (line, name) => {
     expect(ids(line, name)).toContain('SV004-order-coupled-name');
@@ -370,8 +373,11 @@ describe('string-literal rejection (#493)', () => {
   // Directive text stays string-native by design: titles and docstrings ARE
   // strings in real code, and comments carry the note.
   it.each([
+    // savant-ignore SV004 -- fixture: it-title directive input, kept visible
     ["it('creates admin (must run first)', () => {", 'a.spec.ts'],
+    // savant-ignore SV004 -- fixture: docstring directive input, kept visible
     ['"""must run before test_b"""', 'test_a.py'],
+    // savant-ignore SV004 -- fixture: comment directive input, kept visible
     ['# must run before test_b', 'test_a.py'],
   ])('still flags directive text %s', (line, name) => {
     expect(ids(line, name)).toContain('SV004-order-coupled-name');
@@ -387,6 +393,192 @@ describe('string-literal rejection (#493)', () => {
     expect(ids("os.environ['API_KEY'] = 'x'", 'test_a.py')).toContain(
       'SV003-shared-singleton-mutation',
     );
+  });
+});
+
+// --- Inline suppression pragma (#496) ----------------------------------------
+//
+// Mirrors canary-blackhawk's `blackhawk-ignore` (#393) so a user moving
+// between the two skills learns one dialect: `savant-ignore <RULE>[,<RULE>]
+// -- reason`, rule-scoped, reason mandatory, covering the pragma's own line
+// and the next. One deliberate extra: the pragma anchor is string-literal
+// guarded (#493 style), because THIS suite carries pragma text inside fixture
+// strings and data must never act as a directive. Runtime fixture text below
+// is assembled by concatenation so this file's own source lines never carry a
+// live directive phrase (savant dogfoods this suite).
+
+describe('inline suppression pragma (#496)', () => {
+  const ruleIds = (found: { ruleId: string }[]) => {
+    return found.map((f) => f.ruleId);
+  };
+  // '# must ... test_b' assembled at runtime; the source line stays inert.
+  const directive = ['#', 'must run', 'before test_b'].join(' ');
+
+  it('suppresses a rule via a same-line trailing pragma', () => {
+    const r = scanTextFull(
+      `${directive}  # savant-ignore SV004 -- fixture: directive-text input`,
+      'test_a.py',
+    );
+    expect(ruleIds(r.findings)).not.toContain('SV004-order-coupled-name');
+    expect(ruleIds(r.suppressed)).toContain('SV004-order-coupled-name');
+  });
+
+  it('suppresses a finding on the following line', () => {
+    const text =
+      '# savant-ignore SV004 -- fixture: directive-text input\n' + directive;
+    const r = scanTextFull(text, 'test_a.py');
+    expect(r.findings).toEqual([]);
+    expect(r.suppressed.length).toBe(1);
+  });
+
+  it('requires a reason (a bare directive does not suppress)', () => {
+    const r = scanTextFull(`${directive}  # savant-ignore SV004`, 'test_a.py');
+    expect(ruleIds(r.findings)).toContain('SV004-order-coupled-name');
+    expect(r.suppressed).toEqual([]);
+  });
+
+  it('is rule-scoped: an SV003 pragma does not silence SV004 on the line', () => {
+    const r = scanTextFull(
+      `${directive}  # savant-ignore SV003 -- unrelated`,
+      'test_a.py',
+    );
+    expect(ruleIds(r.findings)).toContain('SV004-order-coupled-name');
+    expect(r.suppressed).toEqual([]);
+  });
+
+  it('a pragma naming no rule suppresses nothing', () => {
+    const r = scanTextFull(
+      `${directive}  # savant-ignore -- blanket attempt`,
+      'test_a.py',
+    );
+    expect(ruleIds(r.findings)).toContain('SV004-order-coupled-name');
+    expect(r.suppressed).toEqual([]);
+  });
+
+  it('accepts the full rule id', () => {
+    const r = scanTextFull(
+      `${directive}  # savant-ignore SV004-order-coupled-name -- fixture`,
+      'test_a.py',
+    );
+    expect(r.suppressed.length).toBe(1);
+    expect(r.findings).toEqual([]);
+  });
+
+  it('suppresses a code-rule finding too (SV003, trailing pragma)', () => {
+    const r = scanTextFull(
+      "os.environ['API_KEY'] = 'x'  # savant-ignore SV003 -- fixture env",
+      'test_a.py',
+    );
+    expect(ruleIds(r.findings)).not.toContain(
+      'SV003-shared-singleton-mutation',
+    );
+    expect(ruleIds(r.suppressed)).toContain('SV003-shared-singleton-mutation');
+  });
+
+  it('directive text without a pragma still flags (true-positive guard)', () => {
+    const title = ['must run', 'before b'].join(' ');
+    const r = scanTextFull(`test('${title}', () => {});`, 'a.spec.ts');
+    expect(ruleIds(r.findings)).toContain('SV004-order-coupled-name');
+    expect(r.suppressed).toEqual([]);
+  });
+
+  it('a pragma inside a string literal on the line above is inert', () => {
+    const text = [
+      "const s = 'x  # savant-ignore SV003 -- not a directive';",
+      "process.env.API_KEY = 'x';",
+    ].join('\n');
+    const r = scanTextFull(text, 'a.spec.ts');
+    expect(ruleIds(r.findings)).toContain('SV003-shared-singleton-mutation');
+    expect(r.suppressed).toEqual([]);
+  });
+
+  it('a pragma inside a string literal on the finding line is inert', () => {
+    const r = scanTextFull(
+      "process.env.A = 'savant-ignore SV003 -- nope';",
+      'a.spec.ts',
+    );
+    expect(ruleIds(r.findings)).toContain('SV003-shared-singleton-mutation');
+    expect(r.suppressed).toEqual([]);
+  });
+
+  it('scanPaths counts suppressions separately from findings', () => {
+    const root = mkTmp();
+    try {
+      // The leak comes FIRST: a pragma also covers its next line, so the
+      // unsuppressed mutation must not sit directly under it.
+      fs.writeFileSync(
+        path.join(root, 'test_a.py'),
+        "os.environ['B'] = 'x'\n" +
+          "os.environ['A'] = 'x'  # savant-ignore SV003 -- fixture env\n",
+      );
+      const r = scanPaths([root]);
+      expect(r.findings.length).toBe(1);
+      expect(r.findings[0].ruleId).toBe('SV003-shared-singleton-mutation');
+      expect(r.suppressed).toBe(1);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('cli reports the suppressed count (human + json)', () => {
+    const root = mkTmp();
+    const out: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((s?: unknown) => {
+      out.push(String(s));
+    });
+    try {
+      fs.writeFileSync(
+        path.join(root, 'test_a.py'),
+        "os.environ['A'] = 'x'  # savant-ignore SV003 -- fixture env\n",
+      );
+      expect(main([root, '--json'])).toBe(0);
+      expect(JSON.parse(out.join('\n')).summary.suppressed).toBe(1);
+      out.length = 0;
+      expect(main([root])).toBe(0);
+      const text = out.join('\n');
+      expect(text).toContain('No order-dependence suspects');
+      expect(text).toContain('1 suppressed (inline savant-ignore)');
+    } finally {
+      vi.restoreAllMocks();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('cli keeps the suppressed note after a non-empty findings list', () => {
+    const root = mkTmp();
+    const out: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((s?: unknown) => {
+      out.push(String(s));
+    });
+    try {
+      fs.writeFileSync(
+        path.join(root, 'test_a.py'),
+        "os.environ['B'] = 'x'\n" +
+          "os.environ['A'] = 'x'  # savant-ignore SV003 -- fixture env\n",
+      );
+      expect(main([root])).toBe(0);
+      const text = out.join('\n');
+      expect(text).toContain('1 order-dependence suspect');
+      expect(text).toContain('1 suppressed (inline savant-ignore)');
+    } finally {
+      vi.restoreAllMocks();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('--strict ignores suppressed findings (exit 0)', () => {
+    const root = mkTmp();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      fs.writeFileSync(
+        path.join(root, 'test_a.py'),
+        "os.environ['A'] = 'x'  # savant-ignore SV003 -- fixture env\n",
+      );
+      expect(main([root, '--strict'])).toBe(0);
+    } finally {
+      vi.restoreAllMocks();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -591,6 +783,7 @@ describe('cli', () => {
       files_scanned: 0,
       findings: 0,
       by_severity: {},
+      suppressed: 0,
     });
   });
 

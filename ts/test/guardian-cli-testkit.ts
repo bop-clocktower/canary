@@ -68,8 +68,12 @@ export async function invokeGuardian(
     if (!(k in savedEnv)) savedEnv[k] = process.env[k];
   }
   for (const k of GUARDIAN_ENV_KEYS) delete process.env[k];
+  // The snapshot above covers Object.keys(env) and restore() runs on every
+  // exit path (see testkit-env-restore.test.ts); the file-level teardown
+  // heuristic cannot see helper-function restoration.
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) delete process.env[k];
+    // savant-ignore SV003 -- restore() write-back covers every caller-supplied key
     else process.env[k] = v;
   }
   const savedCwd = process.cwd();

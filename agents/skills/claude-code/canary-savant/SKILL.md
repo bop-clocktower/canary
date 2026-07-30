@@ -72,6 +72,31 @@ Savant Tier 1 is a scanner with no parser dependency, so it ships anywhere
 - **A missed suspect costs less than a false one** — the same bias as
   canary-blackhawk.
 
+## Inline suppression (per-line escape hatch)
+
+A suite that legitimately contains a suspect line — most commonly a fixture
+string feeding a tool that _tests_ these detections — can suppress a single
+finding with an inline pragma, same dialect as `blackhawk-ignore`:
+
+```py
+# savant-ignore SV004 -- fixture: directive-text input the rule under test must detect
+```
+
+- **Reason required** (the `-- reason` tail) — keeps suppressions honest and
+  greppable, like `eslint-disable-next-line` / `# noqa`. A bare
+  `savant-ignore SV004` suppresses nothing.
+- **Rule-scoped** (`SV004`, or the full `SV004-order-coupled-name`) so it never
+  blanket-silences the line; another rule firing on the same line still fires.
+- **Placement:** the pragma may trail the offending line or sit on the line
+  directly above it. Comma-separate ids to suppress several (`SV003,SV004`).
+- **Counted separately:** suppressed findings are reported as
+  `N suppressed (inline savant-ignore)` and in the JSON `summary.suppressed`,
+  out of the actionable total — so a genuinely clean suite can read zero
+  findings while the known-OK fixtures stay visible.
+- **String-guarded:** pragma text that itself sits _inside_ a string literal is
+  fixture data, not a directive — it neither suppresses its own line nor the
+  next one.
+
 ## Which files get scanned
 
 A directory walk only visits **test** files — `*.test.*`, `*.spec.*`,
@@ -161,7 +186,8 @@ correctly.
   "summary": {
     "files_scanned": 8,
     "findings": 1,
-    "by_severity": { "medium": 1 }
+    "by_severity": { "medium": 1 },
+    "suppressed": 0
   }
 }
 ```
@@ -181,9 +207,11 @@ canary runs savant's Tier-1 scan over its **own** test suite on every PR
 (`.github/workflows/harness-quality.yml`, the `Skills (JS)` job), **advisory**:
 it prints suspects to the log and always exits 0. Tuning the rules against that
 real suite dropped the backlog from 37 findings to a handful of genuine
-suspects. Promote to blocking by appending `--strict` to that step once the
-remaining suspects are triaged (fixed or confirmed benign) - the same
-advisory-first path every canary gate takes.
+suspects; the structural residue (savant's own suite testing SV004's
+directive-text detection, #496) is suppressed with per-site `savant-ignore`
+reasons and stays visible in the suppressed count. Promote to blocking by
+appending `--strict` to that step once the remaining suspects are triaged (fixed
+or confirmed benign) - the same advisory-first path every canary gate takes.
 
 ## Roadmap
 
