@@ -1636,20 +1636,29 @@ export class HarnessMigrator {
     root: string,
     config: Record<string, unknown>,
   ): [string | null, string, string, string] {
-    // 0. Explicit override in .canary/company.json ("canary_shape" field).
+    // Explicit override in .canary/company.json ("canary_shape" field) is
+    // user intent: it wins over every probe tier's shape, including a total
+    // probe miss (#502 — monorepos often have no root framework config).
+    // Framework detection still runs so framework-dependent behavior keeps
+    // working when a probe does match.
     const rawShape = config['canary_shape'];
     const explicitShape = (rawShape == null ? '' : String(rawShape))
       .trim()
       .toLowerCase();
-    if (explicitShape) {
-      for (const [filename, framework, , confidence] of _CONFIG_PROBES) {
-        if (existsSync(join(root, filename))) {
-          return [framework, explicitShape, filename, confidence];
-        }
-      }
-      // Fall through to content probes.
-    }
+    const [framework, shape, source, confidence] = this.probeFramework(
+      root,
+      config,
+    );
+    if (!explicitShape) return [framework, shape, source, confidence];
+    return framework === null
+      ? [null, explicitShape, 'canary_shape (.canary/company.json)', 'explicit']
+      : [framework, explicitShape, source, confidence];
+  }
 
+  private probeFramework(
+    root: string,
+    config: Record<string, unknown>,
+  ): [string | null, string, string, string] {
     // 1. Dedicated config file (highest confidence).
     for (const [filename, framework, shape, confidence] of _CONFIG_PROBES) {
       if (existsSync(join(root, filename))) {

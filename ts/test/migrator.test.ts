@@ -239,6 +239,28 @@ describe('TestDetectFramework', () => {
       write(join(canaryDir, 'company.json'), '{"canary_shape": "api"}');
       expect(mig().detect(root).detected_shape).toBe('api');
     }));
+  // #502: monorepos have no root framework config; the explicit override is
+  // user intent and must survive every detection tier, including total miss.
+  it('explicit canary_shape honored when no root config probe matches', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'unknown-lang' });
+      const canaryDir = join(root, '.canary');
+      mkdirSync(canaryDir);
+      write(join(canaryDir, 'company.json'), '{"canary_shape": "capwell"}');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_shape).toBe('capwell');
+      expect(ctx.detected_framework).toBeNull();
+    }));
+  it('explicit canary_shape overrides the language-fallback shape', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'typescript' });
+      const canaryDir = join(root, '.canary');
+      mkdirSync(canaryDir);
+      write(join(canaryDir, 'company.json'), '{"canary_shape": "capwell"}');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_framework).toBe('playwright');
+      expect(ctx.detected_shape).toBe('capwell');
+    }));
   it('falls back to python language as pytest', () =>
     withTmp((root) => {
       makeHarnessProject(root, { language: 'python' });
