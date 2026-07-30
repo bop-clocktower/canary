@@ -240,11 +240,12 @@ when someone remembers to re-run `migrate`.
 reports (without writing) how the target's deployed skills compare to the
 overlay that owns them and exits with a drift-aware code:
 
-| Exit | Meaning                                                                                          |
-| ---- | ------------------------------------------------------------------------------------------------ |
-| `0`  | In sync — every deployed overlay skill is current.                                               |
-| `1`  | **Drift** — the overlay carries newer deployable skills (`stale`) or ones the target is missing. |
-| `2`  | **Local edits** — a deployed skill was hand-modified; one-way ownership refuses to overwrite it. |
+| Exit | Meaning                                                                                                                                                                                                                                                    |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | In sync — every deployed overlay skill is current.                                                                                                                                                                                                         |
+| `1`  | **Drift** — the overlay carries newer deployable skills (`stale`) or ones the target is missing.                                                                                                                                                           |
+| `2`  | **Local edits** — a deployed skill was hand-modified; one-way ownership refuses to overwrite it.                                                                                                                                                           |
+| `3`  | **Abstained** — the resolved shape matched zero overlay skills, so nothing was verified. A gate that checked nothing has not passed: fix shape resolution (`canary_shape` in `.canary/company.json`, or `--framework`) or the overlay's `deploy_to` lists. |
 
 ```bash
 canary migrate --from example-org-example-overlay --check          # human-readable
@@ -255,9 +256,12 @@ canary migrate --from example-org-example-overlay --check --json   # machine-rea
 `current` \| `stale` \| `missing` \| `local_edit`:
 
 ```text
-{ shape, overlay_path, in_sync, has_drift, has_local_edits, exit_code,
-  skills: [{ skill_name, dir_name, status, detail }] }
+{ shape, overlay_path, in_sync, has_drift, has_local_edits, checked,
+  abstained, exit_code, skills: [{ skill_name, dir_name, status, detail }] }
 ```
+
+`checked` is the gate's denominator — how many skills it actually verified.
+`abstained: true` (exit `3`) means that denominator was zero.
 
 ### One-way ownership (the safety guarantee)
 

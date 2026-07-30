@@ -708,8 +708,19 @@ export class FreshnessReport {
     return !this.has_drift && !this.has_local_edits;
   }
 
-  /** 0 in sync, 1 drift, 2 local edits (safety refusal wins). */
+  /**
+   * A gate that verified zero skills has abstained, not passed (#503): the
+   * shape matched nothing, so nothing was checked and "in sync" would be a
+   * silent false pass -- the #456 class. Reported as its own exit code and
+   * flagged in every output surface.
+   */
+  get abstained(): boolean {
+    return this.results.length === 0;
+  }
+
+  /** 0 in sync, 1 drift, 2 local edits (safety refusal wins), 3 abstained. */
   exit_code(): number {
+    if (this.abstained) return 3;
     if (this.has_local_edits) return 2;
     if (this.has_drift) return 1;
     return 0;
@@ -722,6 +733,8 @@ export class FreshnessReport {
       in_sync: this.in_sync,
       has_drift: this.has_drift,
       has_local_edits: this.has_local_edits,
+      checked: this.results.length,
+      abstained: this.abstained,
       exit_code: this.exit_code(),
       skills: this.results.map((r) => ({
         skill_name: r.skill_name,
@@ -742,6 +755,23 @@ export class FreshnessReport {
     ];
     if (this.results.length === 0) {
       lines.push("_No overlay skills match this project's shape._", '');
+      lines.push(
+        `${WARN} **Abstained** ${EMDASH} the gate verified zero skills, so this is not a pass.`,
+        '',
+      );
+      if (this.shape === 'unknown') {
+        lines.push(
+          'The shape could not be detected. Set `canary_shape` in',
+          '`.canary/company.json` or pass `--framework <name>`.',
+          '',
+        );
+      } else {
+        lines.push(
+          `The overlay ships no skills with \`deploy_to\` covering \`${this.shape}\`.`,
+          "Check the overlay's `deploy_to` lists or the resolved `canary_shape`.",
+          '',
+        );
+      }
       lines.push(...workflowMarkdown(this.workflows, false));
       return lines.join('\n');
     }

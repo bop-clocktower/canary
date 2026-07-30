@@ -1563,6 +1563,26 @@ describe('FreshnessReport surface coverage', () => {
       expect(report.results).toEqual([]);
       expect(report.to_markdown()).toContain('No overlay skills match');
     }));
+  // #503: a gate that matched zero skills has abstained, not passed. Exit 3
+  // is distinct from 0 in-sync / 1 drift / 2 local-edits so CI can tell
+  // "verified and clean" from "verified nothing".
+  it('zero matched skills is a loud abstention, not success', () =>
+    withTmp((base) => {
+      const root = join(base, 'proj');
+      mkdirSync(root);
+      makeFreshnessProject(root);
+      const report = mig().checkFreshness(root, {
+        overlayPath: join(base, 'empty'),
+      });
+      expect(report.results).toEqual([]);
+      expect(report.exit_code()).toBe(3);
+      const d = report.to_dict();
+      expect(d['checked']).toBe(0);
+      expect(d['abstained']).toBe(true);
+      const md = report.to_markdown();
+      expect(md.toLowerCase()).toContain('abstained');
+      expect(md).toContain('canary_shape');
+    }));
   it('to_dict and exit_code reflect status', () =>
     withTmp((base) => {
       const root = join(base, 'proj');
@@ -1574,6 +1594,8 @@ describe('FreshnessReport surface coverage', () => {
       const d = report.to_dict();
       expect(d['has_drift']).toBe(true);
       expect(d['exit_code']).toBe(1);
+      expect(d['checked']).toBe(1);
+      expect(d['abstained']).toBe(false);
       expect(report.overlay_path).toBe(overlay);
       expect((d['skills'] as unknown[]).length).toBe(1);
     }));
