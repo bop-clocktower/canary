@@ -280,6 +280,127 @@ describe('frontmatter parser', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Standard-YAML shapes the one-line-per-key subset silently read as empty
+// (#501). Each of these is legal YAML that a formatter (prettier) emits; they
+// must parse to the declared value — and a list the parser still cannot read
+// must be a loud diagnostic, never a silent empty list.
+// ---------------------------------------------------------------------------
+
+describe('frontmatter parser — wrapped/multiline YAML (#501)', () => {
+  it('parses a flow list wrapped mid-list across lines', () => {
+    const { frontmatter, errors } =
+      SkillRegistry.parseFrontmatterWithDiagnostics(
+        '---\nname: x\ninstall_workflows: [templates/a.yml,\n  templates/b.yml]\n---\n',
+      );
+    expect(errors).toEqual([]);
+    expect(frontmatter['install_workflows']).toEqual([
+      'templates/a.yml',
+      'templates/b.yml',
+    ]);
+  });
+
+  it('parses a flow list pushed entirely onto an indented line (prettier rewrap)', () => {
+    // Exactly the rewrite prettier produces for an over-long flow list — the
+    // shape that made `migrate` silently install zero workflows.
+    const { frontmatter, errors } =
+      SkillRegistry.parseFrontmatterWithDiagnostics(
+        '---\nname: x\ninstall_workflows:\n  [templates/canary-guardian.yml, templates/guardian-precision.yml]\n---\n',
+      );
+    expect(errors).toEqual([]);
+    expect(frontmatter['install_workflows']).toEqual([
+      'templates/canary-guardian.yml',
+      'templates/guardian-precision.yml',
+    ]);
+  });
+
+  it('parses a block sequence', () => {
+    const { frontmatter, errors } =
+      SkillRegistry.parseFrontmatterWithDiagnostics(
+        '---\nname: x\ndeploy_to:\n  - api\n  - custom_shape\n---\n',
+      );
+    expect(errors).toEqual([]);
+    expect(frontmatter['deploy_to']).toEqual(['api', 'custom_shape']);
+  });
+
+  it('folds an indented plain-scalar continuation into the value', () => {
+    const { frontmatter, errors } =
+      SkillRegistry.parseFrontmatterWithDiagnostics(
+        '---\nname: x\ndescription: First line of the description\n  continues here\n---\n',
+      );
+    expect(errors).toEqual([]);
+    expect(frontmatter['description']).toBe(
+      'First line of the description continues here',
+    );
+  });
+
+  it('reads a description declared entirely on indented lines', () => {
+    const { frontmatter, errors } =
+      SkillRegistry.parseFrontmatterWithDiagnostics(
+        '---\nname: x\ndescription:\n  First line of the description\n  continues here\n---\n',
+      );
+    expect(errors).toEqual([]);
+    expect(frontmatter['description']).toBe(
+      'First line of the description continues here',
+    );
+  });
+
+  it('unterminated flow list is a loud diagnostic, not a silent empty', () => {
+    const { frontmatter, errors } =
+      SkillRegistry.parseFrontmatterWithDiagnostics(
+        '---\nname: x\ndeploy_to: [api,\n---\n',
+      );
+    expect(frontmatter['deploy_to']).toEqual([]);
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain('deploy_to');
+    expect(errors[0]).toContain('unterminated flow list');
+  });
+
+  it('parseFrontmatter (no-diagnostics wrapper) parses the same shapes', () => {
+    const fm = SkillRegistry.parseFrontmatter(
+      '---\nname: x\ndeploy_to:\n  [api, e2e_ui]\n---\n',
+    );
+    expect(fm['deploy_to']).toEqual(['api', 'e2e_ui']);
+  });
+
+  it('parseNested surfaces a parse diagnostic on SkillInfo.error', () => {
+    const root = mkTmp('sk-');
+    const dir = join(root, 'broken');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'SKILL.md'),
+      '---\nname: broken\ndeploy_to: [api,\n---\n\n# broken\n',
+    );
+    const info = new SkillRegistry().parseNested(
+      join(dir, 'SKILL.md'),
+      'broken',
+      'local',
+    )!;
+    expect(info.deploy_to).toEqual([]);
+    expect(info.error).toContain('frontmatter parse error');
+    expect(info.error).toContain('unterminated flow list');
+  });
+
+  it('parseNested reads an indented-scalar description (SkillInfo level)', () => {
+    const root = mkTmp('sk-');
+    const dir = join(root, 'wrapped');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'SKILL.md'),
+      '---\nname: wrapped\ndescription:\n  Renders fine everywhere else\n  and now here too\n---\n\n# wrapped\n',
+    );
+    const info = new SkillRegistry().parseNested(
+      join(dir, 'SKILL.md'),
+      'wrapped',
+      'local',
+    )!;
+    expect(info.error).toBeNull();
+    expect(info.description).toBe(
+      'Renders fine everywhere else and now here too',
+    );
+  });
+});
+
 // Regression (adversarial review): discovery is sorted by name. Python sorted()
 // orders by code point; JS default string compare orders by UTF-16 code unit,
 // which mis-orders astral names (a lead surrogate 0xD83D sorts before BMP
