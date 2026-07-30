@@ -8,7 +8,8 @@
     "url": "https://github.com/bop-clocktower/canary.git"
   },
   "bin": {
-    "canary": "./bin/canary.js"
+    "canary": "./bin/canary.js",
+    "canary-mcp": "./bin/canary-mcp.js"
   },
   "exports": {
     "./reporter": {
@@ -36,6 +37,7 @@
   },
   "files": [
     "bin/canary.js",
+    "bin/canary-mcp.js",
     "dist/"
   ],
   "dependencies": {
