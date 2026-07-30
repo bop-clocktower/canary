@@ -12,7 +12,12 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { EXIT_ABSTAINED } from '../src/core/abstention.js';
-import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
+import {
+  invokeCanary,
+  mkTmp,
+  rmTmp,
+  type InvokeResult,
+} from './canary-cli-testkit.js';
 
 const HISTORY_REL = join('test-results', 'reports', 'history-v2.jsonl');
 
@@ -85,66 +90,59 @@ describe('review-test / flake-check abstain on zero matched files (#508)', () =>
 
 // --- migrate dry run: JSON carries the denominator ---------------------------
 
-describe('migrate dry run reports checked/abstained (#508/#504)', () => {
-  /** Parse the JSON payload after the migrate banner (existing CLI shape). */
-  const payloadOf = (stdout: string): Record<string, unknown> =>
-    JSON.parse(stdout.slice(stdout.indexOf('{'))) as Record<string, unknown>;
+// '{' as a \u escape: a bare brace inside a string literal unbalances the
+// arch metric's function scanner (it counts braces character-wise), which
+// mis-sizes every function below it. Same spirit as the repo's glyph-escape
+// convention.
+const OPEN_BRACE = '\u007b';
 
+/** Parse the JSON payload after the migrate banner (existing CLI shape). */
+function payloadOf(stdout: string): Record<string, unknown> {
+  const json = stdout.slice(stdout.indexOf(OPEN_BRACE));
+  return JSON.parse(json) as Record<string, unknown>;
+}
+
+/**
+ * Run `canary migrate` (dry run) against a fresh harness project under an
+ * isolated home, cleaning up its own tmp dir.
+ */
+async function runMigrateDry(extraArgs: string[] = []): Promise<InvokeResult> {
+  const base = mkTmp();
+  try {
+    const project = join(base, 'proj');
+    mkdirSync(project);
+    fakeHarnessProject(project);
+    return await invokeCanary(['migrate', '--path', project, ...extraArgs], {
+      deps: { home: () => join(base, 'home') },
+    });
+  } finally {
+    rmTmp(base);
+  }
+}
+
+describe('migrate dry run reports checked/abstained (#508/#504)', () => {
   it('--json includes the denominator when the dry run resolves work', async () => {
-    const base = mkTmp();
-    try {
-      const project = join(base, 'proj');
-      const home = join(base, 'home');
-      mkdirSync(project);
-      fakeHarnessProject(project);
-      const res = await invokeCanary(
-        ['migrate', '--path', project, '--framework', 'pytest', '--json'],
-        { deps: { home: () => home } },
-      );
-      expect(res.code).toBe(0);
-      const payload = payloadOf(res.stdout);
-      expect(payload['abstained']).toBe(false);
-      expect(payload['checked'] as number).toBeGreaterThan(0);
-    } finally {
-      rmTmp(base);
-    }
+    const res = await runMigrateDry(['--framework', 'pytest', '--json']);
+    expect(res.code).toBe(0);
+    const payload = payloadOf(res.stdout);
+    expect(payload['abstained']).toBe(false);
+    expect(payload['checked'] as number).toBeGreaterThan(0);
   });
 
   it('--json flags an unknown-framework dry run that resolved nothing (#504)', async () => {
-    const base = mkTmp();
-    try {
-      const project = join(base, 'proj');
-      const home = join(base, 'home');
-      mkdirSync(project);
-      fakeHarnessProject(project); // no detectable framework, no overlay
-      const res = await invokeCanary(['migrate', '--path', project, '--json'], {
-        deps: { home: () => home },
-      });
-      expect(res.code).toBe(0);
-      const payload = payloadOf(res.stdout);
-      expect(payload['checked']).toBe(0);
-      expect(payload['abstained']).toBe(true);
-    } finally {
-      rmTmp(base);
-    }
+    // No detectable framework and no overlay: zero migration items resolve.
+    const res = await runMigrateDry(['--json']);
+    expect(res.code).toBe(0);
+    const payload = payloadOf(res.stdout);
+    expect(payload['checked']).toBe(0);
+    expect(payload['abstained']).toBe(true);
   });
 
   it('dry-run markdown never says Migration complete', async () => {
-    const base = mkTmp();
-    try {
-      const project = join(base, 'proj');
-      const home = join(base, 'home');
-      mkdirSync(project);
-      fakeHarnessProject(project);
-      const res = await invokeCanary(['migrate', '--path', project], {
-        deps: { home: () => home },
-      });
-      expect(res.code).toBe(0);
-      expect(res.stdout).toContain('Dry run');
-      expect(res.stdout).not.toContain('Migration complete');
-    } finally {
-      rmTmp(base);
-    }
+    const res = await runMigrateDry();
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('Dry run');
+    expect(res.stdout).not.toContain('Migration complete');
   });
 });
 
@@ -164,6 +162,24 @@ describe('skills run with zero resolvable targets stays loud (#508)', () => {
 
 // --- analyze: empty run-history windows --------------------------------------
 
+/**
+ * Drive an analyze subcommand against an empty history store and assert the
+ * abstention notice replaced the old zero-denominator green line. Advisory
+ * commands keep exit 0 -- the notice IS the loud outcome.
+ */
+async function expectAnalyzeAbstention(argv: string[]): Promise<void> {
+  const tmp = mkTmp();
+  try {
+    const res = await invokeCanary(argv, { cwd: tmp });
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('abstained:');
+    expect(res.stdout).not.toContain('No tests above');
+    expect(res.stdout).not.toContain('No spikes detected');
+  } finally {
+    rmTmp(tmp);
+  }
+}
+
 describe('analyze abstains on an empty run-history window (#508)', () => {
   const cases: string[][] = [
     ['analyze', 'flaky'],
@@ -173,18 +189,8 @@ describe('analyze abstains on an empty run-history window (#508)', () => {
   ];
 
   for (const argv of cases) {
-    it(`${argv.join(' ')} prints the abstention notice, not a green all-clear`, async () => {
-      const tmp = mkTmp();
-      try {
-        const res = await invokeCanary(argv, { cwd: tmp });
-        expect(res.code).toBe(0); // advisory: notice, not exit code
-        expect(res.stdout).toContain('abstained:');
-        expect(res.stdout).not.toContain('No tests above');
-        expect(res.stdout).not.toContain('No spikes detected');
-      } finally {
-        rmTmp(tmp);
-      }
-    });
+    it(`${argv.join(' ')} prints the abstention notice, not a green all-clear`, () =>
+      expectAnalyzeAbstention(argv));
   }
 
   it('analyze flaky --json keeps stdout parseable with the notice on stderr', async () => {

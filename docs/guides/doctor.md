@@ -32,6 +32,13 @@ either: the summary line reports them separately
 (`3 check(s) passed (2 skipped).`), and only a run with zero skips prints
 `All checks passed.`
 
+This is the engine-wide _no silent abstention_ doctrine (#508): every gate
+reports its denominator, and denominator-zero is a distinct loud outcome. The
+shared helper behind it lives at
+[`ts/src/core/abstention.ts`](../../ts/src/core/abstention.ts) — exit 3 and the
+`⚠ abstained: <reason>` line have the same meaning on every canary command that
+adopts it.
+
 The human report is one symbol per line, remedy indented under a failure. Its
 layout is _loosely_ modeled on `harness doctor`, but the two are **not** a
 shared contract and have diverged — see [`--json`](#--json) for the machine

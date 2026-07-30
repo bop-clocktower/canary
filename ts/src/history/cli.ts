@@ -187,6 +187,34 @@ interface FlakyOptions {
   json?: boolean;
 }
 
+/**
+ * No silent abstention (#508): "no flaky tests" over ZERO runs is not a pass.
+ * Probes the denominator when the store can report it (local NDJSON); the
+ * remote backend has no probe yet, so an empty result there keeps the benefit
+ * of the doubt (null = unknown) rather than mislabeling it.
+ */
+async function flakyDenominator(
+  store: AsyncHistoryStore,
+  resultCount: number,
+  opts: FlakyOptions,
+): Promise<number | null> {
+  if (resultCount > 0 || !store.countRuns) return null;
+  return store.countRuns(opts.window, opts.suite ?? null);
+}
+
+/** The line for an empty flaky result: abstention over zero runs, else green. */
+function emptyFlakyLine(
+  runsInWindow: number | null,
+  opts: FlakyOptions,
+): string {
+  if (runsInWindow === 0) {
+    return abstentionNotice('no runs in the history window');
+  }
+  return pc.green(
+    `No tests above ${pyFloat(opts.minRate)}% flake rate in the last ${opts.window} runs.`,
+  );
+}
+
 async function flakyCmd(opts: FlakyOptions, deps: HistoryDeps): Promise<void> {
   const store = deps.makeStore(opts.dbUrl);
   const results = await store.queryFlaky(
@@ -194,15 +222,7 @@ async function flakyCmd(opts: FlakyOptions, deps: HistoryDeps): Promise<void> {
     opts.suite ?? null,
     opts.minRate,
   );
-
-  // No silent abstention (#508): "no flaky tests" over ZERO runs is not a
-  // pass. Probe the denominator when the store can report it (local NDJSON);
-  // the remote backend has no probe yet, so its empty result keeps the
-  // benefit of the doubt rather than mislabeling it.
-  const runsInWindow =
-    results.length === 0 && store.countRuns
-      ? await store.countRuns(opts.window, opts.suite ?? null)
-      : null;
+  const runsInWindow = await flakyDenominator(store, results.length, opts);
 
   if (opts.json) {
     if (runsInWindow === 0) {
@@ -213,15 +233,7 @@ async function flakyCmd(opts: FlakyOptions, deps: HistoryDeps): Promise<void> {
   }
 
   if (results.length === 0) {
-    if (runsInWindow === 0) {
-      deps.out(abstentionNotice('no runs in the history window'));
-      return;
-    }
-    deps.out(
-      pc.green(
-        `No tests above ${pyFloat(opts.minRate)}% flake rate in the last ${opts.window} runs.`,
-      ),
-    );
+    deps.out(emptyFlakyLine(runsInWindow, opts));
     return;
   }
 
