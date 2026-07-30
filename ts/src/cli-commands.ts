@@ -249,7 +249,7 @@ export function feedbackCmd(
     throw new CliExit(1);
   }
 
-  const fb = buildFeedback(message.trim(), opts.category);
+  const fb = buildFeedback(message.trim(), opts.category, resolveVersion(deps));
 
   if (opts.json) {
     deps.out(jsonIndent2(fb));
