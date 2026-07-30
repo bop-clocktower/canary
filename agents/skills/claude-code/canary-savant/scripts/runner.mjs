@@ -102,8 +102,11 @@ export function buildShuffleCmd(paths, junitPath, seed, plugin) {
 /**
  * Detect the test framework for a target: pytest or vitest. File extensions win;
  * a bare directory falls back to config-file markers (injectable `exists`).
+ * Both fs probes are injectable so tests stay hermetic: `readdir` guards the
+ * directory scan (step 2) and `exists` the config-marker probe (step 3).
  * @param {string[]} paths
- * @param {{exists?: (f: string) => boolean}} [options]
+ * @param {{exists?: (f: string) => boolean,
+ *          readdir?: (p: string) => string[]}} [options]
  * @returns {'pytest'|'vitest'|null}
  */
 export function detectFramework(paths, options = {}) {
