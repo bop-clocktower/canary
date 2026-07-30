@@ -323,15 +323,18 @@ describe('WorkflowDiscovery persistence', () => {
   });
 
   it('discover skips write in dry-run', async () => {
+    // Asserts the intent directly (write() is never invoked) instead of the
+    // old mtime-equality proxy, which needed a real 5 ms sleep to be
+    // meaningful and was still racy under coarse filesystem mtime
+    // granularity (up to 1 s on some systems). Flagged by canary-blackhawk
+    // (BH002) in the #485 dogfood.
     const d = tmp();
     const wd = new WorkflowDiscovery(d);
     wd.write(makeMapping('DRY'));
-    const before = statSync(wd.mappingPath('DRY')).mtimeMs;
     vi.spyOn(wd, 'fetchJira').mockResolvedValue(makeMapping('DRY'));
-    await new Promise((r) => setTimeout(r, 5));
+    const writeSpy = vi.spyOn(wd, 'write');
     await wd.discover('DRY', { refresh: true, dryRun: true });
-    const after = statSync(wd.mappingPath('DRY')).mtimeMs;
-    expect(after).toBe(before);
+    expect(writeSpy).not.toHaveBeenCalled();
   });
 });
 

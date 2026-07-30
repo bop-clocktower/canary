@@ -721,6 +721,23 @@ describe('path selection', () => {
     expect(result.findings).toEqual([]);
   });
 
+  it('never descends into fixture directories — fixture files are test DATA', () => {
+    // Mirrors blackhawk: a file under fixtures/ never RUNS as a test, so
+    // order-dependence smells in it are data, not defects (#493, one level up).
+    const root = tmp();
+    for (const dir of ['fixtures', '__fixtures__', '__mocks__', 'testdata']) {
+      const d = path.join(root, dir, 'nested');
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(
+        path.join(d, 'test_smelly.py'),
+        "import os\n\ndef test_a():\n    os.environ['K'] = '1'\n",
+      );
+    }
+    const result = scanPaths([root]);
+    expect(result.filesScanned).toBe(0);
+    expect(result.findings).toEqual([]);
+  });
+
   it('scans overlapping paths exactly once', () => {
     const root = tmp();
     const p = path.join(root, 'test_state.py');

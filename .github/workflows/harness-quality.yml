@@ -114,11 +114,20 @@ jobs:
         working-directory: agents/skills
         run: npm test
 
-      # Dogfood: run canary-savant's Tier-1 static scan over canary's OWN test
-      # suite (ts/test — the Python tests/ dir was retired in the v6 cutover).
-      # Advisory (findings don't fail the build); a missing path DOES exit 1, so
-      # this must point at a real dir. Promote to `--strict` once the backlog is
-      # triaged and the signal is trusted (see the skill's SKILL.md).
-      - name: Order-dependence suspects (canary-savant, advisory)
+      # Dogfood (#485), promoted to STRICT: both detectors run over canary's
+      # own suites and FAIL the build on any unsuppressed finding. The backlog
+      # is triaged to zero (#493/#495 fixed detector precision; #496/#498 added
+      # suppression-with-reason; the genuine findings were fixed in #497 and
+      # the workflow-discovery delay test). Strict is what pins the zero — an
+      # advisory step whose findings nobody reads is the #413 dynamic in CI.
+      # A NEW unsuppressed finding here means: fix it, or suppress it with an
+      # inline reason (`blackhawk-ignore` / `savant-ignore <RULE> -- why`).
+      # Never re-demote this step to advisory to make it pass.
+      - name: Temporal-dependency findings (canary-blackhawk, strict)
+        run:
+          node agents/skills/claude-code/canary-blackhawk/scripts/cli.mjs
+          ts/test agents/skills/test --strict
+      - name: Order-dependence findings (canary-savant, strict)
         run:
           node agents/skills/claude-code/canary-savant/scripts/cli.mjs ts/test
+          agents/skills/test --strict

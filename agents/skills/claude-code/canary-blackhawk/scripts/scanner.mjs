@@ -32,6 +32,13 @@ const SKIP_DIRS = new Set([
   '.mypy_cache',
   '.pytest_cache',
   '.tox',
+  // Fixture directories are test DATA: files here never RUN as tests, so a
+  // temporal/order smell in one is a property of the data, not a defect (#493
+  // one level up). Also keeps pragmas out of golden-pinned fixture files.
+  'fixtures',
+  '__fixtures__',
+  '__mocks__',
+  'testdata',
 ]);
 
 const TEST_DIRS = new Set(['tests', 'test', '__tests__', 'e2e', 'spec']);
