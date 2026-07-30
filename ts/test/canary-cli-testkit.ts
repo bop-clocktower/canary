@@ -49,11 +49,15 @@ export async function invokeCanary(
 ): Promise<InvokeResult> {
   const { deps = {}, env = {}, cwd } = opts;
 
+  // Snapshot BEFORE mutating: the fixed key list PLUS every caller-supplied
+  // override. Snapshotting only CANARY_ENV_KEYS let an off-list override leak
+  // into process.env for every later test in the worker -- found by
+  // canary-savant (SV003) once #495 gave it the precision to be heard.
   const savedEnv: Record<string, string | undefined> = {};
-  for (const k of CANARY_ENV_KEYS) {
-    savedEnv[k] = process.env[k];
-    delete process.env[k];
+  for (const k of [...CANARY_ENV_KEYS, ...Object.keys(env)]) {
+    if (!(k in savedEnv)) savedEnv[k] = process.env[k];
   }
+  for (const k of CANARY_ENV_KEYS) delete process.env[k];
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
@@ -112,7 +116,11 @@ function restore(
   cwd: string | undefined,
 ): void {
   if (cwd) process.chdir(savedCwd);
-  for (const k of CANARY_ENV_KEYS) {
+  // Restore from the FULL snapshot -- fixed keys and caller overrides alike.
+  // Written as an explicit savedEnv[k] read (not a destructured value) so the
+  // snapshot write-back is visible both to a reader and to savant's SV003
+  // restoration check.
+  for (const k of Object.keys(savedEnv)) {
     if (savedEnv[k] === undefined) delete process.env[k];
     else process.env[k] = savedEnv[k];
   }
