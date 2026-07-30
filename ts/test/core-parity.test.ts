@@ -252,6 +252,9 @@ describe('scaffolder parity', () => {
   });
 });
 
+// NOTE: feedback.json diverges from the Python capture since #506 (title
+// word-boundary truncation + ellipsis; context key python -> runtime). The
+// Python engine is retired, so the golden now records the TS contract.
 describe('feedback parity', () => {
   const g = golden<{
     issue_url: Array<{
