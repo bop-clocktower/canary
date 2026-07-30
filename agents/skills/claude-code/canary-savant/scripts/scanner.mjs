@@ -141,8 +141,51 @@ function sv002MissingTeardown(lines, file, isPy, text) {
   return findings;
 }
 
-/** Scan source text, returning findings ordered by line then rule id. */
-export function scanText(text, file = '<text>') {
+// Inline suppression pragma (#496): `savant-ignore <RULE>[,<RULE>] -- reason`
+// in a comment, matching canary-blackhawk's `blackhawk-ignore` (#393) so a
+// user moving between the two skills learns one dialect. Rule-scoped (so it
+// never blanket-silences a line) and the reason is required (keeps
+// suppressions honest and greppable). A pragma covers the finding on its own
+// line (trailing comment) and the next line (comment above the code) - the
+// two idioms teams reach for. One deliberate divergence from blackhawk: the
+// anchor is string-literal guarded (#493 style), because savant's own suite
+// carries pragma text inside fixture strings and data must never act as a
+// directive.
+const PRAGMA = /\bsavant-ignore\s+([A-Za-z0-9,\s-]*?)\s*--\s*(\S.*)$/;
+
+function parsePragmas(lines) {
+  const map = new Map();
+  const add = (ln, tokens) => {
+    if (!map.has(ln)) map.set(ln, new Set());
+    for (const t of tokens) map.get(ln).add(t);
+  };
+  lines.forEach((raw, i) => {
+    const m = execOutsideStrings(PRAGMA, raw, stringLiteralRanges(raw));
+    if (!m || !m[2].trim()) return; // reason required
+    const tokens = m[1].split(/[,\s]+/).filter(Boolean);
+    if (!tokens.length) return; // rule-scoped: must name a rule
+    add(i + 1, tokens); // same-line (trailing pragma)
+    add(i + 2, tokens); // next line (pragma above the code)
+  });
+  return map;
+}
+
+// An `SV003` token matches `SV003-shared-singleton-mutation`; the full id
+// also matches.
+const tokenMatches = (ruleId, token) =>
+  ruleId === token || ruleId.split('-')[0] === token;
+
+/**
+ * @typedef {{file: string, line: number, ruleId: string, severity: string,
+ *            snippet: string, why: string}} Finding
+ */
+
+/**
+ * Scan source text. Returns kept `findings` plus `suppressed` findings
+ * silenced by an inline pragma, both ordered by line then rule id.
+ * @returns {{findings: Finding[], suppressed: Finding[]}}
+ */
+export function scanTextFull(text, file = '<text>') {
   const isPy = file.endsWith('.py');
   const lines = splitLines(text);
   const findings = [];
@@ -186,18 +229,40 @@ export function scanText(text, file = '<text>') {
   });
 
   findings.sort((a, b) => a.line - b.line || a.ruleId.localeCompare(b.ruleId));
-  return findings;
+
+  // Partition after the sort (stable), so both arrays stay line-ordered.
+  const pragmas = parsePragmas(lines);
+  const kept = [];
+  const suppressed = [];
+  for (const f of findings) {
+    const tokens = pragmas.get(f.line);
+    if (tokens && [...tokens].some((t) => tokenMatches(f.ruleId, t))) {
+      suppressed.push(f);
+    } else {
+      kept.push(f);
+    }
+  }
+  return { findings: kept, suppressed };
 }
 
-/** Scan one file. Unreadable files yield no findings. */
-export function scanFile(filePath) {
+/** Scan source text, returning kept findings (back-compat wrapper). */
+export function scanText(text, file = '<text>') {
+  return scanTextFull(text, file).findings;
+}
+
+/** Scan one file. Unreadable files yield nothing. */
+export function scanFileFull(filePath) {
   let text;
   try {
     text = fs.readFileSync(filePath, 'utf8');
   } catch {
-    return [];
+    return { findings: [], suppressed: [] };
   }
-  return scanText(text, filePath);
+  return scanTextFull(text, filePath);
+}
+
+export function scanFile(filePath) {
+  return scanFileFull(filePath).findings;
 }
 
 /** Yield the files a path contributes: explicit files win, dirs are filtered. */
@@ -240,13 +305,16 @@ export function scanPaths(paths) {
   const seen = new Set();
   const findings = [];
   let scanned = 0;
+  let suppressed = 0;
   for (const entry of paths) {
     for (const filePath of iterFiles(entry)) {
       const resolved = path.resolve(filePath);
       if (seen.has(resolved)) continue;
       seen.add(resolved);
       scanned += 1;
-      findings.push(...scanFile(filePath));
+      const r = scanFileFull(filePath);
+      findings.push(...r.findings);
+      suppressed += r.suppressed.length;
     }
   }
   findings.sort(
@@ -255,5 +323,5 @@ export function scanPaths(paths) {
       a.line - b.line ||
       a.ruleId.localeCompare(b.ruleId),
   );
-  return { findings, filesScanned: scanned };
+  return { findings, filesScanned: scanned, suppressed };
 }
