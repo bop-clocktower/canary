@@ -85,10 +85,70 @@ export interface JsonReportCheck {
 export interface JsonReport {
   version: 1;
   checks: JsonReportCheck[];
-  /** True iff no check failed — mirrors `harness doctor --json`'s one shared field. */
+  /**
+   * True iff no check failed AND at least one check was actually verified —
+   * mirrors `harness doctor --json`'s one shared field. Doctrine (#508): a run
+   * where every check was skipped verified nothing, so it must not report
+   * `allPassed: true`.
+   */
   allPassed: boolean;
+  /** Denominator (#508): checks actually verified (pass + fail; skips/info excluded). */
+  checked: number;
+  /** Checks that did not run (consent-gated, audience-filtered, …). */
+  skipped: number;
+  /** True when zero checks were verified — a loud non-pass (exit 3). */
+  abstained: boolean;
   /** Non-fatal advisories (e.g. an unknown `--audience`); empty when none. */
   warnings: string[];
+}
+
+/** Aggregated outcome of a doctor run — the one place summary policy lives. */
+export interface DoctorSummary {
+  passed: number;
+  failed: number;
+  skipped: number;
+  /** Denominator (#508): checks actually verified (pass + fail). */
+  checked: number;
+  abstained: boolean;
+  /** The human summary line. Skips NEVER aggregate into "All checks passed." */
+  line: string;
+  /** 0 verified-and-clean, 1 failures, 3 abstained (zero checks verified). */
+  exitCode: number;
+}
+
+/**
+ * No silent abstention (#505/#508): fold check results into the summary line
+ * and exit code. "Skipped" is reported next to "passed", never inside it, and
+ * a run that verified zero checks abstains loudly (exit 3) instead of
+ * printing "All checks passed."
+ */
+export function summarizeChecks(
+  results: readonly CheckResult[],
+): DoctorSummary {
+  const count = (s: CheckStatus): number =>
+    results.filter((r) => r.status === s).length;
+  const passed = count('pass');
+  const failed = count('fail');
+  const skipped = count('skip');
+  const checked = passed + failed;
+  const abstained = failed === 0 && checked === 0;
+
+  let line: string;
+  let exitCode: number;
+  if (failed > 0) {
+    line = `${failed} check(s) failed.`;
+    exitCode = 1;
+  } else if (abstained) {
+    line = `⚠ abstained: 0 checks were verified (${skipped} skipped) — this is not a pass.`;
+    exitCode = 3;
+  } else if (skipped > 0) {
+    line = `${passed} check(s) passed (${skipped} skipped).`;
+    exitCode = 0;
+  } else {
+    line = 'All checks passed.';
+    exitCode = 0;
+  }
+  return { passed, failed, skipped, checked, abstained, line, exitCode };
 }
 
 const SYMBOL: Record<CheckStatus, string> = {
@@ -191,9 +251,11 @@ async function overlayResults(
 }
 
 /**
- * Run `canary doctor`. Returns a process exit code: 0 when every check passed
- * or was skipped/info, non-zero when any check failed. A malformed manifest for
- * one overlay never blocks engine checks or other overlays.
+ * Run `canary doctor`. Returns a process exit code: 0 when at least one check
+ * was verified and none failed, 1 when any check failed, 3 (abstained) when
+ * zero checks were actually verified (#508 — a run that checked nothing is
+ * not a pass). A malformed manifest for one overlay never blocks engine
+ * checks or other overlays.
  */
 export async function runDoctor(
   args: readonly string[],
@@ -237,10 +299,7 @@ export async function runDoctor(
     collectAudiences(allChecks),
   );
 
-  const failures = groups.reduce(
-    (n, g) => n + g.results.filter((r) => r.status === 'fail').length,
-    0,
-  );
+  const summary = summarizeChecks(groups.flatMap((g) => g.results));
 
   // Issue #318: `--json` emits the canary-owned machine contract instead of
   // the human report — nothing else is written to stdout, so the whole stream
@@ -257,11 +316,14 @@ export async function runDoctor(
           group: g.header,
         })),
       ),
-      allPassed: failures === 0,
+      allPassed: summary.exitCode === 0,
+      checked: summary.checked,
+      skipped: summary.skipped,
+      abstained: summary.abstained,
       warnings: audienceHint ? [audienceHint] : [],
     };
     out.write(`${JSON.stringify(report, null, 2)}\n`);
-    return failures === 0 ? 0 : 1;
+    return summary.exitCode;
   }
 
   out.write('canary doctor\n');
@@ -274,8 +336,6 @@ export async function runDoctor(
       out.write(renderCheck(result));
     }
   }
-  out.write(
-    `\n${failures === 0 ? 'All checks passed.' : `${failures} check(s) failed.`}\n`,
-  );
-  return failures === 0 ? 0 : 1;
+  out.write(`\n${summary.line}\n`);
+  return summary.exitCode;
 }

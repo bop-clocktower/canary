@@ -51,6 +51,7 @@ import {
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
+import { EXIT_ABSTAINED } from './abstention.js';
 import { readJsonWithWarning } from './config-validation.js';
 import { uncertainDetectionMessage } from './detection.js';
 import { FrameworkRegistry } from './framework-registry.js';
@@ -720,7 +721,7 @@ export class FreshnessReport {
 
   /** 0 in sync, 1 drift, 2 local edits (safety refusal wins), 3 abstained. */
   exit_code(): number {
-    if (this.abstained) return 3;
+    if (this.abstained) return EXIT_ABSTAINED;
     if (this.has_local_edits) return 2;
     if (this.has_drift) return 1;
     return 0;
@@ -910,6 +911,29 @@ export class MigrationReport {
     this.config_warnings = init.config_warnings ?? [];
   }
 
+  /**
+   * Denominator (#508): how many migration items this run acted on or
+   * verified -- files created (or that would be created), configs verified as
+   * already present, skills matched, workflows considered. A run whose
+   * denominator is zero resolved nothing and must not read as a completed
+   * migration (#504's "Migration complete" with nothing migrated).
+   */
+  get checked(): number {
+    return (
+      this.created_files.length +
+      this.created_dirs.length +
+      this.would_create.length +
+      this.skipped_configs.length +
+      this.deployed_skills.length +
+      this.installed_workflows.length
+    );
+  }
+
+  /** A migration that resolved zero items has abstained, not completed. */
+  get abstained(): boolean {
+    return this.checked === 0;
+  }
+
   to_markdown(): string {
     const lines: string[] = ['# Canary Migration Report', ''];
     if (this.dry_run) {
@@ -1038,6 +1062,28 @@ export class MigrationReport {
       lines.push('## Manual Follow-ups Required', '');
       for (const item of this.manual_followups) lines.push(`- ${item}`);
       lines.push('');
+    } else if (this.abstained) {
+      // #508/#504: zero items resolved -- saying "complete" here rendered
+      // abstention as success. Loud, with the likely cause and the fix.
+      lines.push(
+        '## Status',
+        '',
+        `${WARN} **Abstained** ${EMDASH} this run resolved zero migration items ` +
+          '(nothing created, verified, or deployed), so it is not a completed migration.',
+        '',
+        'If **Framework**/**Shape** read `unknown`, detection matched nothing: set',
+        '`canary_shape` in `.canary/company.json` or pass `--framework <name>`.',
+        '',
+      );
+    } else if (this.dry_run) {
+      // #504: a dry run never says "Migration complete" -- nothing migrated.
+      lines.push(
+        '## Status',
+        '',
+        `Dry run ${EMDASH} verified ${this.checked} item(s); nothing was written. ` +
+          'Re-run with `--apply` to migrate.',
+        '',
+      );
     } else {
       lines.push(
         '## Status',

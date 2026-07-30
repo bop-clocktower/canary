@@ -28,7 +28,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { HarnessMigrator, hashSkillDir } from '../src/core/migrator.js';
+import {
+  HarnessMigrator,
+  MigrationReport,
+  hashSkillDir,
+} from '../src/core/migrator.js';
 import { SkillRegistry } from '../src/core/skill-registry.js';
 
 // Empty, isolated home so `~/.canary/skills` never contributes overlay skills.
@@ -2168,5 +2172,46 @@ describe('TestCheckReportsWorkflowsWithoutNagging', () => {
       expect(
         readFileSync(workflowPath(root, 'canary-guardian.yml'), 'utf-8'),
       ).toBe(HAND_TUNED_YML);
+    }));
+});
+
+// ===========================================================================
+// #508 / #504 -- no silent abstention: MigrationReport denominator + dry-run
+// status copy. A dry run never says "Migration complete", and a run that
+// resolved zero items abstains loudly instead of reading as done.
+// ===========================================================================
+describe('MigrationReport abstention + dry-run status (#508/#504)', () => {
+  it('dry run reports its denominator and never claims completion', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'python' });
+      const report = mig().migrate(root, { dryRun: true });
+      expect(report.checked).toBeGreaterThan(0);
+      expect(report.abstained).toBe(false);
+      const md = report.to_markdown();
+      expect(md).toContain('Dry run');
+      expect(md).toContain(`verified ${report.checked} item(s)`);
+      expect(md).not.toContain('Migration complete');
+    }));
+
+  it('zero resolved items is a loud abstention, not "complete"', () => {
+    const report = new MigrationReport({
+      framework: 'unknown',
+      shape: 'unknown',
+      dry_run: true,
+    });
+    expect(report.checked).toBe(0);
+    expect(report.abstained).toBe(true);
+    const md = report.to_markdown();
+    expect(md).toContain('Abstained');
+    expect(md).toContain('canary_shape');
+    expect(md).not.toContain('Migration complete');
+  });
+
+  it('apply mode with real work still reports Migration complete', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'python' });
+      const report = mig().migrate(root, { dryRun: false });
+      expect(report.abstained).toBe(false);
+      expect(report.to_markdown()).toContain('Migration complete');
     }));
 });

@@ -34,6 +34,14 @@ export interface AsyncHistoryStore {
   ): Promise<FlakyQueryRow[]>;
   queryTimeline(testName: string): Promise<TimelineEntry[]>;
   querySummary(suite: string, runs: number): Promise<SummaryResult>;
+  /**
+   * Optional denominator probe (#508): how many run records the given window
+   * could draw from. Lets the CLI tell "no flaky tests among N runs" (a real
+   * pass) from "zero runs to check" (an abstention). Optional because the
+   * remote backend has no cheap count yet; callers must treat "absent" as
+   * unknown, not as zero.
+   */
+  countRuns?(window: number, suite: string | null): Promise<number>;
 }
 
 /** Async adapter over the synchronous local NDJSON store. */
@@ -58,6 +66,13 @@ export class LocalAsyncAdapter implements AsyncHistoryStore {
 
   async querySummary(suite: string, runs: number): Promise<SummaryResult> {
     return this.inner.querySummary(suite, runs);
+  }
+
+  /** Denominator probe (#508) over the local NDJSON records. */
+  async countRuns(window: number, suite: string | null): Promise<number> {
+    let records = this.inner.readAll();
+    if (suite) records = records.filter((r) => r.suite === suite);
+    return records.slice(-window).length;
   }
 }
 

@@ -8,6 +8,9 @@
  * {@link createAnalyzeCommand} factory wired to an injectable {@link AnalyzeDeps},
  * and `normalizeUsageExit` on every command so usage errors exit 2. No command
  * raises a business exit -- every analyze subcommand returns 0 (matching Python).
+ * These are advisory commands, so the no-silent-abstention doctrine (#508)
+ * surfaces an empty run-history window as an explicit `⚠ abstained:` line
+ * (stderr in `--json` mode) rather than a distinct exit code.
  *
  * Python->TS fidelity notes:
  *   - `json.dumps(x, indent=2)` -> {@link jsonIndent2} (byte-exact + ensure_ascii).
@@ -30,6 +33,7 @@ import { join } from 'node:path';
 import { Command, Option } from 'commander';
 
 import { jsonIndent2, normalizeUsageExit } from '../cli-common.js';
+import { abstentionNotice } from '../core/abstention.js';
 import { AnalysisEngine } from './engine.js';
 import {
   buildAreaHealthReport,
@@ -75,6 +79,31 @@ export function defaultAnalyzeDeps(): AnalyzeDeps {
   };
 }
 
+/**
+ * No silent abstention (#508): an analysis over an empty run-history window
+ * has verified nothing, so its "no flaky tests / no spikes" phrasing would be
+ * a zero-denominator green. These are advisory commands (they never raise a
+ * business exit), so the loud outcome is an explicit `⚠ abstained:` line --
+ * on stdout for human output, on stderr in `--json` mode so the JSON contract
+ * stays parseable. Returns true when the caller should skip the normal
+ * (success-shaped) report.
+ */
+function abstainIfEmptyWindow(
+  runsConsidered: number,
+  reason: string,
+  json: boolean,
+  deps: AnalyzeDeps,
+): boolean {
+  if (runsConsidered > 0) return false;
+  const notice = abstentionNotice(reason);
+  if (json) {
+    deps.err(notice);
+    return false; // JSON payload still prints (empty rows), notice on stderr.
+  }
+  deps.out(notice);
+  return true;
+}
+
 function writeArtifacts(
   artifacts: Record<string, string>,
   output: string,
@@ -97,7 +126,22 @@ interface FlakyOptions {
 
 function flakyCmd(opts: FlakyOptions, deps: AnalyzeDeps): void {
   const store = deps.makeStore(opts.dbUrl);
+  // Denominator (#508): runs the window could actually draw from.
+  const all = store.readAll();
+  const considered = opts.suite
+    ? all.filter((r) => r.suite === opts.suite).length
+    : all.length;
   const rows = store.queryFlaky(opts.window, opts.suite ?? null, opts.minRate);
+  if (
+    abstainIfEmptyWindow(
+      considered,
+      `no runs in the history store${opts.suite ? ` for suite '${opts.suite}'` : ''}`,
+      opts.json ?? false,
+      deps,
+    )
+  ) {
+    return;
+  }
   if (opts.json) {
     deps.out(jsonIndent2(rows));
   } else {
@@ -134,6 +178,16 @@ function spikesCmd(opts: SpikesOptions, deps: AnalyzeDeps): void {
       flaky: r.flaky ?? 0,
       total: r.total ?? 0,
     });
+  }
+  if (
+    abstainIfEmptyWindow(
+      rows.length,
+      `no runs in the history store${opts.since ? ` since ${opts.since}` : ''}`,
+      opts.json ?? false,
+      deps,
+    )
+  ) {
+    return;
   }
   if (opts.json) {
     deps.out(jsonIndent2(rows));
@@ -177,8 +231,10 @@ function commonFailuresCmd(
     error_text: string;
     run_count: number;
   }[] = [];
+  let considered = 0; // Denominator (#508): run records inside the window.
   for (const record of store.readAll()) {
     if (opts.since && (record.timestamp ?? '') < opts.since) continue;
+    considered += 1;
     for (const t of record.tests ?? []) {
       if ((t.status === 'failed' || t.status === 'flaky') && t.error_text) {
         rows.push({
@@ -190,6 +246,16 @@ function commonFailuresCmd(
         });
       }
     }
+  }
+  if (
+    abstainIfEmptyWindow(
+      considered,
+      `no runs in the history store${opts.since ? ` since ${opts.since}` : ''}`,
+      opts.json ?? false,
+      deps,
+    )
+  ) {
+    return;
   }
   if (opts.json) {
     deps.out(jsonIndent2(rows));
@@ -211,12 +277,23 @@ function regressionCandidatesCmd(
   opts: RegressionOptions,
   deps: AnalyzeDeps,
 ): void {
-  const engine = new AnalysisEngine(deps.makeStore(opts.dbUrl));
+  const store = deps.makeStore(opts.dbUrl);
+  const engine = new AnalysisEngine(store);
   const candidates = engine.detectRegressionCandidates(
     null,
     opts.minGreen,
     opts.recentFailures,
   );
+  if (
+    abstainIfEmptyWindow(
+      store.readAll().length,
+      'no runs in the history store',
+      opts.json ?? false,
+      deps,
+    )
+  ) {
+    return;
+  }
   if (opts.json) {
     deps.out(jsonIndent2(candidates));
   } else {
@@ -239,7 +316,12 @@ interface DigestOptions {
 }
 
 function digestCmd(opts: DigestOptions, deps: AnalyzeDeps): void {
-  const engine = new AnalysisEngine(deps.makeStore(opts.dbUrl));
+  const store = deps.makeStore(opts.dbUrl);
+  // Denominator (#508): a digest over zero runs still writes its artifacts
+  // (same shape either way) but is flagged loudly instead of reading like a
+  // healthy all-clear fleet.
+  const emptyStore = store.readAll().length === 0;
+  const engine = new AnalysisEngine(store);
   const result = engine.run({
     window: opts.window,
     delta: opts.delta,
@@ -248,6 +330,13 @@ function digestCmd(opts: DigestOptions, deps: AnalyzeDeps): void {
     suite: opts.suite ?? null,
   });
   writeArtifacts(result.artifacts, opts.output);
+
+  if (emptyStore) {
+    const notice = abstentionNotice('no runs in the history store');
+    // Keep --json stdout parseable and --slack paste-clean: notice to stderr.
+    if (opts.json || opts.slack) deps.err(notice);
+    else deps.out(notice);
+  }
 
   if (opts.json) {
     deps.out(

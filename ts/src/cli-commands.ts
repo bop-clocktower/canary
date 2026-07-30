@@ -24,6 +24,7 @@ import pc from 'picocolors';
 
 import { CliExit, jsonIndent2 } from './cli-common.js';
 import { ckInitCmd } from './company-knowledge-cli.js';
+import { EXIT_ABSTAINED, abstentionNotice } from './core/abstention.js';
 import { extractFrameworkHint } from './core/classifier.js';
 import { VALID_CATEGORIES, buildFeedback } from './core/feedback.js';
 import {
@@ -556,6 +557,10 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
         framework: report.framework,
         shape: report.shape,
         dry_run: report.dry_run,
+        // #508: the denominator travels with the report so CI can tell
+        // "migrated and clean" from "resolved nothing".
+        checked: report.checked,
+        abstained: report.abstained,
         created_files: report.created_files,
         created_dirs: report.created_dirs,
         skipped_configs: report.skipped_configs,
@@ -598,6 +603,32 @@ const SEV_COLOR: Record<string, (s: string) => string> = {
 };
 const SEV_ORDER: Record<string, number> = { critical: 0, warning: 1, info: 2 };
 
+/**
+ * Loud zero-denominator exit for the lint gates (#508). In `--json` mode the
+ * stdout contract (a findings array) stays parseable and the notice goes to
+ * stderr; the distinct exit code carries the abstention either way.
+ */
+/**
+ * Resolve the lint denominator (#508): the concrete files a lint gate will
+ * verify. A directory that matches zero test files collapses the denominator
+ * to zero -- the abstention case. A non-directory path passes through as-is
+ * (a missing file already fails loudly when the linter reads it).
+ */
+function lintTargets(path: string): string[] {
+  return isDir(path) ? collectTestFiles(path) : [path];
+}
+
+function abstainLintGate(path: string, json: boolean, deps: MainDeps): never {
+  const notice = abstentionNotice(`no test files matched ${path}`);
+  if (json) {
+    deps.err(notice);
+    deps.out(jsonIndent2([]));
+  } else {
+    deps.out(pc.yellow(notice));
+  }
+  throw new CliExit(EXIT_ABSTAINED);
+}
+
 function findingPayload(f: Finding): Record<string, unknown> {
   return {
     file: f.file,
@@ -614,7 +645,8 @@ export function reviewTestCmd(
   opts: LintOptions,
   deps: MainDeps,
 ): void {
-  const files = isDir(path) ? collectTestFiles(path) : [path];
+  const files = lintTargets(path);
+  if (files.length === 0) abstainLintGate(path, opts.json ?? false, deps);
   const linter = deps.makeLinter();
   const allFindings: Finding[] = [];
   for (const f of files) allFindings.push(...linter.lint(f, opts.framework));
@@ -625,7 +657,12 @@ export function reviewTestCmd(
   }
 
   if (allFindings.length === 0) {
-    deps.out(pc.bold(pc.green(`${CHECK_MARK} No issues found.`)));
+    // #508 (a): a clean gate states its denominator.
+    deps.out(
+      pc.bold(
+        pc.green(`${CHECK_MARK} No issues found in ${files.length} file(s).`),
+      ),
+    );
     return;
   }
 
@@ -663,7 +700,8 @@ export function flakeCheckCmd(
   opts: { json?: boolean },
   deps: MainDeps,
 ): void {
-  const files = isDir(path) ? collectTestFiles(path) : [path];
+  const files = lintTargets(path);
+  if (files.length === 0) abstainLintGate(path, opts.json ?? false, deps);
   const linter = deps.makeLinter();
   const allFindings: Finding[] = [];
   for (const f of files) allFindings.push(...linter.flakeCheck(f));
@@ -674,8 +712,13 @@ export function flakeCheckCmd(
   }
 
   if (allFindings.length === 0) {
+    // #508 (a): a clean gate states its denominator.
     deps.out(
-      pc.bold(pc.green(`${CHECK_MARK} No flakiness patterns detected.`)),
+      pc.bold(
+        pc.green(
+          `${CHECK_MARK} No flakiness patterns detected in ${files.length} file(s).`,
+        ),
+      ),
     );
     return;
   }

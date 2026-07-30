@@ -28,6 +28,7 @@ import { Command, Option } from 'commander';
 import pc from 'picocolors';
 
 import { CliExit, jsonIndent2, normalizeUsageExit } from '../cli-common.js';
+import { abstentionNotice } from '../core/abstention.js';
 import type { RunInput, TestResultInput } from './schema.js';
 import { makeRunId } from './schema.js';
 import { makeStore as realMakeStore, type AsyncHistoryStore } from './store.js';
@@ -194,12 +195,28 @@ async function flakyCmd(opts: FlakyOptions, deps: HistoryDeps): Promise<void> {
     opts.minRate,
   );
 
+  // No silent abstention (#508): "no flaky tests" over ZERO runs is not a
+  // pass. Probe the denominator when the store can report it (local NDJSON);
+  // the remote backend has no probe yet, so its empty result keeps the
+  // benefit of the doubt rather than mislabeling it.
+  const runsInWindow =
+    results.length === 0 && store.countRuns
+      ? await store.countRuns(opts.window, opts.suite ?? null)
+      : null;
+
   if (opts.json) {
+    if (runsInWindow === 0) {
+      deps.err(abstentionNotice('no runs in the history window'));
+    }
     deps.out(jsonIndent2(results));
     return;
   }
 
   if (results.length === 0) {
+    if (runsInWindow === 0) {
+      deps.out(abstentionNotice('no runs in the history window'));
+      return;
+    }
     deps.out(
       pc.green(
         `No tests above ${pyFloat(opts.minRate)}% flake rate in the last ${opts.window} runs.`,
@@ -289,6 +306,12 @@ async function summaryCmd(
   }
 
   const total = result.total_runs ?? 0;
+  if (total === 0) {
+    // #508: a summary over zero runs verified nothing -- say so instead of
+    // rendering a fabricated "0.0% avg pass rate" statistic.
+    deps.out(abstentionNotice(`no runs recorded for suite '${suite}'`));
+    return;
+  }
   const avg = result.avg_pass_rate ?? 0.0;
   const colorize = avg >= 90 ? pc.green : avg >= 70 ? pc.yellow : pc.red;
   deps.out(
@@ -364,6 +387,11 @@ async function migrateCmd(
     migrated += 1;
   }
 
+  if (migrated === 0) {
+    // #508: "Migrated 0 runs" reads like success while nothing was verified.
+    deps.out(abstentionNotice(`no parseable run lines found in ${file}`));
+    return;
+  }
   deps.out(`${pc.green('Migrated')} ${migrated} runs, skipped ${skipped}`);
 }
 

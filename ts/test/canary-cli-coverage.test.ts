@@ -618,20 +618,36 @@ describe('company-knowledge show / init', () => {
 });
 
 describe('history human-readable paths', () => {
-  it('flaky (empty) prints the no-flakes line', async () => {
+  it('flaky (empty store) abstains instead of a no-flakes pass (#508)', async () => {
     const tmp = mkTmp();
     try {
       const res = await invokeCanary(['history', 'flaky'], { cwd: tmp });
       expect(res.code).toBe(0);
-      expect(res.stdout).toContain('No tests above');
+      expect(res.stdout).toContain('abstained:');
     } finally {
       rmTmp(tmp);
     }
   });
 
-  it('summary prints the suite line', async () => {
+  it('summary prints the suite line when runs exist', async () => {
     const tmp = mkTmp();
     try {
+      const path = join(tmp, 'test-results', 'reports', 'history-v2.jsonl');
+      mkdirSync(join(tmp, 'test-results', 'reports'), { recursive: true });
+      writeFileSync(
+        path,
+        JSON.stringify({
+          run_id: 'r1',
+          suite: 'api',
+          timestamp: '2026-07-02T00:00:00Z',
+          total: 1,
+          passed: 1,
+          failed: 0,
+          flaky: 0,
+          tests: [],
+        }) + '\n',
+        'utf-8',
+      );
       const res = await invokeCanary(['history', 'summary', 'api'], {
         cwd: tmp,
       });

@@ -24,8 +24,13 @@ canary doctor --persona alpha # run only the checks tagged for a persona
 canary doctor --json          # machine-readable report on stdout
 ```
 
-Exit code is **0 when every check passed** (skipped and informational lines do
-not count as failures) and **non-zero when at least one check failed**.
+Exit code is **0 when at least one check was verified and none failed**, **1
+when at least one check failed**, and **3 (abstained)** when zero checks were
+actually verified — a run that checked nothing is not a pass. Skipped and
+informational lines never count as failures, but they never count as passes
+either: the summary line reports them separately
+(`3 check(s) passed (2 skipped).`), and only a run with zero skips prints
+`All checks passed.`
 
 The human report is one symbol per line, remedy indented under a failure. Its
 layout is _loosely_ modeled on `harness doctor`, but the two are **not** a
@@ -123,8 +128,9 @@ and tells you to drop the flag.
 
 `--json` emits a single machine-readable JSON object on stdout instead of the
 human report; nothing else is written, so the whole stream parses as one object.
-The exit code is unchanged (0 = all passed, non-zero = a check failed), so
-`--json` drops into a CI step that both parses the result and gates on the code.
+The exit code is unchanged (0 = verified and clean, 1 = a check failed, 3 =
+abstained), so `--json` drops into a CI step that both parses the result and
+gates on the code.
 
 ```jsonc
 {
@@ -138,7 +144,10 @@ The exit code is unchanged (0 = all passed, non-zero = a check failed), so
       "remedy": "Install git — …", // present only when the check did not pass
     },
   ],
-  "allPassed": true,
+  "allPassed": true, // no failures AND at least one check verified
+  "checked": 5, // denominator: checks actually verified (pass + fail)
+  "skipped": 2, // checks that did not run (consent-gated, filtered, …)
+  "abstained": false, // true when checked is 0 — a loud non-pass (exit 3)
   "warnings": [], // non-fatal advisories, e.g. an unknown --persona
 }
 ```
