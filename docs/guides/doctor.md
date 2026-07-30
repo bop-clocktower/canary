@@ -37,7 +37,8 @@ reports its denominator, and denominator-zero is a distinct loud outcome. The
 shared helper behind it lives at
 [`ts/src/core/abstention.ts`](../../ts/src/core/abstention.ts) — exit 3 and the
 `⚠ abstained: <reason>` line have the same meaning on every canary command that
-adopts it.
+adopts it. Doctor's summary policy is pinned by
+[`doctor-abstention.test.js`](../../npm/scripts/__tests__/doctor-abstention.test.js).
 
 The human report is one symbol per line, remedy indented under a failure. Its
 layout is _loosely_ modeled on `harness doctor`, but the two are **not** a
