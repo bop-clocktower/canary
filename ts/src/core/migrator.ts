@@ -52,9 +52,9 @@ import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { readJsonWithWarning } from './config-validation.js';
-import { EXIT_ABSTAINED, gateOutcome, GateResult } from './gate-result.js';
 import { uncertainDetectionMessage } from './detection.js';
 import { FrameworkRegistry } from './framework-registry.js';
+import { EXIT_ABSTAINED, gateOutcome, GateResult } from './gate-result.js';
 import { Scaffolder, scaffoldableFrameworks, TEMPLATES } from './scaffolder.js';
 import { SkillInfo, SkillRegistry } from './skill-registry.js';
 
