@@ -61,6 +61,20 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 ## Intake
 
+### no-silent-abstention
+
+- **Status:** planned
+- **Spec:** docs/changes/no-silent-abstention/proposal.md
+- **Summary:** No Silent Abstention doctrine (#508): every gate reports its
+  denominator; zero-verified is a loud, distinct outcome (exit 3 = abstained,
+  reserved CLI-wide). Engine `gate-result.ts` helper for ts commands + npm
+  scripts, convention + table-driven conformance suite (the canonical gate
+  registry) for self-contained skill CLIs. Gates exit 3; advisory commands warn
+  loudly with `abstained: true` but exit 0. Five waves, each shippable; v6.4.0,
+  loud by default with a "Gates that got louder" changelog section.
+- **Blockers:** —
+- **Plan:** —
+
 ### canary-pr-guardian
 
 - **Status:** done
