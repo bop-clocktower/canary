@@ -1,0 +1,79 @@
+/**
+ * Tests for the shared gate-abstention helper (#508, no-silent-abstention
+ * D3/D4/D7): a check that verified zero items has abstained, not passed.
+ */
+import { describe, expect, it } from 'vitest';
+
+import {
+  EXIT_ABSTAINED,
+  gateOutcome,
+  GateResult,
+} from '../src/core/gate-result.js';
+
+const WARN = '\u{26A0}';
+
+function result<F>(
+  checked: number,
+  findings: F[] = [],
+  skipped?: { name: string; reason: string }[],
+): GateResult<F> {
+  return { checked, findings, skipped };
+}
+
+describe('gate-result helper', () => {
+  it('reserves exit 3 for abstained (D4)', () => {
+    expect(EXIT_ABSTAINED).toBe(3);
+  });
+
+  it('gate + zero denominator abstains loudly with exit 3', () => {
+    const o = gateOutcome(result(0), 'gate');
+    expect(o.exitCode).toBe(EXIT_ABSTAINED);
+    expect(o.abstained).toBe(true);
+    expect(o.summaryLine.toLowerCase()).toContain('abstained');
+    expect(o.summaryLine).toContain(WARN);
+  });
+
+  it('advisory + zero denominator warns unmissably but exits 0 (D3)', () => {
+    const o = gateOutcome(result(0), 'advisory');
+    expect(o.exitCode).toBe(0);
+    expect(o.abstained).toBe(true);
+    expect(o.summaryLine.toLowerCase()).toContain('abstained');
+    expect(o.summaryLine).toContain(WARN);
+  });
+
+  it('gate with findings exits 1, not abstained', () => {
+    const o = gateOutcome(result(3, ['finding']), 'gate');
+    expect(o.exitCode).toBe(1);
+    expect(o.abstained).toBe(false);
+    expect(o.summaryLine).toContain('1 finding(s) across 3 checked');
+  });
+
+  it('advisory with findings still exits 0', () => {
+    expect(gateOutcome(result(2, ['x']), 'advisory').exitCode).toBe(0);
+  });
+
+  it('clean pass says how many were run (D7 phrasing)', () => {
+    const o = gateOutcome(result(4), 'gate');
+    expect(o.exitCode).toBe(0);
+    expect(o.abstained).toBe(false);
+    expect(o.summaryLine).toContain('All 4 run check(s) passed');
+  });
+
+  it('skipped entries always render and never count as passed (D7)', () => {
+    const skipped = [
+      { name: 'mcp-probe', reason: 'no consent' },
+      { name: 'net-check', reason: 'offline' },
+    ];
+    const clean = gateOutcome(result(4, [], skipped), 'gate');
+    expect(clean.summaryLine).toContain('All 4 run check(s) passed');
+    expect(clean.summaryLine).toContain('(2 skipped: mcp-probe, net-check)');
+    // Skipped-everything is an abstention, not a pass.
+    const allSkipped = gateOutcome(result(0, [], skipped), 'gate');
+    expect(allSkipped.abstained).toBe(true);
+    expect(allSkipped.exitCode).toBe(EXIT_ABSTAINED);
+    expect(allSkipped.summaryLine).toContain('(2 skipped:');
+    // Findings line carries the suffix too.
+    const found = gateOutcome(result(3, ['f'], skipped), 'gate');
+    expect(found.summaryLine).toContain('(2 skipped:');
+  });
+});
