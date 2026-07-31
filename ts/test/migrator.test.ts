@@ -28,6 +28,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { HarnessMigrator, hashSkillDir } from '../src/core/migrator.js';
 import { SkillRegistry } from '../src/core/skill-registry.js';
 
@@ -1576,6 +1577,7 @@ describe('FreshnessReport surface coverage', () => {
       });
       expect(report.results).toEqual([]);
       expect(report.exit_code()).toBe(3);
+      expect(report.exit_code()).toBe(EXIT_ABSTAINED); // #508: same reserved code
       const d = report.to_dict();
       expect(d['checked']).toBe(0);
       expect(d['abstained']).toBe(true);

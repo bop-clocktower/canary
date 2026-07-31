@@ -52,6 +52,7 @@ import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { readJsonWithWarning } from './config-validation.js';
+import { EXIT_ABSTAINED, gateOutcome, GateResult } from './gate-result.js';
 import { uncertainDetectionMessage } from './detection.js';
 import { FrameworkRegistry } from './framework-registry.js';
 import { Scaffolder, scaffoldableFrameworks, TEMPLATES } from './scaffolder.js';
@@ -709,18 +710,34 @@ export class FreshnessReport {
   }
 
   /**
+   * The freshness gate as a {@link GateResult}: denominator = skills
+   * verified, findings = drift + local edits. Feeds the shared abstention
+   * helper (#508) so "verified zero skills" can never render as a pass.
+   */
+  private gateResult(): GateResult<SkillFreshnessResult> {
+    return {
+      checked: this.results.length,
+      findings: [...this.stale, ...this.local_edits],
+    };
+  }
+
+  /**
    * A gate that verified zero skills has abstained, not passed (#503): the
    * shape matched nothing, so nothing was checked and "in sync" would be a
    * silent false pass -- the #456 class. Reported as its own exit code and
-   * flagged in every output surface.
+   * flagged in every output surface. Delegates to the shared helper (#508).
    */
   get abstained(): boolean {
-    return this.results.length === 0;
+    return gateOutcome(this.gateResult(), 'gate').abstained;
   }
 
-  /** 0 in sync, 1 drift, 2 local edits (safety refusal wins), 3 abstained. */
+  /**
+   * 0 in sync, 1 drift, 2 local edits (safety refusal wins), 3 abstained.
+   * The abstention path comes from the shared helper; the 1/2 mapping is
+   * this surface's own contract (local edits outrank drift).
+   */
   exit_code(): number {
-    if (this.abstained) return 3;
+    if (this.abstained) return EXIT_ABSTAINED;
     if (this.has_local_edits) return 2;
     if (this.has_drift) return 1;
     return 0;
