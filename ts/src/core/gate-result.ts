@@ -71,15 +71,8 @@ export function gateOutcome<F>(
   kind: GateKind,
 ): GateOutcome {
   const suffix = skippedSuffix(result.skipped);
-  if (result.checked === 0) {
-    return {
-      exitCode: kind === 'gate' ? EXIT_ABSTAINED : 0,
-      abstained: true,
-      summaryLine:
-        `${WARN} Abstained ${EMDASH} verified zero items; ` +
-        `this is not a pass.${suffix}`,
-    };
-  }
+  // Findings outrank abstention: a finding proves something was checked,
+  // so it must never be masked by a collapsed/invalid denominator.
   if (result.findings.length > 0) {
     return {
       exitCode: kind === 'gate' ? 1 : 0,
@@ -87,6 +80,17 @@ export function gateOutcome<F>(
       summaryLine:
         `${result.findings.length} finding(s) across ` +
         `${result.checked} checked${suffix}`,
+    };
+  }
+  // Negated comparison so 0, negatives, and NaN all abstain: an invalid
+  // denominator must never render as success.
+  if (!(result.checked > 0)) {
+    return {
+      exitCode: kind === 'gate' ? EXIT_ABSTAINED : 0,
+      abstained: true,
+      summaryLine:
+        `${WARN} Abstained ${EMDASH} verified zero items; ` +
+        `this is not a pass.${suffix}`,
     };
   }
   return {

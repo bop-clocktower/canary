@@ -41,6 +41,29 @@ describe('gate-result helper', () => {
     expect(o.summaryLine).toContain(WARN);
   });
 
+  it('invalid denominators (negative, NaN) abstain, never pass', () => {
+    for (const bad of [-1, Number.NaN]) {
+      const o = gateOutcome(result(bad), 'gate');
+      expect(o.exitCode).toBe(EXIT_ABSTAINED);
+      expect(o.abstained).toBe(true);
+      expect(o.summaryLine.toLowerCase()).toContain('abstained');
+    }
+  });
+
+  it('findings outrank abstention: a finding proves something was checked', () => {
+    const o = gateOutcome(result(0, ['x']), 'gate');
+    expect(o.exitCode).toBe(1);
+    expect(o.abstained).toBe(false);
+    expect(o.summaryLine).toContain('1 finding(s) across 0 checked');
+  });
+
+  it('advisory clean pass uses the same run-count summary', () => {
+    const o = gateOutcome(result(2), 'advisory');
+    expect(o.exitCode).toBe(0);
+    expect(o.abstained).toBe(false);
+    expect(o.summaryLine).toContain('All 2 run check(s) passed');
+  });
+
   it('gate with findings exits 1, not abstained', () => {
     const o = gateOutcome(result(3, ['finding']), 'gate');
     expect(o.exitCode).toBe(1);
