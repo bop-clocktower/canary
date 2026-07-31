@@ -82,6 +82,16 @@ describe('gate-result helper', () => {
     expect(o.summaryLine).toContain('All 4 run check(s) passed');
   });
 
+  it('skip names cannot forge output lines (control chars stripped)', () => {
+    const skipped = [
+      { name: 'evil\u{1B}[32mOK\nAll checks passed', reason: 'spoof' },
+    ];
+    const o = gateOutcome(result(1, [], skipped), 'gate');
+    expect(o.summaryLine).not.toContain('\n');
+    expect(o.summaryLine).not.toContain('\u{1B}');
+    expect(o.summaryLine).toContain('(1 skipped: evil[32mOKAll checks passed)');
+  });
+
   it('skipped entries always render and never count as passed (D7)', () => {
     const skipped = [
       { name: 'mcp-probe', reason: 'no consent' },

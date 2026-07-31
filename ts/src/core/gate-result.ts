@@ -52,10 +52,16 @@ export interface GateOutcome {
 const WARN = '\u{26A0}'; // warning sign
 const EMDASH = '\u{2014}'; // em dash
 
+// C0 controls (incl. \n, ESC) and DEL: a skip name must never be able to
+// forge output lines or smuggle ANSI sequences into the summary.
+const CONTROL_CHARS = /[\u0000-\u001F\u007F]/g;
+
 /** D7: skipped entries render in EVERY summary line. */
 function skippedSuffix(skipped?: SkipEntry[]): string {
   if (!skipped || skipped.length === 0) return '';
-  const names = skipped.map((s) => s.name).join(', ');
+  const names = skipped
+    .map((s) => s.name.replace(CONTROL_CHARS, ''))
+    .join(', ');
   return ` (${skipped.length} skipped: ${names})`;
 }
 
