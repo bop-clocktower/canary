@@ -19,12 +19,23 @@ describe('feedback core', () => {
     const ctx = collectContext();
     expect(ctx).toHaveProperty('version');
     expect(ctx).toHaveProperty('os');
-    expect(ctx).toHaveProperty('python');
+    expect(ctx).toHaveProperty('runtime');
+    // #506: the key was 'python' carrying process.version — misleading in
+    // filed issues now that the Python engine is retired.
+    expect(ctx).not.toHaveProperty('python');
+    expect(ctx['runtime']).toBe(process.version);
     // Must never leak env vars or file contents.
     const joined = JSON.stringify(ctx).toLowerCase();
     expect(joined).not.toContain('secret');
     expect(joined).not.toContain('token');
     expect(joined).not.toContain('api_key');
+  });
+
+  // #506: the CLI knows its version; the payload's single most useful triage
+  // field must carry it when the caller provides one.
+  it('context carries a caller-supplied version, defaulting to unknown', () => {
+    expect(collectContext('6.3.0')['version']).toBe('6.3.0');
+    expect(collectContext()['version']).toBe('unknown');
   });
 
   it('build_feedback bundles message, category, context', () => {
@@ -33,6 +44,13 @@ describe('feedback core', () => {
     expect(fb.message).toBe('login button is broken');
     expect(fb).toHaveProperty('context');
     expect(fb).toHaveProperty('issue_url');
+  });
+
+  it('build_feedback threads the version into context and body', () => {
+    const fb = buildFeedback('login button is broken', 'bug', '6.3.0');
+    expect(fb.context['version']).toBe('6.3.0');
+    const body = new URL(fb.issue_url).searchParams.get('body') ?? '';
+    expect(body).toContain('version: 6.3.0');
   });
 
   it('issue url is prefilled and encoded', () => {
@@ -63,5 +81,30 @@ describe('feedback core', () => {
     const url = buildIssueUrl('bug', message, { version: '5.11.0' });
     const title = new URL(url).searchParams.get('title') ?? '';
     expect(title).toContain('TAIL');
+    expect(title).not.toContain('\u{2026}');
+  });
+
+  // #506: truncation was a hard cut at 60 code points with no ellipsis —
+  // titles ended mid-word ("…command checks ne"). Break on the last word
+  // boundary inside the budget and make the truncation visible.
+  it('long titles truncate on a word boundary with an ellipsis', () => {
+    const message = 'alpha '.repeat(9) + 'boundaryword extra tail';
+    const url = buildIssueUrl('ux', message, { version: '6.3.0' });
+    const title = new URL(url).searchParams.get('title') ?? '';
+    expect(title).toBe(`[ux] ${'alpha '.repeat(8)}alpha\u{2026}`);
+    expect(title).not.toContain('bounda');
+  });
+
+  it('an unbreakable long token still hard-truncates with an ellipsis', () => {
+    const message = 'x'.repeat(100);
+    const url = buildIssueUrl('bug', message, { version: '6.3.0' });
+    const title = new URL(url).searchParams.get('title') ?? '';
+    expect(title).toBe(`[bug] ${'x'.repeat(60)}\u{2026}`);
+  });
+
+  it('short titles are untouched (no ellipsis)', () => {
+    const url = buildIssueUrl('bug', 'short and sweet', { version: '6.3.0' });
+    const title = new URL(url).searchParams.get('title') ?? '';
+    expect(title).toBe('[bug] short and sweet');
   });
 });

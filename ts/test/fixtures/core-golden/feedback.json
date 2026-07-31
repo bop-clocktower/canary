@@ -30,7 +30,7 @@
         "os": "Darwin 27.0.0"
       },
       "endpoint": "https://github.com/bop-clocktower/canary/issues/new",
-      "title": "[docs] The quick brown fox jumps over the lazy dog and then keeps o",
+      "title": "[docs] The quick brown fox jumps over the lazy dog and then keeps…",
       "body": "The quick brown fox jumps over the lazy dog and then keeps on running\n\n---\n_Submitted via `canary feedback`._\n\n**Environment**\n- os: Darwin 27.0.0",
       "labels": "docs"
     }
@@ -42,7 +42,7 @@
       "context_keys": [
         "version",
         "os",
-        "python",
+        "runtime",
         "install"
       ]
     },
@@ -52,7 +52,7 @@
       "context_keys": [
         "version",
         "os",
-        "python",
+        "runtime",
         "install"
       ]
     }
