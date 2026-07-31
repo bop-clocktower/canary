@@ -82,6 +82,11 @@ describe('gate-result helper', () => {
     expect(o.summaryLine).toContain('All 4 run check(s) passed');
   });
 
+  it('clean-pass noun is parameterizable via opts.noun', () => {
+    const o = gateOutcome(result(4), 'advisory', { noun: 'item(s)' });
+    expect(o.summaryLine).toContain('All 4 run item(s) passed');
+  });
+
   it('skip names cannot forge output lines (control chars stripped)', () => {
     const skipped = [
       { name: 'evil\u{1B}[32mOK\nAll checks passed', reason: 'spoof' },

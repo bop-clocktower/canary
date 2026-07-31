@@ -1655,7 +1655,7 @@ describe('MigrationReport dry-run status', () => {
       expect(md).toContain('would migrate');
       expect(md).toContain('--apply');
     }));
-  it('dry run that would migrate zero files abstains loudly', () =>
+  it('dry run that would migrate zero item(s) abstains loudly', () =>
     withTmp((root) => {
       makeHarnessProject(root);
       const m = mig();
@@ -1665,6 +1665,9 @@ describe('MigrationReport dry-run status', () => {
       const md = report.to_markdown();
       expect(md).not.toContain('Migration complete');
       expect(md.toLowerCase()).toContain('abstained');
+      // Review nit 7: unit noun is consistent ("item(s)", never "files").
+      expect(md).toContain('zero item(s)');
+      expect(md).not.toContain('zero files');
     }));
   it('apply-mode completion copy is unchanged', () =>
     withTmp((root) => {

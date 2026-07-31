@@ -49,6 +49,12 @@ export interface GateOutcome {
   summaryLine: string;
 }
 
+/** Copy hooks: surfaces adapt wording without re-owning the decision. */
+export interface GateOutcomeOptions {
+  /** Unit noun for the clean-pass line. Default: `'check(s)'`. */
+  noun?: string;
+}
+
 const WARN = '\u{26A0}'; // warning sign
 const EMDASH = '\u{2014}'; // em dash
 
@@ -75,7 +81,9 @@ function skippedSuffix(skipped?: SkipEntry[]): string {
 export function gateOutcome<F>(
   result: GateResult<F>,
   kind: GateKind,
+  opts: GateOutcomeOptions = {},
 ): GateOutcome {
+  const noun = opts.noun ?? 'check(s)';
   const suffix = skippedSuffix(result.skipped);
   // Findings outrank abstention: a finding proves something was checked,
   // so it must never be masked by a collapsed/invalid denominator.
@@ -102,6 +110,6 @@ export function gateOutcome<F>(
   return {
     exitCode: 0,
     abstained: false,
-    summaryLine: `All ${result.checked} run check(s) passed${suffix}`,
+    summaryLine: `All ${result.checked} run ${noun} passed${suffix}`,
   };
 }

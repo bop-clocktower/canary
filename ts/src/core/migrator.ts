@@ -1072,14 +1072,18 @@ export class MigrationReport {
     } else if (this.dry_run) {
       // #504 abstention half: a dry run never completed anything. Zero
       // pending work is an advisory abstention (D3) -- gateOutcome is the
-      // only summary-line path, so the refusal is structural.
+      // only summary-line path AND the only decision point (no local
+      // n === 0 arithmetic), so the refusal is structural.
       const n = this.would_migrate_count;
+      const outcome = gateOutcome({ checked: n, findings: [] }, 'advisory', {
+        noun: 'item(s)',
+      });
       lines.push('## Status', '');
-      if (n === 0) {
+      if (outcome.abstained) {
         lines.push(
-          gateOutcome({ checked: 0, findings: [] }, 'advisory').summaryLine,
+          outcome.summaryLine,
           '',
-          'This dry run would migrate zero files ' +
+          'This dry run would migrate zero item(s) ' +
             EMDASH +
             ' the project already carries everything this migration would ' +
             'produce. If you expected changes, check `--from <overlay>` and ' +
