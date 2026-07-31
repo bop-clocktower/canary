@@ -927,6 +927,20 @@ export class MigrationReport {
     this.config_warnings = init.config_warnings ?? [];
   }
 
+  /**
+   * The dry run's denominator (#504): config files that would be created,
+   * skills that would deploy, workflows that would install. Zero means the
+   * dry run has nothing to apply -- an advisory abstention, not a
+   * completed migration.
+   */
+  get would_migrate_count(): number {
+    return (
+      this.would_create.length +
+      this.deployed_skills.filter((r) => r.status === 'dry_run').length +
+      this.installed_workflows.filter((r) => r.status === 'dry_run').length
+    );
+  }
+
   to_markdown(): string {
     const lines: string[] = ['# Canary Migration Report', ''];
     if (this.dry_run) {
@@ -1055,6 +1069,30 @@ export class MigrationReport {
       lines.push('## Manual Follow-ups Required', '');
       for (const item of this.manual_followups) lines.push(`- ${item}`);
       lines.push('');
+    } else if (this.dry_run) {
+      // #504 abstention half: a dry run never completed anything. Zero
+      // pending work is an advisory abstention (D3) -- gateOutcome is the
+      // only summary-line path, so the refusal is structural.
+      const n = this.would_migrate_count;
+      lines.push('## Status', '');
+      if (n === 0) {
+        lines.push(
+          gateOutcome({ checked: 0, findings: [] }, 'advisory').summaryLine,
+          '',
+          'This dry run would migrate zero files ' +
+            EMDASH +
+            ' the project already carries everything this migration would ' +
+            'produce. If you expected changes, check `--from <overlay>` and ' +
+            'the detected framework/shape above.',
+          '',
+        );
+      } else {
+        lines.push(
+          `Dry run ${EMDASH} would migrate ${n} item(s). ` +
+            'Re-run with `--apply` to write them.',
+          '',
+        );
+      }
     } else {
       lines.push(
         '## Status',

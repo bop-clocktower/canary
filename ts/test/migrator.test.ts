@@ -1642,6 +1642,38 @@ describe('MigrationReport apply markdown coverage', () => {
     }));
 });
 
+// #504 abstention half: a dry run never "completed" a migration, and a
+// dry run that would migrate zero files is an advisory abstention.
+describe('MigrationReport dry-run status', () => {
+  it('dry run with work pending says would-migrate, never complete', () =>
+    withTmp((root) => {
+      makeHarnessProject(root);
+      const report = mig().migrate(root, { dryRun: true });
+      expect(report.would_migrate_count).toBeGreaterThan(0);
+      const md = report.to_markdown();
+      expect(md).not.toContain('Migration complete');
+      expect(md).toContain('would migrate');
+      expect(md).toContain('--apply');
+    }));
+  it('dry run that would migrate zero files abstains loudly', () =>
+    withTmp((root) => {
+      makeHarnessProject(root);
+      const m = mig();
+      m.migrate(root, { dryRun: false }); // apply first: nothing left to do
+      const report = m.migrate(root, { dryRun: true });
+      expect(report.would_migrate_count).toBe(0);
+      const md = report.to_markdown();
+      expect(md).not.toContain('Migration complete');
+      expect(md.toLowerCase()).toContain('abstained');
+    }));
+  it('apply-mode completion copy is unchanged', () =>
+    withTmp((root) => {
+      makeHarnessProject(root);
+      const md = mig().migrate(root, { dryRun: false }).to_markdown();
+      expect(md).toContain('Migration complete');
+    }));
+});
+
 // Deployment edge cases: nested skill files, bogus overlay, malformed manifest.
 describe('deploy edge coverage', () => {
   function run<T>(fn: (s: { target: string; overlay: string }) => T): T {

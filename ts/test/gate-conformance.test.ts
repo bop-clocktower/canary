@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
+import { HarnessMigrator } from '../src/core/migrator.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 
 interface GateRow {
@@ -67,6 +68,28 @@ const ROWS: GateRow[] = [
         args: ['migrate', '--path', project, '--check', '--from', overlay],
         home,
       };
+    },
+  },
+  {
+    command: 'migrate (dry run)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: ['Migration complete'],
+    // #504: pre-apply so the dry run has nothing left to migrate.
+    fixture: (base) => {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      writeFileSync(
+        join(project, 'harness.config.json'),
+        JSON.stringify({ language: 'python', layers: [] }),
+        'utf-8',
+      );
+      mkdirSync(join(project, '.harness'));
+      new HarnessMigrator(home).migrate(project, { dryRun: false });
+      return { args: ['migrate', '--path', project], home };
     },
   },
 ];
