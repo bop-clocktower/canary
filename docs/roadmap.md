@@ -2,9 +2,9 @@
 project: canary
 version: 1
 created: 2026-05-11
-updated: 2026-06-29
+updated: 2026-08-02
 last_synced: 2026-06-29
-last_manual_edit: 2026-07-21T21:28:28.000Z
+last_manual_edit: 2026-08-02T23:25:00.000Z
 ---
 
 # Roadmap
@@ -63,17 +63,28 @@ last_manual_edit: 2026-07-21T21:28:28.000Z
 
 ### no-silent-abstention
 
-- **Status:** planned
+- **Status:** in-progress
 - **Spec:** docs/changes/no-silent-abstention/proposal.md
 - **Summary:** No Silent Abstention doctrine (#508): every gate reports its
   denominator; zero-verified is a loud, distinct outcome (exit 3 = abstained,
   reserved CLI-wide). Engine `gate-result.ts` helper for ts commands + npm
   scripts, convention + table-driven conformance suite (the canonical gate
   registry) for self-contained skill CLIs. Gates exit 3; advisory commands warn
-  loudly with `abstained: true` but exit 0. Five waves, each shippable; v6.4.0,
-  loud by default with a "Gates that got louder" changelog section.
+  loudly with `abstained: true` but exit 0. Five waves, each shippable. WAVE 1
+  SHIPPED in v6.4.0 (PR #518): `ts/src/core/gate-result.ts`, the conformance
+  registry (`ts/test/gate-conformance.test.ts`, seeded with `migrate --check` +
+  `migrate` dry-run), the #503 `FreshnessReport` retrofit (byte-identical,
+  pinned by a coupling assert), and the #504 dry-run abstention half. Waves 2-5
+  remain: guardian (plan written), npm/doctor layer (D7 summary semantics), the
+  review-test / flake-check / analyze / history long tail, then CI-template
+  annotations + doctrine docs. NOTE: PR #515 attempted Waves 3-4 ad-hoc against
+  a second helper (`abstention.ts`) and was CLOSED as superseded; its audit
+  table is the reference for that scope. The spec's "Gates that got louder"
+  changelog section was NOT used in v6.4.0 (standard Added/Fixed headings
+  instead) — decide whether to adopt it from Wave 2 on or drop it from the spec.
+  (refs: docs/changes/no-silent-abstention/plans/)
 - **Blockers:** —
-- **Plan:** —
+- **Plan:** docs/changes/no-silent-abstention/plans/
 
 ### canary-pr-guardian
 
