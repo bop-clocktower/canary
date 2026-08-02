@@ -970,6 +970,17 @@ function abstainPrCheck(
   });
   deps.out(outcome.summaryLine);
   for (const line of PR_CHECK_ABSTAIN_REMEDIATION) deps.out(line);
+  if (format === 'json') {
+    deps.out(
+      ensureAscii(
+        JSON.stringify(
+          { findings: [], tier: 0, checked: 0, abstained: true },
+          null,
+          2,
+        ),
+      ),
+    );
+  }
   throw new CliExit(outcome.exitCode); // EXIT_ABSTAINED
 }
 
@@ -1124,6 +1135,7 @@ async function prCheckCmd(
         opts.format,
         resolution.effective,
         resolution.degraded_notice,
+        { checked: scoredResults.length, abstained: false },
       ),
     );
   }

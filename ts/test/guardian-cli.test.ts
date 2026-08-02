@@ -404,6 +404,35 @@ describe('pr-check post pipeline', () => {
     expect(res.stdout).toContain('docs/'); // the path is visible, not a bare count
   });
 
+  it('json output carries checked and abstained (#508)', async () => {
+    mkdirSync(join(tmp, 'agent', 'core'), { recursive: true });
+    writeFileSync(
+      join(tmp, 'agent', 'core', 'foo.py'),
+      'def foo():\n    return 1\n',
+      'utf-8',
+    );
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--format', 'json', '--gate', 'soft'],
+      { input: DIFF_SRC_AND_TEST, cwd: tmp },
+    );
+    expect(res.code).toBe(0);
+    const data = JSON.parse(res.stdout);
+    expect(data.abstained).toBe(false);
+    expect(data.checked).toBeGreaterThan(0);
+  });
+
+  it('abstained json payload is machine-readable after the loud lines', async () => {
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--format', 'json'],
+      { input: '', cwd: tmp },
+    );
+    expect(res.code).toBe(3);
+    // Loud lines print first; parse from the first brace (the analyze
+    // --json precedent in this suite).
+    const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    expect(data).toMatchObject({ findings: [], checked: 0, abstained: true });
+  });
+
   it('test files never become findings', async () => {
     mkdirSync(join(tmp, 'agent', 'core'), { recursive: true });
     writeFileSync(
