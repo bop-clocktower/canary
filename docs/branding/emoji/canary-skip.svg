@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128" height="128">
+  <!-- Canary SKIP — quarantined / benched (muted grey, no verdict) -->
+  <rect width="64" height="64" rx="10" fill="#0A0A0A"/>
+  <!-- muted signal, dashed = paused/not run -->
+  <path d="M49 24 A9 9 0 0 1 49 40" fill="none" stroke="#6A6A6A" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="2.6 3"/>
+  <path d="M54 19 A14 14 0 0 1 54 45" fill="none" stroke="#6A6A6A" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="2.6 3" opacity="0.5"/>
+  <!-- dimmed bird -->
+  <circle cx="24" cy="33" r="13" fill="#7C7C7C"/>
+  <polygon points="17,23 16,12 25,20" fill="#7C7C7C"/>
+  <polygon points="36,29 47,33 36,37" fill="#7C7C7C"/>
+  <circle cx="28" cy="30" r="2.7" fill="#0A0A0A"/>
+</svg>

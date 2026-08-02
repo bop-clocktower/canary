@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128" height="128">
+  <!-- Canary base — hero app icon (Canary yellow tile, Obsidian bird) -->
+  <rect width="64" height="64" rx="10" fill="#F0C040"/>
+  <path d="M49 24 A9 9 0 0 1 49 40" fill="none" stroke="#0A0A0A" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M54 19 A14 14 0 0 1 54 45" fill="none" stroke="#0A0A0A" stroke-width="2.4" stroke-linecap="round" opacity="0.45"/>
+  <circle cx="24" cy="33" r="13" fill="#0A0A0A"/>
+  <polygon points="17,23 16,12 25,20" fill="#0A0A0A"/>
+  <polygon points="36,29 47,33 36,37" fill="#0A0A0A"/>
+  <circle cx="28" cy="30" r="2.7" fill="#F0C040"/>
+</svg>
