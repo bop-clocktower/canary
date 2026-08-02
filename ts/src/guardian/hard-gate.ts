@@ -61,6 +61,20 @@ export class HardGateBlocked extends Error {
 }
 
 /**
+ * The verification population was EMPTY (#508): no check has ever
+ * reported on the branch, so the context could not be verified against
+ * anything. A subclass of {@link HardGateBlocked} so pre-#508 catch
+ * sites keep working; the CLI maps it to EXIT_ABSTAINED (3), distinct
+ * from real blockers (1).
+ */
+export class HardGateAbstained extends HardGateBlocked {
+  constructor(reason: string, playbook: string) {
+    super(reason, playbook);
+    this.name = 'HardGateAbstained';
+  }
+}
+
+/**
  * What promoting the gate would change on `branch`.
  *
  * `already_required` — the check is already required (no-op).
@@ -279,12 +293,13 @@ export async function applyHardGate(
       observed = [];
     }
     if (observed.length === 0) {
-      throw blocked(
+      throw new HardGateAbstained(
         `could not confirm any check has reported on ${repo}@${branch}, ` +
           `so cannot verify '${checkContext}' is a real context; ` +
           'requiring an unreported check would block every merge. ' +
           'Open a PR so the guardian check runs at least once, or pass ' +
           '--force to register it anyway.',
+        playbook,
       );
     }
     if (!observed.includes(checkContext)) {
