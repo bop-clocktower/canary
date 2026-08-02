@@ -28,6 +28,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { HarnessMigrator, hashSkillDir } from '../src/core/migrator.js';
 import { SkillRegistry } from '../src/core/skill-registry.js';
 
@@ -1576,6 +1577,7 @@ describe('FreshnessReport surface coverage', () => {
       });
       expect(report.results).toEqual([]);
       expect(report.exit_code()).toBe(3);
+      expect(report.exit_code()).toBe(EXIT_ABSTAINED); // #508: same reserved code
       const d = report.to_dict();
       expect(d['checked']).toBe(0);
       expect(d['abstained']).toBe(true);
@@ -1636,6 +1638,41 @@ describe('MigrationReport apply markdown coverage', () => {
       expect(md).toContain('Created Directories');
       expect(md).toContain('Skipped (already exist)');
       expect(md).toContain('preserved as-is');
+      expect(md).toContain('Migration complete');
+    }));
+});
+
+// #504 abstention half: a dry run never "completed" a migration, and a
+// dry run that would migrate zero files is an advisory abstention.
+describe('MigrationReport dry-run status', () => {
+  it('dry run with work pending says would-migrate, never complete', () =>
+    withTmp((root) => {
+      makeHarnessProject(root);
+      const report = mig().migrate(root, { dryRun: true });
+      expect(report.would_migrate_count).toBeGreaterThan(0);
+      const md = report.to_markdown();
+      expect(md).not.toContain('Migration complete');
+      expect(md).toContain('would migrate');
+      expect(md).toContain('--apply');
+    }));
+  it('dry run that would migrate zero item(s) abstains loudly', () =>
+    withTmp((root) => {
+      makeHarnessProject(root);
+      const m = mig();
+      m.migrate(root, { dryRun: false }); // apply first: nothing left to do
+      const report = m.migrate(root, { dryRun: true });
+      expect(report.would_migrate_count).toBe(0);
+      const md = report.to_markdown();
+      expect(md).not.toContain('Migration complete');
+      expect(md.toLowerCase()).toContain('abstained');
+      // Review nit 7: unit noun is consistent ("item(s)", never "files").
+      expect(md).toContain('zero item(s)');
+      expect(md).not.toContain('zero files');
+    }));
+  it('apply-mode completion copy is unchanged', () =>
+    withTmp((root) => {
+      makeHarnessProject(root);
+      const md = mig().migrate(root, { dryRun: false }).to_markdown();
       expect(md).toContain('Migration complete');
     }));
 });

@@ -54,6 +54,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { readJsonWithWarning } from './config-validation.js';
 import { uncertainDetectionMessage } from './detection.js';
 import { FrameworkRegistry } from './framework-registry.js';
+import { EXIT_ABSTAINED, gateOutcome, GateResult } from './gate-result.js';
 import { Scaffolder, scaffoldableFrameworks, TEMPLATES } from './scaffolder.js';
 import { SkillInfo, SkillRegistry } from './skill-registry.js';
 
@@ -709,18 +710,34 @@ export class FreshnessReport {
   }
 
   /**
+   * The freshness gate as a {@link GateResult}: denominator = skills
+   * verified, findings = drift + local edits. Feeds the shared abstention
+   * helper (#508) so "verified zero skills" can never render as a pass.
+   */
+  private gateResult(): GateResult<SkillFreshnessResult> {
+    return {
+      checked: this.results.length,
+      findings: [...this.stale, ...this.local_edits],
+    };
+  }
+
+  /**
    * A gate that verified zero skills has abstained, not passed (#503): the
    * shape matched nothing, so nothing was checked and "in sync" would be a
    * silent false pass -- the #456 class. Reported as its own exit code and
-   * flagged in every output surface.
+   * flagged in every output surface. Delegates to the shared helper (#508).
    */
   get abstained(): boolean {
-    return this.results.length === 0;
+    return gateOutcome(this.gateResult(), 'gate').abstained;
   }
 
-  /** 0 in sync, 1 drift, 2 local edits (safety refusal wins), 3 abstained. */
+  /**
+   * 0 in sync, 1 drift, 2 local edits (safety refusal wins), 3 abstained.
+   * The abstention path comes from the shared helper; the 1/2 mapping is
+   * this surface's own contract (local edits outrank drift).
+   */
   exit_code(): number {
-    if (this.abstained) return 3;
+    if (this.abstained) return EXIT_ABSTAINED;
     if (this.has_local_edits) return 2;
     if (this.has_drift) return 1;
     return 0;
@@ -910,6 +927,20 @@ export class MigrationReport {
     this.config_warnings = init.config_warnings ?? [];
   }
 
+  /**
+   * The dry run's denominator (#504): config files that would be created,
+   * skills that would deploy, workflows that would install. Zero means the
+   * dry run has nothing to apply -- an advisory abstention, not a
+   * completed migration.
+   */
+  get would_migrate_count(): number {
+    return (
+      this.would_create.length +
+      this.deployed_skills.filter((r) => r.status === 'dry_run').length +
+      this.installed_workflows.filter((r) => r.status === 'dry_run').length
+    );
+  }
+
   to_markdown(): string {
     const lines: string[] = ['# Canary Migration Report', ''];
     if (this.dry_run) {
@@ -1038,6 +1069,34 @@ export class MigrationReport {
       lines.push('## Manual Follow-ups Required', '');
       for (const item of this.manual_followups) lines.push(`- ${item}`);
       lines.push('');
+    } else if (this.dry_run) {
+      // #504 abstention half: a dry run never completed anything. Zero
+      // pending work is an advisory abstention (D3) -- gateOutcome is the
+      // only summary-line path AND the only decision point (no local
+      // n === 0 arithmetic), so the refusal is structural.
+      const n = this.would_migrate_count;
+      const outcome = gateOutcome({ checked: n, findings: [] }, 'advisory', {
+        noun: 'item(s)',
+      });
+      lines.push('## Status', '');
+      if (outcome.abstained) {
+        lines.push(
+          outcome.summaryLine,
+          '',
+          'This dry run would migrate zero item(s) ' +
+            EMDASH +
+            ' the project already carries everything this migration would ' +
+            'produce. If you expected changes, check `--from <overlay>` and ' +
+            'the detected framework/shape above.',
+          '',
+        );
+      } else {
+        lines.push(
+          `Dry run ${EMDASH} would migrate ${n} item(s). ` +
+            'Re-run with `--apply` to write them.',
+          '',
+        );
+      }
     } else {
       lines.push(
         '## Status',
