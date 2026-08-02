@@ -675,6 +675,24 @@ function analyzeCmd(
   const gaps = mapImpact(diff, coverageRows);
   const summary = buildSummary(gaps, sha, opts.suite);
 
+  // #508 advisory abstention (D3): a diff with zero endpoints analyzed
+  // nothing. gateOutcome is the only decision point -- no local === 0.
+  const endpointCount =
+    diff.added.length + diff.removed.length + diff.changed.length;
+  const outcome = gateOutcome(
+    { checked: endpointCount, findings: gaps },
+    'advisory',
+    { noun: 'endpoint(s)' },
+  );
+  if (outcome.abstained) {
+    deps.out(outcome.summaryLine);
+    deps.out(
+      'guardian: the spec diff contains zero endpoints, so there was no ' +
+        'impact to analyze. Pass --spec-before/--spec-after pointing at ' +
+        'specs that actually differ.',
+    );
+  }
+
   if (opts.json) {
     deps.out(
       ensureAscii(
@@ -685,6 +703,8 @@ function analyzeCmd(
             added: diff.added.length,
             removed: diff.removed.length,
             changed: diff.changed.length,
+            checked: endpointCount,
+            abstained: outcome.abstained,
             gaps: gaps.map((g) => ({
               path: g.path,
               method: g.method,

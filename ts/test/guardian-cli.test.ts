@@ -231,6 +231,37 @@ describe('analyze', () => {
     expect(payload.added).toBe(0);
   });
 
+  it('zero-endpoint diff abstains visibly but exits 0 (#508, D3)', async () => {
+    const res = await invokeGuardian(['analyze', 'abc1234', '--json']);
+    expect(res.code).toBe(0); // advisory: an empty answer honestly labeled
+    expect(res.stdout.toLowerCase()).toContain('abstained');
+    const payload = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    expect(payload.checked).toBe(0);
+    expect(payload.abstained).toBe(true);
+  });
+
+  it('a real diff carries checked>0 and no abstention warning', async () => {
+    const [before, after] = writeSpecs();
+    const res = await invokeGuardian([
+      'analyze',
+      'abc1234',
+      '--spec-before',
+      before,
+      '--spec-after',
+      after,
+      '--dry-run',
+      '--json',
+    ]);
+    expect(res.code).toBe(0);
+    // The HUMAN abstention line is capitalized ('\u26a0 Abstained \u2014 ...');
+    // the lowercase `abstained` json KEY is expected in the payload, so this
+    // must not lowercase stdout or it matches its own additive field.
+    expect(res.stdout).not.toContain('Abstained');
+    const payload = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    expect(payload.checked).toBe(1); // one added endpoint
+    expect(payload.abstained).toBe(false);
+  });
+
   it('no commit defaults to unknown; prints markdown summary', async () => {
     const res = await invokeGuardian(['analyze']);
     expect(res.code).toBe(0);
