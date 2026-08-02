@@ -77,6 +77,7 @@ import { buildApiDelta, writeApiDelta } from './delta-emitter.js';
 import { extractApiDiff } from './diff-extractor.js';
 import {
   BranchProtection,
+  HardGateAbstained,
   HardGateBlocked,
   RestBranchProtectionClient,
   applyHardGate,
@@ -859,6 +860,15 @@ async function hardenGateCmd(
       opts.force ?? false,
     );
   } catch (exc) {
+    if (exc instanceof HardGateAbstained) {
+      const outcome = gateOutcome({ checked: 0, findings: [] }, 'gate', {
+        noun: 'check context(s)',
+      });
+      deps.out(outcome.summaryLine);
+      deps.out(`${pc.red(pc.bold(`${CROSS} ${exc.reason}`))}\n`);
+      deps.out(exc.playbook);
+      throw new CliExit(outcome.exitCode); // 3, never 1
+    }
     if (exc instanceof HardGateBlocked) {
       deps.out(`${pc.red(pc.bold(`${CROSS} ${exc.reason}`))}\n`);
       deps.out(exc.playbook);
