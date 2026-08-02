@@ -18,5 +18,7 @@ If on `main`:
 - Wait for confirmation, then create and switch to the branch
   before proceeding.
 
-Documentation-only commits (`AGENTS.md`, `README.md`, `CLAUDE.md`,
-etc.) may land on `main` directly unless the user says otherwise.
+`main` is protected on GitHub: all changes, including documentation-only
+commits (`AGENTS.md`, `README.md`, `CLAUDE.md`, etc.), require a pull
+request — direct pushes are rejected. Always create a branch and open a
+PR, even for doc-only changes.

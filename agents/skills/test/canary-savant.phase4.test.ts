@@ -27,17 +27,26 @@ describe('detectFramework', () => {
   it('picks vitest from a .test.ts path', () => {
     expect(runner.detectFramework(['src/a.test.ts'])).toBe('vitest');
   });
+  // `readdir: () => []` keeps step 2 (directory scan) off the real cwd: a
+  // checkout with an unrelated tests/ dir full of .py files would otherwise
+  // resolve 'pytest' before the mocked config-file probe is consulted (#511).
   it('falls back to config files for a bare directory', () => {
+    const readdir = () => [];
     const exists = (f: string) => f === 'vitest.config.ts';
-    expect(runner.detectFramework(['tests'], { exists })).toBe('vitest');
-    const existsPy = (f: string) => f === 'pyproject.toml';
-    expect(runner.detectFramework(['tests'], { exists: existsPy })).toBe(
-      'pytest',
+    expect(runner.detectFramework(['tests'], { exists, readdir })).toBe(
+      'vitest',
     );
+    const existsPy = (f: string) => f === 'pyproject.toml';
+    expect(
+      runner.detectFramework(['tests'], { exists: existsPy, readdir }),
+    ).toBe('pytest');
   });
   it('returns null when it cannot tell', () => {
     expect(
-      runner.detectFramework(['tests'], { exists: () => false }),
+      runner.detectFramework(['tests'], {
+        exists: () => false,
+        readdir: () => [],
+      }),
     ).toBeNull();
   });
 });
