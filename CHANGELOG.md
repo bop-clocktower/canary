@@ -14,6 +14,131 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [6.4.0] - 2026-08-02
+
+The **silence** release. Every fix here is the same defect wearing a different
+coat: a surface that reported success while verifying nothing. A gate that
+matched zero skills and exited 0. A declared list that parsed as empty and
+migrated nothing. An MCP server the plugin manifest has advertised since v6 that
+was never shipped. Detectors so noisy their real findings were unreadable, and
+an advisory CI step nobody read. Canary ran effectively broken in a consuming
+repo for ~7 weeks and no surface said so.
+
+This release starts turning that into a rule rather than a series of one-off
+fixes: **a check that verified zero items has abstained, not passed.**
+
+### Added
+
+- **No-silent-abstention — Wave 1 machinery** (#508):
+  `ts/src/core/gate-result.ts` is the doctrine's load-bearing helper —
+  `GateResult`, `EXIT_ABSTAINED = 3` (now reserved CLI-wide), and
+  `gateOutcome(result, kind, opts?)`. Gates exit 3 on a collapsed denominator,
+  advisory surfaces warn loudly at exit 0, and skipped entries always render
+  rather than folding into "passed". Hardened so the helper cannot be talked out
+  of abstaining: invalid denominators (`NaN`, negative) abstain rather than
+  pass, findings always outrank abstention, and skip names are control-char
+  sanitized so a crafted skill name cannot inject ANSI into a gate summary.
+
+  A **conformance registry** (`ts/test/gate-conformance.test.ts`) is the part
+  meant to outlive Wave 1: the canonical table of every gate and its
+  zero-denominator behaviour, with fixtures that collapse the denominator
+  through the real CLI. New gates join the table rather than re-deciding the
+  question. Seeded with `migrate --check` (gate) and `migrate` dry-run
+  (advisory); #503's shipped `FreshnessReport` is retrofitted onto the helper
+  with byte-identical output, pinned by a coupling assert.
+
+  Waves 2–5 (guardian, doctor/npm layer, the `review-test` / `flake-check` /
+  `analyze` / `history` long tail, and CI-template annotations) follow.
+
+- **Savant inline suppression pragma** (#496):
+  `savant-ignore <RULE>[,<RULE>] -- reason`, matching blackhawk's #393 pattern —
+  same-line and preceding-line binding, **mandatory reason** (a reason-less
+  pragma does not parse, because suppression is a decision and not an evasion),
+  wrong-rule pragmas inert, and suppressed findings surfaced in their own count
+  and in `summary.suppressed` rather than silently dropped.
+
+  One deliberate divergence from blackhawk, and it was not optional: savant's
+  pragma parser applies the anchor-in-string guard from #495, so a
+  `savant-ignore` whose text begins inside a string literal is not a
+  suppression. Without it, test data describing a pragma would suppress real
+  findings.
+
+- **Dogfooding goes strict in CI** (#485): blackhawk and savant now run over
+  canary's own suites with `--strict` in the `Skills (JS)` job, replacing a
+  single advisory step. An advisory gate whose findings nobody reads is the #413
+  dynamic reproduced in our own CI — strict is what pins the triaged-to-zero
+  state. Both scanners now skip `fixtures/`, `__fixtures__/`, `__mocks__/` and
+  `testdata/` during discovery: a file under `fixtures/` never _runs_ as a test,
+  so a temporal smell in it is a property of the data, not a defect.
+
+### Fixed
+
+- **Detector false-positive rates of ~80%** (#493): blackhawk went 15 findings →
+  **3**, savant 56 → **7**, on canary's own suites. The obvious fix — strip
+  string literals before matching — _breaks real detection_, because blackhawk's
+  `LOCAL_TZ` rule deliberately matches the `%z` inside `strftime('…%Z')` quotes.
+  A match is instead rejected only when its **anchor token's start index** falls
+  inside a string literal, so `pyFile('time.sleep(1)')` is rejected while
+  `d.strftime('%Y %Z')` is kept, and `${…}` interpolation is scanned as code.
+
+- **Testkits leaked caller-supplied env overrides** (#497): both CLI testkits
+  snapshotted only their fixed `*_ENV_KEYS` lists before mutating, but the `env`
+  option applies **arbitrary** caller keys — so an off-list override leaked into
+  `process.env` for every later test in the worker. A latent order-dependence
+  bug in the testkits of the tool that exists to catch order-dependence bugs,
+  and the dogfooding program's second real catch once #495 gave savant the
+  precision to see it.
+
+- **`canary_shape` override discarded in monorepos** (#502): `detectFramework`
+  honored the explicit `.canary/company.json` override only inside the root
+  `_CONFIG_PROBES` loop, so in any repo with no root framework config — i.e.
+  every monorepo — user intent was silently dropped and shape resolved to
+  `unknown`, making overlay adoption impossible with no repo-side workaround.
+  Detection is now split: `probeFramework` runs the unchanged probe tiers and
+  `detectFramework` applies the explicit shape unconditionally on top. The
+  pre-existing override test covered only the branch that already worked.
+
+- **`migrate --check` exited 0 having verified nothing** (#503): a resolved
+  shape matching **zero** overlay skills rendered abstention as success, so any
+  shape-detection regression made the gate permanently green. It now exits
+  **3**, distinct from 0 (in sync), 1 (drift) and 2 (local edits); `--json`
+  gains `checked` and `abstained`, and the markdown says what to fix.
+
+- **Overlay lint and migrate disagreed on what a `SKILL.md` declares** (#501):
+  three parser divergences, all reconciled toward tolerating standard YAML.
+  Plain multiline `description:` scalars parsed as empty, so lint reported ~20
+  healthy skills as missing a description. Custom `deploy_to` shapes
+  hard-errored in lint while migrating fine, and are now a typo-guard warning.
+  Most costly: when prettier rewrapped an over-long `install_workflows` flow
+  list onto a continuation line, the parser read it as **empty** and migrate
+  silently installed zero workflows while everything stayed green. Wrapped flow
+  lists and block sequences now parse, and an unterminated list is a loud parse
+  diagnostic — a non-empty declaration can no longer read as a silent empty one.
+
+- **The plugin's MCP server was never shipped** (#507): `plugin.json` has
+  declared `mcpServers.canary-mcp.command = "canary-mcp"` since v6, but the npm
+  package ships only the `canary` bin — so the plugin's MCP server, and the
+  three bundled agents whose only tools are `mcp__canary__*`, have been dead on
+  every plugin install since the TS cutover. Adds `npm/bin/canary-mcp.js`, a CJS
+  wrapper that dynamic-imports the bundled ESM engine and awaits `runStdio()`.
+  All failure paths write to stderr only, so stdout stays a clean JSON-RPC
+  stream.
+
+- **`canary feedback` payload defects** (#506): `version` reported `"unknown"`
+  (the pilot stub — it now comes from the same source `canary -V` prints); the
+  `python` key carried `process.version` and was actively misleading now the
+  Python engine is retired, so it is renamed `runtime`; and titles were hard-cut
+  mid-word at 60 code points, now breaking at the last word boundary inside the
+  budget with an ellipsis, astral-safe slicing preserved.
+
+- **Savant's `detectFramework` tests were not hermetic** (#511): two phase-4
+  tests injected the `exists` seam (step 3, config markers) but not `readdir`
+  (step 2, directory scan), so the scan ran against the real cwd — any checkout
+  with a `tests/` directory containing `.py` files resolved `pytest` before the
+  mocked probe was consulted, false-failing both. Clean CI passed, so it bit
+  only local development with a dirty tree. Both fs seams are now documented in
+  the `detectFramework` JSDoc, which previously omitted `readdir` entirely.
+
 ## [6.3.0] - 2026-07-29
 
 Two live user-facing fixes plus the overlay-adoption feature. Both fixes are for
@@ -755,9 +880,20 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v5.14.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v6.4.0...HEAD
+[6.4.0]: https://github.com/bop-clocktower/canary/compare/v6.3.0...v6.4.0
+[6.3.0]: https://github.com/bop-clocktower/canary/compare/v6.2.0...v6.3.0
+[6.2.0]: https://github.com/bop-clocktower/canary/compare/v6.1.0...v6.2.0
+[6.1.0]: https://github.com/bop-clocktower/canary/compare/v6.0.0...v6.1.0
+[6.0.0]: https://github.com/bop-clocktower/canary/compare/v5.15.0...v6.0.0
+[5.15.0]: https://github.com/bop-clocktower/canary/compare/v5.14.0...v5.15.0
 [5.14.0]: https://github.com/bop-clocktower/canary/compare/v5.13.0...v5.14.0
 [5.13.0]: https://github.com/bop-clocktower/canary/compare/v5.12.0...v5.13.0
+[5.12.0]: https://github.com/bop-clocktower/canary/compare/v5.11.0...v5.12.0
+[5.11.0]: https://github.com/bop-clocktower/canary/compare/v5.10.1...v5.11.0
+[5.7.0]: https://github.com/bop-clocktower/canary/compare/v5.6.0...v5.7.0
+[5.6.0]: https://github.com/bop-clocktower/canary/compare/v5.5.1...v5.6.0
+[5.4.0]: https://github.com/bop-clocktower/canary/compare/v5.3.0...v5.4.0
 [5.3.0]: https://github.com/bop-clocktower/canary/compare/v5.2.0...v5.3.0
 [5.2.0]: https://github.com/bop-clocktower/canary/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/bop-clocktower/canary/compare/v5.0.0...v5.1.0
