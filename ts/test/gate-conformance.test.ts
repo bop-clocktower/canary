@@ -19,7 +19,9 @@ import { describe, expect, it } from 'vitest';
 
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { HarnessMigrator } from '../src/core/migrator.js';
+import { FakeBranchProtectionClient } from '../src/guardian/hard-gate.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
+import { invokeGuardian } from './guardian-cli-testkit.js';
 
 interface GateRow {
   /** Human-readable command line, for the test name and review diffs. */
@@ -92,6 +94,58 @@ const ROWS: GateRow[] = [
       return invokeCanary(['migrate', '--path', project], {
         deps: { home: () => home },
       });
+    },
+  },
+  {
+    command: 'guardian pr-check (empty diff)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['no test-coverage gaps', 'nothing to verify'],
+    // #456 permanent negative fixture (spec SC4): the guardian silently
+    // no-opped for weeks; an empty diff must never render as a pass again.
+    run: (base) =>
+      invokeGuardian(['pr-check', '--diff', '-'], { input: '', cwd: base }),
+  },
+  {
+    command: 'guardian harden-gate --apply (zero observed checks)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['already required', 'Finish the flip'],
+    run: () =>
+      invokeGuardian(
+        ['harden-gate', '--repo', 'o/r', '--apply', '--token', 'x'],
+        {
+          deps: {
+            buildBranchProtectionClient: () =>
+              new FakeBranchProtectionClient({
+                contexts: ['build'],
+                observed: [],
+              }),
+          },
+        },
+      ),
+  },
+  {
+    command: 'guardian analyze (zero-endpoint diff)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: ['"abstained": false'],
+    run: (base) =>
+      invokeGuardian(['analyze', 'abc1234', '--json'], { cwd: base }),
+  },
+  {
+    command: 'guardian validate-coverage (zero file entries)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: ['valid coverage-json document'],
+    run: async (base) => {
+      const path = join(base, 'coverage.json');
+      writeFileSync(path, JSON.stringify({ files: {} }), 'utf-8');
+      return invokeGuardian(['validate-coverage', path]);
     },
   },
 ];
