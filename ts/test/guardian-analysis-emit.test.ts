@@ -120,6 +120,32 @@ describe('envelope', () => {
     });
   });
 
+  it('envelope carries checked/abstained additively (#508)', () => {
+    const record = buildAnalysisRecord([], {
+      ref: 'pr-1',
+      gate: 'soft',
+      effective_tier: 0,
+      degraded_notice: null,
+      exit_code: 0,
+      checked: 4,
+      abstained: false,
+    });
+    expect(record.checked).toBe(4);
+    expect(record.abstained).toBe(false);
+  });
+
+  it('fields default when a caller predates #508', () => {
+    const record = buildAnalysisRecord([], {
+      ref: 'pr-1',
+      gate: 'soft',
+      effective_tier: 0,
+      degraded_notice: null,
+      exit_code: 0,
+    });
+    expect(record.checked).toBe(0);
+    expect(record.abstained).toBe(false);
+  });
+
   it('degraded notice propagates', () => {
     const record = buildAnalysisRecord(findings(), {
       ref: 'pr-7',

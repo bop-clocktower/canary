@@ -1109,6 +1109,8 @@ async function prCheckCmd(
       effective_tier: resolution.effective,
       degraded_notice: resolution.degraded_notice,
       exit_code: exitCode,
+      checked: scoredResults.length,
+      abstained: false, // an abstained run exits before emit (see plan)
     });
     if (res.action === 'emitted') {
       deps.out(`guardian: wrote analysis record ${RIGHT_ARROW} ${res.path}`);

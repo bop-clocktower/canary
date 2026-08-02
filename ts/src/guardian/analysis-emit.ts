@@ -106,6 +106,8 @@ export interface AnalysisRecord {
   ref: string;
   gate: string;
   exitCode: number;
+  checked: number;
+  abstained: boolean;
   tier: number;
   degradedNotice: string | null;
   summary: {
@@ -124,6 +126,8 @@ export interface BuildAnalysisRecordArgs {
   effective_tier: number;
   degraded_notice: string | null;
   exit_code: number;
+  checked?: number;
+  abstained?: boolean;
   analyzed_at?: string | null;
 }
 
@@ -155,6 +159,8 @@ export function buildAnalysisRecord(
     ref,
     gate,
     exitCode: exit_code,
+    checked: args.checked ?? 0,
+    abstained: args.abstained ?? false,
     tier: effective_tier,
     degradedNotice: degraded_notice,
     summary: {
