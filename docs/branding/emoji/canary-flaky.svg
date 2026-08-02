@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128" height="128">
+  <!-- Canary FLAKY — advisory signal (Amber / gold cry) -->
+  <rect width="64" height="64" rx="10" fill="#0A0A0A"/>
+  <path d="M49 24 A9 9 0 0 1 49 40" fill="none" stroke="#D4A820" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M54 19 A14 14 0 0 1 54 45" fill="none" stroke="#C09018" stroke-width="2.4" stroke-linecap="round" opacity="0.55"/>
+  <circle cx="24" cy="33" r="13" fill="#F0C040"/>
+  <polygon points="17,23 16,12 25,20" fill="#F0C040"/>
+  <polygon points="36,29 47,33 36,37" fill="#F0C040"/>
+  <circle cx="28" cy="30" r="2.7" fill="#0A0A0A"/>
+</svg>
