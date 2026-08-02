@@ -1005,6 +1005,16 @@ describe('TestDeployToFrontmatter', () => {
       'api',
       'e2e',
     ]));
+  // #501: standard-YAML list shapes must read the same here as in lint.
+  it('block sequence parsed', () =>
+    expect(
+      skillInfo('deploy_to:\n  - api\n  - custom_shape')!.deploy_to,
+    ).toEqual(['api', 'custom_shape']));
+  it('prettier-wrapped flow list parsed', () =>
+    expect(skillInfo('deploy_to:\n  [api, e2e_ui]')!.deploy_to).toEqual([
+      'api',
+      'e2e_ui',
+    ]));
 });
 
 describe('TestDeploySkills', () => {
@@ -1077,6 +1087,37 @@ describe('TestDeploySkills', () => {
         '---\nname: markdown-only\n---\n\n# Skill',
       );
       expect(mig().deploySkills('api', overlay, target, false)).toEqual([]);
+    }));
+  // #501: shapes are extensible — migrate matches `deploy_to` against the
+  // resolved `canary_shape` by plain string comparison, and lint must agree
+  // (warning at most, never an error; see npm overlay-lint tests over the
+  // same fixture shape).
+  it('custom shape deploys when deploy_to names it', () =>
+    run(({ target, overlay }) => {
+      makeOverlaySkill(overlay, 'custom-bridge', ['custom_shape']);
+      const results = mig().deploySkills(
+        'custom_shape',
+        overlay,
+        target,
+        false,
+      );
+      expect(results.length).toBe(1);
+      expect(results[0]!.status).toBe('copied');
+      expect(results[0]!.skill_name).toBe('custom-bridge');
+    }));
+  // #501: a block-sequence deploy_to must gate deployment identically to the
+  // single-line flow list it is equivalent to.
+  it('block-sequence deploy_to deploys', () =>
+    run(({ target, overlay }) => {
+      const skillDir = join(overlay, '.canary', 'skills', 'block-skill');
+      mkdirSync(skillDir, { recursive: true });
+      write(
+        join(skillDir, 'SKILL.md'),
+        '---\nname: block-skill\ndeploy_to:\n  - api\n---\n\n# block-skill\n',
+      );
+      const results = mig().deploySkills('api', overlay, target, false);
+      expect(results.length).toBe(1);
+      expect(results[0]!.status).toBe('copied');
     }));
   it('multiple skills filtered by shape', () =>
     run(({ target, overlay }) => {
@@ -1848,6 +1889,33 @@ describe('TestInstallWorkflows', () => {
       expect(
         readFileSync(workflowPath(target, 'canary-guardian.yml'), 'utf-8'),
       ).toBe(GUARDIAN_YML);
+    }));
+
+  // #501: prettier rewraps a two-entry install_workflows flow list onto an
+  // indented continuation line; the old one-line parser read it as EMPTY and
+  // migrate silently installed no workflows. The wrapped declaration must
+  // install exactly like the single-line one.
+  it('installs templates declared via a prettier-wrapped flow list', () =>
+    run(({ target, overlay }) => {
+      const skillDir = join(overlay, '.canary', 'skills', 'canary-pr-guardian');
+      mkdirSync(skillDir, { recursive: true });
+      write(
+        join(skillDir, 'SKILL.md'),
+        '---\nname: canary-pr-guardian\ndeploy_to: [all]\ninstall_workflows:\n' +
+          '  [templates/canary-guardian.yml, templates/guardian-precision.yml]\n---\n\n# g\n',
+      );
+      const tpl = join(skillDir, 'templates');
+      mkdirSync(tpl, { recursive: true });
+      write(join(tpl, 'canary-guardian.yml'), GUARDIAN_YML);
+      write(join(tpl, 'guardian-precision.yml'), GUARDIAN_YML);
+      const results = mig().installWorkflows('api', overlay, target, false);
+      expect(results.map((r) => r.status)).toEqual(['installed', 'installed']);
+      expect(existsSync(workflowPath(target, 'canary-guardian.yml'))).toBe(
+        true,
+      );
+      expect(existsSync(workflowPath(target, 'guardian-precision.yml'))).toBe(
+        true,
+      );
     }));
 
   it('dry run reports what would be installed and writes nothing', () =>

@@ -377,7 +377,8 @@ export class SkillRegistry {
     } catch {
       return null;
     }
-    const fm = SkillRegistry.parseFrontmatter(text);
+    const { frontmatter: fm, errors } =
+      SkillRegistry.parseFrontmatterWithDiagnostics(text);
     const stem = basename(path, extname(path));
     const name = pyTruthy(fm['name']) ? (fm['name'] as string) : stem;
     return new SkillInfo({
@@ -389,7 +390,7 @@ export class SkillRegistry {
       entry: SkillRegistry.scalar(fm['entry']),
       deploy_to: SkillRegistry.parseDeployTo(fm),
       requires: SkillRegistry.parseStrList(fm, 'requires'),
-      error: SkillRegistry.validateExecutableFields(fm),
+      error: SkillRegistry.discoveryError(fm, errors),
     });
   }
 
@@ -403,7 +404,8 @@ export class SkillRegistry {
     } catch {
       return null;
     }
-    const fm = SkillRegistry.parseFrontmatter(text);
+    const { frontmatter: fm, errors } =
+      SkillRegistry.parseFrontmatterWithDiagnostics(text);
     const name = pyTruthy(fm['name']) ? (fm['name'] as string) : dirName;
     // Python: `fm.get("description") or self._blockquote_tagline(text)`.
     const description = pyTruthy(fm['description'])
@@ -418,7 +420,7 @@ export class SkillRegistry {
       entry: SkillRegistry.scalar(fm['entry']),
       deploy_to: SkillRegistry.parseDeployTo(fm),
       requires: SkillRegistry.parseStrList(fm, 'requires'),
-      error: SkillRegistry.validateExecutableFields(fm),
+      error: SkillRegistry.discoveryError(fm, errors),
     });
   }
 
@@ -454,34 +456,125 @@ export class SkillRegistry {
   }
 
   /**
-   * Tiny YAML-subset parser: top-level scalar and flow-list fields between `---`
-   * delimiters. No nesting, no block sequences, no quoting. Python:
-   * `_parse_frontmatter`.
+   * Tiny YAML-subset parser: top-level scalar and list fields between `---`
+   * delimiters. Convenience wrapper over
+   * {@link parseFrontmatterWithDiagnostics} that drops the diagnostics.
    */
   static parseFrontmatter(text: string): Frontmatter {
-    const result: Frontmatter = {};
-    if (!text.startsWith('---')) return result;
-    const lines = text.split('\n');
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i]!;
-      if (line.trim() === '---') break;
-      if (!line || line.replace(/^\s+/, '').startsWith('#')) continue;
-      if (!line.includes(':')) continue;
+    return SkillRegistry.parseFrontmatterWithDiagnostics(text).frontmatter;
+  }
+
+  /**
+   * YAML-subset parser with parse diagnostics (#501). The historical
+   * one-line-per-key subset read formatter-emitted YAML — wrapped flow lists,
+   * block sequences, indented scalar continuations — as silently EMPTY, so
+   * `migrate` skipped declared `deploy_to`/`install_workflows` entries while
+   * everything stayed green. Those shapes now parse, and a list-shaped value
+   * that still cannot be read (an unterminated `[`) is a recorded error,
+   * never a silent empty list. Still a deliberate subset: no nested mappings,
+   * no quoting, and top-level lines without a colon are skipped (pinned).
+   * Mirrored by npm/src/skill-frontmatter.ts for `overlay lint` — keep in sync.
+   */
+  static parseFrontmatterWithDiagnostics(text: string): {
+    frontmatter: Frontmatter;
+    errors: string[];
+  } {
+    const frontmatter: Frontmatter = {};
+    const errors: string[] = [];
+    if (!text.startsWith('---')) return { frontmatter, errors };
+    const rest = text.split('\n').slice(1);
+    const end = rest.findIndex((l) => l.trim() === '---');
+    const body = (end === -1 ? rest : rest.slice(0, end)).filter(
+      (l) => !l.trim().startsWith('#'),
+    );
+    let i = 0;
+    while (i < body.length) {
+      const line = body[i]!;
       const idx = line.indexOf(':'); // Python str.partition -> first colon.
-      const key = line.slice(0, idx);
-      const value = line.slice(idx + 1);
-      const v = value.trim();
-      if (v.startsWith('[') && v.endsWith(']')) {
-        const inner = v.slice(1, -1);
-        result[key.trim()] = inner
-          .split(',')
-          .map((item) => item.trim())
-          .filter((item) => item);
-      } else {
-        result[key.trim()] = v;
+      i++;
+      // A line is a key only when top-level, non-blank, and colon-bearing.
+      if (!line.trim() || /^\s/.test(line) || idx === -1) continue;
+      const cont: string[] = []; // indented continuation lines for this key
+      while (i < body.length && /^\s+\S/.test(body[i]!)) {
+        cont.push(body[i]!.trim());
+        i++;
       }
+      SkillRegistry.assignFrontmatterValue(
+        frontmatter,
+        errors,
+        line.slice(0, idx).trim(),
+        line.slice(idx + 1).trim(),
+        cont,
+      );
     }
-    return result;
+    return { frontmatter, errors };
+  }
+
+  /**
+   * Assign one entry from its inline value plus indented continuations: flow
+   * lists (inline, wrapped mid-list, or entirely on a continuation line —
+   * prettier's rewrite), block sequences, and folded plain scalars.
+   */
+  private static assignFrontmatterValue(
+    fm: Frontmatter,
+    errors: string[],
+    key: string,
+    inline: string,
+    cont: string[],
+  ): void {
+    const flow = inline.startsWith('[')
+      ? [inline, ...cont]
+      : inline === '' && cont[0]?.startsWith('[')
+        ? cont
+        : null;
+    if (flow !== null) {
+      const joined = flow.join(' ').trim();
+      if (!joined.endsWith(']')) {
+        errors.push(
+          `\`${key}\`: unterminated flow list (no closing \`]\`): ${joined}`,
+        );
+        fm[key] = [];
+        return;
+      }
+      fm[key] = joined
+        .slice(1, -1)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    } else if (inline === '' && /^-( |$)/.test(cont[0] ?? '')) {
+      const items = SkillRegistry.blockListItems(cont);
+      if (items.length === 0)
+        errors.push(`\`${key}\`: block list has no parseable items`);
+      fm[key] = items;
+    } else {
+      // Scalar; indented continuation lines fold in (plain multiline YAML).
+      fm[key] = [inline, ...cont].join(' ').trim();
+    }
+  }
+
+  /** Block-sequence items; a dash-less line folds into the item above it. */
+  private static blockListItems(cont: string[]): string[] {
+    const items: string[] = [];
+    for (const c of cont) {
+      if (c.startsWith('- ')) items.push(c.slice(2).trim());
+      else if (c !== '-' && items.length > 0)
+        items[items.length - 1] = `${items[items.length - 1]} ${c}`.trim();
+    }
+    return items.filter(Boolean);
+  }
+
+  /**
+   * Frontmatter parse diagnostics + executable-field validation combined into
+   * the `SkillInfo.error` channel; parse errors win (#501: loud, never silent).
+   */
+  private static discoveryError(
+    fm: Frontmatter,
+    parseErrors: string[],
+  ): string | null {
+    if (parseErrors.length > 0) {
+      return `frontmatter parse error: ${parseErrors.join('; ')}`;
+    }
+    return SkillRegistry.validateExecutableFields(fm);
   }
 
   /** Return an error string if the cli/entry combination is invalid. */

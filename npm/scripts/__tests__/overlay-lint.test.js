@@ -24,8 +24,23 @@ function writeSkill(overlay, name, frontmatter, extra = {}) {
   return dir;
 }
 
+/** Write a SKILL.md with a raw frontmatter block (multi-line YAML shapes). */
+function writeSkillRaw(overlay, name, rawFrontmatter) {
+  const dir = path.join(overlay, '.canary', 'skills', name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'SKILL.md'),
+    `---\n${rawFrontmatter}\n---\n\n# ${name}\n`,
+  );
+  return dir;
+}
+
 function errors(result) {
   return result.findings.filter((f) => f.level === 'error');
+}
+
+function warnings(result) {
+  return result.findings.filter((f) => f.level === 'warning');
 }
 
 describe('lintOverlay', () => {
@@ -57,14 +72,98 @@ describe('lintOverlay', () => {
     assert.ok(errors(r).some((f) => /name/.test(f.message)));
   });
 
-  it('flags a deploy_to value that is not a known target', () => {
+  it('warns (not errors) on a deploy_to value outside the bundled targets', () => {
+    // #501: shapes are extensible — migrate matches deploy_to against the
+    // consuming repo's resolved canary_shape by plain string comparison, so a
+    // custom shape that migrate deploys must not be a lint ERROR. It stays a
+    // warning to catch typos.
     writeSkill(ov, 'baddeploy', {
       name: 'baddeploy',
       description: 'x',
       deploy_to: ['e2e_ui', 'bogus_shape'],
     });
     const r = lintOverlay(ov);
-    assert.ok(errors(r).some((f) => /bogus_shape/.test(f.message)));
+    assert.deepEqual(errors(r), []);
+    assert.ok(warnings(r).some((f) => /bogus_shape/.test(f.message)));
+  });
+
+  it('custom shape accepted with a warning only — agrees with migrate (#501)', () => {
+    // Same fixture shape as the migrator test "custom shape deploys when
+    // deploy_to names it": migrate deploys this skill for canary_shape
+    // custom_shape, so lint must not reject it.
+    writeSkill(ov, 'custom-bridge', {
+      name: 'custom-bridge',
+      description: 'deploys to a downstream custom shape',
+      deploy_to: ['custom_shape'],
+    });
+    const r = lintOverlay(ov);
+    assert.deepEqual(errors(r), []);
+    assert.equal(warnings(r).length, 1);
+    assert.ok(/custom_shape/.test(warnings(r)[0].message));
+  });
+
+  it('reads an indented-scalar description — agrees with migrate (#501)', () => {
+    // Legal YAML plain multiline; the old one-line parser read it as empty and
+    // reported "missing description" on skills that render fine everywhere.
+    writeSkillRaw(
+      ov,
+      'wrapped-desc',
+      'name: wrapped-desc\ndescription:\n  First line of the description\n  continues here',
+    );
+    const r = lintOverlay(ov);
+    assert.deepEqual(errors(r), []);
+  });
+
+  it('folds a wrapped scalar continuation into the description (#501)', () => {
+    writeSkillRaw(
+      ov,
+      'folded-desc',
+      'name: folded-desc\ndescription: First line\n  continues here',
+    );
+    assert.deepEqual(errors(lintOverlay(ov)), []);
+  });
+
+  it('parses a prettier-wrapped deploy_to flow list — agrees with migrate (#501)', () => {
+    // Exactly prettier's rewrite of an over-long flow list: the list moves to
+    // an indented continuation line. The old parser read it as EMPTY.
+    writeSkillRaw(
+      ov,
+      'wrapped-flow',
+      'name: wrapped-flow\ndescription: x\ndeploy_to:\n  [api, e2e_ui]',
+    );
+    assert.deepEqual(lintOverlay(ov).findings, []);
+  });
+
+  it('parses a flow list wrapped mid-list (#501)', () => {
+    writeSkillRaw(
+      ov,
+      'midwrap-flow',
+      'name: midwrap-flow\ndescription: x\ndeploy_to: [api,\n  e2e_ui]',
+    );
+    assert.deepEqual(lintOverlay(ov).findings, []);
+  });
+
+  it('parses a block-sequence deploy_to (#501)', () => {
+    writeSkillRaw(
+      ov,
+      'block-deploy',
+      'name: block-deploy\ndescription: x\ndeploy_to:\n  - api\n  - e2e_ui',
+    );
+    assert.deepEqual(lintOverlay(ov).findings, []);
+  });
+
+  it('an unterminated flow list is a loud parse ERROR, never a silent empty (#501)', () => {
+    writeSkillRaw(
+      ov,
+      'unterminated',
+      'name: unterminated\ndescription: x\ndeploy_to: [api,',
+    );
+    const r = lintOverlay(ov);
+    assert.ok(
+      errors(r).some((f) =>
+        /frontmatter parse error.*unterminated flow list/.test(f.message),
+      ),
+    );
   });
 
   it('accepts every known deploy_to target incl. the `all` sentinel', () => {
