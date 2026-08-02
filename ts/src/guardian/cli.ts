@@ -736,6 +736,18 @@ interface ValidateCoverageOptions {
 
 const MAX_COVERAGE_BYTES = 25 * 1024 * 1024;
 
+/** The validator's denominator: entries in the `files` map (#508). */
+function coverageEntryCount(data: unknown): number {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return 0;
+  }
+  const files = (data as Record<string, unknown>)['files'];
+  if (typeof files !== 'object' || files === null || Array.isArray(files)) {
+    return 0;
+  }
+  return Object.keys(files).length;
+}
+
 function validateCoverageCmd(
   path: string,
   opts: ValidateCoverageOptions,
@@ -773,6 +785,11 @@ function validateCoverageCmd(
   const errors = problems.filter((p) => p.severity === 'error');
   const warnings = problems.filter((p) => p.severity === 'warning');
   const valid = errors.length === 0;
+  const outcome = gateOutcome(
+    { checked: coverageEntryCount(data), findings: problems },
+    'advisory',
+    { noun: 'file entrie(s)' },
+  );
 
   if (opts.json) {
     // Plain stdout, NOT colored -- producer-controlled keys must not be
@@ -787,6 +804,8 @@ function validateCoverageCmd(
               location: pr.location,
               message: pr.message,
             })),
+            checked: coverageEntryCount(data),
+            abstained: outcome.abstained,
           },
           null,
           2,
@@ -801,11 +820,20 @@ function validateCoverageCmd(
       deps.out(`${pc.yellow('warning')} ${pr.location}: ${pr.message}`);
     }
     if (valid && warnings.length === 0) {
-      deps.out(
-        pc.green(
-          pc.bold(`${CHECK} ${path} is a valid coverage-json document.`),
-        ),
-      );
+      if (outcome.abstained) {
+        deps.out(outcome.summaryLine);
+        deps.out(
+          `guardian: ${path} carries zero file entries ${EM_DASH} nothing ` +
+            'was validated. Check that the producer wrote a non-empty ' +
+            "'files' map.",
+        );
+      } else {
+        deps.out(
+          pc.green(
+            pc.bold(`${CHECK} ${path} is a valid coverage-json document.`),
+          ),
+        );
+      }
     } else if (valid) {
       deps.out(
         `${pc.green(`${CHECK} valid`)} with ${warnings.length} warning(s) ${EM_DASH} coverage is usable but degraded.`,
