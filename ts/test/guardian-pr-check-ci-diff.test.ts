@@ -221,21 +221,22 @@ describe('pr-check CI empty-diff warning (#369)', () => {
 
     // Non-blocking (an existing green build must not flip red) but IMPOSSIBLE
     // to mistake for a working gate.
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(3);
+    expect(res.stdout.toLowerCase()).toContain('abstained');
     expect(res.stdout).toContain('::warning::');
     expect(res.stderr).toContain('--diff');
     expect(res.stderr.toLowerCase()).toContain('0 changed paths');
   });
 
-  it('stays silent on an empty diff outside CI', async () => {
+  it('abstains loudly on an empty diff outside CI (#508)', async () => {
     const git = fakeGit({ diff: ok(''), 'diff --staged': ok('') });
     const res = await invokeGuardian(['pr-check', '--format', 'text'], {
       cwd: tmp,
       deps: { runGit: git.runGit },
     });
 
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('nothing to verify');
+    expect(res.code).toBe(3);
+    expect(res.stdout.toLowerCase()).toContain('abstained');
     expect(res.stdout).not.toContain('::warning::');
     expect(res.stderr).toBe('');
   });
@@ -247,8 +248,8 @@ describe('pr-check CI empty-diff warning (#369)', () => {
       env: { GITHUB_ACTIONS: 'true' },
     });
 
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('nothing to verify');
+    expect(res.code).toBe(3);
+    expect(res.stdout.toLowerCase()).toContain('abstained');
     expect(res.stdout).not.toContain('::warning::');
   });
 });

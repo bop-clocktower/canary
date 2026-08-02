@@ -261,9 +261,9 @@ describe('pr-check heuristic FP suppression (#413)', () => {
       cwd: tmp,
     });
 
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('nothing to verify');
-    expect(res.stdout).toContain('1 path(s) skipped');
+    expect(res.code).toBe(3);
+    expect(res.stdout.toLowerCase()).toContain('abstained');
+    expect(res.stdout).toContain('(1 skipped');
   });
 
   it('--heuristic-exclude suppresses an ad-hoc source path', async () => {
@@ -283,9 +283,9 @@ describe('pr-check heuristic FP suppression (#413)', () => {
     // Both units are now heuristic-ineligible (`src/**` by flag, the `.config`
     // by the extension floor), so there is nothing scorable left — reported as
     // a SKIP of 2 paths rather than an empty "everything passed" report.
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('nothing to verify');
-    expect(res.stdout).toContain('2 path(s) skipped');
+    expect(res.code).toBe(3);
+    expect(res.stdout.toLowerCase()).toContain('abstained');
+    expect(res.stdout).toContain('(2 skipped');
   });
 
   it('an explicit empty config list restores the pre-#413 behavior', async () => {

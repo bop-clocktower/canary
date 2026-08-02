@@ -372,9 +372,36 @@ describe('pr-check post pipeline', () => {
         deps: { buildCommentClient: () => fake },
       },
     );
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('nothing to verify');
+    expect(res.code).toBe(3);
+    expect(res.stdout.toLowerCase()).toContain('abstained');
     expect(fake.comments).toEqual([]);
+  });
+
+  it('empty diff can never render as a pass (#456 permanent fixture)', async () => {
+    const res = await invokeGuardian(['pr-check', '--diff', '-'], {
+      input: '',
+      cwd: tmp,
+    });
+    expect(res.code).toBe(3); // EXIT_ABSTAINED, reserved CLI-wide (D4)
+    expect(res.stdout.toLowerCase()).toContain('abstained');
+    expect(res.stdout).not.toContain('nothing to verify');
+    expect(res.stdout).not.toContain('no test-coverage gaps');
+  });
+
+  it('abstention names the skipped paths (D7)', async () => {
+    const res = await invokeGuardian(
+      [
+        'pr-check',
+        '--diff',
+        '-',
+        '--config',
+        writeConfig({ skipGlobs: ['docs/**'] }),
+      ],
+      { input: DIFF_DOCS_ONLY, cwd: tmp },
+    );
+    expect(res.code).toBe(3);
+    expect(res.stdout).toContain('(1 skipped');
+    expect(res.stdout).toContain('docs/'); // the path is visible, not a bare count
   });
 
   it('test files never become findings', async () => {
@@ -400,8 +427,8 @@ describe('pr-check post pipeline', () => {
       ['pr-check', '--diff', '-', '--format', 'json'],
       { input: DIFF_LOCKFILE_ONLY, cwd: tmp },
     );
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('nothing to verify');
+    expect(res.code).toBe(3);
+    expect(res.stdout.toLowerCase()).toContain('abstained');
   });
 
   it('explicit empty skipGlobs disables the default skip', async () => {
@@ -430,8 +457,8 @@ describe('pr-check post pipeline', () => {
       ['pr-check', '--diff', '-', '--config', cfg, '--format', 'json'],
       { input: DIFF_LOCKFILE_ONLY, cwd: tmp },
     );
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('nothing to verify');
+    expect(res.code).toBe(3);
+    expect(res.stdout.toLowerCase()).toContain('abstained');
   });
 
   it('barrel index.ts is not flagged', async () => {
@@ -439,8 +466,8 @@ describe('pr-check post pipeline', () => {
       ['pr-check', '--diff', '-', '--format', 'json'],
       { input: DIFF_BARREL_INDEX_TS, cwd: tmp },
     );
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('nothing to verify');
+    expect(res.code).toBe(3);
+    expect(res.stdout.toLowerCase()).toContain('abstained');
   });
 
   it('pr disabled skips the surface', async () => {
