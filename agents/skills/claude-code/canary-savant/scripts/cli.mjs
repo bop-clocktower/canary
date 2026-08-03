@@ -23,6 +23,20 @@ import { RULES } from './rules.mjs';
 
 export const SCHEMA_VERSION = 1;
 
+// --- no-silent-abstention (#508 D2, skill-CLI convention half) ---------------
+//
+// Skill CLIs are deliberately self-contained -- no engine import, no shared
+// module -- so they cannot call `gateOutcome`. They honour the doctrine by
+// CONVENTION instead, emitting the same greppable line the engine helper does.
+// The skill-layer conformance registry (agents/skills/test/gate-conformance.
+// test.ts) is what holds them to it: a row whose fixture collapses the
+// denominator and asserts the loud outcome.
+//
+// U+26A0 / U+2014 are written as escapes so this source stays ASCII, matching
+// ts/src/core/gate-result.ts.
+const ABSTAINED_LINE =
+  '\u{26A0} Abstained \u{2014} verified zero items; this is not a pass.';
+
 const PREFIX = 'canary-savant:';
 
 /** A well-formed integer literal, sign optional. Used for --seed. */
@@ -75,6 +89,15 @@ function renderText(result) {
   const count = result.findings.length;
   const files = result.filesScanned;
   const fp = files === 1 ? '' : 's';
+  // #508: zero suspects over zero scanned files is an ABSENT result, not a
+  // clean one. Findings outrank abstention, so this is the no-findings path.
+  if (!count && !files) {
+    return (
+      `${ABSTAINED_LINE} No file matched the given paths, so there is ` +
+      'nothing to report. Point at a directory that holds test files, or ' +
+      'pass a file directly.'
+    );
+  }
   if (!count) {
     return (
       `No order-dependence suspects (${files} file${fp} scanned).` +
@@ -300,6 +323,9 @@ export function main(argv = []) {
 
   const hasViolation =
     result.findings.length > 0 || (dyn?.victims.length ?? 0) > 0;
+  // Advisory by default (D3); --strict inherits EXIT_ABSTAINED (3) on a
+  // collapsed denominator, distinct from 1 ("found something real").
+  if (opts.strict && !result.filesScanned) return 3;
   return opts.strict && hasViolation ? 1 : 0;
 }
 
