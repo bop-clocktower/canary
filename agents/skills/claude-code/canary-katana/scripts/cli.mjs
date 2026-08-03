@@ -20,6 +20,18 @@ import * as diffscan from './diffscan.mjs';
 import * as alarm from './alarm.mjs';
 import * as ledger from './ledger.mjs';
 
+// --- no-silent-abstention (#508 D2, skill-CLI convention half) ---------------
+//
+// Skill CLIs are deliberately self-contained -- no engine import -- so they
+// cannot call `gateOutcome`. They honour the doctrine by CONVENTION, emitting
+// the same greppable line the engine helper does; the skill-layer conformance
+// registry (agents/skills/test/gate-conformance.test.ts) holds them to it.
+//
+// U+26A0 / U+2014 as escapes so this source stays ASCII, matching
+// ts/src/core/gate-result.ts.
+const ABSTAINED_LINE =
+  '\u{26A0} Abstained \u{2014} verified zero items; this is not a pass.';
+
 const PREFIX = 'canary-katana:';
 
 const USAGE =
@@ -166,7 +178,18 @@ function toEntries(repo, base, deletions) {
   });
 }
 
-function renderText(deletions, findings, degraded) {
+function renderText(deletions, findings, degraded, scanned) {
+  // #508: katana's denominator is the DIFF it read, not the deletions it found.
+  // Zero deletions in a 500-line diff is a real result; zero deletions in an
+  // EMPTY diff means nothing was examined at all. `0 deletion(s) captured` reads
+  // identically in both cases, which is precisely the shape the doctrine bans.
+  if (!scanned) {
+    return (
+      `${ABSTAINED_LINE} The diff was empty, so no deleted test could be ` +
+      'captured. Check --repo/--diff-file, or that the range actually ' +
+      'contains changes.'
+    );
+  }
   const lines = [`${deletions.length} deletion(s) captured.`];
   if (degraded) lines.push(alarm.DEGRADED_NOTICE);
   for (const f of findings) {
@@ -215,6 +238,9 @@ export function main(argv = []) {
     return 1;
   }
 
+  // Non-blank diff text is the denominator probe: `loadDiff` succeeding does
+  // not mean it returned anything to scan.
+  const scanned = diff.trim().length > 0;
   const deletions = diffscan.findDeletions(diff);
   const entries = toEntries(repo, base, deletions);
 
@@ -239,11 +265,18 @@ export function main(argv = []) {
       ledger: String(ledgerPath),
     };
     if (degraded) payload.degraded_notice = alarm.DEGRADED_NOTICE;
+    // Additive (#508): a consumer can distinguish "no deletions" from "nothing
+    // examined" without parsing prose.
+    payload.checked = scanned ? 1 : 0;
+    payload.abstained = !scanned;
     console.log(JSON.stringify(payload, null, 2));
   } else {
-    console.log(renderText(deletions, findings, degraded));
+    console.log(renderText(deletions, findings, degraded, scanned));
   }
 
+  // Advisory by default (D3); --strict inherits EXIT_ABSTAINED (3) on an empty
+  // diff, distinct from 1 ("captured a real deletion").
+  if (args.strict && !scanned) return 3;
   return args.strict && findings.length ? 1 : 0;
 }
 

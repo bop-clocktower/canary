@@ -22,6 +22,20 @@ export const SCHEMA_VERSION = 1;
 
 const PREFIX = 'canary-blackhawk:';
 
+// --- no-silent-abstention (#508 D2, skill-CLI convention half) ---------------
+//
+// Skill CLIs are deliberately self-contained -- no engine import, no shared
+// module -- so they cannot call `gateOutcome`. They honour the doctrine by
+// CONVENTION instead, emitting the same greppable line the engine helper does.
+// The skill-layer conformance registry (agents/skills/test/gate-conformance.
+// test.ts) is what holds them to it: a row whose fixture collapses the
+// denominator and asserts the loud outcome.
+//
+// U+26A0 / U+2014 are written as escapes so this source stays ASCII, matching
+// ts/src/core/gate-result.ts.
+const ABSTAINED_LINE =
+  '\u{26A0} Abstained \u{2014} verified zero items; this is not a pass.';
+
 // The rules block is GENERATED from RULES, never hand-typed: a new rule shows
 // up in --help the moment it is registered, so the help text cannot drift
 // behind the linter as rules are added.
@@ -66,6 +80,16 @@ function renderText(result) {
   const count = result.findings.length;
   const files = result.filesScanned;
   const fp = files === 1 ? '' : 's';
+  // #508: zero findings over zero scanned files is an ABSENT result, not a
+  // clean one. Findings outrank abstention (a finding proves a file was read),
+  // so this is checked only on the no-findings path.
+  if (!count && !files) {
+    return (
+      `${ABSTAINED_LINE} No file matched the given paths, so there is ` +
+      'nothing to report. Point at a directory that holds test files, or ' +
+      'pass a file directly.'
+    );
+  }
   if (!count) {
     return (
       `No temporal-dependency findings (${files} file${fp} scanned).` +
@@ -158,6 +182,10 @@ export function main(argv = []) {
     console.log(renderText(result));
   }
 
+  // Advisory by default (D3). Under --strict the CLI carries an exit-code
+  // contract, so a collapsed denominator inherits EXIT_ABSTAINED (3) -- distinct
+  // from 1 ("found something real"), so CI can tell them apart.
+  if (opts.strict && !result.filesScanned) return 3;
   return opts.strict && result.findings.length ? 1 : 0;
 }
 

@@ -494,11 +494,42 @@ describe('cli', () => {
     expect(text).toContain('2 temporal-dependency findings');
   });
 
-  it('says so when clean', () => {
-    const root = tmp();
+  // #508 Wave 4b: these used to point at an EMPTY temp dir, so they asserted a
+  // green all-clear over ZERO scanned files -- the silent-abstention shape
+  // itself, restated as a test. A genuine clean run needs a real file that
+  // simply has nothing wrong with it.
+  const cleanFile = (root: string): string => {
+    fs.writeFileSync(
+      path.join(root, 'clean.spec.ts'),
+      "it('adds', () => { expect(1 + 1).toBe(2); });\n",
+    );
+    return root;
+  };
+
+  it('says so when clean, and states its denominator', () => {
+    const root = cleanFile(tmp());
     capture();
     expect(main([root])).toBe(0);
-    expect(out.join('\n')).toContain('No temporal-dependency findings');
+    const text = out.join('\n');
+    expect(text).toContain('No temporal-dependency findings');
+    expect(text).toContain('1 file scanned');
+    expect(text).not.toContain('Abstained');
+  });
+
+  it('zero scanned files ABSTAINS, never a clean bill of health', () => {
+    const root = tmp();
+    capture();
+    expect(main([root])).toBe(0); // advisory by default (D3)
+    const text = out.join('\n');
+    expect(text).toContain('Abstained');
+    expect(text).not.toContain('No temporal-dependency findings');
+  });
+
+  it('--strict over zero scanned files exits 3, not 0', () => {
+    const root = tmp();
+    capture();
+    // 3 = abstained, distinct from 1 = found something real.
+    expect(main([root, '--strict'])).toBe(3);
   });
 
   it('is advisory by default', () => {
@@ -513,8 +544,8 @@ describe('cli', () => {
     expect(main([root, '--strict'])).toBe(1);
   });
 
-  it('--strict passes when clean', () => {
-    const root = tmp();
+  it('--strict passes when genuinely clean', () => {
+    const root = cleanFile(tmp());
     capture();
     expect(main([root, '--strict'])).toBe(0);
   });
