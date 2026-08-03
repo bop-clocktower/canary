@@ -335,12 +335,25 @@ cleanly decoupled and depends on none of this. The consumed subcommands are:
 | `snapshot capture` | `arch-snapshot.yml`                                |
 
 **Pinning (#318 A).** Every gate installs the CLI at a **pinned major** via one
-workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@9'` — rather
+workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@10'` — rather
 than an unpinned `@latest`. A harness-major bump (e.g. a subcommand rename) is
 therefore a **deliberate PR** that edits that one line per workflow, not a
-silent CI break with nothing to roll back to. When bumping the major, update
-`HARNESS_CLI` in all six workflows and re-verify the subcommands above still
-exist and behave as expected.
+silent CI break with nothing to roll back to.
+
+Bumping the major is a **three-step sequence**, in this order (#545, #547):
+
+1. **Reconcile `harness.config.json` against the new major's schema first.** Zod
+   strips unknown keys silently, so a key at a path the schema stopped reading
+   is dead with no error — that is how `entryPoints` left the entropy scan with
+   no entry point across every run it ever made. Land the config fix on the
+   _old_ pin, verified against both majors, so a later regression has an
+   unambiguous blame boundary.
+2. **Edit `HARNESS_CLI` in all six workflows** — `harness.yml`,
+   `harness-quality.yml`, `harness-architecture.yml`, `harness-security.yml`,
+   `arch-snapshot.yml`, `refresh-arch-baseline.yml`.
+3. **Re-verify every subcommand in the table above on both majors**, comparing
+   exit code _and_ output, not just exit code. The gates run the CLI on a bare
+   checkout with no `npm ci`, so a local worktree reproduces CI exactly.
 
 **Generated hooks carry local edits (#318 C).** Several hooks under
 `.harness/hooks/` are **harness-generated** but hand-edited in canary (commit
