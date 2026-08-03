@@ -63,8 +63,7 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ### no-silent-abstention
 
-- **Status:** in-progress
-- **Assignee:** <brianna.stevenski@example.com>
+- **Status:** done
 - **Spec:** docs/changes/no-silent-abstention/proposal.md
 - **Summary:** No Silent Abstention doctrine (#508): every gate reports its
   denominator; zero-verified is a loud, distinct outcome (exit 3 = abstained,
@@ -73,24 +72,22 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   registry) for self-contained skill CLIs. Gates exit 3; advisory commands warn
   loudly with `abstained: true` but exit 0. Five waves, each shippable. WAVE 1
   SHIPPED in v6.4.0 (PR #518): `ts/src/core/gate-result.ts`, the conformance
-  registry (`ts/test/gate-conformance.test.ts`, seeded with `migrate --check` +
-  `migrate` dry-run), the #503 `FreshnessReport` retrofit (byte-identical,
-  pinned by a coupling assert), and the #504 dry-run abstention half. WAVE 2
-  SHIPPED in v6.4.0 (PR #526): guardian `pr-check` / `harden-gate` exit 3,
-  `analyze` / `validate-coverage` advisory warnings, 4 registry rows. WAVE 3
-  (npm layer) covers doctor's D7 summary semantics + zero-runnable exit 3 and
-  `overlay lint`'s zero-skill abstention, with the npm-layer registry in
-  `npm/scripts/__tests__/gate-conformance.test.js`. Waves 4-5 remain: the
-  review-test / flake-check / analyze / history long tail, then CI-template
-  annotations + doctrine docs. NOTE: PR #515 attempted Waves 3-4 ad-hoc against
-  a second helper (`abstention.ts`) and was CLOSED as superseded; its audit
-  table is the reference for that scope. DECIDED 2026-08-03: the spec's "Gates
-  that got louder" changelog section IS adopted — Wave 5 adds it and backfills
-  the v6.4.0 surfaces (`migrate --check`, `guardian pr-check`,
-  `guardian harden-gate --apply`) alongside Wave 3's `doctor`, so consumers get
-  one complete table of every surface that can newly exit 3 rather than three
-  partial ones scattered across releases. (refs:
-  docs/changes/no-silent-abstention/plans/)
+  registry, the #503 `FreshnessReport` retrofit, and the #504 dry-run abstention
+  half. WAVE 2 SHIPPED in v6.4.0 (PR #526): guardian `pr-check` / `harden-gate`
+  exit 3, `analyze` / `validate-coverage` warn. WAVE 3 (PR #529): doctor
+  denominator + exit 3 + D7 summary, `overlay lint` zero-skill abstention, the
+  npm registry, and the `npm package` CI job that had never existed. WAVE 4a (PR
+  #530): `review-test` / `flake-check` exit 3 on zero collected files; `analyze`
+  and `history` abstain on zero RUNS (not zero rows) via a new `countRuns()`
+  probe; `history summary`'s fabricated `0.0%` fixed; `heal-test` / `skills run`
+  audited and pinned unchanged. WAVE 4b (PR #531): blackhawk / savant / katana
+  abstain, `--strict` inherits exit 3, skill-layer registry. WAVE 5:
+  `guardian.yml` handles exit 3 distinctly from exit 1, `continue-on-error`
+  steps annotate, ADRs 0009/0010, the AGENTS.md doctrine + new-gate checklist,
+  and the CHANGELOG "Gates that got louder" table with the v6.4.0 surfaces
+  backfilled. Conformance registries: engine 13 rows, npm 3, skill 6.
+  Workflow-template version bumps were N/A — no skill declares
+  `install_workflows`. (refs: docs/changes/no-silent-abstention/plans/)
 - **Blockers:** —
 - **Plan:** docs/changes/no-silent-abstention/plans/
 
