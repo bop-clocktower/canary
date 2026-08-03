@@ -155,6 +155,7 @@ describe('AnalysisEngine with a non-readable store falls through cleanly', () =>
     queryFlaky: () => [],
     querySummary: (suite) => ({ suite, total_runs: 0, avg_pass_rate: 0 }),
     queryTimeline: () => [],
+    countRuns: () => 0,
   };
 
   it('discoverSuites is empty', () => {

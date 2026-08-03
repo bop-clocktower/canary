@@ -618,12 +618,18 @@ describe('company-knowledge show / init', () => {
 });
 
 describe('history human-readable paths', () => {
-  it('flaky (empty) prints the no-flakes line', async () => {
+  // #508 Wave 4a: this used to assert `No tests above N%` over an EMPTY store
+  // -- a green all-clear from a run that examined zero runs. That is the exact
+  // silent-abstention shape the doctrine exists to end, so the pin now asserts
+  // the loud outcome. The `No tests above` line still ships; it just requires a
+  // non-zero denominator to earn it (covered by the seeded-store test below).
+  it('flaky over an EMPTY store abstains, never a green all-clear', async () => {
     const tmp = mkTmp();
     try {
       const res = await invokeCanary(['history', 'flaky'], { cwd: tmp });
-      expect(res.code).toBe(0);
-      expect(res.stdout).toContain('No tests above');
+      expect(res.code).toBe(0); // advisory (D3)
+      expect(res.stdout).toContain('Abstained');
+      expect(res.stdout).not.toContain('No tests above');
     } finally {
       rmTmp(tmp);
     }

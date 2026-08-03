@@ -30,9 +30,9 @@ import { join } from 'node:path';
 import { Command, Option } from 'commander';
 
 import { jsonIndent2, normalizeUsageExit } from '../cli-common.js';
+import { gateOutcome } from '../core/gate-result.js';
 import { AnalysisEngine } from './engine.js';
 import {
-  buildAreaHealthReport,
   buildCommonFailuresReport,
   buildFlakyReport,
   buildRegressionCandidatesReport,
@@ -75,6 +75,46 @@ export function defaultAnalyzeDeps(): AnalyzeDeps {
   };
 }
 
+/**
+ * The shared denominator guard for every history-backed analyze report
+ * (#508 Wave 4a).
+ *
+ * The denominator is the number of RUNS in the store, never the number of
+ * result rows: zero flaky rows across 500 runs is a genuine clean fleet, while
+ * zero rows across zero runs is an absent measurement. Only `countRuns()`
+ * separates them -- keying off `rows.length` would abstain on every healthy
+ * fleet, which is the fastest way to get a doctrine muted (the katana lesson).
+ *
+ * Advisory (D3): the exit stays 0. On the human path the abstention line
+ * REPLACES the all-clear report; on `--json` the payload is a bare array with
+ * nowhere to put an `abstained` field, so stdout is left byte-identical and the
+ * notice rides stderr -- the same split `analyze` already uses for its
+ * `--db-url` note.
+ *
+ * Returns true when the caller should stop (the store was empty).
+ */
+function abstainOnEmptyHistory(
+  store: NdjsonHistoryStore,
+  deps: AnalyzeDeps,
+  json: boolean,
+  what: string,
+): boolean {
+  if (store.countRuns() > 0) return false;
+  const outcome = gateOutcome({ checked: 0, findings: [] }, 'advisory');
+  const notice =
+    `${outcome.summaryLine} No run history to analyze, so "${what}" is ` +
+    `unknown rather than clean. Record runs first ` +
+    `(\`canary history push\`, or a reporter that writes ` +
+    `${DEFAULT_HISTORY_PATH}), then re-run.`;
+  if (json) {
+    deps.out(jsonIndent2([]));
+    deps.err(notice);
+  } else {
+    deps.out(notice);
+  }
+  return true;
+}
+
 function writeArtifacts(
   artifacts: Record<string, string>,
   output: string,
@@ -97,6 +137,9 @@ interface FlakyOptions {
 
 function flakyCmd(opts: FlakyOptions, deps: AnalyzeDeps): void {
   const store = deps.makeStore(opts.dbUrl);
+  if (abstainOnEmptyHistory(store, deps, opts.json === true, 'flake rate')) {
+    return;
+  }
   const rows = store.queryFlaky(opts.window, opts.suite ?? null, opts.minRate);
   if (opts.json) {
     deps.out(jsonIndent2(rows));
@@ -116,6 +159,11 @@ interface SpikesOptions {
 
 function spikesCmd(opts: SpikesOptions, deps: AnalyzeDeps): void {
   const store = deps.makeStore(opts.dbUrl);
+  if (
+    abstainOnEmptyHistory(store, deps, opts.json === true, 'failure spikes')
+  ) {
+    return;
+  }
   const rows: {
     suite: string;
     timestamp: string;
@@ -151,9 +199,21 @@ interface AreaHealthOptions {
 }
 
 function areaHealthCmd(opts: AreaHealthOptions, deps: AnalyzeDeps): void {
-  // Faithful to Python: always builds from an empty row set and never branches
-  // on --json.
-  deps.out(buildAreaHealthReport([], opts.weeks));
+  // #508 Wave 4a: this command builds its report from a HARDCODED empty row
+  // set (faithful to the Python original, which did the same and never branched
+  // on --json). Its denominator is therefore UNCONDITIONALLY zero -- with a
+  // thousand runs recorded it still renders "no area health data", which reads
+  // as a measured all-clear and is not one. So it always abstains, whatever the
+  // store holds. Wiring a real row set is a separate scope call: it changes the
+  // port's contract, and #515 deferred it for exactly that reason.
+  void opts;
+  const outcome = gateOutcome({ checked: 0, findings: [] }, 'advisory');
+  deps.out(
+    `${outcome.summaryLine} \`analyze area-health\` computes no rows in this ` +
+      `build -- its report is a template, not a measurement, so a clean-looking ` +
+      `result here would be a fiction. Use \`analyze digest\` for the reports ` +
+      `that are wired, and track the area-health row set as unimplemented.`,
+  );
 }
 
 // --- common-failures ---------------------------------------------------------
@@ -170,6 +230,11 @@ function commonFailuresCmd(
   deps: AnalyzeDeps,
 ): void {
   const store = deps.makeStore(opts.dbUrl);
+  if (
+    abstainOnEmptyHistory(store, deps, opts.json === true, 'common failures')
+  ) {
+    return;
+  }
   const rows: {
     test_name: string;
     suite: string;
@@ -211,7 +276,18 @@ function regressionCandidatesCmd(
   opts: RegressionOptions,
   deps: AnalyzeDeps,
 ): void {
-  const engine = new AnalysisEngine(deps.makeStore(opts.dbUrl));
+  const store = deps.makeStore(opts.dbUrl);
+  if (
+    abstainOnEmptyHistory(
+      store,
+      deps,
+      opts.json === true,
+      'regression candidates',
+    )
+  ) {
+    return;
+  }
+  const engine = new AnalysisEngine(store);
   const candidates = engine.detectRegressionCandidates(
     null,
     opts.minGreen,
@@ -239,7 +315,11 @@ interface DigestOptions {
 }
 
 function digestCmd(opts: DigestOptions, deps: AnalyzeDeps): void {
-  const engine = new AnalysisEngine(deps.makeStore(opts.dbUrl));
+  const store = deps.makeStore(opts.dbUrl);
+  if (abstainOnEmptyHistory(store, deps, opts.json === true, 'fleet health')) {
+    return;
+  }
+  const engine = new AnalysisEngine(store);
   const result = engine.run({
     window: opts.window,
     delta: opts.delta,
