@@ -1,0 +1,219 @@
+name: Dogfood
+
+# Canary, pointed at canary.
+#
+# The repo already dogfooded three things (guardian pr-check, blackhawk and
+# savant at --strict). This workflow covers the rest of the product surface,
+# because a test-intelligence tool that has never read its own tests is making a
+# claim it cannot support.
+#
+# It paid for itself before it shipped: running `review-test` over canary's own
+# suites for the first time reported 216 assertion-free tests of which 13 were
+# real -- a `node:assert` blind spot and a fixed-window body scan, both fixed in
+# #535. That is the point of this file. Findings here are DATA about the
+# product, not just chores.
+#
+# Posture: everything is ADVISORY and annotated. Nothing here blocks a merge
+# yet. The ratchet to `--strict` happens per-check once its findings are
+# triaged to zero, exactly how blackhawk and savant got there (#485 -> #493 ->
+# strict). Promoting a check before its precision is known is how you teach
+# people to ignore it (ADR 0010).
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  # --- A: canary's test-quality linter, pointed at canary's tests ------------
+  test-quality:
+    name: Test quality (canary on canary)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Build the engine
+        run: |
+          npm --prefix ts ci
+          npm --prefix ts run build
+
+      # Exit 3 (abstained) is the interesting failure here: it means the path
+      # matched zero test files, i.e. this step's own configuration broke. That
+      # must NOT read as a clean lint run -- which, before #508, it would have.
+      # Findings themselves (exit 1) are reported and counted, not fatal.
+      - name: review-test + flake-check over canary's own suites
+        run: |
+          set +e
+          broke=0
+          total=0
+          for dir in ts/test npm/scripts/__tests__ agents/skills/test; do
+            for cmd in review-test flake-check; do
+              echo "::group::canary $cmd $dir"
+              node ts/bin/canary.js "$cmd" "$dir"
+              rc=$?
+              echo "::endgroup::"
+              if [ "$rc" -eq 3 ]; then
+                echo "::error title=Dogfood misconfigured::$cmd ABSTAINED on $dir - it matched zero test files. This is not a clean lint run."
+                broke=1
+                continue
+              fi
+              n=$(node ts/bin/canary.js "$cmd" "$dir" --json 2>/dev/null \
+                    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).length)}catch{console.log(0)}})')
+              echo "$cmd $dir: $n finding(s)"
+              total=$((total + n))
+            done
+          done
+          echo "DOGFOOD_TOTAL=$total" >> "$GITHUB_ENV"
+          exit "$broke"
+
+      # The count is the point: it is the number this check will be ratcheted
+      # against. Advisory until it is triaged to zero, then promoted -- the
+      # blackhawk/savant path (#485 -> #493 -> strict).
+      - name: Report the finding count
+        run:
+          echo "::warning title=Test-quality findings (advisory)::canary
+          reported $DOGFOOD_TOTAL finding(s) across its own suites. Non-blocking
+          while precision is triaged; see the grouped step logs."
+
+  # --- B: doctor, from a real consumer install ------------------------------
+  doctor:
+    name: Doctor (from a packed install)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # Deliberately NOT `node ts/bin/canary.js`: this installs the packed
+      # tarball exactly as a consumer would, so the bundled engine, the bin
+      # shims, and `package.json#files` are all exercised. A regression that
+      # only shows up in the published artifact is invisible from the checkout.
+      - name: Pack and install the npm package
+        run: |
+          npm --prefix npm ci
+          npm --prefix npm run build
+          npm pack ./npm --pack-destination /tmp
+          npm i -g /tmp/canary-test-cli-*.tgz
+
+      - name: canary doctor
+        run: |
+          set +e
+          canary doctor
+          rc=$?
+          set -e
+          # Exit 3 = abstained: zero checks were runnable, so doctor verified
+          # nothing (#508 Wave 3). On a bare runner with no overlay installed
+          # that is a plausible, honest outcome -- it is reported, not hidden,
+          # and not treated as a pass.
+          if [ "$rc" -eq 3 ]; then
+            echo "::warning title=Doctor abstained::canary doctor verified zero checks (exit 3) on this runner. Not a pass."
+            exit 0
+          fi
+          exit "$rc"
+
+      - name: canary doctor --json carries its denominator
+        run: |
+          canary doctor --json > doctor.json || true
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("doctor.json", "utf8"));
+            for (const k of ["checked", "skipped", "abstained", "allPassed"]) {
+              if (!(k in r)) { console.error(`missing key: ${k}`); process.exit(1); }
+            }
+            if (r.abstained && r.allPassed) {
+              console.error("contract violation: abstained runs are never allPassed");
+              process.exit(1);
+            }
+            console.log(`doctor: checked=${r.checked} skipped=${r.skipped.length} abstained=${r.abstained}`);
+          '
+
+  # --- C: fleet health, on canary's own runs --------------------------------
+  fleet-health:
+    name: Fleet health (canary's own runs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Build the engine
+        run: |
+          npm --prefix ts ci
+          npm --prefix ts run build
+
+      # Records a REAL run into canary's own history store. Until this existed,
+      # every analyze/history command had only ever run against synthetic
+      # fixtures -- including the runs-vs-rows denominator design, whose whole
+      # point is telling a healthy fleet apart from an empty one. That
+      # distinction cannot be trusted until it has seen data nobody hand-made.
+      - name: Run the suite and record it
+        run: |
+          npm --prefix ts run test -- --reporter=json --outputFile=/tmp/vitest.json || true
+          node scripts/dogfood-record-run.mjs /tmp/vitest.json --suite ts-engine
+
+      - name: analyze over the recorded run
+        run: |
+          set +e
+          node ts/bin/canary.js analyze flaky
+          rc=$?
+          set -e
+          # With a run recorded this MUST NOT abstain. If it does, either the
+          # recorder wrote nothing or the store path drifted -- and the
+          # abstention is the only reason we would find out.
+          if node ts/bin/canary.js analyze flaky | grep -qi 'abstained'; then
+            echo "::error title=Fleet health broken::analyze abstained immediately after a run was recorded. The recorder or the store path is broken."
+            exit 1
+          fi
+          exit "$rc"
+
+      - name: history summary reports a real pass rate
+        run: node ts/bin/canary.js history summary ts-engine
+
+  # --- D: deleted-test guard ------------------------------------------------
+  katana:
+    name: Deleted-test guard (canary-katana)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Fetch the base branch
+        env:
+          BASE: ${{ github.base_ref }}
+        run: git fetch --no-tags origin "$BASE"
+
+      # Advisory: capturing a deleted test is information, not a veto. Run with
+      # --strict so a real capture is distinguishable from a clean run, then
+      # handle the two non-zero codes SEPARATELY -- 1 means "a test was
+      # deleted", 3 means "the diff was empty and nothing was examined". Letting
+      # `continue-on-error` blur them would annotate an empty diff as a deletion,
+      # which is the exact conflation #508 exists to end.
+      - name: Capture deleted tests
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          git diff "origin/$BASE...HEAD" > /tmp/pr.diff
+          set +e
+          node agents/skills/claude-code/canary-katana/scripts/cli.mjs \
+            --repo . --diff-file /tmp/pr.diff --no-write --strict
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo "katana: no deleted tests in this PR." ;;
+            1) echo "::warning title=Deleted tests (advisory)::canary-katana captured removed test coverage in this PR. Non-blocking - see the step log." ;;
+            3) echo "::notice title=Katana abstained::the PR diff was empty for katana, so nothing was examined. Not a clean run, but nothing to report." ;;
+            *) echo "::error title=Katana failed::unexpected exit $rc"; exit "$rc" ;;
+          esac
