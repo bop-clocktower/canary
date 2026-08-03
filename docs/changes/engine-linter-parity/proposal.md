@@ -78,7 +78,7 @@ Three new modules under `ts/src/core/`. None of them belongs in
 and suppression parsing are not command-dispatch concerns, and putting them
 there is how that file got to 983 lines in the first place.
 
-```
+```text
 ts/src/core/glob.ts                         [NEW]
   globMatches(path, pattern)       lifted verbatim from guardian/pr-check.ts
 
@@ -128,7 +128,7 @@ in the command would give two callers two different answers for the same file.
 
 ## Data flow
 
-```
+```text
 canary review-test ts/test --exclude '**/legacy/**' --strict
       |
       v
@@ -175,7 +175,7 @@ same walker.
 
 ### `--exclude` is repeatable, not variadic
 
-```
+```js
 .option('--exclude <glob>', 'exclude paths matching glob (repeatable)', collect, [])
 ```
 
@@ -190,11 +190,12 @@ shared CI configs brittle.
 
 ### `--strict` and the abstention contract
 
-| Situation          | default                                              | `--strict` |
-| ------------------ | ---------------------------------------------------- | ---------- |
-| zero files matched | **3**                                                | **3**      |
-| any finding        | `review-test`: 0 unless critical<br>`flake-check`: 1 | **1**      |
-| clean run          | 0                                                    | 0          |
+| Situation                   | default           | `--strict` |
+| --------------------------- | ----------------- | ---------- |
+| zero files matched          | **3**             | **3**      |
+| any finding — `review-test` | 0 unless critical | **1**      |
+| any finding — `flake-check` | 1                 | **1**      |
+| clean run                   | 0                 | 0          |
 
 The first row is the load-bearing one. `--strict` must never convert an
 abstention into a finding-failure, because the two mean opposite things: exit 1
