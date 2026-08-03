@@ -75,15 +75,22 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   SHIPPED in v6.4.0 (PR #518): `ts/src/core/gate-result.ts`, the conformance
   registry (`ts/test/gate-conformance.test.ts`, seeded with `migrate --check` +
   `migrate` dry-run), the #503 `FreshnessReport` retrofit (byte-identical,
-  pinned by a coupling assert), and the #504 dry-run abstention half. Waves 2-5
-  remain: guardian (plan written), npm/doctor layer (D7 summary semantics), the
+  pinned by a coupling assert), and the #504 dry-run abstention half. WAVE 2
+  SHIPPED in v6.4.0 (PR #526): guardian `pr-check` / `harden-gate` exit 3,
+  `analyze` / `validate-coverage` advisory warnings, 4 registry rows. WAVE 3
+  (npm layer) covers doctor's D7 summary semantics + zero-runnable exit 3 and
+  `overlay lint`'s zero-skill abstention, with the npm-layer registry in
+  `npm/scripts/__tests__/gate-conformance.test.js`. Waves 4-5 remain: the
   review-test / flake-check / analyze / history long tail, then CI-template
   annotations + doctrine docs. NOTE: PR #515 attempted Waves 3-4 ad-hoc against
   a second helper (`abstention.ts`) and was CLOSED as superseded; its audit
-  table is the reference for that scope. The spec's "Gates that got louder"
-  changelog section was NOT used in v6.4.0 (standard Added/Fixed headings
-  instead) — decide whether to adopt it from Wave 2 on or drop it from the spec.
-  (refs: docs/changes/no-silent-abstention/plans/)
+  table is the reference for that scope. DECIDED 2026-08-03: the spec's "Gates
+  that got louder" changelog section IS adopted — Wave 5 adds it and backfills
+  the v6.4.0 surfaces (`migrate --check`, `guardian pr-check`,
+  `guardian harden-gate --apply`) alongside Wave 3's `doctor`, so consumers get
+  one complete table of every surface that can newly exit 3 rather than three
+  partial ones scattered across releases. (refs:
+  docs/changes/no-silent-abstention/plans/)
 - **Blockers:** —
 - **Plan:** docs/changes/no-silent-abstention/plans/
 

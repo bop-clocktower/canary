@@ -1,3 +1,10 @@
+// GENERATED FILE — DO NOT EDIT.
+// Verbatim copy of ts/src/core/gate-result.ts, mirrored into this CommonJS
+// package by scripts/sync-gate-result.mjs because the staged engine bundle is
+// ESM and unavailable at test time. Edit the engine source and re-run:
+//   node scripts/sync-gate-result.mjs
+// `npm test` verifies this copy has not drifted (--check runs as pretest).
+
 /**
  * Shared gate-abstention helper (issue #508, no-silent-abstention spec).
  *

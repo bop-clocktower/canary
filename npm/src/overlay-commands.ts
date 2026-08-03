@@ -9,6 +9,7 @@ import * as registry from './overlays-registry.js';
 import { commandSucceedsHash, loadManifest } from './doctor-manifest.js';
 import { detectSkillConflicts } from './overlay-conflicts.js';
 import { lintOverlay, type LintFinding } from './overlay-lint.js';
+import { gateOutcome } from './gate-result.js';
 
 /** Result of running a git subcommand. */
 export interface GitResult {
@@ -448,13 +449,40 @@ export function lint(
   const result = lintOverlay(dir);
   const errors = result.findings.filter((f) => f.level === 'error');
 
+  // #508: linting zero skills is an ABSENT verdict, not a clean bill of health.
+  // Advisory (D3) -- a workflows-only overlay is legitimate, so the exit stays
+  // 0 -- but the line is unmissable and `--json` says so. Findings outrank
+  // abstention inside `gateOutcome`, so a missing skills dir still exits 1.
+  const outcome = gateOutcome(
+    { checked: result.skillsChecked, findings: result.findings },
+    'advisory',
+  );
+
   if (opts.json) {
-    out.write(`${JSON.stringify(result, null, 2)}\n`);
+    out.write(
+      `${JSON.stringify(
+        {
+          ...result,
+          checked: result.skillsChecked,
+          abstained: outcome.abstained,
+        },
+        null,
+        2,
+      )}\n`,
+    );
     return errors.length === 0 ? 0 : 1;
   }
 
   const symbol = (f: LintFinding) => (f.level === 'error' ? '✗' : '⚠');
   out.write(`canary overlay lint: ${nameOrPath}\n`);
+  if (outcome.abstained) {
+    out.write(`\n${outcome.summaryLine}\n`);
+    out.write(
+      `  No skill directories under ${dir}/.canary/skills, so nothing was ` +
+        `linted. Add a skill, or lint the overlay that actually ships them.\n`,
+    );
+    return 0;
+  }
   if (result.findings.length === 0) {
     out.write(`\n✓ ${result.skillsChecked} skill(s) — no issues.\n`);
     return 0;

@@ -32,6 +32,14 @@ import {
   type UrlProbe,
 } from './doctor-manifest.js';
 import * as registry from './overlays-registry.js';
+import {
+  EXIT_ABSTAINED,
+  gateOutcome,
+  skippedSuffix,
+  type SkipEntry,
+} from './gate-result.js';
+
+export { EXIT_ABSTAINED };
 
 /** Outcome of a single doctor check. */
 export type CheckStatus = 'pass' | 'fail' | 'skip' | 'info';
@@ -56,10 +64,16 @@ export interface DoctorDeps extends CommandDeps {
   probeUrl?: UrlProbe;
   runCommand?: CommandRunner;
   timeoutMs?: number;
+  /**
+   * Override the engine check set. A test seam only: it is the one input a
+   * hermetic run cannot control (engine checks read the real environment), and
+   * the abstention fixtures need a run whose denominator is exactly zero.
+   */
+  runEngineChecks?: (deps: EngineCheckDeps) => Promise<CheckResult[]>;
 }
 
 /** One printed section: a header and its check results. */
-interface CheckGroup {
+export interface CheckGroup {
   header: string;
   results: CheckResult[];
 }
@@ -89,6 +103,12 @@ export interface JsonReport {
   allPassed: boolean;
   /** Non-fatal advisories (e.g. an unknown `--audience`); empty when none. */
   warnings: string[];
+  /** Checks that produced a verdict (`pass + fail`) -- the denominator (#508). */
+  checked: number;
+  /** Skipped checks, always reported; never folded into `allPassed` (D7). */
+  skipped: SkipEntry[];
+  /** True when nothing was verified: `allPassed` is false and the exit is 3. */
+  abstained: boolean;
 }
 
 const SYMBOL: Record<CheckStatus, string> = {
@@ -190,10 +210,78 @@ async function overlayResults(
   return { group: { header, results }, loadedChecks: load.checks };
 }
 
+/** Doctor's denominator, and the decision that follows from it (#508 D7). */
+export interface DoctorSummary {
+  /** Checks that actually produced a verdict: `pass + fail`. */
+  checked: number;
+  passed: number;
+  failed: number;
+  /** Every skipped check, always visible, never folded into `passed`. */
+  skipped: SkipEntry[];
+  abstained: boolean;
+  exitCode: number;
+  summaryLine: string;
+}
+
 /**
- * Run `canary doctor`. Returns a process exit code: 0 when every check passed
- * or was skipped/info, non-zero when any check failed. A malformed manifest for
- * one overlay never blocks engine checks or other overlays.
+ * Compute doctor's denominator and summary line (#508 Wave 3, D7 / #505).
+ *
+ * Doctor used to count only failures, so a run in which EVERY check was
+ * skipped printed `All checks passed.` and exited 0 -- the doctrine violation
+ * that started #508. Here the denominator is explicit: `info` results are not
+ * verifications (they report context, not evidence), so a run with nothing but
+ * skips and info abstains.
+ *
+ * The decision (exit code + `abstained`) comes from `gateOutcome` and is never
+ * re-derived here; only the failure line keeps doctor's own vocabulary
+ * ("check(s) failed" rather than "finding(s)"), rendered with the helper's own
+ * skip suffix so the two can never drift.
+ */
+export function summarizeChecks(groups: readonly CheckGroup[]): DoctorSummary {
+  const results = groups.flatMap((g) => g.results);
+  const failures = results.filter((r) => r.status === 'fail');
+  const passed = results.filter((r) => r.status === 'pass').length;
+  const skipped: SkipEntry[] = results
+    .filter((r) => r.status === 'skip')
+    .map((r) => ({ name: r.id, reason: r.remedy ?? r.label }));
+  const checked = passed + failures.length;
+
+  const outcome = gateOutcome({ checked, findings: failures, skipped }, 'gate');
+  return {
+    checked,
+    passed,
+    failed: failures.length,
+    skipped,
+    abstained: outcome.abstained,
+    exitCode: outcome.exitCode,
+    summaryLine:
+      failures.length > 0
+        ? `${failures.length} check(s) failed${skippedSuffix(skipped)}`
+        : outcome.summaryLine,
+  };
+}
+
+/**
+ * Remediation for an abstained run: why the denominator collapsed, and the
+ * first fix step. Required of every abstaining surface (spec: "an abstaining
+ * surface must say _why_ ... and the first fix step").
+ */
+function abstentionRemedy(summary: DoctorSummary): string {
+  return summary.skipped.length > 0
+    ? 'Every registered check was skipped or informational, so doctor verified ' +
+        'nothing. Grant command-check consent (re-run `canary overlay add ' +
+        '<name> --yes`) or install an overlay whose checks apply here, then ' +
+        're-run.'
+    : 'No check was registered, so doctor verified nothing. Install an ' +
+        'overlay that ships a `.canary/doctor.json` (`canary overlay add ' +
+        '<source>`), then re-run.';
+}
+
+/**
+ * Run `canary doctor`. Returns a process exit code: 0 when at least one check
+ * ran and none failed, 1 when any check failed, and `EXIT_ABSTAINED` (3) when
+ * nothing was actually verified (#508). A malformed manifest for one overlay
+ * never blocks engine checks or other overlays.
  */
 export async function runDoctor(
   args: readonly string[],
@@ -212,8 +300,9 @@ export async function runDoctor(
     timeoutMs: deps.timeoutMs,
   };
 
+  const engineChecks = deps.runEngineChecks ?? runEngineChecks;
   const groups: CheckGroup[] = [
-    { header: 'Engine', results: await runEngineChecks(engineDeps) },
+    { header: 'Engine', results: await engineChecks(engineDeps) },
   ];
 
   let reg: registry.OverlayRegistry;
@@ -237,10 +326,10 @@ export async function runDoctor(
     collectAudiences(allChecks),
   );
 
-  const failures = groups.reduce(
-    (n, g) => n + g.results.filter((r) => r.status === 'fail').length,
-    0,
-  );
+  // #508: the denominator, not just the failure count. `summarizeChecks` is
+  // the only path to a summary line and an exit code, so doctor structurally
+  // cannot print a bare success over zero verified checks.
+  const summary = summarizeChecks(groups);
 
   // Issue #318: `--json` emits the canary-owned machine contract instead of
   // the human report — nothing else is written to stdout, so the whole stream
@@ -257,11 +346,16 @@ export async function runDoctor(
           group: g.header,
         })),
       ),
-      allPassed: failures === 0,
+      // #508: an abstained run is NOT "all passed" -- zero verified checks is
+      // an absent measurement, never a green.
+      allPassed: summary.failed === 0 && !summary.abstained,
       warnings: audienceHint ? [audienceHint] : [],
+      checked: summary.checked,
+      skipped: summary.skipped,
+      abstained: summary.abstained,
     };
     out.write(`${JSON.stringify(report, null, 2)}\n`);
-    return failures === 0 ? 0 : 1;
+    return summary.exitCode;
   }
 
   out.write('canary doctor\n');
@@ -274,8 +368,9 @@ export async function runDoctor(
       out.write(renderCheck(result));
     }
   }
-  out.write(
-    `\n${failures === 0 ? 'All checks passed.' : `${failures} check(s) failed.`}\n`,
-  );
-  return failures === 0 ? 0 : 1;
+  out.write(`\n${summary.summaryLine}\n`);
+  if (summary.abstained) {
+    out.write(`  ${abstentionRemedy(summary)}\n`);
+  }
+  return summary.exitCode;
 }

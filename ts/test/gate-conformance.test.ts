@@ -7,10 +7,15 @@
  * proves the loud outcome -- the #495 negative-testing discipline applied
  * to every gate. A new gate is not done until it has a row here.
  *
- * Wave 1 seeds the engine layer (migrate --check, migrate dry-run).
- * Waves 2-5 add guardian, npm (doctor / overlay lint), long-tail, and
- * workflow rows; skill-CLI rows live in
- * agents/skills/test/gate-conformance.test.ts (subprocess layer).
+ * This file holds the ENGINE rows. The other layers keep their own registries,
+ * because each runs in a different module system / process model:
+ *   - npm (doctor, overlay lint) -> npm/scripts/__tests__/gate-conformance.test.js
+ *     (CommonJS, node:test);
+ *   - skill CLIs -> agents/skills/test/gate-conformance.test.ts (subprocess).
+ *
+ * Wave 1 seeded the engine layer (migrate --check, migrate dry-run); Wave 2
+ * added guardian; Wave 3 added the npm registry above. Waves 4-5 add the long
+ * tail and the workflow rows.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
