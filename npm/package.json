@@ -30,6 +30,7 @@
   "scripts": {
     "build": "tsc && node scripts/build-engine.mjs",
     "prepare": "npm run build",
+    "pretest": "node scripts/sync-gate-result.mjs --check",
     "test": "tsc && node --test \"scripts/__tests__/*.test.js\""
   },
   "engines": {

@@ -24,8 +24,29 @@ canary doctor --persona alpha # run only the checks tagged for a persona
 canary doctor --json          # machine-readable report on stdout
 ```
 
-Exit code is **0 when every check passed** (skipped and informational lines do
-not count as failures) and **non-zero when at least one check failed**.
+Exit codes:
+
+| Code | Meaning                                                                    |
+| ---- | -------------------------------------------------------------------------- |
+| `0`  | At least one check ran and none failed. The summary names the denominator. |
+| `1`  | At least one check failed.                                                 |
+| `3`  | **Abstained** — nothing was actually verified. See below.                  |
+
+Skipped and informational lines never count as failures, but they also never
+count as passes. A run in which _every_ check was skipped (or which registered
+no checks at all) has **abstained**, not passed: it exits `3` and says so.
+
+```text
+⚠ Abstained — verified zero items; this is not a pass. (2 skipped: smoke-test, api-reachable)
+  Every registered check was skipped or informational, so doctor verified
+  nothing. Grant command-check consent (re-run `canary overlay add <name> --yes`)
+  or install an overlay whose checks apply here, then re-run.
+```
+
+This is the no-silent-abstention doctrine (#508): doctor printed
+`All checks passed.` over a fully-skipped run for weeks (#505), which is the
+failure mode the exit-3 tier exists to end. A clean run now states its
+denominator instead — `All 7 run check(s) passed (2 skipped: smoke-test, …)`.
 
 The human report is one symbol per line, remedy indented under a failure. Its
 layout is _loosely_ modeled on `harness doctor`, but the two are **not** a
@@ -49,7 +70,7 @@ Overlay: example-org-example-overlay
       → Check your network / VPN, or set the API base URL in .canary/company.json
   - smoke-test: skipped (command checks need consent — re-run 'canary overlay add')
 
-1 check(s) failed.
+1 check(s) failed (1 skipped: overlay:example:smoke-test)
 ```
 
 | Symbol | Meaning                                                   |
@@ -123,7 +144,7 @@ and tells you to drop the flag.
 
 `--json` emits a single machine-readable JSON object on stdout instead of the
 human report; nothing else is written, so the whole stream parses as one object.
-The exit code is unchanged (0 = all passed, non-zero = a check failed), so
+The exit code is unchanged (0 = passed, 1 = a check failed, 3 = abstained), so
 `--json` drops into a CI step that both parses the result and gates on the code.
 
 ```jsonc
@@ -138,10 +159,20 @@ The exit code is unchanged (0 = all passed, non-zero = a check failed), so
       "remedy": "Install git — …", // present only when the check did not pass
     },
   ],
-  "allPassed": true,
+  "allPassed": true, // false whenever a check failed OR the run abstained
   "warnings": [], // non-fatal advisories, e.g. an unknown --persona
+  "checked": 7, // the denominator: checks that produced a verdict (pass + fail)
+  "skipped": [
+    { "name": "smoke-test", "reason": "command checks need consent" },
+  ],
+  "abstained": false, // true when checked === 0 — an absent result, not a green
 }
 ```
+
+`checked`, `skipped`, and `abstained` are additive (#508). A consumer that gates
+on `allPassed` alone is already correct — it is `false` on an abstained run —
+but `abstained` lets you tell "nothing verified" apart from "something failed"
+without reading the exit code.
 
 **This is a canary-owned contract, not `harness doctor --json`.** Only the
 top-level `allPassed` boolean intentionally matches harness's shape. The
