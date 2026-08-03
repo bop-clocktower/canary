@@ -1,12 +1,25 @@
 /**
- * Cross-language parity: the TS core/ scanners must produce the same output as
- * the Python originals (agent/core/{metadata,domain,fixture,static_linter}).
+ * Scanner behavior goldens: the core/ scanners' exact output on a known
+ * fixture.
  *
- * Golden fixtures are captured by `scripts/capture_scanner_golden.py`. Both
- * sides scan a COPY of ts/test/fixtures/scanner-project in a fresh temp dir —
- * the committed fixture lives under `ts/test/fixtures/`, and DomainScanner
- * rejects any absolute path containing a "test"/"fixtures" segment, so it must
- * be scanned from a clean path to find anything.
+ * ORIGINALLY cross-language parity against `agent/core/*.py`, captured by
+ * `scripts/capture_scanner_golden.py`. **Both the Python sources and that
+ * capture script were deleted in the v6.0.0 cutover**, so these goldens can no
+ * longer be regenerated from a second implementation and no longer verify
+ * parity with anything. Kept — and renamed in intent — because they still earn
+ * their place as *behavior snapshots*: they pin every scanner's exact findings
+ * on one deliberately-problematic file, so a rule change has to be declared
+ * rather than absorbed.
+ *
+ * Update the goldens by hand when a rule change is intentional, and say why in
+ * the commit. (The docstring said "parity" for three releases after the thing
+ * it claimed parity with was gone — a check whose stated premise has quietly
+ * stopped being true is exactly what #508 was about.)
+ *
+ * Both sides scan a COPY of ts/test/fixtures/scanner-project in a fresh temp
+ * dir — the committed fixture lives under `ts/test/fixtures/`, and
+ * DomainScanner rejects any absolute path containing a "test"/"fixtures"
+ * segment, so it must be scanned from a clean path to find anything.
  */
 
 import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
