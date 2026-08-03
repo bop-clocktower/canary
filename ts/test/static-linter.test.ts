@@ -88,6 +88,64 @@ describe('StaticLinter', () => {
     ).not.toContain('LINT-006');
   });
 
+  // Found by dogfooding canary on canary (#508 follow-up): `review-test` over
+  // canary's own suites reported 216 assertion-free tests, of which 13 were
+  // real -- 6% precision. Two independent defects, both pinned below.
+  describe('LINT-006 precision (dogfood findings)', () => {
+    it('sees node:assert style -- assert.equal is an assertion', () => {
+      // 200 of the 216 false positives: ASSERT_JS matched only expect()-style,
+      // so every `node:test` + `node:assert` suite read as assertion-free.
+      const code = "it('x', () => { assert.equal(1, 1); });";
+      expect(rules(lint('a.test.js', code))).not.toContain('LINT-006');
+    });
+
+    it('sees the other common node:assert forms', () => {
+      for (const call of [
+        'assert.ok(x)',
+        'assert.deepEqual(a, b)',
+        'assert.strictEqual(a, b)',
+        'assert.match(s, /x/)',
+        'assert.throws(fn)',
+        'assert(x)',
+      ]) {
+        expect(
+          rules(lint('b.test.js', `it('x', () => { ${call}; });`)),
+        ).not.toContain(`LINT-006`);
+      }
+    });
+
+    it('finds an assertion PAST the old 2000-char window', () => {
+      // 3 of the false positives: the scanner read a fixed 2000-char slice, so
+      // a long test whose first assertion came later was flagged.
+      const filler = "      const pad = 'x'.repeat(1);\n".repeat(120);
+      const code = `it('long', () => {\n${filler}      expect(1).toBe(1);\n});\n`;
+      expect(code.length).toBeGreaterThan(2000);
+      expect(rules(lint('c.spec.ts', code))).not.toContain('LINT-006');
+    });
+
+    it("does NOT borrow the NEXT test's assertion (the false-negative half)", () => {
+      // The fixed window also read forward past the end of the test, so an
+      // empty test followed by an asserting one could be silently excused.
+      const code = [
+        "it('empty', () => {",
+        '  const a = 1;',
+        '});',
+        "it('asserts', () => {",
+        '  expect(1).toBe(1);',
+        '});',
+      ].join('\n');
+      const six = lint('d.spec.ts', code).filter((f) => f.rule === 'LINT-006');
+      expect(six).toHaveLength(1);
+      expect(six[0]!.message).toContain('empty');
+    });
+
+    it('still flags a genuinely assertion-free test', () => {
+      expect(
+        rules(lint('e.spec.ts', "it('x', () => { const a = 1; });")),
+      ).toContain('LINT-006');
+    });
+  });
+
   it('detects assertion-free pytest tests (framework via .py extension)', () => {
     const code = [
       'def test_no_assert():',

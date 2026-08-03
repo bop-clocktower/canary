@@ -43,8 +43,14 @@ const BARE_PLAYWRIGHT_CALL =
 const TEST_FN_PY = /^(\s*)def (test_\w+)\s*\(/gm;
 const TEST_FN_JS = /(?:^|\s)(?:it|test)\s*\(\s*['"]([^'"]*)['"]/gm;
 const ASSERT_PY = /\bassert\b|\bpytest\.raises\b/;
+// Assertion styles a JS/TS test may use. `expect()` (jest/vitest/playwright)
+// was the only one recognized until canary was pointed at its own suites and
+// reported 216 assertion-free tests of which 13 were real -- the other 200 were
+// `node:test` + `node:assert`, a whole framework the linter could not see.
+// Kept as a union of shapes rather than an import-aware parse: a static linter
+// that needs to resolve imports to judge one line is the wrong trade.
 const ASSERT_JS =
-  /\bexpect\s*\(|\bto(?:Be|Equal|Contain|Have|Match|Throw|Raise)\b/;
+  /\bexpect\s*\(|\bto(?:Be|Equal|Contain|Have|Match|Throw|Raise)\b|\bassert\s*\.\s*\w+\s*\(|\bassert\s*\(|\bshould\s*\.|\.should\b/;
 
 // Strippers
 const STRING_LITERAL = /(['"])(?:\\.|(?!\1).)*?\1/g;
@@ -281,9 +287,23 @@ function scanAssertionFreePy(code: string, file: string): Finding[] {
 
 function scanAssertionFreeJs(code: string, file: string): Finding[] {
   const out: Finding[] = [];
-  for (const m of code.matchAll(TEST_FN_JS)) {
+  // The test declarations, in source order, so each body can be bounded by the
+  // NEXT one -- the JS analogue of what the pytest scanner already does with
+  // "next `def` at the same indent".
+  //
+  // This replaces a fixed 2000-character lookahead that was wrong in BOTH
+  // directions: a long test whose first assertion fell past the window was
+  // flagged (false positive), and a short empty test could borrow the next
+  // test's assertion from inside the window (false negative). Neither failure
+  // is visible without a real codebase to run it against, which is why
+  // dogfooding found them and the unit tests did not.
+  const decls = [...code.matchAll(TEST_FN_JS)];
+  for (let i = 0; i < decls.length; i += 1) {
+    const m = decls[i]!;
     const start = m.index!;
-    const rest = code.slice(start + m[0].length, start + m[0].length + 2000);
+    const bodyStart = start + m[0].length;
+    const bodyEnd = decls[i + 1]?.index ?? code.length;
+    const rest = code.slice(bodyStart, bodyEnd);
     if (!ASSERT_JS.test(rest)) {
       out.push(
         mk(
