@@ -25,13 +25,35 @@ jobs:
         # non-blocking telemetry decision). See #318 C.
         run: node scripts/check_hook_customizations.mjs
 
+      # `continue-on-error` steps are the workflow-layer version of the silent
+      # abstention this repo is fixing everywhere else (#508 Wave 5, ADR 0009):
+      # the step goes orange, the JOB goes green, and nobody reads the log. They
+      # stay non-blocking — that is deliberate, both are transitional — but each
+      # now ANNOTATES on failure, so a soft failure surfaces in the PR's Checks
+      # summary instead of being visible only to someone who expands the step.
       - name: Harness Docs Coverage
+        id: docs_coverage
         run: npx --yes -p "$HARNESS_CLI" harness check-docs
         continue-on-error: true # allow warnings for now as we transition
 
+      - name: Annotate soft docs-coverage failure
+        if: steps.docs_coverage.outcome == 'failure'
+        run:
+          echo "::warning title=Docs coverage (non-blocking)::harness check-docs
+          failed. This step does not block the merge, but it did NOT pass — open
+          the 'Harness Docs Coverage' step for the findings."
+
       - name: Harness Cleanup (Entropy Scan)
+        id: entropy_scan
         run: npx --yes -p "$HARNESS_CLI" harness cleanup
         continue-on-error: true # entropy analysis requires entry-point config; surface findings without blocking
+
+      - name: Annotate soft entropy-scan failure
+        if: steps.entropy_scan.outcome == 'failure'
+        run:
+          echo "::warning title=Entropy scan (non-blocking)::harness cleanup
+          failed. This step does not block the merge, but it did NOT pass — open
+          the 'Harness Cleanup (Entropy Scan)' step for the findings."
 
       - name: Harness Phase Gate
         run: npx --yes -p "$HARNESS_CLI" harness check-phase-gate

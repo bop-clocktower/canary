@@ -14,6 +14,47 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Gates that got louder
+
+Every surface below can now exit **3** (`abstained`) or print an unmissable
+abstention line where it previously reported success over a **zero denominator**
+— a check that verified nothing rendering as a pass. Exit 3 is reserved CLI-wide
+for this meaning and nothing else
+([ADR 0009](docs/adr/0009-exit-3-reserved-for-abstained.md)).
+
+**A new exit 3 in your pipeline is the doctrine working, not a regression.** It
+means that command was already verifying nothing — you just could not see it.
+Handle it distinctly from exit 1: `1` is a real finding, `3` is an empty input.
+
+| Surface                                                               | New behavior                  | When it fires                                       | Shipped |
+| --------------------------------------------------------------------- | ----------------------------- | --------------------------------------------------- | ------- |
+| `migrate --check`                                                     | exit **3**                    | zero skills matched the resolved shape              | v6.4.0  |
+| `migrate` (dry run)                                                   | loud abstention               | nothing left to migrate                             | v6.4.0  |
+| `guardian pr-check`                                                   | exit **3**                    | empty diff, or every unit filtered out              | v6.4.0  |
+| `guardian harden-gate --apply`                                        | exit **3**                    | zero observed check contexts on the branch          | v6.4.0  |
+| `guardian analyze`                                                    | warns, exit 0                 | spec diff contains zero endpoints                   | v6.4.0  |
+| `guardian validate-coverage`                                          | warns, exit 0                 | valid document with zero `files` entries            | v6.4.0  |
+| `doctor`                                                              | exit **3**                    | every check skipped, or no check registered         | next    |
+| `overlay lint`                                                        | warns, exit 0                 | overlay ships zero skills                           | next    |
+| `review-test`                                                         | exit **3**                    | directory matched zero test files                   | next    |
+| `flake-check`                                                         | exit **3**                    | directory matched zero test files                   | next    |
+| `analyze` (flaky/spikes/common-failures/regression-candidates/digest) | warns, exit 0                 | zero runs recorded                                  | next    |
+| `analyze area-health`                                                 | warns, exit 0                 | always — its row set is hardcoded empty             | next    |
+| `history flaky`                                                       | warns, exit 0                 | zero runs recorded                                  | next    |
+| `history summary`                                                     | warns, exit 0                 | zero runs (previously reported a fabricated `0.0%`) | next    |
+| `history migrate`                                                     | warns, exit 0                 | zero runs migrated                                  | next    |
+| `canary-blackhawk` / `canary-savant`                                  | warns; **`--strict` exits 3** | zero files scanned                                  | next    |
+| `canary-katana`                                                       | warns; **`--strict` exits 3** | the diff was empty                                  | next    |
+
+Audited and deliberately **unchanged**: `heal-test` (its denominator is always
+exactly 1) and `skills run` (its exit ladder already used 3 for a refusal to
+invoke, which is an abstention). Both carry conformance rows recording the
+classification.
+
+`--json` surfaces gain `checked` and `abstained` additively. Where the payload
+is a bare array with nowhere to put them, stdout stays byte-identical and the
+notice goes to **stderr**, so existing parsers are unaffected.
+
 ## [6.4.0] - 2026-08-02
 
 The **silence** release. Every fix here is the same defect wearing a different

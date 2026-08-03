@@ -379,6 +379,69 @@ This applies to code changes. Commits that are purely documentation-only (e.g.,
 updating `AGENTS.md`, `README.md`) may be made directly to `main` if the user
 has not indicated otherwise.
 
+### No silent abstention (the denominator rule)
+
+**A check that verified zero items has abstained, not passed.** This is the
+project's most-violated invariant and the reason for issue #508: canary ran
+effectively broken in a consuming repo for ~7 weeks while every surface reported
+green.
+
+Every gate, doctor check, and analysis command must:
+
+1. **report its denominator** — how many items it actually verified; and
+2. **treat denominator-zero as a distinct, loud outcome** — exit `3` for gates,
+   an unmissable warning line for advisory commands.
+
+"Skipped" never aggregates into "passed". See
+[ADR 0009](docs/adr/0009-exit-3-reserved-for-abstained.md) for the exit-code
+vocabulary and
+[ADR 0010](docs/adr/0010-conformance-registry-as-gate-registry.md) for how it is
+enforced.
+
+The two traps, both of which have bitten this repo:
+
+- **The denominator is not the finding count.** Zero flaky tests across 500 runs
+  is a genuine clean fleet; zero across zero runs is an absent measurement. If
+  you key the abstention off `findings.length`, you will nag on exactly the
+  repos doing best — and a tool that nags gets muted.
+- **Unknown is not zero.** A surface that _cannot_ determine its denominator
+  reports unknown (`precision: null`, an optional `countRuns?()`) and does not
+  abstain. Inventing an abstention is its own dishonesty.
+
+#### New-gate checklist
+
+A new gate is **not done** until every box is ticked:
+
+- [ ] The command returns a `GateResult` (`{ checked, findings, skipped? }`) and
+      routes its summary line + exit code through `gateOutcome` — the engine
+      helper in `ts/src/core/gate-result.ts`. Never re-derive the decision.
+- [ ] It is classified **gate** (exit-code contract → exit 3) or **advisory**
+      (warn loudly, exit 0), and the classification is defensible out loud.
+- [ ] The abstention output names **why** the denominator collapsed and the
+      **first fix step**. A bare "abstained" is half a bug report.
+- [ ] `--json` carries `checked` and `abstained` additively. If the payload is a
+      bare array with nowhere to put them, leave stdout parseable and put the
+      notice on **stderr**.
+- [ ] It has a **row in the conformance registry** for its layer, whose fixture
+      collapses the denominator through the **real command** and asserts both
+      the loud outcome and the absence of the old success copy.
+- [ ] A **control test** proves a non-zero denominator still renders the normal
+      result — otherwise you have traded a false green for a false alarm.
+- [ ] Any existing test that asserted the old silent green is **rewritten, not
+      deleted**. Those pins are where the bug was ratified; losing them loses
+      coverage of the real clean path.
+
+Registry files, one per runtime layer:
+
+| Layer  | Registry                                         |
+| ------ | ------------------------------------------------ |
+| engine | `ts/test/gate-conformance.test.ts`               |
+| npm    | `npm/scripts/__tests__/gate-conformance.test.js` |
+| skill  | `agents/skills/test/gate-conformance.test.ts`    |
+
+Skill CLIs are self-contained and cannot import the helper; they mirror its
+wording via a local `ABSTAINED_LINE` and are held to it by their registry.
+
 ### Trusted MCP hierarchy
 
 When a task can be done through an MCP tool, choose in this order and stop at
