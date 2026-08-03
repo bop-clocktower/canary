@@ -12,8 +12,8 @@
     "line": 6,
     "rule": "LINT-005",
     "severity": "info",
-    "message": "Magic number 3000.",
-    "suggestion": "Extract to a named constant or derive from test data."
+    "message": "Magic timing value 3000.",
+    "suggestion": "Name the duration (e.g. RETRY_DELAY_MS) so its units and intent are readable."
   },
   {
     "file": "tests/lint-target.spec.ts",
@@ -60,8 +60,8 @@
     "line": 12,
     "rule": "LINT-005",
     "severity": "info",
-    "message": "Magic number 42.",
-    "suggestion": "Extract to a named constant or derive from test data."
+    "message": "Magic timing value 42.",
+    "suggestion": "Name the duration (e.g. RETRY_DELAY_MS) so its units and intent are readable."
   },
   {
     "file": "tests/lint-target.spec.ts",

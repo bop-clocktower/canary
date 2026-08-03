@@ -55,7 +55,23 @@ const ASSERT_JS =
 // Strippers
 const STRING_LITERAL = /(['"])(?:\\.|(?!\1).)*?\1/g;
 
-// Magic numbers
+// Magic numbers -- scoped to TIMING values only.
+//
+// "Extract the magic number to a named constant" is a production-code
+// principle, and it inverts in a test: the literal IS the specification.
+// `expect(notes.length).toBe(2048)` states the contract that
+// `expect(notes.length).toBe(MAX_NOTES)` hides behind a name the reader now has
+// to go look up. Since this linter only ever reads TEST files, the unscoped
+// rule was misapplied across its entire domain -- measured at 0-for-157
+// actionable when canary was first pointed at its own suites.
+//
+// A timing value is the one case that survives: a bare `5000` in a
+// setTimeout/retry/interval position is a duration whose units and intent are
+// genuinely unclear, and naming it genuinely helps. (Hardcoded sleeps are
+// separately flagged at CRITICAL by FLAKE-001/002; this is the softer signal
+// for the non-sleep timing values those rules do not cover.)
+const TIMING_CONTEXT =
+  /\b(?:setTimeout|setInterval|waitForTimeout|sleep|delay|timeout|interval|retryDelay|retries|backoff|pollInterval|debounce|throttle)\b/i;
 const NUMERIC_LITERAL = /(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])/g;
 const ALLOWED_NUMBERS = new Set(['0', '1', '2', '-1', '10', '100']);
 const HTTP_STATUS = new Set([
@@ -230,11 +246,52 @@ function scanMissingAwait(lines: string[], file: string): Finding[] {
   return out;
 }
 
+/** Multi-line string delimiters: JS template literal, Python triple quotes. */
+const MULTILINE_DELIMS = ['`', '"""', "'''"];
+
+/**
+ * Blank the INTERIOR of multi-line strings, preserving line count and numbering.
+ *
+ * Every per-line rule (magic numbers, selectors, flakiness) sees one line at a
+ * time, so a line inside a multi-line template literal or a Python
+ * triple-quoted block reads as bare code. Canary's own diff fixtures are
+ * template literals, so `100644` -- a git file mode sitting in test DATA -- was
+ * reported as a magic number 30 times. Any consumer with a multi-line SQL,
+ * JSON, HTML, or diff fixture has the same defect.
+ *
+ * Deliberately conservative about an UNBALANCED delimiter (a stray backtick in
+ * a comment, say): blanking to end-of-file would silently disable these rules
+ * from that point down -- the abstention shape, one layer inside the linter. An
+ * unclosed run is therefore discarded rather than applied.
+ */
+function blankMultilineStrings(lines: string[]): string[] {
+  const out = [...lines];
+  for (const delim of MULTILINE_DELIMS) {
+    let openAt: number | null = null;
+    for (let i = 0; i < out.length; i += 1) {
+      const hits = out[i]!.split(delim).length - 1;
+      // An even count opens and closes on the same line, which the single-line
+      // stripper already handles; only an odd count toggles the state.
+      if (hits === 0 || hits % 2 === 0) continue;
+      if (openAt === null) {
+        openAt = i;
+      } else {
+        for (let j = openAt + 1; j < i; j += 1) out[j] = '';
+        openAt = null;
+      }
+    }
+  }
+  return out;
+}
+
 function scanMagicNumbers(lines: string[], file: string): Finding[] {
   const out: Finding[] = [];
   lines.forEach((raw, idx) => {
     if (isComment(raw)) return;
     const scrubbed = raw.replace(STRING_LITERAL, '""');
+    // Only timing positions: everywhere else in a test file the literal is the
+    // specification, not a smell. See TIMING_CONTEXT above.
+    if (!TIMING_CONTEXT.test(scrubbed)) return;
     for (const m of scrubbed.matchAll(NUMERIC_LITERAL)) {
       if (isAllowedNumber(m[0])) continue;
       out.push(
@@ -243,8 +300,8 @@ function scanMagicNumbers(lines: string[], file: string): Finding[] {
           idx + 1,
           'LINT-005',
           'info',
-          `Magic number ${m[0]}.`,
-          'Extract to a named constant or derive from test data.',
+          `Magic timing value ${m[0]}.`,
+          'Name the duration (e.g. RETRY_DELAY_MS) so its units and intent are readable.',
         ),
       );
       break; // one finding per line
@@ -333,7 +390,8 @@ export class StaticLinter {
   /** Full quality audit — all rules. */
   lint(path: string, framework?: string): Finding[] {
     const code = readFileSync(path, 'utf-8');
-    const lines = code.split('\n');
+    // Per-line rules must not read the interior of a multi-line string as code.
+    const lines = blankMultilineStrings(code.split('\n'));
     const fw = framework || detectFramework(path);
     const findings: Finding[] = [
       ...scanFlakiness(lines, path),
@@ -351,7 +409,10 @@ export class StaticLinter {
   /** Flakiness-only subset. */
   flakeCheck(path: string): Finding[] {
     const code = readFileSync(path, 'utf-8');
-    const findings = scanFlakiness(code.split('\n'), path);
+    const findings = scanFlakiness(
+      blankMultilineStrings(code.split('\n')),
+      path,
+    );
     findings.sort((a, b) => a.line - b.line);
     return findings;
   }

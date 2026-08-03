@@ -68,8 +68,54 @@ describe('StaticLinter', () => {
     );
   });
 
-  it('flags real magic numbers but allows small/HTTP-status numbers', () => {
-    expect(rules(lint('h.spec.ts', 'const x = 42;'))).toContain('LINT-005');
+  // LINT-005 is scoped to TIMING values. Dogfooding measured it at 0-for-157
+  // actionable on real test code: "extract the magic number" is a
+  // production-code principle that inverts in a test, where the literal IS the
+  // specification -- `expect(len).toBe(2048)` states the contract that
+  // `expect(len).toBe(MAX)` hides. Since this linter only ever reads test
+  // files, the unscoped rule was misapplied across its entire domain.
+  describe('LINT-005 is scoped to timing values', () => {
+    const timing = [
+      'setTimeout(fn, 5000);',
+      'await page.waitForTimeout(3000);',
+      'const opts = { retryDelay: 250 };',
+      'const cfg = { timeout: 4321 };',
+      'await sleep(1500);',
+      'const t = { interval: 750 };',
+    ];
+    for (const line of timing) {
+      it(`flags a timing value: ${line.trim()}`, () => {
+        expect(rules(lint('t.spec.ts', line))).toContain('LINT-005');
+      });
+    }
+
+    const testData = [
+      "expect(index['a.py']).toEqual({ 13: 2 });",
+      "const ck = loadData({ mcp_servers: ['a'.repeat(129)] });",
+      'const ck = loadData({ field: 123 });',
+      'const run = { duration_s: 1.5 };',
+      'const rows = Array.from({ length: 20 });',
+    ];
+    for (const line of testData) {
+      it(`ignores test data: ${line.trim().slice(0, 42)}`, () => {
+        expect(rules(lint('d.spec.ts', line))).not.toContain('LINT-005');
+      });
+    }
+
+    it('still honours the small-number and HTTP-status allowlists', () => {
+      expect(
+        rules(lint('i.spec.ts', 'const t = { timeout: 200 };')),
+      ).not.toContain('LINT-005');
+      expect(rules(lint('j.spec.ts', 'setTimeout(fn, 5);'))).not.toContain(
+        'LINT-005',
+      );
+    });
+  });
+
+  it('flags a real timing value but allows small/HTTP-status numbers', () => {
+    expect(rules(lint('h.spec.ts', 'const x = { timeout: 42 };'))).toContain(
+      'LINT-005',
+    );
     expect(rules(lint('i.spec.ts', 'const s = 200;'))).not.toContain(
       'LINT-005',
     );
@@ -86,6 +132,58 @@ describe('StaticLinter', () => {
     expect(
       rules(lint('m.spec.ts', "test('y', () => { expect(1).toBe(1); });")),
     ).not.toContain('LINT-006');
+  });
+
+  // Second dogfood finding: `scanMagicNumbers` (and every other per-line rule)
+  // works line by line, so the INTERIOR of a multi-line string reads as code.
+  // Canary's own diff fixtures are template literals, so `100644` -- a git file
+  // mode, inside test DATA -- was reported as a magic number 30 times.
+  describe('per-line rules do not read inside multi-line strings', () => {
+    it('ignores numbers inside a multi-line template literal', () => {
+      const code = [
+        'const diff = `',
+        'diff --git a/x.ts b/x.ts',
+        'index 1111111..2222222 100644',
+        '@@ -1,1 +1,7 @@',
+        '`;',
+        "it('x', () => { expect(diff).toBeTruthy(); });",
+      ].join('\n');
+      expect(rules(lint('a.spec.ts', code))).not.toContain('LINT-005');
+    });
+
+    it('ignores numbers inside a python triple-quoted string', () => {
+      const code = [
+        'DIFF = """',
+        'index 1111111..2222222 100644',
+        '"""',
+        'def test_x():',
+        '    assert DIFF',
+      ].join('\n');
+      expect(rules(lint('test_x.py', code))).not.toContain('LINT-005');
+    });
+
+    it('STILL flags a magic number in real code after the string closes', () => {
+      const code = [
+        'const diff = `',
+        'index 1111111..2222222 100644',
+        '`;',
+        "it('x', () => { expect(timeout).toBe(4321); });",
+      ].join('\n');
+      const five = lint('b.spec.ts', code).filter((f) => f.rule === 'LINT-005');
+      expect(five).toHaveLength(1);
+      expect(five[0]!.message).toContain('4321');
+    });
+
+    it('does not let a lone backtick swallow the rest of the file', () => {
+      // An unbalanced backtick (e.g. inside a comment) must not blank every
+      // following line -- that would silently disable the rule file-wide, which
+      // is the abstention shape one layer down.
+      const code = [
+        '// a stray ` in a comment',
+        "it('x', () => { expect(timeout).toBe(4321); });",
+      ].join('\n');
+      expect(rules(lint('c.spec.ts', code))).toContain('LINT-005');
+    });
   });
 
   // Found by dogfooding canary on canary (#508 follow-up): `review-test` over
@@ -187,7 +285,8 @@ describe('StaticLinter', () => {
   });
 
   it('formatFinding renders a readable string', () => {
-    const [f] = lint('p.spec.ts', 'const x = 42;');
+    // A timing position, since LINT-005 no longer fires on a bare literal.
+    const [f] = lint('p.spec.ts', 'const cfg = { timeout: 42 };');
     expect(formatFinding(f!)).toContain('[INFO]');
     expect(formatFinding(f!)).toContain('LINT-005');
   });
