@@ -34,6 +34,14 @@ export interface AsyncHistoryStore {
   ): Promise<FlakyQueryRow[]>;
   queryTimeline(testName: string): Promise<TimelineEntry[]>;
   querySummary(suite: string, runs: number): Promise<SummaryResult>;
+  /**
+   * OPTIONAL denominator probe (#508 Wave 4a). A backend that cannot report how
+   * many runs it holds keeps benefit-of-the-doubt and never abstains: an
+   * UNKNOWN denominator is not a zero one, and inventing an abstention would be
+   * its own dishonesty. Implemented for the local NDJSON backend; the remote
+   * Supabase backend has not grown one yet.
+   */
+  countRuns?(): Promise<number>;
 }
 
 /** Async adapter over the synchronous local NDJSON store. */
@@ -54,6 +62,10 @@ export class LocalAsyncAdapter implements AsyncHistoryStore {
 
   async queryTimeline(testName: string): Promise<TimelineEntry[]> {
     return this.inner.queryTimeline(testName);
+  }
+
+  async countRuns(): Promise<number> {
+    return this.inner.countRuns();
   }
 
   async querySummary(suite: string, runs: number): Promise<SummaryResult> {

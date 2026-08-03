@@ -28,6 +28,7 @@ import { Command, Option } from 'commander';
 import pc from 'picocolors';
 
 import { CliExit, jsonIndent2, normalizeUsageExit } from '../cli-common.js';
+import { gateOutcome } from '../core/gate-result.js';
 import type { RunInput, TestResultInput } from './schema.js';
 import { makeRunId } from './schema.js';
 import { makeStore as realMakeStore, type AsyncHistoryStore } from './store.js';
@@ -38,6 +39,38 @@ const GEQ = '\u{2265}';
 const MDASH_CELL = '\u{2014}'; // rich `r.get("area") or <em-dash>`
 
 const DEFAULT_HISTORY_FILE = 'test-results/reports/history-v2.jsonl';
+
+/**
+ * The denominator guard for the history reports (#508 Wave 4a).
+ *
+ * `countRuns` is OPTIONAL on `AsyncHistoryStore`: a backend that cannot report
+ * how many runs it holds (today, the remote Supabase store) keeps
+ * benefit-of-the-doubt and never abstains. An UNKNOWN denominator is not a zero
+ * one -- inventing an abstention would be its own dishonesty, the same reason
+ * #527 renders `precision: null` rather than 0.
+ *
+ * Advisory (D3): exit stays 0. Returns true when the caller should stop.
+ */
+async function abstainOnEmptyHistory(
+  store: AsyncHistoryStore,
+  deps: HistoryDeps,
+  json: boolean,
+  what: string,
+): Promise<boolean> {
+  if (store.countRuns === undefined) return false; // unknown, not zero
+  if ((await store.countRuns()) > 0) return false;
+  const outcome = gateOutcome({ checked: 0, findings: [] }, 'advisory');
+  const notice =
+    `${outcome.summaryLine} No runs recorded, so ${what} is unknown rather ` +
+    `than clean. Record runs first (\`canary history push\`), then re-run.`;
+  if (json) {
+    deps.out(jsonIndent2([]));
+    deps.err(notice);
+  } else {
+    deps.out(notice);
+  }
+  return true;
+}
 
 /** Every field of the Python `RunRecord` dataclass (the push/migrate filter). */
 const RUN_FIELDS: readonly (keyof RunInput)[] = [
@@ -188,6 +221,11 @@ interface FlakyOptions {
 
 async function flakyCmd(opts: FlakyOptions, deps: HistoryDeps): Promise<void> {
   const store = deps.makeStore(opts.dbUrl);
+  if (
+    await abstainOnEmptyHistory(store, deps, opts.json === true, 'flake rate')
+  ) {
+    return;
+  }
   const results = await store.queryFlaky(
     opts.window,
     opts.suite ?? null,
@@ -283,6 +321,25 @@ async function summaryCmd(
   const store = deps.makeStore(opts.dbUrl);
   const result = await store.querySummary(suite, opts.runs);
 
+  // #508: a summary over zero runs used to print `avg pass rate: 0.0%` -- a
+  // FABRICATED number, not a measured one, and the most misleading shape in the
+  // whole audit (0% reads as catastrophe, not as absence). The store's own
+  // `total_runs` is the denominator here; no extra probe is needed.
+  if ((result.total_runs ?? 0) === 0) {
+    const outcome = gateOutcome({ checked: 0, findings: [] }, 'advisory');
+    const notice =
+      `${outcome.summaryLine} Suite ${suite} has no recorded runs, so its ` +
+      `pass rate is unknown -- not 0%. Record runs first ` +
+      `(\`canary history push\`), then re-run.`;
+    if (opts.json) {
+      deps.out(jsonIndent2({ ...result, abstained: true }));
+      deps.err(notice);
+    } else {
+      deps.out(notice);
+    }
+    return;
+  }
+
   if (opts.json) {
     deps.out(jsonIndent2(result));
     return;
@@ -364,6 +421,17 @@ async function migrateCmd(
     migrated += 1;
   }
 
+  // #508: `Migrated 0 runs` in green is a success line over an empty
+  // denominator -- the #504 shape. A file that yielded nothing was not migrated.
+  if (migrated === 0) {
+    const outcome = gateOutcome({ checked: 0, findings: [] }, 'advisory');
+    deps.out(
+      `${outcome.summaryLine} No run in ${file} could be migrated ` +
+        `(skipped ${skipped}). Check that the file is v1 history NDJSON and ` +
+        `that --suite/--repo match it.`,
+    );
+    return;
+  }
   deps.out(`${pc.green('Migrated')} ${migrated} runs, skipped ${skipped}`);
 }
 

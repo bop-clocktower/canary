@@ -23,6 +23,7 @@ import { basename, join, resolve } from 'node:path';
 import pc from 'picocolors';
 
 import { CliExit, jsonIndent2 } from './cli-common.js';
+import { gateOutcome } from './core/gate-result.js';
 import { ckInitCmd } from './company-knowledge-cli.js';
 import { extractFrameworkHint } from './core/classifier.js';
 import { VALID_CATEGORIES, buildFeedback } from './core/feedback.js';
@@ -609,12 +610,48 @@ function findingPayload(f: Finding): Record<string, unknown> {
   };
 }
 
+/**
+ * The denominator guard shared by the file-scanning gates (#508 Wave 4a).
+ *
+ * `review-test` and `flake-check` used to render a green all-clear whenever
+ * their finding list was empty -- indistinguishable from a run that scanned a
+ * directory matching zero test files. That is the #503 shape: a gate that
+ * verified nothing reporting a pass. Both are GATES (they carry an exit-code
+ * contract), so a collapsed denominator exits 3.
+ *
+ * Returns without throwing when at least one file was collected; the caller's
+ * normal rendering continues. `--json` keeps a parseable array on stdout -- only
+ * the exit code and the stderr notice carry the abstention.
+ */
+function abstainOnZeroFiles(
+  files: readonly string[],
+  path: string,
+  deps: MainDeps,
+  json: boolean,
+): void {
+  if (files.length > 0) return;
+  const outcome = gateOutcome({ checked: 0, findings: [] }, 'gate');
+  const remedy =
+    `No test file matched under ${path} (looked for test_*.py, ` +
+    `*.spec.ts/js, *.test.ts/js). Point at a directory that holds tests, ` +
+    `or pass a single file directly.`;
+  if (json) {
+    deps.out(jsonIndent2([]));
+    deps.err(`${outcome.summaryLine} ${remedy}`);
+  } else {
+    deps.out(pc.bold(pc.yellow(outcome.summaryLine)));
+    deps.out(`  ${remedy}`);
+  }
+  throw new CliExit(outcome.exitCode);
+}
+
 export function reviewTestCmd(
   path: string,
   opts: LintOptions,
   deps: MainDeps,
 ): void {
   const files = isDir(path) ? collectTestFiles(path) : [path];
+  abstainOnZeroFiles(files, path, deps, opts.json === true);
   const linter = deps.makeLinter();
   const allFindings: Finding[] = [];
   for (const f of files) allFindings.push(...linter.lint(f, opts.framework));
@@ -664,6 +701,7 @@ export function flakeCheckCmd(
   deps: MainDeps,
 ): void {
   const files = isDir(path) ? collectTestFiles(path) : [path];
+  abstainOnZeroFiles(files, path, deps, opts.json === true);
   const linter = deps.makeLinter();
   const allFindings: Finding[] = [];
   for (const f of files) allFindings.push(...linter.flakeCheck(f));

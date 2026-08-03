@@ -60,6 +60,15 @@ export interface HistoryStore {
   ): FlakyQueryRow[];
   queryTimeline(testName: string): TimelineEntry[];
   querySummary(suite: string, runs: number): SummaryResult;
+  /**
+   * How many runs the store holds -- the DENOMINATOR every history-backed
+   * report abstains on when it is zero (#508 Wave 4a).
+   *
+   * Deliberately NOT the row count of a query: zero flaky rows across 500 runs
+   * is a genuine clean result, while zero rows across zero runs is an absent
+   * measurement. Only this number can tell the two apart.
+   */
+  countRuns(): number;
 }
 
 export class NdjsonHistoryStore implements HistoryStore {
@@ -89,6 +98,11 @@ export class NdjsonHistoryStore implements HistoryStore {
       records.push(record);
     }
     return records;
+  }
+
+  /** The denominator probe: how many runs this store holds (#508). */
+  countRuns(): number {
+    return this.readAll().length;
   }
 
   /**

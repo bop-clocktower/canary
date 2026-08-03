@@ -41,6 +41,14 @@ interface GateRow {
   run: (base: string) => Promise<{ code: number; stdout: string }>;
 }
 
+/** A directory that exists but holds no collectible test file (Wave 4a). */
+function emptyTestDir(base: string): string {
+  const dir = join(base, 'no-tests');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'README.md'), '# not a test\n', 'utf-8');
+  return dir;
+}
+
 /** Harness project whose shape cannot be detected (migrator.test.ts:690). */
 function unknownShapeProject(base: string): {
   project: string;
@@ -152,6 +160,65 @@ const ROWS: GateRow[] = [
       writeFileSync(path, JSON.stringify({ files: {} }), 'utf-8');
       return invokeGuardian(['validate-coverage', path]);
     },
+  },
+
+  // --- Wave 4a: the engine long tail ---------------------------------------
+  {
+    command: 'review-test (directory matching zero test files)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['No issues found'],
+    run: (base) => invokeCanary(['review-test', emptyTestDir(base)]),
+  },
+  {
+    command: 'flake-check (directory matching zero test files)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['No flakiness patterns detected'],
+    run: (base) => invokeCanary(['flake-check', emptyTestDir(base)]),
+  },
+  {
+    command: 'analyze flaky (zero runs recorded)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: ['No tests above'],
+    run: (base) => invokeCanary(['analyze', 'flaky'], { cwd: base }),
+  },
+  {
+    command: 'analyze regression-candidates (zero runs recorded)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: [],
+    run: (base) =>
+      invokeCanary(['analyze', 'regression-candidates'], { cwd: base }),
+  },
+  {
+    command: 'analyze area-health (row set is hardcoded empty)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: [],
+    run: (base) => invokeCanary(['analyze', 'area-health'], { cwd: base }),
+  },
+  {
+    command: 'history flaky (zero runs recorded)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: ['No tests above'],
+    run: (base) => invokeCanary(['history', 'flaky'], { cwd: base }),
+  },
+  {
+    command: 'history summary (zero runs -- the fabricated 0.0% average)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: ['0.0%'],
+    run: (base) => invokeCanary(['history', 'summary', 'api'], { cwd: base }),
   },
 ];
 
