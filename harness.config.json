@@ -1,17 +1,10 @@
 {
   "version": 1,
   "name": "canary",
-  "language": "python",
   "template": {
     "language": "python",
     "version": 1,
     "level": "intermediate"
-  },
-  "tooling": {
-    "packageManager": "pip",
-    "linter": "ruff",
-    "formatter": "ruff",
-    "testRunner": "pytest"
   },
   "layers": [
     {
@@ -56,13 +49,10 @@
   },
   "agentsMapPath": "./AGENTS.md",
   "docsDir": "./docs",
-  "entryPoints": ["ts/bin/canary.js"],
   "entropy": {
-    "rootDir": ".",
-    "analyze": {
-      "drift": {
-        "checkApiSignatures": false
-      }
+    "entryPoints": ["ts/bin/canary.js"],
+    "drift": {
+      "checkApiSignatures": false
     }
   },
   "telemetry": {

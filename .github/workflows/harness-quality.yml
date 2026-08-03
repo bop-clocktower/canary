@@ -46,7 +46,13 @@ jobs:
       - name: Harness Cleanup (Entropy Scan)
         id: entropy_scan
         run: npx --yes -p "$HARNESS_CLI" harness cleanup
-        continue-on-error: true # entropy analysis requires entry-point config; surface findings without blocking
+        # Until now this step never ran its analysis at all: it exited 2 with
+        # "Could not resolve entry points" because `entryPoints` sat at a config
+        # path the schema does not read, and `continue-on-error` turned that
+        # startup failure into a green job. The key is fixed, so the scan now
+        # actually executes — and reports 718 findings. It stays non-blocking
+        # only until those are triaged and baselined; ratchet tracked in #544.
+        continue-on-error: true
 
       - name: Annotate soft entropy-scan failure
         if: steps.entropy_scan.outcome == 'failure'
