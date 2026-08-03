@@ -64,7 +64,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 ### no-silent-abstention
 
 - **Status:** done
-- **Assignee:** <brianna.stevenski@example.com>
 - **Spec:** docs/changes/no-silent-abstention/proposal.md
 - **Summary:** No Silent Abstention doctrine (#508): every gate reports its
   denominator; zero-verified is a loud, distinct outcome (exit 3 = abstained,
