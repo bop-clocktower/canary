@@ -78,6 +78,30 @@ jobs:
         working-directory: ts
         run: npm test
 
+  npm-validate:
+    # The shipped `canary-test-cli` package (doctor, overlay commands, the MCP
+    # bin). Its suite ran in NO CI job until #508 Wave 3: `release.yml` builds
+    # the package at tag time but never tests it, so a regression here reached
+    # npm unchallenged. `npm test` also runs the gate-abstention drift check
+    # (`pretest`), which is what keeps npm/src/gate-result.ts identical to the
+    # engine's copy -- and the npm half of the conformance registry, which
+    # enforces nothing if it never executes.
+    name: npm package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install npm package deps
+        working-directory: npm
+        run: npm ci
+
+      - name: Test (node:test + gate-abstention drift check)
+        working-directory: npm
+        run: npm test
+
   skills-validate:
     # First JS skill (canary-savant) and the template test harness for skills
     # migrating off Python (canary mirrors harness, which is TS/Node). Runs in
