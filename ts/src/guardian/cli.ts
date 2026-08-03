@@ -76,7 +76,7 @@ import {
   summarizePrecision,
 } from './adjudication.js';
 import { emitAnalysis } from './analysis-emit.js';
-import { gateOutcome, SkipEntry } from '../core/gate-result.js';
+import { gateOutcome, GateOutcome, SkipEntry } from '../core/gate-result.js';
 import {
   ChangedUnit,
   resolveCoverage,
@@ -1460,6 +1460,40 @@ interface AuthorPlanOptions {
   json?: boolean;
 }
 
+/**
+ * author-plan's denominator decision (#508, review-round gap).
+ *
+ * The spec's audit list named `author-plan` next to `pr-check`, but #515
+ * deferred it ("guardian internals being reworked in parallel") and Wave 2 only
+ * took pr-check. On an EMPTY diff this surface emitted
+ * `block: false, authored_count: 0` and exited 0 -- "we examined nothing,
+ * therefore do not block", which is the #456 class verbatim.
+ *
+ * ADVISORY, not a gate: author-plan is an authoring aid whose JSON an agent
+ * reads (see `canary-pr-guardian/SKILL.md`); the exit-code contract belongs to
+ * `pr-check` and the pre-commit gate. So the exit stays 0 and stdout stays a
+ * single parseable object -- `checked`/`abstained` ride the payload additively
+ * and the loud line goes to stderr, keeping `--json` consumers byte-compatible.
+ */
+function authorPlanOutcome(
+  checked: number,
+  results: readonly unknown[],
+  deps: GuardianDeps,
+): GateOutcome {
+  const outcome = gateOutcome({ checked, findings: [...results] }, 'advisory', {
+    noun: 'gap(s)',
+  });
+  if (outcome.abstained) {
+    deps.err(
+      `${outcome.summaryLine} guardian author-plan scoped zero coverage ` +
+        'gaps, so "nothing to author" here means nothing was EXAMINED, not ' +
+        'that everything is covered. Confirm the diff is non-empty and that ' +
+        'skipGlobs is not filtering every path.',
+    );
+  }
+  return outcome;
+}
+
 function authorPlanCmd(opts: AuthorPlanOptions, deps: GuardianDeps): void {
   const [config, warning] = loadGuardianConfig(opts.config);
   if (warning !== null) {
@@ -1493,6 +1527,9 @@ function authorPlanCmd(opts: AuthorPlanOptions, deps: GuardianDeps): void {
   });
   const results = deps.makeAgentTier().author_tests(gaps, ctx);
   const decision = decideBlock(results);
+
+  const outcome = authorPlanOutcome(gaps.length, results, deps);
+
   const payload = {
     intents: results.map(intentDict),
     block: {
@@ -1500,6 +1537,8 @@ function authorPlanCmd(opts: AuthorPlanOptions, deps: GuardianDeps): void {
       message: decision.message,
       authored_count: decision.authored_count,
     },
+    checked: gaps.length,
+    abstained: outcome.abstained,
   };
   deps.out(ensureAscii(JSON.stringify(payload, null, 2)));
 }

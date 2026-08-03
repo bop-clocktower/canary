@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
+import { invokeGuardian } from './guardian-cli-testkit.js';
 
 /** A directory that exists but holds no test files. */
 function emptyTestDir(base: string): string {
@@ -324,6 +325,110 @@ describe('skills run: exit-ladder classification (#508 Wave 4a)', () => {
     // was already right; Wave 4a only records the classification.
     expect(res.code).toBe(EXIT_ABSTAINED);
     expect(res.stdout).toContain('Refusing to invoke');
+  });
+});
+
+/**
+ * Gaps the WAVE audit missed, found by the post-wave review round (#508).
+ *
+ * Both are the same lesson: the audit table (#515's) was treated as the scope
+ * of record, so a surface absent from it was never probed. `history timeline`
+ * and `guardian author-plan` were both absent.
+ */
+describe('history timeline: zero runs vs unknown test (review-round gap)', () => {
+  it('an EMPTY store abstains -- nothing was examined', async () => {
+    const base = mkTmp();
+    try {
+      const res = await invokeCanary(['history', 'timeline', 'some-test'], {
+        cwd: base,
+      });
+      expect(res.code).toBe(0); // advisory (D3)
+      expect(res.stdout).toContain('Abstained');
+      expect(res.stdout).not.toContain('No history found for');
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('a SEEDED store still answers "no history for this test" honestly', async () => {
+    const base = mkTmp();
+    try {
+      seedHistory(base);
+      const res = await invokeCanary(['history', 'timeline', 'unknown-test'], {
+        cwd: base,
+      });
+      expect(res.code).toBe(0);
+      // The control that makes the fix meaningful: with runs recorded, "this
+      // test has no history" is a REAL answer and must not be muddied.
+      expect(res.stdout).toContain('No history found for');
+      expect(res.stdout).not.toContain('Abstained');
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('a SEEDED store renders the timeline for a known test', async () => {
+    const base = mkTmp();
+    try {
+      seedHistory(base);
+      const res = await invokeCanary(['history', 'timeline', 't1'], {
+        cwd: base,
+      });
+      expect(res.code).toBe(0);
+      expect(res.stdout).not.toContain('Abstained');
+    } finally {
+      rmTmp(base);
+    }
+  });
+});
+
+describe('guardian author-plan: empty diff (review-round gap)', () => {
+  it('an empty diff abstains additively; block stays false, exit stays 0', async () => {
+    const base = mkTmp();
+    try {
+      const res = await invokeGuardian(['author-plan', '--diff', '-'], {
+        input: '',
+        cwd: base,
+      });
+      expect(res.code).toBe(0); // advisory -- the gate is pr-check, not this
+      const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+      expect(payload['checked']).toBe(0);
+      expect(payload['abstained']).toBe(true);
+      // stdout stays ONE parseable object: the loud line rides stderr, so the
+      // agent that consumes this JSON is byte-compatible.
+      expect(res.stdout).not.toContain('Abstained');
+      expect(res.stderr).toContain('Abstained');
+      // The pre-existing shape is untouched.
+      expect(payload['intents']).toEqual([]);
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('a diff with a real gap reports checked > 0 and does not abstain', async () => {
+    const base = mkTmp();
+    try {
+      const diff = [
+        'diff --git a/src/pay.ts b/src/pay.ts',
+        'index 1111111..2222222 100644',
+        '--- a/src/pay.ts',
+        '+++ b/src/pay.ts',
+        '@@ -1,1 +1,2 @@',
+        ' export const a = 1;',
+        '+export const b = 2;',
+        '',
+      ].join('\n');
+      const res = await invokeGuardian(['author-plan', '--diff', '-'], {
+        input: diff,
+        cwd: base,
+      });
+      expect(res.code).toBe(0);
+      const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+      expect(payload['abstained']).toBe(false);
+      expect(payload['checked']).toBeGreaterThan(0);
+    } finally {
+      rmTmp(base);
+    }
   });
 });
 
