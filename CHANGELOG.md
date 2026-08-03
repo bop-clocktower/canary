@@ -14,6 +14,18 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [6.5.0] - 2026-08-03
+
+The **denominator** release. v6.4.0 turned "a check that verified zero items has
+abstained, not passed" into a rule and applied it to the first two layers; this
+one finishes the sweep across every remaining surface, and closes #508.
+
+Sixteen more commands now report how many items they actually verified. The
+subtle half is that the denominator is almost never the finding count: zero
+flaky tests across 500 runs is a healthy fleet, while zero across zero runs is
+an absent measurement, and the two used to print the same line. Separating them
+is what most of this release is.
+
 ### Gates that got louder
 
 Every surface below can now exit **3** (`abstained`) or print an unmissable
@@ -34,17 +46,19 @@ Handle it distinctly from exit 1: `1` is a real finding, `3` is an empty input.
 | `guardian harden-gate --apply`                                        | exit **3**                    | zero observed check contexts on the branch          | v6.4.0  |
 | `guardian analyze`                                                    | warns, exit 0                 | spec diff contains zero endpoints                   | v6.4.0  |
 | `guardian validate-coverage`                                          | warns, exit 0                 | valid document with zero `files` entries            | v6.4.0  |
-| `doctor`                                                              | exit **3**                    | every check skipped, or no check registered         | next    |
-| `overlay lint`                                                        | warns, exit 0                 | overlay ships zero skills                           | next    |
-| `review-test`                                                         | exit **3**                    | directory matched zero test files                   | next    |
-| `flake-check`                                                         | exit **3**                    | directory matched zero test files                   | next    |
-| `analyze` (flaky/spikes/common-failures/regression-candidates/digest) | warns, exit 0                 | zero runs recorded                                  | next    |
-| `analyze area-health`                                                 | warns, exit 0                 | always — its row set is hardcoded empty             | next    |
-| `history flaky`                                                       | warns, exit 0                 | zero runs recorded                                  | next    |
-| `history summary`                                                     | warns, exit 0                 | zero runs (previously reported a fabricated `0.0%`) | next    |
-| `history migrate`                                                     | warns, exit 0                 | zero runs migrated                                  | next    |
-| `canary-blackhawk` / `canary-savant`                                  | warns; **`--strict` exits 3** | zero files scanned                                  | next    |
-| `canary-katana`                                                       | warns; **`--strict` exits 3** | the diff was empty                                  | next    |
+| `doctor`                                                              | exit **3**                    | every check skipped, or no check registered         | 6.5.0   |
+| `overlay lint`                                                        | warns, exit 0                 | overlay ships zero skills                           | 6.5.0   |
+| `review-test`                                                         | exit **3**                    | directory matched zero test files                   | 6.5.0   |
+| `flake-check`                                                         | exit **3**                    | directory matched zero test files                   | 6.5.0   |
+| `analyze` (flaky/spikes/common-failures/regression-candidates/digest) | warns, exit 0                 | zero runs recorded                                  | 6.5.0   |
+| `analyze area-health`                                                 | warns, exit 0                 | always — its row set is hardcoded empty             | 6.5.0   |
+| `history flaky`                                                       | warns, exit 0                 | zero runs recorded                                  | 6.5.0   |
+| `history summary`                                                     | warns, exit 0                 | zero runs (previously reported a fabricated `0.0%`) | 6.5.0   |
+| `history migrate`                                                     | warns, exit 0                 | zero runs migrated                                  | 6.5.0   |
+| `canary-blackhawk` / `canary-savant`                                  | warns; **`--strict` exits 3** | zero files scanned                                  | 6.5.0   |
+| `canary-katana`                                                       | warns; **`--strict` exits 3** | the diff was empty                                  | 6.5.0   |
+| `history timeline`                                                    | warns, exit 0                 | zero runs recorded (vs. an unknown test)            | 6.5.0   |
+| `guardian author-plan`                                                | warns, exit 0                 | empty diff; `checked`/`abstained` now in the JSON   | 6.5.0   |
 
 Audited and deliberately **unchanged**: `heal-test` (its denominator is always
 exactly 1) and `skills run` (its exit ladder already used 3 for a refusal to
@@ -54,6 +68,72 @@ classification.
 `--json` surfaces gain `checked` and `abstained` additively. Where the payload
 is a bare array with nowhere to put them, stdout stays byte-identical and the
 notice goes to **stderr**, so existing parsers are unaffected.
+
+### Added
+
+- **`canary doctor` reports its denominator** (#508, #505). The summary names
+  what actually ran and what was skipped —
+  `All 7 run check(s) passed (2 skipped: smoke-test, api-reachable)` — instead
+  of `All checks passed.` over a run where every check was skipped. `--json`
+  gains `checked`, `skipped`, and `abstained`; `allPassed` is now `false` on an
+  abstained run. Zero runnable checks exits **3**.
+- **`NdjsonHistoryStore.countRuns()`** — the denominator probe every
+  history-backed report consults. `AsyncHistoryStore.countRuns?()` is
+  deliberately **optional**: a backend that cannot report how many runs it holds
+  (today, the remote Supabase store) keeps benefit-of-the-doubt rather than
+  abstaining. An unknown denominator is not a zero one.
+- **Two ADRs** recording the doctrine's load-bearing decisions:
+  [0009 — exit 3 reserved CLI-wide](docs/adr/0009-exit-3-reserved-for-abstained.md)
+  and
+  [0010 — the conformance registry is the canonical gate list](docs/adr/0010-conformance-registry-as-gate-registry.md).
+  `AGENTS.md` gains the doctrine plus a **new-gate checklist**.
+- **Conformance registries, one per runtime layer** — 24 rows total (15 engine,
+  3 npm, 6 skill). Every row collapses a command's denominator and runs the
+  **real command**, asserting both the loud outcome and the absence of the old
+  success copy. A new gate is not done until it has a row.
+- **The npm package's test suite now runs in CI.** It ran in _zero_ jobs before:
+  `release.yml` built the package at tag time but never tested it, so a
+  regression in `doctor`, the overlay commands, or the MCP bin reached npm
+  unchallenged.
+
+### Fixed
+
+- **`history summary` fabricated a pass rate over an empty sample** (#508). Zero
+  recorded runs printed `avg pass rate: 0.0%` — the most misleading shape in the
+  audit, since 0% reads as catastrophe rather than as absence. It now says the
+  rate is unknown.
+- **`analyze` and `history` reports abstained on the wrong denominator** (#508).
+  They keyed off result rows, so a healthy fleet with 500 recorded runs and zero
+  flaky tests was indistinguishable from an empty store. They now consult the
+  **run count**, which is the only thing that separates "clean" from "unknown".
+- **`analyze area-health` always presented a template as a measurement** (#508).
+  It builds its report from a hardcoded empty row set, so it rendered "no area
+  health data" no matter how much history existed. It now abstains
+  unconditionally; wiring a real row set is tracked separately.
+- **`guardian author-plan` on an empty diff answered "do not block"** (#508, the
+  #456 class). It emitted `block: false, authored_count: 0` and exited 0 — "we
+  examined nothing, therefore do not block". The payload now carries `checked`
+  and `abstained`; the exit stays 0 (it is an authoring aid, not the gate) and
+  stdout stays a single parseable object.
+- **`history timeline` conflated "no history for this test" with "no history at
+  all"** (#508). Both rendered identically; the empty store now abstains.
+- **`review-test` / `flake-check` reported a clean bill of health over zero
+  scanned files** (#508) — now exit **3**. Same for `canary-blackhawk` /
+  `canary-savant` (advisory; `--strict` inherits exit 3) and `canary-katana` on
+  an empty diff.
+- **`canary overlay lint` called an empty overlay clean** (#508). Linting zero
+  skills now abstains instead of printing `0 skill(s) — no issues`.
+- **`guardian.yml` treated every non-zero exit as a failure** (#508). It now
+  handles exit 3 distinctly — annotate and pass, since a docs-only PR has
+  nothing to gate — while exit 1 stays red. The two `continue-on-error` steps in
+  `harness-quality.yml` now annotate on failure instead of going quietly green.
+
+### Notes for consumers
+
+If a pipeline step newly exits **3**, that command was already verifying nothing
+— the exit code is the first time it has been able to say so. Treat `3` as
+"empty input, nothing checked" and `1` as "a real finding"; collapsing them back
+into "non-zero" reintroduces exactly the blindness this release removes.
 
 ## [6.4.0] - 2026-08-02
 
@@ -922,6 +1002,7 @@ line (descends from v3.0.0); no prior release was modified.
   guard (removed-symbol / proprietary-denylist checks).
 
 [Unreleased]: https://github.com/bop-clocktower/canary/compare/v6.4.0...HEAD
+[6.5.0]: https://github.com/bop-clocktower/canary/compare/v6.4.0...v6.5.0
 [6.4.0]: https://github.com/bop-clocktower/canary/compare/v6.3.0...v6.4.0
 [6.3.0]: https://github.com/bop-clocktower/canary/compare/v6.2.0...v6.3.0
 [6.2.0]: https://github.com/bop-clocktower/canary/compare/v6.1.0...v6.2.0
