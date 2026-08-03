@@ -134,6 +134,51 @@ describe('StaticLinter', () => {
     ).not.toContain('LINT-006');
   });
 
+  // Third dogfood finding, same family as #499 on the skills side: the FLAKE
+  // rules and the missing-await rule matched the RAW line, so a pattern sitting
+  // inside a string literal -- i.e. test DATA -- was reported as real code.
+  // Canary's own linter tests are the worst case, since they necessarily carry
+  // the bad patterns as fixture strings. `scanMagicNumbers` already stripped
+  // strings; these scanners never did.
+  describe('code rules do not match inside string literals', () => {
+    const dataLines: Array<[string, string]> = [
+      ["const src = 'const t = Date.now();';", 'FLAKE-004'],
+      ["heal(pyFile('import time\\ntime.sleep(2)\\n'));", 'FLAKE-001'],
+      ["const src = 'setTimeout(fn, 100);';", 'FLAKE-002'],
+      ["const src = 'const r = Math.random();';", 'FLAKE-003'],
+      ['const src = "page.click(\'#x\');";', 'LINT-004'],
+    ];
+    for (const [line, rule] of dataLines) {
+      it(`${rule} ignores the pattern inside a string`, () => {
+        expect(rules(lint('d.spec.ts', line))).not.toContain(rule);
+      });
+    }
+
+    const codeLines: Array<[string, string]> = [
+      ['const t = Date.now();', 'FLAKE-004'],
+      ['await page.waitForTimeout(2000);', 'FLAKE-001'],
+      ['setTimeout(fn, 100);', 'FLAKE-002'],
+      ['const r = Math.random();', 'FLAKE-003'],
+      ["page.click('#x');", 'LINT-004'],
+    ];
+    for (const [line, rule] of codeLines) {
+      it(`${rule} still fires on real code`, () => {
+        expect(rules(lint('c.spec.ts', line))).toContain(rule);
+      });
+    }
+
+    it('selector rules are NOT string-stripped -- their match IS the quotes', () => {
+      // LINT-001/002/003 deliberately look inside quotes: the selector is a
+      // string by construction. Stripping would delete the rules entirely.
+      expect(
+        rules(lint('s.spec.ts', "page.locator('.btn').click();")),
+      ).toContain('LINT-001');
+      expect(rules(lint('u.spec.ts', "page.locator('#id');"))).toContain(
+        'LINT-002',
+      );
+    });
+  });
+
   // Second dogfood finding: `scanMagicNumbers` (and every other per-line rule)
   // works line by line, so the INTERIOR of a multi-line string reads as code.
   // Canary's own diff fixtures are template literals, so `100644` -- a git file
@@ -174,6 +219,23 @@ describe('StaticLinter', () => {
       expect(five[0]!.message).toContain('4321');
     });
 
+    it('LINT-006 does not read tests inside a multi-line string either', () => {
+      // The assertion scanners took the RAW source while the per-line rules
+      // took the blanked one, so a diff fixture full of `it(...)` lines was
+      // still mined for assertion-free tests. Canary's katana tests carry
+      // exactly that shape (deleted `it(` lines inside a diff string).
+      const code = [
+        'const diff = `',
+        'diff --git a/t.spec.ts b/t.spec.ts',
+        "-  it('adds to cart', async () => {",
+        '-    await page.goto("/");',
+        '-  });',
+        '`;',
+        "it('real', () => { expect(diff).toBeTruthy(); });",
+      ].join('\n');
+      expect(rules(lint('k.spec.ts', code))).not.toContain('LINT-006');
+    });
+
     it('does not let a lone backtick swallow the rest of the file', () => {
       // An unbalanced backtick (e.g. inside a comment) must not blank every
       // following line -- that would silently disable the rule file-wide, which
@@ -210,6 +272,32 @@ describe('StaticLinter', () => {
           rules(lint('b.test.js', `it('x', () => { ${call}; });`)),
         ).not.toContain(`LINT-006`);
       }
+    });
+
+    it('counts an expectX()/assertX() helper as an assertion', () => {
+      // A test that delegates its assertion to a named helper
+      // (`expectAuthoringAllowed(...)`) is asserting; a regex linter cannot
+      // follow the call, so the NAME is the signal. 9 of canary's own 16
+      // residual LINT-006 findings were this. Same "union of shapes" trade
+      // ASSERT_JS already documents -- an import-aware parse is the wrong cost
+      // for a static linter.
+      for (const call of [
+        'expectAuthoringAllowed(r)',
+        'assertRecorded(x, y)',
+        'expectAbstained(res)',
+      ]) {
+        expect(
+          rules(lint('h.spec.ts', `it('x', () => { ${call}; });`)),
+        ).not.toContain('LINT-006');
+      }
+    });
+
+    it('does not treat an unrelated camelCase call as an assertion', () => {
+      // The convention is expect*/assert* specifically; a generic verb must not
+      // buy a free pass, or the rule silently stops firing.
+      expect(
+        rules(lint('i.spec.ts', "it('x', () => { checkoutBranch('main'); });")),
+      ).toContain('LINT-006');
     });
 
     it('finds an assertion PAST the old 2000-char window', () => {

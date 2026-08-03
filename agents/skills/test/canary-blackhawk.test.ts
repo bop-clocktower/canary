@@ -665,6 +665,29 @@ describe('cli', () => {
 // --- Inline suppression pragma (#393) --------------------------------------
 
 describe('inline suppression pragma', () => {
+  // #499: the pragma parser ran `PRAGMA.exec(raw)` on the raw line, so a
+  // `blackhawk-ignore` sitting INSIDE a string literal registered as a live
+  // directive -- data acting as directive, with a fabricated "reason" entering
+  // the suppressed count. Savant shipped the guard in #498; blackhawk did not
+  // get it ported back. These mirror savant's two pin tests.
+  it('a pragma inside a string literal on the same line is inert', () => {
+    const text =
+      "const fixture = 'setTimeout(x, 500); // blackhawk-ignore BH002 -- fake';\n" +
+      'setTimeout(done, 500);\n';
+    const r = scanTextFull(text, 'a.spec.ts');
+    expect(r.findings.some((f) => f.ruleId.startsWith('BH002'))).toBe(true);
+    expect(r.suppressed).toEqual([]);
+  });
+
+  it('a pragma inside a string literal on the line above is inert', () => {
+    const text =
+      "const s = '// blackhawk-ignore BH002 -- not a directive';\n" +
+      'setTimeout(done, 500);\n';
+    const r = scanTextFull(text, 'a.spec.ts');
+    expect(r.findings.some((f) => f.ruleId.startsWith('BH002'))).toBe(true);
+    expect(r.suppressed).toEqual([]);
+  });
+
   const ruleIds = (fs2: { ruleId: string }[]) => fs2.map((f) => f.ruleId);
 
   it('suppresses a rule via a same-line trailing pragma', () => {
