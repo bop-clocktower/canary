@@ -648,14 +648,41 @@ describe('history human-readable paths', () => {
     }
   });
 
-  it('timeline (no history) reports the miss', async () => {
+  // #508 (review round): this pointed at an EMPTY store, so it asserted
+  // `No history found for: nope` over a store that held nothing at all -- the
+  // silent-abstention shape restated as a test, for the fourth time in this
+  // epic. Reporting the miss is real behavior; it just needs recorded runs to
+  // be a miss rather than an absence. (Empty-store abstention is covered in
+  // abstention-longtail.test.ts.)
+  it('timeline reports the miss when the store HAS runs', async () => {
     const tmp = mkTmp();
     try {
+      const dir = join(tmp, 'test-results', 'reports');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, 'history-v2.jsonl'),
+        `${JSON.stringify({
+          run_id: 'r1',
+          suite: 'api',
+          repo: 'o/r',
+          branch: 'main',
+          commit_sha: 'abc1234',
+          timestamp: '2026-08-01T00:00:00+00:00',
+          total: 1,
+          passed: 1,
+          failed: 0,
+          flaky: 0,
+          skipped: 0,
+          tests: [{ test_name: 't1', status: 'passed' }],
+        })}\n`,
+        'utf-8',
+      );
       const res = await invokeCanary(['history', 'timeline', 'nope'], {
         cwd: tmp,
       });
       expect(res.code).toBe(0);
       expect(res.stdout).toContain('No history found for');
+      expect(res.stdout).not.toContain('Abstained');
     } finally {
       rmTmp(tmp);
     }

@@ -212,6 +212,27 @@ const ROWS: GateRow[] = [
     forbid: ['No tests above'],
     run: (base) => invokeCanary(['history', 'flaky'], { cwd: base }),
   },
+  // --- review-round gaps: surfaces #515's audit table never listed ---------
+  {
+    command: 'history timeline (zero runs recorded)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: ['No history found for'],
+    run: (base) =>
+      invokeCanary(['history', 'timeline', 'some-test'], { cwd: base }),
+  },
+  {
+    command: 'guardian author-plan (empty diff)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    // `"abstained": false` must never appear -- the #456 class was exactly
+    // "examined nothing, therefore do not block".
+    forbid: ['"abstained": false'],
+    run: (base) =>
+      invokeGuardian(['author-plan', '--diff', '-'], { input: '', cwd: base }),
+  },
   {
     command: 'history summary (zero runs -- the fabricated 0.0% average)',
     layer: 'engine',

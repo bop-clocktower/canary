@@ -277,6 +277,23 @@ async function timelineCmd(
   deps: HistoryDeps,
 ): Promise<void> {
   const store = deps.makeStore(opts.dbUrl);
+
+  // #508 (review-round gap): `No history found for: <test>` rendered
+  // IDENTICALLY whether the test genuinely has no runs in a populated store (a
+  // real answer) or the store is empty and nothing was examined at all (an
+  // absent one). Same runs-vs-rows distinction Wave 4a built `countRuns()` for;
+  // `timeline` was missed because #515's audit table never listed it.
+  if (
+    await abstainOnEmptyHistory(
+      store,
+      deps,
+      opts.json === true,
+      `the timeline for ${testName}`,
+    )
+  ) {
+    return;
+  }
+
   const rows = await store.queryTimeline(testName);
 
   if (opts.json) {
