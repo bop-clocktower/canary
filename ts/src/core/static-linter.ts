@@ -49,8 +49,13 @@ const ASSERT_PY = /\bassert\b|\bpytest\.raises\b/;
 // `node:test` + `node:assert`, a whole framework the linter could not see.
 // Kept as a union of shapes rather than an import-aware parse: a static linter
 // that needs to resolve imports to judge one line is the wrong trade.
+// The `expectX()/assertX()` alternative covers a test that delegates its
+// assertion to a named helper (`expectAuthoringAllowed(res)`) -- 9 of canary's
+// own 16 residual findings. A regex linter cannot follow the call, so the NAME
+// carries the signal; the `[A-Z]` keeps it to the convention rather than
+// excusing any call that merely starts with those letters.
 const ASSERT_JS =
-  /\bexpect\s*\(|\bto(?:Be|Equal|Contain|Have|Match|Throw|Raise)\b|\bassert\s*\.\s*\w+\s*\(|\bassert\s*\(|\bshould\s*\.|\.should\b/;
+  /\bexpect\s*\(|\bto(?:Be|Equal|Contain|Have|Match|Throw|Raise)\b|\bassert\s*\.\s*\w+\s*\(|\bassert\s*\(|\bshould\s*\.|\.should\b|\b(?:expect|assert)[A-Z]\w*\s*\(/;
 
 // Strippers
 const STRING_LITERAL = /(['"])(?:\\.|(?!\1).)*?\1/g;
@@ -163,10 +168,33 @@ const FLAKINESS_RULES: FlakeRule[] = [
   },
 ];
 
+/**
+ * Blank single-line string literals so a rule matching CODE cannot fire on test
+ * DATA.
+ *
+ * `scanMagicNumbers` has always done this; the flakiness and missing-await
+ * rules never did, so `const src = 'const t = Date.now();'` -- a fixture string
+ * feeding a linter test -- was reported as a real timestamp dependency. Any
+ * suite that carries the patterns it tests as string data hits this, and
+ * canary's own linter tests are the worst case.
+ *
+ * The same defect shipped in `canary-blackhawk`'s pragma parser (#499) and was
+ * guarded in `canary-savant` (#495/#498): data must never act as code, nor as
+ * directive.
+ *
+ * NOT applied to the selector rules: LINT-001/002/003 match `'.btn'` / `'#id'`
+ * inside quotes by construction, because a selector IS a string. Stripping
+ * would delete those rules outright.
+ */
+function blankStrings(line: string): string {
+  return line.replace(STRING_LITERAL, '""');
+}
+
 function scanFlakiness(lines: string[], file: string): Finding[] {
   const out: Finding[] = [];
-  lines.forEach((line, idx) => {
-    if (isComment(line)) return;
+  lines.forEach((raw, idx) => {
+    if (isComment(raw)) return;
+    const line = blankStrings(raw);
     for (const r of FLAKINESS_RULES) {
       if (r.re.test(line) && (!r.guard || r.guard(line))) {
         out.push(
@@ -228,8 +256,10 @@ function scanSelectors(lines: string[], file: string): Finding[] {
 
 function scanMissingAwait(lines: string[], file: string): Finding[] {
   const out: Finding[] = [];
-  lines.forEach((line, idx) => {
-    if (isComment(line)) return;
+  lines.forEach((raw, idx) => {
+    if (isComment(raw)) return;
+    // A `page.click(...)` inside a string is fixture data, not a missing await.
+    const line = blankStrings(raw);
     if (BARE_PLAYWRIGHT_CALL.test(line) && !line.includes('await')) {
       out.push(
         mk(
@@ -390,8 +420,12 @@ export class StaticLinter {
   /** Full quality audit — all rules. */
   lint(path: string, framework?: string): Finding[] {
     const code = readFileSync(path, 'utf-8');
-    // Per-line rules must not read the interior of a multi-line string as code.
+    // No rule may read the interior of a multi-line string as code. Blanking
+    // preserves line count, so `scanned` re-joins to the same line numbers the
+    // per-line scanners report -- both halves must use it, or the assertion
+    // scanners go on mining `it(...)` declarations out of diff fixtures.
     const lines = blankMultilineStrings(code.split('\n'));
+    const scanned = lines.join('\n');
     const fw = framework || detectFramework(path);
     const findings: Finding[] = [
       ...scanFlakiness(lines, path),
@@ -399,8 +433,8 @@ export class StaticLinter {
       ...scanMissingAwait(lines, path),
       ...scanMagicNumbers(lines, path),
       ...(fw === 'pytest'
-        ? scanAssertionFreePy(code, path)
-        : scanAssertionFreeJs(code, path)),
+        ? scanAssertionFreePy(scanned, path)
+        : scanAssertionFreeJs(scanned, path)),
     ];
     findings.sort((a, b) => a.line - b.line || cmp(a.rule, b.rule));
     return findings;
