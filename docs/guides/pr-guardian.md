@@ -172,10 +172,46 @@ A suppressed finding is cleared from the `gate: hard` exit calculation but stays
 **visible** in the comment (labeled `suppressed`), so the decision is auditable
 rather than hidden.
 
+## Adjudication
+
+Your 👍/👎 does something.
+
+React on the guardian's sticky comment to adjudicate its findings:
+
+- **👍 (thumbs-up)** — the finding was right (true positive).
+- **👎 (thumbs-down)** — the finding was wrong (false positive).
+
+On the next `pr-check` run for that PR the guardian reads the reactions back off
+its own comment and persists an adjudication record to `.harness/analyses/` (one
+record per PR, latest reaction state; you can also sweep explicitly with
+`canary guardian collect-adjudications --repo o/r --pr N`). One vote per user;
+bots are excluded; a user who reacted both ways is dropped as contradictory. No
+reaction means **neutral** — it is never counted as either verdict.
+
+Attribution is **whole-comment**: one sticky comment carries all findings, so a
+reaction adjudicates the run rather than a single finding — except when the
+comment shows exactly one finding, which the reaction is attributed to directly.
+(Per-finding comments were rejected as a worse artifact: N comments per PR.)
+
+The verdicts feed the promotion evidence:
+
+```bash
+canary guardian precision          # TP / (TP + FP), with its sample size
+canary guardian precision --json   # machine-readable; precision null = unknown
+```
+
+With **zero** adjudications the report says `unknown — no adjudications yet`; an
+empty sample is an absent measurement, never a perfect score. When there is
+data, the sample size rides alongside the number — reviewers self-select into
+reacting, so treat it as a signal, not ground truth.
+
 ## Soft → hard promotion
 
 The gate starts **soft** and earns its way to **hard** — do not flip a repo to
-`hard` before the baseline has proven itself there.
+`hard` before the baseline has proven itself there. Promotion is earned by
+reviewer adjudication feeding `precision = TP / (TP + FP)` (see
+[Adjudication](#adjudication) above); `canary guardian harden-gate` surfaces the
+measured precision — or an honest `unknown` — in its readiness output.
 
 - **`gate: soft` (default).** The guardian always exits `0`. Findings are
   advisory: they post to the PR and emit an analysis, but never block a merge.
