@@ -713,7 +713,10 @@ entirely and is untouched.
        '--json',
      ]);
      expect(res.code).toBe(0);
-     expect(res.stdout.toLowerCase()).not.toContain('abstained');
+     // The HUMAN abstention line is capitalized ('\u26a0 Abstained \u2014 ...');
+     // the lowercase `abstained` json KEY is expected in the payload, so this
+     // must not lowercase stdout or it matches its own additive field.
+     expect(res.stdout).not.toContain('Abstained');
      const payload = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
      expect(payload.checked).toBe(1); // one added endpoint
      expect(payload.abstained).toBe(false);

@@ -77,6 +77,21 @@ it('apply unverified context exits one', async () => {
   expect(fake.write_count).toBe(0);
 });
 
+it('apply with zero observed checks exits 3 abstained with playbook (#508)', async () => {
+  const fake = new FakeBranchProtectionClient({
+    contexts: ['build'],
+    observed: [],
+  });
+  const res = await invokeGuardian(
+    ['harden-gate', '--repo', 'o/r', '--apply', '--token', 'x'],
+    { deps: { buildBranchProtectionClient: () => fake } },
+  );
+  expect(res.code).toBe(3);
+  expect(res.stdout.toLowerCase()).toContain('abstained');
+  expect(res.stdout).toContain('settings/branches'); // playbook still prints
+  expect(fake.write_count).toBe(0);
+});
+
 it('force bypasses verification', async () => {
   const fake = new FakeBranchProtectionClient({
     contexts: ['build'],

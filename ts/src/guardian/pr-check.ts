@@ -809,11 +809,18 @@ function findingDict(finding: Finding): Record<string, unknown> {
  * - `json`: `{"findings": [...], "tier": <n>}` — stable schema.
  * - `text`: plain, markdown-free, for local/CLI output.
  */
+/** Additive gate denominator for the json format (#508). */
+export interface GateMeta {
+  checked: number;
+  abstained: boolean;
+}
+
 export function render(
   findings: Finding[],
   fmt: string,
   tier = 0,
   degradedNotice: string | null = null,
+  gateMeta: GateMeta | null = null,
 ): string {
   const ordered = [...findings].sort(
     (a, b) => severitySortKey(a.severity) - severitySortKey(b.severity),
@@ -825,6 +832,10 @@ export function render(
       tier,
     };
     if (degradedNotice) payload['degraded_notice'] = degradedNotice;
+    if (gateMeta !== null) {
+      payload['checked'] = gateMeta.checked;
+      payload['abstained'] = gateMeta.abstained;
+    }
     return ensureAscii(JSON.stringify(payload, null, 2));
   }
 

@@ -106,6 +106,24 @@ it('directory path exits two', async () => {
   expect(res.code).toBe(2);
 });
 
+it('zero file entries abstains loudly, exit 0 (#508, D3)', async () => {
+  const path = write({ files: {} });
+  const res = await invokeGuardian(['validate-coverage', path]);
+  expect(res.code).toBe(0);
+  expect(res.stdout.toLowerCase()).toContain('abstained');
+  expect(res.stdout).not.toContain('valid coverage-json document');
+});
+
+it('json carries checked/abstained additively (#508)', async () => {
+  const empty = write({ files: {} });
+  const res = await invokeGuardian(['validate-coverage', empty, '--json']);
+  expect(res.code).toBe(0);
+  const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+  expect(data.valid).toBe(true);
+  expect(data.checked).toBe(0);
+  expect(data.abstained).toBe(true);
+});
+
 it('valid clean document prints the success line', async () => {
   // A fully-valid document with no warnings hits the "valid document" branch.
   const path = write({ files: { 'a.py': { line_hits: { '1': 2 } } } });

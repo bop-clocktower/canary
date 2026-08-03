@@ -67,11 +67,17 @@ import {
   decideBlock,
 } from './agent-tier.js';
 import { emitAnalysis } from './analysis-emit.js';
-import { resolveCoverage, validateCoverageJson } from './coverage.js';
+import { gateOutcome, SkipEntry } from '../core/gate-result.js';
+import {
+  ChangedUnit,
+  resolveCoverage,
+  validateCoverageJson,
+} from './coverage.js';
 import { buildApiDelta, writeApiDelta } from './delta-emitter.js';
 import { extractApiDiff } from './diff-extractor.js';
 import {
   BranchProtection,
+  HardGateAbstained,
   HardGateBlocked,
   RestBranchProtectionClient,
   applyHardGate,
@@ -669,6 +675,24 @@ function analyzeCmd(
   const gaps = mapImpact(diff, coverageRows);
   const summary = buildSummary(gaps, sha, opts.suite);
 
+  // #508 advisory abstention (D3): a diff with zero endpoints analyzed
+  // nothing. gateOutcome is the only decision point -- no local === 0.
+  const endpointCount =
+    diff.added.length + diff.removed.length + diff.changed.length;
+  const outcome = gateOutcome(
+    { checked: endpointCount, findings: gaps },
+    'advisory',
+    { noun: 'endpoint(s)' },
+  );
+  if (outcome.abstained) {
+    deps.out(outcome.summaryLine);
+    deps.out(
+      'guardian: the spec diff contains zero endpoints, so there was no ' +
+        'impact to analyze. Pass --spec-before/--spec-after pointing at ' +
+        'specs that actually differ.',
+    );
+  }
+
   if (opts.json) {
     deps.out(
       ensureAscii(
@@ -679,6 +703,8 @@ function analyzeCmd(
             added: diff.added.length,
             removed: diff.removed.length,
             changed: diff.changed.length,
+            checked: endpointCount,
+            abstained: outcome.abstained,
             gaps: gaps.map((g) => ({
               path: g.path,
               method: g.method,
@@ -709,6 +735,18 @@ interface ValidateCoverageOptions {
 }
 
 const MAX_COVERAGE_BYTES = 25 * 1024 * 1024;
+
+/** The validator's denominator: entries in the `files` map (#508). */
+function coverageEntryCount(data: unknown): number {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return 0;
+  }
+  const files = (data as Record<string, unknown>)['files'];
+  if (typeof files !== 'object' || files === null || Array.isArray(files)) {
+    return 0;
+  }
+  return Object.keys(files).length;
+}
 
 function validateCoverageCmd(
   path: string,
@@ -747,6 +785,11 @@ function validateCoverageCmd(
   const errors = problems.filter((p) => p.severity === 'error');
   const warnings = problems.filter((p) => p.severity === 'warning');
   const valid = errors.length === 0;
+  const outcome = gateOutcome(
+    { checked: coverageEntryCount(data), findings: problems },
+    'advisory',
+    { noun: 'file entrie(s)' },
+  );
 
   if (opts.json) {
     // Plain stdout, NOT colored -- producer-controlled keys must not be
@@ -761,6 +804,8 @@ function validateCoverageCmd(
               location: pr.location,
               message: pr.message,
             })),
+            checked: coverageEntryCount(data),
+            abstained: outcome.abstained,
           },
           null,
           2,
@@ -775,11 +820,20 @@ function validateCoverageCmd(
       deps.out(`${pc.yellow('warning')} ${pr.location}: ${pr.message}`);
     }
     if (valid && warnings.length === 0) {
-      deps.out(
-        pc.green(
-          pc.bold(`${CHECK} ${path} is a valid coverage-json document.`),
-        ),
-      );
+      if (outcome.abstained) {
+        deps.out(outcome.summaryLine);
+        deps.out(
+          `guardian: ${path} carries zero file entries ${EM_DASH} nothing ` +
+            'was validated. Check that the producer wrote a non-empty ' +
+            "'files' map.",
+        );
+      } else {
+        deps.out(
+          pc.green(
+            pc.bold(`${CHECK} ${path} is a valid coverage-json document.`),
+          ),
+        );
+      }
     } else if (valid) {
       deps.out(
         `${pc.green(`${CHECK} valid`)} with ${warnings.length} warning(s) ${EM_DASH} coverage is usable but degraded.`,
@@ -854,6 +908,15 @@ async function hardenGateCmd(
       opts.force ?? false,
     );
   } catch (exc) {
+    if (exc instanceof HardGateAbstained) {
+      const outcome = gateOutcome({ checked: 0, findings: [] }, 'gate', {
+        noun: 'check context(s)',
+      });
+      deps.out(outcome.summaryLine);
+      deps.out(`${pc.red(pc.bold(`${CROSS} ${exc.reason}`))}\n`);
+      deps.out(exc.playbook);
+      throw new CliExit(outcome.exitCode); // 3, never 1
+    }
     if (exc instanceof HardGateBlocked) {
       deps.out(`${pc.red(pc.bold(`${CROSS} ${exc.reason}`))}\n`);
       deps.out(exc.playbook);
@@ -920,8 +983,63 @@ async function postStickyComment(
 }
 
 /** The gate's no-op line, shared by the pre- and post-filter exits. */
-function nothingToVerify(skippedCount: number): string {
-  return `guardian: nothing to verify (${skippedCount} path(s) skipped).`;
+// D7: every filtered path stays visible as a SkipEntry, never folded
+// into "passed". One entry per path so the rendered count still equals
+// the path count the old `N path(s) skipped` line reported.
+function prCheckSkipEntries(
+  skipped: ChangedUnit[],
+  testUnits: ChangedUnit[],
+  barrelUnits: ChangedUnit[],
+  noisePaths: string[] = [],
+): SkipEntry[] {
+  return [
+    ...skipped.map((u) => ({ name: u.path, reason: 'skipGlobs' })),
+    ...testUnits.map((u) => ({ name: u.path, reason: 'test path' })),
+    ...barrelUnits.map((u) => ({
+      name: u.path,
+      reason: 're-export barrel',
+    })),
+    ...noisePaths.map((p) => ({
+      name: p,
+      reason: 'heuristic-ineligible',
+    })),
+  ];
+}
+
+// Remediation is required copy (#508): say WHY the denominator
+// collapsed and the first fix step. The #456 class, now loud.
+const PR_CHECK_ABSTAIN_REMEDIATION = [
+  'guardian: the diff contained no findings-eligible units, so NO ' +
+    'coverage was verified. This is not a pass (exit 3, abstained).',
+  'If you expected verification: in CI, checkout with fetch-depth: 0 ' +
+    'or pass --diff <base>...HEAD; locally, confirm the diff is ' +
+    'non-empty and skipGlobs/heuristicExclude are not filtering ' +
+    'every path.',
+];
+
+/** Exit 3 with the structural abstention line + remediation (#508). */
+function abstainPrCheck(
+  skipped: SkipEntry[],
+  format: string,
+  deps: GuardianDeps,
+): never {
+  const outcome = gateOutcome({ checked: 0, findings: [], skipped }, 'gate', {
+    noun: 'unit(s)',
+  });
+  deps.out(outcome.summaryLine);
+  for (const line of PR_CHECK_ABSTAIN_REMEDIATION) deps.out(line);
+  if (format === 'json') {
+    deps.out(
+      ensureAscii(
+        JSON.stringify(
+          { findings: [], tier: 0, checked: 0, abstained: true },
+          null,
+          2,
+        ),
+      ),
+    );
+  }
+  throw new CliExit(outcome.exitCode); // EXIT_ABSTAINED
 }
 
 interface PrCheckOptions {
@@ -980,8 +1098,11 @@ async function prCheckCmd(
     skipped.length + testUnits.length + barrelUnits.length;
 
   if (kept.length === 0 && weakFindings.length === 0) {
-    deps.out(nothingToVerify(preFilterSkipped));
-    throw new CliExit(0);
+    abstainPrCheck(
+      prCheckSkipEntries(skipped, testUnits, barrelUnits),
+      opts.format,
+      deps,
+    );
   }
 
   const results = resolveCoverage(kept, {
@@ -1006,8 +1127,16 @@ async function prCheckCmd(
   // SKIP rather than rendering an empty "0 unaddressed" report -- an adopter
   // must be able to tell "nothing was judgeable" from "everything passed".
   if (scoredResults.length === 0 && findings.length === 0) {
-    deps.out(nothingToVerify(preFilterSkipped + noiseResults.length));
-    throw new CliExit(0);
+    abstainPrCheck(
+      prCheckSkipEntries(
+        skipped,
+        testUnits,
+        barrelUnits,
+        noiseResults.map((r) => r.unit.path),
+      ),
+      opts.format,
+      deps,
+    );
   }
 
   // SC-5 (PR half): resolve the requested tier against actual capability. No
@@ -1038,6 +1167,8 @@ async function prCheckCmd(
       effective_tier: resolution.effective,
       degraded_notice: resolution.degraded_notice,
       exit_code: exitCode,
+      checked: scoredResults.length,
+      abstained: false, // an abstained run exits before emit (see plan)
     });
     if (res.action === 'emitted') {
       deps.out(`guardian: wrote analysis record ${RIGHT_ARROW} ${res.path}`);
@@ -1064,6 +1195,7 @@ async function prCheckCmd(
         opts.format,
         resolution.effective,
         resolution.degraded_notice,
+        { checked: scoredResults.length, abstained: false },
       ),
     );
   }

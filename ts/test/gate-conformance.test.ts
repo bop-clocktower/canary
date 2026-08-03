@@ -19,19 +19,21 @@ import { describe, expect, it } from 'vitest';
 
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { HarnessMigrator } from '../src/core/migrator.js';
+import { FakeBranchProtectionClient } from '../src/guardian/hard-gate.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
+import { invokeGuardian } from './guardian-cli-testkit.js';
 
 interface GateRow {
   /** Human-readable command line, for the test name and review diffs. */
   command: string;
   layer: 'engine' | 'npm' | 'skill' | 'workflow';
   kind: 'gate' | 'advisory';
-  /** Build the zero-denominator fixture; return the CLI invocation. */
-  fixture: (base: string) => { args: string[]; home: string };
   /** gate rows exit EXIT_ABSTAINED; advisory rows warn and exit 0. */
   expect: 'exit3' | 'warnLine';
   /** Success copy that must NEVER appear on a zero denominator. */
   forbid: string[];
+  /** Build the zero-denominator fixture and run the REAL CLI. */
+  run: (base: string) => Promise<{ code: number; stdout: string }>;
 }
 
 /** Harness project whose shape cannot be detected (migrator.test.ts:690). */
@@ -60,14 +62,14 @@ const ROWS: GateRow[] = [
     expect: 'exit3',
     forbid: ['In sync', 'Migration complete'],
     // #503/#510: unknown shape + empty overlay -> zero skills matched.
-    fixture: (base) => {
+    run: (base) => {
       const { project, home } = unknownShapeProject(base);
       const overlay = join(base, 'empty-overlay');
       mkdirSync(join(overlay, '.canary', 'skills'), { recursive: true });
-      return {
-        args: ['migrate', '--path', project, '--check', '--from', overlay],
-        home,
-      };
+      return invokeCanary(
+        ['migrate', '--path', project, '--check', '--from', overlay],
+        { deps: { home: () => home } },
+      );
     },
   },
   {
@@ -77,7 +79,7 @@ const ROWS: GateRow[] = [
     expect: 'warnLine',
     forbid: ['Migration complete'],
     // #504: pre-apply so the dry run has nothing left to migrate.
-    fixture: (base) => {
+    run: (base) => {
       const project = join(base, 'proj');
       const home = join(base, 'home');
       mkdirSync(project, { recursive: true });
@@ -89,7 +91,61 @@ const ROWS: GateRow[] = [
       );
       mkdirSync(join(project, '.harness'));
       new HarnessMigrator(home).migrate(project, { dryRun: false });
-      return { args: ['migrate', '--path', project], home };
+      return invokeCanary(['migrate', '--path', project], {
+        deps: { home: () => home },
+      });
+    },
+  },
+  {
+    command: 'guardian pr-check (empty diff)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['no test-coverage gaps', 'nothing to verify'],
+    // #456 permanent negative fixture (spec SC4): the guardian silently
+    // no-opped for weeks; an empty diff must never render as a pass again.
+    run: (base) =>
+      invokeGuardian(['pr-check', '--diff', '-'], { input: '', cwd: base }),
+  },
+  {
+    command: 'guardian harden-gate --apply (zero observed checks)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['already required', 'Finish the flip'],
+    run: () =>
+      invokeGuardian(
+        ['harden-gate', '--repo', 'o/r', '--apply', '--token', 'x'],
+        {
+          deps: {
+            buildBranchProtectionClient: () =>
+              new FakeBranchProtectionClient({
+                contexts: ['build'],
+                observed: [],
+              }),
+          },
+        },
+      ),
+  },
+  {
+    command: 'guardian analyze (zero-endpoint diff)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: ['"abstained": false'],
+    run: (base) =>
+      invokeGuardian(['analyze', 'abc1234', '--json'], { cwd: base }),
+  },
+  {
+    command: 'guardian validate-coverage (zero file entries)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: ['valid coverage-json document'],
+    run: async (base) => {
+      const path = join(base, 'coverage.json');
+      writeFileSync(path, JSON.stringify({ files: {} }), 'utf-8');
+      return invokeGuardian(['validate-coverage', path]);
     },
   },
 ];
@@ -99,10 +155,7 @@ describe('gate conformance registry (#508)', () => {
     it(`${row.command} [${row.layer}/${row.kind}] is loud on a zero denominator`, async () => {
       const base = mkTmp();
       try {
-        const { args, home } = row.fixture(base);
-        const res = await invokeCanary(args, {
-          deps: { home: () => home },
-        });
+        const res = await row.run(base);
         expect(res.stdout.toLowerCase()).toContain('abstained');
         for (const text of row.forbid) {
           expect(res.stdout).not.toContain(text);

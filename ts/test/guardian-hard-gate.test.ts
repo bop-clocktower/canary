@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   FakeBranchProtectionClient,
+  HardGateAbstained,
   HardGateBlocked,
   applyHardGate,
   planHardGate,
@@ -134,6 +135,17 @@ describe('phantom context verification', () => {
     }
     expect(caught).not.toBeNull();
     expect(caught!.reason).toContain('build'); // lists the real contexts
+    expect(c.write_count).toBe(0);
+  });
+
+  it('no observed checks is an ABSTENTION, not a generic blocker (#508)', async () => {
+    const c = new FakeBranchProtectionClient({
+      contexts: ['build'],
+      observed: [],
+    });
+    await expect(
+      applyHardGate(c, 'owner/repo', 'main', 'guardian'),
+    ).rejects.toBeInstanceOf(HardGateAbstained);
     expect(c.write_count).toBe(0);
   });
 

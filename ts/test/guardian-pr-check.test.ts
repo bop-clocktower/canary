@@ -547,6 +547,23 @@ new file mode 100644
   });
 });
 
+describe('render json gate meta (#508)', () => {
+  it('adds checked/abstained when meta is provided', () => {
+    const out = JSON.parse(
+      render([], 'json', 0, null, { checked: 3, abstained: false }),
+    );
+    expect(out.checked).toBe(3);
+    expect(out.abstained).toBe(false);
+    expect(out.findings).toEqual([]);
+  });
+
+  it('omits the fields when meta is absent (byte-stable for emit)', () => {
+    const out = JSON.parse(render([], 'json'));
+    expect('checked' in out).toBe(false);
+    expect('abstained' in out).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // filterSkipped
 // ---------------------------------------------------------------------------
