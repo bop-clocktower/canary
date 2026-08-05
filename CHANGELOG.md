@@ -14,8 +14,114 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [6.6.0] - 2026-08-05
+
+The **precision** release. v6.5.0 made a check that examined zero items say so;
+this one aims the linter at canary's own test suites for the first time and
+fixes what that exposed. Findings went 409 -> 19, and 13 of the 19 are a
+deliberately-bad fixture. A detector nobody has ever pointed at real code is not
+a passing gate — it is an unmeasured one, and ADR 0010 is explicit that a noisy
+check gets ignored, so precision is the prerequisite for ever gating on it.
+
+### Added
+
+- `ts/test/harness-config-denominator.test.ts` — asserts that the architecture
+  rules govern real files: every layer pattern and every side of every import
+  boundary matches at least one **git-tracked** file, every
+  `allowedDependencies` name resolves to a declared layer, and every tracked
+  file under `ts/src` belongs to some layer. Tracked files rather than a
+  filesystem walk on purpose — the dead `tests/**` pattern still matched a
+  directory full of untracked `.pyc` spoil, which is precisely how the rule
+  looked alive.
+- `ts/test/import-graph-acyclic.test.ts` — reproduces the CI cycle check at desk
+  speed and names the offending chain instead of leaving a bisect. Type-only
+  imports count, because the gate it stands in for counts them; a local check
+  more permissive than the gate hands back green while the pipeline goes red.
+- `ts/test/workflow-false-green.test.ts` — asserts the false-green invariants
+  fixed below across _every_ workflow, not just the files that were broken: a
+  path-filtered workflow lists its own file, no `git push` has its failure
+  swallowed by `|| echo`/`|| true`, nothing pushes directly to `main`, and a
+  workflow that pushes a side branch says where it went. That last invariant
+  immediately caught a third instance nobody had filed —
+  `refresh-arch-baseline.yml` pushed a baseline commit and announced nothing.
+- **`dogfood.yml` — canary pointed at canary** (#536). Four advisory jobs over
+  the product surface the repo had never run on itself: `review-test` plus
+  `flake-check` across all three suites; `doctor` from a real global install of
+  the packed tarball, so the bundled engine, bin shims, and `package.json#files`
+  are exercised rather than the checkout; fleet health over a recorded vitest
+  run, since every `analyze` and history path had until now only ever seen
+  synthetic fixtures; and `katana --strict`, handling "a test was deleted" (exit
+  1. and "the diff was empty" (exit 3) as separate outcomes rather than blurring
+     both behind `continue-on-error`. Nothing blocks a merge — each check
+     ratchets to strict once its findings are triaged to zero, the same path
+     blackhawk and savant took. It paid for itself before it shipped: the
+     LINT-006 defects below were found by running it.
+
 ### Fixed
 
+- **LINT-006 precision, 6% -> ~100%** (#535). Running `review-test` over
+  canary's own suites reported 216 assertion-free tests, of which 13 were real.
+  Two independent defects, neither reachable from a unit test because both need
+  a large, diverse codebase to express themselves. First, `ASSERT_JS` matched
+  only `expect()`-style assertions, so every `node:test` + `node:assert` suite
+  read as assertion-free — 200 of the 216 findings, and that is the framework
+  canary's own npm package uses, so canary could not see the assertions in its
+  own shipped code. It now recognizes `assert.equal(...)` and friends, bare
+  `assert(...)`, and chai's `should`. Second, the test body boundary was a fixed
+  2000-character window, wrong in both directions: a long test whose first
+  assertion fell past the window was flagged, and a short empty test could
+  borrow the _next_ test's assertion from inside the window, a false negative
+  nobody had counted. The body is now bounded by the next test declaration —
+  what the pytest scanner had been doing all along with "next `def` at the same
+  indent". The two scanners had silently disagreed since the port.
+- **LINT-005 was 0-for-157 on real test code** (#537). Two mistakes. Every rule
+  in this linter works line by line, so a line inside a template literal or a
+  Python triple-quoted block was read as bare source — canary's own diff
+  fixtures are template literals, so the git file mode `100644` sitting in test
+  _data_ was reported as a magic number 30 times, and any consumer with a
+  multi-line SQL, JSON, HTML, or diff fixture had the same defect. Multi-line
+  string interiors are now blanked before the per-line scan, preserving line
+  numbering; an _unbalanced_ delimiter discards the run rather than blanking to
+  end-of-file, which would silently disable every rule below it — the abstention
+  shape, one layer inside the linter. Separately, "extract the magic number to a
+  named constant" is a production-code principle that inverts in a test:
+  `expect(len).toBe(2048)` states the contract that
+  `expect(len).toBe(MAX_NOTES)` hides. Since this linter only ever reads test
+  files, the rule was misapplied across its entire domain. It now fires only in
+  a timing position (`setTimeout`, `waitForTimeout`, `sleep`, `delay`,
+  `retryDelay`, `retries`, `backoff`, `poll`, `debounce`, `throttle`), where a
+  bare `5000` genuinely has unclear units and intent. Hardcoded sleeps remain
+  CRITICAL under FLAKE-001/002. LINT-005: 218 -> 2.
+- **Data was acting as code in four more scanners** (#539, closes #499). One
+  root cause across two codebases. blackhawk's pragma parser ran against the raw
+  line, so a `blackhawk-ignore` inside a string literal registered as a live
+  directive and contributed a fabricated reason to the suppressed count — savant
+  shipped that guard in #495/#498 and it was never ported back. The FLAKE and
+  missing-await rules never stripped strings either, so
+  `const src = 'const t = Date.now();'` — a fixture string feeding a linter test
+  — was a real FLAKE-004. And the assertion scanners read the raw source while
+  the per-line rules read the blanked one, so a diff fixture full of deleted
+  `it(...)` lines was still mined for assertion-free tests. The selector rules
+  are deliberately excluded and pinned by a test: LINT-001/002/003 match
+  `'.btn'` and `'#id'` inside quotes by construction, because a selector _is_ a
+  string, and stripping would delete those rules outright. LINT-006 now also
+  credits an `expectX()`/`assertX()` helper as an assertion — a regex linter
+  cannot follow the call, so the name carries the signal, and `[A-Z]` keeps it
+  to the convention. Across the triage rounds: 409 -> 199 -> 35 -> 26 -> 19
+  findings, of which 13 are the deliberately-bad `lint-target.spec.ts` fixture.
+- **Five `harness.config.json` keys sat at paths the schema never reads**
+  (#545). Zod strips unknown keys silently, so all five were dead on the pinned
+  @9 as well as on @10, and nothing ever reported it. One was load-bearing:
+  `entryPoints` belongs at `entropy.entryPoints`, and with it stripped,
+  reachability analysis had no entry point and `harness cleanup` exited 2 at
+  startup with "Could not resolve entry points". That is the CI Entropy Scan
+  step, which is `continue-on-error` — so the startup failure has rendered as a
+  green job for the entire life of the step, and the scan has never once run its
+  analysis. It now exits 1 with 718 findings (40 drift, 678 dead code), still
+  non-blocking until those are triaged. The dead top-level `tooling` block is
+  deleted rather than moved: its pip/ruff/pytest values describe pre-v6 canary,
+  and promoting stale Python tooling into a path harness actually reads would be
+  worse than leaving it dead.
 - **`arch-snapshot.yml` never committed a snapshot** (#548). The change guard
   ran `git diff` against `.harness/arch/timeline.json`, a path git had never
   tracked. git cannot report a diff for an unknown path, so the guard was
@@ -67,27 +173,36 @@ under the project's former name) are documented in the
   runtime hazard, but the gate counts it, and both original modules re-export
   the moved names, so no caller changed.
 
-### Added
+### Security
 
-- `ts/test/harness-config-denominator.test.ts` — asserts that the architecture
-  rules govern real files: every layer pattern and every side of every import
-  boundary matches at least one **git-tracked** file, every
-  `allowedDependencies` name resolves to a declared layer, and every tracked
-  file under `ts/src` belongs to some layer. Tracked files rather than a
-  filesystem walk on purpose — the dead `tests/**` pattern still matched a
-  directory full of untracked `.pyc` spoil, which is precisely how the rule
-  looked alive.
-- `ts/test/import-graph-acyclic.test.ts` — reproduces the CI cycle check at desk
-  speed and names the offending chain instead of leaving a bisect. Type-only
-  imports count, because the gate it stands in for counts them; a local check
-  more permissive than the gate hands back green while the pipeline goes red.
-- `ts/test/workflow-false-green.test.ts` — asserts the invariants above across
-  _every_ workflow rather than the specific files that were broken: a
-  path-filtered workflow lists its own file, no `git push` has its failure
-  swallowed by `|| echo`/`|| true`, nothing pushes directly to `main`, and a
-  workflow that pushes a side branch says where it went. That last invariant
-  immediately caught a third instance nobody had filed —
-  `refresh-arch-baseline.yml` pushed a baseline commit and announced nothing.
+- **`hono` 4.12.32 -> 4.13.0** (#556). Two Dependabot advisories, both medium
+  and both _runtime_ scope: `hono < 4.12.34` is vulnerable to ReDoS in the CORS
+  middleware via `Access-Control-Request-Headers`. Runtime scope matters here —
+  hono arrives transitively through `@modelcontextprotocol/sdk`, a production
+  dependency of the published `canary-test-cli`, so this sits behind
+  `bin/canary-mcp.js` rather than in test tooling. Lockfiles only, in `ts/` and
+  `npm/`: nothing declares hono directly and the SDK asks for `^4.11.4`, so
+  4.13.0 resolves inside the existing range with no manifest change. Verified
+  with a real `npm ci` in both packages rather than a lockfile diff alone, since
+  a lockfile diff proves nothing about what npm actually resolves.
+- **`fast-uri` 3.1.4 -> 3.1.5, `@hono/node-server` 1.19.15 -> 2.0.12, `postcss`
+  8.5.22 -> 8.5.25** (#546). Closes five of the seven open alerts, including
+  both high-severity `fast-uri` ones. All transitive; the `postcss` half is
+  dev-only, which is why hono needed the separate follow-up above.
+
+### Notes for consumers
+
+- **The linter reports much less now, and that is the point.** If you gate on
+  `review-test` or the static linter, expect the finding count to drop sharply —
+  LINT-005 is scoped to timing values, LINT-006 sees `node:assert` and helper
+  assertions, and none of the per-line rules read the inside of a multi-line
+  string any more. Nothing was suppressed to get there; each change removed a
+  class of finding that was never actionable. A baseline or ratchet pinned to
+  the old counts will need refreshing downward.
+- **Two CI checks start reporting for the first time.** The Entropy Scan and the
+  architecture gate were both failing or matching zero files while showing
+  green. They now produce real findings (718 and 2 respectively, the latter
+  already fixed). Both remain non-blocking until triaged.
 
 ## [6.5.0] - 2026-08-03
 
@@ -1076,7 +1191,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v6.4.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v6.6.0...HEAD
+[6.6.0]: https://github.com/bop-clocktower/canary/compare/v6.5.0...v6.6.0
 [6.5.0]: https://github.com/bop-clocktower/canary/compare/v6.4.0...v6.5.0
 [6.4.0]: https://github.com/bop-clocktower/canary/compare/v6.3.0...v6.4.0
 [6.3.0]: https://github.com/bop-clocktower/canary/compare/v6.2.0...v6.3.0
