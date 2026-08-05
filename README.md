@@ -1,7 +1,7 @@
 # ![Canary](docs/assets/icon-gold.svg) Canary
 
 ![version](https://img.shields.io/badge/version-6.6.0-F0C040?style=flat-square&labelColor=0A0A0A&color=F0C040)
-![python](https://img.shields.io/badge/python-3.11+-F5F5F5?style=flat-square&labelColor=1C1C1C&color=2E2E2E)
+![node](https://img.shields.io/badge/node-18+-F5F5F5?style=flat-square&labelColor=1C1C1C&color=2E2E2E)
 ![tests](https://img.shields.io/badge/tests-passing-28C840?style=flat-square&labelColor=1C1C1C&color=1C1C1C&logoColor=28C840)
 ![frameworks](https://img.shields.io/badge/playwright_·_vitest_·_pytest-F0C040?style=flat-square&labelColor=C09018&color=F0C040)
 ![license](https://img.shields.io/badge/license-MIT-555?style=flat-square&labelColor=1C1C1C&color=2E2E2E)
@@ -24,12 +24,11 @@ language requirements into high-quality, framework-aware test code.
 
 ## 🛠 Installation
 
-> Package names differ by registry: the npm/Volta package is `canary-test-cli`.
-> A PyPI package (`canary-test-ai`) is **planned but not yet published** — until
-> it is, `pip install canary-test-ai` / `pipx install canary-test-ai` will not
-> work. Python users should install via **npm** or **git**
-> (`pipx install git+https://github.com/bop-clocktower/canary@latest`), per the
-> pipx section below.
+> Canary installs from **npm** as `canary-test-cli`, and that is the only
+> registry it publishes to. There is no PyPI package and none is planned — the
+> engine has been TypeScript since v6.0.0, so `pip` and `pipx` have nothing to
+> install. Canary still _generates_ Pytest suites; it just no longer runs on
+> Python itself.
 
 ### Volta (recommended)
 
@@ -37,11 +36,12 @@ language requirements into high-quality, framework-aware test code.
 volta install canary-test-cli@latest
 ```
 
-Installs a self-contained `canary` binary — no Python or pipx required. Volta
-handles version pinning and per-project switching automatically.
+Puts `canary` on your PATH with the TypeScript engine bundled in. Volta handles
+version pinning and per-project switching automatically.
 
-> **Supported:** linux-x64, darwin-arm64 (Apple Silicon), win32-x64. Intel Mac
-> (darwin-x64) is not yet supported.
+> **Requires Node 18 or newer.** No per-platform build: the package is pure
+> JavaScript with no `os`/`cpu` restrictions, so Linux, macOS (Apple Silicon and
+> Intel), and Windows all run the same artifact.
 
 ### mise
 
@@ -61,18 +61,22 @@ npm install -g canary-test-cli@latest
 npx canary-test-cli recommend "a login page"
 ```
 
-### pipx (Python users)
-
-```bash
-pipx install git+https://github.com/bop-clocktower/canary@latest
-```
-
 ### From source
 
 ```bash
 git clone https://github.com/bop-clocktower/canary.git
 cd canary
-pip install -e .
+npm --prefix ts ci && npm --prefix ts run build    # build the TypeScript engine
+npm --prefix npm ci && npm --prefix npm run build  # stage it into the CLI package
+node npm/bin/canary.js --version                   # run it in place
+```
+
+To put the local build on your PATH as `canary`, link it from inside the package
+directory — `npm --prefix npm link` will not work, because `--prefix` retargets
+npm's _global_ prefix rather than the package being linked:
+
+```bash
+cd npm && npm link
 ```
 
 ### Claude Code plugin
