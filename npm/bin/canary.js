@@ -1,6 +1,68 @@
 #!/usr/bin/env node
 'use strict';
 
+// ---------------------------------------------------------------------------
+// Node-floor guard (#559). Everything in this block runs BEFORE the bundled
+// engine is required, and deliberately so.
+//
+// `engines` is advisory: npm prints `warn EBADENGINE` and installs anyway
+// (verified — it errors only under `engine-strict=true`, which almost nobody
+// sets). So on an unsupported Node the user reaches this file, and the require
+// of `../dist/router.js` below can throw a bare SyntaxError from engine code
+// compiled for a newer runtime. A guard placed after that require would only
+// ever run on versions that did not need it.
+//
+// The floor is read from `engines.node` rather than hardcoded, so the manifest
+// stays the single source of truth — see ts/test/node-engines-floor.test.ts,
+// which holds the manifest, the README badge, and the README prose together.
+// ---------------------------------------------------------------------------
+
+/** Floor major from this package's own `engines.node` (e.g. `>=22` -> 22). */
+function readMinNodeMajor() {
+  var declared = (require('../package.json').engines || {}).node || '';
+  var match = /^>=\s*(\d+)/.exec(String(declared).trim());
+  return match ? Number(match[1]) : 0;
+}
+
+var MIN_NODE_MAJOR = readMinNodeMajor();
+
+/**
+ * Returns an error message when `version` is below `minMajor`, else null.
+ *
+ * Abstains (returns null) on a version string it cannot parse: a false block
+ * would be worse than letting an odd runtime through to whatever the real
+ * error turns out to be.
+ */
+function checkNodeFloor(version, minMajor) {
+  var match = /^v?(\d+)\./.exec(String(version));
+  if (!match || !minMajor) return null;
+  var major = Number(match[1]);
+  if (major >= minMajor) return null;
+  return (
+    'canary requires Node ' +
+    minMajor +
+    ' or newer, but this is Node ' +
+    version +
+    '.\n' +
+    'The bundled engine is compiled for Node ' +
+    minMajor +
+    ', so older runtimes fail in ways that look\n' +
+    'like canary bugs. npm only warns about this (EBADENGINE), it does not ' +
+    'stop the install.\n' +
+    'Upgrade with nvm, volta, or mise — e.g. `nvm install ' +
+    minMajor +
+    '` — then re-run canary.\n'
+  );
+}
+
+if (require.main === module) {
+  var floorError = checkNodeFloor(process.versions.node, MIN_NODE_MAJOR);
+  if (floorError) {
+    process.stderr.write(floorError);
+    process.exit(1);
+  }
+}
+
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -65,5 +127,11 @@ function main() {
   );
 }
 
-module.exports = { getEnginePath, forwardToEngine, run };
+module.exports = {
+  getEnginePath,
+  forwardToEngine,
+  run,
+  checkNodeFloor,
+  MIN_NODE_MAJOR,
+};
 if (require.main === module) main();
