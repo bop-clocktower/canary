@@ -5,7 +5,10 @@ on:
     branches:
       - main
     paths:
-      - "docs/wiki/**"
+      - 'docs/wiki/**'
+      # Self-test: a path-filtered workflow that omits its own file is the one
+      # file in the repo it cannot gate (#549).
+      - '.github/workflows/wiki-sync.yml'
 
 permissions:
   contents: write

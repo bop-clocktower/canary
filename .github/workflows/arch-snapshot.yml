@@ -22,6 +22,7 @@ env:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   snapshot:
@@ -38,16 +39,34 @@ jobs:
       - name: Capture architecture snapshot
         run: npx --yes -p "$HARNESS_CLI" harness snapshot capture
 
-      - name: Commit the appended timeline if it changed
+      # Two stacked false greens lived here (#548). First, the guard used
+      # `git diff` against a path git had never tracked — git cannot report a
+      # diff for an unknown path, so the guard was trivially true, the early
+      # `exit 0` always fired, and the commit below was unreachable. Seeding
+      # `.harness/arch/timeline.json` on `main` fixes that, and
+      # `git status --porcelain` is used regardless because it sees untracked
+      # files while `git diff` does not. Second, the push targeted `main`, which
+      # ruleset 16189198 rejects for every actor, and `|| echo` turned the
+      # rejection into a green job. The snapshot lands as a rolling upsert PR.
+      - name: Open or update the arch-timeline PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: chore/arch-timeline
         run: |
-          if git diff --quiet -- .harness/arch/timeline.json; then
+          if [ -z "$(git status --porcelain -- .harness/arch/timeline.json)" ]; then
             echo "No new architecture snapshot to commit."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
           git add .harness/arch/timeline.json
           git commit -m "chore(arch): capture architecture timeline snapshot"
-          git push origin HEAD:main || \
-            echo "Push skipped — branch protection on main prevents direct push. Snapshot will be captured on the next run."
+          git push --force origin "HEAD:$BRANCH"
+          if [ -z "$(gh pr list --head "$BRANCH" --state open \
+                       --json number --jq '.[].number')" ]; then
+            gh pr create --base main --head "$BRANCH" \
+              --title "chore(arch): capture architecture timeline snapshot" \
+              --body "Automated architecture snapshot from \`arch-snapshot.yml\`. This branch is force-updated on each weekly run; merge whenever convenient. See #548 for why this is a PR rather than a direct push."
+          fi

@@ -366,9 +366,20 @@ the edits from `git show 6be522e`. The durable fix is generator-side
 preservation, filed upstream.
 
 **Arch trend surface (#318 C).** `arch-snapshot.yml` runs
-`harness snapshot capture` weekly and commits `.harness/arch/timeline.json` —
-the architecture time-series that feeds `harness snapshot trends`, mirroring the
-committed `.harness/security/timeline.json` ledger.
+`harness snapshot capture` weekly and appends `.harness/arch/timeline.json` —
+the architecture time-series that feeds `harness snapshot trends`, alongside the
+`.harness/security/timeline.json` ledger refreshed by `harness-security.yml`.
+
+**Ledger updates arrive as pull requests, never as direct pushes (#548).** Both
+workflows above commit to a standing branch (`chore/arch-timeline`,
+`chore/security-ledger`), force-update it each run, and upsert a single open PR.
+This is not a style preference: ruleset `16189198` on `main` carries a
+`pull_request` rule with `bypass_actors: []`, so a direct push from any actor —
+`github-actions[bot]` included — is rejected with `GH013`. There are zero bot
+commits on `main` in the repo's history. Both workflows previously pushed
+straight to `main` and swallowed the rejection with `|| echo`, so they reported
+success while delivering nothing; `ts/test/workflow-false-green.test.ts` now
+fails the build if either pattern returns.
 
 ## Agent Behavior
 
