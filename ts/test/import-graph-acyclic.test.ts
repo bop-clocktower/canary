@@ -47,16 +47,34 @@ function sourceFiles(): string[] {
 }
 
 /**
- * Relative import specifiers in a file, `import` and `export ... from` alike.
+ * Relative import specifiers in a file.
+ *
+ * Two forms, because two forms create edges:
+ *   - `import ... from './x.js'` and `export ... from './x.js'`
+ *   - `import './x.js'` — side-effect only, no `from` clause
+ *
+ * The side-effect form is matched even though `ts/src` currently contains none.
+ * A detector that misses a real edge reports "no cycles" for the wrong reason,
+ * which is the failure this whole file exists to rule out; leaving the form
+ * uncovered would make that a matter of luck rather than of design.
  *
  * Bare specifiers (`node:fs`, `@supabase/supabase-js`) are skipped: they are
- * outside the graph under test and can never close a local cycle.
+ * outside the graph under test and can never close a local cycle. Dynamic
+ * `import(expr)` with a non-literal specifier is unresolvable statically and is
+ * skipped by this test exactly as it is by `harness check-deps`; the one
+ * occurrence in the tree (`skills-cli.ts`, loading an external skill module by
+ * name) could not be graphed by either.
  */
 function relativeSpecifiers(source: string): string[] {
   const found: string[] = [];
-  const re = /(?:^|\n)\s*(?:import|export)\b[^;]*?from\s*['"](\.[^'"]*)['"]/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(source)) !== null) found.push(m[1]!);
+  const patterns = [
+    /(?:^|\n)\s*(?:import|export)\b[^;]*?from\s*['"](\.[^'"]*)['"]/g,
+    /(?:^|\n)\s*import\s*['"](\.[^'"]*)['"]/g,
+  ];
+  for (const re of patterns) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(source)) !== null) found.push(m[1]!);
+  }
   return found;
 }
 
@@ -93,49 +111,114 @@ function buildGraph(files: string[]): Map<string, string[]> {
   return graph;
 }
 
+/** DFS colours: unvisited, on the current stack, finished. */
+const WHITE = 0;
+const GREY = 1;
+const BLACK = 2;
+
+interface Walk {
+  graph: Map<string, string[]>;
+  colour: Map<string, number>;
+  stack: string[];
+  cycles: Map<string, string>;
+}
+
 /**
- * Every cycle in the graph, each as a readable `a -> b -> a` chain.
+ * Record the cycle closed by an edge back into a node already on the stack.
  *
- * Plain colour-marking DFS: grey means "on the current stack", so an edge into
- * a grey node closes a cycle and the stack slice names it. Cycles are keyed by
- * their sorted member set, so one cycle is reported once no matter which entry
- * point reached it first.
+ * Keyed by sorted member set, so one cycle is reported once no matter which
+ * entry point reached it first.
  */
+function recordCycle(walk: Walk, closing: string): void {
+  const members = walk.stack.slice(walk.stack.indexOf(closing));
+  const key = [...members].sort().join('|');
+  if (!walk.cycles.has(key)) {
+    walk.cycles.set(key, [...members, closing].join(' -> '));
+  }
+}
+
+/** Colour-marking DFS: an edge into a grey node closes a cycle. */
+function visit(walk: Walk, node: string): void {
+  walk.colour.set(node, GREY);
+  walk.stack.push(node);
+  for (const next of walk.graph.get(node) ?? []) {
+    const colour = walk.colour.get(next) ?? WHITE;
+    if (colour === GREY) recordCycle(walk, next);
+    else if (colour === WHITE) visit(walk, next);
+  }
+  walk.stack.pop();
+  walk.colour.set(node, BLACK);
+}
+
+/** Every cycle in the graph, each as a readable `a -> b -> a` chain. */
 function findCycles(graph: Map<string, string[]>): string[] {
-  const WHITE = 0;
-  const GREY = 1;
-  const BLACK = 2;
-  const colour = new Map<string, number>();
-  const stack: string[] = [];
-  const cycles = new Map<string, string>();
-
-  function visit(node: string): void {
-    colour.set(node, GREY);
-    stack.push(node);
-    for (const next of graph.get(node) ?? []) {
-      const c = colour.get(next) ?? WHITE;
-      if (c === GREY) {
-        const members = stack.slice(stack.indexOf(next));
-        const key = [...members].sort().join('|');
-        if (!cycles.has(key)) {
-          cycles.set(key, [...members, next].join(' -> '));
-        }
-      } else if (c === WHITE) {
-        visit(next);
-      }
-    }
-    stack.pop();
-    colour.set(node, BLACK);
-  }
-
+  const walk: Walk = {
+    graph,
+    colour: new Map(),
+    stack: [],
+    cycles: new Map(),
+  };
   for (const node of graph.keys()) {
-    if ((colour.get(node) ?? WHITE) === WHITE) visit(node);
+    if ((walk.colour.get(node) ?? WHITE) === WHITE) visit(walk, node);
   }
-  return [...cycles.values()].sort();
+  return [...walk.cycles.values()].sort();
 }
 
 const FILES = sourceFiles();
 const GRAPH = buildGraph(FILES);
+
+/**
+ * Self-checks on the detector.
+ *
+ * Without these, the only evidence the cycle finder works was that it went red
+ * once against the two cycles this PR fixes — evidence that cannot be produced
+ * again from a clean tree. A detector whose sole proof of life is a failure you
+ * have since fixed is indistinguishable from one that returns `[]`
+ * unconditionally, and "no cycles found" would then be worth nothing.
+ */
+describe('cycle detector self-checks', () => {
+  const graph = (edges: Record<string, string[]>): Map<string, string[]> =>
+    new Map(Object.entries(edges));
+
+  it('finds a two-node cycle and names the chain', () => {
+    expect(findCycles(graph({ a: ['b'], b: ['a'] }))).toEqual(['a -> b -> a']);
+  });
+
+  it('finds a cycle reachable only through an acyclic prefix', () => {
+    // The shape both real findings had: an entry point that is not itself part
+    // of the cycle it leads to.
+    expect(findCycles(graph({ entry: ['a'], a: ['b'], b: ['a'] }))).toEqual([
+      'a -> b -> a',
+    ]);
+  });
+
+  it('reports one cycle once regardless of entry point', () => {
+    const found = findCycles(graph({ a: ['b'], b: ['a'], c: ['a'] }));
+    expect(found).toHaveLength(1);
+  });
+
+  it('reports nothing for a diamond', () => {
+    // Shared dependencies are not cycles; a detector that cannot tell the
+    // difference would fail this suite constantly and get deleted.
+    expect(
+      findCycles(graph({ a: ['b', 'c'], b: ['d'], c: ['d'], d: [] })),
+    ).toEqual([]);
+  });
+
+  it('extracts both import forms and ignores bare specifiers', () => {
+    const source = [
+      "import { a } from './a.js';",
+      "import './side-effect.js';",
+      "export { b } from './b.js';",
+      "import { readFileSync } from 'node:fs';",
+      "import pkg from '@scope/pkg';",
+    ].join('\n');
+    expect(relativeSpecifiers(source)).toEqual(
+      expect.arrayContaining(['./a.js', './side-effect.js', './b.js']),
+    );
+    expect(relativeSpecifiers(source)).toHaveLength(3);
+  });
+});
 
 describe('ts/src import graph (#543)', () => {
   it('has a non-empty file denominator', () => {
