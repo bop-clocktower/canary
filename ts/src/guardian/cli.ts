@@ -323,27 +323,40 @@ export function prContextFromEnv(
 export function blobBaseFromEnv(env: NodeJS.ProcessEnv): string | null {
   const repo = env['GITHUB_REPOSITORY'];
   if (!repo || !repo.includes('/')) return null;
-
-  let sha: string | undefined;
-  const eventPath = env['GITHUB_EVENT_PATH'];
-  if (eventPath) {
-    try {
-      const event = JSON.parse(readFileSync(eventPath, 'utf-8')) as unknown;
-      const head =
-        typeof event === 'object' && event !== null
-          ? (event as { pull_request?: { head?: { sha?: unknown } } })
-              .pull_request?.head?.sha
-          : undefined;
-      if (typeof head === 'string' && head) sha = head;
-    } catch {
-      // Unreadable/!JSON payload: fall through to GITHUB_SHA rather than
-      // dropping links entirely — a merge-commit link still beats no link.
-    }
-  }
-  sha ??= env['GITHUB_SHA'];
+  const sha = headShaFromEvent(env['GITHUB_EVENT_PATH']) ?? env['GITHUB_SHA'];
   if (!sha) return null;
 
   return `https://github.com/${repo}/blob/${sha}`;
+}
+
+/** The one field of a `pull_request` event payload the permalink base reads. */
+interface PullRequestEventPayload {
+  pull_request?: { head?: { sha?: unknown } };
+}
+
+/**
+ * `pull_request.head.sha` from the event payload at `eventPath`, or `null`.
+ *
+ * Every failure — no path, unreadable file, non-JSON body, a payload without a
+ * `pull_request` — returns `null` so {@link blobBaseFromEnv} falls through to
+ * `GITHUB_SHA` rather than dropping links entirely: a merge-commit link still
+ * beats no link.
+ */
+function headShaFromEvent(eventPath: string | undefined): string | null {
+  if (!eventPath) return null;
+  try {
+    // Optional chaining carries the shape check: on a payload that is not an
+    // object (a bare number or string), `?.` short-circuits to `undefined`
+    // exactly as an explicit `typeof === 'object'` guard would.
+    const event = JSON.parse(
+      readFileSync(eventPath, 'utf-8'),
+    ) as PullRequestEventPayload | null;
+    const head = event?.pull_request?.head?.sha;
+    if (typeof head !== 'string') return null;
+    return head || null;
+  } catch {
+    return null;
+  }
 }
 
 /**
