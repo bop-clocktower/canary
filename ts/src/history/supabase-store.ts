@@ -13,7 +13,7 @@ import { def } from '../util/coalesce.js';
 import { round1 } from '../util/round.js';
 import type { TimelineEntry } from './record.js';
 import type { FlakyQueryRow, SummaryResult } from './ndjson-store.js';
-import type { AsyncHistoryStore } from './store.js';
+import type { AsyncHistoryStore } from './async-store.js';
 import {
   serializeRun,
   serializeTestResult,

@@ -13,6 +13,7 @@
  * present one uniform async surface.
  */
 
+import type { AsyncHistoryStore } from './async-store.js';
 import type { TimelineEntry } from './record.js';
 import {
   NdjsonHistoryStore,
@@ -22,27 +23,12 @@ import {
 import type { RunInput, TestResultInput } from './schema.js';
 import { SupabaseHistoryStore } from './supabase-store.js';
 
-const DEFAULT_NDJSON_PATH = 'test-results/reports/history-v2.jsonl';
+// The contract lives in its own leaf module so the backends can implement it
+// without importing this factory back (#543); re-exported here because callers
+// have always taken both from `store.js`.
+export type { AsyncHistoryStore } from './async-store.js';
 
-/** Async store contract (mirrors the Python `HistoryStore` ABC methods). */
-export interface AsyncHistoryStore {
-  pushRun(run: RunInput, results: TestResultInput[]): Promise<void>;
-  queryFlaky(
-    window: number,
-    suite: string | null,
-    minRate: number,
-  ): Promise<FlakyQueryRow[]>;
-  queryTimeline(testName: string): Promise<TimelineEntry[]>;
-  querySummary(suite: string, runs: number): Promise<SummaryResult>;
-  /**
-   * OPTIONAL denominator probe (#508 Wave 4a). A backend that cannot report how
-   * many runs it holds keeps benefit-of-the-doubt and never abstains: an
-   * UNKNOWN denominator is not a zero one, and inventing an abstention would be
-   * its own dishonesty. Implemented for the local NDJSON backend; the remote
-   * Supabase backend has not grown one yet.
-   */
-  countRuns?(): Promise<number>;
-}
+const DEFAULT_NDJSON_PATH = 'test-results/reports/history-v2.jsonl';
 
 /** Async adapter over the synchronous local NDJSON store. */
 export class LocalAsyncAdapter implements AsyncHistoryStore {
