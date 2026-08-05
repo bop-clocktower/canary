@@ -456,6 +456,14 @@ export class Finding {
   // the changed lines (FIX 1). Empty → suppression falls back to a whole-file
   // scan (still comment-leader gated).
   added_ranges: LineRange[];
+  // The specific 1-based line numbers the coverage run proved unhit.
+  //
+  // Only the COVERAGE_VERIFIED tier can supply these — the graph and heuristic
+  // tiers answer "is this reached at all?", not "which lines ran" — so an empty
+  // array means "this tier does not know", NEVER "nothing is uncovered". The
+  // renderer must therefore omit the detail rather than print an empty list,
+  // which would read as a measurement that came back clean.
+  uncovered_lines: number[];
 
   constructor(init: {
     path: string;
@@ -468,6 +476,7 @@ export class Finding {
     suppressed?: boolean;
     suppression_reason?: string | null;
     added_ranges?: LineRange[];
+    uncovered_lines?: number[];
   }) {
     this.path = init.path;
     this.unit = init.unit;
@@ -479,7 +488,60 @@ export class Finding {
     this.suppressed = init.suppressed ?? false;
     this.suppression_reason = init.suppression_reason ?? null;
     this.added_ranges = init.added_ranges ?? [];
+    this.uncovered_lines = init.uncovered_lines ?? [];
   }
+}
+
+/** Basename minus its extension — the token a heuristic test-file match uses. */
+function pathStem(path: string): string {
+  const base = path.split('/').pop() ?? path;
+  const dot = base.indexOf('.');
+  return dot > 0 ? base.slice(0, dot) : base;
+}
+
+/**
+ * Render ranges as `44-49, 52-56, 58`, capped at `max` with a `+N more` tail.
+ *
+ * The cap is a budget guard, not cosmetics: a file with hundreds of scattered
+ * uncovered lines would otherwise produce a single table cell long enough to
+ * push other findings out of the comment entirely (#457).
+ */
+function rangeList(ranges: LineRange[], max = 6): string {
+  const shown = ranges
+    .slice(0, max)
+    .map(([start, end]) => (start === end ? `${start}` : `${start}-${end}`));
+  const rest = ranges.length - shown.length;
+  return rest > 0 ? `${shown.join(', ')} +${rest} more` : shown.join(', ');
+}
+
+/**
+ * The deterministic next action for a finding.
+ *
+ * Every branch states only what its tier actually established, because a
+ * suggestion that guesses (naming a test file that does not exist, say) is
+ * worse than none: it sends the reader somewhere before they distrust it. The
+ * coverage tier can name lines; the graph tier can name a symbol; the heuristic
+ * tier knows only that no filename matched, and says exactly that.
+ */
+function suggestionFor(
+  path: string,
+  unit: string,
+  fidelity: Fidelity,
+  uncovered: number[],
+): string {
+  const symbol = unit && unit !== path ? unit : pathStem(path);
+  if (fidelity === Fidelity.CoverageVerified && uncovered.length > 0) {
+    // The path is deliberately not repeated: the record carries it as a
+    // sibling field, and the comment already shows it in the File column.
+    return `extend a test to execute lines ${rangeList(mergeLines(uncovered))}.`;
+  }
+  if (fidelity === Fidelity.GraphVerified) {
+    return `add a test that calls \`${symbol}\`, directly or through a caller.`;
+  }
+  if (fidelity === Fidelity.Heuristic) {
+    return `no test file mentions \`${pathStem(path)}\` — name a test after it, or reference it from an existing test.`;
+  }
+  return `add a test covering \`${symbol}\`.`;
 }
 
 /**
@@ -500,6 +562,7 @@ export function buildFindings(results: CoverageResult[]): Finding[] {
     const severity =
       result.fidelity === Fidelity.Heuristic ? Severity.MEDIUM : Severity.HIGH;
     const unit = result.unit;
+    const uncovered = [...(result.uncovered_lines ?? [])];
     findings.push(
       new Finding({
         path: unit.path,
@@ -507,7 +570,14 @@ export function buildFindings(results: CoverageResult[]): Finding[] {
         fidelity: result.fidelity,
         severity,
         evidence: result.evidence,
+        suggestion: suggestionFor(
+          unit.path,
+          unit.symbol || unit.path,
+          result.fidelity,
+          uncovered,
+        ),
         added_ranges: [...unit.added_ranges],
+        uncovered_lines: uncovered,
       }),
     );
   }
@@ -600,6 +670,8 @@ export function buildWeakTestFindings(
           severity: Severity.LOW,
           evidence:
             'added test asserts nothing (advisory — never blocks the gate)',
+          suggestion:
+            'add at least one assertion, or delete the test if it is a placeholder.',
           added_ranges: [...unit.added_ranges],
         }),
       );
@@ -759,6 +831,7 @@ const RED_CIRCLE = '\u{1F534}';
 const YELLOW_CIRCLE = '\u{1F7E1}';
 const WHITE_CIRCLE = '\u{26AA}';
 const BABY_CHICK = '\u{1F424}';
+const ARROW = '\u{2192}';
 const WHITE_CHECK = '\u{2705}';
 
 const SEVERITY_ICON: Record<string, string> = {
@@ -795,6 +868,7 @@ function findingDict(finding: Finding): Record<string, unknown> {
     suggestion: finding.suggestion,
     suppressed: finding.suppressed,
     suppression_reason: finding.suppression_reason,
+    uncovered_lines: finding.uncovered_lines,
   };
 }
 
@@ -821,6 +895,7 @@ export function render(
   tier = 0,
   degradedNotice: string | null = null,
   gateMeta: GateMeta | null = null,
+  blobBase: string | null = null,
 ): string {
   const ordered = [...findings].sort(
     (a, b) => severitySortKey(a.severity) - severitySortKey(b.severity),
@@ -842,13 +917,49 @@ export function render(
   const active = ordered.filter((f) => !f.suppressed);
   const suppressed = ordered.filter((f) => f.suppressed);
 
-  // A finding's file label shows the path once, appending the unit only when
-  // it is a distinct symbol within the file (never `path (path)`).
-  const fileLabel = (f: Finding): string =>
-    f.unit && f.unit !== f.path
-      ? `\`${f.path}\` → \`${f.unit}\``
-      : `\`${f.path}\``;
   const cell = (s: string): string => s.replace(/\|/g, '\\|');
+
+  // The line range a permalink should open at: the first range the coverage run
+  // proved unhit, else the first range the diff added. Empty when neither is
+  // known, so the link degrades to the file rather than to a wrong line.
+  const linkAnchor = (f: Finding): string => {
+    const ranges = f.uncovered_lines.length
+      ? mergeLines(f.uncovered_lines)
+      : f.added_ranges;
+    const first = ranges[0];
+    if (!first) return '';
+    return first[0] === first[1]
+      ? `#L${first[0]}`
+      : `#L${first[0]}-L${first[1]}`;
+  };
+
+  // A finding's file label shows the path once, appending the unit only when
+  // it is a distinct symbol within the file (never `path (path)`). The path
+  // becomes a permalink when a blob base is resolvable; with no base it stays
+  // plain code text, because a dead link reads as actionable and is not.
+  // Parentheses must be percent-encoded inside a markdown link target: a bare
+  // `)` closes the link early, so a Next.js route group (`app/(marketing)/…`)
+  // or any parenthesized directory would render as broken markup.
+  const urlPath = (path: string): string =>
+    path.replace(/\(/g, '%28').replace(/\)/g, '%29');
+  const fileLabel = (f: Finding): string => {
+    const shown = `\`${f.path}\``;
+    const linked = blobBase
+      ? `[${shown}](${blobBase}/${urlPath(f.path)}${linkAnchor(f)})`
+      : shown;
+    return f.unit && f.unit !== f.path ? `${linked} → \`${f.unit}\`` : linked;
+  };
+
+  // Evidence, then the suggested action on its own line. The specific uncovered
+  // lines live in the suggestion rather than in a second parenthetical, so the
+  // list is stated exactly once. A finding with no suggestion (a hand-built or
+  // pre-existing record) renders evidence alone — never a dangling arrow.
+  const whatCell = (f: Finding): string => {
+    const action = f.suggestion
+      ? `<br><sub>${ARROW} ${cell(f.suggestion)}</sub>`
+      : '';
+    return `${cell(f.evidence)}${action}`;
+  };
   const CONFIDENCE_NOTE =
     'Confidence — **coverage-verified**: measured from a real coverage run · ' +
     '**graph-verified**: inferred from the call graph · **heuristic**: filename ' +
@@ -883,7 +994,7 @@ export function render(
       );
       lines.push(
         '',
-        '| Sev | File | What is uncovered | Confidence |',
+        '| Sev | File | What is uncovered, and what to do | Confidence |',
         '| --- | --- | --- | --- |',
       );
       // #457: fill rows against a character budget instead of emitting all of
@@ -904,7 +1015,7 @@ export function render(
       let used = lines.join('\n').length;
       let shown = 0;
       for (const f of active) {
-        const row = `| ${SEVERITY_ICON[f.severity] ?? ''} ${f.severity} | ${cell(fileLabel(f))} | ${cell(f.evidence)} | ${f.fidelity} |`;
+        const row = `| ${SEVERITY_ICON[f.severity] ?? ''} ${f.severity} | ${cell(fileLabel(f))} | ${whatCell(f)} | ${f.fidelity} |`;
         if (used + row.length + 1 + reserve > COMMENT_CHAR_BUDGET) break;
         lines.push(row);
         used += row.length + 1;

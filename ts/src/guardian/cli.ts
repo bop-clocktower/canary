@@ -308,6 +308,45 @@ export function prContextFromEnv(
 }
 
 /**
+ * The `https://github.com/<owner>/<repo>/blob/<sha>` prefix for comment
+ * permalinks, or `null` when it cannot be resolved.
+ *
+ * Prefers `pull_request.head.sha` from the event payload over `GITHUB_SHA`: on
+ * a `pull_request` event `GITHUB_SHA` is the ephemeral merge commit, and a blob
+ * URL against it can 404 once the ref is gone. The head SHA is a real commit on
+ * the contributor's branch and stays resolvable.
+ *
+ * Returns `null` rather than a partial URL whenever repo or SHA is missing, so
+ * {@link render} falls back to plain code text. That degradation is deliberate:
+ * an unresolvable link still *looks* clickable, which is worse than no link.
+ */
+export function blobBaseFromEnv(env: NodeJS.ProcessEnv): string | null {
+  const repo = env['GITHUB_REPOSITORY'];
+  if (!repo || !repo.includes('/')) return null;
+
+  let sha: string | undefined;
+  const eventPath = env['GITHUB_EVENT_PATH'];
+  if (eventPath) {
+    try {
+      const event = JSON.parse(readFileSync(eventPath, 'utf-8')) as unknown;
+      const head =
+        typeof event === 'object' && event !== null
+          ? (event as { pull_request?: { head?: { sha?: unknown } } })
+              .pull_request?.head?.sha
+          : undefined;
+      if (typeof head === 'string' && head) sha = head;
+    } catch {
+      // Unreadable/!JSON payload: fall through to GITHUB_SHA rather than
+      // dropping links entirely — a merge-commit link still beats no link.
+    }
+  }
+  sha ??= env['GITHUB_SHA'];
+  if (!sha) return null;
+
+  return `https://github.com/${repo}/blob/${sha}`;
+}
+
+/**
  * At-desk fork signal (guard b), FAIL-CLOSED on ambiguity.
  *
  * Only two safe sentinels mean "not a fork": `CANARY_GUARDIAN_IS_FORK` UNSET, or
@@ -1107,6 +1146,8 @@ async function postStickyComment(
     'comment',
     resolution.effective,
     resolution.degraded_notice,
+    null,
+    blobBaseFromEnv(deps.env),
   );
   const ctx = prContextFromEnv(deps.env);
   if (ctx === null) {
@@ -1407,6 +1448,7 @@ async function prCheckCmd(
         resolution.effective,
         resolution.degraded_notice,
         { checked: scoredResults.length, abstained: false },
+        blobBaseFromEnv(deps.env),
       ),
     );
   }
