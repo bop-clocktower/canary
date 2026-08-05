@@ -206,7 +206,13 @@ export function tallyAdjudications(reactions: Reaction[]): AdjudicationTally {
 // neither of which starts with a backtick, so anchoring on the second cell's
 // leading backtick selects exactly the finding rows. Paths never contain `|`
 // or backticks (see `fileLabel` in pr-check.ts), so the naive anchor is safe.
-const FINDING_ROW_RE = /^\|[^|]*\|\s*`([^`]+)`/;
+//
+// The optional `[` accommodates the permalinked cell — `fileLabel` wraps the
+// path as `[`path`](<blob url>)` whenever a blob base is resolvable, which is
+// the normal case in CI. Without it this regex matched nothing on every posted
+// comment and `activeFindingPaths` returned `[]`, zeroing the precision
+// denominator silently instead of failing (#490, #508).
+const FINDING_ROW_RE = /^\|[^|]*\|\s*\[?`([^`]+)`/;
 
 /**
  * Extract the file paths of the ACTIVE findings shown in a sticky-comment body

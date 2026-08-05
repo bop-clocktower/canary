@@ -16,6 +16,45 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **The guardian's sticky PR comment now says what to do, not just what is
+  wrong.** Three pieces of information were computed and then dropped before
+  they reached the reader:
+
+  - **Which lines are uncovered.** `resolveCoverage` produced
+    `CoverageResult.uncovered_lines`, but `buildFindings` built a `Finding`
+    without that field, so a coverage-verified finding could only say
+    `lines 40-58: 12 uncovered` — the reader had to re-run coverage locally to
+    learn which 12. `Finding` now carries `uncovered_lines` (and emits it in the
+    `--format json` record). An empty array means _this tier cannot measure
+    lines_, never _nothing is uncovered_, so the renderer omits the detail
+    rather than printing an empty list that would read as a clean measurement.
+  - **A suggested next action.** `Finding.suggestion` was in the interface, in
+    the JSON schema, and rendered by the local CLI — and nothing ever populated
+    it, so it was permanently `''`. A field that is present everywhere and empty
+    in every record reads as alive and is dead. It is now populated per tier,
+    stating only what that tier established: the coverage tier names the lines,
+    the graph tier names the symbol to call, the heuristic tier says plainly
+    that no filename matched. A suggestion that guessed at a test path would be
+    worse than none — it sends the reader somewhere before they learn to
+    distrust it.
+  - **A link to the code.** The file cell was plain code text. It is now a
+    permalink to the first uncovered line, built from `GITHUB_REPOSITORY` plus
+    the PR head SHA (preferred over `GITHUB_SHA`, which on a `pull_request`
+    event is an ephemeral merge commit whose blob URL can 404). When neither
+    resolves, the cell stays plain text: an unresolvable link still _looks_
+    clickable, which is worse than no link.
+
+### Fixed
+
+- **Reviewer adjudications would have silently stopped being attributed** (#490,
+  #508). `activeFindingPaths` anchors on the comment table's second cell opening
+  with a backtick; the permalinked cell opens with `[`, so the regex would have
+  matched nothing on every comment posted from CI. The failure mode is the one
+  this repo keeps filing against itself — not an error, but an empty path list,
+  zeroing the precision denominator while reporting success. The parser now
+  accepts the linked form, and a regression test feeds `render`'s own linked
+  output through it so producer and consumer cannot drift apart again.
+
 - **The published Node floor is now `>=22`, and it is enforced at runtime**
   (#559). `canary-test-cli` promised `engines.node: ">=18"` while the engine it
   bundles is built only from `ts/`, which requires `>=22`, and compiled only by
