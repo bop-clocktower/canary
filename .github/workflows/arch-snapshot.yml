@@ -22,7 +22,6 @@ env:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   snapshot:
@@ -47,10 +46,15 @@ jobs:
       # `git status --porcelain` is used regardless because it sees untracked
       # files while `git diff` does not. Second, the push targeted `main`, which
       # ruleset 16189198 rejects for every actor, and `|| echo` turned the
-      # rejection into a green job. The snapshot lands as a rolling upsert PR.
-      - name: Open or update the arch-timeline PR
+      # rejection into a green job. The snapshot lands on a standing branch.
+      #
+      # The branch is pushed but the PR is NOT opened here: this repo has
+      # `can_approve_pull_request_reviews: false`, so `gh pr create` from a
+      # workflow is refused outright (run 30976556644). Opening the PR is a
+      # human step; the step summary below carries the compare link so the
+      # branch cannot accumulate unnoticed.
+      - name: Push the arch-timeline branch
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: chore/arch-timeline
         run: |
           if [ -z "$(git status --porcelain -- .harness/arch/timeline.json)" ]; then
@@ -64,9 +68,10 @@ jobs:
           git add .harness/arch/timeline.json
           git commit -m "chore(arch): capture architecture timeline snapshot"
           git push --force origin "HEAD:$BRANCH"
-          if [ -z "$(gh pr list --head "$BRANCH" --state open \
-                       --json number --jq '.[].number')" ]; then
-            gh pr create --base main --head "$BRANCH" \
-              --title "chore(arch): capture architecture timeline snapshot" \
-              --body "Automated architecture snapshot from \`arch-snapshot.yml\`. This branch is force-updated on each weekly run; merge whenever convenient. See #548 for why this is a PR rather than a direct push."
-          fi
+          {
+            echo "### Architecture snapshot captured"
+            echo
+            echo "Pushed to \`$BRANCH\`. Open a PR to land it:"
+            echo
+            echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$BRANCH?expand=1"
+          } >> "$GITHUB_STEP_SUMMARY"

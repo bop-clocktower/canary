@@ -370,16 +370,25 @@ preservation, filed upstream.
 the architecture time-series that feeds `harness snapshot trends`, alongside the
 `.harness/security/timeline.json` ledger refreshed by `harness-security.yml`.
 
-**Ledger updates arrive as pull requests, never as direct pushes (#548).** Both
-workflows above commit to a standing branch (`chore/arch-timeline`,
-`chore/security-ledger`), force-update it each run, and upsert a single open PR.
-This is not a style preference: ruleset `16189198` on `main` carries a
-`pull_request` rule with `bypass_actors: []`, so a direct push from any actor —
-`github-actions[bot]` included — is rejected with `GH013`. There are zero bot
-commits on `main` in the repo's history. Both workflows previously pushed
-straight to `main` and swallowed the rejection with `|| echo`, so they reported
-success while delivering nothing; `ts/test/workflow-false-green.test.ts` now
-fails the build if either pattern returns.
+**Ledger updates land on a standing branch, never on `main` directly (#548).**
+Both workflows above commit to a fixed branch (`chore/arch-timeline`,
+`chore/security-ledger`), force-update it each run, and write a compare link to
+the job summary. **Opening the PR is a human step.** Two separate repo settings
+force this shape, and both were discovered the hard way:
+
+- Ruleset `16189198` on `main` carries a `pull_request` rule with
+  `bypass_actors: []`, so a direct push from any actor — `github-actions[bot]`
+  included — is rejected with `GH013`. There are zero bot commits on `main` in
+  the repo's history.
+- `can_approve_pull_request_reviews` is `false` on this repo, so `gh pr create`
+  from a workflow is refused with _"GitHub Actions is not permitted to create or
+  approve pull requests"_ (run `30976556644`). Flipping it would also grant
+  every workflow the ability to approve PRs, so it stays off.
+
+Both workflows previously pushed straight to `main` and swallowed the rejection
+with `|| echo`, reporting success while delivering nothing.
+`ts/test/workflow-false-green.test.ts` fails the build if any of those patterns
+return, including a side-branch push that does not announce itself.
 
 ## Agent Behavior
 
