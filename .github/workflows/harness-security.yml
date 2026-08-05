@@ -7,6 +7,10 @@ on:
       - 'npm/**'
       - 'agents/skills/**'
       - 'scripts/**'
+      # Self-test: a path-filtered workflow that omits its own file is the one
+      # file in the repo it cannot gate (#549). #547 changed the CLI pin here
+      # and this workflow did not run on that PR.
+      - '.github/workflows/harness-security.yml'
   push:
     branches:
       - main
@@ -15,13 +19,14 @@ on:
       - 'npm/**'
       - 'agents/skills/**'
       - 'scripts/**'
+      - '.github/workflows/harness-security.yml'
 
 permissions:
   contents: write
 
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
-  HARNESS_CLI: '@harness-engineering/cli@9'
+  HARNESS_CLI: '@harness-engineering/cli@10'
 
 jobs:
   security:
@@ -47,18 +52,38 @@ jobs:
       - name: Refresh security ledger
         run: node scripts/security_ledger.mjs
 
-      - name: Commit ledger if changed (push to main only)
+      # The bot cannot push to `main`: ruleset 16189198 carries a
+      # `pull_request` rule with `bypass_actors: []`, so every direct push is
+      # rejected with GH013. This step used to do exactly that and swallow the
+      # rejection with `|| echo`, so 8/8 recent runs reported success while
+      # committing nothing (#548). The ledger lands on a standing branch
+      # instead, force-updated each run, so a push failure is a real failure.
+      #
+      # The PR is NOT opened here: this repo has
+      # `can_approve_pull_request_reviews: false`, so `gh pr create` from a
+      # workflow is refused outright (run 30976556644). Opening the PR is a
+      # human step; the step summary below carries the compare link.
+      - name: Push the security-ledger branch (push to main only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          BRANCH: chore/security-ledger
         run: |
-          if ! git diff --exit-code -- \
-              .harness/security/timeline.json \
-              docs/SECURITY_LEDGER.md; then
-            git config user.name "github-actions[bot]"
-            git config user.email \
-              "github-actions[bot]@users.noreply.github.com"
-            git add .harness/security/timeline.json \
-                    docs/SECURITY_LEDGER.md
-            git commit -m "chore: refresh security ledger after scan"
-            git push origin HEAD:main || \
-              echo "Push skipped — branch protection on main prevents direct push. Ledger drift will be picked up next run."
+          if git diff --quiet -- .harness/security/timeline.json \
+                                 docs/SECURITY_LEDGER.md; then
+            echo "Security ledger unchanged."
+            exit 0
           fi
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add .harness/security/timeline.json docs/SECURITY_LEDGER.md
+          git commit -m "chore: refresh security ledger after scan"
+          git push --force origin "HEAD:$BRANCH"
+          {
+            echo "### Security ledger refreshed"
+            echo
+            echo "Pushed to \`$BRANCH\`. Open a PR to land it:"
+            echo
+            echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$BRANCH?expand=1"
+          } >> "$GITHUB_STEP_SUMMARY"

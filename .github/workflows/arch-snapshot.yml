@@ -18,7 +18,7 @@ concurrency:
 
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
-  HARNESS_CLI: '@harness-engineering/cli@9'
+  HARNESS_CLI: '@harness-engineering/cli@10'
 
 permissions:
   contents: write
@@ -38,16 +38,40 @@ jobs:
       - name: Capture architecture snapshot
         run: npx --yes -p "$HARNESS_CLI" harness snapshot capture
 
-      - name: Commit the appended timeline if it changed
+      # Two stacked false greens lived here (#548). First, the guard used
+      # `git diff` against a path git had never tracked — git cannot report a
+      # diff for an unknown path, so the guard was trivially true, the early
+      # `exit 0` always fired, and the commit below was unreachable. Seeding
+      # `.harness/arch/timeline.json` on `main` fixes that, and
+      # `git status --porcelain` is used regardless because it sees untracked
+      # files while `git diff` does not. Second, the push targeted `main`, which
+      # ruleset 16189198 rejects for every actor, and `|| echo` turned the
+      # rejection into a green job. The snapshot lands on a standing branch.
+      #
+      # The branch is pushed but the PR is NOT opened here: this repo has
+      # `can_approve_pull_request_reviews: false`, so `gh pr create` from a
+      # workflow is refused outright (run 30976556644). Opening the PR is a
+      # human step; the step summary below carries the compare link so the
+      # branch cannot accumulate unnoticed.
+      - name: Push the arch-timeline branch
+        env:
+          BRANCH: chore/arch-timeline
         run: |
-          if git diff --quiet -- .harness/arch/timeline.json; then
+          if [ -z "$(git status --porcelain -- .harness/arch/timeline.json)" ]; then
             echo "No new architecture snapshot to commit."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
           git add .harness/arch/timeline.json
           git commit -m "chore(arch): capture architecture timeline snapshot"
-          git push origin HEAD:main || \
-            echo "Push skipped — branch protection on main prevents direct push. Snapshot will be captured on the next run."
+          git push --force origin "HEAD:$BRANCH"
+          {
+            echo "### Architecture snapshot captured"
+            echo
+            echo "Pushed to \`$BRANCH\`. Open a PR to land it:"
+            echo
+            echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$BRANCH?expand=1"
+          } >> "$GITHUB_STEP_SUMMARY"

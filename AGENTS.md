@@ -229,7 +229,11 @@ host Claude Code session via `/canary-write-test` — no API key required.
 - **Framework Metadata:** [ts/src/data/frameworks/registry.json][fw-json] —
   Static definitions for framework capabilities and templates.
 - **Harness Config:** [harness.config.json](harness.config.json) — Defines
-  architectural layers, dependency constraints, and project metadata.
+  architectural layers, dependency constraints, and project metadata. The layers
+  describe `ts/src` by role; every pattern is required to match at least one
+  git-tracked file and every tracked source file to belong to a layer
+  (`ts/test/harness-config-denominator.test.ts`), because a rule that matches
+  nothing still reports as configured (#543).
 
 ### Generated Artifacts
 
@@ -278,8 +282,10 @@ Canary integrates with the **Harness Engineering Ecosystem** by:
 
 1. **Programmatic Access:** Exposing a `--json` flag for machine-readable
    generation outputs
-2. **Layered Architecture:** Strictly separating LLM calls from core
-   orchestration and CLI logic (enforced by `harness.config.json`)
+2. **Layered Architecture:** A role-based layering of the TypeScript engine —
+   entry and CLI on top, then feature modules (`guardian`, `analysis`,
+   `history`), then `core`, over the `ui` and `util` leaves — enforced by
+   `harness.config.json` and gated by `harness check-deps` in CI
 3. **Mechanical Verification:** Supporting dry-runs via `--recommend-only` for
    early validation by other harness agents (like `harness-planner`)
 
@@ -335,12 +341,25 @@ cleanly decoupled and depends on none of this. The consumed subcommands are:
 | `snapshot capture` | `arch-snapshot.yml`                                |
 
 **Pinning (#318 A).** Every gate installs the CLI at a **pinned major** via one
-workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@9'` — rather
+workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@10'` — rather
 than an unpinned `@latest`. A harness-major bump (e.g. a subcommand rename) is
 therefore a **deliberate PR** that edits that one line per workflow, not a
-silent CI break with nothing to roll back to. When bumping the major, update
-`HARNESS_CLI` in all six workflows and re-verify the subcommands above still
-exist and behave as expected.
+silent CI break with nothing to roll back to.
+
+Bumping the major is a **three-step sequence**, in this order (#545, #547):
+
+1. **Reconcile `harness.config.json` against the new major's schema first.** Zod
+   strips unknown keys silently, so a key at a path the schema stopped reading
+   is dead with no error — that is how `entryPoints` left the entropy scan with
+   no entry point across every run it ever made. Land the config fix on the
+   _old_ pin, verified against both majors, so a later regression has an
+   unambiguous blame boundary.
+2. **Edit `HARNESS_CLI` in all six workflows** — `harness.yml`,
+   `harness-quality.yml`, `harness-architecture.yml`, `harness-security.yml`,
+   `arch-snapshot.yml`, `refresh-arch-baseline.yml`.
+3. **Re-verify every subcommand in the table above on both majors**, comparing
+   exit code _and_ output, not just exit code. The gates run the CLI on a bare
+   checkout with no `npm ci`, so a local worktree reproduces CI exactly.
 
 **Generated hooks carry local edits (#318 C).** Several hooks under
 `.harness/hooks/` are **harness-generated** but hand-edited in canary (commit
@@ -353,9 +372,29 @@ the edits from `git show 6be522e`. The durable fix is generator-side
 preservation, filed upstream.
 
 **Arch trend surface (#318 C).** `arch-snapshot.yml` runs
-`harness snapshot capture` weekly and commits `.harness/arch/timeline.json` —
-the architecture time-series that feeds `harness snapshot trends`, mirroring the
-committed `.harness/security/timeline.json` ledger.
+`harness snapshot capture` weekly and appends `.harness/arch/timeline.json` —
+the architecture time-series that feeds `harness snapshot trends`, alongside the
+`.harness/security/timeline.json` ledger refreshed by `harness-security.yml`.
+
+**Ledger updates land on a standing branch, never on `main` directly (#548).**
+Both workflows above commit to a fixed branch (`chore/arch-timeline`,
+`chore/security-ledger`), force-update it each run, and write a compare link to
+the job summary. **Opening the PR is a human step.** Two separate repo settings
+force this shape, and both were discovered the hard way:
+
+- Ruleset `16189198` on `main` carries a `pull_request` rule with
+  `bypass_actors: []`, so a direct push from any actor — `github-actions[bot]`
+  included — is rejected with `GH013`. There are zero bot commits on `main` in
+  the repo's history.
+- `can_approve_pull_request_reviews` is `false` on this repo, so `gh pr create`
+  from a workflow is refused with _"GitHub Actions is not permitted to create or
+  approve pull requests"_ (run `30976556644`). Flipping it would also grant
+  every workflow the ability to approve PRs, so it stays off.
+
+Both workflows previously pushed straight to `main` and swallowed the rejection
+with `|| echo`, reporting success while delivering nothing.
+`ts/test/workflow-false-green.test.ts` fails the build if any of those patterns
+return, including a side-branch push that does not announce itself.
 
 ## Agent Behavior
 

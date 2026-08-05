@@ -14,6 +14,81 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **`arch-snapshot.yml` never committed a snapshot** (#548). The change guard
+  ran `git diff` against `.harness/arch/timeline.json`, a path git had never
+  tracked. git cannot report a diff for an unknown path, so the guard was
+  trivially true, the early `exit 0` fired on every run, and the `git add` below
+  it was unreachable. Both runs the workflow had ever made reported success and
+  produced nothing. The guard now uses `git status --porcelain`, which sees
+  untracked files, and the timeline is seeded so the series has a starting
+  point.
+- **`harness-security.yml` failed the same way, one step further along** (#548).
+  Its guard worked, but the delivery did not: it pushed to `main`, which ruleset
+  `16189198` rejects for every actor, and `|| echo` converted the `GH013`
+  rejection into a green job. The eight most recent qualifying runs each logged
+  `remote rejected` and each reported success. Both workflows now commit to a
+  standing branch, so a push failure is a failure again.
+- **Three path-filtered workflows could not gate changes to themselves** (#549).
+  `harness-security.yml`, `harness-architecture.yml`, and `wiki-sync.yml`
+  omitted their own file from their `paths:` filters, so editing one of them
+  never ran it — #547 changed the CLI pin in `harness-security.yml` and the
+  workflow did not run on that PR. Each now lists its own path, matching the
+  precedent `docs-lint.yml` already set.
+- **Ledger workflows could not open their own PR.** The first cut of the #548
+  fix ended each run with `gh pr create`, which this repo refuses outright:
+  `can_approve_pull_request_reviews` is `false`, so a workflow gets _"GitHub
+  Actions is not permitted to create or approve pull requests"_. The branch push
+  succeeded and only the PR creation failed, turning `main` red — correctly, and
+  for the first time, rather than printing a reassuring line. Both workflows now
+  stop after pushing the branch and write a compare link to the job summary;
+  opening the PR is a human step. `pull-requests: write` was dropped from both
+  since nothing needs it any more.
+
+- **The architecture gate had nothing to check** (#543). Every layer pattern and
+  import boundary in `harness.config.json` still described the `agent/` Python
+  tree deleted in the v6.0.0 cutover, so `harness check-deps` analysed zero
+  files and reported `validation passed` for the entire life of the TypeScript
+  engine — a zero denominator, not a clean graph. The patterns now describe
+  `ts/src` by role: `entry` and `cli` on top, then `guardian`, `analysis`, and
+  `history`, then `core`, over the `ui` and `util` leaves, with `util` and
+  `core` forbidden from reaching back up. Repointing them surfaced two genuine
+  circular dependencies the gate had never been in a position to see, both fixed
+  below.
+- **Two circular dependencies in the engine** (#543). `framework-registry`
+  imported `scaffoldableFrameworks` from `scaffolder`, while `scaffolder`
+  imported `FrameworkRegistry` to degrade loudly on an unknown framework; the
+  templates and the derived framework set move to a leaf
+  `ts/src/core/scaffold-templates.ts` that both depend on. `history/store`
+  imported every backend it can construct and `history/supabase-store` imported
+  the interface it implements; the contract moves to
+  `ts/src/history/async-store.ts`. The second was type-only and so never a
+  runtime hazard, but the gate counts it, and both original modules re-export
+  the moved names, so no caller changed.
+
+### Added
+
+- `ts/test/harness-config-denominator.test.ts` — asserts that the architecture
+  rules govern real files: every layer pattern and every side of every import
+  boundary matches at least one **git-tracked** file, every
+  `allowedDependencies` name resolves to a declared layer, and every tracked
+  file under `ts/src` belongs to some layer. Tracked files rather than a
+  filesystem walk on purpose — the dead `tests/**` pattern still matched a
+  directory full of untracked `.pyc` spoil, which is precisely how the rule
+  looked alive.
+- `ts/test/import-graph-acyclic.test.ts` — reproduces the CI cycle check at desk
+  speed and names the offending chain instead of leaving a bisect. Type-only
+  imports count, because the gate it stands in for counts them; a local check
+  more permissive than the gate hands back green while the pipeline goes red.
+- `ts/test/workflow-false-green.test.ts` — asserts the invariants above across
+  _every_ workflow rather than the specific files that were broken: a
+  path-filtered workflow lists its own file, no `git push` has its failure
+  swallowed by `|| echo`/`|| true`, nothing pushes directly to `main`, and a
+  workflow that pushes a side branch says where it went. That last invariant
+  immediately caught a third instance nobody had filed —
+  `refresh-arch-baseline.yml` pushed a baseline commit and announced nothing.
+
 ## [6.5.0] - 2026-08-03
 
 The **denominator** release. v6.4.0 turned "a check that verified zero items has

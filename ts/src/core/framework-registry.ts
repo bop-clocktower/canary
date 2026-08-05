@@ -14,7 +14,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { def } from '../util/coalesce.js';
-import { scaffoldableFrameworks } from './scaffolder.js';
+// The leaf data module, not `scaffolder.js`: the scaffolder imports this
+// registry to degrade loudly on an unknown framework, so taking the set from
+// there would close a cycle (#543).
+import { scaffoldableFrameworks } from './scaffold-templates.js';
 
 export interface Framework {
   name: string;

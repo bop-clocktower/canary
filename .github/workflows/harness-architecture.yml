@@ -8,6 +8,9 @@ on:
       - 'agents/skills/**'
       - 'harness.config.json'
       - 'AGENTS.md'
+      # Self-test: a path-filtered workflow that omits its own file is the one
+      # file in the repo it cannot gate (#549).
+      - '.github/workflows/harness-architecture.yml'
   push:
     branches:
       - main
@@ -16,7 +19,7 @@ on:
 
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
-  HARNESS_CLI: '@harness-engineering/cli@9'
+  HARNESS_CLI: '@harness-engineering/cli@10'
 
 jobs:
   enforce:
