@@ -2,37 +2,108 @@
   "version": 1,
   "name": "canary",
   "template": {
-    "language": "python",
+    "language": "typescript",
     "version": 1,
-    "level": "intermediate"
+    "level": "intermediate",
+    "tooling": {
+      "packageManager": "npm",
+      "lockFile": "ts/package-lock.json",
+      "linter": "prettier",
+      "formatter": "prettier",
+      "buildTool": "tsc",
+      "testRunner": "vitest"
+    }
   },
   "layers": [
     {
-      "name": "llm",
-      "pattern": "agent/llm/**",
-      "allowedDependencies": []
+      "name": "cli",
+      "pattern": "ts/src/**/*cli*.ts",
+      "allowedDependencies": [
+        "composition",
+        "guardian",
+        "analysis",
+        "history",
+        "core",
+        "ui",
+        "util"
+      ]
+    },
+    {
+      "name": "composition",
+      "pattern": "ts/src/main-deps.ts",
+      "allowedDependencies": [
+        "guardian",
+        "analysis",
+        "history",
+        "core",
+        "ui",
+        "util"
+      ]
+    },
+    {
+      "name": "entry",
+      "pattern": "ts/src/*.ts",
+      "allowedDependencies": [
+        "cli",
+        "composition",
+        "guardian",
+        "analysis",
+        "history",
+        "core",
+        "ui",
+        "util"
+      ]
+    },
+    {
+      "name": "guardian",
+      "pattern": "ts/src/guardian/**",
+      "allowedDependencies": ["core", "util"]
+    },
+    {
+      "name": "analysis",
+      "pattern": "ts/src/analysis/**",
+      "allowedDependencies": ["history", "core", "util"]
+    },
+    {
+      "name": "history",
+      "pattern": "ts/src/history/**",
+      "allowedDependencies": ["core", "util"]
     },
     {
       "name": "core",
-      "pattern": "agent/core/**",
-      "allowedDependencies": ["llm"]
+      "pattern": "ts/src/core/**",
+      "allowedDependencies": ["util"]
     },
     {
-      "name": "cli",
-      "pattern": "agent/cli.py",
-      "allowedDependencies": ["core", "llm"]
+      "name": "ui",
+      "pattern": "ts/src/ui/**",
+      "allowedDependencies": []
     },
     {
-      "name": "tests",
-      "pattern": "tests/**",
-      "allowedDependencies": ["core", "llm"]
+      "name": "util",
+      "pattern": "ts/src/util/**",
+      "allowedDependencies": []
     }
   ],
   "forbiddenImports": [
     {
-      "from": "agent/llm/**",
-      "disallow": ["agent/core/**", "agent/cli.py"],
-      "message": "LLM layer must remain isolated from business logic and CLI."
+      "from": "ts/src/util/**",
+      "disallow": [
+        "ts/src/core/**",
+        "ts/src/guardian/**",
+        "ts/src/analysis/**",
+        "ts/src/history/**"
+      ],
+      "message": "util is a leaf: shared helpers must not reach back into engine, feature, or CLI code."
+    },
+    {
+      "from": "ts/src/core/**",
+      "disallow": [
+        "ts/src/guardian/**",
+        "ts/src/analysis/**",
+        "ts/src/history/**"
+      ],
+      "message": "The engine core must not depend on the features built on top of it."
     }
   ],
   "architecture": {

@@ -229,7 +229,11 @@ host Claude Code session via `/canary-write-test` — no API key required.
 - **Framework Metadata:** [ts/src/data/frameworks/registry.json][fw-json] —
   Static definitions for framework capabilities and templates.
 - **Harness Config:** [harness.config.json](harness.config.json) — Defines
-  architectural layers, dependency constraints, and project metadata.
+  architectural layers, dependency constraints, and project metadata. The layers
+  describe `ts/src` by role; every pattern is required to match at least one
+  git-tracked file and every tracked source file to belong to a layer
+  (`ts/test/harness-config-denominator.test.ts`), because a rule that matches
+  nothing still reports as configured (#543).
 
 ### Generated Artifacts
 
@@ -278,8 +282,10 @@ Canary integrates with the **Harness Engineering Ecosystem** by:
 
 1. **Programmatic Access:** Exposing a `--json` flag for machine-readable
    generation outputs
-2. **Layered Architecture:** Strictly separating LLM calls from core
-   orchestration and CLI logic (enforced by `harness.config.json`)
+2. **Layered Architecture:** A role-based layering of the TypeScript engine —
+   entry and CLI on top, then feature modules (`guardian`, `analysis`,
+   `history`), then `core`, over the `ui` and `util` leaves — enforced by
+   `harness.config.json` and gated by `harness check-deps` in CI
 3. **Mechanical Verification:** Supporting dry-runs via `--recommend-only` for
    early validation by other harness agents (like `harness-planner`)
 

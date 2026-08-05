@@ -46,8 +46,41 @@ under the project's former name) are documented in the
   opening the PR is a human step. `pull-requests: write` was dropped from both
   since nothing needs it any more.
 
+- **The architecture gate had nothing to check** (#543). Every layer pattern and
+  import boundary in `harness.config.json` still described the `agent/` Python
+  tree deleted in the v6.0.0 cutover, so `harness check-deps` analysed zero
+  files and reported `validation passed` for the entire life of the TypeScript
+  engine — a zero denominator, not a clean graph. The patterns now describe
+  `ts/src` by role: `entry` and `cli` on top, then `guardian`, `analysis`, and
+  `history`, then `core`, over the `ui` and `util` leaves, with `util` and
+  `core` forbidden from reaching back up. Repointing them surfaced two genuine
+  circular dependencies the gate had never been in a position to see, both fixed
+  below.
+- **Two circular dependencies in the engine** (#543). `framework-registry`
+  imported `scaffoldableFrameworks` from `scaffolder`, while `scaffolder`
+  imported `FrameworkRegistry` to degrade loudly on an unknown framework; the
+  templates and the derived framework set move to a leaf
+  `ts/src/core/scaffold-templates.ts` that both depend on. `history/store`
+  imported every backend it can construct and `history/supabase-store` imported
+  the interface it implements; the contract moves to
+  `ts/src/history/async-store.ts`. The second was type-only and so never a
+  runtime hazard, but the gate counts it, and both original modules re-export
+  the moved names, so no caller changed.
+
 ### Added
 
+- `ts/test/harness-config-denominator.test.ts` — asserts that the architecture
+  rules govern real files: every layer pattern and every side of every import
+  boundary matches at least one **git-tracked** file, every
+  `allowedDependencies` name resolves to a declared layer, and every tracked
+  file under `ts/src` belongs to some layer. Tracked files rather than a
+  filesystem walk on purpose — the dead `tests/**` pattern still matched a
+  directory full of untracked `.pyc` spoil, which is precisely how the rule
+  looked alive.
+- `ts/test/import-graph-acyclic.test.ts` — reproduces the CI cycle check at desk
+  speed and names the offending chain instead of leaving a bisect. Type-only
+  imports count, because the gate it stands in for counts them; a local check
+  more permissive than the gate hands back green while the pipeline goes red.
 - `ts/test/workflow-false-green.test.ts` — asserts the invariants above across
   _every_ workflow rather than the specific files that were broken: a
   path-filtered workflow lists its own file, no `git push` has its failure
