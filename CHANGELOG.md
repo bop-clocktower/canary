@@ -14,6 +14,48 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- **The published Node floor is now `>=22`, and it is enforced at runtime**
+  (#559). `canary-test-cli` promised `engines.node: ">=18"` while the engine it
+  bundles is built only from `ts/`, which requires `>=22`, and compiled only by
+  the release workflow, which runs on 22. Nothing tested 18; nothing prevented
+  claiming it. Node 18 and 20 are both past end-of-life, so the floor rises to
+  match what is actually built rather than adding a compatibility leg for
+  runtimes nobody should be on.
+
+  The bump alone would have been cosmetic. **`engines` is advisory** — verified,
+  not assumed: installing a package declaring `engines.node: ">=99"` on Node 24
+  exits 0 with nothing but `npm warn EBADENGINE`, and only `engine-strict=true`
+  turns that into an error. So a Node 20 user still installs. `bin/canary.js`
+  now checks `process.versions.node` against its own `engines.node` and exits 1
+  with a message naming the required version, the running version, and how to
+  upgrade. The check sits **above** the `require('../dist/router.js')` line on
+  purpose: the engine is compiled for the floor, so requiring it first can throw
+  a bare `SyntaxError` on an older Node and the guard would be dead code on
+  exactly the versions it exists to catch.
+
+### Added
+
+- `ts/test/node-engines-floor.test.ts` — holds four declarations of the Node
+  floor together: `npm/package.json` `engines.node`, the README badge, the
+  README install prose, and the `setup-node` version in `release.yml`. The
+  version badge is out of scope in `version-consistency.test.ts` as a "display
+  artifact" — correct there, since `bump-version.mjs` stamps it. Nothing stamps
+  the _node_ badge, which is why it read `python-3.11+` for six releases and
+  then `18+`. An unstamped badge is a declaration.
+- `npm/scripts/__tests__/node-floor-guard.test.js` — pins the runtime guard: the
+  floor is read from `engines.node` rather than hardcoded (a hardcoded copy
+  would be a fourth thing to drift), the message names both versions and a
+  remedy, an unparseable version abstains rather than false-blocks, and the
+  guard textually precedes the engine require.
+- **`dogfood.yml` job E — "Node floor is enforced (unsupported runtime)".**
+  Packs the tarball on the supported Node, switches to `floor - 2`, installs,
+  and asserts the guard fires: a clean exit means the floor is unenforced, and a
+  `SyntaxError` means the guard ran too late. The unsupported version is derived
+  from `engines.node`, so raising the floor moves the test with it. No unit test
+  can prove a guard survives module-load ordering in a real install.
+
 ## [6.6.0] - 2026-08-05
 
 The **precision** release. v6.5.0 made a check that examined zero items say so;

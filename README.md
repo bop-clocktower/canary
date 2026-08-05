@@ -1,7 +1,7 @@
 # ![Canary](docs/assets/icon-gold.svg) Canary
 
 ![version](https://img.shields.io/badge/version-6.6.0-F0C040?style=flat-square&labelColor=0A0A0A&color=F0C040)
-![node](https://img.shields.io/badge/node-18+-F5F5F5?style=flat-square&labelColor=1C1C1C&color=2E2E2E)
+![node](https://img.shields.io/badge/node-22+-F5F5F5?style=flat-square&labelColor=1C1C1C&color=2E2E2E)
 ![tests](https://img.shields.io/badge/tests-passing-28C840?style=flat-square&labelColor=1C1C1C&color=1C1C1C&logoColor=28C840)
 ![frameworks](https://img.shields.io/badge/playwright_·_vitest_·_pytest-F0C040?style=flat-square&labelColor=C09018&color=F0C040)
 ![license](https://img.shields.io/badge/license-MIT-555?style=flat-square&labelColor=1C1C1C&color=2E2E2E)
@@ -39,9 +39,11 @@ volta install canary-test-cli@latest
 Puts `canary` on your PATH with the TypeScript engine bundled in. Volta handles
 version pinning and per-project switching automatically.
 
-> **Requires Node 18 or newer.** No per-platform build: the package is pure
-> JavaScript with no `os`/`cpu` restrictions, so Linux, macOS (Apple Silicon and
-> Intel), and Windows all run the same artifact.
+> **Requires Node 22 or newer.** Node 18 and 20 are both past end-of-life, and
+> the bundled engine is only ever built and tested on 22 — see
+> [#559](https://github.com/bop-clocktower/canary/issues/559). No per-platform
+> build: the package is pure JavaScript with no `os`/`cpu` restrictions, so
+> Linux, macOS (Apple Silicon and Intel), and Windows all run the same artifact.
 
 ### mise
 

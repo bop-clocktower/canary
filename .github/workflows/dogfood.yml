@@ -134,6 +134,90 @@ jobs:
             console.log(`doctor: checked=${r.checked} skipped=${r.skipped.length} abstained=${r.abstained}`);
           '
 
+  # --- E: the declared Node floor is enforced, not just declared ------------
+  #
+  # `engines` is ADVISORY. Installing a package that declares
+  # `engines.node: ">=99"` on a newer Node exits 0 with only
+  # `npm warn EBADENGINE`; it errors only under `engine-strict=true`, which
+  # almost nobody sets. So `>=22` in the manifest stops nobody, and before #559
+  # a Node 20 user's first signal was whatever SyntaxError the engine happened
+  # to throw -- which reads as a canary bug, not as "wrong Node".
+  #
+  # This job installs the PACKED TARBALL on a deliberately unsupported Node and
+  # asserts the guard fires with a message a human can act on. It is the only
+  # place that combination is ever exercised: job D covers the supported floor,
+  # and no unit test can prove the guard survives being placed before the
+  # engine require in a real install.
+  node-floor:
+    name: Node floor is enforced (unsupported runtime)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Build on the supported version -- we are testing the RUNTIME guard, not
+      # whether the engine compiles on an old Node (it does not, by design).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Pack the npm package
+        run: |
+          npm --prefix npm ci
+          npm --prefix npm run build
+          npm pack ./npm --pack-destination /tmp
+
+      - name: Derive the unsupported version from the declared floor
+        id: floor
+        run: |
+          floor=$(node -e "console.log(/^>=\s*(\d+)/.exec(require('./npm/package.json').engines.node)[1])")
+          echo "floor=$floor" >> "$GITHUB_OUTPUT"
+          echo "unsupported=$((floor - 2))" >> "$GITHUB_OUTPUT"
+          echo "declared floor: $floor, testing against: $((floor - 2))"
+
+      # Switching Node AFTER packing: the tarball is already built.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.floor.outputs.unsupported }}
+
+      - name: Install on the unsupported runtime
+        # The install itself must still SUCCEED -- that is the whole point.
+        # npm warns and proceeds, so the guard is the only real protection.
+        run: npm i -g /tmp/canary-test-cli-*.tgz
+
+      - name: The guard fires with an actionable message
+        # FLOOR comes through env rather than being interpolated into the shell.
+        # The regex above captures digits only, so injection is not reachable
+        # today -- but a `${{ }}` inside `run:` is the pattern that goes wrong
+        # later, and this repo gates on that class (#549 era workflow hygiene).
+        env:
+          FLOOR: ${{ steps.floor.outputs.floor }}
+        run: |
+          set +e
+          out=$(canary --version 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          echo "exit=$rc"
+
+          if [ "$rc" -eq 0 ]; then
+            echo "::error title=Node floor not enforced::canary ran on Node $(node -v), below the declared floor of ${FLOOR}. engines is advisory, so the runtime guard in bin/canary.js is the only thing protecting this -- it did not fire."
+            exit 1
+          fi
+
+          # A SyntaxError means the engine was required BEFORE the guard ran, so
+          # the guard is dead code on exactly the versions it exists to catch.
+          if echo "$out" | grep -qiE 'syntaxerror|unexpected token'; then
+            echo "::error title=Guard ran too late::canary failed with a SyntaxError instead of the Node-floor message. The guard must run before the require of dist/router.js."
+            exit 1
+          fi
+
+          if ! echo "$out" | grep -q "requires Node ${FLOOR}"; then
+            echo "::error title=Unhelpful failure::canary failed on an unsupported Node but did not say so. Expected the floor message naming Node ${FLOOR}."
+            exit 1
+          fi
+
+          echo "Guard fired correctly on Node $(node -v)."
+
   # --- C: fleet health, on canary's own runs --------------------------------
   fleet-health:
     name: Fleet health (canary's own runs)
