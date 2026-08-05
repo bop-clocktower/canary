@@ -136,4 +136,32 @@ describe('workflow false-green invariants', () => {
       expect(line).not.toMatch(/git push\s+\S+\s+HEAD:main\b/);
     });
   });
+
+  /**
+   * A workflow that pushes a ledger branch and says nothing about it is a
+   * quieter version of the same disease: the job is green, the work really
+   * happened, and nobody knows where it went. `gh pr create` used to provide
+   * that visibility, until the repo's `can_approve_pull_request_reviews: false`
+   * setting refused it (run 30976556644). The step summary replaces it and is
+   * pinned here so the visibility cannot be dropped silently later.
+   */
+  describe('a workflow that pushes a side branch announces where it went', () => {
+    const cases: Array<[string, string]> = [];
+    for (const [name, wf] of allWorkflows()) {
+      for (const script of runBlocks(wf)) {
+        const pushesSideBranch = logicalLines(script).some((l) =>
+          /git push\s+(--force\s+)?\S+\s+"?HEAD:\$/.test(l),
+        );
+        if (pushesSideBranch) cases.push([name, script]);
+      }
+    }
+
+    it('has at least one side-branch push to check', () => {
+      expect(cases.length).toBeGreaterThan(0);
+    });
+
+    it.each(cases)('%s writes a step summary', (_name, script) => {
+      expect(script).toContain('GITHUB_STEP_SUMMARY');
+    });
+  });
 });

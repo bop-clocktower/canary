@@ -29,21 +29,32 @@ under the project's former name) are documented in the
   `16189198` rejects for every actor, and `|| echo` converted the `GH013`
   rejection into a green job. The eight most recent qualifying runs each logged
   `remote rejected` and each reported success. Both workflows now commit to a
-  standing branch and upsert a single pull request, so a push failure is a
-  failure again.
+  standing branch, so a push failure is a failure again.
 - **Three path-filtered workflows could not gate changes to themselves** (#549).
   `harness-security.yml`, `harness-architecture.yml`, and `wiki-sync.yml`
   omitted their own file from their `paths:` filters, so editing one of them
   never ran it — #547 changed the CLI pin in `harness-security.yml` and the
   workflow did not run on that PR. Each now lists its own path, matching the
   precedent `docs-lint.yml` already set.
+- **Ledger workflows could not open their own PR.** The first cut of the #548
+  fix ended each run with `gh pr create`, which this repo refuses outright:
+  `can_approve_pull_request_reviews` is `false`, so a workflow gets _"GitHub
+  Actions is not permitted to create or approve pull requests"_. The branch push
+  succeeded and only the PR creation failed, turning `main` red — correctly, and
+  for the first time, rather than printing a reassuring line. Both workflows now
+  stop after pushing the branch and write a compare link to the job summary;
+  opening the PR is a human step. `pull-requests: write` was dropped from both
+  since nothing needs it any more.
 
 ### Added
 
-- `ts/test/workflow-false-green.test.ts` — asserts the three invariants above
-  across _every_ workflow rather than the specific files that were broken: a
+- `ts/test/workflow-false-green.test.ts` — asserts the invariants above across
+  _every_ workflow rather than the specific files that were broken: a
   path-filtered workflow lists its own file, no `git push` has its failure
-  swallowed by `|| echo`/`|| true`, and nothing pushes directly to `main`.
+  swallowed by `|| echo`/`|| true`, nothing pushes directly to `main`, and a
+  workflow that pushes a side branch says where it went. That last invariant
+  immediately caught a third instance nobody had filed —
+  `refresh-arch-baseline.yml` pushed a baseline commit and announced nothing.
 
 ## [6.5.0] - 2026-08-03
 
