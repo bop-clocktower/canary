@@ -14,6 +14,37 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **`arch-snapshot.yml` never committed a snapshot** (#548). The change guard
+  ran `git diff` against `.harness/arch/timeline.json`, a path git had never
+  tracked. git cannot report a diff for an unknown path, so the guard was
+  trivially true, the early `exit 0` fired on every run, and the `git add` below
+  it was unreachable. Both runs the workflow had ever made reported success and
+  produced nothing. The guard now uses `git status --porcelain`, which sees
+  untracked files, and the timeline is seeded so the series has a starting
+  point.
+- **`harness-security.yml` failed the same way, one step further along** (#548).
+  Its guard worked, but the delivery did not: it pushed to `main`, which ruleset
+  `16189198` rejects for every actor, and `|| echo` converted the `GH013`
+  rejection into a green job. The eight most recent qualifying runs each logged
+  `remote rejected` and each reported success. Both workflows now commit to a
+  standing branch and upsert a single pull request, so a push failure is a
+  failure again.
+- **Three path-filtered workflows could not gate changes to themselves** (#549).
+  `harness-security.yml`, `harness-architecture.yml`, and `wiki-sync.yml`
+  omitted their own file from their `paths:` filters, so editing one of them
+  never ran it — #547 changed the CLI pin in `harness-security.yml` and the
+  workflow did not run on that PR. Each now lists its own path, matching the
+  precedent `docs-lint.yml` already set.
+
+### Added
+
+- `ts/test/workflow-false-green.test.ts` — asserts the three invariants above
+  across _every_ workflow rather than the specific files that were broken: a
+  path-filtered workflow lists its own file, no `git push` has its failure
+  swallowed by `|| echo`/`|| true`, and nothing pushes directly to `main`.
+
 ## [6.5.0] - 2026-08-03
 
 The **denominator** release. v6.4.0 turned "a check that verified zero items has
