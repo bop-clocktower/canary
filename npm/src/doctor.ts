@@ -268,10 +268,13 @@ export function summarizeChecks(groups: readonly CheckGroup[]): DoctorSummary {
  */
 function abstentionRemedy(summary: DoctorSummary): string {
   return summary.skipped.length > 0
-    ? 'Every registered check was skipped or informational, so doctor verified ' +
+    ? // #505: `<source>`, not `<name>` -- `add` takes the source spec, so the
+      // copied-and-pasted form failed for anyone who followed it literally.
+      'Every registered check was skipped or informational, so doctor verified ' +
         'nothing. Grant command-check consent (re-run `canary overlay add ' +
-        '<name> --yes`) or install an overlay whose checks apply here, then ' +
-        're-run.'
+        '<source> --yes`, which re-asks consent on an already-installed overlay ' +
+        'without re-cloning) or install an overlay whose checks apply here, ' +
+        'then re-run.'
     : 'No check was registered, so doctor verified nothing. Install an ' +
         'overlay that ships a `.canary/doctor.json` (`canary overlay add ' +
         '<source>`), then re-run.';
