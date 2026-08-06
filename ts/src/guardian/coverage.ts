@@ -960,13 +960,20 @@ function isTypeOnlySource(source: string): boolean {
   for (const raw of splitLines(stripComments(source))) {
     const line = raw.trim();
     if (depth === 0 && !isErasableTopLevelLine(line)) return false;
-    for (const ch of line) {
-      if (ch === '{' || ch === '(' || ch === '[') depth += 1;
-      else if (ch === '}' || ch === ')' || ch === ']') depth -= 1;
-    }
+    depth += bracketDelta(line);
     if (depth < 0) return false;
   }
   return depth === 0;
+}
+
+/** Net nesting change across one line: openers minus closers. */
+function bracketDelta(line: string): number {
+  let delta = 0;
+  for (const ch of line) {
+    if (ch === '{' || ch === '(' || ch === '[') delta += 1;
+    else if (ch === '}' || ch === ')' || ch === ']') delta -= 1;
+  }
+  return delta;
 }
 
 /**

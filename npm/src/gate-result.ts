@@ -79,8 +79,18 @@ const CONTROL_CHARS = /[\u0000-\u001F\u007F]/g;
  */
 export function skippedSuffix(skipped?: SkipEntry[]): string {
   if (!skipped || skipped.length === 0) return '';
+  // #579: `reason` used to be write-only -- every caller set one and no
+  // surface ever rendered it, so a reader could see THAT a path was dropped
+  // but never WHY. Name and cause travel together: `name [reason]`, keeping
+  // the D7 contract that the path stays visible rather than collapsing into
+  // a bare count. Reasons are stripped of control chars for the same
+  // line-forging reason names are.
   const names = skipped
-    .map((s) => s.name.replace(CONTROL_CHARS, ''))
+    .map((s) => {
+      const name = s.name.replace(CONTROL_CHARS, '');
+      const reason = s.reason.replace(CONTROL_CHARS, '');
+      return reason ? `${name} [${reason}]` : name;
+    })
     .join(', ');
   return ` (${skipped.length} skipped: ${names})`;
 }
