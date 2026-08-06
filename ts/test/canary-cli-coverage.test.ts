@@ -231,10 +231,13 @@ describe('review-test / flake-check (injected linter)', () => {
     expect(hit.code).toBe(1);
     expect(hit.stdout).toContain('flakiness pattern(s) found');
 
+    // #566: `--json` used to exit 0 with findings on stdout, so a consumer
+    // gating on `$?` read every finding-bearing run as clean. The payload is
+    // still a parseable array -- only the exit code changed.
     const json = await invokeCanary(['flake-check', 'x.py', '--json'], {
       deps: { makeLinter: () => fake({ flakeCheck: () => [finding()] }) },
     });
-    expect(json.code).toBe(0);
+    expect(json.code).toBe(1);
     expect(Array.isArray(JSON.parse(json.stdout))).toBe(true);
   });
 });

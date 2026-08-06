@@ -88,6 +88,41 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`review-test` / `flake-check` reported a confident green over `.mjs` and
+  `.cjs` files they never actually read** (#566). Four defects from one consumer
+  report, all the #503 family — a check that measured nothing presenting as a
+  pass:
+  - `.mjs`/`.cjs`/`.mts`/`.cts` now match test discovery. They never did, and
+    the deeper half was in `detectFramework`, whose `return 'pytest'` fallback
+    handed an unrecognised extension to the Python assertion scanners. Over ESM
+    JavaScript those match nothing, so a single `.mjs` file with real defects
+    printed `✅ No issues found` and exited 0. A downstream overlay repo with 30
+    of its 36 test files in `.mjs` was told all 30 were clean. There is no
+    fallback any more: `lintableFramework` returns `null` and the caller
+    abstains, because a guess indistinguishable from a clean result is a lie.
+  - A single file whose extension no ruleset parses now **abstains (exit 3)**
+    instead of reporting clean. `abstainOnZeroFiles` only ever fired on a
+    directory — a single file is a one-element list, so its denominator is never
+    zero — which is why directory scans abstained correctly while the
+    single-file path lied. The directory abstention's own remedy text ("or pass
+    a single file directly") had been routing readers straight into it.
+  - **`node_modules` is excluded from the walk**, along with the rest of the
+    ignore set `pattern-matcher.ts` has carried since the Python port (`.git`,
+    `dist`, `build`, `.venv`, `.next`, `.nuxt`, `__pycache__`). `walkFiles` was
+    the copy that never got it: one consumer run was 254 vendored findings out
+    of 256, with its only `critical` inside a dependency.
+  - **`--json` now carries the same exit code as human mode.** It returned
+    before the exit-code throw, so a consumer gating on `$?` read every
+    finding-bearing run as clean. Abstention (3) was already preserved in both
+    modes; findings (1) were not.
+
+  Upstream CI could not have caught this: every suite in `ts/test`,
+  `npm/scripts/__tests__` and `agents/skills/test` is `.ts`/`.js`, so the
+  denominator was never zero here. Two existing tests had to be rewritten — they
+  asserted the buggy behaviour outright
+  (`unknown extension falls back to pytest`, and `--json` exiting 0 with
+  findings).
+
 - **Reviewer adjudications would have silently stopped being attributed** (#490,
   #508). `activeFindingPaths` anchors on the comment table's second cell opening
   with a backtick; the permalinked cell opens with `[`, so the regex would have

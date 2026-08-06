@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   StaticLinter,
+  UnsupportedTestFileError,
   formatFinding,
   type Finding,
 } from '../src/core/static-linter.js';
@@ -354,9 +355,25 @@ describe('StaticLinter', () => {
     expect(rules(findings)).toContain('LINT-006');
   });
 
-  it('detectFramework: unknown extension falls back to pytest', () => {
-    const findings = lint('weird.txt', 'def test_x():\n    y = 1\n');
-    expect(rules(findings)).toContain('LINT-006');
+  // Was: "unknown extension falls back to pytest". That fallback is the #566
+  // false clean at its source -- it made a `.mjs` file get the Python scanners,
+  // which find nothing in ESM JavaScript, so the CLI printed "No issues found"
+  // over a file it had never really read. A guess indistinguishable from a
+  // clean result is a false green; refusing is the honest answer.
+  it('an extension no ruleset parses throws rather than guessing pytest', () => {
+    expect(() => lint('weird.txt', 'def test_x():\n    y = 1\n')).toThrow(
+      UnsupportedTestFileError,
+    );
+  });
+
+  it('reads .mjs and .cjs with the JS scanners', () => {
+    for (const ext of ['mjs', 'cjs', 'mts', 'cts']) {
+      const findings = lint(
+        `a.test.${ext}`,
+        "test('x', () => { const a = 1; });",
+      );
+      expect(rules(findings), ext).toContain('LINT-006');
+    }
   });
 
   it('respects an explicit framework override', () => {
