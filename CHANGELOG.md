@@ -14,6 +14,39 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **The guardian no longer asks a test fixture to have a test** (#565). #413
+  taught the gate that a non-source path can never satisfy a coverage finding,
+  but it recognised test support by _directory_ (`fixtures/`). Files that are
+  test infrastructure by _filename idiom_ and live in an ordinary source
+  directory slipped through: measured on a downstream consumer PR, a pytest
+  `conftest_otel.py` and a Playwright `playwright-fixture.ts` under
+  `scripts/otel_bootstrap/` were both flagged "no test file references this".
+  Both files _are_ the harness the tests run inside, so the finding inverts the
+  relationship the gate exists to check and a reviewer's only correct response
+  is 👎 — which drives `precision = TP / (TP + FP)` down and holds the repo
+  below its soft→hard promotion bar.
+
+  A file whose basename carries a `conftest` component (`.py` only — it is
+  pytest's own resolution rule) or a `fixture`/`fixtures` component under any
+  separator is now dropped before coverage is resolved, so the suppression holds
+  at **every** fidelity tier rather than only the heuristic one. That matches
+  where the existing `fixtures/` convention already sat: an lcov row proving a
+  fixture's lines are uncovered is perfectly true and still cannot make "this
+  needs a test" satisfiable.
+
+  Matching is on `-`/`_`/`.`-separated components, not substrings, so
+  `conftestimonial.py` and `prefixtures.ts` remain ordinary source. The
+  predicate is deliberately kept separate from `isTestPath`, which also decides
+  what _confers_ graph coverage — widening that would let a conftest mark every
+  module it imports as tested, trading a false positive for a false negative.
+
+  The same suppression applies to the `author-plan` authoring surface, which
+  previously proposed writing `scripts/otel_bootstrap/test_conftest_otel.py` — a
+  test for the conftest. Suppressed paths stay visible in the skip list and a
+  support-only diff now abstains (exit 3) rather than reporting a clean pass.
+
 ### Changed
 
 - **CI checks can now stop a merge to `main`** (#542). The `main` ruleset

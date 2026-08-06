@@ -40,6 +40,7 @@ import {
   coverageStatus,
   isSourcePath,
   isTestPath,
+  isTestSupportPath,
 } from './coverage.js';
 import { Severity, severitySortKey } from './impact-mapper.js';
 
@@ -379,6 +380,35 @@ export function filterTestUnits(
     }
   }
   return [kept, testUnits];
+}
+
+/**
+ * Partition `units` into `[kept, supportUnits]` by test-support name (#565).
+ *
+ * The sibling of {@link filterTestUnits} for files that are test infrastructure
+ * by *filename idiom* rather than by test-path convention — a pytest
+ * `conftest`, a Playwright fixture module. See {@link isTestSupportPath} for
+ * why the match is component-scoped and why it stays out of `isTestPath`.
+ *
+ * Runs before coverage is resolved, so the suppression holds at **every**
+ * fidelity tier — matching where the existing `fixtures/` convention already
+ * sits in {@link DEFAULT_SKIP_GLOBS}. An lcov row proving a fixture's lines are
+ * uncovered is true and still cannot make "this needs a test" satisfiable.
+ *
+ * Partitioned separately from `testUnits` rather than folded into it: those
+ * feed {@link buildWeakTestFindings}, and a conftest asserts nothing by design,
+ * so folding would swap one bogus finding for another. Order-preserving in both.
+ */
+export function filterTestSupportUnits(
+  units: ChangedUnit[],
+): [ChangedUnit[], ChangedUnit[]] {
+  const kept: ChangedUnit[] = [];
+  const supportUnits: ChangedUnit[] = [];
+  for (const unit of units) {
+    if (isTestSupportPath(unit.path)) supportUnits.push(unit);
+    else kept.push(unit);
+  }
+  return [kept, supportUnits];
 }
 
 /**

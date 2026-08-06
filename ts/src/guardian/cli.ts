@@ -106,6 +106,7 @@ import {
   effectiveGraphDepth,
   filterHeuristicNoise,
   filterSkipped,
+  filterTestSupportUnits,
   filterTestUnits,
   findReexportOnly,
   loadGuardianConfig,
@@ -1188,11 +1189,16 @@ function prCheckSkipEntries(
   skipped: ChangedUnit[],
   testUnits: ChangedUnit[],
   barrelUnits: ChangedUnit[],
+  supportUnits: ChangedUnit[] = [],
   noisePaths: string[] = [],
 ): SkipEntry[] {
   return [
     ...skipped.map((u) => ({ name: u.path, reason: 'skipGlobs' })),
     ...testUnits.map((u) => ({ name: u.path, reason: 'test path' })),
+    // #565: distinct from 'test path' on purpose -- these are test
+    // infrastructure recognised by filename idiom, and adjudication needs to
+    // tell the two suppression causes apart.
+    ...supportUnits.map((u) => ({ name: u.path, reason: 'test support' })),
     ...barrelUnits.map((u) => ({
       name: u.path,
       reason: 're-export barrel',
@@ -1355,10 +1361,13 @@ async function prCheckCmd(
   const [keptSkip, skipped] = filterSkipped(units, config.skip_globs);
   // FIX A: drop test-path units -- a test does not itself need a test.
   const [keptTest, testUnits] = filterTestUnits(keptSkip);
+  // #565: drop test *support* units -- a conftest / fixture module is the
+  // harness the tests run inside, so no test can cover it at any tier.
+  const [keptSupport, supportUnits] = filterTestSupportUnits(keptTest);
   // FIX 2: drop pure re-export/barrel files.
   const reexportPaths = findReexportOnly(diffText);
-  const barrelUnits = keptTest.filter((u) => reexportPaths.has(u.path));
-  const kept = keptTest.filter((u) => !reexportPaths.has(u.path));
+  const barrelUnits = keptSupport.filter((u) => reexportPaths.has(u.path));
+  const kept = keptSupport.filter((u) => !reexportPaths.has(u.path));
 
   // Advisory weak-test findings for added tests that assert nothing.
   const weakFindings = config.weak_tests
@@ -1366,11 +1375,14 @@ async function prCheckCmd(
     : [];
 
   const preFilterSkipped =
-    skipped.length + testUnits.length + barrelUnits.length;
+    skipped.length +
+    testUnits.length +
+    barrelUnits.length +
+    supportUnits.length;
 
   if (kept.length === 0 && weakFindings.length === 0) {
     abstainPrCheck(
-      prCheckSkipEntries(skipped, testUnits, barrelUnits),
+      prCheckSkipEntries(skipped, testUnits, barrelUnits, supportUnits),
       opts.format,
       deps,
     );
@@ -1403,6 +1415,7 @@ async function prCheckCmd(
         skipped,
         testUnits,
         barrelUnits,
+        supportUnits,
         noiseResults.map((r) => r.unit.path),
       ),
       opts.format,
@@ -1510,8 +1523,13 @@ function buildGaps(
   const units = scopeDiff(diffText);
   const [keptSkip] = filterSkipped(units, config.skip_globs);
   const [keptTest] = filterTestUnits(keptSkip);
+  // #565: never hand the authoring tier a conftest/fixture module either -- a
+  // generated "test for the fixture" is exactly the inversion the gate exists
+  // to prevent, except it also writes a file (measured: this surface proposed
+  // `scripts/otel_bootstrap/test_conftest_otel.py`).
+  const [keptSupport] = filterTestSupportUnits(keptTest);
   const reexportPaths = findReexportOnly(diffText);
-  const kept = keptTest.filter((u) => !reexportPaths.has(u.path));
+  const kept = keptSupport.filter((u) => !reexportPaths.has(u.path));
   if (kept.length === 0) return [];
   const results = resolveCoverage(kept, { coveragePath, graphMaxDepth });
   // #413: never hand the authoring tier a heuristic FP -- a generated "test" for

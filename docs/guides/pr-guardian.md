@@ -77,6 +77,17 @@ Both follow the same present-vs-absent contract: omit the key to keep the
 built-in default, or supply an explicit list — including `[]`, which means
 "nothing" rather than "use the default".
 
+There is also one suppression that is **not** configurable, because no repo
+should want it off (#565): a file that is _test support by name_ — a pytest
+`conftest` (`conftest.py`, `conftest_otel.py`), or a module with a `fixture` /
+`fixtures` basename component (`playwright-fixture.ts`, `fixture_helpers.py`,
+`user.fixtures.ts`) — is dropped before any tier runs, alongside test paths
+themselves. Such a file _is_ the harness the tests run inside, so "write a test
+covering it" inverts the relationship the gate exists to check, at every
+fidelity. Matching is on `-`/`_`/`.`-separated basename components, so
+`conftestimonial.py` and `prefixtures.ts` are ordinary source and still judged.
+Suppressed paths are always named in the skip list, never folded into a pass.
+
 ### PR check
 
 Set `canary.guardian.pr.enabled: true`. The stock workflow
