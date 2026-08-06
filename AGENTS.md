@@ -73,6 +73,15 @@ the code, not just the paths.
   file (and the `CANARY_PROPRIETARY_DENYLIST` CI secret). The public script
   names no company — keep it that way. Use a neutral placeholder (e.g. `ACME`)
   in public examples.
+- **That guard's denominator is the point.** Both halves scan `.md`, `.py`, the
+  TS/JS family (`.ts`, `.tsx`, `.js`, `.mjs`, `.cjs`) and the data family
+  (`.json`, `.yml`, `.yaml`); the proprietary half adds `.svg`, `.html`, `.txt`
+  and `.toml`. Until #578 neither set covered TypeScript, so the gate reported a
+  confident green while structurally unable to read the language the repo is
+  written in. If you narrow either set, `ts/test/leak-gate-denominator.test.ts`
+  fails — it plants a known offender per suffix rather than trusting the
+  verdict. Point the gate at a fixture tree with `CANARY_LEAK_SCAN_ROOT`; such a
+  run prints a banner saying it does **not** gate the repository.
 
 #### Branch Naming
 

@@ -1,11 +1,11 @@
 {
-  "//": "Example shadow-parity config: the v6 cutover check (TS engine vs Python reference). Copy, point baseline/candidate at your two implementations, and edit `cases`. Run: node cli.mjs --cases cases.example.json",
-  "baseline": ["python3", "-m", "agent.cli"],
+  "//": "Example shadow-parity config: the released CLI (baseline) vs the local build (candidate) — does this branch still agree with what users have? Copy, point baseline/candidate at your two implementations, and edit `cases`. Run: node cli.mjs --cases cases.example.json",
+  "baseline": ["npx", "--yes", "canary-test-cli@6.6.0"],
   "candidate": ["node", "ts/bin/canary.js"],
-  "env": { "PYTHONPATH": "." },
+  "env": { "NO_COLOR": "1" },
   "normalize": ["ansi", "version", "timestamp", "tmppath", "sha"],
   "accept": {
-    "skills list": "Python `rich` soft-wraps long skill descriptions at 80 cols; the TS port emits them unwrapped. Same content + names, different line breaks — a documented, intentional presentation deviation, not a contract."
+    "skills list": "The released build soft-wraps long skill descriptions at 80 cols; the local build emits them unwrapped. Same content + names, different line breaks — a documented, intentional presentation deviation, not a contract."
   },
   "cases": [
     { "label": "frameworks --json", "argv": ["frameworks", "--json"] },

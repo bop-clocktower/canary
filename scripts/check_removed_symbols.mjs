@@ -21,6 +21,16 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+// Test seam (#578). The gate reads a real git working tree, so its suite needs
+// to point it at a throwaway fixture repo. That same knob could quietly neuter
+// the gate in CI — an empty directory scans clean and exits 0 — so an
+// overridden run announces itself loudly rather than letting its green be read
+// as a statement about this repository.
+const SCAN_ROOT_ENV = 'CANARY_LEAK_SCAN_ROOT';
+const scanOverride = (process.env[SCAN_ROOT_ENV] ?? '').trim();
+const SCAN_ROOT = scanOverride ? resolve(scanOverride) : REPO_ROOT;
+const SCAN_ROOT_IS_OVERRIDDEN = SCAN_ROOT !== REPO_ROOT;
+
 // [regex-source, human reason] — surfaces removed in v3.0. A leading (?i) marks
 // a case-insensitive pattern (JS has no inline flag, so it is stripped here).
 const REMOVED_SYMBOLS = [
@@ -89,16 +99,23 @@ const PROPRIETARY_EXCLUDED_DIRS = new Set([
   'tests/generated',
   '.remember',
 ]);
+// The language the repo is actually written in. Both halves of this file were
+// blind to it until #578: the v6 cutover moved the engine from `agent/` (.py)
+// to `ts/src/` and neither suffix set followed, so the gate kept reporting a
+// confident green over a denominator that excluded the codebase. PR #577
+// leaked a consumer identifier into two `ts/test/*.ts` files and passed.
+const CODE_SUFFIXES = ['.ts', '.tsx', '.js', '.mjs', '.cjs'];
+const DATA_SUFFIXES = ['.json', '.yml', '.yaml'];
+
 const PROPRIETARY_SUFFIXES = new Set([
   '.md',
   '.py',
-  '.json',
   '.svg',
   '.html',
-  '.yml',
-  '.yaml',
   '.txt',
   '.toml',
+  ...CODE_SUFFIXES,
+  ...DATA_SUFFIXES,
 ]);
 
 const ALLOWED_CONTEXT_SUBSTRINGS = [
@@ -116,7 +133,12 @@ const ALLOWED_CONTEXT_SUBSTRINGS = [
   'no provider',
 ];
 
-const SCANNED_SUFFIXES = new Set(['.md', '.py']);
+const SCANNED_SUFFIXES = new Set([
+  '.md',
+  '.py',
+  ...CODE_SUFFIXES,
+  ...DATA_SUFFIXES,
+]);
 const SELF = 'scripts/check_removed_symbols.mjs';
 
 /** Compile a [source, reason] pair, honoring a leading (?i) as the 'i' flag. */
@@ -132,7 +154,7 @@ function suffixOf(p) {
 }
 
 function relPosix(absPath) {
-  return relative(REPO_ROOT, absPath).split('\\').join('/');
+  return relative(SCAN_ROOT, absPath).split('\\').join('/');
 }
 
 function inScope(absPath) {
@@ -167,7 +189,7 @@ function checkRemovedSymbols() {
   const violations = [];
   const candidates = new Set();
   for (const inc of INCLUDE_PATHS) {
-    const p = resolve(REPO_ROOT, inc);
+    const p = resolve(SCAN_ROOT, inc);
     if (!existsSync(p)) continue;
     const st = statSync(p);
     if (st.isFile()) candidates.add(p);
@@ -207,7 +229,7 @@ function propExcluded(rel) {
 function trackedFiles() {
   try {
     const out = execFileSync('git', ['ls-files'], {
-      cwd: REPO_ROOT,
+      cwd: SCAN_ROOT,
       encoding: 'utf-8',
     });
     return out.split('\n').filter(Boolean);
@@ -222,6 +244,9 @@ function reEscape(s) {
 
 function loadDenylist() {
   const terms = new Set();
+  // REPO_ROOT, not SCAN_ROOT, and deliberately so: the denylist is the gate's
+  // own configuration, not part of the tree being scanned. A fixture root must
+  // not be able to supply its own (empty) denylist and scan itself clean.
   const f = resolve(REPO_ROOT, DENYLIST_FILE);
   if (existsSync(f)) {
     for (const line of readFileSync(f, 'utf-8').split('\n')) {
@@ -247,7 +272,7 @@ function checkProprietary() {
   const violations = [];
   for (const rel of trackedFiles().sort()) {
     if (rel === SELF) continue;
-    const path = resolve(REPO_ROOT, rel);
+    const path = resolve(SCAN_ROOT, rel);
     if (
       !PROPRIETARY_SUFFIXES.has(suffixOf(rel)) ||
       !existsSync(path) ||
@@ -271,6 +296,13 @@ function checkProprietary() {
 }
 
 function main() {
+  if (SCAN_ROOT_IS_OVERRIDDEN) {
+    process.stdout.write(
+      `check_removed_symbols: ${SCAN_ROOT_ENV} is set — scanning ${SCAN_ROOT}\n` +
+        'This run does not gate the repository; its result says nothing about ' +
+        'the tree in git. Unset the variable for the real gate.\n\n',
+    );
+  }
   const removed = checkRemovedSymbols();
   const proprietary = checkProprietary();
 

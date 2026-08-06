@@ -16,6 +16,37 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The proprietary-leak gate can now read TypeScript** (#578). `docs-lint`
+  reported `clean — no removed-symbol or proprietary leaks` while structurally
+  unable to open the language essentially all of this repo's code is written in.
+  The v6 cutover moved the engine from `agent/` (`.py`) to `ts/src/`, and
+  neither of the script's two suffix sets followed: `SCANNED_SUFFIXES`
+  (removed-symbol half) was still `{.md, .py}`, and `PROPRIETARY_SUFFIXES`
+  (compliance half) had grown to nine suffixes without ever picking up
+  `.ts`/`.tsx`/`.js`/`.mjs`/`.cjs`. The cost was measured, not theoretical: PR
+  #577 leaked a downstream consumer identifier into four places and the gate
+  caught exactly one — the `CHANGELOG.md` instance — passing over two in
+  `ts/test/`. Both sets now cover the TS/JS family plus `.json`/`.yml`/`.yaml`.
+  Note the green was never _wrong_ about what it measured; the denominator just
+  excluded the codebase, which is the same false-green class as #548/#549 with
+  compliance rather than noise as the cost.
+
+  Widening the removed-symbol half surfaced one real drift: the `canary-shadow`
+  example config shipped `["python3", "-m", "agent.cli"]` as its copy-me
+  baseline — an engine deleted in the v6 cutover — so anyone following the
+  example ran a module that no longer exists. It now shadows the released CLI
+  against the local build, which is the durable use of that skill.
+
+  The script had no tests at all and no seam to write one against (a bare
+  `process.exit(main())`, nothing exported), so its suite could not distinguish
+  "no leaks" from "cannot see leaks". `ts/test/leak-gate-denominator.test.ts`
+  now plants a known offender in a fixture repo per suffix and requires the gate
+  to fail on it, with a clean-control case so a gate that fails on everything
+  cannot pass as one that works. The fixture repos are reached through a new
+  `CANARY_LEAK_SCAN_ROOT` override, which prints a banner stating the run does
+  not gate the repository — the seam that makes the gate testable would
+  otherwise be a seam that silently neuters it.
+
 - **The guardian no longer asks a test fixture to have a test** (#565). #413
   taught the gate that a non-source path can never satisfy a coverage finding,
   but it recognised test support by _directory_ (`fixtures/`). Files that are
