@@ -44,6 +44,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -107,6 +108,34 @@ const MUST_STAY_TRACKED = [
   '.github/workflows/dogfood.yml',
 ];
 
+/**
+ * Paths that need not exist yet but must stay *committable* — an ignore rule
+ * broad enough to catch them would foreclose something silently.
+ */
+const MUST_STAY_COMMITTABLE = [
+  // A project skill authored for this repo. `.claude/skills/` is ignored by
+  // named install, never wholesale, precisely so this path stays open.
+  '.claude/skills/a-project-skill/SKILL.md',
+];
+
+/** Where personal skill installs land. Absent on a fresh clone and in CI. */
+const SKILLS_DIR = join(REPO_ROOT, '.claude', 'skills');
+
+/**
+ * Local skill directories paired with whether they carry an install receipt.
+ * `null` when the directory does not exist at all — which is the normal case
+ * in CI, and is reported rather than silently passing.
+ */
+function localSkillDirs(): Array<{ name: string; installed: boolean }> | null {
+  if (!existsSync(SKILLS_DIR)) return null;
+  return readdirSync(SKILLS_DIR, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => ({
+      name: e.name,
+      installed: existsSync(join(SKILLS_DIR, e.name, '.skill-version.json')),
+    }));
+}
+
 /** True when `.gitignore` claims `path`. */
 function isIgnored(path: string): boolean {
   try {
@@ -160,9 +189,72 @@ describe('agent-tooling artifacts stay out of the repo', () => {
       ...trackedUnder('.github/instructions'),
       ...trackedUnder('.github/hooks'),
       ...trackedUnder('.github/copilot-instructions.md'),
-      ...trackedUnder('.claude/skills'),
       ...trackedUnder('.claude/worktrees'),
+      // `.claude/skills` is deliberately absent: a project skill authored for
+      // this repo belongs there and should be trackable. The install/authored
+      // split is enforced by receipt below, not by a blanket path rule.
     ];
     expect(leaked).toEqual([]);
   });
+
+  it.each(MUST_STAY_COMMITTABLE)('leaves %s committable', (path) => {
+    expect(isIgnored(path)).toBe(false);
+  });
+});
+
+/**
+ * The install-vs-authored split, enforced from the filesystem rather than a
+ * hardcoded list, so it stays true as skills are installed and written.
+ *
+ * `.gitignore` cannot express "ignore directories containing a receipt", so
+ * the rule is a list of names and this is what keeps the list honest. Both
+ * directions matter, and they fail for opposite reasons:
+ *
+ *   - An INSTALLED skill (has `.skill-version.json`) that is not ignored means
+ *     the next `git add -A` vendors a third party's code into a public repo.
+ *   - An AUTHORED skill (no receipt) that IS ignored means someone's own work
+ *     silently never appears in `git status`. That is the failure this file
+ *     was rewritten to prevent — a blanket `.claude/skills/` rule caused it.
+ */
+describe('local skill installs are ignored; authored skills are not', () => {
+  const dirs = localSkillDirs();
+
+  it('reports whether the guard could run at all', () => {
+    // `.claude/skills/` is a local install location that does not exist on a
+    // fresh clone or in CI. Zero directories is an abstention, not a pass, so
+    // say which case this run is rather than reporting a silent green. The
+    // named-install rules themselves are still covered by ARTIFACT_PATHS
+    // above, which is checkout-independent.
+    if (dirs === null) {
+      console.warn(
+        '[skills guard] .claude/skills/ absent — receipt classification not ' +
+          'exercised on this checkout (expected in CI).',
+      );
+    }
+    expect(dirs === null || dirs.length > 0).toBe(true);
+  });
+
+  const cases = dirs ?? [];
+  it.skipIf(cases.length === 0).each(cases)(
+    '$name is ignored iff it carries an install receipt',
+    ({ name, installed }: { name: string; installed: boolean }) => {
+      const ignored = isIgnored(`.claude/skills/${name}/SKILL.md`);
+      if (installed) {
+        expect(
+          ignored,
+          `.claude/skills/${name}/ carries a .skill-version.json receipt, so ` +
+            'it is a third-party install. Add it to .gitignore beside the ' +
+            'other installs, or it will be committed on the next `git add -A`.',
+        ).toBe(true);
+      } else {
+        expect(
+          ignored,
+          `.claude/skills/${name}/ has no .skill-version.json, so it reads as ` +
+            'a project skill authored for this repo — but .gitignore is ' +
+            'hiding it, and it will never show up in `git status`. Remove ' +
+            'its .gitignore entry so it can be committed.',
+        ).toBe(false);
+      }
+    },
+  );
 });

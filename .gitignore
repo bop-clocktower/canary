@@ -107,16 +107,38 @@ blob-report/
 **/.harness/.install-id
 **/.harness/.telemetry-notice-shown
 
-# Personal skill installs. Every entry carries a `.skill-version.json` receipt
+# Personal skill INSTALLS — listed by name, deliberately not `.claude/skills/`
+# wholesale. Each carries a `.skill-version.json` receipt
 # ({"version", "installedAt"}) rather than authorship, and skill-creator ships
-# an Apache-2.0 LICENSE — these are third-party artifacts, not source. Nothing
-# under here mentions canary; the project's own skills ship from agents/skills/.
-# Committing them would vendor someone else's code at whatever version one
-# developer happened to install, and hand every contributor a set of Terraform
-# and Azure skills to work on a testing CLI.
-# To commit a genuine project skill, negate it explicitly:
-#   !.claude/skills/my-project-skill/
-.claude/skills/
+# an Apache-2.0 LICENSE: third-party artifacts, not source. Committing them
+# would vendor someone else's code at whatever version one developer happened to
+# install, and hand every contributor a set of Terraform and Azure skills to
+# work on a testing CLI.
+#
+# A blanket rule would also foreclose committing a genuine PROJECT skill here,
+# and do it silently — the file would simply never appear in `git status`.
+# Listing the installs instead leaves `.claude/skills/` open by default, so an
+# authored skill commits with no ceremony. `agents/skills/` remains where the
+# product's shipped skills live; this is for skills that serve the repo itself.
+#
+# `ts/test/agent-artifact-ignores.test.ts` enforces both halves: a
+# receipt-bearing directory must be ignored, and one without a receipt must not
+# be. Install a 16th skill and that test names it and points here.
+.claude/skills/azure-rbac-diagnostics/
+.claude/skills/cross-platform-scripting/
+.claude/skills/deployment-practical/
+.claude/skills/doc-coauthoring/
+.claude/skills/file-style-conventions/
+.claude/skills/github-actions-ci/
+.claude/skills/gitlab-pipeline-ops/
+.claude/skills/self-learning/
+.claude/skills/skill-creator/
+.claude/skills/skill-feedback-adaptation/
+.claude/skills/skill-official-updater/
+.claude/skills/skill-usage-insights/
+.claude/skills/terraform-module-ops/
+.claude/skills/terraform-plan-review/
+.claude/skills/vitest-extension-testing/
 
 # Claude Code runtime state — per-machine, regenerated, and in the case of
 # worktrees/ a live checkout of in-flight branches. These lived in

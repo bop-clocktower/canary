@@ -46,6 +46,18 @@ under the project's former name) are documented in the
   runtime paths remain ignored, and `.git/info/exclude` is left with zero active
   rules.
 
+  `.claude/skills/` is ignored by **named install**, not wholesale. A blanket
+  rule would have foreclosed committing a genuine project skill there, and done
+  it in the worst possible way — the file simply never appears in `git status`,
+  which is the same silent-abstention shape ADR 0010 is about. The two cases are
+  distinguishable even though `.gitignore` cannot express the distinction:
+  installed skills carry a `.skill-version.json` receipt and authored ones do
+  not, so `agent-artifact-ignores.test.ts` enforces both halves from the
+  filesystem. A receipt-bearing directory that is _not_ ignored fails (the next
+  `git add -A` would vendor third-party code); a receiptless one that _is_
+  ignored fails (someone's own work would vanish). Each failure names the
+  directory and the remedy. Verified in both directions rather than assumed.
+
 - **The guardian's sticky PR comment now says what to do, not just what is
   wrong.** Three pieces of information were computed and then dropped before
   they reached the reader:
