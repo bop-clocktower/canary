@@ -88,6 +88,32 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Guardian read GitHub's comment and reaction lists 30 rows at a time and
+  reported the result as complete** (#528). Both REST clients called the list
+  endpoints bare — no `per_page`, no `Link` following — so every read stopped at
+  GitHub's default page size and said nothing about the remainder. Two things
+  broke on a busy PR, both silently: once the thread passed 30 comments the
+  guardian's own sticky comment fell off page one, so `findSticky` missed it and
+  guardian **posted a second sticky** while recording no adjudication at all;
+  and once a sticky passed 30 reactions the 👍/👎 tally was cut mid-sample,
+  biasing the **precision metric that gates the soft-to-hard promotion** toward
+  whichever verdicts happened to sort first. A truncated denominator is worse
+  than an empty one — 30-of-30 reads as a healthy sample, and no number in the
+  code said "30" to notice.
+
+  Both clients now request `per_page=100` and follow `Link: rel="next"` to the
+  end. The loop refuses to truncate quietly: a `Link` cycle or a read past 20
+  pages (2000+ rows) throws rather than returning what it managed to collect,
+  and a failure on page two propagates instead of degrading to page one. A 403
+  maps to `GitHubPermissionError` identically on the paged read and the write,
+  so a fork PR behaves the same on both.
+
+  Also corrected: the module comment claiming an adjudication record can never
+  collide with a findings filename. A branch named `adjudication/pr-42`
+  sanitizes to exactly that name. Nothing breaks — `loadAdjudicationRecords`
+  keys off the `source` field, so a colliding record is skipped rather than
+  mis-tallied — but the comment asserted a guarantee the filenames do not carry.
+
 - **Every guardian sticky comment told reviewers to run a command that does not
   exist** (#489). The one instruction in the comment — reply
   `/guardian suppress <file> <reason>` — was the one thing that could not work:

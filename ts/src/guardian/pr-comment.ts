@@ -15,8 +15,9 @@
  *   test — **no network**. It can simulate a fork read-only token via
  *   `deny_writes=true` (writes reject with {@link GitHubPermissionError}).
  * - {@link RestGitHubClient} (Python's private `_RestGitHubClient`) is the thin
- *   real client. Network lives **only** here and is never exercised in unit
- *   tests.
+ *   real client. Network lives **only** here; `guardian-rest-clients.test.ts`
+ *   drives it through a stubbed global `fetch`, so the URL, headers, error
+ *   mapping, and #528 pagination are covered without a socket.
  *
  * Python→TS nuances:
  *   - **async**: Python's `urllib` client is synchronous; Node's global `fetch`
@@ -30,6 +31,8 @@
  *     rather than off a raised `HTTPError`. As in the oracle, ONLY 403 maps to a
  *     permission error here; any other non-2xx propagates as a generic error.
  */
+
+import { PageReader, readAllPages, restPageReader } from './github-paging.js';
 
 // Single source of truth for the sticky-comment marker. `pr_check.render`
 // emits the identical literal at the head of a `comment`-format body so
@@ -63,6 +66,20 @@ export class GitHubPermissionError extends Error {
     super(message);
     this.name = 'GitHubPermissionError';
   }
+}
+
+/**
+ * Map a non-2xx status to an error. As in the Python reference, ONLY 403 is a
+ * permission error; every other non-2xx propagates (the analog of urllib's
+ * HTTPError re-raise). Shared by the write path and the paged read path so the
+ * two cannot drift.
+ */
+function toGitHubError(status: number, url: string): Error {
+  return status === 403
+    ? new GitHubPermissionError(
+        `GitHub API 403 (read-only token / fork PR?): ${url}`,
+      )
+    : new Error(`GitHub API ${status}: ${url}`);
 }
 
 /**
@@ -182,8 +199,10 @@ export function degradationAnnotation(notice: string): string {
  * Thin real {@link GitHubClient} over the GitHub REST API (`fetch`).
  *
  * Python's private `_RestGitHubClient`, exported here (public, like
- * {@link RestBranchProtectionClient}). Network lives ONLY here; **no unit test
- * exercises this class**. A 403 (fork read-only token) surfaces as
+ * {@link RestBranchProtectionClient}). Network lives ONLY in `request` and in
+ * the default {@link restPageReader}; the write paths have no unit test by
+ * design, while the paged read path is covered through the injected `read`
+ * seam (#528). A 403 (fork read-only token) surfaces as
  * {@link GitHubPermissionError} so the caller degrades loudly rather than
  * crashing.
  *
@@ -193,11 +212,20 @@ export function degradationAnnotation(notice: string): string {
 export class RestGitHubClient implements GitHubClient {
   private static readonly API = 'https://api.github.com';
 
+  private readonly read: PageReader;
+
   constructor(
     private readonly repo: string,
     private readonly prNumber: number,
     private readonly token: string,
-  ) {}
+    read?: PageReader,
+  ) {
+    // The `read` seam exists so #528's paging is testable without a socket;
+    // production callers pass three arguments and get the real reader. It
+    // shares `request`'s 403 mapping so a fork PR degrades identically on a
+    // paged read and an unpaged write.
+    this.read = read ?? restPageReader(this.headers(), toGitHubError);
+  }
 
   private headers(): Record<string, string> {
     return {
@@ -219,23 +247,13 @@ export class RestGitHubClient implements GitHubClient {
       init.body = JSON.stringify(payload);
     }
     const resp = await fetch(url, init);
-    if (!resp.ok) {
-      // As in the oracle, ONLY 403 maps to a permission error; any other
-      // non-2xx propagates (the analog of urllib's HTTPError re-raise).
-      if (resp.status === 403) {
-        throw new GitHubPermissionError(
-          `GitHub API 403 (read-only token / fork PR?): ${url}`,
-        );
-      }
-      throw new Error(`GitHub API ${resp.status}: ${url}`);
-    }
+    if (!resp.ok) throw toGitHubError(resp.status, url);
     return resp.json();
   }
 
   async listComments(): Promise<Comment[]> {
     const url = `${RestGitHubClient.API}/repos/${this.repo}/issues/${this.prNumber}/comments`;
-    const result = await this.request('GET', url);
-    return Array.isArray(result) ? (result as Comment[]) : [];
+    return (await readAllPages(url, this.read)) as Comment[];
   }
 
   async createComment(body: string): Promise<Comment> {

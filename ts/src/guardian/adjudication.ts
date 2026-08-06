@@ -43,16 +43,23 @@ import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
 import { Comment, STICKY_MARKER, findSticky } from './pr-comment.js';
+import { PageReader, readAllPages, restPageReader } from './github-paging.js';
 
 /** Schema tag for adjudication records (independent of the findings schema). */
 export const ADJUDICATION_SCHEMA_VERSION = '1.0';
 
 /**
  * Record `source` + filename prefix. Deliberately namespaced UNDER the
- * `canary-pr-guardian-` prefix (harness's `AnalysisArchive` reads every
- * `*.json` in `.harness/analyses/`) while never colliding with a pr-check
- * findings record: those are `canary-pr-guardian-<sanitized-ref>.json` and a
- * ref is sanitized from a git ref / `pr-<n>`, never `adjudication-pr-<n>`.
+ * `canary-pr-guardian-` prefix, because harness's `AnalysisArchive` reads every
+ * `*.json` in `.harness/analyses/`.
+ *
+ * The filenames are not provably distinct, though: a branch named
+ * `adjudication/pr-42` sanitizes through `analysisFilename` to exactly
+ * `canary-pr-guardian-adjudication-pr-42.json`, colliding with this prefix.
+ * What actually keeps the precision summary honest is the `source` field —
+ * `loadAdjudicationRecords` requires `source === ADJUDICATION_SOURCE` plus
+ * numeric `tp`/`fp`, so a findings record landing on that name is skipped, not
+ * mis-tallied. Read the field, never the filename.
  */
 export const ADJUDICATION_SOURCE = 'canary-pr-guardian-adjudication';
 
@@ -112,44 +119,43 @@ export class FakeReactionsClient implements ReactionsClient {
 
 /**
  * Thin real {@link ReactionsClient} over the GitHub REST API (`fetch`).
- * Network lives ONLY here; no unit test exercises this class. Both endpoints
- * are reads, so a fork's read-only token is sufficient.
+ * Network lives ONLY in the default {@link restPageReader}; both endpoints are
+ * reads, so a fork's read-only token is sufficient. The `read` seam exists so
+ * the #528 paging wiring is testable without a socket — production callers
+ * construct this with three arguments and get the real reader.
  */
 export class RestReactionsClient implements ReactionsClient {
   private static readonly API = 'https://api.github.com';
 
+  private readonly read: PageReader;
+
   constructor(
     private readonly repo: string,
     private readonly prNumber: number,
-    private readonly token: string,
-  ) {}
-
-  private async get(url: string): Promise<unknown> {
-    const resp = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'canary-pr-guardian',
-      },
-    });
-    if (!resp.ok) {
-      throw new Error(`GitHub API ${resp.status}: ${url}`);
-    }
-    return resp.json();
+    token: string,
+    read?: PageReader,
+  ) {
+    this.read =
+      read ??
+      restPageReader(
+        {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'canary-pr-guardian',
+        },
+        (status, url) => new Error(`GitHub API ${status}: ${url}`),
+      );
   }
 
   async listComments(): Promise<Comment[]> {
     const url = `${RestReactionsClient.API}/repos/${this.repo}/issues/${this.prNumber}/comments`;
-    const result = await this.get(url);
-    return Array.isArray(result) ? (result as Comment[]) : [];
+    return (await readAllPages(url, this.read)) as Comment[];
   }
 
   async listReactions(commentId: number): Promise<Reaction[]> {
     const url = `${RestReactionsClient.API}/repos/${this.repo}/issues/comments/${commentId}/reactions`;
-    const result = await this.get(url);
-    if (!Array.isArray(result)) return [];
+    const result = await readAllPages(url, this.read);
     const rows: Reaction[] = [];
     for (const raw of result) {
       if (typeof raw !== 'object' || raw === null) continue;
