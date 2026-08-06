@@ -1,16 +1,12 @@
 name: Architecture Enforcer
 
+# The pull_request path filter was removed with #542: `enforce` is required by
+# ruleset 16189198, and a required check behind a path filter never reports on a
+# PR outside those paths, so the PR can never merge. This also retires the #549
+# self-listing workaround for this trigger — a workflow that always runs cannot
+# fail to gate its own file.
 on:
   pull_request:
-    paths:
-      - 'ts/**'
-      - 'npm/**'
-      - 'agents/skills/**'
-      - 'harness.config.json'
-      - 'AGENTS.md'
-      # Self-test: a path-filtered workflow that omits its own file is the one
-      # file in the repo it cannot gate (#549).
-      - '.github/workflows/harness-architecture.yml'
   push:
     branches:
       - main

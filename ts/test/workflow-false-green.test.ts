@@ -164,4 +164,88 @@ describe('workflow false-green invariants', () => {
       expect(script).toContain('GITHUB_STEP_SUMMARY');
     });
   });
+  /**
+   * #542 — a required check must run on every PR.
+   *
+   * `main`'s ruleset carried NO `required_status_checks` rule at all, so every
+   * check in this repo was advisory: PR #540 merged while `markdownlint` was
+   * reporting FAILURE and `main` went red. The fix is a required set — but a
+   * required check that sits behind a `paths:` filter is worse than none. It
+   * never reports on a PR that does not touch its paths, GitHub shows it as
+   * "Expected — waiting for status" forever, and the PR can never merge.
+   *
+   * `.github/required-checks.json` is the in-repo record of that decision, and
+   * these tests keep it honest in both directions: every required check runs
+   * unconditionally, and every check-producing job is accounted for as either
+   * required or advisory-with-a-stated-reason. A new job that is neither fails
+   * here rather than joining the advisory pile by default — "nobody configured
+   * it" is exactly the state #542 was filed about.
+   */
+  describe('#542 — required checks run on every PR', () => {
+    const manifest = JSON.parse(
+      readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
+    ) as {
+      required: Array<{ check: string; workflow: string }>;
+      advisory: Array<{ check: string; workflow: string; reason: string }>;
+    };
+
+    /** The check name GitHub reports for a job: its `name`, else its job id. */
+    function checkNames(wf: Workflow): string[] {
+      return Object.entries(wf.jobs ?? {}).map(
+        ([id, job]) => (job as { name?: string }).name ?? id,
+      );
+    }
+
+    /** Workflows that report a check on a pull request. */
+    function prWorkflows(): Array<[string, Workflow]> {
+      return allWorkflows().filter(([, wf]) => 'pull_request' in triggers(wf));
+    }
+
+    it('lists checks to enforce (zero denominator is an abstention)', () => {
+      expect(manifest.required.length).toBeGreaterThan(0);
+      expect(prWorkflows().length).toBeGreaterThan(0);
+    });
+
+    it.each(manifest.required.map((r) => [r.check, r.workflow]))(
+      'required check %s is produced by %s',
+      (check, workflow) => {
+        const wf = allWorkflows().find(([n]) => n === workflow)?.[1];
+        expect(wf, `${workflow} not found`).toBeDefined();
+        expect(checkNames(wf!)).toContain(check);
+      },
+    );
+
+    it.each(
+      [...new Set(manifest.required.map((r) => r.workflow))].map((w) => [w]),
+    )('%s runs on every PR (no paths filter)', (workflow) => {
+      const wf = allWorkflows().find(([n]) => n === workflow)?.[1];
+      const pr = triggers(wf!)['pull_request'] as Trigger | null;
+      expect(pr?.paths).toBeUndefined();
+      expect(
+        (pr as { 'paths-ignore'?: string[] } | null)?.['paths-ignore'],
+      ).toBeUndefined();
+    });
+
+    it('every PR check is either required or advisory with a reason', () => {
+      const classified = new Map<string, string>();
+      for (const r of manifest.required) classified.set(r.check, 'required');
+      for (const a of manifest.advisory) {
+        expect(a.reason.trim(), `${a.check} has an empty reason`).not.toBe('');
+        classified.set(a.check, 'advisory');
+      }
+      const unclassified: string[] = [];
+      for (const [, wf] of prWorkflows())
+        for (const check of checkNames(wf))
+          if (!classified.has(check)) unclassified.push(check);
+      expect(unclassified).toEqual([]);
+    });
+
+    it('no check is listed as both required and advisory', () => {
+      const required = new Set(manifest.required.map((r) => r.check));
+      const both = manifest.advisory
+        .map((a) => a.check)
+        .filter((c) => required.has(c));
+      expect(both).toEqual([]);
+    });
+  });
 });

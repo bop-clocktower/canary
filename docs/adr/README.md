@@ -34,3 +34,4 @@ Not every PR needs an ADR. Day-to-day refactors and bug fixes don't.
 | [0008](0008-guardian-canary-owned.md)                 | Guardian ownership — a canary skill that harness leverages          | accepted |
 | [0009](0009-exit-3-reserved-for-abstained.md)         | Exit 3 is reserved CLI-wide for "abstained"                         | accepted |
 | [0010](0010-conformance-registry-as-gate-registry.md) | The conformance registry is the canonical gate list                 | accepted |
+| [0011](0011-required-status-checks.md)                | Required status checks are declared in the repository               | accepted |

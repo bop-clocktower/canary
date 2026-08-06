@@ -1,25 +1,17 @@
 name: Security Reviewer
 
+# The pull_request path filter was removed with #542: `security` is required by
+# ruleset 16189198, and a required check behind a path filter never reports on a
+# PR outside those paths, so the PR can never merge. The push filter goes with
+# it — a security scan that skips itself on some pushes to `main` leaves `main`
+# unscanned for exactly the changes nobody classified as security-relevant, and
+# #547 already demonstrated the shape (a CLI pin changed here and this workflow
+# did not run). This retires the #549 self-listing workaround on both triggers.
 on:
   pull_request:
-    paths:
-      - 'ts/**'
-      - 'npm/**'
-      - 'agents/skills/**'
-      - 'scripts/**'
-      # Self-test: a path-filtered workflow that omits its own file is the one
-      # file in the repo it cannot gate (#549). #547 changed the CLI pin here
-      # and this workflow did not run on that PR.
-      - '.github/workflows/harness-security.yml'
   push:
     branches:
       - main
-    paths:
-      - 'ts/**'
-      - 'npm/**'
-      - 'agents/skills/**'
-      - 'scripts/**'
-      - '.github/workflows/harness-security.yml'
 
 permissions:
   contents: write
