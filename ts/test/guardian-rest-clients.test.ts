@@ -25,22 +25,44 @@ import {
   RestBranchProtectionClient,
 } from '../src/guardian/hard-gate.js';
 
-/** A minimal `Response`-like stub carrying both `json()` and `text()`. */
+/**
+ * A minimal `Response`-like stub carrying `json()`, `text()`, and `headers`.
+ *
+ * `headers` is not optional: a real `Response` always has it, and the paged
+ * read path (#528) reads `Link` off it. A stub without one models a response
+ * that cannot exist and would hide a null-header crash.
+ */
 interface ResponseLike {
   ok: boolean;
   status: number;
   statusText: string;
+  headers: { get: (name: string) => string | null };
   json: () => Promise<unknown>;
   text: () => Promise<string>;
 }
 
-/** A 2xx response whose body decodes to `body` via both `json()` and `text()`. */
-function ok(body: unknown, status = 200): ResponseLike {
+/** Case-insensitive header lookup over a plain record, as `Headers` does. */
+function headersOf(rows: Record<string, string>): ResponseLike['headers'] {
+  const lower = new Map(
+    Object.entries(rows).map(([k, v]) => [k.toLowerCase(), v]),
+  );
+  return { get: (name) => lower.get(name.toLowerCase()) ?? null };
+}
+
+/**
+ * A 2xx response whose body decodes to `body` via both `json()` and `text()`.
+ * `nextUrl` sets a `Link: <...>; rel="next"` header, as GitHub does when the
+ * result spans pages.
+ */
+function ok(body: unknown, status = 200, nextUrl?: string): ResponseLike {
   const raw = JSON.stringify(body);
   return {
     ok: true,
     status,
     statusText: 'OK',
+    headers: headersOf(
+      nextUrl === undefined ? {} : { Link: `<${nextUrl}>; rel="next"` },
+    ),
     json: async () => body,
     text: async () => raw,
   };
@@ -52,6 +74,7 @@ function fail(status: number, statusText = ''): ResponseLike {
     ok: false,
     status,
     statusText,
+    headers: headersOf({}),
     json: async () => ({}),
     text: async () => '',
   };
@@ -83,13 +106,15 @@ describe('RestGitHubClient', () => {
   const client = (): RestGitHubClient =>
     new RestGitHubClient('owner/repo', 42, 'tok');
 
-  it('listComments GETs the issues comments endpoint', async () => {
+  it('listComments GETs the issues comments endpoint, asking for 100', async () => {
     fetchMock.mockResolvedValueOnce(ok([{ id: 1, body: 'a' }]));
     const rows = await client().listComments();
     expect(rows).toEqual([{ id: 1, body: 'a' }]);
     const [url, init] = call(0);
+    // #528: `per_page` is the cheap floor under the Link-following loop.
+    // Without it GitHub serves 30 and says nothing about the rest.
     expect(url).toBe(
-      'https://api.github.com/repos/owner/repo/issues/42/comments',
+      'https://api.github.com/repos/owner/repo/issues/42/comments?per_page=100',
     );
     expect(init.method).toBe('GET');
     expect(init.body).toBeUndefined();
@@ -102,6 +127,29 @@ describe('RestGitHubClient', () => {
   it('listComments coerces a non-array body to []', async () => {
     fetchMock.mockResolvedValueOnce(ok({ not: 'a list' }));
     expect(await client().listComments()).toEqual([]);
+  });
+
+  it('listComments follows Link rel="next" to the last page (#528)', async () => {
+    // The regression: guardian's sticky comment sat on page 2 of a busy PR,
+    // so `findSticky` missed it and guardian posted a SECOND sticky comment
+    // while recording no adjudication. Nothing in the output said "partial".
+    const page2 =
+      'https://api.github.com/repos/owner/repo/issues/42/comments?per_page=100&page=2';
+    fetchMock
+      .mockResolvedValueOnce(
+        ok(
+          Array.from({ length: 100 }, (_, i) => ({ id: i + 1, body: 'x' })),
+          200,
+          page2,
+        ),
+      )
+      .mockResolvedValueOnce(ok([{ id: 101, body: 'the sticky' }]));
+
+    const rows = await client().listComments();
+    expect(rows).toHaveLength(101);
+    expect(rows.at(-1)).toEqual({ id: 101, body: 'the sticky' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(call(1)[0]).toBe(page2);
   });
 
   it('createComment POSTs the body to the issues endpoint', async () => {
@@ -131,6 +179,27 @@ describe('RestGitHubClient', () => {
   it('a 403 maps to GitHubPermissionError', async () => {
     fetchMock.mockResolvedValueOnce(fail(403, 'Forbidden'));
     await expect(client().createComment('x')).rejects.toBeInstanceOf(
+      GitHubPermissionError,
+    );
+  });
+
+  it('a 403 on the PAGED read maps the same way as on a write (#528)', async () => {
+    // The read and write paths took different code after #528; both must map
+    // 403 identically or a fork PR would crash on read and degrade on write.
+    fetchMock.mockResolvedValueOnce(fail(403, 'Forbidden'));
+    await expect(client().listComments()).rejects.toBeInstanceOf(
+      GitHubPermissionError,
+    );
+  });
+
+  it('a 403 on page TWO fails loudly rather than returning page one', async () => {
+    // The whole point of #528: a partial read must never look like a whole one.
+    const page2 =
+      'https://api.github.com/repos/owner/repo/issues/42/comments?per_page=100&page=2';
+    fetchMock
+      .mockResolvedValueOnce(ok([{ id: 1, body: 'a' }], 200, page2))
+      .mockResolvedValueOnce(fail(403, 'Forbidden'));
+    await expect(client().listComments()).rejects.toBeInstanceOf(
       GitHubPermissionError,
     );
   });
