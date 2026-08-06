@@ -547,14 +547,71 @@ function suggestionFor(
   return `add a test covering \`${symbol}\`.`;
 }
 
+// Thresholds for the coverage-verified severity split (#553). Volume is a line
+// count; share is the fraction of the unit's ADDED lines that came back unhit.
+//
+// The pair matters more than either number: volume alone ranks a 30-line
+// function that is 10% uncovered above a 3-line function nothing executes, and
+// share alone ranks a one-line addition alongside a 132-line one.
+const CRITICAL_UNCOVERED_LINES = 20;
+const CRITICAL_UNCOVERED_SHARE = 0.8;
+const HIGH_UNCOVERED_LINES = 5;
+const HIGH_UNCOVERED_SHARE = 0.5;
+
+/** Total lines a diff added for a unit, summed over its inclusive ranges. */
+function addedLineCount(ranges: readonly LineRange[]): number {
+  return ranges.reduce((total, [start, end]) => total + (end - start + 1), 0);
+}
+
+/**
+ * Severity for an uncovered **coverage-verified** result (#553).
+ *
+ * Only this tier can be graded, because only this tier knows *which* lines ran
+ * (see the `uncovered_lines` comment on {@link Finding}). The grade combines
+ * how much is unhit with how much of the change that represents:
+ *
+ *   - `CRITICAL` — a large block (>= 20 lines) that is essentially untouched
+ *     (>= 80% unhit). Nothing executes it; this is what a gate should stop.
+ *   - `HIGH` — a meaningful volume (>= 5 lines) *or* a concentrated gap
+ *     (>= 50% unhit).
+ *   - `MEDIUM` — a handful of lines inside a change that is otherwise tested.
+ *     Real, still reported, not worth blocking a PR over.
+ *
+ * Both unknowns escalate rather than downgrade. No line detail means the tier
+ * could not say which lines were unhit, not that few were; no added-line count
+ * means the share denominator is unknown. An absent measurement must never read
+ * as a low score (ADR 0010) — that is the same silent-abstention shape this
+ * whole module exists to avoid.
+ */
+function coverageVerifiedSeverity(result: CoverageResult): Severity {
+  const uncovered = result.uncovered_lines?.length ?? 0;
+  if (uncovered === 0) return Severity.HIGH;
+
+  const added = addedLineCount(result.unit.added_ranges);
+  const share = added > 0 ? uncovered / added : 1;
+
+  if (
+    uncovered >= CRITICAL_UNCOVERED_LINES &&
+    share >= CRITICAL_UNCOVERED_SHARE
+  )
+    return Severity.CRITICAL;
+  if (uncovered >= HIGH_UNCOVERED_LINES || share >= HIGH_UNCOVERED_SHARE)
+    return Severity.HIGH;
+  return Severity.MEDIUM;
+}
+
 /**
  * Turn uncovered coverage results into fidelity-labeled findings.
  *
- * Only **uncovered** results become findings. Severity policy (Phase 1):
+ * Only **uncovered** results become findings. Severity policy:
  *
- *   - `COVERAGE_VERIFIED` uncovered → `HIGH`
+ *   - `COVERAGE_VERIFIED` uncovered → graded by
+ *     {@link coverageVerifiedSeverity} (`CRITICAL` / `HIGH` / `MEDIUM`)
  *   - `GRAPH_VERIFIED` uncovered    → `HIGH`
  *   - `HEURISTIC` uncovered         → `MEDIUM` (lower confidence)
+ *
+ * The graph and heuristic tiers stay flat on purpose: neither can measure how
+ * much of a unit is unhit, so any spread across them would be invented.
  *
  * Results are sorted by severity sort-key (critical → low).
  */
@@ -562,8 +619,11 @@ export function buildFindings(results: CoverageResult[]): Finding[] {
   const findings: Finding[] = [];
   for (const result of results) {
     if (result.covered) continue;
-    const severity =
-      result.fidelity === Fidelity.Heuristic ? Severity.MEDIUM : Severity.HIGH;
+    let severity: Severity;
+    if (result.fidelity === Fidelity.CoverageVerified)
+      severity = coverageVerifiedSeverity(result);
+    else if (result.fidelity === Fidelity.Heuristic) severity = Severity.MEDIUM;
+    else severity = Severity.HIGH;
     const unit = result.unit;
     const uncovered = [...(result.uncovered_lines ?? [])];
     findings.push(
@@ -831,6 +891,7 @@ function overflowNote(omitted: number): string {
 
 const EM_DASH = '\u{2014}';
 const RED_CIRCLE = '\u{1F534}';
+const ORANGE_CIRCLE = '\u{1F7E0}';
 const YELLOW_CIRCLE = '\u{1F7E1}';
 const WHITE_CIRCLE = '\u{26AA}';
 const BABY_CHICK = '\u{1F424}';
@@ -838,9 +899,14 @@ const ARROW = '\u{2192}';
 const WHITE_CHECK = '\u{2705}';
 const WARNING = '\u{26A0}\u{FE0F}';
 
+// `CRITICAL` and `HIGH` shared the red circle for as long as `CRITICAL` was
+// unreachable (#553) — a collision with nothing to collide with. Now that the
+// two are distinguishable, the icon column has to distinguish them, or the
+// ranking exists only in the text of a cell nobody scans. Matches
+// `summary-emitter.ts`, which has always used the four-color scale.
 const SEVERITY_ICON: Record<string, string> = {
   [Severity.CRITICAL]: RED_CIRCLE,
-  [Severity.HIGH]: RED_CIRCLE,
+  [Severity.HIGH]: ORANGE_CIRCLE,
   [Severity.MEDIUM]: YELLOW_CIRCLE,
   [Severity.LOW]: WHITE_CIRCLE,
 };
