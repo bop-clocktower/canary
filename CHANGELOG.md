@@ -114,6 +114,26 @@ under the project's former name) are documented in the
   keys off the `source` field, so a colliding record is skipped rather than
   mis-tallied — but the comment asserted a guarantee the filenames do not carry.
 
+- **Every guardian sticky comment told reviewers to run a command that does not
+  exist** (#489). The one instruction in the comment — reply
+  `/guardian suppress <file> <reason>` — was the one thing that could not work:
+  nothing has ever implemented a slash command, and guardian does not read PR
+  comments for input at all. The mechanism that does work, a
+  `// canary:allow-untested <reason>` pragma on the line, was documented in the
+  guide and advertised nowhere a reviewer would look. The comment now names the
+  pragma. A test asserted the fake command was present, so the suite had been
+  actively holding the false claim in place; it now asserts the opposite — no
+  rendered comment advertises a `/guardian` slash command in any form.
+
+- **`canary-shadow` shipped a CLI it could not execute** (#478).
+  `scripts/cli.mjs` was committed at mode 0644 while the other six first-party
+  skill CLIs are 0755, so `canary skills run canary-shadow` failed on a skill
+  that installed, listed, and documented perfectly. Made executable, and a new
+  suite now walks every `SKILL.md` declaring a `cli:` entry point and asserts
+  `X_OK` on it — including an explicit check that the scan found a non-zero
+  number of skills, so a renamed frontmatter key cannot turn the guard into a
+  vacuous pass.
+
 - **The guardian's analysis record never said whether coverage was actually
   available** (#554). `degradedNotice` was wired to exactly one producer — the
   agent-tier resolver — so the coverage ladder's own fall-through (report →

@@ -1050,8 +1050,8 @@ export function render(
       );
       lines.push(
         'These lines were changed by this PR but no test exercises them. Add or ' +
-          'extend a test that covers them, or reply ' +
-          '`/guardian suppress <file> <reason>` if they are intentionally untested.',
+          'extend a test that covers them, or mark the line ' +
+          '`// canary:allow-untested <reason>` if it is intentionally untested.',
       );
       if (coverageLine) lines.push('', coverageLine);
       lines.push(
