@@ -466,10 +466,27 @@ describe('render', () => {
   it('comment is actionable — header count, what-to-do, suppress hint', () => {
     const out = render([finding()], 'comment');
     expect(out).toContain('need'); // "1 file needs test coverage"
-    expect(out).toContain('/guardian suppress');
+    expect(out).toContain('canary:allow-untested'); // the pragma that works
     expect(out).toContain('| Sev | File'); // scannable table
     expect(out).toContain('coverage-verified'); // plain-English confidence note
     expect(out).toContain('deterministic check, no LLM'); // demystified tier
+  });
+
+  it('advertises no remediation the tool does not implement (#489)', () => {
+    // The sticky comment told every reviewer to reply
+    // `/guardian suppress <file> <reason>`. Nothing has ever implemented a
+    // slash command -- guardian does not read PR comments for input at all --
+    // so the one instruction in the comment was the one thing that could not
+    // work. This assertion is the guard: the previous version of the test
+    // above actively pinned the false claim in place.
+    const rendered = [
+      render([finding()], 'comment'),
+      render([], 'comment'),
+      render([finding()], 'comment', 0, 'graph stale'),
+    ];
+    for (const out of rendered) {
+      expect(out).not.toContain('/guardian ');
+    }
   });
 
   it('comment does not print the path twice for a file-level finding', () => {
