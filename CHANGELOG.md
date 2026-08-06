@@ -16,6 +16,23 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The consent remedy `doctor` prints can now actually be carried out** (#505).
+  When an overlay's `command-succeeds` checks were consent-skipped, `doctor`
+  said "re-run `canary overlay add`" — and `add` returned early for an
+  already-registered overlay, never reaching the consent prompt. Three separate
+  messages pointed at that path (`doctor`'s skip remedy, its abstention remedy,
+  and the decline message's "Re-add the overlay to change this"), and none of
+  them worked: short of `canary overlay remove` followed by
+  `canary overlay add`, a user who declined once could never grant consent.
+  Filed as a wording nit; it was a dead end. Re-adding a registered overlay is
+  now a consent-only operation — it re-asks, records the new answer, and still
+  never re-clones or duplicates the registry entry, so `--yes` grants consent
+  non-interactively in CI. The messages now say the argument is `<source>` (not
+  `<name>`, which no invocation accepts) and that re-adding an installed overlay
+  is safe, since "re-run add" read as "reinstall it" — the one thing a user with
+  a working overlay will not risk. `docs/guides/doctor.md` gained the step it
+  never had: how to change your mind about consent.
+
 - **Type-only modules no longer raise unsatisfiable coverage findings** (#562).
   A `types.ts` holding nothing but interfaces produced a `coverage-verified`,
   `high`-severity finding ("lines 1-39: 39 uncovered") that no test could ever

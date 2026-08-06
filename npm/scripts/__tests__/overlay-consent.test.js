@@ -154,3 +154,37 @@ describe('consentGranted predicate', () => {
     );
   });
 });
+
+/**
+ * #505 — the consent remedy must actually be reachable.
+ *
+ * `doctor` tells a user whose overlay checks are consent-skipped to "re-run
+ * 'canary overlay add'", and the decline path says "Re-add the overlay to
+ * change this". Both were dead ends: `add` returned early for an
+ * already-registered overlay and never reached the consent prompt, so the
+ * only real way to grant consent was `overlay remove` followed by `add`.
+ */
+describe('overlay add — re-adding is the consent path (#505)', () => {
+  it('re-prompts and records consent when the overlay is already added', () => {
+    src = makeSourceRepo(CMD_MANIFEST);
+    assert.equal(
+      addFrom(src, () => false),
+      0,
+    );
+    assert.equal(registry.read(home).overlays[0].consent, false);
+
+    // The exact remedy doctor prints, on an overlay that is already added.
+    assert.equal(
+      addFrom(src, () => true),
+      0,
+    );
+    assert.equal(registry.read(home).overlays[0].consent, true);
+  });
+
+  it('re-adding does not duplicate the registry entry', () => {
+    src = makeSourceRepo(CMD_MANIFEST);
+    addFrom(src, () => true);
+    addFrom(src, () => true);
+    assert.equal(registry.read(home).overlays.length, 1);
+  });
+});

@@ -377,7 +377,11 @@ function runCommandSucceeds(
   if (!ctx.consentGranted) {
     return skipped(
       check,
-      "command checks need consent — re-run 'canary overlay add'",
+      // #505: name the overlay's source, and say the re-add is safe. The bare
+      // "re-run 'canary overlay add'" read as "reinstall it", which is the
+      // one thing a user with a working overlay will not risk.
+      "command checks need consent — re-run 'canary overlay add <source>' " +
+        '(safe on an installed overlay: it re-asks consent, never re-clones)',
     );
   }
   const command = check.command ?? [];

@@ -37,10 +37,11 @@ count as passes. A run in which _every_ check was skipped (or which registered
 no checks at all) has **abstained**, not passed: it exits `3` and says so.
 
 ```text
-⚠ Abstained — verified zero items; this is not a pass. (2 skipped: smoke-test, api-reachable)
+⚠ Abstained — verified zero items; this is not a pass. (2 skipped: smoke-test, api-reachable [command checks need consent — re-run 'canary overlay add <source>' (safe on an installed overlay: it re-asks consent, never re-clones)])
   Every registered check was skipped or informational, so doctor verified
-  nothing. Grant command-check consent (re-run `canary overlay add <name> --yes`)
-  or install an overlay whose checks apply here, then re-run.
+  nothing. Grant command-check consent (re-run `canary overlay add <source>
+  --yes`, which re-asks consent on an already-installed overlay without
+  re-cloning) or install an overlay whose checks apply here, then re-run.
 ```
 
 This is the no-silent-abstention doctrine (#508): doctor printed
@@ -68,9 +69,9 @@ Overlay: example-org-example-overlay
   ✓ skills-present: .canary/skills exists
   ✗ api-reachable: https://api.example.com unreachable
       → Check your network / VPN, or set the API base URL in .canary/company.json
-  - smoke-test: skipped (command checks need consent — re-run 'canary overlay add')
+  - smoke-test: skipped (command checks need consent — re-run 'canary overlay add <source>')
 
-1 check(s) failed (1 skipped: overlay:example:smoke-test)
+1 check(s) failed (1 skipped: overlay:example:smoke-test [command checks need consent])
 ```
 
 | Symbol | Meaning                                                   |
@@ -198,6 +199,15 @@ stored in `overlays.json`.
 - **The command set later changes** (via `canary overlay update`) → consent is
   treated as _not granted_ until you re-confirm, so a changed command can never
   run under stale consent.
+
+**To grant, revoke, or re-confirm consent on an overlay you already have, run
+the same `canary overlay add <source>` again.** On an already-registered overlay
+this is a consent-only operation: it re-asks, records your new answer, and
+**never re-clones or duplicates the entry** — add `--yes` to grant
+non-interactively in CI. Before #505 this was a dead end: `add` returned early
+for a registered overlay without ever reaching the prompt, so the remedy
+`doctor` printed could not be carried out, and removing the overlay and adding
+it back was the only way through.
 
 Every check runs under a bounded timeout; a `url-reachable` or
 `command-succeeds` check that hangs fails its own line at the timeout without

@@ -106,7 +106,9 @@ function collectConsent(
   );
   if (!granted) {
     out.write(
-      "Declined — 'canary doctor' will skip these command checks. Re-add the overlay to change this.\n",
+      "Declined — 'canary doctor' will skip these command checks. Run the same " +
+        "'canary overlay add' again to change this; it re-asks consent and " +
+        'never re-clones.\n',
     );
   }
   return { consent: granted, consentCommandsHash: hash };
@@ -193,8 +195,45 @@ export function add(
     return 1;
   }
 
-  // Idempotent: re-adding a registered overlay is a no-op with an update hint.
-  if (registry.get(reg, parsed.name)) {
+  // Idempotent: re-adding a registered overlay never re-clones. It DOES
+  // re-run the consent prompt (#505), because `add` is the consent path every
+  // other surface points at -- doctor's skip remedy ("re-run 'canary overlay
+  // add'") and the decline message ("Re-add the overlay to change this") both
+  // said so while this branch returned before reaching `collectConsent`. The
+  // advice was a dead end: short of `overlay remove` + `add`, a user who
+  // declined once could never grant consent.
+  const existing = registry.get(reg, parsed.name);
+  if (existing) {
+    const refreshed = collectConsent(
+      existing.path,
+      parsed.name,
+      deps.confirm ?? defaultConfirm,
+      out,
+    );
+    if (
+      refreshed.consentCommandsHash !== existing.consentCommandsHash ||
+      refreshed.consent !== existing.consent
+    ) {
+      const updated = {
+        ...existing,
+        consent: refreshed.consent,
+        consentCommandsHash: refreshed.consentCommandsHash,
+      };
+      try {
+        registry.write(
+          {
+            ...reg,
+            overlays: reg.overlays.map((o) =>
+              o.name === parsed.name ? updated : o,
+            ),
+          },
+          homeDir,
+        );
+      } catch (e) {
+        err.write(`canary overlay add: ${(e as Error).message}\n`);
+        return 1;
+      }
+    }
     out.write(
       `overlay "${parsed.name}" is already added — run 'canary overlay update ${parsed.name}' to refresh it.\n`,
     );
