@@ -42,6 +42,7 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { SkipEntry } from '../core/gate-result.js';
 import {
   CoverageInputState,
   coverageDegradedNotice,
@@ -50,7 +51,11 @@ import {
 import { Finding, combineNotices, render } from './pr-check.js';
 
 // 1.1 adds the additive `coverage` block (#554); readers of 1.0 are unaffected.
-export const SCHEMA_VERSION = '1.1';
+// 1.2 adds the additive `skipped` list (#582). Additive again, and bumped again
+// for the reason recorded in #572: a reader that pins a version must be able to
+// tell which fields it can rely on being present, and silence about a new field
+// is indistinguishable from the field being absent for a real reason.
+export const SCHEMA_VERSION = '1.2';
 export const SOURCE = 'canary-pr-guardian';
 const REF_SAFE = /[^A-Za-z0-9._-]/g;
 const REF_MAX = 100; // cap the sanitized ref so a long branch never hits ENAMETOOLONG
@@ -122,6 +127,16 @@ export interface AnalysisRecord {
    * null here is "not applicable", never "unknown".
    */
   coverage: (CoverageInputState & { status: string }) | null;
+  /**
+   * Every unit this run declined to judge, with its suppression class (#582).
+   *
+   * Always an array — `[]` means "nothing was dropped", never "unknown". The
+   * `reason` tokens are deliberately distinct per filter ('test support' vs
+   * 'type-only module'), and that distinction only buys anything if it survives
+   * into the record: adjudication measures suppression classes over time from
+   * here, which is what makes a precision regression in one filter visible.
+   */
+  skipped: SkipEntry[];
   summary: {
     total: number;
     unaddressed: number;
@@ -143,6 +158,8 @@ export interface BuildAnalysisRecordArgs {
   analyzed_at?: string | null;
   /** The run's coverage-input state; folded into `degradedNotice` too (#554). */
   coverage?: CoverageInputState | null;
+  /** What the run declined to judge, and why; defaults to `[]` (#582). */
+  skipped?: SkipEntry[];
 }
 
 /** ISO-8601 UTC timestamp with a `+00:00` offset (Python `isoformat`-shaped). */
@@ -188,6 +205,7 @@ export function buildAnalysisRecord(
       coverage === null
         ? null
         : { status: coverageStatus(coverage), ...coverage },
+    skipped: args.skipped ?? [],
     summary: {
       total: findings.length,
       unaddressed: active.length,

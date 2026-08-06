@@ -71,8 +71,10 @@ function finding(): Finding[] {
 }
 
 describe('analysis record carries the coverage block (#554)', () => {
-  it('schema version is 1.1 (additive coverage block)', () => {
-    expect(SCHEMA_VERSION).toBe('1.1');
+  it('schema version tracks the additive blocks (1.1 coverage, 1.2 skipped)', () => {
+    // Pinned so a schema change can never be an accident. #554 added the
+    // coverage block at 1.1; #582 added the skipped list at 1.2.
+    expect(SCHEMA_VERSION).toBe('1.2');
   });
 
   it('coverage-blind run records its state, not null', () => {
