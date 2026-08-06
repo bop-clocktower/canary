@@ -107,6 +107,33 @@ blob-report/
 **/.harness/.install-id
 **/.harness/.telemetry-notice-shown
 
+# Personal skill installs. Every entry carries a `.skill-version.json` receipt
+# ({"version", "installedAt"}) rather than authorship, and skill-creator ships
+# an Apache-2.0 LICENSE — these are third-party artifacts, not source. Nothing
+# under here mentions canary; the project's own skills ship from agents/skills/.
+# Committing them would vendor someone else's code at whatever version one
+# developer happened to install, and hand every contributor a set of Terraform
+# and Azure skills to work on a testing CLI.
+# To commit a genuine project skill, negate it explicitly:
+#   !.claude/skills/my-project-skill/
+.claude/skills/
+
+# Claude Code runtime state — per-machine, regenerated, and in the case of
+# worktrees/ a live checkout of in-flight branches. These lived in
+# .git/info/exclude, which is machine-local and never shared, so the second
+# laptop and every fresh clone saw them as untracked (#567 flagged this).
+**/.claude/worktrees/
+**/.claude/checkpoints/
+**/.claude/mailbox/
+**/.claude/routines/.state/
+**/.claude/scheduled_tasks.json
+**/.claude/agent-registry.json
+**/.claude/agent-memory-local
+**/.claude/assistant-daemon-state.json
+**/.claude/first-run
+.claude/position.local.json
+.claude/profile.local.json
+
 # Proprietary denylist for the company-leak guard (kept local; CI uses a secret)
 .proprietary-denylist
 
