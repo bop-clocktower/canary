@@ -126,6 +126,9 @@
       "checkApiSignatures": false
     }
   },
+  "knowledge": {
+    "domainBlocklist": [".remember", ".kiro"]
+  },
   "telemetry": {
     "enabled": true
   },
