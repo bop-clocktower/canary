@@ -523,7 +523,15 @@ const _WORKSPACE_SKIP_DIRS = new Set([
   '__pycache__',
 ]);
 
-/** Match *directories* under *root* against a workspace glob (`apps/*`). */
+/**
+ * Match *directories* under *root* against a workspace glob (`apps/*`).
+ *
+ * Deliberately a separate walk from `globFiles` rather than a shared one
+ * parameterised by file-vs-directory: folding the two together forced a `kind`
+ * branch through every step and pushed both the walker and its filter to
+ * cyclomatic complexity 14 (threshold 10) to save 7 lines. Two short, honest
+ * walks beat one clever one.
+ */
 function globDirs(root: string, pattern: string): string[] {
   const segments = pattern.split('/').filter((s) => s !== '');
   const out: string[] = [];
@@ -579,35 +587,38 @@ export interface ExistingSuite {
  * parsing it would add a source of truth without adding any packages.
  */
 function workspaceGlobs(root: string): string[] {
-  const globs: string[] = [];
-
   const yaml = readTextOrNull(join(root, 'pnpm-workspace.yaml'));
-  if (yaml !== null) globs.push(...parsePnpmPackages(yaml));
+  return [
+    ...new Set([
+      ...(yaml === null ? [] : parsePnpmPackages(yaml)),
+      ...packageJsonWorkspaceGlobs(root),
+    ]),
+  ];
+}
 
-  const pkgRaw = readTextOrNull(join(root, 'package.json'));
-  if (pkgRaw !== null) {
-    let pkg: unknown = null;
-    try {
-      pkg = JSON.parse(pkgRaw);
-    } catch {
-      pkg = null;
-    }
-    if (pkg !== null && typeof pkg === 'object') {
-      const ws = (pkg as Record<string, unknown>)['workspaces'];
-      const list = Array.isArray(ws)
-        ? ws
-        : ws !== null && typeof ws === 'object'
-          ? (ws as Record<string, unknown>)['packages']
-          : null;
-      if (Array.isArray(list)) {
-        for (const entry of list) {
-          if (typeof entry === 'string' && entry !== '') globs.push(entry);
-        }
-      }
-    }
+/** Parse *text* as JSON, or null if it is absent or malformed. */
+function parseJsonOrNull(text: string | null): unknown {
+  if (text === null) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
   }
+}
 
-  return [...new Set(globs)];
+/**
+ * The `workspaces` globs in a package.json. Accepts both the array form
+ * (`["apps/*"]`) and the object form (`{packages: ["apps/*"]}`) that yarn
+ * writes; anything else yields [].
+ */
+function packageJsonWorkspaceGlobs(root: string): string[] {
+  const pkg = parseJsonOrNull(
+    readTextOrNull(join(root, 'package.json')),
+  ) as Record<string, unknown> | null;
+  const ws = pkg?.['workspaces'] as Record<string, unknown> | unknown[] | null;
+  const list = Array.isArray(ws) ? ws : (ws?.['packages'] as unknown);
+  if (!Array.isArray(list)) return [];
+  return list.filter((e): e is string => typeof e === 'string' && e !== '');
 }
 
 /**

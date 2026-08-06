@@ -48,6 +48,16 @@ under the project's former name) are documented in the
   Detection itself remains root-only: making it report per-package findings is
   part 1 of #504 and is not attempted here.
 
+  This change accepts an architecture-baseline regression:
+  `module-size 25808 → 26153 (+345)`, recorded in `.harness/audit.log`. The
+  growth is 185 lines of feature code plus 91 of comment, not duplication.
+  Complexity was **not** ratcheted — it stays at baseline 88, held there by
+  extracting `packageJsonWorkspaceGlobs` and dropping a duplicate `isRecord`. A
+  `globFiles`/`globDirs` unification was attempted to shrink the diff and
+  reverted: it traded 7 lines for two functions at cyclomatic complexity 14
+  (threshold 10). That trade-off is recorded in a comment at `globDirs` so the
+  next reader does not re-attempt it.
+
 - **The consent remedy `doctor` prints can now actually be carried out** (#505).
   When an overlay's `command-succeeds` checks were consent-skipped, `doctor`
   said "re-run `canary overlay add`" — and `add` returned early for an
