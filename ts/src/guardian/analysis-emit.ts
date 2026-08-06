@@ -42,9 +42,15 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { Finding, render } from './pr-check.js';
+import {
+  CoverageInputState,
+  coverageDegradedNotice,
+  coverageStatus,
+} from './coverage.js';
+import { Finding, combineNotices, render } from './pr-check.js';
 
-export const SCHEMA_VERSION = '1.0';
+// 1.1 adds the additive `coverage` block (#554); readers of 1.0 are unaffected.
+export const SCHEMA_VERSION = '1.1';
 export const SOURCE = 'canary-pr-guardian';
 const REF_SAFE = /[^A-Za-z0-9._-]/g;
 const REF_MAX = 100; // cap the sanitized ref so a long branch never hits ENAMETOOLONG
@@ -110,6 +116,12 @@ export interface AnalysisRecord {
   abstained: boolean;
   tier: number;
   degradedNotice: string | null;
+  /**
+   * What the coverage input actually was (#554). `null` only for a producer
+   * that never ran the coverage ladder — `pr-check` always populates it, so a
+   * null here is "not applicable", never "unknown".
+   */
+  coverage: (CoverageInputState & { status: string }) | null;
   summary: {
     total: number;
     unaddressed: number;
@@ -129,6 +141,8 @@ export interface BuildAnalysisRecordArgs {
   checked?: number;
   abstained?: boolean;
   analyzed_at?: string | null;
+  /** The run's coverage-input state; folded into `degradedNotice` too (#554). */
+  coverage?: CoverageInputState | null;
 }
 
 /** ISO-8601 UTC timestamp with a `+00:00` offset (Python `isoformat`-shaped). */
@@ -144,8 +158,15 @@ export function buildAnalysisRecord(
   args: BuildAnalysisRecordArgs,
 ): AnalysisRecord {
   const { ref, gate, effective_tier, degraded_notice, exit_code } = args;
+  // #554: the record states BOTH degradations — the tier's and the coverage
+  // input's — so "no findings" can never be read as "coverage said so".
+  const coverage = args.coverage ?? null;
+  const notice = combineNotices(
+    degraded_notice,
+    coverage ? coverageDegradedNotice(coverage) : null,
+  );
   const inner = JSON.parse(
-    render(findings, 'json', effective_tier, degraded_notice),
+    render(findings, 'json', effective_tier, notice),
   ) as { findings: unknown[] };
   const active = findings.filter((f) => !f.suppressed);
   const suppressed = findings.filter((f) => f.suppressed);
@@ -162,7 +183,11 @@ export function buildAnalysisRecord(
     checked: args.checked ?? 0,
     abstained: args.abstained ?? false,
     tier: effective_tier,
-    degradedNotice: degraded_notice,
+    degradedNotice: notice,
+    coverage:
+      coverage === null
+        ? null
+        : { status: coverageStatus(coverage), ...coverage },
     summary: {
       total: findings.length,
       unaddressed: active.length,

@@ -142,6 +142,36 @@ tier.
 If no coverage report exists, the guardian falls back to the graph; with no
 graph, it falls back to the heuristic. Absence degrades — it never blocks.
 
+### What mode was this run in?
+
+Degrading quietly is correct; degrading _unrecorded_ is not. Every run states
+the coverage input's actual state, so "no coverage findings" can never be
+misread as "the changed lines are covered":
+
+| Status        | Means                                                                                                     |
+| ------------- | --------------------------------------------------------------------------------------------------------- |
+| `verified`    | the report spoke to **every** changed file                                                                |
+| `partial`     | it spoke to some; the rest fell back to graph/heuristic                                                   |
+| `unavailable` | it spoke to **none** — no report, missing file, unparseable, or a report that matched nothing in the diff |
+
+The state appears in three places:
+
+- the analysis record's `coverage` block (`schemaVersion` 1.1, additive) —
+  `{status, requested, found, parsed, filesInReport, unitsMatched, unitsTotal}`,
+  plus the same fact in prose in `degradedNotice`;
+- the sticky PR comment body, which drops the ✅ all-clear headline when
+  coverage was not `verified`;
+- `--format json` output (`coverage` + `degraded_notice`) and an Actions
+  `::warning::` annotation.
+
+`unitsMatched` of `unitsTotal` is the denominator to read. **Zero files matched
+is an abstention, not a pass.**
+
+The `schemaVersion` bump is the first since 1.0 and is purely additive: every
+1.0 field keeps its name, type, and meaning. Consumers should compare the
+**major** component (`1`) rather than the whole string — a strict `=== "1.0"`
+check rejects a record it can read perfectly well.
+
 ## The tier ladder
 
 | Tier  | Adds                     | Runtime           | Write | Status                  |

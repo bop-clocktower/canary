@@ -618,8 +618,26 @@ describe('pr-check tier degradation (SC-5)', () => {
 
   it('tier zero has no false degradation', async () => {
     const cfg = writeConfig({ pr: { tier: 0 } });
+    // #554: a run with NO coverage report is itself a degradation now, so this
+    // "nothing is degraded" fixture has to supply one that covers the diff.
+    const lcov = join(tmp, 'lcov.info');
+    writeFileSync(
+      lcov,
+      'SF:pkg/widget.py\nDA:1,1\nDA:2,1\nDA:3,1\nend_of_record\n',
+      'utf-8',
+    );
     const res = await invokeGuardian(
-      ['pr-check', '--diff', '-', '--config', cfg, '--format', 'text'],
+      [
+        'pr-check',
+        '--diff',
+        '-',
+        '--config',
+        cfg,
+        '--coverage',
+        lcov,
+        '--format',
+        'text',
+      ],
       { input: DIFF_NEW_UNIT, cwd: tmp },
     );
     expect(res.code).toBe(0);
