@@ -41,9 +41,14 @@ under the project's former name) are documented in the
   omitted `skipped` entirely, so a machine consumer saw `abstained: true` with
   no indication of what had been dropped. That is the #508 zero-denominator
   class one layer down, on the only surface a machine can read. The payload now
-  carries `skipped: [{name, reason}]`, and text summary lines render
-  `name [reason]`. Reasons are stripped of control characters on the same terms
-  as names, since rendering the field made it a second line-forging surface.
+  carries `skipped: [{name, reason}]`, and text summary lines render the cause
+  beside the name, **grouped by reason** so a shared cause is stated once —
+  producers write reasons at very different grain (the guardian uses short
+  tokens like `skipGlobs`; doctor uses whole remedy sentences), and repeating
+  the reason per name turned one doctor summary into 183 characters that said
+  the same thing twice. Reasons are stripped of control characters on the same
+  terms as names, since rendering the field made it a second line-forging
+  surface.
 
 - **The proprietary-leak gate can now read TypeScript** (#578). `docs-lint`
   reported `clean — no removed-symbol or proprietary leaks` while structurally

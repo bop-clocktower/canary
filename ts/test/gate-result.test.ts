@@ -123,7 +123,7 @@ describe('gate-result helper', () => {
     // #579: the CAUSE travels with the name. A reader who sees only names
     // cannot tell a configured skip from a built-in, non-configurable one.
     expect(clean.summaryLine).toContain(
-      '(2 skipped: mcp-probe [no consent], net-check [offline])',
+      '(2 skipped: mcp-probe [no consent]; net-check [offline])',
     );
     // Skipped-everything is an abstention, not a pass.
     const allSkipped = gateOutcome(result(0, [], skipped), 'gate');
@@ -133,5 +133,20 @@ describe('gate-result helper', () => {
     // Findings line carries the suffix too.
     const found = gateOutcome(result(3, ['f'], skipped), 'gate');
     expect(found.summaryLine).toContain('(2 skipped:');
+  });
+
+  it('entries sharing a reason are grouped, not repeated (#579)', () => {
+    // Doctor's skip reasons are full remedy sentences, not short tokens like
+    // the guardian's. Repeating one per name turned a 25-char summary into a
+    // 183-char line saying the same thing twice. Names group under the reason
+    // they share, in first-appearance order.
+    const skipped = [
+      { name: 'repo-access', reason: 'needs consent' },
+      { name: 'cli-tooling', reason: 'needs consent' },
+    ];
+    const o = gateOutcome(result(3, [], skipped), 'gate');
+    expect(o.summaryLine).toContain(
+      '(2 skipped: repo-access, cli-tooling [needs consent])',
+    );
   });
 });

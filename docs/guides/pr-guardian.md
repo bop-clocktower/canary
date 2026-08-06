@@ -105,11 +105,12 @@ statement is ordinary TypeScript and keeps its findings. Every uncertainty — a
 unreadable file, an unrecognised construct — resolves to "not type-only", so the
 finding survives.
 
-Suppressed paths are always named in the skip list with their cause
-(`name [reason]`, e.g. `src/types.ts [type-only module]`), never folded into a
-pass. Under `--format json` the abstain payload carries the same list as
-`skipped: [{name, reason}]` (#579), so a machine consumer can tell _what_ was
-dropped and _why_, not merely that the gate declined to answer.
+Suppressed paths are always named in the skip list with their cause, grouped by
+reason so a shared cause is stated once
+(`3 skipped: docs/x.md, docs/y.md [skipGlobs]; src/types.ts [type-only module]`),
+never folded into a pass. Under `--format json` the abstain payload carries the
+same list as `skipped: [{name, reason}]` (#579), so a machine consumer can tell
+_what_ was dropped and _why_, not merely that the gate declined to answer.
 
 ### PR check
 
