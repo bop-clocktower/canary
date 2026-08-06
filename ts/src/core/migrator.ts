@@ -503,6 +503,202 @@ function subDirs(dir: string): string[] {
 }
 
 /**
+ * Directories a workspace glob must never descend into or return.
+ *
+ * `node_modules` matters twice over: a dependency ships its own
+ * `playwright.config.ts`, which would be mistaken for this repo's suite and
+ * silently suppress a scaffold the user needs -- and a `**` glob over a real
+ * monorepo would otherwise walk every installed package on disk.
+ */
+const _WORKSPACE_SKIP_DIRS = new Set([
+  'node_modules',
+  '.git',
+  '.venv',
+  'venv',
+  'dist',
+  'build',
+  '.next',
+  '.turbo',
+  'coverage',
+  '__pycache__',
+]);
+
+/** Match *directories* under *root* against a workspace glob (`apps/*`). */
+function globDirs(root: string, pattern: string): string[] {
+  const segments = pattern.split('/').filter((s) => s !== '');
+  const out: string[] = [];
+  const walkable = (dir: string): string[] =>
+    subDirs(dir).filter((d) => !_WORKSPACE_SKIP_DIRS.has(basename(d)));
+  const visit = (dir: string, si: number): void => {
+    if (si === segments.length) {
+      if (dir !== root) out.push(dir);
+      return;
+    }
+    const seg = segments[si]!;
+    if (seg === '**') {
+      visit(dir, si + 1);
+      for (const d of walkable(dir)) visit(d, si);
+      return;
+    }
+    const re = segGlobRegex(seg);
+    for (const d of walkable(dir)) {
+      if (re.test(basename(d))) visit(d, si + 1);
+    }
+  };
+  visit(root, 0);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Workspace ("monorepo") awareness -- #504 (3)
+//
+// Deliberately narrow: this exists ONLY to answer "does a suite for this
+// framework already live in a workspace package?" so the scaffold never
+// proposes a duplicate beside one it can see. Making *detection* itself
+// workspace-aware (per-package findings, a `monorepo` detection result) is a
+// separate, larger change -- #504 (1) -- and is NOT attempted here.
+// ---------------------------------------------------------------------------
+
+/** A test suite already present in a workspace package. */
+export interface ExistingSuite {
+  /** Package directory, relative to the repo root, POSIX-separated. */
+  dir: string;
+  /** The config filename that identified it (e.g. `playwright.config.ts`). */
+  config: string;
+  /** Test files found under the package. Zero is legal (config-only suite). */
+  test_count: number;
+}
+
+/**
+ * Workspace package globs declared at *root*, from pnpm-workspace.yaml or
+ * package.json `workspaces` (array or `{packages: []}` form). Returns [] for a
+ * single-package repo, which is what keeps non-monorepos on the old path.
+ *
+ * turbo.json is intentionally NOT read: Turborepo declares tasks, not package
+ * locations -- it defers to the pnpm/npm workspace file we already read, so
+ * parsing it would add a source of truth without adding any packages.
+ */
+function workspaceGlobs(root: string): string[] {
+  const globs: string[] = [];
+
+  const yaml = readTextOrNull(join(root, 'pnpm-workspace.yaml'));
+  if (yaml !== null) globs.push(...parsePnpmPackages(yaml));
+
+  const pkgRaw = readTextOrNull(join(root, 'package.json'));
+  if (pkgRaw !== null) {
+    let pkg: unknown = null;
+    try {
+      pkg = JSON.parse(pkgRaw);
+    } catch {
+      pkg = null;
+    }
+    if (pkg !== null && typeof pkg === 'object') {
+      const ws = (pkg as Record<string, unknown>)['workspaces'];
+      const list = Array.isArray(ws)
+        ? ws
+        : ws !== null && typeof ws === 'object'
+          ? (ws as Record<string, unknown>)['packages']
+          : null;
+      if (Array.isArray(list)) {
+        for (const entry of list) {
+          if (typeof entry === 'string' && entry !== '') globs.push(entry);
+        }
+      }
+    }
+  }
+
+  return [...new Set(globs)];
+}
+
+/**
+ * Pull the `packages:` sequence out of a pnpm-workspace.yaml.
+ *
+ * A hand-rolled reader rather than a YAML dependency: the shape it must handle
+ * is a single top-level key holding a flat list of quoted strings, and the
+ * migrator has no other reason to take on a parser. A file it cannot read
+ * yields [] -- the repo is then treated as single-package, which is the
+ * pre-existing behavior, so a parse miss can never *invent* a suite.
+ */
+function parsePnpmPackages(yaml: string): string[] {
+  const out: string[] = [];
+  let inPackages = false;
+  for (const rawLine of yaml.split(/\r?\n/)) {
+    const line = rawLine.replace(/#.*$/, '');
+    if (/^packages\s*:/.test(line)) {
+      inPackages = true;
+      continue;
+    }
+    if (!inPackages) continue;
+    const item = /^\s+-\s*(.+?)\s*$/.exec(line);
+    if (item) {
+      out.push(item[1]!.replace(/^["']|["']$/g, ''));
+      continue;
+    }
+    // A non-indented, non-empty line ends the sequence.
+    if (line.trim() !== '' && !/^\s/.test(line)) inPackages = false;
+  }
+  return out.filter((p) => p !== '');
+}
+
+/**
+ * Suites for *framework* already present in this repo's workspace packages.
+ *
+ * The repo root is excluded on purpose: a root config is already reported via
+ * `skipped_configs`, and listing it here would double-count it and suppress a
+ * scaffold that the skip logic handles more precisely.
+ */
+function findWorkspaceSuites(root: string, framework: string): ExistingSuite[] {
+  const globs = workspaceGlobs(root);
+  if (globs.length === 0) return [];
+
+  const configNames = _CONFIG_PROBES
+    .filter(([, fw]) => fw === framework)
+    .map(([filename]) => filename);
+  if (configNames.length === 0) return [];
+
+  const dirs = new Set<string>();
+  for (const glob of globs) for (const d of globDirs(root, glob)) dirs.add(d);
+
+  const suites: ExistingSuite[] = [];
+  for (const dir of [...dirs].sort(comparePathParts)) {
+    const config = configNames.find((name) => isFile(join(dir, name)));
+    if (config === undefined) continue;
+    const tests = new Set<string>();
+    for (const pattern of _TEST_GLOBS) {
+      for (const f of globFiles(dir, pattern)) tests.add(f);
+    }
+    suites.push({
+      dir: relative(root, dir).split(sep).join('/'),
+      config,
+      test_count: tests.size,
+    });
+  }
+  return suites;
+}
+
+/**
+ * The shape implied by an explicit `--framework` override (#504 (2)).
+ *
+ * Reuses the probe table so the override resolves exactly the shape a matching
+ * config file would have, including the playwright api-vs-UI refinement.
+ * Returns null for a framework no probe knows, so the caller keeps whatever
+ * shape detection produced rather than overwriting it with a guess.
+ */
+function shapeForFrameworkOverride(
+  framework: string,
+  root: string,
+): string | null {
+  for (const [, probeFramework, shape] of _CONFIG_PROBES) {
+    if (probeFramework !== framework) continue;
+    if (probeFramework === 'playwright' && shape === 'e2e_ui') {
+      return inferPlaywrightShape(root);
+    }
+    return shape;
+  }
+  return null;
+}
+
+/**
  * Return a human reason when *config* describes a skills/docs overlay (not a
  * migratable test suite), else null. Conservative: fires only when there are no
  * test `entryPoints` AND every declared layer is a docs/skills layer.
@@ -888,6 +1084,7 @@ export interface MigrationReportInit {
   skipped_configs?: string[];
   preserved_files?: string[];
   would_create?: string[];
+  existing_suites?: ExistingSuite[];
   manual_followups?: string[];
   deployed_skills?: SkillDeployResult[];
   installed_workflows?: WorkflowInstallResult[];
@@ -905,6 +1102,8 @@ export class MigrationReport {
   skipped_configs: string[];
   preserved_files: string[];
   would_create: string[];
+  /** Suites already present in workspace packages (#504 (3)). */
+  existing_suites: ExistingSuite[];
   manual_followups: string[];
   deployed_skills: SkillDeployResult[];
   installed_workflows: WorkflowInstallResult[];
@@ -921,6 +1120,7 @@ export class MigrationReport {
     this.skipped_configs = init.skipped_configs ?? [];
     this.preserved_files = init.preserved_files ?? [];
     this.would_create = init.would_create ?? [];
+    this.existing_suites = init.existing_suites ?? [];
     this.manual_followups = init.manual_followups ?? [];
     this.deployed_skills = init.deployed_skills ?? [];
     this.installed_workflows = init.installed_workflows ?? [];
@@ -971,6 +1171,7 @@ export class MigrationReport {
             config: `high ${EMDASH} dedicated config file`,
             content: `medium ${EMDASH} file content / dependency scan`,
             language: `low ${EMDASH} harness.config.json language fallback`,
+            override: `high ${EMDASH} explicit \`--framework\` flag`,
           } as Record<string, string>
         )[this.detection_confidence] ?? this.detection_confidence;
       lines.push(
@@ -980,6 +1181,18 @@ export class MigrationReport {
     }
 
     lines.push('');
+
+    // #504 (3): name what was found before saying what would happen, so the
+    // empty "Would Create" below reads as a decision rather than a shrug.
+    if (this.existing_suites.length > 0) {
+      lines.push('## Existing Suites Found', '');
+      for (const s of this.existing_suites) {
+        const tests =
+          s.test_count === 1 ? '1 test file' : `${s.test_count} test files`;
+        lines.push(`- \`${s.dir}/\` ${EMDASH} \`${s.config}\` (${tests})`);
+      }
+      lines.push('');
+    }
 
     if (this.dry_run) {
       if (this.preserved_files.length > 0) {
@@ -992,6 +1205,16 @@ export class MigrationReport {
         lines.push('## Would Create', '');
         for (const f of this.would_create) lines.push(`- \`${f}\``);
         lines.push('');
+      } else if (this.existing_suites.length > 0) {
+        const names = this.existing_suites.map((s) => `\`${s.dir}/\``);
+        lines.push(
+          '## Would Create',
+          '',
+          `_Nothing ${EMDASH} ${names.join(', ')} already ` +
+            `carries a ${this.framework} suite. To scaffold a second one, ` +
+            're-run `canary migrate` from inside that package._',
+          '',
+        );
       } else {
         lines.push(
           '## Would Create',
@@ -1080,14 +1303,21 @@ export class MigrationReport {
       });
       lines.push('## Status', '');
       if (outcome.abstained) {
+        // Zero is zero either way, but *why* differs: an already-complete
+        // project and a repo whose suite lives in a package are different
+        // situations, and the generic sentence misdescribes the second.
+        const why =
+          this.existing_suites.length > 0
+            ? 'the suite this migration would scaffold already exists in ' +
+              `${this.existing_suites.map((s) => `\`${s.dir}/\``).join(', ')}. ` +
+              'Re-run `canary migrate` from inside that package to migrate it.'
+            : 'the project already carries everything this migration would ' +
+              'produce. If you expected changes, check `--from <overlay>` and ' +
+              'the detected framework/shape above.';
         lines.push(
           outcome.summaryLine,
           '',
-          'This dry run would migrate zero item(s) ' +
-            EMDASH +
-            ' the project already carries everything this migration would ' +
-            'produce. If you expected changes, check `--from <overlay>` and ' +
-            'the detected framework/shape above.',
+          `This dry run would migrate zero item(s) ${EMDASH} ${why}`,
           '',
         );
       } else {
@@ -1225,11 +1455,27 @@ export class HarnessMigrator {
     const effectiveFramework = pyTruthy(framework)
       ? (framework as string)
       : ctx.detected_framework;
-    const shape = ctx.detected_shape;
     const source = pyTruthy(framework) ? 'CLI override' : ctx.detection_source;
+    // #504 (2): an override is high-confidence *user intent*, not a config-file
+    // find. Reporting it as 'config' rendered "high -- dedicated config file",
+    // asserting evidence no probe ever gathered.
     const confidence = pyTruthy(framework)
-      ? 'config'
+      ? 'override'
       : ctx.detection_confidence;
+
+    // #504 (2): the override must resolve the shape too. Without this, shape
+    // stays 'unknown' and every shape-keyed behavior downstream (overlay-skill
+    // matching, `<shape>:`-prefixed workflow templates) silently no-ops, so the
+    // override only half-works. An explicit `canary_shape` is a stronger
+    // statement of intent than the framework name, so it still wins.
+    const explicitShape = String(ctx.harness_config['canary_shape'] ?? '')
+      .trim()
+      .toLowerCase();
+    const overrideShape =
+      pyTruthy(framework) && explicitShape === ''
+        ? shapeForFrameworkOverride(framework as string, projectRoot)
+        : null;
+    const shape = overrideShape ?? ctx.detected_shape;
     const followups: string[] = [];
 
     if (effectiveFramework === null) {
@@ -1287,6 +1533,9 @@ export class HarnessMigrator {
     }
 
     const preserved = this.findExistingTests(projectRoot);
+    // #504 (3): a workspace repo that already has a suite for this framework
+    // must not be offered a second one at the root.
+    const existingSuites = findWorkspaceSuites(projectRoot, effectiveFramework);
     const scaffolder = new Scaffolder();
     const deployed = this.deploySkills(shape, overlayPath, projectRoot, dryRun);
     // Post-copy install phase: the template bytes already landed under
@@ -1303,10 +1552,17 @@ export class HarnessMigrator {
       const tmpl = TEMPLATES[effectiveFramework];
       const files = tmpl?.files ?? {};
       const dirs = tmpl?.dirs ?? [];
-      const wouldCreate = [
-        ...Object.keys(files).filter((f) => !existsSync(join(projectRoot, f))),
-        ...dirs.filter((d) => !existsSync(join(projectRoot, d))),
-      ];
+      // A suite already exists in a package: propose nothing rather than a
+      // duplicate. The suites are named in the report so the zero is legible.
+      const wouldCreate =
+        existingSuites.length > 0
+          ? []
+          : [
+              ...Object.keys(files).filter(
+                (f) => !existsSync(join(projectRoot, f)),
+              ),
+              ...dirs.filter((d) => !existsSync(join(projectRoot, d))),
+            ];
       const alreadyPresent = Object.keys(files).filter((f) =>
         existsSync(join(projectRoot, f)),
       );
@@ -1319,6 +1575,7 @@ export class HarnessMigrator {
         would_create: wouldCreate,
         skipped_configs: alreadyPresent,
         preserved_files: preserved,
+        existing_suites: existingSuites,
         manual_followups: followups,
         deployed_skills: deployed,
         installed_workflows: installedWorkflows,
@@ -1326,7 +1583,13 @@ export class HarnessMigrator {
       });
     }
 
-    const result = scaffolder.scaffold(effectiveFramework, String(projectRoot));
+    // Same guard on the apply path: what the dry run refuses to propose, an
+    // `--apply` run must refuse to write. Skills and workflows still deploy --
+    // only the duplicate test-config scaffold is withheld.
+    const result =
+      existingSuites.length > 0
+        ? { created_files: [], created_dirs: [], skipped_files: [] }
+        : scaffolder.scaffold(effectiveFramework, String(projectRoot));
 
     return new MigrationReport({
       framework: effectiveFramework,
@@ -1334,6 +1597,7 @@ export class HarnessMigrator {
       dry_run: false,
       detection_source: source,
       detection_confidence: confidence,
+      existing_suites: existingSuites,
       created_files: result['created_files'] as string[],
       created_dirs: result['created_dirs'] as string[],
       skipped_configs: result['skipped_files'] as string[],
