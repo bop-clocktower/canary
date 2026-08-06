@@ -74,7 +74,18 @@ real CLI, and every non-zero-denominator path byte-identical.
   skill-CLI convention scoped to Wave 4).
 - **[DECISION]** Analysis-record fields are additive under `schemaVersion` "1.0"
   — the #503 precedent (additive `checked`/`abstained`) applies; harness's
-  consumer reads known fields only.
+  consumer reads known fields only. **[SUPERSEDED 2026-08-05 by #554]** An
+  additive field that carries a _verifiability_ claim bumps the minor; a field
+  that is merely more detail still does not. `coverage` (#554) shipped "1.1" for
+  that reason: an absent `coverage` block means _the producer was too old to say
+  whether coverage was available_, which at an unchanged "1.0" is
+  indistinguishable from "coverage was fine" — the zero-denominator confusion
+  this wave exists to remove, one level up in the stack. The
+  `checked`/`abstained` precedent is left standing rather than corrected: "1.0"
+  is already published, so those two fields are permanently undetectable by
+  version, and a "1.0" record may or may not carry them. Consumers compare the
+  **major** (see `docs/guides/pr-guardian.md`); a strict `=== "1.0"` check
+  rejects a record it can read.
 - **[RESOLVED 2026-08-02]** The baseline assumption is settled: `main` at v6.4.0
   runs **1671** tests (verified, 82 files). The hand-off's 1657 was Wave 1's own
   tip; PR #514 landed after it. Task 12 expects 1671 + new tests.

@@ -172,6 +172,16 @@ The `schemaVersion` bump is the first since 1.0 and is purely additive: every
 **major** component (`1`) rather than the whole string — a strict `=== "1.0"`
 check rejects a record it can read perfectly well.
 
+The minor bumps when an added field carries a _verifiability_ claim — one whose
+absence would otherwise read as good news. `coverage` is such a field: missing,
+it looks like "coverage was fine" when it actually means "this producer could
+not say". So `>= 1.1` is what licenses a reader to trust the `coverage` block.
+Fields that are merely more detail do not move it.
+
+One historical caveat: `checked` and `abstained` were added additively _under_
+"1.0", before that rule existed. A "1.0" record may or may not carry them, and
+no version comparison will tell you which — test for the key, not the version.
+
 ## The tier ladder
 
 | Tier  | Adds                     | Runtime           | Write | Status                  |

@@ -113,6 +113,16 @@ under the project's former name) are documented in the
     annotation. That annotation is routed to stderr when JSON owns stdout, so
     the document stays parseable.
 
+  The minor bump is deliberate, and narrows an earlier rule that said additive
+  fields never move the version. An additive field whose absence would read as
+  good news is not merely more detail: a missing `coverage` block looks like
+  "coverage was fine" when it means "this producer could not say". So
+  `schemaVersion >= 1.1` is what licenses a reader to trust the block. Compare
+  the **major** for readability — a strict `=== "1.0"` check rejects a record it
+  can read. Note that `checked` and `abstained` were added additively under
+  "1.0" before this rule existed, so a "1.0" record may or may not carry them;
+  test for those two keys, not the version.
+
 - **`review-test` / `flake-check` reported a confident green over `.mjs` and
   `.cjs` files they never actually read** (#566). Four defects from one consumer
   report, all the #503 family — a check that measured nothing presenting as a
