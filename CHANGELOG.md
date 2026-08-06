@@ -16,6 +16,35 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Type-only modules no longer raise unsatisfiable coverage findings** (#562).
+  A `types.ts` holding nothing but interfaces produced a `coverage-verified`,
+  `high`-severity finding ("lines 1-39: 39 uncovered") that no test could ever
+  clear — an interface has no runtime existence to execute. This was the
+  guardian's entire measured false-positive class: a bounded adjudication of 20
+  findings sampled from a frame of 456 across 41 merged PRs put precision at
+  13/20 against a 0.8 promotion bar, and **all seven misses were this one
+  class**, holding the repo below its soft→hard gate promotion indefinitely. The
+  heuristic-tier fix (#413) structurally could not reach it: that filter is
+  gated on `fidelity === HEURISTIC` precisely because a coverage-verified
+  verdict rests on a real lcov row, and here the lcov row is genuinely correct.
+  Detection is therefore about the file, not the tier — a filename gate
+  (`types.ts`, `*.types.ts`, `types/`, `*.d.ts`) selects candidates and the
+  file's **content** confirms, so a `types.ts` that also exports an `enum` or a
+  `const` map keeps its findings. Applied pre-resolution, so it holds at every
+  tier and on the authoring surface too, which had been proposing to write
+  `src/ConfirmModal/types.test.ts` — a test file for an interface. Every
+  uncertainty (unreadable file, unrecognised construct) keeps the finding.
+- **Guardian says what it skipped, and why** (#579). `SkipEntry.reason` was
+  write-only: every suppression path set one (`skipGlobs`, `test path`,
+  `test support`, `re-export barrel`, `heuristic noise`) and no surface ever
+  rendered it. The `--format json` abstain payload was worse than lossy — it
+  omitted `skipped` entirely, so a machine consumer saw `abstained: true` with
+  no indication of what had been dropped. That is the #508 zero-denominator
+  class one layer down, on the only surface a machine can read. The payload now
+  carries `skipped: [{name, reason}]`, and text summary lines render
+  `name [reason]`. Reasons are stripped of control characters on the same terms
+  as names, since rendering the field made it a second line-forging surface.
+
 - **The proprietary-leak gate can now read TypeScript** (#578). `docs-lint`
   reported `clean — no removed-symbol or proprietary leaks` while structurally
   unable to open the language essentially all of this repo's code is written in.

@@ -108,6 +108,7 @@ import {
   filterSkipped,
   filterTestSupportUnits,
   filterTestUnits,
+  filterTypeOnlyUnits,
   findReexportOnly,
   loadGuardianConfig,
   render,
@@ -1191,6 +1192,7 @@ function prCheckSkipEntries(
   barrelUnits: ChangedUnit[],
   supportUnits: ChangedUnit[] = [],
   noisePaths: string[] = [],
+  typeOnlyUnits: ChangedUnit[] = [],
 ): SkipEntry[] {
   return [
     ...skipped.map((u) => ({ name: u.path, reason: 'skipGlobs' })),
@@ -1199,6 +1201,9 @@ function prCheckSkipEntries(
     // infrastructure recognised by filename idiom, and adjudication needs to
     // tell the two suppression causes apart.
     ...supportUnits.map((u) => ({ name: u.path, reason: 'test support' })),
+    // #562: likewise distinct -- adjudication has to be able to measure this
+    // class separately, since it is the one that held precision at 13/20.
+    ...typeOnlyUnits.map((u) => ({ name: u.path, reason: 'type-only module' })),
     ...barrelUnits.map((u) => ({
       name: u.path,
       reason: 're-export barrel',
@@ -1236,7 +1241,11 @@ function abstainPrCheck(
     deps.out(
       ensureAscii(
         JSON.stringify(
-          { findings: [], tier: 0, checked: 0, abstained: true },
+          // #579: `skipped` carries the denominator the abstention collapsed
+          // to. Without it a consumer sees `abstained: true` and cannot tell
+          // WHAT was dropped or why -- the #508 class one layer down, on the
+          // only surface a machine can read.
+          { findings: [], tier: 0, checked: 0, abstained: true, skipped },
           null,
           2,
         ),
@@ -1364,10 +1373,15 @@ async function prCheckCmd(
   // #565: drop test *support* units -- a conftest / fixture module is the
   // harness the tests run inside, so no test can cover it at any tier.
   const [keptSupport, supportUnits] = filterTestSupportUnits(keptTest);
+  // #562: drop modules with no runtime content -- an interface cannot be
+  // executed, so its uncovered lines are a finding no test could ever satisfy.
+  // `.` (cwd), matching the repoRoot convention `resolveCoverageWithInput`
+  // already uses for the heuristic tier's own file reads.
+  const [keptTyped, typeOnlyUnits] = filterTypeOnlyUnits(keptSupport, '.');
   // FIX 2: drop pure re-export/barrel files.
   const reexportPaths = findReexportOnly(diffText);
-  const barrelUnits = keptSupport.filter((u) => reexportPaths.has(u.path));
-  const kept = keptSupport.filter((u) => !reexportPaths.has(u.path));
+  const barrelUnits = keptTyped.filter((u) => reexportPaths.has(u.path));
+  const kept = keptTyped.filter((u) => !reexportPaths.has(u.path));
 
   // Advisory weak-test findings for added tests that assert nothing.
   const weakFindings = config.weak_tests
@@ -1378,11 +1392,19 @@ async function prCheckCmd(
     skipped.length +
     testUnits.length +
     barrelUnits.length +
-    supportUnits.length;
+    supportUnits.length +
+    typeOnlyUnits.length;
 
   if (kept.length === 0 && weakFindings.length === 0) {
     abstainPrCheck(
-      prCheckSkipEntries(skipped, testUnits, barrelUnits, supportUnits),
+      prCheckSkipEntries(
+        skipped,
+        testUnits,
+        barrelUnits,
+        supportUnits,
+        [],
+        typeOnlyUnits,
+      ),
       opts.format,
       deps,
     );
@@ -1417,6 +1439,7 @@ async function prCheckCmd(
         barrelUnits,
         supportUnits,
         noiseResults.map((r) => r.unit.path),
+        typeOnlyUnits,
       ),
       opts.format,
       deps,
@@ -1528,8 +1551,12 @@ function buildGaps(
   // to prevent, except it also writes a file (measured: this surface proposed
   // `scripts/otel_bootstrap/test_conftest_otel.py`).
   const [keptSupport] = filterTestSupportUnits(keptTest);
+  // #562: nor a type-only module -- measured, this surface proposed writing
+  // `src/ConfirmModal/types.test.ts` to test an interface, a file whose only
+  // possible content is an assertion about nothing.
+  const [keptTyped] = filterTypeOnlyUnits(keptSupport, '.');
   const reexportPaths = findReexportOnly(diffText);
-  const kept = keptSupport.filter((u) => !reexportPaths.has(u.path));
+  const kept = keptTyped.filter((u) => !reexportPaths.has(u.path));
   if (kept.length === 0) return [];
   const results = resolveCoverage(kept, { coveragePath, graphMaxDepth });
   // #413: never hand the authoring tier a heuristic FP -- a generated "test" for

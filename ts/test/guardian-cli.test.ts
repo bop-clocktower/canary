@@ -464,6 +464,27 @@ describe('pr-check post pipeline', () => {
     expect(data).toMatchObject({ findings: [], checked: 0, abstained: true });
   });
 
+  it('abstained json names what was skipped and why (#579)', async () => {
+    const res = await invokeGuardian(
+      [
+        'pr-check',
+        '--diff',
+        '-',
+        '--format',
+        'json',
+        '--config',
+        writeConfig({ skipGlobs: ['docs/**'] }),
+      ],
+      { input: DIFF_DOCS_ONLY, cwd: tmp },
+    );
+    expect(res.code).toBe(3);
+    const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    // An abstention without a denominator is the #508 class one layer down:
+    // the JSON consumer must be able to see WHAT was dropped, not only that
+    // the gate declined to answer.
+    expect(data.skipped).toEqual([{ name: 'docs/x.md', reason: 'skipGlobs' }]);
+  });
+
   it('test files never become findings', async () => {
     mkdirSync(join(tmp, 'agent', 'core'), { recursive: true });
     writeFileSync(

@@ -77,16 +77,39 @@ Both follow the same present-vs-absent contract: omit the key to keep the
 built-in default, or supply an explicit list — including `[]`, which means
 "nothing" rather than "use the default".
 
-There is also one suppression that is **not** configurable, because no repo
-should want it off (#565): a file that is _test support by name_ — a pytest
-`conftest` (`conftest.py`, `conftest_otel.py`), or a module with a `fixture` /
-`fixtures` basename component (`playwright-fixture.ts`, `fixture_helpers.py`,
+There are also two suppressions that are **not** configurable, because no repo
+should want them off.
+
+The first (#565): a file that is _test support by name_ — a pytest `conftest`
+(`conftest.py`, `conftest_otel.py`), or a module with a `fixture` / `fixtures`
+basename component (`playwright-fixture.ts`, `fixture_helpers.py`,
 `user.fixtures.ts`) — is dropped before any tier runs, alongside test paths
 themselves. Such a file _is_ the harness the tests run inside, so "write a test
 covering it" inverts the relationship the gate exists to check, at every
 fidelity. Matching is on `-`/`_`/`.`-separated basename components, so
 `conftestimonial.py` and `prefixtures.ts` are ordinary source and still judged.
-Suppressed paths are always named in the skip list, never folded into a pass.
+
+The second (#562): a **type-only module** — a TypeScript file whose every
+top-level statement is erased at compile time (interfaces, type aliases, type
+imports). An interface has no runtime existence, so no test can execute its
+lines; lcov reports them all uncovered, accurately, and the resulting finding is
+still unsatisfiable. Note this is the one class `heuristicExclude` cannot help
+with: the verdict arrives `coverage-verified`, on real evidence, so the
+heuristic-tier knob never applies.
+
+Detection is two-stage and content-confirmed, never name-only. A filename gate
+(`types.ts`, `*.types.ts`, a `types/` directory, `*.d.ts`) decides which files
+are worth reading; the file is then suppressed **only** if it contains no
+runtime code. A `types.ts` that also exports an `enum`, a `const` map, or runs a
+statement is ordinary TypeScript and keeps its findings. Every uncertainty — an
+unreadable file, an unrecognised construct — resolves to "not type-only", so the
+finding survives.
+
+Suppressed paths are always named in the skip list with their cause
+(`name [reason]`, e.g. `src/types.ts [type-only module]`), never folded into a
+pass. Under `--format json` the abstain payload carries the same list as
+`skipped: [{name, reason}]` (#579), so a machine consumer can tell _what_ was
+dropped and _why_, not merely that the gate declined to answer.
 
 ### PR check
 

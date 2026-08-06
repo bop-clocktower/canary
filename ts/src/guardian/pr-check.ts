@@ -41,6 +41,7 @@ import {
   isSourcePath,
   isTestPath,
   isTestSupportPath,
+  isTypeOnlyModule,
 } from './coverage.js';
 import { Severity, severitySortKey } from './impact-mapper.js';
 
@@ -409,6 +410,32 @@ export function filterTestSupportUnits(
     else kept.push(unit);
   }
   return [kept, supportUnits];
+}
+
+/**
+ * Partition `units` into `[kept, typeOnlyUnits]` by type-only content (#562).
+ *
+ * The sibling of {@link filterTestSupportUnits} for modules that contain no
+ * runtime code at all. Runs pre-resolution for the same reason: a type
+ * declaration has no runtime existence at ANY tier, so a suppression scoped to
+ * one tier would leave the measured false positives in place — which is
+ * precisely how #413 missed this class. See {@link isTypeOnlyModule} for why
+ * content, not the filename, is the evidence.
+ *
+ * `repoRoot` is needed because the decision requires reading the file; a unit
+ * whose file cannot be read keeps its finding. Order-preserving in both.
+ */
+export function filterTypeOnlyUnits(
+  units: ChangedUnit[],
+  repoRoot: string,
+): [ChangedUnit[], ChangedUnit[]] {
+  const kept: ChangedUnit[] = [];
+  const typeOnlyUnits: ChangedUnit[] = [];
+  for (const unit of units) {
+    if (isTypeOnlyModule(unit.path, repoRoot)) typeOnlyUnits.push(unit);
+    else kept.push(unit);
+  }
+  return [kept, typeOnlyUnits];
 }
 
 /**
