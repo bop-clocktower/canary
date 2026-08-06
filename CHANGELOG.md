@@ -88,6 +88,31 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The guardian's analysis record never said whether coverage was actually
+  available** (#554). `degradedNotice` was wired to exactly one producer — the
+  agent-tier resolver — so the coverage ladder's own fall-through (report →
+  graph → heuristic) went unrecorded: `null` in 274 of 274 runs across six weeks
+  of a downstream repo, including every run that produced heuristic findings
+  only. 43 of those PRs changed source files and reported zero coverage-verified
+  findings, which reads as "the new lines are covered" and could equally have
+  meant "the lcov never arrived"; the CI-side evidence that would settle it
+  expires (48 of 55 `guardian-lcov` artifacts were already gone). Every run now
+  records a `CoverageInputState` — was a report requested, did the file exist,
+  did it parse, how many files did it carry, and how many of the changed files
+  did it actually speak to — surfaced as:
+  - an additive `coverage` block in the analysis record (`schemaVersion` 1.0 →
+    1.1) carrying `status` (`verified` / `partial` / `unavailable`) plus every
+    raw count, so the downstream soft-to-hard promotion metric can be computed
+    without parsing prose;
+  - `degradedNotice` populated with that state in words, alongside (not instead
+    of) any tier-degradation notice;
+  - a sticky-comment body line, and — the point of the issue — **no ✅ all-clear
+    headline on a run whose coverage was not `verified`**. Zero files matched is
+    an abstention, not a pass.
+  - the same block and notice in `--format json`, plus an Actions `::warning::`
+    annotation. That annotation is routed to stderr when JSON owns stdout, so
+    the document stays parseable.
+
 - **`review-test` / `flake-check` reported a confident green over `.mjs` and
   `.cjs` files they never actually read** (#566). Four defects from one consumer
   report, all the #503 family — a check that measured nothing presenting as a

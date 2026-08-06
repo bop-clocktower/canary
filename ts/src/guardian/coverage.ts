@@ -654,7 +654,6 @@ function attrValue(attrs: string, name: string): string | null {
 /** Read a report file as UTF-8, returning `null` on any read/decode failure. */
 function readReportText(reportPath: string): string | null {
   try {
-    if (!existsSync(reportPath)) return null;
     const buf = readFileSync(reportPath);
     // Fatal decode: a non-UTF-8 report must fall through, never raise out of
     // the guardian gate (mirrors Python's UnicodeDecodeError → None).
@@ -676,8 +675,30 @@ export function resolveFromReport(
   units: ChangedUnit[],
   reportPath: string,
 ): CoverageResult[] | null {
+  const { index } = readReportIndex(reportPath);
+  if (index === null) return null;
+  return matchUnitsToIndex(units, index);
+}
+
+/**
+ * What a coverage-report read actually yielded (#554).
+ *
+ * `found` is "a file exists at that path"; `index` is non-null only when the
+ * file also parsed into at least one record. Keeping the two apart is the whole
+ * point: "no report" and "a report we could not use" degrade identically today
+ * and are separate operator problems.
+ */
+interface ReportRead {
+  found: boolean;
+  index: ReportIndex | null;
+}
+
+/** Read + parse a coverage report, reporting each step's outcome separately. */
+function readReportIndex(reportPath: string): ReportRead {
+  if (!existsSync(reportPath)) return { found: false, index: null };
   const text = readReportText(reportPath);
-  if (text === null) return null;
+  // Present but unreadable/non-UTF-8 counts as found-and-unusable, not absent.
+  if (text === null) return { found: true, index: null };
 
   const name = basename(reportPath).toLowerCase();
   let index: ReportIndex | null;
@@ -686,7 +707,7 @@ export function resolveFromReport(
     try {
       parsed = JSON.parse(text);
     } catch {
-      return null;
+      return { found: true, index: null };
     }
     index = parseCoverageJson(parsed);
   } else if (name.endsWith('.info') || name.includes('lcov')) {
@@ -695,11 +716,20 @@ export function resolveFromReport(
     index = parseCobertura(text);
   } else {
     // Unrecognized format → fall through to a lower fidelity tier.
-    return null;
+    return { found: true, index: null };
   }
 
-  if (index === null || Object.keys(index).length === 0) return null;
+  if (index === null || Object.keys(index).length === 0) {
+    return { found: true, index: null };
+  }
+  return { found: true, index };
+}
 
+/** Resolve every unit the report index can speak to (COVERAGE_VERIFIED). */
+function matchUnitsToIndex(
+  units: ChangedUnit[],
+  index: ReportIndex,
+): CoverageResult[] {
   const results: CoverageResult[] = [];
   for (const unit of units) {
     const hits = matchHits(unit.path, index);
@@ -1201,6 +1231,109 @@ export function resolveCoverage(
   units: ChangedUnit[],
   options: ResolveCoverageOptions = {},
 ): CoverageResult[] {
+  return resolveCoverageWithInput(units, options).results;
+}
+
+/**
+ * The coverage input's actual state for one run (#554).
+ *
+ * Every field is a count or a fact about what the run *observed*, never a
+ * verdict. `unitsMatched` of `unitsTotal` is the load-bearing pair: it is the
+ * denominator that tells a later reader whether "no coverage findings" meant
+ * "checked and clean" or "never checked".
+ */
+export interface CoverageInputState {
+  /** The `--coverage` path as given, or `null` when none was supplied. */
+  requested: string | null;
+  /** A file exists at `requested`. */
+  found: boolean;
+  /** That file parsed into at least one usable record. */
+  parsed: boolean;
+  /** How many files the parsed report carries coverage for. */
+  filesInReport: number;
+  /** Changed units the report actually spoke to (coverage-verified). */
+  unitsMatched: number;
+  /** Changed units submitted to the ladder. */
+  unitsTotal: number;
+}
+
+/**
+ * `verified` (the report spoke to every changed unit) | `partial` (some) |
+ * `unavailable` (none — whatever the reason).
+ */
+export type CoverageStatus = 'verified' | 'partial' | 'unavailable';
+
+/** Classify a {@link CoverageInputState}. Zero matched is never `verified`. */
+export function coverageStatus(state: CoverageInputState): CoverageStatus {
+  if (state.unitsTotal > 0 && state.unitsMatched === state.unitsTotal) {
+    return 'verified';
+  }
+  return state.unitsMatched > 0 ? 'partial' : 'unavailable';
+}
+
+const COVERAGE_EM_DASH = '\u{2014}';
+const FALLBACK_TIER = 'judged at graph/heuristic tier only';
+
+/**
+ * The human-readable degradation notice for a coverage run, or `null` when the
+ * report covered every changed unit (nothing was degraded, so nothing is said).
+ *
+ * A run that judged nothing (`unitsTotal === 0`) also returns `null` — it makes
+ * no coverage claim in either direction, and the abstention path reports it.
+ */
+export function coverageDegradedNotice(
+  state: CoverageInputState,
+): string | null {
+  const { requested, found, parsed, filesInReport } = state;
+  const { unitsMatched: matched, unitsTotal: total } = state;
+  if (total === 0) return null;
+  const status = coverageStatus(state);
+  if (status === 'verified') return null;
+  const dash = ` ${COVERAGE_EM_DASH} `;
+
+  if (status === 'partial') {
+    return (
+      `coverage partial${dash}report at '${requested}' matched ` +
+      `${matched} of ${total} changed file(s); the other ${total - matched} ` +
+      FALLBACK_TIER
+    );
+  }
+  const head = `coverage unavailable${dash}`;
+  if (requested === null) {
+    return `${head}no coverage report was supplied; ${total} changed file(s) ${FALLBACK_TIER}`;
+  }
+  if (!found) {
+    return `${head}report not found at '${requested}'; ${total} changed file(s) ${FALLBACK_TIER}`;
+  }
+  if (!parsed) {
+    return (
+      `${head}report at '${requested}' yielded no usable records; ` +
+      `${total} changed file(s) ${FALLBACK_TIER}`
+    );
+  }
+  return (
+    `${head}report at '${requested}' covers ${filesInReport} file(s) but ` +
+    `matched 0 of ${total} changed file(s); ${FALLBACK_TIER}`
+  );
+}
+
+/** {@link resolveCoverage}'s results plus the run's {@link CoverageInputState}. */
+export interface ResolvedCoverage {
+  results: CoverageResult[];
+  coverage: CoverageInputState;
+}
+
+/**
+ * {@link resolveCoverage}, additionally reporting which mode the run was in.
+ *
+ * Identical ladder, identical results — the only addition is the
+ * {@link CoverageInputState} record, so a later reader can tell a clean result
+ * from a blind one (#554).
+ */
+export function resolveCoverageWithInput(
+  units: ChangedUnit[],
+  options: ResolveCoverageOptions = {},
+): ResolvedCoverage {
   const {
     coveragePath = null,
     graphPath = '.harness/graph/graph.json',
@@ -1212,13 +1345,28 @@ export function resolveCoverage(
   // units that happen to share a path are still tracked independently.
   const resolved = new Map<ChangedUnit, CoverageResult>();
   let remaining: ChangedUnit[] = [...units];
+  const coverage: CoverageInputState = {
+    requested: coveragePath,
+    found: false,
+    parsed: false,
+    filesInReport: 0,
+    unitsMatched: 0,
+    unitsTotal: units.length,
+  };
 
   if (coveragePath !== null) {
-    const report = resolveFromReport(remaining, coveragePath);
+    const read = readReportIndex(coveragePath);
+    coverage.found = read.found;
+    coverage.parsed = read.index !== null;
+    coverage.filesInReport =
+      read.index === null ? 0 : Object.keys(read.index).length;
+    const report =
+      read.index === null ? null : matchUnitsToIndex(remaining, read.index);
     // An empty array (no unit matched the report) is falsy-equivalent in the
     // Python `if report:` guard — fall through rather than lock in nothing.
     if (report !== null && report.length > 0) {
       for (const r of report) resolved.set(r.unit, r);
+      coverage.unitsMatched = report.length;
       remaining = remaining.filter((u) => !resolved.has(u));
     }
   }
@@ -1237,5 +1385,5 @@ export function resolveCoverage(
     }
   }
 
-  return units.map((unit) => resolved.get(unit)!);
+  return { results: units.map((unit) => resolved.get(unit)!), coverage };
 }

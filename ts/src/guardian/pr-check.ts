@@ -32,9 +32,12 @@ import { readJsonWithWarning } from '../core/config-validation.js';
 import { isAssertionFreeTest } from '../core/quality-scorer.js';
 import {
   ChangedUnit,
+  CoverageInputState,
   CoverageResult,
   Fidelity,
   LineRange,
+  coverageDegradedNotice,
+  coverageStatus,
   isSourcePath,
   isTestPath,
 } from './coverage.js';
@@ -833,6 +836,7 @@ const WHITE_CIRCLE = '\u{26AA}';
 const BABY_CHICK = '\u{1F424}';
 const ARROW = '\u{2192}';
 const WHITE_CHECK = '\u{2705}';
+const WARNING = '\u{26A0}\u{FE0F}';
 
 const SEVERITY_ICON: Record<string, string> = {
   [Severity.CRITICAL]: RED_CIRCLE,
@@ -887,6 +891,58 @@ function findingDict(finding: Finding): Record<string, unknown> {
 export interface GateMeta {
   checked: number;
   abstained: boolean;
+  /** The run's coverage-input state, when the coverage ladder ran (#554). */
+  coverage?: CoverageInputState | null;
+}
+
+/**
+ * Join every degradation notice this run produced into one line, dropping the
+ * empty ones. Notices are independent (the agent tier and the coverage input
+ * degrade for unrelated reasons), so a reader must see both or neither (#554).
+ */
+export function combineNotices(
+  ...notices: Array<string | null | undefined>
+): string | null {
+  const kept = notices.filter((n): n is string => Boolean(n));
+  return kept.length > 0 ? kept.join('; ') : null;
+}
+
+/** The `coverage` block the json/analysis surfaces carry (#554). */
+export function coverageBlock(
+  state: CoverageInputState,
+): Record<string, unknown> {
+  return { status: coverageStatus(state), ...state };
+}
+
+/**
+ * The comment body for a run with zero active findings.
+ *
+ * #554: the ✅ all-clear headline is reserved for a run whose coverage report
+ * spoke to every changed file. Anything less says so in the body — a `<sub>`
+ * footer under a green headline is read as boilerplate, and this is the exact
+ * shape that let 43 coverage-blind PRs read as covered.
+ */
+function noGapsLines(
+  coverageState: CoverageInputState | null,
+  suppressedCount: number,
+): string[] {
+  const notice = coverageState ? coverageDegradedNotice(coverageState) : null;
+  const headline = notice
+    ? `${WARNING} no gaps found, but coverage was ${coverageStatus(coverageState!)}`
+    : `${WHITE_CHECK} no test-coverage gaps`;
+  const lines = [`## ${BABY_CHICK} Canary PR Guardian ${EM_DASH} ${headline}`];
+  if (notice) {
+    lines.push(
+      `> **${notice}**`,
+      '',
+      'Zero files matched is an abstention, not a pass — nothing here is ' +
+        'evidence that the changed lines are covered.',
+    );
+  }
+  if (suppressedCount) {
+    lines.push(`_${suppressedCount} finding(s) suppressed as intentional._`);
+  }
+  return lines;
 }
 
 export function render(
@@ -901,15 +957,23 @@ export function render(
     (a, b) => severitySortKey(a.severity) - severitySortKey(b.severity),
   );
 
+  // #554: the coverage ladder's own degradation, stated alongside the tier's.
+  const coverageState = gateMeta?.coverage ?? null;
+  const coverageNotice = coverageState
+    ? coverageDegradedNotice(coverageState)
+    : null;
+  const notice = combineNotices(degradedNotice, coverageNotice);
+
   if (fmt === 'json') {
     const payload: Record<string, unknown> = {
       findings: ordered.map(findingDict),
       tier,
     };
-    if (degradedNotice) payload['degraded_notice'] = degradedNotice;
+    if (notice) payload['degraded_notice'] = notice;
     if (gateMeta !== null) {
       payload['checked'] = gateMeta.checked;
       payload['abstained'] = gateMeta.abstained;
+      if (coverageState) payload['coverage'] = coverageBlock(coverageState);
     }
     return ensureAscii(JSON.stringify(payload, null, 2));
   }
@@ -965,22 +1029,19 @@ export function render(
     '**graph-verified**: inferred from the call graph · **heuristic**: filename ' +
     `guess (lowest). tier ${tier}: deterministic check, no LLM.`;
 
-  const footerLine = `<sub>${CONFIDENCE_NOTE}${degradedNotice ? ` ${EM_DASH} ${degradedNotice}` : ''}</sub>`;
+  const footerLine = `<sub>${CONFIDENCE_NOTE}${notice ? ` ${EM_DASH} ${notice}` : ''}</sub>`;
+
+  // #554: a coverage-blind run must not present as a run that checked and found
+  // nothing. The notice goes in the BODY, not only the footer — a `<sub>` line
+  // under a green headline is read as boilerplate.
+  const coverageLine = coverageNotice ? `> **${coverageNotice}**` : null;
 
   if (fmt === 'comment') {
     const fileCount = new Set(active.map((f) => f.path)).size;
     const lines = [STICKY_MARKER];
 
     if (active.length === 0) {
-      lines.push(
-        `## ${BABY_CHICK} Canary PR Guardian ${EM_DASH} ` +
-          `${WHITE_CHECK} no test-coverage gaps`,
-      );
-      if (suppressed.length) {
-        lines.push(
-          `_${suppressed.length} finding(s) suppressed as intentional._`,
-        );
-      }
+      lines.push(...noGapsLines(coverageState, suppressed.length));
     } else {
       const noun = fileCount === 1 ? 'file needs' : 'files need';
       lines.push(
@@ -992,6 +1053,7 @@ export function render(
           'extend a test that covers them, or reply ' +
           '`/guardian suppress <file> <reason>` if they are intentionally untested.',
       );
+      if (coverageLine) lines.push('', coverageLine);
       lines.push(
         '',
         '| Sev | File | What is uncovered, and what to do | Confidence |',
@@ -1038,9 +1100,13 @@ export function render(
   }
 
   // fmt == "text" (default fallback): plain, no markdown/HTML.
+  const cleanHeadline = coverageNotice
+    ? // #554: same rule as the comment surface — a blind run never claims clean.
+      `Canary PR Guardian — no gaps found, but coverage was ${coverageStatus(coverageState!)}`
+    : 'Canary PR Guardian — no test-coverage gaps';
   const lines = [
     active.length === 0
-      ? 'Canary PR Guardian — no test-coverage gaps'
+      ? cleanHeadline
       : `Canary PR Guardian — ${new Set(active.map((f) => f.path)).size} file(s) need test coverage`,
   ];
   for (const finding of ordered) {
@@ -1052,7 +1118,7 @@ export function render(
     );
   }
   let footer = `tier ${tier}: deterministic check, no LLM`;
-  if (degradedNotice) footer += ` - ${degradedNotice}`;
+  if (notice) footer += ` - ${notice}`;
   lines.push(footer);
   return lines.join('\n');
 }

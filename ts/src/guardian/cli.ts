@@ -79,7 +79,9 @@ import { emitAnalysis } from './analysis-emit.js';
 import { gateOutcome, GateOutcome, SkipEntry } from '../core/gate-result.js';
 import {
   ChangedUnit,
+  coverageDegradedNotice,
   resolveCoverage,
+  resolveCoverageWithInput,
   validateCoverageJson,
 } from './coverage.js';
 import { buildApiDelta, writeApiDelta } from './delta-emitter.js';
@@ -95,6 +97,7 @@ import {
 import { CoverageRow, mapImpact } from './impact-mapper.js';
 import {
   Finding,
+  GateMeta,
   GuardianConfig,
   applySuppressions,
   buildFindings,
@@ -1153,13 +1156,14 @@ async function postStickyComment(
   findings: Finding[],
   resolution: TierResolution,
   deps: GuardianDeps,
+  gateMeta: GateMeta | null = null,
 ): Promise<void> {
   const body = render(
     findings,
     'comment',
     resolution.effective,
     resolution.degraded_notice,
-    null,
+    gateMeta,
     blobBaseFromEnv(deps.env),
   );
   const ctx = prContextFromEnv(deps.env);
@@ -1372,7 +1376,7 @@ async function prCheckCmd(
     );
   }
 
-  const results = resolveCoverage(kept, {
+  const { results, coverage } = resolveCoverageWithInput(kept, {
     coveragePath: opts.coverage ?? null,
     // #320: under a hard gate the graph tier requires a DIRECT test->source edge
     // (depth 1); soft stays unbounded. An explicit config value wins.
@@ -1419,6 +1423,26 @@ async function prCheckCmd(
   // is the process exit at the end (SC-4 -- emit never changes the exit logic).
   const exitCode = computeExitCode(findings, effectiveGate);
 
+  // #554: every surface below carries the coverage-input state, so a run that
+  // never saw a coverage report cannot present as one that checked and passed.
+  const gateMeta: GateMeta = {
+    checked: scoredResults.length,
+    abstained: false,
+    coverage,
+  };
+  const coverageNotice = coverageDegradedNotice(coverage);
+  if (coverageNotice) {
+    // `--format json` owns stdout: a `::warning::` line there would make the
+    // document unparseable, so the annotation goes to stderr on that path. Both
+    // streams are scanned for workflow commands, so CI still sees it.
+    const machineStdout =
+      !opts.postComment && !opts.emitAnalysis && opts.format === 'json';
+    (machineStdout ? deps.err : deps.out)(
+      degradationAnnotation(coverageNotice),
+    );
+    appendStepSummary(deps.env, coverageNotice);
+  }
+
   let commentPosted = false;
   if (opts.emitAnalysis) {
     // SC-10 producer half: write ONE record to the analyses channel. On an
@@ -1434,6 +1458,7 @@ async function prCheckCmd(
       exit_code: exitCode,
       checked: scoredResults.length,
       abstained: false, // an abstained run exits before emit (see plan)
+      coverage,
     });
     if (res.action === 'emitted') {
       deps.out(`guardian: wrote analysis record ${RIGHT_ARROW} ${res.path}`);
@@ -1443,7 +1468,7 @@ async function prCheckCmd(
       deps.out(degradationAnnotation(res.notice!));
       appendStepSummary(deps.env, res.notice!);
       deps.err(res.notice!);
-      await postStickyComment(findings, resolution, deps);
+      await postStickyComment(findings, resolution, deps, gateMeta);
       commentPosted = true;
     }
   }
@@ -1451,7 +1476,7 @@ async function prCheckCmd(
   if (opts.postComment && !commentPosted) {
     // Explicit `--post-comment`: post/upsert unless the SC-10 fallback already
     // posted this run.
-    await postStickyComment(findings, resolution, deps);
+    await postStickyComment(findings, resolution, deps, gateMeta);
   } else if (!opts.emitAnalysis && !opts.postComment) {
     // Local, non-posting default: render to stdout in `--format`.
     deps.out(
@@ -1460,7 +1485,7 @@ async function prCheckCmd(
         opts.format,
         resolution.effective,
         resolution.degraded_notice,
-        { checked: scoredResults.length, abstained: false },
+        gateMeta,
         blobBaseFromEnv(deps.env),
       ),
     );
