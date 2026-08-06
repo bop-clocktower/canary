@@ -18,7 +18,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, extname, join, resolve } from 'node:path';
 
 import pc from 'picocolors';
 
@@ -32,6 +32,7 @@ import {
   listOverlays,
   resolveOverlay,
 } from './core/overlays.js';
+import { JS_TEST_EXTENSIONS, lintableFramework } from './core/static-linter.js';
 import type { Finding } from './core/static-linter.js';
 import { RunSummary } from './core/ticket-updater.js';
 import { renderBanner } from './ui/banner.js';
@@ -74,6 +75,25 @@ function isDir(p: string): boolean {
   }
 }
 
+/**
+ * Directories never worth walking. A dependency's own test suite is not the
+ * consumer's to fix: before #566, `node_modules` accounted for 254 of 256
+ * findings in one downstream run, and the only `critical` sat inside vendored
+ * code. `pattern-matcher.ts` has carried this set since the Python port; this
+ * walk was the copy that never got it.
+ */
+const IGNORED_DIRS: ReadonlySet<string> = new Set([
+  'node_modules',
+  '.git',
+  '__pycache__',
+  '.venv',
+  'venv',
+  'dist',
+  'build',
+  '.next',
+  '.nuxt',
+]);
+
 function walkFiles(dir: string): string[] {
   const out: string[] = [];
   let entries;
@@ -84,11 +104,21 @@ function walkFiles(dir: string): string[] {
   }
   for (const e of entries) {
     const full = join(dir, e.name);
-    if (e.isDirectory()) out.push(...walkFiles(full));
-    else if (e.isFile()) out.push(full);
+    if (e.isDirectory()) {
+      if (!IGNORED_DIRS.has(e.name)) out.push(...walkFiles(full));
+    } else if (e.isFile()) out.push(full);
   }
   return out;
 }
+
+/**
+ * `test_*.py` plus `*.test.*` / `*.spec.*` over every extension the scanners
+ * can actually read -- `.mjs` and `.cjs` included, which is the half of #566
+ * that made a directory of ESM tests collect zero files.
+ */
+const JS_TEST_FILE_RE = new RegExp(
+  `\\.(test|spec)\\.(${JS_TEST_EXTENSIONS.map((e) => e.slice(1)).join('|')})$`,
+);
 
 /** Recursive test-file glob matching Python's `rglob` union, sorted by path. */
 function collectTestFiles(dir: string): string[] {
@@ -96,11 +126,7 @@ function collectTestFiles(dir: string): string[] {
     .filter((p) => {
       const b = basename(p);
       return (
-        (b.startsWith('test_') && b.endsWith('.py')) ||
-        b.endsWith('.spec.ts') ||
-        b.endsWith('.spec.js') ||
-        b.endsWith('.test.ts') ||
-        b.endsWith('.test.js')
+        (b.startsWith('test_') && b.endsWith('.py')) || JS_TEST_FILE_RE.test(b)
       );
     })
     .sort();
@@ -610,6 +636,24 @@ function findingPayload(f: Finding): Record<string, unknown> {
   };
 }
 
+/** Human-readable list of what the collectors look for, for remedy text. */
+const SCANNABLE_DESC = `test_*.py, *.test|spec.{${JS_TEST_EXTENSIONS.map((e) =>
+  e.slice(1),
+).join(',')}}`;
+
+/** Emit the abstention notice in the caller's output mode, then exit 3. */
+function abstain(remedy: string, deps: MainDeps, json: boolean): never {
+  const outcome = gateOutcome({ checked: 0, findings: [] }, 'gate');
+  if (json) {
+    deps.out(jsonIndent2([]));
+    deps.err(`${outcome.summaryLine} ${remedy}`);
+  } else {
+    deps.out(pc.bold(pc.yellow(outcome.summaryLine)));
+    deps.out(`  ${remedy}`);
+  }
+  throw new CliExit(outcome.exitCode);
+}
+
 /**
  * The denominator guard shared by the file-scanning gates (#508 Wave 4a).
  *
@@ -630,19 +674,37 @@ function abstainOnZeroFiles(
   json: boolean,
 ): void {
   if (files.length > 0) return;
-  const outcome = gateOutcome({ checked: 0, findings: [] }, 'gate');
-  const remedy =
-    `No test file matched under ${path} (looked for test_*.py, ` +
-    `*.spec.ts/js, *.test.ts/js). Point at a directory that holds tests, ` +
-    `or pass a single file directly.`;
-  if (json) {
-    deps.out(jsonIndent2([]));
-    deps.err(`${outcome.summaryLine} ${remedy}`);
-  } else {
-    deps.out(pc.bold(pc.yellow(outcome.summaryLine)));
-    deps.out(`  ${remedy}`);
-  }
-  throw new CliExit(outcome.exitCode);
+  abstain(
+    `No test file matched under ${path} (looked for ${SCANNABLE_DESC}). ` +
+      `Point at a directory that holds tests, or pass a single file directly.`,
+    deps,
+    json,
+  );
+}
+
+/**
+ * The single-file half of the same guard (#566).
+ *
+ * `abstainOnZeroFiles` only ever fires on a directory: a single file is passed
+ * straight through as a one-element list, so its denominator is never zero. It
+ * can still be unmeasurable -- an extension no ruleset parses used to fall back
+ * to the Python scanners, which find nothing in ESM JavaScript and so rendered
+ * "No issues found" over a file that was never actually read. Zero findings
+ * from a scanner that could not parse the input is an abstention, not a pass.
+ */
+function abstainOnUnlintableFile(
+  path: string,
+  deps: MainDeps,
+  json: boolean,
+): void {
+  if (lintableFramework(path) !== null) return;
+  const ext = extname(path) || basename(path);
+  abstain(
+    `Cannot lint ${ext} — no ruleset parses it, so a clean result would be ` +
+      `meaningless (looked for ${SCANNABLE_DESC}).`,
+    deps,
+    json,
+  );
 }
 
 export function reviewTestCmd(
@@ -650,14 +712,23 @@ export function reviewTestCmd(
   opts: LintOptions,
   deps: MainDeps,
 ): void {
+  const json = opts.json === true;
   const files = isDir(path) ? collectTestFiles(path) : [path];
-  abstainOnZeroFiles(files, path, deps, opts.json === true);
+  abstainOnZeroFiles(files, path, deps, json);
+  if (!isDir(path) && !opts.framework)
+    abstainOnUnlintableFile(path, deps, json);
   const linter = deps.makeLinter();
   const allFindings: Finding[] = [];
   for (const f of files) allFindings.push(...linter.lint(f, opts.framework));
 
-  if (opts.json) {
+  // `--json` renders the machine payload and then falls through to the same
+  // exit-code decision as human mode. It used to `return` here, so a consumer
+  // gating on `$?` saw every finding-bearing run as clean (#566).
+  if (json) {
     deps.out(jsonIndent2(allFindings.map(findingPayload)));
+    if (allFindings.some((f) => f.severity === 'critical')) {
+      throw new CliExit(1);
+    }
     return;
   }
 
@@ -700,14 +771,18 @@ export function flakeCheckCmd(
   opts: { json?: boolean },
   deps: MainDeps,
 ): void {
+  const json = opts.json === true;
   const files = isDir(path) ? collectTestFiles(path) : [path];
-  abstainOnZeroFiles(files, path, deps, opts.json === true);
+  abstainOnZeroFiles(files, path, deps, json);
+  if (!isDir(path)) abstainOnUnlintableFile(path, deps, json);
   const linter = deps.makeLinter();
   const allFindings: Finding[] = [];
   for (const f of files) allFindings.push(...linter.flakeCheck(f));
 
-  if (opts.json) {
+  // Exit-code parity with human mode, same reason as `review-test` above.
+  if (json) {
     deps.out(jsonIndent2(allFindings.map(findingPayload)));
+    if (allFindings.length > 0) throw new CliExit(1);
     return;
   }
 

@@ -407,13 +407,54 @@ function scanAssertionFreeJs(code: string, file: string): Finding[] {
   return out;
 }
 
-function detectFramework(path: string): string {
+/**
+ * Extensions whose contents the JS/TS scanners can actually read. ESM (`.mjs`)
+ * and CJS (`.cjs`) belong here as much as `.js` does -- omitting them is what
+ * made #566 possible.
+ */
+export const JS_TEST_EXTENSIONS = [
+  '.ts',
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.mts',
+  '.cts',
+] as const;
+
+const JS_EXT_SET: ReadonlySet<string> = new Set(JS_TEST_EXTENSIONS);
+
+/**
+ * The framework whose scanners can parse `path`, or `null` when no scanner
+ * understands the extension.
+ *
+ * This deliberately has no default. The previous `return 'pytest'` fallback
+ * meant an unrecognised extension was silently handed to the Python assertion
+ * scanners: over ESM JavaScript they match nothing, so a `.mjs` file with real
+ * defects linted to zero findings and rendered a green all-clear (#566). A
+ * guess that cannot be distinguished from a clean result is a false green;
+ * `null` forces the caller to abstain instead.
+ */
+export function lintableFramework(path: string): string | null {
   const suffix = extname(path).toLowerCase();
   const name = basename(path).toLowerCase();
   if (suffix === '.py') return 'pytest';
   if (name.includes('playwright')) return 'playwright';
-  if (suffix === '.ts' || suffix === '.js') return 'vitest';
-  return 'pytest';
+  if (JS_EXT_SET.has(suffix)) return 'vitest';
+  return null;
+}
+
+/** Thrown when a scanner is asked for a file no ruleset can parse. */
+export class UnsupportedTestFileError extends Error {
+  constructor(readonly path: string) {
+    super(`No linter ruleset can parse ${extname(path) || basename(path)}`);
+    this.name = 'UnsupportedTestFileError';
+  }
+}
+
+function requireFramework(path: string, framework?: string): string {
+  const fw = framework || lintableFramework(path);
+  if (fw === null) throw new UnsupportedTestFileError(path);
+  return fw;
 }
 
 export class StaticLinter {
@@ -426,7 +467,7 @@ export class StaticLinter {
     // scanners go on mining `it(...)` declarations out of diff fixtures.
     const lines = blankMultilineStrings(code.split('\n'));
     const scanned = lines.join('\n');
-    const fw = framework || detectFramework(path);
+    const fw = requireFramework(path, framework);
     const findings: Finding[] = [
       ...scanFlakiness(lines, path),
       ...scanSelectors(lines, path),
