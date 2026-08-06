@@ -261,6 +261,31 @@ measured precision — or an honest `unknown` — in its readiness output.
   covering test was added in the same diff (the finding no longer reproduces on
   re-run) or an explicit `// canary:allow-untested` suppression.
 
+### What severity means
+
+Severity is what `gate: hard` filters on, so it has to discriminate. Only the
+**coverage-verified** tier is graded, because only that tier knows which lines
+ran — the graph and heuristic tiers can say a unit is unreached but not how much
+of it is, and a spread invented from that would be noise dressed as ranking.
+
+| Severity   | Coverage-verified finding                                        |
+| ---------- | ---------------------------------------------------------------- |
+| `critical` | 20+ uncovered lines **and** 80%+ of the unit's added lines unhit |
+| `high`     | 5+ uncovered lines **or** 50%+ of the added lines unhit          |
+| `medium`   | a handful of unhit lines in an otherwise-tested change           |
+
+Graph-verified findings are always `high`; heuristic findings are always
+`medium`. Both unknowns escalate rather than downgrade: a coverage-verified
+finding that carries no line numbers, or a unit whose added-line count cannot be
+determined, is graded as though the gap were total. An absent measurement is
+never allowed to read as a low score.
+
+Before this grading existed, every coverage-verified finding was `high` — so a
+`critical`/`high` gate was exactly "block on any coverage-verified finding", and
+a reviewer facing 68 findings had no way to tell which one mattered ([#553]).
+
+[#553]: https://github.com/bop-clocktower/canary/issues/553
+
 Promotion is **per-repo** and has two parts: the **exit gate** (`gate: hard` in
 config, which makes `canary guardian pr-check` exit non-zero on an unaddressed
 finding) and the **required status check** in branch protection (what actually

@@ -88,6 +88,38 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The hard gate's severity filter did not filter** (#553). `buildFindings`
+  derived severity from fidelity alone, so every coverage-verified finding was
+  `high` and nothing was ever `critical`. Measured across 274 downstream runs
+  over six weeks: 1,488 coverage-verified findings, 100% of them `high`. That
+  made `gate: hard`'s `critical`/`high` bar exactly equivalent to "block on any
+  coverage-verified finding" — 45 of 123 PRs would have been blocked, one with
+  68 findings and one with 132 — and left a reviewer no way to tell which row
+  mattered, since every row said the same thing. A promotion bar written in
+  terms of `CRITICAL`/`HIGH` was describing a filter that discriminated nothing.
+
+  Coverage-verified findings are now graded on signal the engine already held:
+  how many lines came back unhit, and what share of the unit's added lines that
+  is. `critical` needs both volume (20+ lines) and concentration (80%+ unhit);
+  `high` needs either 5+ lines or a 50%+ share; the remainder — a guard clause
+  inside an otherwise-tested change — is `medium` and no longer blocks a merge.
+  The graph and heuristic tiers are deliberately left flat: neither can measure
+  how much of a unit is unhit, so any spread across them would be invented.
+
+  Both unknowns escalate rather than downgrade. A coverage-verified result with
+  no line numbers means the tier could not say _which_ lines were unhit, not
+  that few were, and a missing added-line count leaves the share denominator
+  unknown; both grade as though the gap were total. The regression test asserts
+  the distribution rather than the labels — a future rule that collapses every
+  finding back onto one severity fails on the same assertion that would have
+  caught this.
+
+  The sticky comment's icon column mapped `critical` and `high` to the same red
+  circle — a collision with nothing to collide with while `critical` was
+  unreachable, and one that would have hidden the new ranking behind identical
+  glyphs the moment it became reachable. `high` is now the orange circle, which
+  is what `summary-emitter.ts` has always used.
+
 - **Guardian read GitHub's comment and reaction lists 30 rows at a time and
   reported the result as complete** (#528). Both REST clients called the list
   endpoints bare — no `per_page`, no `Link` following — so every read stopped at
