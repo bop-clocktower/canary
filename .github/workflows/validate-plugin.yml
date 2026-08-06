@@ -1,18 +1,14 @@
 name: Validate Plugin Manifest
 
+# The pull_request path filter was removed with #542: this check is required by
+# ruleset 16189198, and a required check behind a path filter never reports on a
+# PR outside those paths, so the PR can never merge. Validating one JSON file
+# against one schema is a few seconds, so there is nothing to save by skipping.
 on:
   push:
     branches: [main]
-    paths:
-      - '.claude-plugin/plugin.json'
-      - '.claude-plugin/schemas/plugin.schema.json'
-      - '.github/workflows/validate-plugin.yml'
   pull_request:
     branches: [main]
-    paths:
-      - '.claude-plugin/plugin.json'
-      - '.claude-plugin/schemas/plugin.schema.json'
-      - '.github/workflows/validate-plugin.yml'
 
 jobs:
   validate:

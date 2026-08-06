@@ -1,12 +1,12 @@
 name: Docs Lint
 
+# No `paths:` filter on pull_request, deliberately (#542). These checks are
+# required by ruleset 16189198, and a required check behind a path filter never
+# reports on a PR outside those paths — GitHub shows it as "Expected — waiting
+# for status" and the PR can never merge. Running unconditionally costs ~20s.
+# `markdownlint` is the check that failed on PR #540 and was merged over.
 on:
   pull_request:
-    paths:
-      - '**/*.md'
-      - '.markdownlint.json'
-      - '.github/workflows/docs-lint.yml'
-      - 'scripts/check_removed_symbols.mjs'
   push:
     branches:
       - main

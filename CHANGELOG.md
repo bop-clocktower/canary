@@ -16,6 +16,39 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **CI checks can now stop a merge to `main`** (#542). The `main` ruleset
+  contained no `required_status_checks` rule at all — not a missing entry, the
+  rule type was absent — so every check this repo runs was advisory. PR #540 was
+  merged by auto-merge while `markdownlint` was reporting `FAILURE`; auto-merge
+  fires once the _required_ checks pass, and with none required it fires as soon
+  as the PR exists. `main` went red and stayed red until #541. The check was not
+  wrong: it caught four real MD040/MD033 violations and was overruled by
+  configuration. (The classic `branches/main/protection` endpoint returns
+  `404 Branch not protected`, so an audit through the old endpoint concludes
+  nothing is configured at all — which is how this survived.)
+
+  Thirteen checks are now required, and `.github/required-checks.json` is the
+  in-repo record of which and why, with the GitHub ruleset as the copy that
+  enforces it. Promoting a check meant also removing its path filter: a required
+  check behind `paths:` never reports on a PR outside those paths, so GitHub
+  shows it as "Expected — waiting for status" and the PR can never merge. #542's
+  own proposal named `docs-lint` among the checks to promote, and `docs-lint`
+  was path-filtered — following it verbatim would have deadlocked every
+  code-only PR while fixing the gate. `docs-lint`, `harness-architecture`,
+  `harness-security` and `validate-plugin` now run on every PR; the security
+  scan's `push` filter went too, since a scan that skips itself on some pushes
+  to `main` leaves `main` unscanned for exactly the changes nobody classified as
+  security-relevant.
+
+  Every check-producing job is classified as required, or advisory with a stated
+  reason, and `workflow-false-green.test.ts` fails when a job is neither — so a
+  new check cannot join the advisory pile by default. The five dogfood jobs stay
+  advisory against ADR 0010's rule (precision unknown until #544 triages the
+  409-finding baseline), and `refresh-arch-baseline` stays advisory because it
+  only triggers on a label and requiring it would deadlock every unlabeled PR.
+  `required_approving_review_count` stays 0, now as a recorded decision for a
+  single-maintainer repo rather than an unconfigured default. See ADR 0011.
+
 - **Agent-tooling artifacts are now ignored rather than permanently dirty.** A
   skills-manager extension writes ~2.6 MB of machine-local state into the tree
   each session — telemetry under `.claude/learning/`, per-vendor skill mirrors

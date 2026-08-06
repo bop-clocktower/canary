@@ -1,0 +1,90 @@
+{
+  "$comment": [
+    "The in-repo record of which CI checks can stop a merge to `main`, and why",
+    "the rest cannot (#542). Ruleset 16189198 carried no `required_status_checks`",
+    "rule at all, so every check was advisory: PR #540 merged while markdownlint",
+    "was reporting FAILURE and `main` went red until #541.",
+    "",
+    "This file is the source of truth a human can read; the GitHub ruleset is the",
+    "copy that enforces it. `ts/test/workflow-false-green.test.ts` keeps the two",
+    "honest against the workflows: every `required` check must be produced by a",
+    "workflow that runs unconditionally on `pull_request` (a required check behind",
+    "a `paths:` filter never reports, and the PR can never merge), and every",
+    "check-producing job must appear here as either required or advisory with a",
+    "stated reason. A new job that is neither fails the suite rather than joining",
+    "the advisory pile by default.",
+    "",
+    "ADR 0010: a check is promoted once its precision is known. That is a real",
+    "reason to wait. `nobody configured it` is not, and is what #542 was filed",
+    "about.",
+    "",
+    "To apply this file to the ruleset:",
+    "  gh api -X PUT repos/bop-clocktower/canary/rulesets/16189198 --input <payload>",
+    "See docs/adr/0011-required-status-checks.md for the procedure."
+  ],
+
+  "ruleset": 16189198,
+
+  "required": [
+    { "check": "validate", "workflow": "harness-quality.yml" },
+    { "check": "TS engine (pilot)", "workflow": "harness-quality.yml" },
+    { "check": "npm package", "workflow": "harness-quality.yml" },
+    { "check": "Skills (JS)", "workflow": "harness-quality.yml" },
+    { "check": "harness", "workflow": "harness.yml" },
+    { "check": "guardian", "workflow": "guardian.yml" },
+    { "check": "markdownlint", "workflow": "docs-lint.yml" },
+    {
+      "check": "Code fences open and close correctly",
+      "workflow": "docs-lint.yml"
+    },
+    { "check": "Wiki diagrams render", "workflow": "docs-lint.yml" },
+    {
+      "check": "No removed-symbol or proprietary leaks",
+      "workflow": "docs-lint.yml"
+    },
+    { "check": "enforce", "workflow": "harness-architecture.yml" },
+    { "check": "security", "workflow": "harness-security.yml" },
+    {
+      "check": "Validate plugin.json against schema",
+      "workflow": "validate-plugin.yml"
+    }
+  ],
+
+  "advisory": [
+    {
+      "check": "Test quality (canary on canary)",
+      "workflow": "dogfood.yml",
+      "reason": "Precision not yet known (ADR 0010). The dogfood jobs run canary against canary and currently report a 409-finding baseline that #544 has not triaged. Promoting before the triage would block every PR on findings nobody has confirmed are real."
+    },
+    {
+      "check": "Doctor (from a packed install)",
+      "workflow": "dogfood.yml",
+      "reason": "Same dogfood baseline as above (#544). Also exercises a packed npm install, which depends on registry availability — a network flake would read as a code failure."
+    },
+    {
+      "check": "Node floor is enforced (unsupported runtime)",
+      "workflow": "dogfood.yml",
+      "reason": "Same dogfood baseline as above (#544). Promote alongside the other dogfood jobs once the baseline is triaged rather than one at a time."
+    },
+    {
+      "check": "Fleet health (canary's own runs)",
+      "workflow": "dogfood.yml",
+      "reason": "Reports on accumulated run history, so its verdict depends on prior runs rather than on this PR's diff. A required check must be a function of the change under review."
+    },
+    {
+      "check": "Deleted-test guard (canary-katana)",
+      "workflow": "dogfood.yml",
+      "reason": "Advisory by design — canary-katana records deleted and skipped tests and alarms only when the deletion removes the last coverage of a high-risk symbol. Same dogfood baseline (#544)."
+    },
+    {
+      "check": "refresh",
+      "workflow": "refresh-arch-baseline.yml",
+      "reason": "Not a gate. Triggers only on `pull_request: types: [labeled]` — an on-demand action a maintainer invokes to refresh the architecture baseline. It does not report on an ordinary PR, so requiring it would deadlock every PR that is never labeled."
+    }
+  ],
+
+  "reviews": {
+    "required_approving_review_count": 0,
+    "reason": "Deliberate, not a default (#542 step 4). Single-maintainer repo: raising this to 1 would mean self-approving every PR, which trains the reflex the gate exists to prevent. Revisit when a second maintainer joins."
+  }
+}
