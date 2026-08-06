@@ -16,6 +16,20 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **Agent-tooling artifacts are now ignored rather than permanently dirty.** A
+  skills-manager extension writes ~2.6 MB of machine-local state into the tree
+  each session — telemetry under `.claude/learning/`, per-vendor skill mirrors
+  in `.cursor/` and `.kiro/` and `.github/instructions/`, and copies of both
+  wherever a hook happened to run (`ts/`, `npm/`, `.github/workflows/`). One of
+  those files, `.claude/mcp-usage.jsonl`, records absolute local paths, session
+  IDs, and full bash command strings, and this repository is public. The rules
+  are globbed rather than path-listed because the hooks resolve from the working
+  directory, so the next `cd` grows another copy. Two tracked files the same
+  extension rewrites — a `CLAUDE.md` table documenting skills that live only on
+  one machine, and `.claude/settings.json` hooks curling `127.0.0.1:4895` — were
+  reverted; the hooks moved to the gitignored `settings.local.json`, where they
+  keep working without asking every contributor to run a local daemon.
+
 - **The guardian's sticky PR comment now says what to do, not just what is
   wrong.** Three pieces of information were computed and then dropped before
   they reached the reader:
@@ -76,6 +90,16 @@ under the project's former name) are documented in the
 
 ### Added
 
+- `ts/test/agent-artifact-ignores.test.ts` — asserts that the machine-local
+  state agent tooling writes into this repo stays out of it. Sixteen artifact
+  paths are checked individually via `git check-ignore`, so a partial regression
+  names the path that slipped; a companion assertion requires the tracked shared
+  config (`.claude/settings.json`, `.cursor/mcp.json`, the workflows) to be
+  **un**ignored, which is the guard against over-correcting. A third checks
+  nothing is tracked _today_, since `.gitignore` has no effect on an
+  already-tracked file. The un-ignored assertion earned itself on its first run
+  by catching a blanket `.cursor/` rule that would have swallowed the shared
+  `mcp.json` beside the telemetry.
 - `ts/test/node-engines-floor.test.ts` — holds four declarations of the Node
   floor together: `npm/package.json` `engines.node`, the README badge, the
   README install prose, and the `setup-node` version in `release.yml`. The
