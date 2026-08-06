@@ -72,10 +72,33 @@ const CONTROL_CHARS = /[\u0000-\u001F\u007F]/g;
  */
 export function skippedSuffix(skipped?: SkipEntry[]): string {
   if (!skipped || skipped.length === 0) return '';
-  const names = skipped
-    .map((s) => s.name.replace(CONTROL_CHARS, ''))
-    .join(', ');
-  return ` (${skipped.length} skipped: ${names})`;
+  // #579: `reason` used to be write-only -- every caller set one and no
+  // surface ever rendered it, so a reader could see THAT a path was dropped
+  // but never WHY. Name and cause now travel together, keeping the D7
+  // contract that the path stays visible rather than collapsing into a bare
+  // count.
+  //
+  // Grouped by reason, because producers write reasons at very different
+  // grain: the guardian uses short tokens (`skipGlobs`), doctor uses whole
+  // remedy sentences. Repeating the reason per name turned one doctor line
+  // into 183 characters that said the same thing twice. Groups keep
+  // first-appearance order, so output stays deterministic.
+  //
+  // Reasons are control-char stripped for the same line-forging reason names
+  // are -- rendering the field is what made it an injection surface.
+  const groups = new Map<string, string[]>();
+  for (const entry of skipped) {
+    const reason = entry.reason.replace(CONTROL_CHARS, '');
+    const names = groups.get(reason);
+    if (names) names.push(entry.name.replace(CONTROL_CHARS, ''));
+    else groups.set(reason, [entry.name.replace(CONTROL_CHARS, '')]);
+  }
+  const rendered = [...groups]
+    .map(([reason, names]) =>
+      reason ? `${names.join(', ')} [${reason}]` : names.join(', '),
+    )
+    .join('; ');
+  return ` (${skipped.length} skipped: ${rendered})`;
 }
 
 /**

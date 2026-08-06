@@ -94,7 +94,23 @@ describe('gate-result helper', () => {
     const o = gateOutcome(result(1, [], skipped), 'gate');
     expect(o.summaryLine).not.toContain('\n');
     expect(o.summaryLine).not.toContain('\u{1B}');
-    expect(o.summaryLine).toContain('(1 skipped: evil[32mOKAll checks passed)');
+    expect(o.summaryLine).toContain(
+      '(1 skipped: evil[32mOKAll checks passed [spoof])',
+    );
+  });
+
+  it('a skip REASON cannot forge output lines either (#579)', () => {
+    // Rendering `reason` (#579) made it a second injection surface; it is
+    // sanitized on the same terms as `name`.
+    const skipped = [
+      { name: 'probe', reason: 'ok\u{1B}[32m\nAll checks passed' },
+    ];
+    const o = gateOutcome(result(1, [], skipped), 'gate');
+    expect(o.summaryLine).not.toContain('\n');
+    expect(o.summaryLine).not.toContain('\u{1B}');
+    expect(o.summaryLine).toContain(
+      '(1 skipped: probe [ok[32mAll checks passed])',
+    );
   });
 
   it('skipped entries always render and never count as passed (D7)', () => {
@@ -104,7 +120,11 @@ describe('gate-result helper', () => {
     ];
     const clean = gateOutcome(result(4, [], skipped), 'gate');
     expect(clean.summaryLine).toContain('All 4 run check(s) passed');
-    expect(clean.summaryLine).toContain('(2 skipped: mcp-probe, net-check)');
+    // #579: the CAUSE travels with the name. A reader who sees only names
+    // cannot tell a configured skip from a built-in, non-configurable one.
+    expect(clean.summaryLine).toContain(
+      '(2 skipped: mcp-probe [no consent]; net-check [offline])',
+    );
     // Skipped-everything is an abstention, not a pass.
     const allSkipped = gateOutcome(result(0, [], skipped), 'gate');
     expect(allSkipped.abstained).toBe(true);
@@ -113,5 +133,20 @@ describe('gate-result helper', () => {
     // Findings line carries the suffix too.
     const found = gateOutcome(result(3, ['f'], skipped), 'gate');
     expect(found.summaryLine).toContain('(2 skipped:');
+  });
+
+  it('entries sharing a reason are grouped, not repeated (#579)', () => {
+    // Doctor's skip reasons are full remedy sentences, not short tokens like
+    // the guardian's. Repeating one per name turned a 25-char summary into a
+    // 183-char line saying the same thing twice. Names group under the reason
+    // they share, in first-appearance order.
+    const skipped = [
+      { name: 'repo-access', reason: 'needs consent' },
+      { name: 'cli-tooling', reason: 'needs consent' },
+    ];
+    const o = gateOutcome(result(3, [], skipped), 'gate');
+    expect(o.summaryLine).toContain(
+      '(2 skipped: repo-access, cli-tooling [needs consent])',
+    );
   });
 });
