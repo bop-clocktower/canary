@@ -30,6 +30,22 @@ under the project's former name) are documented in the
   reverted; the hooks moved to the gitignored `settings.local.json`, where they
   keep working without asking every contributor to run a local daemon.
 
+- **Agent ignores moved out of `.git/info/exclude` into the tracked
+  `.gitignore`.** That file is machine-local and never shared, so 15 personal
+  skill installs and ten kinds of Claude Code runtime state were invisible on
+  the machine that wrote them and untracked noise on every other clone — the
+  same state looking clean or dirty depending on which laptop you opened. The
+  skill directories are third-party artifacts rather than source: each carries a
+  `.skill-version.json` receipt (`{"version", "installedAt"}`), `skill-creator`
+  ships an Apache-2.0 `LICENSE.txt`, and not one file under `.claude/skills/`
+  mentions canary — the project's own skills ship from `agents/skills/`.
+  Committing them would vendor another author's code at whatever version one
+  developer installed. `.claude/skills/` is now ignored wholesale, with the
+  negation to commit a genuine project skill documented inline. Coverage
+  equivalence was verified rather than assumed: all 15 skill paths and all 12
+  runtime paths remain ignored, and `.git/info/exclude` is left with zero active
+  rules.
+
 - **The guardian's sticky PR comment now says what to do, not just what is
   wrong.** Three pieces of information were computed and then dropped before
   they reached the reader:

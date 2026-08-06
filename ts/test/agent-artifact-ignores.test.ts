@@ -15,6 +15,15 @@
  * path-listed, since the hooks resolve from the working directory — running a
  * command in `ts/` or `npm/` grows another copy.
  *
+ * A second batch of these paths — the personal skill installs and Claude Code's
+ * runtime state — previously hid in `.git/info/exclude`, which is machine-local
+ * and never shared, so a fresh clone or a second laptop saw them as untracked
+ * while the first machine looked clean. Consolidating them here is what makes
+ * the two agree; asserting them here is what keeps them agreeing. This suite
+ * deliberately does NOT assert anything about `.git/info/exclude` itself —
+ * it is a legitimate per-developer tool, and a test that forbade it would
+ * false-fail on any contributor who uses it as intended.
+ *
  * Offline: shells out to `git check-ignore` and `git ls-files` only. Never
  * writes, never reaches the network.
  *
@@ -66,6 +75,25 @@ const ARTIFACT_PATHS = [
   // harness CLI machine identity.
   'ts/.harness/.install-id',
   'agents/skills/.harness/.telemetry-notice-shown',
+  // Personal skill installs — third-party artifacts carrying a
+  // `.skill-version.json` receipt, not this project's source.
+  '.claude/skills/terraform-plan-review/SKILL.md',
+  '.claude/skills/skill-creator/LICENSE.txt',
+  // Claude Code runtime state. `worktrees/` is a live checkout of in-flight
+  // branches; the rest is regenerated per machine.
+  '.claude/worktrees/linter-exclude-strict-pragma/README.md',
+  '.claude/checkpoints/some-checkpoint.json',
+  '.claude/mailbox/some-message.json',
+  '.claude/routines/.state/state.json',
+  '.claude/scheduled_tasks.json',
+  '.claude/agent-registry.json',
+  '.claude/agent-memory-local',
+  '.claude/assistant-daemon-state.json',
+  '.claude/first-run',
+  '.claude/position.local.json',
+  '.claude/profile.local.json',
+  // Globbed, so a nested checkout is covered too.
+  'ts/.claude/worktrees/some-branch/file.ts',
 ];
 
 /** Shared config that must stay tracked and visible to every contributor. */
@@ -102,7 +130,7 @@ function trackedUnder(prefix: string): string[] {
 describe('agent-tooling artifacts stay out of the repo', () => {
   it('checks a non-empty set of artifact paths', () => {
     // A zero denominator is an abstention, not a pass.
-    expect(ARTIFACT_PATHS.length).toBeGreaterThan(10);
+    expect(ARTIFACT_PATHS.length).toBeGreaterThan(25);
   });
 
   it.each(ARTIFACT_PATHS)('ignores %s', (path) => {
@@ -132,6 +160,8 @@ describe('agent-tooling artifacts stay out of the repo', () => {
       ...trackedUnder('.github/instructions'),
       ...trackedUnder('.github/hooks'),
       ...trackedUnder('.github/copilot-instructions.md'),
+      ...trackedUnder('.claude/skills'),
+      ...trackedUnder('.claude/worktrees'),
     ];
     expect(leaked).toEqual([]);
   });
