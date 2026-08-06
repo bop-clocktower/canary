@@ -79,6 +79,34 @@ blob-report/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
+# ── Agent-tooling artifacts (machine-local; never commit) ─────
+# The skills-manager extension writes telemetry and per-vendor config mirrors
+# into the repo. Two reasons none of it belongs here:
+#   1. mcp-usage.jsonl records absolute local paths, session IDs, and full
+#      bash command strings — this repo is public.
+#   2. The learning/ stores are per-machine state; committing them would make
+#      every clone inherit one developer's cost and adoption history.
+# Globbed rather than path-listed because the hooks resolve from cwd, not the
+# repo root — running a command in ts/ or npm/ grows another copy.
+**/.claude/learning/
+**/.claude/mcp-usage.jsonl
+
+# Same extension, re-emitting the local .claude/skills/ set per agent vendor.
+# .claude/skills/ is itself untracked, so these mirrors document tooling no
+# contributor has — committing them would be pure drift.
+# Subpaths, not the whole dir: `.cursor/mcp.json` is tracked, shared config.
+.cursor/hooks.json
+.cursor/learning/
+.cursor/skills/
+.kiro/
+.github/copilot-instructions.md
+.github/instructions/
+.github/hooks/
+
+# harness CLI machine identity — regenerated per install
+**/.harness/.install-id
+**/.harness/.telemetry-notice-shown
+
 # Proprietary denylist for the company-leak guard (kept local; CI uses a secret)
 .proprietary-denylist
 
