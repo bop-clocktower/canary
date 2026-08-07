@@ -69,6 +69,22 @@ interface Run {
   stdout: string;
 }
 
+/**
+ * `execFileSync` throws on a non-zero exit, which is the case under test for
+ * three of the exit codes here — so a throw is a result, not a failure.
+ *
+ * Split out of `run` to keep that helper under the complexity threshold tests
+ * are held to (10, against 15 for `ts/src`). The nullish defaults are each a
+ * branch, and four of them in one function is enough to trip it.
+ */
+function asRun(error: unknown): Run {
+  const e = error as { status?: number; stdout?: string; stderr?: string };
+  return {
+    status: e.status ?? 2,
+    stdout: `${e.stdout ?? ''}${e.stderr ?? ''}`,
+  };
+}
+
 describe('roadmap-groom', () => {
   let dir: string;
   let roadmap: string;
@@ -83,11 +99,7 @@ describe('roadmap-groom', () => {
       );
       return { status: 0, stdout };
     } catch (error) {
-      const e = error as { status?: number; stdout?: string; stderr?: string };
-      return {
-        status: e.status ?? 2,
-        stdout: (e.stdout ?? '') + (e.stderr ?? ''),
-      };
+      return asRun(error);
     }
   };
 
