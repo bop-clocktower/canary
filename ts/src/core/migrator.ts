@@ -489,6 +489,7 @@ export interface MigrationContextInit {
   detection_confidence?: string;
   config_warnings?: string[];
   not_test_project_reason?: string | null;
+  workspace?: WorkspaceInfo | null;
 }
 
 export class MigrationContext {
@@ -502,6 +503,13 @@ export class MigrationContext {
   detection_confidence: string;
   config_warnings: string[];
   not_test_project_reason: string | null;
+  /**
+   * Declared workspace topology, or null for a single-package repo.
+   *
+   * Null is the back-compatibility guarantee -- a repo that declares no
+   * workspace never enters the plural path (#504 part 1).
+   */
+  workspace: WorkspaceInfo | null;
 
   constructor(init: MigrationContextInit) {
     this.project_root = init.project_root;
@@ -513,6 +521,7 @@ export class MigrationContext {
     this.detection_confidence = init.detection_confidence ?? 'none';
     this.config_warnings = init.config_warnings ?? [];
     this.not_test_project_reason = init.not_test_project_reason ?? null;
+    this.workspace = init.workspace ?? null;
   }
 }
 
@@ -827,6 +836,7 @@ export interface MigrationReportInit {
   deployed_skills?: SkillDeployResult[];
   installed_workflows?: WorkflowInstallResult[];
   config_warnings?: string[];
+  workspace?: WorkspaceInfo | null;
 }
 
 export class MigrationReport {
@@ -846,6 +856,8 @@ export class MigrationReport {
   deployed_skills: SkillDeployResult[];
   installed_workflows: WorkflowInstallResult[];
   config_warnings: string[];
+  /** Declared workspace topology, or null for a single-package repo (#504). */
+  workspace: WorkspaceInfo | null;
 
   constructor(init: MigrationReportInit) {
     this.framework = init.framework;
@@ -863,6 +875,32 @@ export class MigrationReport {
     this.deployed_skills = init.deployed_skills ?? [];
     this.installed_workflows = init.installed_workflows ?? [];
     this.config_warnings = init.config_warnings ?? [];
+    this.workspace = init.workspace ?? null;
+  }
+
+  /**
+   * What the workspace walk actually covered, stated with its denominator.
+   *
+   * Emitted only when a workspace was declared, so single-package output is
+   * untouched. Saying "0 packages carry a test config" is a different claim
+   * from saying nothing at all, which reads as "there was nothing to find"
+   * (#504 part 1, criteria 4 and 5).
+   */
+  private workspaceNotes(): string[] {
+    const ws = this.workspace;
+    if (ws === null) return [];
+    const notes: string[] = [];
+    if (ws.globs.length > 0 && ws.scanned === 0) {
+      const g = ws.globs.length === 1 ? '1 glob' : `${ws.globs.length} globs`;
+      notes.push(`Declared ${g}, matched 0 packages.`);
+    } else if (ws.scanned > 0 && ws.findings.length === 0) {
+      const p = ws.scanned === 1 ? '1 package' : `${ws.scanned} packages`;
+      notes.push(`${p} scanned, none carries a recognizable test config.`);
+    }
+    for (const dir of ws.unreadable) {
+      notes.push(`\`${dir}/\` could not be read and was not scanned.`);
+    }
+    return notes;
   }
 
   /**
@@ -919,6 +957,13 @@ export class MigrationReport {
     }
 
     lines.push('');
+
+    const wsNotes = this.workspaceNotes();
+    if (wsNotes.length > 0) {
+      lines.push('## Workspace', '');
+      for (const n of wsNotes) lines.push(`- ${n}`);
+      lines.push('');
+    }
 
     // #504 (3): name what was found before saying what would happen, so the
     // empty "Would Create" below reads as a decision rather than a shrug.
@@ -1157,9 +1202,17 @@ export class HarnessMigrator {
       });
     }
 
+    // Detected once and threaded: `detectFramework` resolves the scalar from it
+    // and the context carries it, so the package walk happens a single time.
+    const workspace = detectWorkspace(
+      projectRoot,
+      harnessConfig,
+      configWarnings,
+    );
     const [framework, shape, source, confidence] = this.detectFramework(
       projectRoot,
       harnessConfig,
+      workspace,
     );
 
     return new MigrationContext({
@@ -1171,6 +1224,7 @@ export class HarnessMigrator {
       detection_source: source,
       detection_confidence: confidence,
       config_warnings: configWarnings,
+      workspace,
     });
   }
 
@@ -1242,6 +1296,7 @@ export class HarnessMigrator {
         detection_confidence: confidence,
         manual_followups: followups,
         config_warnings: ctx.config_warnings,
+        workspace: ctx.workspace,
         deployed_skills: deployed,
         installed_workflows: this.installWorkflows(
           shape,
@@ -1318,6 +1373,7 @@ export class HarnessMigrator {
         deployed_skills: deployed,
         installed_workflows: installedWorkflows,
         config_warnings: ctx.config_warnings,
+        workspace: ctx.workspace,
       });
     }
 
@@ -1344,6 +1400,7 @@ export class HarnessMigrator {
       deployed_skills: deployed,
       installed_workflows: installedWorkflows,
       config_warnings: ctx.config_warnings,
+      workspace: ctx.workspace,
     });
   }
 
@@ -1726,6 +1783,7 @@ export class HarnessMigrator {
   private detectFramework(
     root: string,
     config: Record<string, unknown>,
+    ws: WorkspaceInfo | null = null,
   ): [string | null, string, string, string] {
     // Explicit override in .canary/company.json ("canary_shape" field) is
     // user intent: it wins over every probe tier's shape, including a total
@@ -1739,7 +1797,6 @@ export class HarnessMigrator {
     const rootProbe = this.probeFramework(root, config);
     // A root miss falls through to the workspace packages -- but only a miss.
     // A root config file still outranks them, unchanged from before (#504).
-    const ws = detectWorkspace(root, config);
     const resolved =
       rootProbe[0] === null && ws !== null
         ? (this.resolveFromWorkspace(ws) ?? rootProbe)

@@ -2823,3 +2823,37 @@ describe('TestWorkspaceDegradation', () => {
       ).toBe(true);
     }));
 });
+
+describe('TestWorkspaceDenominatorMarkdown', () => {
+  function wsRoot(root: string, yaml: string): void {
+    makeHarnessProject(root, { language: 'go' });
+    write(join(root, 'pnpm-workspace.yaml'), yaml);
+  }
+
+  // Spec test 18. "Found nothing" and "never looked" must not render alike.
+  it('states the glob count when nothing matched', () =>
+    withTmp((root) => {
+      wsRoot(root, 'packages:\n  - "apps/*"\n');
+      const md = mig().migrate(root, { dryRun: true }).to_markdown();
+      expect(md).toContain('Declared 1 glob, matched 0 packages.');
+    }));
+
+  it('states the scanned count when no package carries a test config', () =>
+    withTmp((root) => {
+      wsRoot(root, 'packages:\n  - "apps/*"\n');
+      mkdirSync(join(root, 'apps', 'a'), { recursive: true });
+      mkdirSync(join(root, 'apps', 'b'), { recursive: true });
+      const md = mig().migrate(root, { dryRun: true }).to_markdown();
+      expect(md).toContain(
+        '2 packages scanned, none carries a recognizable test config.',
+      );
+    }));
+
+  it('says nothing about a workspace when none is declared', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'go' });
+      const report = mig().migrate(root, { dryRun: true });
+      expect(report.workspace).toBeNull();
+      expect(report.to_markdown()).not.toContain('## Workspace');
+    }));
+});
