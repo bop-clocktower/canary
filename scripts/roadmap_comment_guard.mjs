@@ -24,7 +24,10 @@ const COMMENT_BLOCK =
   `${DISABLE_COMMENT}\n` +
   '<!-- Machine-managed by harness roadmap tooling: each feature field is a single\n' +
   '     line by schema contract, so the 80-column line-length rule does not apply.\n' +
-  '     Completed work lives in docs/roadmap-archive.md (run: harness roadmap groom). -->\n';
+  '     Completed work lives in docs/roadmap-archive.md — move it there with\n' +
+  '     `node scripts/roadmap-groom.mjs --apply`. There is no `harness roadmap\n' +
+  '     groom`; this comment claimed one for months while ten done rows piled up\n' +
+  '     here (#595). -->\n';
 
 const HEADING_PATTERN = /^# Roadmap\n\n/m;
 
