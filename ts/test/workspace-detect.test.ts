@@ -3,7 +3,13 @@
  * findings (#504 part 1).
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -168,4 +174,42 @@ describe('detectWorkspace -- what it must not claim', () => {
       // `apps/web` -- but never `apps/web/node_modules/dep`.
       expect(ws!.scanned).toBe(2);
     }));
+});
+
+describe('detectWorkspace -- the denominator', () => {
+  // Spec test 17. `scanned: 0` against a declared glob is what makes "found
+  // nothing" distinguishable from "never looked".
+  it('reports zero scanned when the globs match no directory', () =>
+    withTmp((tmp) => {
+      write(join(tmp, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+
+      const ws = detectWorkspace(tmp, {});
+
+      expect(ws).not.toBeNull();
+      expect(ws!.globs).toHaveLength(1);
+      expect(ws!.scanned).toBe(0);
+      expect(ws!.findings).toEqual([]);
+    }));
+
+  // Spec test 19. Root ignores the mode bit, so an unguarded version of this
+  // test would pass for the wrong reason in a container running as root.
+  const canChmod = process.platform !== 'win32' && process.getuid?.() !== 0;
+  it.runIf(canChmod)('lists a package directory it cannot read', () =>
+    withTmp((tmp) => {
+      write(join(tmp, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+      const locked = mkPkg(tmp, 'apps/locked');
+      write(join(mkPkg(tmp, 'apps/web'), 'playwright.config.ts'), '');
+      chmodSync(locked, 0o000);
+      try {
+        const ws = detectWorkspace(tmp, {});
+
+        expect(ws).not.toBeNull();
+        expect(ws!.unreadable).toEqual(['apps/locked']);
+        expect(ws!.scanned).toBe(2);
+        expect(ws!.findings.map((f) => f.dir)).toEqual(['apps/web']);
+      } finally {
+        chmodSync(locked, 0o755);
+      }
+    }),
+  );
 });
