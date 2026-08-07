@@ -2776,3 +2776,50 @@ describe('TestWorkspaceScalarResolution', () => {
       expect(ctx.detected_shape).toBe('capwell');
     }));
 });
+
+describe('TestWorkspaceDegradation', () => {
+  it('reports no workspace for a single-package repo', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'go' });
+      write(join(root, 'package.json'), JSON.stringify({ name: 'solo' }));
+      expect(mig().detect(root).workspace).toBeNull();
+    }));
+
+  // The one that matters: a broken pnpm-workspace.yaml must not discard the
+  // globs a readable package.json declared.
+  it('keeps package.json globs when pnpm-workspace.yaml is unparseable', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'go' });
+      write(join(root, 'pnpm-workspace.yaml'), ':\n\tnot: [valid\n');
+      write(
+        join(root, 'package.json'),
+        JSON.stringify({ name: 'r', workspaces: ['apps/*'] }),
+      );
+      const dir = join(root, 'apps', 'web');
+      mkdirSync(dir, { recursive: true });
+      write(join(dir, 'playwright.config.ts'), 'export default {};');
+
+      const ctx = mig().detect(root);
+
+      expect(ctx.workspace!.globs).toEqual(['apps/*']);
+      expect(ctx.workspace!.findings.map((f) => f.dir)).toEqual(['apps/web']);
+      expect(
+        ctx.config_warnings.some((w) => w.includes('pnpm-workspace.yaml')),
+      ).toBe(true);
+    }));
+
+  it('warns and stays single-package when the yaml is the only source', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'go' });
+      write(join(root, 'pnpm-workspace.yaml'), ':\n\tnot: [valid\n');
+
+      const ctx = mig().detect(root);
+
+      expect(ctx.workspace!.globs).toEqual([]);
+      expect(ctx.workspace!.scanned).toBe(0);
+      expect(ctx.detected_framework).toBeNull();
+      expect(
+        ctx.config_warnings.some((w) => w.includes('pnpm-workspace.yaml')),
+      ).toBe(true);
+    }));
+});
