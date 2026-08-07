@@ -155,13 +155,73 @@ export function runStatus(
   return "passed";
 }
 
+/** Worst-first, so a collapsed row can never look healthier than its parts. */
+const STATUS_SEVERITY: Record<string, number> = {
+  failed: 3,
+  flaky: 2,
+  passed: 1,
+  skipped: 0,
+};
+
+/**
+ * Collapse results that share a `full_title` into one row.
+ *
+ * TestTracker's ingest holds a unique index on `(run_id, full_title)` and
+ * rejects the WHOLE run on a collision, so a duplicate title is not a cosmetic
+ * problem — it takes the suite dark. The reporter keys its in-flight map by
+ * `test.id`, which is genuinely unique, but a title is not: a Playwright
+ * `dependencies:` setup project runs in full in EVERY shard (dependencies are
+ * not sharded), so a `merge-reports` payload over a sharded matrix legitimately
+ * carries the same setup title once per shard. Capwell's `capwell-web` suite
+ * had every nightly rejected this way and never ingested a single run.
+ *
+ * Collapse rule keeps the merged row honest: worst status wins, the first real
+ * error is preserved (so the SDET still sees why it failed), and duration and
+ * retries take the max rather than the last-seen value.
+ */
+export function dedupeByFullTitle(results: ResultEntry[]): ResultEntry[] {
+  const merged = new Map<string, ResultEntry>();
+  for (const r of results) {
+    const prior = merged.get(r.full_title);
+    merged.set(r.full_title, prior ? mergeEntries(prior, r) : { ...r, tags: [...r.tags] });
+  }
+  return [...merged.values()];
+}
+
+function worstOf(a: string, b: string): string {
+  return (STATUS_SEVERITY[b] ?? 0) > (STATUS_SEVERITY[a] ?? 0) ? b : a;
+}
+
+/** `Math.max` treats a missing duration as 0; absent-on-both must stay absent. */
+function longerOf(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return Math.max(a, b);
+}
+
+function mergeEntries(prior: ResultEntry, next: ResultEntry): ResultEntry {
+  return {
+    ...prior,
+    status: worstOf(prior.status, next.status),
+    error_message: prior.error_message ?? next.error_message,
+    error_stack: prior.error_stack ?? next.error_stack,
+    duration_ms: longerOf(prior.duration_ms, next.duration_ms),
+    retries: Math.max(prior.retries, next.retries),
+    tags: [...new Set([...prior.tags, ...next.tags])],
+  };
+}
+
 export function buildPayload(
-  results: ResultEntry[],
+  rawResults: ResultEntry[],
   cfg: ResolvedConfig,
   timing: { startedAt: string; finishedAt: string },
   env: NodeJS.ProcessEnv = process.env,
   fullResultStatus?: string,
 ): IngestPayload {
+  // Deduped before the totals are counted, so `totals` always describes the
+  // rows actually sent — a payload whose totals disagree with `results.length`
+  // would misreport the run on the dashboard.
+  const results = dedupeByFullTitle(rawResults);
   const count = (s: string) => results.filter((r) => r.status === s).length;
   const passed = count("passed");
   const failed = count("failed");

@@ -14,6 +14,35 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [6.7.1] - 2026-08-07
+
+### Fixed
+
+- **The TestTracker reporter no longer emits duplicate `full_title` values,
+  which silently took a consuming suite dark**
+  ([#599](https://github.com/bop-clocktower/canary/issues/599)). TestTracker's
+  ingest holds a unique index on `(run_id, full_title)` and rejects the **whole
+  run** on a collision. The reporter keyed its in-flight map by `test.id` —
+  genuinely unique — but a title is not: a Playwright `dependencies:` setup
+  project runs in full in _every_ shard, so a `merge-reports` payload over a
+  sharded matrix legitimately carries the same setup title once per shard.
+
+  The failure mode is what makes this worth a patch release. The reporter is
+  deliberately non-fatal, so the CI job stays **green** while nothing is
+  ingested at all — a consuming suite ran four consecutive nightlies with every
+  push rejected and its dashboard stuck on `NEVER REPORTED`. A run count of zero
+  is an abstention, not a pass.
+
+  Results are now collapsed by `full_title` before the totals are counted, so
+  `totals` always describes the rows actually sent. The merged row stays honest:
+  worst status wins (`failed` > `flaky` > `passed` > `skipped`) so it can never
+  look healthier than its parts, the first real error is preserved so the SDET
+  still sees why it failed, and duration and retries take the max rather than
+  the last-seen value. Suites whose results were already unique are unaffected —
+  the collapse is a no-op.
+
+## [6.7.0] - 2026-08-06
+
 ### Fixed
 
 - **Every guardian run now reports what it declined to judge, not just what it
@@ -1695,7 +1724,9 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v6.6.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v6.7.1...HEAD
+[6.7.1]: https://github.com/bop-clocktower/canary/compare/v6.7.0...v6.7.1
+[6.7.0]: https://github.com/bop-clocktower/canary/compare/v6.6.0...v6.7.0
 [6.6.0]: https://github.com/bop-clocktower/canary/compare/v6.5.0...v6.6.0
 [6.5.0]: https://github.com/bop-clocktower/canary/compare/v6.4.0...v6.5.0
 [6.4.0]: https://github.com/bop-clocktower/canary/compare/v6.3.0...v6.4.0
