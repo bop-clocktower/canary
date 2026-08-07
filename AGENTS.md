@@ -391,11 +391,17 @@ Two related facts worth not rediscovering:
   `Blockers`, `Plan`), so it is easy to conclude no link field exists. 19 rows
   carry one as of #596.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
-  Before the 19 linked issues were labelled it examined **2 of 30** — an
-  effectively blind gate that reported a real number nobody read. Rows still
-  lacking an `External-ID` are read as rows needing a ticket, so `--apply`
-  without `--no-create` files a new issue per unlinked row (29 of them, mostly
-  already-shipped work). #595 tracks resolving those.
+  Before the linked issues were labelled it examined **2 of 30** — an effectively
+  blind gate that reported a real number nobody read. All 38 rows now carry an
+  `External-ID` (#596, #601–#619) and sync reports `would create 0`.
+- **`--apply` replaces issue bodies, and no flag disables it.** `updateTicket`
+  sets `patch.body` from the row's `Summary`, so patching a linked issue
+  overwrites whatever a human wrote there with the roadmap's one paragraph. With
+  every row linked, one `--apply` would flatten 38 issue bodies — the evidence in
+  #486, the design notes in #591–#594, the provenance in #601–#619.
+  `--no-state-change` guards open/closed only. This is why #601–#619 were filed
+  directly rather than through sync's create path: the command has no create-only
+  mode, so creating 19 would have meant patching 19.
 
 **Generated hooks carry local edits (#318 C).** Several hooks under
 `.harness/hooks/` are **harness-generated** but hand-edited in canary (commit
