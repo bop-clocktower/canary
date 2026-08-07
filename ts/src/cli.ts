@@ -154,7 +154,10 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
         'Project root to migrate (default: current directory).',
       ).default('.'),
     )
-    .option('-f, --framework <framework>', 'Override auto-detected framework.')
+    .option(
+      '-f, --framework <framework>',
+      'Override the auto-detected framework (also resolves its test shape).',
+    )
     .option(
       '--from <overlay>',
       'Tracked overlay (name or path) whose .canary/skills/ are deployed into the target.',

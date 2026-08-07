@@ -14,6 +14,7 @@
  */
 
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -417,6 +418,408 @@ describe('TestFrameworkOverride', () => {
       makeHarnessProject(root, { language: 'python' });
       mig().migrate(root, { dryRun: false, framework: 'vitest' });
       expect(existsSync(join(root, 'vitest.config.ts'))).toBe(true);
+    }));
+});
+
+// ---------------------------------------------------------------------------
+// #504 (2): `--framework` must resolve the shape too, not just the framework.
+//
+// Without this the override half-works: overlay-skill matching and
+// `<shape>:`-prefixed workflow templates key off shape, so an override that
+// leaves `shape === 'unknown'` silently deploys nothing shape-specific.
+// ---------------------------------------------------------------------------
+describe('TestFrameworkOverrideResolvesShape', () => {
+  it('playwright override resolves the e2e_ui shape', () =>
+    withTmp((root) => {
+      // No probe can match: bare config, no language fallback, no test files.
+      harnessProject(root, { version: 1, name: 'p' });
+      expect(
+        mig().migrate(root, { dryRun: true, framework: 'playwright' }).shape,
+      ).toBe('e2e_ui');
+    }));
+
+  it('pytest override resolves the api shape', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'p' });
+      expect(
+        mig().migrate(root, { dryRun: true, framework: 'pytest' }).shape,
+      ).toBe('api');
+    }));
+
+  it('vitest override resolves the frontend_unit shape', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'p' });
+      expect(
+        mig().migrate(root, { dryRun: true, framework: 'vitest' }).shape,
+      ).toBe('frontend_unit');
+    }));
+
+  it('playwright override refines to api when no spec uses UI fixtures', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'p' });
+      mkdirSync(join(root, 'tests'), { recursive: true });
+      write(
+        join(root, 'tests', 'api.spec.ts'),
+        "test('x', async ({ request }) => {});",
+      );
+      expect(
+        mig().migrate(root, { dryRun: true, framework: 'playwright' }).shape,
+      ).toBe('api');
+    }));
+
+  it('an explicit canary_shape still outranks the override-derived shape', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'p', canary_shape: 'contract' });
+      expect(
+        mig().migrate(root, { dryRun: true, framework: 'playwright' }).shape,
+      ).toBe('contract');
+    }));
+
+  it('an override with no probe entry leaves the detected shape alone', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'python' });
+      // 'mocha' is in no probe table -- nothing to derive a shape from, so the
+      // language fallback's shape must survive rather than be clobbered.
+      expect(
+        mig().migrate(root, { dryRun: true, framework: 'mocha' }).shape,
+      ).toBe('api');
+    }));
+
+  it('the override does not claim a config file was found', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'p' });
+      const report = mig().migrate(root, {
+        dryRun: true,
+        framework: 'playwright',
+      });
+      expect(report.detection_confidence).toBe('override');
+      // The old value ('config') rendered as "high -- dedicated config file",
+      // asserting evidence that was never gathered.
+      expect(report.to_markdown()).not.toContain('dedicated config file');
+      expect(report.to_markdown()).toContain('--framework');
+    }));
+});
+
+// ---------------------------------------------------------------------------
+// #504 (3): never propose a root scaffold beside a suite that already exists
+// in a workspace package. Detection itself stays root-only (that is #504 (1),
+// out of scope here) -- this is purely the "is there already a suite?" guard.
+// ---------------------------------------------------------------------------
+describe('TestWorkspaceExistingSuiteScan', () => {
+  /** pnpm/turbo monorepo with a playwright suite in apps/web-e2e. */
+  function pnpmMonorepo(root: string): void {
+    harnessProject(root, { version: 1, name: 'capwell' });
+    write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+    write(
+      join(root, 'package.json'),
+      JSON.stringify({ name: 'capwell', scripts: { test: 'turbo test' } }),
+    );
+    mkdirSync(join(root, 'apps', 'web-e2e', 'tests'), { recursive: true });
+    write(
+      join(root, 'apps', 'web-e2e', 'playwright.config.ts'),
+      'export default {};',
+    );
+    write(
+      join(root, 'apps', 'web-e2e', 'tests', 'home.spec.ts'),
+      "test('home', async ({ page }) => {});",
+    );
+  }
+
+  it('finds the existing suite in a pnpm workspace package', () =>
+    withTmp((root) => {
+      pnpmMonorepo(root);
+      const report = mig().migrate(root, {
+        dryRun: true,
+        framework: 'playwright',
+      });
+      expect(report.existing_suites.map((s) => s.dir)).toEqual([
+        'apps/web-e2e',
+      ]);
+      expect(report.existing_suites[0]!.config).toBe('playwright.config.ts');
+      expect(report.existing_suites[0]!.test_count).toBe(1);
+    }));
+
+  it('proposes nothing when a suite for that framework already exists', () =>
+    withTmp((root) => {
+      pnpmMonorepo(root);
+      expect(
+        mig().migrate(root, { dryRun: true, framework: 'playwright' })
+          .would_create,
+      ).toEqual([]);
+    }));
+
+  it('names the existing suite in the markdown instead of scaffolding', () =>
+    withTmp((root) => {
+      pnpmMonorepo(root);
+      const md = mig()
+        .migrate(root, { dryRun: true, framework: 'playwright' })
+        .to_markdown();
+      expect(md).toContain('Existing Suites Found');
+      expect(md).toContain('apps/web-e2e');
+      expect(md).not.toContain('- `tests/e2e`');
+      // Zero items, and the abstention says the real reason rather than the
+      // generic "already carries everything" -- which would be false here.
+      expect(md).toContain('would migrate zero item(s)');
+      expect(md).toContain('already exists in `apps/web-e2e/`');
+      expect(md).not.toContain('already carries everything');
+    }));
+
+  it('reads npm/yarn workspaces from package.json too', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'capwell' });
+      write(
+        join(root, 'package.json'),
+        JSON.stringify({ name: 'capwell', workspaces: ['apps/*'] }),
+      );
+      mkdirSync(join(root, 'apps', 'e2e'), { recursive: true });
+      write(join(root, 'apps', 'e2e', 'playwright.config.ts'), 'export {};');
+      expect(
+        mig()
+          .migrate(root, { dryRun: true, framework: 'playwright' })
+          .existing_suites.map((s) => s.dir),
+      ).toEqual(['apps/e2e']);
+    }));
+
+  it('reads the workspaces.packages object form', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'capwell' });
+      write(
+        join(root, 'package.json'),
+        JSON.stringify({
+          name: 'capwell',
+          workspaces: { packages: ['apps/*'] },
+        }),
+      );
+      mkdirSync(join(root, 'apps', 'e2e'), { recursive: true });
+      write(join(root, 'apps', 'e2e', 'playwright.config.ts'), 'export {};');
+      expect(
+        mig()
+          .migrate(root, { dryRun: true, framework: 'playwright' })
+          .existing_suites.map((s) => s.dir),
+      ).toEqual(['apps/e2e']);
+    }));
+
+  it('ignores a package suite for a different framework', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'capwell' });
+      write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "packages/*"\n');
+      mkdirSync(join(root, 'packages', 'core'), { recursive: true });
+      write(join(root, 'packages', 'core', 'vitest.config.ts'), 'export {};');
+      const report = mig().migrate(root, {
+        dryRun: true,
+        framework: 'playwright',
+      });
+      // A vitest suite is no reason to withhold a playwright scaffold.
+      expect(report.existing_suites).toEqual([]);
+      expect(report.would_create).toContain('playwright.config.ts');
+    }));
+
+  it('leaves a single-package repo entirely alone', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'solo' });
+      expect(
+        mig().migrate(root, { dryRun: true, framework: 'playwright' })
+          .would_create,
+      ).toContain('playwright.config.ts');
+    }));
+
+  it('does not treat the root itself as an existing workspace suite', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'capwell' });
+      write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+      write(join(root, 'playwright.config.ts'), 'export default {};');
+      // The root config is already handled by skipped_configs; reporting it as
+      // an "existing suite" would double-count and suppress nothing useful.
+      expect(
+        mig().migrate(root, { dryRun: true, framework: 'playwright' })
+          .existing_suites,
+      ).toEqual([]);
+    }));
+
+  it('applies to an apply-mode run as well, writing no root scaffold', () =>
+    withTmp((root) => {
+      pnpmMonorepo(root);
+      mig().migrate(root, { dryRun: false, framework: 'playwright' });
+      expect(existsSync(join(root, 'playwright.config.ts'))).toBe(false);
+    }));
+
+  it('still deploys skills and workflows when the scaffold is withheld', () =>
+    withTmp((root) => {
+      pnpmMonorepo(root);
+      const report = mig().migrate(root, {
+        dryRun: true,
+        framework: 'playwright',
+      });
+      // Withholding a duplicate *config* must not withhold the rest of the
+      // migration -- that would turn a precision fix into a regression.
+      expect(report.would_create).toEqual([]);
+      expect(report.shape).toBe('e2e_ui');
+    }));
+
+  it('reads unquoted and commented pnpm package entries', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'capwell' });
+      write(
+        join(root, 'pnpm-workspace.yaml'),
+        '# the workspace\npackages:\n  - apps/*   # unquoted\n  - "tools/*"\n',
+      );
+      mkdirSync(join(root, 'tools', 'e2e'), { recursive: true });
+      write(join(root, 'tools', 'e2e', 'playwright.config.ts'), 'export {};');
+      expect(
+        mig()
+          .migrate(root, { dryRun: true, framework: 'playwright' })
+          .existing_suites.map((s) => s.dir),
+      ).toEqual(['tools/e2e']);
+    }));
+
+  it('treats an unparseable workspace file as a single-package repo', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'capwell' });
+      write(join(root, 'pnpm-workspace.yaml'), 'not: a packages list\n');
+      // A parse miss must never invent a suite -- it falls back to the old
+      // behavior, which proposes the root scaffold.
+      const report = mig().migrate(root, {
+        dryRun: true,
+        framework: 'playwright',
+      });
+      expect(report.existing_suites).toEqual([]);
+      expect(report.would_create).toContain('playwright.config.ts');
+    }));
+
+  it('survives a package.json that is not valid JSON', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'capwell' });
+      write(join(root, 'package.json'), '{ not json');
+      expect(() =>
+        mig().migrate(root, { dryRun: true, framework: 'playwright' }),
+      ).not.toThrow();
+    }));
+
+  it('lists every matching package suite, in path order', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'capwell' });
+      write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+      for (const name of ['zeta', 'alpha']) {
+        mkdirSync(join(root, 'apps', name), { recursive: true });
+        write(join(root, 'apps', name, 'playwright.config.ts'), 'export {};');
+      }
+      expect(
+        mig()
+          .migrate(root, { dryRun: true, framework: 'playwright' })
+          .existing_suites.map((s) => s.dir),
+      ).toEqual(['apps/alpha', 'apps/zeta']);
+    }));
+
+  it('reports a config-only package suite as zero test files', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'capwell' });
+      write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+      mkdirSync(join(root, 'apps', 'e2e'), { recursive: true });
+      write(join(root, 'apps', 'e2e', 'playwright.config.ts'), 'export {};');
+      const report = mig().migrate(root, {
+        dryRun: true,
+        framework: 'playwright',
+      });
+      expect(report.existing_suites[0]!.test_count).toBe(0);
+      expect(report.to_markdown()).toContain('0 test files');
+    }));
+
+  it('handles a workspace glob that matches no directory', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'capwell' });
+      write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "nope/*"\n');
+      expect(
+        mig().migrate(root, { dryRun: true, framework: 'playwright' })
+          .existing_suites,
+      ).toEqual([]);
+    }));
+
+  it('never counts a dependency’s own config as an existing suite', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'capwell' });
+      write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/**"\n');
+      mkdirSync(join(root, 'apps', 'web', 'node_modules', 'some-dep'), {
+        recursive: true,
+      });
+      write(
+        join(
+          root,
+          'apps',
+          'web',
+          'node_modules',
+          'some-dep',
+          'playwright.config.ts',
+        ),
+        'export {};',
+      );
+      // A vendored config is not this repo's suite. Counting it would suppress
+      // a scaffold the user actually needs -- a silent, wrong abstention.
+      const report = mig().migrate(root, {
+        dryRun: true,
+        framework: 'playwright',
+      });
+      expect(report.existing_suites).toEqual([]);
+      expect(report.would_create).toContain('playwright.config.ts');
+    }));
+
+  it('does not descend into .git while walking workspace globs', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'capwell' });
+      write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/**"\n');
+      mkdirSync(join(root, 'apps', '.git', 'objects'), { recursive: true });
+      write(join(root, 'apps', '.git', 'playwright.config.ts'), 'export {};');
+      expect(
+        mig().migrate(root, { dryRun: true, framework: 'playwright' })
+          .existing_suites,
+      ).toEqual([]);
+    }));
+
+  it('walks a deep ** workspace glob', () =>
+    withTmp((root) => {
+      harnessProject(root, { version: 1, name: 'capwell' });
+      write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/**"\n');
+      mkdirSync(join(root, 'apps', 'group', 'e2e'), { recursive: true });
+      write(
+        join(root, 'apps', 'group', 'e2e', 'playwright.config.ts'),
+        'export {};',
+      );
+      expect(
+        mig()
+          .migrate(root, { dryRun: true, framework: 'playwright' })
+          .existing_suites.map((s) => s.dir),
+      ).toEqual(['apps/group/e2e']);
+    }));
+});
+
+// ---------------------------------------------------------------------------
+// #504 (4): a dry run must never claim the migration completed. Already true
+// on main since the `## Status` block became `gateOutcome`-derived -- this
+// pins it so the copy cannot regress.
+// ---------------------------------------------------------------------------
+describe('TestDryRunNeverClaimsCompletion', () => {
+  it('dry-run markdown never says the migration completed', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'python' });
+      const md = mig().migrate(root, { dryRun: true }).to_markdown();
+      expect(md).not.toContain('Migration complete');
+      expect(md).toContain('Dry run');
+    }));
+
+  it('dry-run markdown stays honest when nothing would be migrated', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'python' });
+      write(join(root, 'pytest.ini'), '[pytest]\n');
+      mkdirSync(join(root, 'tests'), { recursive: true });
+      const md = mig().migrate(root, { dryRun: true }).to_markdown();
+      expect(md).not.toContain('Migration complete');
+    }));
+
+  it('an applied run still reports completion', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'python' });
+      expect(mig().migrate(root, { dryRun: false }).to_markdown()).toContain(
+        'Migration complete',
+      );
     }));
 });
 
@@ -2274,4 +2677,298 @@ describe('TestCheckReportsWorkflowsWithoutNagging', () => {
         readFileSync(workflowPath(root, 'canary-guardian.yml'), 'utf-8'),
       ).toBe(HAND_TUNED_YML);
     }));
+});
+
+describe('TestWorkspaceScalarResolution', () => {
+  /**
+   * A harness project whose ROOT probe misses every tier: `language: go` is not
+   * in `_LANGUAGE_FALLBACKS`, so the scalar can only come from the workspace.
+   */
+  function wsProject(root: string, globs: string[] = ['apps/*']): void {
+    makeHarnessProject(root, { language: 'go' });
+    write(
+      join(root, 'pnpm-workspace.yaml'),
+      `packages:\n${globs.map((g) => `  - "${g}"\n`).join('')}`,
+    );
+  }
+
+  function pkg(root: string, rel: string, ...configs: string[]): void {
+    const dir = join(root, ...rel.split('/'));
+    mkdirSync(dir, { recursive: true });
+    for (const c of configs) write(join(dir, c), 'export default {};');
+  }
+
+  it('resolves the scalar from unanimous packages and counts them', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      pkg(root, 'apps/b', 'playwright.config.ts');
+      pkg(root, 'apps/c', 'playwright.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_framework).toBe('playwright');
+      expect(ctx.detected_shape).toBe('e2e_ui');
+      expect(ctx.detection_source).toBe('workspace (3 packages)');
+    }));
+
+  it('uses the singular noun for a single package', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detection_source).toBe('workspace (1 package)');
+    }));
+
+  it('reports mixed when packages disagree on the framework', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      pkg(root, 'apps/b', 'vitest.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_framework).toBeNull();
+      expect(ctx.detected_shape).toBe('unknown');
+      expect(ctx.detection_source).toBe('workspace (mixed)');
+    }));
+
+  // Unanimity is on the (framework, shape) PAIR: shape decides which overlay
+  // skills deploy, so same-framework/different-shape is NOT unanimous.
+  it('is not unanimous when the same framework resolves to two shapes', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/ui', 'playwright.config.ts');
+      const api = join(root, 'apps', 'api');
+      mkdirSync(join(api, 'tests'), { recursive: true });
+      write(join(api, 'playwright.config.ts'), 'export default {};');
+      write(
+        join(api, 'tests', 'a.spec.ts'),
+        'test("x", async ({ request }) => {});',
+      );
+      const ctx = mig().detect(root);
+      expect(ctx.detected_shape).toBe('unknown');
+      expect(ctx.detection_source).toBe('workspace (mixed)');
+    }));
+
+  it('is not unanimous when one package carries two frameworks', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts', 'vitest.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_shape).toBe('unknown');
+      expect(ctx.detection_source).toBe('workspace (mixed)');
+    }));
+
+  it('lets a root probe hit outrank the workspace packages', () =>
+    withTmp((root) => {
+      wsProject(root);
+      write(join(root, 'vitest.config.ts'), 'export default {};');
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_framework).toBe('vitest');
+      expect(ctx.detection_source).toBe('vitest.config.ts');
+    }));
+
+  it('lets an explicit canary_shape outrank the workspace shape', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      const canaryDir = join(root, '.canary');
+      mkdirSync(canaryDir, { recursive: true });
+      write(join(canaryDir, 'company.json'), '{"canary_shape": "capwell"}');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_shape).toBe('capwell');
+    }));
+});
+
+describe('TestWorkspaceDegradation', () => {
+  it('reports no workspace for a single-package repo', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'go' });
+      write(join(root, 'package.json'), JSON.stringify({ name: 'solo' }));
+      expect(mig().detect(root).workspace).toBeNull();
+    }));
+
+  // The one that matters: a broken pnpm-workspace.yaml must not discard the
+  // globs a readable package.json declared.
+  it('keeps package.json globs when pnpm-workspace.yaml is unparseable', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'go' });
+      write(join(root, 'pnpm-workspace.yaml'), ':\n\tnot: [valid\n');
+      write(
+        join(root, 'package.json'),
+        JSON.stringify({ name: 'r', workspaces: ['apps/*'] }),
+      );
+      const dir = join(root, 'apps', 'web');
+      mkdirSync(dir, { recursive: true });
+      write(join(dir, 'playwright.config.ts'), 'export default {};');
+
+      const ctx = mig().detect(root);
+
+      expect(ctx.workspace!.globs).toEqual(['apps/*']);
+      expect(ctx.workspace!.findings.map((f) => f.dir)).toEqual(['apps/web']);
+      expect(
+        ctx.config_warnings.some((w) => w.includes('pnpm-workspace.yaml')),
+      ).toBe(true);
+    }));
+
+  it('warns and stays single-package when the yaml is the only source', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'go' });
+      write(join(root, 'pnpm-workspace.yaml'), ':\n\tnot: [valid\n');
+
+      const ctx = mig().detect(root);
+
+      expect(ctx.workspace!.globs).toEqual([]);
+      expect(ctx.workspace!.scanned).toBe(0);
+      expect(ctx.detected_framework).toBeNull();
+      expect(
+        ctx.config_warnings.some((w) => w.includes('pnpm-workspace.yaml')),
+      ).toBe(true);
+    }));
+});
+
+describe('TestWorkspaceDenominatorMarkdown', () => {
+  function wsRoot(root: string, yaml: string): void {
+    makeHarnessProject(root, { language: 'go' });
+    write(join(root, 'pnpm-workspace.yaml'), yaml);
+  }
+
+  // Spec test 18. "Found nothing" and "never looked" must not render alike.
+  it('states the glob count when nothing matched', () =>
+    withTmp((root) => {
+      wsRoot(root, 'packages:\n  - "apps/*"\n');
+      const md = mig().migrate(root, { dryRun: true }).to_markdown();
+      expect(md).toContain('Declared 1 glob, matched 0 packages.');
+    }));
+
+  it('states the scanned count when no package carries a test config', () =>
+    withTmp((root) => {
+      wsRoot(root, 'packages:\n  - "apps/*"\n');
+      mkdirSync(join(root, 'apps', 'a'), { recursive: true });
+      mkdirSync(join(root, 'apps', 'b'), { recursive: true });
+      const md = mig().migrate(root, { dryRun: true }).to_markdown();
+      expect(md).toContain(
+        '2 packages scanned, none carries a recognizable test config.',
+      );
+    }));
+
+  it('says nothing about a workspace when none is declared', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'go' });
+      const report = mig().migrate(root, { dryRun: true });
+      expect(report.workspace).toBeNull();
+      expect(report.to_markdown()).not.toContain('## Workspace');
+    }));
+});
+
+/**
+ * Criterion 3 / spec test 27: a repo that declares no workspace must render
+ * byte-for-byte what it rendered before workspace detection existed.
+ *
+ * The expected string was captured by running this fixture at commit 3fecfdf8
+ * -- the commit before this change -- NOT from the post-change code, which
+ * would assert whatever the new behavior happens to be into the baseline.
+ */
+const EXPECTED_SINGLE_PACKAGE_MARKDOWN = `# Canary Migration Report
+
+> **Dry run** \u{2014} no files were written. Re-run with \`--apply\` to migrate.
+
+**Framework:** playwright
+**Shape:** e2e_ui
+**Detected from:** \`playwright.config.ts\`
+**Confidence:** high \u{2014} dedicated config file
+
+## Would Create
+
+- \`tests/e2e\`
+
+## Already Present (will not be touched)
+
+- \`playwright.config.ts\`
+
+## Status
+
+Dry run \u{2014} would migrate 1 item(s). Re-run with \`--apply\` to write them.
+`;
+
+describe('TestSinglePackageByteIdentical', () => {
+  it('leaves single-package markdown byte-identical', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'typescript' });
+      write(join(root, 'playwright.config.ts'), 'export default {};');
+
+      const report = mig().migrate(root, { dryRun: true });
+
+      expect(report.workspace).toBeNull();
+      expect(report.shapes).toEqual(['e2e_ui']);
+      expect(report.to_markdown()).toBe(EXPECTED_SINGLE_PACKAGE_MARKDOWN);
+    }));
+});
+
+/**
+ * `shapes` is populated in Milestone 1 and read in Milestone 2. Landing it
+ * untested would mean Milestone 2 builds deployment on an unverified union.
+ */
+describe('TestWorkspaceShapesUnion', () => {
+  function wsProject(root: string): void {
+    makeHarnessProject(root, { language: 'go' });
+    write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+  }
+
+  function pkg(root: string, rel: string, ...configs: string[]): void {
+    const dir = join(root, ...rel.split('/'));
+    mkdirSync(dir, { recursive: true });
+    for (const c of configs) write(join(dir, c), 'export default {};');
+  }
+
+  it('unions shapes across packages even when the scalar is unknown', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/e2e', 'playwright.config.ts');
+      pkg(root, 'apps/lib', 'vitest.config.ts');
+
+      const report = mig().migrate(root, { dryRun: true });
+
+      expect(report.shapes).toEqual(['e2e_ui', 'frontend_unit']);
+      // The scalar collapses to unknown, but no shape is lost.
+      expect(report.detection_source).toBe('workspace (mixed)');
+    }));
+
+  // Spec test 13b: one package, two frameworks. First-match-wins would drop a
+  // shape whose skills should deploy in Milestone 2.
+  it('keeps both shapes when a single package declares two frameworks', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/web', 'playwright.config.ts', 'vitest.config.ts');
+
+      const report = mig().migrate(root, { dryRun: true });
+
+      expect(report.shapes).toEqual(['e2e_ui', 'frontend_unit']);
+      expect(report.workspace!.scanned).toBe(1);
+      expect(report.workspace!.findings).toHaveLength(2);
+    }));
+
+  it('leaves shapes empty when nothing was detected', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/bare');
+
+      const report = mig().migrate(root, { dryRun: true });
+
+      expect(report.shapes).toEqual([]);
+    }));
+
+  const canChmod = process.platform !== 'win32' && process.getuid?.() !== 0;
+  it.runIf(canChmod)('names an unreadable package in the report', () =>
+    withTmp((root) => {
+      wsProject(root);
+      const locked = join(root, 'apps', 'locked');
+      mkdirSync(locked, { recursive: true });
+      chmodSync(locked, 0o000);
+      try {
+        const md = mig().migrate(root, { dryRun: true }).to_markdown();
+        expect(md).toContain('`apps/locked/` could not be read');
+      } finally {
+        chmodSync(locked, 0o755);
+      }
+    }),
+  );
 });

@@ -45,7 +45,6 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -53,6 +52,28 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { readJsonWithWarning } from './config-validation.js';
 import { uncertainDetectionMessage } from './detection.js';
+import {
+  _CONFIG_PROBES,
+  inferPlaywrightShape,
+  probe,
+  ProbeResult,
+} from './framework-probes.js';
+import {
+  _WORKSPACE_SKIP_DIRS,
+  comparePathParts,
+  globDirs,
+  globFiles,
+  isDir,
+  isFile,
+  parseJsonOrNull,
+  readTextOrNull,
+} from './fs-glob.js';
+import {
+  detectWorkspace,
+  WorkspaceFinding,
+  WorkspaceInfo,
+  workspaceGlobs,
+} from './workspace-detect.js';
 import { FrameworkRegistry } from './framework-registry.js';
 import { EXIT_ABSTAINED, gateOutcome, GateResult } from './gate-result.js';
 import { Scaffolder, scaffoldableFrameworks, TEMPLATES } from './scaffolder.js';
@@ -122,28 +143,6 @@ type WorkflowManifest = Record<string, WorkflowManifestEntry>;
 
 /** The whole manifest document: skill provenance plus workflow provenance. */
 type ManifestDoc = { skills: Manifest; workflows: WorkflowManifest };
-
-/**
- * Order two POSIX-style relative paths the way Python orders `Path` objects:
- * component-wise (`PurePath.__lt__` compares the parts list), NOT as joined
- * strings. They differ when a directory name prefixes a sibling file name and
- * the next char sorts below '/' (0x2F) -- most commonly the '.' extension
- * separator, e.g. `scripts/run.sh` vs `scripts.md`. A joined-string sort places
- * `scripts.md` first ('.' 0x2E < '/' 0x2F); Python's component sort places
- * `scripts/run.sh` first ('scripts' < 'scripts.md'). This ordering feeds the
- * skill-dir hash, a byte-exact contract compared against Python-written
- * .deploy-manifest.json files on the upgrade path.
- */
-function comparePathParts(a: string, b: string): number {
-  const pa = a.split('/');
-  const pb = b.split('/');
-  const n = Math.min(pa.length, pb.length);
-  for (let i = 0; i < n; i++) {
-    if (pa[i]! < pb[i]!) return -1;
-    if (pa[i]! > pb[i]!) return 1;
-  }
-  return pa.length - pb.length;
-}
 
 /**
  * A stable sha256 of every file under *skillDir* (component-sorted rel-path +
@@ -348,69 +347,6 @@ const _DOC_SKILL_LAYER_NAMES = new Set([
   'prompts',
 ]);
 
-// (config_file, framework, shape, confidence)
-const _CONFIG_PROBES: Array<[string, string, string, string]> = [
-  ['playwright.config.ts', 'playwright', 'e2e_ui', 'config'],
-  ['playwright.config.js', 'playwright', 'e2e_ui', 'config'],
-  ['cypress.config.ts', 'playwright', 'e2e_ui', 'config'],
-  ['cypress.config.js', 'playwright', 'e2e_ui', 'config'],
-  ['vitest.config.ts', 'vitest', 'frontend_unit', 'config'],
-  ['vitest.config.js', 'vitest', 'frontend_unit', 'config'],
-  ['vitest.config.mts', 'vitest', 'frontend_unit', 'config'],
-  ['jest.config.ts', 'vitest', 'frontend_unit', 'config'],
-  ['jest.config.js', 'vitest', 'frontend_unit', 'config'],
-  ['jest.config.mjs', 'vitest', 'frontend_unit', 'config'],
-  ['k6.config.js', 'k6', 'performance', 'config'],
-  ['pytest.ini', 'pytest', 'api', 'config'],
-  ['setup.cfg', 'pytest', 'api', 'config'],
-  ['axe.config.js', 'axe-core', 'accessibility', 'config'],
-  ['backstop.json', 'backstopjs', 'visual', 'config'],
-  ['pact.json', 'pact', 'contract', 'config'],
-  ['.pact', 'pact', 'contract', 'config'],
-  ['stryker.config.js', 'stryker', 'mutation', 'config'],
-  ['stryker.config.mjs', 'stryker', 'mutation', 'config'],
-  ['locust.conf', 'locust', 'load', 'config'],
-  ['locustfile.py', 'locust', 'load', 'config'],
-  ['wdio.conf.ts', 'wdio', 'mobile', 'config'],
-  ['wdio.conf.js', 'wdio', 'mobile', 'config'],
-  ['wdio.conf.mjs', 'wdio', 'mobile', 'config'],
-];
-
-// pyproject.toml section markers
-const _PYPROJECT_MARKERS: Array<[string, string, string]> = [
-  ['[tool.pytest.ini_options]', 'pytest', 'api'],
-  ['[tool.coverage', 'pytest', 'api'],
-];
-
-// package.json test script -> (framework, shape)
-const _PACKAGE_SCRIPT_PATTERNS: Array<[RegExp, string, string]> = [
-  [/\bplaywright\b/, 'playwright', 'e2e_ui'],
-  [/\bcypress\b/, 'playwright', 'e2e_ui'],
-  [/\bvitest\b/, 'vitest', 'frontend_unit'],
-  [/\bjest\b/, 'vitest', 'frontend_unit'],
-  [/\bk6\b/, 'k6', 'performance'],
-  [/\blocust\b/, 'locust', 'load'],
-  [/\bstryker\b/, 'stryker', 'mutation'],
-  [/\bwdio\b/, 'wdio', 'mobile'],
-];
-
-// Python dependency -> (framework, shape). MULTILINE `^` anchored on `\n` only.
-const _PYTHON_DEP_PATTERNS: Array<[RegExp, string, string]> = [
-  [/(?:^|(?<=\n))pytest\b/i, 'pytest', 'api'],
-  [/(?:^|(?<=\n))locust\b/i, 'locust', 'load'],
-  [/(?:^|(?<=\n))pact\b/i, 'pact', 'contract'],
-  [/(?:^|(?<=\n))sdv\b/i, 'sdv', 'synthetic_data'],
-  [/(?:^|(?<=\n))faker\b/i, 'faker', 'synthetic_data'],
-  [/(?:^|(?<=\n))testcontainers\b/i, 'testcontainers', 'integration'],
-];
-
-// Language -> (framework, shape) fallbacks from harness.config.json
-const _LANGUAGE_FALLBACKS: Record<string, [string, string]> = {
-  python: ['pytest', 'api'],
-  typescript: ['playwright', 'e2e_ui'],
-  javascript: ['playwright', 'e2e_ui'],
-};
-
 const _TEST_GLOBS = [
   'tests/**/*.py',
   'test/**/*.py',
@@ -422,84 +358,82 @@ const _TEST_GLOBS = [
   'src/**/*.test.ts',
 ];
 
-// Detects playwright UI fixture params. MULTILINE is a no-op (no `^`/`$`).
-const _PW_UI_FIXTURE_RE = /async\s*\(\s*\{[^}]*\b(?:page|browser)\b/;
-
 // ---------------------------------------------------------------------------
-// Small filesystem / glob helpers
+// Workspace ("monorepo") awareness -- #504 (3)
+//
+// Deliberately narrow: this exists ONLY to answer "does a suite for this
+// framework already live in a workspace package?" so the scaffold never
+// proposes a duplicate beside one it can see. Making *detection* itself
+// workspace-aware (per-package findings, a `monorepo` detection result) is a
+// separate, larger change -- #504 (1) -- and is NOT attempted here.
 // ---------------------------------------------------------------------------
 
-function isDir(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function isFile(path: string): boolean {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
-}
-
-/** Compile a single glob segment (with `*` -> `[^/]*`) to an anchored regex. */
-function segGlobRegex(seg: string): RegExp {
-  const body = seg
-    .replace(/[.+^${}()|[\]\\?]/g, '\\$&')
-    .replace(/\*/g, '[^/]*');
-  return new RegExp(`^${body}$`);
+/** A test suite already present in a workspace package. */
+export interface ExistingSuite {
+  /** Package directory, relative to the repo root, POSIX-separated. */
+  dir: string;
+  /** The config filename that identified it (e.g. `playwright.config.ts`). */
+  config: string;
+  /** Test files found under the package. Zero is legal (config-only suite). */
+  test_count: number;
 }
 
 /**
- * Match files under *root* against a pathlib-style glob (`**` matches zero or
- * more directories; `*` matches within a single segment). Mirrors the subset of
- * `Path.glob` the migrator needs.
+ * Suites for *framework* already present in this repo's workspace packages.
+ *
+ * The repo root is excluded on purpose: a root config is already reported via
+ * `skipped_configs`, and listing it here would double-count it and suppress a
+ * scaffold that the skip logic handles more precisely.
  */
-function globFiles(root: string, pattern: string): string[] {
-  const segments = pattern.split('/');
-  const out: string[] = [];
-  const visit = (dir: string, si: number): void => {
-    const seg = segments[si]!;
-    const last = si === segments.length - 1;
-    if (seg === '**') {
-      // `**` consumes zero directories -> continue at the same dir.
-      visit(dir, si + 1);
-      // `**` consumes one-or-more -> descend into each subdir, staying on `**`.
-      for (const d of subDirs(dir)) visit(d, si);
-      return;
+function findWorkspaceSuites(root: string, framework: string): ExistingSuite[] {
+  const globs = workspaceGlobs(root);
+  if (globs.length === 0) return [];
+
+  const configNames = _CONFIG_PROBES
+    .filter(([, fw]) => fw === framework)
+    .map(([filename]) => filename);
+  if (configNames.length === 0) return [];
+
+  const dirs = new Set<string>();
+  for (const glob of globs) for (const d of globDirs(root, glob)) dirs.add(d);
+
+  const suites: ExistingSuite[] = [];
+  for (const dir of [...dirs].sort(comparePathParts)) {
+    const config = configNames.find((name) => isFile(join(dir, name)));
+    if (config === undefined) continue;
+    const tests = new Set<string>();
+    for (const pattern of _TEST_GLOBS) {
+      for (const f of globFiles(dir, pattern)) tests.add(f);
     }
-    const re = segGlobRegex(seg);
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      if (!re.test(e.name)) continue;
-      const full = join(dir, e.name);
-      if (last) {
-        if (e.isFile() || isFile(full)) out.push(full);
-      } else if (e.isDirectory()) {
-        visit(full, si + 1);
-      }
-    }
-  };
-  visit(root, 0);
-  return out;
+    suites.push({
+      dir: relative(root, dir).split(sep).join('/'),
+      config,
+      test_count: tests.size,
+    });
+  }
+  return suites;
 }
 
-function subDirs(dir: string): string[] {
-  try {
-    return readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => join(dir, e.name));
-  } catch {
-    return [];
+/**
+ * The shape implied by an explicit `--framework` override (#504 (2)).
+ *
+ * Reuses the probe table so the override resolves exactly the shape a matching
+ * config file would have, including the playwright api-vs-UI refinement.
+ * Returns null for a framework no probe knows, so the caller keeps whatever
+ * shape detection produced rather than overwriting it with a guess.
+ */
+function shapeForFrameworkOverride(
+  framework: string,
+  root: string,
+): string | null {
+  for (const [, probeFramework, shape] of _CONFIG_PROBES) {
+    if (probeFramework !== framework) continue;
+    if (probeFramework === 'playwright' && shape === 'e2e_ui') {
+      return inferPlaywrightShape(root);
+    }
+    return shape;
   }
+  return null;
 }
 
 /**
@@ -541,6 +475,22 @@ function skillsDocsOverlayReason(
   );
 }
 
+/**
+ * The deduplicated, sorted union of the root shape and every package's shape.
+ *
+ * `unknown` is excluded: it is the absence of a shape, and carrying it into a
+ * union that drives deployment would let "we could not tell" masquerade as a
+ * detected shape. An empty array therefore means nothing was detected (#504).
+ */
+function unionShapes(rootShape: string, ws: WorkspaceInfo | null): string[] {
+  const shapes = new Set<string>();
+  if (rootShape !== 'unknown' && rootShape !== '') shapes.add(rootShape);
+  for (const f of ws?.findings ?? []) {
+    if (f.shape !== 'unknown' && f.shape !== '') shapes.add(f.shape);
+  }
+  return [...shapes].sort();
+}
+
 // ---------------------------------------------------------------------------
 // Data model
 // ---------------------------------------------------------------------------
@@ -555,6 +505,8 @@ export interface MigrationContextInit {
   detection_confidence?: string;
   config_warnings?: string[];
   not_test_project_reason?: string | null;
+  workspace?: WorkspaceInfo | null;
+  shapes?: string[];
 }
 
 export class MigrationContext {
@@ -568,6 +520,21 @@ export class MigrationContext {
   detection_confidence: string;
   config_warnings: string[];
   not_test_project_reason: string | null;
+  /**
+   * Declared workspace topology, or null for a single-package repo.
+   *
+   * Null is the back-compatibility guarantee -- a repo that declares no
+   * workspace never enters the plural path (#504 part 1).
+   */
+  workspace: WorkspaceInfo | null;
+  /**
+   * Every shape detected anywhere, deduplicated and sorted.
+   *
+   * Populated but not yet read: plural deployment is Milestone 2. Landing the
+   * data first keeps this change reviewable as "detection got richer, nothing
+   * else moved" (#504 part 1).
+   */
+  shapes: string[];
 
   constructor(init: MigrationContextInit) {
     this.project_root = init.project_root;
@@ -579,6 +546,8 @@ export class MigrationContext {
     this.detection_confidence = init.detection_confidence ?? 'none';
     this.config_warnings = init.config_warnings ?? [];
     this.not_test_project_reason = init.not_test_project_reason ?? null;
+    this.workspace = init.workspace ?? null;
+    this.shapes = init.shapes ?? [];
   }
 }
 
@@ -888,10 +857,13 @@ export interface MigrationReportInit {
   skipped_configs?: string[];
   preserved_files?: string[];
   would_create?: string[];
+  existing_suites?: ExistingSuite[];
   manual_followups?: string[];
   deployed_skills?: SkillDeployResult[];
   installed_workflows?: WorkflowInstallResult[];
   config_warnings?: string[];
+  workspace?: WorkspaceInfo | null;
+  shapes?: string[];
 }
 
 export class MigrationReport {
@@ -905,10 +877,16 @@ export class MigrationReport {
   skipped_configs: string[];
   preserved_files: string[];
   would_create: string[];
+  /** Suites already present in workspace packages (#504 (3)). */
+  existing_suites: ExistingSuite[];
   manual_followups: string[];
   deployed_skills: SkillDeployResult[];
   installed_workflows: WorkflowInstallResult[];
   config_warnings: string[];
+  /** Declared workspace topology, or null for a single-package repo (#504). */
+  workspace: WorkspaceInfo | null;
+  /** Every detected shape, deduplicated and sorted; unread until Milestone 2. */
+  shapes: string[];
 
   constructor(init: MigrationReportInit) {
     this.framework = init.framework;
@@ -921,10 +899,38 @@ export class MigrationReport {
     this.skipped_configs = init.skipped_configs ?? [];
     this.preserved_files = init.preserved_files ?? [];
     this.would_create = init.would_create ?? [];
+    this.existing_suites = init.existing_suites ?? [];
     this.manual_followups = init.manual_followups ?? [];
     this.deployed_skills = init.deployed_skills ?? [];
     this.installed_workflows = init.installed_workflows ?? [];
     this.config_warnings = init.config_warnings ?? [];
+    this.workspace = init.workspace ?? null;
+    this.shapes = init.shapes ?? [];
+  }
+
+  /**
+   * What the workspace walk actually covered, stated with its denominator.
+   *
+   * Emitted only when a workspace was declared, so single-package output is
+   * untouched. Saying "0 packages carry a test config" is a different claim
+   * from saying nothing at all, which reads as "there was nothing to find"
+   * (#504 part 1, criteria 4 and 5).
+   */
+  private workspaceNotes(): string[] {
+    const ws = this.workspace;
+    if (ws === null) return [];
+    const notes: string[] = [];
+    if (ws.globs.length > 0 && ws.scanned === 0) {
+      const g = ws.globs.length === 1 ? '1 glob' : `${ws.globs.length} globs`;
+      notes.push(`Declared ${g}, matched 0 packages.`);
+    } else if (ws.scanned > 0 && ws.findings.length === 0) {
+      const p = ws.scanned === 1 ? '1 package' : `${ws.scanned} packages`;
+      notes.push(`${p} scanned, none carries a recognizable test config.`);
+    }
+    for (const dir of ws.unreadable) {
+      notes.push(`\`${dir}/\` could not be read and was not scanned.`);
+    }
+    return notes;
   }
 
   /**
@@ -971,6 +977,7 @@ export class MigrationReport {
             config: `high ${EMDASH} dedicated config file`,
             content: `medium ${EMDASH} file content / dependency scan`,
             language: `low ${EMDASH} harness.config.json language fallback`,
+            override: `high ${EMDASH} explicit \`--framework\` flag`,
           } as Record<string, string>
         )[this.detection_confidence] ?? this.detection_confidence;
       lines.push(
@@ -980,6 +987,25 @@ export class MigrationReport {
     }
 
     lines.push('');
+
+    const wsNotes = this.workspaceNotes();
+    if (wsNotes.length > 0) {
+      lines.push('## Workspace', '');
+      for (const n of wsNotes) lines.push(`- ${n}`);
+      lines.push('');
+    }
+
+    // #504 (3): name what was found before saying what would happen, so the
+    // empty "Would Create" below reads as a decision rather than a shrug.
+    if (this.existing_suites.length > 0) {
+      lines.push('## Existing Suites Found', '');
+      for (const s of this.existing_suites) {
+        const tests =
+          s.test_count === 1 ? '1 test file' : `${s.test_count} test files`;
+        lines.push(`- \`${s.dir}/\` ${EMDASH} \`${s.config}\` (${tests})`);
+      }
+      lines.push('');
+    }
 
     if (this.dry_run) {
       if (this.preserved_files.length > 0) {
@@ -992,6 +1018,16 @@ export class MigrationReport {
         lines.push('## Would Create', '');
         for (const f of this.would_create) lines.push(`- \`${f}\``);
         lines.push('');
+      } else if (this.existing_suites.length > 0) {
+        const names = this.existing_suites.map((s) => `\`${s.dir}/\``);
+        lines.push(
+          '## Would Create',
+          '',
+          `_Nothing ${EMDASH} ${names.join(', ')} already ` +
+            `carries a ${this.framework} suite. To scaffold a second one, ` +
+            're-run `canary migrate` from inside that package._',
+          '',
+        );
       } else {
         lines.push(
           '## Would Create',
@@ -1080,14 +1116,21 @@ export class MigrationReport {
       });
       lines.push('## Status', '');
       if (outcome.abstained) {
+        // Zero is zero either way, but *why* differs: an already-complete
+        // project and a repo whose suite lives in a package are different
+        // situations, and the generic sentence misdescribes the second.
+        const why =
+          this.existing_suites.length > 0
+            ? 'the suite this migration would scaffold already exists in ' +
+              `${this.existing_suites.map((s) => `\`${s.dir}/\``).join(', ')}. ` +
+              'Re-run `canary migrate` from inside that package to migrate it.'
+            : 'the project already carries everything this migration would ' +
+              'produce. If you expected changes, check `--from <overlay>` and ' +
+              'the detected framework/shape above.';
         lines.push(
           outcome.summaryLine,
           '',
-          'This dry run would migrate zero item(s) ' +
-            EMDASH +
-            ' the project already carries everything this migration would ' +
-            'produce. If you expected changes, check `--from <overlay>` and ' +
-            'the detected framework/shape above.',
+          `This dry run would migrate zero item(s) ${EMDASH} ${why}`,
           '',
         );
       } else {
@@ -1189,9 +1232,17 @@ export class HarnessMigrator {
       });
     }
 
+    // Detected once and threaded: `detectFramework` resolves the scalar from it
+    // and the context carries it, so the package walk happens a single time.
+    const workspace = detectWorkspace(
+      projectRoot,
+      harnessConfig,
+      configWarnings,
+    );
     const [framework, shape, source, confidence] = this.detectFramework(
       projectRoot,
       harnessConfig,
+      workspace,
     );
 
     return new MigrationContext({
@@ -1203,6 +1254,8 @@ export class HarnessMigrator {
       detection_source: source,
       detection_confidence: confidence,
       config_warnings: configWarnings,
+      workspace,
+      shapes: unionShapes(shape, workspace),
     });
   }
 
@@ -1225,11 +1278,27 @@ export class HarnessMigrator {
     const effectiveFramework = pyTruthy(framework)
       ? (framework as string)
       : ctx.detected_framework;
-    const shape = ctx.detected_shape;
     const source = pyTruthy(framework) ? 'CLI override' : ctx.detection_source;
+    // #504 (2): an override is high-confidence *user intent*, not a config-file
+    // find. Reporting it as 'config' rendered "high -- dedicated config file",
+    // asserting evidence no probe ever gathered.
     const confidence = pyTruthy(framework)
-      ? 'config'
+      ? 'override'
       : ctx.detection_confidence;
+
+    // #504 (2): the override must resolve the shape too. Without this, shape
+    // stays 'unknown' and every shape-keyed behavior downstream (overlay-skill
+    // matching, `<shape>:`-prefixed workflow templates) silently no-ops, so the
+    // override only half-works. An explicit `canary_shape` is a stronger
+    // statement of intent than the framework name, so it still wins.
+    const explicitShape = String(ctx.harness_config['canary_shape'] ?? '')
+      .trim()
+      .toLowerCase();
+    const overrideShape =
+      pyTruthy(framework) && explicitShape === ''
+        ? shapeForFrameworkOverride(framework as string, projectRoot)
+        : null;
+    const shape = overrideShape ?? ctx.detected_shape;
     const followups: string[] = [];
 
     if (effectiveFramework === null) {
@@ -1258,6 +1327,8 @@ export class HarnessMigrator {
         detection_confidence: confidence,
         manual_followups: followups,
         config_warnings: ctx.config_warnings,
+        workspace: ctx.workspace,
+        shapes: ctx.shapes,
         deployed_skills: deployed,
         installed_workflows: this.installWorkflows(
           shape,
@@ -1287,6 +1358,9 @@ export class HarnessMigrator {
     }
 
     const preserved = this.findExistingTests(projectRoot);
+    // #504 (3): a workspace repo that already has a suite for this framework
+    // must not be offered a second one at the root.
+    const existingSuites = findWorkspaceSuites(projectRoot, effectiveFramework);
     const scaffolder = new Scaffolder();
     const deployed = this.deploySkills(shape, overlayPath, projectRoot, dryRun);
     // Post-copy install phase: the template bytes already landed under
@@ -1303,10 +1377,17 @@ export class HarnessMigrator {
       const tmpl = TEMPLATES[effectiveFramework];
       const files = tmpl?.files ?? {};
       const dirs = tmpl?.dirs ?? [];
-      const wouldCreate = [
-        ...Object.keys(files).filter((f) => !existsSync(join(projectRoot, f))),
-        ...dirs.filter((d) => !existsSync(join(projectRoot, d))),
-      ];
+      // A suite already exists in a package: propose nothing rather than a
+      // duplicate. The suites are named in the report so the zero is legible.
+      const wouldCreate =
+        existingSuites.length > 0
+          ? []
+          : [
+              ...Object.keys(files).filter(
+                (f) => !existsSync(join(projectRoot, f)),
+              ),
+              ...dirs.filter((d) => !existsSync(join(projectRoot, d))),
+            ];
       const alreadyPresent = Object.keys(files).filter((f) =>
         existsSync(join(projectRoot, f)),
       );
@@ -1319,14 +1400,23 @@ export class HarnessMigrator {
         would_create: wouldCreate,
         skipped_configs: alreadyPresent,
         preserved_files: preserved,
+        existing_suites: existingSuites,
         manual_followups: followups,
         deployed_skills: deployed,
         installed_workflows: installedWorkflows,
         config_warnings: ctx.config_warnings,
+        workspace: ctx.workspace,
+        shapes: ctx.shapes,
       });
     }
 
-    const result = scaffolder.scaffold(effectiveFramework, String(projectRoot));
+    // Same guard on the apply path: what the dry run refuses to propose, an
+    // `--apply` run must refuse to write. Skills and workflows still deploy --
+    // only the duplicate test-config scaffold is withheld.
+    const result =
+      existingSuites.length > 0
+        ? { created_files: [], created_dirs: [], skipped_files: [] }
+        : scaffolder.scaffold(effectiveFramework, String(projectRoot));
 
     return new MigrationReport({
       framework: effectiveFramework,
@@ -1334,6 +1424,7 @@ export class HarnessMigrator {
       dry_run: false,
       detection_source: source,
       detection_confidence: confidence,
+      existing_suites: existingSuites,
       created_files: result['created_files'] as string[],
       created_dirs: result['created_dirs'] as string[],
       skipped_configs: result['skipped_files'] as string[],
@@ -1342,6 +1433,8 @@ export class HarnessMigrator {
       deployed_skills: deployed,
       installed_workflows: installedWorkflows,
       config_warnings: ctx.config_warnings,
+      workspace: ctx.workspace,
+      shapes: ctx.shapes,
     });
   }
 
@@ -1724,6 +1817,7 @@ export class HarnessMigrator {
   private detectFramework(
     root: string,
     config: Record<string, unknown>,
+    ws: WorkspaceInfo | null = null,
   ): [string | null, string, string, string] {
     // Explicit override in .canary/company.json ("canary_shape" field) is
     // user intent: it wins over every probe tier's shape, including a total
@@ -1734,107 +1828,51 @@ export class HarnessMigrator {
     const explicitShape = (rawShape == null ? '' : String(rawShape))
       .trim()
       .toLowerCase();
-    const [framework, shape, source, confidence] = this.probeFramework(
-      root,
-      config,
-    );
+    const rootProbe = this.probeFramework(root, config);
+    // A root miss falls through to the workspace packages -- but only a miss.
+    // A root config file still outranks them, unchanged from before (#504).
+    const resolved =
+      rootProbe[0] === null && ws !== null
+        ? (this.resolveFromWorkspace(ws) ?? rootProbe)
+        : rootProbe;
+    const [framework, shape, source, confidence] = resolved;
     if (!explicitShape) return [framework, shape, source, confidence];
     return framework === null
       ? [null, explicitShape, 'canary_shape (.canary/company.json)', 'explicit']
       : [framework, explicitShape, source, confidence];
   }
 
+  /**
+   * The scalar (framework, shape, source) implied by workspace findings.
+   *
+   * Unanimity is on the (framework, shape) PAIR, not the framework alone --
+   * shape drives which overlay skills and workflow templates deploy, so two
+   * playwright packages resolving to e2e_ui and api are not unanimous. Applies
+   * at N >= 1: `detection_source` reports the package count, so the scalar
+   * never pretends a root probe hit (#504 part 1).
+   */
+  private resolveFromWorkspace(ws: WorkspaceInfo): ProbeResult | null {
+    const findings = ws.findings;
+    if (findings.length === 0) return null;
+    const pairs = new Set(findings.map((f) => `${f.framework} ${f.shape}`));
+    if (pairs.size > 1) {
+      return [null, 'unknown', 'workspace (mixed)', 'none'];
+    }
+    const first = findings[0]!;
+    const n = new Set(findings.map((f) => f.dir)).size;
+    return [
+      first.framework,
+      first.shape,
+      `workspace (${n} package${n === 1 ? '' : 's'})`,
+      first.confidence,
+    ];
+  }
+
   private probeFramework(
     root: string,
     config: Record<string, unknown>,
-  ): [string | null, string, string, string] {
-    // 1. Dedicated config file (highest confidence).
-    for (const [filename, framework, shape, confidence] of _CONFIG_PROBES) {
-      if (existsSync(join(root, filename))) {
-        // For playwright config files, distinguish API vs UI suites.
-        if (framework === 'playwright' && shape === 'e2e_ui') {
-          const inferred = inferPlaywrightShape(root);
-          if (inferred !== shape)
-            return [framework, inferred, filename, 'content'];
-        }
-        return [framework, shape, filename, confidence];
-      }
-    }
-
-    // 2. pyproject.toml section markers then dependency scan.
-    const pyproject = join(root, 'pyproject.toml');
-    if (existsSync(pyproject)) {
-      const content = readTextOrNull(pyproject);
-      if (content !== null) {
-        for (const [marker, framework, shape] of _PYPROJECT_MARKERS) {
-          if (content.includes(marker)) {
-            return [framework, shape, 'pyproject.toml', 'content'];
-          }
-        }
-        for (const [pattern, framework, shape] of _PYTHON_DEP_PATTERNS) {
-          if (pattern.test(content)) {
-            return [
-              framework,
-              shape,
-              'pyproject.toml (dependencies)',
-              'content',
-            ];
-          }
-        }
-      }
-    }
-
-    // 3. requirements*.txt dependency scan.
-    for (const reqFile of [
-      'requirements.txt',
-      'requirements-test.txt',
-      'requirements-dev.txt',
-    ]) {
-      const reqPath = join(root, reqFile);
-      if (existsSync(reqPath)) {
-        const content = readTextOrNull(reqPath);
-        if (content !== null) {
-          for (const [pattern, framework, shape] of _PYTHON_DEP_PATTERNS) {
-            if (pattern.test(content))
-              return [framework, shape, reqFile, 'content'];
-          }
-        }
-      }
-    }
-
-    // 4. package.json scripts.test scan.
-    const pkgJson = join(root, 'package.json');
-    if (existsSync(pkgJson)) {
-      try {
-        const pkg = JSON.parse(readFileSync(pkgJson, 'utf-8')) as Record<
-          string,
-          unknown
-        >;
-        const scripts = (pkg['scripts'] ?? {}) as Record<string, unknown>;
-        const testScript = String(scripts['test'] ?? '');
-        for (const [pattern, framework, shape] of _PACKAGE_SCRIPT_PATTERNS) {
-          if (pattern.test(testScript)) {
-            return [framework, shape, 'package.json (scripts.test)', 'content'];
-          }
-        }
-      } catch {
-        // OSError / JSONDecodeError -> ignore.
-      }
-    }
-
-    // 5. Language fallback from harness config.
-    const language = String(config['language'] ?? '').toLowerCase();
-    if (Object.prototype.hasOwnProperty.call(_LANGUAGE_FALLBACKS, language)) {
-      const [fw, shape] = _LANGUAGE_FALLBACKS[language]!;
-      return [
-        fw,
-        shape,
-        `harness.config.json (language: ${language})`,
-        'language',
-      ];
-    }
-
-    return [null, 'unknown', 'none', 'none'];
+  ): ProbeResult {
+    return probe(root, config, ['config', 'content', 'language']);
   }
 
   private findExistingTests(root: string): string[] {
@@ -1849,42 +1887,4 @@ export class HarnessMigrator {
     }
     return found;
   }
-}
-
-function readTextOrNull(path: string): string | null {
-  try {
-    return readFileSync(path, 'utf-8');
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Return 'api' when no playwright spec file uses page/browser fixtures, else
- * 'e2e_ui' (the default when any UI signal is found or no spec files exist).
- */
-function inferPlaywrightShape(root: string): string {
-  const specGlobs = [
-    'tests/**/*.spec.ts',
-    'tests/**/*.spec.js',
-    'test/**/*.spec.ts',
-    'test/**/*.spec.js',
-  ];
-  let total = 0;
-  for (const glob of specGlobs) {
-    for (const path of globFiles(root, glob)) {
-      // Python read_text(errors="ignore"); readFileSync substitutes U+FFFD for
-      // invalid bytes -- immaterial for the ASCII fixture pattern below.
-      let content: string;
-      try {
-        content = readFileSync(path, 'utf-8');
-      } catch {
-        continue;
-      }
-      total += 1;
-      if (_PW_UI_FIXTURE_RE.test(content)) return 'e2e_ui';
-    }
-  }
-
-  return total > 0 ? 'api' : 'e2e_ui';
 }

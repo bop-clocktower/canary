@@ -33,6 +33,64 @@ under the project's former name) are documented in the
   and the minor moved because an absent `skipped` reads as good news — the same
   test `>= 1.1` applied to the `coverage` block.
 
+- **`canary migrate` now walks workspace packages and reports each package's
+  framework, shape, and evidence source, with the count of packages scanned**
+  ([#504](https://github.com/bop-clocktower/canary/issues/504), part 1). A
+  monorepo whose root carries no test config previously detected nothing and
+  said nothing about why. Detection now reads the declared workspace
+  (`pnpm-workspace.yaml`, or `workspaces` in package.json in either the npm
+  array or yarn object form), probes each package, and states its denominator —
+  how many packages were scanned, and which could not be read. A repo that
+  declares no workspace is untouched: its report is byte-identical to before.
+
+  Two things it deliberately will not do: attribute a framework to a package via
+  the root `language:` fallback (that would make every package in a TypeScript
+  monorepo "detect" playwright it never carried), and collapse a package that
+  declares two frameworks down to one — both shapes are kept, because shape
+  drives which skills deploy.
+
+- **`migrate` no longer proposes a second test suite beside one it can see, and
+  `--framework` now resolves the shape** (#504, parts 2–4). Three defects along
+  the same adoption path, reported from a Turborepo + pnpm workspace repo:
+
+  - `--framework playwright` set the framework but left **Shape: unknown**, so
+    every shape-keyed behavior downstream — overlay-skill matching and
+    `<shape>:`-prefixed workflow-template selection — silently did nothing. The
+    override half-worked, and nothing said so. The flag now resolves the shape
+    through the same probe table a config file would use, including the
+    playwright api-vs-UI refinement. An explicit `canary_shape` in
+    `.canary/company.json` still outranks it.
+  - The override also reported **"Confidence: high — dedicated config file"**
+    when no config file had been found. It now says "high — explicit
+    `--framework` flag": the confidence is real, the evidence claim was not.
+  - In a workspace repo, the dry run proposed creating `playwright.config.ts`
+    and `tests/e2e` **at the monorepo root**, beside the `apps/web-e2e/`
+    Playwright project it never noticed. `migrate` now reads
+    `pnpm-workspace.yaml` and package.json `workspaces` (array and
+    `{packages: []}` forms), and when a package already carries a suite for the
+    target framework it names that suite and proposes nothing rather than a
+    duplicate — on `--apply` as well as on a dry run. Skills and workflows still
+    deploy; only the duplicate config scaffold is withheld. The zero-item
+    abstention now states the real reason instead of the generic "the project
+    already carries everything this migration would produce", which was false in
+    exactly this case.
+
+  Part 4 of the report — a dry run printing "Migration complete" — was already
+  fixed by the `gateOutcome`-derived `## Status` block and could not be
+  reproduced; it is now pinned by regression tests so the copy cannot come back.
+  Detection itself remained root-only in parts 2–4; per-package reporting landed
+  separately as part 1, described above.
+
+  This change accepts an architecture-baseline regression:
+  `module-size 25808 → 26153 (+345)`, recorded in `.harness/audit.log`. The
+  growth is 185 lines of feature code plus 91 of comment, not duplication.
+  Complexity was **not** ratcheted — it stays at baseline 88, held there by
+  extracting `packageJsonWorkspaceGlobs` and dropping a duplicate `isRecord`. A
+  `globFiles`/`globDirs` unification was attempted to shrink the diff and
+  reverted: it traded 7 lines for two functions at cyclomatic complexity 14
+  (threshold 10). That trade-off is recorded in a comment at `globDirs` so the
+  next reader does not re-attempt it.
+
 - **The consent remedy `doctor` prints can now actually be carried out** (#505).
   When an overlay's `command-succeeds` checks were consent-skipped, `doctor`
   said "re-run `canary overlay add`" — and `add` returned early for an
