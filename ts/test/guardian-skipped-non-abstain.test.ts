@@ -19,7 +19,7 @@ import {
   SCHEMA_VERSION,
   buildAnalysisRecord,
 } from '../src/guardian/analysis-emit.js';
-import { invokeGuardian, mkTmp, rmTmp } from './guardian-cli-testkit.js';
+import { invokeGuardianJson, mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
 let tmp: string;
 beforeEach(() => {
@@ -27,17 +27,11 @@ beforeEach(() => {
 });
 afterEach(() => rmTmp(tmp));
 
-// An arrow const rather than a `function` declaration: harness#587 measures a
-// top-level `function` in a test file as running to EOF, so this seven-line
-// helper was reported at functionLength=73 and tripped the complexity ratchet.
-// Moving it does not help -- only the declaration form does.
-const jsonPayload = async (diff: string): Promise<Record<string, unknown>> => {
-  const res = await invokeGuardian(
-    ['pr-check', '--diff', '-', '--format', 'json'],
-    { input: diff, cwd: tmp },
-  );
-  return JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
-};
+const jsonPayload = (diff: string): Promise<Record<string, unknown>> =>
+  invokeGuardianJson(['pr-check', '--diff', '-', '--format', 'json'], {
+    input: diff,
+    cwd: tmp,
+  });
 
 // A diff the guardian PARTLY judges: one ordinary source unit it keeps, and one
 // test unit it drops. The mix is the point -- an all-dropped diff abstains and
