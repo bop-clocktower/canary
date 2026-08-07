@@ -147,6 +147,28 @@ export function readTextOrNull(path: string): string | null {
   }
 }
 
+/**
+ * Order two POSIX-style relative paths the way Python orders `Path` objects:
+ * component-wise (`PurePath.__lt__` compares the parts list), NOT as joined
+ * strings. They differ when a directory name prefixes a sibling file name and
+ * the next char sorts below '/' (0x2F) -- most commonly the '.' extension
+ * separator, e.g. `scripts/run.sh` vs `scripts.md`. A joined-string sort places
+ * `scripts.md` first ('.' 0x2E < '/' 0x2F); Python's component sort places
+ * `scripts/run.sh` first ('scripts' < 'scripts.md'). This ordering feeds the
+ * skill-dir hash, a byte-exact contract compared against Python-written
+ * .deploy-manifest.json files on the upgrade path.
+ */
+export function comparePathParts(a: string, b: string): number {
+  const pa = a.split('/');
+  const pb = b.split('/');
+  const n = Math.min(pa.length, pb.length);
+  for (let i = 0; i < n; i++) {
+    if (pa[i]! < pb[i]!) return -1;
+    if (pa[i]! > pb[i]!) return 1;
+  }
+  return pa.length - pb.length;
+}
+
 /** Parse *text* as JSON, or null if it is absent or malformed. */
 export function parseJsonOrNull(text: string | null): unknown {
   if (text === null) return null;

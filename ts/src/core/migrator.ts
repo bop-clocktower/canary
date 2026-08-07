@@ -60,6 +60,7 @@ import {
 } from './framework-probes.js';
 import {
   _WORKSPACE_SKIP_DIRS,
+  comparePathParts,
   globDirs,
   globFiles,
   isDir,
@@ -67,6 +68,12 @@ import {
   parseJsonOrNull,
   readTextOrNull,
 } from './fs-glob.js';
+import {
+  detectWorkspace,
+  WorkspaceFinding,
+  WorkspaceInfo,
+  workspaceGlobs,
+} from './workspace-detect.js';
 import { FrameworkRegistry } from './framework-registry.js';
 import { EXIT_ABSTAINED, gateOutcome, GateResult } from './gate-result.js';
 import { Scaffolder, scaffoldableFrameworks, TEMPLATES } from './scaffolder.js';
@@ -136,28 +143,6 @@ type WorkflowManifest = Record<string, WorkflowManifestEntry>;
 
 /** The whole manifest document: skill provenance plus workflow provenance. */
 type ManifestDoc = { skills: Manifest; workflows: WorkflowManifest };
-
-/**
- * Order two POSIX-style relative paths the way Python orders `Path` objects:
- * component-wise (`PurePath.__lt__` compares the parts list), NOT as joined
- * strings. They differ when a directory name prefixes a sibling file name and
- * the next char sorts below '/' (0x2F) -- most commonly the '.' extension
- * separator, e.g. `scripts/run.sh` vs `scripts.md`. A joined-string sort places
- * `scripts.md` first ('.' 0x2E < '/' 0x2F); Python's component sort places
- * `scripts/run.sh` first ('scripts' < 'scripts.md'). This ordering feeds the
- * skill-dir hash, a byte-exact contract compared against Python-written
- * .deploy-manifest.json files on the upgrade path.
- */
-function comparePathParts(a: string, b: string): number {
-  const pa = a.split('/');
-  const pb = b.split('/');
-  const n = Math.min(pa.length, pb.length);
-  for (let i = 0; i < n; i++) {
-    if (pa[i]! < pb[i]!) return -1;
-    if (pa[i]! > pb[i]!) return 1;
-  }
-  return pa.length - pb.length;
-}
 
 /**
  * A stable sha256 of every file under *skillDir* (component-sorted rel-path +
@@ -391,70 +376,6 @@ export interface ExistingSuite {
   config: string;
   /** Test files found under the package. Zero is legal (config-only suite). */
   test_count: number;
-}
-
-/**
- * Workspace package globs declared at *root*, from pnpm-workspace.yaml or
- * package.json `workspaces` (array or `{packages: []}` form). Returns [] for a
- * single-package repo, which is what keeps non-monorepos on the old path.
- *
- * turbo.json is intentionally NOT read: Turborepo declares tasks, not package
- * locations -- it defers to the pnpm/npm workspace file we already read, so
- * parsing it would add a source of truth without adding any packages.
- */
-function workspaceGlobs(root: string): string[] {
-  const yaml = readTextOrNull(join(root, 'pnpm-workspace.yaml'));
-  return [
-    ...new Set([
-      ...(yaml === null ? [] : parsePnpmPackages(yaml)),
-      ...packageJsonWorkspaceGlobs(root),
-    ]),
-  ];
-}
-
-/**
- * The `workspaces` globs in a package.json. Accepts both the array form
- * (`["apps/*"]`) and the object form (`{packages: ["apps/*"]}`) that yarn
- * writes; anything else yields [].
- */
-function packageJsonWorkspaceGlobs(root: string): string[] {
-  const pkg = parseJsonOrNull(
-    readTextOrNull(join(root, 'package.json')),
-  ) as Record<string, unknown> | null;
-  const ws = pkg?.['workspaces'] as Record<string, unknown> | unknown[] | null;
-  const list = Array.isArray(ws) ? ws : (ws?.['packages'] as unknown);
-  if (!Array.isArray(list)) return [];
-  return list.filter((e): e is string => typeof e === 'string' && e !== '');
-}
-
-/**
- * Pull the `packages:` sequence out of a pnpm-workspace.yaml.
- *
- * A hand-rolled reader rather than a YAML dependency: the shape it must handle
- * is a single top-level key holding a flat list of quoted strings, and the
- * migrator has no other reason to take on a parser. A file it cannot read
- * yields [] -- the repo is then treated as single-package, which is the
- * pre-existing behavior, so a parse miss can never *invent* a suite.
- */
-function parsePnpmPackages(yaml: string): string[] {
-  const out: string[] = [];
-  let inPackages = false;
-  for (const rawLine of yaml.split(/\r?\n/)) {
-    const line = rawLine.replace(/#.*$/, '');
-    if (/^packages\s*:/.test(line)) {
-      inPackages = true;
-      continue;
-    }
-    if (!inPackages) continue;
-    const item = /^\s+-\s*(.+?)\s*$/.exec(line);
-    if (item) {
-      out.push(item[1]!.replace(/^["']|["']$/g, ''));
-      continue;
-    }
-    // A non-indented, non-empty line ends the sequence.
-    if (line.trim() !== '' && !/^\s/.test(line)) inPackages = false;
-  }
-  return out.filter((p) => p !== '');
 }
 
 /**
