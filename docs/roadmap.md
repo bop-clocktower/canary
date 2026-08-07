@@ -41,8 +41,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Blockers:** upstream harness#838 (`harness ci check` doesn't thread
   entropy.analyze.drift config)
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#601
 
 ## Example Library
@@ -64,8 +62,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   docs/changes/realworld-functions-batch9/)
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#602
 
 ## Intake
@@ -86,8 +82,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Blockers:** publish/link canary-test-cli@5.15.0; dev TestTracker
   tenant+token (human).
 - **Plan:** docs/changes/testtracker-ingest-reporter/plans/
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#603
 
 ### Flakiness detector skill over test-reporter history
@@ -113,8 +107,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   docs/ideation/bop-themed-canary-skills-2026-07-21.md; agent/history/)
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#604
 
 ### Generated-test soundness linter
@@ -131,8 +123,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   to spec.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#605
 
 ### Guardian coverage-delta (regression on touched units)
@@ -148,8 +138,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   present. Medium effort. Next: /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#606
 
 ### Edge-case-discovery to generate-test handoff
@@ -166,8 +154,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   automatic pipe. Medium effort. Next: /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#607
 
 ### Mutation-testing signal via Stryker
@@ -192,8 +178,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   spike is still the next step, this is a link and not a decision.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#486
 
 ### canary-cry — pre-launch "try to break it" exploratory sweep
@@ -234,8 +218,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   was run for. Next: /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#608
 
 ### canary-signal — QA impact digest
@@ -259,8 +241,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#609
 
 ### canary-clocktower — run-history gap analysis (NOT a greenfield build)
@@ -289,8 +269,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   history store, so part of the gap may already be known.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#610
 
 ### canary-manhunter — release quality dossier
@@ -309,8 +287,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   built. Medium effort / high confidence. Next: /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#611
 
 ### canary-cassandra — vacuous-test detection
@@ -337,8 +313,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   both mint Birds of Prey names and neither reads the other.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#612
 
 ### canary-question — test-bug vs product-bug triage
@@ -358,8 +332,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   to spec.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#613
 
 ### canary-judomaster — incident to regression test
@@ -378,8 +350,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   confidence. Next: /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#614
 
 ### canary-ivy — suite overgrowth and pruning
@@ -400,8 +370,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   reshape premise, then /harness:brainstorming.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#615
 
 ### canary-harley — property-based and fuzz test generation
@@ -421,8 +389,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
     effort / medium confidence. Next: /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#616
 
 ### canary-huntress — targeted regression pursuit
@@ -442,8 +408,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   distinct scope before speccing, or leave the name reserved.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#617
 
 ### canary-hawk-dove — gate threshold auto-tuner
@@ -465,8 +429,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   history store itself EXISTS - agent/history/, 2026-06-10 - so the substrate is
   not the blocker; the missing labels are)
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#618
 
 ### canary-batgirl — developer and team quality scorecard
@@ -489,8 +451,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Blockers:** — (history substrate EXISTS: agent/history/, 2026-06-10; the
   Goodhart objection remains the real gate, not a missing store)
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#619
 
 ### canary-shiva — predictive test ordering
@@ -514,8 +474,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Blockers:** Issue #538 (nothing writes the local history store, so the
   volume/retention question may already have a known answer)
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#460
 
 ### canary-rewind — time-travel run debugging
@@ -534,8 +492,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   Prey name; if the roster convention is meant to hold, this row needs one.
 - **Blockers:** Issue #538 (no writer for the local history store)
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#461
 
 ### canary-screech — broken-main siren
@@ -552,8 +508,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   the history store), and whether it posts the blast or only emits it.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#591
 
 ### canary-misfit — E2E resilience injection
@@ -571,8 +525,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   deterministic seed or a reported failure cannot be reproduced.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#592
 
 ### canary-mission-briefing — PR diff to human test charter
@@ -591,8 +543,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   pass, and whether output is stdout Markdown or a sticky PR comment.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#593
 
 ### canary-sweep — site-wide a11y audit
@@ -612,8 +562,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   is the least test-shaped item in the Skill Forge batch.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#594
 
 ## Engine and Platform
@@ -637,8 +585,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   fallback must be a real good default, not a degraded mode.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#462
 
 ### Voice pack and themable external-report hooks
@@ -661,8 +607,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   for and `oracle` is retired and never reused.
 - **Blockers:** Issue #462 (personas — voice needs something to attach to)
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#340
 
 ### Skill Forge primitives — cross-surface consistency and reachability
@@ -679,8 +623,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   because it enumerated zero skills is an abstention, not a pass.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#452
 
 ### Shared company-knowledge schema and loader package
@@ -696,8 +638,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   its own but removes a duplicated contract that will drift.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#550
 
 ### Overlay workflow templates for consumer repos
@@ -714,8 +654,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   matching the confirm-before-apply flow migrate already uses.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#459
 
 ### Gate canary-promote-test on structured test-craft verdicts
@@ -732,8 +670,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   no-silent-abstention work exists to close.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#477
 
 ### Measure abandonment, not satisfaction
@@ -750,8 +686,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   implementation, and nothing identifying may land in the records.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#491
 
 ### Pedagogical Reasoning Mode
@@ -768,8 +702,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   this raises the cost of a confident-but-incorrect finding.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#342
 
 ## Product Surface Gaps
@@ -789,8 +721,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   content, and the canary-clocktower gap analysis is partly answered by it.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#538
 
 ### Uninstall path
@@ -807,8 +737,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   to rely on without saying so first.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#523
 
 ### doctor — detect a stale Claude Code plugin
@@ -824,8 +752,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   so.
 - **Blockers:** —
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#522
 
 ### Consume the detected environment and user-level context
@@ -842,6 +768,4 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   decides.
 - **Blockers:** Issue #462 (persona definition — overlapping audience model)
 - **Plan:** —
-- **Assignee:** —
-- **Priority:** —
 - **External-ID:** github:bop-clocktower/canary#341
