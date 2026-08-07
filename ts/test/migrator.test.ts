@@ -2677,3 +2677,102 @@ describe('TestCheckReportsWorkflowsWithoutNagging', () => {
       ).toBe(HAND_TUNED_YML);
     }));
 });
+
+describe('TestWorkspaceScalarResolution', () => {
+  /**
+   * A harness project whose ROOT probe misses every tier: `language: go` is not
+   * in `_LANGUAGE_FALLBACKS`, so the scalar can only come from the workspace.
+   */
+  function wsProject(root: string, globs: string[] = ['apps/*']): void {
+    makeHarnessProject(root, { language: 'go' });
+    write(
+      join(root, 'pnpm-workspace.yaml'),
+      `packages:\n${globs.map((g) => `  - "${g}"\n`).join('')}`,
+    );
+  }
+
+  function pkg(root: string, rel: string, ...configs: string[]): void {
+    const dir = join(root, ...rel.split('/'));
+    mkdirSync(dir, { recursive: true });
+    for (const c of configs) write(join(dir, c), 'export default {};');
+  }
+
+  it('resolves the scalar from unanimous packages and counts them', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      pkg(root, 'apps/b', 'playwright.config.ts');
+      pkg(root, 'apps/c', 'playwright.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_framework).toBe('playwright');
+      expect(ctx.detected_shape).toBe('e2e_ui');
+      expect(ctx.detection_source).toBe('workspace (3 packages)');
+    }));
+
+  it('uses the singular noun for a single package', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detection_source).toBe('workspace (1 package)');
+    }));
+
+  it('reports mixed when packages disagree on the framework', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      pkg(root, 'apps/b', 'vitest.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_framework).toBeNull();
+      expect(ctx.detected_shape).toBe('unknown');
+      expect(ctx.detection_source).toBe('workspace (mixed)');
+    }));
+
+  // Unanimity is on the (framework, shape) PAIR: shape decides which overlay
+  // skills deploy, so same-framework/different-shape is NOT unanimous.
+  it('is not unanimous when the same framework resolves to two shapes', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/ui', 'playwright.config.ts');
+      const api = join(root, 'apps', 'api');
+      mkdirSync(join(api, 'tests'), { recursive: true });
+      write(join(api, 'playwright.config.ts'), 'export default {};');
+      write(
+        join(api, 'tests', 'a.spec.ts'),
+        'test("x", async ({ request }) => {});',
+      );
+      const ctx = mig().detect(root);
+      expect(ctx.detected_shape).toBe('unknown');
+      expect(ctx.detection_source).toBe('workspace (mixed)');
+    }));
+
+  it('is not unanimous when one package carries two frameworks', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts', 'vitest.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_shape).toBe('unknown');
+      expect(ctx.detection_source).toBe('workspace (mixed)');
+    }));
+
+  it('lets a root probe hit outrank the workspace packages', () =>
+    withTmp((root) => {
+      wsProject(root);
+      write(join(root, 'vitest.config.ts'), 'export default {};');
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_framework).toBe('vitest');
+      expect(ctx.detection_source).toBe('vitest.config.ts');
+    }));
+
+  it('lets an explicit canary_shape outrank the workspace shape', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      const canaryDir = join(root, '.canary');
+      mkdirSync(canaryDir, { recursive: true });
+      write(join(canaryDir, 'company.json'), '{"canary_shape": "capwell"}');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_shape).toBe('capwell');
+    }));
+});
