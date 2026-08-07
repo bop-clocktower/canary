@@ -123,3 +123,49 @@ describe('detectWorkspace -- plural findings', () => {
       ]);
     }));
 });
+
+describe('detectWorkspace -- what it must not claim', () => {
+  // Spec test 8. The language tier maps `typescript` to playwright/e2e_ui. If it
+  // ran per package, every package in a TypeScript monorepo would "detect"
+  // playwright it never carried -- findings invented by inheritance.
+  it('never attributes a framework via the root language fallback', () =>
+    withTmp((tmp) => {
+      write(join(tmp, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+      mkPkg(tmp, 'apps/web');
+
+      const ws = detectWorkspace(tmp, { language: 'typescript' });
+
+      expect(ws!.scanned).toBe(1);
+      expect(ws!.findings).toEqual([]);
+    }));
+
+  // Spec test 11.
+  it('locates a nested package through a ** glob', () =>
+    withTmp((tmp) => {
+      write(join(tmp, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/**"\n');
+      write(join(mkPkg(tmp, 'apps/group/web'), 'playwright.config.ts'), '');
+
+      const ws = detectWorkspace(tmp, {});
+
+      expect(ws!.findings.map((f) => f.dir)).toContain('apps/group/web');
+    }));
+
+  // Spec test 12. A dependency ships its own playwright.config.ts; mistaking it
+  // for this repo's suite would suppress a scaffold the user needs.
+  it('never yields a finding from inside node_modules', () =>
+    withTmp((tmp) => {
+      write(join(tmp, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/**"\n');
+      mkPkg(tmp, 'apps/web');
+      write(
+        join(mkPkg(tmp, 'apps/web/node_modules/dep'), 'playwright.config.ts'),
+        '',
+      );
+
+      const ws = detectWorkspace(tmp, {});
+
+      expect(ws!.findings).toEqual([]);
+      // `apps/**` matches `apps` itself (`**` matches zero directories) plus
+      // `apps/web` -- but never `apps/web/node_modules/dep`.
+      expect(ws!.scanned).toBe(2);
+    }));
+});
