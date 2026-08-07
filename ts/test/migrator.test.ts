@@ -14,6 +14,7 @@
  */
 
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -2900,4 +2901,74 @@ describe('TestSinglePackageByteIdentical', () => {
       expect(report.shapes).toEqual(['e2e_ui']);
       expect(report.to_markdown()).toBe(EXPECTED_SINGLE_PACKAGE_MARKDOWN);
     }));
+});
+
+/**
+ * `shapes` is populated in Milestone 1 and read in Milestone 2. Landing it
+ * untested would mean Milestone 2 builds deployment on an unverified union.
+ */
+describe('TestWorkspaceShapesUnion', () => {
+  function wsProject(root: string): void {
+    makeHarnessProject(root, { language: 'go' });
+    write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+  }
+
+  function pkg(root: string, rel: string, ...configs: string[]): void {
+    const dir = join(root, ...rel.split('/'));
+    mkdirSync(dir, { recursive: true });
+    for (const c of configs) write(join(dir, c), 'export default {};');
+  }
+
+  it('unions shapes across packages even when the scalar is unknown', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/e2e', 'playwright.config.ts');
+      pkg(root, 'apps/lib', 'vitest.config.ts');
+
+      const report = mig().migrate(root, { dryRun: true });
+
+      expect(report.shapes).toEqual(['e2e_ui', 'frontend_unit']);
+      // The scalar collapses to unknown, but no shape is lost.
+      expect(report.detection_source).toBe('workspace (mixed)');
+    }));
+
+  // Spec test 13b: one package, two frameworks. First-match-wins would drop a
+  // shape whose skills should deploy in Milestone 2.
+  it('keeps both shapes when a single package declares two frameworks', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/web', 'playwright.config.ts', 'vitest.config.ts');
+
+      const report = mig().migrate(root, { dryRun: true });
+
+      expect(report.shapes).toEqual(['e2e_ui', 'frontend_unit']);
+      expect(report.workspace!.scanned).toBe(1);
+      expect(report.workspace!.findings).toHaveLength(2);
+    }));
+
+  it('leaves shapes empty when nothing was detected', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/bare');
+
+      const report = mig().migrate(root, { dryRun: true });
+
+      expect(report.shapes).toEqual([]);
+    }));
+
+  const canChmod = process.platform !== 'win32' && process.getuid?.() !== 0;
+  it.runIf(canChmod)('names an unreadable package in the report', () =>
+    withTmp((root) => {
+      wsProject(root);
+      const locked = join(root, 'apps', 'locked');
+      mkdirSync(locked, { recursive: true });
+      chmodSync(locked, 0o000);
+      try {
+        const md = mig().migrate(root, { dryRun: true }).to_markdown();
+        expect(md).toContain('`apps/locked/` could not be read');
+      } finally {
+        chmodSync(locked, 0o755);
+      }
+    }),
+  );
 });
