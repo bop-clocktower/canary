@@ -27,6 +27,18 @@ beforeEach(() => {
 });
 afterEach(() => rmTmp(tmp));
 
+// An arrow const rather than a `function` declaration: harness#587 measures a
+// top-level `function` in a test file as running to EOF, so this seven-line
+// helper was reported at functionLength=73 and tripped the complexity ratchet.
+// Moving it does not help -- only the declaration form does.
+const jsonPayload = async (diff: string): Promise<Record<string, unknown>> => {
+  const res = await invokeGuardian(
+    ['pr-check', '--diff', '-', '--format', 'json'],
+    { input: diff, cwd: tmp },
+  );
+  return JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+};
+
 // A diff the guardian PARTLY judges: one ordinary source unit it keeps, and one
 // test unit it drops. The mix is the point -- an all-dropped diff abstains and
 // takes the (already fixed) #579 path instead.
@@ -58,14 +70,6 @@ index 1111111..2222222 100644
 +    return 42
 +
 `;
-
-async function jsonPayload(diff: string): Promise<Record<string, unknown>> {
-  const res = await invokeGuardian(
-    ['pr-check', '--diff', '-', '--format', 'json'],
-    { input: diff, cwd: tmp },
-  );
-  return JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
-}
 
 describe('non-abstain --format json carries `skipped` (#582)', () => {
   it('names the dropped path and why, alongside a real denominator', async () => {
