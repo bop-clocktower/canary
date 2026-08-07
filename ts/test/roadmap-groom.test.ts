@@ -18,12 +18,13 @@
  *   3 = ZERO DENOMINATOR — parsed no rows at all, an abstention, never a pass
  */
 
-import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { runCapture } from './subprocess-testkit.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCRIPT = join(REPO_ROOT, 'scripts', 'roadmap-groom.mjs');
@@ -69,38 +70,18 @@ interface Run {
   stdout: string;
 }
 
-/**
- * `execFileSync` throws on a non-zero exit, which is the case under test for
- * three of the exit codes here — so a throw is a result, not a failure.
- *
- * Split out of `run` to keep that helper under the complexity threshold tests
- * are held to (10, against 15 for `ts/src`). The nullish defaults are each a
- * branch, and four of them in one function is enough to trip it.
- */
-function asRun(error: unknown): Run {
-  const e = error as { status?: number; stdout?: string; stderr?: string };
-  return {
-    status: e.status ?? 2,
-    stdout: `${e.stdout ?? ''}${e.stderr ?? ''}`,
-  };
-}
-
 describe('roadmap-groom', () => {
   let dir: string;
   let roadmap: string;
   let archive: string;
 
   const run = (...args: string[]): Run => {
-    try {
-      const stdout = execFileSync(
-        process.execPath,
-        [SCRIPT, '--roadmap', roadmap, '--archive', archive, ...args],
-        { encoding: 'utf-8' },
-      );
-      return { status: 0, stdout };
-    } catch (error) {
-      return asRun(error);
-    }
+    const { status, output } = runCapture(
+      process.execPath,
+      [SCRIPT, '--roadmap', roadmap, '--archive', archive, ...args],
+      { failureStatus: 2 },
+    );
+    return { status, stdout: output };
   };
 
   beforeEach(() => {
