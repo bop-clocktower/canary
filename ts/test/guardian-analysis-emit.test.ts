@@ -81,7 +81,8 @@ describe('envelope', () => {
       analyzed_at: '2026-07-19T00:00:00+00:00',
     });
     // #554: 1.1 adds the additive `coverage` block.
-    expect(record.schemaVersion).toBe('1.1');
+    // #582: 1.2 adds the additive `skipped` list.
+    expect(record.schemaVersion).toBe('1.2');
     expect(record.source).toBe('canary-pr-guardian');
     expect(record.ref).toBe('pr-7');
     expect(record.gate).toBe('hard');

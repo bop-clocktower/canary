@@ -110,6 +110,21 @@ export async function invokeGuardian(
   };
 }
 
+/**
+ * Invoke the guardian CLI and parse its `--format json` payload.
+ *
+ * The slice past the first `{` is the load-bearing part: the CLI is free to
+ * print human preamble before the payload, so a bare `JSON.parse(stdout)` is a
+ * latent failure every JSON test would otherwise re-invent.
+ */
+export async function invokeGuardianJson(
+  args: string[],
+  opts: InvokeOptions = {},
+): Promise<Record<string, unknown>> {
+  const res = await invokeGuardian(args, opts);
+  return JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+}
+
 function restore(
   savedEnv: Record<string, string | undefined>,
   savedCwd: string,

@@ -108,9 +108,12 @@ finding survives.
 Suppressed paths are always named in the skip list with their cause, grouped by
 reason so a shared cause is stated once
 (`3 skipped: docs/x.md, docs/y.md [skipGlobs]; src/types.ts [type-only module]`),
-never folded into a pass. Under `--format json` the abstain payload carries the
-same list as `skipped: [{name, reason}]` (#579), so a machine consumer can tell
-_what_ was dropped and _why_, not merely that the gate declined to answer.
+never folded into a pass. Under `--format json` the payload carries the same
+list as `skipped: [{name, reason}]` — on the abstain path since #579, and on
+every ordinary run since #582 — so a machine consumer can tell _what_ was
+dropped and _why_, not merely that the gate declined to answer. See
+[What did this run decline to judge?](#what-did-this-run-decline-to-judge) for
+the reason vocabulary.
 
 ### PR check
 
@@ -202,16 +205,44 @@ The state appears in three places:
 `unitsMatched` of `unitsTotal` is the denominator to read. **Zero files matched
 is an abstention, not a pass.**
 
-The `schemaVersion` bump is the first since 1.0 and is purely additive: every
-1.0 field keeps its name, type, and meaning. Consumers should compare the
-**major** component (`1`) rather than the whole string — a strict `=== "1.0"`
-check rejects a record it can read perfectly well.
+Both `schemaVersion` bumps since 1.0 are purely additive: every 1.0 field keeps
+its name, type, and meaning. Consumers should compare the **major** component
+(`1`) rather than the whole string — a strict `=== "1.0"` check rejects a record
+it can read perfectly well.
 
 The minor bumps when an added field carries a _verifiability_ claim — one whose
 absence would otherwise read as good news. `coverage` is such a field: missing,
 it looks like "coverage was fine" when it actually means "this producer could
 not say". So `>= 1.1` is what licenses a reader to trust the `coverage` block.
 Fields that are merely more detail do not move it.
+
+`skipped` (1.2) is the same kind of field, which is why it moved the minor too:
+absent, it reads as "nothing was filtered out", when it may mean "this producer
+never said". `>= 1.2` is what licenses a reader to trust it.
+
+### What did this run decline to judge?
+
+`checked` is a numerator. `skipped` is the rest of the fraction — one entry per
+filtered path, carrying the class that filtered it:
+
+| `reason`               | The path was                                                |
+| ---------------------- | ----------------------------------------------------------- |
+| `skipGlobs`            | matched by a configured `skip_globs` pattern                |
+| `test path`            | a test itself — a test does not need its own test           |
+| `test support`         | test infrastructure (a `conftest`/fixture module)           |
+| `type-only module`     | types with no runtime content, so uncovered by construction |
+| `re-export barrel`     | a pure re-export with nothing to execute                    |
+| `heuristic-ineligible` | outside what a naming heuristic can judge                   |
+
+It appears in `--format json` and in the analysis record, always as an array —
+`[]` means "nothing was dropped", never "unknown". The reasons are distinct
+tokens on purpose: adjudication measures suppression classes over time from
+them, which is what makes a precision regression in a single filter visible
+rather than averaged away.
+
+Without it, `checked: 3` cannot distinguish a diff of three source files from a
+diff of eight where five were filtered out — the same "the engine knows
+something the output never says" class the `coverage` block closed one layer up.
 
 One historical caveat: `checked` and `abstained` were added additively _under_
 "1.0", before that rule existed. A "1.0" record may or may not carry them, and

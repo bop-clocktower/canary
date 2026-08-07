@@ -45,6 +45,23 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Every guardian run now reports what it declined to judge, not just what it
+  checked** (#582). `#579` fixed the abstain payload; an ordinary run that
+  checked 3 units and filtered out 5 still emitted a payload describing only
+  the 3. `checked: 3` was honest as far as it went and left a consumer unable to
+  distinguish "this diff had 3 source files" from "this diff had 8 and the
+  guardian declined to judge 5 of them" — the same "the engine knows something
+  the output never says" class, one layer down, on a run that did verify a real
+  denominator. `--format json` and the emitted analysis record now both carry
+  `skipped: [{name, reason}]` on every run, always as an array (`[]` means
+  nothing was dropped, never "unknown"). The reason tokens stay distinct per
+  filter (`test support` vs `type-only module`), so adjudication can measure
+  suppression classes over time and a precision regression in one filter stays
+  visible instead of being averaged away. Analysis-record `schemaVersion` moves
+  `1.1 → 1.2`, additive: every earlier field keeps its name, type, and meaning,
+  and the minor moved because an absent `skipped` reads as good news — the same
+  test `>= 1.1` applied to the `coverage` block.
+
 - **`canary migrate` now walks workspace packages and reports each package's
   framework, shape, and evidence source, with the count of packages scanned**
   ([#504](https://github.com/bop-clocktower/canary/issues/504), part 1). A

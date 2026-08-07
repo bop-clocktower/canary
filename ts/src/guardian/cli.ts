@@ -1191,7 +1191,6 @@ function prCheckSkipEntries(
   testUnits: ChangedUnit[],
   barrelUnits: ChangedUnit[],
   supportUnits: ChangedUnit[] = [],
-  noisePaths: string[] = [],
   typeOnlyUnits: ChangedUnit[] = [],
 ): SkipEntry[] {
   return [
@@ -1208,11 +1207,17 @@ function prCheckSkipEntries(
       name: u.path,
       reason: 're-export barrel',
     })),
-    ...noisePaths.map((p) => ({
-      name: p,
-      reason: 'heuristic-ineligible',
-    })),
   ];
+}
+
+/**
+ * The heuristic-noise skip class (#413), which is only knowable AFTER the
+ * coverage ladder has scored each unit — so it cannot join
+ * {@link prCheckSkipEntries}, which must be built before the abstain exit.
+ * Kept a named function so the reason token has exactly one definition.
+ */
+function heuristicSkipEntries(noisePaths: string[]): SkipEntry[] {
+  return noisePaths.map((p) => ({ name: p, reason: 'heuristic-ineligible' }));
 }
 
 // Remediation is required copy (#508): say WHY the denominator
@@ -1388,26 +1393,24 @@ async function prCheckCmd(
     ? buildWeakTestFindings(testUnits, diffText)
     : [];
 
-  const preFilterSkipped =
-    skipped.length +
-    testUnits.length +
-    barrelUnits.length +
-    supportUnits.length +
-    typeOnlyUnits.length;
+  // #582: build the skip list ONCE, above the abstain exit, so the surviving
+  // (non-abstain) path carries the same denominator the abstain payload has
+  // carried since #579. The heuristic-noise class is not known until the
+  // coverage ladder has run, so it is appended below rather than passed here.
+  //
+  // This supersedes a `preFilterSkipped` count that was computed at this point
+  // and read by nothing — the fossil of an earlier attempt to surface the same
+  // number on this path.
+  const preCoverageSkips = prCheckSkipEntries(
+    skipped,
+    testUnits,
+    barrelUnits,
+    supportUnits,
+    typeOnlyUnits,
+  );
 
   if (kept.length === 0 && weakFindings.length === 0) {
-    abstainPrCheck(
-      prCheckSkipEntries(
-        skipped,
-        testUnits,
-        barrelUnits,
-        supportUnits,
-        [],
-        typeOnlyUnits,
-      ),
-      opts.format,
-      deps,
-    );
+    abstainPrCheck(preCoverageSkips, opts.format, deps);
   }
 
   const { results, coverage } = resolveCoverageWithInput(kept, {
@@ -1428,22 +1431,18 @@ async function prCheckCmd(
     ...weakFindings,
   ];
 
+  // The complete skip list for this run: the pre-coverage filters plus the
+  // heuristic-noise class the ladder just revealed.
+  const allSkips: SkipEntry[] = [
+    ...preCoverageSkips,
+    ...heuristicSkipEntries(noiseResults.map((r) => r.unit.path)),
+  ];
+
   // #413: if the heuristic filter consumed every scorable unit, report it as a
   // SKIP rather than rendering an empty "0 unaddressed" report -- an adopter
   // must be able to tell "nothing was judgeable" from "everything passed".
   if (scoredResults.length === 0 && findings.length === 0) {
-    abstainPrCheck(
-      prCheckSkipEntries(
-        skipped,
-        testUnits,
-        barrelUnits,
-        supportUnits,
-        noiseResults.map((r) => r.unit.path),
-        typeOnlyUnits,
-      ),
-      opts.format,
-      deps,
-    );
+    abstainPrCheck(allSkips, opts.format, deps);
   }
 
   // SC-5 (PR half): resolve the requested tier against actual capability. No
@@ -1465,6 +1464,9 @@ async function prCheckCmd(
     checked: scoredResults.length,
     abstained: false,
     coverage,
+    // #582: `checked` is the numerator of a fraction whose denominator was
+    // never printed. This is the rest of it.
+    skipped: allSkips,
   };
   const coverageNotice = coverageDegradedNotice(coverage);
   if (coverageNotice) {
@@ -1495,6 +1497,7 @@ async function prCheckCmd(
       checked: scoredResults.length,
       abstained: false, // an abstained run exits before emit (see plan)
       coverage,
+      skipped: allSkips,
     });
     if (res.action === 'emitted') {
       deps.out(`guardian: wrote analysis record ${RIGHT_ARROW} ${res.path}`);

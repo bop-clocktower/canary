@@ -29,6 +29,7 @@ import { readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 
 import { readJsonWithWarning } from '../core/config-validation.js';
+import { SkipEntry } from '../core/gate-result.js';
 import { isAssertionFreeTest } from '../core/quality-scorer.js';
 import {
   ChangedUnit,
@@ -1016,6 +1017,15 @@ export interface GateMeta {
   abstained: boolean;
   /** The run's coverage-input state, when the coverage ladder ran (#554). */
   coverage?: CoverageInputState | null;
+  /**
+   * What this run declined to judge, and why (#582).
+   *
+   * `checked` alone is honest but incomplete: it cannot distinguish a diff of
+   * three source files from a diff of eight where five were filtered out. The
+   * abstain payload has carried this since #579; the non-abstain path is the
+   * same class one layer down, on a run that did verify a real denominator.
+   */
+  skipped?: SkipEntry[];
 }
 
 /**
@@ -1096,6 +1106,11 @@ export function render(
     if (gateMeta !== null) {
       payload['checked'] = gateMeta.checked;
       payload['abstained'] = gateMeta.abstained;
+      // #582: unconditional, and `[]` when nothing was dropped. An omitted key
+      // would make "this run skipped nothing" indistinguishable from "this
+      // producer predates #582", leaving a consumer to guess exactly the thing
+      // the field exists to state.
+      payload['skipped'] = gateMeta.skipped ?? [];
       if (coverageState) payload['coverage'] = coverageBlock(coverageState);
     }
     return ensureAscii(JSON.stringify(payload, null, 2));
