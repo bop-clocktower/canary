@@ -401,7 +401,11 @@ Two related facts worth not rediscovering:
   #486, the design notes in #591–#594, the provenance in #601–#619.
   `--no-state-change` guards open/closed only. This is why #601–#619 were filed
   directly rather than through sync's create path: the command has no create-only
-  mode, so creating 19 would have meant patching 19.
+  mode, so creating 19 would have meant patching 19. The wrapper therefore
+  **refuses `--apply` unless `--i-know-this-rewrites-bodies` is also passed** —
+  a speed bump rather than a prohibition, since pushing the roadmap over the
+  tracker is a legitimate thing to decide once it is decided rather than
+  defaulted into. Exits 2 without it, before spawning anything.
 
 **Generated hooks carry local edits (#318 C).** Several hooks under
 `.harness/hooks/` are **harness-generated** but hand-edited in canary (commit
