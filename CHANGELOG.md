@@ -16,6 +16,22 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary migrate` now walks workspace packages and reports each package's
+  framework, shape, and evidence source, with the count of packages scanned**
+  ([#504](https://github.com/bop-clocktower/canary/issues/504), part 1). A
+  monorepo whose root carries no test config previously detected nothing and
+  said nothing about why. Detection now reads the declared workspace
+  (`pnpm-workspace.yaml`, or `workspaces` in package.json in either the npm
+  array or yarn object form), probes each package, and states its denominator —
+  how many packages were scanned, and which could not be read. A repo that
+  declares no workspace is untouched: its report is byte-identical to before.
+
+  Two things it deliberately will not do: attribute a framework to a package via
+  the root `language:` fallback (that would make every package in a TypeScript
+  monorepo "detect" playwright it never carried), and collapse a package that
+  declares two frameworks down to one — both shapes are kept, because shape
+  drives which skills deploy.
+
 - **`migrate` no longer proposes a second test suite beside one it can see, and
   `--framework` now resolves the shape** (#504, parts 2–4). Three defects along
   the same adoption path, reported from a Turborepo + pnpm workspace repo:

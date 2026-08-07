@@ -2857,3 +2857,47 @@ describe('TestWorkspaceDenominatorMarkdown', () => {
       expect(report.to_markdown()).not.toContain('## Workspace');
     }));
 });
+
+/**
+ * Criterion 3 / spec test 27: a repo that declares no workspace must render
+ * byte-for-byte what it rendered before workspace detection existed.
+ *
+ * The expected string was captured by running this fixture at commit 3fecfdf8
+ * -- the commit before this change -- NOT from the post-change code, which
+ * would assert whatever the new behavior happens to be into the baseline.
+ */
+const EXPECTED_SINGLE_PACKAGE_MARKDOWN = `# Canary Migration Report
+
+> **Dry run** \u{2014} no files were written. Re-run with \`--apply\` to migrate.
+
+**Framework:** playwright
+**Shape:** e2e_ui
+**Detected from:** \`playwright.config.ts\`
+**Confidence:** high \u{2014} dedicated config file
+
+## Would Create
+
+- \`tests/e2e\`
+
+## Already Present (will not be touched)
+
+- \`playwright.config.ts\`
+
+## Status
+
+Dry run \u{2014} would migrate 1 item(s). Re-run with \`--apply\` to write them.
+`;
+
+describe('TestSinglePackageByteIdentical', () => {
+  it('leaves single-package markdown byte-identical', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'typescript' });
+      write(join(root, 'playwright.config.ts'), 'export default {};');
+
+      const report = mig().migrate(root, { dryRun: true });
+
+      expect(report.workspace).toBeNull();
+      expect(report.shapes).toEqual(['e2e_ui']);
+      expect(report.to_markdown()).toBe(EXPECTED_SINGLE_PACKAGE_MARKDOWN);
+    }));
+});

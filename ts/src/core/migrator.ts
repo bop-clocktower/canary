@@ -475,6 +475,22 @@ function skillsDocsOverlayReason(
   );
 }
 
+/**
+ * The deduplicated, sorted union of the root shape and every package's shape.
+ *
+ * `unknown` is excluded: it is the absence of a shape, and carrying it into a
+ * union that drives deployment would let "we could not tell" masquerade as a
+ * detected shape. An empty array therefore means nothing was detected (#504).
+ */
+function unionShapes(rootShape: string, ws: WorkspaceInfo | null): string[] {
+  const shapes = new Set<string>();
+  if (rootShape !== 'unknown' && rootShape !== '') shapes.add(rootShape);
+  for (const f of ws?.findings ?? []) {
+    if (f.shape !== 'unknown' && f.shape !== '') shapes.add(f.shape);
+  }
+  return [...shapes].sort();
+}
+
 // ---------------------------------------------------------------------------
 // Data model
 // ---------------------------------------------------------------------------
@@ -490,6 +506,7 @@ export interface MigrationContextInit {
   config_warnings?: string[];
   not_test_project_reason?: string | null;
   workspace?: WorkspaceInfo | null;
+  shapes?: string[];
 }
 
 export class MigrationContext {
@@ -510,6 +527,14 @@ export class MigrationContext {
    * workspace never enters the plural path (#504 part 1).
    */
   workspace: WorkspaceInfo | null;
+  /**
+   * Every shape detected anywhere, deduplicated and sorted.
+   *
+   * Populated but not yet read: plural deployment is Milestone 2. Landing the
+   * data first keeps this change reviewable as "detection got richer, nothing
+   * else moved" (#504 part 1).
+   */
+  shapes: string[];
 
   constructor(init: MigrationContextInit) {
     this.project_root = init.project_root;
@@ -522,6 +547,7 @@ export class MigrationContext {
     this.config_warnings = init.config_warnings ?? [];
     this.not_test_project_reason = init.not_test_project_reason ?? null;
     this.workspace = init.workspace ?? null;
+    this.shapes = init.shapes ?? [];
   }
 }
 
@@ -837,6 +863,7 @@ export interface MigrationReportInit {
   installed_workflows?: WorkflowInstallResult[];
   config_warnings?: string[];
   workspace?: WorkspaceInfo | null;
+  shapes?: string[];
 }
 
 export class MigrationReport {
@@ -858,6 +885,8 @@ export class MigrationReport {
   config_warnings: string[];
   /** Declared workspace topology, or null for a single-package repo (#504). */
   workspace: WorkspaceInfo | null;
+  /** Every detected shape, deduplicated and sorted; unread until Milestone 2. */
+  shapes: string[];
 
   constructor(init: MigrationReportInit) {
     this.framework = init.framework;
@@ -876,6 +905,7 @@ export class MigrationReport {
     this.installed_workflows = init.installed_workflows ?? [];
     this.config_warnings = init.config_warnings ?? [];
     this.workspace = init.workspace ?? null;
+    this.shapes = init.shapes ?? [];
   }
 
   /**
@@ -1225,6 +1255,7 @@ export class HarnessMigrator {
       detection_confidence: confidence,
       config_warnings: configWarnings,
       workspace,
+      shapes: unionShapes(shape, workspace),
     });
   }
 
@@ -1297,6 +1328,7 @@ export class HarnessMigrator {
         manual_followups: followups,
         config_warnings: ctx.config_warnings,
         workspace: ctx.workspace,
+        shapes: ctx.shapes,
         deployed_skills: deployed,
         installed_workflows: this.installWorkflows(
           shape,
@@ -1374,6 +1406,7 @@ export class HarnessMigrator {
         installed_workflows: installedWorkflows,
         config_warnings: ctx.config_warnings,
         workspace: ctx.workspace,
+        shapes: ctx.shapes,
       });
     }
 
@@ -1401,6 +1434,7 @@ export class HarnessMigrator {
       installed_workflows: installedWorkflows,
       config_warnings: ctx.config_warnings,
       workspace: ctx.workspace,
+      shapes: ctx.shapes,
     });
   }
 
