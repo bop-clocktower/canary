@@ -29,14 +29,18 @@ const passthrough = process.argv.slice(2);
 // offers no inverse that could turn state-change back on.
 const args = ['harness', 'roadmap', 'sync', REQUIRED_FLAG, ...passthrough];
 
-// Not an error — `--apply` without `--no-create` is legitimate once the unlinked
-// rows in #595 are resolved. Until then it would file an issue per row lacking
-// an External-ID, several of which describe already-shipped work.
-if (passthrough.includes('--apply') && !passthrough.includes('--no-create')) {
+// The create hazard is gone — every row carries an External-ID as of #601-#619,
+// so `--apply` files nothing new. What remains is worse and has no flag:
+// updateTicket sets `patch.body = summary`, so a patch REPLACES an issue's body
+// with the roadmap's one-paragraph summary. All 38 rows are linked, so an
+// unguarded `--apply` overwrites 38 issue bodies — including the evidence in
+// #486 and the design notes in #591-#594. `--no-state-change` does not cover it.
+if (passthrough.includes('--apply')) {
   console.warn(
-    '! --apply without --no-create: rows lacking an External-ID each get a NEW\n' +
-      '  tracker issue. As of 2026-08-07 that is 29 rows, mostly done/shipped\n' +
-      '  work. See bop-clocktower/canary#595 before proceeding.',
+    '! --apply PATCHES every linked issue, and a patch REPLACES the issue body\n' +
+      '  with the roadmap row summary. 38 rows are linked; hand-written bodies\n' +
+      '  (#486, #591-#594, #601-#619) would be overwritten. There is no flag to\n' +
+      '  disable the body push. See bop-clocktower/canary#595.',
   );
 }
 

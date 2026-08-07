@@ -41,6 +41,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Blockers:** upstream harness#838 (`harness ci check` doesn't thread
   entropy.analyze.drift config)
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#601
 
 ## Example Library
 
@@ -61,6 +64,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   docs/changes/realworld-functions-batch9/)
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#602
 
 ## Intake
 
@@ -80,6 +86,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Blockers:** publish/link canary-test-cli@5.15.0; dev TestTracker
   tenant+token (human).
 - **Plan:** docs/changes/testtracker-ingest-reporter/plans/
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#603
 
 ### Flakiness detector skill over test-reporter history
 
@@ -104,6 +113,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   docs/ideation/bop-themed-canary-skills-2026-07-21.md; agent/history/)
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#604
 
 ### Generated-test soundness linter
 
@@ -119,6 +131,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   to spec.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#605
 
 ### Guardian coverage-delta (regression on touched units)
 
@@ -133,6 +148,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   present. Medium effort. Next: /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#606
 
 ### Edge-case-discovery to generate-test handoff
 
@@ -148,6 +166,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   automatic pipe. Medium effort. Next: /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#607
 
 ### Mutation-testing signal via Stryker
 
@@ -213,6 +234,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   was run for. Next: /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#608
 
 ### canary-signal — QA impact digest
 
@@ -235,6 +259,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#609
 
 ### canary-clocktower — run-history gap analysis (NOT a greenfield build)
 
@@ -262,6 +289,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   history store, so part of the gap may already be known.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#610
 
 ### canary-manhunter — release quality dossier
 
@@ -279,6 +309,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   built. Medium effort / high confidence. Next: /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#611
 
 ### canary-cassandra — vacuous-test detection
 
@@ -304,6 +337,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   both mint Birds of Prey names and neither reads the other.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#612
 
 ### canary-question — test-bug vs product-bug triage
 
@@ -322,6 +358,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   to spec.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#613
 
 ### canary-judomaster — incident to regression test
 
@@ -339,6 +378,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   confidence. Next: /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#614
 
 ### canary-ivy — suite overgrowth and pruning
 
@@ -358,6 +400,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   reshape premise, then /harness:brainstorming.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#615
 
 ### canary-harley — property-based and fuzz test generation
 
@@ -376,6 +421,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
     effort / medium confidence. Next: /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#616
 
 ### canary-huntress — targeted regression pursuit
 
@@ -394,6 +442,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   distinct scope before speccing, or leave the name reserved.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#617
 
 ### canary-hawk-dove — gate threshold auto-tuner
 
@@ -414,6 +465,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   history store itself EXISTS - agent/history/, 2026-06-10 - so the substrate is
   not the blocker; the missing labels are)
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#618
 
 ### canary-batgirl — developer and team quality scorecard
 
@@ -435,6 +489,9 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Blockers:** — (history substrate EXISTS: agent/history/, 2026-06-10; the
   Goodhart objection remains the real gate, not a missing store)
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#619
 
 ### canary-shiva — predictive test ordering
 
