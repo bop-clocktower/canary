@@ -267,6 +267,17 @@ Python from the plugin hooks and maintenance scripts. There is no longer a
 - **Run history:** `test-results/reports/history-v2.jsonl` (NDJSON, one
   run-record per line) remains the on-disk contract between the executor, the
   history store, and `analysis/`.
+- **Subprocess contract tests:** spawn through `runCapture()` in
+  `ts/test/subprocess-testkit.ts`, never a hand-rolled `execFileSync` try/catch.
+  `execFileSync` throws on a non-zero exit — which is the case under test for a
+  CLI suite — so each call site used to re-derive the same cast-and-default
+  block, and three of them independently tripped the `ts/test` cyclomatic
+  threshold of 10 doing it (#622). `runCapture` wraps `spawnSync`, which returns
+  the failure instead of throwing.
+  `ts/test/subprocess-normalisation-guard.test.ts` fails the build on a fourth
+  hand-rolled copy. Note the threshold split (`ts/test` 10, `ts/src` 15) is a
+  harness CLI default, not a key in `harness.config.json` — there is nothing
+  local to retune.
 - **Golden fixtures:** `ts/test/parity.test.ts` compares `AnalysisEngine` output
   against frozen captures in `ts/test/fixtures/golden/`. These began as
   TS↔Python parity captures; with Python gone they are now **regression**
@@ -370,9 +381,9 @@ Bumping the major is a **three-step sequence**, in this order (#545, #547):
    exit code _and_ output, not just exit code. The gates run the CLI on a bare
    checkout with no `npm ci`, so a local worktree reproduces CI exactly.
 
-**`roadmap sync` requires `--no-state-change` (#595).** It is deliberately absent
-from the table above — no workflow runs it, and none should. Run it only through
-`node scripts/roadmap-sync.mjs`, which appends the flag unconditionally;
+**`roadmap sync` requires `--no-state-change` (#595).** It is deliberately
+absent from the table above — no workflow runs it, and none should. Run it only
+through `node scripts/roadmap-sync.mjs`, which appends the flag unconditionally;
 `ts/test/roadmap-sync-guard.test.ts` fails any executable surface that invokes
 the bare command.
 
@@ -386,26 +397,27 @@ actually landing.
 Two related facts worth not rediscovering:
 
 - A row links to a ticket through `- **External-ID:** github:owner/repo#N`, an
-  _optional extended field_ serialized beside `Assignee`/`Priority`/`Updated-At`.
-  It is not one of the five documented fields (`Status`, `Spec`, `Summary`,
-  `Blockers`, `Plan`), so it is easy to conclude no link field exists. 19 rows
-  carry one as of #596.
+  _optional extended field_ serialized beside
+  `Assignee`/`Priority`/`Updated-At`. It is not one of the five documented
+  fields (`Status`, `Spec`, `Summary`, `Blockers`, `Plan`), so it is easy to
+  conclude no link field exists. 19 rows carry one as of #596.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
-  Before the linked issues were labelled it examined **2 of 30** — an effectively
-  blind gate that reported a real number nobody read. All 38 rows now carry an
-  `External-ID` (#596, #601–#619) and sync reports `would create 0`.
+  Before the linked issues were labelled it examined **2 of 30** — an
+  effectively blind gate that reported a real number nobody read. All 38 rows
+  now carry an `External-ID` (#596, #601–#619) and sync reports
+  `would create 0`.
 - **`--apply` replaces issue bodies, and no flag disables it.** `updateTicket`
   sets `patch.body` from the row's `Summary`, so patching a linked issue
   overwrites whatever a human wrote there with the roadmap's one paragraph. With
-  every row linked, one `--apply` would flatten 38 issue bodies — the evidence in
-  #486, the design notes in #591–#594, the provenance in #601–#619.
+  every row linked, one `--apply` would flatten 38 issue bodies — the evidence
+  in #486, the design notes in #591–#594, the provenance in #601–#619.
   `--no-state-change` guards open/closed only. This is why #601–#619 were filed
-  directly rather than through sync's create path: the command has no create-only
-  mode, so creating 19 would have meant patching 19. The wrapper therefore
-  **refuses `--apply` unless `--i-know-this-rewrites-bodies` is also passed** —
-  a speed bump rather than a prohibition, since pushing the roadmap over the
-  tracker is a legitimate thing to decide once it is decided rather than
-  defaulted into. Exits 2 without it, before spawning anything.
+  directly rather than through sync's create path: the command has no
+  create-only mode, so creating 19 would have meant patching 19. The wrapper
+  therefore **refuses `--apply` unless `--i-know-this-rewrites-bodies` is also
+  passed** — a speed bump rather than a prohibition, since pushing the roadmap
+  over the tracker is a legitimate thing to decide once it is decided rather
+  than defaulted into. Exits 2 without it, before spawning anything.
 
 **Generated hooks carry local edits (#318 C).** Several hooks under
 `.harness/hooks/` are **harness-generated** but hand-edited in canary (commit

@@ -10,11 +10,12 @@
  * are preserved exactly.
  */
 
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+
+import { runCapture } from './subprocess-testkit.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CANONICAL = 'canary-mcp';
@@ -30,16 +31,10 @@ interface HookResult {
 }
 
 function runHook(toolName: string): HookResult {
-  try {
-    const stdout = execFileSync('node', [HOOK], {
-      input: JSON.stringify({ tool_name: toolName }),
-      encoding: 'utf-8',
-    });
-    return { status: 0, stdout };
-  } catch (err) {
-    const e = err as { status?: number; stdout?: string };
-    return { status: e.status ?? 1, stdout: e.stdout ?? '' };
-  }
+  const { status, stdout } = runCapture(process.execPath, [HOOK], {
+    input: JSON.stringify({ tool_name: toolName }),
+  });
+  return { status, stdout };
 }
 
 describe('MCP server identity', () => {
