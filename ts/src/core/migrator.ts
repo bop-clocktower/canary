@@ -1736,14 +1736,45 @@ export class HarnessMigrator {
     const explicitShape = (rawShape == null ? '' : String(rawShape))
       .trim()
       .toLowerCase();
-    const [framework, shape, source, confidence] = this.probeFramework(
-      root,
-      config,
-    );
+    const rootProbe = this.probeFramework(root, config);
+    // A root miss falls through to the workspace packages -- but only a miss.
+    // A root config file still outranks them, unchanged from before (#504).
+    const ws = detectWorkspace(root, config);
+    const resolved =
+      rootProbe[0] === null && ws !== null
+        ? (this.resolveFromWorkspace(ws) ?? rootProbe)
+        : rootProbe;
+    const [framework, shape, source, confidence] = resolved;
     if (!explicitShape) return [framework, shape, source, confidence];
     return framework === null
       ? [null, explicitShape, 'canary_shape (.canary/company.json)', 'explicit']
       : [framework, explicitShape, source, confidence];
+  }
+
+  /**
+   * The scalar (framework, shape, source) implied by workspace findings.
+   *
+   * Unanimity is on the (framework, shape) PAIR, not the framework alone --
+   * shape drives which overlay skills and workflow templates deploy, so two
+   * playwright packages resolving to e2e_ui and api are not unanimous. Applies
+   * at N >= 1: `detection_source` reports the package count, so the scalar
+   * never pretends a root probe hit (#504 part 1).
+   */
+  private resolveFromWorkspace(ws: WorkspaceInfo): ProbeResult | null {
+    const findings = ws.findings;
+    if (findings.length === 0) return null;
+    const pairs = new Set(findings.map((f) => `${f.framework} ${f.shape}`));
+    if (pairs.size > 1) {
+      return [null, 'unknown', 'workspace (mixed)', 'none'];
+    }
+    const first = findings[0]!;
+    const n = new Set(findings.map((f) => f.dir)).size;
+    return [
+      first.framework,
+      first.shape,
+      `workspace (${n} package${n === 1 ? '' : 's'})`,
+      first.confidence,
+    ];
   }
 
   private probeFramework(
