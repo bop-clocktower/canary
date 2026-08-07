@@ -85,3 +85,41 @@ describe('detectWorkspace -- topology', () => {
       ]);
     }));
 });
+
+describe('detectWorkspace -- plural findings', () => {
+  it('reports a finding per package across the workspace', () =>
+    withTmp((tmp) => {
+      write(join(tmp, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+      write(join(mkPkg(tmp, 'apps/e2e'), 'playwright.config.ts'), '');
+      write(join(mkPkg(tmp, 'apps/lib'), 'vitest.config.ts'), '');
+
+      const ws = detectWorkspace(tmp, {});
+
+      expect(ws!.scanned).toBe(2);
+      expect(ws!.findings).toHaveLength(2);
+      expect([...new Set(ws!.findings.map((f) => f.shape))].sort()).toEqual([
+        'e2e_ui',
+        'frontend_unit',
+      ]);
+    }));
+
+  // `dir` is NOT unique across findings: a single package carrying two configs
+  // yields two findings, so findings.length can exceed `scanned`.
+  it('reports both frameworks when one package declares two', () =>
+    withTmp((tmp) => {
+      write(join(tmp, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+      const pkg = mkPkg(tmp, 'apps/web');
+      write(join(pkg, 'playwright.config.ts'), '');
+      write(join(pkg, 'vitest.config.ts'), '');
+
+      const ws = detectWorkspace(tmp, {});
+
+      expect(ws!.scanned).toBe(1);
+      expect(ws!.findings).toHaveLength(2);
+      expect(ws!.findings.every((f) => f.dir === 'apps/web')).toBe(true);
+      expect(ws!.findings.map((f) => f.framework).sort()).toEqual([
+        'playwright',
+        'vitest',
+      ]);
+    }));
+});
