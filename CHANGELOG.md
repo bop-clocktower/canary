@@ -24,7 +24,7 @@ under the project's former name) are documented in the
   ingest holds a unique index on `(run_id, full_title)` and rejects the **whole
   run** on a collision. The reporter keyed its in-flight map by `test.id` —
   genuinely unique — but a title is not: a Playwright `dependencies:` setup
-  project runs in full in *every* shard, so a `merge-reports` payload over a
+  project runs in full in _every_ shard, so a `merge-reports` payload over a
   sharded matrix legitimately carries the same setup title once per shard.
 
   The failure mode is what makes this worth a patch release. The reporter is
