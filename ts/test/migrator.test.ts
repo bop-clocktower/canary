@@ -14,6 +14,7 @@
  */
 
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -2676,4 +2677,298 @@ describe('TestCheckReportsWorkflowsWithoutNagging', () => {
         readFileSync(workflowPath(root, 'canary-guardian.yml'), 'utf-8'),
       ).toBe(HAND_TUNED_YML);
     }));
+});
+
+describe('TestWorkspaceScalarResolution', () => {
+  /**
+   * A harness project whose ROOT probe misses every tier: `language: go` is not
+   * in `_LANGUAGE_FALLBACKS`, so the scalar can only come from the workspace.
+   */
+  function wsProject(root: string, globs: string[] = ['apps/*']): void {
+    makeHarnessProject(root, { language: 'go' });
+    write(
+      join(root, 'pnpm-workspace.yaml'),
+      `packages:\n${globs.map((g) => `  - "${g}"\n`).join('')}`,
+    );
+  }
+
+  function pkg(root: string, rel: string, ...configs: string[]): void {
+    const dir = join(root, ...rel.split('/'));
+    mkdirSync(dir, { recursive: true });
+    for (const c of configs) write(join(dir, c), 'export default {};');
+  }
+
+  it('resolves the scalar from unanimous packages and counts them', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      pkg(root, 'apps/b', 'playwright.config.ts');
+      pkg(root, 'apps/c', 'playwright.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_framework).toBe('playwright');
+      expect(ctx.detected_shape).toBe('e2e_ui');
+      expect(ctx.detection_source).toBe('workspace (3 packages)');
+    }));
+
+  it('uses the singular noun for a single package', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detection_source).toBe('workspace (1 package)');
+    }));
+
+  it('reports mixed when packages disagree on the framework', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      pkg(root, 'apps/b', 'vitest.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_framework).toBeNull();
+      expect(ctx.detected_shape).toBe('unknown');
+      expect(ctx.detection_source).toBe('workspace (mixed)');
+    }));
+
+  // Unanimity is on the (framework, shape) PAIR: shape decides which overlay
+  // skills deploy, so same-framework/different-shape is NOT unanimous.
+  it('is not unanimous when the same framework resolves to two shapes', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/ui', 'playwright.config.ts');
+      const api = join(root, 'apps', 'api');
+      mkdirSync(join(api, 'tests'), { recursive: true });
+      write(join(api, 'playwright.config.ts'), 'export default {};');
+      write(
+        join(api, 'tests', 'a.spec.ts'),
+        'test("x", async ({ request }) => {});',
+      );
+      const ctx = mig().detect(root);
+      expect(ctx.detected_shape).toBe('unknown');
+      expect(ctx.detection_source).toBe('workspace (mixed)');
+    }));
+
+  it('is not unanimous when one package carries two frameworks', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts', 'vitest.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_shape).toBe('unknown');
+      expect(ctx.detection_source).toBe('workspace (mixed)');
+    }));
+
+  it('lets a root probe hit outrank the workspace packages', () =>
+    withTmp((root) => {
+      wsProject(root);
+      write(join(root, 'vitest.config.ts'), 'export default {};');
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_framework).toBe('vitest');
+      expect(ctx.detection_source).toBe('vitest.config.ts');
+    }));
+
+  it('lets an explicit canary_shape outrank the workspace shape', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/a', 'playwright.config.ts');
+      const canaryDir = join(root, '.canary');
+      mkdirSync(canaryDir, { recursive: true });
+      write(join(canaryDir, 'company.json'), '{"canary_shape": "capwell"}');
+      const ctx = mig().detect(root);
+      expect(ctx.detected_shape).toBe('capwell');
+    }));
+});
+
+describe('TestWorkspaceDegradation', () => {
+  it('reports no workspace for a single-package repo', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'go' });
+      write(join(root, 'package.json'), JSON.stringify({ name: 'solo' }));
+      expect(mig().detect(root).workspace).toBeNull();
+    }));
+
+  // The one that matters: a broken pnpm-workspace.yaml must not discard the
+  // globs a readable package.json declared.
+  it('keeps package.json globs when pnpm-workspace.yaml is unparseable', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'go' });
+      write(join(root, 'pnpm-workspace.yaml'), ':\n\tnot: [valid\n');
+      write(
+        join(root, 'package.json'),
+        JSON.stringify({ name: 'r', workspaces: ['apps/*'] }),
+      );
+      const dir = join(root, 'apps', 'web');
+      mkdirSync(dir, { recursive: true });
+      write(join(dir, 'playwright.config.ts'), 'export default {};');
+
+      const ctx = mig().detect(root);
+
+      expect(ctx.workspace!.globs).toEqual(['apps/*']);
+      expect(ctx.workspace!.findings.map((f) => f.dir)).toEqual(['apps/web']);
+      expect(
+        ctx.config_warnings.some((w) => w.includes('pnpm-workspace.yaml')),
+      ).toBe(true);
+    }));
+
+  it('warns and stays single-package when the yaml is the only source', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'go' });
+      write(join(root, 'pnpm-workspace.yaml'), ':\n\tnot: [valid\n');
+
+      const ctx = mig().detect(root);
+
+      expect(ctx.workspace!.globs).toEqual([]);
+      expect(ctx.workspace!.scanned).toBe(0);
+      expect(ctx.detected_framework).toBeNull();
+      expect(
+        ctx.config_warnings.some((w) => w.includes('pnpm-workspace.yaml')),
+      ).toBe(true);
+    }));
+});
+
+describe('TestWorkspaceDenominatorMarkdown', () => {
+  function wsRoot(root: string, yaml: string): void {
+    makeHarnessProject(root, { language: 'go' });
+    write(join(root, 'pnpm-workspace.yaml'), yaml);
+  }
+
+  // Spec test 18. "Found nothing" and "never looked" must not render alike.
+  it('states the glob count when nothing matched', () =>
+    withTmp((root) => {
+      wsRoot(root, 'packages:\n  - "apps/*"\n');
+      const md = mig().migrate(root, { dryRun: true }).to_markdown();
+      expect(md).toContain('Declared 1 glob, matched 0 packages.');
+    }));
+
+  it('states the scanned count when no package carries a test config', () =>
+    withTmp((root) => {
+      wsRoot(root, 'packages:\n  - "apps/*"\n');
+      mkdirSync(join(root, 'apps', 'a'), { recursive: true });
+      mkdirSync(join(root, 'apps', 'b'), { recursive: true });
+      const md = mig().migrate(root, { dryRun: true }).to_markdown();
+      expect(md).toContain(
+        '2 packages scanned, none carries a recognizable test config.',
+      );
+    }));
+
+  it('says nothing about a workspace when none is declared', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'go' });
+      const report = mig().migrate(root, { dryRun: true });
+      expect(report.workspace).toBeNull();
+      expect(report.to_markdown()).not.toContain('## Workspace');
+    }));
+});
+
+/**
+ * Criterion 3 / spec test 27: a repo that declares no workspace must render
+ * byte-for-byte what it rendered before workspace detection existed.
+ *
+ * The expected string was captured by running this fixture at commit 3fecfdf8
+ * -- the commit before this change -- NOT from the post-change code, which
+ * would assert whatever the new behavior happens to be into the baseline.
+ */
+const EXPECTED_SINGLE_PACKAGE_MARKDOWN = `# Canary Migration Report
+
+> **Dry run** \u{2014} no files were written. Re-run with \`--apply\` to migrate.
+
+**Framework:** playwright
+**Shape:** e2e_ui
+**Detected from:** \`playwright.config.ts\`
+**Confidence:** high \u{2014} dedicated config file
+
+## Would Create
+
+- \`tests/e2e\`
+
+## Already Present (will not be touched)
+
+- \`playwright.config.ts\`
+
+## Status
+
+Dry run \u{2014} would migrate 1 item(s). Re-run with \`--apply\` to write them.
+`;
+
+describe('TestSinglePackageByteIdentical', () => {
+  it('leaves single-package markdown byte-identical', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'typescript' });
+      write(join(root, 'playwright.config.ts'), 'export default {};');
+
+      const report = mig().migrate(root, { dryRun: true });
+
+      expect(report.workspace).toBeNull();
+      expect(report.shapes).toEqual(['e2e_ui']);
+      expect(report.to_markdown()).toBe(EXPECTED_SINGLE_PACKAGE_MARKDOWN);
+    }));
+});
+
+/**
+ * `shapes` is populated in Milestone 1 and read in Milestone 2. Landing it
+ * untested would mean Milestone 2 builds deployment on an unverified union.
+ */
+describe('TestWorkspaceShapesUnion', () => {
+  function wsProject(root: string): void {
+    makeHarnessProject(root, { language: 'go' });
+    write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+  }
+
+  function pkg(root: string, rel: string, ...configs: string[]): void {
+    const dir = join(root, ...rel.split('/'));
+    mkdirSync(dir, { recursive: true });
+    for (const c of configs) write(join(dir, c), 'export default {};');
+  }
+
+  it('unions shapes across packages even when the scalar is unknown', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/e2e', 'playwright.config.ts');
+      pkg(root, 'apps/lib', 'vitest.config.ts');
+
+      const report = mig().migrate(root, { dryRun: true });
+
+      expect(report.shapes).toEqual(['e2e_ui', 'frontend_unit']);
+      // The scalar collapses to unknown, but no shape is lost.
+      expect(report.detection_source).toBe('workspace (mixed)');
+    }));
+
+  // Spec test 13b: one package, two frameworks. First-match-wins would drop a
+  // shape whose skills should deploy in Milestone 2.
+  it('keeps both shapes when a single package declares two frameworks', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/web', 'playwright.config.ts', 'vitest.config.ts');
+
+      const report = mig().migrate(root, { dryRun: true });
+
+      expect(report.shapes).toEqual(['e2e_ui', 'frontend_unit']);
+      expect(report.workspace!.scanned).toBe(1);
+      expect(report.workspace!.findings).toHaveLength(2);
+    }));
+
+  it('leaves shapes empty when nothing was detected', () =>
+    withTmp((root) => {
+      wsProject(root);
+      pkg(root, 'apps/bare');
+
+      const report = mig().migrate(root, { dryRun: true });
+
+      expect(report.shapes).toEqual([]);
+    }));
+
+  const canChmod = process.platform !== 'win32' && process.getuid?.() !== 0;
+  it.runIf(canChmod)('names an unreadable package in the report', () =>
+    withTmp((root) => {
+      wsProject(root);
+      const locked = join(root, 'apps', 'locked');
+      mkdirSync(locked, { recursive: true });
+      chmodSync(locked, 0o000);
+      try {
+        const md = mig().migrate(root, { dryRun: true }).to_markdown();
+        expect(md).toContain('`apps/locked/` could not be read');
+      } finally {
+        chmodSync(locked, 0o755);
+      }
+    }),
+  );
 });
