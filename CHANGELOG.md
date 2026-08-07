@@ -14,6 +14,8 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [6.7.0] - 2026-08-06
+
 ### Fixed
 
 - **`canary migrate` now walks workspace packages and reports each package's
@@ -61,8 +63,8 @@ under the project's former name) are documented in the
   Part 4 of the report — a dry run printing "Migration complete" — was already
   fixed by the `gateOutcome`-derived `## Status` block and could not be
   reproduced; it is now pinned by regression tests so the copy cannot come back.
-  Detection itself remains root-only: making it report per-package findings is
-  part 1 of #504 and is not attempted here.
+  Detection itself remained root-only in parts 2–4; per-package reporting landed
+  separately as part 1, described above.
 
   This change accepts an architecture-baseline regression:
   `module-size 25808 → 26153 (+345)`, recorded in `.harness/audit.log`. The
@@ -1678,7 +1680,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v6.6.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v6.7.0...HEAD
+[6.7.0]: https://github.com/bop-clocktower/canary/compare/v6.6.0...v6.7.0
 [6.6.0]: https://github.com/bop-clocktower/canary/compare/v6.5.0...v6.6.0
 [6.5.0]: https://github.com/bop-clocktower/canary/compare/v6.4.0...v6.5.0
 [6.4.0]: https://github.com/bop-clocktower/canary/compare/v6.3.0...v6.4.0
