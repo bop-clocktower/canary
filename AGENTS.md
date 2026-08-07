@@ -370,6 +370,33 @@ Bumping the major is a **three-step sequence**, in this order (#545, #547):
    exit code _and_ output, not just exit code. The gates run the CLI on a bare
    checkout with no `npm ci`, so a local worktree reproduces CI exactly.
 
+**`roadmap sync` requires `--no-state-change` (#595).** It is deliberately absent
+from the table above — no workflow runs it, and none should. Run it only through
+`node scripts/roadmap-sync.mjs`, which appends the flag unconditionally;
+`ts/test/roadmap-sync-guard.test.ts` fails any executable surface that invokes
+the bare command.
+
+The flag is upstream's CI-safe mode: planning fields and labels converge, but no
+issue's open/closed state is patched. Without it, `statusMap` maps a roadmap row
+of `done` to a **closed** issue, so a hand-edited row that drifts ahead of
+reality can close someone's open bug, and `reverseStatusMap` reopens one the
+other way. Closure belongs to the PR-merge auto-done path, which is tied to work
+actually landing.
+
+Two related facts worth not rediscovering:
+
+- A row links to a ticket through `- **External-ID:** github:owner/repo#N`, an
+  _optional extended field_ serialized beside `Assignee`/`Priority`/`Updated-At`.
+  It is not one of the five documented fields (`Status`, `Spec`, `Summary`,
+  `Blockers`, `Plan`), so it is easy to conclude no link field exists. 19 rows
+  carry one as of #596.
+- `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
+  Before the 19 linked issues were labelled it examined **2 of 30** — an
+  effectively blind gate that reported a real number nobody read. Rows still
+  lacking an `External-ID` are read as rows needing a ticket, so `--apply`
+  without `--no-create` files a new issue per unlinked row (29 of them, mostly
+  already-shipped work). #595 tracks resolving those.
+
 **Generated hooks carry local edits (#318 C).** Several hooks under
 `.harness/hooks/` are **harness-generated** but hand-edited in canary (commit
 `6be522e`): `quality-warner.js` blocks on real violations, `format-check.js`
