@@ -45,7 +45,6 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -53,6 +52,15 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { readJsonWithWarning } from './config-validation.js';
 import { uncertainDetectionMessage } from './detection.js';
+import {
+  _WORKSPACE_SKIP_DIRS,
+  globDirs,
+  globFiles,
+  isDir,
+  isFile,
+  parseJsonOrNull,
+  readTextOrNull,
+} from './fs-glob.js';
 import { FrameworkRegistry } from './framework-registry.js';
 import { EXIT_ABSTAINED, gateOutcome, GateResult } from './gate-result.js';
 import { Scaffolder, scaffoldableFrameworks, TEMPLATES } from './scaffolder.js';
@@ -426,138 +434,6 @@ const _TEST_GLOBS = [
 const _PW_UI_FIXTURE_RE = /async\s*\(\s*\{[^}]*\b(?:page|browser)\b/;
 
 // ---------------------------------------------------------------------------
-// Small filesystem / glob helpers
-// ---------------------------------------------------------------------------
-
-function isDir(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function isFile(path: string): boolean {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
-}
-
-/** Compile a single glob segment (with `*` -> `[^/]*`) to an anchored regex. */
-function segGlobRegex(seg: string): RegExp {
-  const body = seg
-    .replace(/[.+^${}()|[\]\\?]/g, '\\$&')
-    .replace(/\*/g, '[^/]*');
-  return new RegExp(`^${body}$`);
-}
-
-/**
- * Match files under *root* against a pathlib-style glob (`**` matches zero or
- * more directories; `*` matches within a single segment). Mirrors the subset of
- * `Path.glob` the migrator needs.
- */
-function globFiles(root: string, pattern: string): string[] {
-  const segments = pattern.split('/');
-  const out: string[] = [];
-  const visit = (dir: string, si: number): void => {
-    const seg = segments[si]!;
-    const last = si === segments.length - 1;
-    if (seg === '**') {
-      // `**` consumes zero directories -> continue at the same dir.
-      visit(dir, si + 1);
-      // `**` consumes one-or-more -> descend into each subdir, staying on `**`.
-      for (const d of subDirs(dir)) visit(d, si);
-      return;
-    }
-    const re = segGlobRegex(seg);
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      if (!re.test(e.name)) continue;
-      const full = join(dir, e.name);
-      if (last) {
-        if (e.isFile() || isFile(full)) out.push(full);
-      } else if (e.isDirectory()) {
-        visit(full, si + 1);
-      }
-    }
-  };
-  visit(root, 0);
-  return out;
-}
-
-function subDirs(dir: string): string[] {
-  try {
-    return readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => join(dir, e.name));
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Directories a workspace glob must never descend into or return.
- *
- * `node_modules` matters twice over: a dependency ships its own
- * `playwright.config.ts`, which would be mistaken for this repo's suite and
- * silently suppress a scaffold the user needs -- and a `**` glob over a real
- * monorepo would otherwise walk every installed package on disk.
- */
-const _WORKSPACE_SKIP_DIRS = new Set([
-  'node_modules',
-  '.git',
-  '.venv',
-  'venv',
-  'dist',
-  'build',
-  '.next',
-  '.turbo',
-  'coverage',
-  '__pycache__',
-]);
-
-/**
- * Match *directories* under *root* against a workspace glob (`apps/*`).
- *
- * Deliberately a separate walk from `globFiles` rather than a shared one
- * parameterised by file-vs-directory: folding the two together forced a `kind`
- * branch through every step and pushed both the walker and its filter to
- * cyclomatic complexity 14 (threshold 10) to save 7 lines. Two short, honest
- * walks beat one clever one.
- */
-function globDirs(root: string, pattern: string): string[] {
-  const segments = pattern.split('/').filter((s) => s !== '');
-  const out: string[] = [];
-  const walkable = (dir: string): string[] =>
-    subDirs(dir).filter((d) => !_WORKSPACE_SKIP_DIRS.has(basename(d)));
-  const visit = (dir: string, si: number): void => {
-    if (si === segments.length) {
-      if (dir !== root) out.push(dir);
-      return;
-    }
-    const seg = segments[si]!;
-    if (seg === '**') {
-      visit(dir, si + 1);
-      for (const d of walkable(dir)) visit(d, si);
-      return;
-    }
-    const re = segGlobRegex(seg);
-    for (const d of walkable(dir)) {
-      if (re.test(basename(d))) visit(d, si + 1);
-    }
-  };
-  visit(root, 0);
-  return out;
-}
-
-// ---------------------------------------------------------------------------
 // Workspace ("monorepo") awareness -- #504 (3)
 //
 // Deliberately narrow: this exists ONLY to answer "does a suite for this
@@ -594,16 +470,6 @@ function workspaceGlobs(root: string): string[] {
       ...packageJsonWorkspaceGlobs(root),
     ]),
   ];
-}
-
-/** Parse *text* as JSON, or null if it is absent or malformed. */
-function parseJsonOrNull(text: string | null): unknown {
-  if (text === null) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -2123,14 +1989,6 @@ export class HarnessMigrator {
       }
     }
     return found;
-  }
-}
-
-function readTextOrNull(path: string): string | null {
-  try {
-    return readFileSync(path, 'utf-8');
-  } catch {
-    return null;
   }
 }
 
