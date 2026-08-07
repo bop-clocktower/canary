@@ -183,25 +183,32 @@ export function dedupeByFullTitle(results: ResultEntry[]): ResultEntry[] {
   const merged = new Map<string, ResultEntry>();
   for (const r of results) {
     const prior = merged.get(r.full_title);
-    if (!prior) {
-      merged.set(r.full_title, { ...r, tags: [...r.tags] });
-      continue;
-    }
-    const worse = (STATUS_SEVERITY[r.status] ?? 0) > (STATUS_SEVERITY[prior.status] ?? 0);
-    merged.set(r.full_title, {
-      ...prior,
-      status: worse ? r.status : prior.status,
-      error_message: prior.error_message ?? r.error_message,
-      error_stack: prior.error_stack ?? r.error_stack,
-      duration_ms:
-        prior.duration_ms === undefined && r.duration_ms === undefined
-          ? undefined
-          : Math.max(prior.duration_ms ?? 0, r.duration_ms ?? 0),
-      retries: Math.max(prior.retries, r.retries),
-      tags: [...new Set([...prior.tags, ...r.tags])],
-    });
+    merged.set(r.full_title, prior ? mergeEntries(prior, r) : { ...r, tags: [...r.tags] });
   }
   return [...merged.values()];
+}
+
+function worstOf(a: string, b: string): string {
+  return (STATUS_SEVERITY[b] ?? 0) > (STATUS_SEVERITY[a] ?? 0) ? b : a;
+}
+
+/** `Math.max` treats a missing duration as 0; absent-on-both must stay absent. */
+function longerOf(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return Math.max(a, b);
+}
+
+function mergeEntries(prior: ResultEntry, next: ResultEntry): ResultEntry {
+  return {
+    ...prior,
+    status: worstOf(prior.status, next.status),
+    error_message: prior.error_message ?? next.error_message,
+    error_stack: prior.error_stack ?? next.error_stack,
+    duration_ms: longerOf(prior.duration_ms, next.duration_ms),
+    retries: Math.max(prior.retries, next.retries),
+    tags: [...new Set([...prior.tags, ...next.tags])],
+  };
 }
 
 export function buildPayload(
