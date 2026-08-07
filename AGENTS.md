@@ -405,7 +405,16 @@ Two related facts worth not rediscovering:
   Before the linked issues were labelled it examined **2 of 30** — an
   effectively blind gate that reported a real number nobody read. All 38 rows
   now carry an `External-ID` (#596, #601–#619) and sync reports
-  `would create 0`.
+  `would create 0`. `scripts/roadmap-denominator-check.mjs` now keeps it that
+  way: the wrapper runs it before every sync, and it exits 3 unless **every**
+  linked row points at a labelled issue — naming the blind ones, not counting
+  them. The invariant is exact rather than a coverage ratio on purpose: most
+  open issues are ordinary bugs rather than roadmap rows (39 of 52 carry the
+  label today), so a floor would either sit low enough to miss the 2-of-30 case
+  or fire on every new bug report. An unreadable tracker exits 3 as well —
+  cannot-verify is a finding, not a skip. `HARNESS_BIN` skips the preflight for
+  the offline contract tests, and says so on stderr rather than skipping
+  silently.
 - **`--apply` replaces issue bodies, and no flag disables it.** `updateTicket`
   sets `patch.body` from the row's `Summary`, so patching a linked issue
   overwrites whatever a human wrote there with the roadmap's one paragraph. With

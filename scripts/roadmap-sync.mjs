@@ -23,6 +23,7 @@
 // Exit codes are forwarded unchanged, including 3 = ZERO DENOMINATOR (examined
 // nothing — an abstention, never a pass). Refusing `--apply` exits 2.
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const REQUIRED_FLAG = '--no-state-change';
 const OVERRIDE_FLAG = '--i-know-this-rewrites-bodies';
@@ -58,6 +59,31 @@ if (passthrough.includes('--apply') && !passthrough.includes(OVERRIDE_FLAG)) {
 
 // Stripped, not forwarded — upstream would reject an unknown option.
 const forwarded = passthrough.filter((arg) => arg !== OVERRIDE_FLAG);
+
+// Denominator preflight (#595). Sync filters the tracker by label and reports
+// how many tickets that left it — the original bug was that number being 2 of
+// 30 and nobody reading it. The check fails loudly instead, so a label filter
+// that has gone structurally blind cannot be discovered by its consequences.
+//
+// Skipped only under HARNESS_BIN, which is the offline contract-test stub hook
+// and already implies a trusted, non-production invocation. The skip is
+// announced rather than silent — an unmentioned skip is the bug class itself.
+// The check has its own contract tests in ts/test/roadmap-denominator.test.ts.
+if (process.env.HARNESS_BIN) {
+  console.error('i denominator preflight skipped: HARNESS_BIN stub mode');
+} else {
+  const preflight = spawnSync(
+    process.execPath,
+    // fileURLToPath, not URL.pathname: pathname percent-encodes, so a repo
+    // checked out under a path with a space would spawn a file that isn't there.
+    [fileURLToPath(new URL('roadmap-denominator-check.mjs', import.meta.url))],
+    { stdio: 'inherit' },
+  );
+  if (preflight.status !== 0) {
+    console.error('x refusing to run sync against an unverified tracker view.');
+    process.exit(preflight.status ?? 2);
+  }
+}
 
 // Appending REQUIRED_FLAG unconditionally is safe: it is idempotent, and
 // commander offers no inverse that could turn state-change back on.
