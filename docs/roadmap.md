@@ -354,9 +354,20 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   DEFERRED: Stryker per-PR is minutes-to-tens-of-minutes; without diff-scoped
   incremental mutation it is DOA in CI, and incremental mutation is itself hard.
   Revisit only if a diff-scoped mutation spike proves tractable. High effort /
-  low confidence. Next: spike before /harness:brainstorming.
+  low confidence. Next: spike before /harness:brainstorming. LINKED 2026-08-07
+  to Issue #486, which is the diff-scoped proposal this deferral was waiting on
+  and arrives with the evidence this row lacked (three vacuous tests that passed
+  CI against the bug they were written to catch; two hand-run mutants decisive
+  on #484). The row and the issue existed for weeks without either being
+  reachable from the other. Also note Issue #339's canary-katana checkbox
+  described this same work before that name shipped as deleted-test quarantine;
+  #339 is now closed and #486 is the sole owner. Status stays backlog — the
+  spike is still the next step, this is a link and not a decision.
 - **Blockers:** —
 - **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#486
 
 ### canary-cry — pre-launch "try to break it" exploratory sweep
 
@@ -502,7 +513,12 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   (canary-signal, the flakiness item) are not yet wired to query it. Accepted
   risk to handle in spec: do not rebuild what exists - the deliverable is wiring
   plus a documented gap list, not a second store. Effort unknown until the gap
-  analysis runs. Next: gap analysis, then /harness:brainstorming.
+  analysis runs. Next: gap analysis, then /harness:brainstorming. DISAMBIGUATION
+  2026-08-07: Issue #340 was titled "Clocktower voices" and is NOT this row — it
+  is a product-wide voice/report-theming concern, not a skill. It has been
+  retitled off the clocktower name and has its own row below. Note also that the
+  gap analysis here depends on Issue #538: nothing currently writes the local
+  history store, so part of the gap may already be known.
 - **Blockers:** —
 - **Plan:** —
 
@@ -539,7 +555,12 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
   test as vacuous when the call sits several frames deeper. Needs an explicit
   @covers annotation or trace-to-symbol resolution good enough to earn
   graph-verified rather than heuristic. Medium effort / medium confidence. Next:
-  /harness:brainstorming to spec.
+  /harness:brainstorming to spec. NAME COLLISION RESOLVED 2026-08-07: Issue #460
+  also claimed `canary-cassandra`, for predictive test ordering — an unrelated
+  feature. This row keeps the name (Cassandra Cain reads the fake, which is what
+  vacuous-test detection does); #460 was renamed `canary-shiva` and has its own
+  row below. The collision was possible because roadmap rows and tracker issues
+  both mint Birds of Prey names and neither reads the other.
 - **Blockers:** —
 - **Plan:** —
 
@@ -673,3 +694,356 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Blockers:** — (history substrate EXISTS: agent/history/, 2026-06-10; the
   Goodhart objection remains the real gate, not a missing store)
 - **Plan:** —
+
+### canary-shiva — predictive test ordering
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Split from the Skill Forge umbrella (Issue #339, now closed) into
+  Issue #460, and renamed from `canary-cassandra` on 2026-08-07 after the name
+  collided with the vacuous-test-detection row above. Lady Shiva reads a fighter
+  and anticipates the next move, which is the feature: mine the run-history
+  NDJSON plus the PR diff to run likeliest-to-fail tests first, so on a
+  multi-hour suite the failure surfaces in minute one rather than hour three.
+  Accepted risk to handle in spec: ordering is an OPTIMIZATION, NEVER A FILTER —
+  every test still runs, because a predictive ordering that silently drops tests
+  is a correctness bug wearing a performance costume. Needs a defined cold-start
+  fallback (diff-proximity, then declaration order; never fail) and an explicit
+  did-it-help metric (time-to-first-failure vs the unordered baseline) or there
+  is no way to know the model earns its complexity. Next: the blocking data
+  spike in #460 — per-test pass/fail history, commit keying, retention, and
+  whether any supported runner will accept an order.
+- **Blockers:** Issue #538 (nothing writes the local history store, so the
+  volume/retention question may already have a known answer)
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#460
+
+### canary-rewind — time-travel run debugging
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Split from the Skill Forge umbrella (Issue #339, now closed) into
+  Issue #461. Reconstruct a past run — env, seed, commit, order, traces — and
+  replay a single failed test in that exact context, then diff against the
+  nearest green run. The second of the two flagship bets that exploit the
+  run-history asset. Accepted risk to handle in spec: "the exact context" is a
+  claim the store must actually be able to honor; if seed and order were never
+  recorded, replay reproduces a different run while presenting itself as the
+  original, which is worse than not offering replay at all. The honest first
+  deliverable may be a history-schema change. Note `rewind` is not a Birds of
+  Prey name; if the roster convention is meant to hold, this row needs one.
+- **Blockers:** Issue #538 (no writer for the local history store)
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#461
+
+### canary-screech — broken-main siren
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Split from the Skill Forge umbrella (Issue #339, now closed) into
+  Issue #591. Wave 1, small and visible. When the default branch goes red, emit
+  a one-page blast: culprit commit range, failure cluster, owning area, a
+  quarantine-or-revert recommendation, and a chat-ready block. Distinct from
+  canary-fail-fast (in-run, aborts early) and canary-test-reporter (per-run
+  summary) — neither looks across runs or knows the branch went red. Open in
+  #591: where the branch-is-red signal comes from (Actions webhook, polling, or
+  the history store), and whether it posts the blast or only emits it.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#591
+
+### canary-misfit — E2E resilience injection
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Split from the Skill Forge umbrella (Issue #339, now closed) into
+  Issue #592. Wave 2. Wrap a Playwright run with route-level latency, 5xx
+  bursts, aborted responses, and slow-network profiles, then report which flows
+  degrade gracefully and which shatter. Injection sits at the Playwright route
+  layer so it needs no application changes — the same property that makes
+  canary-instrument additive-safe. Accepted risk to handle in spec: the output
+  is a per-flow verdict, not a gate; a flow that shatters under a 5xx burst may
+  be an accepted risk, and the deliverable is that someone decided. Needs a
+  deterministic seed or a reported failure cannot be reproduced.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#592
+
+### canary-mission-briefing — PR diff to human test charter
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Split from the Skill Forge umbrella (Issue #339, now closed) into
+  Issue #593. Wave 2. Given a diff, produce a plan for a person: what to verify
+  manually, which edge cases the diff invites, which existing tests cover it and
+  which parts nothing covers. Three skills read a diff and they are not
+  interchangeable — canary-pr-guardian emits a gate verdict for CI,
+  canary-generate-test emits code for the suite, and this one emits a charter
+  for a human tester. It is explicitly not a gate and explicitly not generated
+  code, and it is the only one of the three aimed at manual verification. Open
+  in #593: whether the coverage half reuses the guardian's Tier-0 diff-coverage
+  pass, and whether output is stdout Markdown or a sticky PR comment.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#593
+
+### canary-sweep — site-wide a11y audit
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Split from the Skill Forge umbrella (Issue #339, now closed) into
+  Issue #594. Wave 2. Crawl routes, run axe-core per page, dedupe findings by
+  component, and output a WCAG-mapped report with fix snippets. Component-level
+  dedup is the load-bearing idea: a per-page axe dump already exists in a dozen
+  tools and nobody reads it, and one bad button reported forty times is noise —
+  noise is how a11y tooling gets muted. Accepted risk to handle in spec: route
+  discovery is framework-specific, and a v1 that claims to discover routes while
+  silently missing half is exactly the abstention failure this repo exists to
+  prevent; taking an explicit route list is the honest version. Open in #594:
+  whether this is in scope for a testing tool at all, or belongs downstream — it
+  is the least test-shaped item in the Skill Forge batch.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#594
+
+## Engine and Platform
+
+### Persona system as a first-class engine concept
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #462, split from #340. Audience adaptation is hand-rolled
+  per skill today — each re-implements some variant of "if tester, use simpler
+  words" — so tone drifts between skills and an overlay cannot override it.
+  Replace with a persona definition (audience, technical depth, preferred output
+  formats, voice) that skills CONSULT rather than reimplement, extensible by
+  downstream overlays through the same `precedence` arbitration the overlay
+  contract already defines. Inventory the existing surface first: `canary doctor
+  --audience` (renamed from `--persona` in v5.12.0, legacy aliases retained),
+  the sdet/tester onboarding tracks, and the tester-facing skills that scale
+  run-summary tone. Accepted risk to handle in spec: if the persona is inferred
+  rather than configured this collides with Issue #341, and inferring an
+  audience wrongly is the failure mode users notice and resent; the no-persona
+  fallback must be a real good default, not a degraded mode.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#462
+
+### Voice pack and themable external-report hooks
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #340, retitled 2026-08-07 off the "Clocktower voices" name
+  that collided with the canary-clocktower row above. The project has a voice
+  identity but it stops at one character in one file. Build out distinct voices
+  for the Birds of Prey cast with a small style guide each, use them across
+  session responses, report flavor lines, doc epigraphs, and CLI moments, and
+  provide the engine-side hook for external-facing reports (a themable footer
+  slot plus a clean way for overlays to inject brand styling into HTML output).
+  Accepted risk to handle in spec: voice is garnish and never load-bearing —
+  every voiced line carries the plain fact too, and a `--no-flavor` off-switch
+  must exist for CI logs and formal contexts. Sequencing: voice attaches to a
+  persona, so Issue #462 wants to land first or the pack ships unwired. New
+  names must not collide with a shipped skill or an existing row — the failure
+  this reconciliation just cleaned up; `cassandra` and `clocktower` are spoken
+  for and `oracle` is retired and never reused.
+- **Blockers:** Issue #462 (personas — voice needs something to attach to)
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#340
+
+### Skill Forge primitives — cross-surface consistency and reachability
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #452. A skill exists across several surfaces at once (the
+  SKILL.md, the plugin manifest, the slash command, the agent definition, the
+  docs), and nothing checks that those agree or that every declared skill is
+  actually reachable. Build the two primitives: a cross-surface consistency
+  check and a reachability sweep. Accepted risk to handle in spec: this is
+  denominator-shaped work, so the check must report what it could not examine
+  rather than passing quietly — a sweep that finds zero unreachable skills
+  because it enumerated zero skills is an abstention, not a pass.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#452
+
+### Shared company-knowledge schema and loader package
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #550. `.canary/company.json` — the org pointer file for
+  Confluence spaces, Jira projects, internal domains, MCP servers, dashboards,
+  and the user-catalog skill — is read by canary-ci-ready and
+  canary-failure-impact, each with its own parsing. Extract the schema and
+  loader into a shared, tool-neutral package so consumers stop re-deriving it
+  and a schema change lands in one place. Enabler work: it unblocks nothing on
+  its own but removes a duplicated contract that will drift.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#550
+
+### Overlay workflow templates for consumer repos
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #459. `canary migrate`/`adopt` should install the overlay
+  workflow templates into a consumer repo, shape-aware and using portable paths.
+  Follows directly from the monorepo-shape work in Issue #504: once the tool
+  knows a repo's shape it can install the right workflow rather than one
+  template that assumes a single package at the root. Accepted risk to handle in
+  spec: writing workflow files into someone else's repo is the highest-blast
+  radius thing canary does, so it needs a dry-run plan shown before any write,
+  matching the confirm-before-apply flow migrate already uses.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#459
+
+### Gate canary-promote-test on structured test-craft verdicts
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #477. Promotion out of `tests/generated/` into the
+  committed suite is currently a review-and-move flow with no machine gate.
+  Require a structured verdict from test-craft before a generated test can be
+  promoted, so the quality bar is enforced rather than remembered. Accepted risk
+  to handle in spec: a gate that blocks promotion needs an abstention path — if
+  test-craft cannot form a verdict, that must be reported as unable-to-assess
+  and not silently treated as a pass, which is the exact failure class the
+  no-silent-abstention work exists to close.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#477
+
+### Measure abandonment, not satisfaction
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #491. Derive passive adoption signals from the analyses
+  records — where users stop, which flows are started and never finished, which
+  outputs are generated and never used — instead of asking whether people are
+  satisfied. Serves the legibility track: abandonment is observable and honest
+  where self-reported satisfaction is neither. Accepted risk to handle in spec:
+  this is usage telemetry on real users, so what is collected, where it is
+  stored, and how it is opted into all belong in the spec rather than the
+  implementation, and nothing identifying may land in the records.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#491
+
+### Pedagogical Reasoning Mode
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #342. A mode in which canary explains its reasoning as it
+  works — why this framework, why this edge case matters, why this test is weak
+  — so the tool teaches rather than only produces. Adjacent to the persona work
+  in Issue #462: depth of explanation is one of the axes a persona definition
+  would carry, and building this without personas risks hard-coding a second
+  audience model beside the first. Accepted risk to handle in spec: explanation
+  attached to a wrong answer is more convincing than the wrong answer alone, so
+  this raises the cost of a confident-but-incorrect finding.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#342
+
+## Product Surface Gaps
+
+### canary history record — a writer for the local history store
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #538. The local history store has a schema, a store
+  abstraction, a local and a Supabase backend, a flake-trend detector, and a
+  `canary history` CLI — but no command writes to the local store. The only
+  writer is `dogfood-record-run.mjs`, a script. Promote it to a real
+  `canary history record` command. This is the product-lies class: the
+  capability is documented and the read side exists, so the gap is invisible
+  until someone queries an empty store. It also gates real work — the
+  canary-shiva and canary-rewind rows above both depend on history having
+  content, and the canary-clocktower gap analysis is partly answered by it.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#538
+
+### Uninstall path
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #523. The word "uninstall" appears zero times in README,
+  docs/, and source. Canary writes into consumer repos — skills, workflows,
+  config, generated tests — and offers no documented way to take it back out.
+  Product-lies class, and the one with the clearest reputational cost: a tool
+  that cannot be removed cleanly is a tool people hesitate to install. Accepted
+  risk to handle in spec: uninstall must distinguish what canary authored from
+  what the user has since edited, and must never delete a test someone has come
+  to rely on without saying so first.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#523
+
+### doctor — detect a stale Claude Code plugin
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #522. The CLI and the Claude Code plugin version
+  independently, so a user can run a current CLI against a stale plugin and get
+  behavior from neither. `canary doctor` has no check for this. Tooling-rot
+  class: the failure is silent and presents as inexplicable behavior rather than
+  as a version problem. Small, well-bounded, and directly serves the
+  denominator principle — a doctor that cannot see a whole surface should say
+  so.
+- **Blockers:** —
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#522
+
+### Consume the detected environment and user-level context
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #341. Environment and user-level context detection ships
+  and works; nothing reads it. Product-lies class in its purest form — the
+  feature is present, tested, and inert. Wire the existing detection into the
+  consumers that should adapt to it. Accepted risk to handle in spec: the
+  SDET-vs-manual detection half collides with the persona work in Issue #462 and
+  needs its own design default, because inferring a user's skill level wrongly
+  is the failure people resent; decide there whether detection proposes or
+  decides.
+- **Blockers:** Issue #462 (persona definition — overlapping audience model)
+- **Plan:** —
+- **Assignee:** —
+- **Priority:** —
+- **External-ID:** github:bop-clocktower/canary#341
