@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { mapStatus, resolveTestStatus, runStatus, resolveConfig, buildPayload, shouldPush } = require("../../dist/reporters/testtracker.js");
+const { mapStatus, resolveTestStatus, runStatus, resolveConfig, buildPayload, shouldPush, dedupeByFullTitle } = require("../../dist/reporters/testtracker.js");
 
 test("mapStatus collapses PW statuses", () => {
   assert.equal(mapStatus("passed"), "passed");
@@ -112,4 +112,88 @@ test("a recovered flake is flaky per-test but does NOT fail the run", () => {
   // no hard failure → run is NOT "failed" (management sees a good run); the
   // flaky count carries the SDET signal.
   assert.equal(p.status, "flaky");
+});
+
+// --- duplicate full_title (canary#599) -------------------------------------
+// A Playwright `dependencies:` setup project runs in full in EVERY shard, so a
+// merge-reports payload over a sharded matrix carries the same setup title once
+// per shard. TestTracker's ingest holds a unique index on
+// (run_id, full_title) and rejects the WHOLE run on a collision — capwell's
+// `capwell-web` suite never ingested a single nightly because of this.
+
+test("dedupeByFullTitle collapses repeated titles, worst status wins", () => {
+  const out = dedupeByFullTitle([
+    { full_title: "setup > auth.setup.ts > authenticate", test_file: "auth.setup.ts", status: "passed", duration_ms: 900, retries: 0, tags: ["setup"] },
+    { full_title: "setup > auth.setup.ts > authenticate", test_file: "auth.setup.ts", status: "failed", duration_ms: 1500, retries: 2, tags: ["setup", "auth"], error_message: "boom", error_stack: "at x" },
+    { full_title: "chromium > a.spec.ts > a", test_file: "a.spec.ts", status: "passed", duration_ms: 10, retries: 0, tags: [] },
+  ]);
+  assert.equal(out.length, 2);
+  const setup = out.find((r) => r.full_title.startsWith("setup"));
+  assert.equal(setup.status, "failed"); // worst wins — never look healthier than the parts
+  assert.equal(setup.duration_ms, 1500); // max, not last-seen
+  assert.equal(setup.retries, 2);
+  assert.equal(setup.error_message, "boom"); // the SDET still sees why it failed
+  assert.equal(setup.error_stack, "at x");
+  assert.deepEqual(setup.tags, ["setup", "auth"]); // union, deduped
+});
+
+test("dedupeByFullTitle keeps the FIRST real error when both attempts errored", () => {
+  const out = dedupeByFullTitle([
+    { full_title: "t", test_file: "t.spec.ts", status: "failed", retries: 0, tags: [], error_message: "first", error_stack: "s1" },
+    { full_title: "t", test_file: "t.spec.ts", status: "failed", retries: 0, tags: [], error_message: "second", error_stack: "s2" },
+  ]);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].error_message, "first");
+  assert.equal(out[0].error_stack, "s1");
+});
+
+test("dedupeByFullTitle leaves duration undefined when no entry had one", () => {
+  const out = dedupeByFullTitle([
+    { full_title: "t", test_file: "t.spec.ts", status: "passed", retries: 0, tags: [] },
+    { full_title: "t", test_file: "t.spec.ts", status: "passed", retries: 0, tags: [] },
+  ]);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].duration_ms, undefined);
+});
+
+test("dedupeByFullTitle is a no-op on already-unique results", () => {
+  const rows = [
+    { full_title: "a", test_file: "a.spec.ts", status: "passed", retries: 0, tags: [] },
+    { full_title: "b", test_file: "b.spec.ts", status: "failed", retries: 1, tags: [] },
+  ];
+  assert.deepEqual(dedupeByFullTitle(rows), rows);
+});
+
+test("buildPayload dedupes, and totals agree with the rows actually sent", () => {
+  const cfg = resolveConfig({ suite: "capwell-web" }, {});
+  // The real capwell shape: two chromium shards each ran the setup project.
+  const results = [
+    { full_title: "setup > auth.setup.ts > authenticate", test_file: "auth.setup.ts", status: "passed", retries: 0, tags: [] },
+    { full_title: "setup > auth.setup.ts > authenticate", test_file: "auth.setup.ts", status: "passed", retries: 0, tags: [] },
+    { full_title: "chromium > a.spec.ts > a", test_file: "a.spec.ts", status: "passed", retries: 0, tags: [] },
+  ];
+  const p = buildPayload(results, cfg, { startedAt: "x", finishedAt: "y" }, {});
+  const titles = p.results.map((r) => r.full_title);
+  assert.equal(new Set(titles).size, titles.length, "payload must not carry duplicate full_title");
+  assert.equal(p.results.length, 2);
+  assert.equal(p.totals.total, 2);
+  assert.equal(p.totals.passed, 2);
+  assert.equal(p.status, "passed");
+});
+
+test("a duplicated title that failed in one shard fails the run", () => {
+  const cfg = resolveConfig({ suite: "s" }, {});
+  const p = buildPayload(
+    [
+      { full_title: "setup > authenticate", test_file: "auth.setup.ts", status: "passed", retries: 0, tags: [] },
+      { full_title: "setup > authenticate", test_file: "auth.setup.ts", status: "failed", retries: 0, tags: [] },
+    ],
+    cfg,
+    { startedAt: "x", finishedAt: "y" },
+    {},
+  );
+  assert.equal(p.totals.total, 1);
+  assert.equal(p.totals.failed, 1);
+  assert.equal(p.totals.passed, 0); // the passing shard must not mask the failure
+  assert.equal(p.status, "failed");
 });
