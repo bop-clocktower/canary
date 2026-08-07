@@ -20,7 +20,6 @@
  * tracker.
  */
 
-import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   mkdtempSync,
@@ -33,6 +32,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { runCapture } from './subprocess-testkit.js';
+
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCRIPT = join(REPO_ROOT, 'scripts', 'roadmap-sync.mjs');
 const OVERRIDE = '--i-know-this-rewrites-bodies';
@@ -42,23 +43,6 @@ interface Run {
   output: string;
   /** argv the stub saw, or null if it was never reached. */
   argv: string[] | null;
-}
-
-/**
- * A non-zero exit is the case under test here, so `execFileSync` throwing is a
- * result rather than a failure.
- *
- * Split out of `run` for the same reason as in `roadmap-groom.test.ts`: nullish
- * defaults are each a branch, and `ts/test` is held to a complexity threshold of
- * 10 against 15 for `ts/src`. Three subprocess helpers in this repo have now hit
- * that ceiling on ordinary error normalisation.
- */
-function asFailure(error: unknown): { status: number; output: string } {
-  const e = error as { status?: number; stdout?: string; stderr?: string };
-  return {
-    status: e.status ?? 2,
-    output: `${e.stdout ?? ''}${e.stderr ?? ''}`,
-  };
 }
 
 describe('roadmap-sync wrapper', () => {
@@ -91,16 +75,11 @@ process.exit(${exitCode});
   };
 
   const run = (...args: string[]): Run => {
-    const env = { ...process.env, HARNESS_BIN: stub };
-    try {
-      const output = execFileSync(process.execPath, [SCRIPT, ...args], {
-        encoding: 'utf-8',
-        env,
-      });
-      return { status: 0, output, argv: recordedArgv() };
-    } catch (error) {
-      return { ...asFailure(error), argv: recordedArgv() };
-    }
+    const { status, output } = runCapture(process.execPath, [SCRIPT, ...args], {
+      env: { ...process.env, HARNESS_BIN: stub },
+      failureStatus: 2,
+    });
+    return { status, output, argv: recordedArgv() };
   };
 
   beforeEach(() => {

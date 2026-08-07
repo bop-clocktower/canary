@@ -267,6 +267,17 @@ Python from the plugin hooks and maintenance scripts. There is no longer a
 - **Run history:** `test-results/reports/history-v2.jsonl` (NDJSON, one
   run-record per line) remains the on-disk contract between the executor, the
   history store, and `analysis/`.
+- **Subprocess contract tests:** spawn through `runCapture()` in
+  `ts/test/subprocess-testkit.ts`, never a hand-rolled `execFileSync` try/catch.
+  `execFileSync` throws on a non-zero exit — which is the case under test for a
+  CLI suite — so each call site used to re-derive the same cast-and-default
+  block, and three of them independently tripped the `ts/test` cyclomatic
+  threshold of 10 doing it (#622). `runCapture` wraps `spawnSync`, which returns
+  the failure instead of throwing.
+  `ts/test/subprocess-normalisation-guard.test.ts` fails the build on a fourth
+  hand-rolled copy. Note the threshold split (`ts/test` 10, `ts/src` 15) is a
+  harness CLI default, not a key in `harness.config.json` — there is nothing
+  local to retune.
 - **Golden fixtures:** `ts/test/parity.test.ts` compares `AnalysisEngine` output
   against frozen captures in `ts/test/fixtures/golden/`. These began as
   TS↔Python parity captures; with Python gone they are now **regression**
