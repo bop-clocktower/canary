@@ -8,8 +8,12 @@
  *    appends it unconditionally.
  * 2. Body replacement — nothing covers it. `updateTicket` sets
  *    `patch.body` from the row's `Summary`, so patching a linked issue
- *    overwrites whatever a human wrote there. All 38 rows are linked, so one
- *    `--apply` flattens 38 issue bodies. There is no `--no-patch`.
+ *    overwrites whatever a human wrote there. Every row is linked, so one
+ *    `--apply` flattens one issue body per row. There is no `--no-patch`.
+ *
+ * The refusal states that count, and states it from the file rather than from
+ * a literal — it read "38" for a while after #628 made it 45, which is a
+ * safety message quietly understating its own blast radius.
  *
  * So `--apply` requires `--i-know-this-rewrites-bodies`. Not a block — the
  * command is legitimate once someone has decided the roadmap should win — but it
@@ -103,6 +107,26 @@ process.exit(${exitCode});
 
     expect(output).toContain(OVERRIDE);
     expect(output).toMatch(/body|bodies/i);
+  });
+
+  it('states the CURRENT number of issue bodies at risk', () => {
+    // The refusal used to hard-code "38 rows". #628 added 7, and the message
+    // kept saying 38 — a safety warning understating its own blast radius by
+    // seven people's writing. A number that has already drifted once will
+    // drift again, so it is derived from the file rather than restated.
+    const linked = readFileSync(
+      join(REPO_ROOT, 'docs', 'roadmap.md'),
+      'utf8',
+    ).match(/^- \*\*External-ID:\*\* /gm);
+
+    expect(
+      linked,
+      'no linked rows found — the count would be vacuous',
+    ).not.toBeNull();
+
+    const { output } = run('--apply');
+
+    expect(output).toContain(String(linked!.length));
   });
 
   it('proceeds when the override is given', () => {
