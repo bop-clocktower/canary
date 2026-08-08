@@ -45,6 +45,10 @@ const ROADMAP = join(REPO_ROOT, 'docs', 'roadmap.md');
 
 /** A field line: `- **Summary:** ...`. Group 1 is the field name. */
 const FIELD = /^- \*\*(\w[\w -]*):\*\*/;
+/** A field line with its value captured: group 1 name, group 2 value. */
+const FIELD_VALUE = /^- \*\*(\w[\w -]*):\*\*\s*(.*)$/;
+/** The priority enum, fixed by the upstream harness roadmap schema. */
+const PRIORITY = /^P[0-3]$/;
 /** A markdown ATX heading, at any level. */
 const HEADING = /^#{1,6}\s/;
 /** The start of an HTML comment block. */
@@ -111,6 +115,45 @@ function scanFieldContract(text: string): ScanResult {
   }
 
   return { fieldsInspected, violations };
+}
+
+interface Row {
+  /** The `### ` heading text. */
+  name: string;
+  /** 1-indexed line of the heading. */
+  line: number;
+  /** Field name to raw value, for the fields this row declares. */
+  fields: Map<string, string>;
+}
+
+/**
+ * Split the roadmap into rows. A row runs from its `### ` heading to the next
+ * heading of any level, so a row cannot silently absorb the fields of the row
+ * or section below it.
+ */
+function scanRows(text: string): Row[] {
+  const rows: Row[] = [];
+  const lines = text.split('\n');
+  let current: Row | undefined;
+
+  for (let i = 0; i < lines.length; i++) {
+    const rowMatch = ROW.exec(lines[i]);
+    if (rowMatch) {
+      current = { name: rowMatch[1].trim(), line: i + 1, fields: new Map() };
+      rows.push(current);
+      continue;
+    }
+    if (HEADING.test(lines[i])) {
+      current = undefined; // a section heading ends the row
+      continue;
+    }
+    if (!current) continue;
+
+    const fieldMatch = FIELD_VALUE.exec(lines[i]);
+    if (fieldMatch) current.fields.set(fieldMatch[1], fieldMatch[2].trim());
+  }
+
+  return rows;
 }
 
 /** Render violations as a message that names the row and field, not just a count. */
@@ -195,8 +238,24 @@ describe('roadmap one-line field contract', () => {
     });
   });
 
+  describe('the row parser', () => {
+    it('reads each row-s fields and stops at the next heading', () => {
+      const rows = scanRows(CLEAN);
+
+      expect(rows.map((r) => r.name)).toEqual(['A row', 'Another row']);
+      expect(rows[0].fields.get('Status')).toBe('backlog');
+      expect(rows[0].fields.get('External-ID')).toBe(
+        'github:bop-clocktower/canary#1',
+      );
+      // The second row declares only Status — it must not inherit the first-s.
+      expect([...rows[1].fields.keys()]).toEqual(['Status']);
+    });
+  });
+
   describe('docs/roadmap.md', () => {
-    const result = scanFieldContract(readFileSync(ROADMAP, 'utf8'));
+    const text = readFileSync(ROADMAP, 'utf8');
+    const result = scanFieldContract(text);
+    const rows = scanRows(text);
 
     it('inspects a non-zero number of fields', () => {
       // Denominator first: without this, every assertion below passes
@@ -209,6 +268,29 @@ describe('roadmap one-line field contract', () => {
         result.violations,
         `${result.violations.length} wrapped field(s) — harness silently ` +
           `discards the continuation of each:\n${describeViolations(result.violations)}`,
+      ).toEqual([]);
+    });
+
+    it('parses a non-zero number of rows', () => {
+      // Same denominator reasoning as the field count: a row parser that
+      // matches nothing would make every per-row assertion below vacuous.
+      expect(rows.length).toBeGreaterThan(0);
+    });
+
+    it('gives every row a Priority in the schema-s enum', () => {
+      // P0-P3 is fixed upstream and hard-fails on read, so an out-of-enum
+      // value is not a style question — it breaks `harness roadmap` outright.
+      const bad = rows.filter(
+        (r) => !PRIORITY.test(r.fields.get('Priority') ?? ''),
+      );
+
+      expect(
+        bad.map(
+          (r) =>
+            `docs/roadmap.md:${r.line} "${r.name}" -> ` +
+            `${JSON.stringify(r.fields.get('Priority') ?? '(absent)')}`,
+        ),
+        `${bad.length} of ${rows.length} row(s) lack a valid Priority (P0-P3)`,
       ).toEqual([]);
     });
   });
