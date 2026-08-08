@@ -140,133 +140,210 @@ interface ScanResult {
  * Fenced blocks and HTML comment bodies are skipped entirely, so the file can
  * document its own contract with a worked example without tripping the guard.
  */
+/** Mutable state threaded through the walk, so each helper does one job. */
+interface ScanState extends ScanResult {
+  /** The `### ` row currently being filled, if any. */
+  current?: Row;
+  /** Name of the current row, for violation messages. */
+  rowName: string;
+  inFence: boolean;
+  inComment: boolean;
+}
+
+/** The shapes that may legitimately follow a field line. */
+const TERMINATORS: ((line: string) => boolean)[] = [
+  (line) => line.trim() === '',
+  (line) => FIELD_ANY.test(line),
+  (line) => HEADING_ANY.test(line),
+  (line) => line.startsWith('<!--'),
+];
+
+/**
+ * A field's value ends at its line. Anything in TERMINATORS legitimately
+ * follows it; everything else is a continuation, which is the text harness
+ * silently drops. EOF is passed in as an empty line, which is already a
+ * terminator — modelling it that way keeps the branch out of the caller.
+ */
+function isTerminator(line: string): boolean {
+  return TERMINATORS.some((matches) => matches(line));
+}
+
+/**
+ * Fenced blocks and HTML comment bodies are not content: the roadmap documents
+ * its own contract in a header comment, and a worked example in a fence must
+ * not read as a violation. Returns true when the caller should skip the line.
+ */
+function skipBlock(line: string, state: ScanState): boolean {
+  if (FENCE.test(line)) {
+    state.inFence = !state.inFence;
+    return true;
+  }
+  if (state.inFence) return true;
+
+  if (state.inComment) {
+    if (line.includes('-->')) state.inComment = false;
+    return true;
+  }
+  if (line.trimStart().startsWith('<!--')) {
+    if (!line.includes('-->')) state.inComment = true;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Headings open a row, close one, or — when malformed — do neither while
+ * looking like they do. `###Foo` matches no heading rule, so without this the
+ * next row's fields land on the previous row and overwrite it, which is how a
+ * schema-invalid Priority hides. Returns true when the line was a heading.
+ */
+function handleHeading(line: string, index: number, state: ScanState): boolean {
+  const rowMatch = ROW.exec(line);
+  if (rowMatch) {
+    state.rowName = rowMatch[1].trim();
+    state.current = { name: state.rowName, line: index + 1, fields: new Map() };
+    state.rows.push(state.current);
+    return true;
+  }
+  if (!HEADING_ANY.test(line)) return false;
+
+  if (!HEADING.test(line)) {
+    state.violations.push({
+      line: index + 1,
+      row: state.rowName,
+      field: line.trim(),
+      kind: 'malformed-heading',
+      detail:
+        'heading-shaped line with no space after the hashes; it is neither a ' +
+        'row nor a section, so the fields below it would be attributed to ' +
+        "the PREVIOUS row and overwrite that row's",
+    });
+  }
+  // Either way it ends the current row: a section heading legitimately does,
+  // and a malformed one must not be allowed to merge two rows.
+  state.rowName = '(no row)';
+  state.current = undefined;
+  return true;
+}
+
+/**
+ * The wrong-shape check. Harness reads a field only at column 0 with a `-`
+ * bullet, so an indented or `*`-bulleted field is invisible to it — and any
+ * value wrapped beneath one is invisible too. Reported rather than skipped,
+ * because skipping is precisely how that hiding place stays open.
+ */
+function shapeViolation(
+  indent: string,
+  bullet: string,
+  name: string,
+  index: number,
+  rowName: string,
+): Violation | undefined {
+  if (indent !== '') {
+    return {
+      line: index + 1,
+      row: rowName,
+      field: name,
+      kind: 'indented-field',
+      detail:
+        `indented by ${indent.length} character(s); harness reads fields ` +
+        'only at column 0, so this field and any wrap in it are invisible',
+    };
+  }
+  if (bullet !== '-') {
+    return {
+      line: index + 1,
+      row: rowName,
+      field: name,
+      kind: 'bullet-style',
+      detail:
+        `bulleted with "${bullet}"; harness reads only "-", so this field ` +
+        'and any wrap in it are invisible',
+    };
+  }
+  return undefined;
+}
+
+/** Record a field on its row, flagging a second declaration of the same key. */
+function recordField(
+  name: string,
+  value: string,
+  index: number,
+  state: ScanState,
+): void {
+  const row = state.current;
+  if (!row) return;
+
+  if (row.fields.has(name)) {
+    state.violations.push({
+      line: index + 1,
+      row: state.rowName,
+      field: name,
+      kind: 'duplicate-field',
+      detail:
+        'declared twice in this row; the parsers disagree about which wins, ' +
+        'so a contradictory value can read as valid',
+    });
+  }
+  row.fields.set(name, value.trim());
+}
+
+/** Count a field-shaped line, check its shape, then check for a wrap. */
+function handleField(
+  line: string,
+  index: number,
+  next: string,
+  state: ScanState,
+): void {
+  const match = FIELD_ANY.exec(line);
+  if (!match) return;
+
+  const [, indent, bullet, name, value] = match;
+  state.fieldShapedLines++;
+
+  const wrongShape = shapeViolation(indent, bullet, name, index, state.rowName);
+  if (wrongShape) {
+    state.violations.push(wrongShape);
+    return;
+  }
+
+  // From here the line is a field harness would genuinely read.
+  state.fieldsInspected++;
+  recordField(name, value, index, state);
+
+  if (!isTerminator(next)) {
+    state.violations.push({
+      line: index + 2,
+      row: state.rowName,
+      field: name,
+      kind: 'wrapped',
+      detail: `harness discards: "${truncate(next.trim(), 60)}"`,
+    });
+  }
+}
+
 function scanRoadmap(text: string): ScanResult {
   // Split on both line endings: a CRLF checkout is a checkout, not a defect,
   // and `.` never matches `\r`, so a bare `\n` split silently breaks every
-  // value-capturing regex below.
+  // value-capturing regex above.
   const lines = text.split(/\r?\n/);
-  const violations: Violation[] = [];
-  const rows: Row[] = [];
-  let fieldsInspected = 0;
-  let fieldShapedLines = 0;
-  let rowName = '(no row)';
-  let current: Row | undefined;
-  let inFence = false;
-  let inComment = false;
-
-  const isTerminator = (line: string | undefined): boolean =>
-    line === undefined ||
-    line.trim() === '' ||
-    FIELD_ANY.test(line) ||
-    HEADING_ANY.test(line) ||
-    line.startsWith('<!--');
+  const state: ScanState = {
+    fieldsInspected: 0,
+    fieldShapedLines: 0,
+    violations: [],
+    rows: [],
+    rowName: '(no row)',
+    inFence: false,
+    inComment: false,
+  };
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (FENCE.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-
-    if (inComment) {
-      if (line.includes('-->')) inComment = false;
-      continue;
-    }
-    if (line.trimStart().startsWith('<!--')) {
-      if (!line.includes('-->')) inComment = true;
-      continue;
-    }
-
-    const rowMatch = ROW.exec(line);
-    if (rowMatch) {
-      rowName = rowMatch[1].trim();
-      current = { name: rowName, line: i + 1, fields: new Map() };
-      rows.push(current);
-      continue;
-    }
-    if (HEADING_ANY.test(line)) {
-      if (!HEADING.test(line)) {
-        violations.push({
-          line: i + 1,
-          row: rowName,
-          field: line.trim(),
-          kind: 'malformed-heading',
-          detail:
-            'heading-shaped line with no space after the hashes; it is ' +
-            'neither a row nor a section, so the fields below it would be ' +
-            "attributed to the PREVIOUS row and overwrite that row's",
-        });
-      }
-      // Either way it ends the current row: a section heading legitimately
-      // does, and a malformed one must not be allowed to merge two rows.
-      rowName = '(no row)';
-      current = undefined;
-      continue;
-    }
-
-    const anyMatch = FIELD_ANY.exec(line);
-    if (!anyMatch) continue;
-
-    const [, indent, bullet, name, value] = anyMatch;
-    fieldShapedLines++;
-
-    if (indent !== '') {
-      violations.push({
-        line: i + 1,
-        row: rowName,
-        field: name,
-        kind: 'indented-field',
-        detail:
-          `indented by ${indent.length} character(s); harness reads fields ` +
-          'only at column 0, so this field and any wrap in it are invisible',
-      });
-      continue;
-    }
-    if (bullet !== '-') {
-      violations.push({
-        line: i + 1,
-        row: rowName,
-        field: name,
-        kind: 'bullet-style',
-        detail:
-          `bulleted with "${bullet}"; harness reads only "-", so this field ` +
-          'and any wrap in it are invisible',
-      });
-      continue;
-    }
-
-    // From here the line is a field harness would genuinely read.
-    fieldsInspected++;
-
-    if (current) {
-      if (current.fields.has(name)) {
-        violations.push({
-          line: i + 1,
-          row: rowName,
-          field: name,
-          kind: 'duplicate-field',
-          detail:
-            'declared twice in this row; the parsers disagree about which ' +
-            'wins, so a contradictory value can read as valid',
-        });
-      }
-      current.fields.set(name, value.trim());
-    }
-
-    const next = lines[i + 1];
-    if (!isTerminator(next)) {
-      violations.push({
-        line: i + 2,
-        row: rowName,
-        field: name,
-        kind: 'wrapped',
-        detail: `harness discards: "${truncate(next.trim(), 60)}"`,
-      });
-    }
+    if (skipBlock(lines[i], state)) continue;
+    if (handleHeading(lines[i], i, state)) continue;
+    handleField(lines[i], i, lines[i + 1] ?? '', state);
   }
 
+  const { fieldsInspected, fieldShapedLines, violations, rows } = state;
   return { fieldsInspected, fieldShapedLines, violations, rows };
 }
 
