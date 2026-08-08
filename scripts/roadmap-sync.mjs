@@ -41,7 +41,11 @@ function linkedRowCount() {
       new URL('../docs/roadmap.md', import.meta.url),
       'utf8',
     );
-    const linked = roadmap.match(/^- \*\*External-ID:\*\* /gm) ?? [];
+    // Match the VALUE, not just the prefix. Harness's serializer emits the
+    // field unconditionally and writes an em-dash placeholder when a row has
+    // no tracker link, so a prefix match would count `- **External-ID:** —`
+    // as linked and overstate the blast radius after any regen/unshard.
+    const linked = roadmap.match(/^- \*\*External-ID:\*\* (?!—\s*$)\S/gm) ?? [];
     return linked.length > 0 ? String(linked.length) : null;
   } catch {
     return null;
@@ -51,13 +55,26 @@ function linkedRowCount() {
 /** The refusal's two count phrases, degrading together when the file is unreadable. */
 function blastRadius() {
   const n = linkedRowCount();
-  return n === null
-    ? {
-        linked: 'An unknown number of rows are',
-        bodies: 'an unknown number of hand-written bodies',
-      }
-    : { linked: `${n} rows are`, bodies: `${n} hand-written bodies` };
+  if (n === null) {
+    return {
+      linked: 'An unknown number of rows are',
+      bodies: 'an unknown number of hand-written bodies',
+    };
+  }
+  // Pluralize: "1 rows are linked" reads like a bug in the safety message,
+  // which is the last place a reader should be doubting the tooling.
+  const plural = n === '1' ? '' : 's';
+  return {
+    linked: `${n} row${plural} ${n === '1' ? 'is' : 'are'}`,
+    bodies: `${n} hand-written bod${n === '1' ? 'y' : 'ies'}`,
+  };
 }
+
+// Computed once: the refusal message interpolates both phrases, and calling
+// blastRadius() per phrase re-read and re-scanned the roadmap, which could
+// also mix a concrete count with "an unknown number" if the file changed
+// between the two reads.
+const BLAST_RADIUS = blastRadius();
 
 // The create hazard is gone — every row carries an External-ID as of #601-#619,
 // so `--apply` files nothing new. What remains is worse and has no upstream
@@ -83,8 +100,8 @@ if (passthrough.includes('--apply') && !passthrough.includes(OVERRIDE_FLAG)) {
     `x Refusing --apply without ${OVERRIDE_FLAG}.\n` +
       '\n' +
       '  --apply patches every linked issue, and a patch REPLACES the issue\n' +
-      `  body with the roadmap row summary. ${blastRadius().linked} linked, so\n` +
-      `  this would overwrite ${blastRadius().bodies}\n` +
+      `  body with the roadmap row summary. ${BLAST_RADIUS.linked} linked, so\n` +
+      `  this would overwrite ${BLAST_RADIUS.bodies}\n` +
       '  (#486, #591-#594, #601-#619).\n' +
       '  Upstream has no flag to disable the body push.\n' +
       '\n' +

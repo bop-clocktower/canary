@@ -85,11 +85,29 @@ it stops being correct. All three findings below were verified on 2026-08-07:
   under prettier's governance._ The hook blocks the repair. Verified: with
   `docs/roadmap.md` listed in a root `.prettierignore`, that same command
   exits 0. **So the ignore entry is a precondition for step 1, not a nicety.**
-- **No CI job formats or checks it, in either direction.** The CI format gate
-  (`harness-quality.yml`) and the `fmt_gate` function in `.githooks/pre-commit`
-  both run each package's own `format:check`, scoped to `ts/` and
-  `agents/skills/` only. `docs/roadmap.md` is outside both. So the ignore entry
-  changes nothing about CI; its whole effect is on the local edit path.
+- **No CI job FORMATS it — but one LINTS it, and that one is required.** The CI
+  format gate (`harness-quality.yml`) and the `fmt_gate` function in
+  `.githooks/pre-commit` both run each package's own `format:check`, scoped to
+  `ts/` and `agents/skills/` only, so `docs/roadmap.md` is outside both and the
+  ignore entry changes nothing about formatting in CI. **An earlier revision of
+  this spec generalised that into "no CI job formats or checks `docs/`", which
+  is false and was the more dangerous half of the claim.** `markdownlint` in
+  `.github/workflows/docs-lint.yml` globs every markdown file with no path
+  filter and is listed in `.github/required-checks.json`. It stays green only
+  because `docs/roadmap.md:12` carries `markdownlint-disable-file MD013`;
+  unwrapping the fields took the file from 12 long lines to 51, so that comment
+  is now load-bearing on a merge gate. `harness roadmap promote` is known to
+  strip it (`#273`), and the only thing that restored it was a pre-commit hook
+  requiring per-clone `core.hooksPath` opt-in. The field-contract test therefore
+  asserts the comment's presence. The harm in the old wording was not the
+  inaccuracy — it told the next reader the file had no CI relationship, which is
+  exactly the coupling that gets a "redundant-looking" disable comment deleted.
+- **The exemption is CWD-scoped.** Prettier resolves `.prettierignore` relative
+  to the current working directory, not the repo root and not the file's
+  location. From `ts/` — where this repo's four gates run —
+  `npx prettier --write ../docs/roadmap.md` reflows every field as if the entry
+  did not exist. Recorded in `.prettierignore`'s own header and in `AGENTS.md`,
+  because the trap is in the habit, not in the config.
 - **Prettier is not the sole author of the current wrapping.** The file is _not
   prettier-clean today_ — `npx prettier --check docs/roadmap.md` reports it —
   which it would be if prettier were the only writer. The provenance is mixed:
@@ -205,9 +223,12 @@ prettier exemption is permanent.
 New test, `ts/test/roadmap-field-contract.test.ts`, offline, parses
 `docs/roadmap.md` as text. The grammar it enforces:
 
-- A **field line** matches `^- \*\*(\w[\w -]*):\*\*`.
-- The line following a field line must be one of: another field line, a blank
-  line, a markdown ATX heading, an HTML comment (`^<!--`), or EOF.
+- A **field line** is `- **Key:** value` at column 0 with a `-` bullet — the
+  only shape harness reads. Lines are matched _permissively_ (any bullet, any
+  indent) and the wrong shapes are then rejected by name, because a strict match
+  would skip them silently, and a skipped line is how a wrapped value hides.
+- The line following a field line must be one of: another field-shaped line, a
+  blank line, a markdown ATX heading, an HTML comment (`^<!--`), or EOF.
 - **Any other non-blank line following a field line is a continuation, and is a
   failure.** Stating the rejection rule positively matters: the field regex
   alone describes what a field looks like, not what a violation looks like, and
@@ -228,12 +249,30 @@ none of it is a durable contract.
 
 ### Priority seeding (as of 2026-08-07)
 
-| Value | Rows seeded                                                                                                                                                                                                                                              |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `P0`  | `#481` (coverage-gate branch headroom), `#544` (entropy-scan triage)                                                                                                                                                                                     |
-| `P1`  | `#504` (monorepo-unaware detection), `#538` (history store), `#523` (no uninstall path), `#522` (stale-plugin check), `#603` (TestTracker ingest)                                                                                                        |
-| `P2`  | `#479` (shared skill-CLI arg parser), `#550` (company-knowledge package), `#462` (personas), `#487` (run SKILL.md examples), `#486` (diff-scoped mutation testing), `#390` (history-store ADR), `#488` (test-design rules), `#601` (api-signature drift) |
-| `P3`  | The remaining rows — those in the _Skills_ and _Engine_ sections of `docs/roadmap.md` with no other row naming them as a blocker (31 rows on 2026-08-07)                                                                                                 |
+| Value | Rows seeded                                                                                                                                                                                                                                                                                   |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `P0`  | `#481` (coverage-gate branch headroom), `#544` (entropy-scan triage)                                                                                                                                                                                                                          |
+| `P1`  | `#504` (monorepo-unaware detection), `#538` (history store), `#523` (no uninstall path), `#522` (stale-plugin check), `#603` (TestTracker ingest), `#341` (environment/user-context consumption)                                                                                              |
+| `P2`  | `#479` (shared skill-CLI arg parser), `#550` (company-knowledge package), `#462` (personas), `#487` (run SKILL.md examples), `#486` (diff-scoped mutation testing), `#390` (history-store ADR), `#488` (test-design rules), `#601` (api-signature drift), `#564` (harness-config denominator) |
+| `P3`  | The remaining rows — those in the _Skills_ and _Engine_ sections of `docs/roadmap.md` with no other row naming them as a blocker (29 rows)                                                                                                                                                    |
+
+Two of those entries were decided _during_ this change rather than in the
+2026-08-07 triage, and D5 requires the basis be recorded somewhere more durable
+than a commit message:
+
+- **`#341` moved P3 → P1.** It is product-lies in its purest form and is
+  reproducible from a consumer-facing invocation, which is the P1 predicate.
+- **`#564` was missing from the D4 table entirely** and is seeded `P2`. Review
+  of this change found it: open, `harness-managed`-labelled, created 2026-08-06
+  — before the baseline, so its absence was a triage miss rather than aging. It
+  is the same denominator class as `#481` and `#544` (a configured rule that
+  matches nothing still reports as configured), but it does not meet the P0
+  predicate because no required check is red or wrong today. See the Goal 3 note
+  under Verification.
+
+A third row, `#630`, was added for the work this review deferred (see
+Verification). Distribution across the resulting 47 rows: `P0`=2, `P1`=6,
+`P2`=10, `P3`=29.
 
 All issue numbers are in `bop-clocktower/canary`; the URL form is
 `https://github.com/bop-clocktower/canary/issues/<n>`.
@@ -272,12 +311,24 @@ non-zero.
 **Entry points.** No new CLI command, MCP tool, or skill.
 
 - **New file:** `ts/test/roadmap-field-contract.test.ts` — asserts every field
-  value in `docs/roadmap.md` is a single physical line, and that the number of
-  fields inspected is non-zero.
+  value in `docs/roadmap.md` is a single physical line, that every row carries a
+  `P0`–`P3` `Priority`, that the number of fields inspected is both non-zero and
+  equal to the number of field-shaped lines, that every inspected field belongs
+  to a row, and that the two out-of-band guards the file leans on are still in
+  place (the `.prettierignore` exemption and the `MD013` directive).
 - **Modified:** `.prettierignore` gains the single line `docs/roadmap.md`.
+- **Modified:** `scripts/roadmap-sync.mjs` and
+  `ts/test/roadmap-sync-wrapper.test.ts` — the `--apply` refusal message
+  hard-coded "38 rows", a literal this change invalidated by adding rows. It now
+  derives the count from the file, matches the `External-ID` _value_ rather than
+  its prefix (so a serializer's em-dash placeholder does not read as linked),
+  and degrades to "an unknown number" rather than a confident zero when the
+  roadmap cannot be read. In scope because a safety message this change silently
+  falsified is this change's to fix.
 - **Content edits** to `docs/roadmap.md`: adds a `Priority` field to all 38
-  existing rows and adds 7 new rows; unwraps the 38 wrapped `Summary` fields. No
-  existing row is removed.
+  existing rows and adds 8 new rows (the 7 in D4, plus `#564`, found during
+  review of this change); unwraps the 38 wrapped `Summary` fields. No existing
+  row is removed.
 
 **Registrations required.** The seven issues enumerated in D4 — `#390`, `#479`,
 `#481`, `#487`, `#488`, `#504`, `#544` — need the `harness-managed` GitHub
@@ -310,11 +361,21 @@ error. That generalises past the roadmap to any schema-bearing doc in the repo.
 Gates run from `ts/`; there is no root `package.json`, so `npm run build` at the
 repo root exits 0 having done nothing.
 
-1. **Field invariant, with its denominator.** On input containing a wrapped
-   field, `ts/test/roadmap-field-contract.test.ts` fails and its message names
-   the offending row and field. On clean input it passes while reporting the
-   number of fields inspected; a run that inspects **zero** fields fails as an
-   abstention rather than passing.
+1. **Field invariant, with a denominator that is complete, not merely
+   non-zero.** On input containing a wrapped field,
+   `ts/test/roadmap-field-contract.test.ts` fails and its message names the
+   offending row, the field, and the text harness would discard. A run that
+   inspects **zero** fields fails as an abstention rather than passing. And a
+   run that inspects _some_ fields fails too, unless the number inspected equals
+   the number of field-shaped lines and every inspected field belongs to a row.
+
+   The completeness half was added after review: `fieldsInspected > 0` counts
+   what the parser matched, and nothing counted what it _should_ have matched,
+   so a demoted `####` row heading, a `*` bullet, or an indented field each hid
+   a schema-invalid `Priority` behind a non-zero count. The counts appear in the
+   failure messages; on a pass the assertions are silent, which is the ordinary
+   vitest contract and is what "reporting" means here.
+
 2. **Formatter exemption — the write path, not the file state.** _Verify by:_
    apply an Edit to `docs/roadmap.md` that leaves a `Summary` unwrapped and
    longer than 80 columns; the edit completes and
@@ -326,8 +387,11 @@ repo root exits 0 having done nothing.
    criterion 1 forbids wrapping. The ignore entry being present is necessary but
    not sufficient: the hook could still block for an unrelated reason (another
    rule, a stale hook build), so grepping `.prettierignore` is not evidence for
-   this criterion. _Scope:_ local write path only. No CI job runs prettier over
-   `docs/`, so a green CI run is not evidence either.
+   this criterion. _Run it from the repo root_ — prettier resolves
+   `.prettierignore` relative to CWD, so the same command from `ts/` exits 1 and
+   would read as the exemption having broken. _Scope:_ local write path only. No
+   CI job runs prettier over `docs/`, so a green CI run is not evidence either —
+   though `markdownlint` does lint the file, and its own guard is criterion 7.
 3. **Priority populated.** Every row in `docs/roadmap.md` carries a `Priority`
    field whose value is one of `P0`–`P3`; zero rows have an empty or `—`
    `Priority` value. Check: `grep -c '^- \*\*Priority:\*\* P[0-3]$'` equals the
@@ -355,6 +419,15 @@ repo root exits 0 having done nothing.
    coverage gate. `format:check` _is_ this package's third gate, not an addition
    to it. Verified 2026-08-07: `npm run lint` exits 1 with
    `Missing script: "lint"`.
+
+7. **The markdownlint directive survives.** `docs/roadmap.md` still contains
+   `<!-- markdownlint-disable-file MD013 -->`, asserted by
+   `ts/test/roadmap-field-contract.test.ts`. Added after review found that
+   `markdownlint` is a _required_ check that lints this file with no path
+   filter, and that unwrapping the fields took it from 12 long lines to 51 — so
+   losing a comment `harness roadmap promote` is known to strip (`#273`) turns a
+   merge gate red. _Verify by:_ deleting the directive from a scratch copy and
+   running `npx markdownlint-cli` against it — 51 MD013 errors.
 
 ## Implementation order
 
@@ -385,22 +458,71 @@ Step 1 is independently shippable and carries all of the risk; steps 2–4 are
 content edits under its guard, and step 5 is the closing gate rather than a
 phase of its own.
 
-## Verification (step 5, run 2026-08-08 at `1e7ea9ba`)
+## Verification (step 5, re-run 2026-08-08 after review)
 
-All six criteria pass. Harness CLI v10.2.0; gates run from `ts/`.
+All seven criteria pass. Harness CLI v10.2.0; gates run from `ts/`, everything
+else from the repo root.
 
-| #   | Criterion                       | Result                                                                                                                                                                                                                                      |
-| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Field invariant + denominator   | `ts/test/roadmap-field-contract.test.ts` — 9/9 pass, including the zero-denominator abstention case and the wrapped-input case that names row, field, and discarded text.                                                                   |
-| 2   | Formatter exemption, write path | An Edit adding an unwrapped 200-column `Summary` completed; `.harness/hooks/quality-warner.js` did not exit 2. Probe reverted, tree clean. Mechanism confirmed separately: `npx prettier --check --ignore-unknown docs/roadmap.md` exits 0. |
-| 3   | Priority populated              | `grep -c '^### '` = 45 and `grep -c '^- \*\*Priority:\*\* P[0-3]$'` = 45. Equality, not merely non-zero.                                                                                                                                    |
-| 4   | Round-trip                      | `shard` on a temp copy → 45 shards; all 45 `Summary` values byte-identical to source. `shard`+`regen` likewise, 46,367 → 46,793 bytes. The ~71% loss (40,525 → 11,640) is gone. Header-comment strip found and filed as `#629` (D3).        |
-| 5   | Denominator check               | `node scripts/roadmap-denominator-check.mjs` exit 0 — 45 linked rows, 46/50 open issues labelled. The 4 unlabelled are `bug`-labelled by D4: `#587`, `#590`, `#626`, `#629`.                                                                |
-| 6   | Gates from `ts/`                | `build`, `typecheck`, `format:check` clean; `npm test` 2268 passed across 111 files.                                                                                                                                                        |
+| #   | Criterion                       | Result                                                                                                                                                                                                                              |
+| --- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Field invariant + denominator   | `ts/test/roadmap-field-contract.test.ts` — 33/33 pass. 316 fields inspected, 316 field-shaped, 316 attached to a row: the denominator is complete, not merely non-zero.                                                             |
+| 2   | Formatter exemption, write path | An Edit adding an unwrapped 200-column `Summary` completed; `.harness/hooks/quality-warner.js` did not exit 2. Mechanism, from the repo root: `npx prettier --check docs/roadmap.md` exits 0. Now also asserted by the test itself. |
+| 3   | Priority populated              | `grep -c '^### '` = 47 and `grep -c '^- \*\*Priority:\*\* P[0-3]$'` = 47. Distribution `P0`=2, `P1`=6, `P2`=10, `P3`=29.                                                                                                            |
+| 4   | Round-trip                      | `shard` on a temp copy → 47 shards; all 47 `Summary` values byte-identical to source. The ~71% loss (40,525 → 11,640) is gone. Header-comment strip found and filed as `#629` (D3).                                                 |
+| 5   | Denominator check               | `node scripts/roadmap-denominator-check.mjs` exit 0 — 47 linked rows, 47/51 open issues labelled. The 4 unlabelled are `bug`-labelled by D4: `#587`, `#590`, `#626`, `#629`.                                                        |
+| 6   | Gates from `ts/`                | `build`, `typecheck`, `format:check` clean; `npm test` 2293 passed across 111 files.                                                                                                                                                |
+| 7   | markdownlint directive          | `npx markdownlint-cli docs/roadmap.md` exits 0. Counter-test: with the directive stripped from a scratch copy, 51 MD013 errors — the guard is load-bearing, not decorative.                                                         |
 
-Row and label counts moved from the 2026-08-07 baseline (45/46/49 → 45/46/50)
-because filing `#629` opened an issue. Per criterion 5 that is not a failure:
-the script asserts the invariant, not the absolute numbers.
+**Goal 3 was not met on the first pass, and this is how it failed.** Review
+found `#564` — open, `harness-managed`-labelled, created 2026-08-06, before the
+baseline — with no roadmap row. D4's table enumerated "the 10 open issues with
+no roadmap row" and omitted it, so the miss was in the triage rather than the
+implementation. Criterion 5 could not catch it: the denominator script asserts
+only _linked row → labelled issue_, never the reverse, so it exits 0 on a
+roadmap missing rows entirely. Partial coverage reading as full coverage — the
+same shape as the defect this change exists to remove, one level up. A row for
+`#564` was added, and the direction the script does not check is now verified
+explicitly:
+
+```bash
+comm -23 <(gh issue list --state open --limit 300 --json number,labels \
+             -q '.[] | select([.labels[].name] | index("bug") | not) | .number' | sort -n) \
+         <(grep -o 'canary#[0-9]*' docs/roadmap.md | sed 's/.*#//' | sort -n)
+# empty — every non-bug open issue has a row
+```
+
+**What review changed in the guard itself.** The first implementation asserted
+`fieldsInspected > 0` and stopped there. Five independently-reproduced inputs
+passed that assertion with a schema-invalid `Priority` sitting in the file: a
+`####` demoted row heading, a `###Foo` heading missing its space (which also
+merged two rows and overwrote the first row's fields), a `*` bullet, an indented
+field, and a duplicate field. Each was invisible because the scanner counted
+what it matched and nothing counted what it should have matched. The scan now
+compares strict against permissive and requires equality, reports the wrong
+shapes by name instead of skipping them, handles CRLF and fenced blocks, and
+asserts the two out-of-band guards (`.prettierignore`, `MD013`) the file leans
+on. The suite went from 9 tests to 33.
+
+Row and label counts moved from the 2026-08-07 baseline (45/46/49 → 47/47/51)
+because filing `#629` and `#630` opened issues, and `#564` and `#630` gained
+rows. Per criterion 5 that is not a failure: the script asserts the invariant,
+not the absolute numbers.
+
+### Deferred to a follow-up issue
+
+Three review findings are real and out of scope here, so they are tracked rather
+than half-done:
+
+- `docs/roadmap-archive.md` carries the identical defect — 60 wrapped `Summary`
+  fields, no `Priority`, still prettier-governed — and `roadmap-groom.mjs` moves
+  rows into it verbatim.
+- The guarded set is a hardcoded single path, so committed shard output would go
+  unscanned while both denominators stayed non-zero.
+- The test detects wrapping but not _truncation_: a file already flattened by a
+  `shard` + `regen` round-trip is one-line-clean and passes.
+
+Filed as `#630`, which carries its own roadmap row — Goal 3 applies to it like
+any other non-bug issue, and the treadmill is the invariant working.
 
 **Keywords** (free-text search aid for `harness roadmap` and repo grep; not
 consumed by any tool): roadmap, priority, schema-contract, prose-wrap,

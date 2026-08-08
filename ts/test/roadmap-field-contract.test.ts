@@ -9,8 +9,8 @@
  * took the file from 40,525 bytes to 11,640 (2026-08-07). The file looked
  * maintained the whole time.
  *
- * Two writers with different rules touch this file, which is why the drift is
- * not a one-off:
+ * Three writers with different rules touch this file, which is why the drift
+ * is not a one-off:
  *
  *   - Agent edits go through `.harness/hooks/quality-warner.js`, which runs
  *     `prettier --check` on every write and blocks on violation. Prettier's
@@ -20,21 +20,32 @@
  *     is a precondition for the repair rather than tidy-up.
  *   - `scripts/roadmap-sync.mjs` and `scripts/roadmap-groom.mjs` write the file
  *     directly and bypass the hook entirely.
+ *   - `harness roadmap promote` rewrites `Summary` from a spec document, and is
+ *     also the command that strips the header comment (canary#273).
  *
- * No CI job formats or checks `docs/` at all — the format gate is scoped to
- * `ts/` and `agents/skills/`. So this test is the only thing in the repo that
- * FAILS on a wrapped field. The `.prettierignore` entry unblocks writing the
- * corrected file; it cannot detect anything. This test detects; it cannot
- * unblock anything. Both are required and they are not redundant.
+ * No CI job FORMATS `docs/`, but one does LINT it: `markdownlint` in
+ * `.github/workflows/docs-lint.yml` globs every markdown file in the repo with
+ * no path filter and is a REQUIRED check in
+ * `.github/required-checks.json`. It passes only because
+ * `docs/roadmap.md` carries a `markdownlint-disable-file MD013` comment — with
+ * that comment removed the file reports 51 line-length errors and a required
+ * check goes red. That comment is therefore load-bearing on a merge gate, and
+ * it is asserted below rather than left to a local-only hook.
  *
  * Denominator, per the repo's no-silent-abstention convention (#508, #595):
  * a scan that inspects ZERO fields fails as an abstention rather than passing
- * vacuously. A parser that silently stops matching — the exact failure this
- * file exists to catch — must not look like a clean file.
+ * vacuously. But non-zero is not enough — a scanner can match SOME fields and
+ * silently skip the rest, which reads exactly like a clean file. So the scan
+ * counts two things: field-SHAPED lines (permissive) and fields actually
+ * INSPECTED (strict), and asserts they are equal. That equality is what turns
+ * the denominator from "non-zero" into "complete", and it is what catches a
+ * demoted heading, a `*` bullet, or an indented field hiding a wrapped value.
  *
- * Offline: reads `docs/roadmap.md` as text. Never invokes harness.
+ * Offline: reads `docs/roadmap.md` as text. Invokes prettier only to prove the
+ * `.prettierignore` exemption is still in force.
  */
 
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,78 +54,45 @@ import { describe, expect, it } from 'vitest';
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ROADMAP = join(REPO_ROOT, 'docs', 'roadmap.md');
 
-/** A field line: `- **Summary:** ...`. Group 1 is the field name. */
-const FIELD = /^- \*\*(\w[\w -]*):\*\*/;
-/** A field line with its value captured: group 1 name, group 2 value. */
-const FIELD_VALUE = /^- \*\*(\w[\w -]*):\*\*\s*(.*)$/;
+/**
+ * A field-SHAPED line, permissively: any bullet, any indent. Harness reads
+ * only the strict shape — `- **Key:** value` at column 0 with a `-` bullet —
+ * so the gap between what this matches and what passes the indent/bullet
+ * checks below IS the coverage hole. Matching permissively and then rejecting
+ * the wrong shapes is what makes that gap visible; matching strictly would
+ * skip them silently, which is how a wrapped value hides.
+ */
+const FIELD_ANY = /^(\s*)([-*+])\s+\*\*([^*]+):\*\*\s*(.*)$/;
 /** The priority enum, fixed by the upstream harness roadmap schema. */
 const PRIORITY = /^P[0-3]$/;
-/** A markdown ATX heading, at any level. */
+/** Any line that starts a heading, well-formed or not. */
+const HEADING_ANY = /^#/;
+/** A well-formed markdown ATX heading: hashes then whitespace. */
 const HEADING = /^#{1,6}\s/;
-/** The start of an HTML comment block. */
-const COMMENT = /^<!--/;
 /** A row heading: `### Some row name`. */
 const ROW = /^###\s+(.*)$/;
+/** A fenced code block delimiter. */
+const FENCE = /^\s*(```|~~~)/;
+/** The markdownlint directive the required docs-lint check depends on. */
+const MD013_DIRECTIVE = '<!-- markdownlint-disable-file MD013 -->';
+
+type ViolationKind =
+  | 'wrapped'
+  | 'indented-field'
+  | 'bullet-style'
+  | 'malformed-heading'
+  | 'duplicate-field';
 
 interface Violation {
-  /** 1-indexed line number of the offending continuation line. */
+  /** 1-indexed line number of the offending line. */
   line: number;
-  /** The `### ` row the field belongs to, or `'(no row)'` before the first. */
+  /** The `### ` row it belongs to, or `'(no row)'` before the first. */
   row: string;
-  /** The field name whose value was wrapped. */
+  /** The field name involved, or the heading text for a heading violation. */
   field: string;
-  /** The continuation text harness would silently discard. */
-  discarded: string;
-}
-
-interface ScanResult {
-  /** The denominator: how many field lines the scan actually matched. */
-  fieldsInspected: number;
-  violations: Violation[];
-}
-
-/**
- * Enforce the grammar positively — the field regex alone describes what a
- * field looks like, not what a violation looks like, so the rejection rule is
- * spelled out rather than left to an unwritten reading.
- *
- * The line after a field line must be one of: another field line, a blank
- * line, a heading, an HTML comment, or EOF. Any other non-blank line is a
- * continuation, and a continuation is exactly the text harness drops.
- */
-function scanFieldContract(text: string): ScanResult {
-  const lines = text.split('\n');
-  const violations: Violation[] = [];
-  let fieldsInspected = 0;
-  let row = '(no row)';
-
-  for (let i = 0; i < lines.length; i++) {
-    const rowMatch = ROW.exec(lines[i]);
-    if (rowMatch) {
-      row = rowMatch[1].trim();
-      continue;
-    }
-
-    const fieldMatch = FIELD.exec(lines[i]);
-    if (!fieldMatch) continue;
-    fieldsInspected++;
-
-    const next = lines[i + 1];
-    if (next === undefined) continue; // EOF
-    if (next.trim() === '') continue;
-    if (FIELD.test(next)) continue;
-    if (HEADING.test(next)) continue;
-    if (COMMENT.test(next)) continue;
-
-    violations.push({
-      line: i + 2,
-      row,
-      field: fieldMatch[1],
-      discarded: next.trim(),
-    });
-  }
-
-  return { fieldsInspected, violations };
+  kind: ViolationKind;
+  /** What harness would silently do with this line. */
+  detail: string;
 }
 
 interface Row {
@@ -126,43 +104,184 @@ interface Row {
   fields: Map<string, string>;
 }
 
+interface ScanResult {
+  /** Fields the STRICT parser inspected — what harness would actually read. */
+  fieldsInspected: number;
+  /** Lines that LOOK like a field to a human, however bulleted or indented. */
+  fieldShapedLines: number;
+  violations: Violation[];
+  rows: Row[];
+}
+
 /**
- * Split the roadmap into rows. A row runs from its `### ` heading to the next
- * heading of any level, so a row cannot silently absorb the fields of the row
- * or section below it.
+ * One walk of the file produces both the field scan and the row split.
+ *
+ * They were two separate functions until review found the failure that split
+ * invites: under CRLF the row parser returned 0 rows while the field scanner
+ * still counted 316, so the suite failed with "expected 0 to be greater
+ * than 0" — a line-ending bug wearing an empty-roadmap costume. One walk, one
+ * set of line-ending and fence rules, one story when it breaks.
+ *
+ * The grammar is enforced positively. A field regex describes what a field
+ * looks like, not what a violation looks like, so each rejection rule is
+ * spelled out:
+ *
+ *   - The line after a field must be another field-shaped line, a blank line,
+ *     a heading, an HTML comment, or EOF. Anything else is a continuation, and
+ *     a continuation is exactly the text harness drops.
+ *   - A field-shaped line that is indented or uses a `*`/`+` bullet is NOT
+ *     skipped — skipping is how a wrapped value hides. It is reported.
+ *   - A heading-shaped line the grammar refuses (`###Foo`, no space) is
+ *     reported, because it matches neither the row pattern nor the heading
+ *     pattern and would otherwise let one row's fields overwrite another's.
+ *   - A field repeated within a row is reported rather than silently
+ *     last-wins.
+ *
+ * Fenced blocks and HTML comment bodies are skipped entirely, so the file can
+ * document its own contract with a worked example without tripping the guard.
  */
-function scanRows(text: string): Row[] {
+function scanRoadmap(text: string): ScanResult {
+  // Split on both line endings: a CRLF checkout is a checkout, not a defect,
+  // and `.` never matches `\r`, so a bare `\n` split silently breaks every
+  // value-capturing regex below.
+  const lines = text.split(/\r?\n/);
+  const violations: Violation[] = [];
   const rows: Row[] = [];
-  const lines = text.split('\n');
+  let fieldsInspected = 0;
+  let fieldShapedLines = 0;
+  let rowName = '(no row)';
   let current: Row | undefined;
+  let inFence = false;
+  let inComment = false;
+
+  const isTerminator = (line: string | undefined): boolean =>
+    line === undefined ||
+    line.trim() === '' ||
+    FIELD_ANY.test(line) ||
+    HEADING_ANY.test(line) ||
+    line.startsWith('<!--');
 
   for (let i = 0; i < lines.length; i++) {
-    const rowMatch = ROW.exec(lines[i]);
+    const line = lines[i];
+
+    if (FENCE.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+
+    if (inComment) {
+      if (line.includes('-->')) inComment = false;
+      continue;
+    }
+    if (line.trimStart().startsWith('<!--')) {
+      if (!line.includes('-->')) inComment = true;
+      continue;
+    }
+
+    const rowMatch = ROW.exec(line);
     if (rowMatch) {
-      current = { name: rowMatch[1].trim(), line: i + 1, fields: new Map() };
+      rowName = rowMatch[1].trim();
+      current = { name: rowName, line: i + 1, fields: new Map() };
       rows.push(current);
       continue;
     }
-    if (HEADING.test(lines[i])) {
-      current = undefined; // a section heading ends the row
+    if (HEADING_ANY.test(line)) {
+      if (!HEADING.test(line)) {
+        violations.push({
+          line: i + 1,
+          row: rowName,
+          field: line.trim(),
+          kind: 'malformed-heading',
+          detail:
+            'heading-shaped line with no space after the hashes; it is ' +
+            'neither a row nor a section, so the fields below it would be ' +
+            "attributed to the PREVIOUS row and overwrite that row's",
+        });
+      }
+      // Either way it ends the current row: a section heading legitimately
+      // does, and a malformed one must not be allowed to merge two rows.
+      rowName = '(no row)';
+      current = undefined;
       continue;
     }
-    if (!current) continue;
 
-    const fieldMatch = FIELD_VALUE.exec(lines[i]);
-    if (fieldMatch) current.fields.set(fieldMatch[1], fieldMatch[2].trim());
+    const anyMatch = FIELD_ANY.exec(line);
+    if (!anyMatch) continue;
+
+    const [, indent, bullet, name, value] = anyMatch;
+    fieldShapedLines++;
+
+    if (indent !== '') {
+      violations.push({
+        line: i + 1,
+        row: rowName,
+        field: name,
+        kind: 'indented-field',
+        detail:
+          `indented by ${indent.length} character(s); harness reads fields ` +
+          'only at column 0, so this field and any wrap in it are invisible',
+      });
+      continue;
+    }
+    if (bullet !== '-') {
+      violations.push({
+        line: i + 1,
+        row: rowName,
+        field: name,
+        kind: 'bullet-style',
+        detail:
+          `bulleted with "${bullet}"; harness reads only "-", so this field ` +
+          'and any wrap in it are invisible',
+      });
+      continue;
+    }
+
+    // From here the line is a field harness would genuinely read.
+    fieldsInspected++;
+
+    if (current) {
+      if (current.fields.has(name)) {
+        violations.push({
+          line: i + 1,
+          row: rowName,
+          field: name,
+          kind: 'duplicate-field',
+          detail:
+            'declared twice in this row; the parsers disagree about which ' +
+            'wins, so a contradictory value can read as valid',
+        });
+      }
+      current.fields.set(name, value.trim());
+    }
+
+    const next = lines[i + 1];
+    if (!isTerminator(next)) {
+      violations.push({
+        line: i + 2,
+        row: rowName,
+        field: name,
+        kind: 'wrapped',
+        detail: `harness discards: "${truncate(next.trim(), 60)}"`,
+      });
+    }
   }
 
-  return rows;
+  return { fieldsInspected, fieldShapedLines, violations, rows };
 }
 
-/** Render violations as a message that names the row and field, not just a count. */
+/** Ellipsis only when text was actually cut — a `…` on a short string lies. */
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/** Render violations naming the row, the field, and the consequence. */
 function describeViolations(v: Violation[]): string {
   return v
     .map(
       (x) =>
-        `  docs/roadmap.md:${x.line} — row "${x.row}", field "${x.field}" is ` +
-        `wrapped; harness discards: "${x.discarded.slice(0, 60)}…"`,
+        `  docs/roadmap.md:${x.line} — row "${x.row}", field "${x.field}" ` +
+        `[${x.kind}]: ${x.detail}`,
     )
     .join('\n');
 }
@@ -173,12 +292,13 @@ const CLEAN = [
   '### A row',
   '',
   '- **Status:** backlog',
+  '- **Priority:** P1',
   '- **Summary:** one physical line, however long it happens to run, because that is the contract.',
   '- **External-ID:** github:bop-clocktower/canary#1',
   '',
   '### Another row',
   '',
-  '- **Status:** done',
+  '- **Priority:** P3',
   '',
   '<!-- a trailing comment -->',
 ].join('\n');
@@ -195,92 +315,288 @@ const WRAPPED = [
 describe('roadmap one-line field contract', () => {
   describe('the detector', () => {
     it('accepts fields that are a single physical line', () => {
-      const result = scanFieldContract(CLEAN);
+      const result = scanRoadmap(CLEAN);
 
       expect(result.violations).toEqual([]);
-      expect(result.fieldsInspected).toBe(4);
+      expect(result.fieldsInspected).toBe(5);
+      expect(result.fieldShapedLines).toBe(5);
     });
 
     it('names the row, the field, and the text harness would discard', () => {
-      const result = scanFieldContract(WRAPPED);
+      const result = scanRoadmap(WRAPPED);
 
       expect(result.violations).toHaveLength(1);
       expect(result.violations[0]).toMatchObject({
         line: 5,
         row: 'A row',
         field: 'Summary',
+        kind: 'wrapped',
       });
-      expect(result.violations[0].discarded).toContain('invisible to harness');
+      expect(result.violations[0].detail).toContain('invisible to harness');
     });
 
-    it('treats a heading, a comment, a blank line, and EOF as terminators', () => {
-      // Each of these follows a field line and must NOT read as a continuation.
-      const terminators = [
-        '- **Status:** x\n\n- **Other:** y',
-        '- **Status:** x\n## Next section',
-        '- **Status:** x\n<!-- note -->',
-        '- **Status:** x',
-      ];
-
-      for (const text of terminators) {
-        expect(scanFieldContract(text).violations).toEqual([]);
-      }
-    });
+    it.each([
+      ['another field', '- **Status:** x\n\n- **Other:** y'],
+      ['a section heading', '- **Status:** x\n## Next section'],
+      ['an HTML comment', '- **Status:** x\n<!-- note -->'],
+      ['EOF', '- **Status:** x'],
+    ])(
+      'treats %s after a field as a terminator, not a wrap',
+      (_label, text) => {
+        expect(scanRoadmap(text).violations).toEqual([]);
+      },
+    );
 
     it('reports a zero denominator rather than a clean result', () => {
       // The failure this whole file guards against: a parser that stops
       // matching looks identical to a spotless file unless the count is
       // asserted. Zero fields inspected is an abstention, not a pass.
-      const result = scanFieldContract('# Roadmap\n\nNo fields here at all.\n');
+      const result = scanRoadmap('# Roadmap\n\nNo fields here at all.\n');
 
       expect(result.violations).toEqual([]);
       expect(result.fieldsInspected).toBe(0);
+      expect(result.fieldShapedLines).toBe(0);
     });
   });
 
-  describe('the row parser', () => {
-    it('reads each row-s fields and stops at the next heading', () => {
-      const rows = scanRows(CLEAN);
+  describe('the coverage hole a non-zero denominator cannot see', () => {
+    // Each of these once passed every assertion in this file while a
+    // schema-invalid value sat in the roadmap. They are the reason the scan
+    // compares inspected against field-shaped instead of just asserting
+    // "more than zero".
 
-      expect(rows.map((r) => r.name)).toEqual(['A row', 'Another row']);
-      expect(rows[0].fields.get('Status')).toBe('backlog');
-      expect(rows[0].fields.get('External-ID')).toBe(
-        'github:bop-clocktower/canary#1',
+    it('reports a demoted row heading instead of dropping the row', () => {
+      const text = [
+        '### Real row',
+        '- **Priority:** P0',
+        '',
+        '#### Demoted row',
+        '- **Priority:** WHATEVER',
+      ].join('\n');
+
+      const result = scanRoadmap(text);
+
+      // The demoted row is not a row, so its bad Priority must not simply
+      // vanish — the field/row cross-check below is what catches it.
+      const attached = result.rows.reduce((n, r) => n + r.fields.size, 0);
+      expect(result.fieldsInspected).toBe(2);
+      expect(attached).toBe(1);
+      expect(result.fieldsInspected).not.toBe(attached);
+    });
+
+    it('reports a heading with no space after the hashes', () => {
+      const text = [
+        '### First row',
+        '- **Priority:** P9',
+        '',
+        '###Second row',
+        '- **Status:** backlog',
+      ].join('\n');
+
+      const result = scanRoadmap(text);
+
+      expect(result.violations).toHaveLength(1);
+      expect(result.violations[0]).toMatchObject({
+        kind: 'malformed-heading',
+        line: 4,
+      });
+      // Critically, the second row's fields must NOT land on the first row —
+      // that overwrite is what used to mask the P9 above.
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0].fields.get('Priority')).toBe('P9');
+      expect(result.rows[0].fields.has('Status')).toBe(false);
+    });
+
+    it.each([
+      ['a * bullet', '* **Summary:** wrapped value continues', 'bullet-style'],
+      [
+        'an indent',
+        '  - **Summary:** wrapped value continues',
+        'indented-field',
+      ],
+    ])('reports %s rather than skipping the field', (_label, field, kind) => {
+      const text = ['### A row', field, '  invisible continuation line'].join(
+        '\n',
       );
-      // The second row declares only Status — it must not inherit the first-s.
-      expect([...rows[1].fields.keys()]).toEqual(['Status']);
+
+      const result = scanRoadmap(text);
+
+      // The old scanner skipped these silently: no count, no check, and the
+      // wrapped value below them went unseen.
+      expect(result.fieldShapedLines).toBe(1);
+      expect(result.fieldsInspected).toBe(0);
+      expect(result.violations[0]).toMatchObject({ kind });
+    });
+
+    it('reports a field declared twice in one row', () => {
+      const text = [
+        '### A row',
+        '- **Priority:** nonsense',
+        '- **Priority:** P1',
+      ].join('\n');
+
+      const result = scanRoadmap(text);
+
+      expect(result.violations).toHaveLength(1);
+      expect(result.violations[0]).toMatchObject({
+        kind: 'duplicate-field',
+        field: 'Priority',
+      });
+    });
+  });
+
+  describe('inputs that must not trip the guard', () => {
+    it('reads a CRLF file exactly as it reads an LF one', () => {
+      // `.` never matches `\r`, so a bare '\n' split made every row parse
+      // fail and reported it as "the roadmap has no rows".
+      const lf = scanRoadmap(CLEAN);
+      const crlf = scanRoadmap(CLEAN.replace(/\n/g, '\r\n'));
+
+      expect(crlf.violations).toEqual([]);
+      expect(crlf.rows.length).toBe(lf.rows.length);
+      expect(crlf.fieldsInspected).toBe(lf.fieldsInspected);
+    });
+
+    it('ignores fields and headings inside a fenced code block', () => {
+      const text = [
+        '### A row',
+        '- **Priority:** P1',
+        '',
+        '```markdown',
+        '### Example row',
+        '- **Priority:** not-a-real-value',
+        '```',
+      ].join('\n');
+
+      const result = scanRoadmap(text);
+
+      expect(result.rows).toHaveLength(1);
+      expect(result.fieldsInspected).toBe(1);
+      expect(result.violations).toEqual([]);
+    });
+
+    it('ignores field-shaped lines inside an HTML comment body', () => {
+      // The file documents its own contract in a header comment; a worked
+      // example in there must not read as a violation.
+      const text = [
+        '<!-- Machine-managed. Example of the contract:',
+        '- **Summary:** one physical line',
+        '-->',
+        '',
+        '### A row',
+        '- **Priority:** P2',
+      ].join('\n');
+
+      const result = scanRoadmap(text);
+
+      expect(result.violations).toEqual([]);
+      expect(result.fieldsInspected).toBe(1);
+    });
+  });
+
+  describe('the Priority enum', () => {
+    // P0-P3 is fixed upstream and hard-fails on read, so an out-of-enum value
+    // is not a style question — it breaks `harness roadmap` outright. These
+    // fixtures exist because the enum check previously ran only against the
+    // real file, where it passed: rotting PRIORITY to /^P\d$/ or dropping its
+    // anchors left every test in this file green.
+    it.each([
+      ['P4', 'above the enum'],
+      ['p1', 'lowercase'],
+      ['P1 (highest)', 'annotated'],
+      ['—', 'the em-dash placeholder'],
+      ['', 'empty'],
+    ])('rejects %s (%s)', (value) => {
+      expect(PRIORITY.test(value)).toBe(false);
+    });
+
+    it.each(['P0', 'P1', 'P2', 'P3'])('accepts %s', (value) => {
+      expect(PRIORITY.test(value)).toBe(true);
+    });
+
+    it('reports the row and the offending value, not just a count', () => {
+      const text = [
+        '### Good row',
+        '- **Priority:** P1',
+        '',
+        '### Bad row',
+        '- **Priority:** P9',
+      ].join('\n');
+
+      const rows = scanRoadmap(text).rows;
+      const bad = rows.filter(
+        (r) => !PRIORITY.test(r.fields.get('Priority') ?? ''),
+      );
+
+      expect(bad).toHaveLength(1);
+      expect(bad[0].name).toBe('Bad row');
+      expect(bad[0].fields.get('Priority')).toBe('P9');
     });
   });
 
   describe('docs/roadmap.md', () => {
-    const text = readFileSync(ROADMAP, 'utf8');
-    const result = scanFieldContract(text);
-    const rows = scanRows(text);
+    // Read inside the tests, not in the describe body: a missing or unreadable
+    // roadmap should be a named failing test, not a suite-collection crash.
+    const scan = (): ScanResult => scanRoadmap(readFileSync(ROADMAP, 'utf8'));
 
     it('inspects a non-zero number of fields', () => {
       // Denominator first: without this, every assertion below passes
       // vacuously the day the field syntax changes.
-      expect(result.fieldsInspected).toBeGreaterThan(0);
+      const result = scan();
+
+      expect(
+        result.fieldsInspected,
+        'zero fields inspected — an abstention, not a pass',
+      ).toBeGreaterThan(0);
+    });
+
+    it('inspects EVERY field-shaped line, not merely some of them', () => {
+      // The completeness half of the denominator. A non-zero count proves the
+      // scanner ran; only this equality proves it ran over everything. The
+      // gap between the two counts is exactly where a demoted heading, a `*`
+      // bullet, or an indented field hides a wrapped value.
+      const result = scan();
+
+      expect(
+        result.fieldsInspected,
+        `${result.fieldShapedLines - result.fieldsInspected} field-shaped ` +
+          `line(s) were NOT inspected (${result.fieldsInspected} of ` +
+          `${result.fieldShapedLines}) — harness cannot see them`,
+      ).toBe(result.fieldShapedLines);
+    });
+
+    it('attaches every inspected field to a row', () => {
+      // Catches the inverse hole: fields that parse fine but belong to no
+      // row, so the per-row Priority assertion never examines them.
+      const result = scan();
+      const attached = result.rows.reduce((n, r) => n + r.fields.size, 0);
+
+      expect(
+        attached,
+        `${result.fieldsInspected - attached} field(s) sit outside any "### " ` +
+          'row — a row heading probably changed level',
+      ).toBe(result.fieldsInspected);
     });
 
     it('has no field value wrapped across lines', () => {
+      const result = scan();
+
       expect(
         result.violations,
-        `${result.violations.length} wrapped field(s) — harness silently ` +
-          `discards the continuation of each:\n${describeViolations(result.violations)}`,
+        `${result.violations.length} contract violation(s) — harness ` +
+          `silently mis-reads each:\n${describeViolations(result.violations)}`,
       ).toEqual([]);
     });
 
     it('parses a non-zero number of rows', () => {
-      // Same denominator reasoning as the field count: a row parser that
-      // matches nothing would make every per-row assertion below vacuous.
-      expect(rows.length).toBeGreaterThan(0);
+      const result = scan();
+
+      expect(result.rows.length).toBeGreaterThan(0);
     });
 
     it('gives every row a Priority in the schema-s enum', () => {
-      // P0-P3 is fixed upstream and hard-fails on read, so an out-of-enum
-      // value is not a style question — it breaks `harness roadmap` outright.
-      const bad = rows.filter(
+      const result = scan();
+      const bad = result.rows.filter(
         (r) => !PRIORITY.test(r.fields.get('Priority') ?? ''),
       );
 
@@ -290,8 +606,44 @@ describe('roadmap one-line field contract', () => {
             `docs/roadmap.md:${r.line} "${r.name}" -> ` +
             `${JSON.stringify(r.fields.get('Priority') ?? '(absent)')}`,
         ),
-        `${bad.length} of ${rows.length} row(s) lack a valid Priority (P0-P3)`,
+        `${bad.length} of ${result.rows.length} row(s) lack a valid ` +
+          'Priority (P0-P3)',
       ).toEqual([]);
+    });
+  });
+
+  describe('the guards the file depends on', () => {
+    it('is still exempt from prettier', () => {
+      // The behavioural form, not a grep of `.prettierignore`: this also
+      // catches a prettier-config change that re-governs the file by another
+      // route. Run from the repo root — prettier resolves `.prettierignore`
+      // relative to CWD, so from `ts/` the exemption does not apply.
+      const result = spawnSync(
+        'npx',
+        ['prettier', '--check', 'docs/roadmap.md'],
+        { cwd: REPO_ROOT, encoding: 'utf8' },
+      );
+
+      expect(
+        result.status,
+        'prettier would rewrap docs/roadmap.md — the .prettierignore entry ' +
+          `is missing or no longer matches:\n${result.stderr ?? ''}`,
+      ).toBe(0);
+    });
+
+    it('keeps the markdownlint directive a required check depends on', () => {
+      // docs-lint.yml globs **/*.md with no path filter and is required in
+      // .github/required-checks.json. Without this directive the file reports
+      // 50 MD013 errors and blocks every merge. `harness roadmap promote` is
+      // known to strip it (canary#273), so it is asserted here rather than
+      // left to the opt-in local pre-commit hook.
+      const text = readFileSync(ROADMAP, 'utf8');
+
+      expect(
+        text.includes(MD013_DIRECTIVE),
+        `docs/roadmap.md lost "${MD013_DIRECTIVE}" — the required ` +
+          'markdownlint check will fail on its long single-line fields',
+      ).toBe(true);
     });
   });
 });

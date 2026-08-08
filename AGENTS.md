@@ -420,18 +420,18 @@ Two related facts worth not rediscovering:
   _optional extended field_ serialized beside
   `Assignee`/`Priority`/`Updated-At`. It is not one of the five documented
   fields (`Status`, `Spec`, `Summary`, `Blockers`, `Plan`), so it is easy to
-  conclude no link field exists. All 45 rows carry one as of #628, and
+  conclude no link field exists. All 47 rows carry one as of #628, and
   `Priority` — serialized in that same extended group — is now populated too.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
-  effectively blind gate that reported a real number nobody read. All 45 rows
+  effectively blind gate that reported a real number nobody read. All 47 rows
   now carry an `External-ID` (#596, #601–#619, #628) and sync reports
   `would create 0`. `scripts/roadmap-denominator-check.mjs` now keeps it that
   way: the wrapper runs it before every sync, and it exits 3 unless **every**
   linked row points at a labelled issue — naming the blind ones, not counting
   them. The invariant is exact rather than a coverage ratio on purpose: most
-  open issues are ordinary bugs rather than roadmap rows (46 of 49 carry the
-  label today; the 3 that do not are exactly the `bug`-labelled ones, which is
+  open issues are ordinary bugs rather than roadmap rows (47 of 51 carry the
+  label today; the 4 that do not are exactly the `bug`-labelled ones, which is
   the rule holding rather than a gap), so a floor would either sit low enough to
   miss the 2-of-30 case or fire on every new bug report. An unreadable tracker
   exits 3 as well — cannot-verify is a finding, not a skip. `HARNESS_BIN` skips
@@ -440,7 +440,7 @@ Two related facts worth not rediscovering:
 - **`--apply` replaces issue bodies, and no flag disables it.** `updateTicket`
   sets `patch.body` from the row's `Summary`, so patching a linked issue
   overwrites whatever a human wrote there with the roadmap's one paragraph. With
-  every row linked, one `--apply` would flatten 45 issue bodies — the evidence
+  every row linked, one `--apply` would flatten 47 issue bodies — the evidence
   in #486, the design notes in #591–#594, the provenance in #601–#619.
   `--no-state-change` guards open/closed only. This is why #601–#619 were filed
   directly rather than through sync's create path: the command has no
@@ -454,10 +454,10 @@ Two related facts worth not rediscovering:
 prettier-exempt (#628).** Harness's roadmap parser reads a `- **Key:** value`
 field by taking one line. Wrap the value and it keeps the first line and
 silently discards the rest — no error on either side. Measured before the fix: a
-`shard` + `unshard` round-trip took the file from **40,525 bytes to 11,641**,
-71% of it gone, while the file looked maintained the whole time.
+`shard` + `regen` round-trip took the file from **40,525 bytes to 11,640**, 71%
+of it gone, while the file looked maintained the whole time.
 
-Three things keep it correct, and they are not interchangeable:
+Four things keep it correct, and they are not interchangeable:
 
 - `docs/roadmap.md` is listed in `.prettierignore`. This is not tidiness and not
   dead config. `.harness/hooks/quality-warner.js` runs `prettier --check` on
@@ -465,13 +465,29 @@ Three things keep it correct, and they are not interchangeable:
   `proseWrap: "always"` treats a long single-line field as a violation — so
   without that entry the hook makes a correct roadmap literally unwritable, and
   pushes any edit back to the broken shape. That is what kept the file drifting.
+  **The exemption is resolved relative to the current working directory** —
+  prettier looks for `.prettierignore` in the CWD, so `npx prettier --write`
+  from `ts/` reflows the roadmap as if the entry did not exist. Run prettier
+  from the repo root, and never point it at this file.
 - `ts/test/roadmap-field-contract.test.ts` is the only thing that **fails** on a
-  wrapped field, and it also asserts its own denominator: a scan matching zero
-  fields is an abstention, not a pass. No CI job formats or checks `docs/` — the
-  format gate covers `ts/` and `agents/skills/` only — so this test is the whole
-  gate.
-- `scripts/roadmap-sync.mjs` and `scripts/roadmap-groom.mjs` write the file
-  directly and bypass the hook. Any new writer must emit one-line fields.
+  wrapped field, and it asserts its denominator twice over: a scan matching zero
+  fields is an abstention rather than a pass, _and_ the number of fields
+  inspected must equal the number of field-shaped lines. Non-zero only proves
+  the scanner ran; the equality proves it ran over everything, which is what
+  catches a demoted `####` row heading, a `*` bullet, or an indented field
+  hiding a wrapped value beneath it.
+- **`docs/roadmap.md` depends on its `markdownlint-disable-file MD013` comment
+  to keep a required check green.** No CI job _formats_ `docs/` — the format
+  gate covers `ts/` and `agents/skills/` only — but `markdownlint` in
+  `docs-lint.yml` _lints_ every markdown file in the repo with no path filter,
+  and it is required in `.github/required-checks.json`. Unwrapping the fields
+  took the file from 12 long lines to 51, so losing that comment turns a
+  required check red and blocks every merge. `harness roadmap promote` is known
+  to strip it (#273), which is why the field-contract test asserts the comment
+  is present rather than leaving it to the opt-in local pre-commit hook.
+- `scripts/roadmap-sync.mjs`, `scripts/roadmap-groom.mjs`, and
+  `harness roadmap promote` write the file directly and bypass the hook. Any new
+  writer must emit one-line fields.
 
 If sharded output is ever committed, extend the `.prettierignore` entry and that
 test's file list **together, in one change** — the exempted set and the guarded

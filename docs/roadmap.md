@@ -39,6 +39,26 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Priority:** P0
 - **External-ID:** github:bop-clocktower/canary#544
 
+### harness-config-denominator — cover knowledge.domainBlocklist
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** ts/test/harness-config-denominator.test.ts encodes four invariants against vacuous rules in harness.config.json — every layers[].pattern, forbiddenImports[].from/disallow, and allowedDependencies name must match something real, and every tracked source file must belong to a layer. PR #563 added knowledge.domainBlocklist, which can go vacuous the same way: a segment matching no real path still reports as configured. It already bit once — two of four initially-blocklisted segments (.claude, .cursor) matched no graph nodes. Extend the test with a fifth invariant so a blocklist entry that matches nothing fails rather than reading as protection. Same class as #481 and #544: a rule that checks zero things is an abstention, not a pass.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#564
+
+### Field contract — extend it to the archive and shard output
+
+- **Status:** backlog
+- **Spec:** docs/changes/roadmap-priority-and-field-contract/proposal.md
+- **Summary:** #628 fixed docs/roadmap.md and guards it with ts/test/roadmap-field-contract.test.ts, but three gaps remain. (1) docs/roadmap-archive.md carries the identical defect — 60 wrapped Summary fields, no Priority, still prettier-governed and therefore held that way — and roadmap-groom.mjs moves rows into it verbatim, which makes the archive prettier-dirty and blocks every subsequent agent write to it. (2) The guarded set is a hardcoded single path, so committed shard output would go unscanned while both denominators stayed non-zero; derive it from .prettierignore so the exempted and guarded sets are the same set mechanically. (3) The test detects wrapping but not truncation — a file already flattened by shard+regen is one-line-clean and passes — so it needs a content floor. Deferred from #628 deliberately: item 1 is 60 rows of prose, and items 2-3 are only worth building once the archive is in the guarded set.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#630
+
 ### Execute the documented commands — run SKILL.md examples in CI
 
 - **Status:** backlog
