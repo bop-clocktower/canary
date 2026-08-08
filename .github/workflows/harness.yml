@@ -25,5 +25,26 @@ jobs:
         with:
           node-version: '22'
       - run: npm install -g "$HARNESS_CLI"
+
+      # `> file`, never a pipe or a bare stdout (#588). The report is ~162 KB
+      # and two independent limits used to eat it: the Actions log truncates at
+      # 60 KB, and Node's stdout is async when it is a pipe, so `process.exit()`
+      # drops the ~64 KB still buffered. A file fd is synchronous, so the whole
+      # report lands. On PR #584 the cut fell after check four of nine and the
+      # log read pass/pass/warn/warn with zero errors — on a job that failed for
+      # `arch: fail`, five checks past the cut.
       - name: Run harness checks
-        run: harness ci check --json
+        run: harness ci check --json > harness-report.json
+
+      # The readable part, small enough that no byte limit can reach it. Runs
+      # on failure too — that is the only run anyone needs it for.
+      - name: Summarise harness checks
+        if: ${{ !cancelled() }}
+        run: node scripts/harness-report-summary.mjs harness-report.json
+
+      - name: Upload harness report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: harness-report
+          path: harness-report.json

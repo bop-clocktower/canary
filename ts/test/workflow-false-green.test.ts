@@ -39,6 +39,9 @@ const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
 
 interface Step {
   run?: string;
+  uses?: string;
+  if?: string;
+  with?: Record<string, unknown>;
 }
 interface Job {
   steps?: Step[];
@@ -92,6 +95,24 @@ function logicalLines(script: string): string[] {
     .map((l) => l.trim())
     .filter(Boolean);
 }
+
+/** Every job in the workflow, as `[jobId, job]`. */
+function jobsOf(wf: Workflow): Array<[string, Job]> {
+  return Object.entries(wf.jobs ?? {});
+}
+
+/**
+ * A stdout redirect to a file — `> report.json`, `>> log`.
+ *
+ * The two exclusions are both real hazards seen in this repo's workflows:
+ * a digit before `>` is an fd redirect (`2>/dev/null`), which sends none of
+ * the report anywhere and must not count as capture; and `=>` inside an
+ * inline `node -e '…'` body is a JS arrow, not a shell redirect. Reading
+ * `d=>s+=d` as "captured to file `s+=d`" would silently pass a step that
+ * dumps its whole report to the log.
+ */
+const STDOUT_TO_FILE =
+  /(?:^|[^0-9&=<>!+-])>>?\s*([A-Za-z0-9_./$"'-][^\s;|&)]*)/;
 
 describe('workflow false-green invariants', () => {
   it('finds workflow files to check (zero denominator is an abstention)', () => {
@@ -247,5 +268,95 @@ describe('workflow false-green invariants', () => {
         .filter((c) => required.has(c));
       expect(both).toEqual([]);
     });
+  });
+
+  /**
+   * #588 — a machine-readable report must be readable.
+   *
+   * `harness.yml` ran `harness ci check --json` with the 162 KB report going
+   * straight to stdout, and TWO independent truncations meant nobody could
+   * ever read it: the Actions log stops at 60 KB, and Node's stdout is async
+   * when it is a pipe, so `process.exit()` drops whatever is still buffered
+   * (~64 KB). Both cuts are silent — no marker, no closing brace.
+   *
+   * The consequence on PR #584: the job failed with exit 1 while the visible
+   * log showed four checks, all pass/warn, zero error-severity findings. The
+   * real cause, `arch: fail`, was one of the five checks past the cut. A
+   * failing job whose log reads "nothing failed" is the same false-green shape
+   * as #548 and #549, just produced by a byte limit instead of a swallowed
+   * exit code.
+   *
+   * Two invariants, because dodging one truncation does not dodge the other:
+   *
+   * 1. `--json` output never goes straight to the log. Redirecting to a file
+   *    (or piping into a consumer) also makes Node's stdout synchronous, which
+   *    is what fixes the 64 KB pipe cut — not just the 60 KB log cut.
+   *
+   * 2. A report written to a file is uploaded with `if: always()`. Without the
+   *    upload the file dies with the runner, so on the failing run — the only
+   *    run anyone needs it for — it is exactly as unreachable as before.
+   */
+  describe('#588 — a --json report is readable after the run', () => {
+    /** `[workflow, jobId, logical line]` for every `--json` invocation. */
+    const jsonLines: Array<[string, string, string]> = [];
+    /** `[workflow, jobId, filename]` for every report redirected to a file. */
+    const reportFiles: Array<[string, string, string]> = [];
+
+    for (const [name, wf] of allWorkflows()) {
+      for (const [jobId, job] of jobsOf(wf)) {
+        const scripts = (job.steps ?? [])
+          .map((s) => s.run)
+          .filter((r): r is string => typeof r === 'string');
+        for (const line of scripts.flatMap(logicalLines)) {
+          if (!line.includes('--json')) continue;
+          jsonLines.push([name, jobId, line]);
+          const target = STDOUT_TO_FILE.exec(line)?.[1];
+          if (target) reportFiles.push([name, jobId, target]);
+        }
+      }
+    }
+
+    it('has --json invocations to check (zero denominator is an abstention)', () => {
+      expect(jsonLines.length).toBeGreaterThan(0);
+      expect(reportFiles.length).toBeGreaterThan(0);
+    });
+
+    it.each(jsonLines)(
+      '%s/%s does not dump --json to the log: %s',
+      (_name, _jobId, line) => {
+        const captured = STDOUT_TO_FILE.test(line) || line.includes('|');
+        expect(
+          captured,
+          'send --json to a file or a consumer; the Actions log truncates at 60 KB',
+        ).toBe(true);
+      },
+    );
+
+    it.each(reportFiles)(
+      '%s/%s uploads %s as an artifact',
+      (name, jobId, file) => {
+        const job = allWorkflows().find(([n]) => n === name)?.[1].jobs?.[jobId];
+        const uploads = (job?.steps ?? []).filter((s) =>
+          s.uses?.startsWith('actions/upload-artifact'),
+        );
+        const forThisFile = uploads.filter((s) =>
+          String(s.with?.path ?? '').includes(file),
+        );
+        expect(
+          forThisFile.length,
+          `no upload step for ${file}`,
+        ).toBeGreaterThan(0);
+        // The property is "still uploads when the job failed", which both
+        // `always()` and `!cancelled()` satisfy. `harness.yml` prefers the
+        // latter because its `cancel-in-progress: true` would otherwise fire
+        // this step on every superseded run.
+        for (const step of forThisFile) {
+          expect(
+            step.if,
+            `${file} is uploaded only on success — useless on the run that failed`,
+          ).toMatch(/always\(\)|!\s*cancelled\(\)/);
+        }
+      },
+    );
   });
 });
