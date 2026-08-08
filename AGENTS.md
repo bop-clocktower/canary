@@ -420,19 +420,21 @@ Two related facts worth not rediscovering:
   _optional extended field_ serialized beside
   `Assignee`/`Priority`/`Updated-At`. It is not one of the five documented
   fields (`Status`, `Spec`, `Summary`, `Blockers`, `Plan`), so it is easy to
-  conclude no link field exists. All 47 rows carry one as of #628, and
-  `Priority` — serialized in that same extended group — is now populated too.
+  conclude no link field exists. All 50 rows carry one — 47 as of #628, plus the
+  three added for #626/#590/#629 — and `Priority`, serialized in that same
+  extended group, is populated on every one of them.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
-  effectively blind gate that reported a real number nobody read. All 47 rows
-  now carry an `External-ID` (#596, #601–#619, #628) and sync reports
-  `would create 0`. `scripts/roadmap-denominator-check.mjs` now keeps it that
-  way: the wrapper runs it before every sync, and it exits 3 unless **every**
-  linked row points at a labelled issue — naming the blind ones, not counting
-  them. The invariant is exact rather than a coverage ratio on purpose: most
-  open issues are ordinary bugs rather than roadmap rows (47 of 51 carry the
-  label today; the 4 that do not are exactly the `bug`-labelled ones, which is
-  the rule holding rather than a gap), so a floor would either sit low enough to
+  effectively blind gate that reported a real number nobody read. All 50 rows
+  now carry an `External-ID` (#596, #601–#619, #628, #626/#590/#629) and sync
+  reports `would create 0`. `scripts/roadmap-denominator-check.mjs` now keeps it
+  that way: the wrapper runs it before every sync, and it exits 3 unless
+  **every** linked row points at a labelled issue — naming the blind ones, not
+  counting them. **Adding a row therefore means labelling its issue in the same
+  change**, or the check flips a green repo to abstaining. The invariant is
+  exact rather than a coverage ratio on purpose (50 of 51 open issues carry the
+  label today; the one that does not is #587, an upstream harness defect this
+  repo tracks but cannot schedule), so a floor would either sit low enough to
   miss the 2-of-30 case or fire on every new bug report. An unreadable tracker
   exits 3 as well — cannot-verify is a finding, not a skip. `HARNESS_BIN` skips
   the preflight for the offline contract tests, and says so on stderr rather
