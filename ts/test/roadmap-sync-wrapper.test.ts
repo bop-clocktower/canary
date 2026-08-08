@@ -8,8 +8,12 @@
  *    appends it unconditionally.
  * 2. Body replacement — nothing covers it. `updateTicket` sets
  *    `patch.body` from the row's `Summary`, so patching a linked issue
- *    overwrites whatever a human wrote there. All 38 rows are linked, so one
- *    `--apply` flattens 38 issue bodies. There is no `--no-patch`.
+ *    overwrites whatever a human wrote there. Every row is linked, so one
+ *    `--apply` flattens one issue body per row. There is no `--no-patch`.
+ *
+ * The refusal states that count, and states it from the file rather than from
+ * a literal — it read "38" for a while after #628 made it 45, which is a
+ * safety message quietly understating its own blast radius.
  *
  * So `--apply` requires `--i-know-this-rewrites-bodies`. Not a block — the
  * command is legitimate once someone has decided the roadmap should win — but it
@@ -103,6 +107,54 @@ process.exit(${exitCode});
 
     expect(output).toContain(OVERRIDE);
     expect(output).toMatch(/body|bodies/i);
+  });
+
+  it('states the CURRENT number of issue bodies at risk', () => {
+    // The refusal used to hard-code "38 rows". #628 added 7, and the message
+    // kept saying 38 — a safety warning understating its own blast radius by
+    // seven people's writing. A number that has already drifted once will
+    // drift again, so it is derived from the file rather than restated.
+    const linked = readFileSync(
+      join(REPO_ROOT, 'docs', 'roadmap.md'),
+      'utf8',
+    ).match(/^- \*\*External-ID:\*\* (?!—\s*$)\S/gm);
+
+    expect(
+      linked,
+      'no linked rows found — the count would be vacuous',
+    ).not.toBeNull();
+
+    const { output } = run('--apply');
+
+    // Assert the PHRASE, not the bare number. The refusal cites issue ranges
+    // (#486, #591-#594, #601-#619), so `toContain('45')` also passes on "94"
+    // inside a citation — and on any single digit — without the count ever
+    // being printed.
+    expect(output).toContain(`${linked!.length} rows are linked`);
+    expect(output).toContain(`${linked!.length} hand-written bodies`);
+  });
+
+  it('says so rather than printing a confident zero when the roadmap is unreadable', () => {
+    // The degraded branch of blastRadius(). A safety message that reports
+    // "0 rows are linked" when it simply could not read the file is the same
+    // false-green shape this roadmap work exists to remove.
+    //
+    // The script resolves the roadmap relative to its OWN location, so a copy
+    // in a temp directory has no sibling docs/roadmap.md — the unreadable
+    // condition, reached without touching the real file.
+    const orphan = join(dir, 'roadmap-sync.mjs');
+    writeFileSync(orphan, readFileSync(SCRIPT, 'utf-8'));
+
+    const { status, output } = runCapture(
+      process.execPath,
+      [orphan, '--apply'],
+      { env: { ...process.env, HARNESS_BIN: stub }, failureStatus: 2 },
+    );
+
+    expect(status).toBe(2);
+    expect(output).toContain('An unknown number of rows are linked');
+    expect(output).toContain('an unknown number of hand-written bodies');
+    expect(output).not.toMatch(/\b0 rows\b/);
   });
 
   it('proceeds when the override is given', () => {

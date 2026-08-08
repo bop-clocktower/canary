@@ -23,19 +23,72 @@
 // Exit codes are forwarded unchanged, including 3 = ZERO DENOMINATOR (examined
 // nothing — an abstention, never a pass). Refusing `--apply` exits 2.
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const REQUIRED_FLAG = '--no-state-change';
 const OVERRIDE_FLAG = '--i-know-this-rewrites-bodies';
 const passthrough = process.argv.slice(2);
 
+/**
+ * How many roadmap rows carry an `External-ID`, i.e. how many issue bodies a
+ * bare `--apply` would overwrite. Phrased for the refusal message, so an
+ * unreadable roadmap degrades to saying so rather than to a confident number.
+ */
+function linkedRowCount() {
+  try {
+    const roadmap = readFileSync(
+      new URL('../docs/roadmap.md', import.meta.url),
+      'utf8',
+    );
+    // Match the VALUE, not just the prefix. Harness's serializer emits the
+    // field unconditionally and writes an em-dash placeholder when a row has
+    // no tracker link, so a prefix match would count `- **External-ID:** —`
+    // as linked and overstate the blast radius after any regen/unshard.
+    const linked = roadmap.match(/^- \*\*External-ID:\*\* (?!—\s*$)\S/gm) ?? [];
+    return linked.length > 0 ? String(linked.length) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The refusal's two count phrases, degrading together when the file is unreadable. */
+function blastRadius() {
+  const n = linkedRowCount();
+  if (n === null) {
+    return {
+      linked: 'An unknown number of rows are',
+      bodies: 'an unknown number of hand-written bodies',
+    };
+  }
+  // Pluralize: "1 rows are linked" reads like a bug in the safety message,
+  // which is the last place a reader should be doubting the tooling.
+  const plural = n === '1' ? '' : 's';
+  return {
+    linked: `${n} row${plural} ${n === '1' ? 'is' : 'are'}`,
+    bodies: `${n} hand-written bod${n === '1' ? 'y' : 'ies'}`,
+  };
+}
+
+// Computed once: the refusal message interpolates both phrases, and calling
+// blastRadius() per phrase re-read and re-scanned the roadmap, which could
+// also mix a concrete count with "an unknown number" if the file changed
+// between the two reads.
+const BLAST_RADIUS = blastRadius();
+
 // The create hazard is gone — every row carries an External-ID as of #601-#619,
 // so `--apply` files nothing new. What remains is worse and has no upstream
 // flag: updateTicket sets `patch.body` from the row's Summary, so a patch
-// REPLACES an issue's body with one roadmap paragraph. All 38 rows are linked,
-// so a bare `--apply` flattens 38 issue bodies — the evidence in #486, the
-// design notes in #591-#594, the provenance in #601-#619. `--no-state-change`
-// covers open/closed only, and there is no `--no-patch`.
+// REPLACES an issue's body with one roadmap paragraph. Every linked row is one
+// issue body flattened — the evidence in #486, the design notes in #591-#594,
+// the provenance in #601-#619. `--no-state-change` covers open/closed only,
+// and there is no `--no-patch`.
+//
+// The count is READ FROM THE FILE, never restated here. It was hard-coded at
+// "38" until #628 added seven rows, at which point the refusal spent a while
+// understating its own blast radius by seven people's writing — a safety
+// message that is quietly wrong is worse than a vague one. If the roadmap
+// cannot be read, the message says so rather than printing a confident zero.
 //
 // A warning was not enough: a warning that scrolls past is indistinguishable
 // from one nobody read, and the loss here is other people's writing. So
@@ -47,8 +100,9 @@ if (passthrough.includes('--apply') && !passthrough.includes(OVERRIDE_FLAG)) {
     `x Refusing --apply without ${OVERRIDE_FLAG}.\n` +
       '\n' +
       '  --apply patches every linked issue, and a patch REPLACES the issue\n' +
-      '  body with the roadmap row summary. 38 rows are linked, so this would\n' +
-      '  overwrite 38 hand-written bodies (#486, #591-#594, #601-#619).\n' +
+      `  body with the roadmap row summary. ${BLAST_RADIUS.linked} linked, so\n` +
+      `  this would overwrite ${BLAST_RADIUS.bodies}\n` +
+      '  (#486, #591-#594, #601-#619).\n' +
       '  Upstream has no flag to disable the body push.\n' +
       '\n' +
       `  If the roadmap really should win, re-run with ${OVERRIDE_FLAG}.\n` +
