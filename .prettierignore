@@ -1,0 +1,17 @@
+# docs/roadmap.md is machine-managed by harness roadmap tooling, and its schema
+# requires each `- **Key:** value` field to be ONE physical line. Prettier's
+# `proseWrap: "always"` wraps them, and harness then reads only the first line
+# and silently discards the rest — no error on either side. A shard + regen
+# round-trip took the file from 40,525 bytes to 11,640 before this entry existed.
+#
+# This is not a style preference and it is not dead config. `.harness/hooks/
+# quality-warner.js` runs `prettier --check` on every file written in this repo
+# and blocks on violation, so without this line an agent cannot write a correct
+# roadmap at all — the hook forces the broken shape.
+#
+# Removing this entry silently re-breaks the file. The guard that FAILS when it
+# happens is ts/test/roadmap-field-contract.test.ts; keep the two in sync — if
+# sharded output is ever committed, extend the ignore and that test's file list
+# together, in one change. See docs/changes/roadmap-priority-and-field-contract/
+# and AGENTS.md.
+docs/roadmap.md

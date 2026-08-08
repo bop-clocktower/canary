@@ -16,9 +16,11 @@ safely written by the tooling that owns it. Two independent defects:
    every time.
 2. **The file has drifted out of its own schema contract.** Field values must be
    a single physical line — the contract is stated in the file's own header
-   comment. All 38 `Summary` fields currently span more than one line, so
-   harness's roadmap parser reads only the first line of each and silently
-   discards the rest.
+   comment. **43 fields** span more than one line — all 38 `Summary` fields and
+   5 `Blockers` fields — so harness's roadmap parser reads only the first line
+   of each and silently discards the rest. (An earlier draft said 38; it had
+   counted only the obvious field. The detector found the other 5, which is the
+   argument for a mechanical check over a hand estimate.)
 
 A third, smaller gap: 10 open issues have no roadmap row, so the roadmap is not
 a complete picture of committed work.
@@ -339,16 +341,23 @@ repo root exits 0 having done nothing.
    linked row visible to sync, denominator non-zero), not these specific counts,
    so the numbers may grow without the criterion failing.
 6. **Gates pass, from `ts/`:** `npm run build`, `npm run typecheck`,
-   `npm run lint`, `npm test` — the repo's standing four-gate contract. Plus
-   `npm run format:check`, which is a fifth check run _in addition to_ lint, not
-   instead of it, because this change touches `.prettierignore`.
+   `npm run format:check`, `npm test`.
+
+   An earlier revision of this criterion named `npm run lint` as the third gate,
+   on the general principle that lint and format are distinct concerns. **That
+   script does not exist here** — `ts/package.json` defines exactly `build`,
+   `typecheck`, `format:check`, and `test`, and
+   `.github/workflows/harness-quality.yml` runs those same three plus the
+   coverage gate. `format:check` _is_ this package's third gate, not an addition
+   to it. Verified 2026-08-07: `npm run lint` exits 1 with
+   `Missing script: "lint"`.
 
 ## Implementation order
 
 1. **Contract first.** Add `docs/roadmap.md` to `.prettierignore`; then write
    `ts/test/roadmap-field-contract.test.ts`, which is red on first run because
-   all 38 `Summary` fields in `docs/roadmap.md` are currently prose-wrapped;
-   then unwrap them to green.
+   43 fields in `docs/roadmap.md` are currently prose-wrapped (38 `Summary`, 5
+   `Blockers`); then unwrap them to green.
 
    The `.prettierignore` entry must land **first within this step**, and the
    reason is mechanical rather than stylistic: until it does,
