@@ -79,6 +79,26 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Priority:** P2
 - **External-ID:** github:bop-clocktower/canary#488
 
+### check-arch and ci check disagree on the same architecture data
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #626, split out of #622. `harness check-arch` exits 1 with "Validation failed (28 issues)" while `harness ci check` — the command the required `harness` job actually runs — reports `arch: pass` and exits 0, from the same data. Both are correct: check-arch counts absolute violations, ci check counts the delta against the baseline, and all 28 findings are baselined complexity. Neither output says which number it is reporting, so a human running the local command reads a green CI job as a disagreement rather than as a different question, and a genuine new violation is indistinguishable from the standing baseline. The fix is wording, not thresholds — each output should name its own mode. Priority is P1 rather than P0 under the predicate in AGENTS.md: the required check is right, and only the local command misleads. Same family as #588 (a report CI truncated) and #584.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#626
+
+### harness roadmap regen strips the roadmap's header comment block
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #629, found while verifying #628 against `@harness-engineering/cli` v10.2.0. A `harness roadmap shard` + `regen` round-trip deletes this file's 8-line header comment — including the `markdownlint-disable-file MD013` directive and the note recording why each field must stay one physical line — and exits 0 both ways with no warning. Field values survive intact. Latent rather than active: neither subcommand is referenced by any workflow or script in this repo, so it only bites someone running them by hand, which is why it is P3 rather than P1 — no CI path and no dependent rows. The hazard is that the tooling erases its own contract note, after which the `.prettierignore` exemption reads as arbitrary and the next cleanup reflows the file. `ts/test/roadmap-field-contract.test.ts` asserts the comment is present, so the loss fails a check rather than passing silently.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#629
+
 ### Resolve roadmap api-signature doc drift
 
 - **Status:** blocked
@@ -457,6 +477,16 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Plan:** —
 - **Priority:** P1
 - **External-ID:** github:bop-clocktower/canary#504
+
+### review-test LINT-006 matches test() inside string literals
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #590. LINT-006 ("this test contains no assertions") matches `test(` and `it(` occurrences inside string literals, template literals, and comments, so a file whose tests all assert is reported as assertion-free. Consumer-facing and directly damaging: a test-quality tool that lies about test quality undercuts the claim the product is sold on, and the false finding lands in the surface a new user judges canary by first. The fix already exists in-repo twice — canary-savant carries a string-literal guard and canary-blackhawk had the same bug ported back to it in #499 — so this is applying a known guard to a third detector rather than inventing one. Same false-positive class as #493 and #496.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#590
 
 ### canary history record — a writer for the local history store
 
