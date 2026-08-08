@@ -19,6 +19,46 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ## Maintenance and Public Readiness
 
+### Coverage gate — raise branch coverage before the floor bites
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Branch coverage sits at 85.48% against an 85 floor — 0.48pt of headroom, where lines/statements/functions each have 4–5pt. One PR adding a handful of uncovered branches trips the gate, and to whoever hits it the failure reads as an unrelated CI break in a job they never touched. The work is to raise the coverage, not the floor: lowering the threshold to 84 is explicitly rejected, because a gate lowered to stop it failing is not a gate. Risk concentrates in error-handling and flag-parsing branches. Split out of #385 (closed obsolete — its subject was the retired Python engine).
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P0
+- **External-ID:** github:bop-clocktower/canary#481
+
+### Entropy scan — triage 718 findings, then ratchet the gate
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** The Harness Cleanup (Entropy Scan) step in harness-quality.yml never ran its analysis: it failed at startup with "Could not resolve entry points" under continue-on-error, so the step went orange, the job went green, and the failure was never a finding. Identical on the pinned @harness-engineering/cli@9 and @10.1.0 — not a version regression, dark the whole time. Now that it runs, triage the findings and ratchet the gate to blocking. Textbook silently-degraded tooling: the surface reported green while checking nothing.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P0
+- **External-ID:** github:bop-clocktower/canary#544
+
+### Execute the documented commands — run SKILL.md examples in CI
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Docs promise commands nothing has ever executed. #472 added a `canary skills run canary-blackhawk -- --help` example in the same PR that left the command broken — mode 644, so the spawn hit EACCES and mapped to a bare exit 1 with no output. Same class as #465 (architecture page describing an engine deleted four majors earlier) and #455 (operator guide pointing at a file deleted as dead code): plausible prose, nothing executing it. Extract each SKILL.md example and run it in CI, catching missing exec bits, broken --help and flag handling, references to deleted files or renamed flags, and unresolvable `cli:` paths in one pass.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#487
+
+### Three test-design rules the port would have benefited from
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Three mechanically-checkable rules, each drawn from a specific bug this cycle, sharing one theme — the tests exercised the shape the author was thinking about, not the shape a user hits. (1) Every CLI option with a fallback needs a test that OMITS the flag: #369 defaulted --diff to a bare `git diff`, empty on a clean CI checkout, and every test passed a diff explicitly, so the default path had zero coverage and the gate scoped zero paths across ~5 PRs. (2) Anything persistent needs a removal test: #456 proved a sentinel was written but never that it was cleared, so deleting the clearing half silently disabled Tier-2 authoring permanently. (3) Scale rules per the issue body.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#488
+
 ### Resolve roadmap api-signature doc drift
 
 - **Status:** blocked
@@ -286,6 +326,26 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ## Engine and Platform
 
+### ADR — sync vs async history-store interface for the TS cutover
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Python's HistoryStore ABC is synchronous, but @supabase/supabase-js is async-only, so the TS port introduced an AsyncHistoryStore contract rather than mirroring the sync shape. Fine while both engines run side by side; at cutover the async interface propagates upward and AnalysisEngine plus every consumer must become async too — a cross-cutting shape decision, not a local one. Three options to weigh: async all the way up, a sync facade over async, or split read/write so the local NDJSON path stays sync and only Supabase is async behind a capability check. Decide before porting core/ and guardian/ so those adopt the final shape.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#390
+
+### Shared skill-CLI arg parser and table-driven conformance suite
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Five skills hand-roll their own parseArgs and share four invariants — null-prototype lookup for value-flag maps, empty-value rejection in both spellings, arity checking, and --flag=value support — with nothing enforcing any of them. The only thing holding the line is a block of tests hand-copied into each suite, which is exactly how they get weakened: during #472 two copies drifted, and canary-fail-fast’s prototype test was structurally unreachable and passed against the buggy code. No test today would catch a sixth skill landing with a plain-object VALUE_FLAGS. canary-shadow (#478) is the proof it already happened.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#479
+
 ### Persona system as a first-class engine concept
 
 - **Status:** backlog
@@ -368,6 +428,16 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ## Product Surface Gaps
 
+### Monorepo-aware detection and a --framework override that resolves shape
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Run against a Turborepo + pnpm workspace with Playwright and Vitest already in place, all probes are root-only, so the repo detects as Framework: unknown — root scripts.test is `turbo test`, which matches nothing. The --framework playwright override sets the framework but leaves Shape: unknown, so overlay-skill matching and shape-prefixed workflow templates never fire. Worse, the scaffold proposal then offers to create playwright.config.ts and tests/e2e at the monorepo root, a duplicate suite beside the apps/web-e2e project it never noticed. The dry run also prints "Migration complete" when nothing was migrated.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#504
+
 ### canary history record — a writer for the local history store
 
 - **Status:** backlog
@@ -405,5 +475,5 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Summary:** Issue #341. Environment and user-level context detection ships and works; nothing reads it. Product-lies class in its purest form — the feature is present, tested, and inert. Wire the existing detection into the consumers that should adapt to it. Accepted risk to handle in spec: the SDET-vs-manual detection half collides with the persona work in Issue #462 and needs its own design default, because inferring a user's skill level wrongly is the failure people resent; decide there whether detection proposes or decides.
 - **Blockers:** Issue #462 (persona definition — overlapping audience model)
 - **Plan:** —
-- **Priority:** P3
+- **Priority:** P1
 - **External-ID:** github:bop-clocktower/canary#341
