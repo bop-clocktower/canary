@@ -107,10 +107,14 @@ documented in the roadmap's own header comment. Harness reads exactly what the
 schema specifies; our file drifted. What _is_ worth reporting upstream is the
 asymmetry: harness errors loudly on an invalid `Priority` value but silently
 keeps a wrapped field's first line. A contract violation should fail to parse or
-warn, never silently discard. **Status: not yet filed.** To be filed against
-`Intense-Visions/harness-engineering` as a separate report; it is not a blocker
-for this change, and this spec should be updated with the issue number once it
-exists.
+warn, never silently discard. **Status: tracked locally as `#629`, not yet
+reported upstream.** Verifying criterion 4 on 2026-08-08 turned up a second
+instance of the same asymmetry: a `shard` + `regen` round-trip deletes this
+file's entire 8-line header comment block — the `markdownlint-disable-file`
+directive and the note documenting the one-line contract — and exits 0 both
+ways. Latent rather than active: no CI workflow or script in this repo invokes
+`shard`, `regen`, or `unshard`. `#629` records both observations and carries the
+upstream report as its next step; neither blocks this change.
 
 **D4 — The GitHub `bug` label decides, not the title.** Of the 10 open issues
 with no roadmap row, 3 carry the `bug` label and stay bugs — they get fixed and
@@ -380,6 +384,23 @@ repo root exits 0 having done nothing.
 Step 1 is independently shippable and carries all of the risk; steps 2–4 are
 content edits under its guard, and step 5 is the closing gate rather than a
 phase of its own.
+
+## Verification (step 5, run 2026-08-08 at `1e7ea9ba`)
+
+All six criteria pass. Harness CLI v10.2.0; gates run from `ts/`.
+
+| #   | Criterion                       | Result                                                                                                                                                                                                                                      |
+| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Field invariant + denominator   | `ts/test/roadmap-field-contract.test.ts` — 9/9 pass, including the zero-denominator abstention case and the wrapped-input case that names row, field, and discarded text.                                                                   |
+| 2   | Formatter exemption, write path | An Edit adding an unwrapped 200-column `Summary` completed; `.harness/hooks/quality-warner.js` did not exit 2. Probe reverted, tree clean. Mechanism confirmed separately: `npx prettier --check --ignore-unknown docs/roadmap.md` exits 0. |
+| 3   | Priority populated              | `grep -c '^### '` = 45 and `grep -c '^- \*\*Priority:\*\* P[0-3]$'` = 45. Equality, not merely non-zero.                                                                                                                                    |
+| 4   | Round-trip                      | `shard` on a temp copy → 45 shards; all 45 `Summary` values byte-identical to source. `shard`+`regen` likewise, 46,367 → 46,793 bytes. The ~71% loss (40,525 → 11,640) is gone. Header-comment strip found and filed as `#629` (D3).        |
+| 5   | Denominator check               | `node scripts/roadmap-denominator-check.mjs` exit 0 — 45 linked rows, 46/50 open issues labelled. The 4 unlabelled are `bug`-labelled by D4: `#587`, `#590`, `#626`, `#629`.                                                                |
+| 6   | Gates from `ts/`                | `build`, `typecheck`, `format:check` clean; `npm test` 2268 passed across 111 files.                                                                                                                                                        |
+
+Row and label counts moved from the 2026-08-07 baseline (45/46/49 → 45/46/50)
+because filing `#629` opened an issue. Per criterion 5 that is not a failure:
+the script asserts the invariant, not the absolute numbers.
 
 **Keywords** (free-text search aid for `harness roadmap` and repo grep; not
 consumed by any tool): roadmap, priority, schema-contract, prose-wrap,
