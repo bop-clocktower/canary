@@ -309,15 +309,19 @@ repo root exits 0 having done nothing.
    the offending row and field. On clean input it passes while reporting the
    number of fields inspected; a run that inspects **zero** fields fails as an
    abstention rather than passing.
-2. **Formatter exemption, and the write path it unblocks.** `docs/roadmap.md` is
-   listed in `.prettierignore`, so
+2. **Formatter exemption — the write path, not the file state.** _Verify by:_
+   apply an Edit to `docs/roadmap.md` that leaves a `Summary` unwrapped and
+   longer than 80 columns; the edit completes and
+   `.harness/hooks/quality-warner.js` does not exit 2. That single observable is
+   the criterion. _Mechanism, which is not itself the criterion:_
+   `docs/roadmap.md` is listed in `.prettierignore`, so the hook's
    `npx prettier --check --ignore-unknown docs/roadmap.md` exits 0 — the file is
    excluded rather than reformatted, because reflowing it re-wraps the fields
-   criterion 1 forbids wrapping. That exact command is what
-   `.harness/hooks/quality-warner.js` runs on every write, so the operational
-   form of this criterion is: **an Edit or Write to `docs/roadmap.md` carrying
-   an unwrapped `Summary` completes instead of being blocked with exit 2.** No
-   CI job runs prettier over `docs/`, so this is a local-path criterion only.
+   criterion 1 forbids wrapping. The ignore entry being present is necessary but
+   not sufficient: the hook could still block for an unrelated reason (another
+   rule, a stale hook build), so grepping `.prettierignore` is not evidence for
+   this criterion. _Scope:_ local write path only. No CI job runs prettier over
+   `docs/`, so a green CI run is not evidence either.
 3. **Priority populated.** Every row in `docs/roadmap.md` carries a `Priority`
    field whose value is one of `P0`–`P3`; zero rows have an empty or `—`
    `Priority` value. Check: `grep -c '^- \*\*Priority:\*\* P[0-3]$'` equals the
