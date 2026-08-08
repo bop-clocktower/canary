@@ -134,6 +134,16 @@ jobs:
             console.log(`doctor: checked=${r.checked} skipped=${r.skipped.length} abstained=${r.abstained}`);
           '
 
+      # Same rule as harness.yml (#588): a report the job's outcome depends on
+      # has to outlive the runner, or on the failing run — the only one anyone
+      # needs it for — it is as unreachable as if it were never written.
+      - name: Upload doctor report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: doctor-report
+          path: doctor.json
+
   # --- E: the declared Node floor is enforced, not just declared ------------
   #
   # `engines` is ADVISORY. Installing a package that declares

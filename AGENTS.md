@@ -381,6 +381,26 @@ Bumping the major is a **three-step sequence**, in this order (#545, #547):
    exit code _and_ output, not just exit code. The gates run the CLI on a bare
    checkout with no `npm ci`, so a local worktree reproduces CI exactly.
 
+**Reading a red `Harness Checks` (#588).** The `ci check --json` report is ~162
+KB and **is not in the job log** — do not scroll for it. Two limits eat it: the
+Actions log truncates at 60 KB, and Node's stdout is async when it is a pipe, so
+`process.exit()` drops the ~64 KB still buffered. Neither cut leaves a marker,
+so the log reads as a complete report that happens to end early. On PR #584 it
+ended after check four of nine, showing `pass/pass/warn/warn` and zero errors on
+a job that failed for `arch: fail` — five checks past the cut, and a long
+debugging detour before anyone captured the report to a file.
+
+So `harness.yml` writes `harness ci check --json > harness-report.json`, prints
+a per-check summary via `node scripts/harness-report-summary.mjs`, and uploads
+the full report as the **`harness-report`** artifact on every run including
+failures. To diagnose a red run: read the summary step for which check failed,
+then `gh run download <run-id> -n harness-report` for the findings. The
+summariser caps _warning_ detail at ten per check and always prints the
+remainder count; error-severity findings are never capped. It exits **3** if the
+report is missing or unparseable, because a summary nobody can produce is this
+same condition returning, not a pass. `ts/test/workflow-false-green.test.ts`
+holds the invariant for every workflow, not just this one.
+
 **`roadmap sync` requires `--no-state-change` (#595).** It is deliberately
 absent from the table above — no workflow runs it, and none should. Run it only
 through `node scripts/roadmap-sync.mjs`, which appends the flag unconditionally;
