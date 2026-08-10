@@ -107,7 +107,7 @@ describes your suite.
 ```
 
 No `coverage` key, no `canary_run_id` key — cut for v1 (see
-`docs/adr/0006-otel-test-side-tracing.md` and
+`docs/knowledge/decisions/0006-otel-test-side-tracing.md` and
 `docs/changes/canary-instrument/proposal.md`). Additive-only evolution: new
 optional fields may appear later; existing fields never change meaning.
 

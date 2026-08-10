@@ -84,11 +84,11 @@ no new public CLI surface beyond `canary skills run`)
   on. If a real span-parsing failure needs a distinct exit code, add it in
   Task 4 — cheap to extend, not blocking.
 - **[ASSUMPTION]** ADR path follows this repo's real, established
-  convention — `docs/adr/NNNN-title.md` with an index in
-  `docs/adr/README.md` (5 prior ADRs, see `docs/adr/0001`–`0005`) — rather
+  convention — `docs/knowledge/decisions/NNNN-title.md` with an index in
+  `docs/knowledge/decisions/README.md` (5 prior ADRs, see `docs/knowledge/decisions/0001`–`0005`) — rather
   than the spec's literal `docs/specs/adr-otel-test-side-tracing.md`. The
   spec's path does not match any existing ADR in the repo; `docs/specs/`
-  holds design specs, not ADRs. Task 8 uses `docs/adr/0006-...md` and
+  holds design specs, not ADRs. Task 8 uses `docs/knowledge/decisions/0006-...md` and
   updates the index. Flagged for human review at plan sign-off — trivial to
   revert to the spec's literal path if that was intentional.
 - **[DEFERRABLE]** `docs/knowledge/` note on the `run.json`
@@ -111,8 +111,8 @@ CREATE agents/skills/claude-code/canary-instrument/scripts/otel_bootstrap/instru
 CREATE agents/skills/claude-code/canary-instrument/scripts/otel_bootstrap/playwright-fixture.ts
 CREATE agents/skills/claude-code/canary-instrument/SKILL.md
 CREATE tests/unit/test_canary_instrument.py
-CREATE docs/adr/0006-otel-test-side-tracing.md
-MODIFY docs/adr/README.md (add index row)
+CREATE docs/knowledge/decisions/0006-otel-test-side-tracing.md
+MODIFY docs/knowledge/decisions/README.md (add index row)
 MODIFY docs/guides/company-knowledge.md (add usage example cross-reference)
 ```
 
@@ -987,7 +987,7 @@ process.on('exit', () => sdk.shutdown());
 // Root-span-via-fixture (not a custom reporter) is deliberate — reporters
 // run in Playwright's main process and can't establish the OTel active
 // context the HTTP auto-instrumentation needs to nest child spans. See
-// docs/adr/0006-otel-test-side-tracing.md.
+// docs/knowledge/decisions/0006-otel-test-side-tracing.md.
 
 import type { TestType } from '@playwright/test';
 import { trace, context } from '@opentelemetry/api';
@@ -1220,7 +1220,7 @@ whatever label describes your suite.
 ```
 
 No `coverage` key, no `canary_run_id` key — cut for v1 (see
-`docs/adr/0006-otel-test-side-tracing.md` and
+`docs/knowledge/decisions/0006-otel-test-side-tracing.md` and
 `docs/changes/canary-instrument/proposal.md`). Additive-only evolution: new
 optional fields may appear later; existing fields never change meaning.
 
@@ -1299,20 +1299,20 @@ git commit -m "feat(canary-instrument): SKILL.md + discoverability test"
 ### Task 8: ADR — test-side-only tracing (Phase 1, SUT-side deferred)
 
 **Category:** integration | **Depends on:** Task 4, Task 5 | **Files:**
-`docs/adr/0006-otel-test-side-tracing.md`, `docs/adr/README.md` (add index
+`docs/knowledge/decisions/0006-otel-test-side-tracing.md`, `docs/knowledge/decisions/README.md` (add index
 row)
 
 **Note on path:** the spec names this file
 `docs/specs/adr-otel-test-side-tracing.md`; this task uses this repo's
-actual, established ADR convention instead — `docs/adr/NNNN-title.md` with
-an index in `docs/adr/README.md` (5 prior ADRs already follow this
+actual, established ADR convention instead — `docs/knowledge/decisions/NNNN-title.md` with
+an index in `docs/knowledge/decisions/README.md` (5 prior ADRs already follow this
 pattern; `docs/specs/` holds design specs, not ADRs). See the plan's
 Uncertainties section. Flag at sign-off if the spec's literal path was
 intentional.
 
 - [ ] **Step 1: Write the ADR**
 
-Create `docs/adr/0006-otel-test-side-tracing.md`:
+Create `docs/knowledge/decisions/0006-otel-test-side-tracing.md`:
 
 ```markdown
 # ADR 0006 — Test-side-only OTel tracing (Phase 1, SUT-side deferred)
@@ -1441,7 +1441,7 @@ additive extension point preserved."
 
 - [ ] **Step 2: Add the index row**
 
-In `docs/adr/README.md`, append to the `## Index` table:
+In `docs/knowledge/decisions/README.md`, append to the `## Index` table:
 
 ```markdown
 | [0006](0006-otel-test-side-tracing.md) | Test-side-only OTel tracing (Phase 1, SUT-side deferred) | accepted |
@@ -1449,7 +1449,7 @@ In `docs/adr/README.md`, append to the `## Index` table:
 
 - [ ] **Step 3: Markdownlint + validate**
 
-Run: `npx markdownlint-cli2 docs/adr/0006-otel-test-side-tracing.md docs/adr/README.md`
+Run: `npx markdownlint-cli2 docs/knowledge/decisions/0006-otel-test-side-tracing.md docs/knowledge/decisions/README.md`
 Expected: no errors.
 Run: `harness validate`
 Expected: PASS.
@@ -1457,7 +1457,7 @@ Expected: PASS.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add docs/adr/0006-otel-test-side-tracing.md docs/adr/README.md
+git add docs/knowledge/decisions/0006-otel-test-side-tracing.md docs/knowledge/decisions/README.md
 git commit -m "docs(adr): 0006 test-side-only OTel tracing (canary-instrument)"
 ```
 
@@ -1581,9 +1581,9 @@ Law — the correlation logic's four distinct behaviors, one per success
 criterion, don't fit one 2–5 minute task cleanly).
 
 **Deviations from spec (flagged, not silently resolved):**
-1. ADR path: `docs/adr/0006-otel-test-side-tracing.md` (+ README index),
+1. ADR path: `docs/knowledge/decisions/0006-otel-test-side-tracing.md` (+ README index),
    not the spec's literal `docs/specs/adr-otel-test-side-tracing.md` — see
-   Uncertainties. This repo has an established, numbered `docs/adr/`
+   Uncertainties. This repo has an established, numbered `docs/knowledge/decisions/`
    convention (5 prior ADRs) that the spec's path doesn't follow;
    `docs/specs/` is for design specs, not decision records.
 2. Spec's `docs/roadmap.md` "mark done" step is explicitly *not* included

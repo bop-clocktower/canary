@@ -20,7 +20,7 @@
     "",
     "To apply this file to the ruleset:",
     "  gh api -X PUT repos/bop-clocktower/canary/rulesets/16189198 --input <payload>",
-    "See docs/adr/0011-required-status-checks.md for the procedure."
+    "See docs/knowledge/decisions/0011-required-status-checks.md for the procedure."
   ],
 
   "ruleset": 16189198,

@@ -14,7 +14,7 @@
 // Root-span-via-fixture (not a custom reporter) is deliberate — reporters
 // run in Playwright's main process and can't establish the OTel active
 // context the HTTP auto-instrumentation needs to nest child spans. See
-// docs/adr/0006-otel-test-side-tracing.md.
+// docs/knowledge/decisions/0006-otel-test-side-tracing.md.
 
 import type { TestType } from '@playwright/test';
 import { trace, context } from '@opentelemetry/api';

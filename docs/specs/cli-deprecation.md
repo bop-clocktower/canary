@@ -45,7 +45,7 @@ deprecated. Removal at v3.0 (separate phase).
    tests/unit` reports the same number of passing tests as before
    (warnings go to stderr; CliRunner captures stdout by default).
 6. The deprecation surface is documented in
-   `docs/adr/0003-deprecate-oracle-generate.md` with status
+   `docs/knowledge/decisions/0003-deprecate-oracle-generate.md` with status
    `accepted`.
 
 ## Scope
@@ -58,8 +58,8 @@ deprecated. Removal at v3.0 (separate phase).
   command.
 - `action.yml` — prefix `description` with `[DEPRECATED — removed in
   v3.0]`.
-- `docs/adr/0003-deprecate-oracle-generate.md` — decision.
-- `docs/adr/README.md` — index update.
+- `docs/knowledge/decisions/0003-deprecate-oracle-generate.md` — decision.
+- `docs/knowledge/decisions/README.md` — index update.
 - `docs/specs/cli-deprecation.md` — this spec.
 - `docs/plans/cli-deprecation.md` — task-by-task plan.
 - `docs/changes/host-llm-migration/plans/<date>-phase-3-plan.md` —

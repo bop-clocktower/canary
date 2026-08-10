@@ -652,10 +652,14 @@ Every gate, doctor check, and analysis command must:
    an unmissable warning line for advisory commands.
 
 "Skipped" never aggregates into "passed". See
-[ADR 0009](docs/adr/0009-exit-3-reserved-for-abstained.md) for the exit-code
-vocabulary and
-[ADR 0010](docs/adr/0010-conformance-registry-as-gate-registry.md) for how it is
-enforced.
+[ADR 0009](docs/knowledge/decisions/0009-exit-3-reserved-for-abstained.md) for
+the exit-code vocabulary and
+[ADR 0010](docs/knowledge/decisions/0010-conformance-registry-as-gate-registry.md)
+for how it is enforced. The concrete shapes this has taken here — each with the
+PR that found it — are catalogued in
+[false-green detection](docs/knowledge/gates/false-green-detection.md); the arch
+gate's own reading traps are in
+[arch baseline semantics](docs/knowledge/gates/arch-baseline-semantics.md).
 
 The two traps, both of which have bitten this repo:
 

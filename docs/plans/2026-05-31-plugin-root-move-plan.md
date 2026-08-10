@@ -35,8 +35,8 @@ DELETE plugins/oracle/ (and plugins/ if empty)
 MODIFY AGENTS.md
 MODIFY tests/unit/test_hooks.py
 MODIFY docs/roadmap.md
-MODIFY docs/adr/0001-host-llm-generation-for-agents.md
-MODIFY docs/adr/0002-self-heal-as-slash-command.md
+MODIFY docs/knowledge/decisions/0001-host-llm-generation-for-agents.md
+MODIFY docs/knowledge/decisions/0002-self-heal-as-slash-command.md
 MODIFY docs/plans/self-heal-migration.md
 MODIFY docs/plans/host-llm-migration.md
 MODIFY docs/specs/self-heal-migration.md
@@ -177,7 +177,7 @@ harness validate
 
 ### Task 5: Bulk path rewrite — historical docs (ADRs, plans, specs, changes/)
 
-**Depends on:** none | **Files:** docs/adr/\*, docs/plans/\*, docs/specs/\*,
+**Depends on:** none | **Files:** docs/knowledge/decisions/\*, docs/plans/\*, docs/specs/\*,
 docs/changes/\*\*/\*
 
 All these files reference `plugins/oracle/` paths that map cleanly via
@@ -186,8 +186,8 @@ pre-existing error (already handled in Task 4):
 
 ```bash
 FILES=(
-  docs/adr/0001-host-llm-generation-for-agents.md
-  docs/adr/0002-self-heal-as-slash-command.md
+  docs/knowledge/decisions/0001-host-llm-generation-for-agents.md
+  docs/knowledge/decisions/0002-self-heal-as-slash-command.md
   docs/plans/self-heal-migration.md
   docs/plans/host-llm-migration.md
   docs/specs/self-heal-migration.md
@@ -201,7 +201,7 @@ for f in "${FILES[@]}"; do
 done
 
 # Verify no remaining references
-grep -r "plugins/oracle" docs/adr docs/plans docs/specs docs/changes \
+grep -r "plugins/oracle" docs/knowledge/decisions docs/plans docs/specs docs/changes \
   && echo "REMAINING REFS — fix manually" || echo "clean"
 
 harness validate

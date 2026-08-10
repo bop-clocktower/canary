@@ -67,8 +67,8 @@ the CLI itself, and the GitHub Action.
 - Smoke test that the host-LLM path works against a known prompt
   fixture (under `tests/integration/` if such a layout exists, else
   manual verification logged in the plan).
-- `docs/adr/0001-host-llm-generation-for-agents.md` accepted as part
-  of the merge.
+- `docs/knowledge/decisions/0001-host-llm-generation-for-agents.md` accepted as
+  part of the merge.
 
 **Out of scope:**
 

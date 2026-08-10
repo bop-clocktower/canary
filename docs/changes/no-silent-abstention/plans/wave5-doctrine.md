@@ -33,7 +33,7 @@ tick.
    rather than deleted.
 4. **[Ubiquitous]** ADR 0009 shall record the exit-3 reservation (D4) and ADR
    0010 the conformance registry as the canonical gate list (D5), both indexed
-   in `docs/adr/README.md`.
+   in `docs/knowledge/decisions/README.md`.
 5. **[Ubiquitous]** `CHANGELOG.md` shall carry a **"Gates that got louder"**
    section enumerating every surface whose exit behavior changed, with the
    v6.4.0 surfaces backfilled so consumers read one complete table rather than

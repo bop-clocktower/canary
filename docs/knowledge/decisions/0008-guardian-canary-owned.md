@@ -1,16 +1,25 @@
+---
+number: 8
+title: 'ADR 0008 — Guardian ownership: a canary skill that harness leverages'
+date: 2026-07-19
+status: accepted
+source: adr
+---
+
+<!-- markdownlint-disable-file MD025 -->
+
 # ADR 0008 — Guardian ownership: a canary skill that harness leverages
 
-**Status:** accepted
-**Date:** 2026-07-19
-**Deciders:** Bri Stevenski (upstream maintainer)
-**Related:** #312; `docs/changes/canary-pr-guardian/proposal.md` (Decision D2)
+**Status:** accepted **Date:** 2026-07-19 **Deciders:** Bri Stevenski (upstream
+maintainer) **Related:** #312; `docs/changes/canary-pr-guardian/proposal.md`
+(Decision D2)
 
 ## Context
 
 `canary-pr-guardian` sits at a project seam. It is a PR-scoped test-quality gate
 — and "gates" are the kind of generic CI machinery that could plausibly live in
 **harness** (the upstream orchestration layer, `Intense-Visions`). But its
-substance is *test intelligence*: is this changed code tested, how good are the
+substance is _test intelligence_: is this changed code tested, how good are the
 affected tests, and can the missing ones be authored. That is squarely canary's
 domain — the guardian is the PR-scoped, write-capable sibling of the existing
 on-demand `canary-test-pipeline`, and it composes canary skills
@@ -25,7 +34,7 @@ future generic gate host fits.
 
 The guardian ships as a **canary skill (`canary-pr-guardian`), owned in this
 repo**, composing the canary test-intelligence skills (D2). Harness does not own
-it; a future harness gate host *leverages* it as the CI surface, attaching
+it; a future harness gate host _leverages_ it as the CI surface, attaching
 through the D1 capability boundary (ADR 0007) and the `.harness/analyses/`
 producer contract (the reverse-handoff scoped in #899).
 
@@ -38,11 +47,11 @@ Concretely:
   harness-owned skill would live upstream and block v1 on external release
   timing and review. Owning it here lets the baseline ship and earn trust now.
 - **The future harness CI-agent tier attaches, it does not absorb.** When a
-  harness gate host or CI-agent runner lands, it plugs into the *same*
+  harness gate host or CI-agent runner lands, it plugs into the _same_
   `AgentTier` boundary (ADR 0007) and consumes the guardian's structured results
-  via the `.harness/analyses/` channel (#899) — so harness *leverages* the
-  guardian without owning or forking it. This extends the established
-  "harness surfaces/leverages canary" direction rather than fighting it.
+  via the `.harness/analyses/` channel (#899) — so harness _leverages_ the
+  guardian without owning or forking it. This extends the established "harness
+  surfaces/leverages canary" direction rather than fighting it.
 
 ## Consequences
 
@@ -58,11 +67,11 @@ Concretely:
 
 ### Follow-on
 
-- A harness gate host / CI-agent tier becomes a *consumer + host*, not an owner:
+- A harness gate host / CI-agent tier becomes a _consumer + host_, not an owner:
   it implements `CiAgentTier` against the ADR 0007 boundary and reads
   `.harness/analyses/`. No migration of the guardian into harness is required.
 - If a genuinely multi-domain gate emerges later (docs-/security-guardian), that
-  generic host belongs in harness — but the *test* guardian stays canary-owned;
+  generic host belongs in harness — but the _test_ guardian stays canary-owned;
   the two compose via the same producer contract.
 
 ### Risks
@@ -73,7 +82,7 @@ Concretely:
   generic PR gates; `canary-pr-guardian` is the test-quality specialist that
   feeds them via `--emit-analysis`.
 - **Two homes for "gates" long-term.** Mitigation: ADR 0007's boundary means the
-  guardian can be *hosted* by a future harness gate without being *owned* by it,
+  guardian can be _hosted_ by a future harness gate without being _owned_ by it,
   so there is one gate surface even with canary-owned substance.
 
 ### Reversibility
@@ -87,7 +96,7 @@ move largely intact, since harness already leverages them by contract.
 ### Alternative 1: Harness-owned gate skill (that leverages canary)
 
 Rejected for v1. This is the right home only if the gate machinery must be
-*generic from day one*. It is not the v1 call: it puts the guardian upstream
+_generic from day one_. It is not the v1 call: it puts the guardian upstream
 (`Intense-Visions`), blocking v1 on external timing and review, and moves test
 intelligence away from its domain owner — slowing iteration on exactly the part
 that carries the value. The D1 boundary lets harness leverage the guardian later
@@ -108,7 +117,8 @@ tier deferred behind that seam.
 
 ## References
 
-- `docs/changes/canary-pr-guardian/proposal.md` (Decision D2, Integration Points)
+- `docs/changes/canary-pr-guardian/proposal.md` (Decision D2, Integration
+  Points)
 - ADR 0007 — Guardian agent capability boundary (the seam harness attaches to)
 - `agent/guardian/analysis_emit.py` (`--emit-analysis`, the #899 producer)
 - `docs/guides/harness-canary-integration.md` (disambiguation matrix)

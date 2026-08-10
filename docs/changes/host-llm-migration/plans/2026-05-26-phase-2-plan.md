@@ -24,8 +24,8 @@ remove it alongside `oracle generate`.
 | --- | --- | --- |
 | Add | `agents/oracle-test-healer.md` | New agent for test repair |
 | Add | `commands/oracle-heal-test.md` | Slash command delegating to the agent |
-| Add | `docs/adr/0002-self-heal-as-slash-command.md` | Decision record |
-| Modify | `docs/adr/README.md` | Index entry for ADR 0002 |
+| Add | `docs/knowledge/decisions/0002-self-heal-as-slash-command.md` | Decision record |
+| Modify | `docs/knowledge/decisions/README.md` | Index entry for ADR 0002 |
 | Add | `docs/specs/self-heal-migration.md` | Spec |
 | Add | `docs/plans/self-heal-migration.md` | This plan |
 | Add | `docs/changes/host-llm-migration/plans/2026-05-26-phase-2-plan.md` | Plan mirror |
@@ -105,15 +105,15 @@ user). Subjective; reviewer judges.
 
 **Files:**
 
-- Add: `docs/adr/0002-self-heal-as-slash-command.md`
-- Modify: `docs/adr/README.md`
+- Add: `docs/knowledge/decisions/0002-self-heal-as-slash-command.md`
+- Modify: `docs/knowledge/decisions/README.md`
 - Add: `docs/specs/self-heal-migration.md`
 - Add: `docs/plans/self-heal-migration.md` (this file)
 - Modify: `docs/roadmap.md`
 
 - [ ] **Step 1: ADR 0002** — Status `accepted` immediately (Phase 1
   established the convention; the decision is uncontroversial). Index
-  in `docs/adr/README.md` updated.
+  in `docs/knowledge/decisions/README.md` updated.
 - [ ] **Step 2: Spec + plan** linked in the relevant cross-references
   (ADR points at spec + plan, spec points at plan, plan points at ADR
   via reference-style link to avoid MD013 violations).
