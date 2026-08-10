@@ -534,9 +534,21 @@ Four things keep it correct, and they are not interchangeable:
   `docs-lint.yml` _lints_ every markdown file in the repo with no path filter,
   and it is required in `.github/required-checks.json`. Unwrapping the fields
   took the file from 12 long lines to 51, so losing that comment turns a
-  required check red and blocks every merge. `harness roadmap promote` is known
-  to strip it (#273), which is why the field-contract test asserts the comment
-  is present rather than leaving it to the opt-in local pre-commit hook.
+  required check red and blocks every merge. The upstream roadmap serializer is
+  known to strip the header block — via `promote` (#273) and via a `shard` +
+  `regen` round-trip (#629, reproduced on CLI v10.2.0 and v11.1.1; reported
+  upstream as `Intense-Visions/harness-engineering#1328`) — which is why the
+  field-contract test asserts the directive is present rather than leaving it to
+  the opt-in local pre-commit hook.
+- **The comment block's second half is guarded separately, because losing it
+  fails nothing.** The MD013 directive turns a required check red, so its loss
+  announces itself; the machine-managed note below it is the only in-file record
+  of why the file is prettier-exempt and must not be reflowed, and no gate reads
+  it. `ts/test/roadmap-comment-guard.test.ts` asserts the note survives in the
+  live file, pins the block `scripts/roadmap_comment_guard.mjs` restores to be
+  byte-identical to it (a guard that restores a stale header is worse than
+  none), and covers the guard's own contract — including the partial strip where
+  the directive is pasted back by hand and the note stays gone.
 - `scripts/roadmap-sync.mjs`, `scripts/roadmap-groom.mjs`, and
   `harness roadmap promote` write the file directly and bypass the hook. Any new
   writer must emit one-line fields.

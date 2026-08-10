@@ -3,8 +3,10 @@
 # Install once per clone: git config core.hooksPath .githooks
 set -euo pipefail
 
-# 1. Roadmap comment guard — restore the markdownlint-disable block that
-#    `harness roadmap promote` silently strips (canary#273), before linting
+# 1. Roadmap comment guard — restore the header comment block that the upstream
+#    harness roadmap tooling silently strips, before linting. Affects both
+#    `roadmap promote` (#273) and `roadmap shard` + `regen` (#629). Reported
+#    upstream as Intense-Visions/harness-engineering#1328.
 STAGED_ROADMAP=$(git diff --cached --name-only --diff-filter=ACM | grep '^docs/roadmap\.md$' || true)
 if [ -n "$STAGED_ROADMAP" ] && [ -f "scripts/roadmap_comment_guard.mjs" ]; then
   node scripts/roadmap_comment_guard.mjs
