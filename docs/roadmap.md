@@ -22,6 +22,7 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 ### Coverage gate — raise branch coverage before the floor bites
 
 - **Status:** in-progress
+- **Assignee:** <brianna.stevenski@example.com>
 - **Spec:** —
 - **Summary:** Branch coverage had 0.48pt of headroom against its 85 floor, where lines/statements/functions each had 4–5pt, so one PR adding a handful of uncovered branches tripped a gate its author never touched. Fixed the stated way — raise the coverage, not lower the floor: 106 tests across the history/analyze report renderers, the company-knowledge show/init ladders, the skills run refusal ladder, the overlay registry's malformed-shape degradations, and the production defaultMainDeps seams took branches 85.48% → 88.51%. Floors then ratcheted to lines 95 / statements 94 / functions 96 / branches 87, each ~1–1.5pt under measured. Split out of #385 (closed obsolete — its subject was the retired Python engine).
 - **Blockers:** —
