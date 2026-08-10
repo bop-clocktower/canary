@@ -39,6 +39,16 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Priority:** P2
 - **External-ID:** github:bop-clocktower/canary#630
 
+### agents-roadmap-counts checks a claim it cannot derive
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #640, found while grooming in #639. ts/test/agents-roadmap-counts.test.ts extracts three claims from AGENTS.md and asserts each equals the linked-row count, but the third pattern captures "(N of M open issues carry the label today)" — labelled open issues, a quantity with no reason to equal the number of rows. It passes only because both are currently equal, and the file's own docstring says the open-issue side is deliberately not checked, so the intent and the implementation disagree. Two failure modes, both bad: a false red on a correct edit that changes rows without changing labels, where the obvious fix is to edit the prose into being wrong; and a false green on the claim it is nominally guarding, which is the shape the file was written to catch. Fix is to drop the third pattern and lower the length floor to 2, or assert it against something derivable offline.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#640
+
 ### Execute the documented commands — run SKILL.md examples in CI
 
 - **Status:** backlog

@@ -426,20 +426,20 @@ Two related facts worth not rediscovering:
   _optional extended field_ serialized beside
   `Assignee`/`Priority`/`Updated-At`. It is not one of the five documented
   fields (`Status`, `Spec`, `Summary`, `Blockers`, `Plan`), so it is easy to
-  conclude no link field exists. All 50 rows carry one — 47 as of #628, plus the
+  conclude no link field exists. All 51 rows carry one — 47 as of #628, plus the
   three added for #626/#590/#629, then #481/#544/#590 archived and
   #633/#634/#638 filed in their place — and `Priority`, serialized in that same
   extended group, is populated on every one of them.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
-  effectively blind gate that reported a real number nobody read. All 50 rows
+  effectively blind gate that reported a real number nobody read. All 51 rows
   now carry an `External-ID` (#596, #601–#619, #628, #626/#590/#629) and sync
   reports `would create 0`. `scripts/roadmap-denominator-check.mjs` now keeps it
   that way: the wrapper runs it before every sync, and it exits 3 unless
   **every** linked row points at a labelled issue — naming the blind ones, not
   counting them. **Adding a row therefore means labelling its issue in the same
   change**, or the check flips a green repo to abstaining. The invariant is
-  exact rather than a coverage ratio on purpose (50 of 51 open issues carry the
+  exact rather than a coverage ratio on purpose (51 of 52 open issues carry the
   label today; the one that does not is #587, an upstream harness defect this
   repo tracks but cannot schedule), so a floor would either sit low enough to
   miss the 2-of-30 case or fire on every new bug report. **The invariant runs
