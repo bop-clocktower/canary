@@ -117,19 +117,7 @@ function literalContentSpans(code: string, python: boolean): Span[] {
       continue;
     }
 
-    if (frame?.kind === 'interp') {
-      if (ch === '{') frame.depth += 1;
-      else if (ch === '}') {
-        if (frame.depth === 0) {
-          stack.pop();
-          // The enclosing template resumes its content after the `}`.
-          const enclosing = top();
-          if (enclosing?.kind === 'string') enclosing.start = i + 1;
-        } else {
-          frame.depth -= 1;
-        }
-      }
-    }
+    if (frame?.kind === 'interp') advanceInsideInterp(ch, i, frame, stack);
   }
 
   // Anything still open never closed. Discard it -- see the header.
@@ -144,6 +132,34 @@ function literalContentSpans(code: string, python: boolean): Span[] {
 type Frame =
   | { kind: 'string'; quote: string; start: number }
   | { kind: 'interp'; depth: number };
+
+/**
+ * Handle one character of a template's `${ ... }`. Only braces matter here:
+ * everything else in an interpolation is code the main loop already handles.
+ * Lives apart from the walk so brace bookkeeping cannot leak into it.
+ */
+function advanceInsideInterp(
+  ch: string,
+  i: number,
+  frame: Extract<Frame, { kind: 'interp' }>,
+  stack: Frame[],
+): void {
+  if (ch === '{') {
+    frame.depth += 1;
+    return;
+  }
+  if (ch !== '}') return;
+
+  if (frame.depth > 0) {
+    frame.depth -= 1;
+    return;
+  }
+
+  stack.pop();
+  // The enclosing template resumes its content after the `}`.
+  const enclosing = stack[stack.length - 1];
+  if (enclosing?.kind === 'string') enclosing.start = i + 1;
+}
 
 /**
  * Handle one character while inside a string frame. Returns the index the main
