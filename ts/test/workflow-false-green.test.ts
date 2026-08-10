@@ -114,6 +114,17 @@ function jobsOf(wf: Workflow): Array<[string, Job]> {
 const STDOUT_TO_FILE =
   /(?:^|[^0-9&=<>!+-])>>?\s*([A-Za-z0-9_./$"'-][^\s;|&)]*)/;
 
+/**
+ * An actual `harness … --update-baseline` invocation.
+ *
+ * `harness` must sit in command position (line start, or after `;`, `&&`,
+ * `||`, `(`) — otherwise the very error message that quotes the command it is
+ * warning about gets collected as an invocation of it, and the check fails on
+ * its own diagnostic text.
+ */
+const UPDATE_BASELINE_CALL =
+  /(?:^|[;&|(]\s*)harness\s+[\w-]+(?=[^;&|]*--update-baseline\b)/;
+
 describe('workflow false-green invariants', () => {
   it('finds workflow files to check (zero denominator is an abstention)', () => {
     expect(allWorkflows().length).toBeGreaterThan(0);
@@ -356,6 +367,127 @@ describe('workflow false-green invariants', () => {
             `${file} is uploaded only on success — useless on the run that failed`,
           ).toMatch(/always\(\)|!\s*cancelled\(\)/);
         }
+      },
+    );
+  });
+
+  /**
+   * #634 — an opt-in mutation workflow must fail when it mutated nothing.
+   *
+   * `refresh-arch-baseline.yml` exists to refresh `.harness/arch/baselines.json`
+   * when the ratchet is red, and a red ratchet is the only reason anyone applies
+   * the `refresh-baseline` label. But it ran `harness check-arch
+   * --update-baseline` bare, and on a regression the CLI *declines to write* —
+   * while exiting 0 — telling the caller to re-run with `--allow-regress
+   * --reason`. The job then saw a clean `git diff`, printed "Baseline already
+   * current; nothing to refresh", went green, and the `if: always()` cleanup
+   * consumed the label. The operator spent the opt-in, got a green run, and the
+   * ratchet was still red.
+   *
+   * "Nothing to refresh" and "refused to refresh" were indistinguishable at the
+   * call site — the same false-green shape as a zero denominator, which is why
+   * this belongs in this file rather than in a workflow-specific one.
+   *
+   * Three invariants, one per link in that chain:
+   *
+   * 1. A `--update-baseline` invocation carries `--allow-regress --reason`.
+   *    Without them the command is a no-op on the only input it is ever given.
+   *
+   * 2. In a label-gated workflow, a no-change guard fails rather than exiting 0.
+   *    The label was applied precisely because a change was wanted, so a run
+   *    that changed nothing has not done what it was asked.
+   *
+   * 3. The step that consumes the opt-in label does not run with `if: always()`.
+   *    A run that refreshed nothing must leave the label in place.
+   */
+  describe('#634 — an opt-in mutation workflow fails when it changed nothing', () => {
+    /** `[workflow, logical line]` for every `--update-baseline` invocation. */
+    const updateBaseline: Array<[string, string]> = [];
+    /** `[workflow, run script]` for no-change guards in label-gated workflows. */
+    const noChangeGuards: Array<[string, string]> = [];
+    /** `[workflow, step]` for every step that consumes an opt-in label. */
+    const labelConsumers: Array<[string, Step]> = [];
+
+    for (const [name, wf] of allWorkflows()) {
+      const pr = triggers(wf)['pull_request'] as { types?: string[] } | null;
+      const labelGated = (pr?.types ?? []).includes('labeled');
+      for (const [, job] of jobsOf(wf)) {
+        for (const step of job.steps ?? []) {
+          if (typeof step.run !== 'string') continue;
+          const lines = logicalLines(step.run);
+          for (const line of lines) {
+            if (UPDATE_BASELINE_CALL.test(line))
+              updateBaseline.push([name, line]);
+          }
+          if (step.run.includes('--remove-label'))
+            labelConsumers.push([name, step]);
+          if (labelGated && lines.some((l) => l.includes('git diff --quiet')))
+            noChangeGuards.push([name, step.run]);
+        }
+      }
+    }
+
+    /**
+     * The body of the `if git diff --quiet …; then` branch — the path taken
+     * when nothing changed. Tracks `if`/`fi` depth so a nested conditional
+     * inside the branch does not end it early.
+     */
+    function noChangeBranch(script: string): string[] {
+      const lines = logicalLines(script);
+      const start = lines.findIndex((l) => /^if\s+git diff --quiet/.test(l));
+      if (start === -1) return [];
+      const body: string[] = [];
+      let depth = 1;
+      for (const line of lines.slice(start + 1)) {
+        if (/^if\b/.test(line)) depth += 1;
+        if (/^fi\b/.test(line)) {
+          depth -= 1;
+          if (depth === 0) break;
+        }
+        body.push(line);
+      }
+      return body;
+    }
+
+    it('has opt-in mutation steps to check (zero denominator is an abstention)', () => {
+      expect(updateBaseline.length).toBeGreaterThan(0);
+      expect(noChangeGuards.length).toBeGreaterThan(0);
+      expect(labelConsumers.length).toBeGreaterThan(0);
+    });
+
+    it.each(updateBaseline)(
+      '%s passes the regression opt-in through: %s',
+      (_name, line) => {
+        expect(
+          line,
+          'harness declines a regressing --update-baseline and exits 0',
+        ).toMatch(/--allow-regress\b/);
+        expect(line, '--allow-regress requires --reason').toMatch(/--reason\b/);
+      },
+    );
+
+    it.each(noChangeGuards)(
+      '%s treats "nothing changed" as a failure',
+      (_name, script) => {
+        const body = noChangeBranch(script);
+        expect(body.length, 'no-change guard body not found').toBeGreaterThan(
+          0,
+        );
+        expect(
+          body,
+          'the label asked for a change; changing nothing is not success',
+        ).not.toContain('exit 0');
+        expect(body.join('\n')).toMatch(/exit 1\b/);
+      },
+    );
+
+    it.each(labelConsumers.map(([n, s]) => [n, s.if ?? '(no if)']))(
+      '%s does not consume the opt-in label unconditionally (if: %s)',
+      (_name, condition) => {
+        expect(
+          condition,
+          'a run that refreshed nothing must leave the label in place',
+        ).not.toMatch(/\balways\(\)/);
       },
     );
   });
