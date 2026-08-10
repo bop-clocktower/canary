@@ -91,7 +91,7 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ### harness check-perf abstains — performance.entryPoints is never declared
 
-- **Status:** in-progress
+- **Status:** backlog
 - **Spec:** —
 - **Summary:** Issue #638, found while triaging #544. `harness ci check` reports `perf: warn — Could not resolve entry points`, inside the required `harness` job. Same failure class as #544 at a different config key: the entropy analyzer reads `entropy.entryPoints`, the perf checker reads `performance.entryPoints`, and harness.config.json declares the latter nowhere, so auto-detection fails and the check reports a colour instead of an abstention. P0 under the written predicate — a check in required-checks.json is wrong, in that `warn` claims a measurement that never happened. Pre-existing on main and unchanged by #637, which is why it was filed rather than folded in: it needs its own decision about whether the repo wants perf budgets at all, and either answer must be legible — declared roots mirroring the entropy list, or the check turned off explicitly rather than left auto-detecting and failing. The gate-conformance route is the same one #544 took: a missing count exits 3, never 0.
 - **Blockers:** —
