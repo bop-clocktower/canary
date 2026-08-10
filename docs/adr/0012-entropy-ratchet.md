@@ -12,7 +12,7 @@ merge. It carried `continue-on-error: true` from the day it was added, which is
 the workflow-layer form of the abstention #508 spent five waves removing from
 the CLI: the step goes orange, the job goes green, nobody reads the log.
 
-#544 fixed the first layer — `entryPoints` sat at the top level of
+Issue #544 fixed the first layer — `entryPoints` sat at the top level of
 `harness.config.json`, a path the schema does not read, so the command exited 2
 with `Could not resolve entry points` and the scan never ran at all. Moving the
 key to `entropy.entryPoints` made it execute, and it reported 718 findings.
