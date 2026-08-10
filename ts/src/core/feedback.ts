@@ -26,7 +26,7 @@
 import { release, type } from 'node:os';
 
 /** The public issue tracker (from npm/package.json `repository`). */
-export const TRACKER_URL = 'https://github.com/bop-clocktower/canary';
+const TRACKER_URL = 'https://github.com/bop-clocktower/canary';
 
 export const VALID_CATEGORIES = ['bug', 'ux', 'docs', 'idea'] as const;
 

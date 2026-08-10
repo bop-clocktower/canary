@@ -301,7 +301,7 @@ export function add(
 }
 
 /** Count `.canary/skills/<name>/SKILL.md` entries in a clone. */
-export function skillCount(dest: string): number {
+function skillCount(dest: string): number {
   const skillsDir = path.join(dest, '.canary', 'skills');
   let entries: fs.Dirent[];
   try {

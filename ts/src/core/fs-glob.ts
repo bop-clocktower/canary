@@ -28,7 +28,7 @@ export function isFile(path: string): boolean {
 }
 
 /** Compile a single glob segment (with `*` -> `[^/]*`) to an anchored regex. */
-export function segGlobRegex(seg: string): RegExp {
+function segGlobRegex(seg: string): RegExp {
   const body = seg
     .replace(/[.+^${}()|[\]\\?]/g, '\\$&')
     .replace(/\*/g, '[^/]*');
@@ -74,7 +74,7 @@ export function globFiles(root: string, pattern: string): string[] {
   return out;
 }
 
-export function subDirs(dir: string): string[] {
+function subDirs(dir: string): string[] {
   try {
     return readdirSync(dir, { withFileTypes: true })
       .filter((e) => e.isDirectory())

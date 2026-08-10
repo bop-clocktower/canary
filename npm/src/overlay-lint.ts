@@ -37,7 +37,7 @@ import {
  * `canary_shape` by plain string comparison, so downstream overlays may use
  * custom shapes. Lint warns (never errors) on a value outside this set (#501).
  */
-export const VALID_DEPLOY_TARGETS: ReadonlySet<string> = new Set([
+const VALID_DEPLOY_TARGETS: ReadonlySet<string> = new Set([
   'api',
   'e2e_ui',
   'frontend_unit',

@@ -1,0 +1,7 @@
+{
+  "$comment": "Triaged entropy ceiling for #544. Lower it when the count drops; never raise it to make CI pass. See docs/adr/0012-entropy-ratchet.md for the triage and the categories behind the number.",
+  "maxFindings": 340,
+  "triagedAt": "2026-08-10",
+  "triagedCount": 330,
+  "harnessCli": "11.1.1"
+}

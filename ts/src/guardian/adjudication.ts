@@ -46,7 +46,7 @@ import { Comment, STICKY_MARKER, findSticky } from './pr-comment.js';
 import { PageReader, readAllPages, restPageReader } from './github-paging.js';
 
 /** Schema tag for adjudication records (independent of the findings schema). */
-export const ADJUDICATION_SCHEMA_VERSION = '1.0';
+const ADJUDICATION_SCHEMA_VERSION = '1.0';
 
 /**
  * Record `source` + filename prefix. Deliberately namespaced UNDER the

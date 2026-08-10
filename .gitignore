@@ -165,3 +165,6 @@ npm/bin/canary.exe
 
 # Local turbo→ruff lint bridge (pairs with gitignored root package.json; see issue #253)
 /turbo.json
+
+# Entropy-scan report consumed by scripts/entropy-ratchet.mjs (#544)
+/entropy-report.txt

@@ -215,7 +215,7 @@ function parseLcov(text: string): ReportIndex {
 // The coverage-json contract version this build understands. Bumped only on a
 // breaking change; the shape evolves additively (see
 // docs/specs/coverage-json-contract.md).
-export const COVERAGE_JSON_SCHEMA_VERSION = 1;
+const COVERAGE_JSON_SCHEMA_VERSION = 1;
 
 /**
  * Parse the canary coverage-json shape into `{path: {line: hits}}`.

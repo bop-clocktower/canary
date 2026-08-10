@@ -23,10 +23,11 @@ export enum Severity {
 }
 
 /**
- * Python: `Severity.sort_key` (ascending — CRITICAL sorts first). Imported by
- * other guardian modules as the canonical severity ordering.
+ * Python: `Severity.sort_key` (ascending — CRITICAL sorts first). The canonical
+ * severity ordering; reached from outside this module through
+ * {@link severitySortKey} rather than directly (#544).
  */
-export const SEVERITY_SORT_KEY: Record<Severity, number> = {
+const SEVERITY_SORT_KEY: Record<Severity, number> = {
   [Severity.CRITICAL]: 0,
   [Severity.HIGH]: 1,
   [Severity.MEDIUM]: 2,

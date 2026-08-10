@@ -17,7 +17,7 @@ import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { CheckResult } from './doctor.js';
 
-export const CHECK_TYPES = [
+const CHECK_TYPES = [
   'file-exists',
   'url-reachable',
   'command-succeeds',
@@ -254,7 +254,7 @@ export function filterByAudience(
 }
 
 /** Default per-check timeout for url and command checks. */
-export const DEFAULT_CHECK_TIMEOUT_MS = 10000;
+const DEFAULT_CHECK_TIMEOUT_MS = 10000;
 
 /** Probe a URL for reachability (injectable). Resolves true on a 2xx/3xx. */
 export type UrlProbe = (url: string, timeoutMs: number) => Promise<boolean>;

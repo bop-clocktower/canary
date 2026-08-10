@@ -43,23 +43,27 @@ jobs:
           failed. This step does not block the merge, but it did NOT pass — open
           the 'Harness Docs Coverage' step for the findings."
 
+      # BLOCKING as of #544 (ADR 0012). Two bugs kept this dark: `entryPoints`
+      # sat at a config path the schema never read (so the scan exited 2 at
+      # startup), and once that was fixed the declared entry point was
+      # `ts/bin/canary.js` — inside `bin/`, one of the analyzer's default-skipped
+      # directories — so the reachability graph had no roots and all 175 scanned
+      # source files came back "dead". Both are fixed in harness.config.json;
+      # `ts/test/entropy-entrypoints.test.ts` keeps them fixed.
+      #
+      # `harness cleanup` exits 1 whenever it has findings, which is always, so
+      # its exit code cannot be the gate. The ratchet reads the count from the
+      # `--findings-json` contract line and compares it to the triaged baseline
+      # in `.harness/entropy-baseline.json`. A MISSING count exits 3 (abstained)
+      # rather than passing — that is the property that stops a future startup
+      # failure from going green again.
       - name: Harness Cleanup (Entropy Scan)
-        id: entropy_scan
-        run: npx --yes -p "$HARNESS_CLI" harness cleanup
-        # Until now this step never ran its analysis at all: it exited 2 with
-        # "Could not resolve entry points" because `entryPoints` sat at a config
-        # path the schema does not read, and `continue-on-error` turned that
-        # startup failure into a green job. The key is fixed, so the scan now
-        # actually executes — and reports 718 findings. It stays non-blocking
-        # only until those are triaged and baselined; ratchet tracked in #544.
-        continue-on-error: true
-
-      - name: Annotate soft entropy-scan failure
-        if: steps.entropy_scan.outcome == 'failure'
         run:
-          echo "::warning title=Entropy scan (non-blocking)::harness cleanup
-          failed. This step does not block the merge, but it did NOT pass — open
-          the 'Harness Cleanup (Entropy Scan)' step for the findings."
+          npx --yes -p "$HARNESS_CLI" harness cleanup --findings-json >
+          entropy-report.txt || true
+
+      - name: Entropy ratchet (blocking)
+        run: node scripts/entropy-ratchet.mjs --report entropy-report.txt
 
       - name: Harness Phase Gate
         run: npx --yes -p "$HARNESS_CLI" harness check-phase-gate
