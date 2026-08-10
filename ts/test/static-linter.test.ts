@@ -444,6 +444,152 @@ describe('StaticLinter', () => {
     });
   });
 
+  // #633. `TEST_FN_JS` opens with `(?:^|\s)`, which CONSUMES the character
+  // before `it`/`test`. For any test not at the very start of the file that
+  // character is the newline ending the previous line, so `m.index` points at
+  // the previous line and the reported coordinate came up one short. Every
+  // fixture in the suite happened to put the subject test on line 1, which is
+  // the one position where the bug is invisible -- so both directions are
+  // pinned below: line 1 must stay 1, and a test well down the file must
+  // report its own line.
+  describe('LINT-006 reports the line the test is actually on (#633)', () => {
+    it('reports line 1 for a test on the first line', () => {
+      const six = lint(
+        'line1.spec.ts',
+        "it('empty one', () => { const b = 2; });\n",
+      ).filter((f) => f.rule === 'LINT-006');
+      expect(six).toHaveLength(1);
+      expect(six[0]!.line).toBe(1);
+    });
+
+    it('reports line 2 for a test on the second line', () => {
+      // The minimal reproducer from the issue: one line of preamble is enough
+      // for the swallowed newline to shift the coordinate.
+      const code = [
+        'const a = 1;',
+        "it('empty one', () => { const b = 2; });",
+      ].join('\n');
+      const six = lint('line2.spec.ts', code).filter(
+        (f) => f.rule === 'LINT-006',
+      );
+      expect(six).toHaveLength(1);
+      expect(six[0]!.line).toBe(2);
+    });
+
+    it('reports line 12 for a top-level test twelve lines down', () => {
+      // Deliberately far from line 1: a naive `+1` that "fixes" the reproducer
+      // would break the line-1 case above, and a fixture on line 1 would never
+      // catch a fix applied in the wrong direction. Top level on purpose -- an
+      // `it(` at column 0 is preceded by the previous line's NEWLINE, which is
+      // the character `(?:^|\s)` swallows.
+      const lines = [
+        "import { it, expect } from 'vitest';",
+        '',
+        "it('first asserts', () => {",
+        '  expect(1).toBe(1);',
+        '});',
+        '',
+        "it('second asserts', () => {",
+        '  expect(2).toBe(2);',
+        '});',
+        '',
+        '// a comment line, so the subject sits well down the file',
+        "it('empty one', () => {",
+        '  const b = 2;',
+        '});',
+      ];
+      expect(lines[11]).toContain('empty one'); // line 12, 1-based
+      const six = lint('deep.spec.ts', lines.join('\n')).filter(
+        (f) => f.rule === 'LINT-006',
+      );
+      expect(six).toHaveLength(1);
+      expect(six[0]!.message).toContain('empty one');
+      expect(six[0]!.line).toBe(12);
+    });
+
+    it('reports the right line for an INDENTED test inside a describe', () => {
+      // The other side of the same coin: an indented `it(` is preceded by a
+      // SPACE, not a newline, so this shape was already correct. It is the
+      // shape a wrong-direction `+1` fix would break, so it is pinned.
+      const lines = [
+        "describe('suite', () => {",
+        "  it('asserts', () => {",
+        '    expect(1).toBe(1);',
+        '  });',
+        '',
+        "  it('empty one', () => {",
+        '    const b = 2;',
+        '  });',
+        '});',
+      ];
+      expect(lines[5]).toContain('empty one'); // line 6, 1-based
+      const six = lint('nested.spec.ts', lines.join('\n')).filter(
+        (f) => f.rule === 'LINT-006',
+      );
+      expect(six).toHaveLength(1);
+      expect(six[0]!.line).toBe(6);
+    });
+
+    it('reports the right line for each of two assertion-free tests', () => {
+      const code = [
+        "it('first empty', () => {", // 1
+        '  const a = 1;', // 2
+        '});', // 3
+        '', // 4
+        "it('second empty', () => {", // 5
+        '  const b = 2;', // 6
+        '});', // 7
+      ].join('\n');
+      const six = lint('two.spec.ts', code).filter(
+        (f) => f.rule === 'LINT-006',
+      );
+      expect(six.map((f) => f.line)).toEqual([1, 5]);
+    });
+
+    it('pytest findings report their own line too', () => {
+      // The pytest half was reported as unaffected because `TEST_FN_PY` is
+      // `^`-anchored -- but its indent group was `\s*`, and `\s` matches a
+      // newline, so the match started at the first of the blank lines ABOVE
+      // the def. PEP 8 mandates those blank lines, so this was the normal case.
+      const code = [
+        'import pytest', // 1
+        '', // 2
+        '', // 3
+        'def test_no_assert():', // 4
+        '    value = compute()', // 5
+      ].join('\n');
+      const six = lint('test_line.py', code).filter(
+        (f) => f.rule === 'LINT-006',
+      );
+      expect(six).toHaveLength(1);
+      expect(six[0]!.line).toBe(4);
+    });
+
+    it("pytest does NOT borrow the next test's assert across a blank line", () => {
+      // The `\s*` indent group also inflated `indent` (it counted the swallowed
+      // newlines), so the "next def at the same indent" boundary could not
+      // match and the empty test's body ran to end-of-file -- silently excused
+      // by the FOLLOWING test's assert. The false-negative half of the same bug.
+      const code = [
+        'import pytest', // 1
+        '', // 2
+        '', // 3
+        'def test_empty():', // 4
+        '    value = compute()', // 5
+        '', // 6
+        '', // 7
+        'def test_asserts():', // 8
+        '    assert compute() == 1', // 9
+      ].join('\n');
+      const six = lint('test_pair.py', code).filter(
+        (f) => f.rule === 'LINT-006',
+      );
+      expect(six).toHaveLength(1);
+      expect(six[0]!.message).toContain('test_empty');
+      expect(six[0]!.line).toBe(4);
+    });
+  });
+
   it('detects assertion-free pytest tests (framework via .py extension)', () => {
     const code = [
       'def test_no_assert():',

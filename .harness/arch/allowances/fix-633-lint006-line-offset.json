@@ -1,0 +1,10 @@
+{
+  "reason": "Accepted by maintainer via the refresh-baseline label on PR #644: fix(review-test): report the line LINT-006 findings are actually on",
+  "categories": {
+    "complexity": 89
+  },
+  "violationIds": [
+    "b8fadd0bb39e27967b430081a43b5eba99964724cefabd4099eab845f628bc37"
+  ],
+  "createdFrom": "2c3259b"
+}

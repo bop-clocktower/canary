@@ -42,7 +42,14 @@ const BARE_PLAYWRIGHT_CALL =
   /(?<!await\s)(?<!return\s)(?<!\w)(?:page|frame|locator)\.(?:click|fill|type|check|uncheck|selectOption|hover|focus|press|tap|dblclick)\s*\(/;
 
 // Assertion detection
-const TEST_FN_PY = /^(\s*)def (test_\w+)\s*\(/gm;
+// Indentation is `[ \t]*`, NOT `\s*`: `\s` matches a newline, so a `^`-anchored
+// `\s*` starts the match at the FIRST of any run of blank lines above the `def`
+// and counts those newlines as indentation. PEP 8 mandates blank lines between
+// defs, so that was the normal case, and it broke two things at once -- the
+// reported line landed above the test, and the inflated indent made the
+// "next def at the same indent" body boundary un-matchable, so the body ran to
+// end-of-file and could borrow a later test's assert (#633).
+const TEST_FN_PY = /^([ \t]*)def (test_\w+)\s*\(/gm;
 // `d` (hasIndices) so the NAME can be read back out of the ORIGINAL source.
 // The scanner matches against string-blanked source, where the name itself has
 // been blanked away; blanking is length-preserving precisely so these offsets
@@ -405,10 +412,16 @@ function scanAssertionFreeJs(
       const name = m.indices?.[1]
         ? source.slice(m.indices[1][0], m.indices[1][1])
         : m[1]!;
+      // The reported coordinate comes from the NAME's offset, not the match's.
+      // `TEST_FN_JS` opens with `(?:^|\s)`, which CONSUMES the character before
+      // `it`/`test` -- for any test not on line 1 that is the newline ending the
+      // previous line, so `m.index` sits one line early (#633). `start` is still
+      // the right anchor for the body bounds; only the line moves.
+      const nameStart = m.indices?.[1]?.[0] ?? start;
       out.push(
         mk(
           file,
-          lineOf(code, start),
+          lineOf(code, nameStart),
           'LINT-006',
           'warning',
           `Test "${name}" contains no assertions.`,

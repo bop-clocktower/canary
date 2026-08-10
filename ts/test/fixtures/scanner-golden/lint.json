@@ -65,7 +65,7 @@
   },
   {
     "file": "tests/lint-target.spec.ts",
-    "line": 15,
+    "line": 16,
     "rule": "LINT-006",
     "severity": "warning",
     "message": "Test \"empty test with no assertions\" contains no assertions.",
