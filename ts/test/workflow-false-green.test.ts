@@ -427,25 +427,25 @@ describe('workflow false-green invariants', () => {
     /** `[workflow, run script]` for steps that stage paths in a label-gated job. */
     const stagingSteps: Array<[string, string]> = [];
 
+    /** Route one step into whichever collectors it belongs to. */
+    function classify(name: string, labelGated: boolean, step: Step): void {
+      if (typeof step.run !== 'string') return;
+      const lines = logicalLines(step.run);
+      const matches = lines.filter((l) => UPDATE_BASELINE_CALL.test(l));
+      updateBaseline.push(...matches.map((l): [string, string] => [name, l]));
+      if (step.run.includes('--remove-label'))
+        labelConsumers.push([name, step]);
+      if (!labelGated) return;
+      if (lines.some((l) => NO_CHANGE_GUARD.test(l)))
+        noChangeGuards.push([name, step.run]);
+      if (/\bgit add\b/.test(step.run)) stagingSteps.push([name, step.run]);
+    }
+
     for (const [name, wf] of allWorkflows()) {
       const pr = triggers(wf)['pull_request'] as { types?: string[] } | null;
       const labelGated = (pr?.types ?? []).includes('labeled');
-      for (const [, job] of jobsOf(wf)) {
-        for (const step of job.steps ?? []) {
-          if (typeof step.run !== 'string') continue;
-          const lines = logicalLines(step.run);
-          for (const line of lines) {
-            if (UPDATE_BASELINE_CALL.test(line))
-              updateBaseline.push([name, line]);
-          }
-          if (step.run.includes('--remove-label'))
-            labelConsumers.push([name, step]);
-          if (labelGated && lines.some((l) => NO_CHANGE_GUARD.test(l)))
-            noChangeGuards.push([name, step.run]);
-          if (labelGated && /\bgit add\b/.test(step.run))
-            stagingSteps.push([name, step.run]);
-        }
-      }
+      for (const [, job] of jobsOf(wf))
+        for (const step of job.steps ?? []) classify(name, labelGated, step);
     }
 
     /**
@@ -563,12 +563,13 @@ describe('workflow false-green invariants', () => {
           .split('\n')
           .filter((l) => /\bgit add\b/.test(l))
           .flatMap(harnessPaths);
-        for (const path of inspected) {
-          expect(
-            staged.some((s) => path === s || path.startsWith(`${s}/`)),
-            `guard inspects ${path} but no \`git add\` covers it`,
-          ).toBe(true);
-        }
+        const uncovered = inspected.filter(
+          (path) => !staged.some((s) => path === s || path.startsWith(`${s}/`)),
+        );
+        expect(
+          uncovered,
+          'the guard inspects these paths but no `git add` stages them',
+        ).toEqual([]);
       },
     );
   });
