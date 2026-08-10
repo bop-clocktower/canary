@@ -56,9 +56,9 @@ Phase 3 will deprecate it alongside `canary generate`.
 
 - `agents/canary-test-healer.md` — new agent.
 - `commands/oracle-heal-test.md` — new slash command.
-- `docs/adr/0002-self-heal-as-slash-command.md` — decision record
+- `docs/knowledge/decisions/0002-self-heal-as-slash-command.md` — decision record
   (accepted on merge of this PR).
-- `docs/adr/README.md` — index updated.
+- `docs/knowledge/decisions/README.md` — index updated.
 - `docs/specs/self-heal-migration.md` — this spec.
 - `docs/plans/self-heal-migration.md` — task-by-task plan.
 - `docs/changes/host-llm-migration/plans/<date>-phase-2-plan.md` —

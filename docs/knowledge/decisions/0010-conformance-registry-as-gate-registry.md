@@ -1,3 +1,13 @@
+---
+number: 10
+title: 'ADR 0010 — The conformance registry is the canonical gate list'
+date: 2026-08-03
+status: accepted
+source: adr
+---
+
+<!-- markdownlint-disable-file MD025 -->
+
 # ADR 0010 — The conformance registry is the canonical gate list
 
 **Status:** accepted **Date:** 2026-08-03 **Deciders:** Bri Stevenski

@@ -22,8 +22,8 @@ the supported replacement. No code is removed in this phase.
 | --- | --- | --- |
 | Modify | `agent/cli.py` | Add deprecation warning to `generate` (skip on `--recommend-only`) and `feedback` |
 | Modify | `action.yml` | Prefix `description` with `[DEPRECATED — removed in v3.0]` |
-| Add | `docs/adr/0003-deprecate-oracle-generate.md` | Decision record (status accepted) |
-| Modify | `docs/adr/README.md` | Index entry for ADR 0003 |
+| Add | `docs/knowledge/decisions/0003-deprecate-oracle-generate.md` | Decision record (status accepted) |
+| Modify | `docs/knowledge/decisions/README.md` | Index entry for ADR 0003 |
 | Add | `docs/specs/cli-deprecation.md` | Spec |
 | Add | `docs/plans/cli-deprecation.md` | This plan |
 | Add | `docs/changes/host-llm-migration/plans/2026-05-26-phase-3-plan.md` | Plan mirror |
@@ -114,8 +114,8 @@ functional change.
 
 **Files:**
 
-- Add: `docs/adr/0003-deprecate-oracle-generate.md`
-- Modify: `docs/adr/README.md`
+- Add: `docs/knowledge/decisions/0003-deprecate-oracle-generate.md`
+- Modify: `docs/knowledge/decisions/README.md`
 - Add: `docs/specs/cli-deprecation.md`
 - Add: `docs/plans/cli-deprecation.md` (this file)
 - Add: `docs/changes/host-llm-migration/plans/2026-05-26-phase-3-plan.md`

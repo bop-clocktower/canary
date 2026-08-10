@@ -705,7 +705,7 @@ last_manual_edit: 2026-06-30T01:18:39.592Z
   the "Overlay Upstreaming" milestone — all three items now shipped. [Note: the
   cut field names above are intentionally left unbackticked so the
   drift-tracking row does not itself register as drift.] (refs:
-  docs/changes/canary-instrument/, docs/adr/0006-otel-test-side-tracing.md, PR
+  docs/changes/canary-instrument/, docs/knowledge/decisions/0006-otel-test-side-tracing.md, PR
   #265)
 - **Blockers:** —
 - **Plan:**
@@ -758,8 +758,8 @@ last_manual_edit: 2026-06-30T01:18:39.592Z
   Gate defaults to soft; promote to hard per-repo once trust is earned.
   Capability boundary (SC-11): the Tier-0 engine imports no agent/LLM. Phases
   1–6 all shipped. (refs: docs/changes/canary-pr-guardian/,
-  docs/adr/0007-guardian-agent-capability-boundary.md,
-  docs/adr/0008-guardian-canary-owned.md, docs/guides/pr-guardian.md)
+  docs/knowledge/decisions/0007-guardian-agent-capability-boundary.md,
+  docs/knowledge/decisions/0008-guardian-canary-owned.md, docs/guides/pr-guardian.md)
 - **Blockers:** —
 - **Plan:** docs/changes/canary-pr-guardian/plans/
 

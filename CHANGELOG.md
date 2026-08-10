@@ -841,7 +841,7 @@ Every surface below can now exit **3** (`abstained`) or print an unmissable
 abstention line where it previously reported success over a **zero denominator**
 — a check that verified nothing rendering as a pass. Exit 3 is reserved CLI-wide
 for this meaning and nothing else
-([ADR 0009](docs/adr/0009-exit-3-reserved-for-abstained.md)).
+([ADR 0009](docs/knowledge/decisions/0009-exit-3-reserved-for-abstained.md)).
 
 **A new exit 3 in your pipeline is the doctrine working, not a regression.** It
 means that command was already verifying nothing — you just could not see it.
@@ -892,9 +892,9 @@ notice goes to **stderr**, so existing parsers are unaffected.
   (today, the remote Supabase store) keeps benefit-of-the-doubt rather than
   abstaining. An unknown denominator is not a zero one.
 - **Two ADRs** recording the doctrine's load-bearing decisions:
-  [0009 — exit 3 reserved CLI-wide](docs/adr/0009-exit-3-reserved-for-abstained.md)
+  [0009 — exit 3 reserved CLI-wide](docs/knowledge/decisions/0009-exit-3-reserved-for-abstained.md)
   and
-  [0010 — the conformance registry is the canonical gate list](docs/adr/0010-conformance-registry-as-gate-registry.md).
+  [0010 — the conformance registry is the canonical gate list](docs/knowledge/decisions/0010-conformance-registry-as-gate-registry.md).
   `AGENTS.md` gains the doctrine plus a **new-gate checklist**.
 - **Conformance registries, one per runtime layer** — 24 rows total (15 engine,
   3 npm, 6 skill). Every row collapses a command's denominator and runs the

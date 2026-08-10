@@ -1,3 +1,13 @@
+---
+number: 11
+title: 'ADR 0011 — Required status checks are declared in the repository'
+date: 2026-08-06
+status: accepted
+source: adr
+---
+
+<!-- markdownlint-disable-file MD025 -->
+
 # ADR 0011 — Required status checks are declared in the repository
 
 **Status:** accepted **Date:** 2026-08-06 **Deciders:** Bri Stevenski

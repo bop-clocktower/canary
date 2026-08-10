@@ -1,3 +1,13 @@
+---
+number: 9
+title: 'ADR 0009 — Exit 3 is reserved CLI-wide for "abstained"'
+date: 2026-08-03
+status: accepted
+source: adr
+---
+
+<!-- markdownlint-disable-file MD025 -->
+
 # ADR 0009 — Exit 3 is reserved CLI-wide for "abstained"
 
 **Status:** accepted **Date:** 2026-08-03 **Deciders:** Bri Stevenski

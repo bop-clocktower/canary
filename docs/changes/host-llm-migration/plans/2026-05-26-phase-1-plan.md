@@ -27,7 +27,7 @@ CLI output. Update related specs to reflect the new path.
 | Verify | `commands/oracle-write-test.md` | Confirm no change needed (delegates to agent) |
 | Modify | `docs/specs/oracle-plugin.md` | Patch out "Delegate to the Oracle CLI" wording; cross-reference this spec |
 | Add | `docs/changes/host-llm-migration/plans/2026-05-22-phase-1-plan.md` | Symlink/copy of this plan for the changes-tracking convention |
-| Verify | `docs/adr/README.md` index entry exists for ADR 0001 | Index up-to-date |
+| Verify | `docs/knowledge/decisions/README.md` index entry exists for ADR 0001 | Index up-to-date |
 | Verify | `docs/roadmap.md` "Migrate all LLM-dependent tasks" item references this plan | Roadmap traceability |
 
 ---

@@ -1,3 +1,13 @@
+---
+number: 12
+title: 'ADR 0012 — The entropy scan is ratcheted against a triaged baseline'
+date: 2026-08-10
+status: accepted
+source: adr
+---
+
+<!-- markdownlint-disable-file MD025 -->
+
 # ADR 0012 — The entropy scan is ratcheted against a triaged baseline
 
 **Status:** accepted **Date:** 2026-08-10 **Deciders:** Bri Stevenski
