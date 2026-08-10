@@ -163,6 +163,46 @@
       "checkApiSignatures": false
     }
   },
+  "performance": {
+    "entryPoints": [
+      "ts/src/cli.ts",
+      "ts/src/mcp-server.ts",
+      "npm/src/router.ts",
+      "npm/src/doctor.ts",
+      "npm/src/reporters/testtracker.ts",
+      "ts/vitest.config.ts",
+      "agents/skills/vitest.config.ts",
+      "scripts/bump-version.mjs",
+      "scripts/check_doc_fences.mjs",
+      "scripts/check_hook_customizations.mjs",
+      "scripts/check_removed_symbols.mjs",
+      "scripts/dogfood-record-run.mjs",
+      "scripts/entropy-ratchet.mjs",
+      "scripts/harness-report-summary.mjs",
+      "scripts/roadmap-denominator-check.mjs",
+      "scripts/roadmap-groom.mjs",
+      "scripts/roadmap-sync.mjs",
+      "scripts/roadmap_comment_guard.mjs",
+      "scripts/security_ledger.mjs",
+      "hooks/_harness_dedup.mjs",
+      "hooks/block-no-verify.mjs",
+      "hooks/pre-compact-state.mjs",
+      "hooks/protect-config.mjs",
+      "hooks/quality-gate.mjs",
+      "npm/scripts/build-engine.mjs",
+      "npm/scripts/sync-gate-result.mjs",
+      "ts/scripts/copy-data.mjs",
+      "agents/skills/claude-code/canary-blackhawk/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-instrument/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-katana/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-savant/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-shadow/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-test-reporter/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-instrument/scripts/otel_bootstrap/instrument.mjs",
+      "agents/skills/claude-code/canary-instrument/scripts/otel_bootstrap/playwright-fixture.ts"
+    ]
+  },
   "knowledge": {
     "domainBlocklist": [".remember", ".kiro"]
   },
