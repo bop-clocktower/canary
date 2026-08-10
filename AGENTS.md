@@ -357,7 +357,7 @@ cleanly decoupled and depends on none of this. The consumed subcommands are:
 | `check-docs`       | `harness-quality.yml`                              |
 | `cleanup`          | `harness-quality.yml`                              |
 | `check-phase-gate` | `harness-quality.yml`                              |
-| `check-arch`       | `refresh-arch-baseline.yml`                        |
+| `check-arch`       | `refresh-arch-baseline.yml`, `harness.yml`         |
 | `snapshot capture` | `arch-snapshot.yml`                                |
 
 **Pinning (#318 A).** Every gate installs the CLI at a **pinned major** via one
@@ -406,6 +406,42 @@ remainder count; error-severity findings are never capped. It exits **3** if the
 report is missing or unparseable, because a summary nobody can produce is this
 same condition returning, not a pass. `ts/test/workflow-false-green.test.ts`
 holds the invariant for every workflow, not just this one.
+
+**A red `arch` is two different bugs (#626).** `harness check-arch` reports the
+**absolute** violation count and exits 1; the ratchet inside `harness ci check`
+reports the **delta** and passes when it is zero. On a clean `main` that is
+`28 issues, exit 1` sitting next to `{"name":"arch","status":"pass"}` — both
+correct, neither wrong. The cost is that the two ways `arch` can go red want
+opposite responses and look identical:
+
+| What happened                      | What the CI report shows | What to do           |
+| ---------------------------------- | ------------------------ | -------------------- |
+| The diff introduced a violation    | `arch fail`, 0 issues    | Fix the code         |
+| The ratchet fired on existing debt | `arch fail`, 0 issues    | Refresh the baseline |
+
+The `arch` entry is `{name, status, issues: [], durationMs}` with **zero**
+error-severity issues either way, so the CI report alone cannot tell them apart
+— which is how #584, #598 and #621 were each read as a defect in the author's
+diff on the same day. Only `check-arch --json` carries the split
+(`newViolations`, `regressions`, `preExisting`), so `harness.yml` captures it to
+`arch-report.json` and passes it to the summariser, which prints one of three
+sentences: `REGRESSION`, `BASELINE TRIP`, or `CANNOT DISAMBIGUATE` when the
+detail report is missing.
+
+Locally, run the same classifier rather than `check-arch` on its own:
+
+```bash
+harness check-arch --json > arch-report.json
+node scripts/arch-verdict.mjs arch-report.json
+```
+
+It exits **0** for a clean tree _and_ for a baseline trip, **1** only when the
+change introduced something, and **3** when it cannot classify. That is the
+difference that makes it worth running: `check-arch` exits 1 on a clean tree, so
+nobody runs it and the ratchet's reasoning goes unread. Both paths share one
+classifier (`scripts/arch-verdict.mjs`), so CI and the desk cannot drift into
+different verdicts on the same report; `ts/test/arch-verdict.test.ts` pins the
+classification, the exit codes, and the `harness.yml` wiring.
 
 **`roadmap sync` requires `--no-state-change` (#595).** It is deliberately
 absent from the table above — no workflow runs it, and none should. Run it only
