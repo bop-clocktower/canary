@@ -36,15 +36,30 @@ jobs:
       - name: Run harness checks
         run: harness ci check --json > harness-report.json
 
+      # The `arch` entry in the report above is `{name, status, issues: [],
+      # durationMs}` — zero error-severity issues whether the check failed on a
+      # NEW violation or on the ratchet firing over pre-existing debt (#626).
+      # Only `check-arch --json` carries that split, so capture it and hand it
+      # to the summariser. `|| true`: this command exits 1 on the *absolute*
+      # count, which is exactly the verdict we are here to reinterpret — the
+      # `harness ci check` step above stays the thing that gates.
+      - name: Capture arch detail for the ratchet verdict
+        if: ${{ !cancelled() }}
+        run: harness check-arch --json > arch-report.json || true
+
       # The readable part, small enough that no byte limit can reach it. Runs
       # on failure too — that is the only run anyone needs it for.
       - name: Summarise harness checks
         if: ${{ !cancelled() }}
-        run: node scripts/harness-report-summary.mjs harness-report.json
+        run: |
+          node scripts/harness-report-summary.mjs harness-report.json \
+            --arch arch-report.json
 
       - name: Upload harness report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: harness-report
-          path: harness-report.json
+          path: |
+            harness-report.json
+            arch-report.json

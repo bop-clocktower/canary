@@ -27,6 +27,11 @@ beforeEach(() => {
 });
 afterEach(() => rmTmp(tmp));
 
+// Keep this signature on its own line. Upstream harness's complexity extractor
+// is line-anchored and brace-counts raw characters, so the collapsed one-line
+// form is "detected" and then measured to end-of-file -- a phantom
+// functionLength that fails a required check (#587, pinned in
+// `harness-complexity-eof.test.ts`). Reformatting this declaration re-arms it.
 const jsonPayload = (diff: string): Promise<Record<string, unknown>> =>
   invokeGuardianJson(['pr-check', '--diff', '-', '--format', 'json'], {
     input: diff,

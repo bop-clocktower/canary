@@ -33,8 +33,23 @@
 //       so this script verified nothing. That is precisely the #588 condition
 //       returning, so it is reported loudly rather than passing quietly.
 //
-//   node scripts/harness-report-summary.mjs [path]   (default harness-report.json)
+// The `arch` check gets one extra section (#626). Its entry in the report is
+// `{name, status, issues: [], durationMs}` with zero error-severity issues
+// whether it failed on a NEW violation or on the ratchet firing over
+// pre-existing debt — two states wanting opposite responses, indistinguishable
+// here. `--arch <check-arch --json>` supplies the missing split; without it, a
+// failing arch check says so rather than looking like an ordinary red.
+//
+//   node scripts/harness-report-summary.mjs [path] [--arch arch-report.json]
+//                                           (default harness-report.json)
 import { appendFileSync, readFileSync } from 'node:fs';
+
+import {
+  archAnnotations,
+  archVerdictLines,
+  classifyArchReport,
+  loadArchReport,
+} from './arch-verdict.mjs';
 
 /** Warning/info issues shown per check before the remainder is summarised. */
 const WARN_DETAIL_CAP = 10;
@@ -139,6 +154,47 @@ function annotations(report) {
   return lines;
 }
 
+/**
+ * The arch section (#626): which of the two indistinguishable failures is it?
+ *
+ * A missing or unreadable detail report is reported, never skipped — "the arch
+ * check is red and I cannot tell you why" is the finding, and a silent omission
+ * would leave the reader exactly where #626 found them.
+ */
+function archSection(report, archPath) {
+  const check = report.checks.find((c) => c.name === 'arch');
+  if (!check) return { lines: [], annotations: [] };
+  const failing = check.status === 'fail' || check.status === 'warn';
+
+  if (archPath === undefined) {
+    if (!failing) return { lines: [], annotations: [] };
+    const message =
+      'arch — CANNOT DISAMBIGUATE: no `harness check-arch --json` report was supplied, ' +
+      'so a new violation and a stale baseline are indistinguishable here. Re-run with ' +
+      '`--arch <report>`, or run `harness check-arch --json` locally and read `newViolations`.';
+    return {
+      lines: [message],
+      annotations: [`::error title=harness arch::${message}`],
+    };
+  }
+
+  const loaded = loadArchReport(archPath);
+  const verdict = loaded.ok
+    ? classifyArchReport(loaded.report)
+    : { verdict: 'unknown', reason: loaded.reason };
+  if (verdict.verdict === 'unknown') {
+    const message = `arch — CANNOT DISAMBIGUATE: ${verdict.reason}. Run \`harness check-arch --json\` and read \`newViolations\`.`;
+    return {
+      lines: [message],
+      annotations: [`::error title=harness arch::${message}`],
+    };
+  }
+  return {
+    lines: archVerdictLines(verdict),
+    annotations: archAnnotations(verdict),
+  };
+}
+
 function render(report) {
   const ordered = [...report.checks].sort(
     (a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9),
@@ -169,16 +225,39 @@ function writeStepSummary(lines) {
   }
 }
 
+/** `[report.json] [--arch arch-report.json]`, in either order. */
+function parseArgs(argv) {
+  const positional = [];
+  let arch;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--arch') {
+      arch = argv[++i];
+      if (arch === undefined) return { usage: '--arch needs a path' };
+    } else if (argv[i].startsWith('-')) {
+      return { usage: `unknown option ${argv[i]}` };
+    } else {
+      positional.push(argv[i]);
+    }
+  }
+  return { path: positional[0] ?? 'harness-report.json', arch };
+}
+
 function main() {
-  const path = process.argv[2] ?? 'harness-report.json';
-  if (path.startsWith('-')) {
-    console.error('usage: harness-report-summary.mjs [report.json]');
+  const args = parseArgs(process.argv.slice(2));
+  if (args.usage !== undefined) {
+    console.error(
+      `harness-report-summary.mjs: ${args.usage}\nusage: harness-report-summary.mjs [report.json] [--arch arch-report.json]`,
+    );
     process.exit(2);
   }
-  const report = loadReport(path);
-  const lines = render(report);
+  const report = loadReport(args.path);
+  const arch = archSection(report, args.arch);
+  const lines = [...render(report)];
+  if (arch.lines.length > 0) lines.push('', ...arch.lines);
   for (const line of lines) console.log(line);
-  for (const line of annotations(report)) console.log(line);
+  for (const line of [...annotations(report), ...arch.annotations]) {
+    console.log(line);
+  }
   writeStepSummary(lines);
 }
 

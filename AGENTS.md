@@ -357,7 +357,7 @@ cleanly decoupled and depends on none of this. The consumed subcommands are:
 | `check-docs`       | `harness-quality.yml`                              |
 | `cleanup`          | `harness-quality.yml`                              |
 | `check-phase-gate` | `harness-quality.yml`                              |
-| `check-arch`       | `refresh-arch-baseline.yml`                        |
+| `check-arch`       | `refresh-arch-baseline.yml`, `harness.yml`         |
 | `snapshot capture` | `arch-snapshot.yml`                                |
 
 **Pinning (#318 A).** Every gate installs the CLI at a **pinned major** via one
@@ -412,6 +412,42 @@ remainder count; error-severity findings are never capped. It exits **3** if the
 report is missing or unparseable, because a summary nobody can produce is this
 same condition returning, not a pass. `ts/test/workflow-false-green.test.ts`
 holds the invariant for every workflow, not just this one.
+
+**A red `arch` is two different bugs (#626).** `harness check-arch` reports the
+**absolute** violation count and exits 1; the ratchet inside `harness ci check`
+reports the **delta** and passes when it is zero. On a clean `main` that is
+`28 issues, exit 1` sitting next to `{"name":"arch","status":"pass"}` — both
+correct, neither wrong. The cost is that the two ways `arch` can go red want
+opposite responses and look identical:
+
+| What happened                      | What the CI report shows | What to do           |
+| ---------------------------------- | ------------------------ | -------------------- |
+| The diff introduced a violation    | `arch fail`, 0 issues    | Fix the code         |
+| The ratchet fired on existing debt | `arch fail`, 0 issues    | Refresh the baseline |
+
+The `arch` entry is `{name, status, issues: [], durationMs}` with **zero**
+error-severity issues either way, so the CI report alone cannot tell them apart
+— which is how #584, #598 and #621 were each read as a defect in the author's
+diff on the same day. Only `check-arch --json` carries the split
+(`newViolations`, `regressions`, `preExisting`), so `harness.yml` captures it to
+`arch-report.json` and passes it to the summariser, which prints one of three
+sentences: `REGRESSION`, `BASELINE TRIP`, or `CANNOT DISAMBIGUATE` when the
+detail report is missing.
+
+Locally, run the same classifier rather than `check-arch` on its own:
+
+```bash
+harness check-arch --json > arch-report.json
+node scripts/arch-verdict.mjs arch-report.json
+```
+
+It exits **0** for a clean tree _and_ for a baseline trip, **1** only when the
+change introduced something, and **3** when it cannot classify. That is the
+difference that makes it worth running: `check-arch` exits 1 on a clean tree, so
+nobody runs it and the ratchet's reasoning goes unread. Both paths share one
+classifier (`scripts/arch-verdict.mjs`), so CI and the desk cannot drift into
+different verdicts on the same report; `ts/test/arch-verdict.test.ts` pins the
+classification, the exit codes, and the `harness.yml` wiring.
 
 **`roadmap sync` requires `--no-state-change` (#595).** It is deliberately
 absent from the table above — no workflow runs it, and none should. Run it only
@@ -504,9 +540,21 @@ Four things keep it correct, and they are not interchangeable:
   `docs-lint.yml` _lints_ every markdown file in the repo with no path filter,
   and it is required in `.github/required-checks.json`. Unwrapping the fields
   took the file from 12 long lines to 51, so losing that comment turns a
-  required check red and blocks every merge. `harness roadmap promote` is known
-  to strip it (#273), which is why the field-contract test asserts the comment
-  is present rather than leaving it to the opt-in local pre-commit hook.
+  required check red and blocks every merge. The upstream roadmap serializer is
+  known to strip the header block — via `promote` (#273) and via a `shard` +
+  `regen` round-trip (#629, reproduced on CLI v10.2.0 and v11.1.1; reported
+  upstream as `Intense-Visions/harness-engineering#1328`) — which is why the
+  field-contract test asserts the directive is present rather than leaving it to
+  the opt-in local pre-commit hook.
+- **The comment block's second half is guarded separately, because losing it
+  fails nothing.** The MD013 directive turns a required check red, so its loss
+  announces itself; the machine-managed note below it is the only in-file record
+  of why the file is prettier-exempt and must not be reflowed, and no gate reads
+  it. `ts/test/roadmap-comment-guard.test.ts` asserts the note survives in the
+  live file, pins the block `scripts/roadmap_comment_guard.mjs` restores to be
+  byte-identical to it (a guard that restores a stale header is worse than
+  none), and covers the guard's own contract — including the partial strip where
+  the directive is pasted back by hand and the note stays gone.
 - `scripts/roadmap-sync.mjs`, `scripts/roadmap-groom.mjs`, and
   `harness roadmap promote` write the file directly and bypass the hook. Any new
   writer must emit one-line fields.
