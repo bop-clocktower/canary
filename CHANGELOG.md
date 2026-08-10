@@ -14,6 +14,92 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [6.8.0] - 2026-08-10
+
+The theme of this release is findings that were never reported. Three separate
+defects caused `review-test` and the PR guardian to return results that read as
+clean while the analysis behind them had silently narrowed — a missing finding
+looks exactly like no finding, which is why all three survived so long.
+
+**If you run `review-test` or `flake-check` against a pytest suite, re-run it
+after upgrading.** Any prior scan of a pytest file may have been incomplete; see
+the LINT-006 entry below.
+
+### Fixed
+
+- **LINT-006 reported the wrong line, and on pytest suites silently missed
+  findings entirely**
+  ([#633](https://github.com/bop-clocktower/canary/issues/633),
+  [#644](https://github.com/bop-clocktower/canary/pull/644)). Two causes, one
+  per language half, and the second is the serious one.
+
+  On JS/TS the test-function pattern opened with `(?:^|\s)`, which _consumes_
+  the character before `it`/`test`. On any line but the first that character is
+  the previous line's newline, so every finding was attributed one line too
+  high. Annoying, but visible.
+
+  On pytest the pattern is `^`-anchored and was assumed safe. Its indent group
+  was `\s*`, and `\s` matches a newline — so a match began at the first of any
+  run of blank lines above the `def`. PEP 8 mandates those blank lines, making
+  this the _normal_ case rather than an edge one. The same bad offset also
+  corrupted the computed indent, which made the "next `def` at the same indent"
+  body boundary un-matchable: the body then ran to end-of-file and could borrow
+  a **later** test's `assert`. An assertion-free test sitting above another test
+  was therefore reported as having assertions, and no finding was emitted. A
+  clean report on a pytest file was not evidence of a clean file.
+
+- **LINT-006 mined test names out of string literals**
+  ([#590](https://github.com/bop-clocktower/canary/issues/590)). Text inside
+  string and template-literal spans was scanned as if it were code, so a fixture
+  containing the word `it(` produced findings against tests that do not exist.
+  Literal spans are now blanked before the scan by a dedicated `string-literals`
+  module rather than by ad-hoc escaping at each call site.
+
+### Added
+
+- **The PR guardian now reports what a _passing_ run declined to judge**
+  ([#582](https://github.com/bop-clocktower/canary/issues/582)). Previously only
+  the fully-abstaining path emitted a skip list. A run that checked 3 units and
+  filtered out 5 emitted a payload describing only the 3 — `checked: 3` is true,
+  and leaves a consumer unable to tell "this diff had 3 source files" from "this
+  diff had 8 and the guardian declined to judge 5 of them".
+
+  `GateMeta` now carries `skipped`, and the JSON renderer emits it
+  **unconditionally** — `[]` when nothing was dropped. An omitted key would make
+  "skipped nothing" indistinguishable from "producer predates this field", which
+  is the ambiguity the field exists to remove. The analysis record carries it
+  too, so suppression classes can be measured over time.
+
+  **`schemaVersion` moves 1.1 → 1.2**, additive. Consumers reading `skipped`
+  should treat its absence as "unknown", not as "nothing was filtered".
+
+### Changed
+
+- **`harness roadmap sync` now fails loudly when its label filter leaves it
+  nearly blind** ([#595](https://github.com/bop-clocktower/canary/issues/595)).
+  Sync filters the tracker by label and printed how many tickets that left — at
+  filing time, "2 of 30". True, on screen, and a pass. Nothing failed, and sync
+  sat one `--apply` away from filing 30 duplicate issues for shipped work. The
+  check is a config invariant rather than a coverage ratio, because most open
+  issues legitimately are not roadmap rows and any ratio low enough to tolerate
+  that would sit below the case it exists to catch.
+
+- **`review-test` and the entropy scan now resolve entry points from an explicit
+  model** ([#544](https://github.com/bop-clocktower/canary/issues/544),
+  [#638](https://github.com/bop-clocktower/canary/issues/638)). Auto-detection
+  failed in repositories without a root `package.json` and the checks reported a
+  status rather than an abstention.
+
+### Known issues
+
+- Complexity metrics reported by `harness check-arch` may be inflated or absent
+  for functions whose bodies contain braces inside strings, comments or generic
+  return types, and `if`/`for`/`while` may appear as function names. This is an
+  upstream defect in `@harness-engineering/cli`
+  ([harness-engineering#1329](https://github.com/Intense-Visions/harness-engineering/issues/1329),
+  tracked here as [#587](https://github.com/bop-clocktower/canary/issues/587)).
+  It affects this project's own CI only; no canary output is derived from it.
+
 ## [6.7.1] - 2026-08-07
 
 ### Fixed
