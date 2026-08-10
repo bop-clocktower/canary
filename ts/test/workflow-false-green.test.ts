@@ -125,6 +125,23 @@ const STDOUT_TO_FILE =
 const UPDATE_BASELINE_CALL =
   /(?:^|[;&|(]\s*)harness\s+[\w-]+(?=[^;&|]*--update-baseline\b)/;
 
+/**
+ * The opening `if` of a "did anything change?" guard, in either idiom.
+ *
+ * Matching both is deliberate: the assertion below requires the porcelain
+ * form, so a collector that recognised only `git status --porcelain` would
+ * find nothing the day someone regressed a guard back to `git diff` — the
+ * check would abstain at exactly the moment it was needed.
+ */
+const NO_CHANGE_GUARD = /^if\b.*(?:git diff --quiet|git status --porcelain)/;
+
+/** Repo-relative paths a guard inspects or a `git add` stages. */
+function harnessPaths(line: string): string[] {
+  return [...line.matchAll(/\.harness\/[\w./-]*/g)].map((m) =>
+    m[0].replace(/\/$/, ''),
+  );
+}
+
 describe('workflow false-green invariants', () => {
   it('finds workflow files to check (zero denominator is an abstention)', () => {
     expect(allWorkflows().length).toBeGreaterThan(0);
@@ -407,6 +424,8 @@ describe('workflow false-green invariants', () => {
     const noChangeGuards: Array<[string, string]> = [];
     /** `[workflow, step]` for every step that consumes an opt-in label. */
     const labelConsumers: Array<[string, Step]> = [];
+    /** `[workflow, run script]` for steps that stage paths in a label-gated job. */
+    const stagingSteps: Array<[string, string]> = [];
 
     for (const [name, wf] of allWorkflows()) {
       const pr = triggers(wf)['pull_request'] as { types?: string[] } | null;
@@ -421,8 +440,10 @@ describe('workflow false-green invariants', () => {
           }
           if (step.run.includes('--remove-label'))
             labelConsumers.push([name, step]);
-          if (labelGated && lines.some((l) => l.includes('git diff --quiet')))
+          if (labelGated && lines.some((l) => NO_CHANGE_GUARD.test(l)))
             noChangeGuards.push([name, step.run]);
+          if (labelGated && /\bgit add\b/.test(step.run))
+            stagingSteps.push([name, step.run]);
         }
       }
     }
@@ -434,7 +455,7 @@ describe('workflow false-green invariants', () => {
      */
     function noChangeBranch(script: string): string[] {
       const lines = logicalLines(script);
-      const start = lines.findIndex((l) => /^if\s+git diff --quiet/.test(l));
+      const start = lines.findIndex((l) => NO_CHANGE_GUARD.test(l));
       if (start === -1) return [];
       const body: string[] = [];
       let depth = 1;
@@ -488,6 +509,66 @@ describe('workflow false-green invariants', () => {
           condition,
           'a run that refreshed nothing must leave the label in place',
         ).not.toMatch(/\balways\(\)/);
+      },
+    );
+
+    /*
+     * #634 follow-up — detection must see NEW files, and staging must cover
+     * everything detection looks at.
+     *
+     * On CLI 11 `--update-baseline --allow-regress` does not rewrite
+     * `baselines.json` at all: it writes a per-branch file under
+     * `.harness/arch/allowances/` and says so ("baselines.json stays
+     * byte-identical to the base"), recording `--reason` in
+     * `.harness/audit.log`. So the guard was watching a path the CLI
+     * deliberately leaves alone — and even pointed at the right path it would
+     * still have missed it, because an allowance is an UNTRACKED file and
+     * `git diff` never reports those. The workflow failed honestly (thanks to
+     * the guard above) while reporting the wrong cause.
+     *
+     * Two invariants, both about the guard telling the truth:
+     *
+     * 4. The guard uses `git status --porcelain`, which lists untracked files,
+     *    rather than `git diff`, which cannot. A mutation that creates a file
+     *    is the normal case here, not an edge one.
+     *
+     * 5. Every path the guard inspects is also staged. A guard that passes on
+     *    a path `git add` omits produces a green run and an empty commit —
+     *    the same lie in a later disguise.
+     */
+    it.each(noChangeGuards)(
+      '%s detects created files, not just modified ones',
+      (_name, script) => {
+        const guard = logicalLines(script).find((l) => NO_CHANGE_GUARD.test(l));
+        expect(guard, 'no-change guard not found').toBeDefined();
+        expect(
+          guard,
+          'an allowance is a NEW file; `git diff` never reports untracked paths',
+        ).toMatch(/git status --porcelain/);
+      },
+    );
+
+    it.each(noChangeGuards)(
+      '%s stages every path its no-change guard inspects',
+      (name, script) => {
+        const guard =
+          logicalLines(script).find((l) => NO_CHANGE_GUARD.test(l)) ?? '';
+        const inspected = harnessPaths(guard);
+        expect(
+          inspected.length,
+          'guard inspects no .harness path (zero denominator)',
+        ).toBeGreaterThan(0);
+
+        const staged = (stagingSteps.find(([n]) => n === name)?.[1] ?? '')
+          .split('\n')
+          .filter((l) => /\bgit add\b/.test(l))
+          .flatMap(harnessPaths);
+        for (const path of inspected) {
+          expect(
+            staged.some((s) => path === s || path.startsWith(`${s}/`)),
+            `guard inspects ${path} but no \`git add\` covers it`,
+          ).toBe(true);
+        }
       },
     );
   });
