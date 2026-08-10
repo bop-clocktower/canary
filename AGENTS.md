@@ -427,7 +427,8 @@ Two related facts worth not rediscovering:
   `Assignee`/`Priority`/`Updated-At`. It is not one of the five documented
   fields (`Status`, `Spec`, `Summary`, `Blockers`, `Plan`), so it is easy to
   conclude no link field exists. All 50 rows carry one — 47 as of #628, plus the
-  three added for #626/#590/#629 — and `Priority`, serialized in that same
+  three added for #626/#590/#629, then #481/#544/#590 archived and
+  #633/#634/#638 filed in their place — and `Priority`, serialized in that same
   extended group, is populated on every one of them.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
@@ -441,10 +442,17 @@ Two related facts worth not rediscovering:
   exact rather than a coverage ratio on purpose (50 of 51 open issues carry the
   label today; the one that does not is #587, an upstream harness defect this
   repo tracks but cannot schedule), so a floor would either sit low enough to
-  miss the 2-of-30 case or fire on every new bug report. An unreadable tracker
-  exits 3 as well — cannot-verify is a finding, not a skip. `HARNESS_BIN` skips
-  the preflight for the offline contract tests, and says so on stderr rather
-  than skipping silently.
+  miss the 2-of-30 case or fire on every new bug report. **The invariant runs
+  one way only — row → labelled issue — so the two inverse drifts are unguarded
+  and have both happened: a row outliving its closed issue (the #481, #544 and
+  #590 rows still read `backlog`/`in-progress` hours after the work merged) and
+  a labelled issue with no row (#638, filed labelled and rowed only later).
+  Neither moves the check off exit 0.** Grooming after a merge is therefore a
+  manual step with no gate behind it: run
+  `node scripts/roadmap-groom.mjs --apply` once the row's `Status` is `done`. An
+  unreadable tracker exits 3 as well — cannot-verify is a finding, not a skip.
+  `HARNESS_BIN` skips the preflight for the offline contract tests, and says so
+  on stderr rather than skipping silently.
 - **`--apply` replaces issue bodies, and no flag disables it.** `updateTicket`
   sets `patch.body` from the row's `Summary`, so patching a linked issue
   overwrites whatever a human wrote there with the roadmap's one paragraph. With
