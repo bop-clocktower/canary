@@ -17,21 +17,28 @@ export default defineConfig({
       // blocking regressions — never to set an aspirational target that fails
       // on day one.
       //
-      // Measured 2026-07-29 (78 files, 1553 tests): lines 95.44, statements
-      // 93.98, functions 95.28, branches 85.48. The three with real headroom
-      // are ratcheted with a ~1–1.5pt working buffer, locking in what the v6
-      // port earned (the engine went 81.67% → 95.44%) so it cannot erode.
+      // Measured 2026-08-10 on `main` + #481 (117 files, 2384 tests): lines
+      // 96.45, statements 95.29, functions 97.10, branches 88.51. Every floor
+      // sits ~1–1.5pt under its measured value.
       //
-      // BRANCHES STAYS AT 85 DELIBERATELY — it measures 85.48, so there is
-      // half a point of slack and tightening it would trip the gate on the
-      // next PR that adds an error path. The fix for branch coverage is more
-      // tests, not a different number; lowering it would be worse still, since
-      // a gate lowered to stop it failing is not a gate. Tracked in #481.
+      // #481 closed the branch problem the honest way. Branch coverage had
+      // 0.48pt of slack at floor 85, which meant an unrelated PR adding a
+      // couple of error paths tripped a gate its author never touched. The fix
+      // was tests for the reachable-but-untested branches (the history/analyze
+      // report renderers, the company-knowledge show/init ladders, the skills
+      // run refusal ladder, the overlay registry's malformed-shape
+      // degradations), which moved branches 85.48 → 88.51. Only then was the
+      // floor ratcheted, to 87.
+      //
+      // The rule that produced these numbers, in both directions: NEVER lower a
+      // floor to stop it failing — a gate lowered to pass is not a gate — and
+      // never set one at the measured value with zero slack, which converts
+      // every honest refactor into a red build.
       thresholds: {
-        lines: 94,
-        functions: 94,
-        branches: 85,
-        statements: 93,
+        lines: 95,
+        functions: 96,
+        branches: 87,
+        statements: 94,
       },
     },
   },

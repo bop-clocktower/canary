@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { num1, pyFloat, round1 } from './round.js';
+import { num1, pyFloat, round1, roundHalfEvenInt } from './round.js';
 
 describe('round1 half-to-even ties', () => {
   it('rounds an even-floor tie down', () => {
@@ -21,6 +21,23 @@ describe('num1', () => {
   it('always renders one decimal', () => {
     expect(num1(50)).toBe('50.0');
     expect(num1(33.34)).toBe('33.3');
+  });
+});
+
+describe('roundHalfEvenInt (Python round() parity)', () => {
+  it('rounds an exact .5 tie to the even neighbour', () => {
+    // JS Math.round would give 3 and 5 here; Python's round() gives 2 and 4.
+    expect(roundHalfEvenInt(2.5)).toBe(2);
+    expect(roundHalfEvenInt(3.5)).toBe(4);
+    expect(roundHalfEvenInt(4.5)).toBe(4);
+  });
+  it('rounds non-ties to the nearest integer', () => {
+    expect(roundHalfEvenInt(2.4)).toBe(2);
+    expect(roundHalfEvenInt(2.6)).toBe(3);
+  });
+  it('applies the same tie rule below zero', () => {
+    expect(roundHalfEvenInt(-2.5)).toBe(-2);
+    expect(roundHalfEvenInt(-1.5)).toBe(-2);
   });
 });
 
