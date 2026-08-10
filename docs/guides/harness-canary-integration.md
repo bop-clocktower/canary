@@ -183,11 +183,14 @@ they run in the developer's Claude Code session (or as a reviewer persona) and
 and the senior-facing accountability brief — but do not block it. So: harness
 workflows **gate**, canary/review layers **advise**.
 
-> Known gap: `harness ci check` does not yet honour
-> `entropy.analyze.drift.checkApiSignatures: false` from `harness.config.json`
-> (upstream harness#838), so api-signature drift can still surface as a
-> non-blocking warning in `harness.yml`. Tracked on the roadmap; findings are
-> warn-severity and do not fail the gate.
+> Closed gap (#601): `harness ci check` now honours
+> `entropy.drift.checkApiSignatures: false` from `harness.config.json`, so
+> api-signature drift no longer surfaces in `harness.yml`. Both halves of the
+> old note were wrong — the upstream miss (harness#838) is fixed on the CLI 11
+> line these workflows pin, and the key was never `entropy.analyze.drift.*`.
+> Measured on harness 11.1.1: `harness ci check --json` reports 290 entropy
+> findings with the flag off and 1195 with it on. Documented settings are pinned
+> to the file by `ts/test/harness-config-doc-claims.test.ts`.
 
 ---
 

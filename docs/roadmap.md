@@ -111,10 +111,10 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ### Resolve roadmap api-signature doc drift
 
-- **Status:** blocked
+- **Status:** done
 - **Spec:** —
-- **Summary:** PARTIALLY MITIGATED, still blocked on a narrower upstream gap. Original blocker (Intense-Visions/harness-engineering#723: analyze.drift config ignored + Python symbol mis-resolution) was fixed upstream via harness#724 and issue #246 closed 2026-07-15 after re-verification (roadmap.md's own residual findings dropped from ~60 to 6, non-blocking warn severity). Project-side, `entropy.analyze.drift.checkApiSignatures: false` was added to harness.config.json, verified via `harness cleanup --json` to fully suppress findings (1450 -> 0). However, `harness ci check` — what this repo's CI workflow actually runs — has its own separate, still-unfixed code path that does not honor this config at all (same config, 0 findings via cleanup vs. 1450 via ci check). That fourth call site is the new, narrower blocker. Findings remain non-blocking (warn severity) regardless. Revisit when the upstream fix lands. (refs: Issue #246 [closed]; Issue #266; upstream harness#838) [Note: symbol names intentionally omitted from this summary so the drift-tracking row does not itself register as drift.]
-- **Blockers:** upstream harness#838 (`harness ci check` doesn't thread entropy.analyze.drift config)
+- **Summary:** RESOLVED. Two upstream gaps and one project-side error, all now closed. Upstream: harness#723 (drift config ignored + Python symbol mis-resolution) fixed by harness#724, and harness#838 (`harness ci check` missing the config as a fourth call site) is closed on the harness CLI 11 line every workflow now pins. Re-measured on harness 11.1.1 against this repo: the suppression is honoured by both call sites, `harness ci check --json` reporting 290 entropy findings with the flag off against 1195 with it on — 905 api-signature findings suppressed, 0 remaining, none of them blocking either way (warn severity). Project-side, both this row and the integration guide named the flag as `entropy.analyze.drift.checkApiSignatures`, echoing the upstream issue title; the key harness reads, and the one whose value moves those counts, is `entropy.drift.checkApiSignatures: false` at harness.config.json. That mis-stated path is guarded by ts/test/harness-config-doc-claims.test.ts, which resolves every documented config setting against the file. (refs: Issue #246 [closed]; Issue #266; upstream harness#838 [closed]) [Note: symbol names intentionally omitted from this summary so the drift-tracking row does not itself register as drift.]
+- **Blockers:** —
 - **Plan:** —
 - **Priority:** P2
 - **External-ID:** github:bop-clocktower/canary#601
