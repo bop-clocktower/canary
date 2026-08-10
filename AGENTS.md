@@ -373,7 +373,13 @@ Bumping the major is a **three-step sequence**, in this order (#545, #547):
    is dead with no error — that is how `entryPoints` left the entropy scan with
    no entry point across every run it ever made. Land the config fix on the
    _old_ pin, verified against both majors, so a later regression has an
-   unambiguous blame boundary.
+   unambiguous blame boundary. **Moving a key to the path the schema reads is
+   only half the check — the value has to be one the analyzer can act on.** The
+   same key then spent its next life pointing at `ts/bin/canary.js`, and `bin`
+   and `dist` are both in the analyzer's `DEFAULT_SKIP_DIRS`, so the scan ran
+   with an empty root set and called all 175 scanned source files dead (#544,
+   ADR 0012). A config key reads as correct the moment it stops erroring; check
+   what the tool did with it.
 2. **Edit `HARNESS_CLI` in all six workflows** — `harness.yml`,
    `harness-quality.yml`, `harness-architecture.yml`, `harness-security.yml`,
    `arch-snapshot.yml`, `refresh-arch-baseline.yml`.

@@ -129,7 +129,7 @@ export interface HistoryDeps {
 }
 
 /** Process-backed defaults for production. */
-export function defaultHistoryDeps(): HistoryDeps {
+function defaultHistoryDeps(): HistoryDeps {
   return {
     out: (s) => process.stdout.write(`${s}\n`),
     err: (s) => process.stderr.write(`${s}\n`),

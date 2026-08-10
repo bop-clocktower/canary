@@ -36,7 +36,7 @@ export interface ReviewRequest {
 }
 
 /** Construct a {@link ReviewRequest} (a frozen dataclass in Python). */
-export function reviewRequest(test_paths: string[]): ReviewRequest {
+function reviewRequest(test_paths: string[]): ReviewRequest {
   return { test_paths };
 }
 
@@ -123,7 +123,7 @@ const SEVERITY_BY_NAME = new Map<string, Severity>(
  * RecordingInvoker} default) yields `[]` -- the SKILL reports its review
  * directly in-session.
  */
-export function parseReviewFindings(transcript: string): Finding[] {
+function parseReviewFindings(transcript: string): Finding[] {
   const findings: Finding[] = [];
   for (const raw of transcript.split(/\r\n|\r|\n/)) {
     const match = REVIEW_LINE_RE.exec(raw);

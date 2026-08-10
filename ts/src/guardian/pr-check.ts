@@ -1041,9 +1041,7 @@ export function combineNotices(
 }
 
 /** The `coverage` block the json/analysis surfaces carry (#554). */
-export function coverageBlock(
-  state: CoverageInputState,
-): Record<string, unknown> {
+function coverageBlock(state: CoverageInputState): Record<string, unknown> {
   return { status: coverageStatus(state), ...state };
 }
 

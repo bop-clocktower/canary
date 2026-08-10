@@ -32,7 +32,8 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ### Entropy scan — triage 718 findings, then ratchet the gate
 
-- **Status:** backlog
+- **Status:** in-progress
+- **Assignee:** <brianna.stevenski@example.com>
 - **Spec:** —
 - **Summary:** The Harness Cleanup (Entropy Scan) step in harness-quality.yml never ran its analysis: it failed at startup with "Could not resolve entry points" under continue-on-error, so the step went orange, the job went green, and the failure was never a finding. Identical on the pinned @harness-engineering/cli@9 and @10.1.0 — not a version regression, dark the whole time. Now that it runs, triage the findings and ratchet the gate to blocking. Textbook silently-degraded tooling: the surface reported green while checking nothing.
 - **Blockers:** —

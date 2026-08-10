@@ -62,7 +62,7 @@ export class RegistryError extends Error {
   }
 }
 
-export function canaryHome(homeDir: string = os.homedir()): string {
+function canaryHome(homeDir: string = os.homedir()): string {
   return path.join(homeDir, '.canary');
 }
 
