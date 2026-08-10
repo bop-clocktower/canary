@@ -9,6 +9,8 @@
 import { readFileSync } from 'node:fs';
 import { basename, extname } from 'node:path';
 
+import { blankStringContent } from './string-literals.js';
+
 export interface Finding {
   file: string;
   line: number;
@@ -41,7 +43,11 @@ const BARE_PLAYWRIGHT_CALL =
 
 // Assertion detection
 const TEST_FN_PY = /^(\s*)def (test_\w+)\s*\(/gm;
-const TEST_FN_JS = /(?:^|\s)(?:it|test)\s*\(\s*['"]([^'"]*)['"]/gm;
+// `d` (hasIndices) so the NAME can be read back out of the ORIGINAL source.
+// The scanner matches against string-blanked source, where the name itself has
+// been blanked away; blanking is length-preserving precisely so these offsets
+// still address the untouched text (#590).
+const TEST_FN_JS = /(?:^|\s)(?:it|test)\s*\(\s*['"]([^'"]*)['"]/dgm;
 const ASSERT_PY = /\bassert\b|\bpytest\.raises\b/;
 // Assertion styles a JS/TS test may use. `expect()` (jest/vitest/playwright)
 // was the only one recognized until canary was pointed at its own suites and
@@ -372,7 +378,11 @@ function scanAssertionFreePy(code: string, file: string): Finding[] {
   return out;
 }
 
-function scanAssertionFreeJs(code: string, file: string): Finding[] {
+function scanAssertionFreeJs(
+  code: string,
+  file: string,
+  source: string,
+): Finding[] {
   const out: Finding[] = [];
   // The test declarations, in source order, so each body can be bounded by the
   // NEXT one -- the JS analogue of what the pytest scanner already does with
@@ -392,13 +402,16 @@ function scanAssertionFreeJs(code: string, file: string): Finding[] {
     const bodyEnd = decls[i + 1]?.index ?? code.length;
     const rest = code.slice(bodyStart, bodyEnd);
     if (!ASSERT_JS.test(rest)) {
+      const name = m.indices?.[1]
+        ? source.slice(m.indices[1][0], m.indices[1][1])
+        : m[1]!;
       out.push(
         mk(
           file,
           lineOf(code, start),
           'LINT-006',
           'warning',
-          `Test "${m[1]!}" contains no assertions.`,
+          `Test "${name}" contains no assertions.`,
           'Add an expect() call; a test that never asserts always passes.',
         ),
       );
@@ -461,13 +474,16 @@ export class StaticLinter {
   /** Full quality audit — all rules. */
   lint(path: string, framework?: string): Finding[] {
     const code = readFileSync(path, 'utf-8');
-    // No rule may read the interior of a multi-line string as code. Blanking
-    // preserves line count, so `scanned` re-joins to the same line numbers the
-    // per-line scanners report -- both halves must use it, or the assertion
-    // scanners go on mining `it(...)` declarations out of diff fixtures.
+    // No rule may read the interior of a string as code. The per-line rules
+    // keep the line-oriented blanking they were written against; the assertion
+    // scanners take a whole-source pass instead, because they are the only
+    // rules that bound one match by the offset of the NEXT one -- so a phantom
+    // declaration inside a fixture does not just add a finding, it truncates a
+    // real test's body and attributes its assertion past the end (#590).
+    // Both blankers preserve line numbering, so findings agree on line numbers.
     const lines = blankMultilineStrings(code.split('\n'));
-    const scanned = lines.join('\n');
     const fw = requireFramework(path, framework);
+    const scanned = blankStringContent(code, { python: fw === 'pytest' });
     const findings: Finding[] = [
       ...scanFlakiness(lines, path),
       ...scanSelectors(lines, path),
@@ -475,7 +491,7 @@ export class StaticLinter {
       ...scanMagicNumbers(lines, path),
       ...(fw === 'pytest'
         ? scanAssertionFreePy(scanned, path)
-        : scanAssertionFreeJs(scanned, path)),
+        : scanAssertionFreeJs(scanned, path, code)),
     ];
     findings.sort((a, b) => a.line - b.line || cmp(a.rule, b.rule));
     return findings;
