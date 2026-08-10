@@ -361,7 +361,7 @@ cleanly decoupled and depends on none of this. The consumed subcommands are:
 | `snapshot capture` | `arch-snapshot.yml`                                |
 
 **Pinning (#318 A).** Every gate installs the CLI at a **pinned major** via one
-workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@10'` — rather
+workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@11'` — rather
 than an unpinned `@latest`. A harness-major bump (e.g. a subcommand rename) is
 therefore a **deliberate PR** that edits that one line per workflow, not a
 silent CI break with nothing to roll back to.
