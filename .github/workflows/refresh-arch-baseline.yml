@@ -65,15 +65,26 @@ jobs:
         env:
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
-          # No diff is a FAILURE, not a success (#634). The label was applied
+          # No change is a FAILURE, not a success (#634). The label was applied
           # because a refresh was wanted, so a run that changed nothing has not
           # done what it was asked — and with the opt-in above passed through,
           # "declined to write" is off the table, leaving either a baseline that
           # was already current (the label was unnecessary) or a CLI that
           # refused for a reason worth a human's eyes. Both need reporting; the
           # old `exit 0` reported neither.
-          if git diff --quiet -- .harness/arch/baselines.json; then
-            echo "::error::harness check-arch --update-baseline wrote nothing." \
+          #
+          # Detection deliberately uses `git status --porcelain`, not
+          # `git diff`, and covers the whole arch directory rather than
+          # baselines.json alone. On CLI 11 an accepted regression does NOT
+          # rewrite baselines.json — `--allow-regress` writes a per-branch file
+          # under .harness/arch/allowances/ and reports "baselines.json stays
+          # byte-identical to the base", recording --reason in audit.log. So
+          # the old guard watched a path the CLI intentionally leaves alone,
+          # and an allowance is a NEW file, which `git diff` never reports.
+          # Run 31434303396 failed here for exactly that reason while naming
+          # the wrong cause.
+          if [ -z "$(git status --porcelain -- .harness/arch/ .harness/audit.log)" ]; then
+            echo "::error::harness check-arch --update-baseline changed nothing." \
               "Either the baseline was already current (the ratchet was not red," \
               "so the label was not needed) or the CLI declined — see the step" \
               "above. The refresh-baseline label is left in place."
@@ -86,7 +97,11 @@ jobs:
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .harness/arch/baselines.json
+          # Stage everything the guard inspects. Staging a narrower set than
+          # detection covers is the same lie one step later: a green run and an
+          # empty commit. audit.log carries the --reason and is tracked, so
+          # dropping it would discard the record of who accepted the regression.
+          git add .harness/arch/ .harness/audit.log
           git commit -m "chore(ci): refresh arch baseline via refresh-baseline label"
           git push origin "HEAD:$BRANCH"
           {
