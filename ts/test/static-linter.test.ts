@@ -333,6 +333,117 @@ describe('StaticLinter', () => {
     });
   });
 
+  // #590. A downstream overlay adopting 6.7.0 got 4 LINT-006 findings on one
+  // suite and all 4 were false. The cases below fall through the seam between
+  // the two blanking mechanisms: `blankMultilineStrings` only toggles on an ODD
+  // count of a delimiter per line, so a template literal that opens AND closes
+  // on the same physical line is skipped; and the single-line stripper
+  // (STRING_LITERAL) has no backtick in its character class and was never
+  // applied to the assertion scanners at all. A `\n`-escaped fixture is
+  // therefore invisible to both, which is why the multi-line test above passes
+  // while the reported shape does not.
+  //
+  // Latent until #566 (6.7.0) made `.mjs` readable -- these files had never
+  // been scanned before.
+  describe('LINT-006 does not mine tests out of string literals (#590)', () => {
+    it('ignores test() inside a single-line template literal fixture', () => {
+      const code = [
+        "describe('scanner', () => {",
+        '  function specDir() {',
+        '    writeFileSync(',
+        "      join(dir, 'auth.spec.ts'),",
+        "      `test.describe('auth', () => {\\n  test('a', async () => {});\\n  test('b', async () => {});\\n});\\n`,",
+        '    );',
+        '    return dir;',
+        '  }',
+        "  it('counts direct tests', () => {",
+        '    expect(scan(specDir()).count).toBe(2);',
+        '  });',
+        '});',
+      ].join('\n');
+      const six = lint('scanner.test.mjs', code).filter(
+        (f) => f.rule === 'LINT-006',
+      );
+      expect(six).toEqual([]);
+    });
+
+    it('does not report a test that DOES assert as assertion-free', () => {
+      // The worse direction: the embedded `test(` opens a phantom scope, so the
+      // real expect() is attributed past the end of the enclosing test and a
+      // test carrying an assertion is told to add one.
+      const code = [
+        "it('comment matches indentation', () => {",
+        '  const src =',
+        '    "test.describe(\'suite\', () => {\\n" +',
+        "    \"  test('failed login', {tag: ['@smoke']}, async () => {});\\n});\\n\";",
+        "  const out = inject(src, 'failed login');",
+        "  expect(out.split('\\n')[idx - 1].startsWith('  //')).toBe(true);",
+        '});',
+      ].join('\n');
+      const six = lint('inject.test.mjs', code).filter(
+        (f) => f.rule === 'LINT-006',
+      );
+      expect(six).toEqual([]);
+    });
+
+    it('ignores a test name inside a plain single-quoted string', () => {
+      const code = [
+        "const fixture = 'it(\\'fake\\', () => {})';",
+        "it('real', () => { expect(fixture).toBeTruthy(); });",
+      ].join('\n');
+      expect(rules(lint('f.spec.ts', code))).not.toContain('LINT-006');
+    });
+
+    it('STILL flags a real assertion-free test in the same file', () => {
+      // The guard must reject matches inside strings, never disable the rule:
+      // a suppression that also silences real findings is the abstention shape
+      // this rule exists to catch.
+      const code = [
+        "const fixture = `test('embedded', () => {});`;",
+        "it('genuinely empty', () => { const a = fixture; });",
+      ].join('\n');
+      const six = lint('g.spec.ts', code).filter((f) => f.rule === 'LINT-006');
+      expect(six).toHaveLength(1);
+      expect(six[0]!.message).toContain('genuinely empty');
+    });
+
+    it('ignores a pytest def inside a triple-quoted fixture', () => {
+      // The pytest half takes the same blanked source, with `python: true` so
+      // ''' and """ blocks are literals. A conftest or codemod test carrying
+      // sample test source in a docstring is the Python shape of #590.
+      const code = [
+        'SAMPLE = """',
+        'def test_generated():',
+        '    value = compute()',
+        '"""',
+        '',
+        'def test_real():',
+        '    assert SAMPLE',
+      ].join('\n');
+      const six = lint('test_gen.py', code).filter(
+        (f) => f.rule === 'LINT-006',
+      );
+      expect(six).toEqual([]);
+    });
+
+    it('STILL flags a real assertion-free pytest test alongside a fixture', () => {
+      const code = [
+        'SAMPLE = """',
+        'def test_generated():',
+        '    value = compute()',
+        '"""',
+        '',
+        'def test_empty():',
+        '    value = SAMPLE',
+      ].join('\n');
+      const six = lint('test_gen2.py', code).filter(
+        (f) => f.rule === 'LINT-006',
+      );
+      expect(six).toHaveLength(1);
+      expect(six[0]!.message).toContain('test_empty');
+    });
+  });
+
   it('detects assertion-free pytest tests (framework via .py extension)', () => {
     const code = [
       'def test_no_assert():',
