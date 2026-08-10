@@ -1,9 +1,9 @@
 # ADR 0012 — The entropy scan is ratcheted against a triaged baseline
 
 **Status:** accepted **Date:** 2026-08-10 **Deciders:** Bri Stevenski
-(maintainer) **Related:** #544; ADR 0009 (exit 3 = abstained); ADR 0011
-(required checks); #508 (no silent abstention); #485 (the dogfood ratchet this
-copies)
+(maintainer) **Related:** #544; #638 (the same entry-point model, at
+`performance.entryPoints`); ADR 0009 (exit 3 = abstained); ADR 0011 (required
+checks); #508 (no silent abstention); #485 (the dogfood ratchet this copies)
 
 ## Context
 
@@ -96,16 +96,41 @@ zero.**
    config until every script in the directory reads as dead. Verified against
    v11 before this was written.
 
-2. `.harness/entropy-baseline.json` carries `maxFindings`, currently **340**
+2. **`performance.entryPoints` carries the identical list (#638).** The perf
+   check builds the same `EntropyAnalyzer` snapshot as the entropy check, but
+   the two callers read the roots from different keys and only some of them fall
+   back — measured against CLI 11.1.1:
+
+   | Caller                            | Roots read from                        |
+   | --------------------------------- | -------------------------------------- |
+   | `ci check` → entropy              | `entropy.entryPoints ?? performance.…` |
+   | `ci check` → perf                 | `performance.entryPoints` **only**     |
+   | `harness check-perf` (standalone) | `performance.… ?? entropy.…`           |
+
+   Declaring only the entropy key therefore left the standalone command green
+   and the required `harness` job reporting
+   `perf: warn — Could not resolve entry points`: zero files analysed, one
+   "issue", exit 0. Declaring both keys is the only configuration under which
+   every caller measures something. Perf findings went 0 files / 1 pseudo-issue
+   → **67 files / 238 findings**; the entropy count is untouched at 330, because
+   the entropy caller was already satisfied by its own key.
+
+   The alternative the issue named — disabling the perf check outright — is
+   rejected. 238 real findings is not nothing to look at, and
+   `PerformanceConfigSchema` is `.passthrough()`, so the key survives the schema
+   rather than being one of the silently-stripped paths that caused #544 in the
+   first place.
+
+3. `.harness/entropy-baseline.json` carries `maxFindings`, currently **340**
    against a measured 330 — ten findings of headroom, roughly 3%. Enough that
    adding a module with a couple of test-only exports does not turn `main` red
    in the same commit, tight enough that a real regression cannot hide in it.
 
-3. `scripts/entropy-ratchet.mjs` compares the count from
+4. `scripts/entropy-ratchet.mjs` compares the count from
    `harness cleanup --findings-json` against that baseline and fails above it.
    `continue-on-error` is gone from the step.
 
-4. **A missing count fails.** No contract line in the output means nothing was
+5. **A missing count fails.** No contract line in the output means nothing was
    measured, and the script exits 3 (abstained, per ADR 0009) rather than
    reading the absence as zero findings. This is the property that matters most:
    without it, a future startup failure would produce a green ratchet, which is
@@ -131,7 +156,15 @@ convention — advisory, then triage, then ratchet.
   `ts/test/entropy-entrypoints.test.ts` fails if an entry point is untracked,
   globbed, or inside a skipped directory — the bug above, made unrepeatable —
   and `ts/test/entropy-ratchet.test.ts` pins the exit-code contract, including
-  the abstention path.
+  the abstention path. The first file applies its invariants to **both** keys
+  and additionally asserts the two arrays are identical: JSON cannot share an
+  array, so the duplication is real and the only thing stopping the two checks
+  from silently walking different codebases is that assertion.
+- The perf check is `warn`-only under the default `--fail-on error`, so its 238
+  findings do not gate a merge today. That is deliberate and matches the #485
+  convention this ADR already follows — advisory, then triage, then ratchet.
+  What changed is that the warning now reports a measurement instead of standing
+  in for one.
 
 ## Alternatives Considered
 

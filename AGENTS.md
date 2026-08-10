@@ -379,7 +379,13 @@ Bumping the major is a **three-step sequence**, in this order (#545, #547):
    and `dist` are both in the analyzer's `DEFAULT_SKIP_DIRS`, so the scan ran
    with an empty root set and called all 175 scanned source files dead (#544,
    ADR 0012). A config key reads as correct the moment it stops erroring; check
-   what the tool did with it.
+   what the tool did with it. **And the same value can be needed at more than
+   one path**: the entropy and perf checks build the same analyzer snapshot but
+   read its roots from `entropy.entryPoints` and `performance.entryPoints`
+   respectively, and only the entropy caller falls back to the other key — so
+   declaring one left `harness check-perf` green and `ci check`'s perf step
+   warning `Could not resolve entry points` on zero files (#638). Check each
+   caller, not the key.
 2. **Edit `HARNESS_CLI` in all six workflows** — `harness.yml`,
    `harness-quality.yml`, `harness-architecture.yml`, `harness-security.yml`,
    `arch-snapshot.yml`, `refresh-arch-baseline.yml`.

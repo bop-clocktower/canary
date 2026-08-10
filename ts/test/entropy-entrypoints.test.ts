@@ -1,6 +1,7 @@
 /**
- * Class-level structural tests for `entropy.entryPoints` in
- * `harness.config.json` (#544).
+ * Class-level structural tests for the entry-point lists in
+ * `harness.config.json` — `entropy.entryPoints` (#544) and
+ * `performance.entryPoints` (#638).
  *
  * Sibling of `harness-config-denominator.test.ts`, and the same failure class
  * one layer down: **a configured rule that matches nothing still reports as
@@ -16,7 +17,23 @@
  * abstention. It looks like a very messy codebase, which is exactly why it sat
  * unexamined.
  *
- * Three invariants, none of which requires running `harness`:
+ * The second instance (#638) is the same shape at a different key. Both
+ * `harness ci check`'s entropy step and its perf step build the same
+ * `EntropyAnalyzer` snapshot, but they read *different* config keys for its
+ * roots, and only the entropy step falls back to the other one:
+ *
+ * | Caller                       | Roots read from                          |
+ * | ---------------------------- | ---------------------------------------- |
+ * | `ci check` → entropy         | `entropy.entryPoints ?? performance.…`   |
+ * | `ci check` → perf            | `performance.entryPoints` **only**       |
+ * | `harness check-perf` (standalone) | `performance.… ?? entropy.…`        |
+ *
+ * So a repo that declares only `entropy.entryPoints` gets a green standalone
+ * `check-perf` and a `perf: warn — Could not resolve entry points` inside the
+ * required `harness` job: zero files analysed, reported as a colour. Declaring
+ * both keys is the only configuration where every caller measures something.
+ *
+ * Four invariants, none of which requires running `harness`:
  *
  * 1. Every declared entry point is a git-tracked file. A path that does not
  *    exist contributes nothing to the graph and raises the dead-code count
@@ -32,6 +49,11 @@
  *    entry silently matches nothing, which looks identical to a correct config
  *    right up until every script in the directory is reported dead. Verified
  *    empirically against the v11 CLI before this rule was written.
+ *
+ * 4. The two lists are identical. They feed the same snapshot builder, so a
+ *    divergence means one of the two checks is walking a different codebase
+ *    than the other and neither output says so. JSON has no way to share the
+ *    array, so the duplication is enforced here instead.
  *
  * Offline: reads `harness.config.json` and asks git for its index.
  */
@@ -63,8 +85,13 @@ const SKIPPED_DIRS = [
   '.cache',
 ];
 
+interface EntryPointSection {
+  entryPoints?: string[];
+}
+
 interface HarnessConfig {
-  entropy?: { entryPoints?: string[] };
+  entropy?: EntryPointSection;
+  performance?: EntryPointSection;
 }
 
 function readConfig(): HarnessConfig {
@@ -82,13 +109,23 @@ function trackedFiles(): Set<string> {
   return new Set(out.split('\n').filter(Boolean));
 }
 
-describe('entropy.entryPoints', () => {
-  const entryPoints = readConfig().entropy?.entryPoints ?? [];
+const CONFIG = readConfig();
 
+/**
+ * Both keys carry the same invariants because both resolve to the same
+ * `EntropyAnalyzer` root set. Enumerated rather than derived from the config so
+ * that deleting a key fails the suite instead of shrinking the denominator.
+ */
+const ENTRY_POINT_KEYS: ReadonlyArray<[string, string[]]> = [
+  ['entropy.entryPoints', CONFIG.entropy?.entryPoints ?? []],
+  ['performance.entryPoints', CONFIG.performance?.entryPoints ?? []],
+];
+
+describe.each(ENTRY_POINT_KEYS)('%s', (_key, entryPoints) => {
   // Guard the guard: an empty list would satisfy every "for each entry" rule
   // below without checking anything, which is the abstention shape all over
   // again. Auto-detection is not an acceptable fallback here — it is what the
-  // repo had before, and it produced the 770.
+  // repo had before, and it produced the 770 (entropy) and the warn (perf).
   it('declares entry points at all', () => {
     expect(entryPoints.length).toBeGreaterThan(0);
   });
@@ -120,5 +157,13 @@ describe('entropy.entryPoints', () => {
         `no entry point under ${root}`,
       ).toBe(true);
     }
+  });
+});
+
+describe('entry-point lists', () => {
+  it('keeps entropy and performance in lockstep, in the same order', () => {
+    expect(CONFIG.performance?.entryPoints).toEqual(
+      CONFIG.entropy?.entryPoints,
+    );
   });
 });
