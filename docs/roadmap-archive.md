@@ -972,3 +972,72 @@ last_manual_edit: 2026-06-30T01:18:39.592Z
   /harness:brainstorming to spec.
 - **Blockers:** —
 - **Plan:** —
+
+### Coverage gate — raise branch coverage before the floor bites
+
+- **Status:** done
+- **Assignee:** <brianna.stevenski@example.com>
+- **Spec:** —
+- **Summary:** Branch coverage had 0.48pt of headroom against its 85 floor,
+  where lines/statements/functions each had 4–5pt, so one PR adding a handful of
+  uncovered branches tripped a gate its author never touched. Fixed the stated
+  way — raise the coverage, not lower the floor: 106 tests across the
+  history/analyze report renderers, the company-knowledge show/init ladders, the
+  skills run refusal ladder, the overlay registry's malformed-shape
+  degradations, and the production defaultMainDeps seams took branches 85.48% →
+  88.51%. Floors then ratcheted to lines 95 / statements 94 / functions 96 /
+  branches 87, each ~1–1.5pt under measured. Split out of #385 (closed obsolete
+  — its subject was the retired Python engine).
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P0
+- **External-ID:** github:bop-clocktower/canary#481
+
+### Entropy scan — fix the entry-point model, then ratchet the gate
+
+- **Status:** done
+- **Assignee:** <brianna.stevenski@example.com>
+- **Spec:** —
+- **Summary:** The Harness Cleanup (Entropy Scan) step in harness-quality.yml
+  never ran its analysis: it failed at startup with "Could not resolve entry
+  points" under continue-on-error, so the step went orange, the job went green,
+  and the failure was never a finding. Identical on the pinned
+  @harness-engineering/cli@9 and @10.1.0 — not a version regression, dark the
+  whole time. Moving the key to `entropy.entryPoints` made it execute, and the
+  value there was wrong too, which was worse because it produced a number
+  instead of an error: the only declared entry point was `ts/bin/canary.js`, and
+  `bin`/`dist` are both in the analyzer's DEFAULT_SKIP_DIRS, so the reachability
+  walk started from an empty root set and reported 175 of 175 non-test source
+  files dead. Every previously recorded figure (718, 603, 770) was measuring
+  that abstention. Corrected count is 330, ratcheted by
+  scripts/entropy-ratchet.mjs against a 340 baseline with continue-on-error
+  removed and a missing count exiting 3 rather than passing. 16 provably-dead
+  exports unexported; 5 test-only ts/src modules deliberately kept and recorded
+  in the ADR. Shipped in #637.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P0
+- **External-ID:** github:bop-clocktower/canary#544
+
+### review-test LINT-006 matches test() inside string literals
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #590. LINT-006 ("this test contains no assertions") matches
+  `test(` and `it(` occurrences inside string literals, template literals, and
+  comments, so a file whose tests all assert is reported as assertion-free.
+  Consumer-facing and directly damaging: a test-quality tool that lies about
+  test quality undercuts the claim the product is sold on, and the false finding
+  lands in the surface a new user judges canary by first. The fix already exists
+  in-repo twice — canary-savant carries a string-literal guard and
+  canary-blackhawk had the same bug ported back to it in #499 — so this is
+  applying a known guard to a third detector rather than inventing one. Same
+  false-positive class as #493 and #496. Shipped in #632 as a shared
+  string-literals module that blanks literals, template literals, and comments
+  before matching, rather than a fourth hand-rolled guard; it surfaced #633,
+  where the same detector reports the line number one too low for any test not
+  starting on line 1.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#590

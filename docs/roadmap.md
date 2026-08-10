@@ -19,28 +19,6 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ## Maintenance and Public Readiness
 
-### Coverage gate — raise branch coverage before the floor bites
-
-- **Status:** in-progress
-- **Assignee:** <brianna.stevenski@example.com>
-- **Spec:** —
-- **Summary:** Branch coverage had 0.48pt of headroom against its 85 floor, where lines/statements/functions each had 4–5pt, so one PR adding a handful of uncovered branches tripped a gate its author never touched. Fixed the stated way — raise the coverage, not lower the floor: 106 tests across the history/analyze report renderers, the company-knowledge show/init ladders, the skills run refusal ladder, the overlay registry's malformed-shape degradations, and the production defaultMainDeps seams took branches 85.48% → 88.51%. Floors then ratcheted to lines 95 / statements 94 / functions 96 / branches 87, each ~1–1.5pt under measured. Split out of #385 (closed obsolete — its subject was the retired Python engine).
-- **Blockers:** —
-- **Plan:** —
-- **Priority:** P0
-- **External-ID:** github:bop-clocktower/canary#481
-
-### Entropy scan — triage 718 findings, then ratchet the gate
-
-- **Status:** in-progress
-- **Assignee:** <brianna.stevenski@example.com>
-- **Spec:** —
-- **Summary:** The Harness Cleanup (Entropy Scan) step in harness-quality.yml never ran its analysis: it failed at startup with "Could not resolve entry points" under continue-on-error, so the step went orange, the job went green, and the failure was never a finding. Identical on the pinned @harness-engineering/cli@9 and @10.1.0 — not a version regression, dark the whole time. Now that it runs, triage the findings and ratchet the gate to blocking. Textbook silently-degraded tooling: the surface reported green while checking nothing.
-- **Blockers:** —
-- **Plan:** —
-- **Priority:** P0
-- **External-ID:** github:bop-clocktower/canary#544
-
 ### harness-config-denominator — cover knowledge.domainBlocklist
 
 - **Status:** backlog
@@ -100,6 +78,26 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Plan:** —
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#629
+
+### harness check-perf abstains — performance.entryPoints is never declared
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #638, found while triaging #544. `harness ci check` reports `perf: warn — Could not resolve entry points`, inside the required `harness` job. Same failure class as #544 at a different config key: the entropy analyzer reads `entropy.entryPoints`, the perf checker reads `performance.entryPoints`, and harness.config.json declares the latter nowhere, so auto-detection fails and the check reports a colour instead of an abstention. P0 under the written predicate — a check in required-checks.json is wrong, in that `warn` claims a measurement that never happened. Pre-existing on main and unchanged by #637, which is why it was filed rather than folded in: it needs its own decision about whether the repo wants perf budgets at all, and either answer must be legible — declared roots mirroring the entropy list, or the check turned off explicitly rather than left auto-detecting and failing. The gate-conformance route is the same one #544 took: a missing count exits 3, never 0.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P0
+- **External-ID:** github:bop-clocktower/canary#638
+
+### refresh-arch-baseline is a no-op on the case it exists for
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #634. The refresh-arch-baseline workflow exists for exactly one situation — the arch ratchet inside the required `harness` job trips and the baseline needs regenerating — and does nothing in that situation, so the red gets waited out or refreshed by hand locally instead. A repair tool that silently declines to repair is worse than no tool, because its existence is what stops someone building the manual habit. Adjacent to #626: that row is about the arch verdict being unreadable, this one is about the documented remedy not working, and the two are one sitting together. P3 rather than P1 by the written predicate and worth naming as such — the workflow is not reachable from a consumer CLI or skill invocation, has no open PR, and no other row blocks on it, so it lands in the residual bucket the way #629 did. That is a gap in the scale, not a judgement that the bug is small.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#634
 
 ### Resolve roadmap api-signature doc drift
 
@@ -480,15 +478,15 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Priority:** P1
 - **External-ID:** github:bop-clocktower/canary#504
 
-### review-test LINT-006 matches test() inside string literals
+### review-test LINT-006 reports the line one too low
 
 - **Status:** backlog
 - **Spec:** —
-- **Summary:** Issue #590. LINT-006 ("this test contains no assertions") matches `test(` and `it(` occurrences inside string literals, template literals, and comments, so a file whose tests all assert is reported as assertion-free. Consumer-facing and directly damaging: a test-quality tool that lies about test quality undercuts the claim the product is sold on, and the false finding lands in the surface a new user judges canary by first. The fix already exists in-repo twice — canary-savant carries a string-literal guard and canary-blackhawk had the same bug ported back to it in #499 — so this is applying a known guard to a third detector rather than inventing one. Same false-positive class as #493 and #496.
+- **Summary:** Issue #633, found while fixing #590. LINT-006 reports its finding one line above the test it is about, for any test not starting on line 1 — an off-by-one in the line accounting, so the consumer is pointed at the wrong place in their own file. Narrower than #590 and the same kind of damage: a report whose locations have to be distrusted is a report that stops being read, and this one is worse per-finding because a wrong line still looks plausible where a wrong verdict at least invites a second look. P1 under the written predicate — reproducible from `canary review-test`, a consumer-facing CLI invocation. The fix lands in the string-literals module #632 built rather than anywhere new, which is why it is worth doing while that code is still warm.
 - **Blockers:** —
 - **Plan:** —
 - **Priority:** P1
-- **External-ID:** github:bop-clocktower/canary#590
+- **External-ID:** github:bop-clocktower/canary#633
 
 ### canary history record — a writer for the local history store
 
