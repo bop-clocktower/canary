@@ -210,6 +210,18 @@ guarded set are the same single file, by construction.** If sharded output is
 ever committed, the ignore entry and the test's file list must be extended
 together, in one change.
 
+> **Superseded by #630.** Scoping the exemption to one file left
+> `docs/roadmap-archive.md` — which `scripts/roadmap-groom.mjs` fills with rows
+> moved verbatim out of `docs/roadmap.md` — in exactly the broken shape this
+> section describes: 60 of 63 rows with a wrapped `Summary`, held there by a
+> `prettier --check` that called the file clean. #630 adds it to both sets and
+> replaces the "extend them together, in one change" instruction with a
+> derivation: the test now globs the `docs/` entries in `.prettierignore`, so
+> the two sets are the same set mechanically and a shard directory needs only an
+> ignore entry. #630 also adds the content floor this section's guard cannot
+> provide — a value cut to its first physical line is one line, so the wrap
+> check reports it clean.
+
 **Dependency between the two halves of this spec.** They can ship independently,
 and the ordering is deliberate rather than forced: `Priority` is a short,
 single-line field, so it would not itself be wrapped, and adding it does not

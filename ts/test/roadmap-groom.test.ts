@@ -140,6 +140,30 @@ describe('roadmap-groom', () => {
     );
   });
 
+  it('lands a long field in the archive as ONE physical line (#630)', () => {
+    // The fixture above uses a short Summary, so "verbatim" above passes even
+    // if a writer reflowed long values. Real rows carry 400-1200 character
+    // summaries, and the archive is under the same one-line field contract as
+    // the roadmap (ts/test/roadmap-field-contract.test.ts scans both). A wrap
+    // introduced HERE is the one the field-contract test can only catch after
+    // the fact, once the damaged archive is already committed.
+    const long = `Long enough to exceed prettier's printWidth several times over, which is the length at which proseWrap: "always" would break the value across lines and harness would keep only the first of them. ${'Filler clause. '.repeat(8)}Ends deliberately.`;
+    writeFileSync(
+      roadmap,
+      ROADMAP_HEAD +
+        '## Intake\n\n' +
+        `### Wordy thing\n\n- **Status:** done\n- **Summary:** ${long}\n\n`,
+    );
+
+    expect(run('--apply').status).toBe(0);
+
+    const lines = readFileSync(archive, 'utf-8').split('\n');
+    const field = lines.filter((l) => l.startsWith('- **Summary:** Long'));
+
+    expect(field).toHaveLength(1);
+    expect(field[0]).toBe(`- **Summary:** ${long}`);
+  });
+
   it('is idempotent — a second run finds nothing left to move', () => {
     run('--apply');
     const settled = readFileSync(archive, 'utf-8');

@@ -1,7 +1,7 @@
-# docs/roadmap.md is machine-managed by harness roadmap tooling, and its schema
-# requires each `- **Key:** value` field to be ONE physical line. Prettier's
-# `proseWrap: "always"` wraps them, and harness then reads only the first line
-# and silently discards the rest — no error on either side. A shard + regen
+# The roadmap files below are machine-managed by harness roadmap tooling, and
+# the schema requires each `- **Key:** value` field to be ONE physical line.
+# Prettier's `proseWrap: "always"` wraps them, and harness reads only the first
+# line and silently discards the rest — no error on either side. A shard + regen
 # round-trip took the file from 40,525 bytes to 11,640 before this entry existed.
 #
 # This is not a style preference and it is not dead config. `.harness/hooks/
@@ -20,9 +20,19 @@
 # field-contract test asserts that comment is present for the same reason it
 # asserts the fields are unwrapped.
 #
-# Removing this entry silently re-breaks the file. The guard that FAILS when it
-# happens is ts/test/roadmap-field-contract.test.ts; keep the two in sync — if
-# sharded output is ever committed, extend the ignore and that test's file list
-# together, in one change. See docs/changes/roadmap-priority-and-field-contract/
+# Removing an entry silently re-breaks that file. The guard that FAILS when it
+# happens is ts/test/roadmap-field-contract.test.ts — and it DERIVES its file
+# list from the `docs/roadmap*` entries below (#630), so the exempted set and
+# guarded set are the same set mechanically rather than by instruction. Adding
+# a line here enrols the file in the guard; there is no second list to update.
+# If `harness roadmap shard` output is ever committed, add `docs/roadmap.d` and
+# every shard is scanned. See docs/changes/roadmap-priority-and-field-contract/
 # and AGENTS.md.
+#
+# docs/roadmap-archive.md is the same contract: scripts/roadmap-groom.mjs moves
+# rows into it verbatim, so a row that is one-line-correct in docs/roadmap.md
+# arrives one-line-correct here and prettier must not rewrap it. Measured
+# 2026-08-08, before this entry: 60 of its 63 rows had a wrapped `Summary`,
+# and `prettier --check` called the file clean while holding it that way.
 docs/roadmap.md
+docs/roadmap-archive.md
