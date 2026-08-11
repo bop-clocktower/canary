@@ -96,6 +96,43 @@ describe('guardian workflow', () => {
     ).toBe(true);
   });
 
+  it('hands pr-check a coverage report, so the top fidelity tier can run', () => {
+    // Until #655 this job passed no --coverage at all. Every verdict canary
+    // posted on its own PRs therefore came from the heuristic (filename) tier:
+    // 17 of the last 17 guardian comments read "coverage was unavailable", and
+    // the coverage-verified scorer was never executed by this repo's CI. That
+    // is why a defect in it could only be found by a downstream consumer.
+    const blocks = runBlocks(load());
+    expect(
+      blocks.some(
+        (b) => b.includes('guardian pr-check') && b.includes('--coverage'),
+      ),
+    ).toBe(true);
+  });
+
+  it('produces the lcov it hands over, in a format guardian parses', () => {
+    // lcov, not vitest's coverage-final.json: the .json branch of the reader
+    // expects canary's own coverage-json contract (`{"files": {...}}`) and
+    // returns null on istanbul's shape, which would degrade to heuristic while
+    // looking wired.
+    const blocks = runBlocks(load());
+    expect(blocks.some((b) => /npm .*test/.test(b))).toBe(true);
+    expect(blocks.some((b) => b.includes('lcov.info'))).toBe(true);
+  });
+
+  it('fails loudly when the coverage report is missing', () => {
+    // A absent lcov makes pr-check fall back to the heuristic tier and still
+    // exit 0 — indistinguishable from the wiring having worked. An unverifiable
+    // gate reports itself rather than reporting nothing (#508).
+    const blocks = runBlocks(load());
+    // Pins the behaviour, not the shell idiom: some block must test the report
+    // for non-emptiness (`-s`) and exit non-zero when it is not there.
+    const guard = blocks.find(
+      (b) => b.includes('lcov.info') && b.includes('-s ') && /exit 1/.test(b),
+    );
+    expect(guard).toBeDefined();
+  });
+
   it('invokes pr-check with --emit-analysis', () => {
     // SC-10 / #899: CI writes the finding record to the analyses channel.
     const blocks = runBlocks(load());

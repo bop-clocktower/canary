@@ -25,6 +25,31 @@ jobs:
       # OPTIONAL (commented): lift fidelity to graph-verified where harness is present.
       #   Baseline is heuristic on stock CI (graph.json is gitignored). See plan Assumptions.
       # - run: npx --yes -p @harness-engineering/cli harness graph
+      #
+      # Coverage-verified tier (#655). This job passed no `--coverage` at all
+      # until that issue, so every verdict canary posted on its own PRs came
+      # from the heuristic (filename) tier — 17 of the last 17 guardian comments
+      # read "coverage was unavailable", and the job finished in ~19s because it
+      # never measured anything. The top rung of the fidelity ladder was
+      # therefore unexecuted in this repo's CI, which is why #655 — a defect in
+      # the coverage-verified scorer itself — could only be found downstream by
+      # a consumer. Dogfooding the tier is what makes a regression in it visible
+      # here rather than in someone else's repo.
+      #
+      # A test failure fails this job. That double-reports with harness-quality,
+      # which is the honest trade: a verdict derived from a run that did not
+      # complete is not a verdict.
+      - name: Produce a coverage report for the guardian
+        run: npm --prefix ts test
+      # An absent or empty lcov makes pr-check degrade to the heuristic tier and
+      # still exit 0 — indistinguishable from the wiring above having worked.
+      # Say so instead of inheriting a green (#508).
+      - name: Verify the coverage report exists
+        run: |
+          if [ ! -s ts/coverage/lcov.info ]; then
+            echo "::error title=Coverage report missing::ts/coverage/lcov.info is absent or empty. The guardian would silently fall back to the heuristic tier and still report success."
+            exit 1
+          fi
       # Fetch the base branch so pr-check's own base-ref resolution can find it.
       # `fetch-depth: 0` above already gives full history; this makes sure the
       # `origin/<base>` ref exists, which is the first candidate pr-check tries.
@@ -60,7 +85,7 @@ jobs:
         # distinction the CLI does.
         run: |
           set +e
-          node ts/bin/canary.js guardian pr-check --emit-analysis --post-comment
+          node ts/bin/canary.js guardian pr-check --coverage ts/coverage/lcov.info --emit-analysis --post-comment
           rc=$?
           set -e
           if [ "$rc" -eq 3 ]; then

@@ -74,6 +74,16 @@ export interface CoverageResult {
   fidelity: Fidelity;
   evidence: string;
   uncovered_lines: number[];
+  /**
+   * How many of the unit's added lines the report could speak to (#655).
+   *
+   * The denominator that severity grading divides by. Only the coverage-verified
+   * tier can know it — the graph and heuristic tiers never see per-line data —
+   * so it is absent everywhere else, and consumers fall back to the added-line
+   * count. Without it, a unit whose every coverable line is unhit inside a
+   * mostly-uninstrumentable new file grades by a share diluted toward zero.
+   */
+  coverable_lines?: number;
 }
 
 /**
@@ -675,9 +685,9 @@ export function resolveFromReport(
   units: ChangedUnit[],
   reportPath: string,
 ): CoverageResult[] | null {
-  const { index } = readReportIndex(reportPath);
+  const { index, absence } = readReportIndex(reportPath);
   if (index === null) return null;
-  return matchUnitsToIndex(units, index);
+  return matchUnitsToIndex(units, index, absence);
 }
 
 /**
@@ -691,44 +701,76 @@ export function resolveFromReport(
 interface ReportRead {
   found: boolean;
   index: ReportIndex | null;
+  absence: AbsenceMeaning;
 }
+
+/**
+ * What it means for a changed line to have no record in the report (#655).
+ *
+ * `'not-coverable'` — lcov and Cobertura both enumerate every *instrumented*
+ * line (`DA:`, `<line number= hits=>`), so a line they never mention could not
+ * have been executed by anything: a comment, an import, a `type`/`interface`
+ * declaration, a blank line, a closing brace. It belongs in neither the
+ * numerator nor the denominator.
+ *
+ * `'uncovered'` — the coverage-json v1 contract says so in as many words ("a
+ * line absent from both fields is treated as uncovered"), and its
+ * `covered_lines` shorthand *cannot* express an unhit line, so absence is the
+ * only way a producer using it can report one. The contract is frozen; reading
+ * it the lcov way would silently blind every producer that uses the shorthand.
+ *
+ * Conflating the two is what made a wholly-new, fully-tested file report as
+ * almost entirely uncovered at the highest-trust tier — every line of a new
+ * file is a changed line, so the finding's size was exactly
+ * `file length − instrumented lines`.
+ */
+type AbsenceMeaning = 'not-coverable' | 'uncovered';
 
 /** Read + parse a coverage report, reporting each step's outcome separately. */
 function readReportIndex(reportPath: string): ReportRead {
-  if (!existsSync(reportPath)) return { found: false, index: null };
+  const unusable = (found: boolean): ReportRead => ({
+    found,
+    index: null,
+    absence: 'not-coverable',
+  });
+
+  if (!existsSync(reportPath)) return unusable(false);
   const text = readReportText(reportPath);
   // Present but unreadable/non-UTF-8 counts as found-and-unusable, not absent.
-  if (text === null) return { found: true, index: null };
+  if (text === null) return unusable(true);
 
   const name = basename(reportPath).toLowerCase();
   let index: ReportIndex | null;
+  let absence: AbsenceMeaning;
   if (name.endsWith('.json')) {
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
     } catch {
-      return { found: true, index: null };
+      return unusable(true);
     }
     index = parseCoverageJson(parsed);
+    absence = 'uncovered';
   } else if (name.endsWith('.info') || name.includes('lcov')) {
     index = parseLcov(text);
+    absence = 'not-coverable';
   } else if (name.endsWith('.xml')) {
     index = parseCobertura(text);
+    absence = 'not-coverable';
   } else {
     // Unrecognized format → fall through to a lower fidelity tier.
-    return { found: true, index: null };
+    return unusable(true);
   }
 
-  if (index === null || Object.keys(index).length === 0) {
-    return { found: true, index: null };
-  }
-  return { found: true, index };
+  if (index === null || Object.keys(index).length === 0) return unusable(true);
+  return { found: true, index, absence };
 }
 
 /** Resolve every unit the report index can speak to (COVERAGE_VERIFIED). */
 function matchUnitsToIndex(
   units: ChangedUnit[],
   index: ReportIndex,
+  absence: AbsenceMeaning,
 ): CoverageResult[] {
   const results: CoverageResult[] = [];
   for (const unit of units) {
@@ -741,11 +783,24 @@ function matchUnitsToIndex(
       continue;
     }
     const added = expandRanges(unit.added_ranges);
-    const uncovered = added.filter((ln) => (hits[ln] ?? 0) <= 0);
+    // The per-line form of the check above (#655): under a format that
+    // enumerates instrumented lines, a changed line with no record could not
+    // have been executed and is scored by neither side.
+    const coverable =
+      absence === 'not-coverable' ? added.filter((ln) => ln in hits) : added;
+    if (coverable.length === 0) {
+      // Every changed line is non-coverable, so this report has nothing to say
+      // about the unit. An abstention — never a clean pass, never a finding.
+      // Falls through to the graph/heuristic tier exactly as an absent path does.
+      continue;
+    }
+    const uncovered = coverable.filter((ln) => (hits[ln] ?? 0) <= 0);
     const covered = uncovered.length === 0;
+    // State the denominator: "all covered" over 20 changed lines and over the 3
+    // of them that were coverable are very different claims (#508).
     const evidence = covered
-      ? `lines ${rangesStr(unit.added_ranges)}: all covered`
-      : `lines ${rangesStr(unit.added_ranges)}: ${uncovered.length} uncovered`;
+      ? `lines ${rangesStr(unit.added_ranges)}: all ${coverable.length} coverable line(s) covered`
+      : `lines ${rangesStr(unit.added_ranges)}: ${uncovered.length} of ${coverable.length} coverable line(s) uncovered`;
     results.push(
       makeResult({
         unit,
@@ -753,6 +808,7 @@ function matchUnitsToIndex(
         fidelity: Fidelity.CoverageVerified,
         evidence,
         uncovered_lines: uncovered,
+        coverable_lines: coverable.length,
       }),
     );
   }
@@ -1558,7 +1614,9 @@ export function resolveCoverageWithInput(
     coverage.filesInReport =
       read.index === null ? 0 : Object.keys(read.index).length;
     const report =
-      read.index === null ? null : matchUnitsToIndex(remaining, read.index);
+      read.index === null
+        ? null
+        : matchUnitsToIndex(remaining, read.index, read.absence);
     // An empty array (no unit matched the report) is falsy-equivalent in the
     // Python `if report:` guard — fall through rather than lock in nothing.
     if (report !== null && report.length > 0) {
