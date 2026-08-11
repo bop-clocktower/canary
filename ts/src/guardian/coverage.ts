@@ -99,9 +99,42 @@ function makeResult(
   return { ...fields, uncovered_lines: fields.uncovered_lines ?? [] };
 }
 
-/** `{path: {line: hits}}` — one report's per-line hit counts. */
+/** `{line: hits}` — one file's per-line execution counts. */
 type LineHits = Record<number, number>;
-type ReportIndex = Record<string, LineHits>;
+
+/**
+ * One file's coverage, plus what the report claims it could measure (#657).
+ *
+ * `coverable` is the set of lines the report says were instrumented. A changed
+ * line outside it is **not coverable** — a comment, an import, a `type`
+ * declaration, a blank line — and is scored by neither side of the ratio
+ * (#655). `null` means the report never said, in which case every changed line
+ * is treated as coverable and absence means uncovered.
+ *
+ * Which case a format lands in is a property of the format, not a flag:
+ *
+ * - **lcov / Cobertura** enumerate every instrumented line by construction, so
+ *   the recorded lines *are* the coverable set.
+ * - **coverage-json** says nothing unless the producer declares
+ *   `instrumented_lines`; without it, the frozen v1 rule ("a line absent from
+ *   both fields is uncovered") applies and `coverable` stays `null`.
+ */
+interface FileCoverage {
+  hits: LineHits;
+  coverable: ReadonlySet<number> | null;
+}
+
+type ReportIndex = Record<string, FileCoverage>;
+
+/** Every line the report recorded is a line it could measure (lcov/Cobertura). */
+function selfDescribing(hits: LineHits): FileCoverage {
+  return { hits, coverable: recordedLines(hits) };
+}
+
+/** The line numbers a hit map has records for. */
+function recordedLines(hits: LineHits): Set<number> {
+  return new Set(Object.keys(hits).map(Number));
+}
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -166,7 +199,7 @@ function pathBoundaryMatch(candidate: string, target: string): boolean {
 }
 
 /**
- * Look up per-line hit counts for `path` in a report index.
+ * Look up one file's coverage for `path` in a report index.
  *
  * Prefers an EXACT path match. Otherwise falls back to a **boundary** suffix
  * match (report paths may be absolute, `./`-prefixed, or repo-relative). On
@@ -174,11 +207,11 @@ function pathBoundaryMatch(candidate: string, target: string): boolean {
  * returns `null` — the unit is then skipped and falls through rather than
  * binding to an arbitrary first match (FIX 6).
  */
-function matchHits(path: string, index: ReportIndex): LineHits | null {
+function matchFile(path: string, index: ReportIndex): FileCoverage | null {
   if (path in index) return index[path]!;
-  const matches: LineHits[] = [];
-  for (const [reportPath, hits] of Object.entries(index)) {
-    if (pathBoundaryMatch(reportPath, path)) matches.push(hits);
+  const matches: FileCoverage[] = [];
+  for (const [reportPath, file] of Object.entries(index)) {
+    if (pathBoundaryMatch(reportPath, path)) matches.push(file);
   }
   return matches.length === 1 ? matches[0]! : null;
 }
@@ -194,14 +227,19 @@ function rangesStr(ranges: LineRange[]): string {
 // LCOV
 // ---------------------------------------------------------------------------
 
-/** Parse `lcov.info` into `{path: {line: hits}}`. */
+/**
+ * Parse `lcov.info` into `{path: {line: hits}}`.
+ *
+ * Every `DA:` record is a line the instrumenter measured, so the recorded lines
+ * are exactly the coverable set — see {@link FileCoverage}.
+ */
 function parseLcov(text: string): ReportIndex {
-  const index: ReportIndex = {};
+  const byPath: Record<string, LineHits> = {};
   let current: string | null = null;
   for (const line of splitLines(text)) {
     if (line.startsWith('SF:')) {
       current = line.slice(3).trim();
-      if (!(current in index)) index[current] = {};
+      if (!(current in byPath)) byPath[current] = {};
     } else if (line.startsWith('DA:') && current !== null) {
       const body = line.slice(3).trim();
       const parts = body.split(',');
@@ -209,13 +247,24 @@ function parseLcov(text: string): ReportIndex {
         const lineno = pyInt(parts[0]!);
         const hits = pyInt(parts[1]!);
         if (lineno === null || hits === null) continue;
-        index[current]![lineno] = hits;
+        byPath[current]![lineno] = hits;
       }
     } else if (line.trim() === 'end_of_record') {
       current = null;
     }
   }
-  return index;
+  return mapValues(byPath, selfDescribing);
+}
+
+/** `Object.fromEntries(Object.entries(o).map(...))`, spelled once. */
+function mapValues<In, Out>(
+  source: Record<string, In>,
+  transform: (value: In) => Out,
+): Record<string, Out> {
+  const out: Record<string, Out> = {};
+  for (const [key, value] of Object.entries(source))
+    out[key] = transform(value);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,36 +302,73 @@ export function parseCoverageJson(data: unknown): ReportIndex | null {
 
   const index: ReportIndex = {};
   for (const [path, entry] of Object.entries(files)) {
-    if (!isRecord(entry)) continue;
-    const hits: LineHits = {};
-    const authoritative = new Set<number>(); // lines line_hits recorded (may be 0)
-
-    const lineHits = entry['line_hits'];
-    if (isRecord(lineHits)) {
-      for (const [k, v] of Object.entries(lineHits)) {
-        // Integers only, 1-based line, non-negative hits (see docstring).
-        if (!(isInt(v) && v >= 0)) continue;
-        const lineno = pyInt(k);
-        if (lineno === null) continue;
-        if (lineno < 1) continue;
-        hits[lineno] = v;
-        authoritative.add(lineno);
-      }
-    }
-
-    const covered = entry['covered_lines'];
-    if (Array.isArray(covered)) {
-      for (const lineno of covered) {
-        if (!(isInt(lineno) && lineno >= 1)) continue;
-        // line_hits is authoritative: covered_lines may add a line it didn't
-        // mention, but never override an explicit hit count (so a `{"14": 0}`
-        // unhit line stays uncovered).
-        if (!authoritative.has(lineno)) hits[lineno] = 1;
-      }
-    }
-    index[String(path)] = hits;
+    if (isRecord(entry)) index[String(path)] = parseFileEntry(entry);
   }
   return index;
+}
+
+/** Resolve one `files[path]` entry into its hit map and coverable set. */
+function parseFileEntry(entry: Record<string, unknown>): FileCoverage {
+  // line_hits is authoritative: covered_lines may add a line it didn't mention,
+  // but never overrides an explicit hit count (so a `{"14": 0}` unhit line
+  // stays uncovered).
+  const recorded = readLineHits(entry['line_hits']);
+  const hits: LineHits = { ...recorded };
+  for (const lineno of coveredLineNumbers(entry['covered_lines'])) {
+    if (!(lineno in recorded)) hits[lineno] = 1;
+  }
+  return {
+    hits,
+    coverable: declaredCoverable(entry['instrumented_lines'], hits),
+  };
+}
+
+/** `line_hits` → hit map, dropping anything the v1 contract rejects. */
+function readLineHits(value: unknown): LineHits {
+  const hits: LineHits = {};
+  if (!isRecord(value)) return hits;
+  for (const [key, count] of Object.entries(value)) {
+    // Integers only, 1-based line, non-negative hits (see docstring).
+    if (!(isInt(count) && count >= 0)) continue;
+    const lineno = pyInt(key);
+    if (lineno === null || lineno < 1) continue;
+    hits[lineno] = count;
+  }
+  return hits;
+}
+
+/** `covered_lines` → the line numbers that survive the v1 contract. */
+function coveredLineNumbers(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((n): n is number => isInt(n) && n >= 1);
+}
+
+/**
+ * Resolve a file entry's `instrumented_lines` declaration (#657).
+ *
+ * Returns the set of lines the report can speak to, or `null` when the producer
+ * did not declare one — which is every v1 document written before this field
+ * existed, and is why adding it changes no existing behaviour.
+ *
+ * A malformed declaration degrades to `null` rather than dropping the entry,
+ * matching the parser's leniency everywhere else: one bad field costs that
+ * field, never the file's coverage. `validateCoverageJson` is what makes the
+ * degradation audible.
+ *
+ * Recorded lines are unioned in. A `line_hits` key outside the declared set is
+ * a producer contradicting itself, and real measurement outranks a declaration
+ * — dropping it would discard a hit count the producer actually took.
+ */
+function declaredCoverable(
+  declaration: unknown,
+  hits: LineHits,
+): ReadonlySet<number> | null {
+  if (!Array.isArray(declaration)) return null;
+  const coverable = recordedLines(hits);
+  for (const lineno of declaration) {
+    if (isInt(lineno) && lineno >= 1) coverable.add(lineno);
+  }
+  return coverable;
 }
 
 /**
@@ -424,9 +510,90 @@ export function validateCoverageJson(data: unknown): CoverageProblem[] {
     if (Object.keys(recorded).length === 0) {
       warn(loc, 'no usable coverage lines; contributes nothing');
     }
+
+    validateInstrumentedLines(entry, recorded, loc, warn);
   }
 
   return problems;
+}
+
+/**
+ * Check a file entry's `instrumented_lines`, and nudge producers that need it.
+ *
+ * Two jobs. The shape checks mirror the parser, as everywhere else in this
+ * validator. The interesting one is the **ambiguity** warning: a document
+ * leaning on `covered_lines` cannot express an unhit line *or* a
+ * non-instrumented one, so every line it omits lands downstream as a coverage
+ * gap. That is exactly what transcoding lcov into this format produces, and it
+ * is the failure #657 exists to close — the producer sees success while the
+ * consumer invents findings. Silence there would be the same shape this repo
+ * keeps closing, so the validator says it out loud.
+ *
+ * It is deliberately scoped to `covered_lines`, the field that *structurally*
+ * cannot report a miss. A `line_hits` document with no zeros is not evidence of
+ * the same mistake: that producer can express an unhit line and simply had none
+ * to report, which is what a fully-covered file looks like. Warning there would
+ * fire on correct documents, and a warning that cries wolf is one producers
+ * learn to skip — the precision lesson from #553.
+ *
+ * The warning clears as soon as the document is unambiguous by either route: a
+ * declared `instrumented_lines`, or an explicit `0` in `line_hits`. A producer
+ * already doing the right thing must not be nagged toward a second mechanism.
+ */
+function validateInstrumentedLines(
+  entry: Record<string, unknown>,
+  recorded: LineHits,
+  loc: string,
+  warn: (location: string, message: string) => void,
+): void {
+  const declaration = entry['instrumented_lines'];
+  const dloc = `${loc}.instrumented_lines`;
+
+  if (declaration === undefined || declaration === null) {
+    const usesShorthand = Array.isArray(entry['covered_lines']);
+    const declaresAMiss = Object.values(recorded).includes(0);
+    if (usesShorthand && !declaresAMiss) {
+      warn(
+        loc,
+        "reports coverage via 'covered_lines', which cannot express an unhit " +
+          'line, so a changed line this document omits is read as uncovered — ' +
+          'a line that was never instrumented (a comment, an import, a type ' +
+          "declaration) becomes a coverage gap. Declare 'instrumented_lines', " +
+          'or record unhit lines as line_hits 0',
+      );
+    }
+    return;
+  }
+
+  if (!Array.isArray(declaration)) {
+    warn(dloc, 'must be an array of line numbers; ignored');
+    return;
+  }
+
+  declaration.forEach((lineno, i) => {
+    if (!isInt(lineno)) {
+      warn(`${dloc}[${i}]`, `${repr(lineno)} is not an integer; dropped`);
+      return;
+    }
+    if (lineno < 1) {
+      warn(`${dloc}[${i}]`, 'line number must be >= 1; dropped');
+    }
+  });
+
+  // A recorded line the declaration omits is a producer contradicting itself.
+  // The parser keeps the measurement, so this costs no coverage — but a
+  // declaration that disagrees with the data is worth hearing about.
+  const declared = new Set(declaration.filter(isInt));
+  const undeclared = Object.keys(recorded)
+    .map(Number)
+    .filter((ln) => !declared.has(ln));
+  if (undeclared.length > 0) {
+    warn(
+      dloc,
+      `line(s) ${undeclared.join(', ')} have coverage data but are not ` +
+        'declared instrumented; the measurement wins and they stay coverable',
+    );
+  }
 }
 
 /** Rough analog of Python's `repr()` for scalar diagnostic values. */
@@ -487,7 +654,9 @@ function parseCobertura(text: string): ReportIndex | null {
   const rootMatch = /<(?![?!])([A-Za-z_][\w.:-]*)/.exec(withoutComments);
   if (rootMatch === null || rootMatch[1] !== 'coverage') return null;
 
-  const index: ReportIndex = {};
+  // Built as raw hit maps; every `<line>` record is a line the instrumenter
+  // measured, so the recorded lines become the coverable set on the way out.
+  const index: Record<string, LineHits> = {};
   // Walk each <class> open tag. A self-closing `<class .../>` is an empty class
   // (its filename recorded, no lines) — critically, it must NOT be paired with
   // the NEXT class's `</class>`, or that class's lines bind to the wrong file.
@@ -539,7 +708,7 @@ function parseCobertura(text: string): ReportIndex | null {
   // Drop classes that yielded no parseable lines; require at least one.
   const pruned: ReportIndex = {};
   for (const [path, hits] of Object.entries(index)) {
-    if (Object.keys(hits).length > 0) pruned[path] = hits;
+    if (Object.keys(hits).length > 0) pruned[path] = selfDescribing(hits);
   }
   return Object.keys(pruned).length > 0 ? pruned : null;
 }
@@ -685,9 +854,9 @@ export function resolveFromReport(
   units: ChangedUnit[],
   reportPath: string,
 ): CoverageResult[] | null {
-  const { index, absence } = readReportIndex(reportPath);
+  const { index } = readReportIndex(reportPath);
   if (index === null) return null;
-  return matchUnitsToIndex(units, index, absence);
+  return matchUnitsToIndex(units, index);
 }
 
 /**
@@ -701,38 +870,11 @@ export function resolveFromReport(
 interface ReportRead {
   found: boolean;
   index: ReportIndex | null;
-  absence: AbsenceMeaning;
 }
-
-/**
- * What it means for a changed line to have no record in the report (#655).
- *
- * `'not-coverable'` — lcov and Cobertura both enumerate every *instrumented*
- * line (`DA:`, `<line number= hits=>`), so a line they never mention could not
- * have been executed by anything: a comment, an import, a `type`/`interface`
- * declaration, a blank line, a closing brace. It belongs in neither the
- * numerator nor the denominator.
- *
- * `'uncovered'` — the coverage-json v1 contract says so in as many words ("a
- * line absent from both fields is treated as uncovered"), and its
- * `covered_lines` shorthand *cannot* express an unhit line, so absence is the
- * only way a producer using it can report one. The contract is frozen; reading
- * it the lcov way would silently blind every producer that uses the shorthand.
- *
- * Conflating the two is what made a wholly-new, fully-tested file report as
- * almost entirely uncovered at the highest-trust tier — every line of a new
- * file is a changed line, so the finding's size was exactly
- * `file length − instrumented lines`.
- */
-type AbsenceMeaning = 'not-coverable' | 'uncovered';
 
 /** Read + parse a coverage report, reporting each step's outcome separately. */
 function readReportIndex(reportPath: string): ReportRead {
-  const unusable = (found: boolean): ReportRead => ({
-    found,
-    index: null,
-    absence: 'not-coverable',
-  });
+  const unusable = (found: boolean): ReportRead => ({ found, index: null });
 
   if (!existsSync(reportPath)) return unusable(false);
   const text = readReportText(reportPath);
@@ -741,7 +883,6 @@ function readReportIndex(reportPath: string): ReportRead {
 
   const name = basename(reportPath).toLowerCase();
   let index: ReportIndex | null;
-  let absence: AbsenceMeaning;
   if (name.endsWith('.json')) {
     let parsed: unknown;
     try {
@@ -750,44 +891,42 @@ function readReportIndex(reportPath: string): ReportRead {
       return unusable(true);
     }
     index = parseCoverageJson(parsed);
-    absence = 'uncovered';
   } else if (name.endsWith('.info') || name.includes('lcov')) {
     index = parseLcov(text);
-    absence = 'not-coverable';
   } else if (name.endsWith('.xml')) {
     index = parseCobertura(text);
-    absence = 'not-coverable';
   } else {
     // Unrecognized format → fall through to a lower fidelity tier.
     return unusable(true);
   }
 
   if (index === null || Object.keys(index).length === 0) return unusable(true);
-  return { found: true, index, absence };
+  return { found: true, index };
 }
 
 /** Resolve every unit the report index can speak to (COVERAGE_VERIFIED). */
 function matchUnitsToIndex(
   units: ChangedUnit[],
   index: ReportIndex,
-  absence: AbsenceMeaning,
 ): CoverageResult[] {
   const results: CoverageResult[] = [];
   for (const unit of units) {
-    const hits = matchHits(unit.path, index);
-    if (hits === null) {
+    const file = matchFile(unit.path, index);
+    if (file === null) {
       // Unit path is nowhere in the report index → "not instrumented", which is
       // NOT the same as "instrumented and unhit". Emit no COVERAGE_VERIFIED
       // result so the orchestrator falls through to a lower-fidelity tier for
       // this unit (FIX 2).
       continue;
     }
+    const { hits, coverable: measured } = file;
     const added = expandRanges(unit.added_ranges);
-    // The per-line form of the check above (#655): under a format that
-    // enumerates instrumented lines, a changed line with no record could not
-    // have been executed and is scored by neither side.
+    // The per-line form of the check above (#655/#657): where the report says
+    // which lines it instrumented, a changed line outside that set could not
+    // have been executed and is scored by neither side. Where it does not say,
+    // every changed line counts and absence means uncovered.
     const coverable =
-      absence === 'not-coverable' ? added.filter((ln) => ln in hits) : added;
+      measured === null ? added : added.filter((ln) => measured.has(ln));
     if (coverable.length === 0) {
       // Every changed line is non-coverable, so this report has nothing to say
       // about the unit. An abstention — never a clean pass, never a finding.
@@ -1614,9 +1753,7 @@ export function resolveCoverageWithInput(
     coverage.filesInReport =
       read.index === null ? 0 : Object.keys(read.index).length;
     const report =
-      read.index === null
-        ? null
-        : matchUnitsToIndex(remaining, read.index, read.absence);
+      read.index === null ? null : matchUnitsToIndex(remaining, read.index);
     // An empty array (no unit matched the report) is falsy-equivalent in the
     // Python `if report:` guard — fall through rather than lock in nothing.
     if (report !== null && report.length > 0) {

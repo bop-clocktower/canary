@@ -1212,3 +1212,134 @@ end_of_record
     expect(results![0]!.covered).toBe(false);
   });
 });
+
+/**
+ * `instrumented_lines` — coverage-json can now say what it measured (#657).
+ *
+ * #655 fixed the per-line rule for lcov and Cobertura, which enumerate every
+ * instrumented line, and deliberately left coverage-json alone: its v1 contract
+ * says a line absent from both fields is *uncovered*, and `covered_lines`
+ * cannot express an unhit line, so absence is the only way a producer using the
+ * shorthand can report one.
+ *
+ * That left a real trap. The contract had no way to say "this line was never
+ * instrumented", so a producer transcoding lcov into it reproduced #655
+ * exactly: the non-instrumented lines it dropped came back as coverage gaps, at
+ * the `coverage-verified` label.
+ *
+ * The fix is additive and stays on v1. A file entry may declare
+ * `instrumented_lines`; when it does, that set is what the report can speak to
+ * and absence outside it means NOT COVERABLE — the lcov rule, opted into
+ * per-file. When it does not, v1 semantics are untouched, so no existing
+ * producer changes behaviour and no existing document is re-read.
+ */
+describe('instrumented_lines (#657)', () => {
+  const unit = (added: [number, number][]): ChangedUnit => ({
+    path: 'pkg/new_module.py',
+    added_ranges: added,
+  });
+
+  const report = (entry: Record<string, unknown>): string =>
+    write(
+      'coverage.json',
+      JSON.stringify({ files: { 'pkg/new_module.py': entry } }),
+    );
+
+  it('excludes a changed line the producer never instrumented', () => {
+    // Lines 1-9 are imports and types: absent from the declared set, so the
+    // report cannot speak to them and they are scored by neither side. Under
+    // v1 semantics every one of them would have counted as a miss.
+    const path = report({
+      line_hits: { '10': 3, '11': 2 },
+      instrumented_lines: [10, 11],
+    });
+
+    const results = resolveFromReport([unit([[1, 11]])], path);
+
+    expect(results![0]!.uncovered_lines).toEqual([]);
+    expect(results![0]!.covered).toBe(true);
+    expect(results![0]!.coverable_lines).toBe(2);
+  });
+
+  it('counts an instrumented line with no hit record as uncovered', () => {
+    // The point of the field: 12 was measured and never ran. Declaring it is
+    // how a producer reports a miss without listing it in line_hits.
+    const path = report({
+      line_hits: { '10': 3 },
+      instrumented_lines: [10, 11, 12],
+    });
+
+    const results = resolveFromReport([unit([[1, 20]])], path);
+
+    expect(results![0]!.uncovered_lines).toEqual([11, 12]);
+    expect(results![0]!.covered).toBe(false);
+    expect(results![0]!.coverable_lines).toBe(3);
+  });
+
+  it('keeps line_hits authoritative over the declared set', () => {
+    // `{"11": 0}` is an explicit unhit line and stays uncovered; listing 11 in
+    // covered_lines must not upgrade it. That rule is frozen and predates this
+    // field — declaring instrumentation must not become a way around it.
+    const path = report({
+      line_hits: { '10': 3, '11': 0 },
+      covered_lines: [11],
+      instrumented_lines: [10, 11],
+    });
+
+    const results = resolveFromReport([unit([[1, 20]])], path);
+
+    expect(results![0]!.uncovered_lines).toEqual([11]);
+  });
+
+  it('treats a line_hits key outside the declared set as coverable', () => {
+    // A producer contradicting itself: it recorded a hit count for a line it
+    // did not declare. Real measurement outranks the declaration, so the line
+    // is coverable. The validator warns about the contradiction separately.
+    const path = report({
+      line_hits: { '10': 3, '50': 0 },
+      instrumented_lines: [10],
+    });
+
+    const results = resolveFromReport([unit([[1, 60]])], path);
+
+    expect(results![0]!.uncovered_lines).toEqual([50]);
+    expect(results![0]!.coverable_lines).toBe(2);
+  });
+
+  it('abstains when no changed line is coverable', () => {
+    // Never a clean pass and never a finding — the report has nothing to say
+    // about this unit, so it falls through to the graph/heuristic tier.
+    const path = report({
+      line_hits: { '10': 3 },
+      instrumented_lines: [10],
+    });
+
+    expect(resolveFromReport([unit([[1, 5]])], path)).toEqual([]);
+  });
+
+  it('leaves a document without the field on v1 semantics', () => {
+    // The compatibility guarantee. No field means the producer said nothing
+    // about instrumentation, so absence still means uncovered exactly as the
+    // frozen contract states — existing producers are not re-read.
+    const path = report({ covered_lines: [10] });
+
+    const results = resolveFromReport([unit([[10, 12]])], path);
+
+    expect(results![0]!.uncovered_lines).toEqual([11, 12]);
+    expect(results![0]!.covered).toBe(false);
+  });
+
+  it('ignores a malformed declaration rather than dropping the file', () => {
+    // Leniency matches the rest of the parser: one bad field degrades that
+    // field, never the whole entry. A non-array declaration means "not
+    // declared", so the entry falls back to v1 semantics.
+    const path = report({
+      line_hits: { '10': 3 },
+      instrumented_lines: 'all of them',
+    });
+
+    const results = resolveFromReport([unit([[10, 11]])], path);
+
+    expect(results![0]!.uncovered_lines).toEqual([11]);
+  });
+});

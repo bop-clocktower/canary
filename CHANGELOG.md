@@ -14,6 +14,28 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`coverage.json` producers can declare `instrumented_lines`.** The contract
+  had no way to say "this line was never instrumented", only "this line is not
+  covered", so a producer transcoding lcov into the format reproduced the #655
+  defect on the consumer side: the non-instrumented lines it dropped came back
+  as coverage gaps, at the `coverage-verified` label. A file entry may now
+  declare the lines its tool actually measured, and a changed line outside that
+  set is scored by neither side of the ratio — the lcov rule, opted into
+  per-file. The field is optional and additive: a document without it is read
+  exactly as before, so no existing producer changes behaviour and the frozen v1
+  semantics stand. ([#657])
+- **`guardian validate-coverage` warns when a document cannot express a miss.**
+  A report leaning on `covered_lines`, with no declared instrumentation and no
+  unhit line recorded, is silently ambiguous — every line it omits becomes a
+  reported gap downstream while the producer sees success. It is scoped to that
+  shape deliberately: a `line_hits` document with no zeros is what a
+  fully-covered file looks like, and warning there would fire on correct
+  documents. Advisory unless `--strict`. ([#657])
+
+[#657]: https://github.com/bop-clocktower/canary/issues/657
+
 ## [6.8.1] - 2026-08-10
 
 A single consumer-reported defect in the guardian's highest-trust coverage tier,
