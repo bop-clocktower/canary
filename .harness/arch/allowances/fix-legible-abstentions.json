@@ -1,0 +1,8 @@
+{
+  "reason": "#660 (#650/#564/#522): make silent gate abstentions legible. +352 aggregate LOC is new detection capability plus its tests -- built-in doctor engine checks in npm/src/engine-checks.ts, a precommit abstention testkit, and denominator assertions for harness-config and plugin-version. Zero new architecture violations and one violation RESOLVED (b1ff9e84); module-size is a repo-wide aggregate, so checks that exist to report a zero denominator can only add to it. Not duplication: the abstention-testkit replaces per-test ad hoc setup.",
+  "categories": {
+    "module-size": 27317
+  },
+  "violationIds": [],
+  "createdFrom": "c74eba5"
+}
