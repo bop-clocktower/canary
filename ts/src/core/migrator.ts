@@ -1854,7 +1854,7 @@ export class HarnessMigrator {
   private resolveFromWorkspace(ws: WorkspaceInfo): ProbeResult | null {
     const findings = ws.findings;
     if (findings.length === 0) return null;
-    const pairs = new Set(findings.map((f) => `${f.framework} ${f.shape}`));
+    const pairs = new Set(findings.map((f) => `${f.framework}\0${f.shape}`));
     if (pairs.size > 1) {
       return [null, 'unknown', 'workspace (mixed)', 'none'];
     }
