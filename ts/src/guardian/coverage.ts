@@ -302,39 +302,45 @@ export function parseCoverageJson(data: unknown): ReportIndex | null {
 
   const index: ReportIndex = {};
   for (const [path, entry] of Object.entries(files)) {
-    if (!isRecord(entry)) continue;
-    const hits: LineHits = {};
-    const authoritative = new Set<number>(); // lines line_hits recorded (may be 0)
-
-    const lineHits = entry['line_hits'];
-    if (isRecord(lineHits)) {
-      for (const [k, v] of Object.entries(lineHits)) {
-        // Integers only, 1-based line, non-negative hits (see docstring).
-        if (!(isInt(v) && v >= 0)) continue;
-        const lineno = pyInt(k);
-        if (lineno === null) continue;
-        if (lineno < 1) continue;
-        hits[lineno] = v;
-        authoritative.add(lineno);
-      }
-    }
-
-    const covered = entry['covered_lines'];
-    if (Array.isArray(covered)) {
-      for (const lineno of covered) {
-        if (!(isInt(lineno) && lineno >= 1)) continue;
-        // line_hits is authoritative: covered_lines may add a line it didn't
-        // mention, but never override an explicit hit count (so a `{"14": 0}`
-        // unhit line stays uncovered).
-        if (!authoritative.has(lineno)) hits[lineno] = 1;
-      }
-    }
-    index[String(path)] = {
-      hits,
-      coverable: declaredCoverable(entry['instrumented_lines'], hits),
-    };
+    if (isRecord(entry)) index[String(path)] = parseFileEntry(entry);
   }
   return index;
+}
+
+/** Resolve one `files[path]` entry into its hit map and coverable set. */
+function parseFileEntry(entry: Record<string, unknown>): FileCoverage {
+  // line_hits is authoritative: covered_lines may add a line it didn't mention,
+  // but never overrides an explicit hit count (so a `{"14": 0}` unhit line
+  // stays uncovered).
+  const recorded = readLineHits(entry['line_hits']);
+  const hits: LineHits = { ...recorded };
+  for (const lineno of coveredLineNumbers(entry['covered_lines'])) {
+    if (!(lineno in recorded)) hits[lineno] = 1;
+  }
+  return {
+    hits,
+    coverable: declaredCoverable(entry['instrumented_lines'], hits),
+  };
+}
+
+/** `line_hits` → hit map, dropping anything the v1 contract rejects. */
+function readLineHits(value: unknown): LineHits {
+  const hits: LineHits = {};
+  if (!isRecord(value)) return hits;
+  for (const [key, count] of Object.entries(value)) {
+    // Integers only, 1-based line, non-negative hits (see docstring).
+    if (!(isInt(count) && count >= 0)) continue;
+    const lineno = pyInt(key);
+    if (lineno === null || lineno < 1) continue;
+    hits[lineno] = count;
+  }
+  return hits;
+}
+
+/** `covered_lines` → the line numbers that survive the v1 contract. */
+function coveredLineNumbers(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((n): n is number => isInt(n) && n >= 1);
 }
 
 /**
