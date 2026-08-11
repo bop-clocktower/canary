@@ -1,0 +1,8 @@
+{
+  "reason": "module-size +357 (26965->27322) is PR #659 landing coverage-json line declarations: guardian/coverage.ts 1586->1781 (+195), core/string-literals.ts +16, guardian/pr-check.ts +15, core/workspace-detect.ts +5. No new modules (81 files before and after) - growth is entirely inside existing, reviewed modules. Tracked for follow-up: coverage.ts is now 1781 lines and already owns the three worst complexity errors in the repo (cc=37/35/22). Tracked in #668.",
+  "categories": {
+    "module-size": 27322
+  },
+  "violationIds": [],
+  "createdFrom": "6368545"
+}
