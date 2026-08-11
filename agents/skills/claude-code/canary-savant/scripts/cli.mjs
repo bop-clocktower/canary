@@ -20,6 +20,11 @@ import fs from 'node:fs';
 import { scanPaths, toJson } from './scanner.mjs';
 import { confirm, locatePolluters, realPolluterSeams } from './runner.mjs';
 import { RULES } from './rules.mjs';
+import {
+  createParser,
+  formatUsageError,
+  EXIT_USAGE,
+} from '../../../lib/parse-args.mjs';
 
 export const SCHEMA_VERSION = 1;
 
@@ -38,9 +43,6 @@ const ABSTAINED_LINE =
   '\u{26A0} Abstained \u{2014} verified zero items; this is not a pass.';
 
 const PREFIX = 'canary-savant:';
-
-/** A well-formed integer literal, sign optional. Used for --seed. */
-const INT_RE = /^[+-]?\d+$/;
 
 // The rules block is GENERATED from RULES, never hand-typed, so a new rule
 // appears in --help the moment it is registered.
@@ -122,93 +124,26 @@ function renderText(result) {
 }
 
 /**
- * Match argparse's contract for the exit paths a hand-rolled loop has to
- * honour: `-h`/`--help` prints usage and exits 0; an unknown flag exits 2. A
- * bare `--` is the end-of-options terminator, after which every token is a
- * path; a lone `-` stays a positional, as argparse treats it.
+ * savant takes paths, so it gets the `--` end-of-options terminator and treats
+ * a lone `-` as a positional, as argparse does.
+ *
+ * `--seed` is the flag that made the shared int type worth having: a bad value
+ * used to decay to `Math.floor(Math.random() * 1e6)` at exit 0, silently
+ * randomizing the one flag whose entire purpose is reproducibility. The shared
+ * parser rejects a non-integer AND an integer past the safe range (#479).
  */
-function parseArgs(argv) {
-  const paths = [];
-  const opts = {
-    json: false,
-    strict: false,
-    confirm: false,
-    seed: undefined,
-    help: false,
-    error: null,
-  };
-  let noMoreFlags = false;
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    if (noMoreFlags) {
-      paths.push(arg);
-      continue;
-    }
-    // `--flag=value`, matching canary-instrument and canary-fail-fast so all
-    // four ported CLIs accept the same two spellings.
-    const eq = arg.startsWith('--') ? arg.indexOf('=') : -1;
-    const inlineFlag = eq !== -1 ? arg.slice(0, eq) : null;
+export const CLI_SPEC = {
+  prog: 'canary-savant',
+  booleans: {
+    '--json': 'json',
+    '--strict': 'strict',
+    '--confirm': 'confirm',
+  },
+  values: { '--seed': { key: 'seed', type: 'int' } },
+  positionals: { key: 'paths', defaults: ['.'] },
+};
 
-    if (arg === '-h' || arg === '--help') {
-      opts.help = true;
-      return { paths, opts };
-    } else if (arg === '--') noMoreFlags = true;
-    else if (arg === '--json') opts.json = true;
-    else if (arg === '--strict') opts.strict = true;
-    else if (arg === '--confirm') opts.confirm = true;
-    else if (arg === '--seed' || inlineFlag === '--seed') {
-      // --seed is a DETERMINISM flag, so every bad spelling has to be loud.
-      // `Number(argv[i + 1])` used to yield NaN for BOTH a missing value and a
-      // non-numeric one; NaN then failed the `Number.isFinite` guard in main
-      // and fell through to `Math.floor(Math.random() * 1e6)` -- the one flag
-      // whose whole purpose is reproducibility, silently randomizing at exit 0.
-      let raw;
-      if (inlineFlag === '--seed') {
-        raw = arg.slice(eq + 1); // `--seed=-5` keeps its sign
-      } else {
-        const next = argv[i + 1];
-        // A leading '-' normally means "this is the next flag, not my value",
-        // but negative seeds are legitimate -- so a token that is itself a
-        // well-formed integer counts as the value. Without this, `--seed -5`
-        // died with "expected one argument" (a false statement: an argument
-        // WAS supplied) while `--seed=-5` worked, splitting two spellings the
-        // SKILL.md calls equivalent.
-        if (
-          next === undefined ||
-          (next.startsWith('-') && !INT_RE.test(next))
-        ) {
-          opts.error = `argument --seed: expected one argument`;
-          return { paths, opts };
-        }
-        raw = next;
-        i += 1;
-      }
-      // Validate the VALUE, not just its presence: reject anything that is not
-      // a finite integer ('abc', '3.7', '1e999', '', '0x10') the way argparse's
-      // `type=int` would, instead of letting it decay to a random seed.
-      if (!INT_RE.test(raw)) {
-        opts.error = `argument --seed: invalid int value: '${raw}'`;
-        return { paths, opts };
-      }
-      // Syntactically an integer is not enough: Number() silently rounds past
-      // 2^53-1, so `--seed 9007199254740993` would RUN with ...992 -- the seed
-      // used differing from the seed asked for, which is the exact class of
-      // lie this flag must not tell. (Bigger values reach 1e26, which
-      // runner.mjs interpolates as `--randomly-seed=1e+26` and pytest-randomly
-      // rejects at runtime.)
-      const parsed = Number(raw);
-      if (!Number.isSafeInteger(parsed)) {
-        opts.error = `argument --seed: seed out of safe integer range: '${raw}'`;
-        return { paths, opts };
-      }
-      opts.seed = parsed;
-    } else if (arg.startsWith('-') && arg !== '-') {
-      opts.error = `unrecognized arguments: ${arg}`;
-      return { paths, opts };
-    } else paths.push(arg);
-  }
-  return { paths: paths.length ? paths : ['.'], opts };
-}
+const parseArgs = createParser(CLI_SPEC);
 
 export function renderConfirm(dyn) {
   if (
@@ -256,17 +191,17 @@ export function renderConfirm(dyn) {
 }
 
 export function main(argv = []) {
-  const { paths, opts } = parseArgs(argv);
+  const { positionals: paths, opts, help, error } = parseArgs(argv);
 
   // Usage and parse errors resolve before any filesystem work, so `--help`
   // never reports a missing path and a typo never half-runs a scan.
-  if (opts.help) {
+  if (help) {
     console.log(USAGE);
     return 0;
   }
-  if (opts.error) {
-    console.error(`${PREFIX} ${opts.error}`);
-    return 2;
+  if (error) {
+    console.error(formatUsageError(CLI_SPEC.prog, error));
+    return EXIT_USAGE;
   }
 
   for (const entry of paths) {

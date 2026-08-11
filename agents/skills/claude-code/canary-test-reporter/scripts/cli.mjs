@@ -13,6 +13,11 @@
 
 import fs from 'node:fs';
 
+import {
+  createParser,
+  formatUsageError,
+  EXIT_USAGE,
+} from '../../../lib/parse-args.mjs';
 import { parseResults } from './parse.mjs';
 import { renderMarkdown } from './render.mjs';
 import { renderJson } from './json_report.mjs';
@@ -25,82 +30,33 @@ const USAGE =
   '\n' +
   'Playwright JSON results -> Markdown + JSON test report.';
 
-// Null-prototype: on a plain object literal every inherited key resolves
-// truthy, so `VALUE_FLAGS['toString']` would be Object.prototype.toString and
-// the token `toString` would be consumed as a value flag. That is the worst
-// failure in this family -- unlike the other CLIs, this one would then exit 0
-// with the report written and the user's tokens silently discarded.
-const VALUE_FLAGS = Object.assign(Object.create(null), {
-  '--results': 'results',
-  '--markdown-out': 'markdownOut',
-  '--json-out': 'jsonOut',
-});
-
 /**
- * Hand-rolled argparse-parity parser. `--help`/`-h` prints usage and exits 0;
- * an unknown flag or a value-flag missing its argument exits 2; a missing
- * required `--results` exits 2. We deliberately do NOT replicate argparse's
- * prefix-abbreviation, consistent with the canary-fail-fast/instrument ports.
- * `--flag=value` is supported.
+ * `--results` is required; the optional writers default to null so main can
+ * tell "not asked for" from "asked for, empty". The four shared invariants live
+ * in the shared parser (#479).
  */
-function parseArgs(argv) {
-  const opts = {
-    results: null,
-    markdownOut: null,
-    jsonOut: null,
-    help: false,
-    error: null,
-  };
-  for (let i = 0; i < argv.length; i += 1) {
-    const a = argv[i];
-    if (a === '-h' || a === '--help') {
-      opts.help = true;
-      return opts;
-    }
+export const CLI_SPEC = {
+  prog: 'canary-test-reporter',
+  values: {
+    '--results': { key: 'results' },
+    '--markdown-out': { key: 'markdownOut' },
+    '--json-out': { key: 'jsonOut' },
+  },
+  required: ['--results'],
+};
 
-    // `--flag=value`
-    const eq = a.indexOf('=');
-    if (a.startsWith('--') && eq !== -1) {
-      const key = VALUE_FLAGS[a.slice(0, eq)];
-      if (!key) {
-        opts.error = `unrecognized arguments: ${a}`;
-        return opts;
-      }
-      opts[key] = a.slice(eq + 1);
-      continue;
-    }
-
-    // `--flag value`
-    const key = VALUE_FLAGS[a];
-    if (!key) {
-      opts.error = `unrecognized arguments: ${a}`;
-      return opts;
-    }
-    const next = argv[i + 1];
-    if (next === undefined || next.startsWith('-')) {
-      opts.error = `argument ${a}: expected one argument`;
-      return opts;
-    }
-    opts[key] = next;
-    i += 1;
-  }
-  return opts;
-}
+const parseArgs = createParser(CLI_SPEC);
 
 export function main(argv = []) {
-  const args = parseArgs(argv);
+  const { opts: args, help, error } = parseArgs(argv);
 
-  if (args.help) {
+  if (help) {
     console.log(USAGE);
     return 0;
   }
-  if (args.error) {
-    console.error(`${PREFIX} ${args.error}`);
-    return 2;
-  }
-  if (!args.results) {
-    console.error(`${PREFIX} the following arguments are required: --results`);
-    return 2;
+  if (error) {
+    console.error(formatUsageError(CLI_SPEC.prog, error));
+    return EXIT_USAGE;
   }
 
   if (!fs.existsSync(args.results)) {

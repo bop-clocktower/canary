@@ -229,6 +229,67 @@ Before adding a skill, confirm:
 Then mirror the SKILL.md format above. Use the existing skills in this catalog
 as templates — match section ordering, table style, and example density.
 
+## The skill-CLI contract
+
+A skill that declares `cli:` in its frontmatter ships an executable entry point,
+and every one of them behaves the same way. That uniformity is enforced, not
+merely encouraged: `test/skill-cli-conformance.test.ts` **discovers** every
+SKILL.md declaring `cli:` and holds it to the contract below, so a new skill is
+covered the moment it lands rather than when someone remembers to add a copy.
+
+| Situation                                        | stdout/stderr                            | Exit                |
+| ------------------------------------------------ | ---------------------------------------- | ------------------- |
+| `--help` / `-h`                                  | usage on **stdout**                      | 0                   |
+| unknown flag, missing/empty value, bad int       | `<prog>: error: <message>` on **stderr** | 2                   |
+| runtime failure (missing file, unreadable input) | `<prog>: <message>` on stderr            | 1                   |
+| advisory run, findings present                   | report                                   | 0 unless `--strict` |
+| zero items verified                              | the abstention line                      | 3 under `--strict`  |
+
+Do not hand-roll the parsing loop. Five skills did, and the same bug class came
+back three consecutive rounds — the pattern was copy-paste, so each new skill
+inherited whichever version its author copied, and two copies drifted into
+passing against buggy code. Instead, declare a spec and export it:
+
+```js
+import {
+  createParser,
+  formatUsageError,
+  EXIT_USAGE,
+} from '../../../lib/parse-args.mjs';
+
+export const CLI_SPEC = {
+  prog: 'canary-example',
+  booleans: { '--json': 'json', '--strict': 'strict' },
+  values: { '--repo': { key: 'repo' }, '--seed': { key: 'seed', type: 'int' } },
+  defaults: { repo: '.' },
+  required: [],
+  // Declaring positionals also enables `--` and a lone `-`; a CLI that takes
+  // no paths gets neither, since there is nothing for them to protect.
+  positionals: { key: 'paths', defaults: ['.'] },
+};
+
+const parseArgs = createParser(CLI_SPEC);
+```
+
+`CLI_SPEC` is the bridge between discovery and per-skill flags: the conformance
+suite reads it to generate that skill's cases. A CLI that hand-rolls its parser
+again exports no spec and fails the suite.
+
+[`lib/parse-args.mjs`](lib/parse-args.mjs) owns four invariants that are easy to
+get wrong by hand:
+
+1. **null-prototype lookup** — on a plain object every inherited key resolves
+   truthy, so `--toString` was swallowed as a value flag instead of rejected.
+2. **empty-value rejection** — `--repo=` is typed by nobody, but
+   `--repo "$UNSET_VAR"` expands to `--repo ''` in any shell, and an accepted
+   empty path silently retargets writes at the process CWD.
+3. **arity checking** — a value flag never consumes the next flag as its value.
+4. **`--flag=value`** — both spellings, everywhere, not per-skill.
+
+Deliberate divergences from argparse, shared by the whole family: flags must be
+spelled in full (no prefix abbreviation), and `--bogus --help` exits 2 rather
+than printing help.
+
 ## Related
 
 - [Guides](../../docs/guides/index.md) — descriptive component documentation

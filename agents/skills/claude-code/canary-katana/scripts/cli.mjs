@@ -16,6 +16,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import {
+  createParser,
+  formatUsageError,
+  EXIT_USAGE,
+} from '../../../lib/parse-args.mjs';
 import * as diffscan from './diffscan.mjs';
 import * as alarm from './alarm.mjs';
 import * as ledger from './ledger.mjs';
@@ -52,81 +57,30 @@ const USAGE =
   '  --strict               exit 1 on a real alarm (degraded runs stay 0)\n' +
   '  --no-write             do not append to the ledger (read-only run)';
 
-/** A required-value option flag error surfaces like argparse. */
-function parseArgs(argv) {
-  const opts = {
-    repo: '.',
-    diffFile: null,
-    ledger: null,
-    criticalAreas: null,
-    json: false,
-    strict: false,
-    noWrite: false,
-    help: false,
-    error: null,
-  };
-  // Null-prototype: on a plain object literal every inherited key resolves
-  // truthy, so `VALUE_FLAGS['toString']` would be Object.prototype.toString
-  // and the token `toString` would be swallowed as a value flag instead of
-  // rejected -- which, inside a real repo, runs a scan and appends to the
-  // ledger.
-  const VALUE_FLAGS = Object.assign(Object.create(null), {
-    '--repo': 'repo',
-    '--diff-file': 'diffFile',
-    '--ledger': 'ledger',
-    '--critical-areas': 'criticalAreas',
-  });
-  for (let i = 0; i < argv.length; i += 1) {
-    const a = argv[i];
+/**
+ * katana takes no positionals, so any leftover token -- dashed or not -- is a
+ * usage error rather than something silently ignored, and `--` has nothing to
+ * protect. The four shared invariants (null-prototype lookup, empty-value
+ * rejection, arity, `--flag=value`) live in the shared parser; see #479 for why
+ * they stopped living here.
+ */
+export const CLI_SPEC = {
+  prog: 'canary-katana',
+  booleans: {
+    '--json': 'json',
+    '--strict': 'strict',
+    '--no-write': 'noWrite',
+  },
+  values: {
+    '--repo': { key: 'repo' },
+    '--diff-file': { key: 'diffFile' },
+    '--ledger': { key: 'ledger' },
+    '--critical-areas': { key: 'criticalAreas' },
+  },
+  defaults: { repo: '.' },
+};
 
-    // `--flag=value`, matching canary-instrument and canary-fail-fast so all
-    // four ported CLIs accept the same two spellings.
-    const eq = a.startsWith('--') ? a.indexOf('=') : -1;
-    const inlineKey = eq !== -1 ? VALUE_FLAGS[a.slice(0, eq)] : undefined;
-
-    if (a === '-h' || a === '--help') {
-      opts.help = true;
-      return opts;
-    } else if (a === '--json') opts.json = true;
-    else if (a === '--strict') opts.strict = true;
-    else if (a === '--no-write') opts.noWrite = true;
-    else if (inlineKey !== undefined) {
-      const value = a.slice(eq + 1);
-      // An empty value is the missing-value case wearing a disguise:
-      // `--repo=` would silently retarget the ledger from <repo>/.canary to
-      // the process CWD.
-      if (!value) {
-        opts.error = `argument ${a.slice(0, eq)}: expected one argument`;
-        return opts;
-      }
-      opts[inlineKey] = value;
-    } else if (VALUE_FLAGS[a] !== undefined) {
-      // A value is required; argparse errors when it is missing (the flag was
-      // last) or looks like another option. Consuming a flag as a value would
-      // silently point --repo/--ledger somewhere nonsensical.
-      //
-      // Empty is rejected here too, and this is the spelling that actually
-      // bites: `--repo=` is typed by nobody, but `--repo "$UNSET_VAR"` expands
-      // to `--repo ''` in any shell, and that used to be accepted as repo=''
-      // -- writing the ledger to path.join('', '.canary', ...), i.e. the
-      // process CWD instead of the target repo.
-      const next = argv[i + 1];
-      if (next === undefined || next === '' || next.startsWith('-')) {
-        opts.error = `argument ${a}: expected one argument`;
-        return opts;
-      }
-      opts[VALUE_FLAGS[a]] = next;
-      i += 1;
-    }
-    // katana takes no positionals, so any leftover token -- dashed or not --
-    // is a usage error rather than something silently ignored.
-    else {
-      opts.error = `unrecognized arguments: ${a}`;
-      return opts;
-    }
-  }
-  return opts;
-}
+const parseArgs = createParser(CLI_SPEC);
 
 /**
  * Return { text, base }. `base` is a git ref when one is resolvable. With
@@ -201,17 +155,17 @@ function renderText(deletions, findings, degraded, scanned) {
 }
 
 export function main(argv = []) {
-  const args = parseArgs(argv);
+  const { opts: args, help, error } = parseArgs(argv);
 
   // FIRST, before loadDiff and before any ledger write: a usage request or a
   // typo must never mutate the working tree.
-  if (args.help) {
+  if (help) {
     console.log(USAGE);
     return 0;
   }
-  if (args.error) {
-    console.error(`${PREFIX} ${args.error}`);
-    return 2;
+  if (error) {
+    console.error(formatUsageError(CLI_SPEC.prog, error));
+    return EXIT_USAGE;
   }
 
   const repo = args.repo;
