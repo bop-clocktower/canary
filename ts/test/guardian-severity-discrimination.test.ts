@@ -198,4 +198,32 @@ describe('the severity filter actually filters', () => {
       'pkg/low.ts',
     ]);
   });
+
+  /**
+   * The share denominator is COVERABLE lines, not added lines (#655).
+   *
+   * Once non-instrumented lines stopped counting as misses, `uncovered` became
+   * a subset of the coverable lines while the denominator was still every added
+   * line. On a new file that is mostly imports and types, that dilutes the
+   * share toward zero: a unit where every coverable line is unhit reads as a
+   * few percent and grades `medium`, which is the same understatement in the
+   * opposite direction from the bug that was just fixed.
+   */
+  describe('share is measured against coverable lines', () => {
+    it('grades on the coverable denominator, not the added-line count', () => {
+      // 24 of 25 coverable lines unhit (96%) inside a 200-line new file. Against
+      // added lines the share is 12% — medium. Against coverable it is critical.
+      const result: CoverageResult = {
+        ...verified(24, 200),
+        coverable_lines: 25,
+      };
+      expect(severityOf(result)).toBe(Severity.CRITICAL);
+    });
+
+    it('falls back to the added-line count when coverable is unknown', () => {
+      // Absent measurement must not silently change existing grades.
+      expect(severityOf(verified(20, 20))).toBe(Severity.CRITICAL);
+      expect(severityOf(verified(2, 40))).toBe(Severity.MEDIUM);
+    });
+  });
 });

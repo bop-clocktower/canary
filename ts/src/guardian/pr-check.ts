@@ -645,8 +645,14 @@ function coverageVerifiedSeverity(result: CoverageResult): Severity {
   const uncovered = result.uncovered_lines?.length ?? 0;
   if (uncovered === 0) return Severity.HIGH;
 
-  const added = addedLineCount(result.unit.added_ranges);
-  const share = added > 0 ? uncovered / added : 1;
+  // Prefer the coverable-line denominator (#655). Added lines overstate what
+  // the report could ever have spoken to — on a new file that is largely
+  // imports, types and blanks, dividing by them drives every share toward zero.
+  // Absent (graph/heuristic tiers, which are not graded here anyway), fall back
+  // to the added-line count so existing grades are unchanged.
+  const denominator =
+    result.coverable_lines ?? addedLineCount(result.unit.added_ranges);
+  const share = denominator > 0 ? uncovered / denominator : 1;
 
   if (
     uncovered >= CRITICAL_UNCOVERED_LINES &&

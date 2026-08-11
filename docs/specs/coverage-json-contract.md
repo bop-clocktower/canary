@@ -69,6 +69,21 @@ created: 2026-07-24
 - **A line absent from both fields is treated as uncovered** (`hits = 0`) by the
   consumer. Only record the lines you have data for; you need not enumerate
   every source line.
+
+  This is the **opposite** of how the consumer reads lcov and Cobertura, and the
+  difference is deliberate. Those formats enumerate every line they
+  _instrumented_, so a line they never mention could not have been executed by
+  anything — a comment, an import, a type declaration — and is excluded from
+  both sides of the ratio rather than counted as a miss ([#655]). This format
+  makes no such promise: `covered_lines` cannot express an unhit line, so
+  absence is the only way a producer using the shorthand can report one.
+
+  The consequence for producers is worth stating plainly: **a producer
+  transcoding lcov into this format loses the distinction**, and its
+  non-instrumented lines will be reported as coverage gaps. Emit `line_hits`
+  with explicit `0` entries for genuinely-unhit lines and omit the rest, or hand
+  the guardian the lcov directly.
+
 - **Paths** are matched against the diff by path-suffix on a separator boundary,
   so a report path may carry a leading source root the diff path lacks
   (`src/main/java/…/Foo.java` resolves a `…/Foo.java` unit). Repository-relative
@@ -82,7 +97,7 @@ created: 2026-07-24
 
 ## Producer feedback (why validate)
 
-The consumer (`agent/guardian/coverage.py`) is deliberately **lenient**: a file
+The consumer (`ts/src/guardian/coverage.ts`) is deliberately **lenient**: a file
 entry that isn't an object, a non-integer hit value, or a non-integer line is
 silently skipped so one malformed row never sinks a whole report. The cost is
 silence — a producer emitting a slightly-wrong shape sees its coverage quietly
@@ -109,3 +124,5 @@ catch drift before canary silently downgrades the report.
 
 The format is generic — it names only file paths, line numbers, and hit counts,
 with no project-, employer-, or client-specific content.
+
+[#655]: https://github.com/bop-clocktower/canary/issues/655

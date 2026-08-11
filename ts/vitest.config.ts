@@ -7,7 +7,11 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'test/*.test.ts'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json'],
+      // `lcov` is what the PR guardian consumes (#655). Its `.json` reader
+      // expects canary's own coverage-json contract (`{"files": {...}}`), NOT
+      // istanbul's `coverage-final.json`, so handing over the json report would
+      // parse to null and degrade to the heuristic tier while looking wired.
+      reporter: ['text', 'json', 'lcov'],
       include: ['src/**'],
       // Exclude non-code: test files and bundled data (the framework registry
       // JSON, which v8 otherwise reports as a 0%-covered "source file").

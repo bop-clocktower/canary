@@ -250,6 +250,23 @@ describe('resolveFromReport', () => {
     expect(resolveFromReport([foo], join(dir, 'nope.json'))).toBeNull();
   });
 
+  it('malformed json returns null rather than throwing', () => {
+    // Found by canary's own guardian once it was finally handed a coverage
+    // report (#655): this branch and the one below had never been executed by
+    // any test, on either side of the port.
+    const report = write('coverage.json', '{"files": {');
+    const [foo] = units();
+    expect(resolveFromReport([foo], report)).toBeNull();
+  });
+
+  it('an extension matching no parser returns null', () => {
+    // Not `.json`, `.info`/lcov, or `.xml` — no parser claims it, so the reader
+    // abstains and the orchestrator falls through to a lower-fidelity tier.
+    const report = write('coverage.txt', 'TN:\nSF:pkg/foo.py\n');
+    const [foo] = units();
+    expect(resolveFromReport([foo], report)).toBeNull();
+  });
+
   it('cobertura covered and uncovered', () => {
     const report = write('coverage.xml', COBERTURA_FIXTURE);
     const [foo, bar] = units();
@@ -299,7 +316,11 @@ describe('resolveFromReport', () => {
     expect(results).not.toBeNull();
     expect(results!.length).toBe(1);
     expect(results![0]!.covered).toBe(false);
-    expect(results![0]!.uncovered_lines).toEqual([13, 14]);
+    // Line 13 has no `<line>` record in the fixture, so it is not coverable and
+    // is scored by neither side (#655). This assertion read `[13, 14]` before
+    // that fix — the subject here is doctype acceptance, and the extra line was
+    // incidental to it, so it had encoded the defect without ever testing for it.
+    expect(results![0]!.uncovered_lines).toEqual([14]);
     expect(results![0]!.fidelity).toBe(Fidelity.CoverageVerified);
   });
 
@@ -1039,5 +1060,155 @@ describe('resolveCoverage (SC-3 ladder: report > graph > heuristic)', () => {
     });
     expect(unbounded[0]!.fidelity).toBe(Fidelity.GraphVerified);
     expect(unbounded[0]!.covered).toBe(true);
+  });
+});
+
+/**
+ * Non-coverable changed lines (#655).
+ *
+ * A changed line with no record in the report was never instrumented —
+ * comments, imports, `interface`/`type` declarations, blank lines, closing
+ * braces. Scoring it as a miss made a wholly-new, fully-tested file read as
+ * almost entirely uncovered at the highest-trust tier: every line of a new file
+ * is a changed line, so the finding's size was `file length − instrumented
+ * lines`. Reported downstream against `canary-test-cli@6.7.0` with the
+ * arithmetic reproduced exactly (156 − 20 = 136, 46 − 12 = 34).
+ *
+ * The rule is per-format, because absence does not mean the same thing in each:
+ *
+ *   - lcov / Cobertura enumerate every *instrumented* line, so a missing record
+ *     means NOT COVERABLE — excluded from numerator and denominator both.
+ *   - coverage-json's frozen v1 contract says the opposite in as many words:
+ *     "a line absent from both fields is treated as uncovered (hits = 0)".
+ *     That is not a bug to fix here; changing it would break the contract.
+ *
+ * The per-file version of this rule already existed one level up — a unit whose
+ * path is absent from the report emits no coverage-verified result rather than
+ * assuming zero. These are the same rule at line granularity.
+ */
+describe('non-coverable lines (#655)', () => {
+  // A new module: 20 lines changed, but only 10-12 carry DA records — the rest
+  // are imports, types and blanks. All three instrumented lines are hit.
+  const LCOV_SPARSE = `SF:pkg/new_module.py
+DA:10,1
+DA:11,2
+DA:12,1
+end_of_record
+`;
+
+  it('does not count an uninstrumented changed line as uncovered', () => {
+    const report = write('lcov.info', LCOV_SPARSE);
+    const unit: ChangedUnit = {
+      path: 'pkg/new_module.py',
+      added_ranges: [[1, 20]],
+    };
+
+    const results = resolveFromReport([unit], report);
+
+    expect(results).not.toBeNull();
+    expect(results![0]!.uncovered_lines).toEqual([]);
+    expect(results![0]!.covered).toBe(true);
+    expect(results![0]!.fidelity).toBe(Fidelity.CoverageVerified);
+  });
+
+  it('reports the coverable denominator, not the changed-line count', () => {
+    // "all covered" over 20 changed lines and over 3 coverable ones are very
+    // different claims; the evidence has to say which one was checked.
+    const report = write('lcov.info', LCOV_SPARSE);
+    const unit: ChangedUnit = {
+      path: 'pkg/new_module.py',
+      added_ranges: [[1, 20]],
+    };
+
+    const evidence = resolveFromReport([unit], report)![0]!.evidence;
+
+    expect(evidence).toContain('3');
+  });
+
+  it('still reports an instrumented line the run never hit', () => {
+    // The narrowness is the point: DA:13,0 is real evidence of a real miss and
+    // must survive a fix aimed at records that do not exist.
+    const report = write(
+      'lcov.info',
+      `${LCOV_SPARSE}`.replace('DA:12,1\n', 'DA:12,1\nDA:13,0\n'),
+    );
+    const unit: ChangedUnit = {
+      path: 'pkg/new_module.py',
+      added_ranges: [[1, 20]],
+    };
+
+    const results = resolveFromReport([unit], report);
+
+    expect(results![0]!.uncovered_lines).toEqual([13]);
+    expect(results![0]!.covered).toBe(false);
+  });
+
+  it('emits no coverage-verified result when no changed line is coverable', () => {
+    // Zero coverable lines is an abstention for this unit, never a clean pass
+    // and never a critical finding. Emitting nothing lets the orchestrator fall
+    // through to the graph/heuristic tier, exactly as an absent path does.
+    const report = write('lcov.info', LCOV_SPARSE);
+    const unit: ChangedUnit = {
+      path: 'pkg/new_module.py',
+      added_ranges: [[1, 4]],
+    };
+
+    const results = resolveFromReport([unit], report);
+
+    expect(results).toEqual([]);
+  });
+
+  it('applies the same rule to Cobertura, which also enumerates lines', () => {
+    const report = write(
+      'coverage.xml',
+      `<?xml version="1.0" ?>
+<coverage version="1.0">
+  <sources><source>.</source></sources>
+  <packages>
+    <package name="pkg">
+      <classes>
+        <class name="new_module" filename="pkg/new_module.py">
+          <lines>
+            <line number="10" hits="1"/>
+            <line number="11" hits="2"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>
+`,
+    );
+    const unit: ChangedUnit = {
+      path: 'pkg/new_module.py',
+      added_ranges: [[1, 20]],
+    };
+
+    const results = resolveFromReport([unit], report);
+
+    expect(results![0]!.uncovered_lines).toEqual([]);
+    expect(results![0]!.covered).toBe(true);
+  });
+
+  it('leaves coverage-json on its frozen contract: absent means uncovered', () => {
+    // NOT the same input. coverage-json's v1 contract states that a line absent
+    // from both fields is uncovered, and `covered_lines` cannot express an
+    // unhit line at all. Applying the lcov rule here would silently rewrite a
+    // frozen contract and blind every producer that uses the shorthand.
+    const report = write(
+      'coverage.json',
+      JSON.stringify({
+        files: { 'pkg/new_module.py': { covered_lines: [10] } },
+      }),
+    );
+    const unit: ChangedUnit = {
+      path: 'pkg/new_module.py',
+      added_ranges: [[10, 12]],
+    };
+
+    const results = resolveFromReport([unit], report);
+
+    expect(results![0]!.uncovered_lines).toEqual([11, 12]);
+    expect(results![0]!.covered).toBe(false);
   });
 });

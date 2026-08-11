@@ -14,6 +14,38 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **`guardian pr-check` no longer counts non-instrumented lines as uncovered.**
+  A changed line with no record in the coverage report — a comment, an import, a
+  `type`/`interface` declaration, a blank line, a closing brace — was scored as
+  a coverage miss. The effect was worst on wholly-new files, where every line is
+  a changed line: a new module that was 100% covered in the very lcov the
+  guardian was handed came back as almost entirely uncovered, at the
+  highest-trust `coverage-verified` label and `critical` severity. The finding's
+  size was exactly `file length − instrumented lines`. Such a line is now
+  excluded from both sides of the ratio, and a unit with no coverable changed
+  line abstains and falls through to a lower tier rather than reporting either a
+  pass or a finding. lcov and Cobertura only — the `coverage.json` contract
+  states that absence means uncovered, and is unchanged. ([#655])
+- **Severity now grades against coverable lines, not every added line.** With
+  the numerator corrected above, an added-line denominator diluted the share
+  toward zero on files that are largely imports and types, understating grades
+  in the opposite direction. ([#655])
+
+### Changed
+
+- **The PR Guardian workflow now runs at the `coverage-verified` tier on this
+  repo.** It passed no `--coverage` at all, so every verdict canary posted on
+  its own PRs came from the heuristic (filename) tier — 17 of the last 17
+  guardian comments read "coverage was unavailable". The top rung of the
+  fidelity ladder was never executed in canary's own CI, which is why a defect
+  in it could only be found downstream by a consumer. The workflow now produces
+  an lcov report, verifies it is non-empty before use, and hands it to
+  `pr-check`. ([#655])
+
+[#655]: https://github.com/bop-clocktower/canary/issues/655
+
 ## [6.8.0] - 2026-08-10
 
 The theme of this release is findings that were never reported. Three separate

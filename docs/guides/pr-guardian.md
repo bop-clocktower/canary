@@ -97,6 +97,23 @@ still unsatisfiable. Note this is the one class `heuristicExclude` cannot help
 with: the verdict arrives `coverage-verified`, on real evidence, so the
 heuristic-tier knob never applies.
 
+A third distinction is per-**line** rather than per-file ([#655]). A changed
+line with no record in the coverage report is **not coverable** — a comment, an
+import, a `type`/`interface` declaration, a blank line, a closing brace — and is
+counted by neither side of the ratio, because lcov and Cobertura both enumerate
+every line they instrumented. Scoring absence as a miss made a wholly-new,
+fully-tested file report as almost entirely uncovered, since every line of a new
+file is a changed line: the finding's size came out as exactly
+`file length − instrumented lines`. If no changed line in a unit is coverable,
+the report has nothing to say about it and the guardian abstains for that unit,
+falling through to the graph or heuristic tier rather than inventing either a
+pass or a finding.
+
+The rule is per-format, because absence does not mean the same thing in each.
+The `coverage.json` contract states that a line absent from both of its fields
+is uncovered, and its `covered_lines` shorthand cannot express an unhit line at
+all — so for that format, and only that format, absence still counts as a miss.
+
 Detection is two-stage and content-confirmed, never name-only. A filename gate
 (`types.ts`, `*.types.ts`, a `types/` directory, `*.d.ts`) decides which files
 are worth reading; the file is then suppressed **only** if it contains no
@@ -334,11 +351,17 @@ Severity is what `gate: hard` filters on, so it has to discriminate. Only the
 ran — the graph and heuristic tiers can say a unit is unreached but not how much
 of it is, and a spread invented from that would be noise dressed as ranking.
 
-| Severity   | Coverage-verified finding                                        |
-| ---------- | ---------------------------------------------------------------- |
-| `critical` | 20+ uncovered lines **and** 80%+ of the unit's added lines unhit |
-| `high`     | 5+ uncovered lines **or** 50%+ of the added lines unhit          |
-| `medium`   | a handful of unhit lines in an otherwise-tested change           |
+| Severity   | Coverage-verified finding                                            |
+| ---------- | -------------------------------------------------------------------- |
+| `critical` | 20+ uncovered lines **and** 80%+ of the unit's coverable lines unhit |
+| `high`     | 5+ uncovered lines **or** 50%+ of the coverable lines unhit          |
+| `medium`   | a handful of unhit lines in an otherwise-tested change               |
+
+The share is measured against **coverable** lines — the changed lines the report
+could speak to at all — not every changed line ([#655]). On a new file that is
+largely imports, type declarations and blanks, those two denominators differ by
+an order of magnitude, and dividing by the larger one drives every share toward
+zero. Where the count is unknown the added-line count is used instead.
 
 Graph-verified findings are always `high`; heuristic findings are always
 `medium`. Both unknowns escalate rather than downgrade: a coverage-verified
@@ -351,6 +374,7 @@ Before this grading existed, every coverage-verified finding was `high` — so a
 a reviewer facing 68 findings had no way to tell which one mattered ([#553]).
 
 [#553]: https://github.com/bop-clocktower/canary/issues/553
+[#655]: https://github.com/bop-clocktower/canary/issues/655
 
 Promotion is **per-repo** and has two parts: the **exit gate** (`gate: hard` in
 config, which makes `canary guardian pr-check` exit non-zero on an unaddressed
