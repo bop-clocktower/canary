@@ -622,6 +622,24 @@ function addedLineCount(ranges: readonly LineRange[]): number {
 }
 
 /**
+ * The fraction of what the report could speak to that came back unhit (#655).
+ *
+ * The denominator is the unit's **coverable** lines — added lines overstate it,
+ * because on a new file that is largely imports, types and blanks most changed
+ * lines were never instrumented at all, and dividing by them drives every share
+ * toward zero. Where the count is unknown (the graph and heuristic tiers, which
+ * are not graded by share anyway) it falls back to the added-line count, so
+ * grades predating that field are unchanged. An unknown denominator yields a
+ * full share rather than a low one — an absent measurement must never read as a
+ * good score (ADR 0010).
+ */
+function uncoveredShare(result: CoverageResult, uncovered: number): number {
+  const denominator =
+    result.coverable_lines ?? addedLineCount(result.unit.added_ranges);
+  return denominator > 0 ? uncovered / denominator : 1;
+}
+
+/**
  * Severity for an uncovered **coverage-verified** result (#553).
  *
  * Only this tier can be graded, because only this tier knows *which* lines ran
@@ -645,14 +663,7 @@ function coverageVerifiedSeverity(result: CoverageResult): Severity {
   const uncovered = result.uncovered_lines?.length ?? 0;
   if (uncovered === 0) return Severity.HIGH;
 
-  // Prefer the coverable-line denominator (#655). Added lines overstate what
-  // the report could ever have spoken to — on a new file that is largely
-  // imports, types and blanks, dividing by them drives every share toward zero.
-  // Absent (graph/heuristic tiers, which are not graded here anyway), fall back
-  // to the added-line count so existing grades are unchanged.
-  const denominator =
-    result.coverable_lines ?? addedLineCount(result.unit.added_ranges);
-  const share = denominator > 0 ? uncovered / denominator : 1;
+  const share = uncoveredShare(result, uncovered);
 
   if (
     uncovered >= CRITICAL_UNCOVERED_LINES &&
