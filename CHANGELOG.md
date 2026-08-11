@@ -14,6 +14,11 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [6.8.1] - 2026-08-10
+
+A single consumer-reported defect in the guardian's highest-trust coverage tier,
+plus the reason it survived: that tier had never run in canary's own CI.
+
 ### Fixed
 
 - **`guardian pr-check` no longer counts non-instrumented lines as uncovered.**
@@ -1842,7 +1847,9 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v6.7.1...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v6.8.1...HEAD
+[6.8.1]: https://github.com/bop-clocktower/canary/compare/v6.8.0...v6.8.1
+[6.8.0]: https://github.com/bop-clocktower/canary/compare/v6.7.1...v6.8.0
 [6.7.1]: https://github.com/bop-clocktower/canary/compare/v6.7.0...v6.7.1
 [6.7.0]: https://github.com/bop-clocktower/canary/compare/v6.6.0...v6.7.0
 [6.6.0]: https://github.com/bop-clocktower/canary/compare/v6.5.0...v6.6.0
