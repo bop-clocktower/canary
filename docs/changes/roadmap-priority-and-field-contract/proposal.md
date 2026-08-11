@@ -125,14 +125,23 @@ documented in the roadmap's own header comment. Harness reads exactly what the
 schema specifies; our file drifted. What _is_ worth reporting upstream is the
 asymmetry: harness errors loudly on an invalid `Priority` value but silently
 keeps a wrapped field's first line. A contract violation should fail to parse or
-warn, never silently discard. **Status: tracked locally as `#629`, not yet
-reported upstream.** Verifying criterion 4 on 2026-08-08 turned up a second
-instance of the same asymmetry: a `shard` + `regen` round-trip deletes this
-file's entire 8-line header comment block — the `markdownlint-disable-file`
-directive and the note documenting the one-line contract — and exits 0 both
-ways. Latent rather than active: no CI workflow or script in this repo invokes
-`shard`, `regen`, or `unshard`. `#629` records both observations and carries the
-upstream report as its next step; neither blocks this change.
+warn, never silently discard. **Status: reported upstream as
+[`Intense-Visions/harness-engineering#1328`](https://github.com/Intense-Visions/harness-engineering/issues/1328)
+(open); tracked locally as `#629`.** Verifying criterion 4 on 2026-08-08 turned
+up a second instance of the same asymmetry: a `shard` + `regen` round-trip
+deletes this file's entire 8-line header comment block — the
+`markdownlint-disable-file` directive and the note documenting the one-line
+contract — and exits 0 both ways. Latent rather than active: no CI workflow or
+script in this repo invokes `shard`, `regen`, or `unshard`.
+
+Re-verified on 2026-08-10 against `@harness-engineering/cli` **v10.2.0 → v11.1.1**
+(the version this repo's workflows now pin): the header strip still reproduces —
+2 HTML comments before, 0 after, exit 0 both ways. The v10 field-truncation half
+is genuinely fixed; the file now _grows_ through a round-trip (54,183 → 54,729
+bytes) because `regen` adds missing `Assignee` rows. So `#629` narrows to the
+comment strip alone, which is covered upstream by `#1328` and locally by the
+`roadmap_comment_guard.mjs` step in `.githooks/pre-commit`. Neither blocks this
+change.
 
 **D4 — The GitHub `bug` label decides, not the title.** Of the 10 open issues
 with no roadmap row, 3 carry the `bug` label and stay bugs — they get fixed and
@@ -480,7 +489,7 @@ else from the repo root.
 | 1   | Field invariant + denominator   | `ts/test/roadmap-field-contract.test.ts` — 33/33 pass. 316 fields inspected, 316 field-shaped, 316 attached to a row: the denominator is complete, not merely non-zero.                                                             |
 | 2   | Formatter exemption, write path | An Edit adding an unwrapped 200-column `Summary` completed; `.harness/hooks/quality-warner.js` did not exit 2. Mechanism, from the repo root: `npx prettier --check docs/roadmap.md` exits 0. Now also asserted by the test itself. |
 | 3   | Priority populated              | `grep -c '^### '` = 47 and `grep -c '^- \*\*Priority:\*\* P[0-3]$'` = 47. Distribution `P0`=2, `P1`=6, `P2`=10, `P3`=29.                                                                                                            |
-| 4   | Round-trip                      | `shard` on a temp copy → 47 shards; all 47 `Summary` values byte-identical to source. The ~71% loss (40,525 → 11,640) is gone. Header-comment strip found and filed as `#629` (D3).                                                 |
+| 4   | Round-trip                      | `shard` on a temp copy → 47 shards; all 47 `Summary` values byte-identical to source. The ~71% loss (40,525 → 11,640) is gone. Header-comment strip filed as `#629` (D3) / upstream harness#1328; still live on v11.1.1.            |
 | 5   | Denominator check               | `node scripts/roadmap-denominator-check.mjs` exit 0 — 47 linked rows, 47/51 open issues labelled. The 4 unlabelled are `bug`-labelled by D4: `#587`, `#590`, `#626`, `#629`.                                                        |
 | 6   | Gates from `ts/`                | `build`, `typecheck`, `format:check` clean; `npm test` 2293 passed across 111 files.                                                                                                                                                |
 | 7   | markdownlint directive          | `npx markdownlint-cli docs/roadmap.md` exits 0. Counter-test: with the directive stripped from a scratch copy, 51 MD013 errors — the guard is load-bearing, not decorative.                                                         |

@@ -1,3 +1,4 @@
-node_modules/
+# No trailing slash — also ignores a symlinked node_modules (#650).
+node_modules
 dist/
 coverage/

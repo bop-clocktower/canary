@@ -20,6 +20,16 @@ if [ -n "$STAGED_MD_FILTERED" ]; then
   if [ -x "node_modules/.bin/markdownlint" ]; then
     echo "[pre-commit] markdownlint: checking staged markdown files..."
     echo "$STAGED_MD_FILTERED" | xargs node_modules/.bin/markdownlint
+  elif npx --no-install markdownlint --version >/dev/null 2>&1; then
+    # A worktree may symlink only `ts/node_modules` and have no root install.
+    # `--no-install` keeps this offline and silent-fast when nothing resolves.
+    echo "[pre-commit] markdownlint: checking staged markdown files (resolved via npx)..."
+    echo "$STAGED_MD_FILTERED" | xargs npx --no-install markdownlint
+  else
+    # The skip is intentional; the silence was the defect (#650). A dep-less
+    # clone must still be able to commit, but it must not look like a clean run.
+    echo "[pre-commit] markdownlint: SKIPPED — no markdownlint binary resolved (run 'npm ci' at the repo root)."
+    echo "             Staged markdown was NOT linted here. CI's docs-lint still gates it."
   fi
 fi
 
@@ -40,7 +50,12 @@ fi
 #    stage unstaged hunks of a partially staged file.
 fmt_gate() { # <package-dir> <label>
   if [ ! -x "$1/node_modules/.bin/prettier" ]; then
-    return 0 # deps not installed in this clone — skip, like markdownlint does
+    # No npx fallback here on purpose: this gate deliberately runs the package's
+    # own `format:check` script (see above), which needs that package's local
+    # install anyway — an npx-resolved prettier would use a different config.
+    echo "[pre-commit] prettier: SKIPPED for $2 — $1/node_modules/.bin/prettier not found (run 'npm ci' in $1)."
+    echo "             Formatting was NOT checked here. CI's harness-quality gate still checks it."
+    return 0
   fi
   echo "[pre-commit] prettier: checking $2..."
   if ! (cd "$1" && npm run --silent format:check); then

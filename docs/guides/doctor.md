@@ -59,6 +59,7 @@ canary doctor
 
 Engine
   ✓ CLI 5.9.0 (latest)
+  ✓ Claude Code plugin 5.9.0 (marketplace 5.9.0)
   ✓ git present (git version 2.44.0)
   ✓ overlay "example-org-example-overlay": up to date
   ✓ overlay "example-org-example-overlay": no local changes
@@ -92,6 +93,7 @@ These run with no overlay present and need no configuration:
 | Check                       | Passes when                                                                             | On failure                                                                                          |
 | --------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `engine:version`            | Installed CLI matches the latest published version                                      | Points at `npm install -g …@latest`. Offline → an `ℹ` line, never a failure.                        |
+| `engine:plugin-version`     | Installed Claude Code plugin matches the `bop-clocktower` marketplace clone             | Prints **both** update commands (see below). Skipped with no plugin install.                        |
 | `engine:git`                | `git` is on `PATH`                                                                      | Install git — `overlay add`/`update` need it.                                                       |
 | `overlay:<name>:present`    | The registered clone still exists on disk                                               | Re-add the overlay.                                                                                 |
 | `overlay:<name>:fresh`      | The clone is up to date with its last-known remote state                                | Run `canary overlay update <name>`. Does **not** hit the network.                                   |
@@ -100,6 +102,24 @@ These run with no overlay present and need no configuration:
 | `engine:skill-requirements` | Every installed skill's declared `requires:` runtime tools are present (and new enough) | Install/upgrade the named tool. Info line when no installed skill declares requirements.            |
 | `engine:project-config`     | `.canary/company.json` (and any `company.<env>.json`) parse as JSON                     | Skipped when there is no project `.canary/`.                                                        |
 | `engine:mcp`                | Project and home `.mcp.json` parse and their `mcpServers` entries resolve               | Skipped when no `.mcp.json` exists.                                                                 |
+
+#### Updating the Claude Code plugin
+
+Canary ships through **two independent streams**. `canary upgrade` moves the
+CLI; it cannot move the plugin, because the plugin manager belongs to Claude
+Code and is not drivable from a CLI process. So the plugin has to be updated by
+hand, with **both** of these commands, in this order:
+
+```text
+/plugin marketplace update bop-clocktower
+/plugin install canary@bop-clocktower
+```
+
+Running only the first is the trap: it refreshes the marketplace clone, prints
+a success message, and leaves the cached plugin exactly where it was. Running
+only the second reinstalls whatever version the (possibly stale) clone already
+holds. `engine:plugin-version` compares the installed version against the clone
+and prints both commands on failure for this reason.
 
 ### Tier 2 — overlay checks (data-driven)
 
