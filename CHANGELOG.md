@@ -33,7 +33,30 @@ under the project's former name) are documented in the
   shape deliberately: a `line_hits` document with no zeros is what a
   fully-covered file looks like, and warning there would fire on correct
   documents. Advisory unless `--strict`. ([#657])
+- **`canary doctor` checks the Claude Code plugin version.** Canary ships
+  through two independent streams and `canary upgrade` can only move one of
+  them, so a current CLI told the user nothing about a plugin cached several
+  versions back. The new `engine:plugin-version` check compares the installed
+  plugin against the marketplace clone and prints **both** update commands,
+  because refreshing the marketplace alone reports success and leaves the cached
+  plugin untouched — the trap that made the skew invisible. Skipped, not failed,
+  when no plugin is installed. ([#522])
 
+### Fixed
+
+- **The pre-commit hook says when a gate did not run.** `markdownlint` and
+  `prettier` both returned success when their binary was missing, so a clone
+  without dependencies — or a worktree that symlinks only `ts/node_modules` —
+  produced a commit that looked fully linted and was not checked at all. Each
+  skip now names itself, says what was not checked, and names the CI gate that
+  still covers it; `markdownlint` additionally resolves through
+  `npx --no-install` before giving up, so the common worktree case runs instead
+  of skipping. A dependency-less clone can still commit — it just can no longer
+  do so silently. ([#650], [#564])
+
+[#522]: https://github.com/bop-clocktower/canary/issues/522
+[#564]: https://github.com/bop-clocktower/canary/issues/564
+[#650]: https://github.com/bop-clocktower/canary/issues/650
 [#657]: https://github.com/bop-clocktower/canary/issues/657
 
 ## [6.8.1] - 2026-08-10

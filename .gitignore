@@ -56,7 +56,10 @@ dmypy.json
 .ruff_cache/
 
 # ── Node / JavaScript ─────────────────────────────────────────
-node_modules/
+# No trailing slash: agent worktrees symlink node_modules rather than install
+# it, and `node_modules/` matches a directory but not a symlink of that name,
+# leaving it untracked and one `git add -A` away from being committed (#650).
+node_modules
 playwright-report/
 blob-report/
 

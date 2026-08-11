@@ -35,15 +35,20 @@
  *    the one that makes the rules describe the codebase instead of a corner
  *    of it.
  *
+ * 5. `knowledge.domainBlocklist` blocks paths that are real and only paths that
+ *    are not ours (#564). This one needs two different denominators; see the
+ *    block comment above it for why the obvious single check cannot work.
+ *
  * Offline: reads `harness.config.json` and asks git for its index. Never runs
  * `harness`, and never executes project code.
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { reportAbstention, reportVerified } from './abstention-testkit';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -63,6 +68,7 @@ interface ForbiddenImport {
 interface HarnessConfig {
   layers?: Layer[];
   forbiddenImports?: ForbiddenImport[];
+  knowledge?: { domainBlocklist?: string[] };
 }
 
 function config(): HarnessConfig {
@@ -124,6 +130,16 @@ const CONFIG = config();
 const TRACKED = trackedFiles();
 const LAYERS = CONFIG.layers ?? [];
 const FORBIDDEN = CONFIG.forbiddenImports ?? [];
+const BLOCKLIST = CONFIG.knowledge?.domainBlocklist ?? [];
+
+/** True when `entry` names a directory that actually holds at least one file. */
+function holdsFiles(entry: string): boolean {
+  const path = join(REPO_ROOT, entry);
+  if (!existsSync(path) || !statSync(path).isDirectory()) return false;
+  return readdirSync(path, { recursive: true, withFileTypes: true }).some((d) =>
+    d.isFile(),
+  );
+}
 
 describe('harness.config.json architecture rules govern real files (#543)', () => {
   it('git reports a tracked-file denominator', () => {
@@ -195,4 +211,108 @@ describe('harness.config.json architecture rules govern real files (#543)', () =
     // Named in the failure so the fix is the file list, not a bisect.
     expect(orphans).toEqual([]);
   });
+});
+
+/**
+ * Invariant 5 — `knowledge.domainBlocklist` (#564).
+ *
+ * #564 proposes the obvious check: every blocklist entry matches at least one
+ * real path. That check cannot run as specified, and the reason is worth
+ * recording because it will come up again for any config key whose subject is
+ * deliberately untracked.
+ *
+ * Both shipped entries name **machine-local agent state**. `.remember` hides
+ * itself with a nested `.gitignore` containing `*`; `.kiro` is in the repo
+ * `.gitignore`. Neither is tracked, so neither exists in CI or in a fresh
+ * clone:
+ *
+ *     .remember   dev laptop 193 files   fresh clone 0
+ *     .kiro       dev laptop  75 files   fresh clone 0
+ *     .claude     dev laptop  97 files   fresh clone 2   <- the entry #563 REMOVED
+ *     .cursor     dev laptop  73 files   fresh clone 1   <- the entry #563 REMOVED
+ *
+ * A presence check would therefore go red in CI on both live entries while
+ * passing on the two that were deleted for being inert — precisely inverted.
+ * The graph-node denominator #564 suggests fares no better: the graph in CI is
+ * built from a tree where these directories do not exist.
+ *
+ * So the property splits in two.
+ *
+ * 5a runs everywhere and is the one that must never be skipped: an entry must
+ * match **zero tracked files**. This catches the failure that actually costs
+ * something — blocklisting a path that holds our own committed source, which
+ * silently removes it from the knowledge graph. It is the mirror image of
+ * invariants 1-2, which demand a non-empty match.
+ *
+ * 5b is the vacuity check, and it can only run where agent state materialises.
+ * The conditional makes it real rather than decorative: if *any* entry is
+ * present, this is a checkout where these directories do exist, so an absent
+ * entry is a genuine typo or a dead entry and fails. If *none* are present,
+ * there is no denominator and the suite abstains **out loud** — reported by
+ * vitest as skipped and by the reason line below — rather than passing green
+ * on nothing checked.
+ *
+ * Known floor: "holds at least one file" is weaker than "the graph ingested
+ * it". `.claude`/`.cursor` were dropped from #563 because the graph held no
+ * *code* nodes under them, and no offline check can see that — both they and
+ * `.remember` are almost entirely Markdown. Closing that gap needs a built
+ * graph, which is not something a unit test should require.
+ */
+const VERIFIABLE = BLOCKLIST.filter(holdsFiles);
+const UNVERIFIABLE = BLOCKLIST.filter((e) => !holdsFiles(e));
+
+describe('knowledge.domainBlocklist blocks real, foreign paths (#564)', () => {
+  it('has at least one blocklist entry to check', () => {
+    expect(BLOCKLIST.length).toBeGreaterThan(0);
+  });
+
+  // 5a — portable, and the one with teeth.
+  it.each(BLOCKLIST)('%s blocks no git-tracked file', (entry) => {
+    const tracked = TRACKED.filter(
+      (f) => f === entry || f.startsWith(`${entry}/`),
+    );
+    expect(tracked).toEqual([]);
+  });
+
+  // 5b — real where the data exists, an audible abstention where it does not.
+  it('states how much of the blocklist this checkout could verify', () => {
+    if (UNVERIFIABLE.length === 0) {
+      reportVerified(
+        'domainBlocklist',
+        `all ${BLOCKLIST.length} entries resolved against on-disk state`,
+      );
+    } else if (VERIFIABLE.length === 0) {
+      // No denominator at all — the honest CI case.
+      reportAbstention(
+        'domainBlocklist',
+        `0/${BLOCKLIST.length} entries checkable here (${UNVERIFIABLE.join(', ')}). ` +
+          `These are machine-local agent directories, untracked by design, so a ` +
+          `clean checkout and CI cannot see them. Nothing about their contents ` +
+          `was proven.`,
+      );
+    } else {
+      // Mixed: agent state does materialise here, so the missing ones are dead
+      // entries rather than an artefact of the environment. Said plainly,
+      // because the failing assertion below is the real verdict.
+      reportVerified(
+        'domainBlocklist',
+        `${VERIFIABLE.length}/${BLOCKLIST.length} entries resolved; ` +
+          `${UNVERIFIABLE.join(', ')} did not, on a checkout where the others ` +
+          `did — treated as dead entries, not as missing data`,
+      );
+    }
+    expect(VERIFIABLE.length + UNVERIFIABLE.length).toBe(BLOCKLIST.length);
+  });
+
+  describe.skipIf(VERIFIABLE.length === 0)(
+    'entries resolve on a checkout where agent state exists',
+    () => {
+      it('every entry names a directory that holds files', () => {
+        // Reached only when at least one entry resolved, which proves this
+        // checkout is one where these directories materialise — so an absent
+        // entry here is a dead entry, not an artefact of the environment.
+        expect(UNVERIFIABLE).toEqual([]);
+      });
+    },
+  );
 });

@@ -48,6 +48,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { reportAbstention } from './abstention-testkit';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -226,9 +227,13 @@ describe('local skill installs are ignored; authored skills are not', () => {
     // named-install rules themselves are still covered by ARTIFACT_PATHS
     // above, which is checkout-independent.
     if (dirs === null) {
-      console.warn(
-        '[skills guard] .claude/skills/ absent — receipt classification not ' +
-          'exercised on this checkout (expected in CI).',
+      // Via the testkit, not `console.warn`: the default reporter discards
+      // console output from passing tests, so this notice printed nothing on
+      // every CI run since it was written (#650).
+      reportAbstention(
+        'skills guard',
+        '.claude/skills/ absent — receipt classification not exercised on ' +
+          'this checkout (expected in CI).',
       );
     }
     expect(dirs === null || dirs.length > 0).toBe(true);

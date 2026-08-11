@@ -155,6 +155,109 @@ export async function checkVersion(
   };
 }
 
+/** Marketplace that carries the Claude Code plugin, and the plugin's key in it. */
+const MARKETPLACE = 'bop-clocktower';
+const PLUGIN_KEY = `canary@${MARKETPLACE}`;
+
+/** Parse JSON from disk; null on missing file, unreadable path, or bad syntax. */
+function readJson(file: string): unknown {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8')) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Newest version among the installs recorded for {@link PLUGIN_KEY}.
+ *
+ * Claude Code stores an array per plugin key because user- and project-scoped
+ * installs coexist. Taking the first would report a stale plugin whenever the
+ * older scope happened to be listed first, so take the newest and let the
+ * comparison speak for the one actually in charge.
+ */
+function installedPluginVersion(manifest: unknown): string | null {
+  const plugins = (manifest as { plugins?: Record<string, unknown> } | null)
+    ?.plugins;
+  const entries = plugins?.[PLUGIN_KEY];
+  if (!Array.isArray(entries)) return null;
+  const versions = entries
+    .map((e) => (e as { version?: unknown } | null)?.version)
+    .filter((v): v is string => typeof v === 'string');
+  if (versions.length === 0) return null;
+  return versions.reduce((best, v) => (isOlder(best, v) ? v : best));
+}
+
+/**
+ * Installed Claude Code plugin vs the marketplace clone (#522).
+ *
+ * Canary ships through two independent version streams and only the CLI had
+ * staleness detection, so `canary upgrade` would report everything current
+ * while leaving the plugin — the way Canary is actually used in-editor —
+ * arbitrarily far behind. A real consuming project ran 4.0.0 for six weeks
+ * against a 6.x CLI, during which six of Canary's agents did not exist in the
+ * version being loaded, with nothing anywhere surfacing it.
+ *
+ * Purely local file reads: no network, so this cannot fail offline. Both files
+ * are untrusted input — a hand-edited manifest degrades to info or skip rather
+ * than throwing out of `doctor`.
+ */
+export function checkPluginVersion(deps: EngineCheckDeps = {}): CheckResult {
+  const home = deps.homeDir ?? os.homedir();
+  const pluginsDir = path.join(home, '.claude', 'plugins');
+
+  const installed = installedPluginVersion(
+    readJson(path.join(pluginsDir, 'installed_plugins.json')),
+  );
+  if (!installed) {
+    // CLI-only users have no plugin to be stale; not a finding.
+    return {
+      id: 'engine:plugin-version',
+      status: 'skip',
+      label: 'Claude Code plugin: not installed',
+    };
+  }
+
+  const marketplace = (
+    readJson(
+      path.join(
+        pluginsDir,
+        'marketplaces',
+        MARKETPLACE,
+        '.claude-plugin',
+        'plugin.json',
+      ),
+    ) as { version?: unknown } | null
+  )?.version;
+  if (typeof marketplace !== 'string') {
+    return {
+      id: 'engine:plugin-version',
+      status: 'info',
+      label: `Claude Code plugin ${installed} (could not read the ${MARKETPLACE} marketplace to compare)`,
+      remedy: `Refresh it with: /plugin marketplace update ${MARKETPLACE}`,
+    };
+  }
+
+  if (isOlder(installed, marketplace)) {
+    return {
+      id: 'engine:plugin-version',
+      status: 'fail',
+      label: `Claude Code plugin ${installed} is behind marketplace ${marketplace}`,
+      // Both commands, in order, always. `/plugin marketplace update` refreshes
+      // the clone but leaves the cached plugin in place, and `/plugin install`
+      // without it reinstalls whatever the stale clone holds — each alone
+      // reports success and changes nothing the user cares about.
+      remedy: `Update both — either alone is a no-op:\n  /plugin marketplace update ${MARKETPLACE}\n  /plugin install ${PLUGIN_KEY}`,
+    };
+  }
+
+  return {
+    id: 'engine:plugin-version',
+    status: 'pass',
+    label: `Claude Code plugin ${installed} (marketplace ${marketplace})`,
+  };
+}
+
 /** git present on PATH. */
 export function checkGit(deps: EngineCheckDeps = {}): CheckResult {
   const git = deps.git ?? realGit;
@@ -541,6 +644,7 @@ export async function runEngineChecks(
 ): Promise<CheckResult[]> {
   return [
     await checkVersion(deps),
+    checkPluginVersion(deps),
     checkGit(deps),
     ...checkOverlays(deps),
     checkOverlayConflicts(deps),
