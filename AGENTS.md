@@ -508,18 +508,26 @@ Two related facts worth not rediscovering:
   over the tracker is a legitimate thing to decide once it is decided rather
   than defaulted into. Exits 2 without it, before spawning anything.
 
-**Every field value is ONE physical line, and `docs/roadmap.md` is therefore
-prettier-exempt (#628).** Harness's roadmap parser reads a `- **Key:** value`
-field by taking one line. Wrap the value and it keeps the first line and
-silently discards the rest — no error on either side. Measured before the fix: a
-`shard` + `regen` round-trip took the file from **40,525 bytes to 11,640**, 71%
-of it gone, while the file looked maintained the whole time.
+**Every field value is ONE physical line, and the roadmap files are therefore
+prettier-exempt (#628, #630).** Harness's roadmap parser reads a
+`- **Key:** value` field by taking one line. Wrap the value and it keeps the
+first line and silently discards the rest — no error on either side. Measured
+before the fix: a `shard` + `regen` round-trip took the file from **40,525 bytes
+to 11,640**, 71% of it gone, while the file looked maintained the whole time.
 
-Four things keep it correct, and they are not interchangeable:
+The contract covers `docs/roadmap.md` **and `docs/roadmap-archive.md`**, because
+`scripts/roadmap-groom.mjs` moves rows between them verbatim. Guarding only the
+first left the archive in exactly the broken shape the guard exists to remove —
+measured 2026-08-08, 60 of its 63 rows carried a wrapped `Summary` and
+`prettier --check` reported the file clean while holding it that way. A row
+moved back into `docs/roadmap.md` for reopened work would have returned
+truncated (#630).
 
-- `docs/roadmap.md` is listed in `.prettierignore`. This is not tidiness and not
-  dead config. `.harness/hooks/quality-warner.js` runs `prettier --check` on
-  **every file written in this repo** and blocks on violation, and prettier's
+Five things keep it correct, and they are not interchangeable:
+
+- Both files are listed in `.prettierignore`. This is not tidiness and not dead
+  config. `.harness/hooks/quality-warner.js` runs `prettier --check` on **every
+  file written in this repo** and blocks on violation, and prettier's
   `proseWrap: "always"` treats a long single-line field as a violation — so
   without that entry the hook makes a correct roadmap literally unwritable, and
   pushes any edit back to the broken shape. That is what kept the file drifting.
@@ -534,6 +542,26 @@ Four things keep it correct, and they are not interchangeable:
   the scanner ran; the equality proves it ran over everything, which is what
   catches a demoted `####` row heading, a `*` bullet, or an indented field
   hiding a wrapped value beneath it.
+- **The test derives its file list from `.prettierignore` rather than naming
+  files (#630).** It globs the `docs/roadmap*` entries there and scans each —
+  that prefix, not a broad `docs/`, so exempting an unrelated doc from
+  prose-wrap does not enrol it in a guard demanding roadmap grammar. So the
+  exempted set and the guarded set are the same set _mechanically_ — a file
+  cannot be exempted from prose-wrap without being enrolled in the guard, and
+  there is no second list to forget. It additionally fails if a
+  `docs/roadmap.d/` shard directory is committed without an ignore entry, which
+  is the one way new roadmap markdown could arrive unguarded.
+- **A content floor catches truncation, which the wrap check structurally cannot
+  (#630).** "Is the next line a continuation?" answers _no_ for a value cut down
+  to its first physical line — one line, no continuation, spotless. So a
+  `Summary` of ≥60 characters that ends mid-sentence (no sentence-final
+  punctuation, no closing delimiter) is a violation naming its row. The floor
+  abstains below 60 rather than guess, and applies to `Summary` only: `Spec`,
+  `External-ID`, and `Blockers` legitimately end on any character, and a check
+  that fires on correct content is a check that gets suppressed. A whole-file
+  byte floor was rejected — a normal `roadmap-groom --apply` legitimately
+  shrinks `docs/roadmap.md`, so the number would need raising to pass, and a
+  floor that gets raised to pass is not a floor.
 - **`docs/roadmap.md` depends on its `markdownlint-disable-file MD013` comment
   to keep a required check green.** No CI job _formats_ `docs/` — the format
   gate covers `ts/` and `agents/skills/` only — but `markdownlint` in
@@ -559,9 +587,9 @@ Four things keep it correct, and they are not interchangeable:
   `harness roadmap promote` write the file directly and bypass the hook. Any new
   writer must emit one-line fields.
 
-If sharded output is ever committed, extend the `.prettierignore` entry and that
-test's file list **together, in one change** — the exempted set and the guarded
-set must stay the same set.
+If sharded output is ever committed, add `docs/roadmap.d` to `.prettierignore`.
+That is the whole change: the guard reads that file, so every shard enrols
+automatically and the exempted set and the guarded set cannot drift apart.
 
 **Priority is `P0`–`P3`, populated, and validated on read (#628).** The enum is
 fixed by the upstream harness schema, which hard-fails with

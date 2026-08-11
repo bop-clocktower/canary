@@ -46,13 +46,83 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, globSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, posix, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const ROADMAP = join(REPO_ROOT, 'docs', 'roadmap.md');
+const PRETTIERIGNORE = join(REPO_ROOT, '.prettierignore');
+/**
+ * Where `harness roadmap shard` writes its per-section files. Nothing commits
+ * this today; the guard exists so that the day something does, the shards
+ * arrive exempted and guarded rather than exempted and unscanned.
+ */
+const SHARD_DIR = 'docs/roadmap.d';
+/**
+ * Ignore entries outside this prefix are not roadmap content and are none of
+ * this guard's business. The prefix is the roadmap tooling's own naming — it
+ * admits `docs/roadmap.md`, `docs/roadmap-archive.md`, and a future
+ * `docs/roadmap.d/` shard directory, and nothing else.
+ *
+ * A broader `docs/` was the first draft and is wrong: exempting an unrelated
+ * doc from prose-wrap for its own reasons would enrol it in a guard that
+ * demands an MD013 directive and roadmap field grammar, and it would fail on
+ * correct content. The shard check below is what covers the one case this
+ * prefix could otherwise miss.
+ */
+const GUARDED_PREFIX = 'docs/roadmap';
+
+/**
+ * The exempted set, read as data. `.prettierignore` used to carry a comment
+ * telling a future author to "extend the ignore and that test's file list
+ * together" — but the file list was a single hardcoded constant, so the
+ * instruction was the only thing holding them in sync. Deriving the list from
+ * the ignore file makes them the same set by construction: a file cannot be
+ * exempted from prettier's prose-wrap without being enrolled in this guard.
+ */
+function ignoreEntries(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'))
+    .map((line) => line.replace(/\/+$/, ''));
+}
+
+/** The entries this guard is responsible for: markdown content under `docs/`. */
+function guardedEntries(text: string): string[] {
+  return ignoreEntries(text).filter((entry) =>
+    entry.startsWith(GUARDED_PREFIX),
+  );
+}
+
+/**
+ * Expand one ignore entry to the concrete markdown files it exempts. A literal
+ * path resolves to itself, a directory to the markdown beneath it, and a glob
+ * through `globSync` — so `docs/roadmap.d/*.md` and a bare `docs/roadmap.d`
+ * both enrol every shard rather than only the pattern's author's example.
+ */
+function resolveMarkdown(entry: string): string[] {
+  const absolute = join(REPO_ROOT, entry);
+  if (existsSync(absolute) && statSync(absolute).isDirectory()) {
+    return globSync(posix.join(entry, '**/*.md'), { cwd: REPO_ROOT });
+  }
+  if (/[*?[\]{}]/.test(entry)) {
+    return globSync(entry, { cwd: REPO_ROOT });
+  }
+  return entry.endsWith('.md') && existsSync(absolute) ? [entry] : [];
+}
+
+/** Repo-relative POSIX paths, so a failure message reads the same on Windows. */
+const GUARDED: string[] = [
+  ...new Set(
+    guardedEntries(readFileSync(PRETTIERIGNORE, 'utf8')).flatMap(
+      resolveMarkdown,
+    ),
+  ),
+]
+  .map((path) => path.split(sep).join(posix.sep))
+  .sort();
 
 /**
  * A field-SHAPED line, permissively: any bullet, any indent. Harness reads
@@ -76,8 +146,33 @@ const FENCE = /^\s*(```|~~~)/;
 /** The markdownlint directive the required docs-lint check depends on. */
 const MD013_DIRECTIVE = '<!-- markdownlint-disable-file MD013 -->';
 
+/**
+ * The prose field the truncation floor guards. `Summary` is the only field
+ * whose value is a sentence; `Spec` and `External-ID` are paths and ids, which
+ * legitimately end on any character, and `Blockers` is a fragment list. A floor
+ * applied to those would fire on correct content, and a check that fires on
+ * correct content gets suppressed.
+ */
+const PROSE_FIELD = 'Summary';
+/**
+ * Shortest `Summary` the floor examines. Prettier's `printWidth: 80` minus the
+ * `- **Summary:** ` prefix leaves a first line of roughly 45-65 characters, and
+ * every one of the 60 wrapped archive summaries measured on 2026-08-08 landed
+ * in 60-69. Below this a short-but-complete summary ("Cobertura parser.") is
+ * indistinguishable from a cut one, so the floor abstains rather than guess.
+ */
+const PROSE_FLOOR = 60;
+/**
+ * A value that ended where its author meant it to: sentence-final punctuation,
+ * or a closing delimiter (the house style closes on `(refs: ...)`). A value cut
+ * at a prose-wrap boundary ends mid-sentence on a word character, which is what
+ * this refuses.
+ */
+const COMPLETE_TAIL = /[.!?…)\]}»”’"'`]$/;
+
 type ViolationKind =
   | 'wrapped'
+  | 'truncated'
   | 'indented-field'
   | 'bullet-style'
   | 'malformed-heading'
@@ -264,6 +359,47 @@ function shapeViolation(
   return undefined;
 }
 
+/**
+ * The content floor (#630 item 3). The wrap check above asks "is the next line
+ * a continuation?", which a value cut down to its first physical line answers
+ * with "no" — one line, no continuation, spotless. That is the shape a
+ * `harness roadmap shard` + `regen` round-trip produces once an agent has
+ * wrapped the shard to satisfy the quality-warner: regen keeps line one of each
+ * field and drops the rest, and the aggregate it rebuilds is simultaneously
+ * one-line-clean and 71% gone. The measured round-trip took `docs/roadmap.md`
+ * from 40,525 bytes to 11,640 while every wrap assertion stayed green.
+ *
+ * A whole-file byte floor would catch that specific event and nothing else: a
+ * normal `roadmap-groom --apply` moves shipped rows out to the archive and
+ * legitimately shrinks the file, so the number would need raising to pass, and
+ * a floor that gets raised to pass is not a floor. The per-row signature is
+ * stable under grooming, sharding, and growth, and it names the row that lost
+ * its text instead of reporting that a file got smaller.
+ */
+function truncationViolation(
+  name: string,
+  rawValue: string,
+  index: number,
+  rowName: string,
+): Violation | undefined {
+  const value = rawValue.trim();
+  if (name !== PROSE_FIELD) return undefined;
+  if (value.length < PROSE_FLOOR) return undefined;
+  if (COMPLETE_TAIL.test(value)) return undefined;
+
+  return {
+    line: index + 1,
+    row: rowName,
+    field: name,
+    kind: 'truncated',
+    detail:
+      `${value.length} characters ending mid-sentence on ` +
+      `"${truncate(value.split(/\s+/).slice(-4).join(' '), 40)}" — the ` +
+      'signature of a value cut at a prose-wrap boundary, which the wrap ' +
+      'check cannot see because the remainder is gone rather than indented',
+  };
+}
+
 /** Record a field on its row, flagging a second declaration of the same key. */
 function recordField(
   name: string,
@@ -311,6 +447,9 @@ function handleField(
   state.fieldsInspected++;
   recordField(name, value, index, state);
 
+  const cut = truncationViolation(name, value, index, state.rowName);
+  if (cut) state.violations.push(cut);
+
   if (!isTerminator(next)) {
     state.violations.push({
       line: index + 2,
@@ -352,12 +491,18 @@ function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-/** Render violations naming the row, the field, and the consequence. */
-function describeViolations(v: Violation[]): string {
+/**
+ * Render violations naming the file, the row, the field, and the consequence.
+ * The file is a parameter rather than a constant because the guarded set is now
+ * derived — a hardcoded `docs/roadmap.md` here sent a reader of an archive
+ * failure to the wrong file, which is exactly the confusion this guard exists
+ * to prevent elsewhere.
+ */
+function describeViolations(file: string, v: Violation[]): string {
   return v
     .map(
       (x) =>
-        `  docs/roadmap.md:${x.line} — row "${x.row}", field "${x.field}" ` +
+        `  ${file}:${x.line} — row "${x.row}", field "${x.field}" ` +
         `[${x.kind}]: ${x.detail}`,
     )
     .join('\n');
@@ -611,10 +756,181 @@ describe('roadmap one-line field contract', () => {
     });
   });
 
-  describe('docs/roadmap.md', () => {
+  describe('the content floor', () => {
+    // The hole the wrap check structurally cannot see: a value cut down to its
+    // first physical line is ONE line, so "is the next line a continuation?"
+    // answers no and the file reports spotless. Every fixture here passed the
+    // whole suite before this floor existed.
+
+    it('flags a Summary cut at a prose-wrap boundary', () => {
+      const text = [
+        '### A row',
+        // Verbatim from docs/roadmap-archive.md before this change: the first
+        // physical line prettier left after wrapping the real summary.
+        '- **Summary:** JSON-based framework metadata with multi-extension and execution',
+      ].join('\n');
+
+      const result = scanRoadmap(text);
+
+      expect(result.violations).toHaveLength(1);
+      expect(result.violations[0]).toMatchObject({
+        kind: 'truncated',
+        row: 'A row',
+        field: 'Summary',
+      });
+      expect(result.violations[0].detail).toContain('mid-sentence');
+    });
+
+    it('accepts a long Summary that ends where its author meant it to', () => {
+      const text = [
+        '### A row',
+        '- **Summary:** JSON-based framework metadata with multi-extension and execution command support.',
+      ].join('\n');
+
+      expect(scanRoadmap(text).violations).toEqual([]);
+    });
+
+    it.each([
+      ['a refs parenthetical', 'shipped in PR #250 (refs: Issue #248)'],
+      ['a bracketed note', 'shipped, with the scrub deferred [won’t-do]'],
+      ['a question', 'does the history store retain enough to rank findings?'],
+    ])('accepts %s as a complete tail', (_label, tail) => {
+      const value = `${'x'.repeat(PROSE_FLOOR)} ${tail}`;
+      const text = ['### A row', `- **Summary:** ${value}`].join('\n');
+
+      expect(scanRoadmap(text).violations).toEqual([]);
+    });
+
+    it('abstains below the floor rather than guessing', () => {
+      // "Cobertura parser." is complete and 17 characters; a 17-character cut
+      // is indistinguishable from it, so the floor declines to judge instead
+      // of inventing a rule that fires on correct content.
+      const short = 'Cobertura parser';
+      expect(short.length).toBeLessThan(PROSE_FLOOR);
+
+      const text = ['### A row', `- **Summary:** ${short}`].join('\n');
+
+      expect(scanRoadmap(text).violations).toEqual([]);
+    });
+
+    it('leaves paths, ids, and fragment lists alone', () => {
+      // A floor on these would fire on correct content, and a check that fires
+      // on correct content is a check that gets suppressed.
+      const text = [
+        '### A row',
+        '- **Spec:** docs/changes/roadmap-priority-and-field-contract/proposal.md',
+        '- **External-ID:** github:bop-clocktower/canary#630',
+        '- **Blockers:** Issue #462 (personas — voice needs something to attach to)',
+      ].join('\n');
+
+      const result = scanRoadmap(text);
+
+      expect(result.violations).toEqual([]);
+      expect(result.fieldsInspected).toBe(3);
+    });
+
+    it('reports a truncated Summary that is otherwise wrap-clean', () => {
+      // The abuse path end to end: shard, wrap to satisfy the quality-warner,
+      // regen keeping line one. The result has no continuation lines at all.
+      const truncated = [
+        '### A row',
+        '- **Status:** done',
+        '- **Summary:** Full adoption of Bombshell engineering constraints and harness',
+        '- **Blockers:** —',
+      ].join('\n');
+
+      const result = scanRoadmap(truncated);
+
+      expect(result.violations.map((v) => v.kind)).toEqual(['truncated']);
+      expect(result.violations.filter((v) => v.kind === 'wrapped')).toEqual([]);
+    });
+  });
+
+  describe('the guarded set', () => {
+    it('drops comments and blank lines from the ignore file', () => {
+      const text = ['# a comment', '', 'docs/roadmap.md', '  ', ''].join('\n');
+
+      expect(guardedEntries(text)).toEqual(['docs/roadmap.md']);
+    });
+
+    it('normalises a trailing slash so a directory entry resolves', () => {
+      expect(guardedEntries('docs/roadmap.d/\n')).toEqual(['docs/roadmap.d']);
+    });
+
+    it('leaves non-roadmap entries to whoever owns them', () => {
+      // `.prettierignore` also carries build output, vendored trees, and docs
+      // exempted for their own reasons. A doc pulled in here would be held to
+      // roadmap field grammar and an MD013 directive it has no reason to carry
+      // — a check that fires on correct content is a check that gets removed.
+      const text = [
+        'ts/dist',
+        'node_modules',
+        'docs/wiki',
+        'docs/roadmap.md',
+      ].join('\n');
+
+      expect(guardedEntries(text)).toEqual(['docs/roadmap.md']);
+    });
+
+    it('admits the shard directory the roadmap tooling would write', () => {
+      const text = ['docs/roadmap.d', 'docs/roadmap-archive.md'].join('\n');
+
+      expect(guardedEntries(text)).toEqual([
+        'docs/roadmap.d',
+        'docs/roadmap-archive.md',
+      ]);
+    });
+
+    it('is derived, not hardcoded, and is non-empty', () => {
+      // Zero guarded files is an abstention: every assertion below would pass
+      // over nothing while reporting a clean suite.
+      expect(
+        GUARDED,
+        'no markdown under docs/ is exempt from prettier — either the ' +
+          '.prettierignore entry was removed (and the roadmap is being ' +
+          'rewrapped) or this derivation stopped matching it',
+      ).not.toEqual([]);
+    });
+
+    it('guards the roadmap and its archive', () => {
+      // Named explicitly because these two are the files the contract exists
+      // for; the derivation above is what admits any future third.
+      expect(GUARDED).toContain('docs/roadmap.md');
+      expect(GUARDED).toContain('docs/roadmap-archive.md');
+    });
+
+    it('leaves no committed roadmap shard outside the guarded set', () => {
+      // `harness roadmap shard` writes rows here and `regen` reads them back.
+      // Shards that are committed but not exempt get prose-wrapped by the
+      // quality-warner, and regen then rebuilds a truncated aggregate that
+      // still parses — both denominators non-zero, every shard unscanned.
+      const shards = existsSync(join(REPO_ROOT, SHARD_DIR))
+        ? globSync(posix.join(SHARD_DIR, '**/*.md'), { cwd: REPO_ROOT }).map(
+            (path) => path.split(sep).join(posix.sep),
+          )
+        : [];
+      const unguarded = shards.filter((path) => !GUARDED.includes(path));
+
+      expect(
+        unguarded,
+        `${unguarded.length} roadmap shard(s) are committed but not listed ` +
+          `in .prettierignore — add "${SHARD_DIR}" there and they enrol in ` +
+          'this guard automatically',
+      ).toEqual([]);
+    });
+  });
+
+  describe.each(GUARDED)('%s', (file) => {
     // Read inside the tests, not in the describe body: a missing or unreadable
     // roadmap should be a named failing test, not a suite-collection crash.
-    const scan = (): ScanResult => scanRoadmap(readFileSync(ROADMAP, 'utf8'));
+    const scan = (): ScanResult =>
+      scanRoadmap(readFileSync(join(REPO_ROOT, file), 'utf8'));
+    /**
+     * Archived rows are shipped and out of the prioritisation the `Priority`
+     * field feeds, so the archive carries none. The enum still binds wherever
+     * one IS declared — the exemption is from the requirement, not the schema.
+     */
+    const isArchive = file.endsWith('roadmap-archive.md');
 
     it('inspects a non-zero number of fields', () => {
       // Denominator first: without this, every assertion below passes
@@ -655,13 +971,14 @@ describe('roadmap one-line field contract', () => {
       ).toBe(result.fieldsInspected);
     });
 
-    it('has no field value wrapped across lines', () => {
+    it('has no field value wrapped across lines or cut short', () => {
       const result = scan();
 
       expect(
         result.violations,
         `${result.violations.length} contract violation(s) — harness ` +
-          `silently mis-reads each:\n${describeViolations(result.violations)}`,
+          'silently mis-reads each:\n' +
+          describeViolations(file, result.violations),
       ).toEqual([]);
     });
 
@@ -671,40 +988,49 @@ describe('roadmap one-line field contract', () => {
       expect(result.rows.length).toBeGreaterThan(0);
     });
 
-    it('gives every row a Priority in the schema-s enum', () => {
+    it('declares only Priority values the schema accepts', () => {
       const result = scan();
-      const bad = result.rows.filter(
+      const declared = result.rows.filter((r) => r.fields.has('Priority'));
+      const bad = declared.filter(
         (r) => !PRIORITY.test(r.fields.get('Priority') ?? ''),
       );
 
       expect(
         bad.map(
           (r) =>
-            `docs/roadmap.md:${r.line} "${r.name}" -> ` +
-            `${JSON.stringify(r.fields.get('Priority') ?? '(absent)')}`,
+            `${file}:${r.line} "${r.name}" -> ` +
+            `${JSON.stringify(r.fields.get('Priority'))}`,
         ),
-        `${bad.length} of ${result.rows.length} row(s) lack a valid ` +
-          'Priority (P0-P3)',
+        `${bad.length} of ${declared.length} declared Priority value(s) are ` +
+          'outside the P0-P3 enum, which hard-fails `harness roadmap` on read',
       ).toEqual([]);
     });
-  });
 
-  describe('the guards the file depends on', () => {
+    it.skipIf(isArchive)('gives every row a Priority', () => {
+      const result = scan();
+      const missing = result.rows.filter((r) => !r.fields.has('Priority'));
+
+      expect(
+        missing.map((r) => `${file}:${r.line} "${r.name}"`),
+        `${missing.length} of ${result.rows.length} row(s) declare no ` +
+          'Priority, so roadmap-pilot cannot rank them',
+      ).toEqual([]);
+    });
+
     it('is still exempt from prettier', () => {
       // The behavioural form, not a grep of `.prettierignore`: this also
       // catches a prettier-config change that re-governs the file by another
       // route. Run from the repo root — prettier resolves `.prettierignore`
       // relative to CWD, so from `ts/` the exemption does not apply.
-      const result = spawnSync(
-        'npx',
-        ['prettier', '--check', 'docs/roadmap.md'],
-        { cwd: REPO_ROOT, encoding: 'utf8' },
-      );
+      const result = spawnSync('npx', ['prettier', '--check', file], {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+      });
 
       expect(
         result.status,
-        'prettier would rewrap docs/roadmap.md — the .prettierignore entry ' +
-          `is missing or no longer matches:\n${result.stderr ?? ''}`,
+        `prettier would rewrap ${file} — the .prettierignore entry is ` +
+          `missing or no longer matches:\n${result.stderr ?? ''}`,
       ).toBe(0);
     });
 
@@ -714,12 +1040,12 @@ describe('roadmap one-line field contract', () => {
       // 50 MD013 errors and blocks every merge. `harness roadmap promote` is
       // known to strip it (canary#273), so it is asserted here rather than
       // left to the opt-in local pre-commit hook.
-      const text = readFileSync(ROADMAP, 'utf8');
+      const text = readFileSync(join(REPO_ROOT, file), 'utf8');
 
       expect(
         text.includes(MD013_DIRECTIVE),
-        `docs/roadmap.md lost "${MD013_DIRECTIVE}" — the required ` +
-          'markdownlint check will fail on its long single-line fields',
+        `${file} lost "${MD013_DIRECTIVE}" — the required markdownlint ` +
+          'check will fail on its long single-line fields',
       ).toBe(true);
     });
   });
