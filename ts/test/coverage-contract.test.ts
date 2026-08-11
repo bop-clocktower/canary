@@ -29,6 +29,18 @@ function warnings(data: unknown): CoverageProblem[] {
   return validateCoverageJson(data).filter((p) => p.severity === 'warning');
 }
 
+/**
+ * The resolved hit map for one path, without the per-file wrapper.
+ *
+ * Since #657 the index value is `{ hits, coverable }` — these tests are about
+ * which hit counts survive parsing, so they assert on `hits` and leave the
+ * coverable set to the tests that are actually about it.
+ */
+function hitsOf(data: unknown, path = 'a.py'): unknown {
+  const index = parseCoverageJson(data);
+  return index === null ? null : index[path]?.hits;
+}
+
 describe('valid shapes', () => {
   it('line_hits is clean', () => {
     const data = {
@@ -37,9 +49,13 @@ describe('valid shapes', () => {
     expect(validateCoverageJson(data)).toEqual([]);
   });
 
-  it('covered_lines is clean', () => {
+  it('covered_lines is a valid shape', () => {
+    // Still valid, and still parses — but since #657 a covered_lines-only
+    // document also carries an advisory, because it cannot distinguish an
+    // unhit line from one that was never instrumented. The shape is fine; the
+    // ambiguity is what the warning is about, and it is asserted below.
     const data = { files: { 'pkg/foo.py': { covered_lines: [12, 13, 15] } } };
-    expect(validateCoverageJson(data)).toEqual([]);
+    expect(errors(data)).toEqual([]);
   });
 
   it('both fields is clean', () => {
@@ -52,9 +68,11 @@ describe('valid shapes', () => {
   });
 
   it('schema_version 1 is clean', () => {
+    // `line_hits` with an explicit zero, not the covered_lines shorthand, so
+    // the subject under test is schema_version and nothing else can warn.
     const data = {
       schema_version: 1,
-      files: { 'a.py': { covered_lines: [1] } },
+      files: { 'a.py': { line_hits: { '1': 1, '2': 0 } } },
     };
     expect(validateCoverageJson(data)).toEqual([]);
   });
@@ -66,7 +84,7 @@ describe('valid shapes', () => {
 
   it('unknown top-level key is ignored', () => {
     const data = {
-      files: { 'a.py': { covered_lines: [1] } },
+      files: { 'a.py': { line_hits: { '1': 1, '2': 0 } } },
       meta: { tool: 'x' },
     };
     expect(validateCoverageJson(data)).toEqual([]);
@@ -156,7 +174,7 @@ describe('parser binding', () => {
     expect(errors(data)).toEqual([]);
     const index = parseCoverageJson(data);
     expect(index).not.toBeNull();
-    expect(index!['a.py']).toEqual({ 13: 2 });
+    expect(index!['a.py']!.hits).toEqual({ 13: 2 });
   });
 
   it('non-integer values rejected by both', () => {
@@ -167,7 +185,7 @@ describe('parser binding', () => {
       const data = { files: { 'a.py': { line_hits: { '12': bad } } } };
       expect(warnings(data), String(bad)).not.toEqual([]);
       expect(errors(data), String(bad)).toEqual([]);
-      expect(parseCoverageJson(data), String(bad)).toEqual({ 'a.py': {} });
+      expect(hitsOf(data), String(bad)).toEqual({});
     }
   });
 
@@ -175,7 +193,7 @@ describe('parser binding', () => {
     for (const bad of [false, '5', 2.5]) {
       const data = { files: { 'a.py': { covered_lines: [bad] } } };
       expect(warnings(data), String(bad)).not.toEqual([]);
-      expect(parseCoverageJson(data), String(bad)).toEqual({ 'a.py': {} });
+      expect(hitsOf(data), String(bad)).toEqual({});
     }
   });
 
@@ -184,7 +202,7 @@ describe('parser binding', () => {
       files: { 'a.py': { line_hits: { '14': 0 }, covered_lines: [12] } },
     };
     expect(validateCoverageJson(data)).toEqual([]);
-    expect(parseCoverageJson(data)).toEqual({ 'a.py': { 12: 1, 14: 0 } });
+    expect(hitsOf(data)).toEqual({ 12: 1, 14: 0 });
   });
 
   it('unsupported schema_version is dropped by parser', () => {
@@ -202,7 +220,7 @@ describe('parser binding', () => {
     };
     expect(errors(data)).toEqual([]);
     expect(warnings(data)).not.toEqual([]);
-    expect(parseCoverageJson(data)).toEqual({ 'a.py': { 14: 0 } });
+    expect(hitsOf(data)).toEqual({ 14: 0 });
   });
 
   it('out of range are dropped not kept', () => {
@@ -214,9 +232,7 @@ describe('parser binding', () => {
     for (const entry of entries) {
       const data = { files: { 'a.py': entry } };
       expect(warnings(data), JSON.stringify(entry)).not.toEqual([]);
-      expect(parseCoverageJson(data), JSON.stringify(entry)).toEqual({
-        'a.py': {},
-      });
+      expect(hitsOf(data), JSON.stringify(entry)).toEqual({});
     }
   });
 
@@ -226,6 +242,81 @@ describe('parser binding', () => {
       const data = { files: { 'a.py': entry } };
       expect(warnings(data), JSON.stringify(entry)).not.toEqual([]);
       expect(errors(data), JSON.stringify(entry)).toEqual([]);
+    }
+  });
+});
+
+/**
+ * The validator is the producer-facing half of `instrumented_lines` (#657).
+ *
+ * The field only helps if a producer learns it exists. The document that most
+ * needs it — `covered_lines` alone, the shape a naive lcov transcode produces —
+ * is silently ambiguous: every line it omits is reported as a coverage gap, and
+ * the producer sees nothing. Saying so is the whole point.
+ */
+describe('instrumented_lines (#657)', () => {
+  const file = (entry: Record<string, unknown>): unknown => ({
+    files: { 'a.py': entry },
+  });
+
+  /** Location and message together — a shape complaint names its field. */
+  function messages(data: unknown): string {
+    return validateCoverageJson(data)
+      .map((p) => `${p.location} ${p.message}`)
+      .join('\n');
+  }
+
+  it('warns that a covered_lines-only document cannot express a miss', () => {
+    // The #657 trap exactly: this is what transcoding lcov produces, and every
+    // non-instrumented line it dropped becomes a reported gap downstream.
+    const problems = warnings(file({ covered_lines: [10, 11] }));
+
+    expect(problems).not.toEqual([]);
+    expect(messages(file({ covered_lines: [10, 11] }))).toMatch(
+      /instrumented_lines/,
+    );
+  });
+
+  it('stays quiet once the producer declares what it instrumented', () => {
+    // Declaring the set resolves the ambiguity, so the warning must clear —
+    // otherwise it is noise a producer learns to ignore.
+    expect(
+      warnings(file({ covered_lines: [10], instrumented_lines: [10, 11] })),
+    ).toEqual([]);
+  });
+
+  it('stays quiet when line_hits carries an explicit zero', () => {
+    // The other documented way to report a miss. A producer already doing the
+    // right thing must not be nagged toward a second mechanism.
+    expect(warnings(file({ line_hits: { '10': 1, '11': 0 } }))).toEqual([]);
+  });
+
+  it('warns on a declared line that line_hits contradicts', () => {
+    // 50 has a hit count but was never declared instrumented. The parser
+    // resolves it (measurement wins); the producer should still hear about it.
+    expect(
+      warnings(file({ line_hits: { '50': 0 }, instrumented_lines: [10] })),
+    ).not.toEqual([]);
+  });
+
+  it('warns and ignores a malformed declaration', () => {
+    for (const bad of ['all', 42, { a: 1 }]) {
+      const data = file({ line_hits: { '10': 1 }, instrumented_lines: bad });
+      expect(warnings(data), JSON.stringify(bad)).not.toEqual([]);
+      expect(errors(data), JSON.stringify(bad)).toEqual([]);
+    }
+  });
+
+  it('warns on a non-integer or out-of-range declared line', () => {
+    // `line_hits` is present so the entry is otherwise clean — without it the
+    // "no coverage data at all" warning would fire and this would pass whether
+    // or not the declared lines were checked.
+    for (const bad of ['3', 3.5, 0, -1, true]) {
+      const data = file({
+        line_hits: { '10': 1 },
+        instrumented_lines: [10, bad],
+      });
+      expect(messages(data), JSON.stringify(bad)).toMatch(/instrumented_lines/);
     }
   });
 });

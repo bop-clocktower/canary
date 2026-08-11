@@ -109,10 +109,19 @@ the report has nothing to say about it and the guardian abstains for that unit,
 falling through to the graph or heuristic tier rather than inventing either a
 pass or a finding.
 
-The rule is per-format, because absence does not mean the same thing in each.
-The `coverage.json` contract states that a line absent from both of its fields
-is uncovered, and its `covered_lines` shorthand cannot express an unhit line at
-all — so for that format, and only that format, absence still counts as a miss.
+The rule is per-**report**, because absence only means "not coverable" where the
+report says what it measured. lcov and Cobertura say so by construction. The
+`coverage.json` contract does not: a line absent from both of its fields is
+uncovered, and its `covered_lines` shorthand cannot express an unhit line at
+all, so absence there counts as a miss.
+
+A coverage-json producer can opt in to the lcov rule per file by declaring
+`instrumented_lines` ([#657]) — the set of lines its tool actually measured.
+Changed lines outside that set are then not coverable, exactly as for lcov. A
+document without the field is read as before, so this changed no existing
+producer. `canary guardian validate-coverage` warns when a document leans on
+`covered_lines` and cannot express a miss at all, which is what transcoding lcov
+into the format produces.
 
 Detection is two-stage and content-confirmed, never name-only. A filename gate
 (`types.ts`, `*.types.ts`, a `types/` directory, `*.d.ts`) decides which files
@@ -375,6 +384,7 @@ a reviewer facing 68 findings had no way to tell which one mattered ([#553]).
 
 [#553]: https://github.com/bop-clocktower/canary/issues/553
 [#655]: https://github.com/bop-clocktower/canary/issues/655
+[#657]: https://github.com/bop-clocktower/canary/issues/657
 
 Promotion is **per-repo** and has two parts: the **exit gate** (`gate: hard` in
 config, which makes `canary guardian pr-check` exit non-zero on an unaddressed

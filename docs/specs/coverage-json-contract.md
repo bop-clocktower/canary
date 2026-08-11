@@ -25,7 +25,8 @@ created: 2026-07-24
   "files": {
     "src/pkg/orders.py": {
       "line_hits": { "12": 3, "13": 1, "14": 0 },
-      "covered_lines": [12, 13]
+      "covered_lines": [12, 13],
+      "instrumented_lines": [12, 13, 14]
     },
     "src/pkg/util.py": {
       "line_hits": { "1": 5, "2": 5 }
@@ -36,13 +37,65 @@ created: 2026-07-24
 
 ## Fields
 
-| Field                       | Type             | Notes                                                                                                                                                                        |
-| --------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `schema_version`            | int _(optional)_ | `1`. Omit to default to `1`. A version this build doesn't understand → the whole document is refused (see Conventions). Bumped only on a breaking change; evolve additively. |
-| `files`                     | object           | **Required.** Maps a file path to that file's coverage. Empty object is valid.                                                                                               |
-| `files[path]`               | object           | Per-file coverage. One or both of `line_hits` / `covered_lines`.                                                                                                             |
-| `files[path].line_hits`     | object _(opt.)_  | `{ "<line>": <hits> }` — line number (as a string key) → execution count.                                                                                                    |
-| `files[path].covered_lines` | int[] _(opt.)_   | Line numbers with `hits >= 1`. Shorthand; cannot express an unhit line.                                                                                                      |
+| Field                            | Type             | Notes                                                                                                                                                                        |
+| -------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_version`                 | int _(optional)_ | `1`. Omit to default to `1`. A version this build doesn't understand → the whole document is refused (see Conventions). Bumped only on a breaking change; evolve additively. |
+| `files`                          | object           | **Required.** Maps a file path to that file's coverage. Empty object is valid.                                                                                               |
+| `files[path]`                    | object           | Per-file coverage. One or both of `line_hits` / `covered_lines`.                                                                                                             |
+| `files[path].line_hits`          | object _(opt.)_  | `{ "<line>": <hits> }` — line number (as a string key) → execution count.                                                                                                    |
+| `files[path].covered_lines`      | int[] _(opt.)_   | Line numbers with `hits >= 1`. Shorthand; cannot express an unhit line.                                                                                                      |
+| `files[path].instrumented_lines` | int[] _(opt.)_   | Lines the tool measured. Declaring it makes a changed line **outside** the set not coverable rather than uncovered ([#657]).                                                 |
+
+## Declaring what you measured (`instrumented_lines`)
+
+Added in [#657]. **Optional and additive** — a document without it is read
+exactly as before, so no existing producer changes behaviour.
+
+Without it this format cannot say "this line was never instrumented", only "this
+line is not covered". The two are very different downstream: the consumer counts
+a changed line it cannot account for as a coverage miss, so a comment, an
+import, or a `type` declaration in a new file becomes a reported gap at the
+`coverage-verified` label. A producer transcoding lcov into this format hits
+that squarely, because lcov's non-instrumented lines simply have no record to
+transcode.
+
+Declaring the set fixes it:
+
+```json
+{
+  "files": {
+    "src/new_module.ts": {
+      "line_hits": { "10": 3, "11": 0 },
+      "instrumented_lines": [10, 11, 12]
+    }
+  }
+}
+```
+
+| Line   | Verdict         | Why                                          |
+| ------ | --------------- | -------------------------------------------- |
+| `10`   | covered         | recorded, 3 hits                             |
+| `11`   | uncovered       | recorded, 0 hits — a real miss               |
+| `12`   | uncovered       | declared instrumented, no hit record         |
+| `1..9` | _not coverable_ | outside the declared set — scored by neither |
+
+Rules:
+
+- **`line_hits` stays authoritative.** A `{"11": 0}` line remains uncovered even
+  if `covered_lines` also lists it; declaring instrumentation is not a way
+  around that frozen rule.
+- **A recorded line outside the declaration is still coverable.** Real
+  measurement outranks a declaration that disagrees with it — dropping the line
+  would discard a hit count the producer actually took. The validator warns.
+- **A malformed declaration is ignored**, not fatal: the entry falls back to the
+  rules below, matching the parser's leniency everywhere else.
+- **If no changed line is coverable**, the guardian abstains for that file and
+  falls through to a lower-fidelity tier — never a clean pass, never a finding.
+
+`canary guardian validate-coverage` warns when a document leans on
+`covered_lines` without declaring `instrumented_lines` and without recording any
+unhit line, because that document cannot express a miss at all. It is advisory;
+only `--strict` turns warnings into a non-zero exit.
 
 ## Conventions (frozen)
 
@@ -67,20 +120,22 @@ created: 2026-07-24
   (Because JSON object keys are always strings, `line_hits` keys are the integer
   written as a string — `"12"` — and are parsed back to an int.)
 - **A line absent from both fields is treated as uncovered** (`hits = 0`) by the
-  consumer. Only record the lines you have data for; you need not enumerate
-  every source line.
+  consumer, **unless `instrumented_lines` says otherwise**. Only record the
+  lines you have data for; you need not enumerate every source line.
 
-  This is the **opposite** of how the consumer reads lcov and Cobertura, and the
-  difference is deliberate. Those formats enumerate every line they
-  _instrumented_, so a line they never mention could not have been executed by
-  anything — a comment, an import, a type declaration — and is excluded from
-  both sides of the ratio rather than counted as a miss ([#655]). This format
-  makes no such promise: `covered_lines` cannot express an unhit line, so
-  absence is the only way a producer using the shorthand can report one.
+  Without a declaration this is the **opposite** of how the consumer reads lcov
+  and Cobertura, and the difference is deliberate. Those formats enumerate every
+  line they _instrumented_, so a line they never mention could not have been
+  executed by anything — a comment, an import, a type declaration — and is
+  excluded from both sides of the ratio rather than counted as a miss ([#655]).
+  This format makes no such promise by default: `covered_lines` cannot express
+  an unhit line, so absence is the only way a producer using the shorthand can
+  report one.
 
   The consequence for producers is worth stating plainly: **a producer
-  transcoding lcov into this format loses the distinction**, and its
-  non-instrumented lines will be reported as coverage gaps. Emit `line_hits`
+  transcoding lcov into this format loses the distinction** unless it says so,
+  and its non-instrumented lines will be reported as coverage gaps. Pick one:
+  declare `instrumented_lines` (the direct fix, see above), emit `line_hits`
   with explicit `0` entries for genuinely-unhit lines and omit the rest, or hand
   the guardian the lcov directly.
 
@@ -126,3 +181,4 @@ The format is generic — it names only file paths, line numbers, and hit counts
 with no project-, employer-, or client-specific content.
 
 [#655]: https://github.com/bop-clocktower/canary/issues/655
+[#657]: https://github.com/bop-clocktower/canary/issues/657
