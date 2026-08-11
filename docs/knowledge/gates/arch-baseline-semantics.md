@@ -49,7 +49,7 @@ conditional logic at all.
 
 The cheap fix is to hoist the shape to a named interface, which costs one
 declaration and removes the branches from the count. Applied in #561 to
-`ts/src/guardian/cli.ts`, and again to
+`ts/src/guardian/cli.ts`, and again in #669 to
 `ts/test/precommit-abstention.test.ts`.
 
 ## Every `??` counts as two branches
