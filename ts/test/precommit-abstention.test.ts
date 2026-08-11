@@ -105,12 +105,17 @@ function makeRepo(withDeps: boolean): string {
 }
 
 /** Run the hook and return its combined output, whatever its exit status. */
-function runHook(dir: string): string {
+function runHook(dir: string, pathPrefix?: string): string {
+  const env =
+    pathPrefix === undefined
+      ? process.env
+      : { ...process.env, PATH: `${pathPrefix}:${process.env['PATH'] ?? ''}` };
   try {
     return execFileSync('bash', ['.githooks/pre-commit'], {
       cwd: dir,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      env,
     });
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };
@@ -118,8 +123,26 @@ function runHook(dir: string): string {
   }
 }
 
+/**
+ * A repo with no local markdownlint but an `npx` that resolves one.
+ *
+ * This is the worktree case the fallback exists for: a tree that symlinks only
+ * `ts/node_modules` has no root `node_modules/.bin`, but `npx --no-install`
+ * still finds markdownlint. Stubbing `npx` on PATH is what keeps the test
+ * hermetic and offline — the real one would hit the network or the user's cache
+ * and make the result depend on the machine.
+ */
+function makeNpxRepo(): string {
+  const dir = makeRepo(false);
+  const stubBin = join(dir, 'binstub');
+  writeStub(join(stubBin, 'npx'), 'STUB npx markdownlint ran');
+  return dir;
+}
+
 const withoutDeps = runHook(makeRepo(false));
 const withDeps = runHook(makeRepo(true));
+const npxRepo = makeNpxRepo();
+const viaNpx = runHook(npxRepo, join(npxRepo, 'binstub'));
 
 /** Status lines the hook prints about one named gate, in one run. */
 function statusLines(output: string, gate: string): string[] {
@@ -156,6 +179,23 @@ describe('pre-commit abstentions are legible (#650)', () => {
 
   it('reports markdownlint as skipped when its binary is absent', () => {
     expect(withoutDeps).toMatch(/markdownlint[^\n]*SKIPPED/i);
+  });
+
+  /**
+   * The middle branch, and the load-bearing one: it is what turns the common
+   * worktree case from an announced skip back into a gate that actually runs.
+   * Without this, the only covered paths are "local binary" and "nothing", and
+   * a regression in the npx fallback would degrade silently to a skip — the
+   * exact failure #650 is about, one level down.
+   */
+  it('runs markdownlint via npx when only the local binary is absent', () => {
+    expect(viaNpx).toContain('STUB npx markdownlint ran');
+    expect(viaNpx).toMatch(/markdownlint[^\n]*resolved via npx/i);
+  });
+
+  it('does not report a skip when the npx fallback resolved', () => {
+    expect(statusLines(viaNpx, 'markdownlint')).toHaveLength(1);
+    expect(viaNpx).not.toMatch(/markdownlint[^\n]*SKIPPED/i);
   });
 
   it('reports prettier as skipped when its binary is absent', () => {
