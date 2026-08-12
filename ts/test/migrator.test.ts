@@ -30,7 +30,11 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
-import { HarnessMigrator, hashSkillDir } from '../src/core/migrator.js';
+import {
+  DEPLOY_MANIFEST_NAME,
+  HarnessMigrator,
+  hashSkillDir,
+} from '../src/core/migrator.js';
 import { SkillRegistry } from '../src/core/skill-registry.js';
 
 // Empty, isolated home so `~/.canary/skills` never contributes overlay skills.
@@ -1441,7 +1445,7 @@ describe('TestDeploySkills', () => {
   it('matching skill copied on apply', () =>
     run(({ target, overlay }) => {
       makeOverlaySkill(overlay, 'login-helper', ['e2e_ui']);
-      const results = mig().deploySkills('e2e_ui', overlay, target, false);
+      const results = mig().deploySkills(['e2e_ui'], overlay, target, false);
       expect(results.length).toBe(1);
       expect(results[0]!.status).toBe('copied');
       expect(
@@ -1453,7 +1457,7 @@ describe('TestDeploySkills', () => {
   it('dry run does not copy', () =>
     run(({ target, overlay }) => {
       makeOverlaySkill(overlay, 'login-helper', ['e2e_ui']);
-      const results = mig().deploySkills('e2e_ui', overlay, target, true);
+      const results = mig().deploySkills(['e2e_ui'], overlay, target, true);
       expect(results[0]!.status).toBe('dry_run');
       expect(
         existsSync(join(target, '.canary', 'skills', 'login-helper')),
@@ -1462,14 +1466,16 @@ describe('TestDeploySkills', () => {
   it('non matching shape not deployed', () =>
     run(({ target, overlay }) => {
       makeOverlaySkill(overlay, 'api-bridge', ['api']);
-      expect(mig().deploySkills('e2e_ui', overlay, target, false)).toEqual([]);
+      expect(mig().deploySkills(['e2e_ui'], overlay, target, false)).toEqual(
+        [],
+      );
     }));
   it('all sentinel deploys to any shape', () =>
     run(({ target, overlay }) => {
       makeOverlaySkill(overlay, 'universal-skill', ['all']);
-      expect(mig().deploySkills('api', overlay, target, false)[0]!.status).toBe(
-        'copied',
-      );
+      expect(
+        mig().deploySkills(['api'], overlay, target, false)[0]!.status,
+      ).toBe('copied');
     }));
   it('already present skill skipped', () =>
     run(({ target, overlay }) => {
@@ -1477,7 +1483,7 @@ describe('TestDeploySkills', () => {
       const dest = join(target, '.canary', 'skills', 'login-helper');
       mkdirSync(dest, { recursive: true });
       write(join(dest, 'SKILL.md'), 'existing');
-      const results = mig().deploySkills('e2e_ui', overlay, target, false);
+      const results = mig().deploySkills(['e2e_ui'], overlay, target, false);
       expect(results[0]!.status).toBe('skipped');
       expect(readFileSync(join(dest, 'SKILL.md'), 'utf-8')).toBe('existing');
     }));
@@ -1489,7 +1495,7 @@ describe('TestDeploySkills', () => {
         join(skillDir, 'SKILL.md'),
         '---\nname: markdown-only\n---\n\n# Skill',
       );
-      expect(mig().deploySkills('api', overlay, target, false)).toEqual([]);
+      expect(mig().deploySkills(['api'], overlay, target, false)).toEqual([]);
     }));
   // #501: shapes are extensible — migrate matches `deploy_to` against the
   // resolved `canary_shape` by plain string comparison, and lint must agree
@@ -1499,7 +1505,7 @@ describe('TestDeploySkills', () => {
     run(({ target, overlay }) => {
       makeOverlaySkill(overlay, 'custom-bridge', ['custom_shape']);
       const results = mig().deploySkills(
-        'custom_shape',
+        ['custom_shape'],
         overlay,
         target,
         false,
@@ -1518,7 +1524,7 @@ describe('TestDeploySkills', () => {
         join(skillDir, 'SKILL.md'),
         '---\nname: block-skill\ndeploy_to:\n  - api\n---\n\n# block-skill\n',
       );
-      const results = mig().deploySkills('api', overlay, target, false);
+      const results = mig().deploySkills(['api'], overlay, target, false);
       expect(results.length).toBe(1);
       expect(results[0]!.status).toBe('copied');
     }));
@@ -1527,7 +1533,7 @@ describe('TestDeploySkills', () => {
       makeOverlaySkill(overlay, 'api-bridge', ['api']);
       makeOverlaySkill(overlay, 'login-helper', ['e2e_ui', 'api']);
       makeOverlaySkill(overlay, 'ui-bridge', ['e2e_ui']);
-      const results = mig().deploySkills('api', overlay, target, false);
+      const results = mig().deploySkills(['api'], overlay, target, false);
       const deployed = new Set(
         results.filter((r) => r.status === 'copied').map((r) => r.skill_name),
       );
@@ -1537,13 +1543,13 @@ describe('TestDeploySkills', () => {
     }));
   it('none overlay returns empty', () =>
     run(({ target }) => {
-      expect(mig().deploySkills('api', null, target, false)).toEqual([]);
+      expect(mig().deploySkills(['api'], null, target, false)).toEqual([]);
     }));
   it('overlay extra files copied with skill', () =>
     run(({ target, overlay }) => {
       const skillDir = makeOverlaySkill(overlay, 'rich-skill', ['api']);
       write(join(skillDir, 'helpers.py'), '# helper');
-      mig().deploySkills('api', overlay, target, false);
+      mig().deploySkills(['api'], overlay, target, false);
       expect(
         existsSync(
           join(target, '.canary', 'skills', 'rich-skill', 'helpers.py'),
@@ -1556,7 +1562,7 @@ describe('TestDeploySkills', () => {
     run(({ target, overlay }) => {
       makeOverlaySkill(overlay, 'direct-skill', ['api']);
       const skillsDir = join(overlay, '.canary', 'skills');
-      const results = mig().deploySkills('api', skillsDir, target, false);
+      const results = mig().deploySkills(['api'], skillsDir, target, false);
       expect(results.map((r) => r.skill_name)).toContain('direct-skill');
     }));
 
@@ -1571,7 +1577,7 @@ describe('TestDeploySkills', () => {
         join(dest, 'SKILL.md'),
         `---\nname: demo\ndeploy_to: [api]\n---\n\n# demo\n`,
       );
-      const results = mig().deploySkills('api', overlay, target, false);
+      const results = mig().deploySkills(['api'], overlay, target, false);
       expect(results[0]!.status).toBe('skipped');
       expect(results[0]!.note).toBe('already current');
       expect(
@@ -1591,7 +1597,7 @@ describe('TestDeploySkills', () => {
         '---\nname: home-skill\ndeploy_to: [all]\n---\n\n# home-skill\n',
       );
       const results = new HarnessMigrator(home).deploySkills(
-        'api',
+        ['api'],
         null,
         target,
         false,
@@ -2143,7 +2149,7 @@ describe('deploy edge coverage', () => {
       mkdirSync(sub, { recursive: true });
       write(join(sub, 'util.ts'), 'export const x = 1;\n');
       const m = new HarnessMigrator(HOME);
-      const results = m.deploySkills('api', overlay, target, false);
+      const results = m.deploySkills(['api'], overlay, target, false);
       expect(results[0]!.status).toBe('copied');
       expect(
         existsSync(
@@ -2151,7 +2157,7 @@ describe('deploy edge coverage', () => {
         ),
       ).toBe(true);
       // Re-deploy: identical nested content -> already current (nested hash walk).
-      const again = m.deploySkills('api', overlay, target, false);
+      const again = m.deploySkills(['api'], overlay, target, false);
       expect(again[0]!.status).toBe('skipped');
       expect(again[0]!.note).toBe('already current');
     }));
@@ -2159,7 +2165,7 @@ describe('deploy edge coverage', () => {
   it('overlay path without a .canary/skills dir yields no skills', () =>
     run(({ target, overlay }) => {
       // overlay has no .canary/skills subtree at all.
-      expect(mig().deploySkills('api', overlay, target, false)).toEqual([]);
+      expect(mig().deploySkills(['api'], overlay, target, false)).toEqual([]);
     }));
 
   it('malformed deploy manifest is treated as empty provenance', () =>
@@ -2168,7 +2174,7 @@ describe('deploy edge coverage', () => {
       const skillsDir = join(target, '.canary', 'skills');
       mkdirSync(skillsDir, { recursive: true });
       write(join(skillsDir, '.deploy-manifest.json'), 'not json at all');
-      const results = mig().deploySkills('api', overlay, target, false);
+      const results = mig().deploySkills(['api'], overlay, target, false);
       expect(results[0]!.status).toBe('copied');
     }));
 
@@ -2181,7 +2187,7 @@ describe('deploy edge coverage', () => {
         join(skillsDir, '.deploy-manifest.json'),
         JSON.stringify({ schemaVersion: 1, skills: [] }),
       );
-      const results = mig().deploySkills('api', overlay, target, false);
+      const results = mig().deploySkills(['api'], overlay, target, false);
       expect(results[0]!.status).toBe('copied');
     }));
 });
@@ -2284,7 +2290,7 @@ describe('TestInstallWorkflows', () => {
   it('installs a declared template when the target has no such workflow', () =>
     run(({ target, overlay }) => {
       guardianSkill(overlay);
-      const results = mig().installWorkflows('api', overlay, target, false);
+      const results = mig().installWorkflows(['api'], overlay, target, false);
       expect(results.length).toBe(1);
       expect(results[0]!.status).toBe('installed');
       expect(results[0]!.workflow).toBe('canary-guardian.yml');
@@ -2311,7 +2317,7 @@ describe('TestInstallWorkflows', () => {
       mkdirSync(tpl, { recursive: true });
       write(join(tpl, 'canary-guardian.yml'), GUARDIAN_YML);
       write(join(tpl, 'guardian-precision.yml'), GUARDIAN_YML);
-      const results = mig().installWorkflows('api', overlay, target, false);
+      const results = mig().installWorkflows(['api'], overlay, target, false);
       expect(results.map((r) => r.status)).toEqual(['installed', 'installed']);
       expect(existsSync(workflowPath(target, 'canary-guardian.yml'))).toBe(
         true,
@@ -2324,7 +2330,7 @@ describe('TestInstallWorkflows', () => {
   it('dry run reports what would be installed and writes nothing', () =>
     run(({ target, overlay }) => {
       guardianSkill(overlay);
-      const results = mig().installWorkflows('api', overlay, target, true);
+      const results = mig().installWorkflows(['api'], overlay, target, true);
       expect(results[0]!.status).toBe('dry_run');
       expect(results[0]!.detail).toContain('would install');
       expect(existsSync(join(target, '.github'))).toBe(false);
@@ -2335,7 +2341,7 @@ describe('TestInstallWorkflows', () => {
       guardianSkill(overlay);
       mkdirSync(join(target, '.github', 'workflows'), { recursive: true });
       write(workflowPath(target, 'canary-guardian.yml'), GUARDIAN_YML);
-      const results = mig().installWorkflows('api', overlay, target, false);
+      const results = mig().installWorkflows(['api'], overlay, target, false);
       expect(results[0]!.status).toBe('skipped');
       expect(results[0]!.detail).toContain('already current');
     }));
@@ -2348,7 +2354,7 @@ describe('TestInstallWorkflows', () => {
       guardianSkill(overlay);
       mkdirSync(join(target, '.github', 'workflows'), { recursive: true });
       write(workflowPath(target, 'canary-guardian.yml'), HAND_TUNED_YML);
-      const results = mig().installWorkflows('api', overlay, target, false);
+      const results = mig().installWorkflows(['api'], overlay, target, false);
       // The bytes on disk are the FIRST assertion on purpose: a status check
       // alone would still pass if the file were quietly rewritten.
       expect(
@@ -2364,7 +2370,7 @@ describe('TestInstallWorkflows', () => {
       mkdirSync(join(target, '.github', 'workflows'), { recursive: true });
       write(workflowPath(target, 'canary-guardian.yml'), HAND_TUNED_YML);
       const results = mig().installWorkflows(
-        'api',
+        ['api'],
         overlay,
         target,
         false,
@@ -2382,7 +2388,7 @@ describe('TestInstallWorkflows', () => {
       mkdirSync(join(target, '.github', 'workflows'), { recursive: true });
       write(workflowPath(target, 'canary-guardian.yml'), HAND_TUNED_YML);
       const results = mig().installWorkflows(
-        'api',
+        ['api'],
         overlay,
         target,
         true,
@@ -2398,7 +2404,7 @@ describe('TestInstallWorkflows', () => {
   it('records the template version in the deploy manifest', () =>
     run(({ target, overlay }) => {
       guardianSkill(overlay, { version: '2' });
-      mig().installWorkflows('api', overlay, target, false);
+      mig().installWorkflows(['api'], overlay, target, false);
       const manifest = JSON.parse(
         readFileSync(
           join(target, '.canary', 'skills', '.deploy-manifest.json'),
@@ -2418,7 +2424,7 @@ describe('TestInstallWorkflows', () => {
   it('an unmodified install whose overlay moved on reports as outdated, not conflict', () =>
     run(({ target, overlay }) => {
       guardianSkill(overlay, { version: '1' });
-      mig().installWorkflows('api', overlay, target, false);
+      mig().installWorkflows(['api'], overlay, target, false);
       // Overlay ships a corrected v2.
       const fixed = GUARDIAN_YML.replace('jobs: {}', 'jobs:\n  gate: {}');
       makeWorkflowSkill(overlay, 'canary-pr-guardian', {
@@ -2426,7 +2432,7 @@ describe('TestInstallWorkflows', () => {
         version: '2',
         templates: { 'templates/canary-guardian.yml': fixed },
       });
-      const results = mig().installWorkflows('api', overlay, target, false);
+      const results = mig().installWorkflows(['api'], overlay, target, false);
       expect(results[0]!.status).toBe('outdated');
       expect(results[0]!.detail).toContain('v1');
       expect(results[0]!.detail).toContain('v2');
@@ -2440,9 +2446,9 @@ describe('TestInstallWorkflows', () => {
   it('a workflow edited after install reports as a conflict, not outdated', () =>
     run(({ target, overlay }) => {
       guardianSkill(overlay, { version: '1' });
-      mig().installWorkflows('api', overlay, target, false);
+      mig().installWorkflows(['api'], overlay, target, false);
       write(workflowPath(target, 'canary-guardian.yml'), HAND_TUNED_YML);
-      const results = mig().installWorkflows('api', overlay, target, false);
+      const results = mig().installWorkflows(['api'], overlay, target, false);
       expect(results[0]!.status).toBe('conflict');
       expect(
         readFileSync(workflowPath(target, 'canary-guardian.yml'), 'utf-8'),
@@ -2458,7 +2464,7 @@ describe('TestInstallWorkflows', () => {
       mkdirSync(workflowPath(target, 'canary-guardian.yml'), {
         recursive: true,
       });
-      const results = mig().installWorkflows('api', overlay, target, false);
+      const results = mig().installWorkflows(['api'], overlay, target, false);
       expect(results[0]!.status).toBe('conflict');
       expect(isDirSync(workflowPath(target, 'canary-guardian.yml'))).toBe(true);
     }));
@@ -2466,8 +2472,8 @@ describe('TestInstallWorkflows', () => {
   it('is idempotent: a second run is a no-op', () =>
     run(({ target, overlay }) => {
       guardianSkill(overlay);
-      mig().installWorkflows('api', overlay, target, false);
-      const second = mig().installWorkflows('api', overlay, target, false);
+      mig().installWorkflows(['api'], overlay, target, false);
+      const second = mig().installWorkflows(['api'], overlay, target, false);
       expect(second.map((r) => r.status)).toEqual(['skipped']);
     }));
 
@@ -2477,7 +2483,9 @@ describe('TestInstallWorkflows', () => {
   it('a skill that does not match the shape installs nothing', () =>
     run(({ target, overlay }) => {
       guardianSkill(overlay, { deployTo: ['e2e_ui'] });
-      expect(mig().installWorkflows('api', overlay, target, false)).toEqual([]);
+      expect(mig().installWorkflows(['api'], overlay, target, false)).toEqual(
+        [],
+      );
       expect(existsSync(join(target, '.github'))).toBe(false);
     }));
 
@@ -2493,7 +2501,7 @@ describe('TestInstallWorkflows', () => {
           'templates/guardian-ui.yml': 'name: ui\n',
         },
       });
-      const results = mig().installWorkflows('api', overlay, target, false);
+      const results = mig().installWorkflows(['api'], overlay, target, false);
       expect(results.map((r) => r.workflow)).toEqual(['guardian-api.yml']);
       expect(existsSync(workflowPath(target, 'guardian-ui.yml'))).toBe(false);
     }));
@@ -2504,7 +2512,7 @@ describe('TestInstallWorkflows', () => {
         install: ['all:templates/base.yml'],
         templates: { 'templates/base.yml': 'name: base\n' },
       });
-      const results = mig().installWorkflows('load', overlay, target, false);
+      const results = mig().installWorkflows(['load'], overlay, target, false);
       expect(results[0]!.status).toBe('installed');
       expect(results[0]!.workflow).toBe('base.yml');
     }));
@@ -2514,7 +2522,7 @@ describe('TestInstallWorkflows', () => {
       makeWorkflowSkill(overlay, 'guardian', {
         install: ['templates/absent.yml'],
       });
-      const results = mig().installWorkflows('api', overlay, target, false);
+      const results = mig().installWorkflows(['api'], overlay, target, false);
       expect(results[0]!.status).toBe('missing');
       expect(existsSync(join(target, '.github'))).toBe(false);
     }));
@@ -2525,7 +2533,7 @@ describe('TestInstallWorkflows', () => {
         install: ['../../../etc/passwd'],
       });
       write(join(dirname(skillDir), 'sibling.yml'), 'name: sibling\n');
-      const results = mig().installWorkflows('api', overlay, target, false);
+      const results = mig().installWorkflows(['api'], overlay, target, false);
       expect(results[0]!.status).toBe('invalid');
       expect(existsSync(join(target, '.github'))).toBe(false);
     }));
@@ -2534,22 +2542,24 @@ describe('TestInstallWorkflows', () => {
     run(({ target, overlay }) => {
       makeWorkflowSkill(overlay, 'evil', { install: ['/etc/passwd'] });
       expect(
-        mig().installWorkflows('api', overlay, target, false)[0]!.status,
+        mig().installWorkflows(['api'], overlay, target, false)[0]!.status,
       ).toBe('invalid');
     }));
 
   it('a skill with no install_workflows declares no workflows', () =>
     run(({ target, overlay }) => {
       makeOverlaySkill(overlay, 'plain', ['api']);
-      expect(mig().installWorkflows('api', overlay, target, false)).toEqual([]);
+      expect(mig().installWorkflows(['api'], overlay, target, false)).toEqual(
+        [],
+      );
     }));
 
   it('installing workflows preserves the skills section of the manifest', () =>
     run(({ target, overlay }) => {
       guardianSkill(overlay);
       const m = mig();
-      m.deploySkills('api', overlay, target, false);
-      m.installWorkflows('api', overlay, target, false);
+      m.deploySkills(['api'], overlay, target, false);
+      m.installWorkflows(['api'], overlay, target, false);
       const manifest = JSON.parse(
         readFileSync(
           join(target, '.canary', 'skills', '.deploy-manifest.json'),
@@ -2604,7 +2614,7 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
   function deployThenEdit(overlay: string, target: string): HarnessMigrator {
     guardianSkill(overlay);
     const m = mig();
-    m.deploySkills('api', overlay, target, false);
+    m.deploySkills(['api'], overlay, target, false);
     editDeployedSkill(target, 'guardian runs inline here; template de-listed');
     return m;
   }
@@ -2612,10 +2622,10 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
   it('withholds the workflow of a skill skipped as locally edited', () =>
     run(({ target, overlay }) => {
       const m = deployThenEdit(overlay, target);
-      expect(m.deploySkills('api', overlay, target, false)[0]!.note).toContain(
-        'local edits',
-      );
-      const results = m.installWorkflows('api', overlay, target, false);
+      expect(
+        m.deploySkills(['api'], overlay, target, false)[0]!.note,
+      ).toContain('local edits');
+      const results = m.installWorkflows(['api'], overlay, target, false);
       expect(results.map((r) => r.status)).toEqual(['withheld']);
       expect(results[0]!.workflow).toBe('canary-guardian.yml');
       expect(results[0]!.detail).toContain('local edits');
@@ -2628,7 +2638,7 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
   it('records no workflow provenance for a withheld install', () =>
     run(({ target, overlay }) => {
       const m = deployThenEdit(overlay, target);
-      m.installWorkflows('api', overlay, target, false);
+      m.installWorkflows(['api'], overlay, target, false);
       const manifest = JSON.parse(
         readFileSync(
           join(target, '.canary', 'skills', '.deploy-manifest.json'),
@@ -2641,7 +2651,7 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
   it('withholds in a dry run too, so the plan matches the apply', () =>
     run(({ target, overlay }) => {
       const m = deployThenEdit(overlay, target);
-      const results = m.installWorkflows('api', overlay, target, true);
+      const results = m.installWorkflows(['api'], overlay, target, true);
       expect(results.map((r) => r.status)).toEqual(['withheld']);
       expect(existsSync(workflowPath(target, 'canary-guardian.yml'))).toBe(
         false,
@@ -2655,7 +2665,7 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
     run(({ target, overlay }) => {
       guardianSkill(overlay);
       editDeployedSkill(target, 'my own');
-      const results = mig().installWorkflows('api', overlay, target, false);
+      const results = mig().installWorkflows(['api'], overlay, target, false);
       expect(results.map((r) => r.status)).toEqual(['withheld']);
       expect(existsSync(workflowPath(target, 'canary-guardian.yml'))).toBe(
         false,
@@ -2665,7 +2675,7 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
   it('--force is still the deliberate escape hatch', () =>
     run(({ target, overlay }) => {
       const m = deployThenEdit(overlay, target);
-      const results = m.installWorkflows('api', overlay, target, false, true);
+      const results = m.installWorkflows(['api'], overlay, target, false, true);
       expect(results.map((r) => r.status)).toEqual(['installed']);
       expect(existsSync(workflowPath(target, 'canary-guardian.yml'))).toBe(
         true,
@@ -2679,11 +2689,13 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
     run(({ target, overlay }) => {
       guardianSkill(overlay);
       const m = mig();
-      m.deploySkills('api', overlay, target, false);
-      m.installWorkflows('api', overlay, target, false);
+      m.deploySkills(['api'], overlay, target, false);
+      m.installWorkflows(['api'], overlay, target, false);
       editDeployedSkill(target, 'edited');
       expect(
-        m.installWorkflows('api', overlay, target, false).map((r) => r.status),
+        m
+          .installWorkflows(['api'], overlay, target, false)
+          .map((r) => r.status),
       ).toEqual(['skipped']);
     }));
 
@@ -2693,11 +2705,11 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
     run(({ target, overlay }) => {
       const skillDir = guardianSkill(overlay);
       const m = mig();
-      m.deploySkills('api', overlay, target, false);
-      m.installWorkflows('api', overlay, target, false);
+      m.deploySkills(['api'], overlay, target, false);
+      m.installWorkflows(['api'], overlay, target, false);
       write(join(skillDir, 'templates', 'canary-guardian.yml'), 'name: v2\n');
       editDeployedSkill(target, 'edited');
-      const results = m.installWorkflows('api', overlay, target, false);
+      const results = m.installWorkflows(['api'], overlay, target, false);
       expect(results.map((r) => r.status)).toEqual(['withheld']);
       expect(
         readFileSync(workflowPath(target, 'canary-guardian.yml'), 'utf-8'),
@@ -2709,9 +2721,11 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
     run(({ target, overlay }) => {
       guardianSkill(overlay);
       const m = mig();
-      m.deploySkills('api', overlay, target, false);
+      m.deploySkills(['api'], overlay, target, false);
       expect(
-        m.installWorkflows('api', overlay, target, false).map((r) => r.status),
+        m
+          .installWorkflows(['api'], overlay, target, false)
+          .map((r) => r.status),
       ).toEqual(['installed']);
     }));
 
@@ -3158,3 +3172,252 @@ describe('TestWorkspaceShapesUnion', () => {
     }),
   );
 });
+
+/**
+ * Milestone 2a (spec phase 4, tests 20-26a and 32): `shapes` stops being an
+ * unread field. Overlay skills and workflow templates deploy for the union, and
+ * `--check` resolves the same set `migrate` deploys -- otherwise the drift gate
+ * reports "in sync" about skills it never examined.
+ */
+describe('TestPluralShapeDeployment', () => {
+  function run<T>(fn: (s: { target: string; overlay: string }) => T): T {
+    const root = mkTmp();
+    try {
+      const target = join(root, 'target');
+      const overlay = join(root, 'overlay');
+      mkdirSync(target);
+      mkdirSync(overlay);
+      return fn({ target, overlay });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  function manifestSkills(target: string): string[] {
+    const raw = readFileSync(
+      join(target, '.canary', 'skills', DEPLOY_MANIFEST_NAME),
+      'utf-8',
+    );
+    const doc = JSON.parse(raw) as { skills: Record<string, unknown> };
+    return Object.keys(doc.skills).sort();
+  }
+
+  // Spec test 20.
+  it('deploys the union of shape-specific skills', () =>
+    run(({ target, overlay }) => {
+      makeOverlaySkill(overlay, 'e2e-helper', ['e2e_ui']);
+      makeOverlaySkill(overlay, 'unit-helper', ['frontend_unit']);
+      makeOverlaySkill(overlay, 'api-bridge', ['api']);
+
+      const results = mig().deploySkills(
+        ['e2e_ui', 'frontend_unit'],
+        overlay,
+        target,
+        false,
+      );
+
+      expect(results.map((r) => r.skill_name).sort()).toEqual([
+        'e2e-helper',
+        'unit-helper',
+      ]);
+    }));
+
+  // Spec tests 21 and 24. One pass over the overlay, so a skill matching both
+  // shapes is copied once and the manifest is read and written exactly once. A
+  // per-shape loop would instead report the overlap as `already current` on the
+  // second iteration and rewrite the manifest behind it.
+  it('deploys a skill matching both shapes exactly once', () =>
+    run(({ target, overlay }) => {
+      makeOverlaySkill(overlay, 'both-helper', ['e2e_ui', 'frontend_unit']);
+
+      const results = mig().deploySkills(
+        ['e2e_ui', 'frontend_unit'],
+        overlay,
+        target,
+        false,
+      );
+
+      expect(results).toHaveLength(1);
+      expect(results[0]!.status).toBe('copied');
+      expect(manifestSkills(target)).toEqual(['both-helper']);
+    }));
+
+  it('records every union-deployed skill in one manifest', () =>
+    run(({ target, overlay }) => {
+      makeOverlaySkill(overlay, 'e2e-helper', ['e2e_ui']);
+      makeOverlaySkill(overlay, 'unit-helper', ['frontend_unit']);
+
+      const results = mig().deploySkills(
+        ['e2e_ui', 'frontend_unit'],
+        overlay,
+        target,
+        false,
+      );
+
+      expect(results.every((r) => r.status === 'copied')).toBe(true);
+      expect(manifestSkills(target)).toEqual(['e2e-helper', 'unit-helper']);
+    }));
+
+  // Spec test 22: an empty union is today's `unknown` -- only `all` deploys.
+  it('treats an empty shape set exactly like an undetected shape', () =>
+    run(({ target, overlay }) => {
+      makeOverlaySkill(overlay, 'universal-skill', ['all']);
+      makeOverlaySkill(overlay, 'api-bridge', ['api']);
+
+      const results = mig().deploySkills([], overlay, target, false);
+
+      expect(results.map((r) => r.skill_name)).toEqual(['universal-skill']);
+    }));
+
+  // Spec test 23: `<shape>:` prefixed templates install for every shape in the
+  // set, not just the scalar one.
+  it('installs the shape-prefixed workflow variants for every shape', () =>
+    run(({ target, overlay }) => {
+      makeWorkflowSkill(overlay, 'canary-pr-guardian', {
+        install: ['e2e_ui:templates/e2e.yml', 'frontend_unit:templates/fu.yml'],
+        templates: {
+          'templates/e2e.yml': GUARDIAN_YML,
+          'templates/fu.yml': HAND_TUNED_YML,
+        },
+      });
+
+      const results = mig().installWorkflows(
+        ['e2e_ui', 'frontend_unit'],
+        overlay,
+        target,
+        false,
+      );
+
+      expect(results.map((r) => r.workflow).sort()).toEqual([
+        'e2e.yml',
+        'fu.yml',
+      ]);
+      expect(results.every((r) => r.status === 'installed')).toBe(true);
+    }));
+
+  it('still skips a prefixed variant for a shape outside the set', () =>
+    run(({ target, overlay }) => {
+      makeWorkflowSkill(overlay, 'canary-pr-guardian', {
+        install: ['api:templates/api.yml'],
+        templates: { 'templates/api.yml': GUARDIAN_YML },
+      });
+
+      expect(
+        mig().installWorkflows(['e2e_ui'], overlay, target, false),
+      ).toEqual([]);
+    }));
+});
+
+/**
+ * Spec tests 25, 26 and 26a, plus criterion 8 (test 32). `migrate --check` must
+ * resolve the same shape set `migrate` deploys; anything less is a drift gate
+ * passing on skills it never looked at.
+ */
+describe('TestPluralShapeFreshness', () => {
+  function wsProject(root: string): void {
+    makeHarnessProject(root, { language: 'go' });
+    write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
+  }
+
+  function pkg(root: string, rel: string, ...configs: string[]): void {
+    const dir = join(root, ...rel.split('/'));
+    mkdirSync(dir, { recursive: true });
+    for (const c of configs) write(join(dir, c), 'export default {};');
+  }
+
+  /** A mixed workspace: scalar shape `unknown`, union `[e2e_ui, frontend_unit]`. */
+  function mixedWorkspace(root: string): string {
+    wsProject(root);
+    pkg(root, 'apps/e2e', 'playwright.config.ts');
+    pkg(root, 'apps/lib', 'vitest.config.ts');
+    const overlay = join(root, 'overlay');
+    mkdirSync(overlay, { recursive: true });
+    return overlay;
+  }
+
+  // Spec test 25.
+  it('checks the same shape union that migrate deploys', () =>
+    withTmp((root) => {
+      const overlay = mixedWorkspace(root);
+      makeOverlaySkill(overlay, 'e2e-helper', ['e2e_ui']);
+      makeOverlaySkill(overlay, 'unit-helper', ['frontend_unit']);
+
+      const report = mig().checkFreshness(root, { overlayPath: overlay });
+
+      expect(report.shapes).toEqual(['e2e_ui', 'frontend_unit']);
+      expect(report.results.map((r) => r.skill_name).sort()).toEqual([
+        'e2e-helper',
+        'unit-helper',
+      ]);
+    }));
+
+  // Spec test 26: the union matching zero skills is still an abstention, not a
+  // pass (ADR 0009).
+  it('still abstains when the union matches no skill', () =>
+    withTmp((root) => {
+      const overlay = mixedWorkspace(root);
+      makeOverlaySkill(overlay, 'api-bridge', ['api']);
+
+      const report = mig().checkFreshness(root, { overlayPath: overlay });
+
+      expect(report.results).toEqual([]);
+      expect(report.abstained).toBe(true);
+      expect(report.exit_code()).toBe(EXIT_ABSTAINED);
+      expect(report.to_markdown()).toContain('e2e_ui');
+    }));
+
+  // Spec test 26a: `shapes` is added; the documented scalar `shape` stays.
+  it('adds shapes to --check --json without removing shape', () =>
+    withTmp((root) => {
+      const overlay = mixedWorkspace(root);
+      makeOverlaySkill(overlay, 'e2e-helper', ['e2e_ui']);
+
+      const payload = mig()
+        .checkFreshness(root, { overlayPath: overlay })
+        .to_dict();
+
+      expect(payload['shape']).toBe('unknown');
+      expect(payload['shapes']).toEqual(['e2e_ui', 'frontend_unit']);
+    }));
+
+  it('keeps the scalar shape and a single-element union in step', () =>
+    withTmp((root) => {
+      makeHarnessProject(root, { language: 'typescript' });
+      write(join(root, 'playwright.config.ts'), 'export default {};');
+      const overlay = join(root, 'overlay');
+      mkdirSync(overlay, { recursive: true });
+      makeOverlaySkill(overlay, 'e2e-helper', ['e2e_ui']);
+
+      const report = mig().checkFreshness(root, { overlayPath: overlay });
+
+      expect(report.shape).toBe('e2e_ui');
+      expect(report.shapes).toEqual(['e2e_ui']);
+    }));
+
+  // Criterion 8 / spec test 32: detection walks packages, migration acts at the
+  // root. An `--apply` run must never write inside a package directory.
+  it('writes nothing inside a workspace package on --apply', () =>
+    withTmp((root) => {
+      const overlay = mixedWorkspace(root);
+      makeOverlaySkill(overlay, 'e2e-helper', ['e2e_ui']);
+      const before = listTree(join(root, 'apps'));
+
+      mig().migrate(root, { dryRun: false, overlayPath: overlay });
+
+      expect(listTree(join(root, 'apps'))).toEqual(before);
+    }));
+});
+
+/** Every path under *dir*, sorted -- the "nothing was written here" witness. */
+function listTree(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string, prefix: string): void => {
+    for (const name of readdirSync(d).sort()) {
+      const rel = prefix === '' ? name : `${prefix}/${name}`;
+      out.push(rel);
+      if (statSync(join(d, name)).isDirectory()) walk(join(d, name), rel);
+    }
+  };
+  walk(dir, '');
+  return out;
+}
