@@ -2561,6 +2561,192 @@ describe('TestInstallWorkflows', () => {
     }));
 });
 
+// ===========================================================================
+// Workflow install is gated on the skill's own local-edit protection (#667)
+// ===========================================================================
+//
+// `deploySkills` refuses to overwrite a deployed skill that carries local
+// edits. Before #667 that protection stopped at the skill body: the same run
+// still installed the workflow templates the SKIPPED skill declared, so the
+// report said "skipped -- local edits, not overwritten" while files landed in
+// `.github/workflows/` anyway. The consumer whose local delta WAS the
+// de-listing got their removed workflow silently reinstated on every sync.
+describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
+  function run<T>(fn: (s: { target: string; overlay: string }) => T): T {
+    const root = mkTmp();
+    try {
+      const target = join(root, 'target');
+      const overlay = join(root, 'overlay');
+      mkdirSync(target);
+      mkdirSync(overlay);
+      return fn({ target, overlay });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  const guardianSkill = (overlay: string): string =>
+    makeWorkflowSkill(overlay, 'canary-pr-guardian', {
+      install: ['templates/canary-guardian.yml'],
+      templates: { 'templates/canary-guardian.yml': GUARDIAN_YML },
+    });
+
+  const editDeployedSkill = (target: string, body: string): void => {
+    const dir = join(target, '.canary', 'skills', 'canary-pr-guardian');
+    mkdirSync(dir, { recursive: true });
+    write(
+      join(dir, 'SKILL.md'),
+      `---\nname: canary-pr-guardian\ndeploy_to: [all]\n---\n\n# ${body}\n`,
+    );
+  };
+
+  /** Deploy the skill, then hand-edit the deployed copy -> `local_edit`. */
+  function deployThenEdit(overlay: string, target: string): HarnessMigrator {
+    guardianSkill(overlay);
+    const m = mig();
+    m.deploySkills('api', overlay, target, false);
+    editDeployedSkill(target, 'guardian runs inline here; template de-listed');
+    return m;
+  }
+
+  it('withholds the workflow of a skill skipped as locally edited', () =>
+    run(({ target, overlay }) => {
+      const m = deployThenEdit(overlay, target);
+      expect(m.deploySkills('api', overlay, target, false)[0]!.note).toContain(
+        'local edits',
+      );
+      const results = m.installWorkflows('api', overlay, target, false);
+      expect(results.map((r) => r.status)).toEqual(['withheld']);
+      expect(results[0]!.workflow).toBe('canary-guardian.yml');
+      expect(results[0]!.detail).toContain('local edits');
+      // The bug in one assertion: nothing may reach disk for a skipped skill.
+      expect(existsSync(workflowPath(target, 'canary-guardian.yml'))).toBe(
+        false,
+      );
+    }));
+
+  it('records no workflow provenance for a withheld install', () =>
+    run(({ target, overlay }) => {
+      const m = deployThenEdit(overlay, target);
+      m.installWorkflows('api', overlay, target, false);
+      const manifest = JSON.parse(
+        readFileSync(
+          join(target, '.canary', 'skills', '.deploy-manifest.json'),
+          'utf-8',
+        ),
+      );
+      expect(manifest.workflows ?? {}).toEqual({});
+    }));
+
+  it('withholds in a dry run too, so the plan matches the apply', () =>
+    run(({ target, overlay }) => {
+      const m = deployThenEdit(overlay, target);
+      const results = m.installWorkflows('api', overlay, target, true);
+      expect(results.map((r) => r.status)).toEqual(['withheld']);
+      expect(existsSync(workflowPath(target, 'canary-guardian.yml'))).toBe(
+        false,
+      );
+    }));
+
+  // An unprovenanced deployed skill that differs is `local_edit` for the same
+  // reason it is in deploySkills/checkFreshness: unknown provenance is not
+  // permission to overwrite.
+  it('withholds for an unprovenanced deployed skill that differs', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay);
+      editDeployedSkill(target, 'my own');
+      const results = mig().installWorkflows('api', overlay, target, false);
+      expect(results.map((r) => r.status)).toEqual(['withheld']);
+      expect(existsSync(workflowPath(target, 'canary-guardian.yml'))).toBe(
+        false,
+      );
+    }));
+
+  it('--force is still the deliberate escape hatch', () =>
+    run(({ target, overlay }) => {
+      const m = deployThenEdit(overlay, target);
+      const results = m.installWorkflows('api', overlay, target, false, true);
+      expect(results.map((r) => r.status)).toEqual(['installed']);
+      expect(existsSync(workflowPath(target, 'canary-guardian.yml'))).toBe(
+        true,
+      );
+    }));
+
+  // A withheld skill whose workflow is already present and byte-identical is a
+  // no-op, not a finding -- reporting it as withheld would cry wolf on every
+  // scheduled freshness check.
+  it('an already-identical workflow still reports as current', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay);
+      const m = mig();
+      m.deploySkills('api', overlay, target, false);
+      m.installWorkflows('api', overlay, target, false);
+      editDeployedSkill(target, 'edited');
+      expect(
+        m.installWorkflows('api', overlay, target, false).map((r) => r.status),
+      ).toEqual(['skipped']);
+    }));
+
+  // Withholding preempts `outdated`, whose remedy ("re-run with --force") would
+  // otherwise talk a consumer into the very overwrite the skip refused.
+  it('withholds instead of reporting an outdated workflow', () =>
+    run(({ target, overlay }) => {
+      const skillDir = guardianSkill(overlay);
+      const m = mig();
+      m.deploySkills('api', overlay, target, false);
+      m.installWorkflows('api', overlay, target, false);
+      write(join(skillDir, 'templates', 'canary-guardian.yml'), 'name: v2\n');
+      editDeployedSkill(target, 'edited');
+      const results = m.installWorkflows('api', overlay, target, false);
+      expect(results.map((r) => r.status)).toEqual(['withheld']);
+      expect(
+        readFileSync(workflowPath(target, 'canary-guardian.yml'), 'utf-8'),
+      ).toBe(GUARDIAN_YML);
+    }));
+
+  // A skill with no local edits is untouched by the gate.
+  it('a clean skill still installs its workflow', () =>
+    run(({ target, overlay }) => {
+      guardianSkill(overlay);
+      const m = mig();
+      m.deploySkills('api', overlay, target, false);
+      expect(
+        m.installWorkflows('api', overlay, target, false).map((r) => r.status),
+      ).toEqual(['installed']);
+    }));
+
+  it('withheld installs are reported in markdown and JSON', () =>
+    withTmp((base) => {
+      const root = join(base, 'proj');
+      const overlay = join(base, 'overlay');
+      mkdirSync(root);
+      makeHarnessProject(root, { language: 'python' });
+      makeWorkflowSkill(overlay, 'canary-pr-guardian', {
+        install: ['templates/canary-guardian.yml'],
+        templates: { 'templates/canary-guardian.yml': GUARDIAN_YML },
+      });
+      const m = mig();
+      m.migrate(root, { dryRun: false, overlayPath: overlay });
+      rmSync(workflowPath(root, 'canary-guardian.yml'));
+      write(
+        join(root, '.canary', 'skills', 'canary-pr-guardian', 'SKILL.md'),
+        '---\nname: canary-pr-guardian\ndeploy_to: [all]\n---\n\n# de-listed\n',
+      );
+      const report = m.migrate(root, { dryRun: false, overlayPath: overlay });
+      expect(report.installed_workflows.map((r) => r.status)).toEqual([
+        'withheld',
+      ]);
+      // The consumer deleted it deliberately; a sync must not reinstate it.
+      expect(existsSync(workflowPath(root, 'canary-guardian.yml'))).toBe(false);
+      expect(report.to_markdown()).toContain('withheld');
+      // `--json` serializes each result via to_dict(); the reason has to
+      // survive so a scheduled freshness check can report it.
+      const payload = report.installed_workflows[0]!.to_dict();
+      expect(payload['status']).toBe('withheld');
+      expect(String(payload['detail'])).toContain('local edits');
+    }));
+});
+
 describe('TestMigrateInstallsWorkflows', () => {
   function project(root: string, overlay: string): void {
     makeHarnessProject(root, { language: 'python' });

@@ -1,0 +1,8 @@
+{
+  "reason": "Withhold workflow templates when their skill is skipped (#667): module-size 28178->28266 (+88, measured on the tree rebased onto 00b9430, all of it in ts/src/core/migrator.ts). Only the base moved -- the +88 is unchanged from the ca89ca2 measurement (28123->28211), re-measured from scratch against main rather than carried forward. The growth is the fix plus its explanation. Three pieces: isLocallyEdited() extracted so the deploy skip (#334) and the new workflow-install gate share ONE definition of local_edit -- the whole bug was those two phases disagreeing about the same skill in the same run, so a second copy of the predicate would have re-opened it; skillWasSkipped() to ask that question at install time; and the `withheld` status plumbed through WorkflowInstallResult, the shared workflow markdown section, and --json so the report matches what actually reached disk. Roughly half the added lines are comment, deliberately: the placement of the gate (exempting an already-identical workflow so a no-op is not reported as a finding, preempting `outdated` whose --force remedy would have argued for the overwrite the skip just refused) encodes decisions that read as arbitrary without the reasoning, and this regression has now shipped to a consumer twice. Nothing was absorbed here -- newViolations is empty, the 27 pre-existing threshold violations stay 27, and installWorkflows stayed under the cyclomaticComplexity ceiling by moving the predicate out rather than being allowanced past it. Test growth (9 new migrator cases plus one end-to-end CLI case) is test code and is not counted by module-size.",
+  "categories": {
+    "module-size": 28266
+  },
+  "violationIds": [],
+  "createdFrom": "f0ab0d9"
+}
