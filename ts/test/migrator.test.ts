@@ -2614,7 +2614,7 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
   function deployThenEdit(overlay: string, target: string): HarnessMigrator {
     guardianSkill(overlay);
     const m = mig();
-    m.deploySkills('api', overlay, target, false);
+    m.deploySkills(['api'], overlay, target, false);
     editDeployedSkill(target, 'guardian runs inline here; template de-listed');
     return m;
   }
@@ -2622,10 +2622,10 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
   it('withholds the workflow of a skill skipped as locally edited', () =>
     run(({ target, overlay }) => {
       const m = deployThenEdit(overlay, target);
-      expect(m.deploySkills('api', overlay, target, false)[0]!.note).toContain(
-        'local edits',
-      );
-      const results = m.installWorkflows('api', overlay, target, false);
+      expect(
+        m.deploySkills(['api'], overlay, target, false)[0]!.note,
+      ).toContain('local edits');
+      const results = m.installWorkflows(['api'], overlay, target, false);
       expect(results.map((r) => r.status)).toEqual(['withheld']);
       expect(results[0]!.workflow).toBe('canary-guardian.yml');
       expect(results[0]!.detail).toContain('local edits');
@@ -2638,7 +2638,7 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
   it('records no workflow provenance for a withheld install', () =>
     run(({ target, overlay }) => {
       const m = deployThenEdit(overlay, target);
-      m.installWorkflows('api', overlay, target, false);
+      m.installWorkflows(['api'], overlay, target, false);
       const manifest = JSON.parse(
         readFileSync(
           join(target, '.canary', 'skills', '.deploy-manifest.json'),
@@ -2651,7 +2651,7 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
   it('withholds in a dry run too, so the plan matches the apply', () =>
     run(({ target, overlay }) => {
       const m = deployThenEdit(overlay, target);
-      const results = m.installWorkflows('api', overlay, target, true);
+      const results = m.installWorkflows(['api'], overlay, target, true);
       expect(results.map((r) => r.status)).toEqual(['withheld']);
       expect(existsSync(workflowPath(target, 'canary-guardian.yml'))).toBe(
         false,
@@ -2665,7 +2665,7 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
     run(({ target, overlay }) => {
       guardianSkill(overlay);
       editDeployedSkill(target, 'my own');
-      const results = mig().installWorkflows('api', overlay, target, false);
+      const results = mig().installWorkflows(['api'], overlay, target, false);
       expect(results.map((r) => r.status)).toEqual(['withheld']);
       expect(existsSync(workflowPath(target, 'canary-guardian.yml'))).toBe(
         false,
@@ -2675,7 +2675,7 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
   it('--force is still the deliberate escape hatch', () =>
     run(({ target, overlay }) => {
       const m = deployThenEdit(overlay, target);
-      const results = m.installWorkflows('api', overlay, target, false, true);
+      const results = m.installWorkflows(['api'], overlay, target, false, true);
       expect(results.map((r) => r.status)).toEqual(['installed']);
       expect(existsSync(workflowPath(target, 'canary-guardian.yml'))).toBe(
         true,
@@ -2689,11 +2689,13 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
     run(({ target, overlay }) => {
       guardianSkill(overlay);
       const m = mig();
-      m.deploySkills('api', overlay, target, false);
-      m.installWorkflows('api', overlay, target, false);
+      m.deploySkills(['api'], overlay, target, false);
+      m.installWorkflows(['api'], overlay, target, false);
       editDeployedSkill(target, 'edited');
       expect(
-        m.installWorkflows('api', overlay, target, false).map((r) => r.status),
+        m
+          .installWorkflows(['api'], overlay, target, false)
+          .map((r) => r.status),
       ).toEqual(['skipped']);
     }));
 
@@ -2703,11 +2705,11 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
     run(({ target, overlay }) => {
       const skillDir = guardianSkill(overlay);
       const m = mig();
-      m.deploySkills('api', overlay, target, false);
-      m.installWorkflows('api', overlay, target, false);
+      m.deploySkills(['api'], overlay, target, false);
+      m.installWorkflows(['api'], overlay, target, false);
       write(join(skillDir, 'templates', 'canary-guardian.yml'), 'name: v2\n');
       editDeployedSkill(target, 'edited');
-      const results = m.installWorkflows('api', overlay, target, false);
+      const results = m.installWorkflows(['api'], overlay, target, false);
       expect(results.map((r) => r.status)).toEqual(['withheld']);
       expect(
         readFileSync(workflowPath(target, 'canary-guardian.yml'), 'utf-8'),
@@ -2719,9 +2721,11 @@ describe('TestWorkflowWithheldForLocallyEditedSkill', () => {
     run(({ target, overlay }) => {
       guardianSkill(overlay);
       const m = mig();
-      m.deploySkills('api', overlay, target, false);
+      m.deploySkills(['api'], overlay, target, false);
       expect(
-        m.installWorkflows('api', overlay, target, false).map((r) => r.status),
+        m
+          .installWorkflows(['api'], overlay, target, false)
+          .map((r) => r.status),
       ).toEqual(['installed']);
     }));
 
