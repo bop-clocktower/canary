@@ -22,8 +22,8 @@ other silently matched nothing — but a script that relied on either will now
 exit non-zero, and that deserves a version number a consumer cannot miss.
 
 The rest of the release is the largest correctness batch since the v6 cutover:
-nine merged pull requests, most of them closing false-green paths where a tool
-reported success over work it had not done.
+seventeen merged pull requests, most of them closing false-green paths where a
+tool reported success over work it had not done.
 
 ### BREAKING
 

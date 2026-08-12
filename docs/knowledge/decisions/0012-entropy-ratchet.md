@@ -138,10 +138,25 @@ zero.**
    measured count had drifted up to 340 — the whole ten findings of headroom
    spent — and 32 of those were the `.test.js` artifacts item 6 below now
    excludes. Lowering it to the measured 308 restores the number to something
-   the repo has actually triaged. Note that this leaves **zero** headroom, which
+   the repo has actually triaged. Note that this left **zero** headroom, which
    is the state `main` was already in; it is the ratchet doing its job, not a
    tightening, and the next genuine addition of test-only exports will need
    either an entry point or a re-triage rather than a raised ceiling.
+
+   **Amended by #676 (PR #685).** Repairing 26 dead documentation links removed
+   21 drift findings, so the ceiling came down again — `maxFindings` is now
+   **297** against a measured 287, restoring the ~10 findings of headroom this
+   ADR originally specified. The lesson from the #677 round holds: the ceiling
+   moves only when the measured count moves, and it moves _down_.
+
+   **Amended by #668 (PR #687).** Splitting `guardian/coverage.ts` into eleven
+   modules raised the measured count to **292** (5 of headroom remaining). All
+   +5 are false positives with a single root cause: the analyzer does not credit
+   a re-export edge (`export { x } from './y'`) as a use of `x`. A split-out
+   export survives only if some sibling module imports it directly; if its only
+   path to consumers is the barrel, it is flagged. Adding the barrel to
+   `entropy.entryPoints` is the documented remedy and would reclaim the 5 — not
+   applied, so the number stays honest until someone decides to.
 
 4. `scripts/entropy-ratchet.mjs` compares the count from
    `harness cleanup --findings-json` against that baseline and fails above it.

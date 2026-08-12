@@ -218,8 +218,11 @@ via slash commands.
 - **Manifest:** [.claude-plugin/plugin.json](.claude-plugin/plugin.json). Its
   `version` (and the `canary` entry's `version` in
   [.claude-plugin/marketplace.json](.claude-plugin/marketplace.json)) must match
-  `npm/package.json` and `pyproject.toml`. A `chore(release)` bump must touch
-  **all four**; `tests/unit/test_version_consistency.py` fails CI if they drift.
+  `npm/package.json`. A `chore(release)` bump must touch **all three**, plus the
+  README version badge; `scripts/bump-version.mjs <version>` stamps every one of
+  them, and `ts/test/version-consistency.test.ts` fails CI if they drift. (There
+  is no `pyproject.toml` — the Python engine was retired in the v6.0.0 cutover,
+  and the guard is a vitest suite, not pytest.)
 - **Agents:** `agents/` — seven agent definitions: `canary-test-generator`,
   `canary-test-author`, `canary-test-reviewer`, `canary-initializer`,
   `canary-migrator`, `canary-framework-advisor`, `canary-flake-hunter`.
