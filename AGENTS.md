@@ -773,6 +773,35 @@ The hook (`.githooks/pre-commit`) does two things automatically on every commit:
 - Re-runs `python3 scripts/security_ledger.py` whenever non-ledger files are
   staged — keeps the security ledger fresh without a manual step.
 
+### Quality gates
+
+**The gates run from `ts/`, and there are four of them.** Run each separately —
+a chained one-liner hides which link failed, and silence means it did not run:
+
+```bash
+cd ts
+npm run build         # tsc -p . + copy-data
+npm run typecheck     # tsc --noEmit
+npm run format:check  # prettier
+npm test              # vitest run --coverage
+```
+
+There is **no `lint` gate** and no linter to run one: the repo uses no ESLint by
+decision, and the `protect-config` hook blocks AI-authored linter configs.
+Prettier is the formatting gate; markdown is gated separately by `docs-lint.yml`
+via `markdownlint-cli`. `agents/skills/` carries its own `test` / `typecheck` /
+`format:check` for the skill bundles.
+
+**The repo root is not a gate surface.** There is no root `package.json` in this
+repository — `/package.json` and `/package-lock.json` are gitignored as
+per-machine markdownlint scratch (issue #244), because CI runs
+`npx --yes markdownlint-cli` and never installs a root node project. A root
+manifest you find in your checkout is a local file no review or CI job has ever
+seen; #672 was one that still ran `ruff check agent tests` long after `agent/`
+was deleted in the v6.0.0 cutover, so `npm run lint` at the root reported on
+nothing. Ignore any root manifest, or delete it. The invariants are pinned by
+`ts/test/root-manifest-not-a-gate.test.ts`.
+
 ### Workflow steps
 
 1. **Requirement Analysis:** User provides natural language requirements.

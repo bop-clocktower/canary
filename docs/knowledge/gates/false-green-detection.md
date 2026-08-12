@@ -53,6 +53,25 @@ This is why the seeding of this directory is verified by inspecting graph nodes
 rather than by counting files: the file can be perfect and the node absent, with
 no error either way.
 
+## A gate script living where nothing reviews it
+
+The repo root has no tracked `package.json` — `/package.json` and
+`/package-lock.json` are gitignored (#244) because CI runs
+`npx --yes markdownlint-cli` and never installs a root node project. A local
+root manifest still accumulated a `lint` script, and it ran
+`ruff check agent tests` months after `agent/` was deleted in the v6.0.0
+cutover: a Python linter pointed at a tree that no longer exists, in a file no
+review, CI job, or ratchet had ever read. `npm run lint` at the root therefore
+reported on nothing while looking like the third of four gates. Issue #672
+records it, and `ts/test/root-manifest-not-a-gate.test.ts` guards it.
+
+Two shapes stack here. The gate named a scope that had been deleted out from
+under it — the same defect as the layer rule above, but reached by deletion
+rather than by a loose glob. And it lived on an **unreviewed surface**, which is
+why it survived: every mechanism this repo has for catching stale references
+(`check_removed_symbols.mjs`, the ratchets, review itself) reads tracked files
+only. An ignored file cannot drift loudly.
+
 ## Why these are worth writing down
 
 Each was diagnosed once, at cost, and each looked like an isolated bug. They are
