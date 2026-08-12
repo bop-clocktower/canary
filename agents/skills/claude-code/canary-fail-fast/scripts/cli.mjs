@@ -16,6 +16,11 @@
 
 import fs from 'node:fs';
 
+import {
+  createParser,
+  formatUsageError,
+  EXIT_USAGE,
+} from '../../../lib/parse-args.mjs';
 import { parseFailures } from './parse.mjs';
 import { buildDigest } from './digest.mjs';
 import { checkConfig } from './fastfail_check.mjs';
@@ -28,72 +33,31 @@ const USAGE =
   '\n' +
   'Fail-fast config audit + loud run-end failure digest.';
 
-// Null-prototype: on a plain object literal every inherited key resolves
-// truthy, so `VALUE_FLAGS['toString']` would be Object.prototype.toString and
-// the token `toString` would be swallowed as a value flag instead of rejected.
-const VALUE_FLAGS = Object.assign(Object.create(null), {
-  '--results': 'results',
-  '--config': 'config',
-});
-
 /**
- * Match argparse's contract for the two exit paths the hand-rolled loop must
- * honour: `--help`/`-h` prints usage and exits 0; any parse error (unknown flag,
- * or a value-flag missing its argument) exits 2. On success returns the parsed
- * options. We deliberately do NOT replicate argparse's prefix-abbreviation
- * (`--res` for `--results`) -- an intentional simplification, consistent with
- * the canary-instrument port. `--flag=value` is supported.
+ * Both value flags are optional here -- main enforces "at least one of
+ * --results / --config" itself, because argparse has no vocabulary for that.
+ * The four shared invariants live in the shared parser (#479).
  */
-function parseArgs(argv) {
-  const opts = { results: null, config: null, help: false, error: null };
-  for (let i = 0; i < argv.length; i += 1) {
-    const a = argv[i];
-    if (a === '-h' || a === '--help') {
-      opts.help = true;
-      return opts;
-    }
+export const CLI_SPEC = {
+  prog: 'canary-fail-fast',
+  values: {
+    '--results': { key: 'results' },
+    '--config': { key: 'config' },
+  },
+};
 
-    // `--flag=value`
-    const eq = a.indexOf('=');
-    if (a.startsWith('--') && eq !== -1) {
-      const key = VALUE_FLAGS[a.slice(0, eq)];
-      if (!key) {
-        opts.error = `unrecognized arguments: ${a}`;
-        return opts;
-      }
-      opts[key] = a.slice(eq + 1);
-      continue;
-    }
-
-    // `--flag value`
-    const key = VALUE_FLAGS[a];
-    if (!key) {
-      opts.error = `unrecognized arguments: ${a}`;
-      return opts;
-    }
-    const next = argv[i + 1];
-    // A value is required; argparse errors when it is missing or looks like
-    // another option (starts with '-').
-    if (next === undefined || next.startsWith('-')) {
-      opts.error = `argument ${a}: expected one argument`;
-      return opts;
-    }
-    opts[key] = next;
-    i += 1;
-  }
-  return opts;
-}
+const parseArgs = createParser(CLI_SPEC);
 
 export function main(argv = []) {
-  const args = parseArgs(argv);
+  const { opts: args, help, error } = parseArgs(argv);
 
-  if (args.help) {
+  if (help) {
     console.log(USAGE);
     return 0;
   }
-  if (args.error) {
-    console.error(`${PREFIX} ${args.error}`);
-    return 2;
+  if (error) {
+    console.error(formatUsageError(CLI_SPEC.prog, error));
+    return EXIT_USAGE;
   }
 
   if (!args.results && !args.config) {

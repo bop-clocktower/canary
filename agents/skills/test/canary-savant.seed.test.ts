@@ -121,7 +121,7 @@ describe('--seed reaches the confirmer intact', () => {
     capture();
     expect(main([root, '--confirm', '--seed', value])).toBe(2);
     expect(err.join('\n')).toContain(
-      `argument --seed: seed out of safe integer range: '${value}'`,
+      `argument --seed: integer out of safe range: '${value}'`,
     );
     expect(out.join('\n')).not.toContain('Tier 2 (dynamic)');
   });
@@ -153,7 +153,9 @@ describe('--seed reaches the confirmer intact', () => {
     ['abc', "invalid int value: 'abc'"],
     ['3.7', "invalid int value: '3.7'"],
     ['1e999', "invalid int value: '1e999'"],
-    ['', "invalid int value: ''"],
+    // Empty is the missing-value case wearing a disguise, so the shared
+    // parser reports it as arity rather than as a bad int (#479).
+    ['', 'expected one argument'],
     ['0x10', "invalid int value: '0x10'"],
   ])('--seed %s is rejected, never randomized', (value, message) => {
     const root = tmp();

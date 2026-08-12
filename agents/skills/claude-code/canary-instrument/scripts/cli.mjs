@@ -17,6 +17,11 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  createParser,
+  formatUsageError,
+  EXIT_USAGE,
+} from '../../../lib/parse-args.mjs';
 
 import { RunArtifact } from './run_types.mjs';
 import { readTraces } from './span_reader.mjs';
@@ -35,72 +40,25 @@ const USAGE =
   '  --suite-type TYPE  suite label recorded in the artifact (e.g. e2e_ui)';
 
 /**
- * Parse argv into { spans, output, suiteType }. Supports both `--flag value`
- * and `--flag=value`. Throws a usage error (matching argparse's behavior) when
- * a required flag is missing, an unknown flag appears, or a value-flag is left
- * without a value; callers map that to exit code 2.
- *
- * Two intentional, safer-than-argparse simplifications (deliberate, not
- * oversights):
- *   (a) Flags must be spelled in full -- there is no argparse-style prefix
- *       abbreviation, so `--out` is an unrecognized flag, not `--output`.
- *   (b) An empty value (e.g. `--spans=`) is passed through verbatim; an empty
- *       spans path simply yields an empty trace rather than globbing the CWD.
+ * Both value flags are required, and `--suite-type` is a free-form label. Two
+ * deliberate divergences from argparse survive the move to the shared parser
+ * (#479): flags must be spelled in full (no prefix abbreviation, so `--out` is
+ * an unknown flag rather than `--output`), and an empty value is now REJECTED
+ * rather than passed through -- `--spans=` used to yield an empty trace, which
+ * is the missing-value case wearing a disguise.
  */
-function parseArgs(argv) {
-  const opts = { spans: null, output: null, suiteType: '', help: false };
-  for (let i = 0; i < argv.length; i += 1) {
-    let flag = argv[i];
-    let inlineVal = null;
-    // --help short-circuits BEFORE the required-argument check below, so
-    // `canary-instrument --help` prints usage instead of complaining that
-    // --spans/--output are missing.
-    if (flag === '-h' || flag === '--help') {
-      opts.help = true;
-      return opts;
-    }
-    if (flag.startsWith('--')) {
-      const eq = flag.indexOf('=');
-      if (eq !== -1) {
-        inlineVal = flag.slice(eq + 1);
-        flag = flag.slice(0, eq);
-      }
-    }
-    // A value-flag with no `=value` consumes the next token. It is a usage
-    // error (argparse: "expected one argument") when that token is missing --
-    // the flag was last -- or is itself a flag (starts with `-`).
-    const value = () => {
-      if (inlineVal !== null) return inlineVal;
-      const next = argv[i + 1];
-      if (next === undefined || next.startsWith('-')) {
-        throw usageError(`argument ${flag}: expected one argument`);
-      }
-      i += 1;
-      return next;
-    };
-    if (flag === '--spans') opts.spans = value();
-    else if (flag === '--output') opts.output = value();
-    else if (flag === '--suite-type') opts.suiteType = value();
-    else throw usageError(`unrecognized arguments: ${argv[i]}`);
-  }
+export const CLI_SPEC = {
+  prog: 'canary-instrument',
+  values: {
+    '--spans': { key: 'spans' },
+    '--output': { key: 'output' },
+    '--suite-type': { key: 'suiteType' },
+  },
+  defaults: { suiteType: '' },
+  required: ['--spans', '--output'],
+};
 
-  // Nullish so an accidental undefined is caught alongside the initial null.
-  const missing = [];
-  if (opts.spans == null) missing.push('--spans');
-  if (opts.output == null) missing.push('--output');
-  if (missing.length) {
-    throw usageError(
-      `the following arguments are required: ${missing.join(', ')}`,
-    );
-  }
-  return opts;
-}
-
-function usageError(message) {
-  const err = new Error(message);
-  err.usage = true;
-  return err;
-}
+const parseArgs = createParser(CLI_SPEC);
 
 /**
  * Serialize like Python's json.dumps(obj, indent=2): 2-space indent AND
@@ -129,17 +87,15 @@ function nowIso() {
 }
 
 export function main(argv = []) {
-  let args;
-  try {
-    args = parseArgs(argv);
-  } catch (exc) {
-    console.error(`canary-instrument: error: ${exc.message}`);
-    return 2; // argparse exits 2 on a usage/argument error
-  }
+  const { opts: args, help, error } = parseArgs(argv);
 
-  if (args.help) {
+  if (help) {
     console.log(USAGE);
     return 0;
+  }
+  if (error) {
+    console.error(formatUsageError(CLI_SPEC.prog, error));
+    return EXIT_USAGE;
   }
 
   const spansDir = args.spans;

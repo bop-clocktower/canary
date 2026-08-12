@@ -17,6 +17,11 @@
 import fs from 'node:fs';
 import { scanPaths, toJson } from './scanner.mjs';
 import { RULES } from './rules.mjs';
+import {
+  createParser,
+  formatUsageError,
+  EXIT_USAGE,
+} from '../../../lib/parse-args.mjs';
 
 export const SCHEMA_VERSION = 1;
 
@@ -114,47 +119,31 @@ function renderText(result) {
 }
 
 /**
- * Match argparse's contract for the two exit paths a hand-rolled loop has to
- * honour: `-h`/`--help` prints usage and exits 0; an unknown flag exits 2. A
- * bare `--` is the end-of-options terminator, after which every token is a
- * path (so a file literally named `--json` is reachable). A lone `-` stays a
- * positional, as argparse treats it.
+ * blackhawk takes paths, so it gets the `--` end-of-options terminator (a file
+ * literally named `--json` stays reachable) and treats a lone `-` as a
+ * positional, as argparse does. The four shared invariants live in the shared
+ * parser (#479).
  */
-function parseArgs(argv) {
-  const paths = [];
-  const opts = { json: false, strict: false, help: false, error: null };
-  let noMoreFlags = false;
-  for (const arg of argv) {
-    if (noMoreFlags) {
-      paths.push(arg);
-      continue;
-    }
-    if (arg === '-h' || arg === '--help') {
-      opts.help = true;
-      return { paths, opts };
-    } else if (arg === '--') noMoreFlags = true;
-    else if (arg === '--json') opts.json = true;
-    else if (arg === '--strict') opts.strict = true;
-    else if (arg.startsWith('-') && arg !== '-') {
-      opts.error = `unrecognized arguments: ${arg}`;
-      return { paths, opts };
-    } else paths.push(arg);
-  }
-  return { paths: paths.length ? paths : ['.'], opts };
-}
+export const CLI_SPEC = {
+  prog: 'canary-blackhawk',
+  booleans: { '--json': 'json', '--strict': 'strict' },
+  positionals: { key: 'paths', defaults: ['.'] },
+};
+
+const parseArgs = createParser(CLI_SPEC);
 
 export function main(argv = []) {
-  const { paths, opts } = parseArgs(argv);
+  const { positionals: paths, opts, help, error } = parseArgs(argv);
 
   // Usage and parse errors resolve before any filesystem work, so `--help`
   // never reports a missing path and a typo never half-runs a scan.
-  if (opts.help) {
+  if (help) {
     console.log(USAGE);
     return 0;
   }
-  if (opts.error) {
-    console.error(`${PREFIX} ${opts.error}`);
-    return 2;
+  if (error) {
+    console.error(formatUsageError(CLI_SPEC.prog, error));
+    return EXIT_USAGE;
   }
 
   for (const entry of paths) {

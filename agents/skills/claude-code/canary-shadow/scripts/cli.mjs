@@ -13,6 +13,38 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import {
+  createParser,
+  formatUsageError,
+  EXIT_USAGE,
+} from '../../../lib/parse-args.mjs';
+
+const USAGE =
+  'usage: canary-shadow [-h] --cases PATH [--verbose]\n' +
+  '\n' +
+  'Run each case through a baseline and a candidate command, normalize away\n' +
+  'irrelevant noise, and diff exit code + stdout.\n' +
+  '\n' +
+  'options:\n' +
+  '  -h, --help    show this help message and exit\n' +
+  '  --cases PATH  cases file describing baseline, candidate, and cases\n' +
+  '  --verbose     print a line per matching case, not just divergences';
+
+/**
+ * canary-shadow shipped BEFORE the family had a shared contract, and it showed:
+ * no `--help`, no unknown-flag rejection, and a usage line naming `cli.mjs`
+ * rather than the skill. Nobody noticed, because there was nothing to violate
+ * (#479).
+ */
+export const CLI_SPEC = {
+  prog: 'canary-shadow',
+  booleans: { '--verbose': 'verbose' },
+  values: { '--cases': { key: 'cases' } },
+  required: ['--cases'],
+};
+
+const parseArgs = createParser(CLI_SPEC);
+
 // --- built-in normalization masks (name -> {re, replace}). Each records
 // whether it fired so the reviewer can see what was hidden. Extend/override per
 // project via the cases file's `normalize` list. ---
@@ -84,17 +116,27 @@ function unifiedDiff(a, b, max = 30) {
   return out.slice(0, max);
 }
 
-function main() {
-  const args = process.argv.slice(2);
-  const casesPath = args[args.indexOf('--cases') + 1];
-  const verbose = args.includes('--verbose');
-  if (!casesPath || args.indexOf('--cases') === -1) {
-    process.stderr.write('usage: cli.mjs --cases <cases.json> [--verbose]\n');
-    process.exit(2);
+export function main(argv = []) {
+  const { opts, help, error } = parseArgs(argv);
+
+  if (help) {
+    console.log(USAGE);
+    return 0;
   }
+  if (error) {
+    console.error(formatUsageError(CLI_SPEC.prog, error));
+    return EXIT_USAGE;
+  }
+
+  const { cases: casesPath, verbose } = opts;
   const cfg = JSON.parse(readFileSync(casesPath, 'utf-8'));
   const masks = buildMasks(cfg.normalize);
-  const accept = cfg.accept ?? {};
+  // Null-prototype: `accept` comes straight from JSON, so on a plain object a
+  // case labelled `toString` resolved to Object.prototype.toString and was
+  // reported `accept` instead of DIVERGE -- a parity tool silently suppressing
+  // a parity failure, which is the worst place in the family for this bug to
+  // have landed (#479).
+  const accept = Object.assign(Object.create(null), cfg.accept ?? {});
   const fired = new Set();
 
   let ok = 0;
@@ -140,7 +182,10 @@ function main() {
     `\n=== ${ok} ok, ${accepted} accepted, ${diverged} DIVERGE ` +
       `(${cfg.cases.length} cases) — masks fired: ${[...fired].join(', ') || 'none'} ===\n`,
   );
-  process.exit(diverged > 0 ? 1 : 0);
+  return diverged > 0 ? 1 : 0;
 }
 
-main();
+// Direct execution (the skill runner execs this file via its shebang).
+if (import.meta.url === `file://${process.argv[1]}`) {
+  process.exit(main(process.argv.slice(2)));
+}

@@ -12,6 +12,9 @@ export default defineConfig({
       // file from an unrelated skill (e.g. canary-instrument's otel bootstrap)
       // silently drags the gate down.
       include: [
+        // The shared skill-CLI parser every `cli:` skill now routes through
+        // (#479) -- the one file whose bugs are family-wide.
+        'lib/*.mjs',
         'claude-code/canary-savant/scripts/**/*.mjs',
         'claude-code/canary-blackhawk/scripts/**/*.mjs',
         'claude-code/canary-katana/scripts/**/*.mjs',
@@ -22,6 +25,7 @@ export default defineConfig({
         'claude-code/canary-instrument/scripts/*.mjs',
         'claude-code/canary-fail-fast/scripts/**/*.mjs',
         'claude-code/canary-test-reporter/scripts/**/*.mjs',
+        'claude-code/canary-shadow/scripts/*.mjs',
       ],
       exclude: ['**/*.test.*'],
       // Fresh-code floor, matching the ts/ engine port. Ratchets up over time.
