@@ -30,26 +30,26 @@ import {
 } from '../src/guardian/analysis-emit.js';
 import { Fidelity } from '../src/guardian/coverage.js';
 import { Severity } from '../src/guardian/impact-mapper.js';
-import { Finding, render } from '../src/guardian/pr-check.js';
+import { GuardianFinding, render } from '../src/guardian/pr-check.js';
 import { mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
-function findings(): Finding[] {
+function findings(): GuardianFinding[] {
   return [
-    new Finding({
+    new GuardianFinding({
       path: 'pkg/a.py',
       unit: 'alpha',
       fidelity: Fidelity.GraphVerified,
       severity: Severity.HIGH,
       evidence: 'no covering test for alpha',
     }),
-    new Finding({
+    new GuardianFinding({
       path: 'pkg/b.py',
       unit: 'beta',
       fidelity: Fidelity.Heuristic,
       severity: Severity.MEDIUM,
       evidence: 'no covering test for beta',
     }),
-    new Finding({
+    new GuardianFinding({
       path: 'pkg/c.py',
       unit: 'gamma',
       fidelity: Fidelity.Heuristic,

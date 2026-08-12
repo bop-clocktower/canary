@@ -502,7 +502,7 @@ export function filterHeuristicNoise(
  * concern). `severity` reuses {@link Severity}; `fidelity` carries the
  * confidence tier from the underlying coverage signal.
  */
-export class Finding {
+export class GuardianFinding {
   path: string;
   unit: string;
   kind: string;
@@ -643,7 +643,7 @@ function uncoveredShare(result: CoverageResult, uncovered: number): number {
  * Severity for an uncovered **coverage-verified** result (#553).
  *
  * Only this tier can be graded, because only this tier knows *which* lines ran
- * (see the `uncovered_lines` comment on {@link Finding}). The grade combines
+ * (see the `uncovered_lines` comment on {@link GuardianFinding}). The grade combines
  * how much is unhit with how much of the change that represents:
  *
  *   - `CRITICAL` — a large block (>= 20 lines) that is essentially untouched
@@ -690,8 +690,8 @@ function coverageVerifiedSeverity(result: CoverageResult): Severity {
  *
  * Results are sorted by severity sort-key (critical → low).
  */
-export function buildFindings(results: CoverageResult[]): Finding[] {
-  const findings: Finding[] = [];
+export function buildFindings(results: CoverageResult[]): GuardianFinding[] {
+  const findings: GuardianFinding[] = [];
   for (const result of results) {
     if (result.covered) continue;
     let severity: Severity;
@@ -702,7 +702,7 @@ export function buildFindings(results: CoverageResult[]): Finding[] {
     const unit = result.unit;
     const uncovered = [...(result.uncovered_lines ?? [])];
     findings.push(
-      new Finding({
+      new GuardianFinding({
         path: unit.path,
         unit: unit.symbol || unit.path,
         fidelity: result.fidelity,
@@ -787,9 +787,9 @@ function hasAddedTestBody(added: string[]): boolean {
 export function buildWeakTestFindings(
   testUnits: ChangedUnit[],
   diffText: string,
-): Finding[] {
+): GuardianFinding[] {
   const addedByPath = addedContentByPath(diffText);
-  const findings: Finding[] = [];
+  const findings: GuardianFinding[] = [];
   for (const unit of testUnits) {
     const added = addedByPath.get(unit.path);
     if (!added || added.length === 0) continue;
@@ -800,7 +800,7 @@ export function buildWeakTestFindings(
     const framework = frameworkForTestPath(unit.path);
     if (isAssertionFreeTest(code, framework)) {
       findings.push(
-        new Finding({
+        new GuardianFinding({
           path: unit.path,
           unit: unit.path,
           kind: 'weak-test',
@@ -857,9 +857,9 @@ function suppressionReason(line: string): string | null {
  * them.
  */
 export function applySuppressions(
-  findings: Finding[],
+  findings: GuardianFinding[],
   repoRoot = '.',
-): Finding[] {
+): GuardianFinding[] {
   for (const finding of findings) {
     let source: string;
     try {
@@ -914,7 +914,10 @@ const HARD_GATE_SEVERITIES = new Set<Severity>([
  * open (FIX 5). Config-load validation ({@link loadGuardianConfig}) is the
  * primary guard against unknown gate values.
  */
-export function computeExitCode(findings: Finding[], gate: string): number {
+export function computeExitCode(
+  findings: GuardianFinding[],
+  gate: string,
+): number {
   const normalizedGate =
     typeof gate === 'string' ? gate.trim().toLowerCase() : gate;
   if (normalizedGate !== 'hard') return 0;
@@ -1001,8 +1004,8 @@ function ensureAscii(json: string): string {
   );
 }
 
-/** Serialize a {@link Finding} to a stable JSON-friendly object. */
-function findingDict(finding: Finding): Record<string, unknown> {
+/** Serialize a {@link GuardianFinding} to a stable JSON-friendly object. */
+function findingDict(finding: GuardianFinding): Record<string, unknown> {
   return {
     path: finding.path,
     unit: finding.unit,
@@ -1094,7 +1097,7 @@ function noGapsLines(
 }
 
 export function render(
-  findings: Finding[],
+  findings: GuardianFinding[],
   fmt: string,
   tier = 0,
   degradedNotice: string | null = null,
@@ -1139,7 +1142,7 @@ export function render(
   // The line range a permalink should open at: the first range the coverage run
   // proved unhit, else the first range the diff added. Empty when neither is
   // known, so the link degrades to the file rather than to a wrong line.
-  const linkAnchor = (f: Finding): string => {
+  const linkAnchor = (f: GuardianFinding): string => {
     const ranges = f.uncovered_lines.length
       ? mergeLines(f.uncovered_lines)
       : f.added_ranges;
@@ -1159,7 +1162,7 @@ export function render(
   // or any parenthesized directory would render as broken markup.
   const urlPath = (path: string): string =>
     path.replace(/\(/g, '%28').replace(/\)/g, '%29');
-  const fileLabel = (f: Finding): string => {
+  const fileLabel = (f: GuardianFinding): string => {
     const shown = `\`${f.path}\``;
     const linked = blobBase
       ? `[${shown}](${blobBase}/${urlPath(f.path)}${linkAnchor(f)})`
@@ -1171,7 +1174,7 @@ export function render(
   // lines live in the suggestion rather than in a second parenthetical, so the
   // list is stated exactly once. A finding with no suggestion (a hand-built or
   // pre-existing record) renders evidence alone — never a dangling arrow.
-  const whatCell = (f: Finding): string => {
+  const whatCell = (f: GuardianFinding): string => {
     const action = f.suggestion
       ? `<br><sub>${ARROW} ${cell(f.suggestion)}</sub>`
       : '';

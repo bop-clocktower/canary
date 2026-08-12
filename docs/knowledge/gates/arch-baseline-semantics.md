@@ -49,4 +49,30 @@ conditional logic at all.
 
 The cheap fix is to hoist the shape to a named interface, which costs one
 declaration and removes the branches from the count. Applied in #561 to
-`ts/src/guardian/cli.ts`.
+`ts/src/guardian/cli.ts`, and again in #669 to
+`ts/test/precommit-abstention.test.ts`.
+
+## Every `??` counts as two branches
+
+The decision-point pattern is `/\?(?!=)/g` — it excludes `?=` and nothing else.
+Its own inline comment in the harness source claims it skips `?.` and `??`, but
+the regex never implemented that, so **each `??` scores two** and each `?.`
+scores one. The comment describes an intention, not the behaviour.
+
+This is usually the largest single contributor, and the least visible one.
+`runHook` in `ts/test/precommit-abstention.test.ts` measured 12 against a warn
+threshold of 10, of which exactly **2 were real control flow** (one ternary, one
+`catch`); the other 10 were three `??` (6), two inline optional properties (2),
+one optional parameter (1), and the ternary's own `?` (1).
+
+The remedy is never to swap `??` for `||` — that changes behaviour on falsy
+values to buy a number. Extract the expression into a named helper, which moves
+the count somewhere it is affordable and usually names a real responsibility
+while it is there.
+
+## Reading a `check-arch` verdict through a pipe hides it
+
+`harness check-arch | tail` reports `tail`'s exit status, not the gate's. The
+same trap applies to any gate command whose verdict is an exit code. Redirect to
+a file and check `$?` on the command itself — this is the shell-level instance
+of the same false-green shape the rest of this page describes.

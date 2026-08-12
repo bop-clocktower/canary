@@ -104,22 +104,52 @@ function makeRepo(withDeps: boolean): string {
   return dir;
 }
 
+/**
+ * The environment one hook run sees.
+ *
+ * `pathPrefix` prepends a directory to `PATH` so a stubbed `npx` shadows the
+ * real one; omitting it inherits the ambient environment unchanged.
+ */
+function hookEnv(pathPrefix?: string): NodeJS.ProcessEnv {
+  if (pathPrefix === undefined) return process.env;
+  return { ...process.env, PATH: `${pathPrefix}:${process.env['PATH'] ?? ''}` };
+}
+
+/**
+ * The streams `execFileSync` hangs off the error it throws on a non-zero exit.
+ *
+ * Named rather than inline: each `?` in an *inline* type literal counts as a
+ * branch against the arch complexity threshold, so hoisting the shape removes
+ * two phantom branches from the function below. See
+ * `docs/knowledge/gates/arch-baseline-semantics.md`.
+ */
+interface FailedRun {
+  stdout?: string;
+  stderr?: string;
+}
+
+/**
+ * Everything a failed hook wrote, whichever stream it chose.
+ *
+ * The hook reports gate outcomes on both stdout and stderr, so a non-zero exit
+ * must not lose either half — the assertions below search the union.
+ */
+function combinedOutput(err: unknown): string {
+  const e = err as FailedRun;
+  return `${e.stdout ?? ''}${e.stderr ?? ''}`;
+}
+
 /** Run the hook and return its combined output, whatever its exit status. */
 function runHook(dir: string, pathPrefix?: string): string {
-  const env =
-    pathPrefix === undefined
-      ? process.env
-      : { ...process.env, PATH: `${pathPrefix}:${process.env['PATH'] ?? ''}` };
   try {
     return execFileSync('bash', ['.githooks/pre-commit'], {
       cwd: dir,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      env,
+      env: hookEnv(pathPrefix),
     });
   } catch (err) {
-    const e = err as { stdout?: string; stderr?: string };
-    return `${e.stdout ?? ''}${e.stderr ?? ''}`;
+    return combinedOutput(err);
   }
 }
 

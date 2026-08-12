@@ -42,6 +42,27 @@ under the project's former name) are documented in the
   plugin untouched — the trap that made the skew invisible. Skipped, not failed,
   when no plugin is installed. ([#522])
 
+### Changed
+
+- **Identifiers renamed so units and contracts are visible at the call site.** A
+  `naming-craft` pass over the recently-changed surface found five names that
+  could be misread where they are used; all five are internal, so no published
+  API moves (`canary-test-cli` exports only `./reporter`). Two unrelated
+  exported types were both called `Finding` — the static linter's finding
+  (interface) and the guardian's coverage/weak-test finding (class) — so a
+  signature reading `Finding[]` did not say which contract applied; they are now
+  `LintFinding` and `GuardianFinding`. `lintableFramework` became
+  `frameworkForPath`: it returns `string | null`, but the adjective name read as
+  a predicate and invited `if (lintableFramework(p))`, which silently treats the
+  abstention `null` as a plain falsy — the false-green shape the function's own
+  doc comment warns about. And the report builders in `analysis/reports.ts`
+  formatted their units into the output while leaving the parameters unitless,
+  so `window`, `delta`, and `minRate` became `windowRuns`, `deltaPp`, and
+  `minRatePct`. The `--window` / `--delta` / `--min-rate` CLI flags are
+  deliberately unchanged. New tests pin the unit semantics, cover
+  `frameworkForPath`'s null-abstention contract (previously untested), and guard
+  against the `Finding` collision returning.
+
 ### Fixed
 
 - **The pre-commit hook says when a gate did not run.** `markdownlint` and

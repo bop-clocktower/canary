@@ -138,8 +138,12 @@ export class AnalysisEngine {
       areaHealth: areaRows,
       commonFailures: commonRows,
       regressionCandidates,
-      window,
-      delta,
+      // The engine's own `window`/`delta` stay unitless because they are bound
+      // to the `--window` / `--delta` CLI flags, and renaming those would be a
+      // breaking CLI change. Only the report builders' parameters carry the
+      // unit, so the mapping is spelled out here rather than passed shorthand.
+      windowRuns: window,
+      deltaPp: delta,
       weeks,
       minSuites,
     });
