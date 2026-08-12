@@ -14,6 +14,31 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [7.0.0] - 2026-08-12
+
+Two commands now refuse input they previously accepted, which is what makes this
+a major. Both old behaviours were defects — one destroyed a user's work, the
+other silently matched nothing — but a script that relied on either will now
+exit non-zero, and that deserves a version number a consumer cannot miss.
+
+The rest of the release is the largest correctness batch since the v6 cutover:
+nine merged pull requests, most of them closing false-green paths where a tool
+reported success over work it had not done.
+
+### BREAKING
+
+- **`canary overlay remove` exits 1 on a clone with local edits**, where it
+  previously deleted the clone and exited 0. Pass `--force` for the old
+  behaviour. Any unconditional-cleanup script needs that flag added. A clone
+  with no local edits is unaffected. ([#675])
+- **`canary analyze`'s three numeric thresholds now validate their input.**
+  `--window seven` produced a `NaN` threshold that quietly matched nothing and
+  exited 0; it is now a usage error (exit 2). `--window-runs 0` and a rate
+  outside 0-100 are likewise rejected. Invocations that appeared to work while
+  measuring nothing will now fail loudly. The flag _names_ are backward
+  compatible — `--window`, `--delta` and `--min-rate` still work as deprecated
+  aliases. ([#673])
+
 ### Added
 
 - **`canary uninstall` enumerates the install footprint and removes what it
@@ -87,9 +112,9 @@ under the project's former name) are documented in the
   wearing a percentage's clothes — is the difference between firing and staying
   silent on a failure rate moving 5% → 6%. The canonical flags are now
   `--window-runs`, `--delta-pp` and `--min-rate-pct`, following the convention
-  #670 set one layer down. **Nothing breaks:** `--window`, `--delta` and
-  `--min-rate` still work and still take the same values, but they print a note
-  on stderr naming the replacement, and the canonical flag wins if both are
+  #670 set one layer down. **The old names keep working:** `--window`, `--delta`
+  and `--min-rate` still work and still take the same values, but they print a
+  note on stderr naming the replacement, and the canonical flag wins if both are
   given. Every analyze option also gained a help description — a blank one is
   how the silence survived — and the three thresholds now validate: a window
   that is not a whole count of runs, or a rate outside 0-100, is a usage error
@@ -97,6 +122,20 @@ under the project's former name) are documented in the
   engine's `RunOptions` follow the same names (`windowRuns`, `deltaPp`,
   `minFlakeRatePct`), which retires the mapping comment #670 left behind.
   ([#673])
+- **One shared argument parser backs every skill CLI.** Five skills hand-rolled
+  the same `parseArgs` loop and the same bug class returned three consecutive
+  rounds — structural rather than careless, since the pattern was copy-paste and
+  each new skill inherited whichever version its author copied. Two of the
+  hand-copied test blocks had already drifted into passing against buggy code.
+  `agents/skills/lib/parse-args.mjs` now holds one implementation of the four
+  shared invariants (null-prototype lookup, empty-value rejection, arity
+  checking, `--flag=value`), and all seven `cli:` skills use it. The conformance
+  suite **discovers** every `SKILL.md` declaring `cli:` rather than enumerating
+  them, so a new skill is covered the moment it lands, and a CLI that hand-rolls
+  its parser again exports no `CLI_SPEC` and fails the suite. Two latent bugs in
+  `canary-shadow` were fixed on the way, including an `accept` map read off a
+  plain object — a case labelled `toString` reported `accept` instead of
+  `DIVERGE`, a parity tool silently suppressing a parity failure. ([#479])
 
 ### Fixed
 
@@ -137,13 +176,53 @@ under the project's former name) are documented in the
   deregisters — there is nothing left to lose. `canary uninstall` now delegates
   to the same helper instead of reimplementing the check, so the two removal
   paths cannot drift apart again. ([#675])
+- **`migrate --apply` no longer installs workflow templates for a skill it just
+  skipped.** The run reported `skipped — local edits, not overwritten` and wrote
+  that skill's declared `install_workflows:` templates into `.github/workflows/`
+  in the same breath, so a consumer who deliberately de-listed or deleted a
+  template got it reinstated on every sync. The install list is read from the
+  **overlay's** copy of `SKILL.md`, so an edit to the consumer's own copy could
+  never be heard — withholding is what makes it mean something. One
+  `isLocallyEdited` predicate now backs both the deploy skip and the install
+  gate, so the two phases cannot describe the same skill differently in one run.
+  A new `withheld` status carries the reason into the markdown report and
+  `--json`. An already byte-identical workflow is exempt (a no-op is not a
+  finding), and withholding preempts `outdated`, whose "re-run with `--force`"
+  advice would otherwise have talked a consumer into the overwrite the skip
+  refused. `--force` remains the deliberate escape hatch. ([#667])
+- **Composite-key separators are written as `\0` escapes, not literal NUL
+  bytes.** A literal U+0000 in a file's first 8 KB makes git classify it as
+  binary, and `workspace-detect.ts` did exactly that — its 292 lines merged as
+  `Bin 0 -> 9800 bytes`, with no diff and no line-level review. `reports.ts` and
+  `migrator.ts` share the idiom and escaped notice only because their NUL sits
+  past byte 8192, where git stops sniffing. All three now use the escape:
+  identical character at runtime, reviewable source text. A class-level guard
+  makes the next composite key written with a literal byte fail in CI rather
+  than ship unreviewable. ([#662])
+- **The roadmap's one-line field contract now covers the archive and the
+  shards.** `docs/roadmap-archive.md` sat in the shape the roadmap itself had
+  already left: 60 of its 63 rows carried a wrapped `Summary`, with
+  `prettier --check` reporting the file clean while holding it there. Because
+  `roadmap-groom.mjs --apply` moves rows between the two verbatim, a groomed row
+  made the archive prettier-dirty — blocking every later agent write — and a row
+  moved back for reopened work would have returned truncated. The archive's 67
+  wrapped fields are unwrapped (verified byte-identical after collapsing
+  whitespace) and it joins `.prettierignore`. The guarded set is now derived
+  **from** `.prettierignore` rather than a hardcoded path, so the exempted set
+  and the guarded set are mechanically the same set; a committed
+  `docs/roadmap.d/` shard with no ignore entry now fails. ([#661], [#630])
 
+[#479]: https://github.com/bop-clocktower/canary/issues/479
 [#504]: https://github.com/bop-clocktower/canary/issues/504
 [#522]: https://github.com/bop-clocktower/canary/issues/522
 [#523]: https://github.com/bop-clocktower/canary/issues/523
 [#564]: https://github.com/bop-clocktower/canary/issues/564
+[#630]: https://github.com/bop-clocktower/canary/issues/630
 [#650]: https://github.com/bop-clocktower/canary/issues/650
 [#657]: https://github.com/bop-clocktower/canary/issues/657
+[#661]: https://github.com/bop-clocktower/canary/issues/661
+[#662]: https://github.com/bop-clocktower/canary/issues/662
+[#667]: https://github.com/bop-clocktower/canary/issues/667
 [#673]: https://github.com/bop-clocktower/canary/issues/673
 [#675]: https://github.com/bop-clocktower/canary/issues/675
 
@@ -1980,7 +2059,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v6.8.1...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v7.0.0...HEAD
+[7.0.0]: https://github.com/bop-clocktower/canary/compare/v6.8.1...v7.0.0
 [6.8.1]: https://github.com/bop-clocktower/canary/compare/v6.8.0...v6.8.1
 [6.8.0]: https://github.com/bop-clocktower/canary/compare/v6.7.1...v6.8.0
 [6.7.1]: https://github.com/bop-clocktower/canary/compare/v6.7.0...v6.7.1
