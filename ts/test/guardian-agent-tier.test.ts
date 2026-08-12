@@ -28,12 +28,12 @@ import {
   targetTestPath,
 } from '../src/guardian/agent-tier.js';
 import { Severity } from '../src/guardian/impact-mapper.js';
-import { Finding } from '../src/guardian/pr-check.js';
+import { GuardianFinding } from '../src/guardian/pr-check.js';
 import { resolveTier } from '../src/guardian/tier.js';
 import { mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
-function finding(path = 'src/foo.py', unit = 'foo'): Finding {
-  return new Finding({ path, unit });
+function finding(path = 'src/foo.py', unit = 'foo'): GuardianFinding {
+  return new GuardianFinding({ path, unit });
 }
 
 /** Test double satisfying the `AgentInvoker` port. Calls nothing real. */

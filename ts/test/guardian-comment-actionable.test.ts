@@ -7,10 +7,10 @@
  *
  *  1. **Which lines are uncovered.** `resolveCoverage` computes
  *     `CoverageResult.uncovered_lines`, but `buildFindings` constructed a
- *     `Finding` without that field, so the comment could only say
+ *     `GuardianFinding` without that field, so the comment could only say
  *     "12 uncovered" out of a 19-line range. The reader had to re-run coverage
  *     locally to learn which 12.
- *  2. **A suggested next action.** `Finding.suggestion` existed, was
+ *  2. **A suggested next action.** `GuardianFinding.suggestion` existed, was
  *     JSON-serialized, and was rendered by the local CLI — but nothing ever
  *     populated it, so it was permanently `''`. A field that is present in the
  *     schema and empty in every record reads as alive and is dead.
@@ -40,7 +40,7 @@ import { Severity } from '../src/guardian/impact-mapper.js';
 import {
   buildFindings,
   buildWeakTestFindings,
-  Finding,
+  GuardianFinding,
   render,
 } from '../src/guardian/pr-check.js';
 
@@ -175,7 +175,7 @@ describe('suggestion is populated and rendered', () => {
   it('an empty suggestion adds no dangling arrow', () => {
     const out = render(
       [
-        new Finding({
+        new GuardianFinding({
           path: 'src/pay.ts',
           unit: 'src/pay.ts',
           evidence: 'something',

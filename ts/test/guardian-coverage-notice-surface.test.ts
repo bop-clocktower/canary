@@ -20,7 +20,7 @@ import {
 } from '../src/guardian/analysis-emit.js';
 import { CoverageInputState, Fidelity } from '../src/guardian/coverage.js';
 import { Severity } from '../src/guardian/impact-mapper.js';
-import { Finding, render } from '../src/guardian/pr-check.js';
+import { GuardianFinding, render } from '../src/guardian/pr-check.js';
 import { FakeGitHubClient, STICKY_MARKER } from '../src/guardian/pr-comment.js';
 import { invokeGuardian, mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
@@ -58,9 +58,9 @@ const VERIFIED: CoverageInputState = {
   unitsTotal: 1,
 };
 
-function finding(): Finding[] {
+function finding(): GuardianFinding[] {
   return [
-    new Finding({
+    new GuardianFinding({
       path: 'pkg/a.py',
       unit: 'alpha',
       fidelity: Fidelity.Heuristic,

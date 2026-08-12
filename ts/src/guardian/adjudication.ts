@@ -1,5 +1,5 @@
 /**
- * Finding adjudication collection — the precision the hard gate depends on
+ * Guardian finding adjudication collection — the precision the hard gate depends on
  * (#490).
  *
  * `pr-check.ts` documents the soft→hard promotion contract as

@@ -17,7 +17,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CompanyKnowledge } from '../src/core/company-knowledge.js';
 import { HealChange, HealResult } from '../src/core/pattern-healer.js';
-import type { Finding } from '../src/core/static-linter.js';
+import type { LintFinding } from '../src/core/static-linter.js';
 import {
   IssueType,
   SemanticRole,
@@ -31,7 +31,7 @@ function fake<T>(obj: unknown): T {
   return obj as T;
 }
 
-const finding = (over: Partial<Finding> = {}): Finding => ({
+const finding = (over: Partial<LintFinding> = {}): LintFinding => ({
   file: 'f.py',
   line: 3,
   rule: 'R1',

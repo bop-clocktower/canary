@@ -19,7 +19,7 @@ import {
 import { Severity } from '../src/guardian/impact-mapper.js';
 import {
   DEFAULT_SKIP_GLOBS,
-  Finding,
+  GuardianFinding,
   applySuppressions,
   buildFindings,
   buildWeakTestFindings,
@@ -206,7 +206,7 @@ describe('buildFindings', () => {
     ])[0]!;
     expect(finding.path).toBe('pkg/bar.py');
     expect(finding.evidence).toBe('no test reaches pkg/bar.py');
-    expect(finding).toBeInstanceOf(Finding);
+    expect(finding).toBeInstanceOf(GuardianFinding);
   });
 });
 
@@ -236,7 +236,7 @@ describe('applySuppressions', () => {
       'def foo():\n    return 1  # canary:allow-untested legacy shim\n',
     );
     const out = applySuppressions(
-      [new Finding({ path: 'pkg/foo.py', unit: 'foo' })],
+      [new GuardianFinding({ path: 'pkg/foo.py', unit: 'foo' })],
       dir,
     );
     expect(out[0]!.suppressed).toBe(true);
@@ -249,7 +249,7 @@ describe('applySuppressions', () => {
       'export function foo() {} // canary:allow-untested vendor code\n',
     );
     const out = applySuppressions(
-      [new Finding({ path: 'pkg/foo.ts', unit: 'foo' })],
+      [new GuardianFinding({ path: 'pkg/foo.ts', unit: 'foo' })],
       dir,
     );
     expect(out[0]!.suppressed).toBe(true);
@@ -259,7 +259,7 @@ describe('applySuppressions', () => {
   it('no annotation not suppressed', () => {
     write('pkg/bar.py', 'def bar():\n    return 2\n');
     const out = applySuppressions(
-      [new Finding({ path: 'pkg/bar.py', unit: 'bar' })],
+      [new GuardianFinding({ path: 'pkg/bar.py', unit: 'bar' })],
       dir,
     );
     expect(out[0]!.suppressed).toBe(false);
@@ -269,7 +269,7 @@ describe('applySuppressions', () => {
   it('suppressed finding stays in list', () => {
     write('a.py', 'x = 1  # canary:allow-untested reason\n');
     const out = applySuppressions(
-      [new Finding({ path: 'a.py', unit: 'a' })],
+      [new GuardianFinding({ path: 'a.py', unit: 'a' })],
       dir,
     );
     expect(out).toHaveLength(1);
@@ -282,7 +282,7 @@ describe('applySuppressions', () => {
     );
     const out = applySuppressions(
       [
-        new Finding({
+        new GuardianFinding({
           path: 'pkg/foo.py',
           unit: 'foo',
           added_ranges: [[1, 3]],
@@ -301,7 +301,7 @@ describe('applySuppressions', () => {
     );
     const out = applySuppressions(
       [
-        new Finding({
+        new GuardianFinding({
           path: 'pkg/foo.py',
           unit: 'foo',
           added_ranges: [[2, 2]],
@@ -322,7 +322,7 @@ describe('applySuppressions', () => {
     );
     const out = applySuppressions(
       [
-        new Finding({
+        new GuardianFinding({
           path: 'pkg/foo.py',
           unit: 'foo',
           added_ranges: [[2, 3]],
@@ -339,7 +339,13 @@ describe('applySuppressions', () => {
       'export const x = 1;  // canary:allow-untested vendor code */\n',
     );
     const out = applySuppressions(
-      [new Finding({ path: 'pkg/foo.ts', unit: 'x', added_ranges: [[1, 1]] })],
+      [
+        new GuardianFinding({
+          path: 'pkg/foo.ts',
+          unit: 'x',
+          added_ranges: [[1, 1]],
+        }),
+      ],
       dir,
     );
     expect(out[0]!.suppressed).toBe(true);
@@ -354,21 +360,25 @@ describe('applySuppressions', () => {
 describe('computeExitCode', () => {
   it('hard unaddressed HIGH exits nonzero', () => {
     const findings = [
-      new Finding({ path: 'a.py', unit: 'a', severity: Severity.HIGH }),
+      new GuardianFinding({ path: 'a.py', unit: 'a', severity: Severity.HIGH }),
     ];
     expect(computeExitCode(findings, 'hard')).toBe(1);
   });
 
   it('hard unaddressed CRITICAL exits nonzero', () => {
     const findings = [
-      new Finding({ path: 'a.py', unit: 'a', severity: Severity.CRITICAL }),
+      new GuardianFinding({
+        path: 'a.py',
+        unit: 'a',
+        severity: Severity.CRITICAL,
+      }),
     ];
     expect(computeExitCode(findings, 'hard')).toBe(1);
   });
 
   it('hard suppressed HIGH exits zero', () => {
     const findings = [
-      new Finding({
+      new GuardianFinding({
         path: 'a.py',
         unit: 'a',
         severity: Severity.HIGH,
@@ -380,15 +390,23 @@ describe('computeExitCode', () => {
 
   it('hard only MEDIUM/LOW exits zero', () => {
     const findings = [
-      new Finding({ path: 'a.py', unit: 'a', severity: Severity.MEDIUM }),
-      new Finding({ path: 'b.py', unit: 'b', severity: Severity.LOW }),
+      new GuardianFinding({
+        path: 'a.py',
+        unit: 'a',
+        severity: Severity.MEDIUM,
+      }),
+      new GuardianFinding({ path: 'b.py', unit: 'b', severity: Severity.LOW }),
     ];
     expect(computeExitCode(findings, 'hard')).toBe(0);
   });
 
   it('soft unaddressed CRITICAL exits zero', () => {
     const findings = [
-      new Finding({ path: 'a.py', unit: 'a', severity: Severity.CRITICAL }),
+      new GuardianFinding({
+        path: 'a.py',
+        unit: 'a',
+        severity: Severity.CRITICAL,
+      }),
     ];
     expect(computeExitCode(findings, 'soft')).toBe(0);
   });
@@ -399,7 +417,7 @@ describe('computeExitCode', () => {
 
   it('hard wrong kind exits zero', () => {
     const findings = [
-      new Finding({
+      new GuardianFinding({
         path: 'a.py',
         unit: 'a',
         kind: 'weak-test',
@@ -411,14 +429,14 @@ describe('computeExitCode', () => {
 
   it('hard mixed case still enforces (FIX 5)', () => {
     const findings = [
-      new Finding({ path: 'a.py', unit: 'a', severity: Severity.HIGH }),
+      new GuardianFinding({ path: 'a.py', unit: 'a', severity: Severity.HIGH }),
     ];
     expect(computeExitCode(findings, 'Hard')).toBe(1);
   });
 
   it('hard padded still enforces (FIX 5)', () => {
     const findings = [
-      new Finding({ path: 'a.py', unit: 'a', severity: Severity.HIGH }),
+      new GuardianFinding({ path: 'a.py', unit: 'a', severity: Severity.HIGH }),
     ];
     expect(computeExitCode(findings, ' hard ')).toBe(1);
   });
@@ -429,9 +447,9 @@ describe('computeExitCode', () => {
 // ---------------------------------------------------------------------------
 
 function finding(
-  overrides: Partial<ConstructorParameters<typeof Finding>[0]> = {},
-): Finding {
-  return new Finding({
+  overrides: Partial<ConstructorParameters<typeof GuardianFinding>[0]> = {},
+): GuardianFinding {
+  return new GuardianFinding({
     path: 'pkg/foo.py',
     unit: 'foo',
     severity: Severity.HIGH,
