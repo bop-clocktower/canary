@@ -198,7 +198,7 @@ re-add the overlay.
 
 `canary migrate` converts a harness-scaffolded project to Canary's layout. Pass
 `--from` to also deploy an overlay's skills (those whose `deploy_to` frontmatter
-matches the detected project shape) into the target's `.canary/skills/`:
+matches a detected project shape) into the target's `.canary/skills/`:
 
 ```bash
 # Deploy from a tracked overlay by name
@@ -230,6 +230,30 @@ Resolution:
 > prints a deprecation notice — use `--from` instead. If both are given,
 > `--from` wins.
 
+### Shape is a set, not a single value
+
+A monorepo does not have one shape. An e2e package is `e2e_ui` while a library
+package is `frontend_unit`, and both are true at once. `migrate` therefore
+resolves a **shape set** — the deduplicated union of the root shape (when the
+root probe hits) and every workspace package's shape — and deploys for the whole
+union:
+
+- A skill deploys when its `deploy_to` names **any** shape in the set, or the
+  `all` sentinel.
+- A skill matching two shapes in the set is deployed **once**. The overlay is
+  walked in a single pass, so `.deploy-manifest.json` is read and written
+  exactly once however many shapes resolved.
+- An **empty** set behaves exactly like an undetected shape did before: only
+  `deploy_to: [all]` skills deploy.
+
+The scalar shape printed as `**Shape:**` is the narrower question "what one
+shape is this repo?", and it stays `unknown` when packages disagree. The set is
+what drives deployment, so the two can legitimately differ — a mixed monorepo
+reports `Shape: unknown` while still deploying for both of its shapes.
+
+An explicit `canary_shape` in `.canary/company.json` still outranks detection
+for the scalar, and its value joins the union.
+
 ---
 
 ## Freshness gate & drift (`migrate --check`)
@@ -240,12 +264,12 @@ when someone remembers to re-run `migrate`.
 reports (without writing) how the target's deployed skills compare to the
 overlay that owns them and exits with a drift-aware code:
 
-| Exit | Meaning                                                                                                                                                                                                                                                    |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`  | In sync — every deployed overlay skill is current.                                                                                                                                                                                                         |
-| `1`  | **Drift** — the overlay carries newer deployable skills (`stale`) or ones the target is missing.                                                                                                                                                           |
-| `2`  | **Local edits** — a deployed skill was hand-modified; one-way ownership refuses to overwrite it.                                                                                                                                                           |
-| `3`  | **Abstained** — the resolved shape matched zero overlay skills, so nothing was verified. A gate that checked nothing has not passed: fix shape resolution (`canary_shape` in `.canary/company.json`, or `--framework`) or the overlay's `deploy_to` lists. |
+| Exit | Meaning                                                                                                                                                                                                                                                        |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | In sync — every deployed overlay skill is current.                                                                                                                                                                                                             |
+| `1`  | **Drift** — the overlay carries newer deployable skills (`stale`) or ones the target is missing.                                                                                                                                                               |
+| `2`  | **Local edits** — a deployed skill was hand-modified; one-way ownership refuses to overwrite it.                                                                                                                                                               |
+| `3`  | **Abstained** — the resolved shape set matched zero overlay skills, so nothing was verified. A gate that checked nothing has not passed: fix shape resolution (`canary_shape` in `.canary/company.json`, or `--framework`) or the overlay's `deploy_to` lists. |
 
 ```bash
 canary migrate --from example-org-example-overlay --check          # human-readable
@@ -256,12 +280,17 @@ canary migrate --from example-org-example-overlay --check --json   # machine-rea
 `current` \| `stale` \| `missing` \| `local_edit`:
 
 ```text
-{ shape, overlay_path, in_sync, has_drift, has_local_edits, checked,
+{ shape, shapes, overlay_path, in_sync, has_drift, has_local_edits, checked,
   abstained, exit_code, skills: [{ skill_name, dir_name, status, detail }] }
 ```
 
 `checked` is the gate's denominator — how many skills it actually verified.
 `abstained: true` (exit `3`) means that denominator was zero.
+
+`shapes` is the shape **set** the gate resolved — the same set `migrate` deploys
+for, so `--check` can never report in sync about skills it never examined. The
+scalar `shape` is unchanged and keeps its meaning; `shapes` is purely additive,
+so an existing consumer of this payload is unaffected.
 
 ### One-way ownership (the safety guarantee)
 
@@ -296,8 +325,10 @@ workflow_template_version: 2
   content.
 - An entry may carry a **shape prefix** to pick a variant —
   `install_workflows: [api:templates/guardian-api.yml, e2e_ui:templates/guardian-ui.yml]`.
-  The shape is the same resolved `canary_shape` that drives `deploy_to`, so a
-  skill that does not deploy to this shape installs no workflow either.
+  A prefixed entry installs when its shape is in the same resolved
+  [shape set](#shape-is-a-set-not-a-single-value) that drives `deploy_to`, so a
+  skill that deploys to none of those shapes installs no workflow either — and a
+  monorepo resolving both `api` and `e2e_ui` installs **both** variants above.
 - The file is installed as `basename(template)` under `.github/workflows/`.
 - `workflow_template_version` is recorded in
   `.canary/skills/.deploy-manifest.json`. It is what lets a **corrected**

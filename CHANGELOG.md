@@ -100,6 +100,21 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **A monorepo deploys overlay skills and workflows for every shape it has, not
+  the one it does not.** Detection has walked workspace packages since #586, but
+  the resulting `shapes` union was populated and never read: deployment still
+  keyed off the scalar, which collapses to `unknown` the moment two packages
+  disagree — so a repo with an e2e package and a unit package got only the
+  `deploy_to: [all]` residue and no `<shape>:`-prefixed workflow at all.
+  `deploySkills`, `installWorkflows` and `checkFreshness` now take the union.
+  The overlay is walked once, so a skill matching two shapes is deployed once
+  and `.deploy-manifest.json` is read and written exactly once however many
+  shapes resolved. `migrate --check` resolves the same set `migrate` deploys —
+  it was previously able to report "in sync" about skills it never examined,
+  which is a false green in a drift gate — and its `--json` payload gains
+  `shapes` alongside the unchanged scalar `shape`. An empty union behaves
+  exactly as an undetected shape did before, so single-shape repos are
+  unaffected. ([#504], part 1)
 - **The pre-commit hook says when a gate did not run.** `markdownlint` and
   `prettier` both returned success when their binary was missing, so a clone
   without dependencies — or a worktree that symlinks only `ts/node_modules` —
@@ -123,6 +138,7 @@ under the project's former name) are documented in the
   to the same helper instead of reimplementing the check, so the two removal
   paths cannot drift apart again. ([#675])
 
+[#504]: https://github.com/bop-clocktower/canary/issues/504
 [#522]: https://github.com/bop-clocktower/canary/issues/522
 [#523]: https://github.com/bop-clocktower/canary/issues/523
 [#564]: https://github.com/bop-clocktower/canary/issues/564
