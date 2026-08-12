@@ -342,7 +342,10 @@ export function checkOverlays(deps: EngineCheckDeps = {}): CheckResult[] {
         id: `overlay:${o.name}:clean`,
         status: 'fail',
         label: `overlay "${o.name}": ${clean === 'dirty' ? 'local modifications' : 'git status unreadable'}`,
-        remedy: `Commit/stash changes in ${o.path}, or canary overlay remove ${o.name} and re-add.`,
+        // `--force` is part of the remedy on purpose: since #675 a plain
+        // `overlay remove` refuses on a dirty clone, so the old advice was a
+        // dead end for exactly the user this check fires on.
+        remedy: `Commit/stash changes in ${o.path}, or discard them with canary overlay remove ${o.name} --force and re-add.`,
       });
     }
   }

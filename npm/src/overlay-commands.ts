@@ -558,7 +558,10 @@ function updateOne(
   if (clean === 'dirty') {
     err.write(
       `overlay "${o.name}": local modifications in ${o.path} — refusing to update. ` +
-        `Commit/stash them, or 'canary overlay remove ${o.name}' and re-add.\n`,
+        `Commit/stash them, or discard them with ` +
+        `'canary overlay remove ${o.name} --force' and re-add. ` +
+        `(Plain 'overlay remove' refuses on a dirty clone too, so it will not ` +
+        `throw the edits away by accident.)\n`,
     );
     return 1;
   }
@@ -639,11 +642,28 @@ export function update(name: string | null, deps: CommandDeps = {}): number {
   return failures === 0 ? 0 : 1;
 }
 
+/** Options for {@link remove}. */
+export interface RemoveOptions {
+  /** `--force`: delete even when the clone has local modifications (#675). */
+  force?: boolean;
+}
+
 /**
  * `canary overlay remove <name>` — deregister an overlay and delete its clone.
  * Unknown name is an error; the registry is left unchanged in that case.
+ *
+ * Removal is destructive and irreversible, so it takes the same posture as
+ * `overlay update` (#675): a clone with local modifications — or one whose git
+ * status cannot be read, which is no safer to delete blind — is refused, and
+ * `--force` is the explicit opt-in. A clone that is already gone is not a
+ * refusal: there is nothing left to lose, so the stale registry row is dropped.
  */
-export function remove(name: string, deps: CommandDeps = {}): number {
+export function remove(
+  name: string,
+  deps: CommandDeps = {},
+  opts: RemoveOptions = {},
+): number {
+  const git = deps.git ?? defaultGit;
   const homeDir = deps.homeDir ?? os.homedir();
   const out = deps.out ?? process.stdout;
   const err = deps.err ?? process.stderr;
@@ -660,6 +680,27 @@ export function remove(name: string, deps: CommandDeps = {}): number {
   if (!entry) {
     err.write(`canary overlay remove: no overlay named "${name}".\n`);
     return 1;
+  }
+
+  if (!opts.force && fs.existsSync(entry.path)) {
+    const clean = workingTreeStatus(entry.path, git);
+    if (clean === 'unreadable') {
+      err.write(
+        `canary overlay remove: cannot read git status at ${entry.path} — ` +
+          `refusing to delete it. Inspect the directory, then re-run with ` +
+          `--force to remove it anyway.\n`,
+      );
+      return 1;
+    }
+    if (clean === 'dirty') {
+      err.write(
+        `canary overlay remove: local modifications in ${entry.path} — ` +
+          `refusing to delete them. Commit or discard the changes ` +
+          `(git -C ${entry.path} status), then re-run; or re-run with ` +
+          `--force to delete the clone and the changes.\n`,
+      );
+      return 1;
+    }
   }
 
   fs.rmSync(entry.path, { recursive: true, force: true });

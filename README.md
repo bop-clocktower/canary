@@ -183,11 +183,15 @@ before step 1 if you have not run it yet:
 ```bash
 canary overlay list                      # what is tracked
 canary overlay remove <name>             # per overlay
+canary overlay remove <name> --force     # ...even with local edits in the clone
 ```
 
 Each removal deletes the clone under `~/.canary/overlays/<name>/` and its entry
-in `~/.canary/overlays.json`. If the CLI is already gone, delete `~/.canary/`
-directly — the registry is the only thing that knows about the clones.
+in `~/.canary/overlays.json`. A clone with uncommitted local edits (or one whose
+git status cannot be read) is refused rather than deleted — `--force` is the
+explicit opt-in to throw that work away. If the CLI is already gone, delete
+`~/.canary/` directly — the registry is the only thing that knows about the
+clones.
 
 ### 4. Remove per-project state
 
