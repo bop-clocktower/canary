@@ -108,6 +108,78 @@ Or, if you've already cloned the repo:
 No separate API key is required. The plugin runs through Claude Code's own
 session authentication.
 
+## 🧹 Uninstalling
+
+A full install scatters artifacts across several locations, and removing the CLI
+is the smallest part of it. Removing the binary alone leaves the plugin
+registered, the marketplace cloned, and every overlay on disk — so this section
+mirrors the Installation section above: one removal path per install path,
+followed by the shared state none of them touch.
+
+### 1. Remove the CLI
+
+Whichever way you installed it:
+
+```bash
+volta uninstall canary-test-cli          # Volta
+mise unuse -g npm:canary-test-cli        # mise
+npm uninstall -g canary-test-cli         # npm
+```
+
+`npx` leaves nothing installed, so there is nothing to remove — clear npm's
+cache (`npm cache clean --force`) only if you want the download gone too. For a
+from-source install, `cd npm && npm unlink -g canary-test-cli` undoes the
+`npm link`, then delete the clone.
+
+Confirm with `command -v canary`, which should print nothing.
+
+### 2. Remove the Claude Code plugin
+
+Canary cannot deregister itself — plugin registration is Claude Code's own
+state, so this half is done from inside Claude Code:
+
+```text
+/plugin uninstall canary@bop-clocktower
+/plugin marketplace remove bop-clocktower
+```
+
+That covers the registration in `~/.claude/plugins/installed_plugins.json` and
+the marketplace clone under `~/.claude/plugins/marketplaces/bop-clocktower/`.
+
+> **Stale version caches are not pruned.** Every version you have run stays
+> under `~/.claude/plugins/cache/bop-clocktower/canary/<version>/`, and only the
+> current one is referenced. Removing the plugin does not sweep the older
+> directories; delete the parent directory yourself if you want the disk back.
+
+### 3. Remove overlays
+
+Overlays are tracked, so remove them through Canary while the CLI still exists —
+before step 1 if you have not run it yet:
+
+```bash
+canary overlay list                      # what is tracked
+canary overlay remove <name>             # per overlay
+```
+
+Each removal deletes the clone under `~/.canary/overlays/<name>/` and its entry
+in `~/.canary/overlays.json`. If the CLI is already gone, delete `~/.canary/`
+directly — the registry is the only thing that knows about the clones.
+
+### 4. Remove per-project state
+
+Nothing above touches a consuming repo. In each project where you ran Canary:
+
+| Artifact                | What it is                                                            |
+| ----------------------- | --------------------------------------------------------------------- |
+| `.canary/`              | project config, `company.json`, quarantine ledger, critical-area data |
+| `test-results/reports/` | local run-history store and generated reports                         |
+| `tests/generated/`      | tests Canary generated but you never promoted                         |
+| `.mcp.json`             | the `harness` MCP server registration (project-level)                 |
+
+Committed tests that were promoted into your suite are yours — they are ordinary
+test files with no Canary dependency, and deleting them is a coverage decision,
+not an uninstall step.
+
 ## 📖 Usage
 
 Every top-level CLI command supports `--help`; run `canary --help` for the full
