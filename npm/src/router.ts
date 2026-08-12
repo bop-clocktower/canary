@@ -14,9 +14,14 @@
 import * as overlay from './overlay-commands.js';
 import type { CommandDeps, Writer } from './overlay-commands.js';
 import { runDoctor } from './doctor.js';
+import { run as runUninstall } from './uninstall.js';
 
 /** Subcommands handled in TypeScript rather than forwarded to the binary. */
-export const TS_COMMANDS: readonly string[] = ['overlay', 'doctor'];
+export const TS_COMMANDS: readonly string[] = [
+  'overlay',
+  'doctor',
+  'uninstall',
+];
 
 /** True when `argv` (process.argv.slice(2)) targets a TS-handled command. */
 export function isTsCommand(argv: readonly string[]): boolean {
@@ -129,6 +134,9 @@ export function route(
   }
   if (argv[0] === 'doctor') {
     return runDoctor(argv.slice(1), deps);
+  }
+  if (argv[0] === 'uninstall') {
+    return runUninstall(argv.slice(1), deps);
   }
   return null;
 }

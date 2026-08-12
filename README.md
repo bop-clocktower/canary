@@ -116,6 +116,30 @@ registered, the marketplace cloned, and every overlay on disk — so this sectio
 mirrors the Installation section above: one removal path per install path,
 followed by the shared state none of them touch.
 
+**Start with `canary uninstall`.** It enumerates the whole footprint, removes
+what it safely can, and prints the exact command for everything it cannot:
+
+```bash
+canary uninstall --global     # overlays + orphaned plugin caches
+canary uninstall --project    # .canary/, generated reports, .mcp.json entry
+canary uninstall --all        # both
+```
+
+Nothing is removed until you add `--apply` — a bare run is always a dry run. A
+scope flag is required, because the same command inside a repo could reasonably
+mean "off my machine" or "out of this project".
+
+Two things it deliberately never does: it will not delete the plugin cache that
+Claude Code is currently registered against (that would break your editor — run
+`/plugin uninstall` first, then re-run and it sweeps as an orphan), and it will
+not remove `tests/generated/` or `.canary/quarantine.json` unless you pass
+`--include-generated`, since those can hold work you have not promoted. It also
+cannot remove its own binary or deregister the plugin; those are steps 1 and 2
+below, and it prints them for you.
+
+The rest of this section is the manual path — what `canary uninstall` reports,
+and what to do when you no longer have the CLI to run it.
+
 ### 1. Remove the CLI
 
 Whichever way you installed it:

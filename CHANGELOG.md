@@ -16,6 +16,23 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary uninstall` enumerates the install footprint and removes what it
+  safely can.** A full install scatters artifacts across seven locations and two
+  of them belong to other owners, so the command reports everything, removes the
+  overlays / orphaned plugin caches / project state it owns, and prints the
+  exact command for the CLI binary and the Claude Code plugin registration
+  rather than pretending to handle them. A scope flag (`--global` / `--project`
+  / `--all`) is required — the same command inside a repo could mean either —
+  and nothing is written without `--apply`. Two protections are deliberate: the
+  plugin cache Claude Code is currently registered against is never deleted
+  (that breaks the editor; deregister first and it sweeps as an orphan on the
+  next run), and `tests/generated/` plus `.canary/quarantine.json` are reported
+  but kept unless `--include-generated` is passed, because they can hold
+  unpromoted work. The registered version is read from
+  `installed_plugins.json`'s `installPath`, never inferred by sorting — on the
+  machine this was built against, six versions were cached and the registered
+  one was not the newest. `.mcp.json` is edited surgically, removing only the
+  `canary-mcp` key. ([#523])
 - **`coverage.json` producers can declare `instrumented_lines`.** The contract
   had no way to say "this line was never instrumented", only "this line is not
   covered", so a producer transcoding lcov into the format reproduced the #655
@@ -76,6 +93,7 @@ under the project's former name) are documented in the
   do so silently. ([#650], [#564])
 
 [#522]: https://github.com/bop-clocktower/canary/issues/522
+[#523]: https://github.com/bop-clocktower/canary/issues/523
 [#564]: https://github.com/bop-clocktower/canary/issues/564
 [#650]: https://github.com/bop-clocktower/canary/issues/650
 [#657]: https://github.com/bop-clocktower/canary/issues/657
