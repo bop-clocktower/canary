@@ -35,7 +35,7 @@ import {
   MetadataScanner,
   detectedLanguages,
 } from '../src/core/metadata-scanner.js';
-import { StaticLinter, type Finding } from '../src/core/static-linter.js';
+import { StaticLinter, type LintFinding } from '../src/core/static-linter.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_SRC = join(here, 'fixtures', 'scanner-project');
@@ -105,7 +105,7 @@ describe('scanner parity (TS == Python golden)', () => {
 
 /** Rewrite the absolute `file` field to the project-relative POSIX path the
  * Python golden used (Python was passed the relative path directly). */
-function normalize(findings: Finding[], root: string): Finding[] {
+function normalize(findings: LintFinding[], root: string): LintFinding[] {
   return findings.map((f) => ({
     ...f,
     file: relative(root, resolve(f.file)).split(/[/\\]/).join('/'),

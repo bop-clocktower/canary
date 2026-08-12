@@ -8,7 +8,7 @@
  * `tier.ts`), which imports it never (SC-11). Under the chosen **Option A**
  * invocation mechanism it **never calls an LLM directly**: it (i) turns
  * deterministic Tier-0 gaps into structured authoring intents, (ii) parses and
- * validates agent results into `Finding`/`GeneratedTest` records, and (iii)
+ * validates agent results into `GuardianFinding`/`GeneratedTest` records, and (iii)
  * enforces the write-safety model (opt-in, fork, collision, loop-guard) and the
  * block-once decision. It reaches an agent runtime only through an injected
  * `AgentInvoker` **port**; the production default (`RecordingInvoker`) records
@@ -28,7 +28,7 @@
 import { existsSync } from 'node:fs';
 
 import { Severity } from './impact-mapper.js';
-import { Finding } from './pr-check.js';
+import { GuardianFinding } from './pr-check.js';
 
 /** What Tier 1 asks `canary-test-reviewer` to audit (read-only). */
 export interface ReviewRequest {
@@ -48,7 +48,7 @@ function reviewRequest(test_paths: string[]): ReviewRequest {
  * `'skipped'` (a safety guard blocked it, with `skip_reason`).
  */
 export class GeneratedTest {
-  gap: Finding;
+  gap: GuardianFinding;
   target_path: string;
   requirement: string; // NL requirement -> /canary-write-test $ARGUMENTS
   status: string; // planned | authored | skipped
@@ -56,7 +56,7 @@ export class GeneratedTest {
   skip_reason: string | null;
 
   constructor(init: {
-    gap: Finding;
+    gap: GuardianFinding;
     target_path: string;
     requirement: string;
     status?: string;
@@ -98,8 +98,11 @@ export class RecordingInvoker implements AgentInvoker {
 
 /** The capability boundary a future `CiAgentTier` also implements. */
 export interface AgentTier {
-  audit_test_quality(affected_tests: string[]): Finding[];
-  author_tests(gaps: Finding[], ctx?: AuthoringContext | null): GeneratedTest[];
+  audit_test_quality(affected_tests: string[]): GuardianFinding[];
+  author_tests(
+    gaps: GuardianFinding[],
+    ctx?: AuthoringContext | null,
+  ): GeneratedTest[];
 }
 
 // A canary-test-reviewer transcript line: `[severity] path:line <message>`.
@@ -123,8 +126,8 @@ const SEVERITY_BY_NAME = new Map<string, Severity>(
  * RecordingInvoker} default) yields `[]` -- the SKILL reports its review
  * directly in-session.
  */
-function parseReviewFindings(transcript: string): Finding[] {
-  const findings: Finding[] = [];
+function parseReviewFindings(transcript: string): GuardianFinding[] {
+  const findings: GuardianFinding[] = [];
   for (const raw of transcript.split(/\r\n|\r|\n/)) {
     const match = REVIEW_LINE_RE.exec(raw);
     if (match === null || match.groups === undefined) continue;
@@ -134,7 +137,7 @@ function parseReviewFindings(transcript: string): Finding[] {
     if (severity === undefined) continue;
     const path = match.groups['path']!;
     findings.push(
-      new Finding({
+      new GuardianFinding({
         path,
         unit: path,
         kind: 'weak-test',
@@ -161,7 +164,7 @@ export class InSessionAgentTier implements AgentTier {
    * Tier 1 (read-only): ask the reviewer to audit `affected_tests` and parse the
    * transcript into `weak-test` Findings. Writes nothing.
    */
-  audit_test_quality(affected_tests: string[]): Finding[] {
+  audit_test_quality(affected_tests: string[]): GuardianFinding[] {
     const transcript = this.invoker.review(reviewRequest([...affected_tests]));
     return parseReviewFindings(transcript);
   }
@@ -174,7 +177,7 @@ export class InSessionAgentTier implements AgentTier {
    * default (opt-in off, tier 0 -> everything skipped).
    */
   author_tests(
-    gaps: Finding[],
+    gaps: GuardianFinding[],
     ctx: AuthoringContext | null = null,
   ): GeneratedTest[] {
     const plan = planAuthoring(gaps, ctx ?? new AuthoringContext(false, 0));
@@ -283,7 +286,7 @@ function joinPosix(parent: string, child: string): string {
  *
  * Returns a repo-relative POSIX path string.
  */
-export function targetTestPath(gap: Finding): string {
+export function targetTestPath(gap: GuardianFinding): string {
   const { parent, stem, suffix } = posixParts(gap.path);
   let targetName: string;
   if (suffix === '.py') {
@@ -300,7 +303,7 @@ export function targetTestPath(gap: Finding): string {
  * NL requirement string the `/canary-write-test` command consumes as
  * `$ARGUMENTS` -- names the unit and the untested change.
  */
-function requirementFor(gap: Finding): string {
+function requirementFor(gap: GuardianFinding): string {
   return (
     `Write tests for \`${gap.unit}\` in \`${gap.path}\` covering the newly ` +
     `added, currently-untested code (guardian finding: ${gap.kind}).`
@@ -318,7 +321,7 @@ const EM_DASH = '\u{2014}';
  * (b) fork, (a) loop-guard, (c) collision.
  */
 function authoringSkipReason(
-  gap: Finding,
+  gap: GuardianFinding,
   ctx: AuthoringContext,
 ): string | null {
   if (!ctx.author_tests_optin) {
@@ -352,7 +355,7 @@ function authoringSkipReason(
  * and writes **nothing**.
  */
 export function planAuthoring(
-  gaps: Finding[],
+  gaps: GuardianFinding[],
   ctx: AuthoringContext,
 ): GeneratedTest[] {
   const out: GeneratedTest[] = [];

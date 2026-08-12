@@ -33,7 +33,7 @@ import {
   summarizePrecision,
   tallyAdjudications,
 } from '../src/guardian/adjudication.js';
-import { Finding, render } from '../src/guardian/pr-check.js';
+import { GuardianFinding, render } from '../src/guardian/pr-check.js';
 import { FakeGitHubClient, STICKY_MARKER } from '../src/guardian/pr-comment.js';
 import { invokeGuardian, mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
@@ -48,8 +48,11 @@ afterEach(() => rmTmp(tmp));
 const up = (user: string): Reaction => ({ user, content: '+1' });
 const down = (user: string): Reaction => ({ user, content: '-1' });
 
-function finding(path: string, init: Partial<Finding> = {}): Finding {
-  return new Finding({
+function finding(
+  path: string,
+  init: Partial<GuardianFinding> = {},
+): GuardianFinding {
+  return new GuardianFinding({
     path,
     unit: path,
     evidence: 'no test references this file',
@@ -58,7 +61,7 @@ function finding(path: string, init: Partial<Finding> = {}): Finding {
 }
 
 /** A rendered sticky-comment body carrying the given active findings. */
-function stickyBody(findings: Finding[]): string {
+function stickyBody(findings: GuardianFinding[]): string {
   return render(findings, 'comment', 0, null);
 }
 

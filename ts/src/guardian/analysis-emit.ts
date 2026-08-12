@@ -48,7 +48,7 @@ import {
   coverageDegradedNotice,
   coverageStatus,
 } from './coverage.js';
-import { Finding, combineNotices, render } from './pr-check.js';
+import { GuardianFinding, combineNotices, render } from './pr-check.js';
 
 // 1.1 adds the additive `coverage` block (#554); readers of 1.0 are unaffected.
 // 1.2 adds the additive `skipped` list (#582). Additive again, and bumped again
@@ -171,7 +171,7 @@ function isoUtcNow(): string {
  * Build the v1.0 envelope. `findings` is exactly `render(fmt='json')`'s array.
  */
 export function buildAnalysisRecord(
-  findings: Finding[],
+  findings: GuardianFinding[],
   args: BuildAnalysisRecordArgs,
 ): AnalysisRecord {
   const { ref, gate, effective_tier, degraded_notice, exit_code } = args;
@@ -267,7 +267,7 @@ export interface EmitAnalysisArgs extends BuildAnalysisRecordArgs {
  * drop the record (SC-10 fallback).
  */
 export function emitAnalysis(
-  findings: Finding[],
+  findings: GuardianFinding[],
   args: EmitAnalysisArgs,
 ): EmitResult {
   const { analysesDir } = args;

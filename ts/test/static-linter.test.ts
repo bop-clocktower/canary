@@ -4,7 +4,8 @@ import {
   StaticLinter,
   UnsupportedTestFileError,
   formatFinding,
-  type Finding,
+  frameworkForPath,
+  type LintFinding,
 } from '../src/core/static-linter.js';
 import { makeProject, type TempProject } from './scanner-testkit.js';
 
@@ -14,14 +15,49 @@ afterEach(() => {
   project = null;
 });
 
-function lint(name: string, content: string, framework?: string): Finding[] {
+function lint(
+  name: string,
+  content: string,
+  framework?: string,
+): LintFinding[] {
   project = makeProject({ [name]: content });
   return new StaticLinter().lint(`${project.root}/${name}`, framework);
 }
 
-function rules(findings: Finding[]): string[] {
+function rules(findings: LintFinding[]): string[] {
   return findings.map((f) => f.rule);
 }
+
+describe('frameworkForPath', () => {
+  // The abstention contract this function's own doc comment promises: an
+  // unknown extension must return null so the caller abstains. A guessed
+  // framework here is indistinguishable from a clean result downstream —
+  // the false-green shape the guardian exists to prevent.
+  it('returns null for an extension no ruleset can parse', () => {
+    expect(frameworkForPath('/repo/notes.md')).toBeNull();
+    expect(frameworkForPath('/repo/data.json')).toBeNull();
+    expect(frameworkForPath('/repo/Makefile')).toBeNull();
+  });
+
+  it('resolves the framework by extension when it can', () => {
+    expect(frameworkForPath('/repo/test_api.py')).toBe('pytest');
+    expect(frameworkForPath('/repo/a.spec.ts')).toBe('vitest');
+    expect(frameworkForPath('/repo/b.test.js')).toBe('vitest');
+  });
+
+  it('prefers playwright when the basename says so', () => {
+    expect(frameworkForPath('/repo/playwright.config.ts')).toBe('playwright');
+  });
+
+  it('returns a framework name, never a boolean', () => {
+    // Guards the rename's intent: the old name `lintableFramework` read as a
+    // predicate, inviting `if (lintableFramework(p))`. A caller must be able
+    // to distinguish "no ruleset" (null) from a resolved name.
+    const resolved = frameworkForPath('/repo/a.spec.ts');
+    expect(typeof resolved).toBe('string');
+    expect(frameworkForPath('/repo/notes.md')).not.toBe(false);
+  });
+});
 
 describe('StaticLinter', () => {
   it('flags all four flakiness patterns and skips comments', () => {
