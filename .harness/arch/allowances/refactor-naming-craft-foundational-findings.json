@@ -1,0 +1,8 @@
+{
+  "reason": "Naming-craft foundational findings (#670): module-size 27322->27332 (+10 in ts/src). The growth is renaming, not new logic -- 'Finding' -> 'LintFinding'/'GuardianFinding' and 'lintableFramework' -> 'frameworkForPath' are longer identifiers, so prettier reflows call sites past 80 columns. No new modules (81 .ts files under ts/src before and after) and no new architecture violations. The +357 already absorbed by the 6368545 allowance (tracked in #668) is unrelated to this branch; this adds 10 lines on top of it. Test-file growth is not counted by module-size.",
+  "categories": {
+    "module-size": 27332
+  },
+  "violationIds": [],
+  "createdFrom": "4e58106"
+}
