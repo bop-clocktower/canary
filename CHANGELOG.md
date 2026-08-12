@@ -109,6 +109,19 @@ under the project's former name) are documented in the
   `npx --no-install` before giving up, so the common worktree case runs instead
   of skipping. A dependency-less clone can still commit — it just can no longer
   do so silently. ([#650], [#564])
+- **`canary overlay remove` no longer destroys local edits.** It called
+  `fs.rmSync(..., { force: true })` unconditionally, so an overlay clone a user
+  had customised was deleted with no warning and no way back — while
+  `overlay update` refused to act on that same clone. The two together were a
+  trap: the only command that would touch a modified overlay was the one that
+  threw the work away. `remove` now takes `update`'s posture, through the
+  `workingTreeStatus` helper both already shared: a dirty clone is refused with
+  its path and how to proceed, an unreadable git status is treated as dirty (a
+  clone whose state cannot be read is not one to delete blind), and `--force` is
+  the explicit opt-in to delete anyway. A clone that is already gone still
+  deregisters — there is nothing left to lose. `canary uninstall` now delegates
+  to the same helper instead of reimplementing the check, so the two removal
+  paths cannot drift apart again. ([#675])
 
 [#522]: https://github.com/bop-clocktower/canary/issues/522
 [#523]: https://github.com/bop-clocktower/canary/issues/523
@@ -116,6 +129,7 @@ under the project's former name) are documented in the
 [#650]: https://github.com/bop-clocktower/canary/issues/650
 [#657]: https://github.com/bop-clocktower/canary/issues/657
 [#673]: https://github.com/bop-clocktower/canary/issues/673
+[#675]: https://github.com/bop-clocktower/canary/issues/675
 
 ## [6.8.1] - 2026-08-10
 

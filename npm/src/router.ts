@@ -67,7 +67,7 @@ function refFrom(flags: Record<string, string | boolean>): string | null {
 
 const OVERLAY_USAGE =
   'usage: canary overlay <add|list|lint|update|remove> [args]\n' +
-  '  add <source> [--ref <tag>]   list [--conflicts]   lint <name|path> [--json]   update [name]   remove <name>\n';
+  '  add <source> [--ref <tag>]   list [--conflicts]   lint <name|path> [--json]   update [name]   remove <name> [--force]\n';
 
 interface SubcommandCtx {
   positionals: string[];
@@ -94,12 +94,16 @@ const OVERLAY_SUBCOMMANDS: Record<string, (ctx: SubcommandCtx) => number> = {
     overlay.lint(positionals[0], deps, { json: flags.json === true }),
   update: ({ positionals, deps }) =>
     overlay.update(positionals[0] ?? null, deps),
-  remove: ({ positionals, deps, err }) => {
+  remove: ({ positionals, flags, deps, err }) => {
     if (positionals.length < 1) {
-      err.write('usage: canary overlay remove <name>\n');
+      err.write('usage: canary overlay remove <name> [--force]\n');
       return 1;
     }
-    return overlay.remove(positionals[0], deps);
+    // `--force` deletes a clone with local modifications (#675); without it,
+    // removal refuses rather than destroying uncommitted work.
+    return overlay.remove(positionals[0], deps, {
+      force: flags.force === true,
+    });
   },
 };
 

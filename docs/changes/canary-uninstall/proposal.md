@@ -82,6 +82,11 @@ special case, no flag.
 > (`npm/src/overlay-commands.ts:665`). Removing one overlay by name is a
 > deliberate act so that is defensible; a bulk sweep is not. The gap in
 > `overlay remove` is filed separately rather than changed here.
+>
+> **Closed by [#675](https://github.com/bop-clocktower/canary/issues/675).**
+> `overlay remove` now consults `workingTreeStatus` too (refuse on
+> `dirty`/`unreadable`, `--force` to override), and this scan delegates to that
+> helper rather than reimplementing the porcelain check.
 
 **D6 — Dry-run by default; `--apply` executes.** Matches the established
 destructive-operation shape (`ts/src/cli-commands.ts:559`,

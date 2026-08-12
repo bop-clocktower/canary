@@ -74,6 +74,20 @@ describe('route() overlay dispatch', () => {
     );
   });
 
+  it("threads 'remove --force' through to the destructive path (#675)", () => {
+    route(['overlay', 'add', source], deps());
+    const name = path.basename(source);
+    const dest = registry.clonePath(name, home);
+    fs.writeFileSync(path.join(dest, 'README.md'), 'local edit\n');
+
+    // Without --force the dirty clone is refused and survives.
+    assert.equal(route(['overlay', 'remove', name], deps()), 1);
+    assert.equal(fs.existsSync(dest), true);
+
+    assert.equal(route(['overlay', 'remove', name, '--force'], deps()), 0);
+    assert.equal(fs.existsSync(dest), false);
+  });
+
   it('errors on missing args and unknown subcommands', () => {
     assert.equal(route(['overlay'], deps()), 1);
     assert.equal(route(['overlay', 'bogus'], deps()), 1);

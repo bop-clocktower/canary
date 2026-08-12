@@ -75,6 +75,10 @@ describe('overlay update', () => {
       err.get(),
       new RegExp(clone.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
     );
+    // The remedy must stay reachable: plain `overlay remove` now refuses on a
+    // dirty clone too (#675), so pointing there without --force would be a
+    // dead end — exactly the trap the issue described.
+    assert.match(err.get(), /--force/);
     // unchanged: NEW.md not pulled
     assert.equal(fs.existsSync(path.join(clone, 'NEW.md')), false);
   });

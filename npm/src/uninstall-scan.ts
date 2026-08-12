@@ -9,6 +9,10 @@ import * as path from 'node:path';
 
 import * as registry from './overlays-registry.js';
 import {
+  workingTreeStatus,
+  type GitRunner as OverlayGitRunner,
+} from './overlay-commands.js';
+import {
   MARKETPLACE,
   MCP_KEY,
   PLUGIN_KEY,
@@ -107,8 +111,16 @@ function enumerateGlobal(
     });
   }
 
-  // Overlays: skip dirty, remove clean. `overlay update` already refuses on a
-  // dirty tree; a bulk sweep has even less business destroying local edits.
+  // Overlays: skip dirty, remove clean — via the same `workingTreeStatus` the
+  // `overlay update`, `overlay remove` (#675), and doctor paths consult, so the
+  // removal paths cannot drift apart about whether local edits are safe.
+  // A git runner that could not report (`status: null`) maps to a non-zero
+  // status, i.e. `unreadable`, which is treated as dirty: a clone whose state
+  // cannot be read is not one to sweep away.
+  const overlayGit: OverlayGitRunner = (args, opts) => {
+    const r = git(args, opts);
+    return { status: r.status ?? 1, stdout: r.stdout, stderr: r.stderr };
+  };
   let overlays: registry.OverlayEntry[] = [];
   try {
     overlays = registry.list(registry.read(home));
@@ -117,11 +129,8 @@ function enumerateGlobal(
   }
   for (const entry of overlays) {
     const exists = fs.existsSync(entry.path);
-    const status = exists
-      ? git(['status', '--porcelain'], { cwd: entry.path })
-      : null;
-    const dirty = status
-      ? status.status !== 0 || status.stdout.trim() !== ''
+    const dirty = exists
+      ? workingTreeStatus(entry.path, overlayGit) !== 'clean'
       : false;
     found.push({
       scope: 'global',
