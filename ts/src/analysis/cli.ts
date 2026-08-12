@@ -27,7 +27,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { Command, Option } from 'commander';
+import { Command, InvalidArgumentError, Option } from 'commander';
 
 import { jsonIndent2, normalizeUsageExit } from '../cli-common.js';
 import { gateOutcome } from '../core/gate-result.js';
@@ -115,6 +115,143 @@ function abstainOnEmptyHistory(
   return true;
 }
 
+// --- unit-bearing flags (#673) -----------------------------------------------
+//
+// #670 put the unit in the NAME one layer down -- `analysis/reports.ts` takes
+// `windowRuns`, `deltaPp`, `minRatePct` -- and stopped at the CLI boundary
+// because renaming a flag is user-visible. The flags carried the same silence
+// they always had: the report prints `window: 30 runs`, `20.0pp increase` and
+// `>= 10.0%`, so the unit only ever arrived AFTER the user had guessed. This
+// section closes that gap using the same convention: `<measure><Unit>` in
+// camelCase becomes `--<measure>-<unit>` on the command line.
+//
+// `--delta` is the sharpest case. It is a percentage-POINT threshold that looks
+// like a percentage, so `--delta 20` against a failure rate moving 5% -> 6% is
+// the difference between firing and staying silent, with nothing on screen to
+// say which reading applied.
+
+/** One decimal or integer, no sign: the only shape these thresholds accept. */
+const UNSIGNED_NUMBER = /^(\d+(\.\d+)?|\.\d+)$/;
+
+/**
+ * A whole count of runs, >= 1.
+ *
+ * The bare `Number.parseInt` this replaces mapped `--window seven` to `NaN`,
+ * which the query layer happily compared against and matched nothing -- a
+ * silent abstention wearing a clean fleet's clothes. A value that cannot mean
+ * what the flag says is a usage error instead.
+ */
+function parseRuns(flag: string): (raw: string) => number {
+  return (raw) => {
+    if (!/^\d+$/.test(raw.trim()) || Number.parseInt(raw, 10) < 1) {
+      throw new InvalidArgumentError(
+        `${flag} takes a whole number of RUNS, at least 1 (e.g. 30); ` +
+          `got "${raw}".`,
+      );
+    }
+    return Number.parseInt(raw, 10);
+  };
+}
+
+/**
+ * A 0-100 value on a percentage scale (`percent` for a rate, `percentage
+ * points` for a delta). Rejecting >100 is what catches the fraction habit from
+ * the other direction; `0.1` is still legal (a tenth of a percent), so the help
+ * text carries that half of the warning.
+ */
+function parsePercentScale(
+  flag: string,
+  unit: string,
+): (raw: string) => number {
+  return (raw) => {
+    const n = Number.parseFloat(raw);
+    if (!UNSIGNED_NUMBER.test(raw.trim()) || !Number.isFinite(n) || n > 100) {
+      throw new InvalidArgumentError(
+        `${flag} takes ${unit} between 0 and 100 (e.g. 10 means ten ${unit}, ` +
+          `not 0.1); got "${raw}".`,
+      );
+    }
+    return n;
+  };
+}
+
+/**
+ * A pre-#673 flag spelling kept alive as a deprecated alias, paired with the
+ * unit-bearing name that replaced it.
+ *
+ * Keeping the aliases is deliberate: every scripted `canary analyze` invocation
+ * in a CI file predates the rename, and a flag that vanishes turns a rename
+ * into an outage. The alias warns on stderr (never stdout -- `--json` stays
+ * byte-clean, the same split `--db-url` already uses) so the migration is
+ * visible without breaking anything.
+ */
+interface UnitFlagAlias {
+  /** Commander attribute for the canonical option (`--window-runs`). */
+  canonical: string;
+  /** Commander attribute for the deprecated option (`--window`). */
+  legacy: string;
+  canonicalFlag: string;
+  legacyFlag: string;
+  /** The unit the value has always carried, stated plainly. */
+  unit: string;
+}
+
+const WINDOW_ALIAS: UnitFlagAlias = {
+  canonical: 'windowRuns',
+  legacy: 'window',
+  canonicalFlag: '--window-runs',
+  legacyFlag: '--window',
+  unit: 'a count of runs, not days',
+};
+
+const DELTA_ALIAS: UnitFlagAlias = {
+  canonical: 'deltaPp',
+  legacy: 'delta',
+  canonicalFlag: '--delta-pp',
+  legacyFlag: '--delta',
+  unit: 'percentage points, not percent',
+};
+
+const MIN_RATE_ALIAS: UnitFlagAlias = {
+  canonical: 'minRatePct',
+  legacy: 'minRate',
+  canonicalFlag: '--min-rate-pct',
+  legacyFlag: '--min-rate',
+  unit: 'a percentage, 0-100',
+};
+
+/**
+ * Fold any deprecated spellings the user typed onto their canonical keys.
+ *
+ * The canonical flag wins when BOTH are given -- the alias is the legacy path,
+ * so an explicit new-style flag is the more deliberate statement of intent.
+ * `getOptionValueSource` is what separates "the user typed it" from "commander
+ * filled in the default"; comparing values would let a canonical default that
+ * happens to equal the alias silently discard the alias.
+ */
+function resolveUnitFlags<T extends object>(
+  opts: T,
+  cmd: Command,
+  deps: AnalyzeDeps,
+  aliases: UnitFlagAlias[],
+): T {
+  // Commander hands option bags back as plain objects keyed by camelCase flag
+  // name; the per-command interfaces describe them but carry no index
+  // signature, so the alias keys are reached through one local widening.
+  const merged = { ...opts } as unknown as Record<string, unknown>;
+  for (const alias of aliases) {
+    if (merged[alias.legacy] === undefined) continue;
+    deps.err(
+      `note: ${alias.legacyFlag} is deprecated; use ${alias.canonicalFlag} ` +
+        `(the value is ${alias.unit}).`,
+    );
+    if (cmd.getOptionValueSource(alias.canonical) !== 'cli') {
+      merged[alias.canonical] = merged[alias.legacy];
+    }
+  }
+  return merged as T;
+}
+
 function writeArtifacts(
   artifacts: Record<string, string>,
   output: string,
@@ -128,9 +265,13 @@ function writeArtifacts(
 // --- flaky -------------------------------------------------------------------
 
 interface FlakyOptions {
-  window: number;
+  windowRuns: number;
   suite?: string;
-  minRate: number;
+  minRatePct: number;
+  /** Deprecated alias for {@link FlakyOptions.windowRuns}. */
+  window?: number;
+  /** Deprecated alias for {@link FlakyOptions.minRatePct}. */
+  minRate?: number;
   dbUrl?: string;
   json?: boolean;
 }
@@ -140,11 +281,15 @@ function flakyCmd(opts: FlakyOptions, deps: AnalyzeDeps): void {
   if (abstainOnEmptyHistory(store, deps, opts.json === true, 'flake rate')) {
     return;
   }
-  const rows = store.queryFlaky(opts.window, opts.suite ?? null, opts.minRate);
+  const rows = store.queryFlaky(
+    opts.windowRuns,
+    opts.suite ?? null,
+    opts.minRatePct,
+  );
   if (opts.json) {
     deps.out(jsonIndent2(rows));
   } else {
-    deps.out(buildFlakyReport(rows, opts.window, opts.minRate));
+    deps.out(buildFlakyReport(rows, opts.windowRuns, opts.minRatePct));
   }
 }
 
@@ -152,7 +297,9 @@ function flakyCmd(opts: FlakyOptions, deps: AnalyzeDeps): void {
 
 interface SpikesOptions {
   since?: string;
-  delta: number;
+  deltaPp: number;
+  /** Deprecated alias for {@link SpikesOptions.deltaPp}. */
+  delta?: number;
   dbUrl?: string;
   json?: boolean;
 }
@@ -186,7 +333,7 @@ function spikesCmd(opts: SpikesOptions, deps: AnalyzeDeps): void {
   if (opts.json) {
     deps.out(jsonIndent2(rows));
   } else {
-    deps.out(buildSpikesReport(rows, opts.delta));
+    deps.out(buildSpikesReport(rows, opts.deltaPp));
   }
 }
 
@@ -303,8 +450,12 @@ function regressionCandidatesCmd(
 // --- digest ------------------------------------------------------------------
 
 interface DigestOptions {
-  window: number;
-  delta: number;
+  windowRuns: number;
+  deltaPp: number;
+  /** Deprecated alias for {@link DigestOptions.windowRuns}. */
+  window?: number;
+  /** Deprecated alias for {@link DigestOptions.deltaPp}. */
+  delta?: number;
   weeks: number;
   minSuites: number;
   suite?: string;
@@ -321,8 +472,8 @@ function digestCmd(opts: DigestOptions, deps: AnalyzeDeps): void {
   }
   const engine = new AnalysisEngine(store);
   const result = engine.run({
-    window: opts.window,
-    delta: opts.delta,
+    windowRuns: opts.windowRuns,
+    deltaPp: opts.deltaPp,
     weeks: opts.weeks,
     minSuites: opts.minSuites,
     suite: opts.suite ?? null,
@@ -361,6 +512,20 @@ function printSlack(
 
 // --- assembly ----------------------------------------------------------------
 
+// Option help shared across subcommands. Every analyze option carries a
+// description: a blank one is how the silent unit survived this long, since the
+// value's meaning lived only in the report it eventually printed.
+const DB_URL_ENV = 'CANARY_HISTORY_DB_URL';
+const DB_URL_DESC =
+  'History store URL (accepted, but analyze reads local NDJSON).';
+const JSON_DESC = 'Emit the rows as JSON instead of a Markdown report.';
+const WINDOW_RUNS_DESC = 'Rolling window measured in RUNS, not days.';
+const MIN_RATE_PCT_DESC =
+  'Minimum flake rate to report, in PERCENT 0-100 (10 means 10%, not 0.1).';
+const DELTA_PP_DESC =
+  'Spike threshold as a PERCENTAGE-POINT rise in failure rate ' +
+  '(20 means 5% -> 25%, not 5% -> 6%).';
+
 /** Build a fresh `analyze` command wired to `depsInit`. */
 export function createAnalyzeCommand(
   depsInit: Partial<AnalyzeDeps> = {},
@@ -376,20 +541,35 @@ export function createAnalyzeCommand(
     .command('flaky')
     .description('Fleet-wide flake leaderboard.')
     .addOption(
-      new Option('-w, --window <n>')
+      new Option('-w, --window-runs <runs>', WINDOW_RUNS_DESC)
         .default(30)
-        .argParser((v) => Number.parseInt(v, 10)),
+        .argParser(parseRuns('--window-runs')),
     )
-    .option('-s, --suite <suite>')
     .addOption(
-      new Option('--min-rate <pct>')
-        .default(10.0)
-        .argParser((v) => Number.parseFloat(v)),
+      new Option(
+        '--window <runs>',
+        'Deprecated alias for --window-runs.',
+      ).argParser(parseRuns('--window')),
     )
-    .addOption(new Option('--db-url <url>').env('CANARY_HISTORY_DB_URL'))
-    .option('--json')
-    .action((opts: FlakyOptions) => {
-      flakyCmd(opts, deps);
+    .option('-s, --suite <suite>', 'Filter to a specific suite.')
+    .addOption(
+      new Option('--min-rate-pct <percent>', MIN_RATE_PCT_DESC)
+        .default(10.0)
+        .argParser(parsePercentScale('--min-rate-pct', 'percent')),
+    )
+    .addOption(
+      new Option(
+        '--min-rate <percent>',
+        'Deprecated alias for --min-rate-pct.',
+      ).argParser(parsePercentScale('--min-rate', 'percent')),
+    )
+    .addOption(new Option('--db-url <url>', DB_URL_DESC).env(DB_URL_ENV))
+    .option('--json', JSON_DESC)
+    .action((opts: FlakyOptions, cmd: Command) => {
+      flakyCmd(
+        resolveUnitFlags(opts, cmd, deps, [WINDOW_ALIAS, MIN_RATE_ALIAS]),
+        deps,
+      );
     });
 
   program
@@ -397,26 +577,32 @@ export function createAnalyzeCommand(
     .description('Recent failure spikes across suites.')
     .option('--since <date>', 'ISO date filter, e.g. 2026-06-01')
     .addOption(
-      new Option('--delta <pp>')
+      new Option('--delta-pp <points>', DELTA_PP_DESC)
         .default(20.0)
-        .argParser((v) => Number.parseFloat(v)),
+        .argParser(parsePercentScale('--delta-pp', 'percentage points')),
     )
-    .addOption(new Option('--db-url <url>').env('CANARY_HISTORY_DB_URL'))
-    .option('--json')
-    .action((opts: SpikesOptions) => {
-      spikesCmd(opts, deps);
+    .addOption(
+      new Option(
+        '--delta <points>',
+        'Deprecated alias for --delta-pp.',
+      ).argParser(parsePercentScale('--delta', 'percentage points')),
+    )
+    .addOption(new Option('--db-url <url>', DB_URL_DESC).env(DB_URL_ENV))
+    .option('--json', JSON_DESC)
+    .action((opts: SpikesOptions, cmd: Command) => {
+      spikesCmd(resolveUnitFlags(opts, cmd, deps, [DELTA_ALIAS]), deps);
     });
 
   program
     .command('area-health')
     .description('Area degradation trends over time.')
     .addOption(
-      new Option('--weeks <n>')
+      new Option('--weeks <weeks>', 'Trend window, in whole weeks.')
         .default(4)
         .argParser((v) => Number.parseInt(v, 10)),
     )
-    .addOption(new Option('--db-url <url>').env('CANARY_HISTORY_DB_URL'))
-    .option('--json')
+    .addOption(new Option('--db-url <url>', DB_URL_DESC).env(DB_URL_ENV))
+    .option('--json', JSON_DESC)
     .action((opts: AreaHealthOptions) => {
       areaHealthCmd(opts, deps);
     });
@@ -424,14 +610,17 @@ export function createAnalyzeCommand(
   program
     .command('common-failures')
     .description('Cross-suite failure fingerprinting.')
-    .option('--since <date>')
+    .option('--since <date>', 'ISO date filter, e.g. 2026-06-01')
     .addOption(
-      new Option('--min-suites <n>')
+      new Option(
+        '--min-suites <suites>',
+        'Report a failure only once it appears in this many SUITES.',
+      )
         .default(2)
         .argParser((v) => Number.parseInt(v, 10)),
     )
-    .addOption(new Option('--db-url <url>').env('CANARY_HISTORY_DB_URL'))
-    .option('--json')
+    .addOption(new Option('--db-url <url>', DB_URL_DESC).env(DB_URL_ENV))
+    .option('--json', JSON_DESC)
     .action((opts: CommonFailuresOptions) => {
       commonFailuresCmd(opts, deps);
     });
@@ -440,17 +629,23 @@ export function createAnalyzeCommand(
     .command('regression-candidates')
     .description('Tests newly and consistently broken after a green streak.')
     .addOption(
-      new Option('--min-green <n>')
+      new Option(
+        '--min-green <runs>',
+        'Length of the prior green streak, in RUNS.',
+      )
         .default(5)
         .argParser((v) => Number.parseInt(v, 10)),
     )
     .addOption(
-      new Option('--recent-failures <n>')
+      new Option(
+        '--recent-failures <runs>',
+        'Consecutive failing RUNS required after the streak.',
+      )
         .default(3)
         .argParser((v) => Number.parseInt(v, 10)),
     )
-    .addOption(new Option('--db-url <url>').env('CANARY_HISTORY_DB_URL'))
-    .option('--json')
+    .addOption(new Option('--db-url <url>', DB_URL_DESC).env(DB_URL_ENV))
+    .option('--json', JSON_DESC)
     .action((opts: RegressionOptions) => {
       regressionCandidatesCmd(opts, deps);
     });
@@ -459,32 +654,55 @@ export function createAnalyzeCommand(
     .command('digest')
     .description('Combined digest of all five report types.')
     .addOption(
-      new Option('--window <n>')
+      new Option('--window-runs <runs>', WINDOW_RUNS_DESC)
         .default(30)
-        .argParser((v) => Number.parseInt(v, 10)),
+        .argParser(parseRuns('--window-runs')),
     )
     .addOption(
-      new Option('--delta <pp>')
+      new Option(
+        '--window <runs>',
+        'Deprecated alias for --window-runs.',
+      ).argParser(parseRuns('--window')),
+    )
+    .addOption(
+      new Option('--delta-pp <points>', DELTA_PP_DESC)
         .default(20.0)
-        .argParser((v) => Number.parseFloat(v)),
+        .argParser(parsePercentScale('--delta-pp', 'percentage points')),
     )
     .addOption(
-      new Option('--weeks <n>')
+      new Option(
+        '--delta <points>',
+        'Deprecated alias for --delta-pp.',
+      ).argParser(parsePercentScale('--delta', 'percentage points')),
+    )
+    .addOption(
+      new Option('--weeks <weeks>', 'Area-health trend window, in whole weeks.')
         .default(4)
         .argParser((v) => Number.parseInt(v, 10)),
     )
     .addOption(
-      new Option('--min-suites <n>')
+      new Option(
+        '--min-suites <suites>',
+        'Report a failure only once it appears in this many SUITES.',
+      )
         .default(2)
         .argParser((v) => Number.parseInt(v, 10)),
     )
-    .option('--suite <suite>')
-    .addOption(new Option('--output <dir>').default('test-results/analysis'))
-    .option('--json')
-    .option('--slack')
-    .addOption(new Option('--db-url <url>').env('CANARY_HISTORY_DB_URL'))
-    .action((opts: DigestOptions) => {
-      digestCmd(opts, deps);
+    .option('--suite <suite>', 'Filter to a specific suite.')
+    .addOption(
+      new Option(
+        '--output <dir>',
+        'Directory the Markdown artifacts are ' + 'written to.',
+      ).default('test-results/analysis'),
+    )
+    .option('--json', 'Emit per-section counts as JSON instead of the digest.')
+    .option('--slack', 'Emit a short Slack-formatted summary.')
+    .addOption(new Option('--db-url <url>', DB_URL_DESC).env(DB_URL_ENV))
+    .action((opts: DigestOptions, cmd: Command) => {
+      digestCmd(
+        resolveUnitFlags(opts, cmd, deps, [WINDOW_ALIAS, DELTA_ALIAS]),
+        deps,
+      );
     });
 
   for (const sub of program.commands) {
