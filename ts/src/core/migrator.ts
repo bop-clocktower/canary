@@ -666,17 +666,28 @@ export class FreshnessReport {
    * nagging about something canary has no claim over.
    */
   workflows: WorkflowInstallResult[];
+  /**
+   * Every shape the gate actually resolved -- the set `migrate` deploys for
+   * (#504 part 1). The scalar `shape` above stays, because the `--check --json`
+   * payload is documented and consumers read it; `shapes` is additive.
+   *
+   * A mixed monorepo collapses `shape` to `unknown` while `shapes` still names
+   * both, so the two disagree by design rather than by accident.
+   */
+  shapes: string[];
 
   constructor(
     shape: string,
     overlay_path: string | null = null,
     results: SkillFreshnessResult[] = [],
     workflows: WorkflowInstallResult[] = [],
+    shapes: string[] = [],
   ) {
     this.shape = shape;
     this.overlay_path = overlay_path;
     this.results = results;
     this.workflows = workflows;
+    this.shapes = shapes;
   }
 
   get stale(): SkillFreshnessResult[] {
@@ -738,6 +749,7 @@ export class FreshnessReport {
   to_dict(): Record<string, unknown> {
     return {
       shape: this.shape,
+      shapes: this.shapes,
       overlay_path: this.overlay_path,
       in_sync: this.in_sync,
       has_drift: this.has_drift,
@@ -762,21 +774,30 @@ export class FreshnessReport {
       `**Shape:** ${this.shape}`,
       '',
     ];
+    // A workspace repo resolves several shapes at once; naming only the scalar
+    // would tell a reader `unknown` while the gate checked two shapes (#504).
+    if (this.shapes.length > 1) {
+      lines.push(
+        `**Shapes checked:** ${this.shapes.map((s) => `\`${s}\``).join(', ')}`,
+        '',
+      );
+    }
     if (this.results.length === 0) {
       lines.push("_No overlay skills match this project's shape._", '');
       lines.push(
         `${WARN} **Abstained** ${EMDASH} the gate verified zero skills, so this is not a pass.`,
         '',
       );
-      if (this.shape === 'unknown') {
+      if (this.shapes.length === 0) {
         lines.push(
           'The shape could not be detected. Set `canary_shape` in',
           '`.canary/company.json` or pass `--framework <name>`.',
           '',
         );
       } else {
+        const covered = this.shapes.map((s) => `\`${s}\``).join(', ');
         lines.push(
-          `The overlay ships no skills with \`deploy_to\` covering \`${this.shape}\`.`,
+          `The overlay ships no skills with \`deploy_to\` covering ${covered}.`,
           "Check the overlay's `deploy_to` lists or the resolved `canary_shape`.",
           '',
         );
@@ -1333,6 +1354,10 @@ export class HarnessMigrator {
         ? shapeForFrameworkOverride(framework as string, projectRoot)
         : null;
     const shape = overrideShape ?? ctx.detected_shape;
+    // The set that actually drives deployment. Re-derived from the *effective*
+    // scalar rather than reusing `ctx.shapes`, so a `--framework` override
+    // contributes its resolved shape to the union too (#504 parts 1-2).
+    const deployShapes = unionShapes(shape, ctx.workspace);
     const followups: string[] = [];
 
     if (effectiveFramework === null) {
@@ -1348,7 +1373,7 @@ export class HarnessMigrator {
       // nor, for the same reason, the workflow install (#459). The guardian
       // workflow is exactly what an unrecognised repo most needs.
       const deployed = this.deploySkills(
-        shape,
+        deployShapes,
         overlayPath,
         projectRoot,
         dryRun,
@@ -1362,10 +1387,10 @@ export class HarnessMigrator {
         manual_followups: followups,
         config_warnings: ctx.config_warnings,
         workspace: ctx.workspace,
-        shapes: ctx.shapes,
+        shapes: deployShapes,
         deployed_skills: deployed,
         installed_workflows: this.installWorkflows(
-          shape,
+          deployShapes,
           overlayPath,
           projectRoot,
           dryRun,
@@ -1396,11 +1421,16 @@ export class HarnessMigrator {
     // must not be offered a second one at the root.
     const existingSuites = findWorkspaceSuites(projectRoot, effectiveFramework);
     const scaffolder = new Scaffolder();
-    const deployed = this.deploySkills(shape, overlayPath, projectRoot, dryRun);
+    const deployed = this.deploySkills(
+      deployShapes,
+      overlayPath,
+      projectRoot,
+      dryRun,
+    );
     // Post-copy install phase: the template bytes already landed under
     // .canary/skills/ with the skill; this puts them where Actions looks.
     const installedWorkflows = this.installWorkflows(
-      shape,
+      deployShapes,
       overlayPath,
       projectRoot,
       dryRun,
@@ -1440,7 +1470,7 @@ export class HarnessMigrator {
         installed_workflows: installedWorkflows,
         config_warnings: ctx.config_warnings,
         workspace: ctx.workspace,
-        shapes: ctx.shapes,
+        shapes: deployShapes,
       });
     }
 
@@ -1468,7 +1498,7 @@ export class HarnessMigrator {
       installed_workflows: installedWorkflows,
       config_warnings: ctx.config_warnings,
       workspace: ctx.workspace,
-      shapes: ctx.shapes,
+      shapes: deployShapes,
     });
   }
 
@@ -1476,11 +1506,20 @@ export class HarnessMigrator {
 
   /**
    * Return `[[SkillInfo, skillDir], ...]` for overlay skills whose `deploy_to`
-   * matches *shape* (or the `all` sentinel). Sources: *overlayPath* first, then
-   * `~/.canary/skills/`. The first definition of a name wins.
+   * matches **any** shape in *shapes* (or the `all` sentinel). Sources:
+   * *overlayPath* first, then `~/.canary/skills/`. The first definition of a
+   * name wins.
+   *
+   * *shapes* is a set, not a scalar, because a monorepo genuinely has several
+   * shapes at once (#504 part 1). One pass over the overlay collects the union
+   * deduplicated by name, so a skill matching two shapes is collected once and
+   * the deploy manifest is read and written exactly once -- which a per-shape
+   * loop would not give.
+   *
+   * An empty *shapes* is the old `unknown`: only `deploy_to: [all]` matches.
    */
   private collectOverlaySkills(
-    shape: string,
+    shapes: string[],
     overlayPath: string | null,
   ): Array<[SkillInfo, string]> {
     const candidateRoots: string[] = [];
@@ -1521,7 +1560,7 @@ export class HarnessMigrator {
         if (info === null || seenNames.has(info.name)) continue;
         if (!pyTruthy(info.deploy_to)) continue;
         if (
-          !info.deploy_to.includes(shape) &&
+          !shapes.some((s) => info.deploy_to.includes(s)) &&
           !info.deploy_to.includes('all')
         ) {
           continue;
@@ -1535,17 +1574,17 @@ export class HarnessMigrator {
   }
 
   /**
-   * Copy skills from the overlay's `.canary/skills/` that match *shape*.
+   * Copy skills from the overlay's `.canary/skills/` matching any of *shapes*.
    * Deployment is strictly one-way -- the overlay owns deployed files (#334).
    */
   deploySkills(
-    shape: string,
+    shapes: string[],
     overlayPath: string | null,
     targetRoot: string,
     dryRun: boolean,
   ): SkillDeployResult[] {
     const results: SkillDeployResult[] = [];
-    const skillsToDeploy = this.collectOverlaySkills(shape, overlayPath);
+    const skillsToDeploy = this.collectOverlaySkills(shapes, overlayPath);
 
     const targetSkillsDir = join(targetRoot, '.canary', 'skills');
     const doc = readManifestDoc(targetSkillsDir);
@@ -1659,19 +1698,23 @@ export class HarnessMigrator {
    * from the OVERLAY copy -- so withholding is also the only way that edit can
    * mean anything.
    *
-   * Shape selection reuses the same resolved `canary_shape` that drives
-   * `deploy_to` matching: skills are gated by {@link collectOverlaySkills}, and
-   * an entry may additionally carry a `<shape>:` prefix to pick a variant.
+   * Shape selection reuses the same resolved shape set that drives `deploy_to`
+   * matching: skills are gated by {@link collectOverlaySkills}, and an entry may
+   * additionally carry a `<shape>:` prefix to pick a variant. A prefixed entry
+   * installs when its shape is anywhere in *shapes* (#504 part 1) -- a monorepo
+   * carrying both an e2e and a unit package wants both variants, and matching
+   * only the scalar would silently install neither once the scalar collapses to
+   * `unknown`.
    */
   installWorkflows(
-    shape: string,
+    shapes: string[],
     overlayPath: string | null,
     targetRoot: string,
     dryRun: boolean,
     force = false,
   ): WorkflowInstallResult[] {
     const results: WorkflowInstallResult[] = [];
-    const skills = this.collectOverlaySkills(shape, overlayPath);
+    const skills = this.collectOverlaySkills(shapes, overlayPath);
     const targetSkillsDir = join(targetRoot, '.canary', 'skills');
     const doc = readManifestDoc(targetSkillsDir);
     const workflowsDir = join(targetRoot, '.github', 'workflows');
@@ -1687,7 +1730,11 @@ export class HarnessMigrator {
         this.skillWasSkipped(skillDir, targetSkillsDir, doc.skills);
       for (const entry of entries) {
         const [wantShape, rel] = parseWorkflowEntry(entry);
-        if (wantShape !== null && wantShape !== shape && wantShape !== 'all') {
+        if (
+          wantShape !== null &&
+          !shapes.includes(wantShape) &&
+          wantShape !== 'all'
+        ) {
           continue;
         }
 
@@ -1849,7 +1896,12 @@ export class HarnessMigrator {
     }
 
     const shape = ctx.detected_shape;
-    const skills = this.collectOverlaySkills(shape, overlayPath);
+    // The gate must examine exactly what `migrate` deploys. Resolving only the
+    // scalar here would let `--check` report "in sync" about skills it never
+    // looked at in a monorepo -- a deliberate false green in a drift gate
+    // (#504 part 1).
+    const shapes = ctx.shapes;
+    const skills = this.collectOverlaySkills(shapes, overlayPath);
     const targetSkillsDir = join(projectRoot, '.canary', 'skills');
     const manifest = readManifestDoc(targetSkillsDir).skills;
 
@@ -1902,7 +1954,8 @@ export class HarnessMigrator {
       results,
       // dryRun = true: `--check` reports what an install WOULD do and never
       // writes. Informational only -- see FreshnessReport.workflows.
-      this.installWorkflows(shape, overlayPath, projectRoot, true, false),
+      this.installWorkflows(shapes, overlayPath, projectRoot, true, false),
+      shapes,
     );
   }
 
