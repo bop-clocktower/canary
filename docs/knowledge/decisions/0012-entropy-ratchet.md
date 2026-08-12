@@ -12,8 +12,10 @@ source: adr
 
 **Status:** accepted **Date:** 2026-08-10 **Deciders:** Bri Stevenski
 (maintainer) **Related:** #544; #638 (the same entry-point model, at
-`performance.entryPoints`); ADR 0009 (exit 3 = abstained); ADR 0011 (required
-checks); #508 (no silent abstention); #485 (the dogfood ratchet this copies)
+`performance.entryPoints`); #677 (the exclude list, which amended the
+"Alternatives Considered" entry below); ADR 0009 (exit 3 = abstained); ADR 0011
+(required checks); #508 (no silent abstention); #485 (the dogfood ratchet this
+copies)
 
 ## Context
 
@@ -68,12 +70,12 @@ say which command produced it.
 
 ### Triage of the 346 (corrected entry points, before this change's edits)
 
-| category                                   | dead files | verdict                                                                                                                                                                                                                                             |
-| ------------------------------------------ | ---------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm/scripts/__tests__/*.test.js`          |         29 | False positive. The analyzer's default exclusions cover `**/*.test.ts` and `**/*.spec.ts`, not `.test.js`. These run under `node:test` in the `npm package` job.                                                                                    |
-| `ts/test/**` testkits and fixture projects |         12 | Intentional. `scanner-project/` and `sample-project/` are synthetic inputs that exist to be scanned; the testkits are imported only by `*.test.ts`, which the analyzer excludes from its own snapshot, so their usage is invisible by construction. |
-| `spike/schemathesis/**`                    |          2 | Genuinely unreferenced, and deliberately so — it is a recorded spike. Left in place; deleting exploration history is not a cleanup.                                                                                                                 |
-| `ts/src` production-unreferenced           |          5 | Real finding, deliberately kept — see below.                                                                                                                                                                                                        |
+| category                                   | dead files | verdict                                                                                                                                                                                                                                                  |
+| ------------------------------------------ | ---------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm/scripts/__tests__/*.test.js`          |         29 | False positive. The analyzer's default exclusions cover `**/*.test.ts` and `**/*.spec.ts`, not `.test.js`. These run under `node:test` in the `npm package` job. **Excluded outright as of #677** — see Decision item 6; they no longer reach the count. |
+| `ts/test/**` testkits and fixture projects |         12 | Intentional. `scanner-project/` and `sample-project/` are synthetic inputs that exist to be scanned; the testkits are imported only by `*.test.ts`, which the analyzer excludes from its own snapshot, so their usage is invisible by construction.      |
+| `spike/schemathesis/**`                    |          2 | Genuinely unreferenced, and deliberately so — it is a recorded spike. Left in place; deleting exploration history is not a cleanup.                                                                                                                      |
+| `ts/src` production-unreferenced           |          5 | Real finding, deliberately kept — see below.                                                                                                                                                                                                             |
 
 Dead exports (258 at that point) are dominated by the same structural cause:
 `ts/src/core` (52), `ts/src/guardian` (51) and `agents/skills` (58) are heavily
@@ -131,10 +133,15 @@ zero.**
    rather than being one of the silently-stripped paths that caused #544 in the
    first place.
 
-3. `.harness/entropy-baseline.json` carries `maxFindings`, currently **340**
-   against a measured 330 — ten findings of headroom, roughly 3%. Enough that
-   adding a module with a couple of test-only exports does not turn `main` red
-   in the same commit, tight enough that a real regression cannot hide in it.
+3. `.harness/entropy-baseline.json` carries `maxFindings`, **308** as of #677.
+   It was 340 against a measured 330 when this ADR was written; by #677 the
+   measured count had drifted up to 340 — the whole ten findings of headroom
+   spent — and 32 of those were the `.test.js` artifacts item 6 below now
+   excludes. Lowering it to the measured 308 restores the number to something
+   the repo has actually triaged. Note that this leaves **zero** headroom, which
+   is the state `main` was already in; it is the ratchet doing its job, not a
+   tightening, and the next genuine addition of test-only exports will need
+   either an entry point or a re-triage rather than a raised ceiling.
 
 4. `scripts/entropy-ratchet.mjs` compares the count from
    `harness cleanup --findings-json` against that baseline and fails above it.
@@ -145,6 +152,17 @@ zero.**
    reading the absence as zero findings. This is the property that matters most:
    without it, a future startup failure would produce a green ratchet, which is
    the #544 bug rebuilt one layer higher.
+
+6. **`entropy.excludePatterns` is declared in-repo, not inherited (#677).** The
+   CLI's schema default is `[...skipDirGlobs(), '**/*.test.ts']` — a
+   TypeScript-shaped list applied to a repo whose npm package is tested with
+   `node --test` over `.js` files. All 32 of them were scanned as ordinary
+   source and every one came back unreferenced by construction, a pure analyzer
+   artifact absorbed into the baseline. Declaring the key **replaces** that
+   default rather than extending it (zod `.default()`, not a merge), so the
+   build-output globs are carried explicitly next to the test globs. That is the
+   hazard the "Alternatives Considered" section below originally rejected the
+   key over; it is handled by test, not by care.
 
 Strict-at-zero is explicitly rejected for now, matching the #485 dogfood
 convention — advisory, then triage, then ratchet.
@@ -162,14 +180,19 @@ convention — advisory, then triage, then ratchet.
   denominator to `166 file(s) scanned, 51 rule(s) applied`), so a CLI bump can
   move this number without any repo change. `harnessCli` is recorded in the
   baseline file so a jump has somewhere to be checked against.
-- Two structural test files guard the config itself:
+- Three structural test files guard the config itself:
   `ts/test/entropy-entrypoints.test.ts` fails if an entry point is untracked,
   globbed, or inside a skipped directory — the bug above, made unrepeatable —
-  and `ts/test/entropy-ratchet.test.ts` pins the exit-code contract, including
-  the abstention path. The first file applies its invariants to **both** keys
-  and additionally asserts the two arrays are identical: JSON cannot share an
-  array, so the duplication is real and the only thing stopping the two checks
-  from silently walking different codebases is that assertion.
+  `ts/test/entropy-exclude-patterns.test.ts` fails if the exclude list stops
+  covering a test-file shape that exists in `git ls-files` or drops a
+  build-output glob, and `ts/test/entropy-ratchet.test.ts` pins the exit-code
+  contract, including the abstention path. The first file applies its invariants
+  to **both** entry-point keys and additionally asserts the two arrays are
+  identical: JSON cannot share an array, so the duplication is real and the only
+  thing stopping the two checks from silently walking different codebases is
+  that assertion. The second derives its expectations from the repo's own file
+  list rather than a fixed set, so the day someone adds a `.spec.js` the gate
+  notices instead of passing vacuously.
 - The perf check is `warn`-only under the default `--fail-on error`, so its 238
   findings do not gate a merge today. That is deliberate and matches the #485
   convention this ADR already follows — advisory, then triage, then ratchet.
@@ -193,6 +216,18 @@ measured: adding a single `spike/**` pattern silently un-excluded `**/*.test.ts`
 and drove `ts/test` dead files from 12 to 120. A baseline that carries the
 residual is both smaller and more honest than a default set this repo would have
 to mirror and keep in sync across CLI majors.
+
+> **Amended by #677 — partially.** The reasoning above still holds for the
+> _triage_ categories (the fixture projects, the spike, the test-only `ts/src`
+> modules): those stay in the baseline. It does **not** hold for `.test.js`,
+> which was never a triage call at all — it is the analyzer applying a
+> TypeScript-shaped default (`**/*.test.ts`, `**/*.spec.ts`) to a package whose
+> tests are `.js`. The key is now declared, and the wholesale-replacement hazard
+> is handled the only way it can be: the build-output globs are carried
+> explicitly alongside the test globs, and
+> `ts/test/entropy-exclude-patterns.test.ts` fails if either half goes missing.
+> Measured 340 → 308 on CLI 11.1.1, and the rest of the report is byte-identical
+> — the change is purely subtractive.
 
 **Keep it advisory and annotate harder.** The step already annotates on failure
 and it changed nothing — a warning that nobody has to act on is a warning nobody
