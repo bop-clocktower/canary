@@ -152,9 +152,10 @@ only `--strict` turns warnings into a non-zero exit.
 
 ## Producer feedback (why validate)
 
-The consumer (`ts/src/guardian/coverage.ts`) is deliberately **lenient**: a file
-entry that isn't an object, a non-integer hit value, or a non-integer line is
-silently skipped so one malformed row never sinks a whole report. The cost is
+The consumer (`ts/src/guardian/diff-coverage/formats/coverage-json.ts`,
+re-exported from `ts/src/guardian/coverage.ts`) is deliberately **lenient**: a
+file entry that isn't an object, a non-integer hit value, or a non-integer line
+is silently skipped so one malformed row never sinks a whole report. The cost is
 silence — a producer emitting a slightly-wrong shape sees its coverage quietly
 degrade to a lower fidelity tier with no error.
 
