@@ -319,6 +319,27 @@ function resolveTemplatePath(skillDir: string, rel: string): string | null {
   return full;
 }
 
+/**
+ * Is the deployed copy of a skill the consumer's rather than the overlay's?
+ *
+ * True when it differs from the overlay AND from the hash recorded at deploy
+ * time -- or carries no recorded provenance at all, since unknown provenance is
+ * not permission to overwrite.
+ *
+ * This is the single definition of `local_edit`. The skill-deploy phase refuses
+ * to overwrite on it (#334) and the workflow-install phase withholds on it
+ * (#667); sharing one predicate is what keeps the two phases from reporting
+ * contradictory things about the same skill in the same run.
+ */
+function isLocallyEdited(
+  overlayHash: string,
+  targetHash: string,
+  recordedHash: string | undefined,
+): boolean {
+  if (targetHash === overlayHash) return false;
+  return recordedHash === undefined || targetHash !== recordedHash;
+}
+
 // ---------------------------------------------------------------------------
 // Constants / probes
 // ---------------------------------------------------------------------------
@@ -577,8 +598,10 @@ export class SkillDeployResult {
  *   - `dry_run`   -- what an `--apply` run would have done
  *   - `missing`   -- the overlay declares a template it does not ship
  *   - `invalid`   -- the declared path escapes the skill directory (refused)
+ *   - `withheld`  -- the declaring skill was skipped as locally edited, so its
+ *                    templates were not installed either (#667)
  *
- * `outdated` and `conflict` are REPORTS. Neither ever writes.
+ * `outdated`, `conflict`, and `withheld` are REPORTS. None ever writes.
  */
 export class WorkflowInstallResult {
   /** File name under `.github/workflows/`. */
@@ -840,6 +863,17 @@ function workflowMarkdown(
       `${WARN} Your CI is yours: canary never overwrites a workflow that ` +
         'differs from the template. Re-run with `--force` to take the ' +
         "overlay's version.",
+      '',
+    );
+  }
+  // #667: a withheld install is the one line that says why a template the
+  // overlay declares is absent from the target -- without it, the section
+  // simply omits the file and reads as though it were never declared.
+  if (results.some((r) => r.status === 'withheld')) {
+    lines.push(
+      `${WARN} Templates declared by a skill with local edits were withheld: ` +
+        'the skill itself was skipped, so its workflows were not installed ' +
+        'either. Revert the local edits, or re-run with `--force`.',
       '',
     );
   }
@@ -1535,8 +1569,7 @@ export class HarnessMigrator {
           }
           continue;
         }
-        const recorded = manifest[dirName]?.hash;
-        if (recorded === undefined || targetHash !== recorded) {
+        if (isLocallyEdited(overlayHash, targetHash, manifest[dirName]?.hash)) {
           // Hand-edited (or unprovenanced) -- one-way ownership refuses to clobber.
           results.push(
             new SkillDeployResult(
@@ -1579,6 +1612,29 @@ export class HarnessMigrator {
   }
 
   /**
+   * Would the deploy phase skip this skill as `local_edit` (#667)?
+   *
+   * Answers for the CURRENT on-disk state, so it holds whether the deploy phase
+   * has already run this invocation (apply) or never will (dry run / `--check`)
+   * -- the workflow report then says the same thing about a skill as the skill
+   * report does.
+   */
+  private skillWasSkipped(
+    skillDir: string,
+    targetSkillsDir: string,
+    manifest: Manifest,
+  ): boolean {
+    const dirName = basename(skillDir);
+    const dest = join(targetSkillsDir, dirName);
+    if (!existsSync(dest)) return false;
+    return isLocallyEdited(
+      hashSkillDir(skillDir),
+      hashSkillDir(dest),
+      manifest[dirName]?.hash,
+    );
+  }
+
+  /**
    * Install the workflow templates the shape-matching overlay skills declare
    * into the target's `.github/workflows/` (#459).
    *
@@ -1592,6 +1648,16 @@ export class HarnessMigrator {
    * whatever the provenance. `force` is the deliberate escape hatch. Clobbering
    * a hand-tuned workflow -- or nagging that it is "stale" via an exit code --
    * would be a worse failure than the partial adoption this fixes.
+   *
+   * **The skill's own protection extends here (#667).** A skill the deploy
+   * phase skips as `local_edit` installs nothing: it is reported `withheld`
+   * with the reason and no bytes are written. Otherwise a run could announce
+   * "skipped -- local edits, not overwritten" while writing that same skill's
+   * files to `.github/workflows/` anyway, which is how a consumer who
+   * deliberately de-listed a template got it reinstated on every sync. The
+   * de-listing lives in the consumer's SKILL.md, and the install list is read
+   * from the OVERLAY copy -- so withholding is also the only way that edit can
+   * mean anything.
    *
    * Shape selection reuses the same resolved `canary_shape` that drives
    * `deploy_to` matching: skills are gated by {@link collectOverlaySkills}, and
@@ -1613,6 +1679,12 @@ export class HarnessMigrator {
 
     for (const [info, skillDir] of skills) {
       const { entries, version } = readWorkflowDeclaration(info.path);
+      // Hashing a skill directory is not free, so only skills that actually
+      // declare templates pay for the local-edit lookup.
+      const skillWithheld =
+        !force &&
+        entries.length > 0 &&
+        this.skillWasSkipped(skillDir, targetSkillsDir, doc.skills);
       for (const entry of entries) {
         const [wantShape, rel] = parseWorkflowEntry(entry);
         if (wantShape !== null && wantShape !== shape && wantShape !== 'all') {
@@ -1668,6 +1740,27 @@ export class HarnessMigrator {
           );
         };
 
+        const installedBytes = existsSync(dest) ? readBytesOrNull(dest) : null;
+        const alreadyCurrent =
+          installedBytes !== null && installedBytes.equals(templateBytes);
+
+        // #667: the declaring skill was skipped as locally edited, so this
+        // template is not ours to place. An already-identical file is exempt:
+        // it is a no-op, and calling that "withheld" would raise a finding on
+        // every scheduled freshness check. Everything else is gated here,
+        // ahead of `outdated`, whose remedy ("re-run with --force") would
+        // otherwise talk a consumer into the very overwrite the skip refused.
+        if (skillWithheld && !alreadyCurrent) {
+          push(
+            'withheld',
+            `.github/workflows/${name} was NOT installed ${EMDASH} its skill ` +
+              `'${info.name}' has local edits and was skipped, so its ` +
+              'templates were withheld too; re-run with --force to install it ' +
+              'anyway',
+          );
+          continue;
+        }
+
         if (!existsSync(dest)) {
           if (dryRun) {
             push(
@@ -1684,8 +1777,7 @@ export class HarnessMigrator {
           continue;
         }
 
-        const installedBytes = readBytesOrNull(dest);
-        if (installedBytes !== null && installedBytes.equals(templateBytes)) {
+        if (alreadyCurrent) {
           // Back-fill provenance for a hand-placed but identical file so a later
           // template fix can be reported as `outdated` rather than `conflict`.
           if (doc.workflows[name]?.hash !== templateHash) record();

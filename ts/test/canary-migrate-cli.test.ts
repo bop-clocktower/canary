@@ -10,7 +10,13 @@
  * `patch(Path.home)`, which maps to injecting `deps.home()` here.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -447,6 +453,56 @@ describe('canary migrate -- workflow install', () => {
         'canary-guardian.yml',
       );
       expect(payload.installed_workflows[0].status).toBe('installed');
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  // #667: the consumer deleted the workflow deliberately and expressed that by
+  // editing the deployed skill. A second `--apply` must not put it back, and
+  // `--json` has to carry the withheld verdict so a scheduled freshness check
+  // reports it instead of discovering it by its side effects.
+  it('withholds the workflow of a locally edited skill, and says so in --json', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+      const overlay = overlayWithWorkflow(base);
+      await run(project, home, '--from', overlay, '--apply');
+
+      const installed = join(
+        project,
+        '.github',
+        'workflows',
+        'canary-guardian.yml',
+      );
+      rmSync(installed);
+      writeFileSync(
+        join(project, '.canary', 'skills', 'guardian', 'SKILL.md'),
+        '---\nname: guardian\ndeploy_to: [all]\n---\n\n# runs inline here\n',
+        'utf-8',
+      );
+
+      const res = await run(
+        project,
+        home,
+        '--from',
+        overlay,
+        '--apply',
+        '--json',
+      );
+      const payload = JSON.parse(
+        res.stdout.slice(
+          res.stdout.indexOf('{'),
+          res.stdout.lastIndexOf('}') + 1,
+        ),
+      );
+      expect(payload.installed_workflows[0].status).toBe('withheld');
+      expect(payload.installed_workflows[0].detail).toContain('local edits');
+      expect(existsSync(installed)).toBe(false);
     } finally {
       rmTmp(base);
     }

@@ -316,6 +316,22 @@ above. A consumer's `.github/workflows/` is their territory:
 | differs, unmodified since canary wrote it | **reports** `outdated` (vN installed, vM ships) |
 | differs, edited locally / no provenance   | **reports** `conflict`                          |
 | any of the above with `--force`           | overwrites (`updated`) — the deliberate case    |
+| declaring skill skipped as locally edited | **withholds** the install (`withheld`)          |
+
+One rule does carry over from skill deployment: **a skill skipped as locally
+edited installs nothing.** If the deployed copy of a skill under
+`.canary/skills/` differs from the overlay and from its recorded provenance,
+`migrate` refuses to overwrite it — and every template that skill declares is
+reported `withheld` instead of installed, in both the dry run and `--apply`. It
+was never sound to say "skipped — local edits, not overwritten" while writing
+that same skill's files to `.github/workflows/` anyway.
+
+That is also how a consumer durably declines a template: the install list is
+read from the **overlay's** copy of `SKILL.md`, so editing the deployed copy to
+drop an entry only takes effect because the edit itself withholds the skill's
+installs. Delete the workflow once, keep the local edit, and re-running
+`migrate --apply` will not put it back. `--force` remains the way to say you
+meant it.
 
 Nothing is ever overwritten without `--force`, and workflow status **never
 changes the `migrate --check` exit code**: `--check` reports what it would
