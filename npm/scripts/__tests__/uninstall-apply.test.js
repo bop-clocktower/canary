@@ -239,6 +239,41 @@ describe('project content is protected', () => {
   });
 });
 
+describe('a failed removal is never reported as removed', () => {
+  // `disposition` records what the scan decided, not what removal achieved.
+  // Rendering straight from it would print a failed rmSync under "Removed"
+  // and count it in the summary — a report cleaner than the outcome.
+  it('lists the artifact under FAILED, not Removed, and exits non-zero', () => {
+    const cacheRoot = seedPluginCache(['4.0.0', '6.4.0'], '6.4.0');
+    const orphan = path.join(cacheRoot, '4.0.0');
+
+    const realRm = fs.rmSync;
+    fs.rmSync = (target, opts) => {
+      if (String(target) === orphan) throw new Error('EACCES: denied');
+      return realRm(target, opts);
+    };
+
+    let out, code;
+    try {
+      out = collector();
+      code = uninstall.run(['--global', '--apply'], deps({ out }));
+    } finally {
+      fs.rmSync = realRm;
+    }
+
+    const text = out.get();
+    const removedBlock = text.split('FAILED to remove')[0];
+    assert.equal(code, 1, 'a failed removal must not exit 0');
+    assert.match(text, /FAILED to remove/);
+    assert.equal(
+      removedBlock.includes('4.0.0'),
+      false,
+      'the failed artifact must not appear under Removed',
+    );
+    assert.match(text, /1 FAILED/);
+  });
+});
+
 describe('scope flag is required', () => {
   it('exits 1 and names the flags when no scope is given', () => {
     const err = collector();

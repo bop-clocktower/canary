@@ -162,7 +162,11 @@ export function run(argv: readonly string[], deps: UninstallDeps = {}): number {
     failed = removeAll(artifacts, deps).failed;
   }
 
-  out.write(`${render(artifacts, { scope, apply })}\n`);
+  // Hand the failures to the renderer so a removal that threw is never counted
+  // as removed — the report must not be cleaner than the outcome.
+  out.write(
+    `${render(artifacts, { scope, apply, failed: failed.map((f) => f.artifact) })}\n`,
+  );
   for (const f of failed) {
     err.write(
       `canary uninstall: failed to remove ${f.artifact.path}: ${f.error}\n`,

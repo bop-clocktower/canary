@@ -19,13 +19,21 @@ function human(bytes: number | undefined): string {
 
 export function render(
   artifacts: Artifact[],
-  opts: { scope: Scope; apply: boolean },
+  opts: { scope: Scope; apply: boolean; failed?: Artifact[] },
 ): string {
   const lines: string[] = [];
   const mode = opts.apply ? '(apply)' : '(dry run)';
   lines.push(`canary uninstall --${opts.scope} ${mode}`, '');
 
-  const removable = artifacts.filter((a) => a.disposition === 'removable');
+  // `disposition` records what the scan decided, not what the removal achieved.
+  // A failed rmSync leaves the artifact `removable`, so rendering straight from
+  // the disposition would report it as removed — a clean-looking summary over
+  // work that did not happen.
+  const failedSet = new Set(opts.failed ?? []);
+  const removable = artifacts.filter(
+    (a) => a.disposition === 'removable' && !failedSet.has(a),
+  );
+  const failed = artifacts.filter((a) => failedSet.has(a));
   const blocked = artifacts.filter((a) => a.disposition === 'blocked');
   const manual = artifacts.filter((a) => a.disposition === 'manual');
 
@@ -43,6 +51,7 @@ export function render(
   };
 
   section(opts.apply ? 'Removed' : 'Removable', removable);
+  section('FAILED to remove', failed);
   section('Skipped', blocked);
   section('You must do these yourself', manual);
 
@@ -58,6 +67,7 @@ export function render(
 
   const summary =
     `  ${removable.length} ${opts.apply ? 'removed' : 'removable'}, ` +
+    (failed.length > 0 ? `${failed.length} FAILED, ` : '') +
     `${blocked.length} skipped, ${manual.length} manual.`;
   lines.push(
     opts.apply
@@ -66,11 +76,3 @@ export function render(
   );
   return lines.join('\n');
 }
-
-const KNOWN_FLAGS = new Set([
-  '--global',
-  '--project',
-  '--all',
-  '--apply',
-  '--include-generated',
-]);

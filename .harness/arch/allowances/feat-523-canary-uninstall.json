@@ -1,10 +1,10 @@
 {
-  "reason": "canary uninstall (#523): module-size 27336->27903 (+567). The growth is the feature: four new modules under npm/src (uninstall-types, uninstall-scan, uninstall-render, uninstall) plus their wiring. The split is deliberate -- a single 538-line module tripped fileLength (>300) and a cyclomaticComplexity ceiling, and both were fixed by separating the artifact model, the scan, the renderer, and the removal path rather than absorbed into this allowance. Enumeration stays separate from removal so the dry-run and --apply paths cannot drift. Remaining: one Tier-2 couplingRatio on uninstall.ts, the same 1.0 every orchestration module here carries (overlay-commands, doctor, engine-checks, cli). Test growth (28 node --test cases) is not counted by module-size.",
+  "reason": "canary uninstall (#523): module-size 27336->27910 (+574). The growth is the feature: four new modules under npm/src (uninstall-types, uninstall-scan, uninstall-render, uninstall) plus their wiring. The split is deliberate -- a single 538-line module tripped fileLength (>300) and a cyclomaticComplexity ceiling, and both were fixed by separating the artifact model, the scan, the renderer, and the removal path rather than absorbed into this allowance. Includes the self-review fix that threads removal failures into the renderer so a failed rmSync is never counted as removed. No new architecture violations beyond one Tier-2 couplingRatio on uninstall.ts, the same 1.0 every orchestration module here carries (overlay-commands, doctor, engine-checks, cli). Test growth (29 node --test cases) is not counted by module-size.",
   "categories": {
-    "module-size": 27903
+    "module-size": 27910
   },
   "violationIds": [
     "72d356fe6487d0cf92dcf169e99bb81268c9e40726273a724b5984144882d35a"
   ],
-  "createdFrom": "a2fa9e0"
+  "createdFrom": "0252bb4"
 }
