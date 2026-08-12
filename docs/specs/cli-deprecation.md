@@ -8,10 +8,10 @@ created: 2026-05-26
 
 > **Phase 3 complete.** The deprecated surfaces described here were
 > removed at v5.0.0 (2026-06-07). See
-> [ADR 0004](../adr/0004-remove-keyed-paths-at-v3.md) and
-> [ADR 0005](../adr/0005-remove-llm-abstraction-layer.md) for the
-> removal record. This spec is preserved as a historical record of
-> the deprecation phase.
+> [ADR 0004](../knowledge/decisions/0004-remove-keyed-paths-at-v3.md) and
+> [ADR 0005](../knowledge/decisions/0005-remove-llm-abstraction-layer.md)
+> for the removal record. This spec is preserved as a historical record
+> of the deprecation phase.
 
 Mark `canary generate`, `oracle feedback`, and the GitHub Action as
 deprecated. Removal at v3.0 (separate phase).

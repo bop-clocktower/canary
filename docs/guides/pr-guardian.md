@@ -420,8 +420,8 @@ Then set `gate: hard` in config, confirm a few PRs behave, and you're promoted.
 
 - [Harness + Canary Integration Guide](harness-canary-integration.md) —
   disambiguation matrix (guardian vs `canary-test-pipeline` vs harness gates)
-- [ADR 0007](../adr/0007-guardian-agent-capability-boundary.md) — agent
-  capability boundary
-- [ADR 0008](../adr/0008-guardian-canary-owned.md) — canary-owned ownership
-  stance
+- [ADR 0007](../knowledge/decisions/0007-guardian-agent-capability-boundary.md)
+  — agent capability boundary
+- [ADR 0008](../knowledge/decisions/0008-guardian-canary-owned.md) —
+  canary-owned ownership stance
 - `docs/changes/canary-pr-guardian/proposal.md` — full spec and success criteria

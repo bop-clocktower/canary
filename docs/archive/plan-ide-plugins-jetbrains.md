@@ -1,6 +1,6 @@
 # Implementation Plan — Oracle JetBrains Plugin
 
-**Spec:** [docs/specs/ide-plugins-jetbrains.md](../specs/ide-plugins-jetbrains.md)
+**Spec:** [spec-ide-plugins-jetbrains.md](spec-ide-plugins-jetbrains.md)
 **Repo:** `oracle-intellij` (separate repository)
 **Target:** IntelliJ Platform 2023.1+ (build 231) | Kotlin | Gradle
 

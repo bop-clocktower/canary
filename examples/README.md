@@ -78,7 +78,6 @@ placeholder endpoints. To make them useful for **your project**:
 
 - Paste your real endpoint URL, request shape, and auth pattern into the prompt
   — Canary has no internal context about your codebase unless you provide it
-  (see [Known Limitations](../docs/wiki/Known-Limitations.md))
 - Run `/canary-write-test` from inside your project tree so Canary picks up
   existing test conventions
 - Use `@canary-test-author` in Claude Code for multi-turn refinement on top of
@@ -88,4 +87,4 @@ placeholder endpoints. To make them useful for **your project**:
 
 - [Getting Started](../docs/wiki/Getting-Started.md)
 - [Writing Good Prompts](../docs/wiki/Writing-Good-Prompts.md)
-- [Plugin Agents](../docs/wiki/Plugin-Agents.md)
+- [Plugin agents and skills](../agents/skills/README.md)

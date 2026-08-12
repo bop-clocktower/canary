@@ -1,5 +1,11 @@
 # Test Suite Specification
 
+> **Superseded (v6.0.0).** This spec describes the retired Python engine.
+> The `agent/` package and its `tests/unit/test_*.py` suite were deleted
+> when the TypeScript engine replaced them at v6.0.0; the live suite is
+> `ts/test/` run under Vitest. Retained as a historical record — the file
+> paths below name files that no longer exist.
+
 This document defines the test strategy, coverage requirements, and organization
 for Oracle's automated test suite.
 
@@ -76,10 +82,19 @@ tests/
 
 ## src Reference
 
-- [tests/unit/test_executor.py](../../tests/unit/test_executor.py)
-- [tests/unit/test_factory.py](../../tests/unit/test_factory.py)
-- [tests/unit/test_orchestrator.py](../../tests/unit/test_orchestrator.py)
-- [tests/unit/test_scaffolder.py](../../tests/unit/test_scaffolder.py)
+All four files were deleted with the Python engine at v6.0.0. Their live
+TypeScript successors, where one exists:
+
+- `tests/unit/test_executor.py` →
+  [ts/test/executor.test.ts](../../ts/test/executor.test.ts)
+- `tests/unit/test_factory.py` — no successor; the LLM provider abstraction
+  was removed by
+  [ADR 0005](../knowledge/decisions/0005-remove-llm-abstraction-layer.md)
+- `tests/unit/test_orchestrator.py` — no successor; generation moved into the
+  host LLM session by
+  [ADR 0001](../knowledge/decisions/0001-host-llm-generation-for-agents.md)
+- `tests/unit/test_scaffolder.py` →
+  [ts/test/scaffolder.test.ts](../../ts/test/scaffolder.test.ts)
 
 ## project Reference
 
