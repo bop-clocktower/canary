@@ -1,0 +1,8 @@
+{
+  "reason": "Unit-bearing analyze flags (#673): module-size 27910->28123 (+213, all in ts/src/analysis/cli.ts). The growth is the fix, not new surface area -- three flags gained a unit-bearing canonical spelling (--window-runs / --delta-pp / --min-rate-pct), each pre-#673 spelling is kept as a deprecated alias so nothing breaks, every analyze option gained a help description (a blank one is how the silent unit survived), and the three thresholds gained argument validation that turns a NaN threshold into a usage error. That is roughly 40 lines of option declarations, two shared argument parsers, one alias-resolution helper, and the doc comments explaining why each exists. No new modules (81 .ts files under ts/src before and after), no new architecture violations (newViolations is empty; the 27 pre-existing stay 27), and ts/src/analysis/engine.ts NET SHRINKS by 4 lines because the RunOptions rename retires the mapping comment #670 left behind. The 320-line test file (ts/test/analyze-flag-units.test.ts) is test code and is not counted by module-size.",
+  "categories": {
+    "module-size": 28123
+  },
+  "violationIds": [],
+  "createdFrom": "52b9c4b"
+}

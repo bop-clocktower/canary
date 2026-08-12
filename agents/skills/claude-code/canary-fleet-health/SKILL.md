@@ -73,8 +73,8 @@ of the full digest — cheaper and more focused:
 
 | User asks about                         | Command                                                              |
 | --------------------------------------- | -------------------------------------------------------------------- |
-| Flaky tests fleet-wide                  | `canary analyze flaky --window 30 --min-rate 10 --json`              |
-| Failure spikes                          | `canary analyze spikes --delta 20 --json`                            |
+| Flaky tests fleet-wide                  | `canary analyze flaky --window-runs 30 --min-rate-pct 10 --json`     |
+| Failure spikes                          | `canary analyze spikes --delta-pp 20 --json`                         |
 | Cross-suite common failures             | `canary analyze common-failures --min-suites 2 --json`               |
 | Newly broken tests after a green streak | `canary analyze regression-candidates --json`                        |
 | "Area health" / degrading areas         | See the caveat below — this dimension does not currently return data |
@@ -139,11 +139,20 @@ noise for sections that were never requested.
 
 ## Flags
 
-- `--window <n>` — rolling run window for flaky/spikes (default: 30, passed
-  through to `canary analyze`)
+- `--window-runs <runs>` — rolling window measured in RUNS, not days (default:
+  30, passed through to `canary analyze`)
+- `--min-rate-pct <percent>` — minimum flake rate to report, on a 0-100 percent
+  scale (default: 10, so `10` means 10%, not 0.1)
+- `--delta-pp <points>` — spike threshold as a PERCENTAGE-POINT rise in failure
+  rate (default: 20, so `20` means 5% → 25%, not 5% → 6%)
 - `--suite <name>` — scope to one suite instead of the whole fleet
 - `--json` — pass through the underlying CLI's `--json` when the caller wants
   structured data instead of a chat summary
+
+The unitless spellings `--window`, `--delta`, and `--min-rate` are deprecated
+aliases: they still work and take the same values, but they print a note on
+stderr naming the replacement. Prefer the unit-bearing names in anything you
+write down.
 
 ## Error Handling
 

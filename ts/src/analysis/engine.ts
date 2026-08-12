@@ -75,12 +75,21 @@ export interface AnalysisResult {
   artifacts: Record<string, string>;
 }
 
+/**
+ * Digest inputs, each named for the unit it carries (#670, #673).
+ *
+ * `windowRuns` counts RUNS (not days), `deltaPp` is a PERCENTAGE-POINT increase
+ * (not a percentage), and `minFlakeRatePct` is a 0-100 percentage. The names
+ * match the report builders they feed and the `--window-runs` / `--delta-pp` /
+ * `--min-rate-pct` flags they are bound to, so the unit survives the whole trip
+ * from the command line to the rendered threshold.
+ */
 export interface RunOptions {
-  window?: number;
-  delta?: number;
+  windowRuns?: number;
+  deltaPp?: number;
   weeks?: number;
   minSuites?: number;
-  minFlakeRate?: number;
+  minFlakeRatePct?: number;
   minGreen?: number;
   recentFailures?: number;
   suite?: string | null;
@@ -90,25 +99,25 @@ export class AnalysisEngine {
   constructor(private readonly store: HistoryStore) {}
 
   run(opts: RunOptions = {}): AnalysisResult {
-    const window = opts.window ?? 30;
-    const delta = opts.delta ?? 20.0;
+    const windowRuns = opts.windowRuns ?? 30;
+    const deltaPp = opts.deltaPp ?? 20.0;
     const weeks = opts.weeks ?? 4;
     const minSuites = opts.minSuites ?? 2;
-    const minFlakeRate = opts.minFlakeRate ?? 10.0;
+    const minFlakeRatePct = opts.minFlakeRatePct ?? 10.0;
     const minGreen = opts.minGreen ?? 5;
     const recentFailures = opts.recentFailures ?? 3;
     const suite = opts.suite ?? null;
 
     const flaky = this.store.queryFlaky(
-      window,
+      windowRuns,
       suite,
-      minFlakeRate,
+      minFlakeRatePct,
     ) as FlakyRow[];
 
     const suitesToQuery = suite ? [suite] : this.discoverSuites();
     const spikesRows: SpikeRow[] = [];
     for (const s of suitesToQuery) {
-      const summary = this.store.querySummary(s, window * 2);
+      const summary = this.store.querySummary(s, windowRuns * 2);
       for (const row of def(summary.runs, [])) {
         // query_summary rows omit suite; the spikes builder groups by it, so
         // tag each pooled row with the suite it came from (matches Python).
@@ -138,19 +147,15 @@ export class AnalysisEngine {
       areaHealth: areaRows,
       commonFailures: commonRows,
       regressionCandidates,
-      // The engine's own `window`/`delta` stay unitless because they are bound
-      // to the `--window` / `--delta` CLI flags, and renaming those would be a
-      // breaking CLI change. Only the report builders' parameters carry the
-      // unit, so the mapping is spelled out here rather than passed shorthand.
-      windowRuns: window,
-      deltaPp: delta,
+      windowRuns,
+      deltaPp,
       weeks,
       minSuites,
     });
 
     const artifacts: Record<string, string> = {
-      'flaky.md': buildFlakyReport(flaky, window, minFlakeRate),
-      'spikes.md': buildSpikesReport(spikesRows, delta),
+      'flaky.md': buildFlakyReport(flaky, windowRuns, minFlakeRatePct),
+      'spikes.md': buildSpikesReport(spikesRows, deltaPp),
       'area-health.md': buildAreaHealthReport(areaRows, weeks),
       'common-failures.md': buildCommonFailuresReport(commonRows, minSuites),
       'regression-candidates.md':

@@ -79,6 +79,24 @@ under the project's former name) are documented in the
   deliberately unchanged. New tests pin the unit semantics, cover
   `frameworkForPath`'s null-abstention contract (previously untested), and guard
   against the `Finding` collision returning.
+- **`canary analyze` flags now name their unit, with the old spellings kept as
+  deprecated aliases.** The three numeric thresholds printed a unit they never
+  accepted in the name: the report reads `window: 30 runs`, `20.0pp increase`
+  and `≥ 10.0%`, but a user typing `--window 7` could not tell whether that
+  meant runs, days or hours, and `--delta 20` — a percentage-POINT threshold
+  wearing a percentage's clothes — is the difference between firing and staying
+  silent on a failure rate moving 5% → 6%. The canonical flags are now
+  `--window-runs`, `--delta-pp` and `--min-rate-pct`, following the convention
+  #670 set one layer down. **Nothing breaks:** `--window`, `--delta` and
+  `--min-rate` still work and still take the same values, but they print a note
+  on stderr naming the replacement, and the canonical flag wins if both are
+  given. Every analyze option also gained a help description — a blank one is
+  how the silence survived — and the three thresholds now validate: a window
+  that is not a whole count of runs, or a rate outside 0-100, is a usage error
+  (exit 2) rather than a `NaN` threshold that quietly matches nothing. The
+  engine's `RunOptions` follow the same names (`windowRuns`, `deltaPp`,
+  `minFlakeRatePct`), which retires the mapping comment #670 left behind.
+  ([#673])
 
 ### Fixed
 
@@ -97,6 +115,7 @@ under the project's former name) are documented in the
 [#564]: https://github.com/bop-clocktower/canary/issues/564
 [#650]: https://github.com/bop-clocktower/canary/issues/650
 [#657]: https://github.com/bop-clocktower/canary/issues/657
+[#673]: https://github.com/bop-clocktower/canary/issues/673
 
 ## [6.8.1] - 2026-08-10
 

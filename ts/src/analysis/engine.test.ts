@@ -65,7 +65,7 @@ afterEach(() => {
 
 describe('AnalysisEngine over the NDJSON store', () => {
   it('produces all six artifacts', () => {
-    const result = new AnalysisEngine(seed()).run({ window: 10 });
+    const result = new AnalysisEngine(seed()).run({ windowRuns: 10 });
     expect(Object.keys(result.artifacts).sort()).toEqual([
       'area-health.md',
       'common-failures.md',
@@ -81,7 +81,7 @@ describe('AnalysisEngine over the NDJSON store', () => {
   });
 
   it('tags pooled spike rows with their suite', () => {
-    const result = new AnalysisEngine(seed()).run({ window: 10 });
+    const result = new AnalysisEngine(seed()).run({ windowRuns: 10 });
     expect(result.spikes.length).toBeGreaterThan(0);
     expect(result.spikes.every((row) => 'suite' in row)).toBe(true);
   });
@@ -96,7 +96,7 @@ describe('AnalysisEngine over the NDJSON store', () => {
   });
 
   it('area-health is always the empty-data message (faithful to Python)', () => {
-    const result = new AnalysisEngine(seed()).run({ window: 10 });
+    const result = new AnalysisEngine(seed()).run({ windowRuns: 10 });
     expect(result.artifacts['area-health.md']).toContain('No area health');
     expect(result.areaHealth).toEqual([]);
   });
@@ -139,7 +139,7 @@ describe('AnalysisEngine over the NDJSON store', () => {
       records.map((r) => JSON.stringify(r)).join('\n') + '\n',
     );
     const result = new AnalysisEngine(new NdjsonHistoryStore(path)).run({
-      window: 30,
+      windowRuns: 30,
     });
     expect(result.regressionCandidates.length).toBe(1);
     const [cand] = result.regressionCandidates;
@@ -170,6 +170,6 @@ describe('AnalysisEngine with a non-readable store falls through cleanly', () =>
     ).toEqual([]);
   });
   it('run does not throw', () => {
-    expect(() => new AnalysisEngine(stub).run({ window: 5 })).not.toThrow();
+    expect(() => new AnalysisEngine(stub).run({ windowRuns: 5 })).not.toThrow();
   });
 });
