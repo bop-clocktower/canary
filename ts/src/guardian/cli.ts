@@ -96,7 +96,7 @@ import {
 } from './hard-gate.js';
 import { CoverageRow, mapImpact } from './impact-mapper.js';
 import {
-  Finding,
+  GuardianFinding,
   GateMeta,
   GuardianConfig,
   applySuppressions,
@@ -1155,7 +1155,7 @@ function precisionCmd(opts: PrecisionOptions, deps: GuardianDeps): void {
  * read-only-token degradation is surfaced LOUDLY.
  */
 async function postStickyComment(
-  findings: Finding[],
+  findings: GuardianFinding[],
   resolution: TierResolution,
   deps: GuardianDeps,
   gateMeta: GateMeta | null = null,
@@ -1545,7 +1545,7 @@ function buildGaps(
   config: GuardianConfig,
   coveragePath: string | null,
   graphMaxDepth: number | null,
-): Finding[] {
+): GuardianFinding[] {
   const units = scopeDiff(diffText);
   const [keptSkip] = filterSkipped(units, config.skip_globs);
   const [keptTest] = filterTestUnits(keptSkip);

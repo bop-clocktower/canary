@@ -11,7 +11,7 @@ import { basename, extname } from 'node:path';
 
 import { blankStringContent } from './string-literals.js';
 
-export interface Finding {
+export interface LintFinding {
   file: string;
   line: number;
   rule: string;
@@ -20,7 +20,7 @@ export interface Finding {
   suggestion: string;
 }
 
-export function formatFinding(f: Finding): string {
+export function formatFinding(f: LintFinding): string {
   return `[${f.severity.toUpperCase()}] ${f.file}:${f.line} (${f.rule})\n  ${f.message}\n  → ${f.suggestion}`;
 }
 
@@ -131,17 +131,17 @@ function mk(
   file: string,
   line: number,
   rule: string,
-  severity: Finding['severity'],
+  severity: LintFinding['severity'],
   message: string,
   suggestion: string,
-): Finding {
+): LintFinding {
   return { file, line, rule, severity, message, suggestion };
 }
 
 interface FlakeRule {
   re: RegExp;
   rule: string;
-  severity: Finding['severity'];
+  severity: LintFinding['severity'];
   message: string;
   suggestion: string;
   guard?: (line: string) => boolean;
@@ -203,8 +203,8 @@ function blankStrings(line: string): string {
   return line.replace(STRING_LITERAL, '""');
 }
 
-function scanFlakiness(lines: string[], file: string): Finding[] {
-  const out: Finding[] = [];
+function scanFlakiness(lines: string[], file: string): LintFinding[] {
+  const out: LintFinding[] = [];
   lines.forEach((raw, idx) => {
     if (isComment(raw)) return;
     const line = blankStrings(raw);
@@ -223,7 +223,7 @@ function selectorFinding(
   line: string,
   i: number,
   file: string,
-): Finding | null {
+): LintFinding | null {
   if (CSS_CLASS_SELECTOR.test(line)) {
     return mk(
       file,
@@ -257,8 +257,8 @@ function selectorFinding(
   return null;
 }
 
-function scanSelectors(lines: string[], file: string): Finding[] {
-  const out: Finding[] = [];
+function scanSelectors(lines: string[], file: string): LintFinding[] {
+  const out: LintFinding[] = [];
   lines.forEach((line, idx) => {
     if (isComment(line) || !LOCATOR_METHODS.test(line)) return;
     const finding = selectorFinding(line, idx + 1, file);
@@ -267,8 +267,8 @@ function scanSelectors(lines: string[], file: string): Finding[] {
   return out;
 }
 
-function scanMissingAwait(lines: string[], file: string): Finding[] {
-  const out: Finding[] = [];
+function scanMissingAwait(lines: string[], file: string): LintFinding[] {
+  const out: LintFinding[] = [];
   lines.forEach((raw, idx) => {
     if (isComment(raw)) return;
     // A `page.click(...)` inside a string is fixture data, not a missing await.
@@ -327,8 +327,8 @@ function blankMultilineStrings(lines: string[]): string[] {
   return out;
 }
 
-function scanMagicNumbers(lines: string[], file: string): Finding[] {
-  const out: Finding[] = [];
+function scanMagicNumbers(lines: string[], file: string): LintFinding[] {
+  const out: LintFinding[] = [];
   lines.forEach((raw, idx) => {
     if (isComment(raw)) return;
     const scrubbed = raw.replace(STRING_LITERAL, '""');
@@ -361,8 +361,8 @@ function lineOf(code: string, offset: number): number {
   return n;
 }
 
-function scanAssertionFreePy(code: string, file: string): Finding[] {
-  const out: Finding[] = [];
+function scanAssertionFreePy(code: string, file: string): LintFinding[] {
+  const out: LintFinding[] = [];
   for (const m of code.matchAll(TEST_FN_PY)) {
     const indent = m[1]!.length;
     const start = m.index!;
@@ -389,8 +389,8 @@ function scanAssertionFreeJs(
   code: string,
   file: string,
   source: string,
-): Finding[] {
-  const out: Finding[] = [];
+): LintFinding[] {
+  const out: LintFinding[] = [];
   // The test declarations, in source order, so each body can be bounded by the
   // NEXT one -- the JS analogue of what the pytest scanner already does with
   // "next `def` at the same indent".
@@ -460,7 +460,7 @@ const JS_EXT_SET: ReadonlySet<string> = new Set(JS_TEST_EXTENSIONS);
  * guess that cannot be distinguished from a clean result is a false green;
  * `null` forces the caller to abstain instead.
  */
-export function lintableFramework(path: string): string | null {
+export function frameworkForPath(path: string): string | null {
   const suffix = extname(path).toLowerCase();
   const name = basename(path).toLowerCase();
   if (suffix === '.py') return 'pytest';
@@ -478,14 +478,14 @@ export class UnsupportedTestFileError extends Error {
 }
 
 function requireFramework(path: string, framework?: string): string {
-  const fw = framework || lintableFramework(path);
+  const fw = framework || frameworkForPath(path);
   if (fw === null) throw new UnsupportedTestFileError(path);
   return fw;
 }
 
 export class StaticLinter {
   /** Full quality audit — all rules. */
-  lint(path: string, framework?: string): Finding[] {
+  lint(path: string, framework?: string): LintFinding[] {
     const code = readFileSync(path, 'utf-8');
     // No rule may read the interior of a string as code. The per-line rules
     // keep the line-oriented blanking they were written against; the assertion
@@ -497,7 +497,7 @@ export class StaticLinter {
     const lines = blankMultilineStrings(code.split('\n'));
     const fw = requireFramework(path, framework);
     const scanned = blankStringContent(code, { python: fw === 'pytest' });
-    const findings: Finding[] = [
+    const findings: LintFinding[] = [
       ...scanFlakiness(lines, path),
       ...scanSelectors(lines, path),
       ...scanMissingAwait(lines, path),
@@ -511,7 +511,7 @@ export class StaticLinter {
   }
 
   /** Flakiness-only subset. */
-  flakeCheck(path: string): Finding[] {
+  flakeCheck(path: string): LintFinding[] {
     const code = readFileSync(path, 'utf-8');
     const findings = scanFlakiness(
       blankMultilineStrings(code.split('\n')),

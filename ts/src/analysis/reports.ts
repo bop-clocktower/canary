@@ -29,19 +29,19 @@ export { round1 };
 
 export function buildFlakyReport(
   rows: FlakyRow[],
-  window: number,
-  minRate: number,
+  windowRuns: number,
+  minRatePct: number,
   limit = 20,
 ): string {
   if (rows.length === 0) {
-    return `No tests above ${pyFloat(minRate)}% flake rate in the last ${window} runs.\n`;
+    return `No tests above ${pyFloat(minRatePct)}% flake rate in the last ${windowRuns} runs.\n`;
   }
 
   const sorted = [...rows]
     .sort((a, b) => b.flake_rate_pct - a.flake_rate_pct)
     .slice(0, limit);
   const lines = [
-    `## Fleet-wide Flaky Tests (top ${limit}, window: ${window} runs, threshold: ≥ ${pyFloat(minRate)}%)\n`,
+    `## Fleet-wide Flaky Tests (top ${limit}, window: ${windowRuns} runs, threshold: ≥ ${pyFloat(minRatePct)}%)\n`,
     '| Test | Suite | Area | Flake % | Flake/Total |',
     '|------|-------|------|---------|-------------|',
   ];
@@ -84,7 +84,7 @@ function suiteFailRate(rr: SpikeRow[]): number {
   return total > 0 ? (failed / total) * 100 : 0.0;
 }
 
-function detectSpikes(rows: SpikeRow[], delta: number): Spike[] {
+function detectSpikes(rows: SpikeRow[], deltaPp: number): Spike[] {
   const spikes: Spike[] = [];
   for (const [suite, suiteRows] of groupBySuite(rows)) {
     const s = [...suiteRows].sort((a, b) => cmp(a.timestamp, b.timestamp));
@@ -94,7 +94,7 @@ function detectSpikes(rows: SpikeRow[], delta: number): Spike[] {
     const recent = s.slice(mid);
     const recentRate = suiteFailRate(recent);
     const increase = recentRate - early;
-    if (increase < delta) continue;
+    if (increase < deltaPp) continue;
     spikes.push({
       suite,
       earlyFailRate: round1(early),
@@ -106,17 +106,17 @@ function detectSpikes(rows: SpikeRow[], delta: number): Spike[] {
   return spikes;
 }
 
-export function buildSpikesReport(rows: SpikeRow[], delta: number): string {
+export function buildSpikesReport(rows: SpikeRow[], deltaPp: number): string {
   if (rows.length === 0) {
     return 'No run data available for spike detection.\n';
   }
-  const spikes = detectSpikes(rows, delta);
+  const spikes = detectSpikes(rows, deltaPp);
   if (spikes.length === 0) {
-    return `No spikes detected (threshold: ${pyFloat(delta)}pp increase in failure rate).\n`;
+    return `No spikes detected (threshold: ${pyFloat(deltaPp)}pp increase in failure rate).\n`;
   }
 
   const lines = [
-    `## Failure Spikes (threshold: ≥ ${pyFloat(delta)}pp increase)\n`,
+    `## Failure Spikes (threshold: ≥ ${pyFloat(deltaPp)}pp increase)\n`,
     '| Suite | Early Fail % | Recent Fail % | Increase | Since |',
     '|-------|-------------|--------------|----------|-------|',
   ];
@@ -290,15 +290,15 @@ export function buildDigest(args: {
   areaHealth: AreaHealthRow[];
   commonFailures: CommonFailureRow[];
   regressionCandidates: RegressionRow[];
-  window: number;
-  delta: number;
+  windowRuns: number;
+  deltaPp: number;
   weeks: number;
   minSuites: number;
 }): string {
   const sections = [
     '# Fleet Health Digest\n',
-    '## Flaky Tests\n\n' + buildFlakyReport(args.flaky, args.window, 10.0),
-    '## Spikes\n\n' + buildSpikesReport(args.spikes, args.delta),
+    '## Flaky Tests\n\n' + buildFlakyReport(args.flaky, args.windowRuns, 10.0),
+    '## Spikes\n\n' + buildSpikesReport(args.spikes, args.deltaPp),
     '## Area Health\n\n' + buildAreaHealthReport(args.areaHealth, args.weeks),
     '## Common Failures\n\n' +
       buildCommonFailuresReport(args.commonFailures, args.minSuites),

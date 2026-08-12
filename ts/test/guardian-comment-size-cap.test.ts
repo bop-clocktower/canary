@@ -18,7 +18,7 @@ import { ChangedUnit, Fidelity } from '../src/guardian/coverage.js';
 import { Severity } from '../src/guardian/impact-mapper.js';
 import {
   COMMENT_CHAR_BUDGET,
-  Finding,
+  GuardianFinding,
   render,
 } from '../src/guardian/pr-check.js';
 
@@ -31,8 +31,8 @@ function finding(
   path: string,
   severity: Severity = Severity.HIGH,
   evidenceLen = 40,
-): Finding {
-  return new Finding({
+): GuardianFinding {
+  return new GuardianFinding({
     path,
     unit: unit(path).path,
     fidelity: Fidelity.CoverageVerified,
@@ -46,7 +46,7 @@ function many(
   n: number,
   severity = Severity.HIGH,
   evidenceLen = 40,
-): Finding[] {
+): GuardianFinding[] {
   return Array.from({ length: n }, (_, i) =>
     finding(`src/module-${i}/file-${i}.ts`, severity, evidenceLen),
   );

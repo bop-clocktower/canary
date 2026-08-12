@@ -32,8 +32,8 @@ import {
   listOverlays,
   resolveOverlay,
 } from './core/overlays.js';
-import { JS_TEST_EXTENSIONS, lintableFramework } from './core/static-linter.js';
-import type { Finding } from './core/static-linter.js';
+import { JS_TEST_EXTENSIONS, frameworkForPath } from './core/static-linter.js';
+import type { LintFinding } from './core/static-linter.js';
 import { RunSummary } from './core/ticket-updater.js';
 import { renderBanner } from './ui/banner.js';
 import {
@@ -625,7 +625,7 @@ const SEV_COLOR: Record<string, (s: string) => string> = {
 };
 const SEV_ORDER: Record<string, number> = { critical: 0, warning: 1, info: 2 };
 
-function findingPayload(f: Finding): Record<string, unknown> {
+function findingPayload(f: LintFinding): Record<string, unknown> {
   return {
     file: f.file,
     line: f.line,
@@ -697,7 +697,7 @@ function abstainOnUnlintableFile(
   deps: MainDeps,
   json: boolean,
 ): void {
-  if (lintableFramework(path) !== null) return;
+  if (frameworkForPath(path) !== null) return;
   const ext = extname(path) || basename(path);
   abstain(
     `Cannot lint ${ext} — no ruleset parses it, so a clean result would be ` +
@@ -718,7 +718,7 @@ export function reviewTestCmd(
   if (!isDir(path) && !opts.framework)
     abstainOnUnlintableFile(path, deps, json);
   const linter = deps.makeLinter();
-  const allFindings: Finding[] = [];
+  const allFindings: LintFinding[] = [];
   for (const f of files) allFindings.push(...linter.lint(f, opts.framework));
 
   // `--json` renders the machine payload and then falls through to the same
@@ -776,7 +776,7 @@ export function flakeCheckCmd(
   abstainOnZeroFiles(files, path, deps, json);
   if (!isDir(path)) abstainOnUnlintableFile(path, deps, json);
   const linter = deps.makeLinter();
-  const allFindings: Finding[] = [];
+  const allFindings: LintFinding[] = [];
   for (const f of files) allFindings.push(...linter.flakeCheck(f));
 
   // Exit-code parity with human mode, same reason as `review-test` above.

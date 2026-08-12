@@ -267,8 +267,8 @@ describe('buildDigest', () => {
     areaHealth: [],
     commonFailures: [],
     regressionCandidates: [],
-    window: 30,
-    delta: 20.0,
+    windowRuns: 30,
+    deltaPp: 20.0,
     weeks: 4,
     minSuites: 2,
   };
@@ -362,5 +362,57 @@ describe('branch coverage — fallbacks and alternate row shapes', () => {
   it('regression: missing streak/commit/area/suite render placeholders', () => {
     const md = buildRegressionCandidatesReport([{ test_name: 't' }]);
     expect(md).toContain('| t |  | — | ? runs | ? |');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unit semantics
+//
+// These builders format their units into the output strings while the
+// parameters that carry them were, until now, unitless (`window`, `delta`,
+// `minRate`). The renames to `windowRuns` / `deltaPp` / `minRatePct` put the
+// unit in the name; these tests pin the unit to the contract so a future
+// caller cannot quietly reinterpret `10.0` as a fraction or `20.0` as a
+// percentage rather than percentage points.
+// ---------------------------------------------------------------------------
+
+describe('unit semantics', () => {
+  it('windowRuns is a count of runs, not days', () => {
+    const md = buildFlakyReport(
+      [flakyRow('t', 'api', 'members', 34.0)],
+      30,
+      10.0,
+    );
+    expect(md).toContain('window: 30 runs');
+  });
+
+  it('minRatePct is a percentage, so 10.0 means ten percent', () => {
+    const md = buildFlakyReport(
+      [flakyRow('t', 'api', 'members', 34.0)],
+      30,
+      10.0,
+    );
+    expect(md).toContain('≥ 10.0%');
+    // 10.0 must not be read as a 0..1 fraction (which would render 1000%).
+    expect(md).not.toContain('1000%');
+  });
+
+  it('states both units in the empty-rows message', () => {
+    expect(buildFlakyReport([], 30, 10.0)).toBe(
+      'No tests above 10.0% flake rate in the last 30 runs.\n',
+    );
+  });
+
+  it('deltaPp is percentage points, not percent', () => {
+    expect(buildSpikesReport([], 20.0)).toContain('No run data');
+    const md = buildSpikesReport(runs('api', 0.98, 0.6), 20.0);
+    expect(md).toContain('20.0pp');
+  });
+
+  it('deltaPp threshold gates on the point increase', () => {
+    // 0.95 -> 0.94 is a 1pp move, far under a 20pp threshold.
+    expect(buildSpikesReport(runs('api', 0.95, 0.94), 20.0)).toContain(
+      'No spikes',
+    );
   });
 });
