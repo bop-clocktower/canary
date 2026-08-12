@@ -59,7 +59,7 @@ The test will fail because `validateEmail` doesn't exist yet — this example is
 
 This pattern (write tests against a contract, then implement) is what the
 `@canary-test-author` plugin agent shines at — see
-[Plugin Agents](../../docs/wiki/Plugin-Agents.md).
+[Plugin agents and skills](../../agents/skills/README.md).
 
 ## What to expect
 
@@ -110,4 +110,4 @@ describe('validateEmail', () => {
 
 - [Getting Started → generating tests](../../docs/wiki/Getting-Started.md)
 - [Writing Good Prompts](../../docs/wiki/Writing-Good-Prompts.md)
-- [Plugin Agents](../../docs/wiki/Plugin-Agents.md)
+- [Plugin agents and skills](../../agents/skills/README.md)

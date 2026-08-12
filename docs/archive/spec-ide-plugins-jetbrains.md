@@ -1,7 +1,8 @@
 # IDE Plugins — JetBrains Specification
 
 Phase 2 of the Oracle IDE Plugins initiative. Mirrors the feature surface of
-the VS Code extension ([ide-plugins.md](ide-plugins.md)) using IntelliJ
+the VS Code extension
+([spec-ide-plugins-vscode.md](spec-ide-plugins-vscode.md)) using IntelliJ
 Platform APIs.
 
 ## Overview

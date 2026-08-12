@@ -90,7 +90,7 @@ The test will fail against `example.com` (no real login form). To adapt:
 - **Bigger scope:** add a forgot-password flow as a third scenario
 - **Different framework:** rephrase the prompt to ask for a Cypress version
   (Canary's framework advisor agent can recommend; see
-  [Plugin Agents](../../docs/wiki/Plugin-Agents.md))
+  [Plugin agents and skills](../../agents/skills/README.md))
 
 ## See also
 

@@ -6,9 +6,9 @@
 >
 > **Status (v5.0.0):** The keyed CLI path (`canary generate`, GitHub
 > Action) described below was removed at v5.0.0 (2026-06-07). See
-> [ADR 0004](../adr/0004-remove-keyed-paths-at-v3.md). The MCP
-> server (`canary-mcp`), skills (`/canary:init`, `/canary:migrate`),
-> and all deterministic CLI commands remain active.
+> [ADR 0004](../knowledge/decisions/0004-remove-keyed-paths-at-v3.md).
+> The MCP server (`canary-mcp`), skills (`/canary:init`,
+> `/canary:migrate`), and all deterministic CLI commands remain active.
 > `/canary:generate` was removed with the keyed path; test generation
 > is now handled directly by the host LLM session without a dedicated
 > slash command.
@@ -351,11 +351,17 @@ mocked intelligence modules and file I/O — no real files written.
 
 ## src Reference
 
-- [`agent/mcp_server.py`](../../agent/mcp_server.py) — MCP server (new)
+Paths below are given as they stand today. The Python originals
+(`agent/*.py`, `tests/unit/test_*.py`) were deleted at v6.0.0 when the
+TypeScript engine replaced them, and agent definitions moved out of
+`.claude-plugin/` to the top-level `agents/` directory.
+
+- [`ts/src/mcp-server.ts`](../../ts/src/mcp-server.ts) — MCP server (was
+  `agent/mcp_server.py`)
 - [`.claude-plugin/plugin.json`](../../.claude-plugin/plugin.json) — plugin
-  manifest (new)
-- [`.claude-plugin/agents/`](../../.claude-plugin/agents/) — agent
-  definitions (new)
-- [`agents/skills/`](../../agents/skills/) — skill files (new)
-- [`tests/unit/test_mcp_server.py`](../../tests/unit/test_mcp_server.py) —
-  unit tests (new)
+  manifest
+- [`agents/`](../../agents/) — agent definitions (was
+  `.claude-plugin/agents/`)
+- [`agents/skills/`](../../agents/skills/) — skill files
+- [`ts/test/mcp-server.test.ts`](../../ts/test/mcp-server.test.ts) — unit
+  tests (was `tests/unit/test_mcp_server.py`)

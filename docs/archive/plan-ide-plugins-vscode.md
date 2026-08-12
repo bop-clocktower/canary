@@ -1,6 +1,6 @@
 # Implementation Plan — Oracle VS Code Extension
 
-**Spec:** [docs/specs/ide-plugins.md](../specs/ide-plugins.md)
+**Spec:** [spec-ide-plugins-vscode.md](spec-ide-plugins-vscode.md)
 **Repo:** `oracle-vscode` (separate repository)
 **Target:** VS Code >= 1.85.0 | TypeScript | `vsce` packaging
 

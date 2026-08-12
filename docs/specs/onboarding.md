@@ -140,12 +140,14 @@ field to be present and non-empty.
 
 ## src Reference
 
-- [`agent/cli.py`](../../agent/cli.py) — `@app.callback()` and `oracle setup`
-  command
-- [`agent/core/setup.py`](../../agent/core/setup.py) — `SetupWizard` class
-  (new)
-- [`tests/unit/test_setup.py`](../../tests/unit/test_setup.py) — unit tests
-  (new)
+All three files were deleted with the Python engine at v6.0.0; the wizard
+itself was removed earlier, when Canary became a Claude Code plugin.
+
+- `agent/cli.py` — `@app.callback()` and the `oracle setup` command. The
+  CLI entry point is now [`ts/src/cli.ts`](../../ts/src/cli.ts), which has no
+  setup wizard.
+- `agent/core/setup.py` — `SetupWizard` class. No successor.
+- `tests/unit/test_setup.py` — unit tests. No successor.
 
 ## Test Coverage
 
