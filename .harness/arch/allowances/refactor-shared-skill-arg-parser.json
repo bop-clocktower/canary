@@ -1,0 +1,8 @@
+{
+  "reason": "Shared skill-CLI parser (#663, closes #479): module-size 27332->27336 (+4). The refactor is net-neutral by design -- agents/skills/lib/parse-args.mjs adds 214 lines and the seven skill CLIs it replaces shed 416, so the aggregate barely moves despite a 1056-line diff. No new architecture violations. Growth in agents/skills/test (the parse-args suite and the discovery-driven conformance suite) is test code and not counted by module-size.",
+  "categories": {
+    "module-size": 27336
+  },
+  "violationIds": [],
+  "createdFrom": "cdc7856"
+}
