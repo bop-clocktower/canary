@@ -103,10 +103,25 @@ personas this table never listed:
 | `guided` | Cases + numbered reproduction steps |
 
 When `reasoning` is true, say which persona shaped the output and why —
-`persona.reason` is written to be quoted. When `source` is `detected`, the
-choice came from a heuristic over the working directory and open files, so a
-reader who disagrees needs to know it is guessable and overridable with
-`CANARY_PERSONA` or `--level`.
+`persona.reason` is written to be quoted.
+
+Read `source` before trusting the persona, and treat the three values
+differently:
+
+- `explicit` — the reader chose this. Do not second-guess it.
+- `detected` — inferred from at least two independent signals about the project.
+  Reliable enough to act on, still a guess; mention it is overridable with
+  `CANARY_PERSONA` or `--level` if the depth seems wrong for them.
+- `fallback` — the engine **declined** to guess, which is the common case. That
+  is not a failure and not a reason to go hunting for signals of your own: it
+  means the evidence did not clear the floor, and re-deriving an audience here
+  is exactly the hand-rolling this section replaced. Use the persona as given.
+
+**Never infer `terse` on your own.** Stripping explanation from a reader who
+turns out to be a manual tester is the expensive direction of this mistake;
+`fallback` is deliberately explanatory for that reason. Note that `manual` is
+not inferable from a file analysis at all — it is reached by an explicit choice
+— so a `fallback` persona may well be a manual tester.
 
 The shipped personas are `sdet` (terse), `junior` (brief), and `manual`
 (guided); the definitions live in `ts/src/data/personas/registry.json`.

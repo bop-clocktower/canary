@@ -64,9 +64,25 @@ export type ExplanationDepth = (typeof DEPTHS)[number];
  * Note what the detector's confidence actually is: `|sdet - manual| / total`,
  * a *margin* between two tallies, not a probability. One open `.ts` file with
  * no opposing signal scores 1.0. So this floor screens out genuine ties and
- * near-ties; it is not a calibrated certainty threshold.
+ * near-ties and nothing else; {@link DEFAULT_MIN_DETECTION_SIGNALS} is the
+ * screen that does the real discriminating.
  */
 const DEFAULT_MIN_DETECTION_CONFIDENCE = 0.5;
+
+/**
+ * Independent signals required before a detected level is trusted.
+ *
+ * A confidence floor cannot carry this decision on its own: because confidence
+ * is a margin, one unopposed observation arrives at a perfect 1.0, and a floor
+ * that screens ties but not single observations is confident-and-wrong — the
+ * failure mode this repo keeps rooting out. Two signals of genuinely different
+ * kinds is the screen that discriminates.
+ *
+ * "Independent" is per {@link independentSignalKinds}: distinct *kinds* of
+ * evidence, not a raw count. Ten open TypeScript files are one observation
+ * restated ten times.
+ */
+const DEFAULT_MIN_DETECTION_SIGNALS = 2;
 
 /** One audience, and what consulting it should change about the output. */
 export interface PersonaDefinition {
@@ -91,6 +107,8 @@ export interface PersonaRegistry {
   fallback: string;
   /** Minimum detector confidence before a detected level is honored. */
   minDetectionConfidence: number;
+  /** Minimum count of independent signal kinds before it is honored. */
+  minDetectionSignals: number;
   /** Detected user level -> persona id. Unmapped levels use the fallback. */
   detectionMap: Record<string, string>;
   personas: PersonaDefinition[];
@@ -250,11 +268,16 @@ function loadPersonaRegistry(
   const version = typeof raw['version'] === 'number' ? raw['version'] : 1;
   const fallback = typeof raw['fallback'] === 'string' ? raw['fallback'] : '';
   const floor = raw['minDetectionConfidence'];
+  const signalFloor = raw['minDetectionSignals'];
   return {
     version,
     fallback,
     minDetectionConfidence:
       typeof floor === 'number' ? floor : DEFAULT_MIN_DETECTION_CONFIDENCE,
+    minDetectionSignals:
+      typeof signalFloor === 'number'
+        ? signalFloor
+        : DEFAULT_MIN_DETECTION_SIGNALS,
     detectionMap: parseDetectionMap(raw['detectionMap']),
     personas: parsePersonas(raw['personas']),
   };
@@ -263,6 +286,28 @@ function loadPersonaRegistry(
 // ---------------------------------------------------------------------------
 // Lookup
 // ---------------------------------------------------------------------------
+
+/**
+ * The distinct *kinds* of evidence in a detector signal list.
+ *
+ * `detectUserLevel` emits signals shaped `"<kind>: <detail>"` — for example
+ * `"code/test file open: a.ts"`, `"project manifest present: package.json"` —
+ * plus one kindless string (`"cwd path suggests manual testing"`), which is
+ * treated as its own kind. Grouping on the part before the first `": "` is what
+ * makes ten open TypeScript files count once: they are one observation restated,
+ * and a raw length check would have read them as ten independent facts.
+ *
+ * Splitting on `": "` rather than `":"` keeps a Windows path (`C:\src\a.ts`)
+ * from being mistaken for a separator.
+ */
+function independentSignalKinds(signals: readonly string[]): string[] {
+  const kinds = new Set<string>();
+  for (const signal of signals) {
+    const at = signal.indexOf(': ');
+    kinds.add(at === -1 ? signal : signal.slice(0, at));
+  }
+  return [...kinds];
+}
 
 /** Ids in registry order — the discoverable persona vocabulary. */
 function personaIds(registry: PersonaRegistry): string[] {
@@ -340,12 +385,24 @@ export function resolvePersona(
   const detected = input.detected;
   if (detected) {
     const floor = registry.minDetectionConfidence;
+    const signalFloor = registry.minDetectionSignals;
+    const kinds = independentSignalKinds(signals);
     const target = registry.detectionMap[detected.level];
     const mapped = findPersona(registry, target);
     if (!mapped) {
+      // Reported ahead of the signal count on purpose: an unmapped level is a
+      // vocabulary problem, and "open more files" would be the wrong next step.
       notes.push(
         `detected user level '${detected.level}' maps to no persona, so the` +
           ' fallback applies',
+      );
+    } else if (kinds.length < signalFloor) {
+      // Named as a count rather than as "no signal": a reader has to be able to
+      // tell "I looked and found too little" from "I found nothing", because
+      // only one of those is fixed by giving the detector more to look at.
+      notes.push(
+        `detected '${detected.level}' from ${kinds.length} independent ` +
+          `signal(s) (${signalFloor} required), so the fallback applies`,
       );
     } else if (detected.confidence < floor) {
       notes.push(

@@ -54,12 +54,25 @@ function persona(id: string, over: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * Two signals of genuinely different kinds — enough to clear the floor.
+ *
+ * Shaped like the detector's real output, because the independence rule reads
+ * the signal's kind (the text before the first `": "`) rather than counting
+ * strings.
+ */
+const TWO_KINDS = [
+  'project manifest present: package.json',
+  'test-framework config present: vitest.config.ts',
+];
+
 /** A small hand-built registry, for the precedence cases. */
 function registry(over: Partial<PersonaRegistry> = {}): PersonaRegistry {
   return {
     version: 1,
     fallback: 'b',
     minDetectionConfidence: 0.5,
+    minDetectionSignals: 2,
     detectionMap: { sdet: 'a', manual: 'b' },
     personas: [
       persona('a', { depth: 'terse', reasoning: false }),
@@ -121,7 +134,7 @@ describe('shipped persona registry', () => {
     // sdet|junior|manual, code said sdet|manual|unknown. Pin the union.
     for (const level of ['sdet', 'manual', 'unknown']) {
       const resolved = resolvePersona({
-        detected: { level, confidence: 1, signals: [] },
+        detected: { level, confidence: 1, signals: TWO_KINDS },
         home: BARE,
       });
       expect(byId(SHIPPED, resolved.persona.id)).not.toBeNull();
@@ -132,7 +145,7 @@ describe('shipped persona registry', () => {
     // `unknown` is a real detector outcome, not an audience. A run that fired
     // no signal must not assert one.
     const resolved = resolvePersona({
-      detected: { level: 'unknown', confidence: 1, signals: [] },
+      detected: { level: 'unknown', confidence: 1, signals: TWO_KINDS },
       home: BARE,
     });
     expect(resolved.source).toBe('fallback');
@@ -142,9 +155,9 @@ describe('shipped persona registry', () => {
   it('agrees with the live detector on a code-shaped project', () => {
     // Contract test across the #341 seam: the detector's own output must be a
     // resolvable input, not merely a string that happens to look like one.
-    const [level] = detectUserLevel(process.cwd(), ['src/thing.ts']);
+    const [level, signals] = detectUserLevel(process.cwd(), ['src/thing.ts']);
     const resolved = resolvePersona({
-      detected: { level, confidence: 1, signals: [] },
+      detected: { level, confidence: 1, signals },
       home: BARE,
     });
     expect(resolved.source).toBe('detected');
@@ -213,14 +226,29 @@ describe('effectivePersonaRegistry base registry', () => {
     expect(ids(loaded)).toEqual(['ok']);
   });
 
-  it('defaults the confidence floor and detection map when absent', () => {
+  it('defaults both floors and the detection map when absent', () => {
     const loaded = load(
       'minimal.json',
       JSON.stringify({ fallback: 'ok', personas: [persona('ok')] }),
     );
     expect(loaded.minDetectionConfidence).toBeGreaterThan(0);
+    // A registry that forgets the signal floor must not get a floor of zero —
+    // that would restore exactly the single-signal trust this removes.
+    expect(loaded.minDetectionSignals).toBe(2);
     expect(loaded.detectionMap).toEqual({});
     expect(loaded.version).toBe(1);
+  });
+
+  it('lets a registry declare a non-default signal floor', () => {
+    const loaded = load(
+      'strict.json',
+      JSON.stringify({
+        fallback: 'ok',
+        personas: [persona('ok')],
+        minDetectionSignals: 3,
+      }),
+    );
+    expect(loaded.minDetectionSignals).toBe(3);
   });
 
   it('ignores a non-object detectionMap and non-string targets', () => {
@@ -287,7 +315,7 @@ describe('resolvePersona', () => {
 
   it('falls back when the detection is below the confidence floor', () => {
     const resolved = resolvePersona({
-      detected: { level: 'sdet', confidence: 0.25, signals: ['s1'] },
+      detected: { level: 'sdet', confidence: 0.25, signals: TWO_KINDS },
       registry: registry(),
     });
     expect(resolved.persona.id).toBe('b');
@@ -295,12 +323,12 @@ describe('resolvePersona', () => {
     // The floor must be named, or a surprised user has nothing to tune.
     expect(resolved.reason).toMatch(/0\.5/);
     // Signals survive: the fallback still owes the user its evidence.
-    expect(resolved.signals).toEqual(['s1']);
+    expect(resolved.signals).toEqual(TWO_KINDS);
   });
 
   it('treats the floor as inclusive', () => {
     const resolved = resolvePersona({
-      detected: { level: 'sdet', confidence: 0.5, signals: [] },
+      detected: { level: 'sdet', confidence: 0.5, signals: TWO_KINDS },
       registry: registry(),
     });
     expect(resolved.source).toBe('detected');
@@ -358,7 +386,7 @@ describe('resolvePersona', () => {
     // everything else — but it must still be reported.
     const resolved = resolvePersona({
       explicit: 'architect',
-      detected: { level: 'sdet', confidence: 1, signals: [] },
+      detected: { level: 'sdet', confidence: 1, signals: TWO_KINDS },
       registry: registry(),
     });
     expect(resolved.persona.id).toBe('a');
@@ -382,6 +410,160 @@ describe('resolvePersona', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The independent-signal floor
+// ---------------------------------------------------------------------------
+
+/**
+ * Confidence alone cannot carry this decision, and these tests are why.
+ *
+ * `detectUserLevel` returns `|sdet - manual| / total` — a *margin* between two
+ * tallies, not a probability. One unopposed signal scores a perfect 1.0, so a
+ * confidence floor screens ties and nothing else: it will wave through a single
+ * observation with total certainty attached. Requiring two signals of genuinely
+ * different kinds is the screen that actually discriminates, and "confident and
+ * wrong" is the failure this repo keeps rooting out.
+ */
+describe('resolvePersona independent-signal floor', () => {
+  it('refuses a single signal even at full confidence', () => {
+    // The whole point. One observation is not evidence about a person.
+    const resolved = resolvePersona({
+      detected: {
+        level: 'sdet',
+        confidence: 1,
+        signals: ['project manifest present: package.json'],
+      },
+      registry: registry(),
+    });
+    expect(resolved.source).toBe('fallback');
+    expect(resolved.persona.id).toBe('b');
+  });
+
+  it('counts repeated evidence of one kind as one signal', () => {
+    // Ten open TypeScript files are one observation restated, not ten
+    // independent ones — and the raw count would have said ten.
+    const resolved = resolvePersona({
+      detected: {
+        level: 'sdet',
+        confidence: 1,
+        signals: [
+          'code/test file open: a.ts',
+          'code/test file open: b.ts',
+          'code/test file open: c.ts',
+        ],
+      },
+      registry: registry(),
+    });
+    expect(resolved.source).toBe('fallback');
+  });
+
+  it('accepts two signals of different kinds', () => {
+    const resolved = resolvePersona({
+      detected: { level: 'sdet', confidence: 1, signals: TWO_KINDS },
+      registry: registry(),
+    });
+    expect(resolved.source).toBe('detected');
+    expect(resolved.persona.id).toBe('a');
+  });
+
+  it('accepts two kinds spread across more than two signals', () => {
+    const resolved = resolvePersona({
+      detected: {
+        level: 'sdet',
+        confidence: 1,
+        signals: [
+          'code/test file open: a.ts',
+          'code/test file open: b.ts',
+          'project manifest present: package.json',
+        ],
+      },
+      registry: registry(),
+    });
+    expect(resolved.source).toBe('detected');
+  });
+
+  it('treats a kindless signal as its own kind', () => {
+    // `cwd path suggests manual testing` carries no `": "` separator, so the
+    // whole string is the kind. It must still count as one.
+    const resolved = resolvePersona({
+      detected: {
+        level: 'manual',
+        confidence: 1,
+        signals: [
+          'cwd path suggests manual testing',
+          'manual artefact open: plan.md',
+        ],
+      },
+      registry: registry(),
+    });
+    expect(resolved.source).toBe('detected');
+    expect(resolved.persona.id).toBe('b');
+  });
+
+  it('says insufficient signals, not absent ones', () => {
+    // Abstention-vs-absence, the same discipline as the rest of the repo: a
+    // reader has to be able to tell "I looked and found too little" from "I
+    // found nothing", because only one of them is fixed by opening more files.
+    const one = resolvePersona({
+      detected: { level: 'sdet', confidence: 1, signals: ['only: one'] },
+      registry: registry(),
+    });
+    expect(one.reason).toMatch(/1 independent signal/);
+    expect(one.reason).toMatch(/2 required/);
+    expect(one.reason).not.toMatch(/no signal/);
+
+    const none = resolvePersona({
+      detected: { level: 'sdet', confidence: 1, signals: [] },
+      registry: registry(),
+    });
+    expect(none.reason).toMatch(/0 independent signal/);
+  });
+
+  it('keeps the evidence it rejected, so the user can see it', () => {
+    const resolved = resolvePersona({
+      detected: { level: 'sdet', confidence: 1, signals: ['only: one'] },
+      registry: registry(),
+    });
+    expect(resolved.signals).toEqual(['only: one']);
+  });
+
+  it('reports a missing mapping ahead of the signal count', () => {
+    // An unmapped level is a vocabulary problem, not an evidence problem, and
+    // telling the user to open more files would be the wrong next step.
+    const resolved = resolvePersona({
+      detected: { level: 'unknown', confidence: 1, signals: ['only: one'] },
+      registry: registry(),
+    });
+    expect(resolved.reason).toMatch(/maps to no persona/);
+    expect(resolved.reason).not.toMatch(/independent signal/);
+  });
+
+  it('lets an explicit choice through with no signals at all', () => {
+    // The floor governs inference. It must never gate a stated preference.
+    const resolved = resolvePersona({
+      explicit: 'a',
+      detected: { level: 'manual', confidence: 1, signals: [] },
+      registry: registry(),
+    });
+    expect(resolved.source).toBe('explicit');
+    expect(resolved.persona.id).toBe('a');
+  });
+
+  it('honours a registry that lowers the floor', () => {
+    const resolved = resolvePersona({
+      detected: { level: 'sdet', confidence: 1, signals: ['only: one'] },
+      registry: registry({ minDetectionSignals: 1 }),
+    });
+    expect(resolved.source).toBe('detected');
+  });
+
+  it('is two in the shipped registry, stated rather than defaulted', () => {
+    // Declared in registry.json even though the code default matches it, so an
+    // overlay author reading the data file can see the policy and retune it.
+    expect(SHIPPED.minDetectionSignals).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The JSON view consumers actually read
 // ---------------------------------------------------------------------------
 
@@ -389,7 +571,7 @@ describe('personaToDict', () => {
   it('emits the resolution provenance beside the definition', () => {
     const dict = personaToDict(
       resolvePersona({
-        detected: { level: 'manual', confidence: 0.9, signals: ['s'] },
+        detected: { level: 'manual', confidence: 0.9, signals: TWO_KINDS },
         registry: registry(),
       }),
     );
@@ -402,7 +584,7 @@ describe('personaToDict', () => {
       reasoning: true,
       source: 'detected',
       reason: expect.any(String),
-      signals: ['s'],
+      signals: TWO_KINDS,
     });
   });
 

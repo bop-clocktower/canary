@@ -154,8 +154,22 @@ describe('analyzeFileImpl', () => {
   // #341's missing half: something reads the detected level (#462 personas)
   // -------------------------------------------------------------------------
 
-  /** A project that scores `sdet` on the user-level heuristic. */
+  /**
+   * A project carrying TWO independent `sdet` signals — a project manifest and
+   * a test-framework config. Two is the floor, so one of these alone is not
+   * enough; see the weak-signal cases below.
+   */
   function sdetProject(): string {
+    const root = gitRoot();
+    writeFileSync(join(root, 'package.json'), '{}\n');
+    writeFileSync(join(root, 'playwright.config.ts'), 'export default {};\n');
+    const target = join(root, 'login.spec.ts');
+    writeFileSync(target, "import { test } from '@playwright/test';\n");
+    return target;
+  }
+
+  /** A project whose only user-level signal is its manifest. */
+  function oneSignalProject(): string {
     const root = gitRoot();
     writeFileSync(join(root, 'package.json'), '{}\n');
     const target = join(root, 'login.spec.ts');
@@ -228,10 +242,61 @@ describe('analyzeFileImpl', () => {
     expect(persona['reasoning']).toBe(true);
   });
 
-  it('resolves the manual persona from a manual-artefact signal', () => {
-    // A `.md` file open is the detector's manual-tester signal, and it scores
-    // an unopposed 1.0 — so this is the path that actually adapts output for
-    // a non-automation reader.
+  it('does not resolve sdet from one project signal', () => {
+    // The regression this floor exists for. A manifest is one observation, and
+    // a manifest plus full confidence used to be enough to declare the reader a
+    // senior SDET and strip every explanation out of the output.
+    const persona = analyzeFileImpl(oneSignalProject())['persona'] as Record<
+      string,
+      unknown
+    >;
+    expect(persona['source']).toBe('fallback');
+    expect(persona['id']).not.toBe('sdet');
+    expect(persona['reason']).toContain('independent signal');
+  });
+
+  it('does not count the analyzed file as a signal about the user', () => {
+    // `analyze_file`'s own argument is the tool's input, not an observation of
+    // what the caller happens to be working on, so it must not be one of the
+    // two. If it were counted, this project (manifest + the analyzed `.ts`
+    // file) would clear the floor and resolve `sdet`.
+    const result = analyzeFileImpl(oneSignalProject());
+    const persona = result['persona'] as Record<string, unknown>;
+    expect(persona['reason']).toContain('1 independent signal');
+    const personaSignals = persona['signals'] as string[];
+    expect(
+      personaSignals.some((s) => s.startsWith('code/test file open:')),
+    ).toBe(false);
+
+    // The analyzed file is still reported in `environment`, whose contract is
+    // unchanged — it is only the persona that declines to count it.
+    const env = result['environment'] as Record<string, unknown>;
+    const envSignals = env['user_level_signals'] as string[];
+    expect(envSignals.some((s) => s.startsWith('code/test file open:'))).toBe(
+      true,
+    );
+  });
+
+  it('no longer infers the manual persona from a manual artefact alone', () => {
+    // Consequence of the floor, recorded deliberately rather than discovered
+    // later: analysing a `.md` file used to resolve `manual` on that one
+    // unopposed signal. The only other manual-leaning evidence the detector has
+    // is a cwd path hint, so `manual` is now reached by an explicit
+    // CANARY_PERSONA rather than guessed at. The fallback is explanatory, so
+    // the failure is safe — a manual tester gets `junior`, not `sdet`.
+    const root = gitRoot();
+    const target = join(root, 'test-plan.md');
+    writeFileSync(target, '# plan\n');
+    const persona = analyzeFileImpl(target)['persona'] as Record<
+      string,
+      unknown
+    >;
+    expect(persona['source']).toBe('fallback');
+    expect(persona['depth']).not.toBe('terse');
+  });
+
+  it('still resolves manual when it is asked for outright', () => {
+    vi.stubEnv('CANARY_PERSONA', 'manual');
     const root = gitRoot();
     const target = join(root, 'test-plan.md');
     writeFileSync(target, '# plan\n');

@@ -49,7 +49,10 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import * as z from 'zod';
 
 import { DomainScanner } from './core/domain-scanner.js';
-import { detectEnvironment } from './core/environment-detect.js';
+import {
+  detectEnvironment,
+  detectUserLevel,
+} from './core/environment-detect.js';
 import {
   effectivePersonaRegistry,
   personaToDict,
@@ -475,6 +478,18 @@ export function analyzeFileImpl(filePath: string): Record<string, unknown> {
   // Resolving it into a persona is what turns the signal into something a
   // skill can consult instead of re-inventing its own audience rules.
   //
+  // The persona re-derives the user level WITHOUT the analyzed file, and that
+  // is the whole point of the second call. `filePath` is this tool's argument,
+  // not an observation of what the caller is working on, so counting it as
+  // evidence about the person would let any `.ts` file in any project with a
+  // package.json clear the two-independent-signal floor and declare the reader
+  // a senior SDET. `environment` above keeps reporting it — that contract is
+  // unchanged — and only the persona declines to count it.
+  const [personaLevel, personaSignals, personaConfidence] = detectUserLevel(
+    projectRoot,
+    [],
+  );
+
   // Both I/O decisions are made *here* rather than inside the resolver, which
   // is pure by design: reading the environment variable, and loading the
   // registry (shipped personas folded with every overlay's). `CANARY_PERSONA`
@@ -484,9 +499,9 @@ export function analyzeFileImpl(filePath: string): Record<string, unknown> {
     resolvePersona({
       explicit: process.env['CANARY_PERSONA'] ?? null,
       detected: {
-        level: detected.user_level,
-        confidence: detected.user_level_confidence,
-        signals: detected.user_level_signals,
+        level: personaLevel,
+        confidence: personaConfidence,
+        signals: personaSignals,
       },
       registry: effectivePersonaRegistry(),
     }),

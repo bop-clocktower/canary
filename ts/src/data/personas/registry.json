@@ -2,6 +2,7 @@
   "version": 1,
   "fallback": "junior",
   "minDetectionConfidence": 0.5,
+  "minDetectionSignals": 2,
   "detectionMap": {
     "sdet": "sdet",
     "manual": "manual"
