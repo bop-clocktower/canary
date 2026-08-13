@@ -48,13 +48,28 @@ jobs:
       # matched zero test files, i.e. this step's own configuration broke. That
       # must NOT read as a clean lint run -- which, before #508, it would have.
       # Findings themselves (exit 1) are reported and counted, not fatal.
-      - name: review-test + flake-check over canary's own suites
+      #
+      # `vacuity-check` joined this loop in #716. It shipped in #714 and spent
+      # its first days running nowhere, which is the exact claim this workflow's
+      # header says a test-intelligence tool cannot make: it had never read our
+      # own tests. Its contract differs from its neighbours -- findings exit 0
+      # (advisory, per ADR 0009's advisory/gate split) while a collapsed
+      # denominator still exits 3 -- so the abstention guard below covers it
+      # unchanged, and the count comes from `--json` either way. Baseline at
+      # time of wiring: 101 findings (27 ts/test, 2 npm, 72 agents/skills/test),
+      # triage tracked in #705/#706.
+      #
+      # `promote-check` is deliberately NOT here. It is a single-file gate and
+      # abstains (exit 3) on a directory, so adding it would manufacture a
+      # permanent "Dogfood misconfigured" error rather than coverage.
+      # `ts/test/workflow-false-green.test.ts` pins both halves of that.
+      - name: review-test + flake-check + vacuity-check over canary's own suites
         run: |
           set +e
           broke=0
           total=0
           for dir in ts/test npm/scripts/__tests__ agents/skills/test; do
-            for cmd in review-test flake-check; do
+            for cmd in review-test flake-check vacuity-check; do
               echo "::group::canary $cmd $dir"
               node ts/bin/canary.js "$cmd" "$dir"
               rc=$?
@@ -64,8 +79,24 @@ jobs:
                 broke=1
                 continue
               fi
+              # Two --json shapes are in play. `review-test` and `flake-check`
+              # emit a bare array; `vacuity-check` emits an envelope
+              # {checked, abstained, findings, skipped} that carries its own
+              # denominator. Reading `.length` off the envelope yields
+              # `undefined`, which shell arithmetic then quietly treats as 0 --
+              # the check would have run, reported nothing, and looked clean.
+              # An unreadable count now trips `broke` instead of counting zero,
+              # for the same reason exit 3 does: absence of a number is not
+              # evidence of zero findings (#508, #716).
               n=$(node ts/bin/canary.js "$cmd" "$dir" --json 2>/dev/null \
-                    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).length)}catch{console.log(0)}})')
+                    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);const f=Array.isArray(j)?j:j.findings;console.log(Array.isArray(f)?f.length:"ERR")}catch{console.log("ERR")}})')
+              case "$n" in
+                '' | *[!0-9]*)
+                  echo "::error title=Dogfood count unreadable::$cmd on $dir yielded no countable findings list. A missing count must not read as zero."
+                  broke=1
+                  continue
+                  ;;
+              esac
               echo "$cmd $dir: $n finding(s)"
               total=$((total + n))
             done
