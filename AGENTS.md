@@ -201,6 +201,25 @@ docs/branching-convention
   user-level heuristic (cwd + open files). Surfaced additively as the
   `environment` block on the MCP `analyze_file` response. Browser-tab detection
   is deferred to the Chrome Extension MCP Bridge (#343).
+- **Personas:** [ts/src/core/persona.ts](ts/src/core/persona.ts) — the audience
+  definition skills **consult** instead of hand-rolling "if tester, use simpler
+  words" (#462), and the consumer the detection above never had (#341).
+  `ts/src/data/personas/registry.json` names each audience with an explanation
+  `depth`, preferred `formats`, and a `reasoning` switch; `resolvePersona` picks
+  one from an explicit id, then a detected level clearing the registry's
+  confidence floor, then the fallback — always reporting `source`, `reason`, and
+  the detector's `signals`. Surfaced additively as the `persona` block on
+  `analyze_file`. Three boundaries that are decisions, not omissions: **voice is
+  not a persona field** (`voice/discovery.md` already owns that axis, and
+  collapsing the two would make "terse in a given voice" inexpressible); the
+  **fallback is explanatory rather than terse**, because most users never
+  configure this and under-explaining fails a manual tester silently where
+  over-explaining merely annoys an SDET; and the module reads **no** environment
+  variable itself, so `CANARY_PERSONA` is read at the call site and the resolver
+  stays pure. `CANARY_PERSONA` is unrelated to `canary doctor --audience`, which
+  tags which overlay _checks_ run and ships no vocabulary of its own. Overlays
+  extend the registry through `.canary/personas.json`, arbitrated by the same
+  `precedence` contract as skill-name collisions (#333).
 - **Feedback:** [ts/src/core/feedback.ts](ts/src/core/feedback.ts) — Builds a
   pre-filled GitHub issue for `canary feedback` (#345) with non-sensitive
   context (version/OS/Python/install); never env vars or file contents. (New in
