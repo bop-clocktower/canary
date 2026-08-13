@@ -1,13 +1,15 @@
 {
-  "$comment": "Triaged entropy ceiling for #544, corrected in #677, lowered in #676. Lower it when the count drops; never raise it to make CI pass. See docs/knowledge/decisions/0012-entropy-ratchet.md for the triage and the categories behind the number.",
+  "$comment": "Triaged entropy ceiling for #544, corrected in #677, lowered in #676 and again by the 2026-08-13 paydown. Lower it when the count drops; never raise it to make CI pass. See docs/knowledge/decisions/0012-entropy-ratchet.md for the triage and the categories behind the number.",
   "$correction": "#677: the exclude list inherited from the CLI covered **/*.test.ts but not **/*.test.js, so all 32 node:test files under npm/scripts/__tests__/ were scanned as ordinary source and reported unreferenced. entropy.excludePatterns is now declared in harness.config.json and the measured count fell 340 -> 308, purely subtractive (the report is otherwise byte-identical).",
   "$reduction": "#676: 26 dead documentation links repaired (v6.0.0 Python retirement and the docs/adr -> docs/knowledge/decisions move). 21 of them fall inside docs/, the only tree `harness cleanup` scans, so the measured count fell 308 -> 287. This composes with #677 rather than overlapping it: #677 removed test files from the denominator, #676 removed dead links from the numerator. Re-measured on the merged tree, not derived arithmetically.",
-  "maxFindings": 297,
+  "$paydown": "2026-08-13 paydown: 15 provably-dead exports removed to create durable headroom (main measured 296 against the 297 ceiling — one finding, and two finished branches waiting on three). Every one was verified category-1 before touching: no importer of the declaring module references it, including via `dist` (the npm package's node:test suite requires `../../dist/*.js`, so npm/src exports that look dead are NOT) and via the ts/src -> npm/src `sync-gate-result.mjs` mirror (`skippedSuffix` looks dead in ts/src and is live in the generated copy). 13 are `export` keyword removals on symbols still used inside their own module — no code deleted, nothing changes at runtime. 2 are real deletions: the `scanFile` thin wrapper in the canary-savant and canary-blackhawk scanners, which had zero consumers anywhere (neither skill's cli.mjs nor its test imports it; both import `scanText`/`scanTextFull`/`scanPaths`). Measured 296 -> 281 on the real tree with `harness cleanup --findings-json`, and the before/after `--json` sets differ by exactly those 15 with ZERO additions and drift unchanged at 24 — purely subtractive, never derived arithmetically. Left deliberately: the 24 drift findings (upstream detector defects, re-verified fence-quoted), the ADR-triaged testkits / fixture projects / spike / five test-only ts/src modules, 15 npm/src exports covered via dist, and `ts/src/cli-common.ts::ensureAscii` — see the wiring finding in ADR 0012.",
+  "maxFindings": 291,
   "triagedAt": "2026-08-10",
   "triagedCount": 330,
   "correctedAt": "2026-08-12",
   "correctedCount": 308,
-  "measuredAt": "2026-08-12",
-  "measuredCount": 287,
-  "harnessCli": "11.1.1"
+  "measuredAt": "2026-08-13",
+  "measuredCount": 281,
+  "harnessCli": "11.1.1",
+  "$headroom": "maxFindings is 291 against a measured 281 — 10 findings of deliberate headroom, the same shape as the previous ceiling (297 against a measured 287). This is a TIGHTENING of the ceiling (297 -> 291), not a raise: the forbidden move is lifting maxFindings so a failing check passes, and this lowers it while the measured count is falling. The headroom exists because the ratchet is an ABSOLUTE total, so concurrent branches consume a shared non-renewable budget that none of them can see (#703). A ceiling pinned exactly to the measured count means the next single green PR that adds one finding fails, which is how a blocking gate becomes wallpaper. Lower it again when the count drops; never raise it to make CI pass."
 }

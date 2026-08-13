@@ -152,7 +152,7 @@ function describeRegression(r) {
  * read. `HARNESS_CLI_VERSION` overrides the probe — CI already knows what it
  * installed, and the tests need a seam that does not depend on the machine.
  */
-export function detectHarnessCliVersion() {
+function detectHarnessCliVersion() {
   const declared = process.env.HARNESS_CLI_VERSION;
   if (declared !== undefined && declared !== '') return declared.trim();
   try {
@@ -175,7 +175,7 @@ export function detectHarnessCliVersion() {
  * version is reported rather than assumed green — guessing "probably fine"
  * here is the abstention-as-pass shape this repo keeps closing.
  */
-export function allowanceSupportLines(version) {
+function allowanceSupportLines(version) {
   const major = Number.parseInt(String(version ?? '').replace(/^v/, ''), 10);
   if (Number.isNaN(major)) {
     return [

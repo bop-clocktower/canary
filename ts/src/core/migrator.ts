@@ -348,7 +348,7 @@ function isLocallyEdited(
  * Frameworks a user can pass to `canary migrate --framework <name>`. Surfaced in
  * the fail-loud message when auto-detection is uncertain (issue #295).
  */
-export const KNOWN_FRAMEWORKS: readonly string[] = [
+const KNOWN_FRAMEWORKS: readonly string[] = [
   'playwright',
   'vitest',
   'pytest',

@@ -29,7 +29,7 @@ import { stringLiteralRanges, execOutsideStrings } from './string-literals.mjs';
 
 export const SNIPPET_LIMIT = 120;
 
-export const SUPPORTED_SUFFIXES = [
+const SUPPORTED_SUFFIXES = [
   '.py',
   '.js',
   '.jsx',
@@ -71,7 +71,7 @@ const isComment = (stripped) =>
 const partsOf = (p) => p.split(/[\\/]/).filter(Boolean);
 
 /** True when a path looks like a test file by name or containing directory. */
-export function isTestFile(filePath) {
+function isTestFile(filePath) {
   const suffix = path.extname(filePath);
   if (!SUPPORTED_SUFFIXES.includes(suffix)) return false;
   const name = path.basename(filePath);
@@ -258,7 +258,7 @@ export function scanText(text, file = '<text>') {
 }
 
 /** Scan one file. Unreadable files yield nothing. */
-export function scanFileFull(filePath) {
+function scanFileFull(filePath) {
   let text;
   try {
     text = fs.readFileSync(filePath, 'utf8');
@@ -266,10 +266,6 @@ export function scanFileFull(filePath) {
     return { findings: [], suppressed: [] };
   }
   return scanTextFull(text, filePath);
-}
-
-export function scanFile(filePath) {
-  return scanFileFull(filePath).findings;
 }
 
 /** Yield the files a path contributes: explicit files win, dirs are filtered. */

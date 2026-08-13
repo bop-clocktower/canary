@@ -160,6 +160,51 @@ zero.**
    `entropy.entryPoints` is the documented remedy and would reclaim the 5 — not
    applied, so the number stays honest until someone decides to.
 
+   **Amended 2026-08-13 by the dead-code paydown.** `main` measured **296**
+   against the 297 ceiling — one finding of headroom, with two finished branches
+   waiting that needed three between them. Rather than squeeze those through, 15
+   provably-dead exports were removed and `maxFindings` lowered to the measured
+   **281**. Thirteen are `export`-keyword removals on symbols still used inside
+   their own module (`RECORD_STATUSES`, `ANALYSIS_SOURCE`, `KNOWN_FRAMEWORKS`,
+   `workflow-discovery`'s `SCHEMA_VERSION`, `arch-verdict.mjs`'s two helpers,
+   the redundant `TestResultRecord` re-export, and
+   `SUPPORTED_SUFFIXES`/`isTestFile`/`scanFileFull` in the canary-savant and
+   canary-blackhawk scanners) — no code deleted, nothing changed at runtime. Two
+   are genuine deletions: the `scanFile` thin wrapper in both scanners, with
+   zero consumers anywhere. Measured 296 → 281, and the before/after `--json`
+   sets differ by exactly those 15 with **zero** additions — purely subtractive.
+
+   **Two traps that make an export look dead when it is live**, both hit during
+   this triage and both worth naming so the next paydown does not delete live
+   code:
+
+   | trap                | why the analyzer misses it                                                                                                                                                                              |
+   | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | the `dist` hop      | `npm/scripts/__tests__/*.test.js` does `require('../../dist/engine-checks.js')`, so all 15 flagged `npm/src` exports (`checkPluginVersion`, `parseRegistryVersion`, ...) are test-covered and **live**. |
+   | the sync-mirror hop | `npm/src/gate-result.ts` is a verbatim generated copy of `ts/src/core/gate-result.ts`; `npm/src/doctor.ts` imports `skippedSuffix` from the copy, so the engine export is live.                         |
+
+   A third class stays exported by necessity: `tsconfig` sets
+   `declaration: true`, so a type named in an exported signature cannot be
+   unexported. That is why `BlockDecision` (return type of the exported
+   `decideBlock`) and migrator's `SkillDeployResult` / `WorkflowInstallResult` /
+   `SkillFreshnessResult` (field types of the exported `MigrationReport` /
+   `FreshnessReport`) were left alone.
+
+   **A wiring finding surfaced and was deliberately NOT resolved by deleting.**
+   `ts/src/cli-common.ts` documents `ensureAscii` as shared plumbing "every
+   command tree needs", and it is imported by nothing: eight modules
+   (`mcp-server.ts`, `guardian/cli.ts`, `guardian/pr-check.ts`,
+   `guardian/analysis-emit.ts`, `core/reporter.ts`, `core/migrator.ts`,
+   `core/ticket-updater.ts`, `core/workflow-discovery.ts`) each declare their
+   own private copy instead. The copies have drifted into **two**
+   implementations — six use a regex `replace`, two use the per-code-unit loop
+   `cli-common.ts` documents. Both forms iterate UTF-16 code units, so they
+   agree today and no behavior is wrong; what is wrong is that the single source
+   of truth was written and never wired, so the next parity fix has eight places
+   to land instead of one. Unexporting it would have paid one more finding and
+   cemented the duplication, so it was left exported and recorded here instead.
+   Consolidating the eight copies is a separate change.
+
 4. `scripts/entropy-ratchet.mjs` compares the count from
    `harness cleanup --findings-json` against that baseline and fails above it.
    `continue-on-error` is gone from the step.
