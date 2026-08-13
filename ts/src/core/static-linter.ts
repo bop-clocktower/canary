@@ -55,7 +55,7 @@ const TEST_FN_PY = /^([ \t]*)def (test_\w+)\s*\(/gm;
 // been blanked away; blanking is length-preserving precisely so these offsets
 // still address the untouched text (#590).
 const TEST_FN_JS = /(?:^|\s)(?:it|test)\s*\(\s*['"]([^'"]*)['"]/dgm;
-const ASSERT_PY = /\bassert\b|\bpytest\.raises\b/;
+export const ASSERT_PY = /\bassert\b|\bpytest\.raises\b/;
 // Assertion styles a JS/TS test may use. `expect()` (jest/vitest/playwright)
 // was the only one recognized until canary was pointed at its own suites and
 // reported 216 assertion-free tests of which 13 were real -- the other 200 were
@@ -67,11 +67,44 @@ const ASSERT_PY = /\bassert\b|\bpytest\.raises\b/;
 // own 16 residual findings. A regex linter cannot follow the call, so the NAME
 // carries the signal; the `[A-Z]` keeps it to the convention rather than
 // excusing any call that merely starts with those letters.
-const ASSERT_JS =
+export const ASSERT_JS =
   /\bexpect\s*\(|\bto(?:Be|Equal|Contain|Have|Match|Throw|Raise)\b|\bassert\s*\.\s*\w+\s*\(|\bassert\s*\(|\bshould\s*\.|\.should\b|\b(?:expect|assert)[A-Z]\w*\s*\(/;
 
 // Strippers
-const STRING_LITERAL = /(['"])(?:\\.|(?!\1).)*?\1/g;
+/**
+ * A single-line quoted string literal.
+ *
+ * Written as one unambiguous alternation per quote style rather than the
+ * backreferenced `/(['"])(?:\\.|(?!\1).)*?\1/`, because that shape is
+ * CATASTROPHICALLY BACKTRACKING: `\\.` and `(?!\1).` both match a backslash, so
+ * every backslash doubles the parses the engine must try, and an UNTERMINATED
+ * literal makes it try all of them. Measured on this file's own scanners: a line
+ * `const p = 'C:` followed by 42 backslashes and no closing quote took **5.9
+ * seconds**, at 36 backslashes 142ms, and the growth is exponential -- ~55 is
+ * minutes. A linter that hangs on a Windows-path fixture is not advisory, it is
+ * down, and the input reaches here routinely because `blankMultilineStrings`
+ * blanks only the lines BETWEEN delimiters, so a multi-line literal's opening
+ * line always arrives intact.
+ *
+ * Each branch is `[^quote\\\n]` or `\\[\s\S]` -- disjoint by construction, so
+ * there is exactly one way to parse any input and the match is linear. `\n` is
+ * excluded so an unterminated literal cannot swallow the following lines.
+ */
+const STRING_LITERAL = /'(?:[^'\\\n]|\\[\s\S])*'|"(?:[^"\\\n]|\\[\s\S])*"/g;
+/**
+ * A backtick template literal that opens and closes on ONE line.
+ *
+ * `blankStrings` knew only `'` and `"`, so a single-line template literal was
+ * read as live code by every rule. In a TS suite that is the common case for
+ * fixture data -- pointing the soundness rules at canary's own tests reported 6
+ * findings inside the fixtures of the file testing those very rules. The
+ * multi-line stripper below never covered it either: it only blanks the
+ * INTERIOR of a run whose delimiter count is odd, so a balanced one-line
+ * literal falls through both.
+ */
+const TEMPLATE_LITERAL = /`(?:[^`\\]|\\[\s\S])*`/g;
+/** A `${...}` substitution: string syntax wrapping genuinely live code. */
+const TEMPLATE_SUBSTITUTION = /\$\{[^{}]*\}/g;
 
 // Magic numbers -- scoped to TIMING values only.
 //
@@ -125,6 +158,22 @@ function isAllowedNumber(token: string): boolean {
 function isComment(line: string): boolean {
   const s = line.trim();
   return s.startsWith('#') || s.startsWith('//') || s.startsWith('*');
+}
+
+/**
+ * Drop a TRAILING comment from a line whose strings are already blanked.
+ *
+ * `isComment` only recognises a line that is entirely a comment, so a trailing
+ * `// seeded from process.pid earlier` was read as live code -- and because
+ * SOUND-001 gates promotion, a comment mentioning `process.pid` or `Date.now()`
+ * was enough to block a correct test. Safe to apply after `blankStrings`,
+ * because a `//` inside a string literal is already gone by then.
+ *
+ * Applied only by `scanSoundness`: the older rules were written against
+ * comment-bearing lines and changing what they see is not this change's business.
+ */
+function stripComments(line: string): string {
+  return line.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$|#.*$/, '');
 }
 
 function mk(
@@ -200,7 +249,19 @@ const FLAKINESS_RULES: FlakeRule[] = [
  * would delete those rules outright.
  */
 function blankStrings(line: string): string {
-  return line.replace(STRING_LITERAL, '""');
+  // Template literals first: their interior can contain `'`/`"` that would
+  // otherwise pair up across the boundary and blank the wrong span.
+  //
+  // `${...}` substitutions are preserved, because they are the one part of a
+  // template literal that IS executed -- blanking them would take a real
+  // `Date.now()` dark, which is the abstention shape rather than a false
+  // positive. So the literal is replaced by the concatenation of its
+  // substitutions, and the quoted text around them disappears.
+  const detemplated = line.replace(TEMPLATE_LITERAL, (lit) => {
+    const subs = lit.match(TEMPLATE_SUBSTITUTION) ?? [];
+    return subs.length === 0 ? '""' : `""+${subs.join('+')}+""`;
+  });
+  return detemplated.replace(STRING_LITERAL, '""');
 }
 
 function scanFlakiness(lines: string[], file: string): LintFinding[] {
@@ -353,6 +414,245 @@ function scanMagicNumbers(lines: string[], file: string): LintFinding[] {
   return out;
 }
 
+// --- Soundness (#605) -------------------------------------------------------
+//
+// A test can assert, pass, and still prove nothing about the implementation --
+// because the value it pins is one no correct implementation is OBLIGED to
+// produce. A generated test that pins a UUID, a pid, a temp-dir path, or a
+// float it compares with exact equality goes green on the machine that made it
+// and is a scheduled failure everywhere else. Nothing in this linter saw that
+// class: the assertion exists, so LINT-006 is satisfied, and the assertion line
+// itself is often clean, so FLAKE-003/004 never fire.
+//
+// The three rules below all key off the EXPECTATION position rather than the
+// line, which is what keeps them actionable. A random temp dir used as test
+// INPUT is fine and extremely common; the same value used as the expected
+// RESULT is the defect. A rule that could not tell those apart would fire on
+// every fixture-using test in the repo and be ignored within a week -- the
+// LINT-005 outcome (0-for-157 actionable), re-run.
+
+/**
+ * Non-deterministic sources FLAKE-003/004 do not already name. Kept disjoint
+ * from them so one defect never yields two findings the author must dismiss
+ * separately.
+ */
+const NONDET_EXTRA =
+  /\b(?:crypto\.)?randomUUID\s*\(|\buuid4\s*\(|\bnanoid\s*\(|\bprocess\.pid\b|\bprocess\.hrtime\b|\bos\.getpid\s*\(|\bos\.hostname\s*\(|\bsocket\.gethostname\s*\(|\bperformance\.now\s*\(|\btime\.monotonic\s*\(|\bmkdtempSync\s*\(|\btempfile\.mkdtemp\s*\(|\bos\.tmpdir\s*\(/;
+
+/**
+ * Sources whose value a test may legitimately pin as an EXPECTATION, and so the
+ * only ones worth tracking through a variable.
+ *
+ * Deliberately excludes the path family (`mkdtempSync`, `tmpdir`, `mkdtemp`).
+ * Measured against canary's own suite, taint through a temp directory was
+ * 0-for-3 actionable: a temp path is non-deterministic by design, and the
+ * assertion built from it (`expect(globDirs(tmp)).toEqual([join(tmp, 'apps')])`)
+ * is about the relationship between input and output, not about the path. The
+ * path family stays a direct-mode source, where `toBe(mkdtempSync(...))` --
+ * pinning a directory created in the assertion itself -- is still nonsense.
+ */
+const NONDET_TAINT_SOURCE = new RegExp(
+  `${RANDOM.source}|${TIMESTAMP.source}|` +
+    `\\b(?:crypto\\.)?randomUUID\\s*\\(|\\buuid4\\s*\\(|\\bnanoid\\s*\\(|` +
+    `\\bprocess\\.pid\\b|\\bprocess\\.hrtime\\b|\\bos\\.getpid\\s*\\(|` +
+    `\\bos\\.hostname\\s*\\(|\\bsocket\\.gethostname\\s*\\(|` +
+    `\\bperformance\\.now\\s*\\(|\\btime\\.monotonic\\s*\\(`,
+);
+
+/**
+ * Where a JS/TS assertion's EXPECTED value begins.
+ *
+ * `toBeCloseTo` deliberately does not match: `\s*\(` must follow the matcher
+ * name, and `CloseTo(` does not. That single fact is what exempts the CORRECT
+ * float comparison from SOUND-002 and the pinned-fraction contract from
+ * SOUND-003, without either rule naming the fix.
+ */
+const JS_MATCHER_OPEN =
+  /\.to(?:Be|Equal|StrictEqual|MatchObject|Contain|ContainEqual|HaveProperty|HaveLength|HaveValue)\s*\(/;
+/** The Python analogue: `==` in an assert, or `assertEqual(`'s argument list. */
+const PY_MATCHER_OPEN = /==|\bassertEqual\s*\(/;
+
+/**
+ * A `const|let|var x = <rhs>` (JS) or `x = <rhs>` (Python) binding.
+ *
+ * The RHS stops at `;` rather than running to end-of-line, and both are `/g` so
+ * every binding on a line is seen. The old `(.*)$` meant one non-deterministic
+ * call anywhere later on the line tainted every name bound before it --
+ * `const expected = 3; const now = Date.now();` tainted `expected` -- and the
+ * "source" quoted back in the message was the rest of the statement, which is
+ * what gave the bug away.
+ */
+const JS_BINDING = /\b(?:const|let|var)\s+(\w+)\s*=\s*([^;\n]*)/g;
+const PY_BINDING = /^[ \t]*(\w+)\s*=\s*([^=;\n][^;\n]*)/g;
+
+const LEADING_FRACTION = /^\s*-?\d+\.\d+(?![\d.])/;
+const LEADING_INTEGER = /^\s*-?\d+(?![\d.])/;
+/** A division between two operands, e.g. `total / count`. */
+const DIVISION = /[\w)\]]\s*\/\s*[\w(]/;
+
+/**
+ * True iff a decimal literal has an exact binary-float representation.
+ *
+ * The discrimination that makes SOUND-002 usable rather than noise. `0.5` and
+ * `1.125` are exact, so `toBe(0.5)` states a contract an implementation can
+ * actually honour; `0.1` and `0.3` are not, so exact equality on them is a bet
+ * on the specific arithmetic path that produced the value. Flagging the exact
+ * ones too would train readers to dismiss the rule.
+ *
+ * `0.d1..dn` is `N / 10^n = N / (2^n * 5^n)`, so its reduced denominator is a
+ * power of two exactly when `5^n` divides `N`. Computed in BigInt because the
+ * float version was wrong twice over past 10 digits: `10 ** n` exceeds 2^31 so
+ * `den & (den - 1)` coerced through ToInt32 -- for a 32-digit fraction that is
+ * `0 & -1 === 0`, i.e. "exactly representable", and the rule went silent -- and
+ * `Number(frac)` loses precision past 15 digits, making the reduction
+ * meaningless before that. Both failures were in the permissive direction.
+ */
+function isBinaryExact(literal: string): boolean {
+  const frac = literal.split('.')[1] ?? '';
+  if (frac === '') return true;
+  return BigInt(frac) % 5n ** BigInt(frac.length) === 0n;
+}
+
+/** The expected-value text of an assertion line, or null if there is none. */
+function expectationOf(line: string, python: boolean): string | null {
+  const open = python ? PY_MATCHER_OPEN : JS_MATCHER_OPEN;
+  const m = open.exec(line);
+  if (m === null) return null;
+  // To end-of-line rather than to a matching paren: a nested call in the
+  // expectation (`toBe(mkdtempSync(dir))`) has unbalanced parens under any
+  // regex, and the actual-value side is already excluded by starting after the
+  // matcher.
+  return line.slice(m.index + m[0].length);
+}
+
+/** The actual-value text of an assertion line (everything before the matcher). */
+function actualOf(line: string, python: boolean): string | null {
+  const open = python ? PY_MATCHER_OPEN : JS_MATCHER_OPEN;
+  const m = open.exec(line);
+  return m === null ? null : line.slice(0, m.index);
+}
+
+function scanSoundness(
+  lines: string[],
+  file: string,
+  python: boolean,
+): LintFinding[] {
+  const out: LintFinding[] = [];
+  // Variables bound to a non-deterministic source, name -> the source text.
+  //
+  // File-scoped, not test-scoped, and deliberately so: bounding taint by test
+  // body needs the same next-declaration machinery the assertion scanners use,
+  // and a name reused across tests in the same file with one tainted binding is
+  // a finding worth showing either way. Same trade blackhawk documents for
+  // file-wide frozen-clock suppression.
+  const tainted = new Map<string, string>();
+
+  lines.forEach((raw, idx) => {
+    if (isComment(raw)) return;
+    // Data must never read as code: a fixture string carrying `Date.now()` is
+    // the linter's own test suite, not a defect in it. Comments are stripped for
+    // the same reason and it is not cosmetic -- `isComment` only skips a WHOLE
+    // comment line, so a trailing `// seeded from process.pid earlier` was read
+    // as an expectation and blocked the promotion of a correct test.
+    const line = stripComments(blankStrings(raw));
+    const lineNo = idx + 1;
+
+    // EVERY binding on the line, and a deterministic one CLEARS the taint.
+    //
+    // Two bugs lived in the single-`exec` version, both producing a false
+    // block. The RHS capture ran to end-of-line, so `const expected = 3; const
+    // now = Date.now();` tainted `expected` -- and the reported "source" was the
+    // rest of the statement, which is how it was noticed. And the map was
+    // write-only, so a name re-bound to a constant in a later test stayed
+    // tainted for the whole file.
+    for (const b of line.matchAll(python ? PY_BINDING : JS_BINDING)) {
+      const name = b[1]!;
+      const rhs = b[2]!.trim();
+      if (NONDET_TAINT_SOURCE.test(rhs)) tainted.set(name, rhs);
+      else tainted.delete(name);
+    }
+
+    const isAssertion = (python ? ASSERT_PY : ASSERT_JS).test(line);
+    if (!isAssertion) return;
+    const expected = expectationOf(line, python);
+    if (expected === null) return;
+
+    // SOUND-001a: a non-deterministic source called straight into the
+    // expectation.
+    if (NONDET_EXTRA.test(expected)) {
+      out.push(
+        mk(
+          file,
+          lineNo,
+          'SOUND-001',
+          'warning',
+          'Assertion pins a non-deterministic value.',
+          'Pin a fixture value, or assert the SHAPE (matcher/regex/type) instead of the exact value.',
+        ),
+      );
+    } else {
+      // SOUND-001b: the mode a line-based rule cannot see -- the value became
+      // non-deterministic on an earlier line and arrives here through a
+      // variable, so this line reads as perfectly clean.
+      for (const [name, source] of tainted) {
+        // `[\w$]` lookarounds, not `\b`: `$` is legal in a JS identifier and is
+        // not a word character, so `\b$stamp\b` could only match after a word
+        // char and a `$`-prefixed name was invisible.
+        if (!new RegExp(`(?<![\\w$])${name}(?![\\w$])`).test(expected))
+          continue;
+        out.push(
+          mk(
+            file,
+            lineNo,
+            'SOUND-001',
+            'warning',
+            `Assertion pins \`${name}\`, which came from \`${source}\`.`,
+            'A value the implementation did not have to produce proves nothing. Freeze the source (fake timers / fixed seed) or assert the shape.',
+          ),
+        );
+        break; // one finding per assertion line
+      }
+    }
+
+    // SOUND-002: exact equality against a fraction with no exact binary form.
+    const frac = LEADING_FRACTION.exec(expected);
+    if (frac && !isBinaryExact(frac[0].trim())) {
+      out.push(
+        mk(
+          file,
+          lineNo,
+          'SOUND-002',
+          'warning',
+          `Exact equality against ${frac[0].trim()}, which has no exact binary representation.`,
+          python
+            ? 'Use pytest.approx() -- exact float equality depends on the arithmetic path, not the contract.'
+            : 'Use toBeCloseTo() -- exact float equality depends on the arithmetic path, not the contract.',
+        ),
+      );
+    }
+
+    // SOUND-003: a ratio pinned to an integer never states whether the
+    // operation truncates. This is the realworld S4 integer/fractional
+    // precondition, one layer down: the test exercises the input shape the
+    // author had in mind and leaves the other one unspecified.
+    const actual = actualOf(line, python);
+    if (actual && DIVISION.test(actual) && LEADING_INTEGER.test(expected)) {
+      out.push(
+        mk(
+          file,
+          lineNo,
+          'SOUND-003',
+          'warning',
+          'A ratio is pinned to an integer, leaving the integer/fractional contract unpinned.',
+          'Add a case whose inputs divide to a fractional result, so the test says whether the operation truncates.',
+        ),
+      );
+    }
+  });
+
+  return out;
+}
+
 function lineOf(code: string, offset: number): number {
   let n = 1;
   for (let i = 0; i < offset && i < code.length; i++) {
@@ -361,22 +661,87 @@ function lineOf(code: string, offset: number): number {
   return n;
 }
 
+/** One test declaration and the source span that belongs to it. */
+export interface TestBlock {
+  /** The test's name as written in the ORIGINAL (unblanked) source. */
+  name: string;
+  /** 1-based line of the declaration. */
+  line: number;
+  /** The body text, bounded by the next declaration. */
+  body: string;
+  /** Byte offset of `body` in the source it was sliced from. */
+  bodyStart: number;
+}
+
+/**
+ * Every test declaration in `code`, with its body bounded by the NEXT one.
+ *
+ * Extracted so the vacuity scanner (#612) shares one notion of "where does this
+ * test end" with LINT-006 rather than growing a second, subtly different one.
+ * The boundary logic is the part with a bug history — a fixed 2000-character
+ * lookahead was wrong in both directions (#590), the `(?:^|\s)` prefix put the
+ * reported line one early (#633) — so a divergent copy would inherit none of
+ * those fixes.
+ *
+ * `code` must be the string-blanked source (see `blankStringContent`) so a
+ * declaration inside a fixture cannot truncate a real test's body; `source` is
+ * the untouched text, read only to recover names that blanking erased.
+ */
+export function enumerateTests(
+  code: string,
+  source: string,
+  python: boolean,
+): TestBlock[] {
+  const out: TestBlock[] = [];
+  if (python) {
+    for (const m of code.matchAll(TEST_FN_PY)) {
+      const indent = m[1]!.length;
+      const start = m.index!;
+      const bodyStart = start + m[0].length;
+      const rest = code.slice(bodyStart);
+      const nextFn = rest.match(new RegExp(`^[ \\t]{${indent}}def `, 'm'));
+      out.push({
+        name: m[2]!,
+        line: lineOf(code, start),
+        body: nextFn ? rest.slice(0, nextFn.index!) : rest,
+        bodyStart,
+      });
+    }
+    return out;
+  }
+  const decls = [...code.matchAll(TEST_FN_JS)];
+  for (let i = 0; i < decls.length; i += 1) {
+    const m = decls[i]!;
+    const start = m.index!;
+    const bodyStart = start + m[0].length;
+    const bodyEnd = decls[i + 1]?.index ?? code.length;
+    // The coordinate comes from the NAME's offset, not the match's: TEST_FN_JS
+    // opens with `(?:^|\s)`, which CONSUMES the character before `it`/`test` --
+    // for any test not on line 1 that is the previous line's newline (#633).
+    const nameStart = m.indices?.[1]?.[0] ?? start;
+    out.push({
+      name: m.indices?.[1]
+        ? source.slice(m.indices[1][0], m.indices[1][1])
+        : m[1]!,
+      line: lineOf(code, nameStart),
+      body: code.slice(bodyStart, bodyEnd),
+      bodyStart,
+    });
+  }
+  return out;
+}
+
 function scanAssertionFreePy(code: string, file: string): LintFinding[] {
   const out: LintFinding[] = [];
-  for (const m of code.matchAll(TEST_FN_PY)) {
-    const indent = m[1]!.length;
-    const start = m.index!;
-    const rest = code.slice(start + m[0].length);
-    const nextFn = rest.match(new RegExp(`^[ \\t]{${indent}}def `, 'm'));
-    const body = nextFn ? rest.slice(0, nextFn.index!) : rest;
-    if (!ASSERT_PY.test(body)) {
+  for (const t of enumerateTests(code, code, true)) {
+    if (!ASSERT_PY.test(t.body)) {
       out.push(
         mk(
           file,
-          lineOf(code, start),
+          t.line,
           'LINT-006',
           'warning',
-          `\`${m[2]!}\` contains no assertions.`,
+          `\`${t.name}\` contains no assertions.`,
           'Add at least one assert statement; a test that never fails proves nothing.',
         ),
       );
@@ -391,40 +756,17 @@ function scanAssertionFreeJs(
   source: string,
 ): LintFinding[] {
   const out: LintFinding[] = [];
-  // The test declarations, in source order, so each body can be bounded by the
-  // NEXT one -- the JS analogue of what the pytest scanner already does with
-  // "next `def` at the same indent".
-  //
-  // This replaces a fixed 2000-character lookahead that was wrong in BOTH
-  // directions: a long test whose first assertion fell past the window was
-  // flagged (false positive), and a short empty test could borrow the next
-  // test's assertion from inside the window (false negative). Neither failure
-  // is visible without a real codebase to run it against, which is why
-  // dogfooding found them and the unit tests did not.
-  const decls = [...code.matchAll(TEST_FN_JS)];
-  for (let i = 0; i < decls.length; i += 1) {
-    const m = decls[i]!;
-    const start = m.index!;
-    const bodyStart = start + m[0].length;
-    const bodyEnd = decls[i + 1]?.index ?? code.length;
-    const rest = code.slice(bodyStart, bodyEnd);
-    if (!ASSERT_JS.test(rest)) {
-      const name = m.indices?.[1]
-        ? source.slice(m.indices[1][0], m.indices[1][1])
-        : m[1]!;
-      // The reported coordinate comes from the NAME's offset, not the match's.
-      // `TEST_FN_JS` opens with `(?:^|\s)`, which CONSUMES the character before
-      // `it`/`test` -- for any test not on line 1 that is the newline ending the
-      // previous line, so `m.index` sits one line early (#633). `start` is still
-      // the right anchor for the body bounds; only the line moves.
-      const nameStart = m.indices?.[1]?.[0] ?? start;
+  // Bodies are bounded by the NEXT declaration -- see `enumerateTests`, which
+  // now owns that logic and its bug history (#590, #633) for both languages.
+  for (const t of enumerateTests(code, source, false)) {
+    if (!ASSERT_JS.test(t.body)) {
       out.push(
         mk(
           file,
-          lineOf(code, nameStart),
+          t.line,
           'LINT-006',
           'warning',
-          `Test "${name}" contains no assertions.`,
+          `Test "${t.name}" contains no assertions.`,
           'Add an expect() call; a test that never asserts always passes.',
         ),
       );
@@ -502,6 +844,7 @@ export class StaticLinter {
       ...scanSelectors(lines, path),
       ...scanMissingAwait(lines, path),
       ...scanMagicNumbers(lines, path),
+      ...scanSoundness(lines, path, fw === 'pytest'),
       ...(fw === 'pytest'
         ? scanAssertionFreePy(scanned, path)
         : scanAssertionFreeJs(scanned, path, code)),

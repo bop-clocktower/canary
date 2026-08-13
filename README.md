@@ -266,6 +266,8 @@ Use, process, escalation) lives in
 | ----------------------------------------- | -------------------------------------------------------------------------------- |
 | `/canary-review-test <file\|description>` | Claude Code — `canary-test-reviewer`; brittleness, anti-patterns, coverage gaps. |
 | `canary review-test <path>`               | CLI, deterministic — static lint only, no LLM.                                   |
+| `canary vacuity-check <path>`             | CLI, deterministic — tests that pass without proving anything; advisory.         |
+| `canary promote-check <file>`             | CLI, deterministic — may this generated test enter the committed suite?          |
 
 ### I want to run the full pipeline
 
@@ -333,8 +335,9 @@ Use, process, escalation) lives in
 **No API key is required.** Canary runs as a Claude Code plugin and uses your
 Claude Code session for any LLM work — there is no separate provider key to set.
 Most CLI commands (`recommend`, `init`, `run`, `migrate`, `review-test`,
-`flake-check`, `heal-test`) are fully deterministic and make no LLM calls;
-they're documented as such above and in each command's own `--help`.
+`flake-check`, `heal-test`, `vacuity-check`, `promote-check`) are fully
+deterministic and make no LLM calls; they're documented as such above and in
+each command's own `--help`.
 
 ## 📝 Changelog
 

@@ -23,7 +23,14 @@ import { basename, extname, join, resolve } from 'node:path';
 import pc from 'picocolors';
 
 import { CliExitError, jsonIndent2 } from './cli-common.js';
-import { gateOutcome } from './core/gate-result.js';
+import {
+  EXIT_ABSTAINED,
+  gateOutcome,
+  type GateResult,
+  type SkipEntry,
+} from './core/gate-result.js';
+import { promotionVerdict } from './core/promotion-verdict.js';
+import { scanVacuity, type VacuityFinding } from './core/vacuity-scanner.js';
 import { ckInitCmd } from './company-knowledge-cli.js';
 import { extractFrameworkHint } from './core/classifier.js';
 import { VALID_CATEGORIES, buildFeedback } from './core/feedback.js';
@@ -807,6 +814,134 @@ export function flakeCheckCmd(
 
   deps.out(pc.bold(`${allFindings.length} flakiness pattern(s) found.`));
   throw new CliExitError(1);
+}
+
+// --- vacuity-check (canary-cassandra, #612) ----------------------------------
+
+/**
+ * The CLI surface of the vacuity scanner.
+ *
+ * Registered as an **advisory** command, not a gate: this repo's established
+ * shape for a brand-new detector is advisory first, ratchet to strict only after
+ * triage (the dogfooding jobs, #485). So findings exit 0.
+ *
+ * The abstention half is NOT advisory, and the asymmetry is the whole #508
+ * doctrine. "I found weak tests" is information a repo absorbs over time; "I
+ * verified nothing" is a broken instrument, and a vacuity detector that reported
+ * its own silence as success would be the exact false-green class it exists to
+ * find. Two distinct zeros are guarded: no file matched, and files matched but
+ * held no tests -- a scanner that only checked the first prints a clean tick on
+ * the second.
+ */
+export function vacuityCheckCmd(
+  path: string,
+  opts: { json?: boolean },
+  deps: MainDeps,
+): void {
+  const json = opts.json === true;
+  const files = isDir(path) ? collectTestFiles(path) : [path];
+
+  const findings: VacuityFinding[] = [];
+  const skipped: SkipEntry[] = [];
+  let checked = 0;
+  for (const f of files) {
+    const r = scanVacuity(f);
+    checked += r.checked;
+    findings.push(...r.findings);
+    if (r.skipped) skipped.push(...r.skipped);
+  }
+  if (files.length === 0) {
+    skipped.push({
+      name: path,
+      reason: `no test file matched (looked for ${SCANNABLE_DESC})`,
+    });
+  }
+
+  const result: GateResult<VacuityFinding> = { checked, findings };
+  if (skipped.length > 0) result.skipped = skipped;
+  const outcome = gateOutcome(result, 'advisory', { noun: 'test(s)' });
+  // `advisory` keeps findings at exit 0; the abstention still has to be loud, so
+  // the exit code for a zero denominator is taken from the gate contract.
+  const exitCode = outcome.abstained ? EXIT_ABSTAINED : 0;
+
+  if (json) {
+    deps.out(
+      jsonIndent2({
+        checked,
+        abstained: outcome.abstained,
+        findings,
+        skipped,
+      }),
+    );
+    if (exitCode !== 0) throw new CliExitError(exitCode);
+    return;
+  }
+
+  for (const f of findings) {
+    const color = f.severity === 'critical' ? pc.red : pc.yellow;
+    const tier = f.fidelity ? pc.dim(` [${f.fidelity}]`) : '';
+    deps.out(
+      `${color(`[${f.severity.toUpperCase()}]`)} ${f.file}:${f.line} ${pc.dim(`(${f.rule})`)}${tier}`,
+    );
+    deps.out(`  ${f.test}: ${f.message}`);
+    deps.out(`  ${pc.dim(`${ARROW} ${f.suggestion}`)}\n`);
+  }
+  deps.out(
+    outcome.abstained
+      ? pc.bold(pc.yellow(outcome.summaryLine))
+      : `${pc.bold(outcome.summaryLine)}`,
+  );
+  if (exitCode !== 0) throw new CliExitError(exitCode);
+}
+
+// --- promote-check (#477) ----------------------------------------------------
+
+/**
+ * The gate `canary-promote-test` Phase 1 consumes.
+ *
+ * Unlike `vacuity-check` this IS a gate, and deliberately so: it does not scan a
+ * repository, it decides whether ONE generated draft may enter the committed
+ * suite. A blocking finding there is not a backlog item to triage, it is a
+ * reason not to import the draft. Nothing existing turns red -- the command is
+ * new and only ever pointed at `tests/generated/`.
+ */
+export function promoteCheckCmd(
+  path: string,
+  opts: { json?: boolean },
+  deps: MainDeps,
+): void {
+  const verdict = promotionVerdict(path);
+  if (opts.json === true) {
+    deps.out(jsonIndent2(verdict as unknown as Record<string, unknown>));
+    if (verdict.exitCode !== 0) throw new CliExitError(verdict.exitCode);
+    return;
+  }
+
+  for (const axis of verdict.axes) {
+    for (const f of axis.findings) {
+      const blocking = axis.gating && verdict.blocked.includes(f.rule);
+      const label = blocking ? pc.red('[BLOCK]') : pc.yellow('[ADVISORY]');
+      const tier = f.fidelity ? pc.dim(` [${f.fidelity}]`) : '';
+      deps.out(
+        `${label} ${verdict.file}:${f.line} ${pc.dim(`(${f.rule}/${axis.axis})`)}${tier}`,
+      );
+      deps.out(`  ${f.message}`);
+      deps.out(`  ${pc.dim(`${ARROW} ${f.suggestion}`)}\n`);
+    }
+  }
+
+  // No glyph on `abstain`: `gateOutcome` already opens its summary line with the
+  // warning sign, and two in a row read as a rendering bug rather than emphasis.
+  const banner: Record<string, string> = {
+    promote: pc.green(`${CHECK_MARK} PROMOTE`),
+    block: pc.red(`${REDX} BLOCK`),
+    abstain: pc.yellow('ABSTAIN'),
+  };
+  deps.out(
+    `${pc.bold(banner[verdict.decision]!)} ${EM_DASH} ${verdict.summaryLine}`,
+  );
+  if (verdict.remedy) deps.out(`  ${verdict.remedy}`);
+  if (verdict.exitCode !== 0) throw new CliExitError(verdict.exitCode);
 }
 
 // --- heal-test ---------------------------------------------------------------

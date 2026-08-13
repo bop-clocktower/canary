@@ -30,12 +30,14 @@ import {
   initCmd,
   migrateCmd,
   overlayCmd,
+  promoteCheckCmd,
   recommendFrameworkCmd,
   reviewTestCmd,
   runCmd,
   setupCmd,
   ticketUpdateCmd,
   upgradeCmd,
+  vacuityCheckCmd,
   versionCmd,
 } from './cli-commands.js';
 import { buildCompanyKnowledgeCommand } from './company-knowledge-cli.js';
@@ -222,6 +224,28 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     .option('--json', 'Output findings as JSON.')
     .action((path: string, opts: { json?: boolean }) => {
       flakeCheckCmd(path, opts, deps);
+    });
+
+  program
+    .command('promote-check')
+    .description(
+      'Decide whether a generated test may be promoted into the committed suite.',
+    )
+    .argument('<path>', 'The generated test file to judge.')
+    .option('--json', 'Emit the structured verdict as JSON.')
+    .action((path: string, opts: { json?: boolean }) => {
+      promoteCheckCmd(path, opts, deps);
+    });
+
+  program
+    .command('vacuity-check')
+    .description(
+      'Find tests that pass without proving anything -- advisory, no LLM required.',
+    )
+    .argument('<path>', 'Test file or directory to scan.')
+    .option('--json', 'Output the verdict and its denominator as JSON.')
+    .action((path: string, opts: { json?: boolean }) => {
+      vacuityCheckCmd(path, opts, deps);
     });
 
   program

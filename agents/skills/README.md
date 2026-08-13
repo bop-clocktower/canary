@@ -13,9 +13,10 @@ it), see [Guides](../../docs/guides/index.md).
 
 ```text
 agents/skills/
-├── claude-code/                    # Claude Code skills (19)
+├── claude-code/                    # Claude Code skills (21)
 │   ├── canary-add-framework/
 │   ├── canary-blackhawk/
+│   ├── canary-cassandra/
 │   ├── canary-ci-ready/
 │   ├── canary-company-knowledge/
 │   ├── canary-critical-areas/
@@ -30,6 +31,7 @@ agents/skills/
 │   ├── canary-promote-test/
 │   ├── canary-savant/
 │   ├── canary-setup-harness/
+│   ├── canary-shadow/
 │   ├── canary-ship/
 │   ├── canary-test-pipeline/
 │   └── canary-test-reporter/
@@ -157,6 +159,12 @@ slash-command entry points.
 - [`canary-fleet-health`](./claude-code/canary-fleet-health/SKILL.md) —
   Fleet-wide flake/spike/regression health summary across suites from the
   run-history store, condensed to one scannable chat-turn report.
+
+- [`canary-cassandra`](./claude-code/canary-cassandra/SKILL.md) — Vacuous-test
+  detection: tests that pass without proving anything (an assertion identical to
+  the value it checks, a target never invoked, an absence observed on a
+  bystander). Deterministic and advisory; a zero denominator exits 3 rather than
+  reporting a pass.
 
 ## SKILL.md Format
 

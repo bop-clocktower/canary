@@ -312,6 +312,66 @@ const ROWS: GateRow[] = [
     forbid: ['0.0%'],
     run: (base) => invokeCanary(['history', 'summary', 'api'], { cwd: base }),
   },
+  // --- test-signal quality: the #605/#612/#477 chain ------------------------
+  //
+  // Three rows, not one, because these commands have three DIFFERENT zeros and
+  // a registry that only exercised the easy one would ratify the others.
+  //
+  // `vacuity-check` is classified `gate` HERE and described as advisory in its
+  // own docs, and the two are consistent because they are about different
+  // things. This registry measures exactly one axis -- what a ZERO DENOMINATOR
+  // does -- and on that axis vacuity-check has the gate contract: exit 3, never
+  // a tick. Its FINDINGS are advisory and exit 0, which is the sense the skill
+  // means. The split is deliberate for a detector whose whole subject is
+  // false-green: "I found weak tests" is a backlog a repo absorbs over time,
+  // "I verified nothing" is a broken instrument, and only one of those may ever
+  // be quiet. Writing it down here because a future reader comparing the row to
+  // the SKILL.md will otherwise read a contradiction and 'fix' it.
+  {
+    command: 'vacuity-check (directory matching zero test files)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['No issues found', 'No vacuous tests'],
+    run: (base) => invokeCanary(['vacuity-check', emptyTestDir(base)]),
+  },
+  {
+    command: 'vacuity-check (files matched, but they held zero tests)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['No issues found', 'No vacuous tests'],
+    // The zero a file-count guard cannot see. The collector matched a file, so
+    // the file-level denominator is healthy and only the TEST count collapsed --
+    // which is the number the verdict is actually about.
+    run: (base) => {
+      const dir = join(base, 'fixtures-only');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, 'helpers.test.ts'),
+        'export const fixture = 1;\n',
+        'utf-8',
+      );
+      return invokeCanary(['vacuity-check', dir]);
+    },
+  },
+  {
+    command: 'promote-check (a file with no test declarations)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    // A promotion gate has two ways to be wrong on an empty verdict, and the
+    // dangerous one is LOOSE: 'PROMOTE' over a file nothing could be read from
+    // would walk an unreviewed draft into the committed suite.
+    forbid: ['PROMOTE', 'BLOCK'],
+    run: (base) => {
+      const dir = join(base, 'generated');
+      mkdirSync(dir, { recursive: true });
+      const path = join(dir, 'gen.test.ts');
+      writeFileSync(path, 'export const fixture = 1;\n', 'utf-8');
+      return invokeCanary(['promote-check', path]);
+    },
+  },
 ];
 
 describe('gate conformance registry (#508)', () => {

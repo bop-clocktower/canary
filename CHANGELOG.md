@@ -107,6 +107,83 @@ under the project's former name) are documented in the
 [#341]: https://github.com/bop-clocktower/canary/issues/341
 [#462]: https://github.com/bop-clocktower/canary/issues/462
 
+- **`canary promote-check` — promotion now gates on a structured verdict.**
+  `canary-promote-test` referenced `harness:test-craft` as optional prose ("run
+  it for a deeper quality audit") and had nothing machine-readable to gate on.
+  [#477] was parked on that emit side; it is unblocked from the other direction
+  — [#605] and [#612] emit exactly the structured per-test verdicts a gate
+  needed, and they are deterministic. `ts/src/core/promotion-verdict.ts`
+  composes them into six axes and answers the three decisions the issue left
+  open. **Which gate:** `soundness`, `assertions` (`LINT-006`), `flakiness`
+  (`FLAKE-001/002`) and `vacuity`; `selectors` and `maintainability` report. An
+  8-axis gate would block nearly every promotion, which is the outcome the issue
+  predicted. **What happens with no verdict:** `abstain`, exit 3, and the output
+  says promotion was NOT approved — two zeros are guarded, an unparseable
+  extension and a parseable file with no test declarations (a `promote` on the
+  latter would walk an empty file into the committed suite). **Whether an LLM
+  judgement may block:** no, and structurally rather than by convention —
+  `VerdictSource` is a single-member union, so there is no field an LLM verdict
+  could arrive in and quietly acquire authority. `VAC-002` blocks only at
+  `annotated` fidelity, keeping a heuristic off the promotion gate while the
+  author's own `// @covers` declaration still counts. The gate's three
+  zero-denominator fixtures are rows in `ts/test/gate-conformance.test.ts`.
+  ([#477])
+
+- **Three test-design rules, with a per-rule enforcement verdict, in
+  `AGENTS.md`.** Default paths, persistence removal, and realistic scale — each
+  drawn from a specific shipped bug, and each labelled with what actually
+  enforces it today rather than left to read as covered. Rules 1 and 2 are
+  review questions; rule 3 is partly automated by
+  `ts/test/guardian-comment-size-cap.test.ts`. Rule 1 in particular _looks_
+  mechanical (enumerate options with defaults, cross-reference argv in tests)
+  and the entry records why the cross-reference does not hold up — a test can
+  reach a default through a testkit helper or a `deps` override, so a literal
+  argv reader would report the best-tested commands as uncovered. Stating the
+  gap beats shipping a checker with the `LINT-005` hit rate. ([#488])
+
+- **`canary-cassandra` — vacuous-test detection, plus the `canary vacuity-check`
+  command behind it.** A test with no assertions is easy to find and everyone
+  already looks. The dangerous one has assertions that _cannot fail_: it has
+  coverage, goes green, and goes green identically against the bug it was
+  written to catch — three of those shipped in one cycle ([#486]) and every gate
+  in the repo read all three as healthy. `VAC-001` (critical) flags an assertion
+  identical to the value it checks; `VAC-002` flags a test that never references
+  its target; `VAC-003` flags a test whose every assertion is an _absence_
+  observed on a bystander rather than on the target, so nothing proves the
+  operation ran at all. `VAC-002`/`VAC-003` carry an explicit fidelity ladder —
+  `annotated` (`// @covers <symbol>`) over `import-inferred` — and a test whose
+  target resolves at neither tier is recorded as a **skip with its reason**,
+  never scanned-and-passed. Advisory: findings exit 0, matching the repo's
+  advisory-first convention for a new detector ([#485]). A collapsed denominator
+  is not advisory and exits 3, and **two** distinct zeros are guarded — no file
+  matched, and files matched but held zero tests (a scanner that only checks the
+  first prints a clean tick on the second). Measured across 3078 tests in this
+  repo: **99 findings** (89 `VAC-002`, 10 `VAC-003`, **0** `VAC-001`) and 235
+  recorded skips; triage of the residual `VAC-002` inference gap is [#705] and
+  of the true positives [#706]. The detection lives in
+  `ts/src/core/vacuity-scanner.ts` and is shared with the promotion gate rather
+  than duplicated into a `.mjs` skill runtime — the third-half-enforcer risk
+  [#605] names. ([#612])
+
+- **Generated-test soundness rules (`SOUND-001/002/003`) in
+  `static-linter.ts`.** A test can assert, pass, and still prove nothing — when
+  the value it pins is one no correct implementation is obliged to produce.
+  `SOUND-001` flags a non-deterministic value used as an _expectation_, both
+  directly (`toBe(crypto.randomUUID())`) and through a variable tainted on an
+  earlier line — the mode `FLAKE-003/004` structurally cannot see, because the
+  assertion line itself is clean. `SOUND-002` flags exact equality against a
+  fraction with no exact binary representation, exempting `0.5`/`0.25`/`1.125`
+  by reducing the literal and testing the denominator for a power of two, so the
+  rule fires only where exact equality is genuinely a bet on the arithmetic
+  path. `SOUND-003` flags a ratio pinned to an integer, which never states
+  whether the operation truncates (the realworld S4 integer/fractional
+  precondition, one layer down). All three are `warning`, so `review-test` —
+  which exits 1 only on `critical` — cannot turn a consumer's gate red the day
+  they land; soundness blocks only at the promotion boundary. Extended in place
+  rather than added as a third scanner, per the issue's own accepted risk.
+  Measured on canary's 135-file suite: **1 finding, a true positive**
+  (`environment-detect.test.ts:287` pins `1 / 3` as `toBe(0.333)`). ([#605])
+
 - **`canary skills verify` — the skills' declared surface, checked against
   reality (closes [#487]; [#452] stays open).** A skill name is declared in up
   to six places: `agents/skills/<host>/<dir>/SKILL.md`, the flat
@@ -194,6 +271,16 @@ under the project's former name) are documented in the
 [#390]: https://github.com/bop-clocktower/canary/issues/390
 [#508]: https://github.com/bop-clocktower/canary/issues/508
 [#538]: https://github.com/bop-clocktower/canary/issues/538
+[#477]: https://github.com/bop-clocktower/canary/issues/477
+[#485]: https://github.com/bop-clocktower/canary/issues/485
+[#488]: https://github.com/bop-clocktower/canary/issues/488
+[#486]: https://github.com/bop-clocktower/canary/issues/486
+[#566]: https://github.com/bop-clocktower/canary/issues/566
+[#605]: https://github.com/bop-clocktower/canary/issues/605
+[#612]: https://github.com/bop-clocktower/canary/issues/612
+[#704]: https://github.com/bop-clocktower/canary/issues/704
+[#705]: https://github.com/bop-clocktower/canary/issues/705
+[#706]: https://github.com/bop-clocktower/canary/issues/706
 [#676]: https://github.com/bop-clocktower/canary/issues/676
 [#686]: https://github.com/bop-clocktower/canary/issues/686
 [#703]: https://github.com/bop-clocktower/canary/issues/703
@@ -214,7 +301,21 @@ under the project's former name) are documented in the
   dead in `ts/src` while `npm/src/doctor.ts` uses the generated copy — which is
   why the 15 flagged `npm/src` exports were left alone. Re-measured 296 → 281 on
   the real tree; the before/after `--json` sets differ by exactly those 15 with
-  zero additions. ([#703])
+  zero additions. ([#703]) lowered 297 → 291 and the measured count 296 → 281.**
+  `main` measured 296 against a 297 ceiling — one finding of headroom, with two
+  finished branches waiting that needed three between them. The ceiling was
+  **not** raised; real dead code was paid down instead. Thirteen of the fifteen
+  are `export`-keyword removals on symbols still used inside their own module,
+  so no code was deleted and nothing changed at runtime. Two are genuine
+  deletions: the `scanFile` thin wrapper in the canary-savant and
+  canary-blackhawk scanners, which no CLI and no test imported. Every candidate
+  was verified live-or-dead through the two hops the analyzer cannot follow —
+  the npm package's `require('../../dist/*.js')` test imports, and the
+  `sync-gate-result.mjs` mirror that makes `skippedSuffix` look dead in `ts/src`
+  while `npm/src/doctor.ts` uses the generated copy — which is why the 15
+  flagged `npm/src` exports were left alone. Re-measured 296 → 281 on the real
+  tree; the before/after `--json` sets differ by exactly those 15 with zero
+  additions. ([#703])
 
 - **Twelve more identifiers renamed to say what they are at the import site.**
   The polish-tier remainder of the `naming-craft` pass whose five foundational
@@ -266,6 +367,58 @@ under the project's former name) are documented in the
   source was invisible to a gate that needed to see it; here, gitignored prose
   was visible to one that must not. Both come of never stating the denominator.
   ([#686], [#688])
+
+- **Catastrophic backtracking in the static linter's string strippers.** Both
+  `STRING_LITERAL` and the new `TEMPLATE_LITERAL` were written as
+  `(?:\\.|[^delim])*`, whose two branches BOTH match a backslash — so every
+  backslash doubles the parses the engine must try, and an unterminated literal
+  makes it try all of them. Measured: a line `const p = 'C:` followed by 42
+  backslashes and no closing quote took **5.9 seconds** inside
+  `StaticLinter.lint`; 36 backslashes took 142ms; ~55 is minutes. Reachable
+  without contrivance, because `blankMultilineStrings` blanks only the lines
+  _between_ delimiters, so a multi-line template's opening line — the one
+  carrying the escapes — always arrives at the single-line stripper intact. A
+  Windows-path or escaped-JSON fixture is enough to hang `review-test` and every
+  command built on it. Both are now one unambiguous alternation per quote style
+  (`[^q\\\n]` or `\\[\s\S]`, disjoint by construction), so matching is linear.
+  ([#605])
+
+- **An unreadable input crashed with a raw stack and exited 0.** `vacuity-check`
+  and `promote-check` let `readFileSync` throw out of the command handler, so a
+  missing path printed an ENOENT stack _and exited 0_ — a gate that could not
+  open its input reporting success, which is the exact false-green shape both
+  commands exist to detect. "Cannot read" is now an abstention naming its cause
+  (exit 3, `1 skipped: <path> [could not be read (ENOENT)]`). Only errno-shaped
+  codes degrade this way: keying off "has a string `code`" also swept in Node
+  programmer errors (`ERR_INVALID_ARG_TYPE`), which turned a genuine internal
+  defect into a clean-looking abstention. `review-test` and `flake-check` have
+  the same crash and are tracked in [#704] — they exit 1, so they are not
+  false-green. ([#612], [#477])
+
+- **`blankStrings` in `static-linter.ts` never knew about backtick template
+  literals.** Only `'` and `"` were blanked, so a single-line template literal —
+  the normal shape of fixture data in a TS suite — was read as live code by
+  every per-line rule. The multi-line stripper did not cover it either: it
+  blanks the interior of a run whose delimiter count is _odd_, so a balanced
+  one-line literal fell through both. Measured on canary's own suite, this was
+  **16 of 33 findings** across `FLAKE-001/002/003/004` and the `LINT-*` family —
+  half the linter's output on this repository was its own test data. `${...}`
+  substitutions are preserved rather than blanked, because they are the one part
+  of a template literal that executes; blanking them would be an abstention
+  wearing a false positive's clothes. Same "data must never act as code" defect
+  as `canary-blackhawk`'s pragma parser, one module over. ([#605])
+
+- **`pattern-matcher.ts` could not see an ESM or CJS test suite.** Its
+  `FILE_PATTERNS` globs covered `.ts`/`.js` only, so a project whose suite is
+  `.mjs`/`.cjs`/`.mts`/`.cts` scanned to `test_count: 0` — a value no consumer
+  can distinguish from "this project has no tests", after which every caller
+  branching on `isEmpty()` silently falls back to generic conventions. This is
+  the discovery-denominator class of [#566] one module deeper than the copy that
+  was fixed there: `cli-commands.ts` learned the extensions, this one never did.
+  The globs are now derived from `JS_TEST_EXTENSIONS` instead of hand-listed,
+  and `pattern-matcher.test.ts` asserts the coverage against that shared list —
+  no suite in this repo is `.mjs`/`.cjs`, so CI can never trip over this class
+  by accident. ([#605])
 
 - **Source code hidden from the architecture gate is now a build failure.** The
   arch analyzer skips 55 directory names outright — `coverage`, `dist`, `build`,
