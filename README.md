@@ -284,7 +284,8 @@ Use, process, escalation) lives in
 | Tool                                                                                          | What it does                                                        |
 | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `canary analyze {flaky\|spikes\|area-health\|common-failures\|regression-candidates\|digest}` | CLI — cross-suite fleet health reports; `digest` combines all five. |
-| `canary history {push\|flaky\|timeline\|summary\|migrate}`                                    | CLI — query and manage the per-suite run-history store.             |
+| `canary history {record\|push\|flaky\|timeline\|summary\|migrate}`                            | CLI — query and manage the per-suite run-history store.             |
+| `canary history record <vitest.json> --suite <name>`                                          | CLI — record a finished run INTO the store (the write side).        |
 
 ### I want to watch API changes for test impact
 

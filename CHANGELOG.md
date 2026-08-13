@@ -34,6 +34,37 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary history record <results-file> --suite <name>` — the history store
+  finally has a writer.** `canary analyze` and `canary history` have always read
+  `test-results/reports/history-v2.jsonl`; nothing in the product wrote it, so
+  every consumer wanting a flake report had to author the NDJSON by hand, and
+  the entire read surface — including the runs-vs-rows denominator design from
+  [#508], whose whole purpose is telling a healthy fleet from an empty one — had
+  only ever been exercised against synthetic fixtures. `record` converts a
+  vitest `--reporter=json` report into one v2 run and appends it through the
+  store, so it honours `--db-url` / `CANARY_HISTORY_DB_URL` as well as `--path`.
+  Four things it deliberately does loudly: a report carrying **zero results
+  abstains with exit 3** rather than appending an empty run (a 0/0 record is the
+  denominator collapsing, not a passing suite; it carries a conformance-registry
+  row); an **unrecognized report shape is refused** by name instead of being
+  read as zero tests; a **duplicate `run_id` exits 1** instead of relying on the
+  store's silent idempotent skip, and degrades to a "could not be verified" note
+  on a backend that cannot report its run count; and the **`flaky: 0` caveat is
+  printed** — vitest has no flaky status, so a retried-then-passed test is
+  recorded as `passed`, which every flake report reads. `--repo` is inferred
+  from `GITHUB_REPOSITORY` and exits 2 when it cannot be, rather than filing one
+  team's runs under a hardcoded slug. Resolves [#538]; the interface it writes
+  through is settled by ADR 0013 below.
+- **ADR 0013 — the history store presents one async contract** ([#390]).
+  `AsyncHistoryStore` is now the single contract for history consumers, and the
+  synchronous `NdjsonHistoryStore` is demoted to an implementation detail behind
+  `LocalAsyncAdapter`. The sync-facade option is infeasible in Node (there is no
+  way to synchronously await a Promise short of `Atomics.wait` or a subprocess
+  per query), and the split sync-local / async-remote option is the status quo
+  that already produces `analyze`'s "`--db-url` is ignored" note — a capability
+  check that always resolves to "local". Recorded as **proposed** pending
+  maintainer sign-off. `AnalysisEngine` is the one remaining sync consumer;
+  converting it is follow-up work.
 - **`scripts/check_doc_links.mjs` — a dead-link gate that actually reports
   zero.** Harness's structural doc-drift check emits 27 findings on this
   repository and every one of them resolves fine for a reader: 24 come from
@@ -59,6 +90,9 @@ under the project's former name) are documented in the
   allowlist and would have silently dropped every doc directory nobody
   remembered to name. ([#686])
 
+[#390]: https://github.com/bop-clocktower/canary/issues/390
+[#508]: https://github.com/bop-clocktower/canary/issues/508
+[#538]: https://github.com/bop-clocktower/canary/issues/538
 [#676]: https://github.com/bop-clocktower/canary/issues/676
 [#686]: https://github.com/bop-clocktower/canary/issues/686
 
@@ -96,6 +130,24 @@ under the project's former name) are documented in the
   verification. ([#671])
 
 [#671]: https://github.com/bop-clocktower/canary/issues/671
+
+### Removed
+
+- **`scripts/dogfood-record-run.mjs`, replaced by `canary history record`.** The
+  script was CI glue that converted vitest JSON into a v2 history record for the
+  `dogfood.yml` fleet-health job; the capability it provided was a genuine
+  product gap, and leaving it in place alongside the new subcommand would mean
+  two writers of one store drifting apart. `dogfood.yml` now calls the shipped
+  command, so the fleet-health job dogfoods the product rather than repo-local
+  glue, and the script is gone from both `entropy.entryPoints` and
+  `performance.entryPoints`. Behaviour differences worth knowing: the record is
+  now written by the store's own serializer, so per-test rows carry
+  `run_id`/`suite`/`repo`/`test_file` (the script omitted them, which left
+  `suite` empty in flake rows) and no longer carry a `schema_version` field
+  (matching every other record the store writes — the reader treats a missing
+  version as current); a zero-result report exits **3** rather than 1; and the
+  repo slug is inferred from `GITHUB_REPOSITORY` instead of defaulting to
+  `bop-clocktower/canary`. ([#538])
 
 ### Fixed
 
