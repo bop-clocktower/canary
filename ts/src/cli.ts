@@ -7,8 +7,8 @@
  *
  * Conventions follow `guardian/cli.ts` (see `cli-common.ts`): a
  * {@link createCanaryCommand} factory wired to an injectable {@link MainDeps},
- * `CliExit` for business exits, `normalizeUsageExit` on the program AND every
- * subcommand so usage errors exit 2 (typer/click) not commander's default 1, and
+ * `CliExitError` for business exits, `normalizeUsageExit` on the program AND
+ * every subcommand so usage errors exit 2 (typer/click) not commander's 1, and
  * an eager `-V/--version` global option + `_main` callback analog.
  *
  * Sub-app mounting note: `guardian`/`history`/`analyze` are mounted as FRESH
@@ -19,18 +19,18 @@
 
 import { Command, Option } from 'commander';
 
-import { CliExit, normalizeUsageExit } from './cli-common.js';
+import { CliExitError, normalizeUsageExit } from './cli-common.js';
 import { createAnalyzeCommand } from './analysis/cli.js';
 import {
-  doctorStub,
+  doctorCmd,
   feedbackCmd,
   flakeCheckCmd,
-  frameworksCmd,
+  listFrameworksCmd,
   healTestCmd,
   initCmd,
   migrateCmd,
-  overlayStub,
-  recommendCmd,
+  overlayCmd,
+  recommendFrameworkCmd,
   reviewTestCmd,
   runCmd,
   setupCmd,
@@ -58,18 +58,18 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     .hook('preAction', () => {
       if (program.opts()['version']) {
         versionCmd(deps);
-        throw new CliExit(0);
+        throw new CliExitError(0);
       }
     })
     .action(() => {
       if (program.opts()['version']) {
         versionCmd(deps);
-        throw new CliExit(0);
+        throw new CliExitError(0);
       }
       // Python `typer.Typer(no_args_is_help=True)` prints help and exits 2 on a
       // bare `canary` invocation (a usage exit), NOT 0.
       program.outputHelp();
-      throw new CliExit(2);
+      throw new CliExitError(2);
     });
 
   program
@@ -80,7 +80,7 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     .argument('<prompt>')
     .option('--json', 'Output as JSON for tool integration.')
     .action((prompt: string, opts: { json?: boolean }) => {
-      recommendCmd(prompt, opts, deps);
+      recommendFrameworkCmd(prompt, opts, deps);
     });
 
   program
@@ -88,7 +88,7 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     .description('List the supported testing frameworks and how to run each.')
     .option('--json', 'Dump the registry as JSON for tool integration.')
     .action((opts: { json?: boolean }) => {
-      frameworksCmd(opts, deps);
+      listFrameworksCmd(opts, deps);
     });
 
   program
@@ -267,7 +267,7 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     .allowExcessArguments(true)
     .argument('[args...]')
     .action(() => {
-      overlayStub(deps);
+      overlayCmd(deps);
     });
 
   program
@@ -279,7 +279,7 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     .allowExcessArguments(true)
     .argument('[args...]')
     .action(() => {
-      doctorStub(deps);
+      doctorCmd(deps);
     });
 
   program

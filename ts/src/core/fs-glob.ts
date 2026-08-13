@@ -92,7 +92,7 @@ function subDirs(dir: string): string[] {
  * silently suppress a scaffold the user needs -- and a `**` glob over a real
  * monorepo would otherwise walk every installed package on disk.
  */
-export const _WORKSPACE_SKIP_DIRS = new Set([
+export const WORKSPACE_SKIP_DIRS = new Set([
   'node_modules',
   '.git',
   '.venv',
@@ -118,7 +118,7 @@ export function globDirs(root: string, pattern: string): string[] {
   const segments = pattern.split('/').filter((s) => s !== '');
   const out: string[] = [];
   const walkable = (dir: string): string[] =>
-    subDirs(dir).filter((d) => !_WORKSPACE_SKIP_DIRS.has(basename(d)));
+    subDirs(dir).filter((d) => !WORKSPACE_SKIP_DIRS.has(basename(d)));
   const visit = (dir: string, si: number): void => {
     if (si === segments.length) {
       if (dir !== root) out.push(dir);

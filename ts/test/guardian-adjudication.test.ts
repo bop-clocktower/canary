@@ -33,7 +33,7 @@ import {
   summarizePrecision,
   tallyAdjudications,
 } from '../src/guardian/adjudication.js';
-import { GuardianFinding, render } from '../src/guardian/pr-check.js';
+import { GuardianFinding, renderFindings } from '../src/guardian/pr-check.js';
 import { FakeGitHubClient, STICKY_MARKER } from '../src/guardian/pr-comment.js';
 import { invokeGuardian, mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
@@ -62,7 +62,7 @@ function finding(
 
 /** A rendered sticky-comment body carrying the given active findings. */
 function stickyBody(findings: GuardianFinding[]): string {
-  return render(findings, 'comment', 0, null);
+  return renderFindings(findings, 'comment', 0, null);
 }
 
 /** Analyses dir under an existing `.harness/` home (channel available). */

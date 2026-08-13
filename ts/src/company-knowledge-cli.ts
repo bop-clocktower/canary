@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { Command, Option } from 'commander';
 import pc from 'picocolors';
 
-import { CliExit, jsonIndent2, normalizeUsageExit } from './cli-common.js';
+import { CliExitError, jsonIndent2, normalizeUsageExit } from './cli-common.js';
 import { CompanyKnowledge } from './core/company-knowledge.js';
 import { CHECK, CROSS, WARN, type MainDeps } from './main-deps.js';
 
@@ -28,7 +28,7 @@ function ckShowCmd(opts: ShowOptions, deps: MainDeps): void {
 
   if (ck.error && ck.isEmpty) {
     deps.out(`${pc.red(CROSS)} ${ck.error}`);
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 
   if (opts.json) {

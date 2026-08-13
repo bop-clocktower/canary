@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { Command } from 'commander';
 import pc from 'picocolors';
 
-import { CliExit, jsonIndent2, normalizeUsageExit } from './cli-common.js';
+import { CliExitError, jsonIndent2, normalizeUsageExit } from './cli-common.js';
 import {
   SemanticRole,
   WorkflowDiscoveryError,
@@ -66,7 +66,7 @@ async function discoverCmd(
       deps.out(
         `${pc.yellow('No project keys found.')} Pass ${pc.bold('--project <key>')} or add keys to ${pc.bold('.canary/company.json')} ${'\u{2192}'} ${pc.bold('jira_projects')}.`,
       );
-      throw new CliExit(1);
+      throw new CliExitError(1);
     }
   }
 
@@ -113,7 +113,7 @@ async function discoverCmd(
 
   if (errors.length) {
     deps.out(`\n${pc.red(`Discovery failed for: ${errors.join(', ')}`)}`);
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 }
 
@@ -142,7 +142,7 @@ function showCmd(opts: ShowOptions, deps: MainDeps): void {
     }
     if (keys.length === 0) {
       deps.out(pc.yellow('No cached workflow mappings found.'));
-      throw new CliExit(0);
+      throw new CliExitError(0);
     }
   }
 
@@ -221,7 +221,7 @@ function showCmd(opts: ShowOptions, deps: MainDeps): void {
   }
 
   if (!anyFound) {
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 }
 
@@ -241,7 +241,7 @@ function initCmd(opts: InitOptions, deps: MainDeps): void {
     deps.out(
       `${pc.yellow(WARN)}  Mapping already exists at ${mappingPath}.\nUse ${pc.bold('--force')} to overwrite.`,
     );
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 
   const resolvedUrl =

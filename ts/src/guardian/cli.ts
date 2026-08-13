@@ -13,8 +13,8 @@
  *     `_branch_protection_client` seams were replaced.
  *   - Commands are THIN: parse -> call the already-ported guardian library ->
  *     emit. No business logic lives in a handler.
- *   - Business exit codes are carried by throwing {@link CliExit} (Python's
- *     `typer.Exit(n)`); `parseAsync` from a test catches it to read the code.
+ *   - Business exit codes are carried by throwing {@link CliExitError}
+ *     (Python's `typer.Exit(n)`); a test's `parseAsync` catches it to read it.
  *     `.exitOverride()` turns commander's own usage errors into throws too, so a
  *     test never terminates the process.
  *
@@ -111,7 +111,7 @@ import {
   filterTypeOnlyUnits,
   findReexportOnly,
   loadGuardianConfig,
-  render,
+  renderFindings,
   scopeDiff,
 } from './pr-check.js';
 import {
@@ -133,10 +133,10 @@ const CROSS = '\u{2717}';
  * Business exit signal. Thrown from a handler to carry an exit code the way
  * Python's `typer.Exit(code)` did; the runner catches it to read the code.
  */
-export class CliExit extends Error {
+export class CliExitError extends Error {
   constructor(readonly code: number) {
     super(`exit ${code}`);
-    this.name = 'CliExit';
+    this.name = 'CliExitError';
   }
 }
 
@@ -158,10 +158,10 @@ function normalizeUsageExit(err: CommanderError): never {
 }
 
 /** Raised by `deps.sleep` to break the `watch` poll loop (Ctrl+C analog). */
-export class WatchInterrupt extends Error {
+export class WatchInterruptError extends Error {
   constructor() {
     super('watch interrupted');
-    this.name = 'WatchInterrupt';
+    this.name = 'WatchInterruptError';
   }
 }
 
@@ -322,8 +322,9 @@ export function prContextFromEnv(
  * the contributor's branch and stays resolvable.
  *
  * Returns `null` rather than a partial URL whenever repo or SHA is missing, so
- * {@link render} falls back to plain code text. That degradation is deliberate:
- * an unresolvable link still *looks* clickable, which is worse than no link.
+ * {@link renderFindings} falls back to plain code text. That degradation is
+ * deliberate: an unresolvable link still *looks* clickable, which is worse than
+ * no link.
  */
 export function blobBaseFromEnv(env: NodeJS.ProcessEnv): string | null {
   const repo = env['GITHUB_REPOSITORY'];
@@ -655,7 +656,7 @@ function warnIfEmptyCiDiff(
 function loadSpec(path: string, deps: GuardianDeps): Record<string, unknown> {
   if (!existsSync(path)) {
     deps.err(`Spec file not found: ${path}`);
-    throw new CliExit(2);
+    throw new CliExitError(2);
   }
   const text = readFileSync(path, 'utf-8');
   // Python `_load_spec`: `.json` -> json.loads; otherwise yaml.safe_load (with a
@@ -833,14 +834,14 @@ function validateCoverageCmd(
       deps.out(
         `${pc.red(pc.bold(`${CROSS} cannot read ${path}:`))} not a readable file within the size limit`,
       );
-      throw new CliExit(2);
+      throw new CliExitError(2);
     }
     text = readFileSync(path, 'utf-8');
   } catch (exc) {
-    if (exc instanceof CliExit) throw exc;
+    if (exc instanceof CliExitError) throw exc;
     const msg = exc instanceof Error ? exc.message : String(exc);
     deps.out(`${pc.red(pc.bold(`${CROSS} cannot read ${path}:`))} ${msg}`);
-    throw new CliExit(2);
+    throw new CliExitError(2);
   }
 
   let data: unknown;
@@ -851,7 +852,7 @@ function validateCoverageCmd(
     deps.out(
       `${pc.red(pc.bold(`${CROSS} ${path} is not valid JSON:`))} ${msg}`,
     );
-    throw new CliExit(2);
+    throw new CliExitError(2);
   }
 
   const problems = validateCoverageJson(data);
@@ -919,7 +920,7 @@ function validateCoverageCmd(
   }
 
   if (errors.length > 0 || (opts.strict && warnings.length > 0)) {
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 }
 
@@ -962,7 +963,7 @@ async function hardenGateCmd(
     deps.out(
       `${pc.red(pc.bold(`${CROSS} no repo`))} ${EM_DASH} pass --repo owner/repo or set GITHUB_REPOSITORY.`,
     );
-    throw new CliExit(2);
+    throw new CliExitError(2);
   }
 
   const playbook = renderPlaybook(repo, opts.branch, opts.check);
@@ -989,7 +990,7 @@ async function hardenGateCmd(
       `${pc.red(pc.bold(`${CROSS} --apply needs an admin token`))} (pass --token or set GITHUB_TOKEN).\n`,
     );
     deps.out(playbook);
-    throw new CliExit(2);
+    throw new CliExitError(2);
   }
 
   const client = deps.buildBranchProtectionClient(repo, opts.token);
@@ -1010,12 +1011,12 @@ async function hardenGateCmd(
       deps.out(outcome.summaryLine);
       deps.out(`${pc.red(pc.bold(`${CROSS} ${exc.reason}`))}\n`);
       deps.out(exc.playbook);
-      throw new CliExit(outcome.exitCode); // 3, never 1
+      throw new CliExitError(outcome.exitCode); // 3, never 1
     }
     if (exc instanceof HardGateBlocked) {
       deps.out(`${pc.red(pc.bold(`${CROSS} ${exc.reason}`))}\n`);
       deps.out(exc.playbook);
-      throw new CliExit(1);
+      throw new CliExitError(1);
     }
     throw exc;
   }
@@ -1077,7 +1078,7 @@ async function collectAdjudicationsCmd(
     deps.out(
       `${pc.red(pc.bold(`${CROSS} no PR context`))} ${EM_DASH} pass --repo and --pr, or run in Actions.`,
     );
-    throw new CliExit(2);
+    throw new CliExitError(2);
   }
 
   const client = deps.buildReactionsClient(repo, prNumber);
@@ -1119,7 +1120,7 @@ async function collectAdjudicationsCmd(
 
   if (res.action === 'unavailable') {
     deps.out(pc.red(pc.bold(`${CROSS} ${res.notice ?? 'not persisted'}`)));
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 }
 
@@ -1160,7 +1161,7 @@ async function postStickyComment(
   deps: GuardianDeps,
   gateMeta: GateMeta | null = null,
 ): Promise<void> {
-  const body = render(
+  const body = renderFindings(
     findings,
     'comment',
     resolution.effective,
@@ -1257,7 +1258,7 @@ function abstainPrCheck(
       ),
     );
   }
-  throw new CliExit(outcome.exitCode); // EXIT_ABSTAINED
+  throw new CliExitError(outcome.exitCode); // EXIT_ABSTAINED
 }
 
 /** Resolve the analyses-channel dir (test override, else repo-root default). */
@@ -1352,7 +1353,7 @@ async function prCheckCmd(
   // entirely (no diff scoped, no comment posted, exit 0).
   if (opts.postComment && !config.pr_enabled) {
     deps.out(`guardian: pr.enabled is false ${EM_DASH} skipping PR surface.`);
-    throw new CliExit(0);
+    throw new CliExitError(0);
   }
 
   const effectiveGate = opts.gate ?? config.pr_gate;
@@ -1519,7 +1520,7 @@ async function prCheckCmd(
   } else if (!opts.emitAnalysis && !opts.postComment) {
     // Local, non-posting default: render to stdout in `--format`.
     deps.out(
-      render(
+      renderFindings(
         findings,
         opts.format,
         resolution.effective,
@@ -1530,7 +1531,7 @@ async function prCheckCmd(
     );
   }
 
-  throw new CliExit(exitCode);
+  throw new CliExitError(exitCode);
 }
 
 // --- author-plan --------------------------------------------------------------
@@ -1718,7 +1719,7 @@ async function watchCmd(opts: WatchOptions, deps: GuardianDeps): Promise<void> {
       await deps.sleep(opts.interval);
     }
   } catch (exc) {
-    if (exc instanceof WatchInterrupt) {
+    if (exc instanceof WatchInterruptError) {
       deps.out(`\n${pc.yellow('Watch stopped.')}`);
       return;
     }
@@ -1737,7 +1738,7 @@ function collect(value: string, previous: string[]): string[] {
  * Build a fresh `guardian` command wired to `depsInit` (process-backed defaults
  * fill any gap). Every subcommand uses `.exitOverride()` so a usage error throws
  * a `CommanderError` rather than terminating the process -- tests read the exit
- * code from the thrown error (or from {@link CliExit} for business exits).
+ * code from the thrown error (or from {@link CliExitError} for business exits).
  */
 export function createGuardianCommand(
   depsInit: Partial<GuardianDeps> = {},

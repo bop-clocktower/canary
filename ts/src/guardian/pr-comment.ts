@@ -34,9 +34,10 @@
 
 import { PageReader, readAllPages, restPageReader } from './github-paging.js';
 
-// Single source of truth for the sticky-comment marker. `pr_check.render`
-// emits the identical literal at the head of a `comment`-format body so
-// `findSticky` can locate the guardian comment for in-place upsert.
+// Single source of truth for the sticky-comment marker.
+// `pr_check.renderFindings` emits the identical literal at the head of a
+// `comment`-format body so `findSticky` can locate the guardian comment for
+// in-place upsert.
 export const STICKY_MARKER = '<!-- canary-pr-guardian -->';
 
 /** A GitHub issue comment row: `{ id, body }`. */

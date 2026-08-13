@@ -41,7 +41,7 @@ import {
   buildFindings,
   buildWeakTestFindings,
   GuardianFinding,
-  render,
+  renderFindings,
 } from '../src/guardian/pr-check.js';
 
 function unit(
@@ -75,7 +75,7 @@ describe('uncovered line numbers survive to the comment', () => {
   });
 
   it('comment names the uncovered ranges, not just a count', () => {
-    const out = render(buildFindings([result()]), 'comment');
+    const out = renderFindings(buildFindings([result()]), 'comment');
     // Collapsed into inclusive ranges so a 12-line list stays one short cell.
     expect(out).toContain('44-49');
     expect(out).toContain('52-56');
@@ -90,14 +90,14 @@ describe('uncovered line numbers survive to the comment', () => {
         uncovered_lines: [],
       }),
     ]);
-    const out = render(findings, 'comment');
+    const out = renderFindings(findings, 'comment');
     expect(out).not.toContain('()');
     expect(out).not.toContain('uncovered: |');
   });
 
   it('a huge uncovered list is truncated so one finding cannot eat the budget', () => {
     const many = Array.from({ length: 400 }, (_, i) => i * 2 + 1); // 400 lone ranges
-    const out = render(
+    const out = renderFindings(
       buildFindings([result({ uncovered_lines: many })]),
       'comment',
     );
@@ -108,7 +108,7 @@ describe('uncovered line numbers survive to the comment', () => {
   });
 
   it('json carries the structured uncovered_lines for downstream tooling', () => {
-    const data = JSON.parse(render(buildFindings([result()]), 'json'));
+    const data = JSON.parse(renderFindings(buildFindings([result()]), 'json'));
     expect(data.findings[0].uncovered_lines).toEqual([
       44, 45, 46, 47, 48, 49, 52, 53, 54, 55, 56, 58,
     ]);
@@ -166,14 +166,14 @@ describe('suggestion is populated and rendered', () => {
   });
 
   it('the comment renders the suggestion alongside the evidence', () => {
-    const out = render(buildFindings([result()]), 'comment');
+    const out = renderFindings(buildFindings([result()]), 'comment');
     // Rendered as a distinct call-to-action, not silently folded into evidence.
     expect(out).toContain('extend a test to execute');
     expect(out).toContain('<br>');
   });
 
   it('an empty suggestion adds no dangling arrow', () => {
-    const out = render(
+    const out = renderFindings(
       [
         new GuardianFinding({
           path: 'src/pay.ts',
@@ -239,7 +239,7 @@ describe('comment permalinks', () => {
   const base = 'https://github.com/o/r/blob/deadbeef';
 
   it('links the file to its first uncovered line range', () => {
-    const out = render(
+    const out = renderFindings(
       buildFindings([result()]),
       'comment',
       0,
@@ -251,7 +251,7 @@ describe('comment permalinks', () => {
   });
 
   it('falls back to the added range when no line-level data exists', () => {
-    const out = render(
+    const out = renderFindings(
       buildFindings([
         result({ fidelity: Fidelity.GraphVerified, uncovered_lines: [] }),
       ]),
@@ -265,7 +265,7 @@ describe('comment permalinks', () => {
   });
 
   it('uses a single-line anchor when only one line is uncovered', () => {
-    const out = render(
+    const out = renderFindings(
       buildFindings([result({ uncovered_lines: [44] })]),
       'comment',
       0,
@@ -280,7 +280,7 @@ describe('comment permalinks', () => {
   it('percent-encodes parentheses so a route-group path is not a broken link', () => {
     // `app/(marketing)/page.tsx` — a Next.js route group. A bare `)` would
     // close the markdown link early and render the rest as literal text.
-    const out = render(
+    const out = renderFindings(
       buildFindings([result({ unit: unit('app/(marketing)/page.tsx') })]),
       'comment',
       0,
@@ -296,13 +296,13 @@ describe('comment permalinks', () => {
   });
 
   it('emits plain code text when no base is available (never a dead link)', () => {
-    const out = render(buildFindings([result()]), 'comment');
+    const out = renderFindings(buildFindings([result()]), 'comment');
     expect(out).not.toContain('https://github.com');
     expect(out).toContain('`src/pay.ts`');
   });
 
   it('keeps the unit arrow outside the link', () => {
-    const out = render(
+    const out = renderFindings(
       buildFindings([
         result({
           unit: {
@@ -323,27 +323,34 @@ describe('comment permalinks', () => {
   });
 
   it('text format never emits links or HTML', () => {
-    const out = render(buildFindings([result()]), 'text', 0, null, null, base);
+    const out = renderFindings(
+      buildFindings([result()]),
+      'text',
+      0,
+      null,
+      null,
+      base,
+    );
     expect(out).not.toContain('https://');
     expect(out).not.toContain('<br>');
   });
 });
 
 // ---------------------------------------------------------------------------
-// The adjudication parser consumes render's output — they must not drift.
+// The adjudication parser consumes renderFindings' output — no drift allowed.
 // ---------------------------------------------------------------------------
 
 describe('activeFindingPaths survives the linked file cell', () => {
-  // Fed from render's OWN output rather than a hand-written fixture: a fixture
+  // Fed from renderFindings' OWN output, not a hand-written fixture: a fixture
   // would re-encode the very assumption under test (that the cell opens with a
   // backtick), so producer and consumer could drift apart again unnoticed.
   it('reads paths out of an unlinked body', () => {
-    const body = render(buildFindings([result()]), 'comment');
+    const body = renderFindings(buildFindings([result()]), 'comment');
     expect(activeFindingPaths(body)).toEqual(['src/pay.ts']);
   });
 
   it('reads paths out of a permalinked body', () => {
-    const body = render(
+    const body = renderFindings(
       buildFindings([result()]),
       'comment',
       0,
@@ -357,7 +364,7 @@ describe('activeFindingPaths survives the linked file cell', () => {
   });
 
   it('still ignores the header and separator rows when linked', () => {
-    const body = render(
+    const body = renderFindings(
       buildFindings([
         result({ unit: unit('src/a.ts') }),
         result({ unit: unit('src/b.ts') }),
@@ -383,7 +390,7 @@ describe('richer cells stay within the comment budget', () => {
         result({ unit: unit(`src/mod-${i}/file-with-a-long-name.ts`) }),
       ),
     );
-    const out = render(
+    const out = renderFindings(
       findings,
       'comment',
       0,
