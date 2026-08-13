@@ -602,22 +602,87 @@ function lineOf(code: string, offset: number): number {
   return n;
 }
 
+/** One test declaration and the source span that belongs to it. */
+export interface TestBlock {
+  /** The test's name as written in the ORIGINAL (unblanked) source. */
+  name: string;
+  /** 1-based line of the declaration. */
+  line: number;
+  /** The body text, bounded by the next declaration. */
+  body: string;
+  /** Byte offset of `body` in the source it was sliced from. */
+  bodyStart: number;
+}
+
+/**
+ * Every test declaration in `code`, with its body bounded by the NEXT one.
+ *
+ * Extracted so the vacuity scanner (#612) shares one notion of "where does this
+ * test end" with LINT-006 rather than growing a second, subtly different one.
+ * The boundary logic is the part with a bug history — a fixed 2000-character
+ * lookahead was wrong in both directions (#590), the `(?:^|\s)` prefix put the
+ * reported line one early (#633) — so a divergent copy would inherit none of
+ * those fixes.
+ *
+ * `code` must be the string-blanked source (see `blankStringContent`) so a
+ * declaration inside a fixture cannot truncate a real test's body; `source` is
+ * the untouched text, read only to recover names that blanking erased.
+ */
+export function enumerateTests(
+  code: string,
+  source: string,
+  python: boolean,
+): TestBlock[] {
+  const out: TestBlock[] = [];
+  if (python) {
+    for (const m of code.matchAll(TEST_FN_PY)) {
+      const indent = m[1]!.length;
+      const start = m.index!;
+      const bodyStart = start + m[0].length;
+      const rest = code.slice(bodyStart);
+      const nextFn = rest.match(new RegExp(`^[ \\t]{${indent}}def `, 'm'));
+      out.push({
+        name: m[2]!,
+        line: lineOf(code, start),
+        body: nextFn ? rest.slice(0, nextFn.index!) : rest,
+        bodyStart,
+      });
+    }
+    return out;
+  }
+  const decls = [...code.matchAll(TEST_FN_JS)];
+  for (let i = 0; i < decls.length; i += 1) {
+    const m = decls[i]!;
+    const start = m.index!;
+    const bodyStart = start + m[0].length;
+    const bodyEnd = decls[i + 1]?.index ?? code.length;
+    // The coordinate comes from the NAME's offset, not the match's: TEST_FN_JS
+    // opens with `(?:^|\s)`, which CONSUMES the character before `it`/`test` --
+    // for any test not on line 1 that is the previous line's newline (#633).
+    const nameStart = m.indices?.[1]?.[0] ?? start;
+    out.push({
+      name: m.indices?.[1]
+        ? source.slice(m.indices[1][0], m.indices[1][1])
+        : m[1]!,
+      line: lineOf(code, nameStart),
+      body: code.slice(bodyStart, bodyEnd),
+      bodyStart,
+    });
+  }
+  return out;
+}
+
 function scanAssertionFreePy(code: string, file: string): LintFinding[] {
   const out: LintFinding[] = [];
-  for (const m of code.matchAll(TEST_FN_PY)) {
-    const indent = m[1]!.length;
-    const start = m.index!;
-    const rest = code.slice(start + m[0].length);
-    const nextFn = rest.match(new RegExp(`^[ \\t]{${indent}}def `, 'm'));
-    const body = nextFn ? rest.slice(0, nextFn.index!) : rest;
-    if (!ASSERT_PY.test(body)) {
+  for (const t of enumerateTests(code, code, true)) {
+    if (!ASSERT_PY.test(t.body)) {
       out.push(
         mk(
           file,
-          lineOf(code, start),
+          t.line,
           'LINT-006',
           'warning',
-          `\`${m[2]!}\` contains no assertions.`,
+          `\`${t.name}\` contains no assertions.`,
           'Add at least one assert statement; a test that never fails proves nothing.',
         ),
       );
@@ -632,40 +697,17 @@ function scanAssertionFreeJs(
   source: string,
 ): LintFinding[] {
   const out: LintFinding[] = [];
-  // The test declarations, in source order, so each body can be bounded by the
-  // NEXT one -- the JS analogue of what the pytest scanner already does with
-  // "next `def` at the same indent".
-  //
-  // This replaces a fixed 2000-character lookahead that was wrong in BOTH
-  // directions: a long test whose first assertion fell past the window was
-  // flagged (false positive), and a short empty test could borrow the next
-  // test's assertion from inside the window (false negative). Neither failure
-  // is visible without a real codebase to run it against, which is why
-  // dogfooding found them and the unit tests did not.
-  const decls = [...code.matchAll(TEST_FN_JS)];
-  for (let i = 0; i < decls.length; i += 1) {
-    const m = decls[i]!;
-    const start = m.index!;
-    const bodyStart = start + m[0].length;
-    const bodyEnd = decls[i + 1]?.index ?? code.length;
-    const rest = code.slice(bodyStart, bodyEnd);
-    if (!ASSERT_JS.test(rest)) {
-      const name = m.indices?.[1]
-        ? source.slice(m.indices[1][0], m.indices[1][1])
-        : m[1]!;
-      // The reported coordinate comes from the NAME's offset, not the match's.
-      // `TEST_FN_JS` opens with `(?:^|\s)`, which CONSUMES the character before
-      // `it`/`test` -- for any test not on line 1 that is the newline ending the
-      // previous line, so `m.index` sits one line early (#633). `start` is still
-      // the right anchor for the body bounds; only the line moves.
-      const nameStart = m.indices?.[1]?.[0] ?? start;
+  // Bodies are bounded by the NEXT declaration -- see `enumerateTests`, which
+  // now owns that logic and its bug history (#590, #633) for both languages.
+  for (const t of enumerateTests(code, source, false)) {
+    if (!ASSERT_JS.test(t.body)) {
       out.push(
         mk(
           file,
-          lineOf(code, nameStart),
+          t.line,
           'LINT-006',
           'warning',
-          `Test "${name}" contains no assertions.`,
+          `Test "${t.name}" contains no assertions.`,
           'Add an expect() call; a test that never asserts always passes.',
         ),
       );

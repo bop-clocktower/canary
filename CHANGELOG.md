@@ -106,6 +106,28 @@ under the project's former name) are documented in the
 [#333]: https://github.com/bop-clocktower/canary/issues/333
 [#341]: https://github.com/bop-clocktower/canary/issues/341
 [#462]: https://github.com/bop-clocktower/canary/issues/462
+- **`canary-cassandra` — vacuous-test detection, plus the `canary vacuity-check`
+  command behind it.** A test with no assertions is easy to find and everyone
+  already looks. The dangerous one has assertions that _cannot fail_: it has
+  coverage, goes green, and goes green identically against the bug it was
+  written to catch — three of those shipped in one cycle ([#486]) and every gate
+  in the repo read all three as healthy. `VAC-001` (critical) flags an assertion
+  identical to the value it checks; `VAC-002` flags a test that never references
+  its target; `VAC-003` flags a test whose every assertion is an _absence_
+  observed on a bystander rather than on the target, so nothing proves the
+  operation ran at all. `VAC-002`/`VAC-003` carry an explicit fidelity ladder —
+  `annotated` (`// @covers <symbol>`) over `import-inferred` — and a test whose
+  target resolves at neither tier is recorded as a **skip with its reason**,
+  never scanned-and-passed. Advisory: findings exit 0, matching the repo's
+  advisory-first convention for a new detector ([#485]). A collapsed denominator
+  is not advisory and exits 3, and **two** distinct zeros are guarded — no file
+  matched, and files matched but held zero tests (a scanner that only checks the
+  first prints a clean tick on the second). Measured across 3078 tests in this
+  repo: **99 findings** (89 `VAC-002`, 10 `VAC-003`, **0** `VAC-001`) and 235
+  recorded skips. The detection lives in `ts/src/core/vacuity-scanner.ts` and is
+  shared with the promotion gate rather than duplicated into a `.mjs` skill
+  runtime — the third-half-enforcer risk [#605] names. ([#612])
+
 - **Generated-test soundness rules (`SOUND-001/002/003`) in
   `static-linter.ts`.** A test can assert, pass, and still prove nothing — when
   the value it pins is one no correct implementation is obliged to produce.
@@ -212,8 +234,11 @@ under the project's former name) are documented in the
 [#390]: https://github.com/bop-clocktower/canary/issues/390
 [#508]: https://github.com/bop-clocktower/canary/issues/508
 [#538]: https://github.com/bop-clocktower/canary/issues/538
+[#485]: https://github.com/bop-clocktower/canary/issues/485
+[#486]: https://github.com/bop-clocktower/canary/issues/486
 [#566]: https://github.com/bop-clocktower/canary/issues/566
 [#605]: https://github.com/bop-clocktower/canary/issues/605
+[#612]: https://github.com/bop-clocktower/canary/issues/612
 [#676]: https://github.com/bop-clocktower/canary/issues/676
 [#686]: https://github.com/bop-clocktower/canary/issues/686
 [#703]: https://github.com/bop-clocktower/canary/issues/703

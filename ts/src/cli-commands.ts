@@ -23,7 +23,13 @@ import { basename, extname, join, resolve } from 'node:path';
 import pc from 'picocolors';
 
 import { CliExitError, jsonIndent2 } from './cli-common.js';
-import { gateOutcome } from './core/gate-result.js';
+import {
+  EXIT_ABSTAINED,
+  gateOutcome,
+  type GateResult,
+  type SkipEntry,
+} from './core/gate-result.js';
+import { scanVacuity, type VacuityFinding } from './core/vacuity-scanner.js';
 import { ckInitCmd } from './company-knowledge-cli.js';
 import { extractFrameworkHint } from './core/classifier.js';
 import { VALID_CATEGORIES, buildFeedback } from './core/feedback.js';
@@ -807,6 +813,84 @@ export function flakeCheckCmd(
 
   deps.out(pc.bold(`${allFindings.length} flakiness pattern(s) found.`));
   throw new CliExitError(1);
+}
+
+// --- vacuity-check (canary-cassandra, #612) ----------------------------------
+
+/**
+ * The CLI surface of the vacuity scanner.
+ *
+ * Registered as an **advisory** command, not a gate: this repo's established
+ * shape for a brand-new detector is advisory first, ratchet to strict only after
+ * triage (the dogfooding jobs, #485). So findings exit 0.
+ *
+ * The abstention half is NOT advisory, and the asymmetry is the whole #508
+ * doctrine. "I found weak tests" is information a repo absorbs over time; "I
+ * verified nothing" is a broken instrument, and a vacuity detector that reported
+ * its own silence as success would be the exact false-green class it exists to
+ * find. Two distinct zeros are guarded: no file matched, and files matched but
+ * held no tests -- a scanner that only checked the first prints a clean tick on
+ * the second.
+ */
+export function vacuityCheckCmd(
+  path: string,
+  opts: { json?: boolean },
+  deps: MainDeps,
+): void {
+  const json = opts.json === true;
+  const files = isDir(path) ? collectTestFiles(path) : [path];
+
+  const findings: VacuityFinding[] = [];
+  const skipped: SkipEntry[] = [];
+  let checked = 0;
+  for (const f of files) {
+    const r = scanVacuity(f);
+    checked += r.checked;
+    findings.push(...r.findings);
+    if (r.skipped) skipped.push(...r.skipped);
+  }
+  if (files.length === 0) {
+    skipped.push({
+      name: path,
+      reason: `no test file matched (looked for ${SCANNABLE_DESC})`,
+    });
+  }
+
+  const result: GateResult<VacuityFinding> = { checked, findings };
+  if (skipped.length > 0) result.skipped = skipped;
+  const outcome = gateOutcome(result, 'advisory', { noun: 'test(s)' });
+  // `advisory` keeps findings at exit 0; the abstention still has to be loud, so
+  // the exit code for a zero denominator is taken from the gate contract.
+  const exitCode = outcome.abstained ? EXIT_ABSTAINED : 0;
+
+  if (json) {
+    deps.out(
+      jsonIndent2({
+        checked,
+        abstained: outcome.abstained,
+        findings,
+        skipped,
+      }),
+    );
+    if (exitCode !== 0) throw new CliExitError(exitCode);
+    return;
+  }
+
+  for (const f of findings) {
+    const color = f.severity === 'critical' ? pc.red : pc.yellow;
+    const tier = f.fidelity ? pc.dim(` [${f.fidelity}]`) : '';
+    deps.out(
+      `${color(`[${f.severity.toUpperCase()}]`)} ${f.file}:${f.line} ${pc.dim(`(${f.rule})`)}${tier}`,
+    );
+    deps.out(`  ${f.test}: ${f.message}`);
+    deps.out(`  ${pc.dim(`${ARROW} ${f.suggestion}`)}\n`);
+  }
+  deps.out(
+    outcome.abstained
+      ? pc.bold(pc.yellow(outcome.summaryLine))
+      : `${pc.bold(outcome.summaryLine)}`,
+  );
+  if (exitCode !== 0) throw new CliExitError(exitCode);
 }
 
 // --- heal-test ---------------------------------------------------------------
