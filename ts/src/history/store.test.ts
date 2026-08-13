@@ -86,6 +86,36 @@ describe('LocalAsyncAdapter (async surface over the sync NDJSON store)', () => {
     expect(summary.total_runs).toBe(1);
   });
 
+  it('carries readAll across the adapter boundary (#711)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'canary-store-'));
+    const path = join(dir, 'history-v2.jsonl');
+    const store = makeStore(undefined, path);
+    await store.pushRun(run, []);
+
+    // The analysis engine's raw-record sections are reachable ONLY through this
+    // optional capability. If the adapter stops forwarding it, `analyze` starts
+    // abstaining against the LOCAL store — a silent regression to a "cannot
+    // verify" that is really a plumbing break, so it is pinned here.
+    expect(typeof store.readAll).toBe('function');
+    const records = await store.readAll!();
+    expect(records.map((r) => r.run_id)).toEqual([run.run_id]);
+  });
+
+  it('the remote backend does NOT claim raw-record access', () => {
+    // The engine's degradation keys off this absence, so an accidental stub
+    // implementation on the remote store would turn a loud abstention back into
+    // a silent empty report.
+    const priorKey = process.env.SUPABASE_ANON_KEY;
+    process.env.SUPABASE_ANON_KEY = 'test-anon-key';
+    try {
+      const remote = new SupabaseHistoryStore('https://proj.supabase.co');
+      expect((remote as { readAll?: unknown }).readAll).toBeUndefined();
+    } finally {
+      if (priorKey === undefined) delete process.env.SUPABASE_ANON_KEY;
+      else process.env.SUPABASE_ANON_KEY = priorKey;
+    }
+  });
+
   it('is idempotent — a duplicate run_id is not appended twice', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'canary-store-'));
     const path = join(dir, 'history-v2.jsonl');

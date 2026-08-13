@@ -5,12 +5,13 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { AnalysisEngine } from './engine.js';
-import type { HistoryStore } from '../history/ndjson-store.js';
+import type { AsyncHistoryStore } from '../history/async-store.js';
 import { NdjsonHistoryStore } from '../history/ndjson-store.js';
+import { LocalAsyncAdapter } from '../history/store.js';
 
 let dir: string;
 
-function seed(): NdjsonHistoryStore {
+function seed(): AsyncHistoryStore {
   const records = [
     {
       run_id: 'r1',
@@ -53,7 +54,7 @@ function seed(): NdjsonHistoryStore {
   ];
   const path = join(dir, 'history-v2.jsonl');
   writeFileSync(path, records.map((r) => JSON.stringify(r)).join('\n') + '\n');
-  return new NdjsonHistoryStore(path);
+  return new LocalAsyncAdapter(new NdjsonHistoryStore(path));
 }
 
 beforeEach(() => {
@@ -64,8 +65,8 @@ afterEach(() => {
 });
 
 describe('AnalysisEngine over the NDJSON store', () => {
-  it('produces all six artifacts', () => {
-    const result = new AnalysisEngine(seed()).run({ windowRuns: 10 });
+  it('produces all six artifacts', async () => {
+    const result = await new AnalysisEngine(seed()).run({ windowRuns: 10 });
     expect(Object.keys(result.artifacts).sort()).toEqual([
       'area-health.md',
       'common-failures.md',
@@ -76,32 +77,41 @@ describe('AnalysisEngine over the NDJSON store', () => {
     ]);
   });
 
-  it('discovers seeded suites', () => {
-    expect(new AnalysisEngine(seed()).discoverSuites()).toContain('checkout');
+  it('discovers seeded suites', async () => {
+    expect(await new AnalysisEngine(seed()).discoverSuites()).toContain(
+      'checkout',
+    );
   });
 
-  it('tags pooled spike rows with their suite', () => {
-    const result = new AnalysisEngine(seed()).run({ windowRuns: 10 });
+  it('tags pooled spike rows with their suite', async () => {
+    const result = await new AnalysisEngine(seed()).run({ windowRuns: 10 });
     expect(result.spikes.length).toBeGreaterThan(0);
     expect(result.spikes.every((row) => 'suite' in row)).toBe(true);
   });
 
-  it('extracts common failures from failed tests', () => {
-    const rows = new AnalysisEngine(seed()).queryCommonFailures(null);
+  it('extracts common failures from failed tests', async () => {
+    const rows = await new AnalysisEngine(seed()).queryCommonFailures(null);
     expect(rows.some((r) => r.test_name === 'test_pay')).toBe(true);
   });
 
-  it('respects the suite filter for common failures', () => {
-    expect(new AnalysisEngine(seed()).queryCommonFailures('nope')).toEqual([]);
+  it('respects the suite filter for common failures', async () => {
+    expect(
+      await new AnalysisEngine(seed()).queryCommonFailures('nope'),
+    ).toEqual([]);
   });
 
-  it('area-health is always the empty-data message (faithful to Python)', () => {
-    const result = new AnalysisEngine(seed()).run({ windowRuns: 10 });
+  it('area-health is always the empty-data message (faithful to Python)', async () => {
+    const result = await new AnalysisEngine(seed()).run({ windowRuns: 10 });
     expect(result.artifacts['area-health.md']).toContain('No area health');
     expect(result.areaHealth).toEqual([]);
   });
 
-  it('surfaces a regression candidate after a green streak then failures', () => {
+  it('a store that exposes raw records degrades nothing', async () => {
+    const result = await new AnalysisEngine(seed()).run({ windowRuns: 10 });
+    expect(result.degraded).toEqual([]);
+  });
+
+  it('surfaces a regression candidate after a green streak then failures', async () => {
     // 5 green runs then 3 failing runs → regression candidate.
     const records = [
       ...Array.from({ length: 5 }, (_, i) => ({
@@ -138,9 +148,9 @@ describe('AnalysisEngine over the NDJSON store', () => {
       path,
       records.map((r) => JSON.stringify(r)).join('\n') + '\n',
     );
-    const result = new AnalysisEngine(new NdjsonHistoryStore(path)).run({
-      windowRuns: 30,
-    });
+    const result = await new AnalysisEngine(
+      new LocalAsyncAdapter(new NdjsonHistoryStore(path)),
+    ).run({ windowRuns: 30 });
     expect(result.regressionCandidates.length).toBe(1);
     const [cand] = result.regressionCandidates;
     expect(cand!.test_name).toBe('test_reg');
@@ -150,26 +160,66 @@ describe('AnalysisEngine over the NDJSON store', () => {
   });
 });
 
-describe('AnalysisEngine with a non-readable store falls through cleanly', () => {
-  const stub: HistoryStore = {
-    queryFlaky: () => [],
-    querySummary: (suite) => ({ suite, total_runs: 0, avg_pass_rate: 0 }),
-    queryTimeline: () => [],
-    countRuns: () => 0,
+/**
+ * A backend without `readAll()` — the shape of the remote Supabase store.
+ *
+ * Before #711 the engine silently returned `[]` for every raw-record section
+ * against a store like this, which renders as a clean report and is not one.
+ * The contract now is that it says so instead.
+ */
+describe('AnalysisEngine against a backend with no raw-record access', () => {
+  const stub: AsyncHistoryStore = {
+    pushRun: async () => {},
+    queryFlaky: async () => [],
+    querySummary: async (suite) => ({
+      suite,
+      total_runs: 0,
+      avg_pass_rate: 0,
+    }),
+    queryTimeline: async () => [],
+    // deliberately no readAll() and no countRuns() — mirrors SupabaseHistoryStore
   };
 
-  it('discoverSuites is empty', () => {
-    expect(new AnalysisEngine(stub).discoverSuites()).toEqual([]);
+  it('discoverSuites is empty', async () => {
+    expect(await new AnalysisEngine(stub).discoverSuites()).toEqual([]);
   });
-  it('queryCommonFailures is empty', () => {
-    expect(new AnalysisEngine(stub).queryCommonFailures(null)).toEqual([]);
+
+  it('queryCommonFailures is empty', async () => {
+    expect(await new AnalysisEngine(stub).queryCommonFailures(null)).toEqual(
+      [],
+    );
   });
-  it('detectRegressionCandidates is empty', () => {
+
+  it('detectRegressionCandidates is empty', async () => {
     expect(
-      new AnalysisEngine(stub).detectRegressionCandidates(null, 5, 3),
+      await new AnalysisEngine(stub).detectRegressionCandidates(null, 5, 3),
     ).toEqual([]);
   });
-  it('run does not throw', () => {
-    expect(() => new AnalysisEngine(stub).run({ windowRuns: 5 })).not.toThrow();
+
+  it('run does not throw', async () => {
+    await expect(
+      new AnalysisEngine(stub).run({ windowRuns: 5 }),
+    ).resolves.toBeDefined();
+  });
+
+  it('NAMES every section it could not compute, rather than reporting zero', async () => {
+    const result = await new AnalysisEngine(stub).run({ windowRuns: 5 });
+    expect(result.degraded).toEqual([
+      'failure spikes',
+      'common failures',
+      'regression candidates',
+    ]);
+  });
+
+  it('does not degrade spikes when an explicit --suite removes the need to discover them', async () => {
+    const result = await new AnalysisEngine(stub).run({
+      windowRuns: 5,
+      suite: 'checkout',
+    });
+    expect(result.degraded).not.toContain('failure spikes');
+    expect(result.degraded).toEqual([
+      'common failures',
+      'regression candidates',
+    ]);
   });
 });

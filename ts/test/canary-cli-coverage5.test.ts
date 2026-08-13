@@ -10,6 +10,8 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { defaultAnalyzeDeps } from '../src/analysis/cli.js';
+import { LocalAsyncAdapter } from '../src/history/store.js';
+import { SupabaseHistoryStore } from '../src/history/supabase-store.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 
 function fake<T>(obj: unknown): T {
@@ -56,10 +58,13 @@ describe('CLI fidelity fixes (adversarial review)', () => {
     }
   });
 
-  // #3: analyze's production makeStore ignores --db-url (sync engine, local
-  // NDJSON only) but must WARN to stderr so the data-source divergence from the
-  // Python oracle (which honors --db-url) is not silent.
-  it('analyze makeStore warns to stderr when a db-url is provided', () => {
+  // #3: analyze's production makeStore used to IGNORE --db-url (the engine held
+  // the synchronous store contract) and warn to stderr so the divergence was at
+  // least not silent. #711 made the engine async, so the flag is honoured for
+  // real -- the warning is gone because the thing it apologised for is gone.
+  it('analyze makeStore honours --db-url instead of warning about it', () => {
+    const priorKey = process.env.SUPABASE_ANON_KEY;
+    process.env.SUPABASE_ANON_KEY = 'test-anon-key';
     const writes: string[] = [];
     const spy = vi
       .spyOn(process.stderr, 'write')
@@ -68,11 +73,26 @@ describe('CLI fidelity fixes (adversarial review)', () => {
         return true;
       });
     try {
-      defaultAnalyzeDeps().makeStore('postgres://remote/db');
+      const store = defaultAnalyzeDeps().makeStore('https://proj.supabase.co');
+      expect(store).toBeInstanceOf(SupabaseHistoryStore);
     } finally {
       spy.mockRestore();
+      if (priorKey === undefined) delete process.env.SUPABASE_ANON_KEY;
+      else process.env.SUPABASE_ANON_KEY = priorKey;
     }
-    expect(writes.join('')).toContain('--db-url is ignored');
+    expect(writes.join('')).not.toContain('--db-url is ignored');
+  });
+
+  it('analyze makeStore still defaults to the local store with no db-url', () => {
+    const priorUrl = process.env.CANARY_HISTORY_DB_URL;
+    delete process.env.CANARY_HISTORY_DB_URL;
+    try {
+      expect(defaultAnalyzeDeps().makeStore()).toBeInstanceOf(
+        LocalAsyncAdapter,
+      );
+    } finally {
+      if (priorUrl !== undefined) process.env.CANARY_HISTORY_DB_URL = priorUrl;
+    }
   });
 });
 
