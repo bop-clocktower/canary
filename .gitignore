@@ -107,6 +107,11 @@ blob-report/
 .cursor/learning/
 .cursor/skills/
 .kiro/
+# Remember plugin scratch state. It writes its own `.remember/.gitignore`, but
+# that file lives INSIDE the untracked directory, so it does not exist in
+# `actions/checkout` and never protected the repo — only the machine that had
+# already run the plugin. Ignored here so the rule is committed (#700).
+.remember/
 .github/copilot-instructions.md
 .github/instructions/
 .github/hooks/
