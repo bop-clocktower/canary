@@ -1,14 +1,18 @@
 /**
  * Write-side schema for run-history records.
  *
- * Faithful TS port of `agent/history/schema.py`. `record.ts` holds the *read*
- * shapes (loose, as parsed from disk); this module holds the *write* inputs
- * (the dataclass field sets) and the serializers that turn them into the exact
- * dict shapes Python's `asdict()` produces — so a record written by TS is read
- * identically by the Python `LocalHistoryStore` (the write-seam proof).
+ * Originally a faithful TS port of `agent/history/schema.py`. `record.ts` holds
+ * the *read* shapes (loose, as parsed from disk); this module holds the *write*
+ * inputs (the dataclass field sets) and the serializers that produce the on-disk
+ * and remote-table shapes.
+ *
+ * The field sets still match what Python's `asdict()` produced, with one
+ * deliberate addition since the Python engine was retired at v6.0.0: the local
+ * record carries `schema_version` (#701). See `serializeLocalRecord`.
  */
 
 import { def } from '../util/coalesce.js';
+import { SCHEMA_VERSION } from './record.js';
 
 /** Mirrors the Python `RunRecord` dataclass. */
 export interface RunInput {
@@ -97,11 +101,25 @@ export function serializeTestResult(
 
 /**
  * The nested NDJSON line shape written by the local store: a serialized run
- * with its `tests` embedded (matches Python `LocalHistoryStore.push_run`).
+ * with its `tests` embedded.
+ *
+ * `schema_version` is stamped **here**, in the one serializer every local
+ * writer goes through, rather than at each call site (#701). A writer that has
+ * to remember the field is a writer that eventually forgets it — and an
+ * unstamped row is invisible to the reader's version guard, so the guard could
+ * never fire on the store's own history. Stamping by construction is what makes
+ * "every row is self-describing" a property instead of a convention.
+ *
+ * Deliberately absent from `serializeRun`/`serializeTestResult`: those map to
+ * the remote store's table columns, which have no such field.
  */
 export function serializeLocalRecord(
   run: RunInput,
   results: TestResultInput[],
 ): Record<string, unknown> {
-  return { ...serializeRun(run), tests: results.map(serializeTestResult) };
+  return {
+    schema_version: SCHEMA_VERSION,
+    ...serializeRun(run),
+    tests: results.map(serializeTestResult),
+  };
 }
