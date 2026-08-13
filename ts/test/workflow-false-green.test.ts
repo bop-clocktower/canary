@@ -38,10 +38,13 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
 
 interface Step {
+  id?: string;
+  name?: string;
   run?: string;
   uses?: string;
   if?: string;
   with?: Record<string, unknown>;
+  'continue-on-error'?: boolean;
 }
 interface Job {
   steps?: Step[];
@@ -753,6 +756,228 @@ describe('workflow false-green invariants', () => {
           inDirLoop,
           `${cmd} is a single-file gate; a directory makes it abstain, not pass`,
         ).toBe(false);
+      },
+    );
+  });
+
+  describe('#717 — a wired check is not scoped into silence', () => {
+    /**
+     * `check-perf`'s sub-flags, every one of which turns the check into a
+     * green tick over findings it should be reporting.
+     *
+     * Measured on the same tree in the same minute at 8c865b5, CLI 11.1.1:
+     *
+     *   harness check-perf              -> x Validation failed (237 issues)
+     *   harness check-perf --structural -> x Validation failed (209 issues)
+     *   harness check-perf --coupling   -> v validation passed
+     *   harness check-perf --size       -> v validation passed
+     *
+     * The 237 is 209 structural + 26 coupling-ratio + 2 import-count. So
+     * `--coupling` reports a PASS over the 28 findings that are its own
+     * subject, and `--structural` reports a real number over a silently
+     * reduced denominator. `--severity` is here for the same reason by its
+     * own documentation: "violations below it are excluded from the report
+     * and never fail the gate".
+     *
+     * This is not hypothetical tidiness. Scoping the gate to `--coupling` is
+     * the obvious way to make check-perf blockable on day one — 28 findings
+     * is a tractable backlog and 237 is not — and that gate would have been
+     * green forever over nothing.
+     *
+     * `perf-ratchet.mjs` catches `--coupling` and `--size` on its own, via
+     * the implausible-collapse guard. It cannot catch `--structural`: 209
+     * against a 245 baseline is a perfectly ordinary-looking pass. That gap
+     * is the whole reason this assertion exists rather than relying on the
+     * ratchet alone.
+     */
+    const NARROWING_FLAGS = ['--structural', '--coupling', '--size'];
+
+    const quality = allWorkflows().find(
+      ([name]) => name === 'harness-quality.yml',
+    );
+
+    it('finds harness-quality.yml to check (zero denominator is an abstention)', () => {
+      expect(quality, 'harness-quality.yml is missing').toBeDefined();
+    });
+
+    const executable = logicalLines(
+      runBlocks(quality?.[1] ?? {}).join('\n'),
+    ).filter((line) => !line.trimStart().startsWith('#'));
+
+    const perfLines = executable.filter((line) =>
+      /harness\s+check-perf\b/.test(line),
+    );
+
+    it('wires check-perf at all', () => {
+      expect(
+        perfLines,
+        'check-perf ran in no workflow at all, which is what #717 filed',
+      ).not.toEqual([]);
+    });
+
+    it.each(NARROWING_FLAGS)(
+      'never scopes check-perf with %s',
+      (flag: string) => {
+        expect(
+          perfLines.filter((line) => line.includes(flag)),
+          `${flag} silences findings it should report; the gate must call a ` +
+            'bare `harness check-perf`',
+        ).toEqual([]);
+      },
+    );
+
+    it('never scopes check-perf with --severity', () => {
+      expect(
+        perfLines.filter((line) => /--severity\b/.test(line)),
+        '--severity excludes lower violations from the report entirely, so ' +
+          'the ratchet would compare a filtered count to an unfiltered baseline',
+      ).toEqual([]);
+    });
+
+    /**
+     * `check-perf` exits 1 whenever it has violations, which is always, so
+     * its own exit code cannot be the gate — the step has to swallow it and
+     * hand the count to the ratchet. That swallow is only safe because the
+     * ratchet abstains on an unparseable report; without the ratchet line,
+     * `|| true` is just a silenced check.
+     */
+    it('gates check-perf on the ratchet rather than on its exit code', () => {
+      expect(
+        executable.filter((line) => line.includes('perf-ratchet.mjs')),
+        'check-perf runs with `|| true`, so nothing blocks unless the ratchet ' +
+          'reads the report it captured',
+      ).not.toEqual([]);
+    });
+
+    it('captures the check-perf report to the file the ratchet reads', () => {
+      const captured = perfLines.some((line) => STDOUT_TO_FILE.test(line));
+      expect(
+        captured,
+        'the ratchet reads a report file; an uncaptured run leaves it with ' +
+          'nothing to parse, which is an abstention every time',
+      ).toBe(true);
+    });
+  });
+
+  describe('#718 — a soft-failing step explains itself or does not exist', () => {
+    /**
+     * `continue-on-error: true` is the workflow-layer silent abstention: the
+     * step goes orange, the JOB goes green, and nobody reads the log. The
+     * instance this rule was written for was `harness check-docs`, soft since
+     * "we transition" with no end condition, no target and no owner, sitting
+     * at 3.0% coverage — which at that number is the steady state, not a
+     * transition. It is blocking at a floor as of #718.
+     *
+     * Soft steps are not banned outright; a genuinely transitional one is
+     * legitimate. What is banned is a soft step nobody can see failing. A
+     * step is EXPLAINED when a later step annotates on its outcome, which
+     * puts the soft failure in the PR's Checks summary rather than only
+     * inside an expanded step.
+     */
+    function softSteps(wf: Workflow): Array<[string, Step, Step[]]> {
+      const found: Array<[string, Step, Step[]]> = [];
+      for (const [jobId, job] of jobsOf(wf)) {
+        const steps = job.steps ?? [];
+        for (const step of steps) {
+          if (step['continue-on-error'] === true) {
+            found.push([jobId, step, steps]);
+          }
+        }
+      }
+      return found;
+    }
+
+    /** Does any sibling step annotate on this step's outcome? */
+    function isExplained(step: Step, siblings: Step[]): boolean {
+      if (!step.id) return false;
+      const outcomeRef = new RegExp(
+        `steps\\.${step.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.outcome`,
+      );
+      return siblings.some((s) => s !== step && outcomeRef.test(s.if ?? ''));
+    }
+
+    /**
+     * The repo currently has ZERO `continue-on-error: true` steps, so the
+     * assertion below runs over an empty set — and an empty set is exactly
+     * the zero denominator this file exists to reject. Proving the detector
+     * against a fixture is what makes the real-workflow assertion mean
+     * something: without it, `softSteps` could be broken outright and the
+     * suite would stay green because it found nothing either way.
+     */
+    describe('the detector works (so the empty real-world result is a pass)', () => {
+      const unexplained = {
+        jobs: {
+          build: {
+            steps: [
+              { name: 'soft and silent', run: 'x', 'continue-on-error': true },
+              { name: 'unrelated', run: 'y' },
+            ],
+          },
+        },
+      } as Workflow;
+
+      const explained = {
+        jobs: {
+          build: {
+            steps: [
+              {
+                id: 'soft',
+                name: 'soft but annotated',
+                run: 'x',
+                'continue-on-error': true,
+              },
+              {
+                name: 'annotate',
+                if: "steps.soft.outcome == 'failure'",
+                run: 'echo "::warning::it failed"',
+              },
+            ],
+          },
+        },
+      } as Workflow;
+
+      it('spots a continue-on-error step', () => {
+        expect(softSteps(unexplained)).toHaveLength(1);
+      });
+
+      it('calls an unannotated soft step unexplained', () => {
+        const [[, step, siblings]] = softSteps(unexplained);
+        expect(isExplained(step, siblings)).toBe(false);
+      });
+
+      it('calls an annotated soft step explained', () => {
+        const [[, step, siblings]] = softSteps(explained);
+        expect(isExplained(step, siblings)).toBe(true);
+      });
+
+      it('does not accept an id with no matching annotation', () => {
+        const orphan = {
+          jobs: {
+            build: {
+              steps: [
+                { id: 'soft', run: 'x', 'continue-on-error': true },
+                { if: "steps.other.outcome == 'failure'", run: 'y' },
+              ],
+            },
+          },
+        } as Workflow;
+        const [[, step, siblings]] = softSteps(orphan);
+        expect(isExplained(step, siblings)).toBe(false);
+      });
+    });
+
+    it.each(allWorkflows())(
+      '%s has no unexplained continue-on-error step',
+      (_name: string, wf: Workflow) => {
+        const offenders = softSteps(wf)
+          .filter(([, step, siblings]) => !isExplained(step, siblings))
+          .map(([jobId, step]) => `${jobId}: ${step.name ?? step.run ?? '?'}`);
+        expect(
+          offenders,
+          'a soft-failing step with no annotation goes orange while the job ' +
+            'goes green — give it an `id` and a step that annotates on its ' +
+            'outcome, or make it blocking',
+        ).toEqual([]);
       },
     );
   });
