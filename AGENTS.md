@@ -269,7 +269,12 @@ Python from the plugin hooks and maintenance scripts. There is no longer a
   leftover from the migration, not a statement of status).
 - **Run history:** `test-results/reports/history-v2.jsonl` (NDJSON, one
   run-record per line) remains the on-disk contract between the executor, the
-  history store, and `analysis/`.
+  history store, and `analysis/`. **`canary history record` is the writer**
+  (#538) — before it existed nothing in the product wrote the file, so the whole
+  `analyze` / `history` surface had only ever been read against synthetic
+  fixtures. New history consumers take the async `AsyncHistoryStore` from
+  `makeStore()`, never `NdjsonHistoryStore` directly; see
+  [ADR 0013](docs/knowledge/decisions/0013-history-store-async-interface.md).
 - **Subprocess contract tests:** spawn through `runCapture()` in
   `ts/test/subprocess-testkit.ts`, never a hand-rolled `execFileSync` try/catch.
   `execFileSync` throws on a non-zero exit — which is the case under test for a

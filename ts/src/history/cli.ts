@@ -20,6 +20,12 @@
  *     no Python CLI test pinning them, so this port emits a simple aligned text
  *     table carrying the SAME cell content. `summary`/`push`/`migrate` are NOT
  *     tables and are reproduced byte-for-byte via picocolors stripping.
+ *
+ * `record` is NOT a port. It has no Python counterpart: nothing in either engine
+ * ever wrote the local store, which is why the whole `analyze` / `history`
+ * surface had only ever been exercised against synthetic fixtures (#538). Its
+ * conversion half lives in `run-recorder.ts`; it takes the async store contract
+ * per ADR 0013, so it writes local NDJSON or the remote store by configuration.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -36,6 +42,15 @@ import { gateOutcome } from '../core/gate-result.js';
 import type { RunInput, TestResultInput } from './schema.js';
 import { makeRunId } from './schema.js';
 import { makeStore as realMakeStore, type AsyncHistoryStore } from './store.js';
+import {
+  buildRunFromVitestReport,
+  countReportResults,
+  detectReportShape,
+  RecordValidationError,
+  type BuiltRun,
+  type RecordContext,
+} from './run-recorder.js';
+import { def } from '../util/coalesce.js';
 import { pyFloat } from '../util/round.js';
 
 const EM_DASH = '\u{2014}';
@@ -211,6 +226,258 @@ async function pushCmd(
   deps.out(
     `${pc.green('Pushed')} run ${pc.bold(run.run_id)} (${results.length} tests)`,
   );
+}
+
+// --- record ------------------------------------------------------------------
+
+interface RecordOptions {
+  suite: string;
+  repo?: string;
+  branch?: string;
+  commit?: string;
+  path?: string;
+  runId?: string;
+  dbUrl?: string;
+  dryRun?: boolean;
+  json?: boolean;
+}
+
+/** The `flaky: 0` caveat, printed rather than buried in a source comment. */
+const FLAKY_VOCABULARY_NOTE =
+  'note: flaky=0 \u{2014} vitest reports no flaky status, so a test that was ' +
+  'retried and then passed is recorded as passed.';
+
+/** Read + parse the results file, or exit 1 having said which and why. */
+function readReport(resultsFile: string, deps: HistoryDeps): unknown {
+  if (!existsSync(resultsFile)) {
+    deps.out(`${pc.red('Not found:')} ${resultsFile}`);
+    throw new CliExitError(1);
+  }
+  try {
+    return JSON.parse(readFileSync(resultsFile, 'utf-8'));
+  } catch (err) {
+    // Loud, not silent: an unreadable report means this run recorded NOTHING,
+    // and a later `analyze` would abstain without ever saying why.
+    deps.out(
+      `${pc.red('Could not be read:')} ${resultsFile} ` +
+        `(${(err as Error).message}) \u{2014} nothing was recorded.`,
+    );
+    throw new CliExitError(1);
+  }
+}
+
+/** The repo slug, or exit 2 -- never a hardcoded default (see #538). */
+function resolveRepo(opts: RecordOptions, deps: HistoryDeps): string {
+  const repo = def(opts.repo, deps.env['GITHUB_REPOSITORY']);
+  if (repo) return repo;
+  // A hardcoded default repo slug is how a tool ends up filing one team's runs
+  // under another team's name. Usage error (exit 2), not a guess.
+  deps.out(
+    `${pc.red('Missing --repo:')} the repo slug could not be inferred ` +
+      `(no GITHUB_REPOSITORY in the environment). Pass ` +
+      `--repo <owner>/<name>.`,
+  );
+  throw new CliExitError(2);
+}
+
+/**
+ * Resolve the run-level facts a runner's report cannot carry.
+ *
+ * Fallbacks go through `def()` rather than `??` chains: as a call it is not a
+ * decision point, which keeps this mapper under the arch gate's per-function
+ * complexity threshold (the same reason the store's row mappers use it).
+ */
+function recordContext(opts: RecordOptions, deps: HistoryDeps): RecordContext {
+  const runId = opts.runId;
+  return {
+    suite: opts.suite,
+    repo: resolveRepo(opts, deps),
+    branch: def(opts.branch, def(deps.env['GITHUB_REF_NAME'], 'local')),
+    commitSha: def(opts.commit, def(deps.env['GITHUB_SHA'], 'local')),
+    // `exactOptionalPropertyTypes`: an absent --run-id omits the key rather
+    // than setting it to undefined.
+    ...(runId === undefined ? {} : { runId }),
+    nowMs: Date.now(),
+  };
+}
+
+/**
+ * `record` is a GATE (ADR 0009): a zero-result report exits 3, because the
+ * caller is a CI step whose next command reads the store, and "the suite
+ * reported nothing" must not look like "the suite passed". #538.
+ */
+async function recordCmd(
+  resultsFile: string,
+  opts: RecordOptions,
+  deps: HistoryDeps,
+): Promise<void> {
+  const parsed = readReport(resultsFile, deps);
+  if (detectReportShape(parsed) !== 'vitest') {
+    deps.out(
+      `${pc.red('Unrecognized report:')} ${resultsFile} carries no ` +
+        `\`testResults\` array, so it is not a vitest --reporter=json report. ` +
+        `\`record\` reads vitest JSON today; Playwright JSON and JUnit XML ` +
+        `are not supported yet.`,
+    );
+    throw new CliExitError(1);
+  }
+
+  // The denominator first: a report with no results is an abstention whatever
+  // else is missing, and refusing it over an unresolvable --repo would report
+  // the wrong finding.
+  if (countReportResults(parsed) === 0) {
+    abstainOnEmptyReport(resultsFile, opts, deps);
+    return;
+  }
+
+  const ctx = recordContext(opts, deps);
+  let built;
+  try {
+    built = buildRunFromVitestReport(parsed, ctx);
+  } catch (err) {
+    if (!(err instanceof RecordValidationError)) throw err;
+    deps.out(
+      `${pc.red('Invalid results:')} ${err.message}. Nothing was recorded ` +
+        `\u{2014} a malformed record degrades every later read of the store.`,
+    );
+    throw new CliExitError(1);
+  }
+
+  const remote = opts.dbUrl ?? deps.env['CANARY_HISTORY_DB_URL'];
+  const storePath = opts.path ?? DEFAULT_HISTORY_FILE;
+  const target = remote ? 'the configured remote store' : storePath;
+
+  if (opts.dryRun) {
+    reportDryRun(built, target, opts, deps);
+    return;
+  }
+
+  if (remote && opts.path) {
+    deps.err(
+      `note: --path is ignored while a db-url is configured; the run goes to ` +
+        `the remote store.`,
+    );
+  }
+
+  const store = deps.makeStore(opts.dbUrl, storePath);
+  const before = store.countRuns ? await store.countRuns() : null;
+  await store.pushRun(built.run, built.results);
+  const after = store.countRuns ? await store.countRuns() : null;
+
+  // `pushRun` skips a duplicate run_id SILENTLY (it is idempotent by design).
+  // For a CLI that is the wrong default: the caller believes it recorded a run.
+  if (before !== null && after === before) {
+    deps.out(
+      `${pc.yellow('Already recorded:')} run_id ` +
+        `${pc.bold(built.run.run_id)} is already present in ${target}; ` +
+        `nothing was appended. Two runs of one suite at one commit inside the ` +
+        `same second collide \u{2014} pass --run-id to record a distinct run.`,
+    );
+    throw new CliExitError(1);
+  }
+  if (before === null) {
+    // Cannot verify is a finding, not a silence (#508).
+    deps.err(
+      `note: this backend cannot report how many runs it holds, so a ` +
+        `duplicate run_id could not be verified \u{2014} the store skips ` +
+        `duplicates silently.`,
+    );
+  }
+
+  reportRecorded(built, target, opts, deps);
+}
+
+function abstainOnEmptyReport(
+  resultsFile: string,
+  opts: RecordOptions,
+  deps: HistoryDeps,
+): void {
+  const outcome = gateOutcome({ checked: 0, findings: [] }, 'gate');
+  const notice =
+    `${outcome.summaryLine} ${resultsFile} carried zero test results, so ` +
+    `nothing was recorded \u{2014} an empty run is the denominator ` +
+    `collapsing, not a passing suite. Check that the runner wrote its report ` +
+    `(\`vitest --reporter=json --outputFile=<path>\`) and that the suite ran.`;
+  if (opts.json) {
+    deps.out(
+      jsonIndent2({
+        suite: opts.suite,
+        checked: 0,
+        recorded: false,
+        abstained: true,
+      }),
+    );
+    deps.err(notice);
+  } else {
+    deps.out(notice);
+  }
+  throw new CliExitError(outcome.exitCode);
+}
+
+/** The success payload/line. Shared shape so `--json` cannot drift from it. */
+function recordPayload(
+  built: BuiltRun,
+  target: string,
+  extra: Record<string, unknown>,
+): Record<string, unknown> {
+  const { run } = built;
+  return {
+    run_id: run.run_id,
+    suite: run.suite,
+    repo: run.repo,
+    target,
+    checked: built.results.length,
+    passed: run.passed,
+    failed: run.failed,
+    flaky: run.flaky,
+    skipped: run.skipped,
+    abstained: false,
+    ...extra,
+  };
+}
+
+function countsLine(built: BuiltRun): string {
+  const { run } = built;
+  return (
+    `${built.results.length} result(s) for ${pc.bold(run.suite)} ` +
+    `(${run.passed} passed, ${run.failed} failed, ${run.skipped} skipped)`
+  );
+}
+
+function reportDryRun(
+  built: BuiltRun,
+  target: string,
+  opts: RecordOptions,
+  deps: HistoryDeps,
+): void {
+  if (opts.json) {
+    deps.out(
+      jsonIndent2(
+        recordPayload(built, target, { recorded: false, dry_run: true }),
+      ),
+    );
+    return;
+  }
+  deps.out(
+    `${pc.cyan('dry-run:')} would record ${countsLine(built)} as ` +
+      `${pc.bold(built.run.run_id)} \u{2192} ${target}`,
+  );
+  deps.out(FLAKY_VOCABULARY_NOTE);
+}
+
+function reportRecorded(
+  built: BuiltRun,
+  target: string,
+  opts: RecordOptions,
+  deps: HistoryDeps,
+): void {
+  if (opts.json) {
+    deps.out(jsonIndent2(recordPayload(built, target, { recorded: true })));
+    return;
+  }
+  deps.out(`${pc.green('Recorded')} ${countsLine(built)} \u{2192} ${target}`);
+  deps.out(`run_id: ${built.run.run_id}`);
+  deps.out(FLAKY_VOCABULARY_NOTE);
 }
 
 // --- flaky -------------------------------------------------------------------
@@ -483,6 +750,34 @@ export function createHistoryCommand(
     .option('--dry-run', 'Show what would be pushed without pushing.')
     .action(async (historyFile: string, opts: PushOptions) => {
       await pushCmd(historyFile, opts, deps);
+    });
+
+  program
+    .command('record')
+    .description(
+      'Record a finished test run into the history store (vitest JSON).',
+    )
+    .argument('<results_file>', "Path to the runner's JSON report.")
+    .requiredOption('--suite <suite>', 'Suite name for this run (e.g. e2e).')
+    .option('--repo <repo>', 'GitHub repo slug (default: $GITHUB_REPOSITORY).')
+    .option('--branch <branch>', 'Branch name (default: $GITHUB_REF_NAME).')
+    .option('--commit <sha>', 'Commit SHA (default: $GITHUB_SHA).')
+    // No commander default: an explicitly-passed --path has to stay
+    // distinguishable from the fallback, so a db-url + --path combination can
+    // say that --path is unused instead of silently dropping it.
+    .option(
+      '--path <store>',
+      `Local NDJSON store to append to (default: ${DEFAULT_HISTORY_FILE}).`,
+    )
+    .option(
+      '--run-id <id>',
+      'Run id (default: <suite>-<commit[:8]>-<epoch seconds>).',
+    )
+    .addOption(new Option('--db-url <url>').env('CANARY_HISTORY_DB_URL'))
+    .option('--dry-run', 'Show what would be recorded without writing.')
+    .option('--json')
+    .action(async (resultsFile: string, opts: RecordOptions) => {
+      await recordCmd(resultsFile, opts, deps);
     });
 
   program

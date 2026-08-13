@@ -248,10 +248,16 @@ jobs:
       # fixtures -- including the runs-vs-rows denominator design, whose whole
       # point is telling a healthy fleet apart from an empty one. That
       # distinction cannot be trusted until it has seen data nobody hand-made.
+      #
+      # This was `scripts/dogfood-record-run.mjs` until #538 promoted it to a
+      # real subcommand -- so this step now dogfoods the SHIPPED writer rather
+      # than repo-local glue. `record` exits 3 (abstained) when the report
+      # carries zero results, which fails the step: a missing report and an
+      # empty suite both mean the analyze step below would have nothing to read.
       - name: Run the suite and record it
         run: |
           npm --prefix ts run test -- --reporter=json --outputFile=/tmp/vitest.json || true
-          node scripts/dogfood-record-run.mjs /tmp/vitest.json --suite ts-engine
+          node ts/bin/canary.js history record /tmp/vitest.json --suite ts-engine
 
       - name: analyze over the recorded run
         run: |

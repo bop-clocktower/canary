@@ -234,6 +234,28 @@ const ROWS: GateRow[] = [
       invokeGuardian(['author-plan', '--diff', '-'], { input: '', cwd: base }),
   },
   {
+    command: 'history record (results file carrying zero test results)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    // The script this command replaced exited 1 here, which a caller reads as
+    // "the recorder is broken" rather than "the suite reported nothing"; and
+    // appending the run anyway would write a 0/0 record every later report
+    // divides by. #538.
+    forbid: ['Recorded'],
+    run: (base) => {
+      const report = join(base, 'vitest-empty.json');
+      writeFileSync(
+        report,
+        JSON.stringify({ startTime: 1, testResults: [] }),
+        'utf-8',
+      );
+      return invokeCanary(['history', 'record', report, '--suite', 'api'], {
+        cwd: base,
+      });
+    },
+  },
+  {
     command: 'history summary (zero runs -- the fabricated 0.0% average)',
     layer: 'engine',
     kind: 'advisory',
