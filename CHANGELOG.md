@@ -14,6 +14,30 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`scripts/check_doc_links.mjs` — a dead-link gate that actually reports
+  zero.** Harness's structural doc-drift check emits 27 findings on this
+  repository and every one of them resolves fine for a reader: 24 come from
+  `extractFileLinks` having no fence awareness (a link quoted inside a
+  ` ```markdown ` fence gets resolved relative to the plan quoting it), and 3
+  from `slugifyHeading` trimming before it hyphenates (`## 📖 Usage` slugs to
+  `usage`, where GitHub produces `-usage`). Both defects live in
+  `@harness-engineering/core` 11.1.1 and are filed upstream. The cost of a
+  standing floor of 27 is that finding #28 — an actually dead link — is
+  invisible, which is the cost [#676] was opened to remove. The new script
+  re-implements the check correctly over 249 Markdown files (more than the drift
+  check scans), takes no path allowlist, abstains with exit 3 rather than
+  passing when it scanned nothing, and currently measures **0**. It is gated by
+  `ts/test/doc-links.test.ts` inside `npm test`, so no new CI job or
+  required-check entry was needed. The 27 are recorded as an accepted floor in
+  ADR 0012 rather than muted via `entropy.drift.docPaths`, which is an allowlist
+  and would have silently dropped every doc directory nobody remembered to name.
+  ([#686])
+
+[#676]: https://github.com/bop-clocktower/canary/issues/676
+[#686]: https://github.com/bop-clocktower/canary/issues/686
+
 ## [7.0.0] - 2026-08-12
 
 Two commands now refuse input they previously accepted, which is what makes this
