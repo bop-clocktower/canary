@@ -124,10 +124,27 @@ describe('arch-verdict', () => {
       expect(r.output).not.toMatch(/regression detected/i);
     });
 
-    it('points a baseline trip at the refresh route rather than the code', () => {
+    it('names the allowance file as the route, not the refresh label', () => {
+      // #689: the annotation used to recommend `refresh-baseline`, which is
+      // NOT how this repo clears module-size growth — six allowance files live
+      // on `main` and the label is the rarer maintainer escalation. Four
+      // independent workers (#680, #682, #683, #687) read the old text,
+      // believed it, and reached the wrong conclusion in a single afternoon.
+      // One of them had done the correct denominator check on a pristine
+      // `main` worktree and was misled anyway, because the instrument's own
+      // advice was wrong.
       const r = runVerdict(writeJson('arch.json', ratchetTrip()));
-      expect(r.output).toContain('refresh-baseline');
-      expect(r.output).toContain('.harness/arch/baselines.json');
+      expect(r.output).toContain('.harness/arch/allowances/');
+      const allowanceAt = r.output.indexOf('.harness/arch/allowances/');
+      const labelAt = r.output.indexOf('refresh-baseline');
+      expect(allowanceAt).toBeGreaterThanOrEqual(0);
+      // The label may still be mentioned, but never before the allowance.
+      if (labelAt >= 0) expect(allowanceAt).toBeLessThan(labelAt);
+    });
+
+    it('marks the refresh label as the escalation, not the default', () => {
+      const r = runVerdict(writeJson('arch.json', ratchetTrip()));
+      expect(r.output).toMatch(/escalation|rare|last resort|maintainer/i);
     });
 
     it('names a new violation a regression and locates it', () => {
@@ -157,6 +174,64 @@ describe('arch-verdict', () => {
         ),
       );
       expect(r.output).toMatch(/regression/i);
+    });
+
+    it('labels the regression operands so the pair cannot read as a delta', () => {
+      // #689 trap 1: the line printed `module-size 26965 -> 28178`, whose LEFT
+      // operand is `baselines.json` — not `main`. Read as a delta it overstates
+      // this PR's growth by every allowance ever merged, and the error GROWS
+      // over the repo's life. Real deltas in the #680/#682/#683/#687 batch were
+      // +55 and +88; the bare arrow implied ~1200 for both.
+      const r = runVerdict(
+        writeJson(
+          'arch.json',
+          archReport({
+            regressions: [{ metric: 'module-size', from: 26965, to: 28178 }],
+          }),
+        ),
+      );
+      expect(r.output).toContain('26965');
+      expect(r.output).toContain('28178');
+      expect(r.output).toContain('baselines.json');
+      expect(r.output).not.toMatch(/26965\s*->\s*28178/);
+      expect(r.output).toMatch(
+        /not .*(delta|diff|growth)|not this (PR|change)/i,
+      );
+    });
+  });
+
+  describe('the allowance mechanism needs a CLI that honours it (#689 trap 2)', () => {
+    function runAt(version: string | undefined) {
+      const env = { ...process.env };
+      if (version === undefined) delete env.HARNESS_CLI_VERSION;
+      else env.HARNESS_CLI_VERSION = version;
+      return runCapture(
+        'node',
+        [VERDICT, writeJson('arch.json', ratchetTrip())],
+        {
+          env,
+        },
+      );
+    }
+
+    it('warns when the running CLI is too old to read an allowance', () => {
+      // Under `@10` the allowance file is ignored ENTIRELY, so a correct
+      // allowance appears to do nothing and the author concludes the mechanism
+      // is wrong. Every workflow pins `@11`; a local install can differ.
+      const r = runAt('10.4.2');
+      expect(r.output).toMatch(/10\.4\.2/);
+      expect(r.output).toMatch(/ignore/i);
+      expect(r.output).toMatch(/11/);
+    });
+
+    it('stays quiet about the CLI version when it is new enough', () => {
+      const r = runAt('11.1.1');
+      expect(r.output).not.toMatch(/too old|ignores? .*allowance/i);
+    });
+
+    it('says so when it cannot determine the version, rather than assuming', () => {
+      const r = runAt('not-a-version');
+      expect(r.output).toMatch(/could not determine|unknown/i);
     });
   });
 

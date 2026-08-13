@@ -25,6 +25,44 @@
 
   "ruleset": 16189198,
 
+  "mergePolicy": {
+    "$comment": [
+      "#678 — the confirmed reason a PR-time check can pass while the identical",
+      "commit fails post-merge. Read against the live ruleset with:",
+      "  gh api repos/bop-clocktower/canary/rulesets/16189198",
+      "",
+      "`strict` is GitHub's `strict_required_status_checks_policy`. With it",
+      "FALSE a PR merges without being up to date with `main`. Combined with the",
+      "default `actions/checkout` behaviour on `pull_request` — which checks out",
+      "the merge commit GitHub computed for that event, i.e. head merged into",
+      "`main` as of the last push to the PR BRANCH — a green check is a verdict",
+      "about `merge(head, main@t0)`. Nothing re-runs when the base moves to t1,",
+      "because base movement fires no check run on the PR. So the PR-time green",
+      "and the post-merge red are answers to two different questions, and the",
+      "gate is reporting after the fact rather than gating. #660 is the worked",
+      "example: its own `harness` check passed, the same commit failed",
+      "`check-arch` on `main`, and #663 inherited the failure and read as its",
+      "cause.",
+      "",
+      "Recorded rather than silently flipped: setting `strict` to true forces",
+      "every open PR to update its branch whenever `main` moves, which is a real",
+      "cost to concurrent work and a maintainer's call, not a drive-by. The",
+      "field exists so the state is reviewable in the repo instead of living",
+      "only in a ruleset nobody reads."
+    ],
+    "strict": false,
+    "postMergeDetection": {
+      "$comment": [
+        "The mitigation that IS in place: every workflow producing a required",
+        "check also runs on `push: main`, so a stale PR-time green is caught on",
+        "`main` within one run rather than surfacing as the NEXT PR's failure.",
+        "`guardian.yml` is the sole exemption — it reviews a pull-request diff",
+        "and has nothing to say about a push."
+      ],
+      "prOnlyByNature": ["guardian.yml"]
+    }
+  },
+
   "required": [
     { "check": "validate", "workflow": "harness-quality.yml" },
     { "check": "TS engine (pilot)", "workflow": "harness-quality.yml" },
@@ -42,7 +80,20 @@
       "check": "No removed-symbol or proprietary leaks",
       "workflow": "docs-lint.yml"
     },
-    { "check": "enforce", "workflow": "harness-architecture.yml" },
+    {
+      "check": "enforce",
+      "workflow": "harness-architecture.yml",
+      "$comment": [
+        "Despite the workflow's display name — Architecture Enforcer — this job",
+        "does NOT run the architecture ratchet (#678). It runs `harness",
+        "check-deps` and `harness validate`; neither reads",
+        "`.harness/arch/baselines.json`. The ratchet lives in the `harness`",
+        "check above, via `harness ci check` plus the `check-arch` detail report",
+        "that `scripts/arch-verdict.mjs` classifies. That is why this job can be",
+        "green while a local `harness check-arch` exits 1: they are different",
+        "commands, not one gate disagreeing with itself."
+      ]
+    },
     { "check": "security", "workflow": "harness-security.yml" },
     {
       "check": "Validate plugin.json against schema",

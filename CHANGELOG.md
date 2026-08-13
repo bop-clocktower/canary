@@ -81,6 +81,35 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Source code hidden from the architecture gate is now a build failure.** The
+  arch analyzer skips 55 directory names outright — `coverage`, `dist`, `build`,
+  `bin`, `out`, `target`, `deps`, `obj`, `vendor` and more — so a source
+  directory whose name collides is never walked and every line in it is
+  invisible to `module-size`, `complexity` and the rest. This fails **open**:
+  naming a directory `ts/src/guardian/coverage/` dropped the reported
+  `module-size` by 1822 lines, exactly the size of the code that had just moved
+  there, while `ts/.gitignore` made the same files unstageable and invisible to
+  prettier. `scripts/source-visibility.mjs` now guards both mechanisms against
+  the real tree and prints the exact line count the gate cannot see; it abstains
+  with exit 3 rather than passing when it enumerates nothing. ([#688])
+- **The arch gate no longer recommends the wrong mechanism.** On a baseline trip
+  it pointed at the `refresh-baseline` label; this repo clears architecture
+  growth with a per-PR allowance in `.harness/arch/allowances/`. Four
+  independent pull requests (#680, #682, #683, #687) read that annotation,
+  believed it, and reached the wrong conclusion in a single afternoon — one of
+  them after correctly verifying the failure against a pristine `main`. The
+  allowance is now named first, the label is marked as the maintainer
+  escalation, the regression line labels its operands instead of printing an
+  arrow that reads as a delta it is not, and an older harness CLI (which ignores
+  allowance files entirely) is warned about. ([#689])
+- **The PR-time-vs-post-merge gap in the architecture ratchet is recorded and
+  bounded.** A green PR check measures head merged into `main` as of the last
+  push to the PR branch; base movement re-runs nothing, so the identical commit
+  can fail once merged — which is what happened to #660 and was then inherited
+  by #663. `.github/required-checks.json` now records the branch-freshness
+  policy and its reasoning, and a test keeps every required workflow running on
+  `push: main` so a stale green surfaces there rather than as the next PR's
+  failure. ([#678])
 - **Two live docs described processes that no longer exist.**
   `docs/guides/python-release-checklist.md` was a checklist for the release path
   deleted in the v6.0.0 Python→TypeScript cutover: every step named something
@@ -315,6 +344,9 @@ tool reported success over work it had not done.
 [#667]: https://github.com/bop-clocktower/canary/issues/667
 [#673]: https://github.com/bop-clocktower/canary/issues/673
 [#675]: https://github.com/bop-clocktower/canary/issues/675
+[#678]: https://github.com/bop-clocktower/canary/issues/678
+[#688]: https://github.com/bop-clocktower/canary/issues/688
+[#689]: https://github.com/bop-clocktower/canary/issues/689
 
 ## [6.8.1] - 2026-08-10
 

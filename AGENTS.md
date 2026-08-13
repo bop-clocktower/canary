@@ -423,10 +423,11 @@ reports the **delta** and passes when it is zero. On a clean `main` that is
 correct, neither wrong. The cost is that the two ways `arch` can go red want
 opposite responses and look identical:
 
-| What happened                      | What the CI report shows | What to do           |
-| ---------------------------------- | ------------------------ | -------------------- |
-| The diff introduced a violation    | `arch fail`, 0 issues    | Fix the code         |
-| The ratchet fired on existing debt | `arch fail`, 0 issues    | Refresh the baseline |
+| What happened                      | What the CI report shows | What to do                   |
+| ---------------------------------- | ------------------------ | ---------------------------- |
+| The diff introduced a violation    | `arch fail`, 0 issues    | Fix the code                 |
+| The ratchet fired on existing debt | `arch fail`, 0 issues    | Write a per-PR **allowance** |
+| A metric grew for a good reason    | `arch fail`, 0 issues    | Write a per-PR **allowance** |
 
 The `arch` entry is `{name, status, issues: [], durationMs}` with **zero**
 error-severity issues either way, so the CI report alone cannot tell them apart
@@ -451,6 +452,76 @@ nobody runs it and the ratchet's reasoning goes unread. Both paths share one
 classifier (`scripts/arch-verdict.mjs`), so CI and the desk cannot drift into
 different verdicts on the same report; `ts/test/arch-verdict.test.ts` pins the
 classification, the exit codes, and the `harness.yml` wiring.
+
+**Clearing architecture growth is an allowance, not a baseline refresh (#689).**
+Write `.harness/arch/allowances/<slug>.json` — one file per PR, carrying the
+absolute value you measured and the argument for it. Copy the shape of an
+existing file (six live on `main`), or let
+`harness check-arch --update-baseline --allow-regress --reason "…"` write one.
+Refreshing `.harness/arch/baselines.json` wholesale — the `refresh-baseline`
+label — is the rarer maintainer escalation: it banks every pre-existing
+violation at once and erases the per-PR record of who accepted what.
+
+Three things about that output are worth knowing before you read it:
+
+- **The regression line is not a delta.** It used to print
+  `module-size 26965 -> 28178`, whose **left** operand is `baselines.json`, not
+  `main`. Every allowance merged since the baseline was last refreshed sits
+  inside that gap, so the implied growth overstates your change by the whole
+  accumulated total — and the error grows over the repo's life. In the
+  #680/#682/#683/#687 batch the real contributions were **+55** and **+88**
+  while the arrow implied ~1200 for both. Measure your own contribution against
+  the merge base. `scripts/arch-verdict.mjs` now names both operands and says
+  outright that the pair is not your delta.
+- **Allowances need harness `@11`.** Under `@10` the file is ignored entirely,
+  so a correct allowance looks like a no-op and the mechanism reads as broken.
+  Every workflow pins `@11`; a local install can differ silently, so the verdict
+  script warns when it detects an older one and says so when it cannot tell.
+- **The old advice cost four PRs in one afternoon.** #680, #682, #683 and #687
+  all read the `refresh-baseline` annotation, believed it, and stopped at the
+  wrong conclusion. #682's author had first verified the failure against a
+  pristine `main` worktree — correct methodology, wrong answer, because the
+  instrument misnamed its own mechanism.
+
+**A PR-time green does not measure the tree that merges (#678).** GitHub's
+`strict_required_status_checks_policy` is **false** on ruleset 16189198, so a PR
+merges without being up to date with `main`, and `actions/checkout` on
+`pull_request` checks out the merge commit computed for that event — head merged
+into `main` as of the last push to the **PR branch**. Base movement fires no
+check run, so nothing re-measures. #660's `harness` check passed, the identical
+commit failed `check-arch` on `main`, and #663 inherited the failure and read as
+its cause. The state and the reasoning are recorded in
+`.github/required-checks.json` under `mergePolicy`; the mitigation in place is
+that every workflow behind a required check also runs on `push: main`
+(`guardian.yml` excepted, being a PR-diff reviewer), so a stale green surfaces
+on `main` within one run rather than as the next PR's failure.
+`gh pr update-branch` before merging is the manual version of the same
+guarantee.
+
+Related: the **Architecture Enforcer** workflow does not run the architecture
+ratchet. Its `enforce` job runs `harness check-deps` and `harness validate`;
+neither reads `.harness/arch/baselines.json`. That is why it can be green while
+a local `harness check-arch` exits 1 — two different commands, not one gate
+disagreeing with itself.
+
+**A metric that silently improves is a finding (#688).** The arch analyzer skips
+55 directory names outright (`coverage`, `dist`, `build`, `bin`, `out`,
+`target`, `deps`, `obj`, `vendor`, …) plus every dot-directory, so a source
+directory whose name collides is never walked. Splitting
+`ts/src/guardian/coverage.ts` into `ts/src/guardian/coverage/` dropped the
+reported `module-size` by the exact size of the code that had just moved there,
+while `ts/.gitignore`'s `coverage/` rule made the files unstageable and
+invisible to prettier as well. Unlike the rest of this section that fails
+**open**: the gate reports better than reality and the ratchet gains headroom it
+did not earn. `scripts/source-visibility.mjs` guards both mechanisms and prints
+the exact line count the gate cannot see; it runs against the real tree in
+`ts/test/source-visibility.test.ts` and abstains with exit **3** rather than
+passing when it enumerates nothing.
+
+```bash
+node scripts/source-visibility.mjs          # 0 clean, 1 hidden source, 3 abstain
+node scripts/source-visibility.mjs --json   # the report, machine-readable
+```
 
 **`roadmap sync` requires `--no-state-change` (#595).** It is deliberately
 absent from the table above — no workflow runs it, and none should. Run it only
