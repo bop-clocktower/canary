@@ -11,10 +11,26 @@
  * Python module. No Python test exercises the cli/entry execution branches.
  */
 
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
 import { Command } from 'commander';
 import pc from 'picocolors';
 
-import { CliExitError, normalizeUsageExit } from './cli-common.js';
+import { CliExitError, jsonIndent2, normalizeUsageExit } from './cli-common.js';
+import { gateOutcome, type GateResult } from './core/gate-result.js';
+import {
+  checkExamples,
+  spawnRunner,
+  type ExampleFinding,
+} from './core/skill-examples.js';
+import {
+  SurfaceFindingKind,
+  checkSurfaces,
+  collectSurfaces,
+  type SurfaceDeclaration,
+  type SurfaceFinding,
+} from './core/skill-surfaces.js';
 import {
   isExecutableSkillAllowed,
   resolveCliPath,
@@ -179,6 +195,146 @@ async function runCmd(
   }
 }
 
+interface VerifyOptions {
+  root?: string;
+  json?: boolean;
+  runExamples?: boolean;
+  canaryBin?: string;
+}
+
+/**
+ * `skills verify` -- cross-surface consistency (#452) plus execution of the
+ * commands the docs promise (#487).
+ *
+ * **Two checks, two summary lines, deliberately.** Folding them into one
+ * denominator is the trap: 80 surfaces checked and 0 examples executed would
+ * render as a single healthy number while the half that actually executes
+ * something had abstained. Each check therefore reports its own denominator
+ * through `gateOutcome`, and the reader sees both.
+ *
+ * Classified **advisory** (exit 0): both checks are landing on a corpus nothing
+ * has ever swept, so their precision is unknown and ADR 0010 says promotion
+ * waits for the triage. Abstention is still printed loudly -- that is what the
+ * classification does *not* soften.
+ */
+/**
+ * Run the examples half, or explain why it could not run.
+ *
+ * The examples half spawns a CLI. When there is no built one, the honest result
+ * is a zero denominator carrying the reason -- an unrunnable runner must never
+ * look like a clean corpus.
+ */
+function exampleHalf(
+  opts: VerifyOptions,
+  surfaces: SurfaceDeclaration[],
+  root: string,
+): GateResult<ExampleFinding> {
+  const bin = opts.canaryBin ?? join(root, 'ts', 'bin', 'canary.js');
+  if ((opts.runExamples ?? true) && existsSync(bin)) {
+    return checkExamples(surfaces, spawnRunner(bin), root);
+  }
+  return {
+    checked: 0,
+    findings: [],
+    skipped: [
+      {
+        name: 'every documented example',
+        reason:
+          opts.runExamples === false
+            ? '--no-run-examples was passed'
+            : `no built CLI at ${bin} (run \`npm --prefix ts run build\`)`,
+      },
+    ],
+  };
+}
+
+/**
+ * Per-kind tally over the FULL enum, including kinds that scored zero.
+ *
+ * A triage backlog is read by category, and `cli-not-executable=0` is the line
+ * that says the rule ran. An absent line is indistinguishable from a rule that
+ * was never evaluated -- the reading trap this whole check exists to close.
+ */
+function tallyByKind(findings: SurfaceFinding[]): string {
+  return Object.values(SurfaceFindingKind)
+    .map((kind) => `${kind}=${findings.filter((f) => f.kind === kind).length}`)
+    .join(' ');
+}
+
+/** Both halves as JSON, each carrying its own `checked` and `abstained`. */
+function verifyJson(
+  root: string,
+  surfaceResult: GateResult<SurfaceFinding>,
+  exampleResult: GateResult<ExampleFinding>,
+): string {
+  return jsonIndent2({
+    root,
+    surfaces: {
+      checked: surfaceResult.checked,
+      abstained: !(surfaceResult.checked > 0),
+      findings: surfaceResult.findings,
+    },
+    examples: {
+      checked: exampleResult.checked,
+      abstained: !(exampleResult.checked > 0),
+      findings: exampleResult.findings,
+      skipped: exampleResult.skipped ?? [],
+    },
+  });
+}
+
+/** One summary line per half, plus the remediation text on an abstention. */
+function verifyReport(
+  root: string,
+  surfaceResult: GateResult<SurfaceFinding>,
+  exampleResult: GateResult<ExampleFinding>,
+  deps: MainDeps,
+): void {
+  for (const f of surfaceResult.findings) {
+    deps.err(`${pc.yellow(CROSS)} [${f.kind}] ${f.name}: ${f.detail}`);
+  }
+  for (const f of exampleResult.findings) {
+    deps.err(`${pc.yellow(CROSS)} [${f.kind}] ${f.skill}: ${f.detail}`);
+  }
+
+  const surfaceOutcome = gateOutcome(surfaceResult, 'advisory', {
+    noun: 'surface declaration(s)',
+  });
+  deps.out(`surfaces: ${surfaceOutcome.summaryLine}`);
+  deps.out(`  by kind: ${tallyByKind(surfaceResult.findings)}`);
+  if (surfaceOutcome.abstained) {
+    deps.out(
+      `  no skill surface was found under ${root} ${EM_DASH} check the path, ` +
+        'or that `agents/skills/` has not been renamed.',
+    );
+  }
+
+  const exampleOutcome = gateOutcome(exampleResult, 'advisory', {
+    noun: 'documented example(s)',
+  });
+  deps.out(`examples: ${exampleOutcome.summaryLine}`);
+  if (exampleOutcome.abstained) {
+    deps.out(
+      `  zero documented commands were executed ${EM_DASH} nothing here is ` +
+        'proven. Add a help-shaped example in a shell fence to a SKILL.md, or ' +
+        'build the engine so the runner has a CLI to spawn.',
+    );
+  }
+}
+
+function verifyCmd(opts: VerifyOptions, deps: MainDeps): void {
+  const root = resolve(opts.root ?? deps.cwd());
+  const surfaces = collectSurfaces(root);
+  const surfaceResult = checkSurfaces(root);
+  const exampleResult = exampleHalf(opts, surfaces, root);
+
+  if (opts.json) {
+    deps.out(verifyJson(root, surfaceResult, exampleResult));
+    return;
+  }
+  verifyReport(root, surfaceResult, exampleResult, deps);
+}
+
 /** Python `str.partition(sep)` -> `[before, sep, after]`. */
 function partition(s: string, sep: string): [string, string, string] {
   const i = s.indexOf(sep);
@@ -212,6 +368,22 @@ export function buildSkillsCommand(deps: MainDeps): Command {
     )
     .action(async (name: string, args: string[], opts: RunOptions) => {
       await runCmd(name, args ?? [], opts, deps);
+    });
+
+  program
+    .command('verify')
+    .description(
+      'Check that skill surfaces agree and that documented examples still run.',
+    )
+    .option('--root <path>', 'Repository root to inspect (default: cwd).')
+    .option('--json', 'Emit both denominators and every finding as JSON.')
+    .option(
+      '--no-run-examples',
+      'Inspect declarations only; do not execute documented examples.',
+    )
+    .option('--canary-bin <path>', 'CLI to spawn for documented examples.')
+    .action((opts: VerifyOptions) => {
+      verifyCmd(opts, deps);
     });
 
   for (const sub of program.commands) {

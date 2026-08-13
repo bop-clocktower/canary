@@ -142,6 +142,64 @@ under the project's former name) are documented in the
 [#333]: https://github.com/bop-clocktower/canary/issues/333
 [#341]: https://github.com/bop-clocktower/canary/issues/341
 [#462]: https://github.com/bop-clocktower/canary/issues/462
+- **`canary skills verify` — the skills' declared surface, checked against
+  reality (closes [#487]; [#452] stays open).** A skill name is declared in up
+  to six places: `agents/skills/<host>/<dir>/SKILL.md`, the flat
+  `agents/skills/*.md` slash skills, `commands/*.md`, `agents/*.md`, and the
+  per-host `agents/commands/` and `agents/agents/` trees. Each file is
+  internally consistent, so every per-file assertion passes even when they
+  disagree with each other or point at something deleted — the bug class behind
+  [#465] (an architecture page describing an engine dropped four majors
+  earlier), [#455] (an operator guide pointing at a file removed as dead code)
+  and [#472] (a SKILL.md documenting a command that had never been executed).
+  Two new engine modules close it:
+
+  - `ts/src/core/skill-surfaces.ts` builds the cross-surface inventory and
+    grades declarations against **resolvability** rather than a literal: a
+    frontmatter `name:` that diverges from the directory docs invoke it by, a
+    `cli:` target that is missing or lands at mode 0644 ([#478]), and a
+    documented `canary skills run <name>` that reaches no discoverable skill. It
+    reuses the same frontmatter parser discovery itself uses, because a checker
+    with its own YAML subset would eventually disagree with the runtime it is
+    auditing. It deliberately does **not** adjudicate divergent prose: [#452]'s
+    triage settled that with no fixture-intent floor there is no principled
+    culprit, and that half of the issue stays open.
+  - `ts/src/core/skill-examples.ts` **executes** the commands the docs promise,
+    discovery-driven rather than the per-skill `spawnSync` block [#480] copied
+    across five test files ([#479]). Only help-shaped, placeholder-free `canary`
+    invocations inside a shell fence are run — everything else is reported
+    `unverifiable` **with its reason**, travelling in `GateResult.skipped` so it
+    renders in every summary line and cannot quietly leave the denominator.
+
+  The command reports **two denominators, never one**: folding them would let
+  "80 surfaces checked" mask "0 examples executed". Wired advisory into
+  `dogfood.yml`, where a collapsed denominator on either half is still a hard
+  error — an abstention is not a finding of unknown precision, it is the check
+  saying it measured nothing. Both halves carry rows in the gate-conformance
+  registry, and every assertion in the two new suites was verified by mutation
+  (11 mutants, 11 killed) rather than by the module merely being absent.
+
+  First sweep of this repository: **80 surface declarations, 0 consistency
+  findings; 33 documented examples, of which 4 executed clean and 29 are
+  unverifiable; 1 finding** — `canary-shadow` declares a `cli:` and documents no
+  runnable command, which is precisely the skill [#487] named as the live
+  example. Verified against a known break: reverting `canary-blackhawk`'s exec
+  bit is caught by both halves, the second reproducing [#472]'s exact symptom
+  (`exit 1: (no output)`). That finding is reported, never fatal — the fix is
+  tracked in [#707] along with the 29 unverifiable examples, because the corpus
+  is written almost entirely in placeholder form and rewriting it is not this
+  change.
+
+  **Scope: this closes [#487] only.** [#452] is a different subject — generic
+  UI-testing primitives, whose link half already shipped as
+  `ts/src/analysis/reachability.ts`. What it contributed here is the design
+  vocabulary this reuses (an outcome the checker is not entitled to assert on
+  gets its own status, never folded into pass or fail) and the ruling that a
+  disagreement set is reported without electing a winner. Both of its remaining
+  halves stay open: the **controls half**, which needs a live browser so the
+  engine can own classification but not observation, and the **cross-surface
+  consistency check**, still parked on the divergence-attribution question its
+  own triage asked to settle before any code.
 
 - **`scripts/check_doc_links.mjs` — a dead-link gate that actually reports
   zero.** Harness's structural doc-drift check emits 27 findings on this
@@ -480,7 +538,14 @@ tool reported success over work it had not done.
   and the guarded set are mechanically the same set; a committed
   `docs/roadmap.d/` shard with no ignore entry now fails. ([#661], [#630])
 
+[#452]: https://github.com/bop-clocktower/canary/issues/452
+[#455]: https://github.com/bop-clocktower/canary/issues/455
+[#465]: https://github.com/bop-clocktower/canary/issues/465
+[#472]: https://github.com/bop-clocktower/canary/issues/472
+[#478]: https://github.com/bop-clocktower/canary/issues/478
 [#479]: https://github.com/bop-clocktower/canary/issues/479
+[#480]: https://github.com/bop-clocktower/canary/issues/480
+[#487]: https://github.com/bop-clocktower/canary/issues/487
 [#504]: https://github.com/bop-clocktower/canary/issues/504
 [#522]: https://github.com/bop-clocktower/canary/issues/522
 [#523]: https://github.com/bop-clocktower/canary/issues/523
@@ -496,6 +561,7 @@ tool reported success over work it had not done.
 [#678]: https://github.com/bop-clocktower/canary/issues/678
 [#688]: https://github.com/bop-clocktower/canary/issues/688
 [#689]: https://github.com/bop-clocktower/canary/issues/689
+[#707]: https://github.com/bop-clocktower/canary/issues/707
 
 ## [6.8.1] - 2026-08-10
 
