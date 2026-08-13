@@ -419,6 +419,20 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`review-test` and `flake-check` abstain on a path they cannot read, instead
+  of printing a raw Node stack.** Both passed the path straight to
+  `StaticLinter`, so `readFileSync` threw out of the command handler: an ENOENT
+  stack and exit 1. Not false green — a consumer gating on `$?` still failed —
+  but exit 1 means "I found findings", and here the denominator collapsed to
+  zero; nothing was inspected at all. Both now take the shape `vacuity-check`
+  and `promote-check` already use: an errno-coded read failure becomes a skip
+  entry reading `could not be read (ENOENT)`, and a run that opened no file at
+  all exits 3 (ADR 0009) with the cause named on the summary line. A directory
+  where only _some_ files were unreadable still reports its real result, with
+  the dropped files rendered rather than quietly shrinking what "clean" covered.
+  A fault carrying no errno code still throws — swallowing an unknown one is how
+  a scanner learns to go quiet. ([#704])
+
 - **The dead-link checker no longer scans files git is ignoring.** Found on
   `main` within minutes of #696 merging: `scripts/check_doc_links.mjs` walked
   `.github/instructions/`, a gitignored directory an editor extension writes,

@@ -62,6 +62,25 @@ const EMDASH = '\u{2014}'; // em dash
 // forge output lines or smuggle ANSI sequences into the summary.
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/g;
 
+// A libuv/POSIX errno code (`ENOENT`, `EACCES`, `EISDIR`), as opposed to a Node
+// programmer-error code (`ERR_INVALID_ARG_TYPE`).
+const ERRNO = /^E[A-Z0-9]+$/;
+
+/**
+ * The errno code `e` carries, or `null` when it carries none.
+ *
+ * Load-bearing wherever a read failure is absorbed into a {@link SkipEntry}:
+ * only "the filesystem said no" may become a skip. Node PROGRAMMER errors carry
+ * a string `code` too, so keying off `typeof code === 'string'` reports a
+ * genuine defect inside the scanner as a tidy abstention with a misleading
+ * reason -- which is how a scanner learns to go quiet. Anything this returns
+ * `null` for must still throw.
+ */
+export function errnoCode(e: unknown): string | null {
+  const code = (e as { code?: unknown } | null | undefined)?.code;
+  return typeof code === 'string' && ERRNO.test(code) ? code : null;
+}
+
 /**
  * D7: skipped entries render in EVERY summary line.
  *
