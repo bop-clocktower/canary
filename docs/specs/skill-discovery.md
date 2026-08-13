@@ -2,7 +2,7 @@
 project: canary
 version: 3
 created: 2026-05-20
-updated: 2026-06-01
+updated: 2026-08-12
 ---
 
 # Skill Discovery Convention
@@ -138,10 +138,18 @@ workflow_template_version: 2
 ```
 
 Paths are relative to the skill directory and may carry a `<shape>:` prefix to
-select a variant (`api:templates/guardian-api.yml`); the shape is the same one
-`deploy_to` matches against. Install is one-directional but **not**
-overlay-owned: absent → written, identical → no-op, different → reported and
-left alone unless `--force` is passed. `workflow_template_version` is recorded
+select a variant (`api:templates/guardian-api.yml`); a prefixed entry installs
+when its shape is anywhere in the same resolved shape **set** that `deploy_to`
+matches against (or when the prefix is the `all` sentinel), so a monorepo
+resolving both `api` and `e2e_ui` installs both variants. Install is
+one-directional but **not** overlay-owned: absent → written, identical → no-op,
+different → reported and left alone unless `--force` is passed — as `outdated`
+when the installed file is unmodified since canary wrote it, `conflict` when it
+was edited locally or has no recorded provenance. A template declared by a skill
+that the deploy phase itself skipped as locally edited is reported `withheld`
+and no bytes are written, in the dry run and under `--apply` alike (#667) — it
+was never sound to skip a skill for local edits and then write that same skill's
+files into `.github/workflows/` anyway. `workflow_template_version` is recorded
 in `.canary/skills/.deploy-manifest.json` so a corrected template can be offered
 to repos that already adopted an earlier one. Full rules:
 [Tracked Overlays — Workflow templates](../guides/tracked-overlays.md).
