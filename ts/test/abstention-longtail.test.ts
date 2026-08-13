@@ -18,7 +18,12 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
-import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
+import {
+  invokeCanary,
+  mkTmp,
+  rmTmp,
+  type InvokeOptions,
+} from './canary-cli-testkit.js';
 import { invokeGuardian } from './guardian-cli-testkit.js';
 
 /** A directory that exists but holds no test files. */
@@ -485,118 +490,153 @@ describe('heal-test: audited, no zero-denominator path (#508 Wave 4a)', () => {
  * with the cause named, the same shape `scanVacuity`/`promotionVerdict` already
  * use.
  */
-describe('review-test / flake-check: an unreadable path abstains (#704)', () => {
-  /** A file name that collects (the extension parses) but cannot be read. */
-  function missingTest(base: string): string {
-    return join(base, 'gone.test.ts');
+/** The two file-scanning gates, with the success copy each must never print. */
+const READ_CASES = [
+  { command: 'review-test', successCopy: 'No issues found' },
+  { command: 'flake-check', successCopy: 'No flakiness patterns detected' },
+] as const;
+
+/** A path that collects (the extension parses) but cannot be read. */
+function missingTest(base: string): string {
+  return join(base, 'gone.test.ts');
+}
+
+/** Invoke options wiring a fake linter that raises `err` for `match`. */
+function linterThrowing(
+  err: Error,
+  match: (file: string) => boolean = () => true,
+): InvokeOptions {
+  const scan = (f: string): never[] => {
+    if (match(f)) throw err;
+    return [];
+  };
+  return { deps: { makeLinter: () => ({ lint: scan, flakeCheck: scan }) } };
+}
+
+/** A directory holding `names` as empty collectible test files. */
+function dirOf(base: string, name: string, files: string[]): string {
+  const dir = join(base, name);
+  mkdirSync(dir, { recursive: true });
+  for (const f of files) writeFileSync(join(dir, f), '\n', 'utf-8');
+  return dir;
+}
+
+function errnoError(code: string): Error {
+  return Object.assign(new Error(`${code}: denied`), { code });
+}
+
+// The assertions live at module scope rather than inside the parametrised loop
+// so neither the loop body nor any `it` callback grows past the repo's
+// function-length and nesting thresholds -- the arch ratchet counts test code.
+
+async function expectAbstainsOnMissingPath(
+  command: string,
+  successCopy: string,
+): Promise<void> {
+  const base = mkTmp();
+  try {
+    const res = await invokeCanary([command, missingTest(base)]);
+    expect(res.code).toBe(EXIT_ABSTAINED);
+    expect(res.stdout).toContain('Abstained');
+    expect(res.stdout).toContain('ENOENT');
+    expect(res.stdout).not.toContain(successCopy);
+  } finally {
+    rmTmp(base);
   }
+}
 
-  for (const command of ['review-test', 'flake-check'] as const) {
-    const successCopy =
-      command === 'review-test'
-        ? 'No issues found'
-        : 'No flakiness patterns detected';
-
-    it(`${command} exits 3 and names the errno instead of throwing`, async () => {
-      const base = mkTmp();
-      try {
-        const res = await invokeCanary([command, missingTest(base)]);
-        expect(res.code).toBe(EXIT_ABSTAINED);
-        expect(res.stdout).toContain('Abstained');
-        expect(res.stdout).toContain('ENOENT');
-        expect(res.stdout).not.toContain(successCopy);
-      } finally {
-        rmTmp(base);
-      }
-    });
-
-    it(`${command} --json keeps a parseable array and still exits 3`, async () => {
-      const base = mkTmp();
-      try {
-        const res = await invokeCanary([command, missingTest(base), '--json']);
-        expect(res.code).toBe(EXIT_ABSTAINED);
-        expect(JSON.parse(res.stdout)).toEqual([]);
-        expect(res.stderr).toContain('ENOENT');
-      } finally {
-        rmTmp(base);
-      }
-    });
-
-    it(`${command} reports a partially-read directory but still passes`, async () => {
-      // One file readable, one not: the denominator is 1, so this is a real
-      // result -- but the dropped file must stay visible (gate-result D7)
-      // rather than silently shrinking what "clean" covered.
-      const base = mkTmp();
-      try {
-        const dir = join(base, 'mixed');
-        mkdirSync(dir, { recursive: true });
-        writeFileSync(join(dir, 'a.test.ts'), '\n', 'utf-8');
-        writeFileSync(join(dir, 'b.test.ts'), '\n', 'utf-8');
-        const blowUpOnB = (f: string): never[] => {
-          if (f.endsWith('b.test.ts'))
-            throw Object.assign(new Error('EACCES: denied'), {
-              code: 'EACCES',
-            });
-          return [];
-        };
-        const res = await invokeCanary([command, dir], {
-          deps: {
-            makeLinter: () =>
-              ({ lint: blowUpOnB, flakeCheck: blowUpOnB }) as never,
-          },
-        });
-        expect(res.code).toBe(0);
-        expect(res.stdout).toContain(successCopy);
-        expect(res.stdout).toContain('EACCES');
-        expect(res.stdout).toContain('b.test.ts');
-      } finally {
-        rmTmp(base);
-      }
-    });
-
-    it(`${command} abstains when EVERY collected file is unreadable`, async () => {
-      const base = mkTmp();
-      try {
-        const dir = join(base, 'all-locked');
-        mkdirSync(dir, { recursive: true });
-        writeFileSync(join(dir, 'a.test.ts'), '\n', 'utf-8');
-        const blowUp = (): never[] => {
-          throw Object.assign(new Error('EACCES: denied'), { code: 'EACCES' });
-        };
-        const res = await invokeCanary([command, dir], {
-          deps: {
-            makeLinter: () => ({ lint: blowUp, flakeCheck: blowUp }) as never,
-          },
-        });
-        expect(res.code).toBe(EXIT_ABSTAINED);
-        expect(res.stdout).toContain('Abstained');
-        expect(res.stdout).not.toContain(successCopy);
-      } finally {
-        rmTmp(base);
-      }
-    });
-
-    it(`${command} still throws on a fault with no errno code`, async () => {
-      // Swallowing an unknown fault is how a scanner learns to go quiet: a Node
-      // PROGRAMMER error carries a `code` too, and must surface as a crash
-      // rather than be relabelled "could not be read".
-      const base = mkTmp();
-      try {
-        const boom = (): never[] => {
-          throw Object.assign(new Error('internal'), {
-            code: 'ERR_INVALID_ARG_TYPE',
-          });
-        };
-        await expect(
-          invokeCanary([command, missingTest(base)], {
-            deps: {
-              makeLinter: () => ({ lint: boom, flakeCheck: boom }) as never,
-            },
-          }),
-        ).rejects.toThrow('internal');
-      } finally {
-        rmTmp(base);
-      }
-    });
+async function expectJsonAbstention(command: string): Promise<void> {
+  const base = mkTmp();
+  try {
+    const res = await invokeCanary([command, missingTest(base), '--json']);
+    expect(res.code).toBe(EXIT_ABSTAINED);
+    // stdout stays a parseable array -- the notice rides stderr.
+    expect(JSON.parse(res.stdout)).toEqual([]);
+    expect(res.stderr).toContain('ENOENT');
+  } finally {
+    rmTmp(base);
   }
-});
+}
+
+/**
+ * One file readable, one not: the denominator is 1, so this is a real result --
+ * but the dropped file must stay visible (gate-result D7) rather than silently
+ * shrinking what "clean" covered.
+ */
+async function expectPartialReadStillPasses(
+  command: string,
+  successCopy: string,
+): Promise<void> {
+  const base = mkTmp();
+  try {
+    const dir = dirOf(base, 'mixed', ['a.test.ts', 'b.test.ts']);
+    const res = await invokeCanary(
+      [command, dir],
+      linterThrowing(errnoError('EACCES'), (f) => f.endsWith('b.test.ts')),
+    );
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain(successCopy);
+    expect(res.stdout).toContain('EACCES');
+    expect(res.stdout).toContain('b.test.ts');
+  } finally {
+    rmTmp(base);
+  }
+}
+
+async function expectAbstainsWhenAllUnreadable(
+  command: string,
+  successCopy: string,
+): Promise<void> {
+  const base = mkTmp();
+  try {
+    const dir = dirOf(base, 'all-locked', ['a.test.ts']);
+    const res = await invokeCanary(
+      [command, dir],
+      linterThrowing(errnoError('EACCES')),
+    );
+    expect(res.code).toBe(EXIT_ABSTAINED);
+    expect(res.stdout).toContain('Abstained');
+    expect(res.stdout).not.toContain(successCopy);
+  } finally {
+    rmTmp(base);
+  }
+}
+
+/**
+ * Swallowing an unknown fault is how a scanner learns to go quiet: a Node
+ * PROGRAMMER error carries a `code` too, and must surface as a crash rather
+ * than be relabelled "could not be read".
+ */
+async function expectNonErrnoStillThrows(command: string): Promise<void> {
+  const base = mkTmp();
+  try {
+    const boom = Object.assign(new Error('internal'), {
+      code: 'ERR_INVALID_ARG_TYPE',
+    });
+    await expect(
+      invokeCanary([command, missingTest(base)], linterThrowing(boom)),
+    ).rejects.toThrow('internal');
+  } finally {
+    rmTmp(base);
+  }
+}
+
+describe.each(READ_CASES)(
+  '$command: an unreadable path abstains (#704)',
+  ({ command, successCopy }) => {
+    it('exits 3 and names the errno instead of throwing', () =>
+      expectAbstainsOnMissingPath(command, successCopy));
+
+    it('--json keeps a parseable array and still exits 3', () =>
+      expectJsonAbstention(command));
+
+    it('reports a partially-read directory but still passes', () =>
+      expectPartialReadStillPasses(command, successCopy));
+
+    it('abstains when EVERY collected file is unreadable', () =>
+      expectAbstainsWhenAllUnreadable(command, successCopy));
+
+    it('still throws on a fault with no errno code', () =>
+      expectNonErrnoStillThrows(command));
+  },
+);

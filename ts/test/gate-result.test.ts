@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   EXIT_ABSTAINED,
+  errnoCode,
   gateOutcome,
   GateResult,
 } from '../src/core/gate-result.js';
@@ -148,5 +149,38 @@ describe('gate-result helper', () => {
     expect(o.summaryLine).toContain(
       '(2 skipped: repo-access, cli-tooling [needs consent])',
     );
+  });
+});
+
+/**
+ * The classifier that decides whether a caught error may become a
+ * {@link SkipEntry} at all (#704). Getting this wrong in the loose direction
+ * relabels a defect inside a scanner as a tidy abstention -- the whole point of
+ * the doctrine is that a broken instrument stays loud, so anything that is not
+ * plainly "the filesystem said no" has to keep throwing.
+ */
+describe('errnoCode (#704)', () => {
+  it.each(['ENOENT', 'EACCES', 'EISDIR', 'EMFILE', 'E2BIG'])(
+    'recognises the libuv/POSIX code %s',
+    (code) => {
+      expect(errnoCode(Object.assign(new Error('x'), { code }))).toBe(code);
+    },
+  );
+
+  it.each(['ERR_INVALID_ARG_TYPE', 'ERR_STRING_TOO_LONG', 'MODULE_NOT_FOUND'])(
+    'rejects the Node programmer-error code %s',
+    (code) => {
+      expect(errnoCode(Object.assign(new Error('x'), { code }))).toBeNull();
+    },
+  );
+
+  it('rejects a non-string code, and every non-object throwable', () => {
+    // A thrown value need not be an Error at all; the classifier must not
+    // explode on the shapes a `catch` can genuinely receive.
+    expect(errnoCode(Object.assign(new Error('x'), { code: 2 }))).toBeNull();
+    expect(errnoCode(new Error('no code at all'))).toBeNull();
+    expect(errnoCode('ENOENT')).toBeNull();
+    expect(errnoCode(null)).toBeNull();
+    expect(errnoCode(undefined)).toBeNull();
   });
 });
