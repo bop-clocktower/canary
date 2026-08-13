@@ -44,6 +44,31 @@ under the project's former name) are documented in the
 [#676]: https://github.com/bop-clocktower/canary/issues/676
 [#686]: https://github.com/bop-clocktower/canary/issues/686
 
+### Fixed
+
+- **Two live docs described processes that no longer exist.**
+  `docs/guides/python-release-checklist.md` was a checklist for the release path
+  deleted in the v6.0.0 Python→TypeScript cutover: every step named something
+  absent (`pyproject.toml`, `python3 -m pytest tests/unit`,
+  `ruff check agent tests`, `scripts/check_removed_symbols.py` — now `.mjs` —
+  and a `build-binaries` PyInstaller job, where `release.yml` has only `publish`
+  and `advance-latest`). Nothing linked to it, so it is deleted rather than
+  banner-capped: a checklist nobody can follow is worse than no checklist.
+  `docs/specs/skill-discovery.md`'s workflow-template summary predated two
+  merged changes and now records both — the `withheld` outcome, where a skill
+  skipped as locally edited installs none of its templates ([#667]), and the
+  resolved shape **set** a prefixed entry matches against rather than a single
+  shape ([#504]). The `different → reported` case is also split into the
+  `outdated` / `conflict` statuses the migrator actually emits. ([#691])
+- **Neither surface was reachable by any detector.** `harness`'s drift check
+  scopes to `docs/**` + `**/README.md`, so `AGENTS.md`, `CHANGELOG.md`, and
+  every `SKILL.md` are unread and rot invisibly. Widening
+  `entropy.drift.docPaths` is the fix, but it waits on [#686] — the detector's
+  fence-blindness and emoji-anchor-slug defects would turn a wider glob into a
+  wave of false positives.
+
+[#691]: https://github.com/bop-clocktower/canary/issues/691
+
 ## [7.0.0] - 2026-08-12
 
 Two commands now refuse input they previously accepted, which is what makes this
