@@ -119,9 +119,23 @@ const KNOWN_FLAGS = new Set([
   '--include-generated',
 ]);
 
+/** The scope menu, shared by `--help` and the no-scope refusal. */
+const SCOPE_HELP =
+  '  --global   overlays and orphaned Claude Code plugin caches\n' +
+  '  --project  .canary/, generated reports, and the .mcp.json entry\n' +
+  '  --all      both\n' +
+  'Nothing is removed without --apply.\n';
+
 export function run(argv: readonly string[], deps: UninstallDeps = {}): number {
   const out = deps.out ?? process.stdout;
   const err = deps.err ?? process.stderr;
+
+  // Routed before the engine's commander sees argv (#730), so `--help` lands
+  // here as a plain token. Asking how a command works is not a usage error.
+  if (argv.includes('--help') || argv.includes('-h')) {
+    out.write(`usage: canary uninstall <scope> [--apply]\n${SCOPE_HELP}`);
+    return 0;
+  }
 
   for (const a of argv) {
     if (!KNOWN_FLAGS.has(a)) {
@@ -136,13 +150,7 @@ export function run(argv: readonly string[], deps: UninstallDeps = {}): number {
   if (argv.includes('--all')) scopes.push('all');
 
   if (scopes.length === 0) {
-    err.write(
-      'canary uninstall: choose a scope.\n' +
-        '  --global   overlays and orphaned Claude Code plugin caches\n' +
-        '  --project  .canary/, generated reports, and the .mcp.json entry\n' +
-        '  --all      both\n' +
-        'Nothing is removed without --apply.\n',
-    );
+    err.write(`canary uninstall: choose a scope.\n${SCOPE_HELP}`);
     return 1;
   }
   if (scopes.length > 1) {

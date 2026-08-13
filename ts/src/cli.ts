@@ -36,6 +36,7 @@ import {
   runCmd,
   setupCmd,
   ticketUpdateCmd,
+  uninstallCmd,
   upgradeCmd,
   vacuityCheckCmd,
   versionCmd,
@@ -309,6 +310,18 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     .argument('[args...]')
     .action(() => {
       doctorCmd(deps);
+    });
+
+  program
+    .command('uninstall')
+    .description(
+      'Remove installed Canary artifacts (requires the npm install of Canary).',
+    )
+    .allowUnknownOption(true)
+    .allowExcessArguments(true)
+    .argument('[args...]')
+    .action(() => {
+      uninstallCmd(deps);
     });
 
   program

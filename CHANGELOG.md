@@ -73,6 +73,22 @@ under the project's former name) are documented in the
   flake leaderboard and names the rest. The exit stays 0 (advisory) and `--json`
   keeps stdout parseable with the notice on stderr. ([#711])
 
+- **`canary uninstall` is discoverable again: it appears in `canary --help`, and
+  `canary uninstall --help` answers instead of erroring.** The command shipped
+  in 7.0.0 routable and fully functional, but two hand-maintained lists had to
+  agree and nothing asserted that they did: `TS_COMMANDS` in `npm/src/router.ts`
+  decides what the npm shim handles natively, and the commander stubs in
+  `ts/src/cli.ts` decide what the engine lists in `--help`. `uninstall` was in
+  the first and not the second, so `canary --help | grep -c uninstall` returned
+  `0` — the one place a user looks to discover a command never mentioned it.
+  Because the router dispatches `uninstall` before commander sees the argv,
+  `--help` also arrived at the handler as a plain token and was rejected as an
+  unknown option; asking how a command works is not a usage error, so
+  `--help`/`-h` now print the scopes and exit 0. The **class** is closed rather
+  than the instance: a conformance test enumerates `TS_COMMANDS` from its
+  declaration and asserts every entry appears in the engine's help, so the next
+  TS-handled command cannot land routable-but-invisible the same way. ([#730])
+
 ### Added
 
 - **`canary migrate --adoption-report` — name the pieces of a half-finished
@@ -366,6 +382,7 @@ under the project's former name) are documented in the
 [#703]: https://github.com/bop-clocktower/canary/issues/703
 [#701]: https://github.com/bop-clocktower/canary/issues/701
 [#711]: https://github.com/bop-clocktower/canary/issues/711
+[#730]: https://github.com/bop-clocktower/canary/issues/730
 
 ### Changed
 
