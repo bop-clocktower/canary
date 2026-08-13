@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { SCHEMA_VERSION } from './record.js';
 import {
   makeRunId,
   serializeLocalRecord,
@@ -89,5 +90,14 @@ describe('serializeLocalRecord', () => {
     expect(record.run_id).toBe(run.run_id);
     expect(Array.isArray(record.tests)).toBe(true);
     expect((record.tests as unknown[]).length).toBe(1);
+  });
+
+  // #701: the reader's version guard can only fire on rows that carry a
+  // version. Every writer goes through this serializer, so stamping here is
+  // what makes the store's own history self-describing by construction.
+  it('stamps the schema version every writer inherits', () => {
+    expect(serializeLocalRecord(run, [result]).schema_version).toBe(
+      SCHEMA_VERSION,
+    );
   });
 });

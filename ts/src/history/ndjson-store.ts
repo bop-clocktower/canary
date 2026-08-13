@@ -7,8 +7,12 @@
  *
  * Deviation from the Python reader (deliberate): where Python's `_read_all`
  * swallows any parse error and returns `[]`, this reader throws on malformed
- * JSON and on an explicit unrecognized `schema_version`, so a corrupt or
- * future-version history fails loudly rather than silently analysing nothing.
+ * JSON and on an unrecognized `schema_version`, so a corrupt or future-version
+ * history fails loudly rather than silently analysing nothing.
+ *
+ * Version resolution lives in `resolveSchemaVersion` (#701): rows written by
+ * this store carry their version, and a legacy unstamped row is read as the
+ * version it was written at rather than as "current".
  */
 
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
@@ -16,7 +20,7 @@ import { dirname } from 'node:path';
 
 import { def } from '../util/coalesce.js';
 import { round1 } from '../util/round.js';
-import { SCHEMA_VERSION } from './record.js';
+import { SCHEMA_VERSION, resolveSchemaVersion } from './record.js';
 import type { RunRecord, TestResultRecord, TimelineEntry } from './record.js';
 import { serializeLocalRecord } from './schema.js';
 import type { RunInput, TestResultInput } from './schema.js';
@@ -89,8 +93,8 @@ export class NdjsonHistoryStore implements HistoryStore {
       const line = raw.trim();
       if (!line) continue;
       const record = JSON.parse(line) as RunRecord;
-      const version = record.schema_version;
-      if (version !== undefined && version !== SCHEMA_VERSION) {
+      const version = resolveSchemaVersion(record);
+      if (version !== SCHEMA_VERSION) {
         throw new Error(
           `Unsupported history schema_version ${version} (expected ${SCHEMA_VERSION})`,
         );

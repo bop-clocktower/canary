@@ -1,15 +1,13 @@
 /**
- * Write-seam parity: a record written by the TS store must be byte-compatible
- * with what the Python `LocalHistoryStore` writes and reads.
+ * Write-seam golden: the exact on-disk record `serializeLocalRecord` / `pushRun`
+ * produce, pinned field-for-field so a refactor cannot quietly reshape it.
  *
- * CI-safe direction (this file): assert TS `serializeLocalRecord` /​ `pushRun`
- * produces the exact object Python's `asdict` produces — captured as a golden
- * fixture by `scripts/read_ts_written_history.py golden`. No Python needed at
- * test time.
- *
- * Reverse direction (Python reads a TS-written file) is verified locally with
- * `python scripts/read_ts_written_history.py read <path>` — not run in the
- * node-only CI job.
+ * The fixture began as a capture of Python's `asdict` output (from the since
+ * deleted `scripts/read_ts_written_history.py`, retired with the Python engine
+ * at v6.0.0). It is now a frozen record of the TS store's own format, and it
+ * intentionally carries one field Python never wrote: `schema_version` (#701),
+ * without which the reader's version guard can never fire on the store's own
+ * rows.
  */
 
 import { mkdtempSync, readFileSync } from 'node:fs';
