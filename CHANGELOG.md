@@ -14,6 +14,24 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **The dead-link checker no longer scans files git is ignoring.** Found on
+  `main` within minutes of #696 merging: `scripts/check_doc_links.mjs` walked
+  `.github/instructions/`, a gitignored directory an editor extension writes,
+  and reported two dead links to workflows this repo does not have. The result
+  was a suite that passed in CI and failed on a laptop, over a file no commit
+  could fix. `SKIP_DIRS` could not have covered it — that list names directories
+  every checkout shares, where an ignored path is whatever a given machine
+  happens to have lying around. The walk now consults `git check-ignore`.
+  Outside a work tree (a tarball export, a vendored copy) there are no ignore
+  rules to apply, so every file is scanned — treating a missing `.git` as
+  "ignore everything" would turn it into a silent pass, the exact failure the
+  script exists to prevent. This is #688 read backwards: there, gitignored
+  source was invisible to a gate that needed to see it; here, gitignored prose
+  was visible to one that must not. Both come of never stating the denominator.
+  ([#686], [#688])
+
 ### Added
 
 - **`scripts/check_doc_links.mjs` — a dead-link gate that actually reports

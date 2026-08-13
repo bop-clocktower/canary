@@ -39,6 +39,7 @@
  * Offline: every case builds its own fixture tree in a temp directory.
  */
 
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -255,6 +256,36 @@ describe('check_doc_links', () => {
 
     it('errors when the scan root does not exist', () => {
       expect(exec(['--root', join(root, 'missing')]).status).toBe(2);
+    });
+
+    it('excludes gitignored Markdown — those files are not this repo', () => {
+      // Found on `main` immediately after #696 merged: the walker read
+      // `.github/instructions/`, a gitignored editor-extension directory that
+      // exists on one laptop and in no checkout, and reported two dead links
+      // in it. Green in CI, red locally, for a file the repo does not own.
+      //
+      // This is #688 inverted. There, gitignored files were invisible to a
+      // gate that should have seen them; here they are visible to one that
+      // should not. Both are the same unanswered question — what is this
+      // gate's denominator — failed in opposite directions.
+      spawnSync('git', ['init', '-q'], { cwd: root });
+      write('.gitignore', 'ignored/\n');
+      write('ignored/local.md', '[dead](./nope.md)\n');
+      write('real.md', '# Real\n');
+
+      const r = report();
+      expect(r.findings).toEqual([]);
+      // And the file must not merely be un-flagged — it must be unscanned,
+      // or a later dead link inside it would count toward the denominator.
+      expect(r.filesScanned).toBe(1);
+    });
+
+    it('still scans everything when the root is not a git repository', () => {
+      // No git means no ignore rules to consult, not an excuse to scan
+      // nothing. Abstaining here would turn a tarball export into a silent
+      // pass.
+      write('a.md', '[dead](./nope.md)\n');
+      expect(findings()).toHaveLength(1);
     });
 
     it('reports the file count it actually scanned', () => {
