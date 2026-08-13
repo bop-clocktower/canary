@@ -40,6 +40,7 @@ import {
   type HttpClient,
   type SubprocessRun,
 } from './workflow-discovery.js';
+import { ensureAscii } from '../util/ensure-ascii.js';
 
 // ---------------------------------------------------------------------------
 // Python-compatibility helpers (copied locally per-module, matching reporter.ts)
@@ -64,17 +65,6 @@ function pyGet(
   fallback: unknown,
 ): unknown {
   return Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : fallback;
-}
-
-/**
- * Reproduce Python's `json.dumps(..., ensure_ascii=True)` (the library default)
- * on `JSON.stringify` output: escape every code point >= 0x80 as `\uXXXX`.
- */
-function ensureAscii(json: string): string {
-  return json.replace(
-    /[\u0080-\uffff]/g,
-    (ch) => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'),
-  );
 }
 
 /**

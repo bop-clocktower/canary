@@ -78,6 +78,7 @@ import { FrameworkRegistry } from './framework-registry.js';
 import { EXIT_ABSTAINED, gateOutcome, GateResult } from './gate-result.js';
 import { Scaffolder, scaffoldableFrameworks, TEMPLATES } from './scaffolder.js';
 import { SkillInfo, SkillRegistry } from './skill-registry.js';
+import { ensureAscii } from '../util/ensure-ascii.js';
 
 // ---------------------------------------------------------------------------
 // Python-compatibility helpers (copied locally per-module, matching reporter.ts)
@@ -90,17 +91,6 @@ function pyTruthy(value: unknown): boolean {
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === 'object') return Object.keys(value).length > 0;
   return Boolean(value);
-}
-
-/**
- * Reproduce `json.dumps(..., ensure_ascii=True)` on `JSON.stringify` output:
- * escape every code point >= 0x80 as `\uXXXX`. (Same helper as reporter.ts.)
- */
-function ensureAscii(json: string): string {
-  return json.replace(
-    /[\u0080-\uffff]/g,
-    (ch) => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'),
-  );
 }
 
 // Non-ASCII glyphs kept out of the source text as escapes, emitted verbatim.

@@ -147,7 +147,8 @@
       "**/*.spec.js",
       "**/*.spec.jsx",
       "**/*.spec.mjs",
-      "**/*.spec.cjs"
+      "**/*.spec.cjs",
+      "tests/generated/**"
     ],
     "entryPoints": [
       "ts/test/doc-links-testkit.ts",

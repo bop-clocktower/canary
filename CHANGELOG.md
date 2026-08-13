@@ -14,6 +14,35 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **History rows are self-describing again: `serializeLocalRecord` stamps
+  `schema_version`.** The reader has always refused a `schema_version` it does
+  not understand — but the store's own serializer never wrote the field, so the
+  guard could only ever fire on rows written by _somebody else's_ writer. Every
+  row the local store has ever appended was unversioned, which meant the guard
+  was structurally incapable of protecting the one history it owns. Nothing was
+  broken while `SCHEMA_VERSION` stayed at `2`; the damage was scheduled for the
+  next bump, when every legacy row would have been read as the new version and
+  silently misinterpreted. The stamp now lives in the one serializer every local
+  writer goes through, so it is a property of the format rather than something
+  each writer has to remember. **This supersedes the note in v7.0.0's #538
+  entry** that records "no longer carry a `schema_version` field": they do, as
+  of this release, and that entry described the bug rather than the intent.
+  `serializeRun` / `serializeTestResult` are deliberately unchanged — they map
+  to the remote store's table columns, which have no such field. ([#701])
+
+- **An unversioned history row now reads as the version it was written at, not
+  as "current".** `resolveSchemaVersion` resolves a missing `schema_version` to
+  the frozen `LEGACY_UNVERSIONED_SCHEMA_VERSION = 2` — a historical fact (v2 is
+  the only version this store has ever had, and every row after the fix above is
+  stamped), not a default that tracks the current version. Nothing changes today
+  because the two numbers are equal. What changes is the next bump: legacy rows
+  will be **refused loudly** instead of reinterpreted under semantics they were
+  never written for, which forces that bump to ship a real migration. A loud
+  refusal a maintainer must answer beats a silent wrong answer nobody sees.
+  ([#701])
+
 ### Added
 
 - **`canary migrate --adoption-report` — name the pieces of a half-finished
@@ -305,6 +334,7 @@ under the project's former name) are documented in the
 [#676]: https://github.com/bop-clocktower/canary/issues/676
 [#686]: https://github.com/bop-clocktower/canary/issues/686
 [#703]: https://github.com/bop-clocktower/canary/issues/703
+[#701]: https://github.com/bop-clocktower/canary/issues/701
 
 ### Changed
 

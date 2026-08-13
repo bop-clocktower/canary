@@ -95,6 +95,7 @@ import {
   renderPlaybook,
 } from './hard-gate.js';
 import { CoverageRow, mapImpact } from './impact-mapper.js';
+import { ensureAscii } from '../util/ensure-ascii.js';
 import {
   GuardianFinding,
   GateMeta,
@@ -250,22 +251,6 @@ export function defaultDeps(): GuardianDeps {
     makeAgentTier: () => new InSessionAgentTier(),
     sleep: (secs) => new Promise((resolve) => setTimeout(resolve, secs * 1000)),
   };
-}
-
-/**
- * Escape non-ASCII to `\uXXXX`, matching Python `json.dumps(ensure_ascii=True)`.
- */
-function ensureAscii(json: string): string {
-  // Escape every UTF-16 code UNIT >= 0x80 to \uXXXX, matching Python
-  // json.dumps(ensure_ascii=True). Iterating by unit (not code point) means an
-  // astral char's surrogate pair emits \udXXX\udXXX, like Python; a code-point
-  // regex would stop at U+FFFF and leave astral chars raw.
-  let out = '';
-  for (let i = 0; i < json.length; i++) {
-    const c = json.charCodeAt(i);
-    out += c >= 0x80 ? '\\u' + c.toString(16).padStart(4, '0') : json[i];
-  }
-  return out;
 }
 
 /** ISO-8601 UTC timestamp with a `+00:00` offset (Python `isoformat`-shaped). */
