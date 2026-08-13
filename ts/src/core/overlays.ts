@@ -52,8 +52,15 @@ export class OverlayNotFound extends Error {
   }
 }
 
-function overlaysRoot(home: string): string {
-  return join(home, '.canary', 'overlays');
+/**
+ * Directory holding overlay clones: `<home>/.canary/overlays`.
+ *
+ * Exported so a sibling that reads per-overlay config files (see
+ * `persona.ts`) locates them through this one definition rather than
+ * re-deriving the path and drifting from it.
+ */
+export function overlaysRoot(home?: string): string {
+  return join(home ?? homedir(), '.canary', 'overlays');
 }
 
 /** Overlay names in `overlays.json` order, or `[]` when it is unreadable. */

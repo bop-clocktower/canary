@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "fallback": "junior",
+  "minDetectionConfidence": 0.5,
+  "detectionMap": {
+    "sdet": "sdet",
+    "manual": "manual"
+  },
+  "personas": [
+    {
+      "id": "sdet",
+      "label": "Senior SDET",
+      "audience": "Writes and owns automated tests daily; fluent in the framework and the codebase.",
+      "depth": "terse",
+      "formats": ["bullets", "code"],
+      "reasoning": false
+    },
+    {
+      "id": "junior",
+      "label": "Junior SDET",
+      "audience": "Writes automated tests but is still building judgement about which ones matter.",
+      "depth": "brief",
+      "formats": ["bullets", "code", "rationale"],
+      "reasoning": true
+    },
+    {
+      "id": "manual",
+      "label": "Manual tester",
+      "audience": "Tests by hand and reads test output; may not read or write the framework's code.",
+      "depth": "guided",
+      "formats": ["numbered-steps", "rationale"],
+      "reasoning": true
+    }
+  ]
+}
