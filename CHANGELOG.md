@@ -158,9 +158,11 @@ under the project's former name) are documented in the
   matched, and files matched but held zero tests (a scanner that only checks the
   first prints a clean tick on the second). Measured across 3078 tests in this
   repo: **99 findings** (89 `VAC-002`, 10 `VAC-003`, **0** `VAC-001`) and 235
-  recorded skips. The detection lives in `ts/src/core/vacuity-scanner.ts` and is
-  shared with the promotion gate rather than duplicated into a `.mjs` skill
-  runtime — the third-half-enforcer risk [#605] names. ([#612])
+  recorded skips; triage of the residual `VAC-002` inference gap is [#705] and
+  of the true positives [#706]. The detection lives in
+  `ts/src/core/vacuity-scanner.ts` and is shared with the promotion gate rather
+  than duplicated into a `.mjs` skill runtime — the third-half-enforcer risk
+  [#605] names. ([#612])
 
 - **Generated-test soundness rules (`SOUND-001/002/003`) in
   `static-linter.ts`.** A test can assert, pass, and still prove nothing — when
@@ -275,6 +277,9 @@ under the project's former name) are documented in the
 [#566]: https://github.com/bop-clocktower/canary/issues/566
 [#605]: https://github.com/bop-clocktower/canary/issues/605
 [#612]: https://github.com/bop-clocktower/canary/issues/612
+[#704]: https://github.com/bop-clocktower/canary/issues/704
+[#705]: https://github.com/bop-clocktower/canary/issues/705
+[#706]: https://github.com/bop-clocktower/canary/issues/706
 [#676]: https://github.com/bop-clocktower/canary/issues/676
 [#686]: https://github.com/bop-clocktower/canary/issues/686
 [#703]: https://github.com/bop-clocktower/canary/issues/703
@@ -347,6 +352,33 @@ under the project's former name) are documented in the
   source was invisible to a gate that needed to see it; here, gitignored prose
   was visible to one that must not. Both come of never stating the denominator.
   ([#686], [#688])
+- **Catastrophic backtracking in the static linter's string strippers.** Both
+  `STRING_LITERAL` and the new `TEMPLATE_LITERAL` were written as
+  `(?:\\.|[^delim])*`, whose two branches BOTH match a backslash — so every
+  backslash doubles the parses the engine must try, and an unterminated literal
+  makes it try all of them. Measured: a line `const p = 'C:` followed by 42
+  backslashes and no closing quote took **5.9 seconds** inside
+  `StaticLinter.lint`; 36 backslashes took 142ms; ~55 is minutes. Reachable
+  without contrivance, because `blankMultilineStrings` blanks only the lines
+  _between_ delimiters, so a multi-line template's opening line — the one
+  carrying the escapes — always arrives at the single-line stripper intact. A
+  Windows-path or escaped-JSON fixture is enough to hang `review-test` and every
+  command built on it. Both are now one unambiguous alternation per quote style
+  (`[^q\\\n]` or `\\[\s\S]`, disjoint by construction), so matching is linear.
+  ([#605])
+
+- **An unreadable input crashed with a raw stack and exited 0.** `vacuity-check`
+  and `promote-check` let `readFileSync` throw out of the command handler, so a
+  missing path printed an ENOENT stack _and exited 0_ — a gate that could not
+  open its input reporting success, which is the exact false-green shape both
+  commands exist to detect. "Cannot read" is now an abstention naming its cause
+  (exit 3, `1 skipped: <path> [could not be read (ENOENT)]`). Only errno-shaped
+  codes degrade this way: keying off "has a string `code`" also swept in Node
+  programmer errors (`ERR_INVALID_ARG_TYPE`), which turned a genuine internal
+  defect into a clean-looking abstention. `review-test` and `flake-check` have
+  the same crash and are tracked in [#704] — they exit 1, so they are not
+  false-green. ([#612], [#477])
+
 - **`blankStrings` in `static-linter.ts` never knew about backtick template
   literals.** Only `'` and `"` were blanked, so a single-line template literal —
   the normal shape of fixture data in a TS suite — was read as live code by

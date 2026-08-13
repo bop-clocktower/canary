@@ -55,7 +55,7 @@ const TEST_FN_PY = /^([ \t]*)def (test_\w+)\s*\(/gm;
 // been blanked away; blanking is length-preserving precisely so these offsets
 // still address the untouched text (#590).
 const TEST_FN_JS = /(?:^|\s)(?:it|test)\s*\(\s*['"]([^'"]*)['"]/dgm;
-const ASSERT_PY = /\bassert\b|\bpytest\.raises\b/;
+export const ASSERT_PY = /\bassert\b|\bpytest\.raises\b/;
 // Assertion styles a JS/TS test may use. `expect()` (jest/vitest/playwright)
 // was the only one recognized until canary was pointed at its own suites and
 // reported 216 assertion-free tests of which 13 were real -- the other 200 were
@@ -67,11 +67,30 @@ const ASSERT_PY = /\bassert\b|\bpytest\.raises\b/;
 // own 16 residual findings. A regex linter cannot follow the call, so the NAME
 // carries the signal; the `[A-Z]` keeps it to the convention rather than
 // excusing any call that merely starts with those letters.
-const ASSERT_JS =
+export const ASSERT_JS =
   /\bexpect\s*\(|\bto(?:Be|Equal|Contain|Have|Match|Throw|Raise)\b|\bassert\s*\.\s*\w+\s*\(|\bassert\s*\(|\bshould\s*\.|\.should\b|\b(?:expect|assert)[A-Z]\w*\s*\(/;
 
 // Strippers
-const STRING_LITERAL = /(['"])(?:\\.|(?!\1).)*?\1/g;
+/**
+ * A single-line quoted string literal.
+ *
+ * Written as one unambiguous alternation per quote style rather than the
+ * backreferenced `/(['"])(?:\\.|(?!\1).)*?\1/`, because that shape is
+ * CATASTROPHICALLY BACKTRACKING: `\\.` and `(?!\1).` both match a backslash, so
+ * every backslash doubles the parses the engine must try, and an UNTERMINATED
+ * literal makes it try all of them. Measured on this file's own scanners: a line
+ * `const p = 'C:` followed by 42 backslashes and no closing quote took **5.9
+ * seconds**, at 36 backslashes 142ms, and the growth is exponential -- ~55 is
+ * minutes. A linter that hangs on a Windows-path fixture is not advisory, it is
+ * down, and the input reaches here routinely because `blankMultilineStrings`
+ * blanks only the lines BETWEEN delimiters, so a multi-line literal's opening
+ * line always arrives intact.
+ *
+ * Each branch is `[^quote\\\n]` or `\\[\s\S]` -- disjoint by construction, so
+ * there is exactly one way to parse any input and the match is linear. `\n` is
+ * excluded so an unterminated literal cannot swallow the following lines.
+ */
+const STRING_LITERAL = /'(?:[^'\\\n]|\\[\s\S])*'|"(?:[^"\\\n]|\\[\s\S])*"/g;
 /**
  * A backtick template literal that opens and closes on ONE line.
  *
@@ -83,7 +102,7 @@ const STRING_LITERAL = /(['"])(?:\\.|(?!\1).)*?\1/g;
  * INTERIOR of a run whose delimiter count is odd, so a balanced one-line
  * literal falls through both.
  */
-const TEMPLATE_LITERAL = /`(?:\\.|[^`])*?`/g;
+const TEMPLATE_LITERAL = /`(?:[^`\\]|\\[\s\S])*`/g;
 /** A `${...}` substitution: string syntax wrapping genuinely live code. */
 const TEMPLATE_SUBSTITUTION = /\$\{[^{}]*\}/g;
 
@@ -139,6 +158,22 @@ function isAllowedNumber(token: string): boolean {
 function isComment(line: string): boolean {
   const s = line.trim();
   return s.startsWith('#') || s.startsWith('//') || s.startsWith('*');
+}
+
+/**
+ * Drop a TRAILING comment from a line whose strings are already blanked.
+ *
+ * `isComment` only recognises a line that is entirely a comment, so a trailing
+ * `// seeded from process.pid earlier` was read as live code -- and because
+ * SOUND-001 gates promotion, a comment mentioning `process.pid` or `Date.now()`
+ * was enough to block a correct test. Safe to apply after `blankStrings`,
+ * because a `//` inside a string literal is already gone by then.
+ *
+ * Applied only by `scanSoundness`: the older rules were written against
+ * comment-bearing lines and changing what they see is not this change's business.
+ */
+function stripComments(line: string): string {
+  return line.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$|#.*$/, '');
 }
 
 function mk(
@@ -437,18 +472,23 @@ const JS_MATCHER_OPEN =
 /** The Python analogue: `==` in an assert, or `assertEqual(`'s argument list. */
 const PY_MATCHER_OPEN = /==|\bassertEqual\s*\(/;
 
-/** A `const|let|var x = <rhs>` (JS) or `x = <rhs>` (Python) binding. */
-const JS_BINDING = /\b(?:const|let|var)\s+(\w+)\s*=\s*(.*)$/;
-const PY_BINDING = /^\s*(\w+)\s*=\s*([^=].*)$/;
+/**
+ * A `const|let|var x = <rhs>` (JS) or `x = <rhs>` (Python) binding.
+ *
+ * The RHS stops at `;` rather than running to end-of-line, and both are `/g` so
+ * every binding on a line is seen. The old `(.*)$` meant one non-deterministic
+ * call anywhere later on the line tainted every name bound before it --
+ * `const expected = 3; const now = Date.now();` tainted `expected` -- and the
+ * "source" quoted back in the message was the rest of the statement, which is
+ * what gave the bug away.
+ */
+const JS_BINDING = /\b(?:const|let|var)\s+(\w+)\s*=\s*([^;\n]*)/g;
+const PY_BINDING = /^[ \t]*(\w+)\s*=\s*([^=;\n][^;\n]*)/g;
 
 const LEADING_FRACTION = /^\s*-?\d+\.\d+(?![\d.])/;
 const LEADING_INTEGER = /^\s*-?\d+(?![\d.])/;
 /** A division between two operands, e.g. `total / count`. */
 const DIVISION = /[\w)\]]\s*\/\s*[\w(]/;
-
-function gcd(a: number, b: number): number {
-  return b === 0 ? a : gcd(b, a % b);
-}
 
 /**
  * True iff a decimal literal has an exact binary-float representation.
@@ -458,17 +498,19 @@ function gcd(a: number, b: number): number {
  * actually honour; `0.1` and `0.3` are not, so exact equality on them is a bet
  * on the specific arithmetic path that produced the value. Flagging the exact
  * ones too would train readers to dismiss the rule.
+ *
+ * `0.d1..dn` is `N / 10^n = N / (2^n * 5^n)`, so its reduced denominator is a
+ * power of two exactly when `5^n` divides `N`. Computed in BigInt because the
+ * float version was wrong twice over past 10 digits: `10 ** n` exceeds 2^31 so
+ * `den & (den - 1)` coerced through ToInt32 -- for a 32-digit fraction that is
+ * `0 & -1 === 0`, i.e. "exactly representable", and the rule went silent -- and
+ * `Number(frac)` loses precision past 15 digits, making the reduction
+ * meaningless before that. Both failures were in the permissive direction.
  */
 function isBinaryExact(literal: string): boolean {
   const frac = literal.split('.')[1] ?? '';
   if (frac === '') return true;
-  let num = Number(frac);
-  let den = 10 ** frac.length;
-  const d = gcd(num, den);
-  num = num / d;
-  den = den / d;
-  // A reduced denominator that is a power of two is exactly representable.
-  return (den & (den - 1)) === 0;
+  return BigInt(frac) % 5n ** BigInt(frac.length) === 0n;
 }
 
 /** The expected-value text of an assertion line, or null if there is none. */
@@ -508,13 +550,26 @@ function scanSoundness(
   lines.forEach((raw, idx) => {
     if (isComment(raw)) return;
     // Data must never read as code: a fixture string carrying `Date.now()` is
-    // the linter's own test suite, not a defect in it.
-    const line = blankStrings(raw);
+    // the linter's own test suite, not a defect in it. Comments are stripped for
+    // the same reason and it is not cosmetic -- `isComment` only skips a WHOLE
+    // comment line, so a trailing `// seeded from process.pid earlier` was read
+    // as an expectation and blocked the promotion of a correct test.
+    const line = stripComments(blankStrings(raw));
     const lineNo = idx + 1;
 
-    const binding = (python ? PY_BINDING : JS_BINDING).exec(line);
-    if (binding && NONDET_TAINT_SOURCE.test(binding[2]!)) {
-      tainted.set(binding[1]!, binding[2]!.trim());
+    // EVERY binding on the line, and a deterministic one CLEARS the taint.
+    //
+    // Two bugs lived in the single-`exec` version, both producing a false
+    // block. The RHS capture ran to end-of-line, so `const expected = 3; const
+    // now = Date.now();` tainted `expected` -- and the reported "source" was the
+    // rest of the statement, which is how it was noticed. And the map was
+    // write-only, so a name re-bound to a constant in a later test stayed
+    // tainted for the whole file.
+    for (const b of line.matchAll(python ? PY_BINDING : JS_BINDING)) {
+      const name = b[1]!;
+      const rhs = b[2]!.trim();
+      if (NONDET_TAINT_SOURCE.test(rhs)) tainted.set(name, rhs);
+      else tainted.delete(name);
     }
 
     const isAssertion = (python ? ASSERT_PY : ASSERT_JS).test(line);
@@ -540,7 +595,11 @@ function scanSoundness(
       // non-deterministic on an earlier line and arrives here through a
       // variable, so this line reads as perfectly clean.
       for (const [name, source] of tainted) {
-        if (!new RegExp(`\\b${name}\\b`).test(expected)) continue;
+        // `[\w$]` lookarounds, not `\b`: `$` is legal in a JS identifier and is
+        // not a word character, so `\b$stamp\b` could only match after a word
+        // char and a `$`-prefixed name was invisible.
+        if (!new RegExp(`(?<![\\w$])${name}(?![\\w$])`).test(expected))
+          continue;
         out.push(
           mk(
             file,

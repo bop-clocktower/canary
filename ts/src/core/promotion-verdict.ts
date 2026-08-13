@@ -65,6 +65,13 @@ import {
   type VacuityFinding,
 } from './vacuity-scanner.js';
 
+/**
+ * A libuv/POSIX errno code (`ENOENT`, `EISDIR`, `EACCES`), as opposed to a Node
+ * programmer-error code (`ERR_INVALID_ARG_TYPE`). Only the former means "the
+ * filesystem said no"; the latter means this code has a bug.
+ */
+const ERRNO = /^E[A-Z0-9]+$/;
+
 /** Promotion outcomes. `abstain` is never aggregated into either other one. */
 export type PromotionDecision = 'promote' | 'block' | 'abstain';
 
@@ -118,11 +125,22 @@ export interface PromotionVerdict {
   exitCode: number;
 }
 
-/** Which rules land on which axis, and whether that axis gates. */
+/**
+ * Which rules land on which axis, and whether that axis gates.
+ *
+ * A rule matching NO row here is invisible to the verdict: not gating, not
+ * advisory, not printed. `LINT-004` -- an unawaited Playwright action, the
+ * linter's other `critical` and the canonical false-green defect -- was omitted
+ * from the first cut and walked straight through the gate built to stop it.
+ * `test-signal-review-findings.test.ts` now asserts that every rule a real lint
+ * produces lands somewhere, because the omission is otherwise silent.
+ */
 const AXES: { axis: PromotionAxis; gating: boolean; rules: RegExp }[] = [
   { axis: 'soundness', gating: true, rules: /^SOUND-/ },
   { axis: 'assertions', gating: true, rules: /^LINT-006$/ },
-  { axis: 'flakiness', gating: true, rules: /^FLAKE-00[12]$/ },
+  // LINT-004 sits here rather than in its own axis because an unawaited action
+  // IS the classic race: the assertion runs before the action lands.
+  { axis: 'flakiness', gating: true, rules: /^FLAKE-00[12]$|^LINT-004$/ },
   { axis: 'vacuity', gating: true, rules: /^VAC-/ },
   { axis: 'selectors', gating: false, rules: /^LINT-00[123]$/ },
   {
@@ -219,45 +237,17 @@ export function promotionVerdict(path: string): PromotionVerdict {
     );
   }
 
-  // Two distinct reasons the linter can refuse, and BOTH have to become an
-  // abstention rather than an exception. Letting a read error propagate meant
-  // the CLI printed a raw ENOENT stack and exited 0 -- a promotion gate that
-  // could not open the draft, reporting success. Anything else genuinely
-  // unexpected still throws, because swallowing an unknown fault is how a
-  // scanner learns to go quiet.
-  let lint: LintFinding[];
-  try {
-    lint = new StaticLinter().lint(path);
-  } catch (e) {
-    if (e instanceof UnsupportedTestFileError) {
-      return abstained(path, [{ name: path, reason: e.message }], emptyAxes());
-    }
-    const code = (e as { code?: string }).code;
-    if (typeof code !== 'string') throw e;
-    return abstained(
-      path,
-      [{ name: path, reason: `could not be read (${code})` }],
-      emptyAxes(),
-    );
-  }
-  const vacuity: GateResult<VacuityFinding> = scanVacuity(path);
+  const lint = lintOrAbstain(path);
+  if (!Array.isArray(lint)) return lint;
 
-  const all: VerdictFinding[] = [
+  const vacuity: GateResult<VacuityFinding> = scanVacuity(path);
+  const axes = groupIntoAxes([
     ...lint.map(normalizeLint),
     ...vacuity.findings.map(normalizeVacuity),
-  ];
-
-  const axes: AxisVerdict[] = AXES.map((spec) => ({
-    axis: spec.axis,
-    gating: spec.gating,
-    findings: all
-      .filter((f) => spec.rules.test(f.rule))
-      .sort((a, b) => a.line - b.line),
-  }));
-
+  ]);
   const skipped = vacuity.skipped ?? [];
 
-  // A parseable file with no tests is the second zero, and it must not read as a
+  // A parseable file with no tests is another zero, and it must not read as a
   // pass: promotion would let an empty file into the committed suite. Note that
   // `lint` can still be non-empty here (a stray `Date.now()` outside any test),
   // so the check is on the TEST count, not on the finding count.
@@ -276,23 +266,73 @@ export function promotionVerdict(path: string): PromotionVerdict {
     );
   }
 
-  const blocked = axes
-    .filter((a) => a.gating)
-    .flatMap((a) => a.findings)
-    .filter(mayBlock)
-    .map((f) => f.rule);
-  const uniqueBlocked = [...new Set(blocked)];
+  return decide(path, axes, skipped, vacuity.checked);
+}
 
+/**
+ * The lint findings, or a ready-made abstention when the linter refused.
+ *
+ * Two distinct refusals, and BOTH have to become an abstention rather than an
+ * exception. Letting a read error propagate meant the CLI printed a raw ENOENT
+ * stack and exited 0 -- a promotion gate that could not open the draft,
+ * reporting success. Anything without an `errno`-style `code` still throws,
+ * because swallowing an unknown fault is how a scanner learns to go quiet.
+ */
+function lintOrAbstain(path: string): LintFinding[] | PromotionVerdict {
+  try {
+    return new StaticLinter().lint(path);
+  } catch (e) {
+    if (e instanceof UnsupportedTestFileError) {
+      return abstained(path, [{ name: path, reason: e.message }], emptyAxes());
+    }
+    const code = (e as { code?: string }).code;
+    // ERRNO-shaped only. Keying off "has a string `code`" swept in every Node
+    // PROGRAMMER error too -- `ERR_INVALID_ARG_TYPE`, `ERR_STRING_TOO_LONG` --
+    // so a genuine defect inside the linter was reported as a clean ABSTAIN with
+    // a misleading reason instead of surfacing. An unknown fault must still
+    // throw; that is the difference between degrading honestly and going quiet.
+    if (typeof code !== 'string' || !ERRNO.test(code)) throw e;
+    return abstained(
+      path,
+      [{ name: path, reason: `could not be read (${code})` }],
+      emptyAxes(),
+    );
+  }
+}
+
+/** Every axis, in registry order, each carrying its findings sorted by line. */
+function groupIntoAxes(all: VerdictFinding[]): AxisVerdict[] {
+  return AXES.map((spec) => ({
+    axis: spec.axis,
+    gating: spec.gating,
+    findings: all
+      .filter((f) => spec.rules.test(f.rule))
+      .sort((a, b) => a.line - b.line),
+  }));
+}
+
+/** Turn evaluated axes into the promote/block decision and its copy. */
+function decide(
+  path: string,
+  axes: AxisVerdict[],
+  skipped: SkipEntry[],
+  checked: number,
+): PromotionVerdict {
+  const blocked = [
+    ...new Set(
+      axes
+        .filter((a) => a.gating)
+        .flatMap((a) => a.findings)
+        .filter(mayBlock)
+        .map((f) => f.rule),
+    ),
+  ];
   // `gateOutcome` owns the summary line so promotion reports its denominator in
   // the same shape as every other gate, rather than inventing a private format.
-  const outcome = gateOutcome(
-    { checked: vacuity.checked, findings: uniqueBlocked, skipped },
-    'gate',
-    { noun: 'test(s)' },
-  );
-
-  const decision: PromotionDecision =
-    uniqueBlocked.length > 0 ? 'block' : 'promote';
+  const outcome = gateOutcome({ checked, findings: blocked, skipped }, 'gate', {
+    noun: 'test(s)',
+  });
+  const decision: PromotionDecision = blocked.length > 0 ? 'block' : 'promote';
   const advisoryCount = axes
     .filter((a) => !a.gating)
     .reduce((n, a) => n + a.findings.length, 0);
@@ -301,19 +341,44 @@ export function promotionVerdict(path: string): PromotionVerdict {
     file: path,
     decision,
     source: 'deterministic',
-    checked: vacuity.checked,
+    checked,
     axes,
-    blocked: uniqueBlocked,
+    blocked,
     skipped,
     summaryLine: outcome.summaryLine,
-    remedy:
-      decision === 'block'
-        ? `Blocked on ${uniqueBlocked.join(', ')}. Fix the test or regenerate it ` +
-          'with a sharper prompt -- do not hand-patch a generated draft ' +
-          '(canary-promote-test Phase 1).'
-        : advisoryCount > 0
-          ? `Promotable. ${advisoryCount} advisory finding(s) are a reviewer's call, not a blocker.`
-          : '',
+    remedy: remedyFor(decision, blocked, advisoryCount, skipped.length),
     exitCode: decision === 'block' ? 1 : 0,
   };
+}
+
+function remedyFor(
+  decision: PromotionDecision,
+  blocked: string[],
+  advisoryCount: number,
+  skipCount: number,
+): string {
+  if (decision === 'block') {
+    return (
+      `Blocked on ${blocked.join(', ')}. Fix the test or regenerate it ` +
+      'with a sharper prompt -- do not hand-patch a generated draft ' +
+      '(canary-promote-test Phase 1).'
+    );
+  }
+  const parts = ['Promotable.'];
+  if (advisoryCount > 0) {
+    parts.push(
+      `${advisoryCount} advisory finding(s) are a reviewer's call, not a blocker.`,
+    );
+  }
+  // A `promote` whose rules went dark must not read as an unqualified pass.
+  // `checked` legitimately counts the tests VAC-001 did run on, so the
+  // denominator is right -- but a reader seeing only "promotable" would never
+  // learn that two of the three vacuity rules could not be evaluated at all.
+  if (skipCount > 0) {
+    parts.push(
+      `${skipCount} check(s) could not run on this file -- see the skip list; ` +
+        'those rules did NOT pass, they abstained.',
+    );
+  }
+  return advisoryCount > 0 || skipCount > 0 ? parts.join(' ') : '';
 }

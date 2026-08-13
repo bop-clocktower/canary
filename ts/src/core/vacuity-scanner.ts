@@ -32,8 +32,14 @@
  *   imported from relative paths, closed over local declarations to a fixpoint
  *   (one helper, or a chain of them, still counts as reaching the target).
  * - neither -- the target cannot be resolved. That is "cannot verify", which is
- *   a finding about the SCAN, so it lands in `skipped` with its reason and the
- *   affected tests never count toward `checked`.
+ *   a finding about the SCAN, so it lands in `skipped` with its reason.
+ *
+ * A skip is PER RULE, not per test: `VAC-001` needs no target and always runs,
+ * so a test whose target is unresolvable is still genuinely `checked` and stays
+ * in the denominator. Saying otherwise would understate what was verified. What
+ * must not happen is a reader mistaking that for a full pass, which is why
+ * `promotion-verdict.ts` puts the skip count in its remedy rather than letting
+ * `promote` read as unqualified.
  *
  * ## The denominator
  *
@@ -47,6 +53,8 @@ import { readFileSync } from 'node:fs';
 
 import type { GateResult, SkipEntry } from './gate-result.js';
 import {
+  ASSERT_JS,
+  ASSERT_PY,
   enumerateTests,
   frameworkForPath,
   type TestBlock,
@@ -69,8 +77,14 @@ export interface VacuityFinding {
   fidelity?: VacuityFidelity;
 }
 
-/** `@covers <symbol>` -- the explicit rung of the ladder. */
-const COVERS_PRAGMA = /@covers\s+([A-Za-z_$][\w$]*)/;
+/**
+ * `@covers <symbol>` -- the explicit rung of the ladder.
+ *
+ * Global, because {@link annotationFor} needs the LAST match in its window, not
+ * the first: `exec` returns the match nearest the start, which is the FARTHEST
+ * annotation above the declaration.
+ */
+const COVERS_PRAGMA = /@covers\s+([A-Za-z_$][\w$]*)/g;
 
 /** An import whose specifier is relative: the local code a test can target. */
 const JS_RELATIVE_IMPORT =
@@ -83,7 +97,8 @@ const JS_RELATIVE_REQUIRE =
  * a heuristic, but the alternative is treating every pytest file as
  * unresolvable.
  */
-const PY_FROM_IMPORT = /^\s*from\s+([\w.]+)\s+import\s+([^\n#]+)/gm;
+const PY_FROM_IMPORT =
+  /^[ \t]*from\s+([\w.]+)\s+import\s+(\([^)]*\)|[^\n#]+)/gm;
 const PY_STDLIB = new Set([
   'os',
   'sys',
@@ -161,9 +176,20 @@ const ABSENCE_ASSERTION =
 const PY_ABSENCE_ASSERTION =
   /\bassert\s+not\b|\bis\s+None\b|==\s*(?:False|None)\b|==\s*(?:\[\s*\]|\{\s*\})|\bassert\s+len\s*\([^)]*\)\s*==\s*0\b/;
 
-/** Any assertion at all, per language. Deliberately the linter's vocabulary. */
-const JS_ASSERTION = /\bexpect\s*\(|\bassert\s*[.(]/;
-const PY_ASSERTION = /\bassert\b|\bpytest\.raises\b|\bself\.assert\w+/;
+/**
+ * Any assertion at all -- imported from the linter rather than restated.
+ *
+ * A local `/\bexpect\s*\(|\bassert\s*[.(]/` was NOT the linter's vocabulary, and
+ * the comment claiming it was is how the gap survived: `ASSERT_JS` also knows
+ * `should`-style, `.should`, the `toThrow` family, and the
+ * `expectX()`/`assertX()` helper convention that the linter's own notes say
+ * accounted for 9 of 16 residual findings here. For a suite written in any of
+ * those styles the assertion list came out EMPTY, VAC-003's `length > 0` guard
+ * short-circuited, and the rule reported nothing while nothing said it could not
+ * look -- the silent zero this module exists to prevent, one layer inside it.
+ */
+const JS_ASSERTION = ASSERT_JS;
+const PY_ASSERTION = new RegExp(`${ASSERT_PY.source}|\\bself\\.assert\\w+`);
 
 function mk(
   file: string,
@@ -196,36 +222,62 @@ function lineOf(code: string, offset: number): number {
   return n;
 }
 
-/** Names imported from first-party (relative) modules. */
-function importedTargets(code: string, python: boolean): Set<string> {
+/**
+ * The identifiers a comma-separated import clause binds.
+ *
+ * `{ save as store }` binds `store`; `{ save }` binds `save`. Anything that is
+ * not a bare identifier after that (`type Kit`, a stray comment) is dropped --
+ * the filter is also what guarantees no name reaching {@link mentionsAny} can
+ * carry regex metacharacters.
+ */
+function clauseNames(list: string | undefined): string[] {
+  // Parentheses and newlines stripped first, so the multi-line
+  // `from m import (\n  a,\n  b,\n)` form yields names rather than `(a` -- which
+  // the identifier filter below silently dropped, taking the whole file's target
+  // set with it.
+  return (list ?? '')
+    .replace(/[()\n]/g, ' ')
+    .split(',')
+    .map(
+      (raw) =>
+        raw
+          .trim()
+          .split(/\s+as\s+/)
+          .pop()
+          ?.trim() ?? '',
+    )
+    .filter((name) => /^[A-Za-z_$][\w$]*$/.test(name));
+}
+
+/** Python first-party imports: `from x import y`, minus the stdlib by name. */
+function pythonImportedTargets(code: string): Set<string> {
   const names = new Set<string>();
-  const addList = (list: string | undefined) => {
-    for (const raw of (list ?? '').split(',')) {
-      // `{ save as store }` binds `store`; `{ save }` binds `save`.
-      const name = raw
-        .trim()
-        .split(/\s+as\s+/)
-        .pop()
-        ?.trim();
-      if (name && /^[A-Za-z_$][\w$]*$/.test(name)) names.add(name);
-    }
-  };
-  if (python) {
-    for (const m of code.matchAll(PY_FROM_IMPORT)) {
-      const root = m[1]!.split('.')[0]!;
-      if (PY_STDLIB.has(root)) continue;
-      addList(m[2]);
-    }
-    return names;
+  for (const m of code.matchAll(PY_FROM_IMPORT)) {
+    const root = m[1]!.split('.')[0]!;
+    if (PY_STDLIB.has(root)) continue;
+    for (const n of clauseNames(m[2])) names.add(n);
   }
+  return names;
+}
+
+/** JS/TS first-party imports: any `import`/`require` with a relative specifier. */
+function jsImportedTargets(code: string): Set<string> {
+  const names = new Set<string>();
   for (const re of [JS_RELATIVE_IMPORT, JS_RELATIVE_REQUIRE]) {
+    // Reset explicitly: these are module-level `/g` patterns, so a leftover
+    // `lastIndex` from an earlier file would silently skip the head of this one.
     re.lastIndex = 0;
     for (const m of code.matchAll(re)) {
-      addList(m[1]);
+      for (const n of clauseNames(m[1])) names.add(n);
       if (m[2]) names.add(m[2]);
     }
   }
   return names;
+}
+
+/** Names imported from first-party (relative) modules. */
+function importedTargets(code: string, python: boolean): Set<string> {
+  return python ? pythonImportedTargets(code) : jsImportedTargets(code);
 }
 
 /**
@@ -274,7 +326,7 @@ function closeOverLocals(
     for (const d of decls) {
       if (d.names.every((n) => reaching.has(n))) continue;
       const reaches = [...reaching].some((t) =>
-        new RegExp(`\\b${t}\\b`).test(d.body),
+        identifierPattern(t).test(d.body),
       );
       if (!reaches) continue;
       for (const n of d.names) reaching.add(n);
@@ -313,10 +365,21 @@ function expectArgument(line: string): string | null {
   return null;
 }
 
-/** The single argument of the matcher that follows `expect(...)`, or null. */
-function matcherArgument(line: string): string | null {
-  const m = /\.\s*(?:not\s*\.\s*)?to\w+\s*\(([^()]*)\)/.exec(line);
-  return m ? m[1]! : null;
+/**
+ * The matcher following `expect(...)`: its argument, and whether it is negated.
+ *
+ * The negation is returned rather than swallowed. `expect(v).not.toBe(v)` has
+ * identical texts on both sides, so a comparison that ignored `.not` reported it
+ * as `VAC-001` -- "no implementation can fail it" -- about an assertion that can
+ * only ever FAIL. Inverting the rule's own claim is worse than missing the case,
+ * and it was a `critical` finding that BLOCKS promotion. `pyTautology` already
+ * guarded the analogous `assert False`; the JS path had no equivalent.
+ */
+function matcherOf(
+  line: string,
+): { argument: string; negated: boolean } | null {
+  const m = /\.\s*(not\s*\.\s*)?to\w+\s*\(([^()]*)\)/.exec(line);
+  return m ? { argument: m[2]!, negated: m[1] !== undefined } : null;
 }
 
 function normalize(expr: string): string {
@@ -326,10 +389,10 @@ function normalize(expr: string): string {
 /** VAC-001 for one JS/TS line. */
 function jsTautology(line: string): boolean {
   const actual = expectArgument(line);
-  const expected = matcherArgument(line);
-  if (actual === null || expected === null) return false;
+  const matcher = matcherOf(line);
+  if (actual === null || matcher === null || matcher.negated) return false;
   const a = normalize(actual);
-  const e = normalize(expected);
+  const e = normalize(matcher.argument);
   if (a === '' || e === '') return false;
   return a === e;
 }
@@ -340,6 +403,7 @@ function pyTautology(line: string): boolean {
   // `assert False` is a deliberate unreachable marker -- it can only ever fail,
   // so it is the opposite of vacuous and must never be flagged.
   if (/^assert\s+True\s*(?:,|$)/.test(t)) return true;
+  // Same reason `.not` is excluded above: `assert x != x` can only ever fail.
   const cmp = /^assert\s+(.+?)\s*==\s*(.+?)\s*(?:,|$)/.exec(t);
   if (!cmp) return false;
   return normalize(cmp[1]!) === normalize(cmp[2]!);
@@ -352,103 +416,233 @@ function scanBlock(
   python: boolean,
   reaching: Set<string> | null,
   annotated: string | null,
+  skipped: SkipEntry[],
 ): VacuityFinding[] {
-  const out: VacuityFinding[] = [];
   const lines = bodyLines(code, block).filter((l) => !isComment(l.text));
-  const anyAssertion = python ? PY_ASSERTION : JS_ASSERTION;
-  const absence = python ? PY_ABSENCE_ASSERTION : ABSENCE_ASSERTION;
-
-  // VAC-001 -- deterministic, hence `critical`: an expectation identical to the
-  // value it checks cannot fail for any implementation.
-  for (const l of lines) {
-    if (python ? pyTautology(l.text) : jsTautology(l.text)) {
-      out.push(
-        mk(
-          file,
-          l.line,
-          'VAC-001',
-          'critical',
-          block.name,
-          'Assertion compares a value with itself; no implementation can fail it.',
-          'Assert the value the code under test should have produced, not the input.',
-        ),
-      );
-    }
-  }
-
-  // VAC-002 -- the target is never referenced anywhere in the body.
-  if (annotated !== null) {
-    if (!new RegExp(`\\b${annotated}\\b`).test(block.body)) {
-      out.push(
-        mk(
-          file,
-          block.line,
-          'VAC-002',
-          'warning',
-          block.name,
-          `Declared target \`${annotated}\` is never referenced in this test.`,
-          'Invoke the target, or correct the @covers annotation to name what the test actually exercises.',
-          'annotated',
-        ),
-      );
-    }
-  } else if (reaching !== null) {
-    const touches = [...reaching].some((t) =>
-      new RegExp(`\\b${t}\\b`).test(block.body),
-    );
-    if (!touches) {
-      out.push(
-        mk(
-          file,
-          block.line,
-          'VAC-002',
-          'warning',
-          block.name,
-          'This test references none of the symbols the file imports from first-party modules.',
-          'If the target is reached indirectly, add `// @covers <symbol>` so the check verifies the real target instead of inferring one.',
-          'import-inferred',
-        ),
-      );
-    }
-  }
-
-  // VAC-003 -- every assertion is an absence, AND none of them observes the
-  // target's own return value.
-  //
-  // That second clause is not a refinement, it is the rule. The first cut
-  // omitted it and reported 254 findings across canary's 2154 tests, nearly all
-  // of the form `expect(isCI()).toBe(false)` -- a perfectly good negative test,
-  // because the assertion invokes the target, so the target provably ran and the
-  // `false` is load-bearing. The #486 katana defect is the other shape:
-  // `expect(existsSync(ledger)).toBe(false)` after a bare call, where the
-  // absence is observed on a BYSTANDER and the buggy code satisfied it by
-  // exiting before the write. Reported at the first absence assertion, the line
-  // an author adds a precondition next to.
   const targets = annotated !== null ? new Set([annotated]) : reaching;
-  const assertions = lines.filter((l) => anyAssertion.test(l.text));
-  const observesTarget = (text: string) =>
+  return [
+    ...tautologies(lines, block, file, python),
+    ...targetNeverInvoked(block, file, reaching, annotated),
+    ...absenceOnly(lines, block, file, python, targets, skipped),
+  ];
+}
+
+/**
+ * A pattern matching `name` as a whole identifier.
+ *
+ * NOT `\b${name}\b`, which is wrong for the `$` that JS identifiers allow and
+ * `\w` does not. `\b` sits between a `\w` and a non-`\w`, so `\b$fetch\b` can
+ * only match after a word character -- a `$`-prefixed import never matched at
+ * all, and `\bfoo$bar\b` can never match. That silently shrank the target set,
+ * producing a `VAC-002` false positive on a test invoking its target on the only
+ * line it had. Lookarounds over `[\w$]` give the boundary JS actually has.
+ *
+ * `name` is escaped as well: every call site filters to `[A-Za-z_$][\w$]*`
+ * today, so nothing can currently smuggle a metacharacter through, but the
+ * escape means a widened filter cannot turn into a silent semantic change.
+ */
+function identifierPattern(name: string): RegExp {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![\\w$])${escaped}(?![\\w$])`);
+}
+
+/** Does `text` name any symbol in `targets`? */
+function mentionsAny(text: string, targets: Set<string> | null): boolean {
+  return (
     targets !== null &&
-    [...targets].some((t) => new RegExp(`\\b${t}\\b`).test(text));
-  if (
-    targets !== null &&
-    assertions.length > 0 &&
-    assertions.every((l) => absence.test(l.text)) &&
-    !assertions.some((l) => observesTarget(l.text))
-  ) {
-    out.push(
+    [...targets].some((t) => identifierPattern(t).test(text))
+  );
+}
+
+/**
+ * VAC-001 -- deterministic, hence `critical`: an expectation identical to the
+ * value it checks cannot fail for any implementation.
+ */
+function tautologies(
+  lines: { text: string; line: number }[],
+  block: TestBlock,
+  file: string,
+  python: boolean,
+): VacuityFinding[] {
+  return lines
+    .filter((l) => (python ? pyTautology(l.text) : jsTautology(l.text)))
+    .map((l) =>
       mk(
         file,
-        assertions[0]!.line,
-        'VAC-003',
-        'warning',
+        l.line,
+        'VAC-001',
+        'critical',
         block.name,
-        'Every assertion in this test asserts an absence, and none of them observes the target.',
-        'Add one assertion proving the operation actually ran (exit code, returned value, a positive existence) -- otherwise the test passes identically when the code crashed before doing anything.',
+        'Assertion compares a value with itself; no implementation can fail it.',
+        'Assert the value the code under test should have produced, not the input.',
       ),
     );
-  }
+}
 
-  return out;
+/** VAC-002 -- the target is never referenced anywhere in the body. */
+function targetNeverInvoked(
+  block: TestBlock,
+  file: string,
+  reaching: Set<string> | null,
+  annotated: string | null,
+): VacuityFinding[] {
+  if (annotated !== null) {
+    if (mentionsAny(block.body, new Set([annotated]))) return [];
+    return [
+      mk(
+        file,
+        block.line,
+        'VAC-002',
+        'warning',
+        block.name,
+        `Declared target \`${annotated}\` is never referenced in this test.`,
+        'Invoke the target, or correct the @covers annotation to name what the test actually exercises.',
+        'annotated',
+      ),
+    ];
+  }
+  if (reaching === null || mentionsAny(block.body, reaching)) return [];
+  return [
+    mk(
+      file,
+      block.line,
+      'VAC-002',
+      'warning',
+      block.name,
+      'This test references none of the symbols the file imports from first-party modules.',
+      'If the target is reached indirectly, add `// @covers <symbol>` so the check verifies the real target instead of inferring one.',
+      'import-inferred',
+    ),
+  ];
+}
+
+/**
+ * VAC-003 -- every assertion is an absence, AND none of them observes the
+ * target.
+ *
+ * That second clause is not a refinement, it is the rule. The first cut omitted
+ * it and reported 254 findings across canary's 2154 tests, nearly all of the
+ * form `expect(isCI()).toBe(false)` -- a perfectly good negative test, because
+ * the assertion invokes the target, so the target provably ran and the `false`
+ * is load-bearing. The #486 katana defect is the other shape:
+ * `expect(existsSync(ledger)).toBe(false)` after a bare call, where the absence
+ * is observed on a BYSTANDER and the buggy code satisfied it by exiting before
+ * the write. Reported at the first absence assertion, the line an author adds a
+ * precondition next to.
+ */
+function absenceOnly(
+  lines: { text: string; line: number }[],
+  block: TestBlock,
+  file: string,
+  python: boolean,
+  targets: Set<string> | null,
+  skipped: SkipEntry[],
+): VacuityFinding[] {
+  if (targets === null) return [];
+  const anyAssertion = python ? PY_ASSERTION : JS_ASSERTION;
+  const absence = python ? PY_ABSENCE_ASSERTION : ABSENCE_ASSERTION;
+  const assertions = lines.filter((l) => anyAssertion.test(l.text));
+  if (assertions.length === 0) {
+    // Zero recognised assertions is unanswerable, not clean: either the test
+    // asserts nothing (which is `LINT-006`'s finding, not this rule's) or its
+    // assertion style is one the vocabulary does not know. Both are "cannot
+    // verify", so both are recorded rather than passed over in silence.
+    skipped.push({
+      name: `VAC-003 (${block.name})`,
+      reason:
+        'no recognised assertion, so absence-only could not be judged -- the test may assert nothing (LINT-006) or use an unrecognised assertion style',
+    });
+    return [];
+  }
+  if (!assertions.every((l) => absence.test(l.text))) return [];
+  if (assertions.some((l) => mentionsAny(l.text, targets))) return [];
+  return [
+    mk(
+      file,
+      assertions[0]!.line,
+      'VAC-003',
+      'warning',
+      block.name,
+      'Every assertion in this test asserts an absence, and none of them observes the target.',
+      'Add one assertion proving the operation actually ran (exit code, returned value, a positive existence) -- otherwise the test passes identically when the code crashed before doing anything.',
+    ),
+  ];
+}
+
+/** A zero-denominator result that names why it could not measure. */
+function unreadable(path: string, reason: string): GateResult<VacuityFinding> {
+  return { checked: 0, findings: [], skipped: [{ name: path, reason }] };
+}
+
+/**
+ * The file's text, or the reason it could not be read.
+ *
+ * An unreadable path is a zero, and it was the worst-shaped one: left to throw,
+ * `readFileSync` escaped the command handler, so the CLI printed a raw ENOENT
+ * stack and exited **0**. A gate that could not open its input and reported
+ * success is precisely the false green this module exists to detect.
+ *
+ * Deliberately a discriminated result rather than `null` plus a module-level
+ * `lastError`: a module-level mutable that a function writes to is the first
+ * thing `canary-savant` flags, and it would be an odd thing to ship inside the
+ * repo's own test-quality tooling.
+ */
+type ReadResult = { ok: true; source: string } | { ok: false; reason: string };
+
+function readSource(path: string): ReadResult {
+  try {
+    return { ok: true, source: readFileSync(path, 'utf-8') };
+  } catch (e) {
+    const code = (e as { code?: string }).code ?? 'unknown error';
+    return { ok: false, reason: `could not be read (${code})` };
+  }
+}
+
+/**
+ * The target set for the `import-inferred` rung, or `null` when there is none.
+ *
+ * Imports are read from the ORIGINAL source, not the blanked copy: blanking
+ * replaces literal CONTENT with spaces, so `from './store.js'` becomes
+ * `from '           '` and the leading `.` that marks a first-party module is
+ * gone -- which silently collapsed every JS/TS file to "target unresolvable".
+ *
+ * The cost is that an import written inside a fixture string is read as real.
+ * That only ever ADDS names to the target set, which makes VAC-002 quieter,
+ * never noisier -- the safe direction for a heuristic-tier rule.
+ */
+function resolveTargets(
+  source: string,
+  code: string,
+  python: boolean,
+): Set<string> | null {
+  const imported = importedTargets(source, python);
+  return imported.size > 0 ? closeOverLocals(code, imported, python) : null;
+}
+
+/**
+ * The `@covers` symbol declared above `block`, or `null`.
+ *
+ * Two bugs lived in the naive version, and both produced a FALSE BLOCK, which is
+ * the worst outcome available here: `annotated` is the one vacuity fidelity
+ * allowed to block a promotion, so a stray annotation failed a correct test.
+ *
+ * - The window was a blind 400-character look-back, so it reached over the
+ *   PREVIOUS test and its annotation. It is now floored at `floor` -- the end of
+ *   the previous test's body -- so only text genuinely between the two
+ *   declarations can be read.
+ * - `exec` returns the match nearest the START of the window, i.e. the FARTHEST
+ *   annotation above the declaration. It now takes the last, which is the
+ *   nearest.
+ */
+function annotationFor(
+  code: string,
+  block: TestBlock,
+  floor: number,
+): string | null {
+  const from = Math.max(floor, block.bodyStart - 400);
+  const window = code.slice(from, block.bodyStart);
+  const matches = [...window.matchAll(COVERS_PRAGMA)];
+  return matches.at(-1)?.[1] ?? null;
 }
 
 /**
@@ -461,69 +655,60 @@ function scanBlock(
 export function scanVacuity(path: string): GateResult<VacuityFinding> {
   const framework = frameworkForPath(path);
   if (framework === null) {
-    return {
-      checked: 0,
-      findings: [],
-      skipped: [
-        {
-          name: path,
-          reason:
-            'no ruleset parses this extension, so a clean result would be meaningless',
-        },
-      ],
-    };
+    return unreadable(
+      path,
+      'no ruleset parses this extension, so a clean result would be meaningless',
+    );
   }
   const python = framework === 'pytest';
-  // An unreadable path is the third zero, and it was the worst-shaped one: left
-  // to throw, `readFileSync` escaped the command handler, so the CLI printed a
-  // raw ENOENT stack and exited **0**. A gate that could not open its input and
-  // reported success is precisely the false green this module exists to detect,
-  // so "cannot read" becomes an abstention with its cause named -- never an
-  // exception, and never a pass.
-  let source: string;
-  try {
-    source = readFileSync(path, 'utf-8');
-  } catch (e) {
-    return {
-      checked: 0,
-      findings: [],
-      skipped: [
-        {
-          name: path,
-          reason: `could not be read (${(e as { code?: string }).code ?? 'unknown error'})`,
-        },
-      ],
-    };
-  }
+  const read = readSource(path);
+  if (!read.ok) return unreadable(path, read.reason);
+  const source = read.source;
+
   // Whole-source blanking, offset-preserving: a `expect(true).toBe(true)`
   // carried as fixture DATA is not a vacuous test, and a `it(...)` inside a
   // string must not be able to truncate a real test's body (#590).
   const code = blankStringContent(source, { python });
-
   const blocks = enumerateTests(code, source, python);
+  const reaching = resolveTargets(source, code, python);
+
   const skipped: SkipEntry[] = [];
+  const findings = scanAllBlocks(
+    { code, path, python, reaching },
+    blocks,
+    skipped,
+  );
 
-  // Read imports from the ORIGINAL source, not the blanked copy: blanking
-  // replaces literal CONTENT with spaces, so `from './store.js'` becomes
-  // `from '           '` and the leading `.` that marks a first-party module is
-  // gone -- which silently collapsed every JS/TS file to "target unresolvable".
-  //
-  // The cost is that an import written inside a fixture string is read as real.
-  // That only ever ADDS names to the target set, which makes VAC-002 quieter,
-  // never noisier -- the safe direction for a heuristic-tier rule.
-  const imported = importedTargets(source, python);
-  const reaching =
-    imported.size > 0 ? closeOverLocals(code, imported, python) : null;
+  const result: GateResult<VacuityFinding> = {
+    checked: blocks.length,
+    findings,
+  };
+  if (skipped.length > 0) result.skipped = skipped;
+  return result;
+}
 
+/** The invariants every block in one file shares. */
+interface ScanContext {
+  code: string;
+  path: string;
+  python: boolean;
+  reaching: Set<string> | null;
+}
+
+function scanAllBlocks(
+  ctx: ScanContext,
+  blocks: TestBlock[],
+  skipped: SkipEntry[],
+): VacuityFinding[] {
   const findings: VacuityFinding[] = [];
-  for (const block of blocks) {
-    const pragma = COVERS_PRAGMA.exec(
-      // The annotation sits in a comment ABOVE the declaration, so look back to
-      // the previous newline-delimited comment run rather than into the body.
-      code.slice(Math.max(0, block.bodyStart - 400), block.bodyStart),
-    );
-    const annotated = pragma?.[1] ?? null;
-    if (annotated === null && reaching === null) {
+  for (let i = 0; i < blocks.length; i += 1) {
+    const block = blocks[i]!;
+    // An annotation may only be read from the gap between the previous test's
+    // end and this declaration -- see `annotationFor`.
+    const prev = blocks[i - 1];
+    const floor = prev ? prev.bodyStart + prev.body.length : 0;
+    const annotated = annotationFor(ctx.code, block, floor);
+    if (annotated === null && ctx.reaching === null) {
       // Both target-dependent rules go dark together, and both say so. VAC-003
       // asks "does any assertion observe the target", which is unanswerable
       // without a target -- so it abstains rather than falling back to the
@@ -534,13 +719,17 @@ export function scanVacuity(path: string): GateResult<VacuityFinding> {
           'target unresolvable: no @covers annotation and no first-party relative import to infer from',
       });
     }
-    findings.push(...scanBlock(code, block, path, python, reaching, annotated));
+    findings.push(
+      ...scanBlock(
+        ctx.code,
+        block,
+        ctx.path,
+        ctx.python,
+        ctx.reaching,
+        annotated,
+        skipped,
+      ),
+    );
   }
-
-  const result: GateResult<VacuityFinding> = {
-    checked: blocks.length,
-    findings,
-  };
-  if (skipped.length > 0) result.skipped = skipped;
-  return result;
+  return findings;
 }
