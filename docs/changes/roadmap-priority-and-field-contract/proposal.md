@@ -126,22 +126,28 @@ schema specifies; our file drifted. What _is_ worth reporting upstream is the
 asymmetry: harness errors loudly on an invalid `Priority` value but silently
 keeps a wrapped field's first line. A contract violation should fail to parse or
 warn, never silently discard. **Status: reported upstream as
-[`Intense-Visions/harness-engineering#1328`](https://github.com/Intense-Visions/harness-engineering/issues/1328)
-(open); tracked locally as `#629`.** Verifying criterion 4 on 2026-08-08 turned
-up a second instance of the same asymmetry: a `shard` + `regen` round-trip
-deletes this file's entire 8-line header comment block — the
-`markdownlint-disable-file` directive and the note documenting the one-line
-contract — and exits 0 both ways. Latent rather than active: no CI workflow or
-script in this repo invokes `shard`, `regen`, or `unshard`.
+[`Intense-Visions/harness-engineering#1328`](https://github.com/Intense-Visions/harness-engineering/issues/1328),
+closed as completed on 2026-08-13; tracked locally as `#629`, which stays
+open.** The upstream close is not yet reachable from here: the latest published
+`@harness-engineering/cli` is **v11.1.1**, released 2026-08-09 — before the
+close — so no version this repo can pin carries the fix, and #1328 records no
+closing comment, linked PR, or commit to identify what landed. `#629` therefore
+closes on a _measured_ round-trip against a release that fixes it, not on the
+upstream issue state. Verifying criterion 4 on 2026-08-08 turned up a second
+instance of the same asymmetry: a `shard` + `regen` round-trip deletes this
+file's entire 8-line header comment block — the `markdownlint-disable-file`
+directive and the note documenting the one-line contract — and exits 0 both
+ways. Latent rather than active: no CI workflow or script in this repo invokes
+`shard`, `regen`, or `unshard`.
 
-Re-verified on 2026-08-10 against `@harness-engineering/cli` **v10.2.0 → v11.1.1**
-(the version this repo's workflows now pin): the header strip still reproduces —
-2 HTML comments before, 0 after, exit 0 both ways. The v10 field-truncation half
-is genuinely fixed; the file now _grows_ through a round-trip (54,183 → 54,729
-bytes) because `regen` adds missing `Assignee` rows. So `#629` narrows to the
-comment strip alone, which is covered upstream by `#1328` and locally by the
-`roadmap_comment_guard.mjs` step in `.githooks/pre-commit`. Neither blocks this
-change.
+Re-verified on 2026-08-10 against `@harness-engineering/cli` **v10.2.0 →
+v11.1.1** (the version this repo's workflows now pin): the header strip still
+reproduces — 2 HTML comments before, 0 after, exit 0 both ways. The v10
+field-truncation half is genuinely fixed; the file now _grows_ through a
+round-trip (54,183 → 54,729 bytes) because `regen` adds missing `Assignee` rows.
+So `#629` narrows to the comment strip alone, which is covered upstream by
+`#1328` and locally by the `roadmap_comment_guard.mjs` step in
+`.githooks/pre-commit`. Neither blocks this change.
 
 **D4 — The GitHub `bug` label decides, not the title.** Of the 10 open issues
 with no roadmap row, 3 carry the `bug` label and stay bugs — they get fixed and
