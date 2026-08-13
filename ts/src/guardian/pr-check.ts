@@ -45,6 +45,7 @@ import {
   isTypeOnlyModule,
 } from './coverage.js';
 import { Severity, severitySortKey } from './impact-mapper.js';
+import { ensureAscii } from '../util/ensure-ascii.js';
 
 const HUNK_RE = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
 
@@ -988,21 +989,6 @@ const SEVERITY_ICON: Record<string, string> = {
   [Severity.MEDIUM]: YELLOW_CIRCLE,
   [Severity.LOW]: WHITE_CIRCLE,
 };
-
-/**
- * Escape every non-ASCII (>= U+0080) code unit to a `\uXXXX` sequence, matching
- * Python's `json.dumps(..., ensure_ascii=True)` (the library default). `JSON`
- * `.stringify` emits raw UTF-8 for these, so a finding whose evidence carries an
- * em-dash (`—`, U+2014) would otherwise diverge byte-for-byte from the Python
- * oracle. Only touches the >= 0x80 range, so the ASCII escapes JSON.stringify
- * already produced (`\"`, `\\`, control chars) are left intact.
- */
-function ensureAscii(json: string): string {
-  return json.replace(
-    /[-￿]/g,
-    (ch) => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'),
-  );
-}
 
 /** Serialize a {@link GuardianFinding} to a stable JSON-friendly object. */
 function findingDict(finding: GuardianFinding): Record<string, unknown> {

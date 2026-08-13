@@ -205,6 +205,15 @@ zero.**
    cemented the duplication, so it was left exported and recorded here instead.
    Consolidating the eight copies is a separate change.
 
+   **Resolved in #710.** The single implementation now lives in
+   `ts/src/util/ensure-ascii.ts` — `util`, not `cli-common.ts`, because the
+   copies spanned the `core`, `guardian`, and entry layers and the layer model
+   permits none of them to depend on `cli`. All nine call sites import it, and
+   `ts/test/shared-helper-single-source.test.ts` fails if a ninth copy is
+   declared. The measured entropy count fell by exactly one (the dead export),
+   which is the point worth keeping: the gate could only ever see the one
+   finding, while the eight copies it could not see were the actual defect.
+
 4. `scripts/entropy-ratchet.mjs` compares the count from
    `harness cleanup --findings-json` against that baseline and fails above it.
    `continue-on-error` is gone from the step.
@@ -246,6 +255,38 @@ zero.**
    `docs/changes/` is precisely where #676 found real dead links, so the trade
    on offer is 27 false positives in exchange for a denominator that shrinks
    silently — the shape this whole ADR exists to refuse.
+
+   **Amended by #719.** The floor was re-measured at 97bb15f against
+   `@harness-engineering/cli` 11 and reads **24**, all Class A; the 3 Class B
+   anchor findings no longer appear. #719 proposed a second local mute on a
+   different reading of those 24 — that they are _archival link rot_, historical
+   plan documents pointing into a repo layout that legitimately no longer exists
+   — and offered two levers: excluding `docs/plans/**` and
+   `docs/changes/**/plans/**` by path, or an `archived: true` frontmatter key
+   `check_doc_links.mjs` would honour.
+
+   The reading does not survive measurement. Every one of the 24 targets was
+   located in its source file and tested for fence membership: **56 occurrences,
+   56 fenced, 0 bare.** Not one is a link a reader could follow and fail on, so
+   none of them is rot. They are the Class A defect above, arriving under a new
+   name.
+
+   Both levers are therefore declined, and for the same reason the `docPaths`
+   mute was: `docs/changes/` is where #676 found 26 genuinely dead links, so an
+   archived-tree exclusion blinds the check over the one directory in this repo
+   with a proven failure history. The frontmatter variant is worse than the path
+   list rather than better — it is self-service, invisible from any config file,
+   and grants any future document a permanent exemption for the cost of one
+   line. Neither trade is on offer.
+
+   The decline is pinned by test rather than by this paragraph, because an
+   exclusion is cheap to add later by someone reading only the issue:
+   `doc-links.test.ts` → `archived plan documents (#719)` asserts that a dead
+   link in either archived tree is reported, that an `archived: true`
+   frontmatter buys no exemption, and that the fenced shape those plans actually
+   carry stays quiet. Verified live at the same commit by appending a dead link
+   to `docs/plans/onboarding.md`: exit 1, named at
+   `docs/plans/onboarding.md:668`, over 251 scanned files; exit 0 once removed.
 
    **What is not accepted is the loss of signal.** A standing floor of 27 means
    finding #28 — a genuinely dead link — is invisible, which is the exact cost
