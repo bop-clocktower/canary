@@ -370,6 +370,49 @@ install (in the `workflows` array of `--json`), but does not fail your build
 over a workflow you tuned yourself. Clobbering hand-tuned CI, or nagging that it
 is "stale", would be a worse failure than the partial adoption this solves.
 
+## Adoption report (`migrate --adoption-report`)
+
+A half-adopted repo is quiet. Overlay skills sit in `.canary/skills/`, so it
+_looks_ adopted, while no workflow was ever installed and the guardian never
+runs. `--adoption-report` names each piece so the gap can be pointed at:
+
+```bash
+canary migrate --from example-org-example-overlay --adoption-report
+canary migrate --from example-org-example-overlay --adoption-report --json
+```
+
+It reports seven pieces, in adoption order — the first `missing` line is the
+step to fix, because nothing below it can work without it:
+
+| Piece           | Present when                                              |
+| --------------- | --------------------------------------------------------- |
+| `company_json`  | `.canary/company.json` exists in the repo                 |
+| `shape`         | at least one test shape resolved                          |
+| `path_pointers` | `coverage_report_path` / `sut_controllers_path` declared  |
+| `overlay`       | an overlay is tracked or passed with `--from`             |
+| `skills`        | every shape-matching overlay skill is deployed            |
+| `manifest`      | `.canary/skills/.deploy-manifest.json` records provenance |
+| `workflows`     | every declared `install_workflows` template exists in CI  |
+
+Three properties are deliberate:
+
+- **It writes nothing.** The skill and workflow pieces come from the same
+  non-writing path `--check` uses, so the report is pure observation.
+- **It runs without an overlay.** "No overlay is tracked" is itself the most
+  common gap, so the report answers rather than refusing.
+- **An edited workflow counts as present.** Your CI is yours (above). A workflow
+  that differs from the template was adopted and then tuned — that is a
+  freshness question for `--check`, not an adoption gap. Only a declared
+  template with no file at all is `missing`.
+
+Exit codes: `0` every piece present, `1` at least one piece missing, `3` nothing
+was verifiable (an abstention, never a pass — see
+[ADR 0009](../knowledge/decisions/0009-exit-3-reserved-for-abstained.md)).
+Pieces the report could not reach are printed as `unknown` and are never counted
+as verified: `path_pointers` with nothing declared is `unknown`, not missing,
+because a template with no pointer falls back to its own default and whether
+that default fits the repo is not knowable from the repo.
+
 ### Scheduled auto-update recipe
 
 Wire the gate into a cron workflow in the **consuming** repo so drift opens a PR

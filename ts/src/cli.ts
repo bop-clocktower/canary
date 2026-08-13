@@ -174,6 +174,10 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     )
     .option('--check', 'Freshness gate: report drift without writing.')
     .option(
+      '--adoption-report',
+      'Report which adoption pieces (company.json, shape, overlay, skills, manifest, workflows) are present or missing in this repo. Writes nothing. Exits 0 fully adopted, 1 pieces missing, 3 nothing verifiable.',
+    )
+    .option(
       '--force',
       'Overwrite a .github/workflows/ file that differs from the overlay template. Without this flag a difference is only reported -- your CI is never rewritten behind your back.',
     )
@@ -188,6 +192,7 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
         check?: boolean;
         force?: boolean;
         json?: boolean;
+        adoptionReport?: boolean;
       }) => {
         migrateCmd(opts, deps);
       },

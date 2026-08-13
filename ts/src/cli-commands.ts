@@ -23,6 +23,7 @@ import { basename, extname, join, resolve } from 'node:path';
 import pc from 'picocolors';
 
 import { CliExitError, jsonIndent2 } from './cli-common.js';
+import { gatherAdoptionReport } from './core/adoption.js';
 import {
   EXIT_ABSTAINED,
   gateOutcome,
@@ -448,6 +449,7 @@ interface MigrateOptions {
   check?: boolean;
   force?: boolean;
   json?: boolean;
+  adoptionReport?: boolean;
 }
 
 function resolveMigrateOverlay(
@@ -502,6 +504,33 @@ function resolveMigrateOverlay(
   return null;
 }
 
+/**
+ * `--adoption-report`: which adoption pieces are in place here (#459).
+ *
+ * Read-only, and unlike `--check` it runs WITHOUT an overlay: "no overlay is
+ * tracked" is itself one of the answers a half-adopted repo needs, so refusing
+ * to report until one exists would hide the most common gap.
+ */
+function migrateAdoption(
+  migrator: ReturnType<MainDeps['makeMigrator']>,
+  root: string,
+  overlayPath: string | null,
+  json: boolean,
+  deps: MainDeps,
+): void {
+  let report;
+  try {
+    report = gatherAdoptionReport(migrator, root, overlayPath, deps.home());
+  } catch (e) {
+    deps.out(
+      `\n${pc.bold(pc.red(CROSS))} ${e instanceof Error ? e.message : String(e)}`,
+    );
+    throw new CliExitError(1);
+  }
+  deps.out(json ? jsonIndent2(report.to_dict()) : report.to_markdown());
+  throw new CliExitError(report.exit_code());
+}
+
 function migrateCheck(
   migrator: ReturnType<MainDeps['makeMigrator']>,
   root: string,
@@ -535,15 +564,36 @@ function migrateCheck(
   throw new CliExitError(report.exit_code());
 }
 
+/**
+ * Dispatch the report-only modes, which each exit via `CliExitError`.
+ *
+ * One gate for both so `migrateCmd` carries a single "does this run write?"
+ * branch: a second report mode added inline is how the writing path acquires an
+ * accidental fall-through.
+ */
+function migrateReportOnly(
+  opts: MigrateOptions,
+  migrator: ReturnType<MainDeps['makeMigrator']>,
+  root: string,
+  overlayPath: string | null,
+  deps: MainDeps,
+): void {
+  const json = opts.json ?? false;
+  if (opts.adoptionReport) {
+    migrateAdoption(migrator, root, overlayPath, json, deps);
+  }
+  if (opts.check) {
+    migrateCheck(migrator, root, overlayPath, json, deps);
+  }
+}
+
 export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
   const root = resolve(opts.path);
   const overlayPath = resolveMigrateOverlay(opts.from, opts.overlay, deps);
   const migrator = deps.makeMigrator();
 
-  if (opts.check) {
-    migrateCheck(migrator, root, overlayPath, opts.json ?? false, deps);
-    return; // unreachable -- migrateCheck always throws CliExitError
-  }
+  // Both report-only modes exit here; neither ever reaches the writing path.
+  migrateReportOnly(opts, migrator, root, overlayPath, deps);
 
   let ctx;
   try {
