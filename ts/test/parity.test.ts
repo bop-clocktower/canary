@@ -54,6 +54,9 @@ describe('TS↔Python analysis parity', () => {
   // the point, since #711 was a mechanical async conversion and any drift in
   // these six files would mean it was not.
   let result: AnalysisResult;
+  // This setup acquires no resource: it computes a pure in-memory value into a
+  // describe-scoped local, so no teardown hook could release anything (#733).
+  // savant-ignore SV002 -- no resource acquired, so no teardown exists to write
   beforeAll(async () => {
     result = await new AnalysisEngine(
       new LocalAsyncAdapter(new NdjsonHistoryStore(fixture)),

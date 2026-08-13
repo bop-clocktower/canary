@@ -64,6 +64,9 @@ describe('CLI fidelity fixes (adversarial review)', () => {
   // real -- the warning is gone because the thing it apologised for is gone.
   it('analyze makeStore honours --db-url instead of warning about it', () => {
     const priorKey = process.env.SUPABASE_ANON_KEY;
+    // Savant only collects framework teardown hooks as restore regions, so the
+    // in-test try/finally restore below is not recognised as one (#733).
+    // savant-ignore SV003 -- the finally restores or deletes this exact key
     process.env.SUPABASE_ANON_KEY = 'test-anon-key';
     const writes: string[] = [];
     const spy = vi
