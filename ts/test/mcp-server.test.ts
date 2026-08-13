@@ -150,6 +150,99 @@ describe('analyzeFileImpl', () => {
     expect(env['user_level']).toBe('sdet');
   });
 
+  // -------------------------------------------------------------------------
+  // #341's missing half: something reads the detected level (#462 personas)
+  // -------------------------------------------------------------------------
+
+  /** A project that scores `sdet` on the user-level heuristic. */
+  function sdetProject(): string {
+    const root = gitRoot();
+    writeFileSync(join(root, 'package.json'), '{}\n');
+    const target = join(root, 'login.spec.ts');
+    writeFileSync(target, "import { test } from '@playwright/test';\n");
+    return target;
+  }
+
+  it('resolves a persona from the detected user level (#462)', () => {
+    const result = analyzeFileImpl(sdetProject());
+    const persona = result['persona'] as Record<string, unknown>;
+    expect(persona['id']).toBe('sdet');
+    expect(persona['source']).toBe('detected');
+    expect(persona['depth']).toBe('terse');
+    // The reason and signals travel with the verdict: a skill that adapts its
+    // output owes the reader an answer to "why did you decide I was that?".
+    expect(persona['reason']).toContain('sdet');
+    expect(persona['signals']).not.toEqual([]);
+  });
+
+  it('leaves the #341 environment block untouched beside it', () => {
+    // The persona block is additive. Nothing that read `environment` before
+    // has to change.
+    const result = analyzeFileImpl(sdetProject());
+    expect(result['environment']).toBeTypeOf('object');
+    expect((result['environment'] as Record<string, unknown>)['user_level']);
+  });
+
+  it('lets CANARY_PERSONA override the detected level', () => {
+    // Inferring an audience wrongly is the failure users resent, so the
+    // inference must always be overridable without editing a config file.
+    vi.stubEnv('CANARY_PERSONA', 'manual');
+    const result = analyzeFileImpl(sdetProject());
+    const persona = result['persona'] as Record<string, unknown>;
+    expect(persona['id']).toBe('manual');
+    expect(persona['source']).toBe('explicit');
+  });
+
+  it('reports an unknown CANARY_PERSONA instead of ignoring it', () => {
+    vi.stubEnv('CANARY_PERSONA', 'architect');
+    const result = analyzeFileImpl(sdetProject());
+    const persona = result['persona'] as Record<string, unknown>;
+    // The detection still applies — a typo is a mistake, not an instruction
+    // to discard the signal — but the typo is named.
+    expect(persona['id']).toBe('sdet');
+    expect(persona['reason']).toContain('architect');
+  });
+
+  it('ignores a blank CANARY_PERSONA', () => {
+    vi.stubEnv('CANARY_PERSONA', '   ');
+    const result = analyzeFileImpl(sdetProject());
+    expect((result['persona'] as Record<string, unknown>)['source']).toBe(
+      'detected',
+    );
+  });
+
+  it('falls back to the explanatory persona with no signal at all', () => {
+    // `.yaml` is in neither the code nor the manual suffix set, and a bare
+    // git root has no manifest or test config, so the detector fires nothing
+    // and returns `unknown`. That must not resolve to an audience nobody
+    // claimed — and the fallback must not be the terse one.
+    const root = gitRoot();
+    const target = join(root, 'fixtures.yaml');
+    writeFileSync(target, 'a: 1\n');
+    const persona = analyzeFileImpl(target)['persona'] as Record<
+      string,
+      unknown
+    >;
+    expect(persona['source']).toBe('fallback');
+    expect(persona['depth']).not.toBe('terse');
+    expect(persona['reasoning']).toBe(true);
+  });
+
+  it('resolves the manual persona from a manual-artefact signal', () => {
+    // A `.md` file open is the detector's manual-tester signal, and it scores
+    // an unopposed 1.0 — so this is the path that actually adapts output for
+    // a non-automation reader.
+    const root = gitRoot();
+    const target = join(root, 'test-plan.md');
+    writeFileSync(target, '# plan\n');
+    const persona = analyzeFileImpl(target)['persona'] as Record<
+      string,
+      unknown
+    >;
+    expect(persona['id']).toBe('manual');
+    expect(persona['depth']).toBe('guided');
+  });
+
   it('falls back to framework_source=suffix without a config file', () => {
     const root = gitRoot();
     const target = join(root, 'tests', 'test_x.py');

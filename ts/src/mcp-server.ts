@@ -50,6 +50,7 @@ import * as z from 'zod';
 
 import { DomainScanner } from './core/domain-scanner.js';
 import { detectEnvironment } from './core/environment-detect.js';
+import { personaToDict, resolvePersona } from './core/persona.js';
 import { CanaryTestExecutor } from './core/executor.js';
 import { FrameworkRegistry } from './core/framework-registry.js';
 import { HarnessMigrator } from './core/migrator.js';
@@ -461,9 +462,30 @@ export function analyzeFileImpl(filePath: string): Record<string, unknown> {
   // Context-aware persona & environment detection (#341): attach the detected
   // BASE_URL, suite type, and SDET-vs-manual user level. The file under
   // analysis is itself an "open file" signal for the user-level heuristic.
-  const environment = detectEnvironment(projectRoot, {
+  const detected = detectEnvironment(projectRoot, {
     openFiles: [filePath],
-  }).toDict();
+  });
+
+  // Personas (#462) — and the consumer #341 never had. Detection shipped and
+  // was read by nobody: the level was computed, attached here, and dropped.
+  // Resolving it into a persona is what turns the signal into something a
+  // skill can consult instead of re-inventing its own audience rules.
+  //
+  // The environment variable is read *here* rather than inside the resolver,
+  // which is pure by design. `CANARY_PERSONA` is the audience-depth axis and
+  // is unrelated to `canary doctor --audience`, which tags which overlay
+  // checks run.
+  const persona = personaToDict(
+    resolvePersona({
+      explicit: process.env['CANARY_PERSONA'] ?? null,
+      detected: {
+        level: detected.user_level,
+        confidence: detected.user_level_confidence,
+        signals: detected.user_level_signals,
+      },
+    }),
+  );
+  const environment = detected.toDict();
 
   return {
     framework,
@@ -478,6 +500,7 @@ export function analyzeFileImpl(filePath: string): Record<string, unknown> {
     existing_tests: findExistingTests(projectRoot, framework),
     context_snippets: contextSnippets,
     environment,
+    persona,
   };
 }
 
