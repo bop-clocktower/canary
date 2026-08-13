@@ -15,7 +15,9 @@ source: adr
 `performance.entryPoints`); #677 (the exclude list, which amended the
 "Alternatives Considered" entry below); ADR 0009 (exit 3 = abstained); ADR 0011
 (required checks); #508 (no silent abstention); #485 (the dogfood ratchet this
-copies)
+copies); #676 / PR #685 (the 26 dead links whose repair lowered the ceiling);
+issue #686 (the 27 structural doc-drift findings that are detector defects,
+below)
 
 ## Context
 
@@ -179,6 +181,70 @@ zero.**
    hazard the "Alternatives Considered" section below originally rejected the
    key over; it is handled by test, not by care.
 
+7. **27 structural doc-drift findings are an accepted floor, and the dead-link
+   signal is rebuilt locally rather than muted (#686).** Every one of the 27
+   findings `harness ci check` reports resolves correctly for a reader. Two
+   defects in `@harness-engineering/core` 11.1.1, neither of them ours to patch:
+
+   | class | count | defect                                                                                                                                                                |
+   | ----- | ----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | A     |    24 | `extractFileLinks` has no fence awareness, so a link quoted inside a ` ```markdown ` fence is resolved relative to the quoting plan instead of the file being quoted. |
+   | B     |     3 | `slugifyHeading` runs `.trim()` before hyphenating, so `## 📖 Usage` slugs to `usage`; GitHub keeps the space the emoji left and produces `-usage`.                   |
+
+   Filed upstream as `Intense-Visions/harness-engineering` — see the
+   Consequences below for what happens when it ships.
+
+   **The local mute was rejected.** The one lever harness offers is
+   `entropy.drift.docPaths`, which is an **allowlist**: narrowing it to drop
+   `docs/plans/` and `docs/changes/` also drops `docs/knowledge/`,
+   `docs/runbooks/`, and every doc directory added after the list is written.
+   `docs/changes/` is precisely where #676 found real dead links, so the trade
+   on offer is 27 false positives in exchange for a denominator that shrinks
+   silently — the shape this whole ADR exists to refuse.
+
+   **What is not accepted is the loss of signal.** A standing floor of 27 means
+   finding #28 — a genuinely dead link — is invisible, which is the exact cost
+   #676 was opened to remove. `scripts/check_doc_links.mjs` restores it: the
+   same check, implemented correctly, on a **larger** denominator (249 Markdown
+   files versus the drift check's `docs/**` plus READMEs), with no path
+   allowlist and an exit-3 abstention when the walk finds nothing.
+
+   It measures 0 today, but it did not on its first run: it found **five
+   genuinely dead links that survived #676** — three `docs/adr/` targets
+   orphaned by the move to `docs/knowledge/decisions/`, and two `docs/wiki/`
+   links to `agents/skills/` missing a path segment — all repaired in the same
+   change. Every one is a reference-style definition (`[label]: path`), a form
+   `extractFileLinks` does not read at all, so they were never among the 27 and
+   no amount of triaging that number would have surfaced them. That is the case
+   for building the check rather than only documenting the floor: the detector
+   is not merely noisy, it is also silently narrow. At 0 it is strict at zero
+   rather than ratcheted — there is nothing to triage.
+
+   Files carrying a generator's `Do not edit` stamp are counted and printed but
+   do not gate: `harness generate-agent-definitions` emits 30 links to
+   `references/*.md` files it never writes, which is a third upstream defect and
+   not one a commit here can fix. That exclusion keys off the generator's own
+   stamp rather than a path list, so it cannot go stale the way `docPaths`
+   would.
+
+   The change costs four findings against this very ratchet: **292 → 296**,
+   leaving **1** of headroom under the 297 ceiling. All four are
+   `ts/test/doc-links-testkit.ts` and its three exports — the "testkit imported
+   only by `*.test.ts`" category triaged above, arriving again. The testkit is
+   not optional: with the helpers inline in the spec file, `check-arch`
+   attributes the entire 263-line `describe` body to whichever module-scope
+   helper was declared last and reports three new complexity violations;
+   extracting them drops that to zero. Measured both ways before choosing. The
+   ceiling is **not** raised to absorb it — one finding of headroom is the
+   honest state, and the next addition needs a re-triage rather than a bigger
+   number.
+
+   It deliberately adds **no CI job**. `ts/test/doc-links.test.ts` runs the
+   script against the real repository inside `npm test`, which is already the
+   required `TS engine (pilot)` check — so the gate is hard without a new entry
+   in `.github/required-checks.json` and without the ruleset edit ADR 0011 would
+   otherwise require.
+
 Strict-at-zero is explicitly rejected for now, matching the #485 dogfood
 convention — advisory, then triage, then ratchet.
 
@@ -208,6 +274,11 @@ convention — advisory, then triage, then ratchet.
   that assertion. The second derives its expectations from the repo's own file
   list rather than a fixed set, so the day someone adds a `.spec.js` the gate
   notices instead of passing vacuously.
+- When the upstream fix ships, the 27 should disappear on a CLI bump with no
+  repo change. If they do not, the assumption in Decision item 7 was wrong and
+  the findings deserve re-triage rather than a wider exclusion.
+  `scripts/check_doc_links.mjs` stays either way: it covers more files than the
+  drift check does, and it is the thing that would catch the regression.
 - The perf check is `warn`-only under the default `--fail-on error`, so its 238
   findings do not gate a merge today. That is deliberate and matches the #485
   convention this ADR already follows — advisory, then triage, then ratchet.

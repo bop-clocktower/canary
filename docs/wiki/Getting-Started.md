@@ -1,7 +1,7 @@
 # Getting Started with Canary
 
-This guide takes you from zero to your first generated test.
-It should take about five minutes.
+This guide takes you from zero to your first generated test. It should take
+about five minutes.
 
 ## Prerequisites
 
@@ -30,16 +30,15 @@ You should see the Canary banner with the current version number.
 
 ## Step 2: Open Canary in Claude Code
 
-Canary runs as a Claude Code plugin — no API key setup required.
-Install the plugin once:
+Canary runs as a Claude Code plugin — no API key setup required. Install the
+plugin once:
 
 ```bash
 claude plugin install .
 ```
 
-Claude Code's own session provides the LLM. Your first
-`/canary:generate` will analyse the target file and write tests
-automatically.
+Claude Code's own session provides the LLM. Your first `/canary:generate` will
+analyse the target file and write tests automatically.
 
 ## Step 3: Generate Your First Test
 
@@ -100,16 +99,13 @@ pytest tests/generated/api/test_api_health_get_200.py
 
 ## What Happens to Generated Tests
 
-Generated tests live in `tests/generated/` — a scratch space
-that is **not** committed to git. They're yours to review and
-run freely.
+Generated tests live in `tests/generated/` — a scratch space that is **not**
+committed to git. They're yours to review and run freely.
 
-Once a test passes review, you can promote it into the committed
-test suite. See the
-[canary-promote-test][promote-skill] skill for
-the full promotion checklist.
+Once a test passes review, you can promote it into the committed test suite. See
+the [canary-promote-test][promote-skill] skill for the full promotion checklist.
 
-[promote-skill]: ../skills/claude-code/canary-promote-test/SKILL.md
+[promote-skill]: ../../agents/skills/claude-code/canary-promote-test/SKILL.md
 
 ## Want a Preview Without Generating?
 
@@ -122,9 +118,8 @@ canary recommend "load test the search endpoint"
 
 ## Next Steps
 
-- [Writing Good Prompts](Writing-Good-Prompts.md) — get the
-  test you actually want on the first try
-- [For Manual Testers](For-Manual-Testers.md) — if you're
-  coming from a manual testing background
-- [Troubleshooting](Troubleshooting.md) — if something
-  went wrong above
+- [Writing Good Prompts](Writing-Good-Prompts.md) — get the test you actually
+  want on the first try
+- [For Manual Testers](For-Manual-Testers.md) — if you're coming from a manual
+  testing background
+- [Troubleshooting](Troubleshooting.md) — if something went wrong above

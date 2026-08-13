@@ -150,6 +150,7 @@
       "**/*.spec.cjs"
     ],
     "entryPoints": [
+      "ts/test/doc-links-testkit.ts",
       "ts/src/cli.ts",
       "ts/src/mcp-server.ts",
       "npm/src/router.ts",
@@ -163,6 +164,7 @@
       "agents/skills/vitest.config.ts",
       "scripts/bump-version.mjs",
       "scripts/check_doc_fences.mjs",
+      "scripts/check_doc_links.mjs",
       "scripts/check_hook_customizations.mjs",
       "scripts/check_removed_symbols.mjs",
       "scripts/dogfood-record-run.mjs",
@@ -198,6 +200,7 @@
   },
   "performance": {
     "entryPoints": [
+      "ts/test/doc-links-testkit.ts",
       "ts/src/cli.ts",
       "ts/src/mcp-server.ts",
       "npm/src/router.ts",
@@ -211,6 +214,7 @@
       "agents/skills/vitest.config.ts",
       "scripts/bump-version.mjs",
       "scripts/check_doc_fences.mjs",
+      "scripts/check_doc_links.mjs",
       "scripts/check_hook_customizations.mjs",
       "scripts/check_removed_symbols.mjs",
       "scripts/dogfood-record-run.mjs",
