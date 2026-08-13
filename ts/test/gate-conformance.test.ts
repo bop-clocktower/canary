@@ -179,6 +179,27 @@ const ROWS: GateRow[] = [
     forbid: ['No flakiness patterns detected'],
     run: (base) => invokeCanary(['flake-check', emptyTestDir(base)]),
   },
+  // #704: the same two commands, a DIFFERENT zero. The rows above collapse the
+  // COLLECTOR (a directory matching nothing); these collapse the READ -- a path
+  // that collects fine and then cannot be opened. That one used to escape the
+  // handler as a raw ENOENT stack, which is exit 1 ("I found findings") over a
+  // run that inspected nothing at all.
+  {
+    command: 'review-test (a path that cannot be read)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['No issues found'],
+    run: (base) => invokeCanary(['review-test', join(base, 'gone.test.ts')]),
+  },
+  {
+    command: 'flake-check (a path that cannot be read)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['No flakiness patterns detected'],
+    run: (base) => invokeCanary(['flake-check', join(base, 'gone.test.ts')]),
+  },
   {
     command: 'analyze flaky (zero runs recorded)',
     layer: 'engine',

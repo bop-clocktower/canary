@@ -49,6 +49,7 @@
 
 import {
   EXIT_ABSTAINED,
+  errnoCode,
   gateOutcome,
   type GateResult,
   type SkipEntry,
@@ -64,13 +65,6 @@ import {
   type VacuityFidelity,
   type VacuityFinding,
 } from './vacuity-scanner.js';
-
-/**
- * A libuv/POSIX errno code (`ENOENT`, `EISDIR`, `EACCES`), as opposed to a Node
- * programmer-error code (`ERR_INVALID_ARG_TYPE`). Only the former means "the
- * filesystem said no"; the latter means this code has a bug.
- */
-const ERRNO = /^E[A-Z0-9]+$/;
 
 /** Promotion outcomes. `abstain` is never aggregated into either other one. */
 export type PromotionDecision = 'promote' | 'block' | 'abstain';
@@ -285,13 +279,13 @@ function lintOrAbstain(path: string): LintFinding[] | PromotionVerdict {
     if (e instanceof UnsupportedTestFileError) {
       return abstained(path, [{ name: path, reason: e.message }], emptyAxes());
     }
-    const code = (e as { code?: string }).code;
     // ERRNO-shaped only. Keying off "has a string `code`" swept in every Node
     // PROGRAMMER error too -- `ERR_INVALID_ARG_TYPE`, `ERR_STRING_TOO_LONG` --
     // so a genuine defect inside the linter was reported as a clean ABSTAIN with
     // a misleading reason instead of surfacing. An unknown fault must still
     // throw; that is the difference between degrading honestly and going quiet.
-    if (typeof code !== 'string' || !ERRNO.test(code)) throw e;
+    const code = errnoCode(e);
+    if (code === null) throw e;
     return abstained(
       path,
       [{ name: path, reason: `could not be read (${code})` }],

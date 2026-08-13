@@ -472,3 +472,131 @@ describe('heal-test: audited, no zero-denominator path (#508 Wave 4a)', () => {
     }
   });
 });
+
+/**
+ * #704: the THIRD zero these two commands can hit.
+ *
+ * `abstainOnZeroFiles` guards "the collector matched nothing" and
+ * `abstainOnUnlintableFile` guards "no ruleset parses this extension". Neither
+ * sees a path that collected fine and then could not be OPENED: the read threw
+ * out of the command handler, so the CLI printed a raw Node stack. That is not
+ * false green (it exited 1), but exit 1 means "I found findings" and here the
+ * denominator collapsed to zero -- the honest answer is an abstention (exit 3)
+ * with the cause named, the same shape `scanVacuity`/`promotionVerdict` already
+ * use.
+ */
+describe('review-test / flake-check: an unreadable path abstains (#704)', () => {
+  /** A file name that collects (the extension parses) but cannot be read. */
+  function missingTest(base: string): string {
+    return join(base, 'gone.test.ts');
+  }
+
+  for (const command of ['review-test', 'flake-check'] as const) {
+    const successCopy =
+      command === 'review-test'
+        ? 'No issues found'
+        : 'No flakiness patterns detected';
+
+    it(`${command} exits 3 and names the errno instead of throwing`, async () => {
+      const base = mkTmp();
+      try {
+        const res = await invokeCanary([command, missingTest(base)]);
+        expect(res.code).toBe(EXIT_ABSTAINED);
+        expect(res.stdout).toContain('Abstained');
+        expect(res.stdout).toContain('ENOENT');
+        expect(res.stdout).not.toContain(successCopy);
+      } finally {
+        rmTmp(base);
+      }
+    });
+
+    it(`${command} --json keeps a parseable array and still exits 3`, async () => {
+      const base = mkTmp();
+      try {
+        const res = await invokeCanary([command, missingTest(base), '--json']);
+        expect(res.code).toBe(EXIT_ABSTAINED);
+        expect(JSON.parse(res.stdout)).toEqual([]);
+        expect(res.stderr).toContain('ENOENT');
+      } finally {
+        rmTmp(base);
+      }
+    });
+
+    it(`${command} reports a partially-read directory but still passes`, async () => {
+      // One file readable, one not: the denominator is 1, so this is a real
+      // result -- but the dropped file must stay visible (gate-result D7)
+      // rather than silently shrinking what "clean" covered.
+      const base = mkTmp();
+      try {
+        const dir = join(base, 'mixed');
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'a.test.ts'), '\n', 'utf-8');
+        writeFileSync(join(dir, 'b.test.ts'), '\n', 'utf-8');
+        const blowUpOnB = (f: string): never[] => {
+          if (f.endsWith('b.test.ts'))
+            throw Object.assign(new Error('EACCES: denied'), {
+              code: 'EACCES',
+            });
+          return [];
+        };
+        const res = await invokeCanary([command, dir], {
+          deps: {
+            makeLinter: () =>
+              ({ lint: blowUpOnB, flakeCheck: blowUpOnB }) as never,
+          },
+        });
+        expect(res.code).toBe(0);
+        expect(res.stdout).toContain(successCopy);
+        expect(res.stdout).toContain('EACCES');
+        expect(res.stdout).toContain('b.test.ts');
+      } finally {
+        rmTmp(base);
+      }
+    });
+
+    it(`${command} abstains when EVERY collected file is unreadable`, async () => {
+      const base = mkTmp();
+      try {
+        const dir = join(base, 'all-locked');
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'a.test.ts'), '\n', 'utf-8');
+        const blowUp = (): never[] => {
+          throw Object.assign(new Error('EACCES: denied'), { code: 'EACCES' });
+        };
+        const res = await invokeCanary([command, dir], {
+          deps: {
+            makeLinter: () => ({ lint: blowUp, flakeCheck: blowUp }) as never,
+          },
+        });
+        expect(res.code).toBe(EXIT_ABSTAINED);
+        expect(res.stdout).toContain('Abstained');
+        expect(res.stdout).not.toContain(successCopy);
+      } finally {
+        rmTmp(base);
+      }
+    });
+
+    it(`${command} still throws on a fault with no errno code`, async () => {
+      // Swallowing an unknown fault is how a scanner learns to go quiet: a Node
+      // PROGRAMMER error carries a `code` too, and must surface as a crash
+      // rather than be relabelled "could not be read".
+      const base = mkTmp();
+      try {
+        const boom = (): never[] => {
+          throw Object.assign(new Error('internal'), {
+            code: 'ERR_INVALID_ARG_TYPE',
+          });
+        };
+        await expect(
+          invokeCanary([command, missingTest(base)], {
+            deps: {
+              makeLinter: () => ({ lint: boom, flakeCheck: boom }) as never,
+            },
+          }),
+        ).rejects.toThrow('internal');
+      } finally {
+        rmTmp(base);
+      }
+    });
+  }
+});

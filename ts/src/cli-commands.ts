@@ -26,7 +26,9 @@ import { CliExitError, jsonIndent2 } from './cli-common.js';
 import { gatherAdoptionReport } from './core/adoption.js';
 import {
   EXIT_ABSTAINED,
+  errnoCode,
   gateOutcome,
+  skippedSuffix,
   type GateResult,
   type SkipEntry,
 } from './core/gate-result.js';
@@ -702,8 +704,18 @@ const SCANNABLE_DESC = `test_*.py, *.test|spec.{${JS_TEST_EXTENSIONS.map((e) =>
 ).join(',')}}`;
 
 /** Emit the abstention notice in the caller's output mode, then exit 3. */
-function abstain(remedy: string, deps: MainDeps, json: boolean): never {
-  const outcome = gateOutcome({ checked: 0, findings: [] }, 'gate');
+function abstain(
+  remedy: string,
+  deps: MainDeps,
+  json: boolean,
+  skipped: SkipEntry[] = [],
+): never {
+  const result: GateResult<never> = { checked: 0, findings: [] };
+  // Only attach a non-empty list: `skippedSuffix` renders nothing for an empty
+  // one, but leaving the key set would put `"skipped": []` in the shape other
+  // producers use to mean "nothing was dropped".
+  if (skipped.length > 0) result.skipped = skipped;
+  const outcome = gateOutcome(result, 'gate');
   if (json) {
     deps.out(jsonIndent2([]));
     deps.err(`${outcome.summaryLine} ${remedy}`);
@@ -767,6 +779,77 @@ function abstainOnUnlintableFile(
   );
 }
 
+/** What a lint sweep actually managed to read, and what it could not (#704). */
+interface LintSweep {
+  findings: LintFinding[];
+  /** Files the scanner genuinely opened. Unreadable files do NOT count. */
+  checked: number;
+  skipped: SkipEntry[];
+}
+
+/**
+ * Run every collected file through `scan`, turning an unreadable one into a
+ * skip instead of an escaped exception (#704).
+ *
+ * The third zero these commands can hit. `abstainOnZeroFiles` guards the
+ * COLLECTOR and `abstainOnUnlintableFile` guards the RULESET; neither sees a
+ * path that collects fine and then cannot be opened, so `readFileSync` threw
+ * straight out of the handler and the CLI printed a raw Node stack. Not false
+ * green -- it exited 1 -- but exit 1 means "I found findings", and a run that
+ * opened nothing found nothing because it looked at nothing. Same shape
+ * `scanVacuity` and `promotionVerdict` already use: catch an errno-coded error,
+ * report a zero denominator plus a skip entry naming the cause.
+ *
+ * A fault with no errno code still throws. Swallowing an unknown one is how a
+ * scanner learns to go quiet.
+ */
+function sweepFiles(
+  files: readonly string[],
+  scan: (file: string) => LintFinding[],
+): LintSweep {
+  const sweep: LintSweep = { findings: [], checked: 0, skipped: [] };
+  for (const f of files) {
+    try {
+      sweep.findings.push(...scan(f));
+      sweep.checked += 1;
+    } catch (e) {
+      const code = errnoCode(e);
+      if (code === null) throw e;
+      sweep.skipped.push({ name: f, reason: `could not be read (${code})` });
+    }
+  }
+  return sweep;
+}
+
+/** Every collected file was unreadable: nothing was inspected, so exit 3. */
+function abstainOnUnreadable(
+  sweep: LintSweep,
+  path: string,
+  deps: MainDeps,
+  json: boolean,
+): void {
+  if (sweep.checked > 0) return;
+  abstain(
+    `Nothing under ${path} could be opened, so this is an absent result and ` +
+      `not a clean one. Check the path exists and is readable.`,
+    deps,
+    json,
+    sweep.skipped,
+  );
+}
+
+/**
+ * D7 for the partial read: a file dropped from a run that still had a
+ * denominator stays visible, or "clean" silently covers less than it claims.
+ * In `--json` the notice rides stderr so stdout stays a parseable array.
+ */
+function reportSkips(sweep: LintSweep, deps: MainDeps, json: boolean): void {
+  if (sweep.skipped.length === 0) return;
+  const line = `${WARN} Not every collected file was read${skippedSuffix(sweep.skipped)}`;
+  if (json) deps.err(line);
+  else deps.out(pc.yellow(line));
+}
+
 export function reviewTestCmd(
   path: string,
   opts: LintOptions,
@@ -778,8 +861,10 @@ export function reviewTestCmd(
   if (!isDir(path) && !opts.framework)
     abstainOnUnlintableFile(path, deps, json);
   const linter = deps.makeLinter();
-  const allFindings: LintFinding[] = [];
-  for (const f of files) allFindings.push(...linter.lint(f, opts.framework));
+  const sweep = sweepFiles(files, (f) => linter.lint(f, opts.framework));
+  abstainOnUnreadable(sweep, path, deps, json);
+  reportSkips(sweep, deps, json);
+  const allFindings = sweep.findings;
 
   // `--json` renders the machine payload and then falls through to the same
   // exit-code decision as human mode. It used to `return` here, so a consumer
@@ -836,8 +921,10 @@ export function flakeCheckCmd(
   abstainOnZeroFiles(files, path, deps, json);
   if (!isDir(path)) abstainOnUnlintableFile(path, deps, json);
   const linter = deps.makeLinter();
-  const allFindings: LintFinding[] = [];
-  for (const f of files) allFindings.push(...linter.flakeCheck(f));
+  const sweep = sweepFiles(files, (f) => linter.flakeCheck(f));
+  abstainOnUnreadable(sweep, path, deps, json);
+  reportSkips(sweep, deps, json);
+  const allFindings = sweep.findings;
 
   // Exit-code parity with human mode, same reason as `review-test` above.
   if (json) {
