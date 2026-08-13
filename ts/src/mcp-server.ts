@@ -50,7 +50,11 @@ import * as z from 'zod';
 
 import { DomainScanner } from './core/domain-scanner.js';
 import { detectEnvironment } from './core/environment-detect.js';
-import { personaToDict, resolvePersona } from './core/persona.js';
+import {
+  effectivePersonaRegistry,
+  personaToDict,
+  resolvePersona,
+} from './core/persona.js';
 import { CanaryTestExecutor } from './core/executor.js';
 import { FrameworkRegistry } from './core/framework-registry.js';
 import { HarnessMigrator } from './core/migrator.js';
@@ -471,10 +475,11 @@ export function analyzeFileImpl(filePath: string): Record<string, unknown> {
   // Resolving it into a persona is what turns the signal into something a
   // skill can consult instead of re-inventing its own audience rules.
   //
-  // The environment variable is read *here* rather than inside the resolver,
-  // which is pure by design. `CANARY_PERSONA` is the audience-depth axis and
-  // is unrelated to `canary doctor --audience`, which tags which overlay
-  // checks run.
+  // Both I/O decisions are made *here* rather than inside the resolver, which
+  // is pure by design: reading the environment variable, and loading the
+  // registry (shipped personas folded with every overlay's). `CANARY_PERSONA`
+  // is the audience-depth axis and is unrelated to `canary doctor --audience`,
+  // which tags which overlay checks run.
   const persona = personaToDict(
     resolvePersona({
       explicit: process.env['CANARY_PERSONA'] ?? null,
@@ -483,6 +488,7 @@ export function analyzeFileImpl(filePath: string): Record<string, unknown> {
         confidence: detected.user_level_confidence,
         signals: detected.user_level_signals,
       },
+      registry: effectivePersonaRegistry(),
     }),
   );
   const environment = detected.toDict();

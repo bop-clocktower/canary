@@ -2,39 +2,45 @@
  * Personas as a first-class engine concept (issue #462), and the consumer
  * wiring the detected user level never had (issue #341).
  *
- * The invariants here are deliberately opinionated, because each one pins a
- * design decision that would otherwise be re-litigated:
+ * These tests drive the module through its three public functions only —
+ * `effectivePersonaRegistry`, `resolvePersona`, `personaToDict`. The parsing,
+ * merging and overlay-reading helpers are module-private on purpose, so the
+ * overlay cases here write real `.canary/personas.json` files to a temp home
+ * rather than hand-building layer objects. That costs a few lines of setup and
+ * buys a test of the contract that actually ships.
+ *
+ * Several invariants are deliberately opinionated, because each pins a design
+ * decision that would otherwise be re-litigated:
  *
  *   - the fallback persona is *explanatory*, never terse (the repo owner's
  *     stated default on #341 and #342: over-explaining is a mild annoyance,
  *     under-explaining silently fails a manual tester);
  *   - a persona carries no `voice` field, because voice is already its own
  *     axis with its own config surface (`voice/discovery.md`);
- *   - every value `detectUserLevel` can return is mapped, so the two
- *     vocabularies cannot drift apart again.
+ *   - every value `detectUserLevel` can return resolves to something, so the
+ *     two vocabularies cannot drift apart again.
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { detectUserLevel } from '../src/core/environment-detect.js';
 import {
-  DEPTHS,
-  defaultPersonaRegistryPath,
-  findPersona,
-  loadPersonaRegistry,
-  mergePersonaRegistries,
-  personaIds,
+  effectivePersonaRegistry,
   personaToDict,
-  readOverlayPersonaLayers,
   resolvePersona,
-  type OverlayPersonaLayer,
   type PersonaRegistry,
 } from '../src/core/persona.js';
 
-const SHIPPED = loadPersonaRegistry();
+/** An empty home, so the shipped registry is what resolution sees. */
+const BARE = mkdtempSync(join(tmpdir(), 'canary-persona-bare-'));
+const SHIPPED = effectivePersonaRegistry({ home: BARE });
+
+const ids = (r: PersonaRegistry): string[] => r.personas.map((p) => p.id);
+const byId = (r: PersonaRegistry, id: string) =>
+  r.personas.find((p) => p.id === id) ?? null;
 
 function persona(id: string, over: Record<string, unknown> = {}) {
   return {
@@ -48,6 +54,7 @@ function persona(id: string, over: Record<string, unknown> = {}) {
   };
 }
 
+/** A small hand-built registry, for the precedence cases. */
 function registry(over: Partial<PersonaRegistry> = {}): PersonaRegistry {
   return {
     version: 1,
@@ -67,12 +74,6 @@ function registry(over: Partial<PersonaRegistry> = {}): PersonaRegistry {
 // ---------------------------------------------------------------------------
 
 describe('shipped persona registry', () => {
-  it('resolves to a real file under ts/src/data', () => {
-    expect(defaultPersonaRegistryPath()).toMatch(
-      /data[/\\]personas[/\\]registry\.json$/,
-    );
-  });
-
   it('defines a non-zero number of personas', () => {
     // Denominator rule: a registry that defines nothing has abstained, and
     // every resolution below it would silently return the same fallback.
@@ -83,24 +84,23 @@ describe('shipped persona registry', () => {
     // agents/skills/.../canary-edge-case-discovery/SKILL.md documents
     // `--level sdet|junior|manual`. Changing those ids would be a breaking
     // change to a published skill surface, so the registry adopts them.
-    expect(personaIds(SHIPPED)).toEqual(['sdet', 'junior', 'manual']);
+    expect(ids(SHIPPED)).toEqual(['sdet', 'junior', 'manual']);
   });
 
   it('names a fallback that exists', () => {
-    expect(findPersona(SHIPPED, SHIPPED.fallback)).not.toBeNull();
+    expect(byId(SHIPPED, SHIPPED.fallback)).not.toBeNull();
   });
 
   it('falls back to an explanatory persona, never a terse one', () => {
-    const fallback = findPersona(SHIPPED, SHIPPED.fallback);
+    const fallback = byId(SHIPPED, SHIPPED.fallback);
     expect(fallback?.depth).not.toBe('terse');
     expect(fallback?.reasoning).toBe(true);
   });
 
   it('gives every persona a distinct id and a known depth', () => {
-    const ids = SHIPPED.personas.map((p) => p.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    expect(new Set(ids(SHIPPED)).size).toBe(ids(SHIPPED).length);
     for (const p of SHIPPED.personas) {
-      expect(DEPTHS).toContain(p.depth);
+      expect(['terse', 'brief', 'guided']).toContain(p.depth);
       expect(p.label.length).toBeGreaterThan(0);
       expect(p.audience.length).toBeGreaterThan(0);
       expect(p.formats.length).toBeGreaterThan(0);
@@ -109,28 +109,34 @@ describe('shipped persona registry', () => {
 
   it('carries no voice field — voice is a separate axis', () => {
     // `voice/discovery.md` already resolves a named voice profile from its own
-    // project config. Collapsing the two axes would make "terse Huntress" and
-    // "explanatory Huntress" inexpressible, which is the exact objection
-    // raised on #462.
+    // project config. Collapsing the two axes would make "terse, in a given
+    // voice" inexpressible, which is the exact objection raised on #462.
     for (const p of SHIPPED.personas) {
       expect(p).not.toHaveProperty('voice');
     }
   });
 
-  it('maps every user level detectUserLevel can return', () => {
+  it('resolves every user level detectUserLevel can return', () => {
     // The two vocabularies drifted once already: prose said
     // sdet|junior|manual, code said sdet|manual|unknown. Pin the union.
-    const levels = ['sdet', 'manual', 'unknown'];
-    for (const level of levels) {
-      const target = SHIPPED.detectionMap[level] ?? SHIPPED.fallback;
-      expect(findPersona(SHIPPED, target)).not.toBeNull();
+    for (const level of ['sdet', 'manual', 'unknown']) {
+      const resolved = resolvePersona({
+        detected: { level, confidence: 1, signals: [] },
+        home: BARE,
+      });
+      expect(byId(SHIPPED, resolved.persona.id)).not.toBeNull();
     }
   });
 
   it('maps an unknown level to the fallback rather than a persona', () => {
-    // `unknown` is a real detector outcome, not a persona. It must not be
-    // mapped to an audience, or a no-signal run would assert one.
-    expect(SHIPPED.detectionMap['unknown']).toBeUndefined();
+    // `unknown` is a real detector outcome, not an audience. A run that fired
+    // no signal must not assert one.
+    const resolved = resolvePersona({
+      detected: { level: 'unknown', confidence: 1, signals: [] },
+      home: BARE,
+    });
+    expect(resolved.source).toBe('fallback');
+    expect(resolved.persona.id).toBe(SHIPPED.fallback);
   });
 
   it('agrees with the live detector on a code-shaped project', () => {
@@ -139,7 +145,7 @@ describe('shipped persona registry', () => {
     const [level] = detectUserLevel(process.cwd(), ['src/thing.ts']);
     const resolved = resolvePersona({
       detected: { level, confidence: 1, signals: [] },
-      registry: SHIPPED,
+      home: BARE,
     });
     expect(resolved.source).toBe('detected');
     expect(resolved.persona.id).toBe('sdet');
@@ -147,10 +153,10 @@ describe('shipped persona registry', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Registry loading
+// Reading the base registry off disk
 // ---------------------------------------------------------------------------
 
-describe('loadPersonaRegistry', () => {
+describe('effectivePersonaRegistry base registry', () => {
   let dir: string;
 
   beforeEach(() => {
@@ -161,37 +167,35 @@ describe('loadPersonaRegistry', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('throws a message naming the file when it is unreadable', () => {
-    const missing = join(dir, 'nope.json');
-    expect(() => loadPersonaRegistry(missing)).toThrow(/nope\.json/);
-  });
+  function load(name: string, body: string): PersonaRegistry {
+    const path = join(dir, name);
+    writeFileSync(path, body);
+    return effectivePersonaRegistry({ home: BARE, registryPath: path });
+  }
 
-  it('throws when the payload is not a persona registry', () => {
-    const path = join(dir, 'bad.json');
-    writeFileSync(path, '[]');
-    expect(() => loadPersonaRegistry(path)).toThrow(/persona registry/i);
+  it('throws a message naming the file when it is unreadable', () => {
+    // The engine's own registry going missing is a packaging fault. Degrading
+    // to an empty registry would make every resolution return the same
+    // fallback while reporting nothing.
+    const missing = join(dir, 'nope.json');
+    expect(() =>
+      effectivePersonaRegistry({ home: BARE, registryPath: missing }),
+    ).toThrow(/nope\.json/);
   });
 
   it('throws naming the file when the JSON is malformed', () => {
-    const path = join(dir, 'truncated.json');
-    writeFileSync(path, '{ "personas": [');
-    expect(() => loadPersonaRegistry(path)).toThrow(/is not JSON/);
+    expect(() => load('truncated.json', '{ "personas": [')).toThrow(
+      /is not JSON/,
+    );
   });
 
-  it('treats an absent fallback as no opinion, not an empty id', () => {
-    const path = join(dir, 'no-fallback.json');
-    writeFileSync(path, JSON.stringify({ personas: [persona('only')] }));
-    const loaded = loadPersonaRegistry(path);
-    expect(loaded.fallback).toBe('');
-    // With no named fallback the first persona applies, rather than throwing
-    // on a registry that is otherwise perfectly usable.
-    expect(resolvePersona({ registry: loaded }).persona.id).toBe('only');
+  it('throws when the payload is not a persona registry', () => {
+    expect(() => load('bad.json', '[]')).toThrow(/persona registry/i);
   });
 
   it('drops malformed persona entries rather than trusting them', () => {
-    const path = join(dir, 'partial.json');
-    writeFileSync(
-      path,
+    const loaded = load(
+      'partial.json',
       JSON.stringify({
         version: 1,
         fallback: 'ok',
@@ -199,23 +203,53 @@ describe('loadPersonaRegistry', () => {
           persona('ok'),
           { id: 'no-label' },
           persona('bad-depth', { depth: 'shouty' }),
+          persona('bad-formats', { formats: [1, 2] }),
+          persona('bad-reasoning', { reasoning: 'yes' }),
+          persona('  '),
           'not-an-object',
         ],
       }),
     );
-    expect(personaIds(loadPersonaRegistry(path))).toEqual(['ok']);
+    expect(ids(loaded)).toEqual(['ok']);
   });
 
   it('defaults the confidence floor and detection map when absent', () => {
-    const path = join(dir, 'minimal.json');
-    writeFileSync(
-      path,
+    const loaded = load(
+      'minimal.json',
       JSON.stringify({ fallback: 'ok', personas: [persona('ok')] }),
     );
-    const loaded = loadPersonaRegistry(path);
     expect(loaded.minDetectionConfidence).toBeGreaterThan(0);
     expect(loaded.detectionMap).toEqual({});
     expect(loaded.version).toBe(1);
+  });
+
+  it('ignores a non-object detectionMap and non-string targets', () => {
+    const loaded = load(
+      'odd-map.json',
+      JSON.stringify({
+        fallback: 'ok',
+        personas: [persona('ok')],
+        detectionMap: { sdet: 7, manual: 'ok' },
+      }),
+    );
+    expect(loaded.detectionMap).toEqual({ manual: 'ok' });
+  });
+
+  it('ignores a non-array personas field', () => {
+    expect(() =>
+      load('scalar.json', JSON.stringify({ fallback: 'x', personas: 3 })),
+    ).not.toThrow();
+  });
+
+  it('treats an absent fallback as no opinion, not an empty id', () => {
+    const loaded = load(
+      'no-fallback.json',
+      JSON.stringify({ personas: [persona('only')] }),
+    );
+    expect(loaded.fallback).toBe('');
+    // With no named fallback the first persona applies, rather than throwing
+    // on a registry that is otherwise perfectly usable.
+    expect(resolvePersona({ registry: loaded }).persona.id).toBe('only');
   });
 });
 
@@ -282,6 +316,15 @@ describe('resolvePersona', () => {
     expect(resolved.reason).toMatch(/unknown/);
   });
 
+  it('falls back when a mapping points at a persona that is gone', () => {
+    const resolved = resolvePersona({
+      registry: registry({ detectionMap: { sdet: 'deleted' } }),
+      detected: { level: 'sdet', confidence: 1, signals: [] },
+    });
+    expect(resolved.source).toBe('fallback');
+    expect(resolved.reason).toMatch(/maps to no persona/);
+  });
+
   it('falls back with no input at all', () => {
     const resolved = resolvePersona({ registry: registry() });
     expect(resolved.persona.id).toBe('b');
@@ -289,8 +332,14 @@ describe('resolvePersona', () => {
     expect(resolved.signals).toEqual([]);
   });
 
-  it('defaults to the shipped registry', () => {
+  it('reads the shipped registry when given no registry', () => {
     expect(resolvePersona().persona.id).toBe(SHIPPED.fallback);
+  });
+
+  it('ignores a blank explicit choice', () => {
+    const resolved = resolvePersona({ explicit: '   ', registry: registry() });
+    expect(resolved.source).toBe('fallback');
+    expect(resolved.reason).not.toMatch(/not a known persona/);
   });
 
   it('names the valid ids when an explicit choice is unknown', () => {
@@ -363,7 +412,8 @@ describe('personaToDict', () => {
       resolvePersona({ explicit: 'a', registry: reg }),
     );
     (dict['formats'] as string[]).push('mutated');
-    expect(findPersona(reg, 'a')?.formats).toEqual(['bullets']);
+    (dict['signals'] as string[]).push('mutated');
+    expect(byId(reg, 'a')?.formats).toEqual(['bullets']);
   });
 });
 
@@ -371,85 +421,7 @@ describe('personaToDict', () => {
 // Overlay extension, via the precedence contract that already exists (#333)
 // ---------------------------------------------------------------------------
 
-describe('mergePersonaRegistries', () => {
-  const layer = (
-    overlay: string,
-    precedence: number,
-    over: Partial<OverlayPersonaLayer> = {},
-  ): OverlayPersonaLayer => ({
-    overlay,
-    precedence,
-    personas: [],
-    fallback: null,
-    ...over,
-  });
-
-  it('returns the base unchanged when no overlay contributes', () => {
-    expect(mergePersonaRegistries(registry(), [])).toEqual(registry());
-  });
-
-  it('adds a persona an overlay defines', () => {
-    const merged = mergePersonaRegistries(registry(), [
-      layer('acme', 0, {
-        personas: [persona('pm')] as PersonaRegistry['personas'],
-      }),
-    ]);
-    expect(personaIds(merged)).toEqual(['a', 'b', 'pm']);
-  });
-
-  it('lets a higher precedence overlay override a base persona', () => {
-    const merged = mergePersonaRegistries(registry(), [
-      layer('low', 1, {
-        personas: [
-          persona('a', { label: 'Low' }),
-        ] as PersonaRegistry['personas'],
-      }),
-      layer('high', 9, {
-        personas: [
-          persona('a', { label: 'High' }),
-        ] as PersonaRegistry['personas'],
-      }),
-    ]);
-    expect(findPersona(merged, 'a')?.label).toBe('High');
-    // Overriding must not reorder the base vocabulary.
-    expect(personaIds(merged)).toEqual(['a', 'b']);
-  });
-
-  it('breaks a precedence tie by overlay name, lowest first', () => {
-    const merged = mergePersonaRegistries(registry(), [
-      layer('zeta', 0, {
-        personas: [
-          persona('a', { label: 'Zeta' }),
-        ] as PersonaRegistry['personas'],
-      }),
-      layer('alpha', 0, {
-        personas: [
-          persona('a', { label: 'Alpha' }),
-        ] as PersonaRegistry['personas'],
-      }),
-    ]);
-    // Ascending (precedence, name) with last-writer-wins mirrors
-    // skill-registry.ts, so both surfaces agree on the winner.
-    expect(findPersona(merged, 'a')?.label).toBe('Zeta');
-  });
-
-  it('lets the highest precedence overlay move the fallback', () => {
-    const merged = mergePersonaRegistries(registry(), [
-      layer('acme', 3, { fallback: 'a' }),
-      layer('other', 1, { fallback: 'b' }),
-    ]);
-    expect(merged.fallback).toBe('a');
-  });
-
-  it('ignores an overlay fallback naming no known persona', () => {
-    const merged = mergePersonaRegistries(registry(), [
-      layer('acme', 3, { fallback: 'ghost' }),
-    ]);
-    expect(merged.fallback).toBe('b');
-  });
-});
-
-describe('readOverlayPersonaLayers', () => {
+describe('overlay persona extension', () => {
   let home: string;
 
   beforeEach(() => {
@@ -460,56 +432,145 @@ describe('readOverlayPersonaLayers', () => {
     rmSync(home, { recursive: true, force: true });
   });
 
+  /** Write `<home>/.canary/overlays/<name>/.canary/personas.json`. */
   function writeOverlay(name: string, body: string): void {
     const dir = join(home, '.canary', 'overlays', name, '.canary');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'personas.json'), body);
   }
 
-  it('returns nothing when no overlays are installed', () => {
-    expect(readOverlayPersonaLayers(home)).toEqual([]);
-  });
-
-  it('reads a personas.json and its declared precedence', () => {
+  function declarePrecedence(entries: Record<string, number | null>): void {
     mkdirSync(join(home, '.canary'), { recursive: true });
     writeFileSync(
       join(home, '.canary', 'overlays.json'),
-      JSON.stringify({ overlays: [{ name: 'acme', precedence: 7 }] }),
+      JSON.stringify({
+        overlays: Object.entries(entries).map(([name, precedence]) => ({
+          name,
+          precedence,
+        })),
+      }),
     );
+  }
+
+  function merged(): PersonaRegistry {
+    return effectivePersonaRegistry({ home });
+  }
+
+  it('is the shipped registry when no overlay is installed', () => {
+    expect(ids(merged())).toEqual(ids(SHIPPED));
+  });
+
+  it('adds a persona an overlay defines', () => {
     writeOverlay('acme', JSON.stringify({ personas: [persona('pm')] }));
-    expect(readOverlayPersonaLayers(home)).toEqual([
-      {
-        overlay: 'acme',
-        precedence: 7,
-        personas: [persona('pm')],
-        fallback: null,
-      },
-    ]);
+    expect(ids(merged())).toEqual([...ids(SHIPPED), 'pm']);
+  });
+
+  it('lets an overlay redefine a shipped persona in place', () => {
+    writeOverlay(
+      'acme',
+      JSON.stringify({ personas: [persona('sdet', { label: 'Staff SDET' })] }),
+    );
+    expect(byId(merged(), 'sdet')?.label).toBe('Staff SDET');
+    // Overriding must not reorder the base vocabulary.
+    expect(ids(merged())).toEqual(ids(SHIPPED));
+  });
+
+  it('lets the higher precedence overlay win a collision', () => {
+    declarePrecedence({ low: 1, high: 9 });
+    writeOverlay(
+      'low',
+      JSON.stringify({ personas: [persona('sdet', { label: 'Low' })] }),
+    );
+    writeOverlay(
+      'high',
+      JSON.stringify({ personas: [persona('sdet', { label: 'High' })] }),
+    );
+    expect(byId(merged(), 'sdet')?.label).toBe('High');
+  });
+
+  it('breaks a precedence tie by overlay name, lowest applied first', () => {
+    // Ascending (precedence, name) with last-writer-wins mirrors
+    // skill-registry.ts, so both surfaces agree on the winner.
+    declarePrecedence({ alpha: 0, zeta: 0 });
+    writeOverlay(
+      'alpha',
+      JSON.stringify({ personas: [persona('sdet', { label: 'Alpha' })] }),
+    );
+    writeOverlay(
+      'zeta',
+      JSON.stringify({ personas: [persona('sdet', { label: 'Zeta' })] }),
+    );
+    expect(byId(merged(), 'sdet')?.label).toBe('Zeta');
   });
 
   it('treats an undeclared precedence as zero', () => {
-    writeOverlay('acme', JSON.stringify({ personas: [persona('pm')] }));
-    expect(readOverlayPersonaLayers(home)[0]?.precedence).toBe(0);
+    declarePrecedence({ declared: 5, undeclared: null });
+    writeOverlay(
+      'declared',
+      JSON.stringify({ personas: [persona('sdet', { label: 'Declared' })] }),
+    );
+    writeOverlay(
+      'undeclared',
+      JSON.stringify({ personas: [persona('sdet', { label: 'Undeclared' })] }),
+    );
+    expect(byId(merged(), 'sdet')?.label).toBe('Declared');
+  });
+
+  it('lets the highest precedence overlay move the fallback', () => {
+    declarePrecedence({ acme: 3, other: 1 });
+    writeOverlay('acme', JSON.stringify({ fallback: 'sdet' }));
+    writeOverlay('other', JSON.stringify({ fallback: 'manual' }));
+    expect(merged().fallback).toBe('sdet');
+  });
+
+  it('ignores an overlay fallback naming no known persona', () => {
+    // A fallback naming nothing is worse than no opinion: it would silently
+    // demote resolution to "first persona in the list".
+    writeOverlay('acme', JSON.stringify({ fallback: 'ghost' }));
+    expect(merged().fallback).toBe(SHIPPED.fallback);
   });
 
   it('skips an overlay with no personas.json', () => {
     mkdirSync(join(home, '.canary', 'overlays', 'bare'), { recursive: true });
-    expect(readOverlayPersonaLayers(home)).toEqual([]);
+    expect(ids(merged())).toEqual(ids(SHIPPED));
   });
 
   it('skips a malformed personas.json rather than throwing', () => {
     writeOverlay('broken', '{ not json');
+    writeOverlay('scalar', '"just a string"');
     writeOverlay('ok', JSON.stringify({ personas: [persona('pm')] }));
-    expect(readOverlayPersonaLayers(home).map((l) => l.overlay)).toEqual([
-      'ok',
-    ]);
+    expect(ids(merged())).toEqual([...ids(SHIPPED), 'pm']);
   });
 
-  it('carries an overlay fallback through', () => {
+  it('reaches resolvePersona, so an overlay can retune the default', () => {
+    // The whole point of #462: an overlay overrides the audience definition
+    // the same way it ships a skill. If this does not hold, the extension
+    // point is decoration.
     writeOverlay(
       'acme',
-      JSON.stringify({ fallback: 'pm', personas: [persona('pm')] }),
+      JSON.stringify({
+        fallback: 'field',
+        personas: [persona('field', { depth: 'guided', label: 'Field' })],
+      }),
     );
-    expect(readOverlayPersonaLayers(home)[0]?.fallback).toBe('pm');
+    const resolved = resolvePersona({ home });
+    expect(resolved.source).toBe('fallback');
+    expect(resolved.persona.label).toBe('Field');
+  });
+
+  it('resolves an overlay-only persona from an explicit id', () => {
+    writeOverlay(
+      'acme',
+      JSON.stringify({ personas: [persona('pm', { depth: 'guided' })] }),
+    );
+    const resolved = resolvePersona({ explicit: 'pm', home });
+    expect(resolved.source).toBe('explicit');
+    expect(resolved.persona.depth).toBe('guided');
+  });
+
+  it('prefers an explicit registry over anything on disk', () => {
+    writeOverlay('acme', JSON.stringify({ personas: [persona('pm')] }));
+    const resolved = resolvePersona({ registry: registry(), home });
+    expect(resolved.persona.id).toBe('b');
   });
 });

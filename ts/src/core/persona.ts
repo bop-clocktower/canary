@@ -47,10 +47,14 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { uncertainDetectionMessage } from './detection.js';
-import { listOverlays, registryPrecedence, overlaysRoot } from './overlays.js';
+import {
+  listOverlays,
+  registryPrecedence,
+  resolveOverlay,
+} from './overlays.js';
 
 /** How much explanation a persona wants around the same finding. */
-export const DEPTHS = ['terse', 'brief', 'guided'] as const;
+const DEPTHS = ['terse', 'brief', 'guided'] as const;
 
 export type ExplanationDepth = (typeof DEPTHS)[number];
 
@@ -62,7 +66,7 @@ export type ExplanationDepth = (typeof DEPTHS)[number];
  * no opposing signal scores 1.0. So this floor screens out genuine ties and
  * near-ties; it is not a calibrated certainty threshold.
  */
-export const DEFAULT_MIN_DETECTION_CONFIDENCE = 0.5;
+const DEFAULT_MIN_DETECTION_CONFIDENCE = 0.5;
 
 /** One audience, and what consulting it should change about the output. */
 export interface PersonaDefinition {
@@ -110,7 +114,10 @@ export interface ResolvePersonaInput {
   /** An id the user chose outright — config, flag, or overlay setting. */
   explicit?: string | null;
   detected?: DetectedUserLevel | null;
+  /** A registry to use verbatim. Skips the on-disk registry and overlays. */
   registry?: PersonaRegistry;
+  /** Home directory to discover overlays under. Defaults to the real one. */
+  home?: string;
 }
 
 /** A persona plus the provenance that makes the choice auditable. */
@@ -123,8 +130,16 @@ export interface ResolvedPersona {
   signals: string[];
 }
 
+/** Where {@link effectivePersonaRegistry} should read from. */
+export interface EffectiveRegistryOptions {
+  /** Home directory to discover overlays under. Defaults to the real one. */
+  home?: string;
+  /** Base registry file. Defaults to the one shipped with the engine. */
+  registryPath?: string;
+}
+
 /** One overlay's contribution to the registry, with its arbitration weight. */
-export interface OverlayPersonaLayer {
+interface OverlayPersonaLayer {
   overlay: string;
   /** Declared `precedence` from `overlays.json`; undeclared is 0 (#333). */
   precedence: number;
@@ -189,7 +204,7 @@ function parseDetectionMap(raw: unknown): Record<string, string> {
 }
 
 /** Default registry path: `<module dir>/../data/personas/registry.json`. */
-export function defaultPersonaRegistryPath(): string {
+function defaultPersonaRegistryPath(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   // here = <core> -> sibling data/ dir (src/data under vitest, dist/data once
   // built and copied by ts/scripts/copy-data.mjs).
@@ -205,7 +220,7 @@ export function defaultPersonaRegistryPath(): string {
  * nothing. Overlay registries take the forgiving path instead; see
  * {@link readOverlayPersonaLayers}.
  */
-export function loadPersonaRegistry(
+function loadPersonaRegistry(
   registryPath: string = defaultPersonaRegistryPath(),
 ): PersonaRegistry {
   let text: string;
@@ -250,12 +265,12 @@ export function loadPersonaRegistry(
 // ---------------------------------------------------------------------------
 
 /** Ids in registry order — the discoverable persona vocabulary. */
-export function personaIds(registry: PersonaRegistry): string[] {
+function personaIds(registry: PersonaRegistry): string[] {
   return registry.personas.map((p) => p.id);
 }
 
 /** The persona with this id (case-insensitive), or null. */
-export function findPersona(
+function findPersona(
   registry: PersonaRegistry,
   id: string | null | undefined,
 ): PersonaDefinition | null {
@@ -293,7 +308,13 @@ function fallbackPersona(registry: PersonaRegistry): PersonaDefinition {
 export function resolvePersona(
   input: ResolvePersonaInput = {},
 ): ResolvedPersona {
-  const registry = input.registry ?? loadPersonaRegistry();
+  // `exactOptionalPropertyTypes` forbids passing an explicit `undefined`, so
+  // omit the key rather than forwarding it.
+  const registry =
+    input.registry ??
+    effectivePersonaRegistry(
+      input.home === undefined ? {} : { home: input.home },
+    );
   const signals = [...(input.detected?.signals ?? [])];
   const notes: string[] = [];
 
@@ -385,13 +406,19 @@ export function personaToDict(
  * Forgiving by design: a missing file means the overlay simply has no opinion,
  * and an unreadable or malformed one is skipped rather than fatal, because a
  * downstream overlay must not be able to break the engine's own vocabulary.
+ *
+ * The clone path comes from `resolveOverlay` rather than being rebuilt here, so
+ * `~/.canary/overlays/<name>` stays defined in exactly one place.
  */
-export function readOverlayPersonaLayers(home?: string): OverlayPersonaLayer[] {
-  const root = overlaysRoot(home);
+function readOverlayPersonaLayers(home?: string): OverlayPersonaLayer[] {
   const precedence = registryPrecedence(home);
   const layers: OverlayPersonaLayer[] = [];
   for (const overlay of listOverlays(home)) {
-    const path = join(root, overlay, '.canary', 'personas.json');
+    const path = join(
+      resolveOverlay(overlay, home),
+      '.canary',
+      'personas.json',
+    );
     if (!existsSync(path)) continue;
     let raw: unknown;
     try {
@@ -421,7 +448,7 @@ export function readOverlayPersonaLayers(home?: string): OverlayPersonaLayer[] {
  * personas. An id already in the base is replaced **in place**, so extending
  * the vocabulary never reorders it.
  */
-export function mergePersonaRegistries(
+function mergePersonaRegistries(
   base: PersonaRegistry,
   layers: readonly OverlayPersonaLayer[],
 ): PersonaRegistry {
@@ -445,4 +472,31 @@ export function mergePersonaRegistries(
   // demote resolution to "first persona in the list".
   if (!findPersona(merged, merged.fallback)) merged.fallback = base.fallback;
   return merged;
+}
+
+/**
+ * The registry a resolution actually sees: shipped, plus every overlay.
+ *
+ * This is the function that makes overlay extension real rather than
+ * decorative. {@link resolvePersona} calls it whenever the caller does not
+ * hand over a registry outright, so a downstream `.canary/personas.json` reaches
+ * every consumer without each one remembering to merge — which is the mistake
+ * #341 is a record of: a signal that was produced correctly and read by nobody.
+ *
+ * Re-read per call rather than cached. `analyze_file` already scans the project
+ * tree, so one small JSON read plus a directory listing is not the cost worth
+ * trading a stale-config bug for.
+ *
+ * `registryPath` points the base registry somewhere other than the shipped
+ * file. It is the whole public seam onto the loader: the parsing and merging
+ * helpers below are intentionally module-private, so this is how both a caller
+ * with its own registry and a test exercising a malformed one get in.
+ */
+export function effectivePersonaRegistry(
+  options: EffectiveRegistryOptions = {},
+): PersonaRegistry {
+  return mergePersonaRegistries(
+    loadPersonaRegistry(options.registryPath),
+    readOverlayPersonaLayers(options.home),
+  );
 }
