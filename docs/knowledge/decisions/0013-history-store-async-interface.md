@@ -2,7 +2,7 @@
 number: 13
 title: 'ADR 0013 — The history store presents one async contract'
 date: 2026-08-13
-status: proposed
+status: accepted
 source: adr
 ---
 
@@ -10,9 +10,9 @@ source: adr
 
 # ADR 0013 — The history store presents one async contract
 
-**Status:** proposed (awaiting maintainer sign-off) **Date:** 2026-08-13
-**Deciders:** Bri Stevenski (maintainer) **Related:** #390 (this decision); #389
-(the `history/` port that surfaced it); #538 (`canary history record`, the first
+**Status:** accepted **Date:** 2026-08-13 **Accepted:** 2026-08-13 **Deciders:**
+Bri Stevenski (maintainer) **Related:** #390 (this decision); #389 (the
+`history/` port that surfaced it); #538 (`canary history record`, the first
 writer built on the answer); #543 (the leaf-module split of the contract); #508
 (no silent abstention — the `countRuns?()` optionality below); ADR 0009 (exit 3
 = abstained); the five downstream consumers that inherit this shape — #460
