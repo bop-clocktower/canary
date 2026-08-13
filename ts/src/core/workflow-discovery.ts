@@ -173,7 +173,7 @@ export interface WorkflowDiscoveryDeps {
 // Schema
 // ---------------------------------------------------------------------------
 
-export const SCHEMA_VERSION =
+const SCHEMA_VERSION =
   'https://github.com/bop-clocktower/canary/schemas/workflow-mapping/v1';
 
 // Word-list used for automatic semantic-role heuristics.

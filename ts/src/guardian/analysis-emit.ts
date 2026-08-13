@@ -56,7 +56,7 @@ import { GuardianFinding, combineNotices, renderFindings } from './pr-check.js';
 // tell which fields it can rely on being present, and silence about a new field
 // is indistinguishable from the field being absent for a real reason.
 export const SCHEMA_VERSION = '1.2';
-export const ANALYSIS_SOURCE = 'canary-pr-guardian';
+const ANALYSIS_SOURCE = 'canary-pr-guardian';
 const REF_SAFE = /[^A-Za-z0-9._-]/g;
 const REF_MAX = 100; // cap the sanitized ref so a long branch never hits ENAMETOOLONG
 

@@ -14,6 +14,24 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- **Entropy paydown: 15 provably-dead exports removed, the ratchet ceiling
+  lowered 297 → 281.** `main` measured 296 against a 297 ceiling — one finding
+  of headroom, with two finished branches waiting that needed three between
+  them. The ceiling was **not** raised; real dead code was paid down instead.
+  Thirteen of the fifteen are `export`-keyword removals on symbols still used
+  inside their own module, so no code was deleted and nothing changed at
+  runtime. Two are genuine deletions: the `scanFile` thin wrapper in the
+  canary-savant and canary-blackhawk scanners, which no CLI and no test
+  imported. Every candidate was verified live-or-dead through the two hops the
+  analyzer cannot follow — the npm package's `require('../../dist/*.js')` test
+  imports, and the `sync-gate-result.mjs` mirror that makes `skippedSuffix` look
+  dead in `ts/src` while `npm/src/doctor.ts` uses the generated copy — which is
+  why the 15 flagged `npm/src` exports were left alone. Re-measured 296 → 281 on
+  the real tree; the before/after `--json` sets differ by exactly those 15 with
+  zero additions. ([#703])
+
 ### Fixed
 
 - **The dead-link checker no longer scans files git is ignoring.** Found on
@@ -95,6 +113,7 @@ under the project's former name) are documented in the
 [#538]: https://github.com/bop-clocktower/canary/issues/538
 [#676]: https://github.com/bop-clocktower/canary/issues/676
 [#686]: https://github.com/bop-clocktower/canary/issues/686
+[#703]: https://github.com/bop-clocktower/canary/issues/703
 
 ### Changed
 

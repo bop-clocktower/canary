@@ -250,5 +250,3 @@ function avgPassRate(recent: RunRecord[]): number {
 function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
-
-export type { TestResultRecord };

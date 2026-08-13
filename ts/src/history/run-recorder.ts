@@ -32,12 +32,7 @@ import {
 } from './schema.js';
 
 /** Canary's per-test status vocabulary (the store's read side keys on these). */
-export const RECORD_STATUSES = [
-  'passed',
-  'failed',
-  'flaky',
-  'skipped',
-] as const;
+const RECORD_STATUSES = ['passed', 'failed', 'flaky', 'skipped'] as const;
 
 /** Report formats `record` can convert. `unknown` is refused, never guessed. */
 export type ReportShape = 'vitest' | 'unknown';
