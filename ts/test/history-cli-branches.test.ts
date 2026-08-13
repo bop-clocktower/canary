@@ -15,7 +15,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { CliExit } from '../src/cli-common.js';
+import { CliExitError } from '../src/cli-common.js';
 import { createHistoryCommand, type HistoryDeps } from '../src/history/cli.js';
 import type { AsyncHistoryStore } from '../src/history/store.js';
 import type {
@@ -83,7 +83,7 @@ async function runHistory(
   try {
     await createHistoryCommand(deps).parseAsync(args, { from: 'user' });
   } catch (e) {
-    if (e instanceof CliExit) code = e.code;
+    if (e instanceof CliExitError) code = e.code;
     else throw e;
   }
   return {

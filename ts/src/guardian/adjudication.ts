@@ -222,9 +222,9 @@ const FINDING_ROW_RE = /^\|[^|]*\|\s*\[?`([^`]+)`/;
 
 /**
  * Extract the file paths of the ACTIVE findings shown in a sticky-comment body
- * (PURE). Reads the rendered table `render(fmt='comment')` emitted — this is
- * deliberately parsing the exact body reviewers reacted to, not the current
- * finding set, so a reaction is attributed to what the reviewer actually saw.
+ * (PURE). Reads the rendered table `renderFindings(fmt='comment')` emitted —
+ * this is deliberately parsing the exact body reviewers reacted to, not the
+ * current finding set, so a reaction is attributed to what the reviewer saw.
  * Returns `[]` for a no-gaps body (no table).
  */
 export function activeFindingPaths(commentBody: string): string[] {
@@ -317,7 +317,7 @@ export interface CollectResult {
 }
 
 /** True iff the harness home (`dirname(analysesDir)`) exists. */
-function channelAvailable(analysesDir: string): boolean {
+function isChannelAvailable(analysesDir: string): boolean {
   try {
     return statSync(dirname(analysesDir)).isDirectory();
   } catch {
@@ -369,7 +369,7 @@ export async function collectAdjudications(
     collectedAt: args.collectedAt,
   });
 
-  if (!channelAvailable(args.analysesDir)) {
+  if (!isChannelAvailable(args.analysesDir)) {
     return {
       action: 'unavailable',
       path: null,

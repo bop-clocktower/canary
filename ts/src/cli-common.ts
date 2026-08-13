@@ -5,11 +5,11 @@
  *
  * The three concerns every command tree needs:
  *
- *   - {@link CliExit} -- the business-exit signal thrown from a handler (Python
- *     `typer.Exit(code)`). Re-exported from `guardian/cli.ts` so the ENTIRE
- *     command tree (main program, its sub-apps, AND the already-ported guardian
- *     sub-app it mounts) throws ONE class. `bin/canary.js` then catches a single
- *     `CliExit` regardless of which sub-app raised it.
+ *   - {@link CliExitError} -- the business-exit signal thrown from a handler
+ *     (Python `typer.Exit(code)`). Re-exported from `guardian/cli.ts` so the
+ *     ENTIRE command tree (main program, its sub-apps, AND the already-ported
+ *     guardian sub-app it mounts) throws ONE class. `bin/canary.js` catches one
+ *     `CliExitError` regardless of which sub-app raised it.
  *   - {@link normalizeUsageExit} -- the `.exitOverride()` callback that maps
  *     commander's usage-error exit code (1) to typer/click's 2, while leaving an
  *     explicit `--help`/`--version` at 0. Applied to the program AND every
@@ -22,7 +22,7 @@
 
 import { CommanderError } from 'commander';
 
-export { CliExit } from './guardian/cli.js';
+export { CliExitError } from './guardian/cli.js';
 
 /**
  * Map commander's usage-error exit code to typer/click's `2`. Commander defaults

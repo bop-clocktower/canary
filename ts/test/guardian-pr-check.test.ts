@@ -27,7 +27,7 @@ import {
   filterSkipped,
   filterTestUnits,
   findReexportOnly,
-  render,
+  renderFindings,
   scopeDiff,
 } from '../src/guardian/pr-check.js';
 
@@ -443,7 +443,7 @@ describe('computeExitCode', () => {
 });
 
 // ---------------------------------------------------------------------------
-// render
+// renderFindings
 // ---------------------------------------------------------------------------
 
 function finding(
@@ -459,16 +459,16 @@ function finding(
   });
 }
 
-describe('render', () => {
+describe('renderFindings', () => {
   it('comment has sticky marker and fidelity', () => {
-    const out = render([finding()], 'comment');
+    const out = renderFindings([finding()], 'comment');
     expect(out).toContain('<!-- canary-pr-guardian -->');
     expect(out).toContain('graph-verified');
     expect(out).toContain('pkg/foo.py');
   });
 
   it('comment marks suppressed', () => {
-    const out = render(
+    const out = renderFindings(
       [finding({ suppressed: true, suppression_reason: 'legacy' })],
       'comment',
     );
@@ -476,13 +476,13 @@ describe('render', () => {
   });
 
   it('comment footer shows tier and degraded notice', () => {
-    const out = render([finding()], 'comment', 0, 'graph stale');
+    const out = renderFindings([finding()], 'comment', 0, 'graph stale');
     expect(out.toLowerCase()).toContain('tier 0');
     expect(out).toContain('graph stale');
   });
 
   it('comment is actionable — header count, what-to-do, suppress hint', () => {
-    const out = render([finding()], 'comment');
+    const out = renderFindings([finding()], 'comment');
     expect(out).toContain('need'); // "1 file needs test coverage"
     expect(out).toContain('canary:allow-untested'); // the pragma that works
     expect(out).toContain('| Sev | File'); // scannable table
@@ -498,9 +498,9 @@ describe('render', () => {
     // work. This assertion is the guard: the previous version of the test
     // above actively pinned the false claim in place.
     const rendered = [
-      render([finding()], 'comment'),
-      render([], 'comment'),
-      render([finding()], 'comment', 0, 'graph stale'),
+      renderFindings([finding()], 'comment'),
+      renderFindings([], 'comment'),
+      renderFindings([finding()], 'comment', 0, 'graph stale'),
     ];
     for (const out of rendered) {
       expect(out).not.toContain('/guardian ');
@@ -508,7 +508,7 @@ describe('render', () => {
   });
 
   it('comment does not print the path twice for a file-level finding', () => {
-    const out = render(
+    const out = renderFindings(
       [finding({ path: 'pkg/foo.py', unit: 'pkg/foo.py' })],
       'comment',
     );
@@ -518,7 +518,7 @@ describe('render', () => {
   });
 
   it('comment shows the unit only when it differs from the path', () => {
-    const out = render(
+    const out = renderFindings(
       [finding({ path: 'pkg/foo.py', unit: 'do_it' })],
       'comment',
     );
@@ -526,7 +526,7 @@ describe('render', () => {
   });
 
   it('comment is clean when there are no active findings', () => {
-    expect(render([], 'comment')).toContain('no test-coverage gaps');
+    expect(renderFindings([], 'comment')).toContain('no test-coverage gaps');
   });
 
   it('json round-trips all findings', () => {
@@ -539,7 +539,7 @@ describe('render', () => {
         fidelity: Fidelity.Heuristic,
       }),
     ];
-    const data = JSON.parse(render(findings, 'json'));
+    const data = JSON.parse(renderFindings(findings, 'json'));
     expect(data.tier).toBe(0);
     expect(data.findings).toHaveLength(2);
     expect(new Set(data.findings.map((f: { path: string }) => f.path))).toEqual(
@@ -548,7 +548,7 @@ describe('render', () => {
   });
 
   it('text has no HTML marker', () => {
-    const out = render([finding()], 'text');
+    const out = renderFindings([finding()], 'text');
     expect(out).not.toContain('<!--');
     expect(out).toContain('pkg/foo.py');
   });
@@ -570,7 +570,7 @@ new file mode 100644
     const findings = buildWeakTestFindings(units, diff);
     expect(findings).toHaveLength(1);
 
-    const out = render(findings, 'json');
+    const out = renderFindings(findings, 'json');
     // The escaped sequence is present; no raw em-dash survives.
     expect(out).toContain('\\u2014');
     expect(out).not.toContain('—');
@@ -582,10 +582,10 @@ new file mode 100644
   });
 });
 
-describe('render json gate meta (#508)', () => {
+describe('renderFindings json gate meta (#508)', () => {
   it('adds checked/abstained when meta is provided', () => {
     const out = JSON.parse(
-      render([], 'json', 0, null, { checked: 3, abstained: false }),
+      renderFindings([], 'json', 0, null, { checked: 3, abstained: false }),
     );
     expect(out.checked).toBe(3);
     expect(out.abstained).toBe(false);
@@ -593,7 +593,7 @@ describe('render json gate meta (#508)', () => {
   });
 
   it('omits the fields when meta is absent (byte-stable for emit)', () => {
-    const out = JSON.parse(render([], 'json'));
+    const out = JSON.parse(renderFindings([], 'json'));
     expect('checked' in out).toBe(false);
     expect('abstained' in out).toBe(false);
   });

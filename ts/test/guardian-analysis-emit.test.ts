@@ -24,13 +24,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   analysisFilename,
   buildAnalysisRecord,
-  channelAvailable,
+  isChannelAvailable,
   emitAnalysis,
   emitSeams,
 } from '../src/guardian/analysis-emit.js';
 import { Fidelity } from '../src/guardian/coverage.js';
 import { Severity } from '../src/guardian/impact-mapper.js';
-import { GuardianFinding, render } from '../src/guardian/pr-check.js';
+import { GuardianFinding, renderFindings } from '../src/guardian/pr-check.js';
 import { mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
 function findings(): GuardianFinding[] {
@@ -92,7 +92,7 @@ describe('envelope', () => {
     expect(record.analyzedAt).toBe('2026-07-19T00:00:00+00:00');
   });
 
-  it('findings are verbatim render json', () => {
+  it('findings are verbatim renderFindings json', () => {
     const fs = findings();
     const record = buildAnalysisRecord(fs, {
       ref: 'pr-7',
@@ -101,7 +101,7 @@ describe('envelope', () => {
       degraded_notice: null,
       exit_code: 0,
     });
-    const expected = JSON.parse(render(fs, 'json', 0)).findings;
+    const expected = JSON.parse(renderFindings(fs, 'json', 0)).findings;
     expect(record.findings).toEqual(expected);
   });
 
@@ -219,12 +219,12 @@ describe('filename', () => {
 
 describe('channel availability', () => {
   it('absent harness home is unavailable', () => {
-    expect(channelAvailable(join(tmp, '.harness', 'analyses'))).toBe(false);
+    expect(isChannelAvailable(join(tmp, '.harness', 'analyses'))).toBe(false);
   });
 
   it('present harness home is available', () => {
     mkdirSync(join(tmp, '.harness'));
-    expect(channelAvailable(join(tmp, '.harness', 'analyses'))).toBe(true);
+    expect(isChannelAvailable(join(tmp, '.harness', 'analyses'))).toBe(true);
   });
 });
 

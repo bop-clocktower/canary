@@ -20,7 +20,7 @@ import {
 } from '../src/guardian/analysis-emit.js';
 import { CoverageInputState, Fidelity } from '../src/guardian/coverage.js';
 import { Severity } from '../src/guardian/impact-mapper.js';
-import { GuardianFinding, render } from '../src/guardian/pr-check.js';
+import { GuardianFinding, renderFindings } from '../src/guardian/pr-check.js';
 import { FakeGitHubClient, STICKY_MARKER } from '../src/guardian/pr-comment.js';
 import { invokeGuardian, mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
@@ -134,7 +134,7 @@ describe('analysis record carries the coverage block (#554)', () => {
 
 describe('sticky comment states the coverage mode (#554)', () => {
   it('zero findings + blind coverage does not render as a clean pass', () => {
-    const body = render([], 'comment', 0, null, {
+    const body = renderFindings([], 'comment', 0, null, {
       checked: 1,
       abstained: false,
       coverage: BLIND,
@@ -147,7 +147,7 @@ describe('sticky comment states the coverage mode (#554)', () => {
   });
 
   it('zero findings + verified coverage keeps the clean headline', () => {
-    const body = render([], 'comment', 0, null, {
+    const body = renderFindings([], 'comment', 0, null, {
       checked: 1,
       abstained: false,
       coverage: VERIFIED,
@@ -158,7 +158,7 @@ describe('sticky comment states the coverage mode (#554)', () => {
   });
 
   it('findings present + blind coverage still states the mode', () => {
-    const body = render(finding(), 'comment', 0, null, {
+    const body = renderFindings(finding(), 'comment', 0, null, {
       checked: 1,
       abstained: false,
       coverage: BLIND,
@@ -168,7 +168,7 @@ describe('sticky comment states the coverage mode (#554)', () => {
 
   it('json output carries the coverage block', () => {
     const payload = JSON.parse(
-      render([], 'json', 0, null, {
+      renderFindings([], 'json', 0, null, {
         checked: 1,
         abstained: false,
         coverage: BLIND,

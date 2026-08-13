@@ -3,7 +3,7 @@
  * `CliRunner`. Builds a `guardian` command wired to capturing sinks + a fake
  * stdin + isolated env, invokes it via `parseAsync(argv, { from: 'user' })`, and
  * returns the captured stdout/stderr plus the business exit code (from a thrown
- * {@link CliExit}) or commander usage exit code (from a `CommanderError`).
+ * {@link CliExitError}) or commander usage exit code (from a `CommanderError`).
  *
  * This file is a testkit, not a suite (no `*.test.ts` name) so vitest's shallow
  * `test/*.test.ts` glob never collects it.
@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { CommanderError } from 'commander';
 
 import {
-  CliExit,
+  CliExitError,
   GuardianDeps,
   createGuardianCommand,
 } from '../src/guardian/cli.js';
@@ -94,7 +94,7 @@ export async function invokeGuardian(
     const cmd = createGuardianCommand(fullDeps);
     await cmd.parseAsync(args, { from: 'user' });
   } catch (e) {
-    if (e instanceof CliExit) code = e.code;
+    if (e instanceof CliExitError) code = e.code;
     else if (e instanceof CommanderError) code = e.exitCode;
     else {
       restore(savedEnv, savedCwd, cwd);

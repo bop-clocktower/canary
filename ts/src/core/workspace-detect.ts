@@ -11,9 +11,9 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 import {
-  _CONFIG_PROBES,
-  inferPlaywrightShape,
-  probe,
+  CONFIG_PROBES,
+  inferPlaywrightTestType,
+  probeFramework,
   ProbeResult,
 } from './framework-probes.js';
 import {
@@ -198,13 +198,13 @@ function toPosixRel(root: string, dir: string): string {
 function configFindings(dir: string, rel: string): WorkspaceFinding[] {
   const out: WorkspaceFinding[] = [];
   const seen = new Set<string>();
-  for (const [filename, framework, shape, confidence] of _CONFIG_PROBES) {
+  for (const [filename, framework, shape, confidence] of CONFIG_PROBES) {
     if (!isFile(join(dir, filename))) continue;
     // Mirrors the config tier's own refinement: a playwright config with no
     // UI-fixture spec is an API suite, and the shape decides which skills ship.
     const refined =
       framework === 'playwright' && shape === 'e2e_ui'
-        ? inferPlaywrightShape(dir)
+        ? inferPlaywrightTestType(dir)
         : shape;
     // NUL separates the parts because it cannot occur in a path, a framework
     // name, or a shape -- so `a\0b` can never collide with `a` + `\0b`. Written
@@ -229,8 +229,9 @@ function configFindings(dir: string, rel: string): WorkspaceFinding[] {
  * Findings for one package: every config-tier match, or -- only when the config
  * tier found nothing at all -- a single content-tier answer.
  *
- * The language tier is deliberately withheld; see `probe` for why inheriting a
- * root `language:` per package would invent findings (#504 part 1, spec test 8).
+ * The language tier is deliberately withheld; see `probeFramework` for why
+ * inheriting a root `language:` per package would invent findings (#504 part 1,
+ * spec test 8).
  */
 function probePackage(
   dir: string,
@@ -239,7 +240,7 @@ function probePackage(
 ): WorkspaceFinding[] {
   const fromConfig = configFindings(dir, rel);
   if (fromConfig.length > 0) return fromConfig;
-  const [framework, shape, source, confidence]: ProbeResult = probe(
+  const [framework, shape, source, confidence]: ProbeResult = probeFramework(
     dir,
     config,
     ['content'],

@@ -40,7 +40,7 @@ export {
   type CoverageProblem,
 } from './diff-coverage/formats/coverage-json-lint.js';
 export { resolveFromGraph } from './diff-coverage/graph-tier.js';
-export { resolveHeuristic } from './diff-coverage/heuristic-tier.js';
+export { resolveFromHeuristic } from './diff-coverage/heuristic-tier.js';
 export {
   coverageDegradedNotice,
   coverageStatus,

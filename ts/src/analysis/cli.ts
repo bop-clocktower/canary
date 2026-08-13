@@ -34,9 +34,9 @@ import { gateOutcome } from '../core/gate-result.js';
 import { AnalysisEngine } from './engine.js';
 import {
   buildCommonFailuresReport,
-  buildFlakyReport,
+  buildFlakyTestsReport,
   buildRegressionCandidatesReport,
-  buildSpikesReport,
+  buildFailureSpikesReport,
 } from './reports.js';
 import { NdjsonHistoryStore } from '../history/ndjson-store.js';
 
@@ -289,7 +289,7 @@ function flakyCmd(opts: FlakyOptions, deps: AnalyzeDeps): void {
   if (opts.json) {
     deps.out(jsonIndent2(rows));
   } else {
-    deps.out(buildFlakyReport(rows, opts.windowRuns, opts.minRatePct));
+    deps.out(buildFlakyTestsReport(rows, opts.windowRuns, opts.minRatePct));
   }
 }
 
@@ -333,7 +333,7 @@ function spikesCmd(opts: SpikesOptions, deps: AnalyzeDeps): void {
   if (opts.json) {
     deps.out(jsonIndent2(rows));
   } else {
-    deps.out(buildSpikesReport(rows, opts.deltaPp));
+    deps.out(buildFailureSpikesReport(rows, opts.deltaPp));
   }
 }
 

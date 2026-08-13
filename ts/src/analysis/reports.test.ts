@@ -4,9 +4,9 @@ import {
   buildAreaHealthReport,
   buildCommonFailuresReport,
   buildDigest,
-  buildFlakyReport,
+  buildFlakyTestsReport,
   buildRegressionCandidatesReport,
-  buildSpikesReport,
+  buildFailureSpikesReport,
   round1,
 } from './reports.js';
 import type { AreaHealthRow, FlakyRow, SpikeRow } from './rows.js';
@@ -93,13 +93,13 @@ describe('round1 (Python round-half-to-even parity)', () => {
   });
 });
 
-describe('buildFlakyReport', () => {
+describe('buildFlakyTestsReport', () => {
   it('returns a no-issues message on empty rows', () => {
-    expect(buildFlakyReport([], 30, 10.0)).toContain('No tests');
+    expect(buildFlakyTestsReport([], 30, 10.0)).toContain('No tests');
   });
 
   it('renders the table header', () => {
-    const md = buildFlakyReport(
+    const md = buildFlakyTestsReport(
       [flakyRow('test A', 'api', 'members', 34.0)],
       30,
       10.0,
@@ -109,7 +109,7 @@ describe('buildFlakyReport', () => {
   });
 
   it('renders the test name and one-decimal rate', () => {
-    const md = buildFlakyReport(
+    const md = buildFlakyTestsReport(
       [flakyRow('test A', 'api', 'members', 34.0)],
       30,
       10.0,
@@ -119,7 +119,7 @@ describe('buildFlakyReport', () => {
   });
 
   it('orders highest rate first', () => {
-    const md = buildFlakyReport(
+    const md = buildFlakyTestsReport(
       [
         flakyRow('test A', 'api', 'members', 15.0),
         flakyRow('test B', 'api', 'auth', 40.0),
@@ -131,7 +131,11 @@ describe('buildFlakyReport', () => {
   });
 
   it('includes the window in the header and renders — for missing area', () => {
-    const md = buildFlakyReport([flakyRow('t', 'api', '', 12.0)], 30, 10.0);
+    const md = buildFlakyTestsReport(
+      [flakyRow('t', 'api', '', 12.0)],
+      30,
+      10.0,
+    );
     expect(md).toContain('30');
     expect(md).toContain('| — |'.replace(' |', '')); // area rendered as em dash
   });
@@ -140,30 +144,30 @@ describe('buildFlakyReport', () => {
     const rows = Array.from({ length: 25 }, (_, i) =>
       flakyRow(`t${i}`, 'api', 'a', i + 1),
     );
-    const md = buildFlakyReport(rows, 30, 10.0, 20);
+    const md = buildFlakyTestsReport(rows, 30, 10.0, 20);
     expect(md.match(/\| t\d+ \|/g)?.length).toBe(20);
   });
 });
 
-describe('buildSpikesReport', () => {
+describe('buildFailureSpikesReport', () => {
   it('detects a spike', () => {
-    const md = buildSpikesReport(runs('api', 0.98, 0.6), 20.0);
+    const md = buildFailureSpikesReport(runs('api', 0.98, 0.6), 20.0);
     expect(md).toContain('api');
     expect(md).toContain('%');
   });
 
   it('reports no spike when stable', () => {
-    const md = buildSpikesReport(runs('api', 0.95, 0.94), 20.0);
+    const md = buildFailureSpikesReport(runs('api', 0.95, 0.94), 20.0);
     expect(md).toContain('No spikes');
   });
 
   it('returns a message on empty rows', () => {
-    expect(buildSpikesReport([], 20.0)).toContain('No run data');
+    expect(buildFailureSpikesReport([], 20.0)).toContain('No run data');
   });
 
   it('skips suites with fewer than four runs', () => {
     const few = runs('api', 0.9, 0.1, 3);
-    expect(buildSpikesReport(few, 20.0)).toContain('No spikes');
+    expect(buildFailureSpikesReport(few, 20.0)).toContain('No spikes');
   });
 });
 
@@ -288,7 +292,7 @@ describe('buildDigest', () => {
 
 describe('branch coverage — fallbacks and alternate row shapes', () => {
   it('flaky: missing suite falls back to empty string', () => {
-    const md = buildFlakyReport(
+    const md = buildFlakyTestsReport(
       [{ test_name: 't', flake_rate_pct: 12.0, flake_count: 1, total_runs: 8 }],
       30,
       10.0,
@@ -315,7 +319,7 @@ describe('branch coverage — fallbacks and alternate row shapes', () => {
         total: 100,
       },
     ];
-    const md = buildSpikesReport(rows, 20.0);
+    const md = buildFailureSpikesReport(rows, 20.0);
     expect(md).toContain('api');
     expect(md).toContain('pp');
   });
@@ -378,7 +382,7 @@ describe('branch coverage — fallbacks and alternate row shapes', () => {
 
 describe('unit semantics', () => {
   it('windowRuns is a count of runs, not days', () => {
-    const md = buildFlakyReport(
+    const md = buildFlakyTestsReport(
       [flakyRow('t', 'api', 'members', 34.0)],
       30,
       10.0,
@@ -387,7 +391,7 @@ describe('unit semantics', () => {
   });
 
   it('minRatePct is a percentage, so 10.0 means ten percent', () => {
-    const md = buildFlakyReport(
+    const md = buildFlakyTestsReport(
       [flakyRow('t', 'api', 'members', 34.0)],
       30,
       10.0,
@@ -398,20 +402,20 @@ describe('unit semantics', () => {
   });
 
   it('states both units in the empty-rows message', () => {
-    expect(buildFlakyReport([], 30, 10.0)).toBe(
+    expect(buildFlakyTestsReport([], 30, 10.0)).toBe(
       'No tests above 10.0% flake rate in the last 30 runs.\n',
     );
   });
 
   it('deltaPp is percentage points, not percent', () => {
-    expect(buildSpikesReport([], 20.0)).toContain('No run data');
-    const md = buildSpikesReport(runs('api', 0.98, 0.6), 20.0);
+    expect(buildFailureSpikesReport([], 20.0)).toContain('No run data');
+    const md = buildFailureSpikesReport(runs('api', 0.98, 0.6), 20.0);
     expect(md).toContain('20.0pp');
   });
 
   it('deltaPp threshold gates on the point increase', () => {
     // 0.95 -> 0.94 is a 1pp move, far under a 20pp threshold.
-    expect(buildSpikesReport(runs('api', 0.95, 0.94), 20.0)).toContain(
+    expect(buildFailureSpikesReport(runs('api', 0.95, 0.94), 20.0)).toContain(
       'No spikes',
     );
   });

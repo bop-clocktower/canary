@@ -5,7 +5,7 @@
  * doctor, ticket-update). The commander wiring (options/args/defaults) lives in
  * `cli.ts`; these functions are the thin handlers it dispatches to.
  *
- * Conventions mirror `guardian/cli.ts`: `CliExit` for business exits,
+ * Conventions mirror `guardian/cli.ts`: `CliExitError` for business exits,
  * `jsonIndent2` for `json.dumps(indent=2)`, picocolors for rich markup (color
  * strips on a non-TTY sink so plain text is byte-exact), and output glyphs as
  * `\u{...}` escapes emitted verbatim.
@@ -22,7 +22,7 @@ import { basename, extname, join, resolve } from 'node:path';
 
 import pc from 'picocolors';
 
-import { CliExit, jsonIndent2 } from './cli-common.js';
+import { CliExitError, jsonIndent2 } from './cli-common.js';
 import { gateOutcome } from './core/gate-result.js';
 import { ckInitCmd } from './company-knowledge-cli.js';
 import { extractFrameworkHint } from './core/classifier.js';
@@ -138,7 +138,7 @@ interface RecommendOptions {
   json?: boolean;
 }
 
-export function recommendCmd(
+export function recommendFrameworkCmd(
   promptText: string,
   opts: RecommendOptions,
   deps: MainDeps,
@@ -220,7 +220,10 @@ const TIER_STYLE: Record<string, (s: string) => string> = {
   catalog: pc.yellow,
 };
 
-export function frameworksCmd(opts: FrameworksOptions, deps: MainDeps): void {
+export function listFrameworksCmd(
+  opts: FrameworksOptions,
+  deps: MainDeps,
+): void {
   const summaries = deps.makeRegistry().summaries();
 
   if (opts.json) {
@@ -267,13 +270,13 @@ export function feedbackCmd(
     deps.out(
       `${pc.bold(pc.red(CROSS))} Unknown --category '${opts.category}'. Choose one of: ${VALID_CATEGORIES.join(', ')}.`,
     );
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
   if (!message || !message.trim()) {
     deps.out(
       `${pc.bold(pc.red(CROSS))} A feedback message is required.\nUsage: ${pc.bold('canary feedback "<message>" [--category bug|ux|docs|idea]')}`,
     );
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 
   const fb = buildFeedback(message.trim(), opts.category, resolveVersion(deps));
@@ -458,7 +461,7 @@ function resolveMigrateOverlay(
     } catch (e) {
       if (e instanceof OverlayNotFound) {
         deps.out(`\n${pc.bold(pc.red(CROSS))} ${e.message}`);
-        throw new CliExit(1);
+        throw new CliExitError(1);
       }
       throw e;
     }
@@ -487,7 +490,7 @@ function resolveMigrateOverlay(
     deps.out(
       `\n${pc.bold(pc.red(CROSS))} ${tracked.length} tracked overlays registered (${names}).\nChoose one with ${pc.bold('--from <name>')}.`,
     );
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
   return null;
 }
@@ -503,7 +506,7 @@ function migrateCheck(
     deps.out(
       `\n${pc.yellow('No overlay to check against.')} Track one with ${pc.bold('canary overlay add')} or pass ${pc.bold('--from <overlay>')}.`,
     );
-    throw new CliExit(0);
+    throw new CliExitError(0);
   }
 
   let report;
@@ -513,7 +516,7 @@ function migrateCheck(
     deps.out(
       `\n${pc.bold(pc.red(CROSS))} ${e instanceof Error ? e.message : String(e)}`,
     );
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 
   if (json) {
@@ -522,7 +525,7 @@ function migrateCheck(
     deps.out(report.to_markdown());
   }
 
-  throw new CliExit(report.exit_code());
+  throw new CliExitError(report.exit_code());
 }
 
 export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
@@ -532,7 +535,7 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
 
   if (opts.check) {
     migrateCheck(migrator, root, overlayPath, opts.json ?? false, deps);
-    return; // unreachable -- migrateCheck always throws CliExit
+    return; // unreachable -- migrateCheck always throws CliExitError
   }
 
   let ctx;
@@ -542,7 +545,7 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
     deps.out(
       `\n${pc.bold(pc.red('Detection error:'))} ${e instanceof Error ? e.message : String(e)}`,
     );
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 
   if (!ctx.is_harness_project) {
@@ -553,7 +556,7 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
         `\n${pc.bold(pc.red(CROSS))} No harness project detected at ${pc.bold(root)}.\nExpected ${pc.dim('harness.config.json')} and ${pc.dim('.harness/')} directory.`,
       );
     }
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 
   const dryRun = !opts.apply;
@@ -574,7 +577,7 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
     deps.out(
       `\n${pc.bold(pc.red('Error:'))} ${e instanceof Error ? e.message : String(e)}`,
     );
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 
   if (opts.json) {
@@ -651,7 +654,7 @@ function abstain(remedy: string, deps: MainDeps, json: boolean): never {
     deps.out(pc.bold(pc.yellow(outcome.summaryLine)));
     deps.out(`  ${remedy}`);
   }
-  throw new CliExit(outcome.exitCode);
+  throw new CliExitError(outcome.exitCode);
 }
 
 /**
@@ -727,7 +730,7 @@ export function reviewTestCmd(
   if (json) {
     deps.out(jsonIndent2(allFindings.map(findingPayload)));
     if (allFindings.some((f) => f.severity === 'critical')) {
-      throw new CliExit(1);
+      throw new CliExitError(1);
     }
     return;
   }
@@ -763,7 +766,7 @@ export function reviewTestCmd(
     `${pc.bold(`${allFindings.length} finding(s):`)} ${parts.join(', ')}`,
   );
 
-  if (counts['critical']) throw new CliExit(1);
+  if (counts['critical']) throw new CliExitError(1);
 }
 
 export function flakeCheckCmd(
@@ -782,7 +785,7 @@ export function flakeCheckCmd(
   // Exit-code parity with human mode, same reason as `review-test` above.
   if (json) {
     deps.out(jsonIndent2(allFindings.map(findingPayload)));
-    if (allFindings.length > 0) throw new CliExit(1);
+    if (allFindings.length > 0) throw new CliExitError(1);
     return;
   }
 
@@ -803,7 +806,7 @@ export function flakeCheckCmd(
   }
 
   deps.out(pc.bold(`${allFindings.length} flakiness pattern(s) found.`));
-  throw new CliExit(1);
+  throw new CliExitError(1);
 }
 
 // --- heal-test ---------------------------------------------------------------
@@ -821,7 +824,7 @@ export function healTestCmd(
 ): void {
   if (!isFile(path)) {
     deps.out(pc.red(`Error: ${path} is not a file.`));
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 
   const result = deps.makeHealer().heal(path);
@@ -935,24 +938,24 @@ export function upgradeCmd(opts: UpgradeOptions, deps: MainDeps): void {
     report();
   } else {
     deps.out(`${pc.red('Upgrade failed.')}\n${pip.stderr.trim()}`);
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 }
 
 // --- overlay / doctor (npm-shim pointers) ------------------------------------
 
-export function overlayStub(deps: MainDeps): void {
+export function overlayCmd(deps: MainDeps): void {
   deps.out(
     `${pc.yellow('`canary overlay` is provided by the npm install of Canary.')}\nInstall it with:  ${pc.bold('npm install -g canary-test-cli')}\nThe pipx/Python entry point does not include the overlay commands.`,
   );
-  throw new CliExit(1);
+  throw new CliExitError(1);
 }
 
-export function doctorStub(deps: MainDeps): void {
+export function doctorCmd(deps: MainDeps): void {
   deps.out(
     `${pc.yellow('`canary doctor` is provided by the npm install of Canary.')}\nInstall it with:  ${pc.bold('npm install -g canary-test-cli')}\nThe pipx/Python entry point does not include the doctor command.`,
   );
-  throw new CliExit(1);
+  throw new CliExitError(1);
 }
 
 // --- ticket-update -----------------------------------------------------------
@@ -984,7 +987,7 @@ export async function ticketUpdateCmd(
           `Could not read result file '${opts.result}': ${exc instanceof Error ? exc.message : String(exc)}`,
         ),
       );
-      throw new CliExit(1);
+      throw new CliExitError(1);
     }
   }
 
@@ -1048,7 +1051,7 @@ export async function ticketUpdateCmd(
   }
 
   if (updateResult.transition.reason.startsWith(WARN)) {
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 }
 
