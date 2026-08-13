@@ -205,6 +205,15 @@ zero.**
    cemented the duplication, so it was left exported and recorded here instead.
    Consolidating the eight copies is a separate change.
 
+   **Resolved in #710.** The single implementation now lives in
+   `ts/src/util/ensure-ascii.ts` — `util`, not `cli-common.ts`, because the
+   copies spanned the `core`, `guardian`, and entry layers and the layer model
+   permits none of them to depend on `cli`. All nine call sites import it, and
+   `ts/test/shared-helper-single-source.test.ts` fails if a ninth copy is
+   declared. The measured entropy count fell by exactly one (the dead export),
+   which is the point worth keeping: the gate could only ever see the one
+   finding, while the eight copies it could not see were the actual defect.
+
 4. `scripts/entropy-ratchet.mjs` compares the count from
    `harness cleanup --findings-json` against that baseline and fails above it.
    `continue-on-error` is gone from the step.

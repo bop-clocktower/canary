@@ -14,13 +14,19 @@
  *     commander's usage-error exit code (1) to typer/click's 2, while leaving an
  *     explicit `--help`/`--version` at 0. Applied to the program AND every
  *     subcommand.
- *   - {@link ensureAscii} / {@link jsonIndent2} -- Python `json.dumps` fidelity:
- *     `ensure_ascii=True` (per-UTF-16-unit escaping, so astral chars emit a
- *     surrogate pair exactly like CPython) and the `indent=2` pretty form (whose
- *     separators match `JSON.stringify(x, null, 2)` byte-for-byte).
+ *   - {@link jsonIndent2} -- Python `json.dumps(x, indent=2)` fidelity: the
+ *     separators match `JSON.stringify(x, null, 2)` byte-for-byte, and the
+ *     `ensure_ascii=True` default is restored by `ensureAscii`.
+ *
+ * `ensureAscii` itself used to be declared and exported here, and was imported
+ * by nobody while eight modules carried private copies (#710). It now lives in
+ * `util/ensure-ascii.ts` -- the one layer `core`, `guardian`, and the entry
+ * modules are all permitted to depend on, which `cli` is not.
  */
 
 import { CommanderError } from 'commander';
+
+import { ensureAscii } from './util/ensure-ascii.js';
 
 export { CliExitError } from './guardian/cli.js';
 
@@ -38,21 +44,6 @@ export function normalizeUsageExit(err: CommanderError): never {
     err.exitCode = 2;
   }
   throw err;
-}
-
-/**
- * Escape every non-ASCII UTF-16 code UNIT to `\uXXXX`, matching Python
- * `json.dumps(ensure_ascii=True)`. Iterating by unit (not code point) means an
- * astral char's surrogate pair emits `\udXXX\udXXX`, exactly like CPython; a
- * code-point regex would stop at U+FFFF and leave astral chars raw.
- */
-export function ensureAscii(json: string): string {
-  let out = '';
-  for (let i = 0; i < json.length; i++) {
-    const c = json.charCodeAt(i);
-    out += c >= 0x80 ? '\\u' + c.toString(16).padStart(4, '0') : json[i];
-  }
-  return out;
 }
 
 /**

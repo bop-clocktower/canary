@@ -34,7 +34,7 @@
  *     default for `_WORKING_DIR` uses `??` to mirror `os.environ.get(k, cwd)`
  *     (an explicitly-empty env var stays `""`).
  *   - **ensure_ascii.** Hand-built JSON returned to the MCP host is escaped via
- *     {@link ensureAscii} (the reporter.ts pattern) so non-ASCII code points
+ *     the shared {@link ensureAscii} (`util/ensure-ascii.ts`) so non-ASCII units
  *     emit `\uXXXX`, matching Python's default `json.dumps`.
  *   - **splitlines.** `context_snippets` uses {@link pySplitlines}, which drops
  *     a single trailing-newline empty tail exactly as `str.splitlines()` does.
@@ -63,6 +63,7 @@ import { FrameworkRegistry } from './core/framework-registry.js';
 import { HarnessMigrator } from './core/migrator.js';
 import { findTestFiles, PatternMatcher } from './core/pattern-matcher.js';
 import { Scaffolder } from './core/scaffolder.js';
+import { ensureAscii } from './util/ensure-ascii.js';
 
 // ---------------------------------------------------------------------------
 // Module constants (mirror agent/mcp_server.py)
@@ -120,19 +121,6 @@ const MAX_FILE_FUNCTIONS = 20;
 // ---------------------------------------------------------------------------
 // Python-compatibility helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Reproduce Python's `json.dumps(..., ensure_ascii=True)` (the library default):
- * escape every code point >= 0x80 as `\uXXXX`. Copied per-module, matching the
- * reporter.ts / guardian pattern (the regex range is written with `\u....`
- * escapes so this source stays ASCII).
- */
-function ensureAscii(json: string): string {
-  return json.replace(
-    /[\u0080-\uffff]/g,
-    (ch) => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'),
-  );
-}
 
 /**
  * Split like Python's `str.splitlines()` for the common line endings: splits on
