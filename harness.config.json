@@ -150,6 +150,7 @@
       "**/*.spec.cjs"
     ],
     "entryPoints": [
+      "ts/test/doc-links-testkit.ts",
       "ts/src/cli.ts",
       "ts/src/mcp-server.ts",
       "npm/src/router.ts",
@@ -198,6 +199,7 @@
   },
   "performance": {
     "entryPoints": [
+      "ts/test/doc-links-testkit.ts",
       "ts/src/cli.ts",
       "ts/src/mcp-server.ts",
       "npm/src/router.ts",
