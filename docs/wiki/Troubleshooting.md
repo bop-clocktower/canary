@@ -48,7 +48,7 @@ cat ts/src/data/frameworks/registry.json
 If the category genuinely has no entry, a new registry entry is needed. See the
 [canary-add-framework skill][add-framework] for how to add one.
 
-[add-framework]: ../skills/claude-code/canary-add-framework/SKILL.md
+[add-framework]: ../../agents/skills/claude-code/canary-add-framework/SKILL.md
 
 ## Test Execution Fails After Generation
 

@@ -208,6 +208,40 @@ describe('check_doc_links', () => {
 
       expect(findings()).toEqual([]);
     });
+
+    it('checks reference-style definitions, not just inline links', () => {
+      // This repo carries 21 of them, and one was genuinely dead — a
+      // `docs/adr/` target left behind by the move to
+      // `docs/knowledge/decisions/`. Checking only `[text](path)` would have
+      // let this class through while reporting a confident zero.
+      write(
+        'docs/a.md',
+        ['See [the ADR][adr].', '', '[adr]: ../adr/1.md', ''].join('\n'),
+      );
+
+      const found = findings();
+      expect(found).toHaveLength(1);
+      expect(found[0]?.target).toBe('../adr/1.md');
+      expect(found[0]?.line).toBe(3);
+    });
+
+    it('checks the anchor on a reference-style definition too', () => {
+      write('docs/target.md', '## Setup\n');
+      write('docs/a.md', '[t]: ./target.md#nope\n');
+
+      const found = findings();
+      expect(found).toHaveLength(1);
+      expect(found[0]?.kind).toBe('anchor');
+    });
+
+    it('ignores a reference definition inside a fence', () => {
+      write(
+        'docs/a.md',
+        ['```markdown', '[adr]: ../adr/1.md', '```', ''].join('\n'),
+      );
+
+      expect(findings()).toEqual([]);
+    });
   });
 
   describe('the denominator', () => {

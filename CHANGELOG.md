@@ -28,12 +28,18 @@ under the project's former name) are documented in the
   invisible, which is the cost [#676] was opened to remove. The new script
   re-implements the check correctly over 249 Markdown files (more than the drift
   check scans), takes no path allowlist, abstains with exit 3 rather than
-  passing when it scanned nothing, and currently measures **0**. It is gated by
-  `ts/test/doc-links.test.ts` inside `npm test`, so no new CI job or
-  required-check entry was needed. The 27 are recorded as an accepted floor in
-  ADR 0012 rather than muted via `entropy.drift.docPaths`, which is an allowlist
-  and would have silently dropped every doc directory nobody remembered to name.
-  ([#686])
+  passing when it scanned nothing, and now measures **0** — after finding and
+  repairing **five genuinely dead links that survived [#676]**: three
+  `docs/adr/` targets orphaned by the move to `docs/knowledge/decisions/`, and
+  two `docs/wiki/` links to `agents/skills/` missing a path segment. All five
+  are reference-style definitions (`[label]: path`), a form the upstream
+  detector does not read at all — so they were never among the 27, and a checker
+  that read only `[text](path)` would have reported a confident zero over them.
+  It is gated by `ts/test/doc-links.test.ts` inside `npm test`, so no new CI job
+  or required-check entry was needed. The 27 are recorded as an accepted floor
+  in ADR 0012 rather than muted via `entropy.drift.docPaths`, which is an
+  allowlist and would have silently dropped every doc directory nobody
+  remembered to name. ([#686])
 
 [#676]: https://github.com/bop-clocktower/canary/issues/676
 [#686]: https://github.com/bop-clocktower/canary/issues/686

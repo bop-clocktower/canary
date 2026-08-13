@@ -145,20 +145,42 @@ function headingSlugs(content) {
   return slugs;
 }
 
-/** Inline links `[text](target)`, fenced and code-span regions excluded. */
+function unbracket(target) {
+  return target.startsWith('<') && target.endsWith('>')
+    ? target.slice(1, -1)
+    : target;
+}
+
+/**
+ * Every link target in a document: inline `[text](target)` **and**
+ * reference-style `[label]: target` definitions. Fenced blocks and inline code
+ * spans are excluded.
+ *
+ * Reference definitions are not an edge case here — this repo carries 21, and
+ * one of them (`docs/plans/host-llm-migration.md` → `../adr/…`) was left dead
+ * by the `docs/adr/` → `docs/knowledge/decisions/` move. A checker that reads
+ * only the inline form would have reported a confident zero over it.
+ */
 function extractLinks(content) {
   const links = [];
   const lines = blankFencedLines(content.split('\n'));
+  const inlineRe =
+    /\[[^\]]*\]\(\s*(<[^>]*>|[^)\s]+)(?:\s+"[^"]*"|\s+'[^']*')?\s*\)/g;
+  const defRe =
+    /^ {0,3}\[[^\]]+\]:\s+(<[^>]*>|\S+)(?:\s+("[^"]*"|'[^']*'|\([^)]*\)))?\s*$/;
+
   for (let i = 0; i < lines.length; i += 1) {
     const line = blankCodeSpans(lines[i]);
-    const re =
-      /\[[^\]]*\]\(\s*(<[^>]*>|[^)\s]+)(?:\s+"[^"]*"|\s+'[^']*')?\s*\)/g;
+
+    const def = defRe.exec(line);
+    if (def) {
+      links.push({ target: unbracket(def[1]), line: i + 1 });
+      continue;
+    }
+
     let m;
-    while ((m = re.exec(line)) !== null) {
-      let target = m[1];
-      if (target.startsWith('<') && target.endsWith('>'))
-        target = target.slice(1, -1);
-      links.push({ target, line: i + 1 });
+    while ((m = inlineRe.exec(line)) !== null) {
+      links.push({ target: unbracket(m[1]), line: i + 1 });
     }
   }
   return links;

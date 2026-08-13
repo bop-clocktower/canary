@@ -207,14 +207,25 @@ zero.**
    #676 was opened to remove. `scripts/check_doc_links.mjs` restores it: the
    same check, implemented correctly, on a **larger** denominator (249 Markdown
    files versus the drift check's `docs/**` plus READMEs), with no path
-   allowlist and an exit-3 abstention when the walk finds nothing. It measures 0
-   findings today, so it is strict at zero rather than ratcheted — there is
-   nothing to triage. Files carrying a generator's `Do not edit` stamp are
-   counted and printed but do not gate: `harness generate-agent-definitions`
-   emits 30 links to `references/*.md` files it never writes, which is a third
-   upstream defect and not one a commit here can fix. That exclusion keys off
-   the generator's own stamp rather than a path list, so it cannot go stale the
-   way `docPaths` would.
+   allowlist and an exit-3 abstention when the walk finds nothing.
+
+   It measures 0 today, but it did not on its first run: it found **five
+   genuinely dead links that survived #676** — three `docs/adr/` targets
+   orphaned by the move to `docs/knowledge/decisions/`, and two `docs/wiki/`
+   links to `agents/skills/` missing a path segment — all repaired in the same
+   change. Every one is a reference-style definition (`[label]: path`), a form
+   `extractFileLinks` does not read at all, so they were never among the 27 and
+   no amount of triaging that number would have surfaced them. That is the case
+   for building the check rather than only documenting the floor: the detector
+   is not merely noisy, it is also silently narrow. At 0 it is strict at zero
+   rather than ratcheted — there is nothing to triage.
+
+   Files carrying a generator's `Do not edit` stamp are counted and printed but
+   do not gate: `harness generate-agent-definitions` emits 30 links to
+   `references/*.md` files it never writes, which is a third upstream defect and
+   not one a commit here can fix. That exclusion keys off the generator's own
+   stamp rather than a path list, so it cannot go stale the way `docPaths`
+   would.
 
    The change costs four findings against this very ratchet: **292 → 296**,
    leaving **1** of headroom under the 297 ceiling. All four are
