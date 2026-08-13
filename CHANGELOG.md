@@ -14,42 +14,6 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
-### Changed
-
-- **Entropy paydown: 15 provably-dead exports removed, the ratchet ceiling
-  lowered 297 → 281.** `main` measured 296 against a 297 ceiling — one finding
-  of headroom, with two finished branches waiting that needed three between
-  them. The ceiling was **not** raised; real dead code was paid down instead.
-  Thirteen of the fifteen are `export`-keyword removals on symbols still used
-  inside their own module, so no code was deleted and nothing changed at
-  runtime. Two are genuine deletions: the `scanFile` thin wrapper in the
-  canary-savant and canary-blackhawk scanners, which no CLI and no test
-  imported. Every candidate was verified live-or-dead through the two hops the
-  analyzer cannot follow — the npm package's `require('../../dist/*.js')` test
-  imports, and the `sync-gate-result.mjs` mirror that makes `skippedSuffix` look
-  dead in `ts/src` while `npm/src/doctor.ts` uses the generated copy — which is
-  why the 15 flagged `npm/src` exports were left alone. Re-measured 296 → 281 on
-  the real tree; the before/after `--json` sets differ by exactly those 15 with
-  zero additions. ([#703])
-
-### Fixed
-
-- **The dead-link checker no longer scans files git is ignoring.** Found on
-  `main` within minutes of #696 merging: `scripts/check_doc_links.mjs` walked
-  `.github/instructions/`, a gitignored directory an editor extension writes,
-  and reported two dead links to workflows this repo does not have. The result
-  was a suite that passed in CI and failed on a laptop, over a file no commit
-  could fix. `SKIP_DIRS` could not have covered it — that list names directories
-  every checkout shares, where an ignored path is whatever a given machine
-  happens to have lying around. The walk now consults `git check-ignore`.
-  Outside a work tree (a tarball export, a vendored copy) there are no ignore
-  rules to apply, so every file is scanned — treating a missing `.git` as
-  "ignore everything" would turn it into a silent pass, the exact failure the
-  script exists to prevent. This is #688 read backwards: there, gitignored
-  source was invisible to a gate that needed to see it; here, gitignored prose
-  was visible to one that must not. Both come of never stating the denominator.
-  ([#686], [#688])
-
 ### Added
 
 - **`canary history record <results-file> --suite <name>` — the history store
@@ -142,6 +106,7 @@ under the project's former name) are documented in the
 [#333]: https://github.com/bop-clocktower/canary/issues/333
 [#341]: https://github.com/bop-clocktower/canary/issues/341
 [#462]: https://github.com/bop-clocktower/canary/issues/462
+
 - **`canary skills verify` — the skills' declared surface, checked against
   reality (closes [#487]; [#452] stays open).** A skill name is declared in up
   to six places: `agents/skills/<host>/<dir>/SKILL.md`, the flat
@@ -235,6 +200,22 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **Entropy paydown: 15 provably-dead exports removed, the ratchet ceiling
+  lowered 297 → 281.** `main` measured 296 against a 297 ceiling — one finding
+  of headroom, with two finished branches waiting that needed three between
+  them. The ceiling was **not** raised; real dead code was paid down instead.
+  Thirteen of the fifteen are `export`-keyword removals on symbols still used
+  inside their own module, so no code was deleted and nothing changed at
+  runtime. Two are genuine deletions: the `scanFile` thin wrapper in the
+  canary-savant and canary-blackhawk scanners, which no CLI and no test
+  imported. Every candidate was verified live-or-dead through the two hops the
+  analyzer cannot follow — the npm package's `require('../../dist/*.js')` test
+  imports, and the `sync-gate-result.mjs` mirror that makes `skippedSuffix` look
+  dead in `ts/src` while `npm/src/doctor.ts` uses the generated copy — which is
+  why the 15 flagged `npm/src` exports were left alone. Re-measured 296 → 281 on
+  the real tree; the before/after `--json` sets differ by exactly those 15 with
+  zero additions. ([#703])
+
 - **Twelve more identifiers renamed to say what they are at the import site.**
   The polish-tier remainder of the `naming-craft` pass whose five foundational
   findings shipped in #670. **Not a breaking change:** every name here is an
@@ -268,25 +249,23 @@ under the project's former name) are documented in the
 
 [#671]: https://github.com/bop-clocktower/canary/issues/671
 
-### Removed
-
-- **`scripts/dogfood-record-run.mjs`, replaced by `canary history record`.** The
-  script was CI glue that converted vitest JSON into a v2 history record for the
-  `dogfood.yml` fleet-health job; the capability it provided was a genuine
-  product gap, and leaving it in place alongside the new subcommand would mean
-  two writers of one store drifting apart. `dogfood.yml` now calls the shipped
-  command, so the fleet-health job dogfoods the product rather than repo-local
-  glue, and the script is gone from both `entropy.entryPoints` and
-  `performance.entryPoints`. Behaviour differences worth knowing: the record is
-  now written by the store's own serializer, so per-test rows carry
-  `run_id`/`suite`/`repo`/`test_file` (the script omitted them, which left
-  `suite` empty in flake rows) and no longer carry a `schema_version` field
-  (matching every other record the store writes — the reader treats a missing
-  version as current); a zero-result report exits **3** rather than 1; and the
-  repo slug is inferred from `GITHUB_REPOSITORY` instead of defaulting to
-  `bop-clocktower/canary`. ([#538])
-
 ### Fixed
+
+- **The dead-link checker no longer scans files git is ignoring.** Found on
+  `main` within minutes of #696 merging: `scripts/check_doc_links.mjs` walked
+  `.github/instructions/`, a gitignored directory an editor extension writes,
+  and reported two dead links to workflows this repo does not have. The result
+  was a suite that passed in CI and failed on a laptop, over a file no commit
+  could fix. `SKIP_DIRS` could not have covered it — that list names directories
+  every checkout shares, where an ignored path is whatever a given machine
+  happens to have lying around. The walk now consults `git check-ignore`.
+  Outside a work tree (a tarball export, a vendored copy) there are no ignore
+  rules to apply, so every file is scanned — treating a missing `.git` as
+  "ignore everything" would turn it into a silent pass, the exact failure the
+  script exists to prevent. This is #688 read backwards: there, gitignored
+  source was invisible to a gate that needed to see it; here, gitignored prose
+  was visible to one that must not. Both come of never stating the denominator.
+  ([#686], [#688])
 
 - **Source code hidden from the architecture gate is now a build failure.** The
   arch analyzer skips 55 directory names outright — `coverage`, `dist`, `build`,
@@ -339,6 +318,24 @@ under the project's former name) are documented in the
   wave of false positives.
 
 [#691]: https://github.com/bop-clocktower/canary/issues/691
+
+### Removed
+
+- **`scripts/dogfood-record-run.mjs`, replaced by `canary history record`.** The
+  script was CI glue that converted vitest JSON into a v2 history record for the
+  `dogfood.yml` fleet-health job; the capability it provided was a genuine
+  product gap, and leaving it in place alongside the new subcommand would mean
+  two writers of one store drifting apart. `dogfood.yml` now calls the shipped
+  command, so the fleet-health job dogfoods the product rather than repo-local
+  glue, and the script is gone from both `entropy.entryPoints` and
+  `performance.entryPoints`. Behaviour differences worth knowing: the record is
+  now written by the store's own serializer, so per-test rows carry
+  `run_id`/`suite`/`repo`/`test_file` (the script omitted them, which left
+  `suite` empty in flake rows) and no longer carry a `schema_version` field
+  (matching every other record the store writes — the reader treats a missing
+  version as current); a zero-result report exits **3** rather than 1; and the
+  repo slug is inferred from `GITHUB_REPOSITORY` instead of defaulting to
+  `bop-clocktower/canary`. ([#538])
 
 ## [7.0.0] - 2026-08-12
 
