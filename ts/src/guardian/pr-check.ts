@@ -949,9 +949,9 @@ const STICKY_MARKER = '<!-- canary-pr-guardian -->';
  * silently produces nothing on exactly the large PRs that need it most -- the
  * same silent-green failure #369 was filed for.
  *
- * 60,000 leaves ~5.5k of headroom for anything appended outside `render`
- * (degradation annotations, upsert wrappers) without inviting a body that only
- * *just* fits and then breaks when a filename grows.
+ * 60,000 leaves ~5.5k of headroom for anything appended outside
+ * `renderFindings` (degradation annotations, upsert wrappers) without inviting
+ * a body that only *just* fits and then breaks when a filename grows.
  *
  * The cap applies ONLY to the comment. The `--emit-analysis` JSON record is the
  * authoritative complete set and is never truncated.
@@ -1096,7 +1096,7 @@ function noGapsLines(
   return lines;
 }
 
-export function render(
+export function renderFindings(
   findings: GuardianFinding[],
   fmt: string,
   tier = 0,

@@ -5,7 +5,7 @@
  */
 
 import { resolveFromGraph } from './graph-tier.js';
-import { resolveHeuristic } from './heuristic-tier.js';
+import { resolveFromHeuristic } from './heuristic-tier.js';
 import { matchUnitsToIndex, readReportIndex } from './report-tier.js';
 import type { ChangedUnit, CoverageResult } from './types.js';
 
@@ -187,7 +187,7 @@ export function resolveCoverageWithInput(
   }
 
   if (remaining.length > 0) {
-    for (const r of resolveHeuristic(remaining, repoRoot)) {
+    for (const r of resolveFromHeuristic(remaining, repoRoot)) {
       resolved.set(r.unit, r);
     }
   }

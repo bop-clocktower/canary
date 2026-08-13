@@ -14,7 +14,7 @@
 import { Command } from 'commander';
 import pc from 'picocolors';
 
-import { CliExit, normalizeUsageExit } from './cli-common.js';
+import { CliExitError, normalizeUsageExit } from './cli-common.js';
 import {
   isExecutableSkillAllowed,
   resolveCliPath,
@@ -111,11 +111,11 @@ async function runCmd(
   const skill = deps.makeSkillRegistry().find(name);
   if (skill === null) {
     deps.out(`${pc.red(CROSS)} No skill named ${pc.bold(name)} found.`);
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
   if (skill.error) {
     deps.out(`${pc.red(CROSS)} Skill ${pc.bold(name)}: ${skill.error}`);
-    throw new CliExit(2);
+    throw new CliExitError(2);
   }
   if (!skill.isExecutable) {
     deps.out(
@@ -123,13 +123,13 @@ async function runCmd(
         `Skill ${pc.bold(name)} is markdown-only ${EM_DASH} no cli: or entry: field to run.`,
       ),
     );
-    throw new CliExit(2);
+    throw new CliExitError(2);
   }
   if (!isExecutableSkillAllowed(opts.allowExecutableSkills ?? false)) {
     deps.out(
       `${pc.red(CROSS)} Refusing to invoke executable skill in non-interactive context. Pass ${pc.bold('--allow-executable-skills')} to opt in (e.g. in trusted CI configurations).`,
     );
-    throw new CliExit(3);
+    throw new CliExitError(3);
   }
 
   const forwarded = args;
@@ -142,7 +142,7 @@ async function runCmd(
       deps.out(
         `${pc.red(CROSS)} ${exc instanceof Error ? exc.message : String(exc)}`,
       );
-      throw new CliExit(4);
+      throw new CliExitError(4);
     }
     const cmd = target.endsWith('.py') ? [deps.pythonExe(), target] : [target];
     const res = deps.runSubprocess(cmd[0]!, [...cmd.slice(1), ...forwarded], {
@@ -152,7 +152,7 @@ async function runCmd(
     // A spawn failure (missing interpreter/binary) yields status=null; Python's
     // subprocess.run raises FileNotFoundError -> nonzero exit. Map null -> 1, not
     // a silent 0. A normal run passes its real exit code through.
-    throw new CliExit(res.status ?? 1);
+    throw new CliExitError(res.status ?? 1);
   }
 
   // entry: branch -- see module docstring (Python-module semantics are not
@@ -162,20 +162,20 @@ async function runCmd(
     deps.out(
       `${pc.red(CROSS)} Skill ${pc.bold(name)} entry must be 'module:callable', got '${skill.entry}'`,
     );
-    throw new CliExit(5);
+    throw new CliExitError(5);
   }
   try {
     const mod = (await import(moduleName)) as Record<string, unknown>;
     const target = mod[attr];
     if (typeof target !== 'function') throw new Error('not callable');
     const rc = (target as () => unknown)();
-    throw new CliExit(typeof rc === 'number' ? rc : 0);
+    throw new CliExitError(typeof rc === 'number' ? rc : 0);
   } catch (exc) {
-    if (exc instanceof CliExit) throw exc;
+    if (exc instanceof CliExitError) throw exc;
     deps.out(
       `${pc.red(CROSS)} Skill ${pc.bold(name)} entry '${skill.entry}': ${exc instanceof Error ? exc.message : String(exc)}`,
     );
-    throw new CliExit(6);
+    throw new CliExitError(6);
   }
 }
 

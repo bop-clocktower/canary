@@ -14,9 +14,9 @@ import {
   buildAreaHealthReport,
   buildCommonFailuresReport,
   buildDigest,
-  buildFlakyReport,
+  buildFlakyTestsReport,
   buildRegressionCandidatesReport,
-  buildSpikesReport,
+  buildFailureSpikesReport,
 } from './reports.js';
 import type {
   AreaHealthRow,
@@ -154,8 +154,8 @@ export class AnalysisEngine {
     });
 
     const artifacts: Record<string, string> = {
-      'flaky.md': buildFlakyReport(flaky, windowRuns, minFlakeRatePct),
-      'spikes.md': buildSpikesReport(spikesRows, deltaPp),
+      'flaky.md': buildFlakyTestsReport(flaky, windowRuns, minFlakeRatePct),
+      'spikes.md': buildFailureSpikesReport(spikesRows, deltaPp),
       'area-health.md': buildAreaHealthReport(areaRows, weeks),
       'common-failures.md': buildCommonFailuresReport(commonRows, minSuites),
       'regression-candidates.md':

@@ -115,7 +115,7 @@ function iterTestFiles(repoRoot: string): Array<[string, string]> {
  * A unit is heuristic-covered iff some test file under `repoRoot` references
  * the unit's file stem or a top-level symbol name (word-boundary scan).
  */
-export function resolveHeuristic(
+export function resolveFromHeuristic(
   units: ChangedUnit[],
   repoRoot = '.',
 ): CoverageResult[] {

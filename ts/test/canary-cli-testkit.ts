@@ -3,7 +3,7 @@
  * `CliRunner`. Builds a `canary` command wired to capturing sinks + injectable
  * fake factories + an isolated env/cwd/home, invokes it via
  * `parseAsync(argv, { from: 'user' })`, and returns captured stdout/stderr plus
- * the business exit code (`CliExit`) or commander usage exit code
+ * the business exit code (`CliExitError`) or commander usage exit code
  * (`CommanderError`).
  *
  * Not named `*.test.ts` so vitest's `test/*.test.ts` glob never collects it.
@@ -15,7 +15,7 @@ import { join } from 'node:path';
 
 import { CommanderError } from 'commander';
 
-import { CliExit } from '../src/cli-common.js';
+import { CliExitError } from '../src/cli-common.js';
 import { createCanaryCommand } from '../src/cli.js';
 import type { MainDeps } from '../src/main-deps.js';
 
@@ -86,7 +86,7 @@ export async function invokeCanary(
     const cmd = createCanaryCommand(fullDeps);
     await cmd.parseAsync(args, { from: 'user' });
   } catch (e) {
-    if (e instanceof CliExit) code = e.code;
+    if (e instanceof CliExitError) code = e.code;
     else if (e instanceof CommanderError) code = e.exitCode;
     else {
       restore(savedEnv, savedCwd, cwd);

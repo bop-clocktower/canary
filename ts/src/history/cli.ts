@@ -5,7 +5,7 @@
  *
  * Follows the guardian CLI conventions (see `../cli-common.ts`): a
  * {@link createHistoryCommand} factory wired to an injectable {@link HistoryDeps}
- * (out/err sinks, env, a store factory), `CliExit` for business exits, and
+ * (out/err sinks, env, a store factory), `CliExitError` for business exits, and
  * `normalizeUsageExit` on every command so usage errors exit 2.
  *
  * Python->TS fidelity notes:
@@ -27,7 +27,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { Command, Option } from 'commander';
 import pc from 'picocolors';
 
-import { CliExit, jsonIndent2, normalizeUsageExit } from '../cli-common.js';
+import {
+  CliExitError,
+  jsonIndent2,
+  normalizeUsageExit,
+} from '../cli-common.js';
 import { gateOutcome } from '../core/gate-result.js';
 import type { RunInput, TestResultInput } from './schema.js';
 import { makeRunId } from './schema.js';
@@ -173,7 +177,7 @@ async function pushCmd(
 ): Promise<void> {
   if (!existsSync(historyFile)) {
     deps.out(`${pc.red('Not found:')} ${historyFile}`);
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 
   const store = deps.makeStore(opts.dbUrl, historyFile);
@@ -186,7 +190,7 @@ async function pushCmd(
 
   if (records.length === 0) {
     deps.out(pc.yellow('No runs found in history file.'));
-    throw new CliExit(0);
+    throw new CliExitError(0);
   }
 
   const latest = { ...records[records.length - 1]! };
@@ -200,7 +204,7 @@ async function pushCmd(
     deps.out(
       `${pc.cyan('dry-run:')} would push run ${pc.bold(run.run_id)} (${results.length} tests)`,
     );
-    throw new CliExit(0);
+    throw new CliExitError(0);
   }
 
   await store.pushRun(run, results);
@@ -386,7 +390,7 @@ async function migrateCmd(
 ): Promise<void> {
   if (!existsSync(file)) {
     deps.out(`${pc.red('Not found:')} ${file}`);
-    throw new CliExit(1);
+    throw new CliExitError(1);
   }
 
   const store = deps.makeStore(opts.dbUrl);

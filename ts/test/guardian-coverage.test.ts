@@ -19,7 +19,7 @@ import {
   resolveCoverage,
   resolveFromGraph,
   resolveFromReport,
-  resolveHeuristic,
+  resolveFromHeuristic,
 } from '../src/guardian/coverage.js';
 
 let dir: string;
@@ -830,7 +830,7 @@ describe('resolveFromGraph depth (#320)', () => {
 
 // ---------------------------------------------------------------------------
 
-describe('resolveHeuristic', () => {
+describe('resolveFromHeuristic', () => {
   function buildRepo(): string {
     mkdirSync(join(dir, 'pkg'));
     mkdirSync(join(dir, 'tests'));
@@ -855,7 +855,7 @@ describe('resolveHeuristic', () => {
   it('stem referenced by test is covered', () => {
     const repo = buildRepo();
     const foo: ChangedUnit = { path: 'pkg/foo.py', added_ranges: [[1, 2]] };
-    const results = resolveHeuristic([foo], repo);
+    const results = resolveFromHeuristic([foo], repo);
     expect(results[0]!.covered).toBe(true);
     expect(results[0]!.fidelity).toBe(Fidelity.Heuristic);
     expect(results[0]!.evidence).toContain('test_foo.py');
@@ -864,7 +864,7 @@ describe('resolveHeuristic', () => {
   it('unreferenced unit is uncovered', () => {
     const repo = buildRepo();
     const bar: ChangedUnit = { path: 'pkg/bar.py', added_ranges: [[1, 2]] };
-    const results = resolveHeuristic([bar], repo);
+    const results = resolveFromHeuristic([bar], repo);
     expect(results[0]!.covered).toBe(false);
     expect(results[0]!.fidelity).toBe(Fidelity.Heuristic);
   });
@@ -883,7 +883,7 @@ describe('resolveHeuristic', () => {
       'utf-8',
     );
     const unit: ChangedUnit = { path: 'pkg/widget.py', added_ranges: [[1, 2]] };
-    const results = resolveHeuristic([unit], dir);
+    const results = resolveFromHeuristic([unit], dir);
     expect(results[0]!.covered).toBe(true);
   });
 
@@ -893,7 +893,7 @@ describe('resolveHeuristic', () => {
       { path: 'pkg/foo.py', added_ranges: [[1, 2]] },
       { path: 'pkg/bar.py', added_ranges: [[1, 2]] },
     ];
-    const results = resolveHeuristic(units, repo);
+    const results = resolveFromHeuristic(units, repo);
     expect(results.length).toBe(2);
     expect(results.every((r) => r.fidelity === Fidelity.Heuristic)).toBe(true);
   });
