@@ -106,6 +106,24 @@ under the project's former name) are documented in the
 [#333]: https://github.com/bop-clocktower/canary/issues/333
 [#341]: https://github.com/bop-clocktower/canary/issues/341
 [#462]: https://github.com/bop-clocktower/canary/issues/462
+- **Generated-test soundness rules (`SOUND-001/002/003`) in
+  `static-linter.ts`.** A test can assert, pass, and still prove nothing — when
+  the value it pins is one no correct implementation is obliged to produce.
+  `SOUND-001` flags a non-deterministic value used as an _expectation_, both
+  directly (`toBe(crypto.randomUUID())`) and through a variable tainted on an
+  earlier line — the mode `FLAKE-003/004` structurally cannot see, because the
+  assertion line itself is clean. `SOUND-002` flags exact equality against a
+  fraction with no exact binary representation, exempting `0.5`/`0.25`/`1.125`
+  by reducing the literal and testing the denominator for a power of two, so the
+  rule fires only where exact equality is genuinely a bet on the arithmetic
+  path. `SOUND-003` flags a ratio pinned to an integer, which never states
+  whether the operation truncates (the realworld S4 integer/fractional
+  precondition, one layer down). All three are `warning`, so `review-test` —
+  which exits 1 only on `critical` — cannot turn a consumer's gate red the day
+  they land; soundness blocks only at the promotion boundary. Extended in place
+  rather than added as a third scanner, per the issue's own accepted risk.
+  Measured on canary's 135-file suite: **1 finding, a true positive**
+  (`environment-detect.test.ts:287` pins `1 / 3` as `toBe(0.333)`). ([#605])
 
 - **`canary skills verify` — the skills' declared surface, checked against
   reality (closes [#487]; [#452] stays open).** A skill name is declared in up
@@ -194,6 +212,8 @@ under the project's former name) are documented in the
 [#390]: https://github.com/bop-clocktower/canary/issues/390
 [#508]: https://github.com/bop-clocktower/canary/issues/508
 [#538]: https://github.com/bop-clocktower/canary/issues/538
+[#566]: https://github.com/bop-clocktower/canary/issues/566
+[#605]: https://github.com/bop-clocktower/canary/issues/605
 [#676]: https://github.com/bop-clocktower/canary/issues/676
 [#686]: https://github.com/bop-clocktower/canary/issues/686
 [#703]: https://github.com/bop-clocktower/canary/issues/703
@@ -266,6 +286,30 @@ under the project's former name) are documented in the
   source was invisible to a gate that needed to see it; here, gitignored prose
   was visible to one that must not. Both come of never stating the denominator.
   ([#686], [#688])
+- **`blankStrings` in `static-linter.ts` never knew about backtick template
+  literals.** Only `'` and `"` were blanked, so a single-line template literal —
+  the normal shape of fixture data in a TS suite — was read as live code by
+  every per-line rule. The multi-line stripper did not cover it either: it
+  blanks the interior of a run whose delimiter count is _odd_, so a balanced
+  one-line literal fell through both. Measured on canary's own suite, this was
+  **16 of 33 findings** across `FLAKE-001/002/003/004` and the `LINT-*` family —
+  half the linter's output on this repository was its own test data. `${...}`
+  substitutions are preserved rather than blanked, because they are the one part
+  of a template literal that executes; blanking them would be an abstention
+  wearing a false positive's clothes. Same "data must never act as code" defect
+  as `canary-blackhawk`'s pragma parser, one module over. ([#605])
+
+- **`pattern-matcher.ts` could not see an ESM or CJS test suite.** Its
+  `FILE_PATTERNS` globs covered `.ts`/`.js` only, so a project whose suite is
+  `.mjs`/`.cjs`/`.mts`/`.cts` scanned to `test_count: 0` — a value no consumer
+  can distinguish from "this project has no tests", after which every caller
+  branching on `isEmpty()` silently falls back to generic conventions. This is
+  the discovery-denominator class of [#566] one module deeper than the copy that
+  was fixed there: `cli-commands.ts` learned the extensions, this one never did.
+  The globs are now derived from `JS_TEST_EXTENSIONS` instead of hand-listed,
+  and `pattern-matcher.test.ts` asserts the coverage against that shared list —
+  no suite in this repo is `.mjs`/`.cjs`, so CI can never trip over this class
+  by accident. ([#605])
 
 - **Source code hidden from the architecture gate is now a build failure.** The
   arch analyzer skips 55 directory names outright — `coverage`, `dist`, `build`,

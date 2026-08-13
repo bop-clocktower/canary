@@ -10,18 +10,40 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 
+import { JS_TEST_EXTENSIONS } from './static-linter.js';
+
+/**
+ * `**\/*.<infix>.<ext>` for every extension the scanners can actually read.
+ *
+ * Derived from {@link JS_TEST_EXTENSIONS} rather than hand-listed, because the
+ * hand-listed version is what made #566 possible and this module carried the
+ * same gap one layer deeper: the globs covered `.ts`/`.js` only, so a project
+ * whose suite is ESM (`.mjs`) or CJS (`.cjs`) scanned to `test_count: 0` — a
+ * value indistinguishable from "this project has no tests", which every
+ * consumer branching on {@link isEmpty} then treats as a clean absence.
+ *
+ * No suite in this repo is `.mjs`/`.cjs`, so CI can never trip over this by
+ * accident; `pattern-matcher.test.ts` asserts the coverage against the shared
+ * extension list instead of restating it.
+ */
+function jsGlobs(...infixes: string[]): string[] {
+  return infixes.flatMap((infix) =>
+    JS_TEST_EXTENSIONS.map((ext) => `**/*.${infix}${ext}`),
+  );
+}
+
 const FILE_PATTERNS: Record<string, string[]> = {
-  playwright: ['**/*.spec.ts', '**/*.spec.js', '**/*.test.ts', '**/*.test.js'],
-  vitest: ['**/*.test.ts', '**/*.test.js', '**/*.spec.ts', '**/*.spec.js'],
+  playwright: jsGlobs('spec', 'test'),
+  vitest: jsGlobs('test', 'spec'),
   pytest: ['**/test_*.py', '**/*_test.py'],
   k6: ['**/*.load.js', '**/load.js'],
-  e2e_ui: ['**/*.spec.ts', '**/*.spec.js'],
-  frontend_unit: ['**/*.test.ts', '**/*.test.js'],
+  e2e_ui: jsGlobs('spec'),
+  frontend_unit: jsGlobs('test'),
   api: ['**/test_*.py', '**/*_test.py'],
   performance: ['**/*.load.js'],
   python_unit: ['**/test_*.py', '**/*_test.py'],
 };
-const DEFAULT_PATTERNS = ['**/test_*.py', '**/*.spec.ts', '**/*.test.ts'];
+const DEFAULT_PATTERNS = ['**/test_*.py', ...jsGlobs('spec', 'test')];
 const IGNORED_DIRS = new Set([
   'node_modules',
   '.git',
