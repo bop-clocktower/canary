@@ -1,0 +1,8 @@
+{
+  "reason": "Async history-store contract, all the way up (#711, #390): module-size 32801->32936 (+135). Attributed against the EFFECTIVE ceiling -- the highest matching allowance, fix-704-abstain-unreadable-path.json (32801) -- not against baselines.json (26965), which check-arch quotes in its error and which is the floor rather than the operand (#736). Measured on a clean origin/main worktree, the pass/fail boundary sits between +3 lines (32795, passes) and +20 lines (32812, fails), bracketing 32801. The growth buys what #711 reports: the engine holds an async store contract, so --db-url and CANARY_HISTORY_DB_URL select the backend for real instead of being accepted with a printed apology. It lands in two places -- ts/src/analysis/cli.ts (+3771B) for the awaited handlers and the makeStore wiring, and ts/src/analysis/engine.ts (+1497B) for the async run() and readAll. The three reports computed by walking raw run records (spikes, common-failures, regression-candidates) each name themselves unverifiable against a backend without readAll rather than rendering an empty report, which is the false-green shape that only became reachable once the flag started being honoured. No new architecture violations. Growth in ts/test (analyze-remote-store.test.ts and the engine/store suites) is test code and module-size does not count it. A split was tried and reverted: extracting ~310 lines of cli.ts into a sibling commands.ts moved the metric UP to 32989, because the metric is a repo-wide line count and a new module adds its own header and imports.",
+  "categories": {
+    "module-size": 32936
+  },
+  "violationIds": [],
+  "createdFrom": "f83f801"
+}
