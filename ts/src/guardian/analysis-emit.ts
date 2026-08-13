@@ -14,7 +14,7 @@
  *     canary's records -- they never clobber a harness record and always pass
  *     `AnalysisArchive.safePath` (no traversal).
  *   - {@link buildAnalysisRecord} -- the v1.0 envelope wrapping the verbatim
- *     `render(fmt="json")` findings array.
+ *     `renderFindings(fmt="json")` findings array.
  *
  * SC-11 boundary: this module is deterministic filesystem/JSON only. It imports
  * no `AgentTier`/LLM-SDK module (only intra-guardian, agent-free helpers).
@@ -48,7 +48,7 @@ import {
   coverageDegradedNotice,
   coverageStatus,
 } from './coverage.js';
-import { GuardianFinding, combineNotices, render } from './pr-check.js';
+import { GuardianFinding, combineNotices, renderFindings } from './pr-check.js';
 
 // 1.1 adds the additive `coverage` block (#554); readers of 1.0 are unaffected.
 // 1.2 adds the additive `skipped` list (#582). Additive again, and bumped again
@@ -56,7 +56,7 @@ import { GuardianFinding, combineNotices, render } from './pr-check.js';
 // tell which fields it can rely on being present, and silence about a new field
 // is indistinguishable from the field being absent for a real reason.
 export const SCHEMA_VERSION = '1.2';
-export const SOURCE = 'canary-pr-guardian';
+export const ANALYSIS_SOURCE = 'canary-pr-guardian';
 const REF_SAFE = /[^A-Za-z0-9._-]/g;
 const REF_MAX = 100; // cap the sanitized ref so a long branch never hits ENAMETOOLONG
 
@@ -94,7 +94,10 @@ function stripDashes(value: string): string {
  * `REF_MAX` chars with a short hash suffix appended to preserve uniqueness --
  * only when truncation actually happens. Short refs are unchanged.
  */
-export function analysisFilename(ref: string, source: string = SOURCE): string {
+export function analysisFilename(
+  ref: string,
+  source: string = ANALYSIS_SOURCE,
+): string {
   let safe = stripDashes(ref.replace(REF_SAFE, '-')) || 'local';
   if (safe.length > REF_MAX) {
     // sha1 is a filename disambiguator (not a security digest); it matches the
@@ -168,7 +171,8 @@ function isoUtcNow(): string {
 }
 
 /**
- * Build the v1.0 envelope. `findings` is exactly `render(fmt='json')`'s array.
+ * Build the v1.0 envelope. `findings` is exactly the array from
+ * `renderFindings(fmt='json')`.
  */
 export function buildAnalysisRecord(
   findings: GuardianFinding[],
@@ -183,7 +187,7 @@ export function buildAnalysisRecord(
     coverage ? coverageDegradedNotice(coverage) : null,
   );
   const inner = JSON.parse(
-    render(findings, 'json', effective_tier, notice),
+    renderFindings(findings, 'json', effective_tier, notice),
   ) as { findings: unknown[] };
   const active = findings.filter((f) => !f.suppressed);
   const suppressed = findings.filter((f) => f.suppressed);
@@ -193,7 +197,7 @@ export function buildAnalysisRecord(
   }
   return {
     schemaVersion: SCHEMA_VERSION,
-    source: SOURCE,
+    source: ANALYSIS_SOURCE,
     ref,
     gate,
     exitCode: exit_code,
@@ -247,7 +251,7 @@ export const emitSeams = {
  * The analyses dir itself is created on demand by {@link emitAnalysis} (mirroring
  * harness `AnalysisArchive.save`'s recursive `mkdir`).
  */
-export function channelAvailable(analysesDir: string): boolean {
+export function isChannelAvailable(analysesDir: string): boolean {
   try {
     return statSync(dirname(analysesDir)).isDirectory();
   } catch {
@@ -271,7 +275,7 @@ export function emitAnalysis(
   args: EmitAnalysisArgs,
 ): EmitResult {
   const { analysesDir } = args;
-  if (!channelAvailable(analysesDir)) {
+  if (!isChannelAvailable(analysesDir)) {
     return {
       action: 'unavailable',
       path: null,
@@ -282,8 +286,8 @@ export function emitAnalysis(
   }
   const target = join(analysesDir, analysisFilename(args.ref));
   try {
-    // Build INSIDE the try: a non-I/O error (from JSON/render) would otherwise
-    // crash pr-check instead of degrading.
+    // Build INSIDE the try: a non-I/O error (from JSON/renderFindings) would
+    // otherwise crash pr-check instead of degrading.
     const record = emitSeams.buildAnalysisRecord(findings, args);
     mkdirSync(analysesDir, { recursive: true });
     // Atomic write: stage into a same-dir temp then rename (atomic on one

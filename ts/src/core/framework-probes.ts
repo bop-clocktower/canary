@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { globFiles, readTextOrNull } from './fs-glob.js';
 
 // (config_file, framework, shape, confidence)
-export const _CONFIG_PROBES: Array<[string, string, string, string]> = [
+export const CONFIG_PROBES: Array<[string, string, string, string]> = [
   ['playwright.config.ts', 'playwright', 'e2e_ui', 'config'],
   ['playwright.config.js', 'playwright', 'e2e_ui', 'config'],
   ['cypress.config.ts', 'playwright', 'e2e_ui', 'config'],
@@ -90,7 +90,7 @@ export type ProbeResult = [
  * Return 'api' when no playwright spec file uses page/browser fixtures, else
  * 'e2e_ui' (the default when any UI signal is found or no spec files exist).
  */
-export function inferPlaywrightShape(root: string): string {
+export function inferPlaywrightTestType(root: string): string {
   const specGlobs = [
     'tests/**/*.spec.ts',
     'tests/**/*.spec.js',
@@ -118,11 +118,11 @@ export function inferPlaywrightShape(root: string): string {
 
 /** Tier 1 -- a dedicated config file (highest confidence). */
 function probeConfig(root: string): ProbeResult | null {
-  for (const [filename, framework, shape, confidence] of _CONFIG_PROBES) {
+  for (const [filename, framework, shape, confidence] of CONFIG_PROBES) {
     if (existsSync(join(root, filename))) {
       // For playwright config files, distinguish API vs UI suites.
       if (framework === 'playwright' && shape === 'e2e_ui') {
-        const inferred = inferPlaywrightShape(root);
+        const inferred = inferPlaywrightTestType(root);
         if (inferred !== shape)
           return [framework, inferred, filename, 'content'];
       }
@@ -212,10 +212,10 @@ function probeLanguage(config: Record<string, unknown>): ProbeResult | null {
  * (#504 part 1, spec test #8).
  *
  * Note the tier list and the returned `confidence` are not the same axis: the
- * config tier returns confidence `content` when `inferPlaywrightShape` refines
- * e2e_ui to api, because the refinement read file contents to decide.
+ * config tier returns confidence `content` when `inferPlaywrightTestType`
+ * refines e2e_ui to api, because the refinement read file contents to decide.
  */
-export function probe(
+export function probeFramework(
   dir: string,
   config: Record<string, unknown>,
   tiers: ProbeTier[],

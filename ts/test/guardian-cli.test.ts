@@ -992,13 +992,13 @@ describe('mark-authored', () => {
 
 describe('watch', () => {
   it('prints startup + poll, then stops on interrupt', async () => {
-    const { WatchInterrupt } = await import('../src/guardian/cli.js');
+    const { WatchInterruptError } = await import('../src/guardian/cli.js');
     let calls = 0;
     const res = await invokeGuardian(['watch', '--interval', '1'], {
       deps: {
         sleep: async () => {
           calls += 1;
-          throw new WatchInterrupt();
+          throw new WatchInterruptError();
         },
       },
     });

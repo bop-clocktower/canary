@@ -14,6 +14,41 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- **Twelve more identifiers renamed to say what they are at the import site.**
+  The polish-tier remainder of the `naming-craft` pass whose five foundational
+  findings shipped in #670. **Not a breaking change:** every name here is an
+  internal module export, and `canary-test-cli` publishes only `./reporter` and
+  `./package.json`, so nothing a consumer can import moves. The CLI surface is
+  byte-identical, evidenced by a differential parity run of ten invocations
+  through both builds. Four themes. Names that told you nothing across a module
+  boundary got their domain back: `SOURCE` → `ANALYSIS_SOURCE` (matching the
+  sibling `ADJUDICATION_SOURCE`; the emitted `source` string value is
+  unchanged), `render` → `renderFindings`, and `probe` → `probeFramework`. Names
+  that broke a convention the repo had already established rejoined it:
+  `channelAvailable` → `isChannelAvailable` (thirteen sibling `is*` predicates),
+  `CliExit` / `WatchInterrupt` → `CliExitError` / `WatchInterruptError` (six of
+  ten `extends Error` classes already carried the suffix), and
+  `resolveHeuristic` → `resolveFromHeuristic` (siblings `resolveFromReport`,
+  `resolveFromGraph`). Two constants claimed to be private while being exported;
+  since both cross a module boundary by design, the contradiction is resolved in
+  favour of the modifier: `_CONFIG_PROBES` → `CONFIG_PROBES` and
+  `_WORKSPACE_SKIP_DIRS` → `WORKSPACE_SKIP_DIRS`. And the vague ones named their
+  subject: `inferPlaywrightShape` → `inferPlaywrightTestType`,
+  `buildFlakyReport` → `buildFlakyTestsReport`, `buildSpikesReport` →
+  `buildFailureSpikesReport`. Separately, the `*Cmd` handler family in
+  `cli-commands.ts` was made internally consistent in one sweep rather than
+  piecemeal: `frameworksCmd` → `listFrameworksCmd` and `recommendCmd` →
+  `recommendFrameworkCmd` (a bare plural noun and a verb with no artifact, in a
+  family where every other member names its command), while `overlayStub` and
+  `doctorStub` became `overlayCmd` and `doctorCmd` — "Stub" encoded a build
+  status into a public name that will outlive the stub. No test was edited
+  beyond the identifier substitution itself; the suite passing unchanged is the
+  verification. ([#671])
+
+[#671]: https://github.com/bop-clocktower/canary/issues/671
+
 ### Fixed
 
 - **Two live docs described processes that no longer exist.**

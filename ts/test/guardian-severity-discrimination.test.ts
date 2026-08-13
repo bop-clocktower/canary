@@ -25,7 +25,7 @@ import { Severity } from '../src/guardian/impact-mapper.js';
 import {
   buildFindings,
   computeExitCode,
-  render,
+  renderFindings,
 } from '../src/guardian/pr-check.js';
 
 /**
@@ -168,7 +168,7 @@ describe('the severity filter actually filters', () => {
     // unnoticed until the first real critical finding in a consumer repo.
     const findings = buildFindings([verified(40, 40, 'pkg/worst.ts')]);
     expect(findings[0]!.severity).toBe(Severity.CRITICAL);
-    const body = render(findings, 'markdown');
+    const body = renderFindings(findings, 'markdown');
     expect(body).toContain('critical');
     expect(body).toContain('pkg/worst.ts');
   });
@@ -177,8 +177,11 @@ describe('the severity filter actually filters', () => {
     // The icon column is the only part of a row read at a glance. While
     // CRITICAL was unreachable the two shared a red circle harmlessly; a
     // shared glyph now would hide the ranking this change exists to create.
-    const critical = render(buildFindings([verified(40, 40)]), 'comment');
-    const high = render(buildFindings([verified(6, 60)]), 'comment');
+    const critical = renderFindings(
+      buildFindings([verified(40, 40)]),
+      'comment',
+    );
+    const high = renderFindings(buildFindings([verified(6, 60)]), 'comment');
     const iconOf = (body: string) =>
       /\| (\S+) (critical|high|medium|low) \|/.exec(body)?.[1];
     expect(iconOf(critical)).toBeDefined();

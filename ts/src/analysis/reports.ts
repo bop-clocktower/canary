@@ -27,7 +27,7 @@ export { round1 };
 // Flaky report
 // ---------------------------------------------------------------------------
 
-export function buildFlakyReport(
+export function buildFlakyTestsReport(
   rows: FlakyRow[],
   windowRuns: number,
   minRatePct: number,
@@ -106,7 +106,10 @@ function detectSpikes(rows: SpikeRow[], deltaPp: number): Spike[] {
   return spikes;
 }
 
-export function buildSpikesReport(rows: SpikeRow[], deltaPp: number): string {
+export function buildFailureSpikesReport(
+  rows: SpikeRow[],
+  deltaPp: number,
+): string {
   if (rows.length === 0) {
     return 'No run data available for spike detection.\n';
   }
@@ -297,8 +300,9 @@ export function buildDigest(args: {
 }): string {
   const sections = [
     '# Fleet Health Digest\n',
-    '## Flaky Tests\n\n' + buildFlakyReport(args.flaky, args.windowRuns, 10.0),
-    '## Spikes\n\n' + buildSpikesReport(args.spikes, args.deltaPp),
+    '## Flaky Tests\n\n' +
+      buildFlakyTestsReport(args.flaky, args.windowRuns, 10.0),
+    '## Spikes\n\n' + buildFailureSpikesReport(args.spikes, args.deltaPp),
     '## Area Health\n\n' + buildAreaHealthReport(args.areaHealth, args.weeks),
     '## Common Failures\n\n' +
       buildCommonFailuresReport(args.commonFailures, args.minSuites),

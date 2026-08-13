@@ -53,13 +53,13 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { readJsonWithWarning } from './config-validation.js';
 import { uncertainDetectionMessage } from './detection.js';
 import {
-  _CONFIG_PROBES,
-  inferPlaywrightShape,
-  probe,
+  CONFIG_PROBES,
+  inferPlaywrightTestType,
+  probeFramework,
   ProbeResult,
 } from './framework-probes.js';
 import {
-  _WORKSPACE_SKIP_DIRS,
+  WORKSPACE_SKIP_DIRS,
   comparePathParts,
   globDirs,
   globFiles,
@@ -410,9 +410,9 @@ function findWorkspaceSuites(root: string, framework: string): ExistingSuite[] {
   const globs = workspaceGlobs(root);
   if (globs.length === 0) return [];
 
-  const configNames = _CONFIG_PROBES
-    .filter(([, fw]) => fw === framework)
-    .map(([filename]) => filename);
+  const configNames = CONFIG_PROBES.filter(([, fw]) => fw === framework).map(
+    ([filename]) => filename,
+  );
   if (configNames.length === 0) return [];
 
   const dirs = new Set<string>();
@@ -447,10 +447,10 @@ function shapeForFrameworkOverride(
   framework: string,
   root: string,
 ): string | null {
-  for (const [, probeFramework, shape] of _CONFIG_PROBES) {
-    if (probeFramework !== framework) continue;
-    if (probeFramework === 'playwright' && shape === 'e2e_ui') {
-      return inferPlaywrightShape(root);
+  for (const [, candidateFramework, shape] of CONFIG_PROBES) {
+    if (candidateFramework !== framework) continue;
+    if (candidateFramework === 'playwright' && shape === 'e2e_ui') {
+      return inferPlaywrightTestType(root);
     }
     return shape;
   }
@@ -2017,7 +2017,7 @@ export class HarnessMigrator {
     root: string,
     config: Record<string, unknown>,
   ): ProbeResult {
-    return probe(root, config, ['config', 'content', 'language']);
+    return probeFramework(root, config, ['config', 'content', 'language']);
   }
 
   private findExistingTests(root: string): string[] {
