@@ -201,6 +201,40 @@ docs/branching-convention
   user-level heuristic (cwd + open files). Surfaced additively as the
   `environment` block on the MCP `analyze_file` response. Browser-tab detection
   is deferred to the Chrome Extension MCP Bridge (#343).
+- **Personas:** [ts/src/core/persona.ts](ts/src/core/persona.ts) — the audience
+  definition skills **consult** instead of hand-rolling "if tester, use simpler
+  words" (#462), and the consumer the detection above never had (#341).
+  `ts/src/data/personas/registry.json` names each audience with an explanation
+  `depth`, preferred `formats`, and a `reasoning` switch; `resolvePersona` picks
+  one from an explicit id, then a detected level clearing **both** registry
+  floors, then the fallback — always reporting `source`, `reason`, and the
+  detector's `signals`. Surfaced additively as the `persona` block on
+  `analyze_file`. **Two floors, because one of them cannot work alone:** the
+  detector's confidence is `|sdet - manual| / total`, a _margin_ rather than a
+  probability, so a single unopposed observation arrives at `1.0` and a
+  confidence floor screens ties and nothing else. `minDetectionSignals` (2)
+  requires two **independent** signals, counted by _kind_ — the text before the
+  first `": "` — so ten open TypeScript files are one observation restated, not
+  ten facts. Below the floor the reason says how many signals were found rather
+  than "no signal", because "too little evidence" and "no evidence" have
+  different fixes. Relatedly, `analyze_file` re-derives the level **without**
+  the file it was asked about: that path is the tool's own argument, not an
+  observation of the caller, and counting it let any `.ts` file in any project
+  with a `package.json` clear the floor. One consequence worth knowing: `manual`
+  is no longer inferable through `analyze_file` (a manual artefact was its only
+  unopposed signal there), so it is reached by `CANARY_PERSONA=manual`. The
+  fallback is explanatory, so that failure is safe. Three further boundaries are
+  decisions, not omissions: **voice is not a persona field**
+  (`voice/discovery.md` already owns that axis, and collapsing the two would
+  make "terse in a given voice" inexpressible); the **fallback is explanatory
+  rather than terse**, because most users never configure this and
+  under-explaining fails a manual tester silently where over-explaining merely
+  annoys an SDET; and the module reads **no** environment variable itself, so
+  `CANARY_PERSONA` is read at the call site and the resolver stays pure.
+  `CANARY_PERSONA` is unrelated to `canary doctor --audience`, which tags which
+  overlay _checks_ run and ships no vocabulary of its own. Overlays extend the
+  registry through `.canary/personas.json`, arbitrated by the same `precedence`
+  contract as skill-name collisions (#333).
 - **Feedback:** [ts/src/core/feedback.ts](ts/src/core/feedback.ts) — Builds a
   pre-filled GitHub issue for `canary feedback` (#345) with non-sensitive
   context (version/OS/Python/install); never env vars or file contents. (New in

@@ -150,6 +150,164 @@ describe('analyzeFileImpl', () => {
     expect(env['user_level']).toBe('sdet');
   });
 
+  // -------------------------------------------------------------------------
+  // #341's missing half: something reads the detected level (#462 personas)
+  // -------------------------------------------------------------------------
+
+  /**
+   * A project carrying TWO independent `sdet` signals — a project manifest and
+   * a test-framework config. Two is the floor, so one of these alone is not
+   * enough; see the weak-signal cases below.
+   */
+  function sdetProject(): string {
+    const root = gitRoot();
+    writeFileSync(join(root, 'package.json'), '{}\n');
+    writeFileSync(join(root, 'playwright.config.ts'), 'export default {};\n');
+    const target = join(root, 'login.spec.ts');
+    writeFileSync(target, "import { test } from '@playwright/test';\n");
+    return target;
+  }
+
+  /** A project whose only user-level signal is its manifest. */
+  function oneSignalProject(): string {
+    const root = gitRoot();
+    writeFileSync(join(root, 'package.json'), '{}\n');
+    const target = join(root, 'login.spec.ts');
+    writeFileSync(target, "import { test } from '@playwright/test';\n");
+    return target;
+  }
+
+  it('resolves a persona from the detected user level (#462)', () => {
+    const result = analyzeFileImpl(sdetProject());
+    const persona = result['persona'] as Record<string, unknown>;
+    expect(persona['id']).toBe('sdet');
+    expect(persona['source']).toBe('detected');
+    expect(persona['depth']).toBe('terse');
+    // The reason and signals travel with the verdict: a skill that adapts its
+    // output owes the reader an answer to "why did you decide I was that?".
+    expect(persona['reason']).toContain('sdet');
+    expect(persona['signals']).not.toEqual([]);
+  });
+
+  it('leaves the #341 environment block untouched beside it', () => {
+    // The persona block is additive. Nothing that read `environment` before
+    // has to change.
+    const result = analyzeFileImpl(sdetProject());
+    expect(result['environment']).toBeTypeOf('object');
+    expect((result['environment'] as Record<string, unknown>)['user_level']);
+  });
+
+  it('lets CANARY_PERSONA override the detected level', () => {
+    // Inferring an audience wrongly is the failure users resent, so the
+    // inference must always be overridable without editing a config file.
+    vi.stubEnv('CANARY_PERSONA', 'manual');
+    const result = analyzeFileImpl(sdetProject());
+    const persona = result['persona'] as Record<string, unknown>;
+    expect(persona['id']).toBe('manual');
+    expect(persona['source']).toBe('explicit');
+  });
+
+  it('reports an unknown CANARY_PERSONA instead of ignoring it', () => {
+    vi.stubEnv('CANARY_PERSONA', 'architect');
+    const result = analyzeFileImpl(sdetProject());
+    const persona = result['persona'] as Record<string, unknown>;
+    // The detection still applies — a typo is a mistake, not an instruction
+    // to discard the signal — but the typo is named.
+    expect(persona['id']).toBe('sdet');
+    expect(persona['reason']).toContain('architect');
+  });
+
+  it('ignores a blank CANARY_PERSONA', () => {
+    vi.stubEnv('CANARY_PERSONA', '   ');
+    const result = analyzeFileImpl(sdetProject());
+    expect((result['persona'] as Record<string, unknown>)['source']).toBe(
+      'detected',
+    );
+  });
+
+  it('falls back to the explanatory persona with no signal at all', () => {
+    // `.yaml` is in neither the code nor the manual suffix set, and a bare
+    // git root has no manifest or test config, so the detector fires nothing
+    // and returns `unknown`. That must not resolve to an audience nobody
+    // claimed — and the fallback must not be the terse one.
+    const root = gitRoot();
+    const target = join(root, 'fixtures.yaml');
+    writeFileSync(target, 'a: 1\n');
+    const persona = analyzeFileImpl(target)['persona'] as Record<
+      string,
+      unknown
+    >;
+    expect(persona['source']).toBe('fallback');
+    expect(persona['depth']).not.toBe('terse');
+    expect(persona['reasoning']).toBe(true);
+  });
+
+  it('does not resolve sdet from one project signal', () => {
+    // The regression this floor exists for. A manifest is one observation, and
+    // a manifest plus full confidence used to be enough to declare the reader a
+    // senior SDET and strip every explanation out of the output.
+    const persona = analyzeFileImpl(oneSignalProject())['persona'] as Record<
+      string,
+      unknown
+    >;
+    expect(persona['source']).toBe('fallback');
+    expect(persona['id']).not.toBe('sdet');
+    expect(persona['reason']).toContain('independent signal');
+  });
+
+  it('does not count the analyzed file as a signal about the user', () => {
+    // `analyze_file`'s own argument is the tool's input, not an observation of
+    // what the caller happens to be working on, so it must not be one of the
+    // two. If it were counted, this project (manifest + the analyzed `.ts`
+    // file) would clear the floor and resolve `sdet`.
+    const result = analyzeFileImpl(oneSignalProject());
+    const persona = result['persona'] as Record<string, unknown>;
+    expect(persona['reason']).toContain('1 independent signal');
+    const personaSignals = persona['signals'] as string[];
+    expect(
+      personaSignals.some((s) => s.startsWith('code/test file open:')),
+    ).toBe(false);
+
+    // The analyzed file is still reported in `environment`, whose contract is
+    // unchanged — it is only the persona that declines to count it.
+    const env = result['environment'] as Record<string, unknown>;
+    const envSignals = env['user_level_signals'] as string[];
+    expect(envSignals.some((s) => s.startsWith('code/test file open:'))).toBe(
+      true,
+    );
+  });
+
+  it('no longer infers the manual persona from a manual artefact alone', () => {
+    // Consequence of the floor, recorded deliberately rather than discovered
+    // later: analysing a `.md` file used to resolve `manual` on that one
+    // unopposed signal. The only other manual-leaning evidence the detector has
+    // is a cwd path hint, so `manual` is now reached by an explicit
+    // CANARY_PERSONA rather than guessed at. The fallback is explanatory, so
+    // the failure is safe — a manual tester gets `junior`, not `sdet`.
+    const root = gitRoot();
+    const target = join(root, 'test-plan.md');
+    writeFileSync(target, '# plan\n');
+    const persona = analyzeFileImpl(target)['persona'] as Record<
+      string,
+      unknown
+    >;
+    expect(persona['source']).toBe('fallback');
+    expect(persona['depth']).not.toBe('terse');
+  });
+
+  it('still resolves manual when it is asked for outright', () => {
+    vi.stubEnv('CANARY_PERSONA', 'manual');
+    const root = gitRoot();
+    const target = join(root, 'test-plan.md');
+    writeFileSync(target, '# plan\n');
+    const persona = analyzeFileImpl(target)['persona'] as Record<
+      string,
+      unknown
+    >;
+    expect(persona['id']).toBe('manual');
+    expect(persona['depth']).toBe('guided');
+  });
+
   it('falls back to framework_source=suffix without a config file', () => {
     const root = gitRoot();
     const target = join(root, 'tests', 'test_x.py');

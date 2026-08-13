@@ -83,6 +83,66 @@ under the project's former name) are documented in the
   check that always resolves to "local". Recorded as **proposed** pending
   maintainer sign-off. `AnalysisEngine` is the one remaining sync consumer;
   converting it is follow-up work.
+- **Personas are a first-class engine concept, and the detected user level
+  finally has a consumer.** Audience adaptation was hand-rolled in prose:
+  `canary-edge-case-discovery` documented `--level sdet|junior|manual` with its
+  own inference rules, `detectUserLevel` returned `sdet|manual|unknown`, and
+  **no code read either** — the two vocabularies had already drifted apart, and
+  the second one was computed on every `analyze_file` call and dropped on the
+  floor. `ts/src/core/persona.ts` plus `ts/src/data/personas/registry.json`
+  replace that with one definition skills consult: each audience carries an
+  explanation `depth` (`terse` / `brief` / `guided`), preferred `formats`, and a
+  `reasoning` switch. `resolvePersona` picks one from an explicit id, then a
+  detected level that clears both registry floors, then the fallback, and always
+  reports `source`, `reason`, and the detector's own `signals` — a skill that
+  adapts its output owes the reader an answer to "why did you decide I was
+  that?". The result rides along as an additive `persona` block on
+  `analyze_file`, so nothing that read `environment` has to change. Overlays
+  extend the vocabulary through `.canary/personas.json`, arbitrated by the same
+  `precedence` contract that already resolves skill-name collisions ([#333]),
+  rather than a second mechanism to learn. Three boundaries are decisions rather
+  than omissions, and each is pinned by a test: **voice is not a persona field**
+  — `voice/discovery.md` already resolves a named voice profile from its own
+  config, and folding the axes together would make "terse, in a given voice"
+  inexpressible, which was the live objection on [#462]; the **fallback is
+  explanatory, never terse**, because most users will never configure this and
+  under-explaining fails a manual tester silently where over-explaining merely
+  annoys an SDET; and **`unknown` maps to no persona at all**, so a run that
+  fired no signal cannot assert an audience nobody claimed.
+
+  **The inference needs two floors, because a confidence floor cannot work
+  alone.** The detector's confidence is `|sdet - manual| / total` — a _margin_
+  between two tallies, not a probability — so one unopposed observation arrives
+  at a perfect `1.0`, and a floor built on it screens genuine ties and nothing
+  else. It would have waved through a single fact with total certainty attached,
+  which is "confident and wrong": exactly the shape this repo keeps rooting out.
+  So `minDetectionSignals` (2) requires two **independent** signals, counted by
+  _kind_ rather than by length — the text before the first `": "` — so ten open
+  TypeScript files are one observation restated, not ten facts. Below the floor
+  the reason states how many signals were found rather than saying "no signal",
+  because "too little evidence" and "no evidence" have different fixes; that is
+  the same abstention-versus-absence discipline the gates use.
+
+  Relatedly, `analyze_file` now re-derives the level **without** the file it was
+  asked about. That path is the tool's own argument, not an observation of what
+  the caller is working on, and counting it as evidence about the person let any
+  `.ts` file in any project with a `package.json` clear the floor and strip
+  every explanation out of the output. The `environment` block still reports it,
+  so that contract is unchanged — only the persona declines to count it.
+
+  One consequence, recorded rather than left to be discovered: **`manual` is no
+  longer inferable through `analyze_file`.** A manual artefact was its only
+  unopposed signal on that path, so `manual` is now reached by
+  `CANARY_PERSONA=manual`. Since the fallback is explanatory, the failure is
+  safe — a manual tester gets `junior`, never `sdet`. `CANARY_PERSONA` is read
+  at the call site so the resolver stays pure, and it is **unrelated** to
+  `canary doctor --audience`, which tags which overlay _checks_ run and ships no
+  vocabulary of its own. ([#462], [#341])
+
+[#333]: https://github.com/bop-clocktower/canary/issues/333
+[#341]: https://github.com/bop-clocktower/canary/issues/341
+[#462]: https://github.com/bop-clocktower/canary/issues/462
+
 - **`scripts/check_doc_links.mjs` — a dead-link gate that actually reports
   zero.** Harness's structural doc-drift check emits 27 findings on this
   repository and every one of them resolves fine for a reader: 24 come from

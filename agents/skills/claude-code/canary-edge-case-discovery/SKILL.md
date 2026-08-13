@@ -78,19 +78,53 @@ _(Only include if the input is a UI feature or test.)_
 
 ## Output Depth
 
-Governed by `--level` flag. Infer from context when not specified:
+**Consult the resolved persona; do not infer one here.** The engine owns that
+decision (issue #462) so every skill adapts the same way and a downstream
+overlay has one place to override.
 
-- User is asking from a test file or uses technical language → `sdet`
+Resolve it in this order:
 
-- User describes themselves as new or asks "why" questions → `junior`
+1. `--level <id>` if the caller passed one. It is the explicit override and
+   always wins.
+2. The `persona` block on a `canary__analyze_file` response. It carries `id`,
+   `depth`, `formats`, `reasoning`, plus `source`, `reason`, and `signals` — the
+   evidence behind the choice.
+3. Neither available → use `junior`, the engine's fallback. Erring explanatory
+   is deliberate: over-explaining is a mild annoyance, under-explaining silently
+   fails a manual tester.
 
-- User mentions manual testing or is non-technical → `manual`
+Render from the persona's `depth`, not from its `id` — an overlay may add
+personas this table never listed:
 
-| Level    | Audience       | Output style                        |
-| -------- | -------------- | ----------------------------------- |
-| `sdet`   | Senior SDETs   | Bullet list of cases only           |
-| `junior` | Junior SDETs   | Cases + one-line _why this matters_ |
-| `manual` | Manual testers | Cases + numbered reproduction steps |
+| `depth`  | Output style                        |
+| -------- | ----------------------------------- |
+| `terse`  | Bullet list of cases only           |
+| `brief`  | Cases + one-line _why this matters_ |
+| `guided` | Cases + numbered reproduction steps |
+
+When `reasoning` is true, say which persona shaped the output and why —
+`persona.reason` is written to be quoted.
+
+Read `source` before trusting the persona, and treat the three values
+differently:
+
+- `explicit` — the reader chose this. Do not second-guess it.
+- `detected` — inferred from at least two independent signals about the project.
+  Reliable enough to act on, still a guess; mention it is overridable with
+  `CANARY_PERSONA` or `--level` if the depth seems wrong for them.
+- `fallback` — the engine **declined** to guess, which is the common case. That
+  is not a failure and not a reason to go hunting for signals of your own: it
+  means the evidence did not clear the floor, and re-deriving an audience here
+  is exactly the hand-rolling this section replaced. Use the persona as given.
+
+**Never infer `terse` on your own.** Stripping explanation from a reader who
+turns out to be a manual tester is the expensive direction of this mistake;
+`fallback` is deliberately explanatory for that reason. Note that `manual` is
+not inferable from a file analysis at all — it is reached by an explicit choice
+— so a `fallback` persona may well be a manual tester.
+
+The shipped personas are `sdet` (terse), `junior` (brief), and `manual`
+(guided); the definitions live in `ts/src/data/personas/registry.json`.
 
 ## Output Format (`sdet` example)
 
@@ -114,7 +148,8 @@ Edge cases — points accrual on tier upgrade
 
 ## Flags
 
-- `--level sdet|junior|manual` — output depth (default: inferred)
+- `--level sdet|junior|manual` — output depth. Overrides the resolved persona;
+  the default is the persona the engine resolved (see **Output Depth**).
 
 ## Related skills
 

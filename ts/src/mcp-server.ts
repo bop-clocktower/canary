@@ -49,7 +49,15 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import * as z from 'zod';
 
 import { DomainScanner } from './core/domain-scanner.js';
-import { detectEnvironment } from './core/environment-detect.js';
+import {
+  detectEnvironment,
+  detectUserLevel,
+} from './core/environment-detect.js';
+import {
+  effectivePersonaRegistry,
+  personaToDict,
+  resolvePersona,
+} from './core/persona.js';
 import { CanaryTestExecutor } from './core/executor.js';
 import { FrameworkRegistry } from './core/framework-registry.js';
 import { HarnessMigrator } from './core/migrator.js';
@@ -461,9 +469,44 @@ export function analyzeFileImpl(filePath: string): Record<string, unknown> {
   // Context-aware persona & environment detection (#341): attach the detected
   // BASE_URL, suite type, and SDET-vs-manual user level. The file under
   // analysis is itself an "open file" signal for the user-level heuristic.
-  const environment = detectEnvironment(projectRoot, {
+  const detected = detectEnvironment(projectRoot, {
     openFiles: [filePath],
-  }).toDict();
+  });
+
+  // Personas (#462) — and the consumer #341 never had. Detection shipped and
+  // was read by nobody: the level was computed, attached here, and dropped.
+  // Resolving it into a persona is what turns the signal into something a
+  // skill can consult instead of re-inventing its own audience rules.
+  //
+  // The persona re-derives the user level WITHOUT the analyzed file, and that
+  // is the whole point of the second call. `filePath` is this tool's argument,
+  // not an observation of what the caller is working on, so counting it as
+  // evidence about the person would let any `.ts` file in any project with a
+  // package.json clear the two-independent-signal floor and declare the reader
+  // a senior SDET. `environment` above keeps reporting it — that contract is
+  // unchanged — and only the persona declines to count it.
+  const [personaLevel, personaSignals, personaConfidence] = detectUserLevel(
+    projectRoot,
+    [],
+  );
+
+  // Both I/O decisions are made *here* rather than inside the resolver, which
+  // is pure by design: reading the environment variable, and loading the
+  // registry (shipped personas folded with every overlay's). `CANARY_PERSONA`
+  // is the audience-depth axis and is unrelated to `canary doctor --audience`,
+  // which tags which overlay checks run.
+  const persona = personaToDict(
+    resolvePersona({
+      explicit: process.env['CANARY_PERSONA'] ?? null,
+      detected: {
+        level: personaLevel,
+        confidence: personaConfidence,
+        signals: personaSignals,
+      },
+      registry: effectivePersonaRegistry(),
+    }),
+  );
+  const environment = detected.toDict();
 
   return {
     framework,
@@ -478,6 +521,7 @@ export function analyzeFileImpl(filePath: string): Record<string, unknown> {
     existing_tests: findExistingTests(projectRoot, framework),
     context_snippets: contextSnippets,
     environment,
+    persona,
   };
 }
 
