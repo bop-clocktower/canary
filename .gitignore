@@ -11,6 +11,11 @@ temp_harness/
 .harness/knowledge/
 npm/.harness/
 
+# OSV advisory cache written by `harness mcp-guard check` (ADR 0014). Machine-
+# local and refetchable; it is not gitignored upstream, so a bare `git add -A`
+# after running the guard sweeps it into the commit.
+.harness/cache/
+
 # Harness runtime state (machine-local; regenerated each session — never commit)
 .harness/state.json
 .harness/state.events.jsonl
@@ -169,5 +174,7 @@ npm/bin/canary.exe
 # Local turbo→ruff lint bridge (pairs with gitignored root package.json; see issue #253)
 /turbo.json
 
-# Entropy-scan report consumed by scripts/entropy-ratchet.mjs (#544)
+# Scan reports captured by a workflow step and consumed by the matching ratchet:
+# entropy-ratchet.mjs (#544) and perf-ratchet.mjs (#717).
 /entropy-report.txt
+/perf-report.txt
