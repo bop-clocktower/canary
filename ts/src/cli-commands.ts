@@ -29,6 +29,7 @@ import {
   type GateResult,
   type SkipEntry,
 } from './core/gate-result.js';
+import { promotionVerdict } from './core/promotion-verdict.js';
 import { scanVacuity, type VacuityFinding } from './core/vacuity-scanner.js';
 import { ckInitCmd } from './company-knowledge-cli.js';
 import { extractFrameworkHint } from './core/classifier.js';
@@ -891,6 +892,54 @@ export function vacuityCheckCmd(
       : `${pc.bold(outcome.summaryLine)}`,
   );
   if (exitCode !== 0) throw new CliExitError(exitCode);
+}
+
+// --- promote-check (#477) ----------------------------------------------------
+
+/**
+ * The gate `canary-promote-test` Phase 1 consumes.
+ *
+ * Unlike `vacuity-check` this IS a gate, and deliberately so: it does not scan a
+ * repository, it decides whether ONE generated draft may enter the committed
+ * suite. A blocking finding there is not a backlog item to triage, it is a
+ * reason not to import the draft. Nothing existing turns red -- the command is
+ * new and only ever pointed at `tests/generated/`.
+ */
+export function promoteCheckCmd(
+  path: string,
+  opts: { json?: boolean },
+  deps: MainDeps,
+): void {
+  const verdict = promotionVerdict(path);
+  if (opts.json === true) {
+    deps.out(jsonIndent2(verdict as unknown as Record<string, unknown>));
+    if (verdict.exitCode !== 0) throw new CliExitError(verdict.exitCode);
+    return;
+  }
+
+  for (const axis of verdict.axes) {
+    for (const f of axis.findings) {
+      const blocking = axis.gating && verdict.blocked.includes(f.rule);
+      const label = blocking ? pc.red('[BLOCK]') : pc.yellow('[ADVISORY]');
+      const tier = f.fidelity ? pc.dim(` [${f.fidelity}]`) : '';
+      deps.out(
+        `${label} ${verdict.file}:${f.line} ${pc.dim(`(${f.rule}/${axis.axis})`)}${tier}`,
+      );
+      deps.out(`  ${f.message}`);
+      deps.out(`  ${pc.dim(`${ARROW} ${f.suggestion}`)}\n`);
+    }
+  }
+
+  const banner: Record<string, string> = {
+    promote: pc.green(`${CHECK_MARK} PROMOTE`),
+    block: pc.red(`${REDX} BLOCK`),
+    abstain: pc.yellow(`${WARN} ABSTAIN`),
+  };
+  deps.out(
+    `${pc.bold(banner[verdict.decision]!)} ${EM_DASH} ${verdict.summaryLine}`,
+  );
+  if (verdict.remedy) deps.out(`  ${verdict.remedy}`);
+  if (verdict.exitCode !== 0) throw new CliExitError(verdict.exitCode);
 }
 
 // --- heal-test ---------------------------------------------------------------

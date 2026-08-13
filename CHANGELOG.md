@@ -106,6 +106,40 @@ under the project's former name) are documented in the
 [#333]: https://github.com/bop-clocktower/canary/issues/333
 [#341]: https://github.com/bop-clocktower/canary/issues/341
 [#462]: https://github.com/bop-clocktower/canary/issues/462
+- **`canary promote-check` — promotion now gates on a structured verdict.**
+  `canary-promote-test` referenced `harness:test-craft` as optional prose ("run
+  it for a deeper quality audit") and had nothing machine-readable to gate on.
+  [#477] was parked on that emit side; it is unblocked from the other direction
+  — [#605] and [#612] emit exactly the structured per-test verdicts a gate
+  needed, and they are deterministic. `ts/src/core/promotion-verdict.ts`
+  composes them into six axes and answers the three decisions the issue left
+  open. **Which gate:** `soundness`, `assertions` (`LINT-006`), `flakiness`
+  (`FLAKE-001/002`) and `vacuity`; `selectors` and `maintainability` report. An
+  8-axis gate would block nearly every promotion, which is the outcome the issue
+  predicted. **What happens with no verdict:** `abstain`, exit 3, and the output
+  says promotion was NOT approved — two zeros are guarded, an unparseable
+  extension and a parseable file with no test declarations (a `promote` on the
+  latter would walk an empty file into the committed suite). **Whether an LLM
+  judgement may block:** no, and structurally rather than by convention —
+  `VerdictSource` is a single-member union, so there is no field an LLM verdict
+  could arrive in and quietly acquire authority. `VAC-002` blocks only at
+  `annotated` fidelity, keeping a heuristic off the promotion gate while the
+  author's own `// @covers` declaration still counts. The gate's three
+  zero-denominator fixtures are rows in `ts/test/gate-conformance.test.ts`.
+  ([#477])
+
+- **Three test-design rules, with a per-rule enforcement verdict, in
+  `AGENTS.md`.** Default paths, persistence removal, and realistic scale — each
+  drawn from a specific shipped bug, and each labelled with what actually
+  enforces it today rather than left to read as covered. Rules 1 and 2 are
+  review questions; rule 3 is partly automated by
+  `ts/test/guardian-comment-size-cap.test.ts`. Rule 1 in particular _looks_
+  mechanical (enumerate options with defaults, cross-reference argv in tests)
+  and the entry records why the cross-reference does not hold up — a test can
+  reach a default through a testkit helper or a `deps` override, so a literal
+  argv reader would report the best-tested commands as uncovered. Stating the
+  gap beats shipping a checker with the `LINT-005` hit rate. ([#488])
+
 - **`canary-cassandra` — vacuous-test detection, plus the `canary vacuity-check`
   command behind it.** A test with no assertions is easy to find and everyone
   already looks. The dangerous one has assertions that _cannot fail_: it has
@@ -234,7 +268,9 @@ under the project's former name) are documented in the
 [#390]: https://github.com/bop-clocktower/canary/issues/390
 [#508]: https://github.com/bop-clocktower/canary/issues/508
 [#538]: https://github.com/bop-clocktower/canary/issues/538
+[#477]: https://github.com/bop-clocktower/canary/issues/477
 [#485]: https://github.com/bop-clocktower/canary/issues/485
+[#488]: https://github.com/bop-clocktower/canary/issues/488
 [#486]: https://github.com/bop-clocktower/canary/issues/486
 [#566]: https://github.com/bop-clocktower/canary/issues/566
 [#605]: https://github.com/bop-clocktower/canary/issues/605

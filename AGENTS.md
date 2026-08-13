@@ -128,7 +128,8 @@ docs/branching-convention
 - **CLI:** [ts/src/cli.ts](ts/src/cli.ts) — The primary entry point for the
   agent. Handles command-line arguments and high-level orchestration. Commands:
   `recommend`, `frameworks`, `feedback`, `run`, `init`, `migrate`, `setup`,
-  `skills list`, `env-setup` (alias for `setup`), `version`.
+  `skills list`, `env-setup` (alias for `setup`), `version`, `review-test`,
+  `flake-check`, `heal-test`, `vacuity-check`, `promote-check`.
 
 ### Core Services (`ts/src/core/`)
 
@@ -175,6 +176,39 @@ docs/branching-convention
   it was wired into the removed `generate`/orchestrator path and is not
   currently invoked by any live command. Retained pending a decision to re-wire
   it into the plugin flow or remove it.
+- **Static Linter:**
+  [ts/src/core/static-linter.ts](ts/src/core/static-linter.ts) — File:line
+  findings without executing tests; powers `canary review-test` and
+  `canary flake-check`. `FLAKE-001..004` (flakiness), `LINT-001..003`
+  (selectors), `LINT-004` (missing await), `LINT-005` (magic timing values),
+  `LINT-006` (no assertions), and `SOUND-001..003` (#605 — a test that pins a
+  value no correct implementation must produce: a non-deterministic value used
+  as an expectation, exact equality against an inexact fraction, a ratio pinned
+  to an integer). Every rule blanks string literals **including single-line
+  template literals** before matching — a fixture carrying the pattern it tests
+  is data, not a defect, and on this repo that distinction was half the linter's
+  output. Also exports `enumerateTests`, the single "where does this test end"
+  implementation shared with the vacuity scanner.
+- **Vacuity Scanner:**
+  [ts/src/core/vacuity-scanner.ts](ts/src/core/vacuity-scanner.ts) — The
+  `canary-cassandra` detection (#612). Finds tests that pass without proving
+  anything: `VAC-001` an assertion identical to the value it checks, `VAC-002` a
+  target never referenced, `VAC-003` every assertion an absence observed on a
+  bystander rather than on the target. `VAC-002`/`VAC-003` carry a fidelity
+  ladder (`annotated` via `// @covers <symbol>` over `import-inferred`); a test
+  resolvable at neither tier becomes a recorded **skip**, never a pass. Returns
+  a `GateResult` whose `checked` counts **tests**, not files. Surfaced as
+  `canary vacuity-check`.
+- **Promotion Verdict:**
+  [ts/src/core/promotion-verdict.ts](ts/src/core/promotion-verdict.ts) — The
+  structured verdict `canary-promote-test` gates on (#477). Composes the static
+  linter and the vacuity scanner into six axes, four of which gate (`soundness`,
+  `assertions`, `flakiness`, `vacuity`) and two of which report (`selectors`,
+  `maintainability`). Absence of a verdict is `abstain`/exit 3, never a silently
+  looser or stricter promotion. **No LLM judgement can gate:** `VerdictSource`
+  is a single-member union, so there is no field an LLM verdict could arrive in
+  and acquire authority — `harness:test-craft` stays an optional human audit.
+  Surfaced as `canary promote-check`.
 - **Reporter:** [ts/src/core/reporter.ts](ts/src/core/reporter.ts) — Exports
   results to JSON or SARIF (Datadog, SonarQube, GitHub Code Scanning).
   **Vestigial as of v3.0:** it was invoked by the removed `canary generate` path
@@ -845,6 +879,69 @@ Registry files, one per runtime layer:
 
 Skill CLIs are self-contained and cannot import the helper; they mirror its
 wording via a local `ABSTAINED_LINE` and are held to it by their registry.
+
+### Three test-design rules (the shape a user hits, not the shape you had in mind)
+
+Three rules, each drawn from a specific shipped bug. They share one theme: the
+tests exercised the shape the author was thinking about, and the failure lived
+in the shape a user actually hits. All three are cheap reviewer questions; the
+third column says which are mechanically enforced today, so nobody assumes a
+rule is covered by CI when it is a habit, or re-implements one that already
+runs.
+
+| Rule                                         | Came from | Enforcement today                   |
+| -------------------------------------------- | --------- | ----------------------------------- |
+| 1. Every default needs a test that omits it  | #369      | **Review question.** Not automated. |
+| 2. Anything persistent needs a removal test  | #456      | **Review question.** Not automated. |
+| 3. Fixtures need one case at realistic scale | #457      | **Partly automated** — see below.   |
+
+#### 1. Every default must have a test that omits the flag
+
+`pr-check --diff` defaulted to a bare `git diff` — working tree vs. index, which
+is **empty on a clean CI checkout**. Every existing test passed a diff
+explicitly via `--diff -`, so **the default path had no coverage at all**, and
+the gate silently scoped zero paths and exited 0 across roughly five downstream
+PRs.
+
+For each CLI option with a fallback, write one test that **omits** it and
+asserts the fallback's behaviour. Ask it in review even when the suite is green:
+this class fails by _silence_ rather than by error, so nothing else surfaces it.
+
+**Why it is still a review question.** It looks mechanical — enumerate options
+with `.default(...)`, cross-reference against argv arrays in tests — and the
+cross-reference is the part that does not hold up. A test can reach the default
+path through a testkit helper, a fixture argv, or a `deps` override, and a
+checker that reads argv arrays literally reports the well-tested commands as
+uncovered. That is the `LINT-005` outcome (0-for-157 actionable) waiting to
+happen, so it stays a question until someone can resolve "did any test take the
+default path" without guessing. Tracked for a real answer rather than declared
+done.
+
+#### 2. Anything persistent needs a removal test
+
+`mark-authored` wrote a sentinel and had a test proving it. Nothing tested that
+it ever went away — so when the clearing half (`guardian_precommit.py`) was
+deleted as dead code, a half-deleted contract survived a full language port and
+**silently disabled Tier-2 authoring permanently** in any clone that used it.
+
+For every artifact the engine creates on disk, write a test proving it is
+removed or expires. The write half is the interesting-looking one to test; the
+clear half is the one whose absence is invisible.
+
+#### 3. Where output size scales with input, test one realistic upper bound
+
+The guardian's sticky comment had no size cap. GitHub rejects a body over 65,536
+characters and the post path reports that as "could not post", so on a large PR
+the gate produced **nothing**. Every fixture had a handful of findings; a
+downstream audit found a real 27,316-character comment (141 findings), already
+42% of the ceiling.
+
+**Partly automated.** `ts/test/guardian-comment-size-cap.test.ts` holds the
+scaled fixture for the surface that was actually bitten. There is no general
+checker, and a general one is probably the wrong shape — "output scales with
+input" is a property of a specific surface, not a pattern a linter can spot.
+When you add a surface whose output grows with its input, add its own scaled
+fixture next to that one.
 
 ### Trusted MCP hierarchy
 
