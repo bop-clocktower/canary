@@ -27,7 +27,7 @@
  *     reader decodes with a *fatal* `TextDecoder` to preserve the Python
  *     "non-UTF-8 report → fall through" behavior.
  *
- * The implementation lives in `./coverage/`, one module per seam of the ladder
+ * The implementation lives in `./diff-coverage/`, one module per seam of the ladder
  * (#668). This file is the seam-free public face of it: every name the rest of
  * the codebase imports from `guardian/coverage.js` is re-exported here, so the
  * split moved no import in any consumer.
