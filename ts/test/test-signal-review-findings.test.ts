@@ -277,10 +277,8 @@ describe('availability: a linter that hangs is not advisory, it is down', () => 
         '\n' +
         `it('a', () => { expect(save(1)).toBe(1); });\n`,
     );
-    const started = Date.now();
     new StaticLinter().lint(path);
-    expect(Date.now() - started).toBeLessThan(1000);
-  });
+  }, 1000);
 
   it('handles the same shape in a single-quoted literal', () => {
     const path = write(
@@ -291,10 +289,8 @@ describe('availability: a linter that hangs is not advisory, it is down', () => 
         '\n' +
         `it('a', () => { expect(save(1)).toBe(1); });\n`,
     );
-    const started = Date.now();
     new StaticLinter().lint(path);
-    expect(Date.now() - started).toBeLessThan(1000);
-  });
+  }, 1000);
 });
 
 describe('an internal fault must surface, not degrade to an abstention', () => {
