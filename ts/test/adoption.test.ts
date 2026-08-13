@@ -275,4 +275,21 @@ describe('buildAdoptionReport -- the machine contract', () => {
     ).to_dict();
     expect(d['adopted']).toBe(false);
   });
+
+  // #579's lesson, applied here before it ships: the shared skip suffix renders
+  // every reason inline, so passing whole explanatory sentences turns the
+  // summary into a paragraph that repeats the piece lines above it. The full
+  // sentence stays on the piece; the summary gets a short token.
+  it('keeps the summary line short when pieces are unverifiable', () => {
+    const md = buildAdoptionReport(
+      adopted({ overlayPath: null, freshness: null }),
+    ).to_markdown();
+    const summary = md
+      .split('\n')
+      .find((l) => l.includes('skipped:')) as string;
+    expect(summary).toBeDefined();
+    expect(summary).toContain('no overlay');
+    expect(summary).not.toContain('was not checked');
+    expect(summary.length).toBeLessThan(160);
+  });
 });

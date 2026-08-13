@@ -74,6 +74,16 @@ export interface AdoptionPiece {
   detail: string;
   /** The first fix step. Present only when the piece is not `present`. */
   remedy?: string;
+  /**
+   * Short token for the shared skip suffix, when `status` is `unknown`.
+   *
+   * The suffix renders every reason inline, so passing `detail` there turns the
+   * summary into a paragraph restating the piece lines above it -- the noise
+   * #579 fixed for doctor. The sentence stays on the piece; the summary gets
+   * this. Falls back to `detail` when unset, so a new piece is verbose rather
+   * than silent.
+   */
+  skipReason?: string;
 }
 
 /**
@@ -152,7 +162,10 @@ export class AdoptionReport {
   }
 
   private skipped(): SkipEntry[] {
-    return this.unverifiable.map((p) => ({ name: p.id, reason: p.detail }));
+    return this.unverifiable.map((p) => ({
+      name: p.id,
+      reason: p.skipReason ?? p.detail,
+    }));
   }
 
   /** A report that reached nothing has abstained, not passed (#508). */
@@ -319,6 +332,7 @@ function pathPointersPiece(input: AdoptionInput): AdoptionPiece {
     remedy:
       'declare the repo-relative paths in `.canary/company.json` if the ' +
       "installed workflow's defaults are wrong",
+    skipReason: 'none declared',
   };
 }
 
@@ -353,6 +367,7 @@ function skillsPiece(input: AdoptionInput): AdoptionPiece {
       status: 'unknown',
       detail: 'no overlay to compare against, so deployment was not checked',
       remedy: 'resolve an overlay (see above) and re-run',
+      skipReason: 'no overlay',
     };
   }
   if (freshness.results.length === 0) {
@@ -365,6 +380,7 @@ function skillsPiece(input: AdoptionInput): AdoptionPiece {
         'verified',
       remedy:
         "check the overlay's `deploy_to` lists against the resolved shape",
+      skipReason: 'no skill matched the shape',
     };
   }
   const absent = freshness.results.filter((r) => r.status === 'missing');
@@ -427,6 +443,7 @@ function workflowsPiece(input: AdoptionInput): AdoptionPiece {
         'no overlay to compare against, so `.github/workflows/` was not ' +
         'checked',
       remedy: 'resolve an overlay (see above) and re-run',
+      skipReason: 'no overlay',
     };
   }
   if (freshness.workflows.length === 0) {
@@ -440,6 +457,7 @@ function workflowsPiece(input: AdoptionInput): AdoptionPiece {
       remedy:
         'if a workflow is expected, check the declaring skill deploys for ' +
         'this shape',
+      skipReason: 'no template declared',
     };
   }
   const absent = freshness.workflows.filter(
