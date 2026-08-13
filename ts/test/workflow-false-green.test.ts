@@ -431,6 +431,11 @@ describe('workflow false-green invariants', () => {
           .map((s) => s.run)
           .filter((r): r is string => typeof r === 'string');
         for (const line of scripts.flatMap(logicalLines)) {
+          // A comment cannot dump anything. Prose explaining the --json
+          // contract used to trip this as if it were an invocation (#716).
+          // `echo` lines are deliberately NOT skipped: `echo $(cmd --json)`
+          // is a real dump wearing an echo.
+          if (line.trimStart().startsWith('#')) continue;
           if (!line.includes('--json')) continue;
           jsonLines.push([name, jobId, line]);
           const target = STDOUT_TO_FILE.exec(line)?.[1];
@@ -665,6 +670,89 @@ describe('workflow false-green invariants', () => {
           uncovered,
           'the guard inspects these paths but no `git add` stages them',
         ).toEqual([]);
+      },
+    );
+  });
+
+  /**
+   * #716 — the dogfood loop must actually run the detectors this repo ships.
+   *
+   * `dogfood.yml` exists on the stated premise that "a test-intelligence tool
+   * that has never read its own tests is making a claim it cannot support".
+   * `vacuity-check` shipped in #714 and was never added to the loop, so 101
+   * findings across our own suites gated nothing — the claim outran the CI.
+   *
+   * This asserts the instance, not yet the class: a generic "every check
+   * subcommand is wired or exempt" invariant is the follow-up on #716. What is
+   * pinned here is the pairing that was actually wrong, plus the reason
+   * `promote-check` is correctly NOT in this loop — it is a single-file gate
+   * and abstains (exit 3) on a directory, so wiring it would manufacture a
+   * permanent abstention rather than coverage.
+   */
+  describe('#716 — the dogfood loop runs the suite-scanning detectors', () => {
+    /** Commands that scan a directory of tests and belong in the loop. */
+    const SUITE_SCANNERS = ['review-test', 'flake-check', 'vacuity-check'];
+
+    /** Single-file gates, which abstain on a directory by design. */
+    const NOT_SUITE_SCANNERS = ['promote-check'];
+
+    const dogfood = allWorkflows().find(([name]) => name === 'dogfood.yml');
+
+    it('finds dogfood.yml to check (zero denominator is an abstention)', () => {
+      expect(dogfood, 'dogfood.yml is missing').toBeDefined();
+    });
+
+    const scripts = runBlocks(dogfood?.[1] ?? {}).join('\n');
+
+    /**
+     * Comments are excluded deliberately. The prose below the step name names
+     * every command in this list, so matching raw text would keep passing if
+     * someone deleted a command from the loop and left the paragraph behind --
+     * a green test measuring documentation instead of behaviour.
+     */
+    const executable = logicalLines(scripts).filter(
+      (line) => !line.trimStart().startsWith('#'),
+    );
+
+    it.each(SUITE_SCANNERS)('dogfood.yml runs %s', (cmd) => {
+      expect(
+        executable.filter((line) => line.includes(cmd)),
+        `${cmd} scans a suite but no executable line in dogfood.yml invokes it`,
+      ).not.toEqual([]);
+    });
+
+    /**
+     * The loop counts findings by parsing `--json`, and the checks do not agree
+     * on a shape: `review-test`/`flake-check` emit a bare array while
+     * `vacuity-check` emits `{checked, abstained, findings, skipped}`. Reading
+     * `.length` off the envelope gives `undefined`, which `$(( ))` silently
+     * folds to 0 -- the check runs, finds 101 things, and reports a clean 0.
+     * A count that cannot be read is an abstention, not a zero (#508).
+     */
+    it('never lets an unreadable finding count fall back to zero', () => {
+      expect(
+        scripts,
+        'a `catch`/fallback that yields 0 turns a broken count into a clean run',
+      ).not.toMatch(/catch\s*\{?\s*console\.log\(\s*0\s*\)/);
+    });
+
+    it('treats an uncountable --json result as a failure', () => {
+      expect(
+        executable.filter((line) => line.includes('Dogfood count unreadable')),
+        'the counter must emit a non-numeric sentinel the shell can reject',
+      ).not.toEqual([]);
+    });
+
+    it.each(NOT_SUITE_SCANNERS)(
+      'dogfood.yml does not put %s in a directory loop',
+      (cmd) => {
+        const inDirLoop = executable.some(
+          (line) => line.includes(cmd) && /\$dir\b|\$\{dir\}/.test(line),
+        );
+        expect(
+          inDirLoop,
+          `${cmd} is a single-file gate; a directory makes it abstain, not pass`,
+        ).toBe(false);
       },
     );
   });
