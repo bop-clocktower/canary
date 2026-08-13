@@ -160,12 +160,12 @@ zero.**
    `entropy.entryPoints` is the documented remedy and would reclaim the 5 — not
    applied, so the number stays honest until someone decides to.
 
-   **Amended by #703.** `main` measured **296** against the 297 ceiling — one
-   finding of headroom, with two finished branches waiting that needed three
-   between them. Rather than squeeze those through, 15 provably-dead exports
-   were removed and `maxFindings` lowered to the measured **281**. Thirteen are
-   `export`-keyword removals on symbols still used inside their own module
-   (`RECORD_STATUSES`, `ANALYSIS_SOURCE`, `KNOWN_FRAMEWORKS`,
+   **Amended 2026-08-13 by the dead-code paydown.** `main` measured **296**
+   against the 297 ceiling — one finding of headroom, with two finished branches
+   waiting that needed three between them. Rather than squeeze those through, 15
+   provably-dead exports were removed and `maxFindings` lowered to the measured
+   **281**. Thirteen are `export`-keyword removals on symbols still used inside
+   their own module (`RECORD_STATUSES`, `ANALYSIS_SOURCE`, `KNOWN_FRAMEWORKS`,
    `workflow-discovery`'s `SCHEMA_VERSION`, `arch-verdict.mjs`'s two helpers,
    the redundant `TestResultRecord` re-export, and
    `SUPPORTED_SUFFIXES`/`isTestFile`/`scanFileFull` in the canary-savant and
