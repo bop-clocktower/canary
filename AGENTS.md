@@ -469,6 +469,40 @@ Bumping the major is a **three-step sequence**, in this order (#545, #547):
    exit code _and_ output, not just exit code. The gates run the CLI on a bare
    checkout with no `npm ci`, so a local worktree reproduces CI exactly.
 
+**Measuring the entropy ratchet locally — use a worktree, never your working
+directory (#700).** The ratchet is a blocking gate, so it has to be runnable
+before you push. It is, but only from a clean tree:
+
+```bash
+git worktree add ../canary-entropy origin/main --detach
+cd ../canary-entropy
+npx --yes -p '@harness-engineering/cli@11' harness cleanup --findings-json \
+  > /tmp/entropy-report.txt || true
+node scripts/entropy-ratchet.mjs --report /tmp/entropy-report.txt
+```
+
+No `npm ci` — the gates run on a bare checkout, and so should you. Verified at
+`97bb15f`: CI reported **282** and a fresh worktree reported **282**, an exact
+match. The same commands in a long-lived working directory reported **346**.
+
+Every one of those +64 was a local-only artifact, and **gitignore is not what
+protects you** — the analyzer's walk sets `dot: true` deliberately and reads no
+ignore file at all. What keeps local junk out is upstream's hardcoded
+`DEFAULT_SKIP_DIRS` list of directory _basenames_ (`.claude`, `.cursor`,
+`.codex`, `.git-worktrees`, …) plus this repo's `entropy.excludePatterns`. That
+is why `.claude/worktrees/` is silent and `.kiro/` is not: one basename is on
+the list and the other is not, and no amount of gitignoring changes it.
+
+**Upstream limit, measured against CLI 11.1.1.** A path under a dot-directory
+upstream does not already skip cannot be excluded by _any_ `excludePatterns`
+entry — eight forms were tried, down to the exact literal relative path, and
+every one left the count unchanged; the same mechanism excludes non-dot paths
+(`tests/generated/**`) correctly. So `.kiro/**` and `.remember/**` are
+deliberately **absent** from `harness.config.json`: a pattern that matches
+nothing reads as configured and protects nothing, which is the vacuity
+`ts/test/entropy-exclude-patterns.test.ts` exists to refuse. The worktree is the
+workaround until upstream is fixed.
+
 **Reading a red `Harness Checks` (#588).** The `ci check --json` report is ~162
 KB and **is not in the job log** — do not scroll for it. Two limits eat it: the
 Actions log truncates at 60 KB, and Node's stdout is async when it is a pipe, so

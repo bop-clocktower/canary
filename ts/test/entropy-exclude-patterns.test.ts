@@ -114,6 +114,80 @@ describe('entropy.excludePatterns', () => {
   });
 });
 
+/**
+ * Repo-rooted exclusions (#700) — the anchored patterns, as opposed to the
+ * `**\/`-prefixed file-kind rules above that deliberately match tracked files
+ * everywhere.
+ *
+ * Why these exist: the entropy ratchet is a blocking gate that could not be
+ * run in a normal working directory. On `main` @ `97bb15f` CI measured 282 and
+ * a fresh worktree measured 282, while the shared working directory measured
+ * 346 — +64, every one of them in a path that exists only on a developer
+ * machine. The analyzer has NO `.gitignore` awareness at all; its walk sets
+ * `dot: true` deliberately, and what keeps local junk out is a hardcoded
+ * `DEFAULT_SKIP_DIRS` list of directory *basenames* plus whatever this config
+ * declares. `.claude/worktrees/` is quiet because `.claude` is on that list;
+ * `tests/generated/` was noisy because it is not.
+ *
+ * Upstream limit, measured against CLI 11.1.1 and NOT worked around here: a
+ * path under a dot-directory that upstream does not already skip cannot be
+ * excluded by ANY `excludePatterns` entry — eight forms were tried, down to
+ * the exact literal relative path, and all left the count unchanged. That is
+ * why `.kiro/**` and `.remember/**` are deliberately absent from the config: a
+ * pattern that matches nothing is the vacuous-rule shape this file exists to
+ * refuse. Measure the ratchet in a fresh worktree until upstream is fixed.
+ */
+const repoRootedExcludes = EXCLUDES.filter((p) => !p.startsWith('**/'));
+
+/**
+ * True when the repo's *committed* ignore rules cover `path`. `--no-index` so
+ * the answer does not depend on the path existing on this machine.
+ */
+function isGitIgnored(path: string): boolean {
+  try {
+    execFileSync('git', ['check-ignore', '--no-index', '-q', '--', path], {
+      cwd: REPO_ROOT,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+describe('entropy.excludePatterns repo-rooted entries', () => {
+  // Guard the guard: an empty list satisfies every "for each" rule below
+  // without checking anything.
+  it('declares the local-only artifact roots it is meant to cover', () => {
+    expect(repoRootedExcludes).toContain('tests/generated/**');
+  });
+
+  it('writes each one as an unambiguous directory glob', () => {
+    const malformed = repoRootedExcludes.filter((p) => !p.endsWith('/**'));
+    expect(malformed).toEqual([]);
+  });
+
+  // The dangerous direction. An anchored exclusion that CI can also see would
+  // silently shrink the denominator and let the ratchet pass over real
+  // findings. `.gitignore` has to say so at the repo level: a `.gitignore`
+  // written *inside* an untracked artifact directory by the tool that owns it
+  // does not exist in `actions/checkout`, so it proves nothing about CI.
+  it('keeps every one invisible to CI (git-ignored at the repo level)', () => {
+    const visibleToCi = repoRootedExcludes
+      .map((p) => p.slice(0, -'/**'.length))
+      .filter((dir) => !isGitIgnored(`${dir}/probe`));
+    expect(visibleToCi).toEqual([]);
+  });
+
+  it('excludes no git-tracked file', () => {
+    const prefixes = repoRootedExcludes.map((p) => p.slice(0, -'**'.length));
+    const hidden = trackedFiles().filter((f) =>
+      prefixes.some((prefix) => f.startsWith(prefix)),
+    );
+    expect(hidden).toEqual([]);
+  });
+});
+
 describe('entry points', () => {
   it('never declares a test file as a reachability root', () => {
     for (const key of ['entropy', 'performance'] as const) {
