@@ -930,10 +930,12 @@ export function promoteCheckCmd(
     }
   }
 
+  // No glyph on `abstain`: `gateOutcome` already opens its summary line with the
+  // warning sign, and two in a row read as a rendering bug rather than emphasis.
   const banner: Record<string, string> = {
     promote: pc.green(`${CHECK_MARK} PROMOTE`),
     block: pc.red(`${REDX} BLOCK`),
-    abstain: pc.yellow(`${WARN} ABSTAIN`),
+    abstain: pc.yellow('ABSTAIN'),
   };
   deps.out(
     `${pc.bold(banner[verdict.decision]!)} ${EM_DASH} ${verdict.summaryLine}`,

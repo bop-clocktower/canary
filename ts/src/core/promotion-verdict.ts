@@ -219,12 +219,26 @@ export function promotionVerdict(path: string): PromotionVerdict {
     );
   }
 
+  // Two distinct reasons the linter can refuse, and BOTH have to become an
+  // abstention rather than an exception. Letting a read error propagate meant
+  // the CLI printed a raw ENOENT stack and exited 0 -- a promotion gate that
+  // could not open the draft, reporting success. Anything else genuinely
+  // unexpected still throws, because swallowing an unknown fault is how a
+  // scanner learns to go quiet.
   let lint: LintFinding[];
   try {
     lint = new StaticLinter().lint(path);
   } catch (e) {
-    if (!(e instanceof UnsupportedTestFileError)) throw e;
-    return abstained(path, [{ name: path, reason: e.message }], emptyAxes());
+    if (e instanceof UnsupportedTestFileError) {
+      return abstained(path, [{ name: path, reason: e.message }], emptyAxes());
+    }
+    const code = (e as { code?: string }).code;
+    if (typeof code !== 'string') throw e;
+    return abstained(
+      path,
+      [{ name: path, reason: `could not be read (${code})` }],
+      emptyAxes(),
+    );
   }
   const vacuity: GateResult<VacuityFinding> = scanVacuity(path);
 

@@ -201,6 +201,17 @@ describe('absence of a verdict degrades loudly, never silently', () => {
     expect(v.exitCode).toBe(EXIT_ABSTAINED);
   });
 
+  it('abstains on a path it cannot read, instead of throwing', () => {
+    // The worst-shaped zero: the first cut let `readFileSync` throw out of the
+    // command handler, so the CLI printed a raw ENOENT stack and exited **0** —
+    // a promotion gate that could not open the draft, reporting success.
+    project = makeProject({ 'a.test.ts': '' });
+    const v = promotionVerdict(`${project.root}/missing.test.ts`);
+    expect(v.decision).toBe('abstain');
+    expect(v.exitCode).toBe(EXIT_ABSTAINED);
+    expect(v.skipped[0]?.reason).toMatch(/could not be read|ENOENT|read/i);
+  });
+
   it('tells the reader to fall back to manual review', () => {
     const v = verdict('a.test.ts', '');
     expect(v.decision).toBe('abstain');

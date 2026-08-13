@@ -474,7 +474,27 @@ export function scanVacuity(path: string): GateResult<VacuityFinding> {
     };
   }
   const python = framework === 'pytest';
-  const source = readFileSync(path, 'utf-8');
+  // An unreadable path is the third zero, and it was the worst-shaped one: left
+  // to throw, `readFileSync` escaped the command handler, so the CLI printed a
+  // raw ENOENT stack and exited **0**. A gate that could not open its input and
+  // reported success is precisely the false green this module exists to detect,
+  // so "cannot read" becomes an abstention with its cause named -- never an
+  // exception, and never a pass.
+  let source: string;
+  try {
+    source = readFileSync(path, 'utf-8');
+  } catch (e) {
+    return {
+      checked: 0,
+      findings: [],
+      skipped: [
+        {
+          name: path,
+          reason: `could not be read (${(e as { code?: string }).code ?? 'unknown error'})`,
+        },
+      ],
+    };
+  }
   // Whole-source blanking, offset-preserving: a `expect(true).toBe(true)`
   // carried as fixture DATA is not a vacuous test, and a `it(...)` inside a
   // string must not be able to truncate a real test's body (#590).

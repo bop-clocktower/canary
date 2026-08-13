@@ -84,6 +84,28 @@ describe('the denominator', () => {
     expect(gateOutcome(result, 'advisory').abstained).toBe(true);
   });
 
+  // A path that cannot be READ is the third zero, and the worst-shaped one: the
+  // first cut let `readFileSync` throw, so the CLI printed a raw ENOENT stack
+  // and — because the throw escaped the command handler rather than the exit
+  // contract — exited **0**. A gate that cannot open its input and reports
+  // success is the exact false-green this batch exists to remove.
+  it('abstains on a path it cannot read, instead of throwing', () => {
+    project = makeProject({ 'a.test.ts': '' });
+    const result = scanVacuity(`${project.root}/missing.test.ts`);
+    expect(result.checked).toBe(0);
+    expect(result.skipped?.[0]?.reason).toMatch(
+      /could not be read|ENOENT|read/i,
+    );
+    expect(gateOutcome(result, 'advisory').abstained).toBe(true);
+  });
+
+  it('abstains on a directory passed where a file was expected', () => {
+    project = makeProject({ 'a.test.ts': '' });
+    const result = scanVacuity(project.root);
+    expect(result.checked).toBe(0);
+    expect(result.skipped?.length).toBeGreaterThan(0);
+  });
+
   it.each(['mjs', 'cjs', 'mts', 'cts'])(
     'reads a .%s suite rather than reporting zero tests',
     (ext) => {
