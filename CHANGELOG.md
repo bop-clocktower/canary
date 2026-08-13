@@ -16,6 +16,26 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary migrate --adoption-report` — name the pieces of a half-finished
+  overlay adoption.** The failure #459 reports is a repo that _looks_ adopted:
+  overlay skills sit in `.canary/skills/`, no workflow was ever installed, the
+  guardian never runs, and every surface stays quiet. The report answers for
+  seven pieces in adoption order — `company_json`, `shape`, `path_pointers`,
+  `overlay`, `skills`, `manifest`, `workflows` — so the first `missing` line is
+  the step to fix. Three properties are load-bearing: it **writes nothing**
+  (skill and workflow state comes from the same non-writing path `--check`
+  uses); it **runs without an overlay**, because "no overlay is tracked" is
+  itself the most common gap and refusing to report would hide it; and an
+  **edited workflow counts as present**, because a consumer's CI is theirs — a
+  workflow that differs from the template was adopted and then tuned, which is a
+  freshness question, not an adoption gap. Only a declared template with no file
+  at all is `missing`. Pieces the report cannot reach render as `unknown` and
+  are never counted as verified, so `path_pointers` with nothing declared is an
+  honest "cannot verify" rather than a finding against every repo happily using
+  the template default. Exits `0` fully adopted, `1` pieces missing, `3` nothing
+  verifiable. This closes the last open acceptance criterion on #459; install,
+  shape-awareness, and portable paths shipped in v6.3.0 (#484). ([#459])
+
 - **`canary history record <results-file> --suite <name>` — the history store
   finally has a writer.** `canary analyze` and `canary history` have always read
   `test-results/reports/history-v2.jsonl`; nothing in the product wrote it, so
@@ -269,6 +289,7 @@ under the project's former name) are documented in the
   remembered to name. ([#686])
 
 [#390]: https://github.com/bop-clocktower/canary/issues/390
+[#459]: https://github.com/bop-clocktower/canary/issues/459
 [#508]: https://github.com/bop-clocktower/canary/issues/508
 [#538]: https://github.com/bop-clocktower/canary/issues/538
 [#477]: https://github.com/bop-clocktower/canary/issues/477
@@ -286,6 +307,22 @@ under the project's former name) are documented in the
 [#703]: https://github.com/bop-clocktower/canary/issues/703
 
 ### Changed
+
+- **Entropy paydown: 15 provably-dead exports removed, the ratchet ceiling
+  lowered 297 → 281.** `main` measured 296 against a 297 ceiling — one finding
+  of headroom, with two finished branches waiting that needed three between
+  them. The ceiling was **not** raised; real dead code was paid down instead.
+  Thirteen of the fifteen are `export`-keyword removals on symbols still used
+  inside their own module, so no code was deleted and nothing changed at
+  runtime. Two are genuine deletions: the `scanFile` thin wrapper in the
+  canary-savant and canary-blackhawk scanners, which no CLI and no test
+  imported. Every candidate was verified live-or-dead through the two hops the
+  analyzer cannot follow — the npm package's `require('../../dist/*.js')` test
+  imports, and the `sync-gate-result.mjs` mirror that makes `skippedSuffix` look
+  dead in `ts/src` while `npm/src/doctor.ts` uses the generated copy — which is
+  why the 15 flagged `npm/src` exports were left alone. Re-measured 296 → 281 on
+  the real tree; the before/after `--json` sets differ by exactly those 15 with
+  zero additions. ([#703])
 
 - **Entropy paydown: 15 provably-dead exports removed, the ratchet ceiling
   lowered 297 → 281.** `main` measured 296 against a 297 ceiling — one finding
@@ -351,6 +388,22 @@ under the project's former name) are documented in the
 [#671]: https://github.com/bop-clocktower/canary/issues/671
 
 ### Fixed
+
+- **The dead-link checker no longer scans files git is ignoring.** Found on
+  `main` within minutes of #696 merging: `scripts/check_doc_links.mjs` walked
+  `.github/instructions/`, a gitignored directory an editor extension writes,
+  and reported two dead links to workflows this repo does not have. The result
+  was a suite that passed in CI and failed on a laptop, over a file no commit
+  could fix. `SKIP_DIRS` could not have covered it — that list names directories
+  every checkout shares, where an ignored path is whatever a given machine
+  happens to have lying around. The walk now consults `git check-ignore`.
+  Outside a work tree (a tarball export, a vendored copy) there are no ignore
+  rules to apply, so every file is scanned — treating a missing `.git` as
+  "ignore everything" would turn it into a silent pass, the exact failure the
+  script exists to prevent. This is #688 read backwards: there, gitignored
+  source was invisible to a gate that needed to see it; here, gitignored prose
+  was visible to one that must not. Both come of never stating the denominator.
+  ([#686], [#688])
 
 - **The dead-link checker no longer scans files git is ignoring.** Found on
   `main` within minutes of #696 merging: `scripts/check_doc_links.mjs` walked

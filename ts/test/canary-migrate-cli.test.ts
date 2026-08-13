@@ -508,3 +508,140 @@ describe('canary migrate -- workflow install', () => {
     }
   });
 });
+
+// --- adoption report (#459, acceptance criterion 4) ---------------------------
+
+/** `migrate --adoption-report` with an injected temp home. */
+function adoptionRun(project: string, home: string, ...args: string[]) {
+  return run(project, home, '--adoption-report', ...args);
+}
+
+function adoptionJson(stdout: string): Record<string, unknown> {
+  return JSON.parse(
+    stdout.slice(stdout.indexOf('{'), stdout.lastIndexOf('}') + 1),
+  );
+}
+
+function pieceStatus(
+  payload: Record<string, unknown>,
+  id: string,
+): string | undefined {
+  const pieces = payload['pieces'] as { id: string; status: string }[];
+  return pieces.find((p) => p.id === id)?.status;
+}
+
+describe('canary migrate --adoption-report', () => {
+  it('names the exact gap in a skills-deployed, workflow-less repo', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+      const overlay = overlayWithWorkflow(base);
+      // Deploy the skills, then delete the workflow: the #459 report -- a repo
+      // that looks adopted while the guardian never runs.
+      await run(project, home, '--from', overlay, '--apply');
+      rmSync(join(project, '.github', 'workflows', 'canary-guardian.yml'));
+
+      const res = await adoptionRun(project, home, '--from', overlay, '--json');
+      const payload = adoptionJson(res.stdout);
+      expect(pieceStatus(payload, 'skills')).toBe('present');
+      expect(pieceStatus(payload, 'manifest')).toBe('present');
+      expect(pieceStatus(payload, 'workflows')).toBe('missing');
+      expect(payload['adopted']).toBe(false);
+      expect(res.code).toBe(1);
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('reports a fully adopted repo as adopted and exits 0', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+      // The two pieces `migrate` does not create: the project-local pointer
+      // file and its portable path pointers.
+      mkdirSync(join(project, '.canary'), { recursive: true });
+      writeFileSync(
+        join(project, '.canary', 'company.json'),
+        '{"coverage_report_path": "coverage/lcov.info"}',
+        'utf-8',
+      );
+      const overlay = overlayWithWorkflow(base);
+      await run(project, home, '--from', overlay, '--apply');
+
+      const res = await adoptionRun(project, home, '--from', overlay, '--json');
+      const payload = adoptionJson(res.stdout);
+      expect(payload['adopted']).toBe(true);
+      expect(payload['unverifiable']).toBe(0);
+      expect(res.code).toBe(0);
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('still reports with no overlay tracked -- that IS the common gap', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+
+      const res = await adoptionRun(project, home, '--json');
+      const payload = adoptionJson(res.stdout);
+      expect(pieceStatus(payload, 'overlay')).toBe('missing');
+      expect(pieceStatus(payload, 'skills')).toBe('unknown');
+      expect(res.code).toBe(1);
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('writes nothing -- no workflow, no manifest', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+      const overlay = overlayWithWorkflow(base);
+
+      await adoptionRun(project, home, '--from', overlay);
+      expect(
+        existsSync(
+          join(project, '.github', 'workflows', 'canary-guardian.yml'),
+        ),
+      ).toBe(false);
+      expect(existsSync(join(project, '.canary', 'skills'))).toBe(false);
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('renders a human report with a fix line under each gap', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+
+      const res = await adoptionRun(project, home);
+      expect(res.stdout).toContain('# Canary Adoption');
+      expect(res.stdout).toContain('fix: ');
+      expect(res.stdout).toContain('canary overlay add');
+    } finally {
+      rmTmp(base);
+    }
+  });
+});
