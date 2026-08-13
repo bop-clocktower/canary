@@ -355,6 +355,68 @@ describe('check_doc_links', () => {
     });
   });
 
+  describe('archived plan documents (#719)', () => {
+    // #719 read the 24 `NOT_FOUND` findings `harness cleanup` reports — all of
+    // them in `docs/plans/**` or `docs/changes/**/plans/**` — as archival link
+    // rot: historical records pointing into a repo layout that no longer
+    // exists. On that reading the fix is a policy one, and the two proposed
+    // were excluding those trees by path, or an `archived: true` frontmatter
+    // key this script would honour.
+    //
+    // Re-measured at 97bb15f, the reading does not hold. Each of the 24
+    // targets was located in its source file and tested for fence membership:
+    // 56 occurrences, 56 of them inside a fenced block, 0 bare. Every one is
+    // the Class A upstream defect this script already routes around — a link
+    // belonging to the README the plan *creates*, quoted so a reader can see
+    // it. There is no rot to exclude and no link a commit here could repair.
+    //
+    // So both proposals are declined, and these tests are what makes the
+    // decline durable: an exclusion is cheap to add later by someone reading
+    // only the issue. `docs/changes/` is where #676 found 26 genuinely dead
+    // links, so an archived-tree exclusion would buy quiet by blinding the
+    // check over the one directory that has actually failed — the shrinking
+    // denominator ADR 0012 §7 exists to refuse.
+    const PLAN = 'docs/changes/some-feature/plans/2026-07-15-some-plan.md';
+
+    it('reports a dead link in an archived plan doc like any other file', () => {
+      write(PLAN, '[gone](./nope.md)\n');
+      write('docs/plans/older-plan.md', '[gone](./nope.md)\n');
+
+      expect(run().status).toBe(1);
+      expect(
+        findings()
+          .map((f) => f.file)
+          .sort(),
+      ).toEqual([PLAN, 'docs/plans/older-plan.md']);
+    });
+
+    it('honours no `archived: true` frontmatter opt-out', () => {
+      write(PLAN, '---\narchived: true\n---\n\n[gone](./nope.md)\n');
+
+      expect(findings()).toHaveLength(1);
+    });
+
+    it('does not report the fenced links those plans actually carry', () => {
+      // The exact shape of all 24: the plan quotes the README it will write,
+      // and that README's links are relative to the README, not to the plan.
+      write(
+        PLAN,
+        [
+          'Creates `docs/wiki/README.md`:',
+          '',
+          '````markdown',
+          '- [Getting started](../../../docs/wiki/Getting-Started.md)',
+          '- [Prompt](prompt.txt)',
+          '````',
+          '',
+        ].join('\n'),
+      );
+
+      expect(run().status).toBe(0);
+      expect(findings()).toEqual([]);
+    });
+  });
+
   describe('the repository itself', () => {
     it('has no dead documentation links', () => {
       const parsed = parseContract(exec(['--json']).out);
