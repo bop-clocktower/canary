@@ -39,6 +39,7 @@
 //   node scripts/arch-verdict.mjs [arch-report.json]
 //
 // Produce the input with:  harness check-arch --json > arch-report.json
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
@@ -46,6 +47,10 @@ import { pathToFileURL } from 'node:url';
 const NEW_DETAIL_CAP = 25;
 
 const BASELINE_PATH = '.harness/arch/baselines.json';
+const ALLOWANCE_DIR = '.harness/arch/allowances/';
+
+/** The first harness major that reads `.harness/arch/allowances/` at all. */
+const ALLOWANCE_MIN_MAJOR = 11;
 
 /**
  * Reads and parses a `check-arch --json` report.
@@ -119,10 +124,70 @@ function describeViolation(v) {
   return `  ${where}${v?.detail ?? JSON.stringify(v)}`;
 }
 
+// #689 trap 1. This line used to read `module-size 26965 -> 28178`, and the
+// arrow invited everyone to subtract. They should not: the LEFT operand is the
+// value recorded in `baselines.json`, NOT the value on `main`. Every allowance
+// merged since the baseline was last refreshed sits inside that gap, so the
+// implied "delta" overstates the PR's own growth by the whole accumulated
+// total — and the error GROWS over the repo's life. In the #680/#682/#683/#687
+// batch the real contributions were +55 and +88 while the arrow implied ~1200
+// for both, which is precisely how four authors concluded their own change was
+// the problem. The operands are named, the arrow is gone, and the sentence says
+// out loud what the number is not.
 function describeRegression(r) {
   if (r?.metric === undefined)
     return `  metric regression: ${JSON.stringify(r)}`;
-  return `  metric regression: ${r.metric} ${r.from ?? '?'} -> ${r.to ?? '?'}`;
+  const from = r.from ?? '?';
+  const to = r.to ?? '?';
+  return (
+    `  metric regression: ${r.metric} is ${to} now, against ${from} recorded in ${BASELINE_PATH}.` +
+    ` That pair is NOT this change's delta — the left operand is the baseline, which every allowance` +
+    ` merged since it was last refreshed already sits above. Measure your own contribution against the` +
+    ` merge base before believing the gap.`
+  );
+}
+
+/**
+ * The version of the harness CLI in play, or `undefined` when it cannot be
+ * read. `HARNESS_CLI_VERSION` overrides the probe — CI already knows what it
+ * installed, and the tests need a seam that does not depend on the machine.
+ */
+export function detectHarnessCliVersion() {
+  const declared = process.env.HARNESS_CLI_VERSION;
+  if (declared !== undefined && declared !== '') return declared.trim();
+  try {
+    return execFileSync('harness', ['--version'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * #689 trap 2: allowances are silently inert below harness 11.
+ *
+ * Under `@10` the CLI ignores `.harness/arch/allowances/` entirely, so a
+ * correctly written allowance appears to do nothing at all and the author
+ * concludes the mechanism is wrong rather than the toolchain. Every workflow
+ * pins `@11`; a local install can differ without saying so. An unreadable
+ * version is reported rather than assumed green — guessing "probably fine"
+ * here is the abstention-as-pass shape this repo keeps closing.
+ */
+export function allowanceSupportLines(version) {
+  const major = Number.parseInt(String(version ?? '').replace(/^v/, ''), 10);
+  if (Number.isNaN(major)) {
+    return [
+      `  NOTE: could not determine the running harness CLI version (unknown: ${version ?? 'not found on PATH'}).` +
+        ` Allowances need >= ${ALLOWANCE_MIN_MAJOR}; below that the file is ignored and a correct allowance looks like a no-op.`,
+    ];
+  }
+  if (major >= ALLOWANCE_MIN_MAJOR) return [];
+  return [
+    `  WARNING: the running harness CLI is ${version}, which ignores ${ALLOWANCE_DIR} entirely.` +
+      ` Write the allowance against >= ${ALLOWANCE_MIN_MAJOR} or it will read as having no effect. CI pins @${ALLOWANCE_MIN_MAJOR}.`,
+  ];
 }
 
 // `preExisting` is deliberately absent from every rendered sentence. On `main`
@@ -133,23 +198,50 @@ function describeRegression(r) {
 function regressionLines(v) {
   const lines = [
     `arch — REGRESSION: ${v.newCount} new violation(s) and ${v.regressionCount} metric regression(s) came from this change (${v.totalViolations} violation(s) in total).`,
-    '  Fix the code. Refreshing the baseline would bank the regression.',
   ];
+  // Only a NEW violation is a code fix. A metric that grew is handled below,
+  // by an allowance — telling the author of a legitimate refactor to "fix the
+  // code" is how #689 started.
+  if (v.newCount > 0) {
+    lines.push('  Fix the code. Refreshing the baseline would bank it.');
+  }
   for (const item of v.newViolations.slice(0, NEW_DETAIL_CAP)) {
     lines.push(describeViolation(item));
   }
   const hidden = v.newCount - NEW_DETAIL_CAP;
   if (hidden > 0) lines.push(`  … +${hidden} more new violation(s)`);
   for (const item of v.regressions) lines.push(describeRegression(item));
+  // A metric regression is the case the allowance mechanism exists for — a
+  // refactor that legitimately grows module-size cannot be "fixed" in code, and
+  // this is the branch every one of #680/#682/#683/#687 actually landed in.
+  if (v.regressionCount > 0) {
+    lines.push(
+      `  A metric that grew for a defensible reason is recorded, not fixed: add ${ALLOWANCE_DIR}<slug>.json` +
+        ` with the absolute value and the argument for it.`,
+      ...allowanceSupportLines(detectHarnessCliVersion()),
+    );
+  }
   return lines;
 }
 
+// #689. The old third line sent the reader to the `refresh-baseline` label,
+// which is NOT how this repo clears architecture growth — six per-PR allowance
+// files live on `main` (#674, #663, #670, #669, #660, #633) and the label is
+// the rare maintainer escalation. Four independent workers read that line in a
+// single afternoon and all four stopped at the wrong conclusion; one of them
+// had verified the failure against a pristine `main` worktree first and was
+// misled anyway. Correct methodology cannot save a reader from an instrument
+// that misnames its own mechanism, so the mechanism is named first here.
 function baselineLines(v) {
   return [
     `arch — BASELINE TRIP: ${v.newCount} new violation(s) from this change; the ratchet is firing on ${v.totalViolations} pre-existing violation(s) already recorded in the baseline.`,
     '  Nothing in this diff introduced them, so there is no code fix here.',
-    `  Refresh the ratchet instead: add the \`refresh-baseline\` label to the PR, or run` +
-      ` \`harness check-arch --update-baseline\` to update ${BASELINE_PATH}.`,
+    `  The route for this repo is a per-PR allowance: add ${ALLOWANCE_DIR}<slug>.json` +
+      ` stating the absolute value you measured and why the growth is worth it. Copy the shape of an` +
+      ` existing file there, or let \`harness check-arch --update-baseline --allow-regress --reason "..."\` write it.`,
+    `  Refreshing ${BASELINE_PATH} wholesale — the \`refresh-baseline\` label — is the rarer maintainer` +
+      ` escalation, not the default: it banks every pre-existing violation at once and erases the per-PR record of who accepted what.`,
+    ...allowanceSupportLines(detectHarnessCliVersion()),
   ];
 }
 
@@ -171,7 +263,7 @@ export function archAnnotations(v) {
   }
   if (v.verdict === 'baseline') {
     return [
-      `::warning title=harness arch::baseline trip — 0 new violations, ${v.totalViolations} pre-existing; refresh ${BASELINE_PATH} via the refresh-baseline label`,
+      `::warning title=harness arch::baseline trip — 0 new violations, ${v.totalViolations} pre-existing; record a per-PR allowance in ${ALLOWANCE_DIR} (the refresh-baseline label is the rarer maintainer escalation, not the default)`,
     ];
   }
   return [];

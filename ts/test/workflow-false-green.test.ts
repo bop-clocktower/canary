@@ -299,6 +299,101 @@ describe('workflow false-green invariants', () => {
   });
 
   /**
+   * #678 — a PR-time green is a verdict about a tree that may never merge.
+   *
+   * `harness check-arch` reported pass on #660's PR and failed on the identical
+   * commit once it was on `main`; #663 then inherited the failure and read as
+   * its cause. The mechanism is confirmed against the live ruleset: GitHub's
+   * `strict_required_status_checks_policy` is FALSE, so a PR merges without
+   * being up to date with `main`, and the default `actions/checkout` on
+   * `pull_request` checks out the merge commit computed for that event — head
+   * merged into `main` as of the last push to the PR BRANCH. Base movement
+   * fires no check run, so nothing re-measures. PR-time and post-merge are
+   * answers to two different questions.
+   *
+   * Flipping the policy is a maintainer's decision with a real cost to
+   * concurrent work, so what is enforced here is that the state is RECORDED and
+   * that the mitigation actually in place stays in place: every workflow behind
+   * a required check also runs on `push: main`, so a stale green is caught on
+   * `main` within one run instead of surfacing as the next PR's failure. A
+   * required check that only ever runs on pull requests would put the repo back
+   * where #660 left it, and the exemption list makes that a deliberate edit.
+   */
+  describe('#678 — the PR-time-vs-post-merge gap is recorded and bounded', () => {
+    const manifest = JSON.parse(
+      readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
+    ) as {
+      required: Array<{ check: string; workflow: string }>;
+      mergePolicy?: {
+        strict?: boolean;
+        postMergeDetection?: { prOnlyByNature?: string[] };
+      };
+    };
+
+    it('records the branch-freshness policy rather than leaving it implicit', () => {
+      // Recorded either way. `false` is a stated position with the #678
+      // reasoning attached; a missing key is the "nobody configured it" state
+      // that #542 was filed about.
+      expect(typeof manifest.mergePolicy?.strict).toBe('boolean');
+    });
+
+    it('names which required workflows are pull-request-only, if any', () => {
+      expect(
+        Array.isArray(manifest.mergePolicy?.postMergeDetection?.prOnlyByNature),
+      ).toBe(true);
+    });
+
+    it('runs every required workflow on main so a stale green is caught there', () => {
+      const exempt = new Set(
+        manifest.mergePolicy?.postMergeDetection?.prOnlyByNature ?? [],
+      );
+      const workflows = [...new Set(manifest.required.map((r) => r.workflow))];
+      // Zero denominator is an abstention: an empty required set would make
+      // the loop below vacuously true.
+      expect(workflows.length).toBeGreaterThan(0);
+      const missing: string[] = [];
+      for (const name of workflows) {
+        if (exempt.has(name)) continue;
+        const wf = allWorkflows().find(([n]) => n === name)?.[1];
+        const push = triggers(wf!)['push'] as Trigger | null;
+        if (!push?.branches?.includes('main')) missing.push(name);
+      }
+      expect(missing).toEqual([]);
+    });
+
+    it('keeps the exemption list to workflows that really are PR-only', () => {
+      const exempt =
+        manifest.mergePolicy?.postMergeDetection?.prOnlyByNature ?? [];
+      const wrong = exempt.filter((name) => {
+        const wf = allWorkflows().find(([n]) => n === name)?.[1];
+        const push = triggers(wf!)['push'] as Trigger | null;
+        return push?.branches?.includes('main') === true;
+      });
+      expect(wrong).toEqual([]);
+    });
+
+    it('does not let the Architecture Enforcer job claim the arch ratchet', () => {
+      // The secondary #678 symptom: CI's "Architecture Enforcer" passes while a
+      // local `harness check-arch` exits 1. Not one gate disagreeing with
+      // itself — the `enforce` job runs `check-deps` and `validate`, and never
+      // reads the baseline. The ratchet is gated by `harness.yml`. If someone
+      // ever moves `check-arch` into the enforcer, this test says so and the
+      // manifest comment has to be rewritten with it.
+      const arch = allWorkflows().find(
+        ([n]) => n === 'harness-architecture.yml',
+      )?.[1];
+      expect(arch).toBeDefined();
+      const commands = runBlocks(arch!).flatMap(logicalLines);
+      expect(commands.length).toBeGreaterThan(0);
+      expect(commands.some((c) => c.includes('check-arch'))).toBe(false);
+
+      const gating = allWorkflows().find(([n]) => n === 'harness.yml')?.[1];
+      const gatingCommands = runBlocks(gating!).flatMap(logicalLines);
+      expect(gatingCommands.some((c) => c.includes('check-arch'))).toBe(true);
+    });
+  });
+
+  /**
    * #588 — a machine-readable report must be readable.
    *
    * `harness.yml` ran `harness ci check --json` with the 162 KB report going
