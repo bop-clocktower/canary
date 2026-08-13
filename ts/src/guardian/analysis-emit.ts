@@ -43,6 +43,7 @@ import {
 import { dirname, join } from 'node:path';
 
 import { SkipEntry } from '../core/gate-result.js';
+import { ensureAscii } from '../util/ensure-ascii.js';
 import {
   CoverageInputState,
   coverageDegradedNotice,
@@ -63,23 +64,6 @@ const REF_MAX = 100; // cap the sanitized ref so a long branch never hits ENAMET
 // The loud-fallback notices carry an em-dash (U+2014) as output data; written as
 // an escape to honor the ASCII-source rule.
 const EM_DASH = '\u{2014}';
-
-/**
- * Escape every non-ASCII (>= U+0080) code unit to a `\uXXXX` sequence, matching
- * Python's `json.dumps(..., ensure_ascii=True)` (the library default).
- */
-function ensureAscii(json: string): string {
-  // Escape every UTF-16 code UNIT >= 0x80 to \uXXXX, matching Python
-  // json.dumps(ensure_ascii=True). Iterating by unit (not code point) means an
-  // astral char's surrogate pair emits \udXXX\udXXX, like Python; a code-point
-  // regex would stop at U+FFFF and leave astral chars raw.
-  let out = '';
-  for (let i = 0; i < json.length; i++) {
-    const c = json.charCodeAt(i);
-    out += c >= 0x80 ? '\\u' + c.toString(16).padStart(4, '0') : json[i];
-  }
-  return out;
-}
 
 /** Trim leading/trailing `-` characters (Python `str.strip("-")`). */
 function stripDashes(value: string): string {

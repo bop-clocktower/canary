@@ -27,6 +27,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { ensureAscii } from '../util/ensure-ascii.js';
+
 const SARIF_SCHEMA = 'https://json.schemastore.org/sarif-2.1.0.json';
 const TOOL_NAME = 'Canary';
 const TOOL_VERSION = '0.1.0';
@@ -77,19 +79,6 @@ function pyGet(
   fallback: unknown,
 ): unknown {
   return Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : fallback;
-}
-
-/**
- * Reproduce Python's `json.dumps(..., ensure_ascii=True)` (the library default)
- * on `JSON.stringify` output: escape every code point >= 0x80 as `\uXXXX`. Only
- * touches the >= 0x80 range, so the ASCII escapes `JSON.stringify` already
- * produced are left intact. (Same helper as `guardian/pr-check.ts`.)
- */
-function ensureAscii(json: string): string {
-  return json.replace(
-    /[-￿]/g,
-    (ch) => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'),
-  );
 }
 
 /**
