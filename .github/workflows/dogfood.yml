@@ -228,6 +228,60 @@ jobs:
 
           echo "Guard fired correctly on Node $(node -v)."
 
+  # --- B2: the skills' own declared surface, verified against reality -------
+  skill-surfaces:
+    name: Skill surface integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # The examples half SPAWNS the CLI, so it needs a real build. Without
+      # one, `skills verify` abstains and says why rather than reporting a
+      # clean corpus it never executed.
+      - name: Build the engine
+        run: |
+          npm --prefix ts ci
+          npm --prefix ts run build
+
+      # Two denominators, checked separately. `skills verify` is advisory and
+      # exits 0 on findings, so this step reads the JSON and decides: a
+      # collapsed denominator on EITHER half is an error annotation, because a
+      # sweep that inspected nothing has abstained, not passed (#508). Findings
+      # themselves are warnings while precision is unknown (ADR 0010).
+      - name: Verify skill surfaces and execute documented examples
+        run: |
+          node ts/bin/canary.js skills verify --root . --json > surfaces.json
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("surfaces.json", "utf8"));
+            let broke = 0;
+            for (const half of ["surfaces", "examples"]) {
+              const { checked, abstained, findings } = r[half];
+              console.log(`${half}: checked=${checked} findings=${findings.length}`);
+              if (abstained) {
+                console.log(`::error title=Skill surface check abstained::the ${half} half verified ZERO items, so it measured nothing. This is not a pass.`);
+                broke = 1;
+              }
+              for (const f of findings) {
+                console.log(`::warning title=${f.kind}::${f.skill ?? f.name}: ${f.detail}`);
+              }
+            }
+            const skipped = r.examples.skipped.length;
+            if (skipped) console.log(`::notice title=Unverifiable examples::${skipped} documented example(s) could not be executed; each carries its reason in surfaces.json.`);
+            process.exit(broke);
+          '
+
+      # The report has to outlive the runner (#588): on the failing run — the
+      # only one anyone needs it for — an un-uploaded report is unreachable.
+      - name: Upload the surface report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: skill-surface-report
+          path: surfaces.json
+
   # --- C: fleet health, on canary's own runs --------------------------------
   fleet-health:
     name: Fleet health (canary's own runs)

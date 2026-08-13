@@ -118,6 +118,11 @@
       "reason": "Same dogfood baseline as above (#544). Promote alongside the other dogfood jobs once the baseline is triaged rather than one at a time."
     },
     {
+      "check": "Skill surface integrity",
+      "workflow": "dogfood.yml",
+      "reason": "New in this batch and never run against the corpus before, so its precision is unknown (ADR 0010). The first sweep reports 1 finding (canary-shadow documents no runnable command) and 29 of 33 documented examples as unverifiable; promoting before that backlog is triaged would block every PR on findings nobody has confirmed. Note the job DOES fail on a collapsed denominator even while advisory — an abstention is not a finding whose precision is in question, it is the check reporting it measured nothing."
+    },
+    {
       "check": "Fleet health (canary's own runs)",
       "workflow": "dogfood.yml",
       "reason": "Reports on accumulated run history, so its verdict depends on prior runs rather than on this PR's diff. A required check must be a function of the change under review."

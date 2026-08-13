@@ -233,6 +233,55 @@ const ROWS: GateRow[] = [
     run: (base) =>
       invokeGuardian(['author-plan', '--diff', '-'], { input: '', cwd: base }),
   },
+  // --- skill-surface integrity (#452 / #487) -------------------------------
+  // TWO rows for one command, on purpose: `skills verify` carries two
+  // independent denominators, and a single row would let one of them collapse
+  // unnoticed behind the other's healthy number.
+  {
+    command: 'skills verify (tree with zero skill surfaces)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: ['surface declaration(s) passed'],
+    run: (base) => {
+      const empty = join(base, 'no-skills');
+      mkdirSync(join(empty, 'agents', 'skills'), { recursive: true });
+      return invokeCanary(['skills', 'verify', '--root', empty]);
+    },
+  },
+  {
+    command: 'skills verify (every documented example unverifiable)',
+    layer: 'engine',
+    kind: 'advisory',
+    expect: 'warnLine',
+    forbid: ['documented example(s) passed'],
+    // A surface EXISTS here, so only the examples denominator collapses -- the
+    // case a single combined denominator would hide.
+    run: (base) => {
+      const root = join(base, 'illustrative');
+      const dir = join(root, 'agents', 'skills', 'cc', 'canary-x');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, 'SKILL.md'),
+        '---\nname: canary-x\ncli: scripts/cli.mjs\n---\n\n' +
+          '```bash\ncanary skills run canary-x -- <path>\n```\n',
+        'utf-8',
+      );
+      // A runnable CLI must EXIST, or the abstention would come from "no built
+      // CLI to spawn" and this row would pass even with example classification
+      // completely broken -- an abstention proving the wrong thing.
+      const bin = join(root, 'fake-canary.js');
+      writeFileSync(bin, 'process.exit(0);\n', 'utf-8');
+      return invokeCanary([
+        'skills',
+        'verify',
+        '--root',
+        root,
+        '--canary-bin',
+        bin,
+      ]);
+    },
+  },
   {
     command: 'history record (results file carrying zero test results)',
     layer: 'engine',
