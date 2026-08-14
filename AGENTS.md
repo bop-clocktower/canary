@@ -525,44 +525,6 @@ report is missing or unparseable, because a summary nobody can produce is this
 same condition returning, not a pass. `ts/test/workflow-false-green.test.ts`
 holds the invariant for every workflow, not just this one.
 
-**`traceability` needs a graph nobody builds, and reports `pass` without one.**
-The check is a pure function of `.harness/graph/graph.json`. That path is
-gitignored (`.harness/.gitignore` ignores `graph/`) and untracked, and no
-workflow built it — the only `harness graph` invocation in the repo was a
-commented-out line in `guardian.yml` predating the current major. Upstream
-returns an empty issue list when the graph fails to load and the reporter
-renders empty as `pass`, so every `actions/checkout` printed
-`traceability pass, 0 issues` having read **zero requirements**. Same commit,
-same pinned CLI: a worktree with a graph reports `warn traceability 1` in 988
-ms, a fresh `git clone` reports `pass traceability 0` in 4 ms.
-
-So `harness.yml` runs `harness graph scan` before `ci check` — **deliberately
-without `|| true`**, because a build step that silently no-ops puts CI straight
-back into the false green (~5 s, ~15 MB, so there is no cost argument for making
-it optional). It then captures `harness traceability --json` and hands it to the
-summariser, which reads the denominator through
-`scripts/traceability-verdict.mjs` and **exits 3** if the report is missing,
-unreadable, or carries zero requirements. `pass` over an unknown denominator is
-no longer a reachable output.
-
-At the desk:
-
-```bash
-harness graph scan
-harness traceability --json > traceability-report.json
-node scripts/traceability-verdict.mjs traceability-report.json
-```
-
-Exit 0 measured, 3 abstained. On `main` it reads ~43–54 requirements (the count
-tracks `docs/changes/**`), ~98% with code edges and **~2% with test edges**.
-That 2% is reported, not gated: raising `minCoverage` is a separate decision,
-and a number that fails the build the day it first becomes visible is a
-different bug from a number nobody can see. Expect exactly one warning —
-`docs/changes/canary-instrument/proposal.md` names the Python-era
-`span_reader.read_traces()` while the shipped export is `readTraces()` and the
-behaviour _is_ tested. That is spec drift in a dated `docs/changes/**` record,
-which this repo treats as a historical document and does not rewrite. Leave it.
-
 **A red `arch` is two different bugs (#626).** `harness check-arch` reports the
 **absolute** violation count and exits 1; the ratchet inside `harness ci check`
 reports the **delta** and passes when it is zero. On a clean `main` that is
@@ -725,6 +687,75 @@ passing when it enumerates nothing.
 node scripts/source-visibility.mjs          # 0 clean, 1 hidden source, 3 abstain
 node scripts/source-visibility.mjs --json   # the report, machine-readable
 ```
+
+**`traceability` used to abstain in CI and call it `pass` (#729, fixed).** Of
+the nine checks `harness ci check` prints, `traceability` was the one whose
+verdict did not depend on the commit at all. It is a pure function of
+`.harness/graph/graph.json`, which is **gitignored** (`.harness/.gitignore`) and
+was built by **no workflow** — the one invocation that would have built it was
+commented out in `guardian.yml`, with a note saying graph fidelity was declined
+deliberately. Upstream's `runTraceabilityCheck` loads the graph and, when the
+load fails, returns an empty issue list; the reporter renders empty as `pass`.
+
+So `pass traceability 0 issue(s)` on every CI run meant the check **did not
+run**, and the first `warn` anyone saw was not a regression — it was the check
+running for the first time, at a desk. Proven on one commit, two ways:
+
+```bash
+harness ci check --json   # graph present  -> warn traceability 1 (988ms)
+git clone . /tmp/cisim    # what actions/checkout produces
+(cd /tmp/cisim && harness ci check --json)  # no graph -> pass traceability 0 (4ms)
+```
+
+The duration was the only tell in the report, and nobody reads a duration.
+
+**What closed it.** `harness.yml` now runs `harness graph scan` before
+`ci check` — **deliberately without `|| true` or `continue-on-error`**, because
+a build step that silently no-ops puts CI straight back into the same false
+green (~5s and ~15MB here, so there is no cost argument for making it optional).
+It then captures `harness traceability --json` and hands it to the summariser,
+which reads the denominator through `scripts/traceability-verdict.mjs` and
+**exits 3** when the report is missing, unreadable, or carries zero
+requirements. `pass` over an unknown denominator is no longer a reachable
+output. At the desk:
+
+```bash
+harness graph scan
+harness traceability --json > traceability-report.json
+node scripts/traceability-verdict.mjs traceability-report.json  # 0 measured, 3 abstained
+```
+
+Note the shape a bare checkout actually produces, since it is what the guard
+reads — `harness traceability --json` exits 2 and writes an object, not the
+array of specs:
+
+```json
+{ "error": "No knowledge graph found. Run `harness graph scan` first." }
+```
+
+Two consequences worth knowing before reading the number:
+
+- **A worktree borrows the main worktree's graph.** `resolveGraphDir` falls back
+  to the main checkout when the local `.harness/graph` is missing, so a fresh
+  worktree can report a verdict computed from a graph built days ago against a
+  different tree. `harness graph scan` (~6s) rebuilds it locally first.
+- **The `verified_by` half is effectively blind.** On a freshly scanned graph,
+  42 of 43 requirement nodes carry `requires` (code) edges and **one** carries a
+  `verified_by` (test) edge, so `coveragePercent` is ~2%. Only the default
+  `minCoverage: 0` keeps that from failing the repo wholesale — do not set
+  `traceability.minCoverage` without first checking what the edges actually say.
+
+The single warn on `main` is spec drift, not a coverage gap: Success Criterion 2
+of `docs/changes/canary-instrument/proposal.md` names the Python-era
+`span_reader.read_traces()`, while the shipped export is `readTraces()` in
+`agents/skills/claude-code/canary-instrument/scripts/span_reader.mjs`, tested in
+`agents/skills/test/canary-instrument.test.ts`. `docs/changes/**` is a **dated
+record** — the same exclusion `ts/test/harness-config-doc-claims.test.ts` makes
+— so it is not rewritten to match today's names. Expect that warning to persist;
+it is now the check's one real finding rather than the only sign it ever ran.
+`ts/test/traceability-abstention.test.ts` holds the mechanical claims above —
+originally that no workflow built the graph, now that exactly one does and that
+the summariser abstains without it.
 
 **`roadmap sync` requires `--no-state-change` (#595).** It is deliberately
 absent from the table above — no workflow runs it, and none should. Run it only

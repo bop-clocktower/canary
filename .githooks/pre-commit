@@ -14,6 +14,30 @@ if [ -n "$STAGED_ROADMAP" ] && [ -f "scripts/roadmap_comment_guard.mjs" ]; then
 fi
 
 # 2. Markdownlint — check staged .md files only
+#
+#    Resolution order matters here (#725). All work on this repo happens in a
+#    `git worktree`, and `core.hooksPath` is an absolute path into the MAIN
+#    checkout — so the hook always runs, but a worktree has no root
+#    `node_modules` of its own and both original probes were CWD-relative. A
+#    worktree created as a sibling (`../canary-<slug>`, the AGENTS.md
+#    convention) is also outside the directory chain `npx` walks upward, so it
+#    resolved nothing either and markdownlint went dark for essentially all
+#    work. A worktree nested *under* the main checkout resolved by accident —
+#    which is worse, because the gate's coverage then depended on where the
+#    worktree happened to be created.
+#
+#    The common git dir points at the main checkout unconditionally, worktree or
+#    not, so its sibling `node_modules` is the one install this hook can always
+#    name. Probed last: a tree with its own deps should use its own.
+MAIN_CHECKOUT_MARKDOWNLINT=""
+COMMON_GIT_DIR=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+if [ -n "$COMMON_GIT_DIR" ]; then
+  CANDIDATE="$(dirname "$COMMON_GIT_DIR")/node_modules/.bin/markdownlint"
+  if [ -x "$CANDIDATE" ]; then
+    MAIN_CHECKOUT_MARKDOWNLINT="$CANDIDATE"
+  fi
+fi
+
 STAGED_MD=$(git diff --cached --name-only --diff-filter=ACM | grep '\.md$' || true)
 STAGED_MD_FILTERED=$(echo "$STAGED_MD" | grep -v '^agents/agents/' | grep -v '^agents/commands/' || true)
 if [ -n "$STAGED_MD_FILTERED" ]; then
@@ -25,10 +49,16 @@ if [ -n "$STAGED_MD_FILTERED" ]; then
     # `--no-install` keeps this offline and silent-fast when nothing resolves.
     echo "[pre-commit] markdownlint: checking staged markdown files (resolved via npx)..."
     echo "$STAGED_MD_FILTERED" | xargs npx --no-install markdownlint
+  elif [ -n "$MAIN_CHECKOUT_MARKDOWNLINT" ]; then
+    echo "[pre-commit] markdownlint: checking staged markdown files (resolved from the main checkout)..."
+    echo "$STAGED_MD_FILTERED" | xargs "$MAIN_CHECKOUT_MARKDOWNLINT"
   else
     # The skip is intentional; the silence was the defect (#650). A dep-less
     # clone must still be able to commit, but it must not look like a clean run.
-    echo "[pre-commit] markdownlint: SKIPPED — no markdownlint binary resolved (run 'npm ci' at the repo root)."
+    # The remedy names this tree and the main checkout, because #725 was
+    # triggered by an install missing from a *worktree* while the message sent
+    # the reader to a repo root that already had one.
+    echo "[pre-commit] markdownlint: SKIPPED — no markdownlint binary resolved (run 'npm ci' at the root of this tree, or of the main checkout)."
     echo "             Staged markdown was NOT linted here. CI's docs-lint still gates it."
   fi
 fi

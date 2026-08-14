@@ -16,6 +16,27 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Pre-commit markdownlint now resolves in a worktree, and the changelog no
+  longer carries duplicated entries.** `core.hooksPath` is an absolute path into
+  the main checkout, so every worktree runs `.githooks/pre-commit` — but both of
+  its markdownlint probes were CWD-relative, and a worktree has no root
+  `node_modules` of its own. A worktree created as a sibling
+  (`../canary-<slug>`, the `AGENTS.md` convention) is also outside the directory
+  chain `npx` walks upward, so it resolved nothing and the gate announced a
+  skip; a worktree nested under the main checkout resolved by accident, which is
+  worse, because the gate's coverage then depended on where the worktree
+  happened to be created. The hook now falls back to the main checkout's
+  install, located through the common git dir — the one path a linked worktree
+  can always name — and the skip message names both roots instead of sending the
+  reader to a repo root that already had the install. Not a false green either
+  way: the skip announced itself (#650) and CI's `docs-lint` always gated the
+  merge; what was lost was the fast local loop. Separately, `CHANGELOG.md`
+  carried **two** duplicated `Unreleased` entries, one of them spliced
+  mid-sentence into a headline correction by the merge in #714 — no existing
+  gate could see them, because `MD024` is disabled here by design, prettier
+  reformats without deduplicating, and the release audit passes both copies
+  since both have a real PR behind them. `ts/test/changelog-hygiene.test.ts` now
+  fails on a repeated bullet headline within a release section. ([#725])
 - **canary-savant `SV002` can no longer be switched off by prose.** The rule
   pairs a class/all-scoped setup with its teardown, but only the setup half
   skipped comments — the teardown half asked `includes()` of the raw file. So
@@ -408,54 +429,26 @@ under the project's former name) are documented in the
 [#701]: https://github.com/bop-clocktower/canary/issues/701
 [#711]: https://github.com/bop-clocktower/canary/issues/711
 [#730]: https://github.com/bop-clocktower/canary/issues/730
+[#725]: https://github.com/bop-clocktower/canary/issues/725
 
 ### Changed
 
 - **Entropy paydown: 15 provably-dead exports removed, the ratchet ceiling
-  lowered 297 → 281.** `main` measured 296 against a 297 ceiling — one finding
-  of headroom, with two finished branches waiting that needed three between
-  them. The ceiling was **not** raised; real dead code was paid down instead.
-  Thirteen of the fifteen are `export`-keyword removals on symbols still used
-  inside their own module, so no code was deleted and nothing changed at
-  runtime. Two are genuine deletions: the `scanFile` thin wrapper in the
-  canary-savant and canary-blackhawk scanners, which no CLI and no test
-  imported. Every candidate was verified live-or-dead through the two hops the
-  analyzer cannot follow — the npm package's `require('../../dist/*.js')` test
-  imports, and the `sync-gate-result.mjs` mirror that makes `skippedSuffix` look
-  dead in `ts/src` while `npm/src/doctor.ts` uses the generated copy — which is
-  why the 15 flagged `npm/src` exports were left alone. Re-measured 296 → 281 on
-  the real tree; the before/after `--json` sets differ by exactly those 15 with
-  zero additions. ([#703])
-
-- **Entropy paydown: 15 provably-dead exports removed, the ratchet ceiling
-  lowered 297 → 281.** `main` measured 296 against a 297 ceiling — one finding
-  of headroom, with two finished branches waiting that needed three between
-  them. The ceiling was **not** raised; real dead code was paid down instead.
-  Thirteen of the fifteen are `export`-keyword removals on symbols still used
-  inside their own module, so no code was deleted and nothing changed at
-  runtime. Two are genuine deletions: the `scanFile` thin wrapper in the
-  canary-savant and canary-blackhawk scanners, which no CLI and no test
-  imported. Every candidate was verified live-or-dead through the two hops the
-  analyzer cannot follow — the npm package's `require('../../dist/*.js')` test
-  imports, and the `sync-gate-result.mjs` mirror that makes `skippedSuffix` look
-  dead in `ts/src` while `npm/src/doctor.ts` uses the generated copy — which is
-  why the 15 flagged `npm/src` exports were left alone. Re-measured 296 → 281 on
-  the real tree; the before/after `--json` sets differ by exactly those 15 with
-  zero additions. ([#703]) lowered 297 → 291 and the measured count 296 → 281.**
-  `main` measured 296 against a 297 ceiling — one finding of headroom, with two
-  finished branches waiting that needed three between them. The ceiling was
-  **not** raised; real dead code was paid down instead. Thirteen of the fifteen
-  are `export`-keyword removals on symbols still used inside their own module,
-  so no code was deleted and nothing changed at runtime. Two are genuine
-  deletions: the `scanFile` thin wrapper in the canary-savant and
-  canary-blackhawk scanners, which no CLI and no test imported. Every candidate
-  was verified live-or-dead through the two hops the analyzer cannot follow —
-  the npm package's `require('../../dist/*.js')` test imports, and the
-  `sync-gate-result.mjs` mirror that makes `skippedSuffix` look dead in `ts/src`
-  while `npm/src/doctor.ts` uses the generated copy — which is why the 15
-  flagged `npm/src` exports were left alone. Re-measured 296 → 281 on the real
-  tree; the before/after `--json` sets differ by exactly those 15 with zero
-  additions. ([#703])
+  lowered 297 → 291 and the measured count 296 → 281.** `main` measured 296
+  against a 297 ceiling — one finding of headroom, with two finished branches
+  waiting that needed three between them. The ceiling was **not** raised; real
+  dead code was paid down instead. Thirteen of the fifteen are `export`-keyword
+  removals on symbols still used inside their own module, so no code was deleted
+  and nothing changed at runtime. Two are genuine deletions: the `scanFile` thin
+  wrapper in the canary-savant and canary-blackhawk scanners, which no CLI and
+  no test imported. Every candidate was verified live-or-dead through the two
+  hops the analyzer cannot follow — the npm package's
+  `require('../../dist/*.js')` test imports, and the `sync-gate-result.mjs`
+  mirror that makes `skippedSuffix` look dead in `ts/src` while
+  `npm/src/doctor.ts` uses the generated copy — which is why the 15 flagged
+  `npm/src` exports were left alone. Re-measured 296 → 281 on the real tree; the
+  before/after `--json` sets differ by exactly those 15 with zero additions.
+  ([#703])
 
 - **Twelve more identifiers renamed to say what they are at the import site.**
   The polish-tier remainder of the `naming-craft` pass whose five foundational
@@ -505,22 +498,6 @@ under the project's former name) are documented in the
   the dropped files rendered rather than quietly shrinking what "clean" covered.
   A fault carrying no errno code still throws — swallowing an unknown one is how
   a scanner learns to go quiet. ([#704])
-
-- **The dead-link checker no longer scans files git is ignoring.** Found on
-  `main` within minutes of #696 merging: `scripts/check_doc_links.mjs` walked
-  `.github/instructions/`, a gitignored directory an editor extension writes,
-  and reported two dead links to workflows this repo does not have. The result
-  was a suite that passed in CI and failed on a laptop, over a file no commit
-  could fix. `SKIP_DIRS` could not have covered it — that list names directories
-  every checkout shares, where an ignored path is whatever a given machine
-  happens to have lying around. The walk now consults `git check-ignore`.
-  Outside a work tree (a tarball export, a vendored copy) there are no ignore
-  rules to apply, so every file is scanned — treating a missing `.git` as
-  "ignore everything" would turn it into a silent pass, the exact failure the
-  script exists to prevent. This is #688 read backwards: there, gitignored
-  source was invisible to a gate that needed to see it; here, gitignored prose
-  was visible to one that must not. Both come of never stating the denominator.
-  ([#686], [#688])
 
 - **The dead-link checker no longer scans files git is ignoring.** Found on
   `main` within minutes of #696 merging: `scripts/check_doc_links.mjs` walked

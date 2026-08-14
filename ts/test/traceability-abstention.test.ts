@@ -33,7 +33,13 @@
  * the requirement count and prove the two do not collapse into each other.
  */
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -146,6 +152,83 @@ function runVerdict(path: string) {
 function runSummary(args: string[]) {
   return runCapture('node', [SUMMARY, ...args]);
 }
+
+const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
+
+/**
+ * Every `run:` line across every workflow, with comment-only lines dropped.
+ *
+ * The comment stripping is load-bearing in both directions. `guardian.yml`
+ * carries a commented-out `harness graph` invocation with a note saying graph
+ * fidelity was considered and declined; counting it inverted the meaning of the
+ * original #729 assertion, and it would now let a workflow satisfy "builds the
+ * graph" with a line that runs nothing at all.
+ */
+function runScriptLines(): Array<[string, string]> {
+  return readdirSync(WORKFLOW_DIR)
+    .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+    .flatMap((file) => {
+      const wf = loadYaml(
+        readFileSync(join(WORKFLOW_DIR, file), 'utf8'),
+      ) as Workflow;
+      return Object.values(wf.jobs ?? {})
+        .flatMap((job) => job.steps ?? [])
+        .flatMap((step) =>
+          typeof step.run === 'string' ? step.run.split('\n') : [],
+        )
+        .map((line) => line.trim())
+        .filter((line) => line !== '' && !line.startsWith('#'))
+        .map((line) => [file, line] as [string, string]);
+    });
+}
+
+/**
+ * Inherited from #729, which recorded this bug while it was still open.
+ *
+ * Its third assertion was the inverse of the one below — that NO workflow built
+ * the graph — and it said out loud that wiring a build into CI should fail it:
+ * "which is the moment AGENTS.md needs rewriting, not a regression". This is
+ * that moment. The assertion is inverted rather than deleted, so the invariant
+ * still has a guard pointing the other way; the two that remain true are kept
+ * verbatim in intent, because they explain WHY the build step has to exist.
+ */
+describe('the graph the traceability check reads (#729)', () => {
+  it('is still gitignored rather than tracked', () => {
+    const ignore = readFileSync(
+      join(REPO_ROOT, '.harness', '.gitignore'),
+      'utf8',
+    );
+    const rules = ignore
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l !== '' && !l.startsWith('#'));
+
+    // Denominator: an empty ignore file would satisfy any "does not track"
+    // phrasing by containing nothing at all.
+    expect(rules.length).toBeGreaterThan(0);
+    expect(rules).toContain('graph/');
+  });
+
+  it('is built by exactly one workflow — the inverse of the #729 assertion', () => {
+    const lines = runScriptLines();
+
+    // Denominator: a glob that matched nothing would pass the filter below
+    // without inspecting a single workflow.
+    expect(lines.length).toBeGreaterThan(0);
+
+    const builders = lines
+      .filter(([, line]) => /\bharness\s+graph\b/.test(line))
+      .map(([file, line]) => `${file}: ${line}`);
+    expect(builders).toHaveLength(1);
+    expect(builders[0]).toContain('harness.yml');
+  });
+
+  it('is documented in AGENTS.md, naming the file the verdict depends on', () => {
+    const agents = readFileSync(join(REPO_ROOT, 'AGENTS.md'), 'utf8');
+    expect(agents).toContain('.harness/graph/graph.json');
+    expect(agents).toMatch(/traceability/i);
+  });
+});
 
 describe('the CI workflow builds the graph the traceability check reads', () => {
   it('runs `harness graph scan` in the harness job', () => {
