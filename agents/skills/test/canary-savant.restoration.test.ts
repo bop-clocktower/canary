@@ -236,6 +236,70 @@ describe('analyzeRestoration (JS)', () => {
     ].join('\n');
     expect(analyzeRestoration(text).restores('process.env', 'CI')).toBe(false);
   });
+
+  // #733: an in-test `try/finally` that saves and restores is STRICTER than an
+  // afterEach - the window in which the global is dirty is the try block, not
+  // the whole test - but only framework teardown hooks were collected as
+  // restore regions, so the tighter idiom was the one that got flagged. The
+  // workaround was a permanent savant-ignore pragma on a correct line, and
+  // pragmas do not expire.
+  it('a finally block restoring the mutated key counts as restoration', () => {
+    const text = [
+      "it('x', () => {",
+      '  const prior = process.env.SUPABASE_ANON_KEY;',
+      "  process.env.SUPABASE_ANON_KEY = 'test-anon-key';",
+      '  try {',
+      '    run();',
+      '  } finally {',
+      '    if (prior === undefined) delete process.env.SUPABASE_ANON_KEY;',
+      '    else process.env.SUPABASE_ANON_KEY = prior;',
+      '  }',
+      '});',
+    ].join('\n');
+    expect(
+      analyzeRestoration(text).restores('process.env', 'SUPABASE_ANON_KEY'),
+    ).toBe(true);
+  });
+
+  it('a finally restoring a different key leaves the mutated one flagged', () => {
+    const text = [
+      "it('x', () => {",
+      '  try {',
+      '    run();',
+      '  } finally {',
+      '    delete process.env.OTHER;',
+      '  }',
+      '});',
+    ].join('\n');
+    const r = analyzeRestoration(text);
+    expect(r.restores('process.env', 'OTHER')).toBe(true);
+    expect(r.restores('process.env', 'CI')).toBe(false);
+  });
+
+  it('the region ends at the finally block close brace', () => {
+    const text = [
+      '  } finally {',
+      '    delete process.env.CI;',
+      '  }',
+      "  process.env.LEAKED = 'x';",
+    ].join('\n');
+    const r = analyzeRestoration(text);
+    expect(r.restores('process.env', 'CI')).toBe(true);
+    expect(r.restores('process.env', 'LEAKED')).toBe(false);
+  });
+
+  it('a finally token inside a string does not open a region', () => {
+    const text = ["const fixture = '} finally {';", 'process.env.CI = 1;'].join(
+      '\n',
+    );
+    expect(analyzeRestoration(text).restores('process.env', 'CI')).toBe(false);
+  });
+
+  it('an unclosed finally region is capped like the hook regions', () => {
+    const far = Array.from({ length: 60 }, (_, i) => `const a${i} = ${i};`);
+    const text = ['} finally {', ...far, 'delete process.env.CI;'].join('\n');
+    expect(analyzeRestoration(text).restores('process.env', 'CI')).toBe(false);
+  });
 });
 
 // --- analyzeRestoration: Python teardown regions ------------------------------
@@ -285,6 +349,37 @@ describe('analyzeRestoration (Python)', () => {
       '    os.environ.update(old)',
     ].join('\n');
     expect(analyzeRestoration(text).restores('os.environ', 'ANY')).toBe(true);
+  });
+
+  // #733, Python half: `finally:` is indentation-scoped like the `yield` and
+  // teardown-def regions, not brace-balanced.
+  it('a finally: suite restoring the mutated key counts as restoration', () => {
+    const text = [
+      'def test_a():',
+      "    prior = os.environ.get('API_KEY')",
+      '    try:',
+      '        run()',
+      '    finally:',
+      "        os.environ['API_KEY'] = prior",
+    ].join('\n');
+    const r = analyzeRestoration(text);
+    expect(r.restores('os.environ', 'API_KEY')).toBe(true);
+  });
+
+  it('a finally: suite ends at dedent', () => {
+    const text = [
+      'def test_a():',
+      '    try:',
+      '        run()',
+      '    finally:',
+      "        del os.environ['API_KEY']",
+      '',
+      'def test_b():',
+      "    os.environ['LEAKED'] = 'x'",
+    ].join('\n');
+    const r = analyzeRestoration(text);
+    expect(r.restores('os.environ', 'API_KEY')).toBe(true);
+    expect(r.restores('os.environ', 'LEAKED')).toBe(false);
   });
 
   it('os.environ.pop with a literal key covers that key', () => {

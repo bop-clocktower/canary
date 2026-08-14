@@ -25,12 +25,12 @@ other skill.
 
 ## Rules (Tier 1 — static suspects)
 
-| Rule                              | Severity | Fires on                                                                                                                                                                                                                                                                                                                                                                              |
-| --------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SV001-module-mutable-global`     | medium   | A module-scope mutable (`= {}`, `= []`, `set()`, `dict()`, `list()`, or a top-level JS `let`/`var`/`const` object/array) that some line later mutates in place (`.append`/`.add`/`[...] =`/`+=`/`.attr =`). Fires on the **declaration**, the leak's source.                                                                                                                          |
-| `SV002-missing-teardown`          | medium   | A **class/all-scoped** setup whose matching teardown is absent: pytest `setup_class`/`setUpClass`, or vitest/jest `beforeAll`. Per-test setup (`setUp`/`setup_method`/`beforeEach`) is excluded - it rebuilds state each test, so it does not leak.                                                                                                                                   |
-| `SV003-shared-singleton-mutation` | low      | A process-global singleton assigned without restore: `os.environ[...] =`, `sys.modules[...] =`, `process.env.X =`. Reads and `==` comparisons never fire, and neither does a file that demonstrably restores the global — a same-key (or computed-loop) restore in `afterEach`/`afterAll`/teardown/post-`yield` fixture code, or a write-back from a snapshot saved from that global. |
-| `SV004-order-coupled-name`        | low      | A test name or comment that encodes ordering: `test_1_…`, a **terminal** ordinal (`test_first()`, `test_last()` - not `test_first_match_wins`), `must run before …`, `it('… run first')`.                                                                                                                                                                                             |
+| Rule                              | Severity | Fires on                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SV001-module-mutable-global`     | medium   | A module-scope mutable (`= {}`, `= []`, `set()`, `dict()`, `list()`, or a top-level JS `let`/`var`/`const` object/array) that some line later mutates in place (`.append`/`.add`/`[...] =`/`+=`/`.attr =`). Fires on the **declaration**, the leak's source.                                                                                                                                                        |
+| `SV002-missing-teardown`          | medium   | A **class/all-scoped** setup whose matching teardown is absent: pytest `setup_class`/`setUpClass`, or vitest/jest `beforeAll`. Per-test setup (`setUp`/`setup_method`/`beforeEach`) is excluded - it rebuilds state each test, so it does not leak.                                                                                                                                                                 |
+| `SV003-shared-singleton-mutation` | low      | A process-global singleton assigned without restore: `os.environ[...] =`, `sys.modules[...] =`, `process.env.X =`. Reads and `==` comparisons never fire, and neither does a file that demonstrably restores the global — a same-key (or computed-loop) restore in `afterEach`/`afterAll`/teardown/post-`yield` fixture code or an in-test `try`/`finally`, or a write-back from a snapshot saved from that global. |
+| `SV004-order-coupled-name`        | low      | A test name or comment that encodes ordering: `test_1_…`, a **terminal** ordinal (`test_first()`, `test_last()` - not `test_first_match_wins`), `must run before …`, `it('… run first')`.                                                                                                                                                                                                                           |
 
 A finding is a **suspect, not a verdict.** A module dict that is only ever read
 is a legitimate constant and does not fire; only a _mutated_ one does.
@@ -56,9 +56,13 @@ Savant Tier 1 is a scanner with no parser dependency, so it ships anywhere
   teardown. It also only judges class/all-scoped setup, so a genuinely leaky
   per-test setup (rare) is missed - the deliberate false-positive/false-negative
   trade from dogfooding.
-- **Comment-blind for code rules.** `SV003` skips commented-out lines; `SV004`
-  deliberately does not, because an ordering note in a comment is exactly the
-  self-reported dependence it looks for.
+- **Comment-blind for code rules.** `SV003` skips commented-out lines, and
+  `SV002` judges both halves of its pair against a code-only projection of the
+  file (comments dropped, string contents blanked) - so neither a prose mention
+  of `afterAll` nor a fixture string containing one can stand in for the real
+  teardown (#732). `SV004` deliberately is _not_ comment-blind, because an
+  ordering note in a comment is exactly the self-reported dependence it looks
+  for.
 - **String-aware for code anchors.** An `SV003` (or `SV004` name-pattern) match
   that _starts_ inside a string literal on its own line is rejected as fixture
   data. `SV004`'s directive-text alternatives stay unfiltered on purpose: their
