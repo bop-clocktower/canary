@@ -13,13 +13,13 @@
  *   - `json.dumps(x, indent=2)` -> {@link jsonIndent2} (byte-exact + ensure_ascii).
  *   - The report builders are byte-exact ports (Markdown), so the human-readable
  *     paths match the oracle exactly.
- *   - INTENTIONAL DEVIATION: the TS analysis engine (`engine.ts`) operates on the
- *     LOCAL NDJSON store only -- the JS Supabase SDK is async and the engine's
- *     query surface is synchronous. `--db-url` is still accepted (faithful CLI
- *     surface) but the TS port always reads the local store, exactly as the
- *     Python `isinstance(store, LocalHistoryStore)` read-path does for the
- *     spikes/common-failures commands. No Python analyze test exercises a remote
- *     store.
+ *   - `--db-url` / `CANARY_HISTORY_DB_URL` are HONOURED as of #711 (ADR 0013
+ *     Decision 4): the engine is async, so analyze selects its backend through
+ *     the shared `makeStore` factory like every other history consumer. Three
+ *     reports (spikes, common-failures, regression-candidates) are computed by
+ *     walking raw run records, which only the local backend exposes; against a
+ *     remote backend each names itself as unverifiable instead of rendering an
+ *     empty report. No Python analyze test exercised a remote store.
  *   - `area-health` accepts `--json` but ignores it -- faithful to the Python
  *     command, which never branches on `output_json`.
  */
@@ -38,40 +38,32 @@ import {
   buildRegressionCandidatesReport,
   buildFailureSpikesReport,
 } from './reports.js';
-import { NdjsonHistoryStore } from '../history/ndjson-store.js';
+import type { AsyncHistoryStore } from '../history/async-store.js';
+import { makeStore } from '../history/store.js';
 
 const DEFAULT_HISTORY_PATH = 'test-results/reports/history-v2.jsonl';
 
-/** Injected outside-world seams (out sink, env, local-store factory). */
+/** Injected outside-world seams (out sink, env, store factory). */
 export interface AnalyzeDeps {
   out(s: string): void;
   err(s: string): void;
   env: NodeJS.ProcessEnv;
-  makeStore(dbUrl?: string): NdjsonHistoryStore;
+  makeStore(dbUrl?: string): AsyncHistoryStore;
 }
 
 /** Process-backed defaults for production. */
 export function defaultAnalyzeDeps(): AnalyzeDeps {
-  const err = (s: string): void => {
-    process.stderr.write(`${s}\n`);
-  };
   return {
     out: (s) => process.stdout.write(`${s}\n`),
-    err,
+    err: (s) => process.stderr.write(`${s}\n`),
     env: process.env,
-    // The ported analysis engine's query surface is synchronous, so it cannot
-    // drive the async Supabase store; analyze reads local NDJSON only. Python
-    // honors --db-url / CANARY_HISTORY_DB_URL via make_store, so warn (to stderr,
-    // not stdout -- keeps --json clean) rather than SILENTLY reading a different
-    // data source. Full remote support is deferred with the async engine port.
-    makeStore: (dbUrl?: string) => {
-      if (dbUrl) {
-        err(
-          'note: --db-url is ignored by analyze; it reads local NDJSON only.',
-        );
-      }
-      return new NdjsonHistoryStore(DEFAULT_HISTORY_PATH);
-    },
+    // #711: analyze now goes through the shared factory, so --db-url and
+    // CANARY_HISTORY_DB_URL select the backend for real. Until the engine went
+    // async this could not be done -- the engine held the synchronous store
+    // contract -- and the flag was accepted with a printed apology instead.
+    // Where a remote backend cannot answer a given section, the command says so
+    // by name (see `cannotVerifyRawRecords`) rather than rendering an empty one.
+    makeStore: (dbUrl?: string) => makeStore(dbUrl, DEFAULT_HISTORY_PATH),
   };
 }
 
@@ -93,19 +85,68 @@ export function defaultAnalyzeDeps(): AnalyzeDeps {
  *
  * Returns true when the caller should stop (the store was empty).
  */
-function abstainOnEmptyHistory(
-  store: NdjsonHistoryStore,
+async function abstainOnEmptyHistory(
+  store: AsyncHistoryStore,
   deps: AnalyzeDeps,
   json: boolean,
   what: string,
-): boolean {
-  if (store.countRuns() > 0) return false;
+): Promise<boolean> {
+  // #711: `countRuns` is an OPTIONAL capability, and a backend that cannot
+  // report its denominator has an UNKNOWN one, not a zero one (ADR 0013
+  // Decision 3). Abstaining here would fire on every remote query and mute the
+  // doctrine -- the katana lesson again, from the other direction.
+  if (!store.countRuns) return false;
+  if ((await store.countRuns()) > 0) return false;
   const outcome = gateOutcome({ checked: 0, findings: [] }, 'advisory');
   const notice =
     `${outcome.summaryLine} No run history to analyze, so "${what}" is ` +
     `unknown rather than clean. Record runs first ` +
     `(\`canary history push\`, or a reporter that writes ` +
     `${DEFAULT_HISTORY_PATH}), then re-run.`;
+  if (json) {
+    deps.out(jsonIndent2([]));
+    deps.err(notice);
+  } else {
+    deps.out(notice);
+  }
+  return true;
+}
+
+/**
+ * The capability guard for the sections built on raw run records (#711).
+ *
+ * `spikes`, `common-failures` and `regression-candidates` are computed by
+ * walking whole run records rather than by any aggregate query, so they exist
+ * only where the backend implements the optional `readAll()`. The local NDJSON
+ * store does; the remote Supabase store does not.
+ *
+ * Against a backend without it these commands used to emit an empty report,
+ * which is indistinguishable on screen from a measured all-clear — the exact
+ * false-green shape #508 exists to kill, and one that only became reachable
+ * once `--db-url` started being honoured. So the command names the section it
+ * could not compute, and names the ones that DO work against this backend so
+ * the answer is actionable rather than just a refusal.
+ *
+ * Advisory, matching `abstainOnEmptyHistory`: the exit stays 0, the human path
+ * gets the notice instead of the report, and `--json` keeps stdout a parseable
+ * empty array with the notice on stderr.
+ *
+ * Returns true when the caller should stop.
+ */
+function cannotVerifyRawRecords(
+  store: AsyncHistoryStore,
+  deps: AnalyzeDeps,
+  json: boolean,
+  what: string,
+): boolean {
+  if (store.readAll) return false;
+  const outcome = gateOutcome({ checked: 0, findings: [] }, 'advisory');
+  const notice =
+    `${outcome.summaryLine} cannot verify: this history backend does not ` +
+    `expose raw run records, so "${what}" is UNKNOWN rather than clean. ` +
+    `\`analyze flaky\` works against this backend today; drop --db-url ` +
+    `(and CANARY_HISTORY_DB_URL) to analyze the local ${DEFAULT_HISTORY_PATH} ` +
+    `instead.`;
   if (json) {
     deps.out(jsonIndent2([]));
     deps.err(notice);
@@ -276,12 +317,14 @@ interface FlakyOptions {
   json?: boolean;
 }
 
-function flakyCmd(opts: FlakyOptions, deps: AnalyzeDeps): void {
+async function flakyCmd(opts: FlakyOptions, deps: AnalyzeDeps): Promise<void> {
   const store = deps.makeStore(opts.dbUrl);
-  if (abstainOnEmptyHistory(store, deps, opts.json === true, 'flake rate')) {
+  if (
+    await abstainOnEmptyHistory(store, deps, opts.json === true, 'flake rate')
+  ) {
     return;
   }
-  const rows = store.queryFlaky(
+  const rows = await store.queryFlaky(
     opts.windowRuns,
     opts.suite ?? null,
     opts.minRatePct,
@@ -304,10 +347,23 @@ interface SpikesOptions {
   json?: boolean;
 }
 
-function spikesCmd(opts: SpikesOptions, deps: AnalyzeDeps): void {
+async function spikesCmd(
+  opts: SpikesOptions,
+  deps: AnalyzeDeps,
+): Promise<void> {
   const store = deps.makeStore(opts.dbUrl);
   if (
-    abstainOnEmptyHistory(store, deps, opts.json === true, 'failure spikes')
+    await abstainOnEmptyHistory(
+      store,
+      deps,
+      opts.json === true,
+      'failure spikes',
+    )
+  ) {
+    return;
+  }
+  if (
+    cannotVerifyRawRecords(store, deps, opts.json === true, 'failure spikes')
   ) {
     return;
   }
@@ -319,7 +375,7 @@ function spikesCmd(opts: SpikesOptions, deps: AnalyzeDeps): void {
     flaky: number;
     total: number;
   }[] = [];
-  for (const r of store.readAll()) {
+  for (const r of await store.readAll!()) {
     if (opts.since && (r.timestamp ?? '') < opts.since) continue;
     rows.push({
       suite: r.suite ?? '',
@@ -372,13 +428,23 @@ interface CommonFailuresOptions {
   json?: boolean;
 }
 
-function commonFailuresCmd(
+async function commonFailuresCmd(
   opts: CommonFailuresOptions,
   deps: AnalyzeDeps,
-): void {
+): Promise<void> {
   const store = deps.makeStore(opts.dbUrl);
   if (
-    abstainOnEmptyHistory(store, deps, opts.json === true, 'common failures')
+    await abstainOnEmptyHistory(
+      store,
+      deps,
+      opts.json === true,
+      'common failures',
+    )
+  ) {
+    return;
+  }
+  if (
+    cannotVerifyRawRecords(store, deps, opts.json === true, 'common failures')
   ) {
     return;
   }
@@ -389,7 +455,7 @@ function commonFailuresCmd(
     error_text: string;
     run_count: number;
   }[] = [];
-  for (const record of store.readAll()) {
+  for (const record of await store.readAll!()) {
     if (opts.since && (record.timestamp ?? '') < opts.since) continue;
     for (const t of record.tests ?? []) {
       if ((t.status === 'failed' || t.status === 'flaky') && t.error_text) {
@@ -419,13 +485,23 @@ interface RegressionOptions {
   json?: boolean;
 }
 
-function regressionCandidatesCmd(
+async function regressionCandidatesCmd(
   opts: RegressionOptions,
   deps: AnalyzeDeps,
-): void {
+): Promise<void> {
   const store = deps.makeStore(opts.dbUrl);
   if (
-    abstainOnEmptyHistory(
+    await abstainOnEmptyHistory(
+      store,
+      deps,
+      opts.json === true,
+      'regression candidates',
+    )
+  ) {
+    return;
+  }
+  if (
+    cannotVerifyRawRecords(
       store,
       deps,
       opts.json === true,
@@ -435,7 +511,7 @@ function regressionCandidatesCmd(
     return;
   }
   const engine = new AnalysisEngine(store);
-  const candidates = engine.detectRegressionCandidates(
+  const candidates = await engine.detectRegressionCandidates(
     null,
     opts.minGreen,
     opts.recentFailures,
@@ -465,13 +541,18 @@ interface DigestOptions {
   dbUrl?: string;
 }
 
-function digestCmd(opts: DigestOptions, deps: AnalyzeDeps): void {
+async function digestCmd(
+  opts: DigestOptions,
+  deps: AnalyzeDeps,
+): Promise<void> {
   const store = deps.makeStore(opts.dbUrl);
-  if (abstainOnEmptyHistory(store, deps, opts.json === true, 'fleet health')) {
+  if (
+    await abstainOnEmptyHistory(store, deps, opts.json === true, 'fleet health')
+  ) {
     return;
   }
   const engine = new AnalysisEngine(store);
-  const result = engine.run({
+  const result = await engine.run({
     windowRuns: opts.windowRuns,
     deltaPp: opts.deltaPp,
     weeks: opts.weeks,
@@ -479,6 +560,22 @@ function digestCmd(opts: DigestOptions, deps: AnalyzeDeps): void {
     suite: opts.suite ?? null,
   });
   writeArtifacts(result.artifacts, opts.output);
+
+  // Unlike the single-section commands, digest can partially succeed: the flaky
+  // leaderboard rides a contract method and is real even on a backend with no
+  // raw-record access. So it renders what it measured and names what it could
+  // not -- a digest silently missing three of its five sections would be the
+  // worst of both worlds. The notice rides stderr so --json and the Slack path
+  // stay byte-clean for their consumers.
+  if (result.degraded.length > 0) {
+    const outcome = gateOutcome({ checked: 0, findings: [] }, 'advisory');
+    deps.err(
+      `${outcome.summaryLine} cannot verify: this history backend does not ` +
+        `expose raw run records, so ${result.degraded.join(', ')} ` +
+        `${result.degraded.length === 1 ? 'is' : 'are'} UNKNOWN rather than ` +
+        `clean in this digest. The flake leaderboard above is measured.`,
+    );
+  }
 
   if (opts.json) {
     deps.out(
@@ -517,7 +614,9 @@ function printSlack(
 // value's meaning lived only in the report it eventually printed.
 const DB_URL_ENV = 'CANARY_HISTORY_DB_URL';
 const DB_URL_DESC =
-  'History store URL (accepted, but analyze reads local NDJSON).';
+  'History store URL. Defaults to the local NDJSON store; a remote backend ' +
+  'cannot answer the spikes, common-failures or regression-candidates ' +
+  'reports, which say so rather than reporting zero.';
 const JSON_DESC = 'Emit the rows as JSON instead of a Markdown report.';
 const WINDOW_RUNS_DESC = 'Rolling window measured in RUNS, not days.';
 const MIN_RATE_PCT_DESC =
@@ -565,8 +664,8 @@ export function createAnalyzeCommand(
     )
     .addOption(new Option('--db-url <url>', DB_URL_DESC).env(DB_URL_ENV))
     .option('--json', JSON_DESC)
-    .action((opts: FlakyOptions, cmd: Command) => {
-      flakyCmd(
+    .action(async (opts: FlakyOptions, cmd: Command) => {
+      await flakyCmd(
         resolveUnitFlags(opts, cmd, deps, [WINDOW_ALIAS, MIN_RATE_ALIAS]),
         deps,
       );
@@ -589,8 +688,8 @@ export function createAnalyzeCommand(
     )
     .addOption(new Option('--db-url <url>', DB_URL_DESC).env(DB_URL_ENV))
     .option('--json', JSON_DESC)
-    .action((opts: SpikesOptions, cmd: Command) => {
-      spikesCmd(resolveUnitFlags(opts, cmd, deps, [DELTA_ALIAS]), deps);
+    .action(async (opts: SpikesOptions, cmd: Command) => {
+      await spikesCmd(resolveUnitFlags(opts, cmd, deps, [DELTA_ALIAS]), deps);
     });
 
   program
@@ -621,8 +720,8 @@ export function createAnalyzeCommand(
     )
     .addOption(new Option('--db-url <url>', DB_URL_DESC).env(DB_URL_ENV))
     .option('--json', JSON_DESC)
-    .action((opts: CommonFailuresOptions) => {
-      commonFailuresCmd(opts, deps);
+    .action(async (opts: CommonFailuresOptions) => {
+      await commonFailuresCmd(opts, deps);
     });
 
   program
@@ -646,8 +745,8 @@ export function createAnalyzeCommand(
     )
     .addOption(new Option('--db-url <url>', DB_URL_DESC).env(DB_URL_ENV))
     .option('--json', JSON_DESC)
-    .action((opts: RegressionOptions) => {
-      regressionCandidatesCmd(opts, deps);
+    .action(async (opts: RegressionOptions) => {
+      await regressionCandidatesCmd(opts, deps);
     });
 
   program
@@ -698,8 +797,8 @@ export function createAnalyzeCommand(
     .option('--json', 'Emit per-section counts as JSON instead of the digest.')
     .option('--slack', 'Emit a short Slack-formatted summary.')
     .addOption(new Option('--db-url <url>', DB_URL_DESC).env(DB_URL_ENV))
-    .action((opts: DigestOptions, cmd: Command) => {
-      digestCmd(
+    .action(async (opts: DigestOptions, cmd: Command) => {
+      await digestCmd(
         resolveUnitFlags(opts, cmd, deps, [WINDOW_ALIAS, DELTA_ALIAS]),
         deps,
       );

@@ -14,7 +14,7 @@
  */
 
 import type { AsyncHistoryStore } from './async-store.js';
-import type { TimelineEntry } from './record.js';
+import type { RunRecord, TimelineEntry } from './record.js';
 import {
   NdjsonHistoryStore,
   type FlakyQueryRow,
@@ -52,6 +52,16 @@ export class LocalAsyncAdapter implements AsyncHistoryStore {
 
   async countRuns(): Promise<number> {
     return this.inner.countRuns();
+  }
+
+  /**
+   * Forward the local store's raw-record access (#711). This is the only
+   * implementation of the optional `readAll` capability, and the analysis
+   * engine's spikes / common-failures / regression-candidates sections are
+   * reachable through it alone — see `AsyncHistoryStore.readAll`.
+   */
+  async readAll(): Promise<RunRecord[]> {
+    return this.inner.readAll();
   }
 
   async querySummary(suite: string, runs: number): Promise<SummaryResult> {

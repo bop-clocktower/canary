@@ -43,6 +43,36 @@ under the project's former name) are documented in the
   refusal a maintainer must answer beats a silent wrong answer nobody sees.
   ([#701])
 
+- **`canary analyze` honours `--db-url` / `CANARY_HISTORY_DB_URL` instead of
+  apologising for ignoring them.** The flags were accepted and then answered
+  with `note: --db-url is ignored by analyze; it reads local NDJSON only.` That
+  note was the correct interim behaviour — silently reading a different data
+  source would be far worse — but a flag that is accepted and ignored is the
+  product-lies class one layer down, and it existed only because
+  `AnalysisEngine` held the synchronous store contract while every other history
+  consumer had moved to the async one. `AnalysisEngine.run` and the five
+  `analyze` report paths are async now and obtain their backend from the shared
+  `makeStore()`, which closes ADR 0013 Decision 4: `NdjsonHistoryStore` is
+  reachable only through `LocalAsyncAdapter`, so "do not program against it" is
+  structural rather than a review convention. The six byte-exact report goldens
+  are unchanged, which is the proof this was a mechanical conversion. ([#390],
+  [#711])
+
+- **Honouring `--db-url` would have created a quieter lie, so the three
+  raw-record reports now name themselves as unverifiable.** `spikes`,
+  `common-failures` and `regression-candidates` are computed by walking whole
+  run records via `readAll()`, which only the local NDJSON backend implements —
+  the engine previously duck-typed for it and returned `[]` when absent. Against
+  a remote backend that renders as an empty report, which is indistinguishable
+  on screen from a measured all-clear: a zero denominator wearing a clean face
+  (#508). `readAll?()` is now an explicit optional capability on
+  `AsyncHistoryStore`, carrying the same doctrine as `countRuns?()` — absent
+  means UNKNOWN, never zero — and each affected command prints a `cannot verify`
+  notice naming the section it could not compute plus the ones that do work
+  against that backend. `digest` partially succeeds, so it renders its measured
+  flake leaderboard and names the rest. The exit stays 0 (advisory) and `--json`
+  keeps stdout parseable with the notice on stderr. ([#711])
+
 ### Added
 
 - **`canary migrate --adoption-report` — name the pieces of a half-finished
@@ -335,6 +365,7 @@ under the project's former name) are documented in the
 [#686]: https://github.com/bop-clocktower/canary/issues/686
 [#703]: https://github.com/bop-clocktower/canary/issues/703
 [#701]: https://github.com/bop-clocktower/canary/issues/701
+[#711]: https://github.com/bop-clocktower/canary/issues/711
 
 ### Changed
 

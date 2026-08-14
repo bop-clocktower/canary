@@ -18,7 +18,7 @@
  */
 
 import type { FlakyQueryRow, SummaryResult } from './ndjson-store.js';
-import type { TimelineEntry } from './record.js';
+import type { RunRecord, TimelineEntry } from './record.js';
 import type { RunInput, TestResultInput } from './schema.js';
 
 /** Async store contract (mirrors the Python `HistoryStore` ABC methods). */
@@ -39,4 +39,22 @@ export interface AsyncHistoryStore {
    * Supabase backend has not grown one yet.
    */
   countRuns?(): Promise<number>;
+  /**
+   * OPTIONAL raw-record access (#711), carrying the same doctrine as
+   * {@link AsyncHistoryStore.countRuns}: a backend that cannot hand back whole
+   * run records simply does not implement it, and callers must treat its
+   * absence as UNKNOWN rather than as an empty history.
+   *
+   * Three `analyze` sections — failure spikes, common failures and regression
+   * candidates — are computed by walking whole records rather than by any
+   * aggregate query, so they exist only where this does. Before #711 the engine
+   * duck-typed for this method and quietly returned `[]` when it was missing,
+   * which renders as a clean report against a backend that was never asked. The
+   * engine now names those sections in `AnalysisResult.degraded` instead.
+   *
+   * Implemented for the local NDJSON backend (via `LocalAsyncAdapter`). The
+   * remote Supabase backend has not grown one: it would need a real query plus
+   * a row-to-`RunRecord` mapping, which is its own change.
+   */
+  readAll?(): Promise<RunRecord[]>;
 }

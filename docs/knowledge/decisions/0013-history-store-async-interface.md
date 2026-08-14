@@ -129,6 +129,23 @@ question answered five separate times.
   through the adapter and the "do not program against it" rule in Decision 2
   becomes structural rather than a review convention. **Not filed as an issue by
   this change** — flagged to the maintainer with the ADR.
+
+  > **Landed (#711).** Filed after all, and delivered: the engine and all five
+  > report paths are async, `analyze` obtains its backend from `makeStore()`,
+  > and the note is gone. Decision 4 is closed and Decision 2 is now structural.
+  >
+  > Doing it surfaced one thing this ADR did not anticipate. Three `analyze`
+  > reports (spikes, common-failures, regression-candidates) are computed by
+  > walking whole run records rather than through any of the four contract
+  > methods, using a `readAll()` the engine duck-typed for and which only the
+  > local backend has. Honouring `--db-url` therefore made those reports render
+  > empty against a remote backend — trading a loud lie for a quiet one. The fix
+  > follows Decision 3 rather than inventing a mechanism: `readAll?()` is an
+  > explicit optional capability whose absence means UNKNOWN, and each report
+  > names itself as unverifiable instead of reporting zero. A remote `readAll()`
+  > (a real query plus a row-to-`RunRecord` mapping) remains unbuilt and is the
+  > natural next change here.
+
 - Reviewers get a one-line test for new history code: does it import
   `NdjsonHistoryStore`? If yes, it needs a reason in the diff.
 - A future sync consumer (a hook, a synchronous reporter plugin) would have to

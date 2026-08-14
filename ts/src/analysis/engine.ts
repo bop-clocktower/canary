@@ -26,28 +26,23 @@ import type {
   SpikeRow,
 } from './rows.js';
 import { detectRegressions } from '../history/detector.js';
-import type { HistoryStore } from '../history/ndjson-store.js';
+import type { AsyncHistoryStore } from '../history/async-store.js';
+import type { RunRecord } from '../history/record.js';
 import { def } from '../util/coalesce.js';
 
-/** A store that additionally exposes the raw records (the local NDJSON store). */
-interface ReadableStore extends HistoryStore {
-  readAll(): Array<{
-    run_id: string;
-    suite?: string;
-    tests?: Array<{
-      test_name: string;
-      status?: string;
-      failure_category?: string | null;
-      error_text?: string | null;
-    }>;
-  }>;
+/**
+ * A store that additionally exposes raw records — today, only the local NDJSON
+ * backend behind `LocalAsyncAdapter`. See `AsyncHistoryStore.readAll` for why
+ * this is an optional capability rather than part of the contract proper.
+ */
+type ReadableStore = AsyncHistoryStore &
+  Required<Pick<AsyncHistoryStore, 'readAll'>>;
+
+function isReadable(store: AsyncHistoryStore): store is ReadableStore {
+  return typeof store.readAll === 'function';
 }
 
-function isReadable(store: HistoryStore): store is ReadableStore {
-  return typeof (store as ReadableStore).readAll === 'function';
-}
-
-type RawRecord = ReturnType<ReadableStore['readAll']>[number];
+type RawRecord = RunRecord;
 type RawTest = NonNullable<RawRecord['tests']>[number];
 
 function isFailureWithError(t: RawTest): boolean {
@@ -73,7 +68,22 @@ export interface AnalysisResult {
   regressionCandidates: RegressionRow[];
   digestMd: string;
   artifacts: Record<string, string>;
+  /**
+   * Sections this run could NOT compute, named in report language (#711).
+   *
+   * Empty on the local store. Non-empty only when the backend does not
+   * implement the optional `readAll()` capability, in which case the sections
+   * listed here are UNKNOWN rather than clean — their rows are `[]` for want of
+   * data access, not for want of findings, and a caller that renders them as an
+   * all-clear is reporting a measurement that never happened.
+   */
+  degraded: string[];
 }
+
+/** Report-language names for the sections that need raw-record access. */
+const SECTION_SPIKES = 'failure spikes';
+const SECTION_COMMON_FAILURES = 'common failures';
+const SECTION_REGRESSIONS = 'regression candidates';
 
 /**
  * Digest inputs, each named for the unit it carries (#670, #673).
@@ -96,9 +106,9 @@ export interface RunOptions {
 }
 
 export class AnalysisEngine {
-  constructor(private readonly store: HistoryStore) {}
+  constructor(private readonly store: AsyncHistoryStore) {}
 
-  run(opts: RunOptions = {}): AnalysisResult {
+  async run(opts: RunOptions = {}): Promise<AnalysisResult> {
     const windowRuns = opts.windowRuns ?? 30;
     const deltaPp = opts.deltaPp ?? 20.0;
     const weeks = opts.weeks ?? 4;
@@ -108,16 +118,25 @@ export class AnalysisEngine {
     const recentFailures = opts.recentFailures ?? 3;
     const suite = opts.suite ?? null;
 
-    const flaky = this.store.queryFlaky(
+    const flaky = (await this.store.queryFlaky(
       windowRuns,
       suite,
       minFlakeRatePct,
-    ) as FlakyRow[];
+    )) as FlakyRow[];
 
-    const suitesToQuery = suite ? [suite] : this.discoverSuites();
+    // Sections that need raw-record access are UNKNOWN, not empty, on a backend
+    // that does not offer it (#711). `flaky` above and a suite-scoped `spikes`
+    // below ride real contract methods, so they stay measured either way.
+    const degraded: string[] = [];
+    const readable = isReadable(this.store);
+
+    const suitesToQuery = suite ? [suite] : await this.discoverSuites();
+    // With no explicit --suite, the suite list itself comes from raw records —
+    // so spikes is only degraded in that case, not whenever readAll is absent.
+    if (!readable && !suite) degraded.push(SECTION_SPIKES);
     const spikesRows: SpikeRow[] = [];
     for (const s of suitesToQuery) {
-      const summary = this.store.querySummary(s, windowRuns * 2);
+      const summary = await this.store.querySummary(s, windowRuns * 2);
       for (const row of def(summary.runs, [])) {
         // query_summary rows omit suite; the spikes builder groups by it, so
         // tag each pooled row with the suite it came from (matches Python).
@@ -134,12 +153,14 @@ export class AnalysisEngine {
     // Faithful to Python: area rows are never populated by run().
     const areaRows: AreaHealthRow[] = [];
 
-    const commonRows = this.queryCommonFailures(suite);
-    const regressionCandidates = this.detectRegressionCandidates(
+    const commonRows = await this.queryCommonFailures(suite);
+    if (!readable) degraded.push(SECTION_COMMON_FAILURES);
+    const regressionCandidates = await this.detectRegressionCandidates(
       suite,
       minGreen,
       recentFailures,
     );
+    if (!readable) degraded.push(SECTION_REGRESSIONS);
 
     const digest = buildDigest({
       flaky,
@@ -171,22 +192,23 @@ export class AnalysisEngine {
       regressionCandidates,
       digestMd: digest,
       artifacts,
+      degraded,
     };
   }
 
-  discoverSuites(): string[] {
+  async discoverSuites(): Promise<string[]> {
     if (!isReadable(this.store)) return [];
     const suites = new Set<string>();
-    for (const r of this.store.readAll()) {
+    for (const r of await this.store.readAll()) {
       if (r.suite) suites.add(r.suite);
     }
     return [...suites];
   }
 
-  queryCommonFailures(suite: string | null): CommonFailureRow[] {
+  async queryCommonFailures(suite: string | null): Promise<CommonFailureRow[]> {
     if (!isReadable(this.store)) return [];
     const rows: CommonFailureRow[] = [];
-    for (const record of this.store.readAll()) {
+    for (const record of await this.store.readAll()) {
       if (suite && record.suite !== suite) continue;
       for (const t of def(record.tests, [])) {
         if (isFailureWithError(t)) rows.push(toCommonFailureRow(record, t));
@@ -195,21 +217,21 @@ export class AnalysisEngine {
     return rows;
   }
 
-  detectRegressionCandidates(
+  async detectRegressionCandidates(
     suite: string | null,
     minGreen: number,
     recentFailures: number,
-  ): RegressionRow[] {
+  ): Promise<RegressionRow[]> {
     if (!isReadable(this.store)) return [];
     const testNames = new Set<string>();
-    for (const record of this.store.readAll()) {
+    for (const record of await this.store.readAll()) {
       if (suite && record.suite !== suite) continue;
       for (const t of def(record.tests, [])) testNames.add(t.test_name);
     }
 
     const candidates: RegressionRow[] = [];
     for (const name of testNames) {
-      const timeline = this.store.queryTimeline(name);
+      const timeline = await this.store.queryTimeline(name);
       const result = detectRegressions(timeline, minGreen, recentFailures);
       if (result.is_regression) {
         candidates.push({
