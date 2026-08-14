@@ -145,6 +145,48 @@ describe('SV002 missing-teardown', () => {
       'beforeAll(() => { db = openDb(); });\nafterAll(() => { db.close(); });\n';
     expect(ids(text, 'a.spec.ts')).not.toContain('SV002-missing-teardown');
   });
+
+  // #732: the teardown-presence half of the pair searched RAW file text while
+  // the setup half already skipped comments, so any file that merely MENTIONED
+  // the teardown token in prose exempted itself - silently, since an
+  // ungenerated finding never appears in the `N suppressed` line. A rule that
+  // prose can switch off is not a gate, and this one runs --strict in CI.
+  it('flags beforeAll when afterAll appears only in a comment', () => {
+    const text =
+      '// nothing an afterAll could release\n' +
+      'beforeAll(() => { db = openDb(); });\n';
+    expect(ids(text, 'a.spec.ts')).toContain('SV002-missing-teardown');
+  });
+
+  it('flags beforeAll when afterAll appears only in a string literal', () => {
+    const text =
+      "const doc = 'pair every beforeAll with an afterAll';\n" +
+      'beforeAll(() => { db = openDb(); });\n';
+    expect(ids(text, 'a.spec.ts')).toContain('SV002-missing-teardown');
+  });
+
+  it('flags class setup when teardown_class appears only in a comment', () => {
+    const text =
+      'class TestX:\n' +
+      '    # a teardown_class would have nothing to close here\n' +
+      '    def setup_class(cls):\n        cls.db = open_db()\n';
+    expect(ids(text)).toContain('SV002-missing-teardown');
+  });
+
+  it('still clears when afterAll is real code on a commented-up file', () => {
+    const text =
+      '// pair beforeAll with afterAll\n' +
+      'beforeAll(() => { db = openDb(); });\n' +
+      'afterAll(() => { db.close(); });\n';
+    expect(ids(text, 'a.spec.ts')).not.toContain('SV002-missing-teardown');
+  });
+
+  it('clears when afterAll is code trailing a comment on one line', () => {
+    const text =
+      'beforeAll(() => { db = openDb(); });\n' +
+      'afterAll(() => { db.close(); }); // release the handle\n';
+    expect(ids(text, 'a.spec.ts')).not.toContain('SV002-missing-teardown');
+  });
 });
 
 // --- SV003 -----------------------------------------------------------------

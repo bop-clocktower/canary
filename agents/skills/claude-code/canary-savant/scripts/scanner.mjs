@@ -25,7 +25,11 @@ import {
   classifyMutation,
   isSnapshotWriteBack,
 } from './restoration.mjs';
-import { stringLiteralRanges, execOutsideStrings } from './string-literals.mjs';
+import {
+  stringLiteralRanges,
+  inStringLiteral,
+  execOutsideStrings,
+} from './string-literals.mjs';
 
 export const SNIPPET_LIMIT = 120;
 
@@ -125,19 +129,59 @@ function sv001ModuleMutables(lines, file, isPy, text) {
   return findings;
 }
 
+// Line comment openers, for the code-only projection below. A whole-line
+// comment is caught earlier by isComment (which also covers block-comment
+// continuations and Python docstring fences).
+const COMMENT_OPENERS = ['//', '/*', '#'];
+
+/**
+ * The line with comments dropped and string-literal CONTENT blanked, so a
+ * token found in the result is code rather than prose or data.
+ *
+ * #732: SV002 asked `text.includes(teardown)` of the RAW file while its setup
+ * half already skipped comments, so any file that merely MENTIONED the
+ * teardown token exempted itself -- invisibly, because a finding that is never
+ * generated never appears in the `N suppressed` line either. Blanking rather
+ * than deleting preserves column positions for callers that keep ranges.
+ *
+ * Erring here means erring toward FIRING (a token wrongly read as prose costs
+ * a false flag, which restoration.mjs's header calls the safe direction),
+ * never toward the silent exemption this replaces.
+ */
+function codeOnly(line) {
+  if (isComment(line.trim())) return '';
+  const ranges = stringLiteralRanges(line);
+  let out = '';
+  for (let i = 0; i < line.length; i += 1) {
+    if (inStringLiteral(ranges, i)) {
+      out += ' ';
+      continue;
+    }
+    // Rest of the line is a trailing comment.
+    if (COMMENT_OPENERS.some((c) => line.startsWith(c, i))) break;
+    out += line[i];
+  }
+  return out;
+}
+
 /** Setup markers whose matching teardown is absent from the file. */
-function sv002MissingTeardown(lines, file, isPy, text) {
+function sv002MissingTeardown(lines, file, isPy) {
   const pairs = isPy ? PYTHON_SETUP_TEARDOWN : JS_SETUP_TEARDOWN;
+  // #732: pair against code only. Both halves read the same projection, so
+  // the rule can no longer be switched off by a comment or a fixture string.
+  const codeLines = lines.map(codeOnly);
+  const codeText = codeLines.join('\n');
   const findings = [];
   for (const [setup, teardown] of pairs) {
-    if (text.includes(teardown)) continue;
+    if (codeText.includes(teardown)) continue;
     for (let i = 0; i < lines.length; i += 1) {
-      const stripped = lines[i].trim();
-      if (isComment(stripped)) continue;
+      const code = codeLines[i].trim();
+      if (!code) continue;
       const hit = isPy
-        ? stripped.includes(`def ${setup}`)
-        : stripped.startsWith(`${setup}(`) || stripped.includes(` ${setup}(`);
+        ? code.includes(`def ${setup}`)
+        : code.startsWith(`${setup}(`) || code.includes(` ${setup}(`);
       if (hit) {
+        const stripped = lines[i].trim();
         findings.push(
           makeFinding(file, i + 1, 'SV002-missing-teardown', stripped),
         );
@@ -202,7 +246,7 @@ export function scanTextFull(text, file = '<text>') {
   const restoration = analyzeRestoration(text);
 
   findings.push(...sv001ModuleMutables(lines, file, isPy, text));
-  findings.push(...sv002MissingTeardown(lines, file, isPy, text));
+  findings.push(...sv002MissingTeardown(lines, file, isPy));
 
   lines.forEach((raw, i) => {
     const stripped = raw.trim();
