@@ -153,6 +153,62 @@ function runHook(dir: string, pathPrefix?: string): string {
   }
 }
 
+/** An executable stub that resolves nothing, so a probe through it must fail. */
+function writeFailingStub(path: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, '#!/bin/sh\nexit 1\n');
+  chmodSync(path, 0o755);
+}
+
+/**
+ * A linked `git worktree` whose own tree has no `node_modules` at all.
+ *
+ * This is #725: `core.hooksPath` is an absolute path into the main checkout, so
+ * every worktree runs the hook, but both original probes are CWD-relative. A
+ * worktree created as a *sibling* of the main checkout (the `AGENTS.md`
+ * convention, `../canary-<slug>`) is outside the directory chain `npx` walks,
+ * so neither probe resolves and markdownlint goes dark for essentially all
+ * work. The install the hook needs is the *main checkout's*, which it can reach
+ * deterministically through the common git dir.
+ *
+ * `npx` is stubbed to fail so this exercises the main-checkout branch alone and
+ * cannot pass by accident on a machine where a cached `npx` happens to resolve.
+ */
+function makeWorktreeRepo(): { worktree: string; binstub: string } {
+  const main = mkdtempSync(join(tmpdir(), 'canary-precommit-main-'));
+  createdDirs.push(main);
+  const git = (...args: string[]): void => {
+    execFileSync('git', args, { cwd: main, encoding: 'utf-8' });
+  };
+  git('init', '--quiet');
+  git('config', 'user.email', 'test@example.invalid');
+  git('config', 'user.name', 'Test');
+  writeFileSync(join(main, 'seed.txt'), 'seed\n');
+  git('add', '-A');
+  git('commit', '--quiet', '-m', 'seed');
+
+  // Only the main checkout has the root install — the worktree gets none.
+  writeStub(
+    join(main, 'node_modules', '.bin', 'markdownlint'),
+    'STUB markdownlint ran',
+  );
+
+  const worktree = mkdtempSync(join(tmpdir(), 'canary-precommit-wt-'));
+  createdDirs.push(worktree);
+  rmSync(worktree, { recursive: true, force: true }); // `worktree add` creates it
+  git('worktree', 'add', '--quiet', '--detach', worktree, 'HEAD');
+
+  mkdirSync(join(worktree, '.githooks'), { recursive: true });
+  cpSync(HOOK_SOURCE, join(worktree, '.githooks', 'pre-commit'));
+  chmodSync(join(worktree, '.githooks', 'pre-commit'), 0o755);
+  writeFileSync(join(worktree, 'README.md'), '# Title\n');
+  execFileSync('git', ['add', '-A'], { cwd: worktree, encoding: 'utf-8' });
+
+  const binstub = join(worktree, 'binstub');
+  writeFailingStub(join(binstub, 'npx'));
+  return { worktree, binstub };
+}
+
 /**
  * A repo with no local markdownlint but an `npx` that resolves one.
  *
@@ -173,6 +229,8 @@ const withoutDeps = runHook(makeRepo(false));
 const withDeps = runHook(makeRepo(true));
 const npxRepo = makeNpxRepo();
 const viaNpx = runHook(npxRepo, join(npxRepo, 'binstub'));
+const wt = makeWorktreeRepo();
+const inWorktree = runHook(wt.worktree, wt.binstub);
 
 /** Status lines the hook prints about one named gate, in one run. */
 function statusLines(output: string, gate: string): string[] {
@@ -226,6 +284,23 @@ describe('pre-commit abstentions are legible (#650)', () => {
   it('does not report a skip when the npx fallback resolved', () => {
     expect(statusLines(viaNpx, 'markdownlint')).toHaveLength(1);
     expect(viaNpx).not.toMatch(/markdownlint[^\n]*SKIPPED/i);
+  });
+
+  /**
+   * The worktree branch (#725). `core.hooksPath` already points at an absolute
+   * path inside the main checkout, so the hook is running from an install it
+   * can name; the defect was that it never looked there. Asserting the stub
+   * *ran* — not merely that a line was printed — is what keeps this from
+   * degrading back into an announced skip.
+   */
+  it('runs markdownlint from the main checkout when the worktree has no install', () => {
+    expect(inWorktree).toContain('STUB markdownlint ran');
+    expect(inWorktree).toMatch(/markdownlint[^\n]*main checkout/i);
+  });
+
+  it('does not report a skip when the main-checkout fallback resolved', () => {
+    expect(statusLines(inWorktree, 'markdownlint')).toHaveLength(1);
+    expect(inWorktree).not.toMatch(/markdownlint[^\n]*SKIPPED/i);
   });
 
   it('reports prettier as skipped when its binary is absent', () => {

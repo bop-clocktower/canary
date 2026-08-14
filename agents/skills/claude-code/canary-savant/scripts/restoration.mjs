@@ -135,6 +135,11 @@ export function isSnapshotWriteBack(mutation, lines) {
 const JS_TEARDOWN_TOKEN = /\b(?:afterEach|afterAll)\s*\(/;
 const PY_TEARDOWN_DEF = /^(\s*)def\s+(?:teardown\w*|tearDown\w*)\s*\(/;
 const PY_YIELD = /^(\s*)yield\b/;
+// #733: an in-test `finally` restore is TIGHTER than an afterEach -- the
+// window in which the global is dirty is the try block, not the whole test --
+// yet only framework hooks counted, so the better idiom was the flagged one.
+const JS_FINALLY = /\bfinally\s*\{/;
+const PY_FINALLY = /^(\s*)finally\s*:/;
 
 const indentOf = (line) => /^\s*/.exec(line)[0].length;
 const isBlank = (line) => line.trim() === '';
@@ -162,6 +167,31 @@ function collectJsRegions(lines, rangesByLine, region) {
   });
 }
 
+/** JS: `finally { ... }` bodies, brace-balanced and string-aware (#733). */
+function collectJsFinallyRegions(lines, rangesByLine, region) {
+  lines.forEach((line, i) => {
+    const token = execOutsideStrings(JS_FINALLY, line, rangesByLine[i]);
+    if (!token) return;
+    let depth = 0;
+    // Count from the finally's own `{`, never the line start -- the common
+    // spelling `} finally {` opens with the TRY block's closing brace.
+    let col = token.index + token[0].length - 1;
+    for (let j = i; j < lines.length && j <= i + REGION_CAP_LINES; j += 1) {
+      region.add(j);
+      const text = lines[j];
+      const start = j === i ? col : 0;
+      for (let k = start; k < text.length; k += 1) {
+        if (inStringLiteral(rangesByLine[j], k)) continue;
+        if (text[k] === '{') depth += 1;
+        else if (text[k] === '}') {
+          depth -= 1;
+          if (depth === 0) return;
+        }
+      }
+    }
+  });
+}
+
 /** Python: teardown def bodies, post-yield code, addCleanup lines. */
 function collectPyRegions(lines, rangesByLine, region) {
   lines.forEach((line, i) => {
@@ -181,6 +211,15 @@ function collectPyRegions(lines, rangesByLine, region) {
         region.add(j);
       }
     }
+    // `finally:` is indentation-scoped, like the def and yield regions (#733).
+    const fin = PY_FINALLY.exec(line);
+    if (fin) {
+      const indent = fin[1].length;
+      for (let j = i + 1; j < lines.length; j += 1) {
+        if (!isBlank(lines[j]) && indentOf(lines[j]) <= indent) break;
+        region.add(j);
+      }
+    }
     if (execOutsideStrings(/\baddCleanup\b/, line, rangesByLine[i])) {
       region.add(i);
     }
@@ -197,6 +236,7 @@ export function analyzeRestoration(text) {
   const rangesByLine = lines.map((l) => stringLiteralRanges(l));
   const region = new Set();
   collectJsRegions(lines, rangesByLine, region);
+  collectJsFinallyRegions(lines, rangesByLine, region);
   collectPyRegions(lines, rangesByLine, region);
 
   const restoresAll = new Set();
