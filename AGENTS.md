@@ -562,12 +562,68 @@ classification, the exit codes, and the `harness.yml` wiring.
 
 **Clearing architecture growth is an allowance, not a baseline refresh (#689).**
 Write `.harness/arch/allowances/<slug>.json` — one file per PR, carrying the
-absolute value you measured and the argument for it. Copy the shape of an
-existing file (six live on `main`), or let
+absolute value you measured and the argument for it. Copy the shape of any file
+already in that directory — it accumulates one per growing PR, so there is
+always a recent example — or let
 `harness check-arch --update-baseline --allow-regress --reason "…"` write one.
 Refreshing `.harness/arch/baselines.json` wholesale — the `refresh-baseline`
 label — is the rarer maintainer escalation: it banks every pre-existing
 violation at once and erases the per-PR record of who accepted what.
+
+**`baselines.json` is the FLOOR; the highest allowance is the effective CEILING
+(#736).** Nothing in the tooling says this, and not knowing it has now cost two
+separate investigations a full evening each, so it is written here rather than
+left to be re-derived:
+
+```bash
+# the bar your PR is actually measured against
+node -e "const fs=require('fs'),p='.harness/arch/allowances/';
+  console.log(Math.max(...fs.readdirSync(p)
+    .map(f=>JSON.parse(fs.readFileSync(p+f,'utf8')).categories?.['module-size'])
+    .filter(Boolean)))"
+```
+
+`check-arch` prints the **floor** as its left operand, so its arrow reports the
+repo's whole accumulated growth as though your branch caused it:
+
+```text
+[module-size] REGRESSION: 32960 > 26965 (delta: 5995)
+                          ^^^^^          ^^^^^^^^^^^
+                          yours          the FLOOR, not your growth
+```
+
+Your real contribution is `currentValue − ceiling`, which in practice is tens of
+lines, not thousands: #731 was **+135** and #735 was **+24** against arrows
+reading +5971 and +5995. Put the real delta in the allowance's `reason`, never
+the printed one. Confirm the ceiling with a **bracketing probe** on a clean
+worktree — append N `//` comment lines to one tracked source file and re-measure
+until the verdict flips. On `main` at the time of writing, +3 passed and +20
+failed, bracketing the ceiling; if the floor were the operand, +3 would have
+failed too.
+
+Three traps, each of which produced a confident wrong answer during #731:
+
+- **A branch's total moves with main — compare deltas, never totals.** When #731
+  merged, `main` went 32936 and the #735 branch went 32960 with it; its +24
+  never changed. Comparing a pre-rebase total to a post-merge ceiling said "no
+  allowance needed" and was wrong. Re-measure after every rebase.
+- **Pass/fail cannot measure a magnitude.** A probe that only asks "did an error
+  appear" is blind to any movement that stays under the ceiling. Parse the JSON
+  and read `currentValue`; grepping possibly-empty output for the absence of a
+  string is how a false "cleared" reading gets produced. Note `harness ci check`
+  omits the metric entirely when it does not regress, so **`main`'s own value is
+  not obtainable** from a clean tree — do not spend time trying.
+- **Splitting a module cannot reduce `module-size`.** It is a repo-wide line
+  count over `ts/src` + `npm/src` with test code excluded, so extracting ~310
+  lines of `analysis/cli.ts` into a sibling moved it _up_ (32936 → 32989) — a
+  new file brings its own header and imports.
+
+Two consequences worth expecting rather than rediscovering. An allowance records
+the branch's exact value, so `main`'s measured value equals the newest allowance
+with **zero slack** — the next PR to touch any source file always needs its own,
+and the ledger grows one file per PR by design. And a clean tree short-circuits
+the comparison, so a green `arch` on untouched `main` confirms nothing about how
+much room is left.
 
 Three things about that output are worth knowing before you read it:
 
