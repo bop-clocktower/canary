@@ -16,6 +16,31 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **canary-savant `SV002` can no longer be switched off by prose.** The rule
+  pairs a class/all-scoped setup with its teardown, but only the setup half
+  skipped comments — the teardown half asked `includes()` of the raw file. So
+  any suite that merely _mentioned_ `afterAll` (or `teardown_class`) in a
+  comment or a fixture string exempted itself from the rule, permanently and
+  invisibly: a finding that is never generated never appears in the
+  `N suppressed` line either, so a reader could not tell "this file has no leak"
+  from "this file said the magic word". The exemption was trivially reachable by
+  accident, since a comment explaining _why_ no teardown is needed is the most
+  natural thing to write above such a `beforeAll` — which is exactly how it was
+  found. Both halves now read the same code-only projection of the file
+  (comments dropped, string contents blanked). This closes a false negative in a
+  rule that runs `--strict` (blocking) in CI, the direction that hides real
+  pollution. (#732)
+- **canary-savant `SV003` recognises an in-test `try`/`finally` restore.** Only
+  framework teardown hooks counted as restore regions, so the _tighter_ idiom
+  was the one that got flagged: a `finally` that saves and restores keeps the
+  global dirty for the try block only, rather than for the whole test. The
+  workaround was an inline `savant-ignore` pragma on a line that was already
+  correct, and pragmas do not expire — each one trains readers to treat the rule
+  as noisy. JS `finally { … }` bodies (brace-balanced, string-aware, capped like
+  the hook regions) and Python `finally:` suites (indentation-scoped) now count,
+  and the pragma this cost `ts/test/canary-cli-coverage5.test.ts` is removed. A
+  `finally` restoring a _different_ key still flags. (#733)
+
 - **History rows are self-describing again: `serializeLocalRecord` stamps
   `schema_version`.** The reader has always refused a `schema_version` it does
   not understand — but the store's own serializer never wrote the field, so the
