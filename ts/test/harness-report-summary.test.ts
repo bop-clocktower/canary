@@ -93,8 +93,44 @@ function write(body: unknown | string): string {
   return path;
 }
 
+/**
+ * A `harness traceability --json` report with a real, non-zero denominator.
+ *
+ * The nine-check fixture above carries a `traceability` entry, and the
+ * summariser now refuses to render one whose denominator it cannot see: that
+ * check reads a gitignored, untracked knowledge graph and reports `pass` over
+ * ZERO requirements when the graph is absent, which is what it did on every CI
+ * run it ever made. These tests are about #588 — check visibility — so they
+ * supply a valid denominator and stay on the normal path. The abstention
+ * itself is pinned in `traceability-abstention.test.ts`, including the case
+ * this helper exists to keep out of the way (omitting it entirely).
+ */
+function writeTrace(): string {
+  const path = join(dir, 'traceability-report.json');
+  writeFileSync(
+    path,
+    JSON.stringify([
+      {
+        specPath: 'docs/changes/fixture/proposal.md',
+        featureName: 'fixture',
+        requirements: [
+          {
+            requirementId: 'req:fixture:1',
+            requirementName: 'A traced requirement',
+            index: 1,
+            codeFiles: [{ path: 'ts/src/cli.ts', confidence: 0.6 }],
+            testFiles: [{ path: 'ts/test/cli.test.ts', confidence: 0.6 }],
+          },
+        ],
+      },
+    ]),
+    'utf-8',
+  );
+  return path;
+}
+
 function run(path: string, env: NodeJS.ProcessEnv = {}) {
-  return runCapture('node', [SCRIPT, path], {
+  return runCapture('node', [SCRIPT, path, '--traceability', writeTrace()], {
     env: { ...process.env, ...env },
   });
 }
