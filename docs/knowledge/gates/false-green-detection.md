@@ -53,6 +53,38 @@ This is why the seeding of this directory is verified by inspecting graph nodes
 rather than by counting files: the file can be perfect and the node absent, with
 no error either way.
 
+## The same missing graph, but rendered as `pass` instead of a grade
+
+The entry above is the advisory half. The gating half ran for as long and said
+less: the `traceability` check inside `harness ci check` is a pure function of
+the same gitignored `.harness/graph/graph.json`, and **no workflow built it** —
+the only `harness graph` invocation in the repo was a commented-out line in
+`guardian.yml` that predated the current CLI major. Upstream returns an empty
+issue list when the graph fails to load, and the reporter renders empty as
+`pass`. So on every `actions/checkout` the report carried:
+
+```json
+{ "name": "traceability", "status": "pass", "issues": [], "durationMs": 4 }
+```
+
+having read zero requirements, on every run the check ever made.
+
+Reproduced on one commit with one pinned CLI: a worktree with a graph present
+reports `warn traceability 1` in 988 ms; a fresh `git clone` — what CI does —
+reports `pass traceability 0` in 4 ms. The duration is the only tell in the
+report itself, and nobody reads a duration.
+
+Note which way this one fails. The #563 shape at least produced a bad-looking
+grade; this produced the best-looking status a check has. **A denominator of
+zero is most dangerous on the checks that pass**, because nothing invites a
+second look.
+
+Fixed by building the graph in `harness.yml` before the check runs, and by
+`scripts/traceability-verdict.mjs`, which reads the denominator out of
+`harness traceability --json` and makes the summariser exit 3 rather than
+reprint `pass` over a count it cannot see. Guarded by
+`ts/test/traceability-abstention.test.ts`.
+
 ## A gate script living where nothing reviews it
 
 The repo root has no tracked `package.json` — `/package.json` and

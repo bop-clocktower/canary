@@ -26,6 +26,26 @@ jobs:
           node-version: '22'
       - run: npm install -g "$HARNESS_CLI"
 
+      # The `traceability` check inside `harness ci check` is a pure function of
+      # `.harness/graph/graph.json`. That path is gitignored (`.harness/.gitignore`
+      # ignores `graph/`) and untracked, and NO workflow built it — so on every
+      # `actions/checkout` the check loaded no graph, upstream returned an empty
+      # issue list, and the reporter rendered empty as `pass`. The check has
+      # therefore reported `pass` over a ZERO DENOMINATOR on every run it has
+      # ever made. Reproduced on one commit with one pinned CLI: a worktree with
+      # a graph reports `warn traceability 1`; a fresh clone reports
+      # `pass traceability 0`.
+      #
+      # NO `|| true`, and no `continue-on-error`. This step is DELIBERATELY
+      # allowed to fail the job: a graph build that silently no-ops puts CI
+      # straight back into the false green it was added to end — the check would
+      # still run, still read nothing, and still print `pass`. A failure here
+      # names the real cause at the step that caused it, which is the one place
+      # a reader can act on it. (~5s and ~15 MB on this repo, so there is no
+      # cost argument for making it optional.)
+      - name: Build the knowledge graph the traceability check reads
+        run: harness graph scan
+
       # `> file`, never a pipe or a bare stdout (#588). The report is ~162 KB
       # and two independent limits used to eat it: the Actions log truncates at
       # 60 KB, and Node's stdout is async when it is a pipe, so `process.exit()`
@@ -47,13 +67,24 @@ jobs:
         if: ${{ !cancelled() }}
         run: harness check-arch --json > arch-report.json || true
 
+      # The traceability check's denominator, which its entry in the CI report
+      # does not carry (`{name, status, issues, durationMs}` — the same blind
+      # spot as `arch`). `|| true`: unlike the graph build above, a failure here
+      # is not swallowed — the summariser reads a missing or empty report as an
+      # ABSTENTION and exits 3, so the job goes red naming the denominator
+      # rather than the capture command.
+      - name: Capture traceability detail for the denominator
+        if: ${{ !cancelled() }}
+        run: harness traceability --json > traceability-report.json || true
+
       # The readable part, small enough that no byte limit can reach it. Runs
       # on failure too — that is the only run anyone needs it for.
       - name: Summarise harness checks
         if: ${{ !cancelled() }}
         run: |
           node scripts/harness-report-summary.mjs harness-report.json \
-            --arch arch-report.json
+            --arch arch-report.json \
+            --traceability traceability-report.json
 
       - name: Upload harness report
         if: ${{ !cancelled() }}
@@ -63,3 +94,4 @@ jobs:
           path: |
             harness-report.json
             arch-report.json
+            traceability-report.json

@@ -32,6 +32,19 @@
 //   3 = ABSTENTION — the report is missing, truncated, or has zero checks,
 //       so this script verified nothing. That is precisely the #588 condition
 //       returning, so it is reported loudly rather than passing quietly.
+//       ALSO returned when the `traceability` check reports on a denominator
+//       this script cannot see (below).
+//
+// The `traceability` check gets the same treatment, for a harder reason. It is
+// a pure function of `.harness/graph/graph.json`, which is gitignored and
+// untracked, and upstream renders an unloadable graph as an empty issue list —
+// which the reporter prints as `pass`. So on a bare `actions/checkout` the CI
+// report said `traceability pass, 0 issues` having read ZERO requirements, on
+// every run the check has ever made. `pass` on nothing is the exact false
+// green the rest of this file exists to close, and unlike `arch` it was not
+// even failing to draw attention. `--traceability <harness traceability --json>`
+// supplies the missing denominator; without it, or with a report showing zero
+// requirements, this script ABSTAINS (exit 3) rather than reprinting `pass`.
 //
 // The `arch` check gets one extra section (#626). Its entry in the report is
 // `{name, status, issues: [], durationMs}` with zero error-severity issues
@@ -41,6 +54,7 @@
 // failing arch check says so rather than looking like an ordinary red.
 //
 //   node scripts/harness-report-summary.mjs [path] [--arch arch-report.json]
+//                                    [--traceability traceability-report.json]
 //                                           (default harness-report.json)
 import { appendFileSync, readFileSync } from 'node:fs';
 
@@ -50,6 +64,12 @@ import {
   classifyArchReport,
   loadArchReport,
 } from './arch-verdict.mjs';
+import {
+  classifyTraceabilityReport,
+  loadTraceabilityReport,
+  traceabilityAnnotations,
+  traceabilityVerdictLines,
+} from './traceability-verdict.mjs';
 
 /** Warning/info issues shown per check before the remainder is summarised. */
 const WARN_DETAIL_CAP = 10;
@@ -195,6 +215,56 @@ function archSection(report, archPath) {
   };
 }
 
+/**
+ * The traceability section: what was the denominator?
+ *
+ * Unlike `archSection`, this fires whatever the check's status is. A failing
+ * `arch` at least announces itself; a `traceability` entry reading `pass` over
+ * zero requirements announces the opposite of what happened, and has done on
+ * every CI run since the check was enabled. So the absence of a detail report
+ * is a finding here even — especially — when the CI report says everything is
+ * fine.
+ *
+ * `abstained` is returned rather than exiting inline so the rest of the summary
+ * still renders. Costing the reader the report to deliver a verdict about the
+ * report is the #588 trade, in the other direction.
+ */
+function traceabilitySection(report, tracePath) {
+  const check = report.checks.find((c) => c.name === 'traceability');
+  if (!check) return { lines: [], annotations: [], abstained: false };
+
+  if (tracePath === undefined) {
+    const message =
+      'traceability — CANNOT VERIFY: no `harness traceability --json` report was supplied, so the ' +
+      'number of requirements behind this status is unknown. The check reads .harness/graph/graph.json, ' +
+      'which is gitignored and untracked, and renders a missing graph as `pass` over zero requirements. ' +
+      'Re-run with `--traceability <report>` after `harness graph scan`.';
+    return {
+      lines: [message],
+      annotations: [`::error title=harness traceability::${message}`],
+      abstained: true,
+    };
+  }
+
+  const loaded = loadTraceabilityReport(tracePath);
+  const verdict = loaded.ok
+    ? classifyTraceabilityReport(loaded.report)
+    : {
+        verdict: 'unknown',
+        reason: loaded.reason,
+        specs: 0,
+        requirements: 0,
+        codeTraced: 0,
+        testTraced: 0,
+        untraced: [],
+      };
+  return {
+    lines: traceabilityVerdictLines(verdict),
+    annotations: traceabilityAnnotations(verdict),
+    abstained: verdict.verdict !== 'measured',
+  };
+}
+
 function render(report) {
   const ordered = [...report.checks].sort(
     (a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9),
@@ -225,21 +295,30 @@ function writeStepSummary(lines) {
   }
 }
 
-/** `[report.json] [--arch arch-report.json]`, in either order. */
+/**
+ * `[report.json] [--arch arch.json] [--traceability trace.json]`, in any order.
+ */
 function parseArgs(argv) {
   const positional = [];
-  let arch;
+  const paths = {};
+  const options = { '--arch': 'arch', '--traceability': 'traceability' };
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--arch') {
-      arch = argv[++i];
-      if (arch === undefined) return { usage: '--arch needs a path' };
+    const key = options[argv[i]];
+    if (key !== undefined) {
+      paths[key] = argv[++i];
+      if (paths[key] === undefined)
+        return { usage: `${argv[i - 1]} needs a path` };
     } else if (argv[i].startsWith('-')) {
       return { usage: `unknown option ${argv[i]}` };
     } else {
       positional.push(argv[i]);
     }
   }
-  return { path: positional[0] ?? 'harness-report.json', arch };
+  return {
+    path: positional[0] ?? 'harness-report.json',
+    arch: paths.arch,
+    traceability: paths.traceability,
+  };
 }
 
 function main() {
@@ -252,13 +331,23 @@ function main() {
   }
   const report = loadReport(args.path);
   const arch = archSection(report, args.arch);
+  const trace = traceabilitySection(report, args.traceability);
   const lines = [...render(report)];
   if (arch.lines.length > 0) lines.push('', ...arch.lines);
+  if (trace.lines.length > 0) lines.push('', ...trace.lines);
   for (const line of lines) console.log(line);
-  for (const line of [...annotations(report), ...arch.annotations]) {
+  for (const line of [
+    ...annotations(report),
+    ...arch.annotations,
+    ...trace.annotations,
+  ]) {
     console.log(line);
   }
   writeStepSummary(lines);
+  // Last, so the summary above is delivered in full first. A traceability
+  // status reported over an unknown denominator is not a summary of a passing
+  // check — it is this script failing to verify one, which is exit 3.
+  if (trace.abstained) process.exit(3);
 }
 
 main();
