@@ -374,6 +374,50 @@ describe('traceability-verdict', () => {
       expect(r.output).toMatch(/0\/2|0%/);
     });
   });
+
+  // The per-row tolerances the classifier already has, pinned before they were
+  // moved into named helpers. A partial upstream shape change — one spec whose
+  // `requirements` key went missing, one requirement that lost its display
+  // name — must degrade to a smaller honest denominator, never to a crash
+  // (which reads as a broken gate) and never to a silently inflated count.
+  describe('a malformed row degrades the denominator without inflating it', () => {
+    it('skips a spec whose requirements are not an array', () => {
+      const r = runVerdict(
+        writeJson('trace.json', [
+          {
+            specPath: 'docs/changes/broken/proposal.md',
+            featureName: 'broken',
+          },
+          ...traceReport([requirement(1)]),
+        ]),
+      );
+      expect(r.status).toBe(0);
+      // Two specs are read; only the one that carries requirements
+      // contributes to the requirement count.
+      expect(r.output).toContain('1 requirement');
+      expect(r.output).toContain('2 spec');
+    });
+
+    it('falls back to the requirement id when the name is missing', () => {
+      const { requirementName, ...unnamed } = requirement(1, { code: false });
+      expect(requirementName).toBeDefined();
+      const r = runVerdict(
+        writeJson('trace.json', traceReport([unnamed as never])),
+      );
+      expect(r.status).toBe(0);
+      expect(r.output).toContain('req:fixture:1');
+    });
+
+    it('names an untraced requirement that carries no identity at all', () => {
+      const r = runVerdict(
+        writeJson('trace.json', [
+          { specPath: 'docs/changes/fixture/proposal.md', requirements: [{}] },
+        ]),
+      );
+      expect(r.status).toBe(0);
+      expect(r.output).toContain('(unnamed)');
+    });
+  });
 });
 
 describe('the summariser refuses a traceability entry with no denominator', () => {

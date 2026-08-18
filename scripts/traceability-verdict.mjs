@@ -92,76 +92,114 @@ function percent(part, whole) {
   return whole === 0 ? 0 : Math.round((part / whole) * 1000) / 10;
 }
 
-/**
- * Classifies a parsed report into the counts a reader needs.
- *
- * A non-array report is `unknown` rather than zero: an upstream shape change
- * must surface as "I cannot read this", never as a clean bill of health
- * derived from a field that stopped existing. Zero requirements is `abstain`,
- * which is a different finding with a different fix — the graph is missing —
- * and saying so is the point.
- *
- * @returns {{verdict: 'measured'|'abstain'|'unknown', reason?: string,
- *   specs: number, requirements: number, codeTraced: number,
- *   testTraced: number, untraced: {spec: string, name: string}[]}}
- */
-export function classifyTraceabilityReport(report) {
-  const empty = {
+/** A tally that has counted nothing yet. Fresh `untraced` array per call. */
+function emptyTally() {
+  return {
     specs: 0,
     requirements: 0,
     codeTraced: 0,
     testTraced: 0,
     untraced: [],
   };
-  // The shape a bare checkout actually produces. Verified against CLI 11 in a
-  // fresh `git clone` of this repo: `harness traceability --json` exits 2 and
-  // prints {"error":"No knowledge graph found. Run `harness graph scan`
-  // first."} — an object, not the array of specs. Passing upstream's own
-  // sentence through beats paraphrasing it into "shape I cannot read", which
-  // is technically true and useless.
-  if (!Array.isArray(report) && typeof report?.error === 'string') {
+}
+
+/**
+ * The verdict for a report that is not the array of specs, or `null` when the
+ * report is readable and the caller should go on to count it.
+ *
+ * Two unreadable shapes, deliberately given different verdicts. The `error`
+ * object is the one a bare checkout actually produces — verified against CLI
+ * 11 in a fresh `git clone` of this repo: `harness traceability --json` exits
+ * 2 and prints {"error":"No knowledge graph found. Run `harness graph scan`
+ * first."}. That is a known cause with a known fix, so it abstains and passes
+ * upstream's own sentence through; paraphrasing it into "shape I cannot read"
+ * is technically true and useless. Anything else non-array is `unknown` — an
+ * upstream rename must surface as "I cannot read this", never as a clean bill
+ * of health derived from a field that stopped existing.
+ */
+function unreadableShapeVerdict(report) {
+  if (Array.isArray(report)) return null;
+  if (typeof report?.error === 'string') {
     return {
-      ...empty,
+      ...emptyTally(),
       verdict: 'abstain',
       reason: `the traceability report carries no specs, only an error: ${report.error}`,
     };
   }
-  if (!Array.isArray(report)) {
-    return {
-      ...empty,
-      verdict: 'unknown',
-      reason:
-        'the report is not an array of specs — `harness traceability --json` did not produce a shape this can read',
-    };
-  }
-  const shape = { ...empty, specs: report.length, untraced: [] };
+  return {
+    ...emptyTally(),
+    verdict: 'unknown',
+    reason:
+      'the report is not an array of specs — `harness traceability --json` did not produce a shape this can read',
+  };
+}
+
+/**
+ * A spec's requirements, tolerating a spec that carries none.
+ *
+ * A missing or non-array `requirements` key contributes zero to the
+ * denominator rather than throwing: one malformed spec must shrink the
+ * measurement honestly, not take the whole gate down.
+ */
+function requirementsOf(spec) {
+  return Array.isArray(spec?.requirements) ? spec.requirements : [];
+}
+
+/**
+ * How an untraced requirement is named in the report.
+ *
+ * Every field is optional upstream, so the fallback chain runs all the way to
+ * a placeholder — an unnamed row still has to appear in the list, because
+ * dropping it would quietly shrink the count of things nothing traces.
+ */
+function untracedEntry(spec, req) {
+  return {
+    spec: String(spec?.specPath ?? '(unknown spec)'),
+    name: String(req?.requirementName ?? req?.requirementId ?? '(unnamed)'),
+  };
+}
+
+/** Walks every requirement in every spec, accumulating the coverage counts. */
+function tallyRequirements(report) {
+  const tally = { ...emptyTally(), specs: report.length };
   for (const spec of report) {
-    for (const req of Array.isArray(spec?.requirements)
-      ? spec.requirements
-      : []) {
-      shape.requirements += 1;
+    for (const req of requirementsOf(spec)) {
+      tally.requirements += 1;
       const hasCode = traced(req?.codeFiles);
       const hasTest = traced(req?.testFiles);
-      if (hasCode) shape.codeTraced += 1;
-      if (hasTest) shape.testTraced += 1;
-      if (!hasCode && !hasTest) {
-        shape.untraced.push({
-          spec: String(spec?.specPath ?? '(unknown spec)'),
-          name: String(
-            req?.requirementName ?? req?.requirementId ?? '(unnamed)',
-          ),
-        });
-      }
+      if (hasCode) tally.codeTraced += 1;
+      if (hasTest) tally.testTraced += 1;
+      if (!hasCode && !hasTest) tally.untraced.push(untracedEntry(spec, req));
     }
   }
-  if (shape.requirements === 0) {
+  return tally;
+}
+
+/**
+ * Classifies a parsed report into the counts a reader needs.
+ *
+ * Three outcomes, and the two failing ones are NOT interchangeable. An
+ * unreadable shape is `unknown`; zero requirements read from a perfectly
+ * readable report is `abstain`, a different finding with a different fix —
+ * the graph is missing — and saying which one happened is the point.
+ *
+ * @returns {{verdict: 'measured'|'abstain'|'unknown', reason?: string,
+ *   specs: number, requirements: number, codeTraced: number,
+ *   testTraced: number, untraced: {spec: string, name: string}[]}}
+ */
+export function classifyTraceabilityReport(report) {
+  const unreadable = unreadableShapeVerdict(report);
+  if (unreadable) return unreadable;
+
+  const tally = tallyRequirements(report);
+  if (tally.requirements === 0) {
     return {
-      ...shape,
+      ...tally,
       verdict: 'abstain',
-      reason: `zero requirements were read across ${shape.specs} spec(s), so the traceability check verified nothing`,
+      reason: `zero requirements were read across ${tally.specs} spec(s), so the traceability check verified nothing`,
     };
   }
-  return { ...shape, verdict: 'measured' };
+  return { ...tally, verdict: 'measured' };
 }
 
 /**
@@ -216,15 +254,7 @@ function main() {
   const loaded = loadTraceabilityReport(path);
   const verdict = loaded.ok
     ? classifyTraceabilityReport(loaded.report)
-    : {
-        verdict: 'unknown',
-        reason: loaded.reason,
-        specs: 0,
-        requirements: 0,
-        codeTraced: 0,
-        testTraced: 0,
-        untraced: [],
-      };
+    : { ...emptyTally(), verdict: 'unknown', reason: loaded.reason };
   for (const line of traceabilityVerdictLines(verdict)) console.log(line);
   for (const line of traceabilityAnnotations(verdict)) console.log(line);
   if (verdict.verdict !== 'measured') {
