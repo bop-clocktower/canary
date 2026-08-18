@@ -42,7 +42,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -167,5 +167,81 @@ describe('entropy-ratchet', () => {
     const { status, out } = run();
     expect(status).toBe(0);
     expect(out).toMatch(/lower/i);
+  });
+});
+
+/**
+ * The checked-in baseline, as opposed to the script that reads it (#744).
+ *
+ * `maxFindings` is an ABSOLUTE count, but the workflows pin the measuring tool
+ * to a floating major (`@harness-engineering/cli@11`). Those two facts together
+ * mean a patch release can move the number with no change to this repo at all,
+ * and it has: measured on one commit, CLI 11.1.1 reports 281 findings and
+ * 11.2.0 reports 257 — a 24-finding move that is entirely the doc-drift
+ * category upstream stopped false-positiving on (#694).
+ *
+ * Both directions of that are bad and only one of them is loud. A tightened
+ * rule blocks a PR whose diff cannot explain the failure (that cost #743 four
+ * days). A loosened one hands the ratchet slack it never earned, and the gate
+ * keeps reporting OK while defending a ceiling far above what the tree needs —
+ * a ratchet that is 34 under its own ceiling is not ratcheting, it is a number
+ * nobody is holding.
+ *
+ * These are offline structural assertions on the JSON. They cannot re-measure
+ * the tree (that needs the analyzer and the network), so they pin the next best
+ * thing: the file has to say which instrument produced its number, and the
+ * ceiling has to stay within the headroom the file itself documents.
+ */
+describe('the checked-in entropy baseline', () => {
+  const BASELINE_PATH = join(REPO_ROOT, '.harness', 'entropy-baseline.json');
+
+  /**
+   * The deliberate gap between the ceiling and the last measurement, from the
+   * baseline's own `$headroom` note. It is not zero on purpose: the ratchet is
+   * an absolute total, so concurrent branches spend a shared budget none of
+   * them can see (#703), and a ceiling pinned exactly to the measurement fails
+   * the next single green PR that adds one finding.
+   */
+  const MAX_HEADROOM = 10;
+
+  function baselineFile(): Record<string, unknown> {
+    return JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
+  }
+
+  it('records the exact CLI version that produced its measurement', () => {
+    const cli = baselineFile().harnessCli;
+    expect(typeof cli).toBe('string');
+    // A range would defeat the point — the whole failure mode is that `@11`
+    // resolves to different analyzers on different days.
+    expect(cli).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('was measured by the CLI major the workflow actually runs', () => {
+    const pinned = readFileSync(
+      join(REPO_ROOT, '.github', 'workflows', 'harness-quality.yml'),
+      'utf8',
+    ).match(/@harness-engineering\/cli@(\d+)/);
+    expect(pinned).not.toBeNull();
+    const measuredMajor = String(baselineFile().harnessCli).split('.')[0];
+    expect(measuredMajor).toBe(pinned?.[1]);
+  });
+
+  it('never sets a ceiling below the count it last measured', () => {
+    const { maxFindings, measuredCount } = baselineFile() as {
+      maxFindings: number;
+      measuredCount: number;
+    };
+    expect(typeof measuredCount).toBe('number');
+    expect(maxFindings).toBeGreaterThanOrEqual(measuredCount);
+  });
+
+  it('keeps the ceiling within the headroom it documents', () => {
+    const { maxFindings, measuredCount } = baselineFile() as {
+      maxFindings: number;
+      measuredCount: number;
+    };
+    // The assertion that catches a stale ceiling after the analyzer moves
+    // under it — the state CI nags about on every run and nothing enforces.
+    expect(maxFindings - measuredCount).toBeLessThanOrEqual(MAX_HEADROOM);
   });
 });
