@@ -37,12 +37,18 @@
  *   2 = error — the baseline file is missing or unreadable
  *   3 = ABSTENTION — no findings line in the input, so nothing was measured
  *
- * Offline: reads a report file and a baseline file, both supplied by the test.
- * Never runs `harness` and never touches the network.
+ * Offline throughout: never runs `harness`, never touches the network. The
+ * `entropy-ratchet` block supplies its own report and baseline in a tmpdir; the
+ * `the checked-in entropy baseline` block instead reads the REAL
+ * `.harness/entropy-baseline.json`, `.github/workflows/harness-quality.yml` and
+ * `scripts/entropy-ratchet.mjs`, and shells out to `git show` for the previous
+ * committed baseline. Those four are deliberately sensitive to repo state —
+ * that is the point of them — which also makes them the only tests here whose
+ * result depends on the working tree rather than on inputs they control.
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -167,5 +173,211 @@ describe('entropy-ratchet', () => {
     const { status, out } = run();
     expect(status).toBe(0);
     expect(out).toMatch(/lower/i);
+  });
+});
+
+/**
+ * The checked-in baseline, as opposed to the script that reads it (#744).
+ *
+ * `maxFindings` is an ABSOLUTE count, but the workflows pin the measuring tool
+ * to a floating major (`@harness-engineering/cli@11`). Those two facts together
+ * mean a patch release can move the number with no change to this repo at all,
+ * and it has: measured on one commit, CLI 11.1.1 reports 281 findings and
+ * 11.2.0 reports 257 — a 24-finding move that is entirely the doc-drift
+ * category upstream stopped false-positiving on (#694).
+ *
+ * Both directions of that are bad and only one of them is loud. A tightened
+ * rule blocks a PR whose diff cannot explain the failure (that cost #743 four
+ * days). A loosened one hands the ratchet slack it never earned, and the gate
+ * keeps reporting OK while defending a ceiling far above what the tree needs —
+ * a ratchet that is 34 under its own ceiling is not ratcheting, it is a number
+ * nobody is holding.
+ *
+ * These are offline structural assertions on the JSON. BE PRECISE ABOUT WHAT
+ * THEY CAN SEE, because an overclaim here is the same false green they exist to
+ * prevent. `measuredCount` is a memory of the last time a human ran the
+ * analyzer, NOT a measurement, so nothing below observes the live tree. During
+ * the episode above, the file read 291/281 — a self-consistent gap of 10, every
+ * assertion green — while the tree measured 257 and the ceiling stood 34 above
+ * it. Only the ratchet's own runtime line saw that, and it is a log line.
+ *
+ * So these catch a HUMAN-EDIT class of defect, which is the class that is
+ * checkable without the network:
+ *
+ *   - the ceiling RAISED above its last committed value (the ratchet's actual
+ *     forbidden move, compared against git rather than against a sibling field)
+ *   - `maxFindings` moved without re-measuring `measuredCount`
+ *   - a missing, range-valued, or major-mismatched `harnessCli`
+ *
+ * And they explicitly do NOT catch minor-version drift: the workflows pin a
+ * floating `@11`, so 11.1.1 -> 11.2.0 passes the major check. Closing that needs
+ * CI to capture the resolved version and the ratchet to abstain on a mismatch
+ * (#744). Do not let the presence of this block imply otherwise.
+ */
+describe('the checked-in entropy baseline', () => {
+  const BASELINE_PATH = join(REPO_ROOT, '.harness', 'entropy-baseline.json');
+  const BASELINE_REL = '.harness/entropy-baseline.json';
+
+  /**
+   * How to re-measure, quoted into every failure message that needs it. The
+   * clean-worktree part is load-bearing: the count reads high in the main
+   * working directory (#700), so a re-measure taken in place is worse than
+   * none — it is a confident wrong number.
+   */
+  const REMEASURE =
+    'Re-measure in a CLEAN WORKTREE (`git worktree add`) with ' +
+    '`npx --yes -p @harness-engineering/cli@11 harness cleanup --findings-json`' +
+    ' — the count reads high in the main working dir (#700).';
+
+  function baselineFile(): Record<string, unknown> {
+    return JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
+  }
+
+  /**
+   * Validate the numeric fields once, at the boundary, instead of casting.
+   *
+   * A blanket `as {...}` cast let a STRING sneak through: `measuredCount:
+   * "257"` makes `267 - "257"` coerce to 10, so the headroom assertion passed
+   * over a wrongly-typed baseline. Checking here means every assertion below
+   * inherits real numbers rather than each one re-deriving that guarantee.
+   */
+  function baselineNumbers(): {
+    maxFindings: number;
+    measuredCount: number;
+    maxHeadroom: number;
+  } {
+    const raw = baselineFile();
+    for (const key of [
+      'maxFindings',
+      'measuredCount',
+      'maxHeadroom',
+    ] as const) {
+      expect(
+        typeof raw[key],
+        `${BASELINE_REL} is missing a numeric "${key}". The ratchet cannot be ` +
+          `checked without it — restore the field from git history.`,
+      ).toBe('number');
+    }
+    return raw as unknown as {
+      maxFindings: number;
+      measuredCount: number;
+      maxHeadroom: number;
+    };
+  }
+
+  // THE ratchet invariant, and the one this block originally missed entirely.
+  // Every other assertion here compares two fields of the same file, so raising
+  // the ceiling and editing `measuredCount` to match satisfies all of them —
+  // which is precisely the move the baseline forbids in prose six times.
+  // Git holds the only ground truth that is available offline: the value this
+  // file had before the current edit.
+  it('never raises the ceiling above its last committed value', () => {
+    const prev = spawnSync('git', ['show', `HEAD:${BASELINE_REL}`], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    });
+    // A brand-new file has nothing to ratchet against. Skipping is correct
+    // here and is NOT a silent abstention: every other assertion still runs.
+    if (prev.status !== 0) return;
+    const before = JSON.parse(prev.stdout).maxFindings as number;
+    const { maxFindings } = baselineNumbers();
+    expect(
+      maxFindings,
+      `${BASELINE_REL}: the entropy ceiling ROSE ${before} -> ${maxFindings}. ` +
+        `A ratchet only turns one way (#544) and raising it to make a failing ` +
+        `check pass is the one move that is never right. FIX: fix the new ` +
+        `findings, or declare a false-positive entry point in ` +
+        `\`entropy.entryPoints\` in harness.config.json. If the ANALYZER moved ` +
+        `under you rather than the code, that is still not a raise — record ` +
+        `the new \`harnessCli\` and explain it in \`$driftfix\` (see #744).`,
+    ).toBeLessThanOrEqual(before);
+  });
+
+  it('records the exact CLI version that produced its measurement', () => {
+    const cli = baselineFile().harnessCli;
+    expect(
+      typeof cli,
+      `${BASELINE_REL} must record "harnessCli" — the exact version that ` +
+        `produced "measuredCount". Without it there is no way to tell a real ` +
+        `count change from an analyzer change (#744). ${REMEASURE}`,
+    ).toBe('string');
+    // A range would defeat the point — the whole failure mode is that `@11`
+    // resolves to different analyzers on different days.
+    expect(
+      cli,
+      `${BASELINE_REL}: "harnessCli" is "${String(cli)}", which is a RANGE, ` +
+        `not a version. Record what npm actually resolved (e.g. "11.2.0").`,
+    ).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  // NOTE: major only. A minor bump under the floating `@11` pin — the exact
+  // drift that moved this count 24 findings — passes. See the block docblock.
+  it('was measured by a CLI whose MAJOR matches the workflow pin', () => {
+    const yml = readFileSync(
+      join(REPO_ROOT, '.github', 'workflows', 'harness-quality.yml'),
+      'utf8',
+    );
+    // Anchored to the assignment rather than matched anywhere in the file: a
+    // prose comment mentioning an older `@10` used to become the authority,
+    // failing this test with a message that pointed at the baseline.
+    const pins = [
+      ...yml.matchAll(/^\s*HARNESS_CLI:\s*'@harness-engineering\/cli@(\d+)'/gm),
+    ];
+    expect(
+      pins.length,
+      `No HARNESS_CLI pin found in .github/workflows/harness-quality.yml. If ` +
+        `the pin moved or changed shape, point this assertion at its new home ` +
+        `— do not delete it.`,
+    ).toBe(1);
+    const { harnessCli } = baselineFile() as { harnessCli: string };
+    expect(
+      String(harnessCli).split('.')[0],
+      `${BASELINE_REL} was measured with CLI ${String(harnessCli)}, but the ` +
+        `workflow now runs major @${pins[0][1]}. The baseline is stale, not ` +
+        `the workflow. FIX: ${REMEASURE} Then update "measuredCount", ` +
+        `"measuredAt", "harnessCli", and lower "maxFindings" to the new count ` +
+        `plus "maxHeadroom".`,
+    ).toBe(pins[0][1]);
+  });
+
+  it('never sets a ceiling below the count it last measured', () => {
+    const { maxFindings, measuredCount } = baselineNumbers();
+    expect(
+      maxFindings,
+      `${BASELINE_REL}: "maxFindings" (${maxFindings}) is BELOW ` +
+        `"measuredCount" (${measuredCount}), so the gate is red by ` +
+        `construction. One of the two was edited without the other.`,
+    ).toBeGreaterThanOrEqual(measuredCount);
+  });
+
+  // Catches a hand-edit that moved the ceiling without re-measuring. It does
+  // NOT see the live tree — see the docblock before assuming otherwise.
+  it('keeps the ceiling within the headroom the baseline declares', () => {
+    const { maxFindings, measuredCount, maxHeadroom } = baselineNumbers();
+    expect(
+      maxFindings - measuredCount,
+      `${BASELINE_REL}: "maxFindings" (${maxFindings}) sits ` +
+        `${maxFindings - measuredCount} above "measuredCount" ` +
+        `(${measuredCount}), over the ${maxHeadroom} that "maxHeadroom" ` +
+        `allows. A ceiling that far above the tree is not ratcheting. ` +
+        `FIX: ${REMEASURE} Then set "measuredCount" to the new number and ` +
+        `"maxFindings" to it plus ${maxHeadroom}.`,
+    ).toBeLessThanOrEqual(maxHeadroom);
+  });
+
+  // The gap lived in three places at two values (25 in the script, 10 in the
+  // test, 10 in prose), which made 11-25 a hard test failure the gate itself
+  // called fine. The baseline is now the single owner; this pins that.
+  it('is the single source of the headroom the ratchet script uses', () => {
+    const script = readFileSync(
+      join(REPO_ROOT, 'scripts', 'entropy-ratchet.mjs'),
+      'utf8',
+    );
+    expect(
+      script,
+      `scripts/entropy-ratchet.mjs must read "maxHeadroom" from the baseline ` +
+        `rather than hard-coding its own slack — two copies of one policy ` +
+        `number means one of them is already wrong.`,
+    ).toContain('parsed.maxHeadroom');
   });
 });

@@ -471,6 +471,25 @@ Bumping the major is a **three-step sequence**, in this order (#545, #547):
    exit code _and_ output, not just exit code. The gates run the CLI on a bare
    checkout with no `npm ci`, so a local worktree reproduces CI exactly.
 
+**A MINOR bump is not inert, and nothing above catches it (#694, #744, #745).**
+The pin is a floating major, so `@11` silently resolves to whatever `11.x` npm
+last published — four releases shipped in the eight days after 11.0.0. Two gates
+compare an **absolute count** against a checked-in baseline
+(`.harness/entropy-baseline.json`, `.harness/perf-baseline.json`), and that
+count is a property of the analyzer as much as of this repo: 11.1.1 → 11.2.0
+moved the entropy count 281 → 257 with zero commits here, because an upstream
+false positive stopped firing. Both directions bite — a tightened rule blocks a
+PR whose diff cannot explain the failure, and a loosened one leaves a ceiling
+defending far more than the tree needs.
+
+So both baselines record the **exact** resolved version in `harnessCli`, not the
+pinned major. When CI resolves a version that no longer matches, the baseline is
+stale: re-measure **in a clean worktree** (the count reads high in the main
+working dir, #700) and update `measuredCount`, `measuredAt`, `harnessCli` and
+`maxFindings` in the same PR. A count that falls on its own is not automatically
+good news — establish whether the tree got cleaner or the detector went quiet
+before lowering a ceiling to match it.
+
 **Measuring the entropy ratchet locally — use a worktree, never your working
 directory (#700).** The ratchet is a blocking gate, so it has to be runnable
 before you push. It is, but only from a clean tree:

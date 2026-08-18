@@ -41,11 +41,24 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_BASELINE = join(REPO_ROOT, '.harness', 'entropy-baseline.json');
 
 /**
- * Slack above which the baseline is stale enough to mention. Not a failure —
- * a codebase that got cleaner should never turn the build red — but an
- * unratcheted ratchet is just a number in a file.
+ * The deliberate gap between the ceiling and the measured count, when the
+ * baseline does not declare its own `maxHeadroom`.
+ *
+ * This is BOTH the slack above which the baseline is stale enough to mention
+ * AND the gap the nudge tells you to leave. Those were two different numbers
+ * (25 here, 10 in the baseline's prose and in `ts/test/entropy-ratchet.test.ts`)
+ * and the disagreement had teeth: a gap of 11-25 was a hard test failure that
+ * this script considered fine and said nothing about, so the red test and the
+ * green gate pointed in opposite directions. Worse, the nudge used to say
+ * `lower to ${findings}` — a ceiling pinned exactly to the measurement, which
+ * is the zero-headroom state the baseline calls "how a blocking gate becomes
+ * wallpaper". Following this tool's own advice produced the state the file
+ * forbids.
+ *
+ * Nudging is still never a failure: a codebase that got cleaner must not turn
+ * the build red. But an unratcheted ratchet is just a number in a file.
  */
-const NUDGE_SLACK = 25;
+const DEFAULT_MAX_HEADROOM = 10;
 
 function parseArgs(argv) {
   const args = { report: null, baseline: DEFAULT_BASELINE };
@@ -94,9 +107,14 @@ function main() {
   if (!report) fail(2, 'entropy-ratchet: --report <file> is required.');
 
   let maxFindings;
+  let maxHeadroom = DEFAULT_MAX_HEADROOM;
   try {
     const parsed = JSON.parse(readFileSync(baseline, 'utf8'));
     maxFindings = parsed.maxFindings;
+    // The baseline owns its own headroom when it declares one, so this script
+    // and `ts/test/entropy-ratchet.test.ts` cannot drift to two values.
+    if (typeof parsed.maxHeadroom === 'number')
+      maxHeadroom = parsed.maxHeadroom;
   } catch (err) {
     fail(
       2,
@@ -143,11 +161,12 @@ function main() {
     `entropy-ratchet: OK — ${findings} findings, baseline ${maxFindings} ` +
       `(${headroom} of headroom).`,
   );
-  if (headroom > NUDGE_SLACK) {
+  if (headroom > maxHeadroom) {
     console.log(
       `entropy-ratchet: findings are ${headroom} under the baseline. Please ` +
-        `lower "maxFindings" in ${baseline} to ${findings} so the gate keeps ` +
-        'its teeth.',
+        `lower "maxFindings" in ${baseline} to ${findings + maxHeadroom} ` +
+        `(the measured ${findings} plus ${maxHeadroom} of headroom) so the ` +
+        'gate keeps its teeth.',
     );
   }
 }

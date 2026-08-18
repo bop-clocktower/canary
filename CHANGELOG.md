@@ -14,6 +14,33 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- **The entropy ceiling drops 291 → 267, and the headroom it documents is now
+  enforced instead of merely described.** CI had been printing
+  `findings are 34 under the baseline, please lower "maxFindings"` on every run
+  — a ratchet that far under its own ceiling is a number nobody is holding. The
+  count fell 281 → 257 with **no change to this repo**: the whole 24-finding
+  `Documentation drift` category disappeared when the harness CLI floated 11.1.1
+  → 11.2.0, which is the `extractFileLinks` fence-awareness defect #694 had been
+  waiting on upstream. Measured both ways on the same commit in a clean
+  worktree, with dead code unchanged at 10. Corroborated as an upstream fix
+  rather than a detector going dark by the per-finding fence classification
+  already recorded in ADR 0012 (56 occurrences, 56 fenced, 0 bare) and by
+  `scripts/check_doc_links.mjs`, which is fence-aware, spans a larger
+  denominator, is asserted strict-at-zero in the blocking suite, and does not
+  move when the CLI floats. The baseline now declares `maxHeadroom`, which
+  `scripts/entropy-ratchet.mjs` and `ts/test/entropy-ratchet.test.ts` both read
+  — they had drifted to 25 and 10, making a gap of 11–25 a hard test failure the
+  gate itself called fine, and the script's own nudge recommended the
+  zero-headroom ceiling the baseline forbids. Six assertions guard the
+  checked-in baseline, the load-bearing one being that `maxFindings` may never
+  rise above its last committed value: every other check compares two fields of
+  the same file, so raising the ceiling and editing `measuredCount` to match
+  satisfied all of them — which is precisely the move the ratchet exists to
+  prevent. Minor-version CLI drift remains undetected by design here and is
+  tracked in #744. Closes #694.
+
 ### Fixed
 
 - **Pre-commit markdownlint now resolves in a worktree, and the changelog no
