@@ -174,6 +174,19 @@ zero.**
    zero consumers anywhere. Measured 296 → 281, and the before/after `--json`
    sets differ by exactly those 15 with **zero** additions — purely subtractive.
 
+   **Amended 2026-08-18 by the CLI drift fix (#694, #745): 291 → 267.** The
+   largest single move in this file's history, and the only one that paid down
+   nothing. CLI 11.2.0 retired the doc-drift false positives (see item 7), the
+   measured count fell 281 → 257 with no repo change, and the ceiling followed
+   at the standing +10. The lesson worth carrying: `maxFindings` is an absolute
+   count produced by a tool the workflows pin to a **floating major**, so the
+   number can move without a commit. The baseline now records the exact
+   `harnessCli` that measured it and declares its own `maxHeadroom`, which
+   `scripts/entropy-ratchet.mjs` and `ts/test/entropy-ratchet.test.ts` both read
+   rather than keeping private copies (they had drifted to 25 and 10). Minor
+   drift is still undetected — the major check cannot see 11.1.1 → 11.2.0 — and
+   that gap is tracked in #744.
+
    **Two traps that make an export look dead when it is live**, both hit during
    this triage and both worth naming so the next paydown does not delete live
    code:
@@ -235,10 +248,34 @@ zero.**
    hazard the "Alternatives Considered" section below originally rejected the
    key over; it is handled by test, not by care.
 
-7. **27 structural doc-drift findings are an accepted floor, and the dead-link
-   signal is rebuilt locally rather than muted (#686).** Every one of the 27
-   findings `harness ci check` reports resolves correctly for a reader. Two
-   defects in `@harness-engineering/core` 11.1.1, neither of them ours to patch:
+7. **RETIRED 2026-08-18 (#694, #745) — the floor is gone; upstream fixed it.**
+   CLI 11.2.0 shipped the `extractFileLinks` fence-awareness fix
+   (Intense-Visions/harness-engineering#1342) and the `Documentation drift`
+   category fell **24 → 0** with no change to this repo. Measured both ways on
+   the same commit (`aa36af6`) in a clean worktree: 11.1.1 reports 281 findings
+   with 24 drift, 11.2.0 reports 257 with 0, dead code unchanged at 10. The
+   ceiling moved 291 → 267 to match.
+
+   Two things corroborated that this was an upstream FIX and not a detector
+   going dark, since a count falling and a check going silent are
+   indistinguishable from the number alone. First, the per-finding
+   classification recorded below — 56 occurrences, 56 fenced, 0 bare — which
+   identifies the disappeared set as exactly the Class A defect rather than an
+   aggregate coincidence. Second, `scripts/check_doc_links.mjs`, which is
+   fence-aware, spans a larger denominator, and is asserted strict-at-zero in
+   the blocking suite; it does not move when the harness CLI floats, so the real
+   dead-link signal never depended on the drift check. A planted bare broken
+   link was also checked and is still reported, but that is only a smoke check:
+   fence awareness is what changed, so a bare link exercises the path that did
+   not, and it cannot fail by construction. Use a fenced/unfenced pair if a
+   probe is wanted next time.
+
+   **The rest of this item is kept as the historical record** of why the floor
+   was accepted rather than muted — the reasoning is what made the prediction
+   falsifiable, and the `docPaths` allowlist analysis below still governs. Every
+   one of the 27 findings `harness ci check` reports resolves correctly for a
+   reader. Two defects in `@harness-engineering/core` 11.1.1, neither of them
+   ours to patch:
 
    | class | count | defect                                                                                                                                                                |
    | ----- | ----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -360,11 +397,15 @@ convention — advisory, then triage, then ratchet.
   that assertion. The second derives its expectations from the repo's own file
   list rather than a fixed set, so the day someone adds a `.spec.js` the gate
   notices instead of passing vacuously.
-- When the upstream fix ships, the 27 should disappear on a CLI bump with no
-  repo change. If they do not, the assumption in Decision item 7 was wrong and
-  the findings deserve re-triage rather than a wider exclusion.
-  `scripts/check_doc_links.mjs` stays either way: it covers more files than the
-  drift check does, and it is the thing that would catch the regression.
+- ~~When the upstream fix ships, the 27 should disappear on a CLI bump with no
+  repo change.~~ **This happened, on 2026-08-18 (#694, #745).** CLI 11.2.0
+  shipped the `extractFileLinks` fence fix and the drift category went 24 → 0
+  with no repo change, exactly as predicted. The prediction is recorded as
+  confirmed rather than deleted, because it is the only place the reasoning was
+  written down before the outcome was known. `scripts/check_doc_links.mjs` stays
+  either way: it covers more files than the drift check does, and it is the
+  thing that would catch the regression — and it is now the thing carrying the
+  dead-link signal alone.
 - The perf check is `warn`-only under the default `--fail-on error`, so its 238
   findings do not gate a merge today. That is deliberate and matches the #485
   convention this ADR already follows — advisory, then triage, then ratchet.
