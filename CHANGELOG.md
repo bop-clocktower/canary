@@ -14,7 +14,38 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **Both absolute ratchets abstain when the CLI that measured them is not the
+  CLI that set their ceiling** (#744). The workflows pin
+  `@harness-engineering/cli@11` — a floating major — so the analyzer behind
+  every absolute count changes with no commit to this repo. It happened twice.
+  11.1.1 → 11.2.0 moved entropy 281 → 257, and 11.2.0 → 11.3.0 moved it 257 →
+  **147** while the ceiling stood at 267: for four days, a gate that had just
+  been deliberately tightened would have needed a 45% increase in entropy to
+  turn red. Every offline guard was green throughout, because they compare the
+  baseline against itself and a floating **minor** clears a **major** check by
+  construction. `harness-quality.yml` now resolves the pin at run time and
+  passes `--cli-version` to both ratchets, which exit 3 (abstained, per
+  ADR 0009) on any disagreement — including a caller that does not say which
+  version it ran. Abstention rather than failure is deliberate: the tree may be
+  fine, but the number is not commensurable with the ceiling, so there is
+  nothing to compare.
+
 ### Changed
+
+- **The entropy ceiling drops 267 → 157 and the perf ceiling 245 → 233**,
+  re-measured at `c8f412a` in a clean worktree under CLI 11.3.0 (147 and 225
+  respectively). The entropy drop is an upstream false-positive fix, not a
+  paydown, and was corroborated three ways before the ceiling moved: purely
+  subtractive (31 files unflagged, **zero** newly flagged); a planted positive
+  in a live, currently-clean file (three dead exports in
+  `ts/src/core/pattern-matcher.ts` moved the total 147 → 150, ruling out the
+  per-file-dedup reading the raw numbers otherwise fit); and a disappeared set
+  dominated by shipped code in the test-only-consumer class ADR 0012 already
+  documents. The perf baseline had drifted quietly too — recorded 237 at 11.1.1,
+  actually 225 — and that move belongs to the 11.1.1 → 11.2.0 boundary, not to
+  11.3.0. See the 2026-08-20 amendment to ADR 0012.
 
 - **The entropy ceiling drops 291 → 267, and the headroom it documents is now
   enforced instead of merely described.** CI had been printing

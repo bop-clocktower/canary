@@ -61,10 +61,11 @@ const DEFAULT_BASELINE = join(REPO_ROOT, '.harness', 'entropy-baseline.json');
 const DEFAULT_MAX_HEADROOM = 10;
 
 function parseArgs(argv) {
-  const args = { report: null, baseline: DEFAULT_BASELINE };
+  const args = { report: null, baseline: DEFAULT_BASELINE, cliVersion: null };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--report') args.report = argv[i + 1];
     else if (argv[i] === '--baseline') args.baseline = argv[i + 1];
+    else if (argv[i] === '--cli-version') args.cliVersion = argv[i + 1];
   }
   return args;
 }
@@ -102,15 +103,17 @@ function fail(code, message) {
 }
 
 function main() {
-  const { report, baseline } = parseArgs(process.argv.slice(2));
+  const { report, baseline, cliVersion } = parseArgs(process.argv.slice(2));
 
   if (!report) fail(2, 'entropy-ratchet: --report <file> is required.');
 
   let maxFindings;
   let maxHeadroom = DEFAULT_MAX_HEADROOM;
+  let baselineCli = null;
   try {
     const parsed = JSON.parse(readFileSync(baseline, 'utf8'));
     maxFindings = parsed.maxFindings;
+    if (typeof parsed.harnessCli === 'string') baselineCli = parsed.harnessCli;
     // The baseline owns its own headroom when it declares one, so this script
     // and `ts/test/entropy-ratchet.test.ts` cannot drift to two values.
     if (typeof parsed.maxHeadroom === 'number')
@@ -140,6 +143,35 @@ function main() {
         'entropy report, so nothing was measured. This is the #544 shape: the ' +
         'scan most likely failed at startup. Read the step log; do NOT treat ' +
         'an absent count as zero findings.',
+    );
+  }
+
+  // #744. The count above is only meaningful next to the identity of the
+  // analyzer that produced it, and the workflows pin a FLOATING
+  // `@harness-engineering/cli@11`, so that analyzer changes with no commit
+  // here. It moved twice: 11.1.1 -> 11.2.0 took the count 281 -> 257, and
+  // 11.2.0 -> 11.3.0 took it 257 -> 147 while the ceiling stood at 267. Every
+  // offline guard stayed green through both, because they compare the baseline
+  // against itself and a floating minor clears a MAJOR check by construction.
+  //
+  // A disagreement is an ABSTENTION, never a pass and never a failure: the
+  // measurement is not comparable to the ceiling, so there is nothing to
+  // compare. Re-measure, and update the baseline in the same PR.
+  if (baselineCli !== null && cliVersion !== baselineCli) {
+    fail(
+      3,
+      `entropy-ratchet: ABSTAINED — this baseline's ${maxFindings} ceiling was ` +
+        `calibrated against harness CLI ${baselineCli}, but ` +
+        (cliVersion === null
+          ? 'the caller did not say which version produced this report ' +
+            '(pass `--cli-version`).'
+          : `this report was produced by ${cliVersion}.`) +
+        `\nThe measured ${findings} is therefore not comparable to the ` +
+        'ceiling — an analyzer that changes its own false-positive model moves ' +
+        'this count with no change to the codebase, in either direction.\n' +
+        'Re-measure in a clean worktree and update "measuredCount" and ' +
+        '"harnessCli" in the baseline in the SAME PR. Do not silence this by ' +
+        'deleting "harnessCli".',
     );
   }
 

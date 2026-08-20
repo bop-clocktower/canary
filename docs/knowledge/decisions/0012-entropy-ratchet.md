@@ -17,7 +17,8 @@ source: adr
 (required checks); #508 (no silent abstention); #485 (the dogfood ratchet this
 copies); #676 / PR #685 (the 26 dead links whose repair lowered the ceiling);
 issue #686 (the 27 structural doc-drift findings that are detector defects,
-below)
+below); #694 / #719 (the 11.2.0 drift-detector fix, 281 -> 257); #744 (the
+floating pin, and the instrument-identity abstention that closes it)
 
 ## Context
 
@@ -370,6 +371,86 @@ zero.**
 
 Strict-at-zero is explicitly rejected for now, matching the #485 dogfood
 convention — advisory, then triage, then ratchet.
+
+## Amendment — 2026-08-20: the ceiling is only as good as the instrument (#744)
+
+This ADR chose an **absolute** ceiling. That choice has a consequence nobody
+wrote down at the time, and it has now cost two silent drifts: the number on the
+left of the comparison is produced by a tool the workflows pin as a **floating
+major** (`@harness-engineering/cli@11`), so the analyzer behind the count can
+change without a single commit to this repository.
+
+Both moves were downward, which is why neither was noticed:
+
+| CLI move                | Count      | Ceiling at the time | Slack it created |
+| ----------------------- | ---------- | ------------------- | ---------------- |
+| 11.1.1 -> 11.2.0 (#694) | 281 -> 257 | 291                 | 34               |
+| 11.2.0 -> 11.3.0 (#744) | 257 -> 147 | 267                 | **120**          |
+
+The second is the serious one. For four days a gate that had just been
+deliberately **tightened** to 267 would have required a 45% increase in entropy
+to turn red. Nothing was broken, no test failed, and no human error occurred —
+which is the whole point. As the baseline file's own `$whatIsGuarded` note
+predicted _in writing_ before it happened, every offline guard compares the
+baseline against itself (the ceiling did not rise; `measuredCount` matched its
+declared gap; the CLI **major** still matched the pin), and a floating **minor**
+clears a major check by construction.
+
+A falling count is genuinely ambiguous — "the code got cleaner" and "the
+detector went dark" produce the identical signal — so the 257 -> 147 drop was
+corroborated three ways before the ceiling moved. The middle one is the one that
+carries it:
+
+1. **Purely subtractive.** 31 files stopped being flagged; **zero** were newly
+   flagged, and no per-file count rose.
+2. **A planted positive, in a live and currently-clean file.** Three
+   unambiguously-dead exports appended to `ts/src/core/pattern-matcher.ts` moved
+   the total 147 -> 150 and that file 0 -> 3. This is what rules out the
+   per-file-dedup hypothesis, which the raw numbers look exactly like: nearly
+   every surviving file had collapsed to exactly one finding, and a granularity
+   change would produce that same shape. **The probe must go in a live file the
+   scanner already reports as clean** — in a new file, the file itself is dead,
+   so the increment cannot be attributed to symbol-level detection.
+3. **The disappeared set is shipped code** — `guardian/adjudication.ts` (6),
+   `analysis-emit.ts` (5), `github-paging.ts` (4), `pattern-matcher.ts`, and the
+   per-skill `scanner.mjs` / `rules.mjs` trees: the test-only-consumer and
+   workflow-invoked false-positive classes this ADR already documents.
+
+### What changed
+
+`scripts/entropy-ratchet.mjs` and `scripts/perf-ratchet.mjs` now take
+`--cli-version`, supplied by a `Resolve harness CLI version` step in
+`harness-quality.yml` that resolves the floating pin at run time. When the
+baseline declares `harnessCli` and the running version disagrees — **or the
+caller does not say which version it ran** — the ratchet **abstains** (exit 3,
+per ADR 0009) instead of comparing.
+
+Abstention, not failure, is the correct verdict and the distinction matters: the
+tree may be perfectly healthy. What is _not_ true is that the measurement is
+comparable to the ceiling, so there is nothing to compare, and "cannot verify"
+is a finding rather than a pass. The remedy is the one both drift episodes
+needed and neither got: re-measure in a clean worktree, and move `measuredCount`
+and `harnessCli` in the same PR.
+
+The perf baseline was re-measured in the same pass and had quietly drifted too —
+recorded 237 at 11.1.1, actually 225, and the move belongs to the 11.1.1 ->
+11.2.0 boundary rather than to 11.3.0 (11.2.0 and 11.3.0 both report 225 on the
+same tree). Its gap was 20 rather than 120, which is precisely why it would have
+gone on sitting there.
+
+### What is still not guarded
+
+- `measuredCount` remains a **memory of the last human run**, not a measurement.
+  The instrument stamp beside it is now enforced, so it can be trusted that far
+  and no further.
+- **Excessive headroom is still only a log line.** A codebase that got cleaner
+  must never turn the build red, so nothing forces a ceiling down except a human
+  reading the nudge. That is a deliberate trade, and it is why the 120-point gap
+  persisted for four days once created.
+- The perf ratchet's implausible-collapse guard does **not** cover this. It
+  fires below 25% of the baseline; the real drops were 55% (entropy) and 92%
+  (perf). A collapse guard catches a detector going dark all at once, never an
+  instrument that is merely different.
 
 ## Consequences
 
