@@ -14,184 +14,28 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
-### Fixed
+## [7.1.0] - 2026-08-22
 
-- **Both absolute ratchets abstain when the CLI that measured them is not the
-  CLI that set their ceiling** (#744). The workflows pin
-  `@harness-engineering/cli@11` — a floating major — so the analyzer behind
-  every absolute count changes with no commit to this repo. It happened twice.
-  11.1.1 → 11.2.0 moved entropy 281 → 257, and 11.2.0 → 11.3.0 moved it 257 →
-  **147** while the ceiling stood at 267: for four days, a gate that had just
-  been deliberately tightened would have needed a 45% increase in entropy to
-  turn red. Every offline guard was green throughout, because they compare the
-  baseline against itself and a floating **minor** clears a **major** check by
-  construction. `harness-quality.yml` now resolves the pin at run time and
-  passes `--cli-version` to both ratchets, which exit 3 (abstained, per
-  ADR 0009) on any disagreement — including a caller that does not say which
-  version it ran. Abstention rather than failure is deliberate: the tree may be
-  fine, but the number is not commensurable with the ceiling, so there is
-  nothing to compare.
+Thirty merged pull requests. Nothing here changes a command's contract, so this
+is a minor — the one removal (`scripts/dogfood-record-run.mjs`) was repo-local
+CI glue, replaced by the shipped `canary history record` it existed to
+substitute for.
 
-### Changed
+Two themes. The first is new capability: personas as a first-class engine
+concept, soundness and vacuity rules in test-signal with promotion gated on
+structured verdicts, executable checking of the commands skills document, and
+history recording promoted out of CI glue into the product.
 
-- **The entropy ceiling drops 267 → 157 and the perf ceiling 245 → 233**,
-  re-measured at `c8f412a` in a clean worktree under CLI 11.3.0 (147 and 225
-  respectively). The entropy drop is an upstream false-positive fix, not a
-  paydown, and was corroborated three ways before the ceiling moved: purely
-  subtractive (31 files unflagged, **zero** newly flagged); a planted positive
-  in a live, currently-clean file (three dead exports in
-  `ts/src/core/pattern-matcher.ts` moved the total 147 → 150, ruling out the
-  per-file-dedup reading the raw numbers otherwise fit); and a disappeared set
-  dominated by shipped code in the test-only-consumer class ADR 0012 already
-  documents. The perf baseline had drifted quietly too — recorded 237 at 11.1.1,
-  actually 225 — and that move belongs to the 11.1.1 → 11.2.0 boundary, not to
-  11.3.0. See the 2026-08-20 amendment to ADR 0012.
-
-- **The entropy ceiling drops 291 → 267, and the headroom it documents is now
-  enforced instead of merely described.** CI had been printing
-  `findings are 34 under the baseline, please lower "maxFindings"` on every run
-  — a ratchet that far under its own ceiling is a number nobody is holding. The
-  count fell 281 → 257 with **no change to this repo**: the whole 24-finding
-  `Documentation drift` category disappeared when the harness CLI floated 11.1.1
-  → 11.2.0, which is the `extractFileLinks` fence-awareness defect #694 had been
-  waiting on upstream. Measured both ways on the same commit in a clean
-  worktree, with dead code unchanged at 10. Corroborated as an upstream fix
-  rather than a detector going dark by the per-finding fence classification
-  already recorded in ADR 0012 (56 occurrences, 56 fenced, 0 bare) and by
-  `scripts/check_doc_links.mjs`, which is fence-aware, spans a larger
-  denominator, is asserted strict-at-zero in the blocking suite, and does not
-  move when the CLI floats. The baseline now declares `maxHeadroom`, which
-  `scripts/entropy-ratchet.mjs` and `ts/test/entropy-ratchet.test.ts` both read
-  — they had drifted to 25 and 10, making a gap of 11–25 a hard test failure the
-  gate itself called fine, and the script's own nudge recommended the
-  zero-headroom ceiling the baseline forbids. Six assertions guard the
-  checked-in baseline, the load-bearing one being that `maxFindings` may never
-  rise above its last committed value: every other check compares two fields of
-  the same file, so raising the ceiling and editing `measuredCount` to match
-  satisfied all of them — which is precisely the move the ratchet exists to
-  prevent. Minor-version CLI drift remains undetected by design here and is
-  tracked in #744. Closes #694.
-
-### Fixed
-
-- **Pre-commit markdownlint now resolves in a worktree, and the changelog no
-  longer carries duplicated entries.** `core.hooksPath` is an absolute path into
-  the main checkout, so every worktree runs `.githooks/pre-commit` — but both of
-  its markdownlint probes were CWD-relative, and a worktree has no root
-  `node_modules` of its own. A worktree created as a sibling
-  (`../canary-<slug>`, the `AGENTS.md` convention) is also outside the directory
-  chain `npx` walks upward, so it resolved nothing and the gate announced a
-  skip; a worktree nested under the main checkout resolved by accident, which is
-  worse, because the gate's coverage then depended on where the worktree
-  happened to be created. The hook now falls back to the main checkout's
-  install, located through the common git dir — the one path a linked worktree
-  can always name — and the skip message names both roots instead of sending the
-  reader to a repo root that already had the install. Not a false green either
-  way: the skip announced itself (#650) and CI's `docs-lint` always gated the
-  merge; what was lost was the fast local loop. Separately, `CHANGELOG.md`
-  carried **two** duplicated `Unreleased` entries, one of them spliced
-  mid-sentence into a headline correction by the merge in #714 — no existing
-  gate could see them, because `MD024` is disabled here by design, prettier
-  reformats without deduplicating, and the release audit passes both copies
-  since both have a real PR behind them. `ts/test/changelog-hygiene.test.ts` now
-  fails on a repeated bullet headline within a release section. ([#725])
-- **canary-savant `SV002` can no longer be switched off by prose.** The rule
-  pairs a class/all-scoped setup with its teardown, but only the setup half
-  skipped comments — the teardown half asked `includes()` of the raw file. So
-  any suite that merely _mentioned_ `afterAll` (or `teardown_class`) in a
-  comment or a fixture string exempted itself from the rule, permanently and
-  invisibly: a finding that is never generated never appears in the
-  `N suppressed` line either, so a reader could not tell "this file has no leak"
-  from "this file said the magic word". The exemption was trivially reachable by
-  accident, since a comment explaining _why_ no teardown is needed is the most
-  natural thing to write above such a `beforeAll` — which is exactly how it was
-  found. Both halves now read the same code-only projection of the file
-  (comments dropped, string contents blanked). This closes a false negative in a
-  rule that runs `--strict` (blocking) in CI, the direction that hides real
-  pollution. (#732)
-- **canary-savant `SV003` recognises an in-test `try`/`finally` restore.** Only
-  framework teardown hooks counted as restore regions, so the _tighter_ idiom
-  was the one that got flagged: a `finally` that saves and restores keeps the
-  global dirty for the try block only, rather than for the whole test. The
-  workaround was an inline `savant-ignore` pragma on a line that was already
-  correct, and pragmas do not expire — each one trains readers to treat the rule
-  as noisy. JS `finally { … }` bodies (brace-balanced, string-aware, capped like
-  the hook regions) and Python `finally:` suites (indentation-scoped) now count,
-  and the pragma this cost `ts/test/canary-cli-coverage5.test.ts` is removed. A
-  `finally` restoring a _different_ key still flags. (#733)
-
-- **History rows are self-describing again: `serializeLocalRecord` stamps
-  `schema_version`.** The reader has always refused a `schema_version` it does
-  not understand — but the store's own serializer never wrote the field, so the
-  guard could only ever fire on rows written by _somebody else's_ writer. Every
-  row the local store has ever appended was unversioned, which meant the guard
-  was structurally incapable of protecting the one history it owns. Nothing was
-  broken while `SCHEMA_VERSION` stayed at `2`; the damage was scheduled for the
-  next bump, when every legacy row would have been read as the new version and
-  silently misinterpreted. The stamp now lives in the one serializer every local
-  writer goes through, so it is a property of the format rather than something
-  each writer has to remember. **This supersedes the note in v7.0.0's #538
-  entry** that records "no longer carry a `schema_version` field": they do, as
-  of this release, and that entry described the bug rather than the intent.
-  `serializeRun` / `serializeTestResult` are deliberately unchanged — they map
-  to the remote store's table columns, which have no such field. ([#701])
-
-- **An unversioned history row now reads as the version it was written at, not
-  as "current".** `resolveSchemaVersion` resolves a missing `schema_version` to
-  the frozen `LEGACY_UNVERSIONED_SCHEMA_VERSION = 2` — a historical fact (v2 is
-  the only version this store has ever had, and every row after the fix above is
-  stamped), not a default that tracks the current version. Nothing changes today
-  because the two numbers are equal. What changes is the next bump: legacy rows
-  will be **refused loudly** instead of reinterpreted under semantics they were
-  never written for, which forces that bump to ship a real migration. A loud
-  refusal a maintainer must answer beats a silent wrong answer nobody sees.
-  ([#701])
-
-- **`canary analyze` honours `--db-url` / `CANARY_HISTORY_DB_URL` instead of
-  apologising for ignoring them.** The flags were accepted and then answered
-  with `note: --db-url is ignored by analyze; it reads local NDJSON only.` That
-  note was the correct interim behaviour — silently reading a different data
-  source would be far worse — but a flag that is accepted and ignored is the
-  product-lies class one layer down, and it existed only because
-  `AnalysisEngine` held the synchronous store contract while every other history
-  consumer had moved to the async one. `AnalysisEngine.run` and the five
-  `analyze` report paths are async now and obtain their backend from the shared
-  `makeStore()`, which closes ADR 0013 Decision 4: `NdjsonHistoryStore` is
-  reachable only through `LocalAsyncAdapter`, so "do not program against it" is
-  structural rather than a review convention. The six byte-exact report goldens
-  are unchanged, which is the proof this was a mechanical conversion. ([#390],
-  [#711])
-
-- **Honouring `--db-url` would have created a quieter lie, so the three
-  raw-record reports now name themselves as unverifiable.** `spikes`,
-  `common-failures` and `regression-candidates` are computed by walking whole
-  run records via `readAll()`, which only the local NDJSON backend implements —
-  the engine previously duck-typed for it and returned `[]` when absent. Against
-  a remote backend that renders as an empty report, which is indistinguishable
-  on screen from a measured all-clear: a zero denominator wearing a clean face
-  (#508). `readAll?()` is now an explicit optional capability on
-  `AsyncHistoryStore`, carrying the same doctrine as `countRuns?()` — absent
-  means UNKNOWN, never zero — and each affected command prints a `cannot verify`
-  notice naming the section it could not compute plus the ones that do work
-  against that backend. `digest` partially succeeds, so it renders its measured
-  flake leaderboard and names the rest. The exit stays 0 (advisory) and `--json`
-  keeps stdout parseable with the notice on stderr. ([#711])
-
-- **`canary uninstall` is discoverable again: it appears in `canary --help`, and
-  `canary uninstall --help` answers instead of erroring.** The command shipped
-  in 7.0.0 routable and fully functional, but two hand-maintained lists had to
-  agree and nothing asserted that they did: `TS_COMMANDS` in `npm/src/router.ts`
-  decides what the npm shim handles natively, and the commander stubs in
-  `ts/src/cli.ts` decide what the engine lists in `--help`. `uninstall` was in
-  the first and not the second, so `canary --help | grep -c uninstall` returned
-  `0` — the one place a user looks to discover a command never mentioned it.
-  Because the router dispatches `uninstall` before commander sees the argv,
-  `--help` also arrived at the handler as a plain token and was rejected as an
-  unknown option; asking how a command works is not a usage error, so
-  `--help`/`-h` now print the scopes and exit 0. The **class** is closed rather
-  than the instance: a conformance test enumerates `TS_COMMANDS` from its
-  declaration and asserts every entry appears in the engine's help, so the next
-  TS-handled command cannot land routable-but-invisible the same way. ([#730])
+The second is the one worth reading the entries for — a sustained pass over
+gates that were green without being sound. A traceability check that rendered a
+percentage with no denominator, an entropy ceiling calibrated by a floating CLI
+major that drifted 120 counts of slack into a gate four days after it was
+deliberately tightened, an architecture gate reporting a baseline floor as
+though it were a ceiling, a dead-link checker scanning files git ignores, a
+version guard structurally incapable of firing on its own store's rows. Each was
+found by asking what a passing result actually measured, and most now
+**abstain** rather than pass when they cannot answer — the pattern ADR 0009
+names and this release leans on heavily.
 
 ### Added
 
@@ -491,6 +335,44 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **The entropy ceiling drops 267 → 157 and the perf ceiling 245 → 233**,
+  re-measured at `c8f412a` in a clean worktree under CLI 11.3.0 (147 and 225
+  respectively). The entropy drop is an upstream false-positive fix, not a
+  paydown, and was corroborated three ways before the ceiling moved: purely
+  subtractive (31 files unflagged, **zero** newly flagged); a planted positive
+  in a live, currently-clean file (three dead exports in
+  `ts/src/core/pattern-matcher.ts` moved the total 147 → 150, ruling out the
+  per-file-dedup reading the raw numbers otherwise fit); and a disappeared set
+  dominated by shipped code in the test-only-consumer class ADR 0012 already
+  documents. The perf baseline had drifted quietly too — recorded 237 at 11.1.1,
+  actually 225 — and that move belongs to the 11.1.1 → 11.2.0 boundary, not to
+  11.3.0. See the 2026-08-20 amendment to ADR 0012.
+
+- **The entropy ceiling drops 291 → 267, and the headroom it documents is now
+  enforced instead of merely described.** CI had been printing
+  `findings are 34 under the baseline, please lower "maxFindings"` on every run
+  — a ratchet that far under its own ceiling is a number nobody is holding. The
+  count fell 281 → 257 with **no change to this repo**: the whole 24-finding
+  `Documentation drift` category disappeared when the harness CLI floated 11.1.1
+  → 11.2.0, which is the `extractFileLinks` fence-awareness defect #694 had been
+  waiting on upstream. Measured both ways on the same commit in a clean
+  worktree, with dead code unchanged at 10. Corroborated as an upstream fix
+  rather than a detector going dark by the per-finding fence classification
+  already recorded in ADR 0012 (56 occurrences, 56 fenced, 0 bare) and by
+  `scripts/check_doc_links.mjs`, which is fence-aware, spans a larger
+  denominator, is asserted strict-at-zero in the blocking suite, and does not
+  move when the CLI floats. The baseline now declares `maxHeadroom`, which
+  `scripts/entropy-ratchet.mjs` and `ts/test/entropy-ratchet.test.ts` both read
+  — they had drifted to 25 and 10, making a gap of 11–25 a hard test failure the
+  gate itself called fine, and the script's own nudge recommended the
+  zero-headroom ceiling the baseline forbids. Six assertions guard the
+  checked-in baseline, the load-bearing one being that `maxFindings` may never
+  rise above its last committed value: every other check compares two fields of
+  the same file, so raising the ceiling and editing `measuredCount` to match
+  satisfied all of them — which is precisely the move the ratchet exists to
+  prevent. Minor-version CLI drift remains undetected by design here and is
+  tracked in #744. Closes #694.
+
 - **Entropy paydown: 15 provably-dead exports removed, the ratchet ceiling
   lowered 297 → 291 and the measured count 296 → 281.** `main` measured 296
   against a 297 ceiling — one finding of headroom, with two finished branches
@@ -541,7 +423,163 @@ under the project's former name) are documented in the
 
 [#671]: https://github.com/bop-clocktower/canary/issues/671
 
+### Removed
+
+- **`scripts/dogfood-record-run.mjs`, replaced by `canary history record`.** The
+  script was CI glue that converted vitest JSON into a v2 history record for the
+  `dogfood.yml` fleet-health job; the capability it provided was a genuine
+  product gap, and leaving it in place alongside the new subcommand would mean
+  two writers of one store drifting apart. `dogfood.yml` now calls the shipped
+  command, so the fleet-health job dogfoods the product rather than repo-local
+  glue, and the script is gone from both `entropy.entryPoints` and
+  `performance.entryPoints`. Behaviour differences worth knowing: the record is
+  now written by the store's own serializer, so per-test rows carry
+  `run_id`/`suite`/`repo`/`test_file` (the script omitted them, which left
+  `suite` empty in flake rows); a zero-result report exits **3** rather than 1;
+  and the repo slug is inferred from `GITHUB_REPOSITORY` instead of defaulting
+  to `bop-clocktower/canary`. Rows written this way also carry `schema_version`,
+  which the script never wrote — that came later in this same release window,
+  when `serializeLocalRecord` began stamping it so the reader's version guard
+  could fire on the store's own rows (see the `serializeLocalRecord` entry under
+  **Fixed**). ([#538])
+
 ### Fixed
+
+- **Both absolute ratchets abstain when the CLI that measured them is not the
+  CLI that set their ceiling** (#744). The workflows pin
+  `@harness-engineering/cli@11` — a floating major — so the analyzer behind
+  every absolute count changes with no commit to this repo. It happened twice.
+  11.1.1 → 11.2.0 moved entropy 281 → 257, and 11.2.0 → 11.3.0 moved it 257 →
+  **147** while the ceiling stood at 267: for four days, a gate that had just
+  been deliberately tightened would have needed a 45% increase in entropy to
+  turn red. Every offline guard was green throughout, because they compare the
+  baseline against itself and a floating **minor** clears a **major** check by
+  construction. `harness-quality.yml` now resolves the pin at run time and
+  passes `--cli-version` to both ratchets, which exit 3 (abstained, per
+  ADR 0009) on any disagreement — including a caller that does not say which
+  version it ran. Abstention rather than failure is deliberate: the tree may be
+  fine, but the number is not commensurable with the ceiling, so there is
+  nothing to compare.
+
+- **Pre-commit markdownlint now resolves in a worktree, and the changelog no
+  longer carries duplicated entries.** `core.hooksPath` is an absolute path into
+  the main checkout, so every worktree runs `.githooks/pre-commit` — but both of
+  its markdownlint probes were CWD-relative, and a worktree has no root
+  `node_modules` of its own. A worktree created as a sibling
+  (`../canary-<slug>`, the `AGENTS.md` convention) is also outside the directory
+  chain `npx` walks upward, so it resolved nothing and the gate announced a
+  skip; a worktree nested under the main checkout resolved by accident, which is
+  worse, because the gate's coverage then depended on where the worktree
+  happened to be created. The hook now falls back to the main checkout's
+  install, located through the common git dir — the one path a linked worktree
+  can always name — and the skip message names both roots instead of sending the
+  reader to a repo root that already had the install. Not a false green either
+  way: the skip announced itself (#650) and CI's `docs-lint` always gated the
+  merge; what was lost was the fast local loop. Separately, `CHANGELOG.md`
+  carried **two** duplicated `Unreleased` entries, one of them spliced
+  mid-sentence into a headline correction by the merge in #714 — no existing
+  gate could see them, because `MD024` is disabled here by design, prettier
+  reformats without deduplicating, and the release audit passes both copies
+  since both have a real PR behind them. `ts/test/changelog-hygiene.test.ts` now
+  fails on a repeated bullet headline within a release section. ([#725])
+- **canary-savant `SV002` can no longer be switched off by prose.** The rule
+  pairs a class/all-scoped setup with its teardown, but only the setup half
+  skipped comments — the teardown half asked `includes()` of the raw file. So
+  any suite that merely _mentioned_ `afterAll` (or `teardown_class`) in a
+  comment or a fixture string exempted itself from the rule, permanently and
+  invisibly: a finding that is never generated never appears in the
+  `N suppressed` line either, so a reader could not tell "this file has no leak"
+  from "this file said the magic word". The exemption was trivially reachable by
+  accident, since a comment explaining _why_ no teardown is needed is the most
+  natural thing to write above such a `beforeAll` — which is exactly how it was
+  found. Both halves now read the same code-only projection of the file
+  (comments dropped, string contents blanked). This closes a false negative in a
+  rule that runs `--strict` (blocking) in CI, the direction that hides real
+  pollution. (#732)
+- **canary-savant `SV003` recognises an in-test `try`/`finally` restore.** Only
+  framework teardown hooks counted as restore regions, so the _tighter_ idiom
+  was the one that got flagged: a `finally` that saves and restores keeps the
+  global dirty for the try block only, rather than for the whole test. The
+  workaround was an inline `savant-ignore` pragma on a line that was already
+  correct, and pragmas do not expire — each one trains readers to treat the rule
+  as noisy. JS `finally { … }` bodies (brace-balanced, string-aware, capped like
+  the hook regions) and Python `finally:` suites (indentation-scoped) now count,
+  and the pragma this cost `ts/test/canary-cli-coverage5.test.ts` is removed. A
+  `finally` restoring a _different_ key still flags. (#733)
+
+- **History rows are self-describing again: `serializeLocalRecord` stamps
+  `schema_version`.** The reader has always refused a `schema_version` it does
+  not understand — but the store's own serializer never wrote the field, so the
+  guard could only ever fire on rows written by _somebody else's_ writer. Every
+  row the local store has ever appended was unversioned, which meant the guard
+  was structurally incapable of protecting the one history it owns. Nothing was
+  broken while `SCHEMA_VERSION` stayed at `2`; the damage was scheduled for the
+  next bump, when every legacy row would have been read as the new version and
+  silently misinterpreted. The stamp now lives in the one serializer every local
+  writer goes through, so it is a property of the format rather than something
+  each writer has to remember. The `#538` entry under **Removed** in this same
+  release originally recorded that these rows "no longer carry a
+  `schema_version` field" — that described the bug rather than the intent, and
+  has been corrected there: they do carry it, as of this release. `serializeRun`
+  / `serializeTestResult` are deliberately unchanged — they map to the remote
+  store's table columns, which have no such field. ([#701])
+
+- **An unversioned history row now reads as the version it was written at, not
+  as "current".** `resolveSchemaVersion` resolves a missing `schema_version` to
+  the frozen `LEGACY_UNVERSIONED_SCHEMA_VERSION = 2` — a historical fact (v2 is
+  the only version this store has ever had, and every row after the fix above is
+  stamped), not a default that tracks the current version. Nothing changes today
+  because the two numbers are equal. What changes is the next bump: legacy rows
+  will be **refused loudly** instead of reinterpreted under semantics they were
+  never written for, which forces that bump to ship a real migration. A loud
+  refusal a maintainer must answer beats a silent wrong answer nobody sees.
+  ([#701])
+
+- **`canary analyze` honours `--db-url` / `CANARY_HISTORY_DB_URL` instead of
+  apologising for ignoring them.** The flags were accepted and then answered
+  with `note: --db-url is ignored by analyze; it reads local NDJSON only.` That
+  note was the correct interim behaviour — silently reading a different data
+  source would be far worse — but a flag that is accepted and ignored is the
+  product-lies class one layer down, and it existed only because
+  `AnalysisEngine` held the synchronous store contract while every other history
+  consumer had moved to the async one. `AnalysisEngine.run` and the five
+  `analyze` report paths are async now and obtain their backend from the shared
+  `makeStore()`, which closes ADR 0013 Decision 4: `NdjsonHistoryStore` is
+  reachable only through `LocalAsyncAdapter`, so "do not program against it" is
+  structural rather than a review convention. The six byte-exact report goldens
+  are unchanged, which is the proof this was a mechanical conversion. ([#390],
+  [#711])
+
+- **Honouring `--db-url` would have created a quieter lie, so the three
+  raw-record reports now name themselves as unverifiable.** `spikes`,
+  `common-failures` and `regression-candidates` are computed by walking whole
+  run records via `readAll()`, which only the local NDJSON backend implements —
+  the engine previously duck-typed for it and returned `[]` when absent. Against
+  a remote backend that renders as an empty report, which is indistinguishable
+  on screen from a measured all-clear: a zero denominator wearing a clean face
+  (#508). `readAll?()` is now an explicit optional capability on
+  `AsyncHistoryStore`, carrying the same doctrine as `countRuns?()` — absent
+  means UNKNOWN, never zero — and each affected command prints a `cannot verify`
+  notice naming the section it could not compute plus the ones that do work
+  against that backend. `digest` partially succeeds, so it renders its measured
+  flake leaderboard and names the rest. The exit stays 0 (advisory) and `--json`
+  keeps stdout parseable with the notice on stderr. ([#711])
+
+- **`canary uninstall` is discoverable again: it appears in `canary --help`, and
+  `canary uninstall --help` answers instead of erroring.** The command shipped
+  in 7.0.0 routable and fully functional, but two hand-maintained lists had to
+  agree and nothing asserted that they did: `TS_COMMANDS` in `npm/src/router.ts`
+  decides what the npm shim handles natively, and the commander stubs in
+  `ts/src/cli.ts` decide what the engine lists in `--help`. `uninstall` was in
+  the first and not the second, so `canary --help | grep -c uninstall` returned
+  `0` — the one place a user looks to discover a command never mentioned it.
+  Because the router dispatches `uninstall` before commander sees the argv,
+  `--help` also arrived at the handler as a plain token and was rejected as an
+  unknown option; asking how a command works is not a usage error, so
+  `--help`/`-h` now print the scopes and exit 0. The **class** is closed rather
+  than the instance: a conformance test enumerates `TS_COMMANDS` from its
+  declaration and asserts every entry appears in the engine's help, so the next
+  TS-handled command cannot land routable-but-invisible the same way. ([#730])
 
 - **`review-test` and `flake-check` abstain on a path they cannot read, instead
   of printing a raw Node stack.** Both passed the path straight to
@@ -677,24 +715,6 @@ under the project's former name) are documented in the
 
 [#691]: https://github.com/bop-clocktower/canary/issues/691
 
-### Removed
-
-- **`scripts/dogfood-record-run.mjs`, replaced by `canary history record`.** The
-  script was CI glue that converted vitest JSON into a v2 history record for the
-  `dogfood.yml` fleet-health job; the capability it provided was a genuine
-  product gap, and leaving it in place alongside the new subcommand would mean
-  two writers of one store drifting apart. `dogfood.yml` now calls the shipped
-  command, so the fleet-health job dogfoods the product rather than repo-local
-  glue, and the script is gone from both `entropy.entryPoints` and
-  `performance.entryPoints`. Behaviour differences worth knowing: the record is
-  now written by the store's own serializer, so per-test rows carry
-  `run_id`/`suite`/`repo`/`test_file` (the script omitted them, which left
-  `suite` empty in flake rows) and no longer carry a `schema_version` field
-  (matching every other record the store writes — the reader treats a missing
-  version as current); a zero-result report exits **3** rather than 1; and the
-  repo slug is inferred from `GITHUB_REPOSITORY` instead of defaulting to
-  `bop-clocktower/canary`. ([#538])
-
 ## [7.0.0] - 2026-08-12
 
 Two commands now refuse input they previously accepted, which is what makes this
@@ -705,20 +725,6 @@ exit non-zero, and that deserves a version number a consumer cannot miss.
 The rest of the release is the largest correctness batch since the v6 cutover:
 seventeen merged pull requests, most of them closing false-green paths where a
 tool reported success over work it had not done.
-
-### BREAKING
-
-- **`canary overlay remove` exits 1 on a clone with local edits**, where it
-  previously deleted the clone and exited 0. Pass `--force` for the old
-  behaviour. Any unconditional-cleanup script needs that flag added. A clone
-  with no local edits is unaffected. ([#675])
-- **`canary analyze`'s three numeric thresholds now validate their input.**
-  `--window seven` produced a `NaN` threshold that quietly matched nothing and
-  exited 0; it is now a usage error (exit 2). `--window-runs 0` and a rate
-  outside 0-100 are likewise rejected. Invocations that appeared to work while
-  measuring nothing will now fail loudly. The flag _names_ are backward
-  compatible — `--window`, `--delta` and `--min-rate` still work as deprecated
-  aliases. ([#673])
 
 ### Added
 
@@ -918,10 +924,37 @@ tool reported success over work it had not done.
 [#689]: https://github.com/bop-clocktower/canary/issues/689
 [#707]: https://github.com/bop-clocktower/canary/issues/707
 
+### BREAKING
+
+- **`canary overlay remove` exits 1 on a clone with local edits**, where it
+  previously deleted the clone and exited 0. Pass `--force` for the old
+  behaviour. Any unconditional-cleanup script needs that flag added. A clone
+  with no local edits is unaffected. ([#675])
+- **`canary analyze`'s three numeric thresholds now validate their input.**
+  `--window seven` produced a `NaN` threshold that quietly matched nothing and
+  exited 0; it is now a usage error (exit 2). `--window-runs 0` and a rate
+  outside 0-100 are likewise rejected. Invocations that appeared to work while
+  measuring nothing will now fail loudly. The flag _names_ are backward
+  compatible — `--window`, `--delta` and `--min-rate` still work as deprecated
+  aliases. ([#673])
+
 ## [6.8.1] - 2026-08-10
 
 A single consumer-reported defect in the guardian's highest-trust coverage tier,
 plus the reason it survived: that tier had never run in canary's own CI.
+
+### Changed
+
+- **The PR Guardian workflow now runs at the `coverage-verified` tier on this
+  repo.** It passed no `--coverage` at all, so every verdict canary posted on
+  its own PRs came from the heuristic (filename) tier — 17 of the last 17
+  guardian comments read "coverage was unavailable". The top rung of the
+  fidelity ladder was never executed in canary's own CI, which is why a defect
+  in it could only be found downstream by a consumer. The workflow now produces
+  an lcov report, verifies it is non-empty before use, and hands it to
+  `pr-check`. ([#655])
+
+[#655]: https://github.com/bop-clocktower/canary/issues/655
 
 ### Fixed
 
@@ -942,19 +975,6 @@ plus the reason it survived: that tier had never run in canary's own CI.
   toward zero on files that are largely imports and types, understating grades
   in the opposite direction. ([#655])
 
-### Changed
-
-- **The PR Guardian workflow now runs at the `coverage-verified` tier on this
-  repo.** It passed no `--coverage` at all, so every verdict canary posted on
-  its own PRs came from the heuristic (filename) tier — 17 of the last 17
-  guardian comments read "coverage was unavailable". The top rung of the
-  fidelity ladder was never executed in canary's own CI, which is why a defect
-  in it could only be found downstream by a consumer. The workflow now produces
-  an lcov report, verifies it is non-empty before use, and hands it to
-  `pr-check`. ([#655])
-
-[#655]: https://github.com/bop-clocktower/canary/issues/655
-
 ## [6.8.0] - 2026-08-10
 
 The theme of this release is findings that were never reported. Three separate
@@ -965,36 +985,6 @@ looks exactly like no finding, which is why all three survived so long.
 **If you run `review-test` or `flake-check` against a pytest suite, re-run it
 after upgrading.** Any prior scan of a pytest file may have been incomplete; see
 the LINT-006 entry below.
-
-### Fixed
-
-- **LINT-006 reported the wrong line, and on pytest suites silently missed
-  findings entirely**
-  ([#633](https://github.com/bop-clocktower/canary/issues/633),
-  [#644](https://github.com/bop-clocktower/canary/pull/644)). Two causes, one
-  per language half, and the second is the serious one.
-
-  On JS/TS the test-function pattern opened with `(?:^|\s)`, which _consumes_
-  the character before `it`/`test`. On any line but the first that character is
-  the previous line's newline, so every finding was attributed one line too
-  high. Annoying, but visible.
-
-  On pytest the pattern is `^`-anchored and was assumed safe. Its indent group
-  was `\s*`, and `\s` matches a newline — so a match began at the first of any
-  run of blank lines above the `def`. PEP 8 mandates those blank lines, making
-  this the _normal_ case rather than an edge one. The same bad offset also
-  corrupted the computed indent, which made the "next `def` at the same indent"
-  body boundary un-matchable: the body then ran to end-of-file and could borrow
-  a **later** test's `assert`. An assertion-free test sitting above another test
-  was therefore reported as having assertions, and no finding was emitted. A
-  clean report on a pytest file was not evidence of a clean file.
-
-- **LINT-006 mined test names out of string literals**
-  ([#590](https://github.com/bop-clocktower/canary/issues/590)). Text inside
-  string and template-literal spans was scanned as if it were code, so a fixture
-  containing the word `it(` produced findings against tests that do not exist.
-  Literal spans are now blanked before the scan by a dedicated `string-literals`
-  module rather than by ad-hoc escaping at each call site.
 
 ### Added
 
@@ -1030,6 +1020,36 @@ the LINT-006 entry below.
   [#638](https://github.com/bop-clocktower/canary/issues/638)). Auto-detection
   failed in repositories without a root `package.json` and the checks reported a
   status rather than an abstention.
+
+### Fixed
+
+- **LINT-006 reported the wrong line, and on pytest suites silently missed
+  findings entirely**
+  ([#633](https://github.com/bop-clocktower/canary/issues/633),
+  [#644](https://github.com/bop-clocktower/canary/pull/644)). Two causes, one
+  per language half, and the second is the serious one.
+
+  On JS/TS the test-function pattern opened with `(?:^|\s)`, which _consumes_
+  the character before `it`/`test`. On any line but the first that character is
+  the previous line's newline, so every finding was attributed one line too
+  high. Annoying, but visible.
+
+  On pytest the pattern is `^`-anchored and was assumed safe. Its indent group
+  was `\s*`, and `\s` matches a newline — so a match began at the first of any
+  run of blank lines above the `def`. PEP 8 mandates those blank lines, making
+  this the _normal_ case rather than an edge one. The same bad offset also
+  corrupted the computed indent, which made the "next `def` at the same indent"
+  body boundary un-matchable: the body then ran to end-of-file and could borrow
+  a **later** test's `assert`. An assertion-free test sitting above another test
+  was therefore reported as having assertions, and no finding was emitted. A
+  clean report on a pytest file was not evidence of a clean file.
+
+- **LINT-006 mined test names out of string literals**
+  ([#590](https://github.com/bop-clocktower/canary/issues/590)). Text inside
+  string and template-literal spans was scanned as if it were code, so a fixture
+  containing the word `it(` produced findings against tests that do not exist.
+  Literal spans are now blanked before the scan by a dedicated `string-literals`
+  module rather than by ad-hoc escaping at each call site.
 
 ### Known issues
 
@@ -1069,6 +1089,142 @@ the LINT-006 entry below.
   the collapse is a no-op.
 
 ## [6.7.0] - 2026-08-06
+
+### Added
+
+- `ts/test/agent-artifact-ignores.test.ts` — asserts that the machine-local
+  state agent tooling writes into this repo stays out of it. Sixteen artifact
+  paths are checked individually via `git check-ignore`, so a partial regression
+  names the path that slipped; a companion assertion requires the tracked shared
+  config (`.claude/settings.json`, `.cursor/mcp.json`, the workflows) to be
+  **un**ignored, which is the guard against over-correcting. A third checks
+  nothing is tracked _today_, since `.gitignore` has no effect on an
+  already-tracked file. The un-ignored assertion earned itself on its first run
+  by catching a blanket `.cursor/` rule that would have swallowed the shared
+  `mcp.json` beside the telemetry.
+- `ts/test/node-engines-floor.test.ts` — holds four declarations of the Node
+  floor together: `npm/package.json` `engines.node`, the README badge, the
+  README install prose, and the `setup-node` version in `release.yml`. The
+  version badge is out of scope in `version-consistency.test.ts` as a "display
+  artifact" — correct there, since `bump-version.mjs` stamps it. Nothing stamps
+  the _node_ badge, which is why it read `python-3.11+` for six releases and
+  then `18+`. An unstamped badge is a declaration.
+- `npm/scripts/__tests__/node-floor-guard.test.js` — pins the runtime guard: the
+  floor is read from `engines.node` rather than hardcoded (a hardcoded copy
+  would be a fourth thing to drift), the message names both versions and a
+  remedy, an unparseable version abstains rather than false-blocks, and the
+  guard textually precedes the engine require.
+- **`dogfood.yml` job E — "Node floor is enforced (unsupported runtime)".**
+  Packs the tarball on the supported Node, switches to `floor - 2`, installs,
+  and asserts the guard fires: a clean exit means the floor is unenforced, and a
+  `SyntaxError` means the guard ran too late. The unsupported version is derived
+  from `engines.node`, so raising the floor moves the test with it. No unit test
+  can prove a guard survives module-load ordering in a real install.
+
+### Changed
+
+- **CI checks can now stop a merge to `main`** (#542). The `main` ruleset
+  contained no `required_status_checks` rule at all — not a missing entry, the
+  rule type was absent — so every check this repo runs was advisory. PR #540 was
+  merged by auto-merge while `markdownlint` was reporting `FAILURE`; auto-merge
+  fires once the _required_ checks pass, and with none required it fires as soon
+  as the PR exists. `main` went red and stayed red until #541. The check was not
+  wrong: it caught four real MD040/MD033 violations and was overruled by
+  configuration. (The classic `branches/main/protection` endpoint returns
+  `404 Branch not protected`, so an audit through the old endpoint concludes
+  nothing is configured at all — which is how this survived.)
+
+  Thirteen checks are now required, and `.github/required-checks.json` is the
+  in-repo record of which and why, with the GitHub ruleset as the copy that
+  enforces it. Promoting a check meant also removing its path filter: a required
+  check behind `paths:` never reports on a PR outside those paths, so GitHub
+  shows it as "Expected — waiting for status" and the PR can never merge. #542's
+  own proposal named `docs-lint` among the checks to promote, and `docs-lint`
+  was path-filtered — following it verbatim would have deadlocked every
+  code-only PR while fixing the gate. `docs-lint`, `harness-architecture`,
+  `harness-security` and `validate-plugin` now run on every PR; the security
+  scan's `push` filter went too, since a scan that skips itself on some pushes
+  to `main` leaves `main` unscanned for exactly the changes nobody classified as
+  security-relevant.
+
+  Every check-producing job is classified as required, or advisory with a stated
+  reason, and `workflow-false-green.test.ts` fails when a job is neither — so a
+  new check cannot join the advisory pile by default. The five dogfood jobs stay
+  advisory against ADR 0010's rule (precision unknown until #544 triages the
+  409-finding baseline), and `refresh-arch-baseline` stays advisory because it
+  only triggers on a label and requiring it would deadlock every unlabeled PR.
+  `required_approving_review_count` stays 0, now as a recorded decision for a
+  single-maintainer repo rather than an unconfigured default. See ADR 0011.
+
+- **Agent-tooling artifacts are now ignored rather than permanently dirty.** A
+  skills-manager extension writes ~2.6 MB of machine-local state into the tree
+  each session — telemetry under `.claude/learning/`, per-vendor skill mirrors
+  in `.cursor/` and `.kiro/` and `.github/instructions/`, and copies of both
+  wherever a hook happened to run (`ts/`, `npm/`, `.github/workflows/`). One of
+  those files, `.claude/mcp-usage.jsonl`, records absolute local paths, session
+  IDs, and full bash command strings, and this repository is public. The rules
+  are globbed rather than path-listed because the hooks resolve from the working
+  directory, so the next `cd` grows another copy. Two tracked files the same
+  extension rewrites — a `CLAUDE.md` table documenting skills that live only on
+  one machine, and `.claude/settings.json` hooks curling `127.0.0.1:4895` — were
+  reverted; the hooks moved to the gitignored `settings.local.json`, where they
+  keep working without asking every contributor to run a local daemon.
+
+- **Agent ignores moved out of `.git/info/exclude` into the tracked
+  `.gitignore`.** That file is machine-local and never shared, so 15 personal
+  skill installs and ten kinds of Claude Code runtime state were invisible on
+  the machine that wrote them and untracked noise on every other clone — the
+  same state looking clean or dirty depending on which laptop you opened. The
+  skill directories are third-party artifacts rather than source: each carries a
+  `.skill-version.json` receipt (`{"version", "installedAt"}`), `skill-creator`
+  ships an Apache-2.0 `LICENSE.txt`, and not one file under `.claude/skills/`
+  mentions canary — the project's own skills ship from `agents/skills/`.
+  Committing them would vendor another author's code at whatever version one
+  developer installed. `.claude/skills/` is now ignored wholesale, with the
+  negation to commit a genuine project skill documented inline. Coverage
+  equivalence was verified rather than assumed: all 15 skill paths and all 12
+  runtime paths remain ignored, and `.git/info/exclude` is left with zero active
+  rules.
+
+  `.claude/skills/` is ignored by **named install**, not wholesale. A blanket
+  rule would have foreclosed committing a genuine project skill there, and done
+  it in the worst possible way — the file simply never appears in `git status`,
+  which is the same silent-abstention shape ADR 0010 is about. The two cases are
+  distinguishable even though `.gitignore` cannot express the distinction:
+  installed skills carry a `.skill-version.json` receipt and authored ones do
+  not, so `agent-artifact-ignores.test.ts` enforces both halves from the
+  filesystem. A receipt-bearing directory that is _not_ ignored fails (the next
+  `git add -A` would vendor third-party code); a receiptless one that _is_
+  ignored fails (someone's own work would vanish). Each failure names the
+  directory and the remedy. Verified in both directions rather than assumed.
+
+- **The guardian's sticky PR comment now says what to do, not just what is
+  wrong.** Three pieces of information were computed and then dropped before
+  they reached the reader:
+
+  - **Which lines are uncovered.** `resolveCoverage` produced
+    `CoverageResult.uncovered_lines`, but `buildFindings` built a `Finding`
+    without that field, so a coverage-verified finding could only say
+    `lines 40-58: 12 uncovered` — the reader had to re-run coverage locally to
+    learn which 12. `Finding` now carries `uncovered_lines` (and emits it in the
+    `--format json` record). An empty array means _this tier cannot measure
+    lines_, never _nothing is uncovered_, so the renderer omits the detail
+    rather than printing an empty list that would read as a clean measurement.
+  - **A suggested next action.** `Finding.suggestion` was in the interface, in
+    the JSON schema, and rendered by the local CLI — and nothing ever populated
+    it, so it was permanently `''`. A field that is present everywhere and empty
+    in every record reads as alive and is dead. It is now populated per tier,
+    stating only what that tier established: the coverage tier names the lines,
+    the graph tier names the symbol to call, the heuristic tier says plainly
+    that no filename matched. A suggestion that guessed at a test path would be
+    worse than none — it sends the reader somewhere before they learn to
+    distrust it.
+  - **A link to the code.** The file cell was plain code text. It is now a
+    permalink to the first uncovered line, built from `GITHUB_REPOSITORY` plus
+    the PR head SHA (preferred over `GITHUB_SHA`, which on a `pull_request`
+    event is an ephemeral merge commit whose blob URL can 404). When neither
+    resolves, the cell stays plain text: an unresolvable link still _looks_
+    clickable, which is worse than no link.
 
 ### Fixed
 
@@ -1260,113 +1416,6 @@ the LINT-006 entry below.
   test for the conftest. Suppressed paths stay visible in the skip list and a
   support-only diff now abstains (exit 3) rather than reporting a clean pass.
 
-### Changed
-
-- **CI checks can now stop a merge to `main`** (#542). The `main` ruleset
-  contained no `required_status_checks` rule at all — not a missing entry, the
-  rule type was absent — so every check this repo runs was advisory. PR #540 was
-  merged by auto-merge while `markdownlint` was reporting `FAILURE`; auto-merge
-  fires once the _required_ checks pass, and with none required it fires as soon
-  as the PR exists. `main` went red and stayed red until #541. The check was not
-  wrong: it caught four real MD040/MD033 violations and was overruled by
-  configuration. (The classic `branches/main/protection` endpoint returns
-  `404 Branch not protected`, so an audit through the old endpoint concludes
-  nothing is configured at all — which is how this survived.)
-
-  Thirteen checks are now required, and `.github/required-checks.json` is the
-  in-repo record of which and why, with the GitHub ruleset as the copy that
-  enforces it. Promoting a check meant also removing its path filter: a required
-  check behind `paths:` never reports on a PR outside those paths, so GitHub
-  shows it as "Expected — waiting for status" and the PR can never merge. #542's
-  own proposal named `docs-lint` among the checks to promote, and `docs-lint`
-  was path-filtered — following it verbatim would have deadlocked every
-  code-only PR while fixing the gate. `docs-lint`, `harness-architecture`,
-  `harness-security` and `validate-plugin` now run on every PR; the security
-  scan's `push` filter went too, since a scan that skips itself on some pushes
-  to `main` leaves `main` unscanned for exactly the changes nobody classified as
-  security-relevant.
-
-  Every check-producing job is classified as required, or advisory with a stated
-  reason, and `workflow-false-green.test.ts` fails when a job is neither — so a
-  new check cannot join the advisory pile by default. The five dogfood jobs stay
-  advisory against ADR 0010's rule (precision unknown until #544 triages the
-  409-finding baseline), and `refresh-arch-baseline` stays advisory because it
-  only triggers on a label and requiring it would deadlock every unlabeled PR.
-  `required_approving_review_count` stays 0, now as a recorded decision for a
-  single-maintainer repo rather than an unconfigured default. See ADR 0011.
-
-- **Agent-tooling artifacts are now ignored rather than permanently dirty.** A
-  skills-manager extension writes ~2.6 MB of machine-local state into the tree
-  each session — telemetry under `.claude/learning/`, per-vendor skill mirrors
-  in `.cursor/` and `.kiro/` and `.github/instructions/`, and copies of both
-  wherever a hook happened to run (`ts/`, `npm/`, `.github/workflows/`). One of
-  those files, `.claude/mcp-usage.jsonl`, records absolute local paths, session
-  IDs, and full bash command strings, and this repository is public. The rules
-  are globbed rather than path-listed because the hooks resolve from the working
-  directory, so the next `cd` grows another copy. Two tracked files the same
-  extension rewrites — a `CLAUDE.md` table documenting skills that live only on
-  one machine, and `.claude/settings.json` hooks curling `127.0.0.1:4895` — were
-  reverted; the hooks moved to the gitignored `settings.local.json`, where they
-  keep working without asking every contributor to run a local daemon.
-
-- **Agent ignores moved out of `.git/info/exclude` into the tracked
-  `.gitignore`.** That file is machine-local and never shared, so 15 personal
-  skill installs and ten kinds of Claude Code runtime state were invisible on
-  the machine that wrote them and untracked noise on every other clone — the
-  same state looking clean or dirty depending on which laptop you opened. The
-  skill directories are third-party artifacts rather than source: each carries a
-  `.skill-version.json` receipt (`{"version", "installedAt"}`), `skill-creator`
-  ships an Apache-2.0 `LICENSE.txt`, and not one file under `.claude/skills/`
-  mentions canary — the project's own skills ship from `agents/skills/`.
-  Committing them would vendor another author's code at whatever version one
-  developer installed. `.claude/skills/` is now ignored wholesale, with the
-  negation to commit a genuine project skill documented inline. Coverage
-  equivalence was verified rather than assumed: all 15 skill paths and all 12
-  runtime paths remain ignored, and `.git/info/exclude` is left with zero active
-  rules.
-
-  `.claude/skills/` is ignored by **named install**, not wholesale. A blanket
-  rule would have foreclosed committing a genuine project skill there, and done
-  it in the worst possible way — the file simply never appears in `git status`,
-  which is the same silent-abstention shape ADR 0010 is about. The two cases are
-  distinguishable even though `.gitignore` cannot express the distinction:
-  installed skills carry a `.skill-version.json` receipt and authored ones do
-  not, so `agent-artifact-ignores.test.ts` enforces both halves from the
-  filesystem. A receipt-bearing directory that is _not_ ignored fails (the next
-  `git add -A` would vendor third-party code); a receiptless one that _is_
-  ignored fails (someone's own work would vanish). Each failure names the
-  directory and the remedy. Verified in both directions rather than assumed.
-
-- **The guardian's sticky PR comment now says what to do, not just what is
-  wrong.** Three pieces of information were computed and then dropped before
-  they reached the reader:
-
-  - **Which lines are uncovered.** `resolveCoverage` produced
-    `CoverageResult.uncovered_lines`, but `buildFindings` built a `Finding`
-    without that field, so a coverage-verified finding could only say
-    `lines 40-58: 12 uncovered` — the reader had to re-run coverage locally to
-    learn which 12. `Finding` now carries `uncovered_lines` (and emits it in the
-    `--format json` record). An empty array means _this tier cannot measure
-    lines_, never _nothing is uncovered_, so the renderer omits the detail
-    rather than printing an empty list that would read as a clean measurement.
-  - **A suggested next action.** `Finding.suggestion` was in the interface, in
-    the JSON schema, and rendered by the local CLI — and nothing ever populated
-    it, so it was permanently `''`. A field that is present everywhere and empty
-    in every record reads as alive and is dead. It is now populated per tier,
-    stating only what that tier established: the coverage tier names the lines,
-    the graph tier names the symbol to call, the heuristic tier says plainly
-    that no filename matched. A suggestion that guessed at a test path would be
-    worse than none — it sends the reader somewhere before they learn to
-    distrust it.
-  - **A link to the code.** The file cell was plain code text. It is now a
-    permalink to the first uncovered line, built from `GITHUB_REPOSITORY` plus
-    the PR head SHA (preferred over `GITHUB_SHA`, which on a `pull_request`
-    event is an ephemeral merge commit whose blob URL can 404). When neither
-    resolves, the cell stays plain text: an unresolvable link still _looks_
-    clickable, which is worse than no link.
-
-### Fixed
-
 - **The hard gate's severity filter did not filter** (#553). `buildFindings`
   derived severity from fidelity alone, so every coverage-verified finding was
   `high` and nothing was ever `critical`. Measured across 274 downstream runs
@@ -1542,37 +1591,6 @@ the LINT-006 entry below.
   purpose: the engine is compiled for the floor, so requiring it first can throw
   a bare `SyntaxError` on an older Node and the guard would be dead code on
   exactly the versions it exists to catch.
-
-### Added
-
-- `ts/test/agent-artifact-ignores.test.ts` — asserts that the machine-local
-  state agent tooling writes into this repo stays out of it. Sixteen artifact
-  paths are checked individually via `git check-ignore`, so a partial regression
-  names the path that slipped; a companion assertion requires the tracked shared
-  config (`.claude/settings.json`, `.cursor/mcp.json`, the workflows) to be
-  **un**ignored, which is the guard against over-correcting. A third checks
-  nothing is tracked _today_, since `.gitignore` has no effect on an
-  already-tracked file. The un-ignored assertion earned itself on its first run
-  by catching a blanket `.cursor/` rule that would have swallowed the shared
-  `mcp.json` beside the telemetry.
-- `ts/test/node-engines-floor.test.ts` — holds four declarations of the Node
-  floor together: `npm/package.json` `engines.node`, the README badge, the
-  README install prose, and the `setup-node` version in `release.yml`. The
-  version badge is out of scope in `version-consistency.test.ts` as a "display
-  artifact" — correct there, since `bump-version.mjs` stamps it. Nothing stamps
-  the _node_ badge, which is why it read `python-3.11+` for six releases and
-  then `18+`. An unstamped badge is a declaration.
-- `npm/scripts/__tests__/node-floor-guard.test.js` — pins the runtime guard: the
-  floor is read from `engines.node` rather than hardcoded (a hardcoded copy
-  would be a fourth thing to drift), the message names both versions and a
-  remedy, an unparseable version abstains rather than false-blocks, and the
-  guard textually precedes the engine require.
-- **`dogfood.yml` job E — "Node floor is enforced (unsupported runtime)".**
-  Packs the tarball on the supported Node, switches to `floor - 2`, installs,
-  and asserts the guard fires: a clean exit means the floor is unenforced, and a
-  `SyntaxError` means the guard ran too late. The unsupported version is derived
-  from `engines.node`, so raising the floor moves the test with it. No unit test
-  can prove a guard survives module-load ordering in a real install.
 
 ## [6.6.0] - 2026-08-05
 
@@ -1776,49 +1794,6 @@ flaky tests across 500 runs is a healthy fleet, while zero across zero runs is
 an absent measurement, and the two used to print the same line. Separating them
 is what most of this release is.
 
-### Gates that got louder
-
-Every surface below can now exit **3** (`abstained`) or print an unmissable
-abstention line where it previously reported success over a **zero denominator**
-— a check that verified nothing rendering as a pass. Exit 3 is reserved CLI-wide
-for this meaning and nothing else
-([ADR 0009](docs/knowledge/decisions/0009-exit-3-reserved-for-abstained.md)).
-
-**A new exit 3 in your pipeline is the doctrine working, not a regression.** It
-means that command was already verifying nothing — you just could not see it.
-Handle it distinctly from exit 1: `1` is a real finding, `3` is an empty input.
-
-| Surface                                                               | New behavior                  | When it fires                                       | Shipped |
-| --------------------------------------------------------------------- | ----------------------------- | --------------------------------------------------- | ------- |
-| `migrate --check`                                                     | exit **3**                    | zero skills matched the resolved shape              | v6.4.0  |
-| `migrate` (dry run)                                                   | loud abstention               | nothing left to migrate                             | v6.4.0  |
-| `guardian pr-check`                                                   | exit **3**                    | empty diff, or every unit filtered out              | v6.4.0  |
-| `guardian harden-gate --apply`                                        | exit **3**                    | zero observed check contexts on the branch          | v6.4.0  |
-| `guardian analyze`                                                    | warns, exit 0                 | spec diff contains zero endpoints                   | v6.4.0  |
-| `guardian validate-coverage`                                          | warns, exit 0                 | valid document with zero `files` entries            | v6.4.0  |
-| `doctor`                                                              | exit **3**                    | every check skipped, or no check registered         | 6.5.0   |
-| `overlay lint`                                                        | warns, exit 0                 | overlay ships zero skills                           | 6.5.0   |
-| `review-test`                                                         | exit **3**                    | directory matched zero test files                   | 6.5.0   |
-| `flake-check`                                                         | exit **3**                    | directory matched zero test files                   | 6.5.0   |
-| `analyze` (flaky/spikes/common-failures/regression-candidates/digest) | warns, exit 0                 | zero runs recorded                                  | 6.5.0   |
-| `analyze area-health`                                                 | warns, exit 0                 | always — its row set is hardcoded empty             | 6.5.0   |
-| `history flaky`                                                       | warns, exit 0                 | zero runs recorded                                  | 6.5.0   |
-| `history summary`                                                     | warns, exit 0                 | zero runs (previously reported a fabricated `0.0%`) | 6.5.0   |
-| `history migrate`                                                     | warns, exit 0                 | zero runs migrated                                  | 6.5.0   |
-| `canary-blackhawk` / `canary-savant`                                  | warns; **`--strict` exits 3** | zero files scanned                                  | 6.5.0   |
-| `canary-katana`                                                       | warns; **`--strict` exits 3** | the diff was empty                                  | 6.5.0   |
-| `history timeline`                                                    | warns, exit 0                 | zero runs recorded (vs. an unknown test)            | 6.5.0   |
-| `guardian author-plan`                                                | warns, exit 0                 | empty diff; `checked`/`abstained` now in the JSON   | 6.5.0   |
-
-Audited and deliberately **unchanged**: `heal-test` (its denominator is always
-exactly 1) and `skills run` (its exit ladder already used 3 for a refusal to
-invoke, which is an abstention). Both carry conformance rows recording the
-classification.
-
-`--json` surfaces gain `checked` and `abstained` additively. Where the payload
-is a bare array with nowhere to put them, stdout stays byte-identical and the
-notice goes to **stderr**, so existing parsers are unaffected.
-
 ### Added
 
 - **`canary doctor` reports its denominator** (#508, #505). The summary names
@@ -1877,6 +1852,49 @@ notice goes to **stderr**, so existing parsers are unaffected.
   handles exit 3 distinctly — annotate and pass, since a docs-only PR has
   nothing to gate — while exit 1 stays red. The two `continue-on-error` steps in
   `harness-quality.yml` now annotate on failure instead of going quietly green.
+
+### Gates that got louder
+
+Every surface below can now exit **3** (`abstained`) or print an unmissable
+abstention line where it previously reported success over a **zero denominator**
+— a check that verified nothing rendering as a pass. Exit 3 is reserved CLI-wide
+for this meaning and nothing else
+([ADR 0009](docs/knowledge/decisions/0009-exit-3-reserved-for-abstained.md)).
+
+**A new exit 3 in your pipeline is the doctrine working, not a regression.** It
+means that command was already verifying nothing — you just could not see it.
+Handle it distinctly from exit 1: `1` is a real finding, `3` is an empty input.
+
+| Surface                                                               | New behavior                  | When it fires                                       | Shipped |
+| --------------------------------------------------------------------- | ----------------------------- | --------------------------------------------------- | ------- |
+| `migrate --check`                                                     | exit **3**                    | zero skills matched the resolved shape              | v6.4.0  |
+| `migrate` (dry run)                                                   | loud abstention               | nothing left to migrate                             | v6.4.0  |
+| `guardian pr-check`                                                   | exit **3**                    | empty diff, or every unit filtered out              | v6.4.0  |
+| `guardian harden-gate --apply`                                        | exit **3**                    | zero observed check contexts on the branch          | v6.4.0  |
+| `guardian analyze`                                                    | warns, exit 0                 | spec diff contains zero endpoints                   | v6.4.0  |
+| `guardian validate-coverage`                                          | warns, exit 0                 | valid document with zero `files` entries            | v6.4.0  |
+| `doctor`                                                              | exit **3**                    | every check skipped, or no check registered         | 6.5.0   |
+| `overlay lint`                                                        | warns, exit 0                 | overlay ships zero skills                           | 6.5.0   |
+| `review-test`                                                         | exit **3**                    | directory matched zero test files                   | 6.5.0   |
+| `flake-check`                                                         | exit **3**                    | directory matched zero test files                   | 6.5.0   |
+| `analyze` (flaky/spikes/common-failures/regression-candidates/digest) | warns, exit 0                 | zero runs recorded                                  | 6.5.0   |
+| `analyze area-health`                                                 | warns, exit 0                 | always — its row set is hardcoded empty             | 6.5.0   |
+| `history flaky`                                                       | warns, exit 0                 | zero runs recorded                                  | 6.5.0   |
+| `history summary`                                                     | warns, exit 0                 | zero runs (previously reported a fabricated `0.0%`) | 6.5.0   |
+| `history migrate`                                                     | warns, exit 0                 | zero runs migrated                                  | 6.5.0   |
+| `canary-blackhawk` / `canary-savant`                                  | warns; **`--strict` exits 3** | zero files scanned                                  | 6.5.0   |
+| `canary-katana`                                                       | warns; **`--strict` exits 3** | the diff was empty                                  | 6.5.0   |
+| `history timeline`                                                    | warns, exit 0                 | zero runs recorded (vs. an unknown test)            | 6.5.0   |
+| `guardian author-plan`                                                | warns, exit 0                 | empty diff; `checked`/`abstained` now in the JSON   | 6.5.0   |
+
+Audited and deliberately **unchanged**: `heal-test` (its denominator is always
+exactly 1) and `skills run` (its exit ladder already used 3 for a refusal to
+invoke, which is an abstention). Both carry conformance rows recording the
+classification.
+
+`--json` surfaces gain `checked` and `abstained` additively. Where the payload
+is a bare array with nowhere to put them, stdout stays byte-identical and the
+notice goes to **stderr**, so existing parsers are unaffected.
 
 ### Notes for consumers
 
@@ -2016,6 +2034,30 @@ Two live user-facing fixes plus the overlay-adoption feature. Both fixes are for
 failures that were **silent** — a shipped feature permanently disabling itself,
 and a usage request mutating the working tree.
 
+### Added
+
+- **Workflow templates install during `canary migrate`** (#459): an overlay
+  skill may declare `install_workflows: [templates/<file>.yml]` (optionally
+  `<shape>:`-prefixed to pick a variant, plus a `workflow_template_version`) and
+  `migrate` installs the template into the consuming repo's
+  `.github/workflows/`. Previously the template bytes did reach the consumer —
+  whole skill directories are copied — but sat inert under `.canary/skills/`, so
+  adopting repos ended up with skills and no running guardian.
+
+  **A consumer's CI is theirs.** Unlike deployed skills, which the overlay owns
+  one-way (#334), a workflow that differs from the template is **reported and
+  never overwritten**; `--force` is the deliberate opt-in. Workflow status also
+  never changes the `migrate --check` exit code, so the gate cannot nag about a
+  hand-tuned workflow. The template version recorded in
+  `.canary/skills/.deploy-manifest.json` is what lets a corrected template (e.g.
+  the #369 guardian gate that silently no-ops) be offered to repos that already
+  adopted a broken one.
+
+- **`coverage_report_path` / `sut_controllers_path` in `.canary/company.json`**
+  (#459): repo-relative pointers for generated workflow YAML. Both are validated
+  as repo-relative — an absolute path or one containing `..` is dropped with a
+  warning, since the value is interpolated into generated CI.
+
 ### Fixed
 
 - **Guardian — Tier-2 authoring no longer disables itself permanently** (#456):
@@ -2048,30 +2090,6 @@ and a usage request mutating the working tree.
 
   `canary-shadow` is deliberately **not** covered — it needs a contract decision
   rather than a fix (#478).
-
-### Added
-
-- **Workflow templates install during `canary migrate`** (#459): an overlay
-  skill may declare `install_workflows: [templates/<file>.yml]` (optionally
-  `<shape>:`-prefixed to pick a variant, plus a `workflow_template_version`) and
-  `migrate` installs the template into the consuming repo's
-  `.github/workflows/`. Previously the template bytes did reach the consumer —
-  whole skill directories are copied — but sat inert under `.canary/skills/`, so
-  adopting repos ended up with skills and no running guardian.
-
-  **A consumer's CI is theirs.** Unlike deployed skills, which the overlay owns
-  one-way (#334), a workflow that differs from the template is **reported and
-  never overwritten**; `--force` is the deliberate opt-in. Workflow status also
-  never changes the `migrate --check` exit code, so the gate cannot nag about a
-  hand-tuned workflow. The template version recorded in
-  `.canary/skills/.deploy-manifest.json` is what lets a corrected template (e.g.
-  the #369 guardian gate that silently no-ops) be offered to repos that already
-  adopted a broken one.
-
-- **`coverage_report_path` / `sut_controllers_path` in `.canary/company.json`**
-  (#459): repo-relative pointers for generated workflow YAML. Both are validated
-  as repo-relative — an absolute path or one containing `..` is dropped with a
-  warning, since the value is interpolated into generated CI.
 
 ## [6.2.0] - 2026-07-29
 
@@ -2179,6 +2197,12 @@ v3.0.
 **Python-zero.** Completes the v6 cutover: no Python remains in anything a user
 or plugin consumer installs or runs.
 
+### Added
+
+- **`canary-shadow`** — differential parity-testing skill (#447).
+- **Removed-symbol guard extended** to flag `agent/` engine references, with the
+  doc drift it found fixed in the same change (#450).
+
 ### Changed
 
 - **Plugin hooks ported Python → Node ESM** (#449) — `block-no-verify`,
@@ -2186,12 +2210,6 @@ or plugin consumer installs or runs.
   `_harness_dedup` helper, each parity-verified against its original. This
   removed the last Python that **plugin users** would have needed installed.
 - **The four maintenance scripts ported Python → Node** (#448).
-
-### Added
-
-- **`canary-shadow`** — differential parity-testing skill (#447).
-- **Removed-symbol guard extended** to flag `agent/` engine references, with the
-  doc drift it found fixed in the same change (#450).
 
 ### Removed
 
@@ -2205,16 +2223,6 @@ or plugin consumer installs or runs.
 **The TypeScript engine ships.** The Python engine is retired and the npm
 package now bundles and runs the TS engine directly.
 
-### Changed
-
-- **BREAKING — the engine is TypeScript** (#442, #446). `agent/` is deleted,
-  pytest is dropped, and the npm package ships `ts/` → `npm/dist/engine/`.
-- **BREAKING — no per-OS binary and no PyPI package.** The PyInstaller spec and
-  the PyPI publish job are gone; **npm is the sole distribution channel**. This
-  also removed the ~29 MB postinstall binary download that could hang an
-  `npm install` for over 20 minutes (#379).
-- `npm` `files` narrowed to `bin/canary.js` so no stray binary can ship (#443).
-
 ### Added
 
 - **The full engine port**, landed as waves: guardian API-diff, coverage,
@@ -2225,6 +2233,16 @@ package now bundles and runs the TS engine directly.
 - **Golden-parity harness** extended across detection, pattern-healer, reporter,
   scaffolder, feedback, config-validation, and workflow-discovery (#437).
 - **TestTracker ingest reporter** (#420).
+
+### Changed
+
+- **BREAKING — the engine is TypeScript** (#442, #446). `agent/` is deleted,
+  pytest is dropped, and the npm package ships `ts/` → `npm/dist/engine/`.
+- **BREAKING — no per-OS binary and no PyPI package.** The PyInstaller spec and
+  the PyPI publish job are gone; **npm is the sole distribution channel**. This
+  also removed the ~29 MB postinstall binary download that could hang an
+  `npm install` for over 20 minutes (#379).
+- `npm` `files` narrowed to `bin/canary.js` so no stray binary can ship (#443).
 
 ## [5.15.0] - 2026-07-25
 
@@ -2522,18 +2540,18 @@ Publishing integration, and MCP selection hook.
 
 Public-readiness de-identification, plus linter tooling.
 
+### Added
+
+- Unknown-key warning in the `company.json` loader: any unrecognized key emits
+  `ignored unknown field: <key>`, so stale configs self-diagnose.
+- MIT `license` and `authors` metadata in `pyproject.toml`.
+
 ### Changed
 
 - **`company.json` scalar config fields renamed** to generic names —
   `dashboard_url` and `dashboard_token_env` (previously client-prefixed). A
   config using the old keys no longer populates the dashboard fields; update it
   to the new names. `otel_exporter_endpoint` is unchanged.
-
-### Added
-
-- Unknown-key warning in the `company.json` loader: any unrecognized key emits
-  `ignored unknown field: <key>`, so stale configs self-diagnose.
-- MIT `license` and `authors` metadata in `pyproject.toml`.
 
 ### Tooling
 
@@ -2567,6 +2585,11 @@ A content and tooling release — no change to the shipped CLI binary's behavior
 - Spec-craft and naming-craft quality fixes across specs and identifiers (#225,
   #227), and refreshed GitHub issue templates (#230).
 
+### Removed
+
+- Deleted the legacy `docs/specs/oracle.md` (v1/v2 spec, fully superseded by the
+  current specs) (#226).
+
 ### Fixed
 
 - **Plugin manifest version drift** — `.claude-plugin/plugin.json` and the
@@ -2576,11 +2599,6 @@ A content and tooling release — no change to the shipped CLI binary's behavior
 - **Release `latest`-tag advancement** — the floating `latest` tag is moved by
   `release.yml` directly, instead of a separate release-triggered workflow that
   could miss (#231).
-
-### Removed
-
-- Deleted the legacy `docs/specs/oracle.md` (v1/v2 spec, fully superseded by the
-  current specs) (#226).
 
 ## [5.3.0] - 2026-06-21
 
@@ -2612,18 +2630,6 @@ A content and tooling release — no change to the shipped CLI binary's behavior
 
 > **Breaking change.** The `canary generate`, `canary feedback`, and the GitHub
 > Action have been removed. See the migration guide below.
-
-### Migration guide
-
-| Removed surface                                  | Replacement                                                     |
-| ------------------------------------------------ | --------------------------------------------------------------- |
-| `canary generate "<prompt>"`                     | `/canary-write-test` in Claude Code (no API key)                |
-| `canary generate "<prompt>" --recommend-only`    | `canary recommend "<prompt>"`                                   |
-| `canary feedback`                                | no replacement — feedback loop is built into the slash commands |
-| GitHub Action (`uses: bop-clocktower/canary@vN`) | `/canary-write-test` in Claude Code                             |
-
-Pin to `@v4` or earlier to keep the old action while you migrate. The action
-file at this version is a hard-error shim that exits 1 with a migration message.
 
 ### Added
 
@@ -2669,11 +2675,6 @@ file at this version is a hard-error shim that exits 1 with a migration message.
   skills that depend on venv packages (e.g. `openpyxl`) no longer require manual
   injection (PR #203).
 
-### Fixed
-
-- Added `openpyxl>=3.1` to `[project.dependencies]` so xlsx-import skills work
-  out of the box (PR #203).
-
 ### Removed
 
 - **`canary generate`** — deprecated in v4.1.0; removed. Use
@@ -2687,6 +2688,23 @@ file at this version is a hard-error shim that exits 1 with a migration message.
 - **`agent/core/selector_healer.py`**, **`agent/core/feedback.py`**,
   **`agent/core/code_extractor.py`** — last stranded modules from the keyed
   path.
+
+### Fixed
+
+- Added `openpyxl>=3.1` to `[project.dependencies]` so xlsx-import skills work
+  out of the box (PR #203).
+
+### Migration guide
+
+| Removed surface                                  | Replacement                                                     |
+| ------------------------------------------------ | --------------------------------------------------------------- |
+| `canary generate "<prompt>"`                     | `/canary-write-test` in Claude Code (no API key)                |
+| `canary generate "<prompt>" --recommend-only`    | `canary recommend "<prompt>"`                                   |
+| `canary feedback`                                | no replacement — feedback loop is built into the slash commands |
+| GitHub Action (`uses: bop-clocktower/canary@vN`) | `/canary-write-test` in Claude Code                             |
+
+Pin to `@v4` or earlier to keep the old action while you migrate. The action
+file at this version is a hard-error shim that exits 1 with a migration message.
 
 ## [4.1.0] - 2026-06-01
 
@@ -2751,7 +2769,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v7.0.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v7.1.0...HEAD
+[7.1.0]: https://github.com/bop-clocktower/canary/compare/v7.0.0...v7.1.0
 [7.0.0]: https://github.com/bop-clocktower/canary/compare/v6.8.1...v7.0.0
 [6.8.1]: https://github.com/bop-clocktower/canary/compare/v6.8.0...v6.8.1
 [6.8.0]: https://github.com/bop-clocktower/canary/compare/v6.7.1...v6.8.0
