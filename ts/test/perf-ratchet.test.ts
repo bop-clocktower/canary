@@ -59,7 +59,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -246,5 +246,167 @@ describe('perf-ratchet', () => {
       writeFileSync(report, 'garbage\n');
       expect(run().status).toBe(2);
     });
+  });
+});
+
+/**
+ * Instrument-identity abstention (#744) — the perf twin of the block in
+ * `ts/test/entropy-ratchet.test.ts`.
+ *
+ * Both ratchets carry an ABSOLUTE count measured by a CLI the workflows pin as
+ * a floating `@harness-engineering/cli@11`, so both have the same hole: the
+ * analyzer can change under a fixed ceiling with no commit to this repo, and
+ * every offline guard stays green because they compare the baseline against
+ * itself.
+ *
+ * The perf baseline was the quieter case, which is exactly why it needs the
+ * same treatment. It recorded 237 violations at CLI 11.1.1 against a ceiling of
+ * 245 while the tree measured 225 under both 11.2.0 and 11.3.0 — a smaller gap
+ * than entropy's 120, and therefore one nobody would have gone looking for.
+ *
+ * Note this is NOT covered by the existing implausible-collapse guard above.
+ * That fires below 25% of the baseline; 225 against 245 is 92%, and entropy's
+ * real 147 against 267 is 55%. A collapse guard catches a detector that goes
+ * dark all at once. It cannot catch an instrument that is merely *different*,
+ * which is the drift that actually happened, twice.
+ */
+describe('perf-ratchet instrument identity (#744)', () => {
+  let dir: string;
+  let report: string;
+  let baseline: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'perf-ratchet-cli-'));
+    report = join(dir, 'report.txt');
+    baseline = join(dir, 'baseline.json');
+  });
+
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  function run(cliVersion?: string): { status: number; out: string } {
+    const args = [SCRIPT, '--report', report, '--baseline', baseline];
+    if (cliVersion !== undefined) args.push('--cli-version', cliVersion);
+    const r = spawnSync(process.execPath, args, { encoding: 'utf8' });
+    return { status: r.status ?? -1, out: `${r.stdout}${r.stderr}` };
+  }
+
+  function writeBaseline(maxViolations: number, harnessCli?: string): void {
+    const body: Record<string, unknown> = { maxViolations };
+    if (harnessCli !== undefined) body.harnessCli = harnessCli;
+    writeFileSync(baseline, JSON.stringify(body));
+  }
+
+  function violationReport(n: number): string {
+    return `x Validation failed (${n} issues)\n`;
+  }
+
+  it('passes when the running CLI matches the baseline instrument', () => {
+    writeBaseline(235, '11.3.0');
+    writeFileSync(report, violationReport(225));
+    expect(run('11.3.0').status).toBe(0);
+  });
+
+  // The real state of `.harness/perf-baseline.json` before this change.
+  it('ABSTAINS when the baseline was calibrated on an older CLI', () => {
+    writeBaseline(245, '11.1.1');
+    writeFileSync(report, violationReport(225));
+    const { status, out } = run('11.3.0');
+    expect(status).toBe(3);
+    expect(out).toMatch(/ABSTAIN/i);
+    expect(out).toContain('11.1.1');
+    expect(out).toContain('11.3.0');
+  });
+
+  it('ABSTAINS rather than FAILING when the instrument also disagrees', () => {
+    writeBaseline(245, '11.1.1');
+    writeFileSync(report, violationReport(400));
+    expect(run('11.3.0').status).toBe(3);
+  });
+
+  it('ABSTAINS when the baseline names an instrument and the caller does not', () => {
+    writeBaseline(245, '11.1.1');
+    writeFileSync(report, violationReport(225));
+    const { status, out } = run();
+    expect(status).toBe(3);
+    expect(out).toMatch(/--cli-version/);
+  });
+
+  it('leaves baselines that declare no instrument alone', () => {
+    writeBaseline(245);
+    writeFileSync(report, violationReport(225));
+    expect(run().status).toBe(0);
+  });
+
+  // A measurement that never happened outranks one taken on the wrong
+  // instrument, and the implausible-collapse guard outranks it too — both are
+  // about whether the number means anything at all.
+  it('still ABSTAINS on an unparseable report when versions agree', () => {
+    writeBaseline(245, '11.3.0');
+    writeFileSync(report, 'x Validation failed\n');
+    expect(run('11.3.0').status).toBe(3);
+  });
+});
+
+/**
+ * The checked-in perf baseline and its wiring (#744).
+ *
+ * The entropy baseline has had guards on its real file since #544; this one had
+ * none, which is part of why it drifted unnoticed — it recorded 237 violations
+ * at CLI 11.1.1 for a week while the tree measured 225.
+ *
+ * The load-bearing assertion is `harnessCli`. Deleting that key silently
+ * disarms the instrument-identity abstention and turns nothing red, which makes
+ * it the one edit that has to be caught here rather than in review.
+ */
+describe('the checked-in perf baseline (#744)', () => {
+  const BASELINE = join(REPO_ROOT, '.harness', 'perf-baseline.json');
+  const WORKFLOW = join(
+    REPO_ROOT,
+    '.github',
+    'workflows',
+    'harness-quality.yml',
+  );
+
+  function baselineJson(): Record<string, unknown> {
+    return JSON.parse(readFileSync(BASELINE, 'utf8'));
+  }
+
+  it('records the exact CLI version that produced its measurement', () => {
+    const { harnessCli } = baselineJson();
+    expect(typeof harnessCli).toBe('string');
+    // A range like "11" or "^11.2.0" would name a family of analyzers rather
+    // than the one that produced the count, and the abstention needs identity.
+    expect(harnessCli).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('was measured by a CLI whose MAJOR matches the workflow pin', () => {
+    const { harnessCli } = baselineJson();
+    const yaml = readFileSync(WORKFLOW, 'utf8');
+    const pin = /@harness-engineering\/cli@(\d+)/.exec(yaml);
+    expect(pin).not.toBeNull();
+    expect(String(harnessCli).split('.')[0]).toBe(pin?.[1]);
+  });
+
+  it('never sets a ceiling below the count it last measured', () => {
+    const { maxViolations, measuredCount } = baselineJson();
+    expect(typeof measuredCount).toBe('number');
+    expect(maxViolations as number).toBeGreaterThanOrEqual(
+      measuredCount as number,
+    );
+  });
+
+  // The nudge fires above NUDGE_SLACK (20). A ceiling parked further above the
+  // measurement than that is the wallpaper state the entropy gate spent four
+  // days in, so keep this file inside its own advice.
+  it('keeps the ceiling inside the slack the script nudges at', () => {
+    const { maxViolations, measuredCount } = baselineJson();
+    expect(
+      (maxViolations as number) - (measuredCount as number),
+    ).toBeLessThanOrEqual(20);
+  });
+
+  it('hands the resolved CLI version to the ratchet in CI', () => {
+    const yaml = readFileSync(WORKFLOW, 'utf8');
+    expect(yaml).toMatch(/perf-ratchet\.mjs[\s\S]{0,200}?--cli-version/);
   });
 });

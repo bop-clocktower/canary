@@ -78,11 +78,11 @@ with no entry in this table is a finding, not a default.
 
 ### Wired
 
-| Command                                                             | Where                 | How it blocks                                                                                                               |
-| ------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `check-perf`                                                        | `harness-quality.yml` | Ratcheted against `.harness/perf-baseline.json` (`maxViolations` 245 against a measured 237) via `scripts/perf-ratchet.mjs` |
-| `check-docs`                                                        | `harness-quality.yml` | Blocking at `--min-coverage 3`, a floor at today's measurement                                                              |
-| `check-deps`, `check-security`, `check-arch`, `cleanup`, `validate` | pre-existing          | See ADR 0011 / ADR 0012                                                                                                     |
+| Command                                                             | Where                 | How it blocks                                                                                                                                                                                                           |
+| ------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check-perf`                                                        | `harness-quality.yml` | Ratcheted against `.harness/perf-baseline.json` (`maxViolations` 233 against a measured 225, CLI 11.3.0) via `scripts/perf-ratchet.mjs`, which abstains when the running CLI is not the one that set the ceiling (#744) |
+| `check-docs`                                                        | `harness-quality.yml` | Blocking at `--min-coverage 3`, a floor at today's measurement                                                                                                                                                          |
+| `check-deps`, `check-security`, `check-arch`, `cleanup`, `validate` | pre-existing          | See ADR 0011 / ADR 0012                                                                                                                                                                                                 |
 
 `check-perf` is ratcheted rather than strict for the reason ADR 0012 gives: 237
 violations is a real backlog, and a gate that blocks every PR on day one gets

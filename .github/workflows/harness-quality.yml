@@ -46,6 +46,33 @@ jobs:
       - name: Harness Docs Coverage (blocking, floor at today's 3%)
         run: npx --yes -p "$HARNESS_CLI" harness check-docs --min-coverage 3
 
+      # #744. Both ratchets below carry an ABSOLUTE count produced by this CLI,
+      # and `HARNESS_CLI` is a FLOATING major (`@harness-engineering/cli@11`),
+      # so the analyzer behind those counts changes with no commit to this repo.
+      # It moved twice and nothing caught either: 11.1.1 -> 11.2.0 took entropy
+      # 281 -> 257 (#694), and 11.2.0 -> 11.3.0 took it 257 -> 147 while the
+      # ceiling stood at 267 — four days in which the gate would have needed 120
+      # net-new findings to turn red. The offline guards were green throughout,
+      # because they compare the baseline against itself and a floating MINOR
+      # clears a MAJOR check by construction.
+      #
+      # Resolving the version here and handing it to the ratchets is what turns
+      # that silent drift into a loud abstention. An unresolvable version fails
+      # this step rather than passing an empty string through: a ratchet told
+      # nothing about its instrument abstains anyway, but failing here names the
+      # real problem instead of blaming the baseline.
+      - name: Resolve harness CLI version
+        id: harness-cli
+        run: |
+          resolved="$(npx --yes -p "$HARNESS_CLI" harness --version 2>/dev/null \
+            | tail -n 1 | tr -d '[:space:]')"
+          if [ -z "$resolved" ]; then
+            echo "Could not resolve a version from '$HARNESS_CLI'." >&2
+            exit 1
+          fi
+          echo "Resolved $HARNESS_CLI to $resolved"
+          echo "version=$resolved" >> "$GITHUB_OUTPUT"
+
       # BLOCKING as of #544 (ADR 0012). Two bugs kept this dark: `entryPoints`
       # sat at a config path the schema never read (so the scan exited 2 at
       # startup), and once that was fixed the declared entry point was
@@ -66,7 +93,9 @@ jobs:
           entropy-report.txt || true
 
       - name: Entropy ratchet (blocking)
-        run: node scripts/entropy-ratchet.mjs --report entropy-report.txt
+        run:
+          node scripts/entropy-ratchet.mjs --report entropy-report.txt
+          --cli-version "${{ steps.harness-cli.outputs.version }}"
 
       # WIRED as of #717. `check-perf` was referenced by no workflow at all, so
       # its 237 violations at 8c865b5 protected nothing — a check that runs
@@ -92,7 +121,9 @@ jobs:
           || true
 
       - name: Performance ratchet (blocking)
-        run: node scripts/perf-ratchet.mjs --report perf-report.txt
+        run:
+          node scripts/perf-ratchet.mjs --report perf-report.txt --cli-version
+          "${{ steps.harness-cli.outputs.version }}"
 
       # `check-operational-drift` is deliberately NOT wired here. #717 proposed
       # wiring it blocking precisely because it was clean — no backlog to

@@ -499,8 +499,17 @@ git worktree add ../canary-entropy origin/main --detach
 cd ../canary-entropy
 npx --yes -p '@harness-engineering/cli@11' harness cleanup --findings-json \
   > /tmp/entropy-report.txt || true
-node scripts/entropy-ratchet.mjs --report /tmp/entropy-report.txt
+node scripts/entropy-ratchet.mjs --report /tmp/entropy-report.txt \
+  --cli-version "$(npx --yes -p '@harness-engineering/cli@11' harness --version)"
 ```
+
+`--cli-version` is not optional in practice (#744). The pin is a floating major,
+so the analyzer behind this absolute count changes with no commit here — it
+moved twice, most recently 257 -> 147, and the ratchet abstains rather than
+compare a count to a ceiling calibrated against a different instrument. Omitting
+the flag is itself an abstention: "cannot verify" is a finding, not a skip. If
+it fires, re-measure and move `measuredCount` and `harnessCli` together; do not
+silence it by deleting `harnessCli` from the baseline.
 
 No `npm ci` — the gates run on a bare checkout, and so should you. Verified at
 `97bb15f`: CI reported **282** and a fresh worktree reported **282**, an exact

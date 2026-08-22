@@ -381,3 +381,179 @@ describe('the checked-in entropy baseline', () => {
     ).toContain('parsed.maxHeadroom');
   });
 });
+
+/**
+ * Instrument-identity abstention (#744).
+ *
+ * The hole this closes is the one `$whatIsGuarded` in the baseline names and
+ * that nothing could see: `measuredCount` is a memory of the last time a human
+ * ran the analyzer, and the workflows pin a FLOATING `@harness-engineering/
+ * cli@11`, so the analyzer under this absolute count can change with no commit
+ * to this repo. It happened twice. 11.1.1 -> 11.2.0 moved the count 281 -> 257
+ * (#694, a fence-awareness fix). 11.2.0 -> 11.3.0 then moved it 257 -> 147 —
+ * a 110-finding drop, purely subtractive, with the ceiling left at 267. For
+ * four days the gate would have taken 120 net-new findings to turn red: a
+ * blocking check that had been deliberately TIGHTENED to 267 was, in practice,
+ * wallpaper.
+ *
+ * Neither move was catchable offline. The existing guards compare the baseline
+ * against ITSELF (the ceiling did not rise, `measuredCount` matches the
+ * declared gap, the CLI MAJOR still matches the workflow pin) and every one of
+ * them was green the whole time. A floating minor passes a major check by
+ * construction.
+ *
+ * So the count is only meaningful next to the identity of the instrument that
+ * produced it. When the baseline declares `harnessCli`, the ratchet must be
+ * TOLD which version actually ran, and any disagreement is an ABSTENTION — the
+ * measurement is not comparable to the ceiling, so there is nothing to compare.
+ * Not a failure (the tree may be perfectly healthy) and emphatically not a
+ * pass: it forces the human re-measure that both drift episodes needed.
+ *
+ * "Cannot verify" is a finding, so a MISSING `--cli-version` abstains too. A
+ * baseline that declares its instrument and a caller that will not say which
+ * one it ran is precisely the unverifiable state, and letting it through would
+ * rebuild the hiding place one layer up — the same reasoning as the missing
+ * contract line above.
+ *
+ * Baselines with no `harnessCli` are unaffected, which is what keeps the
+ * tmpdir tests above (and any legacy baseline) meaningful.
+ */
+describe('entropy-ratchet instrument identity (#744)', () => {
+  let dir: string;
+  let report: string;
+  let baseline: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'entropy-ratchet-cli-'));
+    report = join(dir, 'report.txt');
+    baseline = join(dir, 'baseline.json');
+  });
+
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  function run(cliVersion?: string): { status: number; out: string } {
+    const args = [SCRIPT, '--report', report, '--baseline', baseline];
+    if (cliVersion !== undefined) args.push('--cli-version', cliVersion);
+    const r = spawnSync(process.execPath, args, { encoding: 'utf8' });
+    return { status: r.status ?? -1, out: `${r.stdout}${r.stderr}` };
+  }
+
+  function writeBaseline(maxFindings: number, harnessCli?: string): void {
+    const body: Record<string, unknown> = { maxFindings };
+    if (harnessCli !== undefined) body.harnessCli = harnessCli;
+    writeFileSync(baseline, JSON.stringify(body));
+  }
+
+  it('passes when the running CLI matches the baseline instrument', () => {
+    writeBaseline(157, '11.3.0');
+    writeFileSync(report, contractLine(147));
+    const { status } = run('11.3.0');
+    expect(status).toBe(0);
+  });
+
+  // The real 11.2.0 -> 11.3.0 episode: a count well UNDER the ceiling, which
+  // every other guard reads as a comfortable pass.
+  it('ABSTAINS when a floating pin moved the CLI under a stale baseline', () => {
+    writeBaseline(267, '11.2.0');
+    writeFileSync(report, contractLine(147));
+    const { status, out } = run('11.3.0');
+    expect(status).toBe(3);
+    expect(out).toMatch(/ABSTAIN/i);
+    expect(out).toContain('11.2.0');
+    expect(out).toContain('11.3.0');
+  });
+
+  // A patch bump is still a different analyzer; #694 shipped in a minor and
+  // moved 24 findings, so "close enough" has no defensible cut-off.
+  it('ABSTAINS on a patch-level difference, not just a minor one', () => {
+    writeBaseline(267, '11.3.0');
+    writeFileSync(report, contractLine(147));
+    expect(run('11.3.1').status).toBe(3);
+  });
+
+  // Would otherwise be the loudest possible false green: over the ceiling AND
+  // measured by an instrument the ceiling was never calibrated against.
+  it('ABSTAINS rather than FAILING when the instrument also disagrees', () => {
+    writeBaseline(267, '11.2.0');
+    writeFileSync(report, contractLine(400));
+    expect(run('11.3.0').status).toBe(3);
+  });
+
+  it('ABSTAINS when the baseline names an instrument and the caller does not', () => {
+    writeBaseline(267, '11.2.0');
+    writeFileSync(report, contractLine(147));
+    const { status, out } = run();
+    expect(status).toBe(3);
+    expect(out).toMatch(/ABSTAIN/i);
+    expect(out).toMatch(/--cli-version/);
+  });
+
+  it('leaves baselines that declare no instrument alone', () => {
+    writeBaseline(267);
+    writeFileSync(report, contractLine(147));
+    expect(run().status).toBe(0);
+  });
+
+  // Ordering: a MISSING measurement outranks a mismatched instrument. Both
+  // abstain, so the exit code is 3 either way, but the operator needs the
+  // older and more dangerous shape named first — a scan that died at startup
+  // is a different problem from a scan that ran on a different analyzer.
+  it('still ABSTAINS on a missing contract line when versions agree', () => {
+    writeBaseline(267, '11.3.0');
+    writeFileSync(report, 'Entropy analysis failed\n');
+    expect(run('11.3.0').status).toBe(3);
+  });
+});
+
+/**
+ * The wiring, not the script (#744).
+ *
+ * The abstention above is only worth anything if CI actually tells the ratchet
+ * which analyzer ran. Two ways to lose that, and both look like a green build:
+ *
+ * 1. Drop `--cli-version` from the workflow. The ratchet then abstains, CI goes
+ *    red, and the tempting "fix" is (2).
+ * 2. Delete `harnessCli` from the baseline. The abstention stops firing, the
+ *    ceiling goes back to being compared against whatever instrument happened
+ *    to run, and nothing anywhere is red. This is the dangerous one, and it is
+ *    exactly the move the script's own failure text tells you not to make.
+ *
+ * These read the REAL workflow and the REAL baseline, so they are deliberately
+ * sensitive to repo state.
+ */
+describe('the entropy ratchet CI wiring (#744)', () => {
+  const WORKFLOW = join(
+    REPO_ROOT,
+    '.github',
+    'workflows',
+    'harness-quality.yml',
+  );
+
+  it('hands the resolved CLI version to the ratchet', () => {
+    const yaml = readFileSync(WORKFLOW, 'utf8');
+    expect(yaml).toMatch(/entropy-ratchet\.mjs[\s\S]{0,200}?--cli-version/);
+  });
+
+  it('resolves that version from the same floating pin the scan uses', () => {
+    const yaml = readFileSync(WORKFLOW, 'utf8');
+    expect(yaml).toContain('harness --version');
+    expect(yaml).toMatch(/id:\s*harness-cli/);
+    // A hardcoded version here would defeat the point entirely: it would agree
+    // with the baseline forever while the scan floated away from both.
+    expect(yaml).toMatch(
+      /resolved="\$\(npx --yes -p "\$HARNESS_CLI" harness --version/,
+    );
+  });
+
+  it('fails the resolve step rather than passing an empty version through', () => {
+    const yaml = readFileSync(WORKFLOW, 'utf8');
+    expect(yaml).toMatch(/if \[ -z "\$resolved" \]/);
+  });
+
+  it('keeps harnessCli in the real baseline, which is what arms the check', () => {
+    const baselineFile = join(REPO_ROOT, '.harness', 'entropy-baseline.json');
+    const parsed = JSON.parse(readFileSync(baselineFile, 'utf8'));
+    expect(typeof parsed.harnessCli).toBe('string');
+    expect(parsed.harnessCli).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});

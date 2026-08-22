@@ -97,10 +97,11 @@ const COLLAPSE_GUARD_MIN_BASELINE = 20;
 const COLLAPSE_RATIO = 0.25;
 
 function parseArgs(argv) {
-  const args = { report: null, baseline: DEFAULT_BASELINE };
+  const args = { report: null, baseline: DEFAULT_BASELINE, cliVersion: null };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--report') args.report = argv[i + 1];
     else if (argv[i] === '--baseline') args.baseline = argv[i + 1];
+    else if (argv[i] === '--cli-version') args.cliVersion = argv[i + 1];
   }
   return args;
 }
@@ -144,16 +145,51 @@ function fail(code, message) {
  */
 function readBaseline(baseline) {
   let maxViolations;
+  let harnessCli = null;
   try {
     const parsed = JSON.parse(readFileSync(baseline, 'utf8'));
     maxViolations = parsed.maxViolations;
+    if (typeof parsed.harnessCli === 'string') harnessCli = parsed.harnessCli;
   } catch (err) {
     fail(2, `perf-ratchet: cannot read baseline ${baseline}: ${err.message}`);
   }
   if (!Number.isInteger(maxViolations)) {
     fail(2, `perf-ratchet: ${baseline} has no integer "maxViolations".`);
   }
-  return maxViolations;
+  return { maxViolations, harnessCli };
+}
+
+/**
+ * Abstain unless the CLI that produced this report is the one the ceiling was
+ * calibrated against (#744).
+ *
+ * The workflows pin a FLOATING `@harness-engineering/cli@11`, so the analyzer
+ * behind this absolute count changes with no commit here — and it did, twice,
+ * moving the entropy count 281 -> 257 and then 257 -> 147 against a ceiling
+ * left at 267. The existing guards could not see either move: they compare the
+ * baseline against itself, and a floating minor clears a MAJOR check by
+ * construction.
+ *
+ * Deliberately NOT the implausible-collapse guard's job. That one fires below
+ * 25% of the baseline and catches a detector going dark; this catches an
+ * instrument that is merely different, which is a far quieter failure and the
+ * one that actually happened.
+ */
+function requireMatchingInstrument(harnessCli, cliVersion, maxViolations) {
+  if (harnessCli === null || cliVersion === harnessCli) return;
+  fail(
+    3,
+    `perf-ratchet: ABSTAINED — this baseline's ${maxViolations} ceiling was ` +
+      `calibrated against harness CLI ${harnessCli}, but ` +
+      (cliVersion === null
+        ? 'the caller did not say which version produced this report ' +
+          '(pass `--cli-version`).'
+        : `this report was produced by ${cliVersion}.`) +
+      '\nThe measurement is therefore not comparable to the ceiling.\n' +
+      'Re-measure in a clean worktree and update "measuredCount" and ' +
+      '"harnessCli" in the baseline in the SAME PR. Do not silence this by ' +
+      'deleting "harnessCli".',
+  );
 }
 
 /**
@@ -238,11 +274,12 @@ function applyRatchet(violations, maxViolations, baseline) {
 }
 
 function main() {
-  const { report, baseline } = parseArgs(process.argv.slice(2));
+  const { report, baseline, cliVersion } = parseArgs(process.argv.slice(2));
   if (!report) fail(2, 'perf-ratchet: --report <file> is required.');
 
-  const maxViolations = readBaseline(baseline);
+  const { maxViolations, harnessCli } = readBaseline(baseline);
   const violations = readViolations(report, maxViolations);
+  requireMatchingInstrument(harnessCli, cliVersion, maxViolations);
   applyRatchet(violations, maxViolations, baseline);
 }
 
