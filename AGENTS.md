@@ -590,15 +590,45 @@ classifier (`scripts/arch-verdict.mjs`), so CI and the desk cannot drift into
 different verdicts on the same report; `ts/test/arch-verdict.test.ts` pins the
 classification, the exit codes, and the `harness.yml` wiring.
 
-**Clearing architecture growth is an allowance, not a baseline refresh (#689).**
-Write `.harness/arch/allowances/<slug>.json` — one file per PR, carrying the
-absolute value you measured and the argument for it. Copy the shape of any file
-already in that directory — it accumulates one per growing PR, so there is
-always a recent example — or let
+**Ordinary growth needs no allowance; the tolerance absorbs it (#736).**
+`check-arch` compares against the HIGHER of two numbers: the baseline widened by
+`architecture.regressionTolerance` (a fraction of the baseline, default **1%**),
+and the highest matching per-PR allowance. With the floor tracking `main` that
+tolerance is worth ~330 lines, which covers ordinary growth — #731's **+135**
+and #735's **+24** would both have passed with no allowance file at all.
+
+Write `.harness/arch/allowances/<slug>.json` only when growth **exceeds** the
+tolerance: one file per PR, carrying the absolute value you measured and the
+argument for it. Copy the shape of any file already in that directory, or let
 `harness check-arch --update-baseline --allow-regress --reason "…"` write one.
-Refreshing `.harness/arch/baselines.json` wholesale — the `refresh-baseline`
-label — is the rarer maintainer escalation: it banks every pre-existing
-violation at once and erases the per-PR record of who accepted what.
+
+This reverses #689's advice, and the reason is worth keeping. #689 was right
+that an allowance beat a refresh _at the time_ — but only because the floor had
+stopped moving on 2026-08-10 while the ceiling climbed to 32960. A 5995 gap
+makes a 1% absorber worth 270, so every PR needed an allowance and the directory
+grew to 22 files whose bespoke justifications read as 22 people absorbing one
+stale constant. The absorber was never broken; it was measuring a fraction of a
+number nobody refreshed. `ts/test/arch-baseline-freshness.test.ts` now fails as
+soon as the gap outgrows the tolerance, so this cannot silently recur.
+
+**Two mechanics that make a refresh look broken (measured 2026-08-22).**
+
+- **The baseline is read from the BASE BRANCH, not your worktree.** Editing
+  `.harness/arch/baselines.json` on a branch changes nothing about how that
+  branch is judged — proven by deleting the file outright and watching
+  `check-arch` still report `base=26965`. This is deliberate anti-tamper: a PR
+  cannot lower its own bar. The consequence is that a refresh **only takes
+  effect once it is on `main`**, so do not expect the PR that performs one to
+  show the new number.
+- **`--update-baseline` does not update the baseline.** At CLI 11.x it writes an
+  _allowance_ and says so —
+  `Commit it — baselines.json stays byte-identical to the base` — then prints
+  `✓ Baseline updated successfully.` anyway. There is no command that rewrites
+  `baselines.json`; a refresh is a hand-edit of `metrics["<metric>"].value`.
+  **Leave `violationIds` untouched** — that keeps the aggregate ceiling moving
+  without banking a single violation, which is the half of a refresh #689
+  rightly objected to. Verified: 1 new / 69 pre-existing, identical before and
+  after.
 
 **`baselines.json` is the FLOOR; the highest allowance is the effective CEILING
 (#736).** Nothing in the tooling says this, and not knowing it has now cost two
@@ -648,12 +678,15 @@ Three traps, each of which produced a confident wrong answer during #731:
   lines of `analysis/cli.ts` into a sibling moved it _up_ (32936 → 32989) — a
   new file brings its own header and imports.
 
-Two consequences worth expecting rather than rediscovering. An allowance records
-the branch's exact value, so `main`'s measured value equals the newest allowance
-with **zero slack** — the next PR to touch any source file always needs its own,
-and the ledger grows one file per PR by design. And a clean tree short-circuits
-the comparison, so a green `arch` on untouched `main` confirms nothing about how
-much room is left.
+One consequence worth expecting rather than rediscovering: a clean tree
+short-circuits the comparison, so a green `arch` on untouched `main` confirms
+nothing about how much room is left.
+
+The ledger no longer grows one file per PR. That property held only while an
+allowance was the _only_ way to clear growth: each one recorded the branch's
+exact value, so `main` ended up equal to the newest allowance with **zero
+slack** and the next PR to touch any source file needed its own. With the floor
+refreshed, the tolerance provides the slack instead.
 
 Three things about that output are worth knowing before you read it:
 
