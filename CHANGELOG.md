@@ -14,6 +14,35 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **The arch baseline floor tracks `main` again, so ordinary growth stops
+  needing an allowance** (#736). `check-arch` measures against the higher of two
+  numbers — the baseline widened by `architecture.regressionTolerance` (1% by
+  default), and the highest per-PR allowance. The floor last moved on
+  2026-08-10; the ceiling climbed to **32960**. A 5995 gap makes a 1% absorber
+  worth **270**, so every PR that touched any source file had to hand-write an
+  allowance, and `.harness/arch/allowances/` grew to 22 files whose bespoke
+  justifications read as 22 people absorbing one stale constant. The absorber
+  was never broken — it was a fraction of a number nobody refreshed. The floor
+  is now 32960, which restores ~330 lines of automatic headroom: #731's +135 and
+  #735's +24 would both have passed with no allowance at all.
+
+  Only `metrics["module-size"].value` moved. `violationIds` is untouched, so
+  **nothing was banked** — 1 new and 69 pre-existing violations, identical
+  before and after. That is the half of a wholesale refresh #689 objected to,
+  and it is avoidable. The 22 existing allowances are left in place as the
+  record of who accepted what; they are inert now that the floor equals the
+  highest of them.
+
+  `ts/test/arch-baseline-freshness.test.ts` fails as soon as the gap outgrows
+  the tolerance — it would have fired at ~270 rather than at 5995. Two mechanics
+  found by probe and now recorded in `AGENTS.md`: the baseline is resolved from
+  the **base branch**, not the worktree (deleting the file outright still
+  reports `base=26965`), so a refresh only takes effect once it is on `main`;
+  and `--update-baseline` writes an _allowance_ at CLI 11.x while printing
+  `✓ Baseline updated successfully.`, so no command rewrites `baselines.json`.
+
 ## [7.1.0] - 2026-08-22
 
 Thirty merged pull requests. Nothing here changes a command's contract, so this
