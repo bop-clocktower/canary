@@ -16,6 +16,30 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The `refresh-baseline` label refreshes the baseline again** (#749). The
+  workflow ran `harness check-arch --update-baseline --allow-regress --reason`,
+  which at CLI 11.x writes a per-PR file under `.harness/arch/allowances/` and
+  states plainly that `baselines.json stays byte-identical to the base` — then
+  prints `Baseline updated successfully.` anyway. So a label named for a refresh
+  wrote allowances, and the commit it pushed said
+  `chore(ci): refresh arch baseline`. This was not undiscovered: the workflow's
+  own comments described the CLI-11 behaviour, and #634's "no change is a
+  FAILURE" guard had been _widened_ to accept an allowance rather than to catch
+  one. A guard that watches `.harness/arch/` as a whole cannot fail for the
+  reason it exists, because the wrong artifact satisfies it.
+
+  `scripts/refresh-arch-baseline.mjs` now performs the refresh from the same
+  `check-arch --json` report, and the guard watches `baselines.json`
+  specifically. The script moves `metrics[<category>].value` and leaves
+  `violationIds` untouched, so **no violation is banked** — the half of a
+  wholesale refresh #689 was right to refuse. It refuses to _lower_ a value
+  (that widens the gate and deserves a deliberate decision, not a label meant to
+  accept growth) and separates its outcomes rather than collapsing them: exit 1
+  means the report was read and no metric regressed, exit 3 means it could not
+  read the report or would have had to invent a number. Eleven tests, including
+  a mutation check that the `violationIds` assertion actually fails when a
+  refresh banks violations.
+
 - **The arch baseline floor tracks `main` again, so ordinary growth stops
   needing an allowance** (#736). `check-arch` measures against the higher of two
   numbers — the baseline widened by `architecture.regressionTolerance` (1% by
