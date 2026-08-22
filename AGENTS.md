@@ -623,12 +623,22 @@ soon as the gap outgrows the tolerance, so this cannot silently recur.
 - **`--update-baseline` does not update the baseline.** At CLI 11.x it writes an
   _allowance_ and says so —
   `Commit it — baselines.json stays byte-identical to the base` — then prints
-  `✓ Baseline updated successfully.` anyway. There is no command that rewrites
-  `baselines.json`; a refresh is a hand-edit of `metrics["<metric>"].value`.
-  **Leave `violationIds` untouched** — that keeps the aggregate ceiling moving
-  without banking a single violation, which is the half of a refresh #689
-  rightly objected to. Verified: 1 new / 69 pre-existing, identical before and
-  after.
+  `✓ Baseline updated successfully.` anyway. No CLI command rewrites
+  `baselines.json`. Use `scripts/refresh-arch-baseline.mjs` (#749), which the
+  `refresh-baseline` label runs for you:
+
+  ```bash
+  harness check-arch --json > arch-report.json || true
+  node scripts/refresh-arch-baseline.mjs arch-report.json
+  ```
+
+  It moves `metrics["<metric>"].value` and **leaves `violationIds` untouched** —
+  that keeps the aggregate ceiling moving without banking a single violation,
+  which is the half of a refresh #689 rightly objected to. Verified: 1 new / 69
+  pre-existing, identical before and after. It exits **1** when no metric
+  regressed (so the label was not needed) and **3** when it cannot read the
+  report or would have to invent a value; only **0** means something was
+  written.
 
 **`baselines.json` is the FLOOR; the highest allowance is the effective CEILING
 (#736).** Nothing in the tooling says this, and not knowing it has now cost two
