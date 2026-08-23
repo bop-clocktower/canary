@@ -1,0 +1,68 @@
+/**
+ * batwoman's report, rendered through canary's persona registry (spec D7).
+ *
+ * Two rules bind harder than anything else here, and both are asserted in
+ * `ts/test/batwoman-render-invariants.test.ts` across all three registers
+ * rather than once against the default:
+ *
+ * **There is no success-only path.** Every run ends with one column per status,
+ * including the two that mean batwoman could not decide. A detector that
+ * covered two of seven changed files and printed a clean token would be a pass
+ * over a denominator of two presented as a pass over seven -- the exact defect
+ * batwoman exists to catch, committed by batwoman (spec D5).
+ *
+ * **Every row keeps its sentence.** `ExerciseVerdict.explanation` renders in
+ * every register, terse included. What the terse register drops is the material
+ * gated by the persona's `reasoning` flag -- the evidence line and the
+ * next-step guidance -- not the observation-and-cause sentence itself, which is
+ * the difference between a verdict and a status code.
+ */
+
+import type { ResolvedPersona } from '../../core/persona.js';
+import {
+  EXERCISE_STATUSES,
+  tallyVerdicts,
+  type ClosureHeader,
+  type ExerciseStatus,
+  type ExerciseVerdict,
+} from './verdict.js';
+
+/** Column labels, in `EXERCISE_STATUSES` order. */
+const SUMMARY_LABELS: Readonly<Record<ExerciseStatus, string>> = {
+  exercised: 'exercised',
+  'not-exercised': 'not exercised',
+  abstain: 'abstained',
+  'no-probe': 'no probe',
+  'not-applicable': 'n/a',
+};
+
+/**
+ * The one line every run prints.
+ *
+ * The changed-file total leads so the denominator is read before any count;
+ * the render suite asserts the columns sum to it.
+ */
+export function summaryLine(verdicts: readonly ExerciseVerdict[]): string {
+  const { changed, byStatus } = tallyVerdicts(verdicts);
+  const columns = EXERCISE_STATUSES.map(
+    (status) => `${byStatus[status]} ${SUMMARY_LABELS[status]}`,
+  );
+  return [`${changed} changed`, ...columns].join(' · ');
+}
+
+/** Greedy word wrap with a fixed indent. A too-long word gets its own line. */
+export function wrap(text: string, width: number, indent: string): string[] {
+  const lines: string[] = [];
+  let current = '';
+  for (const word of text.split(/\s+/).filter((w) => w !== '')) {
+    const candidate = current === '' ? word : `${current} ${word}`;
+    if (indent.length + candidate.length <= width || current === '') {
+      current = candidate;
+    } else {
+      lines.push(indent + current);
+      current = word;
+    }
+  }
+  if (current !== '') lines.push(indent + current);
+  return lines;
+}
