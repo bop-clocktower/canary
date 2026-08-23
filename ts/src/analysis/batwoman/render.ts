@@ -164,6 +164,13 @@ function briefRows(
   return lines;
 }
 
+function terseRows(verdicts: readonly ExerciseVerdict[]): string[] {
+  return verdicts.flatMap((verdict) => [
+    `  - ${verdict.file}  ${verdict.status}`,
+    ...wrap(verdict.explanation, 78, '    '),
+  ]);
+}
+
 function bodyLines(options: RenderOptions): string[] {
   const { verdicts, persona } = options;
   const lines: string[] = [];
@@ -172,6 +179,10 @@ function bodyLines(options: RenderOptions): string[] {
     // An empty section is omitted, not printed as a zero: the counts that
     // matter are in the summary line, which prints all five unconditionally.
     if (rows.length === 0) continue;
+    if (persona.persona.depth === 'terse') {
+      lines.push(...terseRows(rows));
+      continue;
+    }
     lines.push(heading(label, status, rows.length, verdicts.length));
     lines.push(...briefRows(rows, persona.persona.reasoning));
   }

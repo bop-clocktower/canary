@@ -206,3 +206,41 @@ describe('the header holds the 78-column limit', () => {
     expect(flattened).toContain('architect');
   });
 });
+
+describe('the sdet register (terse)', () => {
+  it('is shorter than the junior register over the same verdicts', () => {
+    expect(render('sdet').split('\n').length).toBeLessThan(
+      render('junior').split('\n').length,
+    );
+  });
+
+  it('renders findings as one bullet per row', () => {
+    expect(render('sdet')).toContain(
+      '  - .github/workflows/refresh-arch-baseline.yml  not-exercised',
+    );
+  });
+
+  it('keeps the observation-and-cause sentence on every finding row', () => {
+    // Terse drops the reasoning extras, never the sentence: a row without one
+    // is a status code, which spec D4 rejects.
+    expect(render('sdet')).toContain('twelve days before this fix merged');
+  });
+
+  it('drops the evidence clause, because it wants no reasoning', () => {
+    const out = render('sdet', [
+      {
+        file: 'ci.yml',
+        status: 'abstain',
+        explanation: 'The workflow probe could not decide, because gh failed.',
+        evidence: 'gh run list --limit 100',
+      },
+    ]);
+    expect(out).not.toContain('Read:');
+  });
+
+  it('still prints the whole summary line', () => {
+    expect(render('sdet')).toContain(
+      '7 changed · 0 exercised · 2 not exercised',
+    );
+  });
+});
