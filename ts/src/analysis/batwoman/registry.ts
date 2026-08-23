@@ -38,3 +38,47 @@ export function describeArtifact(file: string): string {
   }
   return 'unrecognised artifact';
 }
+
+/** The first probe claiming this file, or null. */
+export function matchProbe(
+  probes: readonly ExerciseProbe[],
+  file: string,
+): ExerciseProbe | null {
+  return probes.find((probe) => probe.matches(file)) ?? null;
+}
+
+/** One file's verdict, via the probe that claims it. */
+export async function probeFile(
+  probes: readonly ExerciseProbe[],
+  file: string,
+  ctx: ExerciseContext,
+): Promise<ExerciseVerdict> {
+  const probe = matchProbe(probes, file);
+  if (probe === null) {
+    return {
+      file,
+      status: 'no-probe',
+      explanation:
+        `batwoman has no probe for this ${describeArtifact(file)}, so ` +
+        'nothing looked at whether it has run since the fix merged.',
+    };
+  }
+  return probe.probe(file, ctx);
+}
+
+/**
+ * Probe every changed file, in input order, one at a time.
+ *
+ * Sequential rather than `Promise.all`: the real port shells out to `gh`, and a
+ * fan-out over a whole changed-file set would turn one audit into a burst of
+ * API calls. Order is preserved so the report is reproducible.
+ */
+export async function probeAll(
+  probes: readonly ExerciseProbe[],
+  files: readonly string[],
+  ctx: ExerciseContext,
+): Promise<ExerciseVerdict[]> {
+  const verdicts: ExerciseVerdict[] = [];
+  for (const file of files) verdicts.push(await probeFile(probes, file, ctx));
+  return verdicts;
+}
