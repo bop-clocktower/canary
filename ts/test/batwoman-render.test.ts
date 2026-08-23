@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { summaryLine, wrap } from '../src/analysis/batwoman/render.js';
-import { MIXED, v } from './batwoman-testkit.js';
+import { MIXED, render, v } from './batwoman-testkit.js';
 
 describe('summaryLine', () => {
   it('prints one column per status plus the changed-file total', () => {
@@ -53,5 +53,45 @@ describe('wrap', () => {
   it('applies the indent to every line', () => {
     const lines = wrap('one two', 6, '..');
     expect(lines.every((line) => line.startsWith('..'))).toBe(true);
+  });
+});
+
+describe('the report header', () => {
+  it('names the repo and issue, the closing sha and its subject', () => {
+    const out = render('junior');
+    expect(out).toContain('canary batwoman — canary#749');
+    expect(out).toContain('1e0c05b');
+    expect(out).toContain('make the refresh-baseline label refresh');
+  });
+
+  it('prints the merge timestamp', () => {
+    expect(render('junior')).toContain('2026-08-22 17:34 UTC');
+  });
+
+  it('always ends with the summary line', () => {
+    for (const id of ['sdet', 'junior', 'manual']) {
+      expect(render(id).trimEnd().endsWith(summaryLine(MIXED))).toBe(true);
+    }
+  });
+});
+
+describe('persona provenance', () => {
+  it('prints the register, its label and its source when chosen', () => {
+    const out = render('sdet');
+    expect(out).toContain('sdet');
+    expect(out).toContain('explicit');
+  });
+
+  it('renders the registry fallback and says so when nothing is chosen', () => {
+    const out = render(null);
+    expect(out).toContain('junior');
+    expect(out).toContain('fallback');
+    expect(out).toContain("fell back to 'junior'");
+  });
+
+  it('reports an unknown register as the mistake it is, not as silence', () => {
+    const out = render('architect');
+    expect(out).toContain('junior');
+    expect(out).toContain('architect');
   });
 });

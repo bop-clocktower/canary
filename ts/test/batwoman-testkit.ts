@@ -10,6 +10,8 @@
  * `*.test.ts` from another would register its `describe` blocks twice.
  */
 import type { PersonaRegistry } from '../src/core/persona.js';
+import { resolvePersona } from '../src/core/persona.js';
+import { renderReport } from '../src/analysis/batwoman/render.js';
 import type {
   ClosureHeader,
   ExerciseVerdict,
@@ -84,3 +86,16 @@ export const MIXED: ExerciseVerdict[] = [
   v('AGENTS.md', 'not-applicable', 'A document has nothing to execute.'),
   v('CHANGELOG.md', 'not-applicable', 'A document has nothing to execute.'),
 ];
+
+/** Render one register over one verdict set, from the injected registry. */
+export function render(
+  explicit: string | null,
+  verdicts: readonly ExerciseVerdict[] = MIXED,
+): string {
+  return renderReport({
+    header: HEADER,
+    repo: 'canary',
+    verdicts,
+    persona: resolvePersona({ explicit, registry: FIXTURE_REGISTRY }),
+  });
+}

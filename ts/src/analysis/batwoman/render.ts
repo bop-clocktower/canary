@@ -66,3 +66,47 @@ export function wrap(text: string, width: number, indent: string): string[] {
   if (current !== '') lines.push(indent + current);
   return lines;
 }
+
+/** Everything the renderer needs. Probes never see this. */
+export interface RenderOptions {
+  readonly header: ClosureHeader;
+  readonly repo: string;
+  readonly verdicts: readonly ExerciseVerdict[];
+  readonly persona: ResolvedPersona;
+}
+
+/** `2026-08-22 17:34 UTC`, stable across the runner's timezone. */
+function stamp(when: Date): string {
+  return `${when.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+}
+
+function headerLines(options: RenderOptions): string[] {
+  const { header, repo, persona } = options;
+  return [
+    `canary batwoman — ${repo}#${header.issue}`,
+    '',
+    `  Closed by  ${header.mergeSha}  ${header.mergeSubject}`,
+    `  Merged     ${stamp(header.mergedAt)}`,
+    // Printed so a reader who got terse output when they wanted guided output
+    // can tell a short report from a truncated one (spec criterion 9).
+    `  Register   ${persona.persona.id} (${persona.persona.label}) — ` +
+      `${persona.source}: ${persona.reason}`,
+    '',
+  ];
+}
+
+/** Filled in by Tasks 9-11, one register at a time. */
+function bodyLines(_options: RenderOptions): string[] {
+  return [];
+}
+
+/** The whole report, as one string whose last content line is the summary. */
+export function renderReport(options: RenderOptions): string {
+  return [
+    ...headerLines(options),
+    ...bodyLines(options),
+    '  ' + '─'.repeat(62),
+    '  ' + summaryLine(options.verdicts),
+    '',
+  ].join('\n');
+}
