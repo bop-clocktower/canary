@@ -80,24 +80,102 @@ function stamp(when: Date): string {
   return `${when.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
 
+/** The report's column limit. Header and body wrap to the same width. */
+const WIDTH = 78;
+
+/**
+ * One `  Label     value` header row, wrapped with a hanging indent.
+ *
+ * The header wraps for the same reason the body does, and it is the amendment
+ * this module needed most: both values it carries are free text of unbounded
+ * length. A commit subject is whatever the author typed, and
+ * `ResolvedPersona.reason` is a composed sentence -- an unknown register
+ * produces one naming every candidate. Emitted unwrapped, those two lines were
+ * 83 and 199 columns wide against a 78-column report, and only short fixtures
+ * kept that from being visible.
+ */
+function labelled(label: string, value: string): string[] {
+  const prefix = `  ${label.padEnd(9)}  `;
+  const lines = wrap(value, WIDTH, ' '.repeat(prefix.length));
+  const [first, ...rest] = lines;
+  if (first === undefined) return [prefix.trimEnd()];
+  // The first line swaps the blank indent for the label; the rest keep it, so
+  // continuations align under the value rather than under the label.
+  return [prefix + first.slice(prefix.length), ...rest];
+}
+
 function headerLines(options: RenderOptions): string[] {
   const { header, repo, persona } = options;
   return [
     `canary batwoman — ${repo}#${header.issue}`,
     '',
-    `  Closed by  ${header.mergeSha}  ${header.mergeSubject}`,
-    `  Merged     ${stamp(header.mergedAt)}`,
+    ...labelled('Closed by', `${header.mergeSha}  ${header.mergeSubject}`),
+    ...labelled('Merged', stamp(header.mergedAt)),
     // Printed so a reader who got terse output when they wanted guided output
     // can tell a short report from a truncated one (spec criterion 9).
-    `  Register   ${persona.persona.id} (${persona.persona.label}) — ` +
-      `${persona.source}: ${persona.reason}`,
+    ...labelled(
+      'Register',
+      `${persona.persona.id} (${persona.persona.label}) — ` +
+        `${persona.source}: ${persona.reason}`,
+    ),
     '',
   ];
 }
 
-/** Filled in by Tasks 9-11, one register at a time. */
-function bodyLines(_options: RenderOptions): string[] {
-  return [];
+/** Section headings, in report order: the findings first. */
+const SECTIONS: ReadonlyArray<readonly [ExerciseStatus, string]> = [
+  ['not-exercised', 'NOT EXERCISED'],
+  ['abstain', 'ABSTAINED'],
+  ['no-probe', 'NO PROBE'],
+  ['exercised', 'EXERCISED'],
+  ['not-applicable', 'NOT APPLICABLE'],
+];
+
+/**
+ * A section heading.
+ *
+ * The first finding section states its denominator inline; the rest are counted
+ * against the same total one line below, in the summary that always prints.
+ */
+function heading(
+  label: string,
+  status: ExerciseStatus,
+  rows: number,
+  total: number,
+): string {
+  return status === 'not-exercised'
+    ? `  ${label} — ${rows} of ${total} changed files`
+    : `  ${label} — ${rows} files`;
+}
+
+function briefRows(
+  verdicts: readonly ExerciseVerdict[],
+  reasoning: boolean,
+): string[] {
+  const lines: string[] = [];
+  for (const verdict of verdicts) {
+    lines.push(`    ${verdict.file}`);
+    lines.push(...wrap(verdict.explanation, 78, '      '));
+    if (reasoning && verdict.evidence !== undefined) {
+      lines.push(`      Read: ${verdict.evidence}`);
+    }
+    lines.push('');
+  }
+  return lines;
+}
+
+function bodyLines(options: RenderOptions): string[] {
+  const { verdicts, persona } = options;
+  const lines: string[] = [];
+  for (const [status, label] of SECTIONS) {
+    const rows = verdicts.filter((verdict) => verdict.status === status);
+    // An empty section is omitted, not printed as a zero: the counts that
+    // matter are in the summary line, which prints all five unconditionally.
+    if (rows.length === 0) continue;
+    lines.push(heading(label, status, rows.length, verdicts.length));
+    lines.push(...briefRows(rows, persona.persona.reasoning));
+  }
+  return lines;
 }
 
 /** The whole report, as one string whose last content line is the summary. */

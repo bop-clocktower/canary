@@ -4,8 +4,19 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { summaryLine, wrap } from '../src/analysis/batwoman/render.js';
-import { MIXED, render, v } from './batwoman-testkit.js';
+import { resolvePersona } from '../src/core/persona.js';
+import {
+  renderReport,
+  summaryLine,
+  wrap,
+} from '../src/analysis/batwoman/render.js';
+import {
+  FIXTURE_REGISTRY,
+  HEADER,
+  MIXED,
+  render,
+  v,
+} from './batwoman-testkit.js';
 
 describe('summaryLine', () => {
   it('prints one column per status plus the changed-file total', () => {
@@ -93,5 +104,105 @@ describe('persona provenance', () => {
     const out = render('architect');
     expect(out).toContain('junior');
     expect(out).toContain('architect');
+  });
+});
+
+describe('the junior register (brief, the declared fallback)', () => {
+  it('groups rows under a heading naming the status and its count', () => {
+    const out = render('junior');
+    expect(out).toContain('NOT EXERCISED — 2 of 7 changed files');
+    expect(out).toContain('NO PROBE — 3 files');
+    expect(out).toContain('NOT APPLICABLE — 2 files');
+  });
+
+  it('omits a section with no rows rather than printing an empty one', () => {
+    const out = render('junior');
+    expect(out).not.toContain('ABSTAINED');
+    expect(out).not.toContain('EXERCISED — 0');
+  });
+
+  it('carries each not-exercised row with its full sentence', () => {
+    const out = render('junior');
+    expect(out).toContain('.github/workflows/refresh-arch-baseline.yml');
+    expect(out).toContain('twelve days before this fix merged');
+    expect(out).toContain('`refresh-baseline` label');
+  });
+
+  it('names the artifact type on every no-probe row', () => {
+    expect(render('junior')).toContain('test file');
+  });
+
+  it('adds the evidence clause, because the register wants reasoning', () => {
+    const out = render('junior', [
+      {
+        file: 'ci.yml',
+        status: 'abstain',
+        explanation: 'The workflow probe could not decide, because gh failed.',
+        evidence: 'gh run list --limit 100',
+      },
+    ]);
+    expect(out).toContain('Read: gh run list --limit 100');
+  });
+
+  it('wraps prose rather than emitting one very long line', () => {
+    const longest = Math.max(
+      ...render('junior')
+        .split('\n')
+        .map((line) => line.length),
+    );
+    expect(longest).toBeLessThanOrEqual(78);
+  });
+});
+
+describe('the header holds the 78-column limit', () => {
+  /**
+   * Both header values are free text of unbounded length: a commit subject is
+   * whatever the author typed, and `ResolvedPersona.reason` is a sentence the
+   * resolver composes. The short fixtures elsewhere in this suite kept both
+   * lines under the limit by luck, which is what hid the second instance of
+   * this defect behind the first. This case supplies a realistically long
+   * value for each at once, so the limit is asserted against the header rather
+   * than against the fixtures that happen to fit.
+   */
+  const LONG_SUBJECT =
+    'fix(ci): make the refresh-baseline label actually refresh the ' +
+    'architecture baseline instead of silently skipping the job';
+
+  /** An unknown register: the resolver's longest real reason. */
+  const LONG_REASON = resolvePersona({
+    explicit: 'architect',
+    registry: FIXTURE_REGISTRY,
+  });
+
+  it('gives the resolver a reason long enough to break an unwrapped line', () => {
+    // Guard the guard: if the reason were short, the assertion below would
+    // pass without exercising the wrap, which is the abstention shape.
+    expect(LONG_REASON.reason.length).toBeGreaterThan(33);
+  });
+
+  it('wraps a long merge subject and a long persona reason together', () => {
+    const out = renderReport({
+      header: { ...HEADER, mergeSubject: LONG_SUBJECT },
+      repo: 'canary',
+      verdicts: MIXED,
+      persona: LONG_REASON,
+    });
+    const longest = Math.max(...out.split('\n').map((line) => line.length));
+    expect(longest).toBeLessThanOrEqual(78);
+  });
+
+  it('keeps the wrapped subject and reason readable, not truncated', () => {
+    const out = renderReport({
+      header: { ...HEADER, mergeSubject: LONG_SUBJECT },
+      repo: 'canary',
+      verdicts: MIXED,
+      persona: LONG_REASON,
+    });
+    // Wrapping must not drop words: every word of both values survives.
+    const flattened = out.replace(/\s+/g, ' ');
+    for (const word of LONG_SUBJECT.split(' ')) {
+      expect(flattened).toContain(word);
+    }
+    expect(flattened).toContain('architect');
   });
 });
