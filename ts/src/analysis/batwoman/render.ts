@@ -164,6 +164,43 @@ function briefRows(
   return lines;
 }
 
+/**
+ * What a reader can actually do about each status.
+ *
+ * `exercised` and `not-applicable` are absent on purpose: there is nothing to
+ * ask for, and inventing a step for them would be the guided register's version
+ * of a success token.
+ */
+const NEXT_STEPS: Partial<Record<ExerciseStatus, string>> = {
+  'not-exercised':
+    'Run the path this file belongs to, then re-run canary batwoman to ' +
+    'confirm it moved.',
+  abstain:
+    'Check the evidence source named above, then re-run canary batwoman so ' +
+    'this file gets a verdict instead of a gap.',
+  'no-probe':
+    'Add an ExerciseProbe for this artifact type so the gap stops being ' +
+    'uncountable, or confirm by hand that the file ran.',
+};
+
+function guidedRows(
+  verdicts: readonly ExerciseVerdict[],
+  status: ExerciseStatus,
+): string[] {
+  const lines: string[] = [];
+  verdicts.forEach((verdict, index) => {
+    lines.push(`    ${index + 1}. ${verdict.file}`);
+    lines.push(...wrap(verdict.explanation, 78, '       '));
+    if (verdict.evidence !== undefined) {
+      lines.push(`       Read: ${verdict.evidence}`);
+    }
+    const step = NEXT_STEPS[status];
+    if (step !== undefined) lines.push(...wrap(`Next: ${step}`, 78, '       '));
+    lines.push('');
+  });
+  return lines;
+}
+
 function terseRows(verdicts: readonly ExerciseVerdict[]): string[] {
   return verdicts.flatMap((verdict) => [
     `  - ${verdict.file}  ${verdict.status}`,
@@ -181,6 +218,11 @@ function bodyLines(options: RenderOptions): string[] {
     if (rows.length === 0) continue;
     if (persona.persona.depth === 'terse') {
       lines.push(...terseRows(rows));
+      continue;
+    }
+    if (persona.persona.depth === 'guided') {
+      lines.push(heading(label, status, rows.length, verdicts.length));
+      lines.push(...guidedRows(rows, status));
       continue;
     }
     lines.push(heading(label, status, rows.length, verdicts.length));

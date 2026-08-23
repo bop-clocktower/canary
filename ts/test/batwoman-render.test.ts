@@ -244,3 +244,42 @@ describe('the sdet register (terse)', () => {
     );
   });
 });
+
+describe('the manual register (guided)', () => {
+  it('numbers the rows within each section', () => {
+    const out = render('manual');
+    expect(out).toContain('    1. .github/workflows/refresh-arch-baseline.yml');
+    expect(out).toContain('    2. scripts/refresh-arch-baseline.mjs');
+  });
+
+  it('gives every not-exercised row an actionable next step', () => {
+    const out = render('manual');
+    expect(out).toContain('Next:');
+    expect(out).toMatch(/Next: [A-Z][^\n]*/);
+  });
+
+  it('gives an abstain row a different next step from a no-probe row', () => {
+    const stepOf = (out: string) =>
+      out.split('Next: ')[1]?.split('\n')[0] ?? '';
+    const abstained = stepOf(render('manual', [v('ci.yml', 'abstain')]));
+    const unprobed = stepOf(render('manual', [v('x.ts', 'no-probe')]));
+    expect(abstained).not.toBe('');
+    expect(abstained).not.toBe(unprobed);
+  });
+
+  it('gives an exercised row no next step, having nothing to ask for', () => {
+    expect(render('manual', [v('a.yml', 'exercised')])).not.toContain('Next:');
+  });
+
+  it('keeps the evidence clause, because the register wants reasoning', () => {
+    const out = render('manual', [
+      {
+        file: 'ci.yml',
+        status: 'abstain',
+        explanation: 'The workflow probe could not decide, because gh failed.',
+        evidence: 'gh run list --limit 100',
+      },
+    ]);
+    expect(out).toContain('Read: gh run list --limit 100');
+  });
+});
