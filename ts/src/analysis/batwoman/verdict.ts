@@ -72,3 +72,33 @@ export interface ExerciseProbe {
   matches(file: string): boolean;
   probe(file: string, ctx: ExerciseContext): Promise<ExerciseVerdict>;
 }
+
+/** One count per status. No aggregate: see {@link tallyVerdicts}. */
+export type StatusTally = Readonly<Record<ExerciseStatus, number>>;
+
+/** The report's denominator, plus its parts. */
+export interface Tally {
+  readonly changed: number;
+  readonly byStatus: StatusTally;
+}
+
+/**
+ * Count verdicts by status.
+ *
+ * There is deliberately no `assessed` field. A derived "files batwoman could
+ * decide about" figure is exactly the shape spec criterion 3 forbids: it makes
+ * `abstain` and `no-probe` disappear into a denominator that looks like
+ * coverage. A caller wanting a subtotal has to write the addition itself, in
+ * the open, where a reviewer can see which statuses it folded.
+ */
+export function tallyVerdicts(verdicts: readonly ExerciseVerdict[]): Tally {
+  const byStatus: Record<ExerciseStatus, number> = {
+    exercised: 0,
+    'not-exercised': 0,
+    abstain: 0,
+    'no-probe': 0,
+    'not-applicable': 0,
+  };
+  for (const verdict of verdicts) byStatus[verdict.status] += 1;
+  return { changed: verdicts.length, byStatus };
+}
