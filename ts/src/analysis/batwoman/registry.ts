@@ -63,7 +63,23 @@ export async function probeFile(
         'nothing looked at whether it has run since the fix merged.',
     };
   }
-  return probe.probe(file, ctx);
+  try {
+    return await probe.probe(file, ctx);
+  } catch (err) {
+    // Cannot-verify is a finding, not a pass (spec criterion 4). A probe whose
+    // evidence source failed knows strictly less than one that never ran, so
+    // the only honest answer is abstain -- and the `await` inside the `try` is
+    // load-bearing: without it a rejected promise escapes the catch.
+    return {
+      file,
+      status: 'abstain',
+      explanation:
+        `the ${probe.id} probe looked at this file but could not decide ` +
+        'whether it ran, because reading its evidence failed: ' +
+        `${err instanceof Error ? err.message : String(err)}.`,
+      evidence: `${probe.id} probe error`,
+    };
+  }
 }
 
 /**

@@ -135,3 +135,51 @@ describe('the no-probe fallback', () => {
     ]);
   });
 });
+
+describe('a probe that throws', () => {
+  const exploding: ExerciseProbe = {
+    id: 'workflow',
+    artifact: 'workflow',
+    matches: () => true,
+    probe: async () => {
+      throw new Error('gh: could not authenticate');
+    },
+  };
+
+  it('abstains rather than reporting the file clean', async () => {
+    const verdict = await probeFile([exploding], 'ci.yml', OFFLINE_CTX);
+    expect(verdict.status).toBe('abstain');
+    expect(verdict.status).not.toBe('exercised');
+    expect(verdict.status).not.toBe('not-exercised');
+  });
+
+  it('keeps abstain distinct from no-probe: a probe did look', async () => {
+    const verdict = await probeFile([exploding], 'ci.yml', OFFLINE_CTX);
+    expect(verdict.status).not.toBe('no-probe');
+  });
+
+  it('names the probe and the failure in a full sentence', async () => {
+    const verdict = await probeFile([exploding], 'ci.yml', OFFLINE_CTX);
+    expect(verdict.explanation).toContain('workflow');
+    expect(verdict.explanation).toContain('could not authenticate');
+    expect(verdict.explanation.trimEnd().endsWith('.')).toBe(true);
+  });
+
+  it('does not abort the rest of the changed-file set', async () => {
+    const files = ['a.yml', 'b.yml'];
+    const verdicts = await probeAll([exploding], files, OFFLINE_CTX);
+    expect(verdicts).toHaveLength(2);
+    expect(verdicts.every((verdict) => verdict.status === 'abstain')).toBe(
+      true,
+    );
+  });
+
+  it('abstains when the probe rejects rather than throws', async () => {
+    const rejecting: ExerciseProbe = {
+      ...exploding,
+      probe: () => Promise.reject(new Error('network unreachable')),
+    };
+    const verdict = await probeFile([rejecting], 'ci.yml', OFFLINE_CTX);
+    expect(verdict.status).toBe('abstain');
+  });
+});
