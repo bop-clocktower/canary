@@ -46,20 +46,38 @@ jobs:
 
       - run: npm install -g "$HARNESS_CLI"
 
-      # `--allow-regress --reason` is mandatory here, not optional (#634).
-      # A regression is the ONLY reason anyone applies the label, and on a
-      # regression `harness check-arch --update-baseline` declines to write —
-      # while exiting 0 — asking to be re-run with the opt-in. Bare, this step
-      # was a guaranteed no-op on its only real input. The reason is sourced
-      # from the PR so it lands in `.harness/audit.log` as designed.
+      # The CLI cannot do this (#749). `check-arch --update-baseline` — with or
+      # without `--allow-regress --reason`, which #634 correctly made mandatory
+      # for CLI 10.x — writes a per-PR file under `.harness/arch/allowances/` at
+      # CLI 11.x and says so: "baselines.json stays byte-identical to the base".
+      # It then prints "Baseline updated successfully." anyway. So this workflow
+      # spent two majors writing allowances under a name that promises a
+      # refresh, and #634's guard was widened to accept that rather than to
+      # catch it.
+      #
+      # `scripts/refresh-arch-baseline.mjs` performs the refresh directly, from
+      # the same report. It moves `metrics[<category>].value` and leaves
+      # `violationIds` untouched, so no violation is banked — the half of a
+      # wholesale refresh #689 was right to refuse.
+      - name: Measure
+        run: harness check-arch --json > arch-report.json || true
+
       - name: Refresh baseline
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          harness check-arch --update-baseline \
-            --allow-regress \
-            --reason "Accepted by maintainer via the refresh-baseline label on PR #${PR_NUMBER}: ${PR_TITLE}"
+          REFRESH_COMMIT: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/refresh-arch-baseline.mjs arch-report.json
+
+      # The report is the evidence for whatever the step above decided — which
+      # number it wrote, or which regression it refused. `!cancelled()` rather
+      # than `always()`: `cancel-in-progress: true` above would otherwise fire
+      # this on every superseded run (#588).
+      - name: Upload the arch report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: refresh-arch-report
+          path: arch-report.json
+          if-no-files-found: warn
 
       - name: Commit & push the refreshed baseline
         env:
@@ -73,21 +91,23 @@ jobs:
           # refused for a reason worth a human's eyes. Both need reporting; the
           # old `exit 0` reported neither.
           #
-          # Detection deliberately uses `git status --porcelain`, not
-          # `git diff`, and covers the whole arch directory rather than
-          # baselines.json alone. On CLI 11 an accepted regression does NOT
-          # rewrite baselines.json — `--allow-regress` writes a per-branch file
-          # under .harness/arch/allowances/ and reports "baselines.json stays
-          # byte-identical to the base", recording --reason in audit.log. So
-          # the old guard watched a path the CLI intentionally leaves alone,
-          # and an allowance is a NEW file, which `git diff` never reports.
-          # Run 31434303396 failed here for exactly that reason while naming
-          # the wrong cause.
-          if [ -z "$(git status --porcelain -- .harness/arch/ .harness/audit.log)" ]; then
-            echo "::error::harness check-arch --update-baseline changed nothing." \
-              "Either the baseline was already current (the ratchet was not red," \
-              "so the label was not needed) or the CLI declined — see the step" \
-              "above. The refresh-baseline label is left in place."
+          # The guard names the INTENDED artifact, not any artifact (#749).
+          # It previously watched the whole `.harness/arch/` directory, which
+          # meant an allowance file — the one thing the CLI does write, and the
+          # thing this workflow is not for — satisfied it. A run that produced
+          # an allowance instead of a refresh passed a guard whose whole job was
+          # to notice that, and the commit message still said "refresh arch
+          # baseline". Watching baselines.json specifically is what makes the
+          # guard able to fail for the reason it exists.
+          #
+          # `git status --porcelain` rather than `git diff`, so a file that is
+          # new rather than modified still counts.
+          if [ -z "$(git status --porcelain -- .harness/arch/baselines.json)" ]; then
+            echo "::error::baselines.json is unchanged, so no refresh happened." \
+              "The refresh step exits 1 when no metric regressed (the label was" \
+              "not needed) and 3 when it could not read the report or refused to" \
+              "write — read the step above for which. The refresh-baseline label" \
+              "is left in place."
             exit 1
           fi
           # Race guard: the PR branch can be deleted or merged mid-run.
@@ -97,11 +117,11 @@ jobs:
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Stage everything the guard inspects. Staging a narrower set than
-          # detection covers is the same lie one step later: a green run and an
-          # empty commit. audit.log carries the --reason and is tracked, so
-          # dropping it would discard the record of who accepted the regression.
-          git add .harness/arch/ .harness/audit.log
+          # Stage everything the guard inspects, plus audit.log if the CLI
+          # touched it. Staging a narrower set than detection covers is the same
+          # lie one step later: a green run and an empty commit.
+          git add .harness/arch/baselines.json
+          git add .harness/audit.log 2>/dev/null || true
           git commit -m "chore(ci): refresh arch baseline via refresh-baseline label"
           git push origin "HEAD:$BRANCH"
           {

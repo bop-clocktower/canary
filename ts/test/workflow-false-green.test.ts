@@ -129,6 +129,17 @@ const UPDATE_BASELINE_CALL =
   /(?:^|[;&|(]\s*)harness\s+[\w-]+(?=[^;&|]*--update-baseline\b)/;
 
 /**
+ * The repo's own baseline refresh (#749).
+ *
+ * `harness check-arch --update-baseline` writes an ALLOWANCE at CLI 11.x and
+ * leaves `baselines.json` byte-identical, so the flag above no longer denotes a
+ * baseline mutation at all. This script is what mutates the baseline now, and
+ * the #634 invariants (fail on no change, do not spend the label) apply to it
+ * for exactly the same reasons.
+ */
+const REFRESH_BASELINE_CALL = /\brefresh-arch-baseline\.mjs\b/;
+
+/**
  * The opening `if` of a "did anything change?" guard, in either idiom.
  *
  * Matching both is deliberate: the assertion below requires the porcelain
@@ -521,7 +532,10 @@ describe('workflow false-green invariants', () => {
    *    A run that refreshed nothing must leave the label in place.
    */
   describe('#634 — an opt-in mutation workflow fails when it changed nothing', () => {
-    /** `[workflow, logical line]` for every `--update-baseline` invocation. */
+    /**
+     * `[workflow, logical line]` for every step that mutates a baseline —
+     * a `--update-baseline` invocation or a `refresh-arch-baseline.mjs` run.
+     */
     const updateBaseline: Array<[string, string]> = [];
     /** `[workflow, run script]` for no-change guards in label-gated workflows. */
     const noChangeGuards: Array<[string, string]> = [];
@@ -534,7 +548,9 @@ describe('workflow false-green invariants', () => {
     function classify(name: string, labelGated: boolean, step: Step): void {
       if (typeof step.run !== 'string') return;
       const lines = logicalLines(step.run);
-      const matches = lines.filter((l) => UPDATE_BASELINE_CALL.test(l));
+      const matches = lines.filter(
+        (l) => UPDATE_BASELINE_CALL.test(l) || REFRESH_BASELINE_CALL.test(l),
+      );
       updateBaseline.push(...matches.map((l): [string, string] => [name, l]));
       if (step.run.includes('--remove-label'))
         labelConsumers.push([name, step]);
@@ -582,6 +598,16 @@ describe('workflow false-green invariants', () => {
     it.each(updateBaseline)(
       '%s passes the regression opt-in through: %s',
       (_name, line) => {
+        // Only the CLI form needs the flags: harness declines a regressing
+        // `--update-baseline` while exiting 0 unless both are present (#634).
+        // `refresh-arch-baseline.mjs` has no such trapdoor — it refuses unsafe
+        // writes internally (a lowered value, an absent `currentValue`) with a
+        // distinct exit code rather than a silent zero, so there is no opt-in
+        // to forget. Asserting the flags on it would be cargo-culted.
+        if (!UPDATE_BASELINE_CALL.test(line)) {
+          expect(REFRESH_BASELINE_CALL.test(line)).toBe(true);
+          return;
+        }
         expect(
           line,
           'harness declines a regressing --update-baseline and exits 0',
