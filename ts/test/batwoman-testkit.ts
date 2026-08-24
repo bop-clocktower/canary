@@ -5,6 +5,11 @@
  * injected through `resolvePersona({ registry })` so that no test reads
  * `ts/src/data/personas/registry.json` off disk (spec D7).
  *
+ * "Verbatim" is enforced, not asserted in prose: `batwoman-render-invariants`
+ * deep-compares this object against the shipped JSON. Review found the audience
+ * strings had already drifted into truncated paraphrases while the docstring
+ * still claimed a verbatim copy, so the claim now has a test behind it.
+ *
  * It lives in a testkit rather than beside one of the suites because the
  * invariant suite and the render suite both need it, and importing one
  * `*.test.ts` from another would register its `describe` blocks twice.
@@ -28,7 +33,9 @@ export const FIXTURE_REGISTRY: PersonaRegistry = {
     {
       id: 'sdet',
       label: 'Senior SDET',
-      audience: 'Writes and owns automated tests daily.',
+      audience:
+        'Writes and owns automated tests daily; fluent in the framework ' +
+        'and the codebase.',
       depth: 'terse',
       formats: ['bullets', 'code'],
       reasoning: false,
@@ -36,7 +43,9 @@ export const FIXTURE_REGISTRY: PersonaRegistry = {
     {
       id: 'junior',
       label: 'Junior SDET',
-      audience: 'Writes automated tests but is still building judgement.',
+      audience:
+        'Writes automated tests but is still building judgement about which ' +
+        'ones matter.',
       depth: 'brief',
       formats: ['bullets', 'code', 'rationale'],
       reasoning: true,
@@ -44,7 +53,9 @@ export const FIXTURE_REGISTRY: PersonaRegistry = {
     {
       id: 'manual',
       label: 'Manual tester',
-      audience: 'Tests by hand and reads test output.',
+      audience:
+        'Tests by hand and reads test output; may not read or write the ' +
+        "framework's code.",
       depth: 'guided',
       formats: ['numbered-steps', 'rationale'],
       reasoning: true,

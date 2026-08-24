@@ -42,6 +42,7 @@ import {
   explain,
   type ExerciseVerdict,
 } from '../src/analysis/batwoman/verdict.js';
+import type { PersonaRegistry } from '../src/core/persona.js';
 import {
   ALL_STATUSES,
   FIXTURE_REGISTRY,
@@ -190,11 +191,45 @@ describe('offline guarantee', () => {
   });
 });
 
-it('asserts every register the fixture registry declares', () => {
-  // A fourth register added to the registry without being added here would
-  // leave the no-success-token rule unasserted for it -- the exact "asserted
-  // once against the default" failure spec criterion 8 names.
-  expect(FIXTURE_REGISTRY.personas.map((p) => p.id).sort()).toEqual(
-    [...REGISTERS].sort(),
-  );
+/**
+ * The drift guard, read from the *shipped* registry.
+ *
+ * It used to compare `FIXTURE_REGISTRY.personas` against `REGISTERS` -- two
+ * constants three lines apart in the test tree, neither of them the file canary
+ * actually ships. Appending a fourth persona to
+ * `ts/src/data/personas/registry.json` left all 149 batwoman tests green: the
+ * guard guarded the copy against itself, which is the "asserted once against the
+ * default" failure spec criterion 8 names, one level of indirection up.
+ *
+ * This is the one test in the file that touches disk, deliberately, and it does
+ * so outside the offline assertions above: those reset the recorder before they
+ * render, so a read here cannot make them pass. Nothing about invariant 4 is
+ * weakened -- the *renderer* still reads nothing; a drift guard by definition
+ * has to compare against the artifact it is guarding.
+ */
+describe('the shipped persona registry', () => {
+  const SHIPPED = JSON.parse(
+    fs.readFileSync(
+      fileURLToPath(
+        new URL('../src/data/personas/registry.json', import.meta.url),
+      ),
+      'utf8',
+    ),
+  ) as PersonaRegistry;
+
+  it('declares exactly the registers these invariants are asserted over', () => {
+    // Add a register to the shipped registry without adding it to REGISTERS and
+    // the no-success-token rule is unasserted for it. This is what fails.
+    expect(SHIPPED.personas.map((persona) => persona.id).sort()).toEqual(
+      [...REGISTERS].sort(),
+    );
+  });
+
+  it('is what the testkit claims to be a verbatim copy of', () => {
+    // The testkit docstring says "a verbatim copy of the three shipped
+    // registers". Review found its audience strings were truncated versions of
+    // the shipped ones, so the claim was false and nothing could notice. Either
+    // the copy is verbatim or the docstring is a lie; this makes it the former.
+    expect(FIXTURE_REGISTRY).toEqual(SHIPPED);
+  });
 });
