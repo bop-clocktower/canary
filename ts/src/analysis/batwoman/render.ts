@@ -151,7 +151,10 @@ function labelled(label: string, value: string): string[] {
   const prefix = `  ${label.padEnd(9)}  `;
   const lines = wrap(value, WIDTH, ' '.repeat(prefix.length));
   const [first, ...rest] = lines;
-  if (first === undefined) return [prefix.trimEnd()];
+  // An empty value used to emit `  Closed by` and nothing else -- a label
+  // dangling over blank space, which is the same silent-empty shape the verdict
+  // model now forbids outright. Naming the gap keeps it countable by eye.
+  if (first === undefined) return [`${prefix}(none recorded)`];
   // The first line swaps the blank indent for the label; the rest keep it, so
   // continuations align under the value rather than under the label.
   return [prefix + first.slice(prefix.length), ...rest];
@@ -196,9 +199,10 @@ function heading(
   rows: number,
   total: number,
 ): string {
+  const files = (count: number) => (count === 1 ? 'file' : 'files');
   return status === 'not-exercised'
-    ? `  ${label} — ${rows} of ${total} changed files`
-    : `  ${label} — ${rows} files`;
+    ? `  ${label} — ${rows} of ${total} changed ${files(total)}`
+    : `  ${label} — ${rows} ${files(rows)}`;
 }
 
 function briefRows(

@@ -131,6 +131,53 @@ describe('the report header', () => {
   });
 });
 
+describe("section headings count in the reader's language", () => {
+  it('says "1 file", not "1 files"', () => {
+    // BW-S1. Cosmetic, but the guided and brief registers are the ones a manual
+    // tester reads, and "NO PROBE - 1 files" is the register talking to itself.
+    const out = render('junior', [v('a.yml', 'exercised')]);
+    expect(out).toContain('EXERCISED — 1 file');
+    expect(out).not.toContain('1 files');
+  });
+
+  it('keeps the plural for every count above one', () => {
+    expect(render('junior')).toContain('NO PROBE — 3 files');
+    expect(render('junior')).toContain('NOT APPLICABLE — 2 files');
+  });
+
+  it('pluralises the denominator of the leading section too', () => {
+    expect(render('junior')).toContain('NOT EXERCISED — 2 of 7 changed files');
+    const one = render('junior', [v('a.yml', 'not-exercised')]);
+    expect(one).toContain('NOT EXERCISED — 1 of 1 changed file');
+    expect(one).not.toContain('changed files');
+  });
+});
+
+describe('a header value that is empty', () => {
+  it('says so, rather than dangling a label with nothing after it', () => {
+    // BW-S3, the same silent-empty shape as BW-C1 one level up. Both values
+    // `labelled()` carries are free text from outside -- a commit subject and a
+    // composed persona reason -- and an empty one produced a line reading
+    // "  Closed by" with nothing after it, untested.
+    const out = renderReport({
+      header: { ...HEADER, mergeSha: '', mergeSubject: '' },
+      repo: 'canary',
+      verdicts: MIXED,
+      persona: resolvePersona({
+        explicit: 'junior',
+        registry: FIXTURE_REGISTRY,
+      }),
+    });
+    expect(out).toContain('Closed by  (none recorded)');
+    expect(out.split('\n')).not.toContain('  Closed by');
+  });
+
+  it('leaves a non-empty value untouched', () => {
+    expect(render('junior')).toContain('1e0c05b');
+    expect(render('junior')).not.toContain('(none recorded)');
+  });
+});
+
 describe('persona provenance', () => {
   it('prints the register, its label and its source when chosen', () => {
     const out = render('sdet');
