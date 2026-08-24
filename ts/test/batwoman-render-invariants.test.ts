@@ -46,7 +46,9 @@ import type { PersonaRegistry } from '../src/core/persona.js';
 import {
   ALL_STATUSES,
   FIXTURE_REGISTRY,
+  LONG_PATHS,
   MIXED,
+  WIDTH,
   render,
   v,
 } from './batwoman-testkit.js';
@@ -69,6 +71,7 @@ const CASES: ReadonlyArray<readonly [string, ExerciseVerdict[]]> = [
   ['a run carrying all five statuses', ALL_STATUSES],
   ['an all-exercised run', [v('a.yml', 'exercised'), v('b.yml', 'exercised')]],
   ['an all-not-applicable run', [v('AGENTS.md', 'not-applicable')]],
+  ['a run with paths too long to fit', LONG_PATHS],
   ['an empty run', []],
 ];
 
@@ -109,6 +112,45 @@ describe.each(REGISTERS)('the %s register', (register) => {
     expect(columns).toHaveLength(5);
     expect(columns.reduce((a, b) => a + b, 0)).toBe(total);
     expect(total).toBe(vs.length);
+  });
+
+  it.each(CASES)('holds the 78-column limit over %s', (_n, verdicts) => {
+    // BW-I1: the limit used to be asserted for the junior register only, over
+    // fixtures that already fitted. Removing the wrap from the terse or the
+    // guided register survived the whole suite 127/127. It is now asserted for
+    // every register over every case, including one whose paths and evidence
+    // command do not fit.
+    const longest = Math.max(
+      0,
+      ...render(register, verdicts)
+        .split('\n')
+        .map((line) => line.length),
+    );
+    expect(longest).toBeLessThanOrEqual(WIDTH);
+  });
+
+  it.each(CASES)('orphans no row marker while wrapping %s', (_n, verdicts) => {
+    // Fitting a long path to the width must not leave `  -`, `    1.` or an
+    // empty string alone on a line -- the first break candidate inside a row is
+    // the space right after its marker, so this is the shape a naive fit
+    // produces.
+    for (const line of render(register, verdicts).split('\n')) {
+      if (line === '') continue;
+      expect(line.trim()).not.toBe('');
+      expect(line.trim()).not.toBe('-');
+      expect(line.trim()).not.toMatch(/^\d+\.$/);
+    }
+  });
+
+  it('has a long-path case that would overflow if nothing wrapped it', () => {
+    // Guard the guard: if every fixture fitted, the assertion above would pass
+    // without exercising any wrapping, which is the abstention shape.
+    const longest = Math.max(
+      ...LONG_PATHS.map(
+        (verdict) => verdict.file.length + (verdict.evidence?.length ?? 0),
+      ),
+    );
+    expect(longest).toBeGreaterThan(WIDTH);
   });
 
   it('never folds abstain or no-probe into a decided figure', () => {

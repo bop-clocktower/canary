@@ -156,6 +156,42 @@ export const ALL_STATUSES: ExerciseVerdict[] = [
   ),
 ];
 
+/** The report's column limit, restated here so a test can assert it. */
+export const WIDTH = 78;
+
+/**
+ * Rows whose file paths and evidence commands do not fit on one line.
+ *
+ * Every other fixture in this file happens to fit, which is what hid the body's
+ * half of the wrapping defect behind the header's: commit 8abe8d1 wrapped the
+ * header and noted that "only short fixtures kept that from being visible", and
+ * the body was left unwrapped with the same short fixtures still hiding it.
+ * Measured against a 78-column report, these rows rendered at 105 columns
+ * (sdet), 118 (junior) and 119 (manual).
+ */
+export const LONG_PATHS: ExerciseVerdict[] = [
+  v(
+    'agents/skills/claude-code/canary-batwoman/references/' +
+      'exercise-probe-authoring-guide.md',
+    'not-applicable',
+    'A document has nothing to execute, so there is nothing to have run.',
+  ),
+  v(
+    '.github/workflows/refresh-architecture-baseline-on-label.yml',
+    'not-exercised',
+    'It has not run since the fix merged, because it is triggered only by the ' +
+      '`refresh-baseline` label.',
+    'gh run list --workflow refresh-architecture-baseline-on-label.yml ' +
+      '--json conclusion,createdAt --limit 100',
+  ),
+  v(
+    'ts/src/analysis/batwoman/probes/workflow-script-reachability.ts',
+    'no-probe',
+    'batwoman has no probe for this source module, so nothing looked at ' +
+      'whether it has run since the fix merged.',
+  ),
+];
+
 /** Render one register over one verdict set, from the injected registry. */
 export function render(
   explicit: string | null,

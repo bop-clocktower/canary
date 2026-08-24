@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { resolvePersona } from '../src/core/persona.js';
 import { explain } from '../src/analysis/batwoman/verdict.js';
 import {
+  fitLine,
   renderReport,
   summaryLine,
   wrap,
@@ -65,6 +66,49 @@ describe('wrap', () => {
   it('applies the indent to every line', () => {
     const lines = wrap('one two', 6, '..');
     expect(lines.every((line) => line.startsWith('..'))).toBe(true);
+  });
+});
+
+describe('fitLine', () => {
+  it('leaves a line that already fits exactly as it was', () => {
+    // Every short row depends on this, including the two spaces the terse
+    // register puts between a path and its status.
+    expect(fitLine('  - a.yml  exercised', 78, '    ')).toEqual([
+      '  - a.yml  exercised',
+    ]);
+  });
+
+  it('chops a single token with no spaces, which wrap() cannot', () => {
+    const lines = fitLine('  ' + 'x'.repeat(100), 20, '    ');
+    expect(lines.every((line) => line.length <= 20)).toBe(true);
+    expect(lines.join('').replace(/\s/g, '')).toBe('x'.repeat(100));
+  });
+
+  it('never orphans a row marker on a line of its own', () => {
+    // The first break candidate in `    1. <long path>` is the space after the
+    // `1.`, which is inside the room and would leave `    1.` alone. Same for
+    // `  - ` and for the plain four-space indent, which produced a blank line.
+    for (const prefix of ['  - ', '    1. ', '    ']) {
+      const lines = fitLine(prefix + 'a/'.repeat(60) + 'file.ts', 78, '      ');
+      for (const line of lines) {
+        expect(line.trim()).not.toBe('');
+        expect(line.trim()).not.toBe('-');
+        expect(line.trim()).not.toMatch(/^\d+\.$/);
+      }
+    }
+  });
+
+  it('still breaks at a space when the space fills most of the line', () => {
+    const lines = fitLine('  Read: gh run list --json conclusion', 30, '    ');
+    expect(lines[0]).toBe('  Read: gh run list --json');
+    expect(lines[1]).toBe('    conclusion');
+  });
+
+  it('terminates and stays within the width for any input', () => {
+    for (const text of ['', 'a', 'a b', 'x'.repeat(500), 'a '.repeat(100)]) {
+      const lines = fitLine('  ' + text, 40, '      ');
+      expect(lines.every((line) => line.length <= 40)).toBe(true);
+    }
   });
 });
 
