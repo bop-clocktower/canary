@@ -7,7 +7,34 @@
  * file exists to prevent: terse output is where a bare check mark is most
  * tempting.
  */
-import { describe, expect, it } from 'vitest';
+import * as fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it, vi } from 'vitest';
+
+/**
+ * Records every `readFileSync` path, then delegates to the real implementation.
+ *
+ * The plan called for `vi.spyOn(fs, 'readFileSync')`, which cannot work here:
+ * `ts/package.json` is `type: module`, so the ESM namespace object is frozen
+ * and the spy throws `Cannot redefine property`. A hoisted `vi.mock` of a node
+ * builtin is the idiom this repo already uses twice -- see `ci-env.test.ts` and
+ * `executor.test.ts`, both mocking `node:child_process`.
+ *
+ * Passthrough, not stub: the other assertions in this file must keep exercising
+ * real behaviour.
+ */
+const fsReads = vi.hoisted(() => [] as string[]);
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    readFileSync: (...args: Parameters<typeof actual.readFileSync>) => {
+      fsReads.push(String(args[0]));
+      return actual.readFileSync(...args);
+    },
+  };
+});
 
 import { summaryLine } from '../src/analysis/batwoman/render.js';
 import type { ExerciseVerdict } from '../src/analysis/batwoman/verdict.js';
@@ -64,6 +91,58 @@ describe.each(REGISTERS)('the %s register', (register) => {
     expect(out).not.toMatch(/\bdecided\b/i);
     expect(out).toContain('0 abstained');
     expect(out).toContain('3 no probe');
+  });
+});
+
+describe.each(REGISTERS)('%s renders sentences, not codes', (register) => {
+  it('gives every not-exercised row an observation and a cause', () => {
+    // Asserted against the rendered string, not the verdict object: the goal is
+    // what a human reads (spec criterion 11).
+    const out = render(register, MIXED);
+    expect(out).toContain('twelve days before this fix merged');
+    expect(out).toContain('`refresh-baseline` label');
+    expect(out).toContain('which has not run since');
+  });
+
+  it('gives every abstain row an observation and a cause', () => {
+    const out = render(register, [
+      {
+        file: 'ci.yml',
+        status: 'abstain',
+        explanation:
+          'The workflow probe could not decide whether ci.yml ran, because ' +
+          'the run history it fetched did not reach back past the merge.',
+      },
+    ]);
+    expect(out).toContain('could not decide');
+    expect(out).toContain('because');
+  });
+
+  it('never renders a bare status with no file or count beside it', () => {
+    // An empty explanation is a defect upstream, but the renderer must not turn
+    // it into a tidy-looking row: the file still appears, and the summary still
+    // counts it.
+    const out = render(register, [v('x.yml', 'not-exercised', '')]);
+    expect(out).toContain('x.yml');
+    expect(out).toContain('1 not exercised');
+  });
+});
+
+describe('offline guarantee', () => {
+  it('observes reads at all, so an empty result means something', () => {
+    // The planted positive. Without it, "no personas were read" and "the
+    // recorder is broken" produce an identical empty list -- a pass over a
+    // denominator of zero, which is the exact shape this whole feature exists
+    // to catch. Assert the instrument works before trusting its silence.
+    fsReads.length = 0;
+    fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
+    expect(fsReads.length).toBeGreaterThan(0);
+  });
+
+  it('renders every register from the injected registry, reading no disk', () => {
+    fsReads.length = 0;
+    for (const register of REGISTERS) render(register, MIXED);
+    expect(fsReads.filter((path) => path.includes('personas'))).toEqual([]);
   });
 });
 
