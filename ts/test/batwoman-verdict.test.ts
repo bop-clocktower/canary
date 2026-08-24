@@ -7,6 +7,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   EXERCISE_STATUSES,
+  EmptyExplanationError,
+  explain,
+  isExplanation,
   tallyVerdicts,
   type ExerciseVerdict,
 } from '../src/analysis/batwoman/verdict.js';
@@ -29,8 +32,52 @@ describe('exercise statuses', () => {
   });
 });
 
+describe('explain', () => {
+  it('refuses the empty string, so an empty row cannot be constructed', () => {
+    expect(() => explain('')).toThrow(EmptyExplanationError);
+  });
+
+  it('refuses whitespace, which renders identically to nothing', () => {
+    for (const blank of [' ', '\t', '\n', '   \n  ']) {
+      expect(() => explain(blank)).toThrow(EmptyExplanationError);
+    }
+  });
+
+  it('returns the sentence unchanged, so the brand costs nothing at runtime', () => {
+    expect(explain('It ran after the merge.')).toBe('It ran after the merge.');
+  });
+
+  it('says what is wrong, rather than throwing a bare type name', () => {
+    // The message reaches a probe author through probeFile's catch, so it has
+    // to be a sentence for the same reason a verdict does.
+    expect(() => explain('')).toThrow(/never empty/);
+  });
+
+  it('agrees with isExplanation on every case', () => {
+    for (const text of ['', ' ', '\n', 'a', 'It ran.']) {
+      const accepted = isExplanation(text);
+      let constructed = true;
+      try {
+        explain(text);
+      } catch {
+        constructed = false;
+      }
+      expect(constructed).toBe(accepted);
+    }
+  });
+
+  it('rejects non-strings, which is what a JS caller can still hand it', () => {
+    for (const value of [undefined, null, 0, {}, []]) {
+      expect(isExplanation(value)).toBe(false);
+    }
+  });
+});
+
 function v(file: string, status: ExerciseVerdict['status']): ExerciseVerdict {
-  return { file, status, explanation: `${file} is ${status}.` };
+  const explanation = explain(`${file} is ${status}.`);
+  return status === 'exercised' || status === 'not-exercised'
+    ? { file, status, explanation, evidence: `the ${status} fixture` }
+    : { file, status, explanation };
 }
 
 describe('tallyVerdicts', () => {

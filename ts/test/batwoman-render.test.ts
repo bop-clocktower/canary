@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { resolvePersona } from '../src/core/persona.js';
+import { explain } from '../src/analysis/batwoman/verdict.js';
 import {
   renderReport,
   summaryLine,
@@ -137,7 +138,9 @@ describe('the junior register (brief, the declared fallback)', () => {
       {
         file: 'ci.yml',
         status: 'abstain',
-        explanation: 'The workflow probe could not decide, because gh failed.',
+        explanation: explain(
+          'The workflow probe could not decide, because gh failed.',
+        ),
         evidence: 'gh run list --limit 100',
       },
     ]);
@@ -231,7 +234,9 @@ describe('the sdet register (terse)', () => {
       {
         file: 'ci.yml',
         status: 'abstain',
-        explanation: 'The workflow probe could not decide, because gh failed.',
+        explanation: explain(
+          'The workflow probe could not decide, because gh failed.',
+        ),
         evidence: 'gh run list --limit 100',
       },
     ]);
@@ -276,7 +281,9 @@ describe('the manual register (guided)', () => {
       {
         file: 'ci.yml',
         status: 'abstain',
-        explanation: 'The workflow probe could not decide, because gh failed.',
+        explanation: explain(
+          'The workflow probe could not decide, because gh failed.',
+        ),
         evidence: 'gh run list --limit 100',
       },
     ]);

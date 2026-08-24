@@ -37,8 +37,18 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 import { summaryLine } from '../src/analysis/batwoman/render.js';
-import type { ExerciseVerdict } from '../src/analysis/batwoman/verdict.js';
-import { FIXTURE_REGISTRY, MIXED, render, v } from './batwoman-testkit.js';
+import {
+  EmptyExplanationError,
+  explain,
+  type ExerciseVerdict,
+} from '../src/analysis/batwoman/verdict.js';
+import {
+  ALL_STATUSES,
+  FIXTURE_REGISTRY,
+  MIXED,
+  render,
+  v,
+} from './batwoman-testkit.js';
 
 const REGISTERS = ['sdet', 'junior', 'manual'] as const;
 
@@ -109,22 +119,39 @@ describe.each(REGISTERS)('%s renders sentences, not codes', (register) => {
       {
         file: 'ci.yml',
         status: 'abstain',
-        explanation:
+        explanation: explain(
           'The workflow probe could not decide whether ci.yml ran, because ' +
-          'the run history it fetched did not reach back past the merge.',
+            'the run history it fetched did not reach back past the merge.',
+        ),
       },
     ]);
     expect(out).toContain('could not decide');
     expect(out).toContain('because');
   });
 
-  it('never renders a bare status with no file or count beside it', () => {
-    // An empty explanation is a defect upstream, but the renderer must not turn
-    // it into a tidy-looking row: the file still appears, and the summary still
-    // counts it.
-    const out = render(register, [v('x.yml', 'not-exercised', '')]);
-    expect(out).toContain('x.yml');
-    expect(out).toContain('1 not exercised');
+  it('cannot be handed a row with no sentence at all', () => {
+    // This test used to render an empty explanation and assert that the file
+    // name and the count survived -- both of which the defect preserved, so it
+    // could not fail on the thing it was named for. The gap is now
+    // unrepresentable: `Explanation` is branded and `explain` rejects the empty
+    // string, so the failure happens before any renderer sees the row.
+    expect(() => v('x.yml', 'not-exercised', '')).toThrow(
+      EmptyExplanationError,
+    );
+    expect(() => v('x.yml', 'abstain', '   ')).toThrow(EmptyExplanationError);
+  });
+
+  it('gives every row a line of its own beyond the file name', () => {
+    // The renderer's half of the same invariant: a row is a file line plus at
+    // least one line of sentence. Asserted over a fixture carrying all five
+    // statuses, whose paths are short enough that each file line is one line.
+    const out = render(register, ALL_STATUSES);
+    const lines = out.split('\n');
+    for (const verdict of ALL_STATUSES) {
+      const at = lines.findIndex((line) => line.includes(verdict.file));
+      expect(at).toBeGreaterThanOrEqual(0);
+      expect((lines[at + 1] ?? '').trim()).not.toBe('');
+    }
   });
 });
 

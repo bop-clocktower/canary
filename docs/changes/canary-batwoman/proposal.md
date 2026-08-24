@@ -201,20 +201,61 @@ type ExerciseStatus =
   | 'no-probe' // no probe matched this file
   | 'not-applicable'; // no execution semantics (docs, changelog)
 
-interface ExerciseVerdict {
+/** A verdict sentence guaranteed non-empty: the only constructor is explain(). */
+type Explanation = string & { readonly [brand]: true };
+declare function explain(text: string): Explanation; // throws on '' or blank
+
+interface VerdictFields {
   readonly file: string;
-  readonly status: ExerciseStatus;
-  /** Human sentence for the report. Never a code. */
-  readonly explanation: string;
-  /** What was read to decide. Absent for no-probe. */
+  /** Human sentence for the report. Never a code, never empty. */
+  readonly explanation: Explanation;
+}
+
+/** A verdict that claims the file did or did not run. Evidence is required. */
+interface ClaimedVerdict extends VerdictFields {
+  readonly status: 'exercised' | 'not-exercised';
+  readonly evidence: string;
+}
+
+/** A verdict that claims nothing: abstain, no-probe, not-applicable. */
+interface UnclaimedVerdict extends VerdictFields {
+  readonly status: 'abstain' | 'no-probe' | 'not-applicable';
+  /** What was read, when anything was. Absent for no-probe by definition. */
   readonly evidence?: string;
 }
+
+type ExerciseVerdict = ClaimedVerdict | UnclaimedVerdict;
 ```
 
 `abstain` and `no-probe` are deliberately distinct. The first means a probe
 looked and could not tell (report it, investigate it). The second means nothing
 looked (a registry gap, fixable by adding a probe). Collapsing them would hide
 which of the two a given file suffers from.
+
+**[AMENDED 2026-08-24 — BW-C1]** `explanation` was `string`. Phase 1 review
+found that an empty one rendered as a bare file path under a status heading, in
+all three registers, and that the test named to prevent it asserted only that
+the file name and the count survived — both of which the defect preserved.
+Rendering an explicit gap line was considered and rejected: it makes the
+renderer responsible for a defect it cannot fix, and leaves a probe free to ship
+the gap. `Explanation` is therefore branded, so the value cannot be constructed
+without passing `explain()`, and an empty sentence is a compile error at every
+call site rather than a rendering artefact at the far end.
+
+**[AMENDED 2026-08-24 — BW-I4]** This supersedes `evidence?: string` on every
+status. `exercised` and `not-exercised` now require `evidence`; the three
+non-answers keep it optional. **A success claim with nothing behind it is the
+exact defect batwoman exists to detect, so permitting it in batwoman's own type
+is self-undermining.** `not-exercised` is held to the same bar because a
+negative claim sends a human off to run something and owes them the reason.
+`no-probe` cannot carry evidence by definition — nothing looked — and `abstain`
+may or may not, depending on whether the probe got as far as reading anything.
+
+Both amendments are enforced at the type boundary and again at `probeFile`'s
+exit, because a probe can arrive from JavaScript, from a plugin, or from a
+`JSON.parse`, where the type guarantees nothing. A probe whose answer fails
+either check is reported as an `abstain` naming the probe: something looked, and
+its answer cannot be trusted.
 
 ### The probe interface
 
@@ -436,6 +477,16 @@ Two decisions warrant standalone ADRs:
     naming both the observation and its cause, asserted by test against the
     renderer's output rather than its inputs. _(Covers the "reads like a human
     wrote it" goal, which criteria 1-7 otherwise leave untested.)_
+12. An empty explanation shall be a **compile error**, not a rendering artefact,
+    and `probeFile` shall reject one arriving from outside TypeScript. Asserted
+    by compiling snippets against the real source, not by a `@ts-expect-error`
+    comment — `ts/tsconfig.json` includes only `src`, so no gate compiles the
+    test tree.
+13. An `exercised` or `not-exercised` verdict shall be unable to omit its
+    evidence, asserted the same way.
+14. Every line of every rendered report shall be at most 78 columns, asserted
+    for **all three registers** over a fixture set that includes a path and an
+    evidence command long enough to overflow the limit unwrapped.
 
 ## Implementation Order
 

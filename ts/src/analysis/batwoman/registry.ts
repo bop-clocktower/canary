@@ -9,10 +9,15 @@
  * themselves in Phase 2.
  */
 
-import type {
-  ExerciseContext,
-  ExerciseProbe,
-  ExerciseVerdict,
+import {
+  CLAIMING_STATUSES,
+  EXERCISE_STATUSES,
+  explain,
+  isExplanation,
+  type ExerciseContext,
+  type ExerciseProbe,
+  type ExerciseStatus,
+  type ExerciseVerdict,
 } from './verdict.js';
 
 /**
@@ -47,6 +52,66 @@ export function matchProbe(
   return probes.find((probe) => probe.matches(file)) ?? null;
 }
 
+/** An `abstain` naming the probe and what was wrong with its answer. */
+function distrust(
+  probeId: string,
+  file: string,
+  fault: string,
+): ExerciseVerdict {
+  return {
+    file,
+    status: 'abstain',
+    explanation: explain(
+      `the ${probeId} probe answered about this file but batwoman could not ` +
+        `trust its verdict, because ${fault}; the file is therefore ` +
+        'unassessed rather than clean.',
+    ),
+    evidence: `${probeId} probe answer`,
+  };
+}
+
+/**
+ * What is wrong with a probe's answer, or `null` if nothing is.
+ *
+ * The type boundary in `verdict.ts` makes each of these unrepresentable in
+ * TypeScript, so this is the seam for answers arriving from outside it: a
+ * JavaScript probe, a plugin, a `JSON.parse`. It matters because an out-of-
+ * union status reaches `tallyVerdicts`, where `byStatus[status] += 1` yields
+ * `NaN` and the summary line stops summing to its own denominator -- a
+ * false-green shape one level up from the one batwoman detects.
+ */
+function faultIn(answer: unknown, file: string): string | null {
+  if (typeof answer !== 'object' || answer === null) {
+    return (
+      `it returned ${answer === null ? 'null' : typeof answer} rather ` +
+      'than a verdict'
+    );
+  }
+  const verdict = answer as Partial<Record<keyof ExerciseVerdict, unknown>>;
+  if (verdict.file !== file) {
+    return `it answered about ${String(verdict.file)} instead`;
+  }
+  if (!EXERCISE_STATUSES.includes(verdict.status as ExerciseStatus)) {
+    return `'${String(verdict.status)}' is not one of the five statuses`;
+  }
+  if (!isExplanation(verdict.explanation)) {
+    return (
+      'it supplied no explanation, and a row that names a file and says ' +
+      'nothing about it is not a verdict'
+    );
+  }
+  const claims = CLAIMING_STATUSES.includes(
+    verdict.status as (typeof CLAIMING_STATUSES)[number],
+  );
+  if (claims && typeof verdict.evidence !== 'string') {
+    return (
+      `a '${String(verdict.status)}' claim must name the evidence ` +
+      'behind it, and this one named none'
+    );
+  }
+  return null;
+}
+
 /** One file's verdict, via the probe that claims it. */
 export async function probeFile(
   probes: readonly ExerciseProbe[],
@@ -58,13 +123,18 @@ export async function probeFile(
     return {
       file,
       status: 'no-probe',
-      explanation:
+      explanation: explain(
         `batwoman has no probe for this ${describeArtifact(file)}, so ` +
-        'nothing looked at whether it has run since the fix merged.',
+          'nothing looked at whether it has run since the fix merged.',
+      ),
     };
   }
   try {
-    return await probe.probe(file, ctx);
+    const answer: unknown = await probe.probe(file, ctx);
+    const fault = faultIn(answer, file);
+    return fault === null
+      ? (answer as ExerciseVerdict)
+      : distrust(probe.id, file, fault);
   } catch (err) {
     // Cannot-verify is a finding, not a pass (spec criterion 4). A probe whose
     // evidence source failed knows strictly less than one that never ran, so
@@ -73,10 +143,11 @@ export async function probeFile(
     return {
       file,
       status: 'abstain',
-      explanation:
+      explanation: explain(
         `the ${probe.id} probe looked at this file but could not decide ` +
-        'whether it ran, because reading its evidence failed: ' +
-        `${err instanceof Error ? err.message : String(err)}.`,
+          'whether it ran, because reading its evidence failed: ' +
+          `${err instanceof Error ? err.message : String(err)}.`,
+      ),
       evidence: `${probe.id} probe error`,
     };
   }

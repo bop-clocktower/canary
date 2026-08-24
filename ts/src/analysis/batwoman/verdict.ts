@@ -23,15 +23,82 @@ export const EXERCISE_STATUSES = [
 
 export type ExerciseStatus = (typeof EXERCISE_STATUSES)[number];
 
-/** One file's answer. */
-export interface ExerciseVerdict {
+/** The two statuses that make a positive claim about whether the file ran. */
+export const CLAIMING_STATUSES = ['exercised', 'not-exercised'] as const;
+
+export type ClaimingStatus = (typeof CLAIMING_STATUSES)[number];
+
+/** The three named non-answers: nothing was claimed, so nothing is owed. */
+export type NonAnswerStatus = Exclude<ExerciseStatus, ClaimingStatus>;
+
+declare const explanationBrand: unique symbol;
+
+/**
+ * A verdict sentence that is guaranteed non-empty, by construction.
+ *
+ * Branded rather than a bare `string` so that the only way to obtain one is
+ * {@link explain}. An empty explanation used to render as a bare file path
+ * under a status heading -- a row that names a file and says nothing about it,
+ * which is the shape spec criterion 11 forbids. Detecting that downstream was
+ * rejected in review: the renderer would then be responsible for a defect it
+ * cannot fix, and a probe could still ship the gap. Making it unrepresentable
+ * moves the failure to the one place that can do something about it.
+ */
+export type Explanation = string & { readonly [explanationBrand]: true };
+
+/** Thrown by {@link explain}. Named so a probe's failure reads as its own. */
+export class EmptyExplanationError extends Error {
+  constructor() {
+    super(
+      'an ExerciseVerdict explanation must be a full sentence, never empty: ' +
+        'a row that names a file and says nothing about it is the silence ' +
+        'batwoman exists to remove',
+    );
+    this.name = 'EmptyExplanationError';
+  }
+}
+
+/** True when `text` could be an {@link Explanation}. Whitespace is not a sentence. */
+export function isExplanation(text: unknown): text is Explanation {
+  return typeof text === 'string' && text.trim() !== '';
+}
+
+/** The only constructor for an {@link Explanation}. Rejects the empty string. */
+export function explain(text: string): Explanation {
+  if (!isExplanation(text)) throw new EmptyExplanationError();
+  return text;
+}
+
+interface VerdictFields {
   readonly file: string;
-  readonly status: ExerciseStatus;
-  /** Human sentence for the report. Never a code. */
-  readonly explanation: string;
-  /** What was read to decide. Absent for no-probe. */
+  /** Human sentence for the report. Never a code, never empty. */
+  readonly explanation: Explanation;
+}
+
+/**
+ * A verdict that claims the file did or did not run, and names what it read.
+ *
+ * `evidence` is required here and optional below. A success claim with nothing
+ * behind it is precisely the defect batwoman exists to detect, so permitting
+ * one in batwoman's own model would be self-undermining -- and `not-exercised`
+ * is held to the same bar, because a negative claim sends a human to run
+ * something and deserves to say why.
+ */
+export interface ClaimedVerdict extends VerdictFields {
+  readonly status: ClaimingStatus;
+  /** What was read to decide. Required: a claim must name its source. */
+  readonly evidence: string;
+}
+
+/** A verdict that claims nothing: `abstain`, `no-probe` or `not-applicable`. */
+export interface UnclaimedVerdict extends VerdictFields {
+  readonly status: NonAnswerStatus;
+  /** What was read, when anything was. Absent for `no-probe` by definition. */
   readonly evidence?: string;
 }
+
+/** One file's answer. */
+export type ExerciseVerdict = ClaimedVerdict | UnclaimedVerdict;
 
 /** Header data for the report. Probes never read this. */
 export interface ClosureHeader {
