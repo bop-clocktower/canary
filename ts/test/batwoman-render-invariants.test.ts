@@ -44,6 +44,7 @@ import {
 } from '../src/analysis/batwoman/verdict.js';
 import type { PersonaRegistry } from '../src/core/persona.js';
 import {
+  ALL_EXERCISED,
   ALL_STATUSES,
   FIXTURE_REGISTRY,
   LONG_PATHS,
@@ -55,8 +56,18 @@ import {
 
 const REGISTERS = ['sdet', 'junior', 'manual'] as const;
 
-/** Glyphs match literally; words need boundaries so `look` is not `OK`. */
-const GLYPHS = ['✓', '✔', '✅', '☑'];
+/**
+ * Glyphs match literally; words need boundaries so `look` is not `OK`.
+ *
+ * This list is a **denylist, and a denylist can only ever be a floor.** Review
+ * appended ' - verified 🟢' to the terse exercised rows and ' (nothing to do)'
+ * to the brief ones and the whole suite stayed green at 226/226 -- none of those
+ * tokens was on the list, and no list of tokens will be complete. The rule that
+ * actually holds spec criterion 3 is the exact-output assertion further down;
+ * this list stays because it is cheap, it applies to every case rather than one,
+ * and it names the specific glyphs a future author would reach for first.
+ */
+const GLYPHS = ['✓', '✔', '✅', '☑', '🟢', '🎉', '👍', '🆗', '💚'];
 const WORDS = [
   /\bOK\b/,
   /\bclean\b/i,
@@ -64,6 +75,12 @@ const WORDS = [
   /\bsuccess(ful)?\b/i,
   /\ball clear\b/i,
   /\bno issues\b/i,
+  /\bverified\b/i,
+  /\bconfirmed\b/i,
+  /\bup to date\b/i,
+  /\ball good\b/i,
+  /\bnothing to do\b/i,
+  /\blooks good\b/i,
 ];
 
 const CASES: ReadonlyArray<readonly [string, ExerciseVerdict[]]> = [
@@ -264,6 +281,96 @@ describe('offline guarantee', () => {
     fs.readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)));
     expect(fsReads).not.toEqual([]);
     expect(fsReads.some((path) => path.includes('personas'))).toBe(false);
+  });
+});
+
+/**
+ * The whole report, written out, for the run where a success token is most
+ * tempting.
+ *
+ * A denylist enforces "none of these fourteen tokens"; spec criterion 3 says
+ * "no success token appears in any output path". The gap between those two is
+ * where ' - verified 🟢' and ' (nothing to do)' both survived the full suite.
+ * An exact-output assertion closes it for good: anything added anywhere, in any
+ * wording, fails. This is the style that killed ' - all good' on the summary
+ * line when the denylist did not, applied per register instead of once.
+ *
+ * When this fails after a deliberate change, read the diff as the report a
+ * human would receive, and check the new line is not a way of saying "fine".
+ */
+const EXPECTED_ALL_EXERCISED: Readonly<Record<string, string>> = {
+  sdet: [
+    'canary batwoman — canary#749',
+    '',
+    '  Closed by  1e0c05b fix(ci): make the refresh-baseline label refresh the',
+    '             baseline',
+    '  Merged     2026-08-22 17:34 UTC',
+    "  Register   sdet (Senior SDET) — explicit: explicit persona 'sdet'",
+    '',
+    '  - .github/workflows/ci.yml  exercised',
+    '    It ran on 2026-08-23, after this fix merged, on a push to main.',
+    '  - scripts/release.mjs  exercised',
+    '    It runs from release.yml, which ran on 2026-08-23 after the merge.',
+    `  ${'─'.repeat(62)}`,
+    '  2 changed · 2 exercised · 0 not exercised · 0 abstained · 0 no probe · 0 n/a',
+    '',
+  ].join('\n'),
+  junior: [
+    'canary batwoman — canary#749',
+    '',
+    '  Closed by  1e0c05b fix(ci): make the refresh-baseline label refresh the',
+    '             baseline',
+    '  Merged     2026-08-22 17:34 UTC',
+    "  Register   junior (Junior SDET) — explicit: explicit persona 'junior'",
+    '',
+    '  EXERCISED — 2 files',
+    '    .github/workflows/ci.yml',
+    '      It ran on 2026-08-23, after this fix merged, on a push to main.',
+    '      Read: gh run list --workflow ci.yml',
+    '',
+    '    scripts/release.mjs',
+    '      It runs from release.yml, which ran on 2026-08-23 after the merge.',
+    '      Read: release.yml, which names this script',
+    '',
+    `  ${'─'.repeat(62)}`,
+    '  2 changed · 2 exercised · 0 not exercised · 0 abstained · 0 no probe · 0 n/a',
+    '',
+  ].join('\n'),
+  manual: [
+    'canary batwoman — canary#749',
+    '',
+    '  Closed by  1e0c05b fix(ci): make the refresh-baseline label refresh the',
+    '             baseline',
+    '  Merged     2026-08-22 17:34 UTC',
+    "  Register   manual (Manual tester) — explicit: explicit persona 'manual'",
+    '',
+    '  EXERCISED — 2 files',
+    '    1. .github/workflows/ci.yml',
+    '       It ran on 2026-08-23, after this fix merged, on a push to main.',
+    '       Read: gh run list --workflow ci.yml',
+    '',
+    '    2. scripts/release.mjs',
+    '       It runs from release.yml, which ran on 2026-08-23 after the merge.',
+    '       Read: release.yml, which names this script',
+    '',
+    `  ${'─'.repeat(62)}`,
+    '  2 changed · 2 exercised · 0 not exercised · 0 abstained · 0 no probe · 0 n/a',
+    '',
+  ].join('\n'),
+};
+
+describe.each(REGISTERS)('the %s register, all-exercised', (register) => {
+  it('renders exactly this report, so no token can be added to it', () => {
+    expect(render(register, ALL_EXERCISED)).toBe(
+      EXPECTED_ALL_EXERCISED[register],
+    );
+  });
+
+  it('has an expectation on file for this register', () => {
+    // Guard the guard: a missing key would make `toBe(undefined)` the
+    // assertion, which fails loudly -- but a register added to REGISTERS and
+    // forgotten here should say why, not just fail on a type.
+    expect(EXPECTED_ALL_EXERCISED[register]).toBeDefined();
   });
 });
 

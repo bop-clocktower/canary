@@ -192,6 +192,29 @@ export const LONG_PATHS: ExerciseVerdict[] = [
   ),
 ];
 
+/**
+ * A run in which every changed file was exercised.
+ *
+ * The case where a success token is most tempting, and therefore the case the
+ * no-success-token rule is asserted against by exact output rather than by
+ * denylist. Kept short and stable on purpose: the whole report is written out
+ * literally in the invariants suite, so anything appended anywhere fails.
+ */
+export const ALL_EXERCISED: ExerciseVerdict[] = [
+  v(
+    '.github/workflows/ci.yml',
+    'exercised',
+    'It ran on 2026-08-23, after this fix merged, on a push to main.',
+    'gh run list --workflow ci.yml',
+  ),
+  v(
+    'scripts/release.mjs',
+    'exercised',
+    'It runs from release.yml, which ran on 2026-08-23 after the merge.',
+    'release.yml, which names this script',
+  ),
+];
+
 /** Render one register over one verdict set, from the injected registry. */
 export function render(
   explicit: string | null,
