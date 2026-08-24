@@ -167,9 +167,26 @@ describe('offline guarantee', () => {
   });
 
   it('renders every register from the injected registry, reading no disk', () => {
+    // Unfiltered on purpose. This assertion used to be
+    // `fsReads.filter((p) => p.includes('personas'))`, which threw away most of
+    // what the recorder had just proved it could see: a renderer reading
+    // `package.json`, or anything else off disk, passed it 66/66. Invariant 4
+    // is "reads no disk", not "reads no persona file". If a read ever has to be
+    // permitted, name the exact path in an allowlist here, so the exception is
+    // visible rather than implied by a substring match.
     fsReads.length = 0;
     for (const register of REGISTERS) render(register, MIXED);
-    expect(fsReads.filter((path) => path.includes('personas'))).toEqual([]);
+    expect(fsReads).toEqual([]);
+  });
+
+  it('would notice a read of a path that has nothing to do with personas', () => {
+    // The falsification, kept: the assertion above is only worth having if a
+    // non-persona read fails it. Reading through the same recorder the renderer
+    // would go through proves the recorder sees those paths too.
+    fsReads.length = 0;
+    fs.readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)));
+    expect(fsReads).not.toEqual([]);
+    expect(fsReads.some((path) => path.includes('personas'))).toBe(false);
   });
 });
 
