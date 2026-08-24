@@ -66,10 +66,19 @@ const WORDS = [
 
 const CASES: ReadonlyArray<readonly [string, ExerciseVerdict[]]> = [
   ['a run with findings', MIXED],
+  ['a run carrying all five statuses', ALL_STATUSES],
   ['an all-exercised run', [v('a.yml', 'exercised'), v('b.yml', 'exercised')]],
   ['an all-not-applicable run', [v('AGENTS.md', 'not-applicable')]],
   ['an empty run', []],
 ];
+
+/** The summary line as a reader sees it: the last content line of the report. */
+function renderedSummary(
+  register: string,
+  verdicts: ExerciseVerdict[],
+): string {
+  return render(register, verdicts).trimEnd().split('\n').at(-1) ?? '';
+}
 
 describe.each(REGISTERS)('the %s register', (register) => {
   it.each(CASES)('prints no success glyph over %s', (_name, verdicts) => {
@@ -88,20 +97,45 @@ describe.each(REGISTERS)('the %s register', (register) => {
   });
 
   it.each(CASES)('sums its summary columns to the total over %s', (_n, vs) => {
-    const numbers = [...summaryLine(vs).matchAll(/(\d+) /g)].map((m) =>
-      Number(m[1]),
+    // Parsed out of the *rendered* report, not out of `summaryLine(vs)`. As
+    // written before, this test never called `render` and never used its
+    // `register` parameter -- it ran the identical pure-function assertion
+    // three times and would not have noticed a register whose rendered summary
+    // was mangled. Invariant 3 is about what a reader sees.
+    const numbers = [...renderedSummary(register, vs).matchAll(/(\d+) /g)].map(
+      (m) => Number(m[1]),
     );
     const [total, ...columns] = numbers;
+    expect(columns).toHaveLength(5);
     expect(columns.reduce((a, b) => a + b, 0)).toBe(total);
     expect(total).toBe(vs.length);
   });
 
   it('never folds abstain or no-probe into a decided figure', () => {
-    const out = render(register, MIXED);
+    // Asserted over `ALL_STATUSES`, where every column is 1. It used to run
+    // against `MIXED`, which carries *zero* abstain rows -- so
+    // `toContain('0 abstained')` was preserved by any mutation that folded
+    // abstain into another column, because there was nothing to fold. Folding
+    // abstain into no-probe in `tallyVerdicts` left this whole file green.
+    const out = render(register, ALL_STATUSES);
     expect(out).not.toMatch(/\bassessed\b/i);
     expect(out).not.toMatch(/\bdecided\b/i);
-    expect(out).toContain('0 abstained');
-    expect(out).toContain('3 no probe');
+    expect(out).toContain('5 changed');
+    expect(out).toContain('1 exercised');
+    expect(out).toContain('1 not exercised');
+    expect(out).toContain('1 abstained');
+    expect(out).toContain('1 no probe');
+    expect(out).toContain('1 n/a');
+  });
+
+  it('keeps abstain and no-probe in sections of their own', () => {
+    // The counts above could still be right while the two were rendered as one
+    // body section. The terse register prints the raw status on each row and
+    // the other two print a heading, so both spellings are accepted -- but they
+    // must both be present, and they must not be the same marker.
+    const out = render(register, ALL_STATUSES);
+    expect(out).toMatch(/ABSTAINED|\babstain\b/);
+    expect(out).toMatch(/NO PROBE|\bno-probe\b/);
   });
 });
 
