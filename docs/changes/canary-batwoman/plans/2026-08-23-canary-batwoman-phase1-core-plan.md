@@ -4,6 +4,22 @@
 (Implementation Order, Phase 1) | **Tasks:** 14 | **Time:** ~58 min |
 **Integration Tier:** medium
 
+> **[SUPERSEDED IN PART — 2026-08-24]** This plan was executed, then reviewed,
+> and the review produced two approved spec amendments. **The code snippets
+> below are the pre-amendment shapes and no longer compile.** Read `proposal.md`
+> for the current verdict model, not this file:
+>
+> - **BW-C1** — `explanation` is `Explanation`, a branded non-empty type whose
+>   only constructor is `explain()`. `readonly explanation: string` (line 244)
+>   and every `explanation: '...'` literal below are stale.
+> - **BW-I4** — `ExerciseVerdict` is a discriminated union. `evidence` is
+>   **required** for `exercised` and `not-exercised`;
+>   `readonly evidence?: string` (line 246) is stale for those two statuses.
+>
+> The plan is kept unedited as the record of what was executed. Amending 1600
+> lines of executed task text would make the record of what actually happened
+> less accurate, not more.
+
 **Branch:** `feat/canary-batwoman`, worktree `scratchpad/canary-manhunter` (the
 directory basename is a cosmetic leftover of a rename; the branch, spec and
 feature are all `canary-batwoman`). Based on `main` at `1e0c05b` plus two spec
@@ -51,8 +67,8 @@ Traced to the spec's numbered success criteria in brackets.
    `exercised` or `not-exercised`. _(spec 4, the core half; the `gh` half is
    Phase 3)_
 6. **[Ubiquitous]** Every render shall end with the summary line, in every
-   persona register, including a run whose verdicts are all `exercised`.
-   _(spec 3, 8)_
+   persona register, including a run whose verdicts are all `exercised`. _(spec
+   3, 8)_
 7. **[Unwanted]** If any of the three registers is rendered, then no output
    shall contain a success token (check glyphs, `OK`, `clean`, `passed`,
    `success`, `all clear`) — asserted **separately per register**, over both a
@@ -77,23 +93,24 @@ Traced to the spec's numbered success criteria in brackets.
   a `no-probe` row?_ The spec puts the noun phrase on `ExerciseProbe.artifact`,
   but by construction no probe matched a `no-probe` file, so no probe can supply
   it. Resolution: a path-driven `describeArtifact(file)` in the registry module
-  supplies the noun phrase for unmatched files; `ExerciseProbe.artifact` stays in
-  the interface exactly as specified and is used by matched-probe messaging in
-  Phase 2. Nothing in the spec is contradicted, but a reviewer should agree
+  supplies the noun phrase for unmatched files; `ExerciseProbe.artifact` stays
+  in the interface exactly as specified and is used by matched-probe messaging
+  in Phase 2. Nothing in the spec is contradicted, but a reviewer should agree
   before Task 3.
-- **[RESOLVED — decision D1b, needs sign-off]** _D7 says the `sdet` register gets
-  "no explanation clauses", while criterion 11 requires every `not-exercised` and
-  `abstain` row to carry a complete observation-and-cause sentence._ Taken
-  literally these contradict. Resolution: `ExerciseVerdict.explanation` is itself
-  the observation-and-cause sentence and is rendered in **every** register —
-  dropping it would turn a status back into a code, which D4 forbids. What `sdet`
-  drops is the material gated by the persona's `reasoning: false` flag: the
-  evidence line and the next-step guidance. "Terse" therefore means "summary line
-  plus one-line rows", not "rows without sentences".
+- **[RESOLVED — decision D1b, needs sign-off]** _D7 says the `sdet` register
+  gets "no explanation clauses", while criterion 11 requires every
+  `not-exercised` and `abstain` row to carry a complete observation-and-cause
+  sentence._ Taken literally these contradict. Resolution:
+  `ExerciseVerdict.explanation` is itself the observation-and-cause sentence and
+  is rendered in **every** register — dropping it would turn a status back into
+  a code, which D4 forbids. What `sdet` drops is the material gated by the
+  persona's `reasoning: false` flag: the evidence line and the next-step
+  guidance. "Terse" therefore means "summary line plus one-line rows", not "rows
+  without sentences".
 - **[ASSUMPTION]** New modules live under `ts/src/analysis/batwoman/` (layer
   `analysis`, whose `allowedDependencies` include `core`, so the renderer may
-  import `core/persona.js`). `core/` was rejected: batwoman is a feature built on
-  the engine, and `forbiddenImports` bars `core` from ever reaching back to
+  import `core/persona.js`). `core/` was rejected: batwoman is a feature built
+  on the engine, and `forbiddenImports` bars `core` from ever reaching back to
   features, which would trap Phase 3's `gh` adapter.
 - **[ASSUMPTION]** Tests live flat in `ts/test/` as `batwoman-*.test.ts`, with
   shared fixtures in `ts/test/batwoman-testkit.ts`. `ts/vitest.config.ts`
@@ -114,22 +131,22 @@ Traced to the spec's numbered success criteria in brackets.
 Read from `AGENTS.md` before Task 1:
 
 - **Entropy ratchet.** The analyzer cannot follow `./x.js` specifiers, so each
-  new `ts/src` module is unreachable from `ts/src/cli.ts` and reads as dead code.
-  Every new module — and `ts/test/batwoman-testkit.ts`, which is not a
-  `*.test.ts` file and so is not excluded — is declared in **both** `entryPoints`
-  arrays in `harness.config.json` (`entropy.entryPoints` ~line 153 and
-  `performance.entryPoints` ~line 204), in the same commit that creates it, kept
-  byte-identical and alphabetically sorted. `ts/src/analysis/batwoman/*.ts` sorts
-  after `ts/scripts/copy-data.mjs` and before `ts/src/cli.ts`;
+  new `ts/src` module is unreachable from `ts/src/cli.ts` and reads as dead
+  code. Every new module — and `ts/test/batwoman-testkit.ts`, which is not a
+  `*.test.ts` file and so is not excluded — is declared in **both**
+  `entryPoints` arrays in `harness.config.json` (`entropy.entryPoints` ~line 153
+  and `performance.entryPoints` ~line 204), in the same commit that creates it,
+  kept byte-identical and alphabetically sorted. `ts/src/analysis/batwoman/*.ts`
+  sorts after `ts/scripts/copy-data.mjs` and before `ts/src/cli.ts`;
   `ts/test/batwoman-testkit.ts` sorts before `ts/test/doc-links-testkit.ts`.
   `ts/test/entropy-entrypoints.test.ts` enforces git-tracked, non-skipped,
   literal, and identical. **`entropy.maxFindings` is never raised.**
 - **Arch ratchet.** `module-size` is a repo-wide line count; the printed
   regression arrow's left operand is the baseline **floor**, not `main`, so it
-  overstates this branch's contribution by the whole accumulated total. Splitting
-  a module cannot reduce it. Measure inside this worktree only.
-- **Gates run from `ts/`, not the repo root**, and there is **no `lint` script**.
-  The four gates are `build`, `typecheck`, `format:check`, `test`.
+  overstates this branch's contribution by the whole accumulated total.
+  Splitting a module cannot reduce it. Measure inside this worktree only.
+- **Gates run from `ts/`, not the repo root**, and there is **no `lint`
+  script**. The four gates are `build`, `typecheck`, `format:check`, `test`.
 - **`docs-lint` is gated.** Markdown must be both prettier-clean and
   markdownlint-clean; the two are not the same check.
 - **Never `--no-verify`.** Fix the hook's complaint instead.
@@ -150,22 +167,22 @@ MODIFY harness.config.json  (both entryPoints arrays, 4 paths each)
 
 No other file is touched in Phase 1. In particular: no `ts/src/cli.ts`, no
 `agents/skills/**`, no `.github/workflows/**`, and no
-`ts/src/data/personas/registry.json` — the spec is explicit that batwoman adds no
-register.
+`ts/src/data/personas/registry.json` — the spec is explicit that batwoman adds
+no register.
 
 ## Skeleton
 
 1. Verdict model — statuses, the shared interfaces, the tally (~2 tasks, ~8 min)
 2. Probe registry — artifact naming, matching, dispatch, no-probe fallback,
    throw-to-abstain (~4 tasks, ~16 min)
-3. Renderer — wrap and summary line, header and persona provenance, then one task
-   per register (~5 tasks, ~24 min)
-4. Cross-register invariants — no success token, complete sentences, no disk
-   (~2 tasks, ~8 min)
+3. Renderer — wrap and summary line, header and persona provenance, then one
+   task per register (~5 tasks, ~24 min)
+4. Cross-register invariants — no success token, complete sentences, no disk (~2
+   tasks, ~8 min)
 5. Gate sweep and ratchet measurement (~1 task, ~5 min)
 
-**Estimated total:** 14 tasks, ~58 minutes. _Skeleton approval is folded into the
-plan sign-off (see the report accompanying this plan)._
+**Estimated total:** 14 tasks, ~58 minutes. _Skeleton approval is folded into
+the plan sign-off (see the report accompanying this plan)._
 
 ## Tasks
 
@@ -297,9 +314,9 @@ in each. The two arrays must stay byte-identical.
 **6.** Run `cd ts && npx vitest run test/entropy-entrypoints.test.ts` — observe
 pass.
 
-**7.** Run `cd ts && npx prettier --write src/analysis/batwoman
-test/batwoman-*.ts` and, from the repo root,
-`npx prettier --write harness.config.json`.
+**7.** Run
+`cd ts && npx prettier --write src/analysis/batwoman test/batwoman-*.ts` and,
+from the repo root, `npx prettier --write harness.config.json`.
 
 **8.** Run `harness validate` from the repo root.
 
@@ -405,10 +422,12 @@ export function tallyVerdicts(verdicts: readonly ExerciseVerdict[]): Tally {
 **4.** Run `cd ts && npx vitest run test/batwoman-verdict.test.ts` — observe
 pass.
 
-**5.** Run `cd ts && npx prettier --write src/analysis/batwoman
-test/batwoman-*.ts`, then `harness validate` from the repo root.
+**5.** Run
+`cd ts && npx prettier --write src/analysis/batwoman test/batwoman-*.ts`, then
+`harness validate` from the repo root.
 
-**6.** Commit: `feat(batwoman): tally verdicts without a derived assessed figure`
+**6.** Commit:
+`feat(batwoman): tally verdicts without a derived assessed figure`
 
 ### Task 3: Name the artifact type on a file no probe claimed
 
@@ -504,11 +523,13 @@ pass.
 arrays, alphabetically, keeping the two arrays identical. Run
 `cd ts && npx vitest run test/entropy-entrypoints.test.ts`.
 
-**6.** Run `cd ts && npx prettier --write src/analysis/batwoman
-test/batwoman-*.ts` and, from the repo root,
-`npx prettier --write harness.config.json`; then `harness validate`.
+**6.** Run
+`cd ts && npx prettier --write src/analysis/batwoman test/batwoman-*.ts` and,
+from the repo root, `npx prettier --write harness.config.json`; then
+`harness validate`.
 
-**7.** Commit: `feat(batwoman): name the artifact type behind every no-probe row`
+**7.** Commit:
+`feat(batwoman): name the artifact type behind every no-probe row`
 
 ### Task 4: Match a file to a probe, and dispatch to it
 
@@ -641,8 +662,9 @@ export async function probeAll(
 **4.** Run `cd ts && npx vitest run test/batwoman-registry.test.ts` — observe
 pass.
 
-**5.** Run `cd ts && npx prettier --write src/analysis/batwoman
-test/batwoman-*.ts`, then `harness validate`.
+**5.** Run
+`cd ts && npx prettier --write src/analysis/batwoman test/batwoman-*.ts`, then
+`harness validate`.
 
 **6.** Commit: `feat(batwoman): match and dispatch changed files to probes`
 
@@ -697,24 +719,26 @@ key rather than `evidence: undefined`: `exactOptionalPropertyTypes` is on, and
 "nothing was read" is the point.
 
 ```ts
-  if (probe === null) {
-    return {
-      file,
-      status: 'no-probe',
-      explanation:
-        `batwoman has no probe for this ${describeArtifact(file)}, so ` +
-        'nothing looked at whether it has run since the fix merged.',
-    };
-  }
+if (probe === null) {
+  return {
+    file,
+    status: 'no-probe',
+    explanation:
+      `batwoman has no probe for this ${describeArtifact(file)}, so ` +
+      'nothing looked at whether it has run since the fix merged.',
+  };
+}
 ```
 
 **4.** Run `cd ts && npx vitest run test/batwoman-registry.test.ts` — observe
 pass.
 
-**5.** Run `cd ts && npx prettier --write src/analysis/batwoman
-test/batwoman-*.ts`, then `harness validate`.
+**5.** Run
+`cd ts && npx prettier --write src/analysis/batwoman test/batwoman-*.ts`, then
+`harness validate`.
 
-**6.** Commit: `feat(batwoman): report an unmatched file as a named no-probe row`
+**6.** Commit:
+`feat(batwoman): report an unmatched file as a named no-probe row`
 
 ### Task 6: A probe that throws abstains — it never reports clean
 
@@ -757,7 +781,9 @@ describe('a probe that throws', () => {
     const files = ['a.yml', 'b.yml'];
     const verdicts = await probeAll([exploding], files, OFFLINE_CTX);
     expect(verdicts).toHaveLength(2);
-    expect(verdicts.every((verdict) => verdict.status === 'abstain')).toBe(true);
+    expect(verdicts.every((verdict) => verdict.status === 'abstain')).toBe(
+      true,
+    );
   });
 
   it('abstains when the probe rejects rather than throws', async () => {
@@ -778,30 +804,31 @@ failure.
 `return probe.probe(file, ctx);` with:
 
 ```ts
-  try {
-    return await probe.probe(file, ctx);
-  } catch (err) {
-    // Cannot-verify is a finding, not a pass (spec criterion 4). A probe whose
-    // evidence source failed knows strictly less than one that never ran, so
-    // the only honest answer is abstain -- and the `await` inside the `try` is
-    // load-bearing: without it a rejected promise escapes the catch.
-    return {
-      file,
-      status: 'abstain',
-      explanation:
-        `the ${probe.id} probe looked at this file but could not decide ` +
-        'whether it ran, because reading its evidence failed: ' +
-        `${err instanceof Error ? err.message : String(err)}.`,
-      evidence: `${probe.id} probe error`,
-    };
-  }
+try {
+  return await probe.probe(file, ctx);
+} catch (err) {
+  // Cannot-verify is a finding, not a pass (spec criterion 4). A probe whose
+  // evidence source failed knows strictly less than one that never ran, so
+  // the only honest answer is abstain -- and the `await` inside the `try` is
+  // load-bearing: without it a rejected promise escapes the catch.
+  return {
+    file,
+    status: 'abstain',
+    explanation:
+      `the ${probe.id} probe looked at this file but could not decide ` +
+      'whether it ran, because reading its evidence failed: ' +
+      `${err instanceof Error ? err.message : String(err)}.`,
+    evidence: `${probe.id} probe error`,
+  };
+}
 ```
 
 **4.** Run `cd ts && npx vitest run test/batwoman-registry.test.ts` — observe
 pass.
 
-**5.** Run `cd ts && npx prettier --write src/analysis/batwoman
-test/batwoman-*.ts`, then `harness validate`.
+**5.** Run
+`cd ts && npx prettier --write src/analysis/batwoman test/batwoman-*.ts`, then
+`harness validate`.
 
 **6.** Commit: `fix(batwoman): abstain when a probe cannot read its evidence`
 
@@ -812,8 +839,8 @@ test/batwoman-*.ts`, then `harness validate`.
 `harness.config.json`
 
 **1.** Create `ts/test/batwoman-testkit.ts` — the fixtures both render suites
-share. It is not a `*.test.ts` file, so vitest does not collect it and nothing it
-holds can be registered twice:
+share. It is not a `*.test.ts` file, so vitest does not collect it and nothing
+it holds can be registered twice:
 
 ```ts
 /**
@@ -1042,18 +1069,21 @@ export function wrap(text: string, width: number, indent: string): string[] {
 }
 ```
 
-**5.** Run `cd ts && npx vitest run test/batwoman-render.test.ts` — observe pass.
+**5.** Run `cd ts && npx vitest run test/batwoman-render.test.ts` — observe
+pass.
 
 **6.** Add **both** `"ts/src/analysis/batwoman/render.ts"` and
 `"ts/test/batwoman-testkit.ts"` to **both** `entryPoints` arrays, alphabetically
 (the testkit sorts before `ts/test/doc-links-testkit.ts`), keeping the arrays
 identical. Run `cd ts && npx vitest run test/entropy-entrypoints.test.ts`.
 
-**7.** Run `cd ts && npx prettier --write src/analysis/batwoman
-test/batwoman-*.ts` and, from the repo root,
-`npx prettier --write harness.config.json`; then `harness validate`.
+**7.** Run
+`cd ts && npx prettier --write src/analysis/batwoman test/batwoman-*.ts` and,
+from the repo root, `npx prettier --write harness.config.json`; then
+`harness validate`.
 
-**8.** Commit: `feat(batwoman): render the summary line with every status column`
+**8.** Commit:
+`feat(batwoman): render the summary line with every status column`
 
 ### Task 8: The header, and which register spoke
 
@@ -1177,10 +1207,12 @@ export function renderReport(options: RenderOptions): string {
 }
 ```
 
-**5.** Run `cd ts && npx vitest run test/batwoman-render.test.ts` — observe pass.
+**5.** Run `cd ts && npx vitest run test/batwoman-render.test.ts` — observe
+pass.
 
-**6.** Run `cd ts && npx prettier --write src/analysis/batwoman
-test/batwoman-*.ts`, then `harness validate`.
+**6.** Run
+`cd ts && npx prettier --write src/analysis/batwoman test/batwoman-*.ts`, then
+`harness validate`.
 
 **7.** Commit: `feat(batwoman): print the header and which register spoke`
 
@@ -1304,10 +1336,12 @@ function bodyLines(options: RenderOptions): string[] {
 }
 ```
 
-**4.** Run `cd ts && npx vitest run test/batwoman-render.test.ts` — observe pass.
+**4.** Run `cd ts && npx vitest run test/batwoman-render.test.ts` — observe
+pass.
 
-**5.** Run `cd ts && npx prettier --write src/analysis/batwoman
-test/batwoman-*.ts`, then `harness validate`.
+**5.** Run
+`cd ts && npx prettier --write src/analysis/batwoman test/batwoman-*.ts`, then
+`harness validate`.
 
 **6.** Commit: `feat(batwoman): render the junior register`
 
@@ -1375,16 +1409,18 @@ function terseRows(verdicts: readonly ExerciseVerdict[]): string[] {
 **4.** Inside the `bodyLines` loop, branch on depth before the brief path:
 
 ```ts
-    if (persona.persona.depth === 'terse') {
-      lines.push(...terseRows(rows));
-      continue;
-    }
+if (persona.persona.depth === 'terse') {
+  lines.push(...terseRows(rows));
+  continue;
+}
 ```
 
-**5.** Run `cd ts && npx vitest run test/batwoman-render.test.ts` — observe pass.
+**5.** Run `cd ts && npx vitest run test/batwoman-render.test.ts` — observe
+pass.
 
-**6.** Run `cd ts && npx prettier --write src/analysis/batwoman
-test/batwoman-*.ts`, then `harness validate`.
+**6.** Run
+`cd ts && npx prettier --write src/analysis/batwoman test/batwoman-*.ts`, then
+`harness validate`.
 
 **7.** Commit: `feat(batwoman): render the sdet register`
 
@@ -1488,20 +1524,21 @@ function guidedRows(
 **4.** Extend the depth branch in `bodyLines`:
 
 ```ts
-    if (persona.persona.depth === 'guided') {
-      lines.push(heading(label, status, rows.length, verdicts.length));
-      lines.push(...guidedRows(rows, status));
-      continue;
-    }
+if (persona.persona.depth === 'guided') {
+  lines.push(heading(label, status, rows.length, verdicts.length));
+  lines.push(...guidedRows(rows, status));
+  continue;
+}
 ```
 
-**5.** Run `cd ts && npx vitest run test/batwoman-render.test.ts` — observe pass.
-Then print all three registers for review, e.g. by adding a temporary
+**5.** Run `cd ts && npx vitest run test/batwoman-render.test.ts` — observe
+pass. Then print all three registers for review, e.g. by adding a temporary
 `console.log(render(id))` to a scratch run and removing it after.
 `[checkpoint:human-verify]` — show all three, wait for confirmation.
 
-**6.** Run `cd ts && npx prettier --write src/analysis/batwoman
-test/batwoman-*.ts`, then `harness validate`.
+**6.** Run
+`cd ts && npx prettier --write src/analysis/batwoman test/batwoman-*.ts`, then
+`harness validate`.
 
 **7.** Commit: `feat(batwoman): render the manual register with numbered steps`
 
@@ -1595,10 +1632,12 @@ it('asserts every register the fixture registry declares', () => {
 **2.** Run `cd ts && npx vitest run batwoman` — observe pass, or, if a register
 leaks a token, fix the **renderer** (never the assertion) and re-run.
 
-**3.** Run `cd ts && npx prettier --write src/analysis/batwoman
-test/batwoman-*.ts`, then `harness validate`.
+**3.** Run
+`cd ts && npx prettier --write src/analysis/batwoman test/batwoman-*.ts`, then
+`harness validate`.
 
-**4.** Commit: `test(batwoman): forbid a success token in every persona register`
+**4.** Commit:
+`test(batwoman): forbid a success token in every persona register`
 
 ### Task 13: Complete sentences, and no disk access
 
@@ -1660,8 +1699,9 @@ describe('offline guarantee', () => {
 **2.** Run `cd ts && npx vitest run batwoman` — observe failure first if a
 register drops a sentence, then pass.
 
-**3.** Run `cd ts && npx prettier --write src/analysis/batwoman
-test/batwoman-*.ts`, then `harness validate`.
+**3.** Run
+`cd ts && npx prettier --write src/analysis/batwoman test/batwoman-*.ts`, then
+`harness validate`.
 
 **4.** Commit: `test(batwoman): assert full sentences and no registry disk read`
 
@@ -1671,8 +1711,8 @@ test/batwoman-*.ts`, then `harness validate`.
 `.harness/arch/allowances/*.json` (only if a regression is measured) |
 **Category:** integration
 
-`[checkpoint:human-verify]` — the arch measurement below is a decision point, not
-a formality. Show the numbers and stop.
+`[checkpoint:human-verify]` — the arch measurement below is a decision point,
+not a formality. Show the numbers and stop.
 
 **1.** From the worktree, run the four gates in order and record each result.
 There is no `lint` script; do not invent one. Do not use `--no-verify` anywhere.
@@ -1694,10 +1734,10 @@ harness validate
 harness check-arch --json > /tmp/batwoman-arch.json 2>&1 || true
 ```
 
-**4.** Read `currentValue` for `module-size` out of the JSON rather than grepping
-for the absence of a string — pass/fail cannot measure a magnitude. Compare
-against the **effective ceiling**, which is the highest allowance, not the floor
-`check-arch` prints as its left operand:
+**4.** Read `currentValue` for `module-size` out of the JSON rather than
+grepping for the absence of a string — pass/fail cannot measure a magnitude.
+Compare against the **effective ceiling**, which is the highest allowance, not
+the floor `check-arch` prints as its left operand:
 
 ```bash
 node -e "const fs=require('fs'),p='.harness/arch/allowances/';
