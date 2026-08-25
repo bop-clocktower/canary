@@ -95,8 +95,16 @@ describe('non-abstain --format json carries `skipped` (#582)', () => {
 });
 
 describe('analysis record carries `skipped` (#582)', () => {
-  it('schema version is 1.2 (additive skipped list)', () => {
-    expect(SCHEMA_VERSION).toBe('1.2');
+  it('schema version is at least 1.2 (additive skipped list)', () => {
+    // #761 moved this to 1.3 (additive `provenance`). The assertion pins the
+    // floor this suite's field depends on rather than the exact current
+    // version: `skipped` shipped at 1.2 and every later additive bump keeps it,
+    // so re-pinning here on each bump would be churn that asserts nothing about
+    // `skipped`. The exact-version pin lives once, in
+    // guardian-coverage-notice-surface.test.ts, so a bump is still deliberate.
+    const [major, minor] = SCHEMA_VERSION.split('.').map(Number);
+    expect(major).toBe(1);
+    expect(minor).toBeGreaterThanOrEqual(2);
   });
 
   it('records the suppression classes so adjudication can measure them', () => {
