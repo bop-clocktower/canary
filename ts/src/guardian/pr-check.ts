@@ -1019,6 +1019,13 @@ function findingDict(finding: GuardianFinding): Record<string, unknown> {
  */
 /** Additive gate denominator for the json format (#508). */
 /**
+ * Where a resolved diff came from (#369). Defined here rather than in `cli.ts`
+ * because `DiffProvenance` needs it and `cli.ts` already imports from this
+ * module — the reverse edge would be a cycle.
+ */
+export type DiffOrigin = 'stdin' | 'file' | 'ci-base' | 'worktree';
+
+/**
  * What the scoped diff was actually taken between (#761).
  *
  * Every other number guardian reports is downstream of the diff, so a wrong
@@ -1038,8 +1045,8 @@ export interface DiffProvenance {
   base: string | null;
   /** The rev the diff was taken to; null when it could not be resolved. */
   head: string | null;
-  /** How the diff was obtained: `stdin` | `file` | `ci-base` | `worktree`. */
-  origin: string;
+  /** How the diff was obtained. */
+  origin: DiffOrigin;
   /** Paths in the scoped diff, BEFORE any skip/test/type-only filtering. */
   fileCount: number;
   /**
@@ -1062,13 +1069,14 @@ function shortRev(rev: string | null): string {
  * Deliberately terse and always present — a line that appears only when
  * something is wrong teaches readers to ignore it when it does appear.
  */
+export const MERGE_REF_WARNING =
+  'HEAD is a pull_request MERGE REF, not the PR head, so this diff spans ' +
+  'commits merged into the base branch and is WIDER than the PR';
+
 export function provenanceLine(p: DiffProvenance): string {
   const noun = p.fileCount === 1 ? 'file' : 'files';
   const range = `${shortRev(p.base)}...${shortRev(p.head)}`;
-  const warn = p.mergeRef
-    ? ' — HEAD is a pull_request MERGE REF, not the PR head, so this diff ' +
-      'spans commits merged into the base branch and is WIDER than the PR'
-    : '';
+  const warn = p.mergeRef ? ` ${EM_DASH} ${MERGE_REF_WARNING}` : '';
   return `Diff: \`${range}\` (${p.fileCount} ${noun}, via ${p.origin})${warn}`;
 }
 

@@ -100,6 +100,9 @@ import {
   GuardianFinding,
   GateMeta,
   DiffProvenance,
+  DiffOrigin,
+  MERGE_REF_WARNING,
+  provenanceLine,
   GuardianConfig,
   applySuppressions,
   buildFindings,
@@ -490,8 +493,12 @@ function readWorktreeDiff(deps: GuardianDeps): string {
   return deps.runGit(['diff', '--staged'])?.stdout ?? '';
 }
 
-/** Where an omitted-`--diff` resolution ended up (#369). */
-export type DiffOrigin = 'stdin' | 'file' | 'ci-base' | 'worktree';
+/**
+ * Where an omitted-`--diff` resolution ended up (#369). Re-exported from
+ * `pr-check.js`, which owns it so `DiffProvenance.origin` can be typed without
+ * a cycle; the alias keeps this module's public surface unchanged.
+ */
+export type { DiffOrigin } from './pr-check.js';
 
 /** A resolved diff plus the provenance the caller needs to warn accurately. */
 export interface ResolvedDiff {
@@ -663,12 +670,12 @@ export function readPrDiff(
   return { text: readWorktreeDiff(deps), origin: 'worktree', base: null };
 }
 
+// Built from the shared fragment so the annotation and the rendered provenance
+// line cannot drift into describing the same defect two different ways (#761).
 const MERGE_REF_NOTICE =
-  'guardian: HEAD is a pull_request MERGE REF, not the PR head, so this diff ' +
-  'spans commits merged into the base branch and is WIDER than the PR — ' +
-  'findings may name files this PR never touched. Check out with ' +
-  '`ref: ${{ github.event.pull_request.head.sha }}`, or diff to that sha ' +
-  'instead of HEAD.';
+  `guardian: ${MERGE_REF_WARNING} — findings may name files this PR never ` +
+  'touched. Check out with `ref: ${{ github.event.pull_request.head.sha }}`, ' +
+  'or diff to that sha instead of HEAD.';
 
 const EMPTY_CI_DIFF_NOTICE =
   'guardian: 0 changed paths — fell back to a working-tree `git diff`, which ' +
@@ -1286,11 +1293,18 @@ function abstainPrCheck(
   skipped: SkipEntry[],
   format: string,
   deps: GuardianDeps,
+  provenance: DiffProvenance | null = null,
 ): never {
   const outcome = gateOutcome({ checked: 0, findings: [], skipped }, 'gate', {
     noun: 'unit(s)',
   });
   deps.out(outcome.summaryLine);
+  // #761: an abstention says "I verified zero items" — the immediate next
+  // question is "over WHAT?", and the run that motivated this feature is
+  // precisely one that should have abstained. Stating the range here is what
+  // separates "correctly abstained on a docs-only PR" from "abstained because
+  // the diff was wrong", which read identically without it.
+  if (provenance) deps.out(provenanceLine(provenance));
   for (const line of PR_CHECK_ABSTAIN_REMEDIATION) deps.out(line);
   if (format === 'json') {
     deps.out(
@@ -1300,7 +1314,16 @@ function abstainPrCheck(
           // to. Without it a consumer sees `abstained: true` and cannot tell
           // WHAT was dropped or why -- the #508 class one layer down, on the
           // only surface a machine can read.
-          { findings: [], tier: 0, checked: 0, abstained: true, skipped },
+          {
+            findings: [],
+            tier: 0,
+            checked: 0,
+            abstained: true,
+            skipped,
+            // #761: `null` when no diff was resolved -- never absent, so a
+            // reader can tell "not applicable" from "this producer is old".
+            provenance,
+          },
           null,
           2,
         ),
@@ -1482,7 +1505,7 @@ async function prCheckCmd(
   );
 
   if (kept.length === 0 && weakFindings.length === 0) {
-    abstainPrCheck(preCoverageSkips, opts.format, deps);
+    abstainPrCheck(preCoverageSkips, opts.format, deps, provenance);
   }
 
   const { results, coverage } = resolveCoverageWithInput(kept, {
@@ -1514,7 +1537,7 @@ async function prCheckCmd(
   // SKIP rather than rendering an empty "0 unaddressed" report -- an adopter
   // must be able to tell "nothing was judgeable" from "everything passed".
   if (scoredResults.length === 0 && findings.length === 0) {
-    abstainPrCheck(allSkips, opts.format, deps);
+    abstainPrCheck(allSkips, opts.format, deps, provenance);
   }
 
   // SC-5 (PR half): resolve the requested tier against actual capability. No
@@ -1572,6 +1595,9 @@ async function prCheckCmd(
       abstained: false, // an abstained run exits before emit (see plan)
       coverage,
       skipped: allSkips,
+      // #761: the archived artifact is where an inflated diff gets diagnosed
+      // long after the run, so it carries the endpoints too.
+      provenance,
     });
     if (res.action === 'emitted') {
       deps.out(`guardian: wrote analysis record ${RIGHT_ARROW} ${res.path}`);

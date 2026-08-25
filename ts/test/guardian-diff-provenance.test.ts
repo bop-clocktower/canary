@@ -21,12 +21,16 @@
  * self-evident before a reader trusts a single row.
  */
 
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
+import {
+  SCHEMA_VERSION,
+  buildAnalysisRecord,
+} from '../src/guardian/analysis-emit.js';
 import { GuardianDeps, detectMergeRef } from '../src/guardian/cli.js';
 import { CoverageInputState, Fidelity } from '../src/guardian/coverage.js';
 import { Severity } from '../src/guardian/impact-mapper.js';
@@ -37,10 +41,14 @@ import {
   renderFindings,
 } from '../src/guardian/pr-check.js';
 
+/** The literal the provenance line starts with, on every surface. */
+const PROV_PREFIX = 'Diff: ';
+
 const PR_HEAD = '2cfb03cbfbd74e04d0a76869d062c816090c75d3';
 const MERGE_REF_HEAD = '9f1e4d7a3b2c5e8f0a1d6c9b4e7f2a5d8c3b6e90';
 const BASE = '90e550148f3ad609aa8435c7f44a363d627c07ed';
 
+/** The coverage ladder ran but never saw a report: a zero denominator. */
 const BLIND: CoverageInputState = {
   requested: null,
   found: false,
@@ -80,18 +88,21 @@ const INFLATED: DiffProvenance = {
 };
 
 describe('provenanceLine states both endpoints and the size (#761)', () => {
-  it('abbreviates shas to 10 chars and names the file count and origin', () => {
-    const line = provenanceLine(CLEAN);
-    expect(line).toContain('90e550148f...2cfb03cbfb');
-    expect(line).toContain('1 file');
-    expect(line).toContain('via ci-base');
-    // A clean run carries no alarm prose — otherwise the warning stops meaning
-    // anything on the run that has one.
-    expect(line).not.toContain('MERGE REF');
+  it('renders the whole clean line exactly', () => {
+    // Exact rather than a handful of `toContain` probes: it pins the format
+    // (so a reviewer's eye can rely on it), self-documents the output, and
+    // subsumes the "no alarm prose on a clean run" check — a stray warning
+    // could not survive an equality assertion.
+    expect(provenanceLine(CLEAN)).toBe(
+      'Diff: `90e550148f...2cfb03cbfb` (1 file, via ci-base)',
+    );
   });
 
-  it('pluralizes the file count', () => {
+  it('pluralizes the file count, including zero', () => {
     expect(provenanceLine(INFLATED)).toContain('43 files');
+    // Zero is the denominator case this whole feature is about, so it must not
+    // read as "0 file".
+    expect(provenanceLine({ ...CLEAN, fileCount: 0 })).toContain('0 files');
   });
 
   it('renders a ref name verbatim rather than truncating it to 10 chars', () => {
@@ -144,10 +155,13 @@ describe('the sticky comment carries provenance (#761)', () => {
 
   it('provenance sits with the confidence footer, not above the findings table', () => {
     const body = renderFindings(finding(), 'comment', 0, null, meta(CLEAN));
-    const prov = body.indexOf('Diff: ');
+    const prov = body.indexOf(PROV_PREFIX);
     const table = body.indexOf('| Sev |');
     const footer = body.indexOf('Confidence —');
+    // Guard BOTH sentinels before comparing. An unguarded -1 turns a reworded
+    // footer into a failure that points at provenance placement instead.
     expect(table).toBeGreaterThan(-1);
+    expect(footer).toBeGreaterThan(-1);
     expect(prov).toBeGreaterThan(table);
     expect(prov).toBeLessThan(footer);
   });
@@ -158,7 +172,7 @@ describe('the sticky comment carries provenance (#761)', () => {
       abstained: false,
       coverage: BLIND,
     });
-    expect(body).not.toContain('Diff: ');
+    expect(body).not.toContain(PROV_PREFIX);
   });
 });
 
@@ -176,6 +190,21 @@ describe('machine and terminal surfaces carry provenance (#761)', () => {
     expect(payload.provenance.mergeRef).toBe(true);
     expect(payload.provenance.base).toBe(BASE);
     expect(payload.provenance.head).toBe(MERGE_REF_HEAD);
+    expect(payload.provenance.origin).toBe('file');
+  });
+
+  it('omits the key entirely when there is no provenance', () => {
+    // Without this, dropping the `if (gateMeta.provenance)` guard would emit
+    // `"provenance": {}` — an empty object that reads as "resolved, and empty"
+    // rather than "never resolved".
+    const payload = JSON.parse(
+      renderFindings(finding(), 'json', 0, null, {
+        checked: 1,
+        abstained: false,
+        coverage: BLIND,
+      }),
+    ) as Record<string, unknown>;
+    expect('provenance' in payload).toBe(false);
   });
 
   it('the text surface states it without markdown backticks', () => {
@@ -194,8 +223,16 @@ describe('detectMergeRef compares, it does not guess (#761)', () => {
   const depsWith = (env: Record<string, string | undefined>): GuardianDeps =>
     ({ env }) as unknown as GuardianDeps;
 
+  // N2: each dir is unique so this was never a correctness risk — but it is
+  // litter left on every CI job, forever, for no benefit.
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+
   const eventFile = (headSha: string): string => {
     const dir = mkdtempSync(join(tmpdir(), 'guardian-prov-'));
+    dirs.push(dir);
     const path = join(dir, 'event.json');
     writeFileSync(
       path,
@@ -251,5 +288,46 @@ describe('detectMergeRef compares, it does not guess (#761)', () => {
       GITHUB_EVENT_PATH: '/nonexistent/event.json',
     });
     expect(detectMergeRef(MERGE_REF_HEAD, deps)).toBe(false);
+  });
+});
+
+describe('the emitted analysis record carries provenance (#761)', () => {
+  const record = (provenance: DiffProvenance | null | undefined) =>
+    buildAnalysisRecord(finding(), {
+      ref: 'pr-1853',
+      gate: 'soft',
+      effective_tier: 0,
+      degraded_notice: null,
+      exit_code: 0,
+      checked: 43,
+      coverage: BLIND,
+      ...(provenance === undefined ? {} : { provenance }),
+    });
+
+  it('bumps the schema, so a reader can tell the field is available', () => {
+    // Additive, but versioned: silence about a new field is indistinguishable
+    // from the field being absent for a real reason (the #572 rule).
+    expect(SCHEMA_VERSION).toBe('1.3');
+  });
+
+  it('an archived record can be audited long after the run', () => {
+    // The whole point. `checked: 43` is uninterpretable weeks later unless the
+    // endpoints that produced it sit beside it — which is precisely the state
+    // the run in #761 left its own uploaded artifact in.
+    const r = record(INFLATED);
+    expect(r.checked).toBe(43);
+    expect(r.provenance).not.toBeNull();
+    expect(r.provenance!.base).toBe(BASE);
+    expect(r.provenance!.head).toBe(MERGE_REF_HEAD);
+    expect(r.provenance!.fileCount).toBe(43);
+    expect(r.provenance!.mergeRef).toBe(true);
+  });
+
+  it('is null — never absent — for a producer that resolved no diff', () => {
+    // `null` says "not applicable"; a missing key would say "unknown", and the
+    // two are not the same claim.
+    const r = record(undefined);
+    expect('provenance' in r).toBe(true);
+    expect(r.provenance).toBeNull();
   });
 });

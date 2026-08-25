@@ -49,14 +49,23 @@ import {
   coverageDegradedNotice,
   coverageStatus,
 } from './coverage.js';
-import { GuardianFinding, combineNotices, renderFindings } from './pr-check.js';
+import {
+  DiffProvenance,
+  GuardianFinding,
+  combineNotices,
+  renderFindings,
+} from './pr-check.js';
 
 // 1.1 adds the additive `coverage` block (#554); readers of 1.0 are unaffected.
 // 1.2 adds the additive `skipped` list (#582). Additive again, and bumped again
 // for the reason recorded in #572: a reader that pins a version must be able to
 // tell which fields it can rely on being present, and silence about a new field
 // is indistinguishable from the field being absent for a real reason.
-export const SCHEMA_VERSION = '1.2';
+// 1.3 adds the additive `provenance` block (#761). Same additive rule. This is
+// the field an archived record needs most: when a run is questioned WEEKS later
+// from its uploaded artifact, `checked: 43` is only interpretable next to the
+// diff endpoints that produced it.
+export const SCHEMA_VERSION = '1.3';
 const ANALYSIS_SOURCE = 'canary-pr-guardian';
 const REF_SAFE = /[^A-Za-z0-9._-]/g;
 const REF_MAX = 100; // cap the sanitized ref so a long branch never hits ENAMETOOLONG
@@ -124,6 +133,13 @@ export interface AnalysisRecord {
    * here, which is what makes a precision regression in one filter visible.
    */
   skipped: SkipEntry[];
+  /**
+   * What the diff was taken between (#761), or `null` for a producer that
+   * never resolved one. Every count in this record is scoped by these
+   * endpoints, so a record without them cannot be audited after the fact —
+   * which is the position #761's inflated-diff run left its own artifact in.
+   */
+  provenance: DiffProvenance | null;
   summary: {
     total: number;
     unaddressed: number;
@@ -147,6 +163,8 @@ export interface BuildAnalysisRecordArgs {
   coverage?: CoverageInputState | null;
   /** What the run declined to judge, and why; defaults to `[]` (#582). */
   skipped?: SkipEntry[];
+  /** What the diff was taken between (#761). */
+  provenance?: DiffProvenance | null;
 }
 
 /** ISO-8601 UTC timestamp with a `+00:00` offset (Python `isoformat`-shaped). */
@@ -194,6 +212,7 @@ export function buildAnalysisRecord(
         ? null
         : { status: coverageStatus(coverage), ...coverage },
     skipped: args.skipped ?? [],
+    provenance: args.provenance ?? null,
     summary: {
       total: findings.length,
       unaddressed: active.length,

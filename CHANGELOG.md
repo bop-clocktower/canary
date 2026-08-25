@@ -20,6 +20,24 @@ under the project's former name) are documented in the
   sticky PR comment, `--format json`, and the terminal output — now carries a
   provenance line: `Diff: <base>...<head> (N files, via <origin>)`.
 
+  The `--emit-analysis` record carries the same block, at **schema 1.3**
+  (additive; 1.1 was `coverage`, 1.2 `skipped`). That surface matters most and
+  is the easiest to forget: the archived artifact is where a questioned run gets
+  diagnosed weeks later, and `checked: 43` is uninterpretable without the
+  endpoints that produced it. The run in #761 left its own uploaded artifact in
+  exactly that state.
+
+  **The abstain surface carries it too** — the exit-3 payload and the human
+  summary both state the range. That is the surface the #761 narrative names as
+  the real failure: the run in question _should_ have abstained. Without the
+  range, "correctly abstained on a docs-only PR" and "abstained because the diff
+  was wrong" are the same output.
+
+  `fileCount` is deliberately captured **before** the skip / test-path /
+  type-only filters, so it can disagree with `checked`. That disagreement is the
+  feature: a reviewer checks it against the file list GitHub shows them, so it
+  must count what guardian was handed, not what it went on to score.
+
   The failure that earned it, capwell#1853: a PR whose entire diff was **one
   markdown file** was analyzed as **43**, and guardian reported six files the PR
   never touched. CI had checked out the `pull_request` **merge ref** — the base
