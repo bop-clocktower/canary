@@ -32,6 +32,9 @@ const GUARDIAN_ENV_KEYS = [
   'CI',
   'GITHUB_BASE_REF',
   'GITHUB_EVENT_PATH',
+  // #761: merge-ref detection keys off this, so a host runner's value must not
+  // leak into a test the way GITHUB_ACTIONS/CI already could not.
+  'GITHUB_EVENT_NAME',
   'GITHUB_TOKEN',
   'GITHUB_STEP_SUMMARY',
   'CANARY_GUARDIAN_AGENT',

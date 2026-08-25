@@ -99,6 +99,7 @@ import { ensureAscii } from '../util/ensure-ascii.js';
 import {
   GuardianFinding,
   GateMeta,
+  DiffProvenance,
   GuardianConfig,
   applySuppressions,
   buildFindings,
@@ -500,6 +501,62 @@ export interface ResolvedDiff {
   base: string | null;
 }
 
+/**
+ * The PR head sha the CI event declares, if this is a `pull_request` event.
+ *
+ * Distinct from {@link eventBaseSha}: that answers "what are we diffing
+ * against", this answers "what SHOULD the diffed HEAD be". They are compared in
+ * {@link detectMergeRef} (#761).
+ */
+function eventHeadSha(env: NodeJS.ProcessEnv): string | null {
+  const eventPath = env['GITHUB_EVENT_PATH'];
+  if (!eventPath) return null;
+  let sha: unknown;
+  try {
+    const event = JSON.parse(readFileSync(eventPath, 'utf-8')) as {
+      pull_request?: { head?: { sha?: string } };
+    } | null;
+    sha = event?.pull_request?.head?.sha;
+  } catch {
+    return null;
+  }
+  return typeof sha === 'string' && sha.trim() ? sha.trim() : null;
+}
+
+/** Resolve `HEAD` to a full sha, or null when git cannot answer. */
+function resolveHeadSha(deps: GuardianDeps): string | null {
+  const res = deps.runGit(['rev-parse', 'HEAD']);
+  if (res === null || res.code !== 0) return null;
+  const sha = res.stdout.trim();
+  return sha || null;
+}
+
+/**
+ * True when the checked-out HEAD is a `pull_request` MERGE REF, not the PR head.
+ *
+ * This is the capwell#1853 defect (#761). `actions/checkout` on a
+ * `pull_request` event checks out `refs/pull/<n>/merge` — the base branch
+ * merged with the PR head — unless the caller passes an explicit `ref`. Any
+ * diff taken to that HEAD includes every commit merged into the base branch
+ * since the base sha, because the triple-dot merge base degenerates to the base
+ * sha itself (it is an ancestor of the merge commit). A one-file docs PR was
+ * analyzed as 43 files that way.
+ *
+ * Detection is a comparison, not a heuristic: the event payload states the PR
+ * head sha outright, so a HEAD that differs from it is diffing something else.
+ * Returns false whenever either side is unknown — an undetectable case must not
+ * masquerade as a detected-clean one.
+ */
+export function detectMergeRef(
+  headSha: string | null,
+  deps: GuardianDeps,
+): boolean {
+  if (deps.env['GITHUB_EVENT_NAME'] !== 'pull_request') return false;
+  const declared = eventHeadSha(deps.env);
+  if (!declared || !headSha) return false;
+  return declared !== headSha;
+}
+
 /** True when the process looks like a CI runner rather than a dev worktree. */
 function isCiContext(env: NodeJS.ProcessEnv): boolean {
   return Boolean(env['GITHUB_ACTIONS'] || env['CI']);
@@ -605,6 +662,13 @@ export function readPrDiff(
   }
   return { text: readWorktreeDiff(deps), origin: 'worktree', base: null };
 }
+
+const MERGE_REF_NOTICE =
+  'guardian: HEAD is a pull_request MERGE REF, not the PR head, so this diff ' +
+  'spans commits merged into the base branch and is WIDER than the PR — ' +
+  'findings may name files this PR never touched. Check out with ' +
+  '`ref: ${{ github.event.pull_request.head.sha }}`, or diff to that sha ' +
+  'instead of HEAD.';
 
 const EMPTY_CI_DIFF_NOTICE =
   'guardian: 0 changed paths — fell back to a working-tree `git diff`, which ' +
@@ -1357,6 +1421,28 @@ async function prCheckCmd(
   const units = scopeDiff(diffText);
   warnIfEmptyCiDiff(resolvedDiff, units.length, deps);
 
+  // #761: capture what the diff was taken between, BEFORE the skip/test/
+  // type-only filters run — `fileCount` is the size of the surface guardian was
+  // handed, which is the number a reviewer can check against their own PR.
+  // Populated even for an explicit `--diff` (where `base` is unknowable): the
+  // merge-ref warning and the file count are exactly what was missing on
+  // capwell#1853, and that run passed `--diff` from a file.
+  const headSha = resolveHeadSha(deps);
+  const mergeRef = detectMergeRef(headSha, deps);
+  const provenance: DiffProvenance = {
+    base: resolvedDiff.base,
+    head: headSha,
+    origin: resolvedDiff.origin,
+    fileCount: units.length,
+    ...(mergeRef ? { mergeRef: true } : {}),
+  };
+  if (mergeRef) {
+    // Loud, because it invalidates every count downstream — but non-blocking:
+    // the caller owns the checkout, so guardian reports and carries on.
+    deps.err(degradationAnnotation(MERGE_REF_NOTICE));
+    appendStepSummary(deps.env, MERGE_REF_NOTICE);
+  }
+
   // SC-2: drop docs/config-only units matching skipGlobs.
   const [keptSkip, skipped] = filterSkipped(units, config.skip_globs);
   // FIX A: drop test-path units -- a test does not itself need a test.
@@ -1450,6 +1536,8 @@ async function prCheckCmd(
     checked: scoredResults.length,
     abstained: false,
     coverage,
+    // #761: the endpoints every count above is scoped by.
+    provenance,
     // #582: `checked` is the numerator of a fraction whose denominator was
     // never printed. This is the rest of it.
     skipped: allSkips,

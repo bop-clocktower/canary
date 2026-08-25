@@ -14,6 +14,44 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`guardian pr-check` states what it diffed** (#761). Every surface — the
+  sticky PR comment, `--format json`, and the terminal output — now carries a
+  provenance line: `Diff: <base>...<head> (N files, via <origin>)`.
+
+  The failure that earned it, capwell#1853: a PR whose entire diff was **one
+  markdown file** was analyzed as **43**, and guardian reported six files the PR
+  never touched. CI had checked out the `pull_request` **merge ref** — the base
+  branch merged with the PR head — so the triple-dot merge base degenerated to
+  the base sha itself (it is an ancestor of the merge commit) and the range
+  swept in every commit merged into the base branch since. Nothing on the
+  surface contradicted it: the comment named only the HEAD side, through finding
+  permalinks, and never said what it diffed _against_ or how many files it saw.
+  A reviewer who knows their PR is one file can now see `43 files` and stop
+  reading the rows.
+
+  The line prints on **every** comment, clean or not. A line that appears only
+  when something is wrong teaches readers to skip it when it does appear — and
+  the run that motivated this had findings, so a problem-gated line would have
+  stayed hidden precisely when it was needed.
+
+  `pr-check` also now **detects the merge-ref shape directly** rather than
+  inferring it: on a `pull_request` event the payload states the PR head sha, so
+  a checked-out HEAD that differs from it is diffing something else. That is
+  reported as a `::warning::` and on the provenance line, and deliberately does
+  **not** change the exit code — the caller owns the checkout, so guardian says
+  so and carries on. When either side is unknown it makes no claim, because
+  undetectable must never render as detected-clean.
+
+  Not fixed here, and tracked in #761: on that run the wrong diff also
+  **defeated the zero-denominator guard**. The PR was docs-only, no lcov
+  existed, and the run should have abstained ("verified zero items; this is not
+  a pass"). Abstention requires zero findings-eligible units — the phantom files
+  supplied findings, so a run that verified nothing headlined a finding count
+  instead. Guardian is disabled in capwell (capwell#1961) until that closes and
+  the dogfooding bar in #761 is met.
+
 ### Fixed
 
 - **The `refresh-baseline` label refreshes the baseline again** (#749). The
