@@ -99,6 +99,10 @@ import { ensureAscii } from '../util/ensure-ascii.js';
 import {
   GuardianFinding,
   GateMeta,
+  DiffProvenance,
+  DiffOrigin,
+  MERGE_REF_WARNING,
+  provenanceLine,
   GuardianConfig,
   applySuppressions,
   buildFindings,
@@ -489,8 +493,12 @@ function readWorktreeDiff(deps: GuardianDeps): string {
   return deps.runGit(['diff', '--staged'])?.stdout ?? '';
 }
 
-/** Where an omitted-`--diff` resolution ended up (#369). */
-export type DiffOrigin = 'stdin' | 'file' | 'ci-base' | 'worktree';
+/**
+ * Where an omitted-`--diff` resolution ended up (#369). Re-exported from
+ * `pr-check.js`, which owns it so `DiffProvenance.origin` can be typed without
+ * a cycle; the alias keeps this module's public surface unchanged.
+ */
+export type { DiffOrigin } from './pr-check.js';
 
 /** A resolved diff plus the provenance the caller needs to warn accurately. */
 export interface ResolvedDiff {
@@ -498,6 +506,62 @@ export interface ResolvedDiff {
   origin: DiffOrigin;
   /** The git rev the diff was taken against; only set for `ci-base`. */
   base: string | null;
+}
+
+/**
+ * The PR head sha the CI event declares, if this is a `pull_request` event.
+ *
+ * Distinct from {@link eventBaseSha}: that answers "what are we diffing
+ * against", this answers "what SHOULD the diffed HEAD be". They are compared in
+ * {@link detectMergeRef} (#761).
+ */
+function eventHeadSha(env: NodeJS.ProcessEnv): string | null {
+  const eventPath = env['GITHUB_EVENT_PATH'];
+  if (!eventPath) return null;
+  let sha: unknown;
+  try {
+    const event = JSON.parse(readFileSync(eventPath, 'utf-8')) as {
+      pull_request?: { head?: { sha?: string } };
+    } | null;
+    sha = event?.pull_request?.head?.sha;
+  } catch {
+    return null;
+  }
+  return typeof sha === 'string' && sha.trim() ? sha.trim() : null;
+}
+
+/** Resolve `HEAD` to a full sha, or null when git cannot answer. */
+function resolveHeadSha(deps: GuardianDeps): string | null {
+  const res = deps.runGit(['rev-parse', 'HEAD']);
+  if (res === null || res.code !== 0) return null;
+  const sha = res.stdout.trim();
+  return sha || null;
+}
+
+/**
+ * True when the checked-out HEAD is a `pull_request` MERGE REF, not the PR head.
+ *
+ * This is the capwell#1853 defect (#761). `actions/checkout` on a
+ * `pull_request` event checks out `refs/pull/<n>/merge` — the base branch
+ * merged with the PR head — unless the caller passes an explicit `ref`. Any
+ * diff taken to that HEAD includes every commit merged into the base branch
+ * since the base sha, because the triple-dot merge base degenerates to the base
+ * sha itself (it is an ancestor of the merge commit). A one-file docs PR was
+ * analyzed as 43 files that way.
+ *
+ * Detection is a comparison, not a heuristic: the event payload states the PR
+ * head sha outright, so a HEAD that differs from it is diffing something else.
+ * Returns false whenever either side is unknown — an undetectable case must not
+ * masquerade as a detected-clean one.
+ */
+export function detectMergeRef(
+  headSha: string | null,
+  deps: GuardianDeps,
+): boolean {
+  if (deps.env['GITHUB_EVENT_NAME'] !== 'pull_request') return false;
+  const declared = eventHeadSha(deps.env);
+  if (!declared || !headSha) return false;
+  return declared !== headSha;
 }
 
 /** True when the process looks like a CI runner rather than a dev worktree. */
@@ -605,6 +669,13 @@ export function readPrDiff(
   }
   return { text: readWorktreeDiff(deps), origin: 'worktree', base: null };
 }
+
+// Built from the shared fragment so the annotation and the rendered provenance
+// line cannot drift into describing the same defect two different ways (#761).
+const MERGE_REF_NOTICE =
+  `guardian: ${MERGE_REF_WARNING} — findings may name files this PR never ` +
+  'touched. Check out with `ref: ${{ github.event.pull_request.head.sha }}`, ' +
+  'or diff to that sha instead of HEAD.';
 
 const EMPTY_CI_DIFF_NOTICE =
   'guardian: 0 changed paths — fell back to a working-tree `git diff`, which ' +
@@ -1222,11 +1293,18 @@ function abstainPrCheck(
   skipped: SkipEntry[],
   format: string,
   deps: GuardianDeps,
+  provenance: DiffProvenance | null = null,
 ): never {
   const outcome = gateOutcome({ checked: 0, findings: [], skipped }, 'gate', {
     noun: 'unit(s)',
   });
   deps.out(outcome.summaryLine);
+  // #761: an abstention says "I verified zero items" — the immediate next
+  // question is "over WHAT?", and the run that motivated this feature is
+  // precisely one that should have abstained. Stating the range here is what
+  // separates "correctly abstained on a docs-only PR" from "abstained because
+  // the diff was wrong", which read identically without it.
+  if (provenance) deps.out(provenanceLine(provenance));
   for (const line of PR_CHECK_ABSTAIN_REMEDIATION) deps.out(line);
   if (format === 'json') {
     deps.out(
@@ -1236,7 +1314,16 @@ function abstainPrCheck(
           // to. Without it a consumer sees `abstained: true` and cannot tell
           // WHAT was dropped or why -- the #508 class one layer down, on the
           // only surface a machine can read.
-          { findings: [], tier: 0, checked: 0, abstained: true, skipped },
+          {
+            findings: [],
+            tier: 0,
+            checked: 0,
+            abstained: true,
+            skipped,
+            // #761: `null` when no diff was resolved -- never absent, so a
+            // reader can tell "not applicable" from "this producer is old".
+            provenance,
+          },
           null,
           2,
         ),
@@ -1357,6 +1444,28 @@ async function prCheckCmd(
   const units = scopeDiff(diffText);
   warnIfEmptyCiDiff(resolvedDiff, units.length, deps);
 
+  // #761: capture what the diff was taken between, BEFORE the skip/test/
+  // type-only filters run — `fileCount` is the size of the surface guardian was
+  // handed, which is the number a reviewer can check against their own PR.
+  // Populated even for an explicit `--diff` (where `base` is unknowable): the
+  // merge-ref warning and the file count are exactly what was missing on
+  // capwell#1853, and that run passed `--diff` from a file.
+  const headSha = resolveHeadSha(deps);
+  const mergeRef = detectMergeRef(headSha, deps);
+  const provenance: DiffProvenance = {
+    base: resolvedDiff.base,
+    head: headSha,
+    origin: resolvedDiff.origin,
+    fileCount: units.length,
+    ...(mergeRef ? { mergeRef: true } : {}),
+  };
+  if (mergeRef) {
+    // Loud, because it invalidates every count downstream — but non-blocking:
+    // the caller owns the checkout, so guardian reports and carries on.
+    deps.err(degradationAnnotation(MERGE_REF_NOTICE));
+    appendStepSummary(deps.env, MERGE_REF_NOTICE);
+  }
+
   // SC-2: drop docs/config-only units matching skipGlobs.
   const [keptSkip, skipped] = filterSkipped(units, config.skip_globs);
   // FIX A: drop test-path units -- a test does not itself need a test.
@@ -1396,7 +1505,7 @@ async function prCheckCmd(
   );
 
   if (kept.length === 0 && weakFindings.length === 0) {
-    abstainPrCheck(preCoverageSkips, opts.format, deps);
+    abstainPrCheck(preCoverageSkips, opts.format, deps, provenance);
   }
 
   const { results, coverage } = resolveCoverageWithInput(kept, {
@@ -1428,7 +1537,7 @@ async function prCheckCmd(
   // SKIP rather than rendering an empty "0 unaddressed" report -- an adopter
   // must be able to tell "nothing was judgeable" from "everything passed".
   if (scoredResults.length === 0 && findings.length === 0) {
-    abstainPrCheck(allSkips, opts.format, deps);
+    abstainPrCheck(allSkips, opts.format, deps, provenance);
   }
 
   // SC-5 (PR half): resolve the requested tier against actual capability. No
@@ -1450,6 +1559,8 @@ async function prCheckCmd(
     checked: scoredResults.length,
     abstained: false,
     coverage,
+    // #761: the endpoints every count above is scoped by.
+    provenance,
     // #582: `checked` is the numerator of a fraction whose denominator was
     // never printed. This is the rest of it.
     skipped: allSkips,
@@ -1484,6 +1595,9 @@ async function prCheckCmd(
       abstained: false, // an abstained run exits before emit (see plan)
       coverage,
       skipped: allSkips,
+      // #761: the archived artifact is where an inflated diff gets diagnosed
+      // long after the run, so it carries the endpoints too.
+      provenance,
     });
     if (res.action === 'emitted') {
       deps.out(`guardian: wrote analysis record ${RIGHT_ARROW} ${res.path}`);

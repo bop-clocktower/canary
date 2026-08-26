@@ -82,7 +82,8 @@ describe('envelope', () => {
     });
     // #554: 1.1 adds the additive `coverage` block.
     // #582: 1.2 adds the additive `skipped` list.
-    expect(record.schemaVersion).toBe('1.2');
+    // #761: 1.3 adds the additive `provenance` block.
+    expect(record.schemaVersion).toBe('1.3');
     expect(record.source).toBe('canary-pr-guardian');
     expect(record.ref).toBe('pr-7');
     expect(record.gate).toBe('hard');

@@ -1018,11 +1018,75 @@ function findingDict(finding: GuardianFinding): Record<string, unknown> {
  * - `text`: plain, markdown-free, for local/CLI output.
  */
 /** Additive gate denominator for the json format (#508). */
+/**
+ * Where a resolved diff came from (#369). Defined here rather than in `cli.ts`
+ * because `DiffProvenance` needs it and `cli.ts` already imports from this
+ * module — the reverse edge would be a cycle.
+ */
+export type DiffOrigin = 'stdin' | 'file' | 'ci-base' | 'worktree';
+
+/**
+ * What the scoped diff was actually taken between (#761).
+ *
+ * Every other number guardian reports is downstream of the diff, so a wrong
+ * diff silently rewrites all of them — and the comment previously named only
+ * the HEAD side, via the finding permalinks. capwell#1853 is the worked
+ * example: a PR whose real diff was ONE markdown file was analyzed as 43,
+ * because CI diffed the `pull_request` MERGE REF (main merged with the PR head)
+ * rather than the PR head. Guardian then reported six files the PR never
+ * touched, and nothing on the surface contradicted it.
+ *
+ * Stating base…head and the file count makes that shape self-evident: a
+ * reviewer who knows their PR is one file sees `43 files` and stops reading the
+ * findings. This is provenance, not a gate — it changes no exit code.
+ */
+export interface DiffProvenance {
+  /** The rev the diff was taken against; null when the diff was supplied. */
+  base: string | null;
+  /** The rev the diff was taken to; null when it could not be resolved. */
+  head: string | null;
+  /** How the diff was obtained. */
+  origin: DiffOrigin;
+  /** Paths in the scoped diff, BEFORE any skip/test/type-only filtering. */
+  fileCount: number;
+  /**
+   * True when HEAD is a `pull_request` merge ref rather than the PR head — the
+   * capwell#1853 defect. Advisory: guardian reports it and carries on, because
+   * the caller owns the checkout and only the caller can fix it.
+   */
+  mergeRef?: boolean;
+}
+
+/** Short display form for a rev: 10 chars of a sha, a ref name verbatim. */
+function shortRev(rev: string | null): string {
+  if (!rev) return '?';
+  return /^[0-9a-f]{40}$/i.test(rev) ? rev.slice(0, 10) : rev;
+}
+
+/**
+ * The one-line diff provenance shown on every surface (#761).
+ *
+ * Deliberately terse and always present — a line that appears only when
+ * something is wrong teaches readers to ignore it when it does appear.
+ */
+export const MERGE_REF_WARNING =
+  'HEAD is a pull_request MERGE REF, not the PR head, so this diff spans ' +
+  'commits merged into the base branch and is WIDER than the PR';
+
+export function provenanceLine(p: DiffProvenance): string {
+  const noun = p.fileCount === 1 ? 'file' : 'files';
+  const range = `${shortRev(p.base)}...${shortRev(p.head)}`;
+  const warn = p.mergeRef ? ` ${EM_DASH} ${MERGE_REF_WARNING}` : '';
+  return `Diff: \`${range}\` (${p.fileCount} ${noun}, via ${p.origin})${warn}`;
+}
+
 export interface GateMeta {
   checked: number;
   abstained: boolean;
   /** The run's coverage-input state, when the coverage ladder ran (#554). */
   coverage?: CoverageInputState | null;
+  /** What the diff was taken between (#761). */
+  provenance?: DiffProvenance | null;
   /**
    * What this run declined to judge, and why (#582).
    *
@@ -1116,6 +1180,10 @@ export function renderFindings(
       // the field exists to state.
       payload['skipped'] = gateMeta.skipped ?? [];
       if (coverageState) payload['coverage'] = coverageBlock(coverageState);
+      // #761: machine consumers need the diff's endpoints for the same reason
+      // humans do — every count in this payload is scoped by them.
+      if (gateMeta.provenance)
+        payload['provenance'] = { ...gateMeta.provenance };
     }
     return ensureAscii(JSON.stringify(payload, null, 2));
   }
@@ -1178,6 +1246,13 @@ export function renderFindings(
   // under a green headline is read as boilerplate.
   const coverageLine = coverageNotice ? `> **${coverageNotice}**` : null;
 
+  // #761: shown on EVERY comment, clean or not. The run that motivated this was
+  // a findings run whose findings were all phantom, so gating the line on a
+  // problem guardian had not detected would have hidden it exactly when needed.
+  const provLine = gateMeta?.provenance
+    ? `<sub>${provenanceLine(gateMeta.provenance)}</sub>`
+    : null;
+
   if (fmt === 'comment') {
     const fileCount = new Set(active.map((f) => f.path)).size;
     const lines = [STICKY_MARKER];
@@ -1237,6 +1312,9 @@ export function renderFindings(
       }
     }
 
+    // Directly above the confidence footer: provenance and confidence are the
+    // two "how much should I trust this" facts, so they read as one block.
+    if (provLine) lines.push('', provLine);
     lines.push('', footerLine);
     return lines.join('\n');
   }
@@ -1258,6 +1336,12 @@ export function renderFindings(
     lines.push(
       `[${finding.severity}] ${finding.path}${unit} — ${finding.evidence} (${finding.fidelity})${mark}`,
     );
+  }
+  // #761: the terminal surface gets the same provenance the comment does —
+  // this is the one an engineer reads at their desk, where a wrong `--diff` is
+  // likeliest.
+  if (gateMeta?.provenance) {
+    lines.push(provenanceLine(gateMeta.provenance).replace(/`/g, ''));
   }
   let footer = `tier ${tier}: deterministic check, no LLM`;
   if (notice) footer += ` - ${notice}`;
