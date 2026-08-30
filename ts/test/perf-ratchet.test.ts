@@ -254,7 +254,7 @@ describe('perf-ratchet', () => {
  * `ts/test/entropy-ratchet.test.ts`.
  *
  * Both ratchets carry an ABSOLUTE count measured by a CLI the workflows pin as
- * a floating `@harness-engineering/cli@11`, so both have the same hole: the
+ * a floating `@harness-engineering/cli@12`, so both have the same hole: the
  * analyzer can change under a fixed ceiling with no commit to this repo, and
  * every offline guard stays green because they compare the baseline against
  * itself.

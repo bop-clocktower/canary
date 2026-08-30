@@ -180,7 +180,7 @@ describe('entropy-ratchet', () => {
  * The checked-in baseline, as opposed to the script that reads it (#744).
  *
  * `maxFindings` is an ABSOLUTE count, but the workflows pin the measuring tool
- * to a floating major (`@harness-engineering/cli@11`). Those two facts together
+ * to a floating major (`@harness-engineering/cli@12`). Those two facts together
  * mean a patch release can move the number with no change to this repo at all,
  * and it has: measured on one commit, CLI 11.1.1 reports 281 findings and
  * 11.2.0 reports 257 — a 24-finding move that is entirely the doc-drift
@@ -210,23 +210,58 @@ describe('entropy-ratchet', () => {
  *   - a missing, range-valued, or major-mismatched `harnessCli`
  *
  * And they explicitly do NOT catch minor-version drift: the workflows pin a
- * floating `@11`, so 11.1.1 -> 11.2.0 passes the major check. Closing that needs
+ * floating `@12`, so a 12.1.0 -> 12.2.0 move would pass the major check just as
+ * 11.1.1 -> 11.2.0 did. Closing that needs
  * CI to capture the resolved version and the ratchet to abstain on a mismatch
  * (#744). Do not let the presence of this block imply otherwise.
  */
 describe('the checked-in entropy baseline', () => {
   const BASELINE_PATH = join(REPO_ROOT, '.harness', 'entropy-baseline.json');
   const BASELINE_REL = '.harness/entropy-baseline.json';
+  const WORKFLOW_PATH = join(
+    REPO_ROOT,
+    '.github',
+    'workflows',
+    'harness-quality.yml',
+  );
+
+  /**
+   * Every `HARNESS_CLI` assignment in the quality workflow, as major strings.
+   *
+   * Anchored to the assignment rather than matched anywhere in the file: a
+   * prose comment mentioning an older `@10` used to become the authority,
+   * failing the pin test with a message that pointed at the baseline.
+   */
+  function pinnedMajors(): string[] {
+    const yml = readFileSync(WORKFLOW_PATH, 'utf8');
+    return [
+      ...yml.matchAll(/^\s*HARNESS_CLI:\s*'@harness-engineering\/cli@(\d+)'/gm),
+    ].map((m) => m[1]);
+  }
+
+  /** The single pinned major, or `?` when the pin is missing or ambiguous. */
+  function pinnedMajor(): string {
+    const majors = pinnedMajors();
+    return majors.length === 1 ? majors[0] : '?';
+  }
 
   /**
    * How to re-measure, quoted into every failure message that needs it. The
    * clean-worktree part is load-bearing: the count reads high in the main
    * working directory (#700), so a re-measure taken in place is worse than
    * none — it is a confident wrong number.
+   *
+   * The major is READ FROM THE WORKFLOW PIN rather than written here. It used
+   * to be a hardcoded `@11`, which made this hint actively harmful in the one
+   * case it exists for: the major-mismatch failure quotes it, so a maintainer
+   * following it re-measured with the OLD analyzer and reproduced exactly the
+   * stale number the guard had just caught. A remediation hint that names a
+   * version has to derive it, or it goes stale on precisely the bump that
+   * makes someone read it.
    */
   const REMEASURE =
     'Re-measure in a CLEAN WORKTREE (`git worktree add`) with ' +
-    '`npx --yes -p @harness-engineering/cli@11 harness cleanup --findings-json`' +
+    `\`npx --yes -p @harness-engineering/cli@${pinnedMajor()} harness cleanup --findings-json\`` +
     ' — the count reads high in the main working dir (#700).';
 
   function baselineFile(): Record<string, unknown> {
@@ -301,7 +336,7 @@ describe('the checked-in entropy baseline', () => {
         `produced "measuredCount". Without it there is no way to tell a real ` +
         `count change from an analyzer change (#744). ${REMEASURE}`,
     ).toBe('string');
-    // A range would defeat the point — the whole failure mode is that `@11`
+    // A range would defeat the point — the whole failure mode is that `@12`
     // resolves to different analyzers on different days.
     expect(
       cli,
@@ -310,19 +345,10 @@ describe('the checked-in entropy baseline', () => {
     ).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  // NOTE: major only. A minor bump under the floating `@11` pin — the exact
+  // NOTE: major only. A minor bump under the floating `@12` pin — the exact
   // drift that moved this count 24 findings — passes. See the block docblock.
   it('was measured by a CLI whose MAJOR matches the workflow pin', () => {
-    const yml = readFileSync(
-      join(REPO_ROOT, '.github', 'workflows', 'harness-quality.yml'),
-      'utf8',
-    );
-    // Anchored to the assignment rather than matched anywhere in the file: a
-    // prose comment mentioning an older `@10` used to become the authority,
-    // failing this test with a message that pointed at the baseline.
-    const pins = [
-      ...yml.matchAll(/^\s*HARNESS_CLI:\s*'@harness-engineering\/cli@(\d+)'/gm),
-    ];
+    const pins = pinnedMajors();
     expect(
       pins.length,
       `No HARNESS_CLI pin found in .github/workflows/harness-quality.yml. If ` +
@@ -333,11 +359,24 @@ describe('the checked-in entropy baseline', () => {
     expect(
       String(harnessCli).split('.')[0],
       `${BASELINE_REL} was measured with CLI ${String(harnessCli)}, but the ` +
-        `workflow now runs major @${pins[0][1]}. The baseline is stale, not ` +
+        `workflow now runs major @${pins[0]}. The baseline is stale, not ` +
         `the workflow. FIX: ${REMEASURE} Then update "measuredCount", ` +
         `"measuredAt", "harnessCli", and lower "maxFindings" to the new count ` +
         `plus "maxHeadroom".`,
-    ).toBe(pins[0][1]);
+    ).toBe(pins[0]);
+  });
+
+  // The hint is quoted BY the major-mismatch failure above, so a hardcoded
+  // major in it is wrong exactly when someone reads it: following it
+  // re-measures with the analyzer the baseline is already stale against, and
+  // reproduces the stale number. Derive it, or delete the version from it.
+  it('quotes a re-measure command naming the major the workflow pins', () => {
+    expect(
+      REMEASURE,
+      `The re-measure hint names a CLI major that is not the pinned ` +
+        `@${pinnedMajor()}. It is quoted into the major-mismatch failure, so ` +
+        `a stale major here sends the reader back to the wrong analyzer.`,
+    ).toContain(`@harness-engineering/cli@${pinnedMajor()} `);
   });
 
   it('never sets a ceiling below the count it last measured', () => {
@@ -388,13 +427,13 @@ describe('the checked-in entropy baseline', () => {
  * The hole this closes is the one `$whatIsGuarded` in the baseline names and
  * that nothing could see: `measuredCount` is a memory of the last time a human
  * ran the analyzer, and the workflows pin a FLOATING `@harness-engineering/
- * cli@11`, so the analyzer under this absolute count can change with no commit
- * to this repo. It happened twice. 11.1.1 -> 11.2.0 moved the count 281 -> 257
- * (#694, a fence-awareness fix). 11.2.0 -> 11.3.0 then moved it 257 -> 147 —
- * a 110-finding drop, purely subtractive, with the ceiling left at 267. For
- * four days the gate would have taken 120 net-new findings to turn red: a
- * blocking check that had been deliberately TIGHTENED to 267 was, in practice,
- * wallpaper.
+ * cli@12`, so the analyzer under this absolute count can change with no commit
+ * to this repo. It happened twice under the old `@11` pin: 11.1.1 -> 11.2.0
+ * moved the count 281 -> 257 (#694, a fence-awareness fix), and 11.2.0 ->
+ * 11.3.0 then moved it 257 -> 147 — a 110-finding drop, purely subtractive,
+ * with the ceiling left at 267. For four days the gate would have taken 120
+ * net-new findings to turn red: a blocking check that had been deliberately
+ * TIGHTENED to 267 was, in practice, wallpaper.
  *
  * Neither move was catchable offline. The existing guards compare the baseline
  * against ITSELF (the ceiling did not rise, `measuredCount` matches the

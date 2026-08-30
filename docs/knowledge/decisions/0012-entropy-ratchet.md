@@ -375,10 +375,12 @@ convention — advisory, then triage, then ratchet.
 ## Amendment — 2026-08-20: the ceiling is only as good as the instrument (#744)
 
 This ADR chose an **absolute** ceiling. That choice has a consequence nobody
-wrote down at the time, and it has now cost two silent drifts: the number on the
-left of the comparison is produced by a tool the workflows pin as a **floating
-major** (`@harness-engineering/cli@11`), so the analyzer behind the count can
-change without a single commit to this repository.
+wrote down at the time, and it has now cost two silent drifts (plus a third
+move, 147 -> 135 on the @11 -> @12 bump, which the #744 abstention caught before
+it landed rather than days after): the number on the left of the comparison is
+produced by a tool the workflows pin as a **floating major**
+(`@harness-engineering/cli@12`), so the analyzer behind the count can change
+without a single commit to this repository.
 
 Both moves were downward, which is why neither was noticed:
 

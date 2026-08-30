@@ -22,11 +22,19 @@
  * - `dist/chunk-2FPQR6BB.js:740` `checkFunctionLength` — `fn.endLine -
  *   fn.startLine + 1`, so the EOF fallback becomes the reported length.
  *
- * Confirmed still present in **11.1.1** (the version `@harness-engineering/cli@11`
- * floats to), so the v11 bump did NOT fix it. Reproduced end to end: a planted
- * 78-line `ts/test/*.test.ts` fixture whose only helper is 4 lines long draws
- * `New violation [warning]: functionLength=77 in jsonPayload (threshold: 50)`
- * from a real `harness check-arch` run.
+ * Confirmed still present in **11.1.1**, and RE-CONFIRMED in **12.1.0** on
+ * 2026-08-30 when the pin moved `@11` -> `@12`, so neither major bump fixed it.
+ * Reproduced end to end both times: a planted 78-line `ts/test/*.test.ts`
+ * fixture whose only helper is 4 lines long — its brace balance broken by a
+ * `{` inside a string literal — draws
+ * `New violation [warning]: functionLength=75 in jsonPayload (threshold: 50)`
+ * from a real `harness check-arch` run. 11.3.0 and 12.1.0 report the same 75 on
+ * the same fixture in the same minute, which is what says the parser is
+ * unchanged rather than merely still wrong.
+ *
+ * (The originally recorded number was 77 against a slightly different fixture;
+ * 75 is this fixture's distance to EOF. The invariant being pinned is
+ * `reported length == distance to end of file`, not any single integer.)
  *
  * ## The issue title's trigger is wrong, and that matters
  *
@@ -65,10 +73,10 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
 
 /** The harness version these expectations were reproduced against. */
-const VERIFIED_AGAINST = '11.1.1';
+const VERIFIED_AGAINST = '12.1.0';
 
 /** The pin every harness workflow carries while #587 stands. */
-const PINNED_SPEC = '@harness-engineering/cli@11';
+const PINNED_SPEC = '@harness-engineering/cli@12';
 
 // -- upstream algorithm, replicated verbatim ---------------------------------
 
@@ -252,6 +260,14 @@ describe('upstream harness #587: re-verification tripwire', () => {
   it('records the exact version the numbers came from', () => {
     // Documentation with an assertion around it, so the provenance of every
     // number above cannot quietly rot out of the header comment.
-    expect(VERIFIED_AGAINST.startsWith('11.')).toBe(true);
+    //
+    // Derived from PINNED_SPEC rather than hardcoding a major: this assertion
+    // previously read `startsWith('11.')`, which would have stayed green
+    // through a pin bump to @12 with VERIFIED_AGAINST left at an 11.x — the
+    // exact stale-provenance state it exists to prevent.
+    const pinnedMajor = PINNED_SPEC.split('@').pop();
+    expect(VERIFIED_AGAINST.startsWith(`${pinnedMajor}.`)).toBe(true);
+    // And a full version, never a range — the numbers came from one build.
+    expect(VERIFIED_AGAINST).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });
