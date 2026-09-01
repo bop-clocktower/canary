@@ -72,8 +72,18 @@ import { describe, expect, it } from 'vitest';
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
 
-/** The harness version these expectations were reproduced against. */
-const VERIFIED_AGAINST = '12.1.0';
+/**
+ * The harness version these expectations were reproduced against.
+ *
+ * Moved 12.1.0 -> 12.2.0 on 2026-09-01 after re-running the reproduction, not
+ * as a courtesy bump: `check-arch --json` on the same tree reports the SAME 69
+ * `preExisting` violations under both, set-compared rather than byte-compared
+ * because upstream emits the list in a nondeterministic order (the two payloads
+ * are both 11,891 B with different md5s, and the sets are equal). `cleanup`
+ * (135) and `check-perf` (227, byte-identical) are unmoved across the same
+ * boundary, so #587 still stands at 12.2.0.
+ */
+const VERIFIED_AGAINST = '12.2.0';
 
 /** The pin every harness workflow carries while #587 stands. */
 const PINNED_SPEC = '@harness-engineering/cli@12';
