@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "tsc -p . && node scripts/copy-data.mjs",
-    "typecheck": "tsc -p . --noEmit",
+    "typecheck": "tsc -p tsconfig.check.json --noEmit",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"*.ts\"",
     "test": "vitest run --coverage"
   },

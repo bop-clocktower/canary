@@ -35,10 +35,10 @@ function parseAsHarnessDoes(raw: string): Record<string, string> | null {
   if (!match) return null;
 
   const frontmatter: Record<string, string> = {};
-  for (const line of match[1].split('\n')) {
+  for (const line of match[1]!.split('\n')) {
     const kv = line.match(/^(\w+):\s*(.+)$/);
     if (!kv) continue;
-    frontmatter[kv[1]] = kv[2].trim();
+    frontmatter[kv[1]!] = kv[2]!.trim();
   }
 
   if (!frontmatter.number || !frontmatter.title) return null;

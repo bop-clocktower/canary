@@ -25,6 +25,7 @@ import {
   TransitionEntry,
   WorkflowMapping,
 } from '../src/core/workflow-discovery.js';
+import type { MainDeps } from '../src/main-deps.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 
 function fake<T>(obj: unknown): T {
@@ -464,7 +465,8 @@ describe('workflow show / init', () => {
   }
 
   it('show: human, --json, --roles-only, json+roles', async () => {
-    const wd = () => fake({ show: () => mapping() });
+    const wd: MainDeps['makeWorkflowDiscovery'] = () =>
+      fake({ show: () => mapping() });
     const human = await invokeCanary(
       ['workflow', 'show', '--project', 'ACME'],
       {

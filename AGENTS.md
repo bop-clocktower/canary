@@ -1227,10 +1227,17 @@ a chained one-liner hides which link failed, and silence means it did not run:
 ```bash
 cd ts
 npm run build         # tsc -p . + copy-data
-npm run typecheck     # tsc --noEmit
+npm run typecheck     # tsc --noEmit over tsconfig.check.json (src + test)
 npm run format:check  # prettier
 npm test              # vitest run --coverage
 ```
+
+The typecheck gate reads `ts/tsconfig.check.json`, not `ts/tsconfig.json`. The
+build config is emit-shaped (`rootDir: src`, `outDir: dist`) and so cannot also
+cover `test/`; the check config extends it, adds the test tree, and emits
+nothing. Only `test/fixtures/` is excluded — those files are deliberately broken
+sample input for the scanners. See #759 and
+`ts/test/typecheck-denominator.test.ts`, which fails if that exclusion widens.
 
 There is **no `lint` gate** and no linter to run one: the repo uses no ESLint by
 decision, and the `protect-config` hook blocks AI-authored linter configs.

@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { TransitionResult, UpdateResult } from '../src/core/ticket-updater.js';
+import type { MainDeps } from '../src/main-deps.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 
 function fake<T>(obj: unknown): T {
@@ -20,11 +21,11 @@ function fake<T>(obj: unknown): T {
 const HISTORY_REL = join('test-results', 'reports', 'history-v2.jsonl');
 
 describe('recommend: license warning + alternatives + no-framework', () => {
-  const classifier = () =>
+  const classifier: MainDeps['makeClassifier'] = () =>
     fake({
       classify: () => ({ intent: '', test_type: 'performance', confidence: 1 }),
     });
-  const registry = () =>
+  const registry: MainDeps['makeRegistry'] = () =>
     fake({
       executionInfo: () => ({
         execution_command: 'k6 run {file}',
@@ -33,7 +34,7 @@ describe('recommend: license warning + alternatives + no-framework', () => {
     });
 
   it('human output includes the license warning and alternatives', async () => {
-    const recommender = () =>
+    const recommender: MainDeps['makeRecommender'] = () =>
       fake({
         recommend: () => [
           {
@@ -59,7 +60,7 @@ describe('recommend: license warning + alternatives + no-framework', () => {
   });
 
   it('--json includes license + warning + execution_command', async () => {
-    const recommender = () =>
+    const recommender: MainDeps['makeRecommender'] = () =>
       fake({
         recommend: () => [
           {

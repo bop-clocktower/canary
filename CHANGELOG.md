@@ -72,6 +72,36 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The typecheck gate now covers the test tree** (#759). `npm run typecheck`
+  ran `tsc -p .` against a config declaring `"include": ["src"]`, so all 150+
+  files under `ts/test/` sat outside a required gate: a type error in a test
+  could not fail CI, and a `@ts-expect-error` in a test was decoration, since
+  nothing compiled it to check the error it claimed to expect ever occurred.
+
+  The gate now reads a new `ts/tsconfig.check.json` — the build config stays
+  emit-shaped (`rootDir: src`, `outDir: dist`) and so cannot also cover `test/`.
+  Widening it surfaced **71 pre-existing type errors**; 10 were in
+  `test/fixtures/`, which is deliberately-broken sample input for the scanners
+  and is the config's one exclusion, and the remaining **61 across 18 files are
+  fixed here** — mostly unchecked index access under `noUncheckedIndexedAccess`,
+  plus three testkit imports missing the `.js` extension the rest of the suite
+  uses. `ts/test/typecheck-denominator.test.ts` fails if the include narrows or
+  the exclusion widens.
+
+- **Dependabot covers the ecosystems this repo actually has** (#752). The `pip`
+  entry outlived the v6.0.0 deletion of `agent/` and failed
+  `dependency_file_not_found` every weekly run from 2026-08-02 — red on `main`
+  for three weeks over a language the repo no longer contains. Behind that
+  noise, **no `npm` version-update entry had ever been configured**, so `ts/`,
+  `npm/` and `agents/skills/` had zero scheduled dependency updates; the
+  `npm_and_yarn` runs in the history are security updates raised off the
+  advisory database, which need no config entry and made the gap look covered.
+
+  `pip` is removed and the three npm directories are declared.
+  `ts/test/dependabot-ecosystems.test.ts` now fails both ways: on an entry
+  pointing at a directory with no such manifest, and on an npm lockfile with no
+  entry.
+
 - **The `refresh-baseline` label refreshes the baseline again** (#749). The
   workflow ran `harness check-arch --update-baseline --allow-regress --reason`,
   which at CLI 11.x writes a per-PR file under `.harness/arch/allowances/` and
