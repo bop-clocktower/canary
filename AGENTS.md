@@ -439,7 +439,7 @@ cleanly decoupled and depends on none of this. The consumed subcommands are:
 | `snapshot capture` | `arch-snapshot.yml`                                |
 
 **Pinning (#318 A).** Every gate installs the CLI at a **pinned major** via one
-workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@11'` — rather
+workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@12'` — rather
 than an unpinned `@latest`. A harness-major bump (e.g. a subcommand rename) is
 therefore a **deliberate PR** that edits that one line per workflow, not a
 silent CI break with nothing to roll back to.
@@ -497,19 +497,20 @@ before you push. It is, but only from a clean tree:
 ```bash
 git worktree add ../canary-entropy origin/main --detach
 cd ../canary-entropy
-npx --yes -p '@harness-engineering/cli@11' harness cleanup --findings-json \
+npx --yes -p '@harness-engineering/cli@12' harness cleanup --findings-json \
   > /tmp/entropy-report.txt || true
 node scripts/entropy-ratchet.mjs --report /tmp/entropy-report.txt \
-  --cli-version "$(npx --yes -p '@harness-engineering/cli@11' harness --version)"
+  --cli-version "$(npx --yes -p '@harness-engineering/cli@12' harness --version)"
 ```
 
 `--cli-version` is not optional in practice (#744). The pin is a floating major,
 so the analyzer behind this absolute count changes with no commit here — it
-moved twice, most recently 257 -> 147, and the ratchet abstains rather than
-compare a count to a ceiling calibrated against a different instrument. Omitting
-the flag is itself an abstention: "cannot verify" is a finding, not a skip. If
-it fires, re-measure and move `measuredCount` and `harnessCli` together; do not
-silence it by deleting `harnessCli` from the baseline.
+moved three times, most recently 147 -> 135 on the @11 -> @12 bump — the first
+one the abstention caught before it landed — and the ratchet abstains rather
+than compare a count to a ceiling calibrated against a different instrument.
+Omitting the flag is itself an abstention: "cannot verify" is a finding, not a
+skip. If it fires, re-measure and move `measuredCount` and `harnessCli`
+together; do not silence it by deleting `harnessCli` from the baseline.
 
 No `npm ci` — the gates run on a bare checkout, and so should you. Verified at
 `97bb15f`: CI reported **282** and a fresh worktree reported **282**, an exact
@@ -620,12 +621,15 @@ soon as the gap outgrows the tolerance, so this cannot silently recur.
   cannot lower its own bar. The consequence is that a refresh **only takes
   effect once it is on `main`**, so do not expect the PR that performs one to
   show the new number.
-- **`--update-baseline` does not update the baseline.** At CLI 11.x it writes an
-  _allowance_ and says so —
-  `Commit it — baselines.json stays byte-identical to the base` — then prints
-  `✓ Baseline updated successfully.` anyway. No CLI command rewrites
-  `baselines.json`. Use `scripts/refresh-arch-baseline.mjs` (#749), which the
-  `refresh-baseline` label runs for you:
+- **`--update-baseline` does not update the baseline.** At CLI 11.x **and 12.x**
+  (re-verified against 12.1.0 on 2026-08-30) it writes an _allowance_ and says
+  so — `Commit it — baselines.json stays byte-identical to the base` — then
+  prints `✓ Baseline updated successfully.` anyway. 12.x additionally refuses
+  without a `--reason` and states the allowance behaviour up front in that
+  refusal, so the trap is easier to notice; the contradictory success line is
+  unchanged. No CLI command rewrites `baselines.json`. Use
+  `scripts/refresh-arch-baseline.mjs` (#749), which the `refresh-baseline` label
+  runs for you:
 
   ```bash
   harness check-arch --json > arch-report.json || true

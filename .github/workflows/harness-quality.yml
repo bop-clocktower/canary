@@ -8,7 +8,7 @@ on:
 
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
-  HARNESS_CLI: '@harness-engineering/cli@11'
+  HARNESS_CLI: '@harness-engineering/cli@12'
 
 jobs:
   validate:
@@ -47,14 +47,22 @@ jobs:
         run: npx --yes -p "$HARNESS_CLI" harness check-docs --min-coverage 3
 
       # #744. Both ratchets below carry an ABSOLUTE count produced by this CLI,
-      # and `HARNESS_CLI` is a FLOATING major (`@harness-engineering/cli@11`),
+      # and `HARNESS_CLI` is a FLOATING major (`@harness-engineering/cli@12`),
       # so the analyzer behind those counts changes with no commit to this repo.
-      # It moved twice and nothing caught either: 11.1.1 -> 11.2.0 took entropy
-      # 281 -> 257 (#694), and 11.2.0 -> 11.3.0 took it 257 -> 147 while the
-      # ceiling stood at 267 — four days in which the gate would have needed 120
-      # net-new findings to turn red. The offline guards were green throughout,
-      # because they compare the baseline against itself and a floating MINOR
-      # clears a MAJOR check by construction.
+      # It moved three times. The first two caught nobody's eye until days
+      # later: 11.1.1 -> 11.2.0 took entropy 281 -> 257 (#694), and 11.2.0 ->
+      # 11.3.0 took it 257 -> 147 while the ceiling stood at 267 — four days in
+      # which the gate would have needed 120 net-new findings to turn red. The
+      # offline guards were green throughout, because they compare the baseline
+      # against itself and a floating MINOR clears a MAJOR check by
+      # construction.
+      #
+      # The third move is the one that shows this works: 11.3.0 -> 12.1.0 took
+      # entropy 147 -> 135, and it was caught BEFORE it landed — the resolved
+      # version below made the ratchet abstain, and the MAJOR guard in
+      # `ts/test/entropy-ratchet.test.ts` went red the moment this pin changed.
+      # The floating-major hazard is unchanged in kind; what changed is that it
+      # is now loud. A future @12 MINOR can still move these counts silently.
       #
       # Resolving the version here and handing it to the ratchets is what turns
       # that silent drift into a loud abstention. An unresolvable version fails
