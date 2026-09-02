@@ -77,7 +77,8 @@ row carries full provenance so a vanished test leaves a trail:
       "commit": "…40 hex…",
       "author": "Ada Lovelace",
       "date": "2026-07-20T10:00:00+00:00",
-      "reason": "chore: drop points coverage"
+      "reason": "chore: drop points coverage",
+      "ticket": "PROJ-4471"
     }
   ]
 }
@@ -85,6 +86,41 @@ row carries full provenance so a vanished test leaves a trail:
 
 Re-running on the same change adds nothing (entries de-duplicate); a corrupt
 ledger is a hard error, never silently overwritten.
+
+### The ticket, and why it is a trailer
+
+`ticket` is the bug the quarantine is waiting on, read from a **`Ticket:`
+trailer** in the commit that muted the test (`Bug:` and `Tracked:` are accepted
+aliases; the last one wins, following git's convention that the final trailer
+block is authoritative). The value is recorded verbatim — a key, a URL, or
+several — because katana cannot know one org's issue tracker from another's, and
+turning a key into a link is the consuming tool's job.
+
+```text
+test: quarantine the malformed-create cases
+
+The assertions are correct; the platform returns 500 on an empty body.
+
+Ticket: PROJ-4471
+```
+
+**Never inferred from the message.** The patterns that match `PROJ-1234` also
+match `UTF-8` and `SHA-1`, and a confidently wrong bug link is worse than an
+honest blank: it points a reader at the wrong defect, and nobody re-checks a
+link that looks right. A commit with no trailer records `ticket: ""`, which is a
+real and useful state — **a test switched off with nothing to chase is the worst
+row this ledger can hold, and it can only be acted on if it is recorded
+plainly.**
+
+`ticket` is **not** part of a row's de-duplication identity. Identity is what
+happened — which test, in which file, muted how, by which commit and why — and
+the ticket is an attribute of that event. Excluding it also keeps the
+append-only guarantee across this change: rows written before the field existed
+key as an empty ticket, so re-running a capture that now finds one would
+otherwise append a duplicate of a row already on disk.
+
+`schema_version` stays `1`: the field is additive, and a reader that does not
+know about it is unaffected.
 
 ## Invocation
 
