@@ -35,6 +35,12 @@ import {
 } from '../src/guardian/pr-check.js';
 import { invokeGuardian, mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
+// #761: a `pr-check` run that resolved NO coverage and produced only heuristic
+// findings ABSTAINS -- exit 3, not a pass. Every run in this file is
+// coverage-blind by construction (no `--coverage`), so this is their exit code;
+// it is named rather than repeated so the contract is greppable.
+const ABSTAINED = 3;
+
 function unit(path: string): ChangedUnit {
   return { path, added_ranges: [[1, 3]] };
 }
@@ -246,7 +252,7 @@ describe('pr-check heuristic FP suppression (#413)', () => {
       { input: DIFF_CONFIG_AND_SRC, cwd: tmp },
     );
 
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     const paths = JSON.parse(res.stdout).findings.map(
       (f: { path: string }) => f.path,
     );

@@ -148,9 +148,12 @@ describe('provenance reaches the real emitted surfaces (#761)', () => {
 
     expect(res.stderr).toContain('::warning::');
     expect(res.stderr).toContain('MERGE REF');
-    // Advisory by design: the caller owns the checkout, so this never reds a
-    // build that would otherwise pass.
-    expect(res.code).toBe(0);
+    // Advisory by design: the caller owns the checkout, so the merge ref never
+    // changes the exit code on its own. The 3 here is the unrelated #761
+    // coverage abstention (this run has no `--coverage`), which the identical
+    // non-merge-ref run below exits with too — that pairing is what proves the
+    // merge-ref notice added nothing to it.
+    expect(res.code).toBe(3);
   });
 
   it('makes no merge-ref claim when HEAD already IS the PR head', async () => {
@@ -166,6 +169,9 @@ describe('provenance reaches the real emitted surfaces (#761)', () => {
     });
 
     expect(res.stderr).not.toContain('MERGE REF');
+    // The control for the case above: same exit code with no merge ref in
+    // sight, so the 3 there is the coverage abstention and not the notice.
+    expect(res.code).toBe(3);
     const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{'))) as {
       provenance: Record<string, unknown>;
     };

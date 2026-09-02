@@ -25,6 +25,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GitResult, GuardianDeps, readPrDiff } from '../src/guardian/cli.js';
 import { invokeGuardian, mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
+// #761: a `pr-check` run that resolved NO coverage and produced only heuristic
+// findings ABSTAINS -- exit 3, not a pass. Every run in this file is
+// coverage-blind by construction (no `--coverage`), so this is their exit code;
+// it is named rather than repeated so the contract is greppable.
+const ABSTAINED = 3;
+
 const DIFF_NEW_UNIT = `diff --git a/pkg/widget.py b/pkg/widget.py
 index 1111111..2222222 100644
 --- a/pkg/widget.py
@@ -202,7 +208,7 @@ describe('pr-check CI empty-diff warning (#369)', () => {
       deps: { runGit: git.runGit },
     });
 
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     expect(res.stdout).not.toContain('nothing to verify');
     const data = JSON.parse(res.stdout);
     expect(data.findings.map((f: { path: string }) => f.path)).toContain(
