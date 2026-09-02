@@ -130,14 +130,56 @@ function isHttpSpan(span) {
   return 'http.method' in attrs || 'http.request.method' in attrs;
 }
 
+/**
+ * Reconstruct the request URL across both OTel HTTP semantic conventions.
+ *
+ * The old convention put the whole thing in one attribute, `http.url`. The
+ * current one (stable since semconv 1.23) splits it: `url.full` on some
+ * instrumentations, and otherwise the pieces -- `url.scheme`, `server.address`,
+ * `server.port`, `url.path`. `@opentelemetry/auto-instrumentations-node`, which
+ * `otel_bootstrap/instrument.mjs` tells consumers to install, emits the SPLIT
+ * form and no `http.url` at all.
+ *
+ * Reading only `http.url` therefore produced `url: ""` on every request while
+ * the reader still reported a full span count and exit 0 -- the artifact looked
+ * written and was empty of the one field a coverage consumer needs. Port is
+ * omitted when it is the scheme default, so the URL matches what a spec or a
+ * HAR would say.
+ */
+function requestUrl(attrs) {
+  const direct = attrs['url.full'] ?? attrs['http.url'];
+  if (direct) return direct;
+
+  const scheme = attrs['url.scheme'] ?? attrs['http.scheme'];
+  const host =
+    attrs['server.address'] ?? attrs['net.peer.name'] ?? attrs['http.host'];
+  const path = attrs['url.path'] ?? attrs['http.target'] ?? '';
+  if (!scheme || !host) return typeof path === 'string' ? path : '';
+
+  const port = attrs['server.port'] ?? attrs['net.peer.port'];
+  const isDefaultPort =
+    port == null ||
+    (scheme === 'http' && +port === 80) ||
+    (scheme === 'https' && +port === 443);
+  const authority = isDefaultPort ? host : `${host}:${port}`;
+  const query = attrs['url.query'] ? `?${attrs['url.query']}` : '';
+  return `${scheme}://${authority}${path}${query}`;
+}
+
 function toRequestSpan(span) {
   const attrs = span.attributes ?? {};
   const method = attrs['http.method'] || attrs['http.request.method'] || '';
   return RequestSpan({
     method,
-    url: attrs['http.url'] ?? '',
+    url: requestUrl(attrs),
+    // `http.route` is a SERVER-side attribute and is never present on the client
+    // spans this reader consumes. Kept for producers that do supply it (a future
+    // server-side producer under the same v1 contract), but its absence here is
+    // normal, not a gap.
     route: attrs['http.route'] ?? null,
-    status: attrs['http.status_code'] ?? null,
+    // Renamed in the current convention. Old name kept as a fallback.
+    status:
+      attrs['http.response.status_code'] ?? attrs['http.status_code'] ?? null,
     duration_ms: span.duration_ms ?? 0,
     span_id: span.spanId ?? '',
     started_at: span.startTime ?? '',
