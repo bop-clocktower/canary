@@ -382,6 +382,36 @@ describe('ledger', () => {
     expect(doc.entries.length).toBe(1);
   });
 
+  it('does not duplicate a row when only the ticket differs (#772)', () => {
+    // The ticket is an ATTRIBUTE of the mute, not part of its identity, and
+    // this is the case that proves why it has to be. A ledger written before
+    // the field existed holds rows with no ticket; the same capture re-run
+    // afterwards finds one. If `ticket` were part of the de-duplication key
+    // those would hash differently and the second run would append a duplicate
+    // of a row already on disk — breaking the append-only guarantee precisely
+    // at the version boundary, where nobody would be looking.
+    const p = path.join(mkTmp(), 'q.json');
+    ledger.appendEntries(p, [entry({ ticket: '' })]);
+    const doc = ledger.appendEntries(p, [entry({ ticket: 'PROJ-4471' })]);
+
+    expect(doc.entries.length).toBe(1);
+    // First write wins, because the ledger only ever grows and existing rows
+    // keep their position. Correcting a recorded ticket is a new commit and a
+    // new row, not a silent rewrite of history.
+    expect((doc.entries[0] as { ticket: string }).ticket).toBe('');
+  });
+
+  it('keeps ticket in the row shape, in canonical field order', () => {
+    // The field has to be PRESENT on every row for a consumer to read it
+    // without special-casing; `LedgerEntry` fills it with '' when absent.
+    const row = entry() as Record<string, string>;
+    expect(Object.keys(row)).toContain('ticket');
+    expect(row.ticket).toBe('');
+    expect((entry({ ticket: 'PROJ-1' }) as Record<string, string>).ticket).toBe(
+      'PROJ-1',
+    );
+  });
+
   it('sorts new entries for stable ordering', () => {
     const p = path.join(mkTmp(), 'q.json');
     const doc = ledger.appendEntries(p, [
@@ -706,7 +736,7 @@ const git = (repo: string, ...args: string[]) => {
   if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
 };
 
-function fixtureRepo(): string {
+function fixtureRepo(quarantineMessage?: string): string {
   const repo = path.join(mkTmp(), 'repo');
   fs.mkdirSync(repo);
   git(repo, 'init', '-b', 'main');
@@ -722,9 +752,89 @@ function fixtureRepo(): string {
   git(repo, 'checkout', '-b', 'feat/drop');
   fs.writeFileSync(path.join(repo, 'tests', 'test_points.py'), 'x = 1\n');
   git(repo, 'add', '-A');
-  git(repo, 'commit', '-m', 'chore: drop points coverage');
+  git(repo, 'commit', '-m', quarantineMessage ?? 'chore: drop points coverage');
   return repo;
 }
+
+/**
+ * The ticket a quarantine is waiting on (#772).
+ *
+ * A quarantined test with no recoverable bug is the worst row this ledger can
+ * hold -- coverage switched off with nothing to chase -- so the ticket belongs
+ * beside the rest of the provenance rather than in a consuming tool's own
+ * bookkeeping, where it would drift from the ledger that records the mute.
+ *
+ * Read from a `Ticket:` trailer and never guessed: the patterns that match
+ * `PROJ-1234` also match `UTF-8` and `SHA-1`, and a confidently wrong bug link is
+ * worse than an honest blank.
+ */
+describe('ticketFromMessage', () => {
+  it('reads a Ticket: trailer out of the commit body', () => {
+    expect(
+      diffscan.ticketFromMessage(
+        'test: quarantine the create cases\n\nTicket: PROJ-4471',
+      ),
+    ).toBe('PROJ-4471');
+  });
+
+  it('accepts Bug: and Tracked: as aliases, case-insensitively', () => {
+    expect(diffscan.ticketFromMessage('x\n\nBug: PROJ-1')).toBe('PROJ-1');
+    expect(diffscan.ticketFromMessage('x\n\ntracked: PROJ-2')).toBe('PROJ-2');
+  });
+
+  it('takes the LAST trailer, following git convention', () => {
+    // An amended commit corrects the ticket rather than duplicating it.
+    expect(
+      diffscan.ticketFromMessage('x\n\nTicket: PROJ-1\nTicket: PROJ-2'),
+    ).toBe('PROJ-2');
+  });
+
+  it('records the value verbatim — a key, a URL, or several', () => {
+    // Katana cannot know one org's tracker from another's; turning a key into a
+    // link is the consuming tool's job.
+    expect(
+      diffscan.ticketFromMessage('x\n\nTicket: https://jira/browse/AB-9'),
+    ).toBe('https://jira/browse/AB-9');
+  });
+
+  it('returns empty rather than guessing at anything issue-shaped', () => {
+    // The whole reason this is a trailer. Each of these would be a false
+    // positive under a bare `[A-Z]+-\d+` scan.
+    expect(diffscan.ticketFromMessage('fix: decode as UTF-8, not SHA-1')).toBe(
+      '',
+    );
+    expect(diffscan.ticketFromMessage('refs PROJ-1234 in passing')).toBe('');
+    expect(diffscan.ticketFromMessage('')).toBe('');
+    expect(diffscan.ticketFromMessage(undefined as unknown as string)).toBe('');
+  });
+
+  it('ignores a trailer with no value', () => {
+    expect(diffscan.ticketFromMessage('x\n\nTicket:')).toBe('');
+    expect(diffscan.ticketFromMessage('x\n\nTicket:   ')).toBe('');
+  });
+});
+
+describe('ticket provenance end to end', () => {
+  it('commitForFile carries the ticket from the real commit body', () => {
+    const repo = fixtureRepo(
+      'chore: drop points coverage\n\nTicket: PROJ-4471',
+    );
+    const base = diffscan.resolveBase(repo, null);
+    const commit = diffscan.commitForFile(repo, base, 'tests/test_points.py');
+
+    expect(commit!.ticket).toBe('PROJ-4471');
+    // The subject stays the subject -- adding %b must not fold the body into it.
+    expect(commit!.subject).toBe('chore: drop points coverage');
+  });
+
+  it('leaves the ticket empty when the commit named none', () => {
+    const repo = fixtureRepo();
+    const base = diffscan.resolveBase(repo, null);
+    expect(
+      diffscan.commitForFile(repo, base, 'tests/test_points.py')!.ticket,
+    ).toBe('');
+  });
+});
 
 describe('git plumbing', () => {
   it('resolveBase defaults to the merge-base', () => {
