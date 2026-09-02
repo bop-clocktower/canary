@@ -411,6 +411,103 @@ describe('span_reader.readTraces', () => {
     expect(req.duration_ms).toBe(5);
   });
 
+  // The attributes below are what `@opentelemetry/auto-instrumentations-node`
+  // ACTUALLY emits — captured from a real Playwright run through
+  // otel_bootstrap/instrument.mjs. No `http.url` and no `http.status_code`
+  // appear anywhere in that set, which is why reading only the old names
+  // produced a full span count with `url: ""` on every request.
+  it('reconstructs the URL from split current-convention attributes', () => {
+    const tmp = mkTmp();
+    writeJsonl(path.join(tmp, 'otel-spans.0.jsonl'), [
+      rootSpan('t1', 's1', { test_id: 'a:1', title: 'a', file: 'a.spec.ts' }),
+      span(
+        't1',
+        's2',
+        {
+          'http.request.method': 'GET',
+          'url.scheme': 'http',
+          'server.address': '127.0.0.1',
+          'server.port': 62346,
+          'url.path': '/v1/probe/via-request-fixture',
+          'http.response.status_code': 200,
+        },
+        5,
+      ),
+    ]);
+    const req = readTraces(tmp).by_test[0].requests[0];
+    expect(req.url).toBe('http://127.0.0.1:62346/v1/probe/via-request-fixture');
+    expect(req.status).toBe(200);
+  });
+
+  it('omits the port when it is the scheme default, matching a spec path', () => {
+    const tmp = mkTmp();
+    writeJsonl(path.join(tmp, 'otel-spans.0.jsonl'), [
+      rootSpan('t1', 's1', { test_id: 'a:1', title: 'a', file: 'a.spec.ts' }),
+      span('t1', 's2', {
+        'http.request.method': 'GET',
+        'url.scheme': 'https',
+        'server.address': 'api.example.com',
+        'server.port': 443,
+        'url.path': '/v1/members',
+      }),
+    ]);
+    expect(readTraces(tmp).by_test[0].requests[0].url).toBe('https://api.example.com/v1/members');
+  });
+
+  it('still reads the legacy single-attribute convention', () => {
+    const tmp = mkTmp();
+    writeJsonl(path.join(tmp, 'otel-spans.0.jsonl'), [
+      rootSpan('t1', 's1', { test_id: 'a:1', title: 'a', file: 'a.spec.ts' }),
+      span('t1', 's2', {
+        'http.method': 'GET',
+        'http.url': 'http://legacy/v1/thing',
+        'http.status_code': 204,
+      }),
+    ]);
+    const req = readTraces(tmp).by_test[0].requests[0];
+    expect(req.url).toBe('http://legacy/v1/thing');
+    expect(req.status).toBe(204);
+  });
+
+  it('prefers url.full over reassembling the pieces', () => {
+    const tmp = mkTmp();
+    writeJsonl(path.join(tmp, 'otel-spans.0.jsonl'), [
+      rootSpan('t1', 's1', { test_id: 'a:1', title: 'a', file: 'a.spec.ts' }),
+      span('t1', 's2', {
+        'http.request.method': 'GET',
+        'url.full': 'https://host/full/path?q=1',
+        'url.scheme': 'https',
+        'server.address': 'host',
+        'url.path': '/full/path',
+      }),
+    ]);
+    expect(readTraces(tmp).by_test[0].requests[0].url).toBe('https://host/full/path?q=1');
+  });
+
+  it('carries the query string when only the pieces are present', () => {
+    const tmp = mkTmp();
+    writeJsonl(path.join(tmp, 'otel-spans.0.jsonl'), [
+      rootSpan('t1', 's1', { test_id: 'a:1', title: 'a', file: 'a.spec.ts' }),
+      span('t1', 's2', {
+        'http.request.method': 'GET',
+        'url.scheme': 'http',
+        'server.address': 'h',
+        'url.path': '/s',
+        'url.query': 'page=2',
+      }),
+    ]);
+    expect(readTraces(tmp).by_test[0].requests[0].url).toBe('http://h/s?page=2');
+  });
+
+  it('falls back to the bare path rather than an empty URL when the host is absent', () => {
+    const tmp = mkTmp();
+    writeJsonl(path.join(tmp, 'otel-spans.0.jsonl'), [
+      rootSpan('t1', 's1', { test_id: 'a:1', title: 'a', file: 'a.spec.ts' }),
+      span('t1', 's2', { 'http.request.method': 'GET', 'url.path': '/only/path' }),
+    ]);
+    expect(readTraces(tmp).by_test[0].requests[0].url).toBe('/only/path');
+  });
+
   it('does not fragment a record on a raw U+2028 inside a JSON value', () => {
     // Python str.splitlines() breaks on U+2028; instrument.mjs writes such
     // separators raw inside string values. Splitting on them would tear a
@@ -454,6 +551,73 @@ const readRunJson = (dir: string) =>
   JSON.parse(fs.readFileSync(path.join(dir, 'run.json'), 'utf8'));
 
 describe('cli', () => {
+  // The failure this guards is not "no spans" — that is a documented, honest
+  // empty trace. It is "spans captured, correlated, and every URL lost", which
+  // is what an attribute-name mismatch looks like from outside and which used
+  // to exit 0 announcing a written artifact.
+  it('refuses to write an artifact when no correlated request carries a URL', () => {
+    const tmp = mkTmp();
+    const spansDir = path.join(tmp, 'spans');
+    fs.mkdirSync(spansDir);
+    writeJsonl(path.join(spansDir, 'otel-spans.0.jsonl'), [
+      rootSpan('t1', 's1', { test_id: 'a:1', title: 'a', file: 'a.spec.ts' }),
+      // A method and nothing else: present, attributed, and unusable.
+      span('t1', 's2', { 'http.request.method': 'GET' }),
+    ]);
+    const outDir = path.join(tmp, 'out');
+    const { err } = captureLog();
+    const rc = main(['--spans', spansDir, '--output', outDir]);
+    expect(rc).toBe(1);
+    expect(fs.existsSync(path.join(outDir, 'run.json'))).toBe(false);
+    const text = err.join('\n');
+    expect(text).toContain('NONE carried a URL');
+    expect(text).toContain('semantic-convention mismatch');
+  });
+
+  it('still treats an empty spans dir as an honest empty trace, not a failure', () => {
+    const tmp = mkTmp();
+    const spansDir = path.join(tmp, 'spans');
+    fs.mkdirSync(spansDir);
+    const outDir = path.join(tmp, 'out');
+    captureLog();
+    expect(main(['--spans', spansDir, '--output', outDir])).toBe(0);
+    expect(readRunJson(outDir).trace.spans_total).toBe(0);
+  });
+
+  it('reports the URL-bearing count alongside the span count', () => {
+    const tmp = mkTmp();
+    const spansDir = path.join(tmp, 'spans');
+    fs.mkdirSync(spansDir);
+    writeJsonl(path.join(spansDir, 'otel-spans.0.jsonl'), [
+      rootSpan('t1', 's1', { test_id: 'a:1', title: 'a', file: 'a.spec.ts' }),
+      httpSpan('t1', 's2', { url: 'http://x/a' }),
+    ]);
+    const outDir = path.join(tmp, 'out');
+    const { out } = captureLog();
+    expect(main(['--spans', spansDir, '--output', outDir])).toBe(0);
+    expect(out.join('\n')).toContain('1/1 request(s) with a URL');
+  });
+
+  it('warns on partial URL loss but still writes the artifact', () => {
+    const tmp = mkTmp();
+    const spansDir = path.join(tmp, 'spans');
+    fs.mkdirSync(spansDir);
+    writeJsonl(path.join(spansDir, 'otel-spans.0.jsonl'), [
+      rootSpan('t1', 's1', { test_id: 'a:1', title: 'a', file: 'a.spec.ts' }),
+      httpSpan('t1', 's2', { url: 'http://x/a' }),
+      span('t1', 's3', { 'http.request.method': 'GET' }),
+    ]);
+    const outDir = path.join(tmp, 'out');
+    const warn: string[] = [];
+    vi.spyOn(console, 'warn').mockImplementation((s?: unknown) => {
+      warn.push(String(s));
+    });
+    captureLog();
+    expect(main(['--spans', spansDir, '--output', outDir])).toBe(0);
+    expect(fs.existsSync(path.join(outDir, 'run.json'))).toBe(true);
+    expect(warn.join('\n')).toContain('1 request(s) had no resolvable URL');
+  });
+
   it('writes run.json with the correct shape and exits zero', () => {
     const tmp = mkTmp();
     const spansDir = path.join(tmp, 'spans');
@@ -695,8 +859,11 @@ describe('run.json byte fidelity (matches Python json.dumps)', () => {
     fs.mkdirSync(spansDir);
     writeJsonl(path.join(spansDir, 'otel-spans.0.jsonl'), [
       rootSpan('t1', 's1', { test_id: 'a:1', title: 'a', file: 'a.spec.ts' }),
-      // http span with method only -> route/status must serialize as null
-      span('t1', 's2', { 'http.method': 'GET' }, 3),
+      // Method + URL, but no route/status -> both must serialize as null.
+      // The URL is required only to clear the cli's no-usable-URL abstention;
+      // this test is about null serialization, and a URL-less span is now a
+      // refusal rather than an artifact.
+      span('t1', 's2', { 'http.method': 'GET', 'http.url': 'http://x/a' }, 3),
     ]);
     const outDir = path.join(tmp, 'out');
     captureLog();
