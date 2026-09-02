@@ -76,7 +76,12 @@ import {
   summarizePrecision,
 } from './adjudication.js';
 import { emitAnalysis } from './analysis-emit.js';
-import { gateOutcome, GateOutcome, SkipEntry } from '../core/gate-result.js';
+import {
+  EXIT_ABSTAINED,
+  gateOutcome,
+  GateOutcome,
+  SkipEntry,
+} from '../core/gate-result.js';
 import {
   ChangedUnit,
   coverageDegradedNotice,
@@ -115,6 +120,7 @@ import {
   filterTestUnits,
   filterTypeOnlyUnits,
   findReexportOnly,
+  isCoverageAbstention,
   loadGuardianConfig,
   renderFindings,
   scopeDiff,
@@ -1549,15 +1555,25 @@ async function prCheckCmd(
     appendStepSummary(deps.env, resolution.degraded_notice);
   }
 
+  // #761: the run judged units but VERIFIED no coverage, and every finding is a
+  // naming guess. That is an abstention on the coverage denominator — a
+  // different test from the findings-eligible one the two `abstainPrCheck`
+  // calls above make, and the one the capwell#1853 run needed. It does not exit
+  // through `abstainPrCheck`: those findings are worth showing, so the run keeps
+  // every surface and changes only its headline and its exit code.
+  const coverageAbstained = isCoverageAbstention(coverage, findings);
+
   // Compute the gate result once, up front: the emitted record carries it and it
   // is the process exit at the end (SC-4 -- emit never changes the exit logic).
-  const exitCode = computeExitCode(findings, effectiveGate);
+  const exitCode = coverageAbstained
+    ? EXIT_ABSTAINED
+    : computeExitCode(findings, effectiveGate);
 
   // #554: every surface below carries the coverage-input state, so a run that
   // never saw a coverage report cannot present as one that checked and passed.
   const gateMeta: GateMeta = {
     checked: scoredResults.length,
-    abstained: false,
+    abstained: coverageAbstained,
     coverage,
     // #761: the endpoints every count above is scoped by.
     provenance,
@@ -1592,7 +1608,10 @@ async function prCheckCmd(
       degraded_notice: resolution.degraded_notice,
       exit_code: exitCode,
       checked: scoredResults.length,
-      abstained: false, // an abstained run exits before emit (see plan)
+      // #761: a coverage abstention DOES reach emit — unlike the
+      // findings-eligible abstention, it keeps its findings, so a machine
+      // consumer must see the flag rather than infer a result from the array.
+      abstained: coverageAbstained,
       coverage,
       skipped: allSkips,
       // #761: the archived artifact is where an inflated diff gets diagnosed

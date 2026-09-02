@@ -37,11 +37,23 @@ the design rationale.
   The signal is tuned for precision over recall (it should not nag on correct
   tests): snapshot/table-driven tests and the common assertion styles (`expect`,
   `assert`, chai `.should`, `pytest.raises`, `assert_*` helpers) all count as
-  asserting, and a rename that adds only a signature line is ignored. Known
-  limits — it scores a file's _added lines as a whole_ (so if a diff adds one
-  asserting and one assertion-free test to the same file, neither is flagged),
-  and a test whose only check is a custom helper _not_ named `assert*` (e.g.
-  `verify_response(resp)`) may be flagged; since the finding is advisory, the
+  asserting, and a rename that adds only a signature line is ignored.
+
+  The span it scores is the **enclosing test block** of each changed line, not
+  the changed hunk ([#747]). Scoring the added lines alone reported every
+  arrange/act-only edit as assertion-free, because a test's setup is edited far
+  more often than its `expect` — the assertion sat one line past the last `+`
+  line, as a context line. The block is resolved from the diff's own context
+  lines by walking up to the nearest `it`/`test`/`def test_` declaration and
+  down to the end of that block; a `describe` group does not count, so an empty
+  test beside an asserting sibling is still caught. A changed line whose
+  enclosing test **cannot** be resolved — a Playwright `setup(...)` fixture, a
+  bare helper — is abstained on rather than reported.
+
+  Known limits — the span is bounded by what the diff shows, so an assertion
+  further down a block than the diff's context window may be missed; and a test
+  whose only check is a custom helper _not_ named `assert*` (e.g.
+  `verify_response(resp)`) may be flagged. Since the finding is advisory, the
   escape hatch is the `weakTests` toggle.
 
 ## Surfaces and how to enable them
@@ -231,6 +243,23 @@ The state appears in three places:
 `unitsMatched` of `unitsTotal` is the denominator to read. **Zero files matched
 is an abstention, not a pass.**
 
+Since [#761] the run says so with its exit code and its headline, not only in
+the body. A run that judged units but resolved **no** coverage, and whose every
+finding is therefore a naming-heuristic guess, **abstains**: it exits 3, and its
+headline reads `abstained: no coverage data (N files judged heuristically)`
+instead of `N files need test coverage`. The findings stay in the comment, the
+`--format json` payload, and the analysis record (with `abstained: true`) — they
+are useful, they are simply not a coverage verdict, and a count headline is what
+makes a reader take them for one. This is a **different denominator** from the
+abstention below: that one fires when the diff carried no findings-eligible
+units at all, while this one fires on a diff full of them whose lcov never
+reached the runner. A single coverage- or graph-verified finding means the run
+measured something and is a result, not an abstention.
+
+A run with **no** findings is left as it was: it states nothing a reader can
+mistake for a measurement, because its headline already says
+`no gaps found, but coverage was unavailable`.
+
 Both `schemaVersion` bumps since 1.0 are purely additive: every 1.0 field keeps
 its name, type, and meaning. Consumers should compare the **major** component
 (`1`) rather than the whole string — a strict `=== "1.0"` check rejects a record
@@ -385,6 +414,8 @@ a reviewer facing 68 findings had no way to tell which one mattered ([#553]).
 [#553]: https://github.com/bop-clocktower/canary/issues/553
 [#655]: https://github.com/bop-clocktower/canary/issues/655
 [#657]: https://github.com/bop-clocktower/canary/issues/657
+[#747]: https://github.com/bop-clocktower/canary/issues/747
+[#761]: https://github.com/bop-clocktower/canary/issues/761
 
 Promotion is **per-repo** and has two parts: the **exit gate** (`gate: hard` in
 config, which makes `canary guardian pr-check` exit non-zero on an unaddressed
