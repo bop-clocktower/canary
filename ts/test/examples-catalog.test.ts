@@ -39,7 +39,7 @@ function catalogLinks(readme: string): Set<string> {
   const text = readFileSync(readme, 'utf-8');
   const out = new Set<string>();
   for (const m of text.matchAll(/\]\(([^)]+)\)/g)) {
-    out.add(m[1].replace(/\/+$/, ''));
+    out.add(m[1]!.replace(/\/+$/, ''));
   }
   return out;
 }

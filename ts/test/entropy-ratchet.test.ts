@@ -236,13 +236,13 @@ describe('the checked-in entropy baseline', () => {
     const yml = readFileSync(WORKFLOW_PATH, 'utf8');
     return [
       ...yml.matchAll(/^\s*HARNESS_CLI:\s*'@harness-engineering\/cli@(\d+)'/gm),
-    ].map((m) => m[1]);
+    ].map((m) => m[1]!);
   }
 
   /** The single pinned major, or `?` when the pin is missing or ambiguous. */
   function pinnedMajor(): string {
     const majors = pinnedMajors();
-    return majors.length === 1 ? majors[0] : '?';
+    return majors.length === 1 ? majors[0]! : '?';
   }
 
   /**
@@ -356,14 +356,17 @@ describe('the checked-in entropy baseline', () => {
         `— do not delete it.`,
     ).toBe(1);
     const { harnessCli } = baselineFile() as { harnessCli: string };
+    // The assertion above already pins this to exactly one match with one
+    // capture group; named here so the comparison below reads as a value.
+    const workflowMajor = pins[0]!;
     expect(
       String(harnessCli).split('.')[0],
       `${BASELINE_REL} was measured with CLI ${String(harnessCli)}, but the ` +
-        `workflow now runs major @${pins[0]}. The baseline is stale, not ` +
+        `workflow now runs major @${workflowMajor}. The baseline is stale, not ` +
         `the workflow. FIX: ${REMEASURE} Then update "measuredCount", ` +
         `"measuredAt", "harnessCli", and lower "maxFindings" to the new count ` +
         `plus "maxHeadroom".`,
-    ).toBe(pins[0]);
+    ).toBe(workflowMajor);
   });
 
   // The hint is quoted BY the major-mismatch failure above, so a hardcoded

@@ -114,7 +114,7 @@ describe('findInvocations', () => {
   it('flags a bare invocation', () => {
     const found = findInvocations('x.yml', 'npx harness roadmap sync --apply');
     expect(found).toHaveLength(1);
-    expect(found[0].guarded).toBe(false);
+    expect(found[0]!.guarded).toBe(false);
   });
 
   it('accepts one carrying the flag', () => {
@@ -123,7 +123,7 @@ describe('findInvocations', () => {
       'npx harness roadmap sync --apply --no-state-change',
     );
     expect(found).toHaveLength(1);
-    expect(found[0].guarded).toBe(true);
+    expect(found[0]!.guarded).toBe(true);
   });
 
   it('does not confuse a different roadmap subcommand', () => {
@@ -159,7 +159,7 @@ describe('findInvocations', () => {
       'harness roadmap sync --apply # TODO add the flag',
     );
     expect(found).toHaveLength(1);
-    expect(found[0].guarded).toBe(false);
+    expect(found[0]!.guarded).toBe(false);
   });
 });
 

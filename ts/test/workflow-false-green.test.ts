@@ -51,6 +51,8 @@ interface Job {
 }
 interface Trigger {
   paths?: string[];
+  /** `push.branches`, read by the post-merge-detection assertions below. */
+  branches?: string[];
 }
 interface Workflow {
   on?: Record<string, Trigger | unknown>;
@@ -967,12 +969,14 @@ describe('workflow false-green invariants', () => {
       });
 
       it('calls an unannotated soft step unexplained', () => {
-        const [[, step, siblings]] = softSteps(unexplained);
+        const [entry] = softSteps(unexplained);
+        const [, step, siblings] = entry!;
         expect(isExplained(step, siblings)).toBe(false);
       });
 
       it('calls an annotated soft step explained', () => {
-        const [[, step, siblings]] = softSteps(explained);
+        const [entry] = softSteps(explained);
+        const [, step, siblings] = entry!;
         expect(isExplained(step, siblings)).toBe(true);
       });
 
@@ -987,7 +991,8 @@ describe('workflow false-green invariants', () => {
             },
           },
         } as Workflow;
-        const [[, step, siblings]] = softSteps(orphan);
+        const [entry] = softSteps(orphan);
+        const [, step, siblings] = entry!;
         expect(isExplained(step, siblings)).toBe(false);
       });
     });

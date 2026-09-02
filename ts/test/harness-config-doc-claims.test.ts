@@ -113,8 +113,12 @@ function claimsIn(file: string, text: string, roots: Set<string>): Claim[] {
   const found: Claim[] = [];
   text.split('\n').forEach((line, index) => {
     for (const match of line.matchAll(CLAIM)) {
-      const [, path, value] = match;
-      if (roots.has(path.split('.')[0])) {
+      // Both groups are required by CLAIM, so a match populates both. Asserted
+      // rather than guarded: a `continue` here would drop a claim silently,
+      // which is the exact shape this file exists to catch.
+      const path = match[1]!;
+      const value = match[2]!;
+      if (roots.has(path.split('.')[0]!)) {
         found.push({ file, line: index + 1, path, value: value.trim() });
       }
     }
@@ -150,7 +154,7 @@ describe('documented harness.config.json settings match the file (#601)', () => 
       ROOTS,
     );
     expect(fake).toHaveLength(1);
-    expect(lookup(CONFIG, fake[0].path).found).toBe(false);
+    expect(lookup(CONFIG, fake[0]!.path).found).toBe(false);
   });
 
   it.each(CLAIMS.map((c) => [`${c.file}:${c.line}`, c] as const))(
