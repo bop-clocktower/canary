@@ -451,7 +451,9 @@ describe('span_reader.readTraces', () => {
         'url.path': '/v1/members',
       }),
     ]);
-    expect(readTraces(tmp).by_test[0].requests[0].url).toBe('https://api.example.com/v1/members');
+    expect(readTraces(tmp).by_test[0].requests[0].url).toBe(
+      'https://api.example.com/v1/members',
+    );
   });
 
   it('still reads the legacy single-attribute convention', () => {
@@ -481,7 +483,9 @@ describe('span_reader.readTraces', () => {
         'url.path': '/full/path',
       }),
     ]);
-    expect(readTraces(tmp).by_test[0].requests[0].url).toBe('https://host/full/path?q=1');
+    expect(readTraces(tmp).by_test[0].requests[0].url).toBe(
+      'https://host/full/path?q=1',
+    );
   });
 
   it('carries the query string when only the pieces are present', () => {
@@ -496,14 +500,19 @@ describe('span_reader.readTraces', () => {
         'url.query': 'page=2',
       }),
     ]);
-    expect(readTraces(tmp).by_test[0].requests[0].url).toBe('http://h/s?page=2');
+    expect(readTraces(tmp).by_test[0].requests[0].url).toBe(
+      'http://h/s?page=2',
+    );
   });
 
   it('falls back to the bare path rather than an empty URL when the host is absent', () => {
     const tmp = mkTmp();
     writeJsonl(path.join(tmp, 'otel-spans.0.jsonl'), [
       rootSpan('t1', 's1', { test_id: 'a:1', title: 'a', file: 'a.spec.ts' }),
-      span('t1', 's2', { 'http.request.method': 'GET', 'url.path': '/only/path' }),
+      span('t1', 's2', {
+        'http.request.method': 'GET',
+        'url.path': '/only/path',
+      }),
     ]);
     expect(readTraces(tmp).by_test[0].requests[0].url).toBe('/only/path');
   });

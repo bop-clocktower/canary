@@ -151,13 +151,16 @@ function requestUrl(attrs) {
   if (direct) return direct;
 
   const scheme = attrs['url.scheme'] ?? attrs['http.scheme'];
-  const host = attrs['server.address'] ?? attrs['net.peer.name'] ?? attrs['http.host'];
+  const host =
+    attrs['server.address'] ?? attrs['net.peer.name'] ?? attrs['http.host'];
   const path = attrs['url.path'] ?? attrs['http.target'] ?? '';
   if (!scheme || !host) return typeof path === 'string' ? path : '';
 
   const port = attrs['server.port'] ?? attrs['net.peer.port'];
   const isDefaultPort =
-    port == null || (scheme === 'http' && +port === 80) || (scheme === 'https' && +port === 443);
+    port == null ||
+    (scheme === 'http' && +port === 80) ||
+    (scheme === 'https' && +port === 443);
   const authority = isDefaultPort ? host : `${host}:${port}`;
   const query = attrs['url.query'] ? `?${attrs['url.query']}` : '';
   return `${scheme}://${authority}${path}${query}`;
@@ -175,7 +178,8 @@ function toRequestSpan(span) {
     // normal, not a gap.
     route: attrs['http.route'] ?? null,
     // Renamed in the current convention. Old name kept as a fallback.
-    status: attrs['http.response.status_code'] ?? attrs['http.status_code'] ?? null,
+    status:
+      attrs['http.response.status_code'] ?? attrs['http.status_code'] ?? null,
     duration_ms: span.duration_ms ?? 0,
     span_id: span.spanId ?? '',
     started_at: span.startTime ?? '',
