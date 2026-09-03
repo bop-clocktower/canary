@@ -89,6 +89,7 @@ const GENERIC_PROPRIETARY_PATTERNS = [
 
 const DENYLIST_FILE = '.proprietary-denylist';
 const DENYLIST_ENV = 'CANARY_PROPRIETARY_DENYLIST';
+const DENYLIST_FILE_ENV_OVERRIDE = 'CANARY_DENYLIST_FILE';
 
 const PROPRIETARY_EXCLUDED_DIRS = new Set([
   '.git',
@@ -247,7 +248,18 @@ function loadDenylist() {
   // REPO_ROOT, not SCAN_ROOT, and deliberately so: the denylist is the gate's
   // own configuration, not part of the tree being scanned. A fixture root must
   // not be able to supply its own (empty) denylist and scan itself clean.
-  const f = resolve(REPO_ROOT, DENYLIST_FILE);
+  // Test seam, and deliberately a narrow one: honoured ONLY when the scan
+  // root is already overridden, i.e. a fixture run that has announced itself
+  // loudly. A real CI run cannot reach it, so the gate still cannot be
+  // cleared by supplying an empty denylist. Without this, the no-denylist
+  // test passes only on machines that happen to lack the private overlay —
+  // green in CI, red on the maintainer's laptop, which is how the assertion
+  // guarding the dark-gate disclosure would get loosened.
+  const seam = (process.env[DENYLIST_FILE_ENV_OVERRIDE] ?? '').trim();
+  const f =
+    SCAN_ROOT_IS_OVERRIDDEN && seam
+      ? resolve(seam)
+      : resolve(REPO_ROOT, DENYLIST_FILE);
   if (existsSync(f)) {
     for (const line of readFileSync(f, 'utf-8').split('\n')) {
       const s = line.trim();
@@ -281,67 +293,197 @@ const AUTHOR_RANGE_ENV = 'CANARY_AUTHOR_SCAN_RANGE';
 function authorScanRange() {
   const override = (process.env[AUTHOR_RANGE_ENV] ?? '').trim();
   if (override) return override;
-  // A fixture root is not this repository, so the ambient GitHub environment
-  // describes the wrong tree: `origin/<base>` does not resolve inside it, and
-  // trying turned every fixture run into an abstention. An overridden scan
-  // root therefore needs its range stated explicitly, or the scan is skipped.
-  if (SCAN_ROOT_IS_OVERRIDDEN) return null;
   // pull_request: everything this PR adds on top of its base.
   const base = (process.env.GITHUB_BASE_REF ?? '').trim();
-  if (base) return `origin/${base}..HEAD`;
   // push: the commits this push introduced. `before` is all-zeroes on a new
   // branch, in which case there is no usable range.
   const before = (process.env.GITHUB_EVENT_BEFORE ?? '').trim();
-  if (before && !/^0+$/.test(before)) return `${before}..HEAD`;
-  return null;
+  const candidate = base
+    ? `origin/${base}..HEAD`
+    : before && !/^0+$/.test(before)
+      ? `${before}..HEAD`
+      : null;
+  if (!candidate) return null;
+
+  // A fixture root is not this repository, so the ambient GitHub environment
+  // describes the wrong tree — `origin/<base>` does not resolve inside it,
+  // and trying turned every fixture run into an abstention. Rather than
+  // ignoring the event wholesale for an overridden root (which would also
+  // make the real resolution path untestable), check whether the left side
+  // actually exists in the tree being scanned. A fixture that deliberately
+  // sets up the ref gets the production path; one that has not, skips.
+  if (SCAN_ROOT_IS_OVERRIDDEN && !revExists(candidate.split('..')[0])) {
+    return null;
+  }
+  return candidate;
+}
+
+function revExists(rev) {
+  try {
+    execFileSync(
+      'git',
+      ['rev-parse', '--verify', '--quiet', `${rev}^{commit}`],
+      {
+        cwd: SCAN_ROOT,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Denylist terms are authored for the FILE scan, where they read like prose
+// ("Acme Health", "Acme Inc."). An identity string has a different grammar,
+// and `loadDenylist()`'s `\b<term>\b` silently never matches three common
+// shapes against it:
+//
+//   term            identity                        \b-anchored
+//   Acme Health     dev@acmehealth.example          MISS  (separator dropped)
+//   Acme Health     dev@acme-health.example         MISS  (separator changed)
+//   Acme Inc.       Acme Inc. <a@b>                 MISS  (\b after `.` needs
+//                                                          a word char next)
+//   Café            Café <a@b>                      MISS  (\b is ASCII-only)
+//
+// A term that cannot match its own source string is a dud pattern, and it
+// fails open — the worst direction for a gate. So the authorship scan compiles
+// its own: split the term into alphanumeric tokens, allow any run of
+// separators between them, and bound it with unicode-aware lookarounds rather
+// than `\b`. Boundaries are still enforced, so a term stays a whole word:
+// `Acme` must not match `acmecorp`.
+function authorshipPatterns() {
+  const reason = 'company identity on a public commit';
+  return loadDenylist()
+    .map(([rx]) => rx.source.replace(/^\\b|\\b$/g, ''))
+    .map((src) => src.replace(/\\(.)/g, '$1'))
+    .map((term) => term.split(/[^\p{L}\p{N}]+/u).filter(Boolean))
+    .filter((tokens) => tokens.length)
+    .map((tokens) => {
+      const body = tokens.map(reEscape).join('[^\\p{L}\\p{N}]*');
+      return [
+        new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, 'iu'),
+        reason,
+      ];
+    });
 }
 
 function checkAuthorship() {
-  const patterns = loadDenylist();
-  // No denylist means no company terms to match. Say so rather than reporting
-  // a clean scan: zero patterns over any number of commits is an abstention.
-  if (!patterns.length) return { skipped: 'no denylist configured' };
+  const patterns = authorshipPatterns();
+  // Zero patterns over any number of commits matches nothing, so this is an
+  // abstention in every environment. It is only *tolerable* off CI, where a
+  // contributor legitimately has no secret and the pre-commit hook already
+  // warns. Inside Actions it means the gate is dark, and the two ways that
+  // happens are both invisible: a rotated/renamed secret, and a PR from a
+  // fork (GitHub does not pass secrets to fork-triggered workflows). Neither
+  // announces itself, so a green here would be indistinguishable from a
+  // scan that ran.
+  if (!patterns.length) {
+    return process.env.GITHUB_ACTIONS
+      ? {
+          unresolved: 'no denylist available — the gate cannot match anything',
+          advice:
+            'Either the denylist secret is unset or rotated, or this is a ' +
+            'pull request from a fork (GitHub does not pass secrets to ' +
+            'fork-triggered workflows). Both leave the gate matching zero ' +
+            'patterns, which is not something that can be reported as a pass.',
+        }
+      : { skipped: 'no denylist configured (local run)' };
+  }
 
   const range = authorScanRange();
-  if (!range) return { skipped: 'no commit range resolved' };
+  // Nothing to resolve a range *against* — a fixture root is not this repo,
+  // so skipping is correct there. In the real tree it is an abstention: the
+  // gate did not decline to run, it failed to work out what to read.
+  if (!range) {
+    return SCAN_ROOT_IS_OVERRIDDEN
+      ? { skipped: 'scan root overridden with no explicit range' }
+      : { unresolved: 'no commit range could be determined from the event' };
+  }
+
+  // execFileSync uses no shell, so this is not injection — but `git log`
+  // still reads a leading `-` as a flag (`--output=…` writes a file).
+  if (!/^[\w./^~-]+\.{2,3}[\w./^~-]+$/.test(range) || range.startsWith('-')) {
+    return { unresolved: `${range} (not a well-formed commit range)` };
+  }
 
   let lines;
   try {
     lines = execFileSync(
       'git',
-      ['log', '--no-merges', '--format=%H%x00%an <%ae>%x00%cn <%ce>', range],
+      // NOT --no-merges. "Merge branch 'main' into <feature>" made in a fresh
+      // clone is one of the likeliest ways a company identity reaches a public
+      // branch, and skipping merges would leave exactly that commit unread
+      // while the denominator still reported a confident count.
+      // %B carries the trailers. `Co-authored-by:` is not a comment — GitHub
+      // renders it as a linked contributor on the public commit page, so it
+      // is a MORE visible identity surface than the author field, and both
+      // `git commit -s` and pair-programming tools emit them routinely.
+      // Records are RS-separated because %B is multi-line.
+      ['log', '--format=%H%x00%an <%ae>%x00%cn <%ce>%x00%B%x1e', range],
       // SCAN_ROOT, not REPO_ROOT: the commits are part of the tree under
       // scan, so a fixture repo can exercise this path. (The denylist above
       // stays on REPO_ROOT — a fixture must not supply its own.)
-      { cwd: SCAN_ROOT, encoding: 'utf-8' },
+      { cwd: SCAN_ROOT, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] },
     )
-      .split('\n')
-      .filter(Boolean);
-  } catch {
-    // A shallow clone cannot resolve the base commit. That is a degraded gate,
-    // not a clean one — actions/checkout needs `fetch-depth: 0`.
-    return { unresolved: range };
+      .split('\x1e')
+      .map((r) => r.replace(/^\n/, ''))
+      .filter((r) => r.trim());
+  } catch (err) {
+    // A shallow clone cannot resolve the base commit — the common cause, but
+    // not the only one ("not a git repository", a bad revision, git missing).
+    // Carry git's own stderr so the abstention is diagnosable instead of
+    // always blaming fetch-depth.
+    const detail = String(err?.stderr ?? '')
+      .trim()
+      .split('\n')[0];
+    return { unresolved: detail ? `${range} — ${detail}` : range };
   }
+
+  // Identities that appear in a `Name <email>` trailer. Restricted to trailer
+  // lines rather than the whole body: a body may legitimately quote an address
+  // in prose, and a gate that fires on prose gets muted.
+  const TRAILER =
+    /^(?:co-authored|signed-off|reviewed|acked|tested|reported|suggested|helped|mentored)-by:\s*(.+)$/gim;
 
   const violations = [];
   for (const line of lines) {
-    const [sha, author, committer] = line.split('\0');
+    const [sha, author, committer, body = ''] = line.split('\0');
+    const trailers = [...body.matchAll(TRAILER)].map((m) => [
+      'trailer',
+      m[1].trim(),
+    ]);
     // One row per commit, not per field: `user.email` sets author and
     // committer together, so the common case matches twice and would print
     // the same commit twice. The roles that matched are named instead.
     const roles = [
       ['author', author],
       ['committer', committer],
+      ...trailers,
     ].filter(([, ident]) => patterns.some(([rx]) => rx.test(ident)));
     if (roles.length) {
       // The denylist's own reason text is written for file contents ("use a
       // placeholder in examples") and reads as nonsense against a commit, so
       // the match is reported with an authorship-specific one.
+      // Deliberately NOT the matched identity. Actions logs on a public repo
+      // are world-readable, so echoing it would publish the address this gate
+      // exists to keep off the public record — and it would do so on exactly
+      // the commits that trip it. The SHA and field are enough to act on; the
+      // value is one local command away.
       violations.push(
-        `${sha.slice(0, 9)} ${roles.map(([who]) => who).join('/')}: ` +
-          `${roles[0][1]}\n    → company identity on a public commit`,
+        `${sha.slice(0, 9)} ${roles.map(([who]) => who).join('/')} ` +
+          'matched the denylist\n    → company identity on a public commit ' +
+          `(inspect locally: git log -1 --format='%an <%ae> %cn <%ce>' ${sha.slice(0, 9)})`,
       );
     }
+  }
+  // Zero commits is not a clean scan, it is no scan. Reporting "0 commit(s)
+  // checked" beside a clean verdict is the zero-denominator false green this
+  // repo keeps re-learning (#554, #761) — a real PR always adds a commit, so
+  // an empty range means the range was wrong.
+  if (!lines.length) {
+    return { unresolved: `${range} (resolved, but contained no commits)` };
   }
   return { violations, scanned: lines.length, range };
 }
@@ -428,10 +570,15 @@ function main() {
   // A gate that could not resolve what to scan has not passed; it has not run.
   if (authorship.unresolved) {
     process.stdout.write(
-      `\nAuthorship scan could not resolve '${authorship.unresolved}'.\n` +
-        'This is an abstention, not a clean result — no commit was checked. ' +
-        'The usual cause is a shallow checkout; the job needs ' +
-        'actions/checkout with `fetch-depth: 0`.\n',
+      `\nAuthorship scan abstained: ${authorship.unresolved}\n` +
+        'This is an abstention, not a clean result — no commit was ' +
+        'checked.\n' +
+        (authorship.advice ??
+          'The usual cause is a checkout without full history; the job ' +
+            'needs actions/checkout with `fetch-depth: 0`. A force-pushed ' +
+            '`github.event.before` that is no longer reachable looks the ' +
+            'same.') +
+        '\n',
     );
     return 1;
   }
