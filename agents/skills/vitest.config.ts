@@ -17,6 +17,7 @@ export default defineConfig({
         'lib/*.mjs',
         'claude-code/canary-savant/scripts/**/*.mjs',
         'claude-code/canary-blackhawk/scripts/**/*.mjs',
+        'claude-code/canary-cassandra/scripts/**/*.mjs',
         'claude-code/canary-katana/scripts/**/*.mjs',
         // Top-level only (`*.mjs`, not `**`): the ported cli/run_types/
         // span_reader are tested, but otel_bootstrap/instrument.mjs needs a

@@ -11,6 +11,7 @@ description: >
   execution. NOT for tests with zero assertions (that is `canary review-test`'s
   LINT-006), NOT for flaky tests (canary-flake-hunter), and NOT a coverage tool
   — a vacuous test has coverage, which is exactly why coverage never caught it.
+cli: scripts/cli.mjs
 requires: [node>=20]
 ---
 
@@ -40,11 +41,29 @@ they are `warning` and carry a fidelity tier.
 
 ## Run it
 
+Two doors, one detector. Both run the same engine rules, so they cannot disagree
+about a finding or about the denominator.
+
 ```bash
 canary vacuity-check tests/            # human-readable
 canary vacuity-check tests/ --json     # verdict + denominator + skips
 canary vacuity-check tests/a.test.ts   # one file
 ```
+
+As a skill, for an orchestrator or a CI step composing all four Tier-0
+detectors:
+
+```bash
+canary skills run canary-cassandra -- tests/
+canary skills run canary-cassandra -- tests/ --json --strict
+```
+
+The `--json` envelope matches `canary-savant` / `canary-blackhawk` /
+`canary-katana` — `schema_version`, a `findings` array of
+`{file, line, rule_id, severity, snippet, why}`, and a `summary` — so findings
+from all four merge without special-casing one. Cassandra adds `suggestion` and
+`fidelity` per finding, and `tests_checked` to the summary, because its
+denominator is tests rather than files.
 
 **Advisory by design.** Findings exit **0**. This is the repo's established
 shape for a new detector — advisory first, ratchet to strict only after triage

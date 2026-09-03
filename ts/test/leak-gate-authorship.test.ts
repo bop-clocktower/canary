@@ -196,341 +196,354 @@ function namedOffenders(stdout: string): Set<string> {
   );
 }
 
-describe('leak gate: commit authorship', () => {
-  it('fails on a commit authored with a denylisted identity', () => {
-    const { root, range } = fixtureHistory([COMPANY_IDENT]);
+// Each case builds a throwaway git repo (several `git` spawns) and then runs
+// the gate as a node subprocess. That is comfortably under a second alone, and
+// well past vitest's 5s default under full-suite parallelism — the #760 class:
+// passes in isolation, times out under load. The budget is what is wrong here,
+// not the tests, so it is stated once rather than left to flake.
+const SUBPROCESS_BUDGET_MS = 60_000;
 
-    const { status, stdout } = runGate(root, range);
+describe(
+  'leak gate: commit authorship',
+  () => {
+    it('fails on a commit authored with a denylisted identity', () => {
+      const { root, range } = fixtureHistory([COMPANY_IDENT]);
 
-    expect(stdout).toContain('Company identifiers found in commit authorship');
-    expect(stdout).toContain('company identity on a public commit');
-    expect(status).toBe(1);
-  });
+      const { status, stdout } = runGate(root, range);
 
-  it('fails when the term is in the name rather than the address', () => {
-    const { root, range } = fixtureHistory([COMPANY_NAME_IDENT]);
-
-    expect(runGate(root, range).status).toBe(1);
-  });
-
-  it('names exactly the offending commits, and no others', () => {
-    // A count of matches would also pass if the same commit were printed
-    // twice and a distinct offender dropped, so assert on identity.
-    const { root, range, shas } = fixtureHistory([
-      COMPANY_IDENT,
-      CLEAN_IDENT,
-      COMPANY_IDENT,
-    ]);
-
-    const { status, stdout } = runGate(root, range);
-
-    expect(namedOffenders(stdout)).toEqual(
-      new Set([shas[0]!.slice(0, 9), shas[2]!.slice(0, 9)]),
-    );
-    expect(status).toBe(1);
-  });
-
-  it('never echoes the matched identity into the log', () => {
-    // The gate's findings go to a PUBLIC Actions log. Printing the address it
-    // just caught would publish exactly what it exists to keep off the public
-    // record, on precisely the commits that trip it.
-    const { root, range } = fixtureHistory([COMPANY_IDENT]);
-
-    const { stdout } = runGate(root, range);
-
-    expect(stdout).not.toContain(COMPANY_EMAIL);
-    expect(stdout.toLowerCase()).not.toContain('zorbatron');
-    expect(stdout).toContain('inspect locally');
-  });
-
-  it('passes commits authored with a clean identity, and states the count', () => {
-    const { root, range } = fixtureHistory([CLEAN_IDENT, CLEAN_IDENT]);
-
-    const { status, stdout } = runGate(root, range);
-
-    expect(stdout).toContain('2 commit(s) checked for authorship');
-    expect(status).toBe(0);
-  });
-
-  describe('commit classes that must not be exempt', () => {
-    it('sees a company identity on a merge commit', () => {
-      // `git merge origin/main` from a clone with an inherited global
-      // user.email — the gate's own header scenario. Scanning with
-      // --no-merges would skip this commit while still reporting a
-      // confident count over the rest.
-      const { root, base, git } = fixtureHistory([CLEAN_IDENT]);
-      git('checkout', '-q', '-b', 'side', base);
-      writeFileSync(join(root, 'side.txt'), 'side\n', 'utf-8');
-      git('add', '-A');
-      commitAs(git, CLEAN_IDENT, 'side');
-      git('checkout', '-q', 'main');
-      const { name, email } = identParts(COMPANY_IDENT);
-      git(
-        '-c',
-        `user.name=${name}`,
-        '-c',
-        `user.email=${email}`,
-        'merge',
-        '--no-ff',
-        '--no-edit',
-        '-q',
-        'side',
+      expect(stdout).toContain(
+        'Company identifiers found in commit authorship',
       );
-
-      const { status, stdout } = runGate(root, `${base}..HEAD`);
-
       expect(stdout).toContain('company identity on a public commit');
       expect(status).toBe(1);
     });
 
-    it('sees a company identity in a Co-authored-by trailer', () => {
-      // GitHub renders Co-authored-by as a linked contributor on the public
-      // commit page, so it is a more visible identity surface than %ae.
-      const { root, base, git } = fixtureHistory([]);
-      writeFileSync(join(root, 'x.txt'), 'x\n', 'utf-8');
-      git('add', '-A');
-      commitAs(
-        git,
+    it('fails when the term is in the name rather than the address', () => {
+      const { root, range } = fixtureHistory([COMPANY_NAME_IDENT]);
+
+      expect(runGate(root, range).status).toBe(1);
+    });
+
+    it('names exactly the offending commits, and no others', () => {
+      // A count of matches would also pass if the same commit were printed
+      // twice and a distinct offender dropped, so assert on identity.
+      const { root, range, shas } = fixtureHistory([
+        COMPANY_IDENT,
         CLEAN_IDENT,
-        `feat: something\n\nCo-authored-by: ${COMPANY_IDENT}`,
+        COMPANY_IDENT,
+      ]);
+
+      const { status, stdout } = runGate(root, range);
+
+      expect(namedOffenders(stdout)).toEqual(
+        new Set([shas[0]!.slice(0, 9), shas[2]!.slice(0, 9)]),
       );
-
-      const { status, stdout } = runGate(root, `${base}..HEAD`);
-
-      expect(stdout).toContain('trailer');
       expect(status).toBe(1);
     });
 
-    it('checks the committer identity, not only the author', () => {
-      const { root, base, git } = fixtureHistory([]);
-      writeFileSync(join(root, 'x.txt'), 'x\n', 'utf-8');
-      git('add', '-A');
-      commitAs(git, CLEAN_IDENT, 'clean author, dirty committer');
-      const { name, email } = identParts(COMPANY_IDENT);
-      execFileSync('git', ['-C', root, 'commit', '--amend', '--no-edit'], {
-        encoding: 'utf-8',
-        env: {
-          ...process.env,
-          GIT_CONFIG_GLOBAL: '/dev/null',
-          GIT_COMMITTER_NAME: name,
-          GIT_COMMITTER_EMAIL: email,
-        },
-      });
-
-      const { status, stdout } = runGate(root, `${base}..HEAD`);
-
-      // Must be the committer field specifically — 'committer' alone would
-      // also match the 'author/committer' string the common case produces.
-      expect(stdout).toMatch(/^[0-9a-f]{9} committer matched/m);
-      expect(stdout).not.toMatch(/^[0-9a-f]{9} author\/committer/m);
-      expect(status).toBe(1);
-    });
-  });
-
-  describe('denylist term shapes', () => {
-    it('matches any term in a comma-separated denylist', () => {
+    it('never echoes the matched identity into the log', () => {
+      // The gate's findings go to a PUBLIC Actions log. Printing the address it
+      // just caught would publish exactly what it exists to keep off the public
+      // record, on precisely the commits that trip it.
       const { root, range } = fixtureHistory([COMPANY_IDENT]);
 
-      const { status } = runGate(root, range, {
-        denylist: ` Quuxcorp , ${FIXTURE_TERM} `,
-      });
+      const { stdout } = runGate(root, range);
 
-      expect(status).toBe(1);
+      expect(stdout).not.toContain(COMPANY_EMAIL);
+      expect(stdout.toLowerCase()).not.toContain('zorbatron');
+      expect(stdout).toContain('inspect locally');
     });
 
-    it('does not match a term that is only a substring of the identity', () => {
-      // Boundaries still hold: 'Zorb' must not fire on 'zorbatron'.
-      const { root, range } = fixtureHistory([COMPANY_IDENT]);
+    it('passes commits authored with a clean identity, and states the count', () => {
+      const { root, range } = fixtureHistory([CLEAN_IDENT, CLEAN_IDENT]);
 
-      expect(runGate(root, range, { denylist: 'Zorb' }).status).toBe(0);
+      const { status, stdout } = runGate(root, range);
+
+      expect(stdout).toContain('2 commit(s) checked for authorship');
+      expect(status).toBe(0);
     });
 
-    it('matches a multi-word term against a concatenated domain', () => {
-      // Terms are authored for the FILE scan and read like prose. An email
-      // domain drops or changes the separator, and `\b<term>\b` would miss
-      // every one of these — failing open, the worst direction for a gate.
-      const { root, base, git } = fixtureHistory([]);
-      const emails = [
-        'dev@zorbatronhealth.example',
-        'dev@zorbatron-health.example',
-      ];
-      emails.forEach((email, i) => {
-        writeFileSync(join(root, `m${i}.txt`), `${i}\n`, 'utf-8');
+    describe('commit classes that must not be exempt', () => {
+      it('sees a company identity on a merge commit', () => {
+        // `git merge origin/main` from a clone with an inherited global
+        // user.email — the gate's own header scenario. Scanning with
+        // --no-merges would skip this commit while still reporting a
+        // confident count over the rest.
+        const { root, base, git } = fixtureHistory([CLEAN_IDENT]);
+        git('checkout', '-q', '-b', 'side', base);
+        writeFileSync(join(root, 'side.txt'), 'side\n', 'utf-8');
         git('add', '-A');
-        commitAs(git, `Dev <${email}>`, `m${i}`);
+        commitAs(git, CLEAN_IDENT, 'side');
+        git('checkout', '-q', 'main');
+        const { name, email } = identParts(COMPANY_IDENT);
+        git(
+          '-c',
+          `user.name=${name}`,
+          '-c',
+          `user.email=${email}`,
+          'merge',
+          '--no-ff',
+          '--no-edit',
+          '-q',
+          'side',
+        );
+
+        const { status, stdout } = runGate(root, `${base}..HEAD`);
+
+        expect(stdout).toContain('company identity on a public commit');
+        expect(status).toBe(1);
       });
 
-      const { status, stdout } = runGate(root, `${base}..HEAD`, {
-        denylist: 'Zorbatron Health',
+      it('sees a company identity in a Co-authored-by trailer', () => {
+        // GitHub renders Co-authored-by as a linked contributor on the public
+        // commit page, so it is a more visible identity surface than %ae.
+        const { root, base, git } = fixtureHistory([]);
+        writeFileSync(join(root, 'x.txt'), 'x\n', 'utf-8');
+        git('add', '-A');
+        commitAs(
+          git,
+          CLEAN_IDENT,
+          `feat: something\n\nCo-authored-by: ${COMPANY_IDENT}`,
+        );
+
+        const { status, stdout } = runGate(root, `${base}..HEAD`);
+
+        expect(stdout).toContain('trailer');
+        expect(status).toBe(1);
       });
 
-      expect(namedOffenders(stdout).size).toBe(2);
-      expect(status).toBe(1);
+      it('checks the committer identity, not only the author', () => {
+        const { root, base, git } = fixtureHistory([]);
+        writeFileSync(join(root, 'x.txt'), 'x\n', 'utf-8');
+        git('add', '-A');
+        commitAs(git, CLEAN_IDENT, 'clean author, dirty committer');
+        const { name, email } = identParts(COMPANY_IDENT);
+        execFileSync('git', ['-C', root, 'commit', '--amend', '--no-edit'], {
+          encoding: 'utf-8',
+          env: {
+            ...process.env,
+            GIT_CONFIG_GLOBAL: '/dev/null',
+            GIT_COMMITTER_NAME: name,
+            GIT_COMMITTER_EMAIL: email,
+          },
+        });
+
+        const { status, stdout } = runGate(root, `${base}..HEAD`);
+
+        // Must be the committer field specifically — 'committer' alone would
+        // also match the 'author/committer' string the common case produces.
+        expect(stdout).toMatch(/^[0-9a-f]{9} committer matched/m);
+        expect(stdout).not.toMatch(/^[0-9a-f]{9} author\/committer/m);
+        expect(status).toBe(1);
+      });
     });
 
-    it('matches a term carrying trailing punctuation', () => {
-      // `Zorbatron Inc.` compiled to `\bZorbatron Inc\.\b`, whose trailing
-      // \b requires a word character after the dot — a pattern that could
-      // never match anything, silently.
-      const { root, base, git } = fixtureHistory([]);
-      writeFileSync(join(root, 'p.txt'), 'p\n', 'utf-8');
-      git('add', '-A');
-      commitAs(git, 'Zorbatron Inc. <a@example.com>', 'punctuated');
+    describe('denylist term shapes', () => {
+      it('matches any term in a comma-separated denylist', () => {
+        const { root, range } = fixtureHistory([COMPANY_IDENT]);
 
-      expect(
-        runGate(root, `${base}..HEAD`, { denylist: 'Zorbatron Inc.' }).status,
-      ).toBe(1);
-    });
-  });
+        const { status } = runGate(root, range, {
+          denylist: ` Quuxcorp , ${FIXTURE_TERM} `,
+        });
 
-  describe('production range resolution', () => {
-    // runGate always supplies an explicit range, which is a test seam. These
-    // exercise the branches CI actually uses, against a real remote ref.
-    function withOrigin(f: Fixture): Fixture {
-      f.git('remote', 'add', 'origin', f.root);
-      f.git('update-ref', 'refs/remotes/origin/main', f.base);
-      return f;
-    }
-
-    it('resolves origin/<base>..HEAD from GITHUB_BASE_REF', () => {
-      const f = withOrigin(fixtureHistory([COMPANY_IDENT]));
-
-      const { status, stdout } = runGate(f.root, '', {
-        env: { GITHUB_BASE_REF: 'main', GITHUB_EVENT_BEFORE: '' },
+        expect(status).toBe(1);
       });
 
-      expect(stdout).toContain('company identity on a public commit');
-      expect(status).toBe(1);
-    });
+      it('does not match a term that is only a substring of the identity', () => {
+        // Boundaries still hold: 'Zorb' must not fire on 'zorbatron'.
+        const { root, range } = fixtureHistory([COMPANY_IDENT]);
 
-    it('ends the range at the PR head, not the ephemeral merge commit', () => {
-      // On `pull_request`, actions/checkout checks out `refs/pull/N/merge` —
-      // a commit GitHub synthesises per event, authored with the PR author's
-      // ACCOUNT email, and discarded at merge. Scanning it reports a leak
-      // that can never reach public history. Simulated here by putting the
-      // offender on a merge commit *above* the PR head.
-      const f = withOrigin(fixtureHistory([CLEAN_IDENT]));
-      const head = f.git('rev-parse', 'HEAD');
-      f.git('checkout', '-q', '-b', 'ephemeral');
-      commitAs(f.git, COMPANY_IDENT, 'Merge into base', '--allow-empty');
-
-      const { status, stdout } = runGate(f.root, '', {
-        env: { GITHUB_BASE_REF: 'main', GITHUB_PR_HEAD_SHA: head },
+        expect(runGate(root, range, { denylist: 'Zorb' }).status).toBe(0);
       });
 
-      expect(stdout).toContain('1 commit(s) checked for authorship');
+      it('matches a multi-word term against a concatenated domain', () => {
+        // Terms are authored for the FILE scan and read like prose. An email
+        // domain drops or changes the separator, and `\b<term>\b` would miss
+        // every one of these — failing open, the worst direction for a gate.
+        const { root, base, git } = fixtureHistory([]);
+        const emails = [
+          'dev@zorbatronhealth.example',
+          'dev@zorbatron-health.example',
+        ];
+        emails.forEach((email, i) => {
+          writeFileSync(join(root, `m${i}.txt`), `${i}\n`, 'utf-8');
+          git('add', '-A');
+          commitAs(git, `Dev <${email}>`, `m${i}`);
+        });
+
+        const { status, stdout } = runGate(root, `${base}..HEAD`, {
+          denylist: 'Zorbatron Health',
+        });
+
+        expect(namedOffenders(stdout).size).toBe(2);
+        expect(status).toBe(1);
+      });
+
+      it('matches a term carrying trailing punctuation', () => {
+        // `Zorbatron Inc.` compiled to `\bZorbatron Inc\.\b`, whose trailing
+        // \b requires a word character after the dot — a pattern that could
+        // never match anything, silently.
+        const { root, base, git } = fixtureHistory([]);
+        writeFileSync(join(root, 'p.txt'), 'p\n', 'utf-8');
+        git('add', '-A');
+        commitAs(git, 'Zorbatron Inc. <a@example.com>', 'punctuated');
+
+        expect(
+          runGate(root, `${base}..HEAD`, { denylist: 'Zorbatron Inc.' }).status,
+        ).toBe(1);
+      });
+    });
+
+    describe('production range resolution', () => {
+      // runGate always supplies an explicit range, which is a test seam. These
+      // exercise the branches CI actually uses, against a real remote ref.
+      function withOrigin(f: Fixture): Fixture {
+        f.git('remote', 'add', 'origin', f.root);
+        f.git('update-ref', 'refs/remotes/origin/main', f.base);
+        return f;
+      }
+
+      it('resolves origin/<base>..HEAD from GITHUB_BASE_REF', () => {
+        const f = withOrigin(fixtureHistory([COMPANY_IDENT]));
+
+        const { status, stdout } = runGate(f.root, '', {
+          env: { GITHUB_BASE_REF: 'main', GITHUB_EVENT_BEFORE: '' },
+        });
+
+        expect(stdout).toContain('company identity on a public commit');
+        expect(status).toBe(1);
+      });
+
+      it('ends the range at the PR head, not the ephemeral merge commit', () => {
+        // On `pull_request`, actions/checkout checks out `refs/pull/N/merge` —
+        // a commit GitHub synthesises per event, authored with the PR author's
+        // ACCOUNT email, and discarded at merge. Scanning it reports a leak
+        // that can never reach public history. Simulated here by putting the
+        // offender on a merge commit *above* the PR head.
+        const f = withOrigin(fixtureHistory([CLEAN_IDENT]));
+        const head = f.git('rev-parse', 'HEAD');
+        f.git('checkout', '-q', '-b', 'ephemeral');
+        commitAs(f.git, COMPANY_IDENT, 'Merge into base', '--allow-empty');
+
+        const { status, stdout } = runGate(f.root, '', {
+          env: { GITHUB_BASE_REF: 'main', GITHUB_PR_HEAD_SHA: head },
+        });
+
+        expect(stdout).toContain('1 commit(s) checked for authorship');
+        expect(status).toBe(0);
+      });
+
+      it('resolves <before>..HEAD from GITHUB_EVENT_BEFORE', () => {
+        const f = fixtureHistory([COMPANY_IDENT]);
+
+        const { status } = runGate(f.root, '', {
+          env: { GITHUB_BASE_REF: '', GITHUB_EVENT_BEFORE: f.base },
+        });
+
+        expect(status).toBe(1);
+      });
+
+      it('prefers GITHUB_BASE_REF over GITHUB_EVENT_BEFORE', () => {
+        const f = withOrigin(fixtureHistory([CLEAN_IDENT]));
+
+        const { status, stdout } = runGate(f.root, '', {
+          env: {
+            GITHUB_BASE_REF: 'main',
+            GITHUB_EVENT_BEFORE: '0'.repeat(40),
+          },
+        });
+
+        // The all-zeroes `before` would abstain; base ref wins and measures 1.
+        expect(stdout).toContain('1 commit(s) checked for authorship');
+        expect(status).toBe(0);
+      });
+    });
+
+    describe('the false greens', () => {
+      it('abstains when the range cannot be resolved', () => {
+        const { root } = fixtureHistory([COMPANY_IDENT]);
+
+        const { status, stdout } = runGate(root, 'deadbeefdeadbeef..HEAD');
+
+        expect(stdout).toContain('abstention, not a clean result');
+        expect(stdout).not.toContain('commit(s) checked for authorship');
+        expect(status).toBe(1);
+      });
+
+      it('abstains when the range resolves but holds no commits', () => {
+        // "0 commit(s) checked" beside a clean verdict is the canonical shape.
+        const { root, base } = fixtureHistory([]);
+
+        const { status, stdout } = runGate(root, `${base}..${base}`);
+
+        expect(stdout).not.toContain('0 commit(s) checked');
+        expect(stdout).toContain('abstention, not a clean result');
+        expect(status).toBe(1);
+      });
+
+      it('abstains on CI when the denylist is empty', () => {
+        // The fork case: GitHub does not pass secrets to fork-triggered
+        // workflows, so the gate matches zero patterns on every fork PR.
+        const { root, range } = fixtureHistory([COMPANY_IDENT]);
+
+        const { status, stdout } = runGate(root, range, {
+          denylist: '',
+          env: { GITHUB_ACTIONS: 'true' },
+        });
+
+        expect(stdout).toContain('no denylist available');
+        expect(stdout).toContain('fork');
+        expect(status).toBe(1);
+      });
+
+      it('says the scan was skipped, not clean, on a local run with no denylist', () => {
+        // Exit 0 is right off CI — a contributor legitimately has no secret —
+        // but the output must not read as though commits were checked.
+        const { root, range } = fixtureHistory([COMPANY_IDENT]);
+
+        const { status, stdout } = runGate(root, range, {
+          denylist: '',
+          env: { GITHUB_ACTIONS: '' },
+        });
+
+        expect(stdout).toContain('authorship scan skipped');
+        expect(stdout).not.toContain('commit(s) checked for authorship');
+        expect(status).toBe(0);
+      });
+    });
+
+    it('ignores an ambient GITHUB_BASE_REF when scanning a fixture root', () => {
+      // The regression that reached CI: with CANARY_LEAK_SCAN_ROOT pointing at
+      // a fixture, the scan resolved the *ambient* `origin/main..HEAD` and ran
+      // it inside the fixture, which has no `origin/main`. Every otherwise-
+      // clean fixture run became an abstention, including the sibling suite's
+      // clean-control case.
+      const { root } = fixtureHistory([CLEAN_IDENT]);
+
+      const { status, stdout } = runGate(root, '', {
+        env: { GITHUB_BASE_REF: 'main' },
+      });
+
+      expect(stdout).toContain('scan root overridden with no explicit range');
       expect(status).toBe(0);
     });
 
-    it('resolves <before>..HEAD from GITHUB_EVENT_BEFORE', () => {
-      const f = fixtureHistory([COMPANY_IDENT]);
+    it('rejects a range that git would read as a flag', () => {
+      const { root } = fixtureHistory([CLEAN_IDENT]);
 
-      const { status } = runGate(f.root, '', {
-        env: { GITHUB_BASE_REF: '', GITHUB_EVENT_BEFORE: f.base },
-      });
+      const { status, stdout } = runGate(root, '--output=/tmp/pwned..HEAD');
 
+      expect(stdout).toContain('not a well-formed commit range');
       expect(status).toBe(1);
     });
 
-    it('prefers GITHUB_BASE_REF over GITHUB_EVENT_BEFORE', () => {
-      const f = withOrigin(fixtureHistory([CLEAN_IDENT]));
+    it('reports git’s own error rather than always blaming fetch-depth', () => {
+      const { root } = fixtureHistory([CLEAN_IDENT]);
 
-      const { status, stdout } = runGate(f.root, '', {
-        env: {
-          GITHUB_BASE_REF: 'main',
-          GITHUB_EVENT_BEFORE: '0'.repeat(40),
-        },
-      });
+      const { stdout } = runGate(root, 'nosuchref..HEAD');
 
-      // The all-zeroes `before` would abstain; base ref wins and measures 1.
-      expect(stdout).toContain('1 commit(s) checked for authorship');
-      expect(status).toBe(0);
+      expect(stdout).toMatch(/unknown revision|ambiguous argument/);
     });
-  });
-
-  describe('the false greens', () => {
-    it('abstains when the range cannot be resolved', () => {
-      const { root } = fixtureHistory([COMPANY_IDENT]);
-
-      const { status, stdout } = runGate(root, 'deadbeefdeadbeef..HEAD');
-
-      expect(stdout).toContain('abstention, not a clean result');
-      expect(stdout).not.toContain('commit(s) checked for authorship');
-      expect(status).toBe(1);
-    });
-
-    it('abstains when the range resolves but holds no commits', () => {
-      // "0 commit(s) checked" beside a clean verdict is the canonical shape.
-      const { root, base } = fixtureHistory([]);
-
-      const { status, stdout } = runGate(root, `${base}..${base}`);
-
-      expect(stdout).not.toContain('0 commit(s) checked');
-      expect(stdout).toContain('abstention, not a clean result');
-      expect(status).toBe(1);
-    });
-
-    it('abstains on CI when the denylist is empty', () => {
-      // The fork case: GitHub does not pass secrets to fork-triggered
-      // workflows, so the gate matches zero patterns on every fork PR.
-      const { root, range } = fixtureHistory([COMPANY_IDENT]);
-
-      const { status, stdout } = runGate(root, range, {
-        denylist: '',
-        env: { GITHUB_ACTIONS: 'true' },
-      });
-
-      expect(stdout).toContain('no denylist available');
-      expect(stdout).toContain('fork');
-      expect(status).toBe(1);
-    });
-
-    it('says the scan was skipped, not clean, on a local run with no denylist', () => {
-      // Exit 0 is right off CI — a contributor legitimately has no secret —
-      // but the output must not read as though commits were checked.
-      const { root, range } = fixtureHistory([COMPANY_IDENT]);
-
-      const { status, stdout } = runGate(root, range, {
-        denylist: '',
-        env: { GITHUB_ACTIONS: '' },
-      });
-
-      expect(stdout).toContain('authorship scan skipped');
-      expect(stdout).not.toContain('commit(s) checked for authorship');
-      expect(status).toBe(0);
-    });
-  });
-
-  it('ignores an ambient GITHUB_BASE_REF when scanning a fixture root', () => {
-    // The regression that reached CI: with CANARY_LEAK_SCAN_ROOT pointing at
-    // a fixture, the scan resolved the *ambient* `origin/main..HEAD` and ran
-    // it inside the fixture, which has no `origin/main`. Every otherwise-
-    // clean fixture run became an abstention, including the sibling suite's
-    // clean-control case.
-    const { root } = fixtureHistory([CLEAN_IDENT]);
-
-    const { status, stdout } = runGate(root, '', {
-      env: { GITHUB_BASE_REF: 'main' },
-    });
-
-    expect(stdout).toContain('scan root overridden with no explicit range');
-    expect(status).toBe(0);
-  });
-
-  it('rejects a range that git would read as a flag', () => {
-    const { root } = fixtureHistory([CLEAN_IDENT]);
-
-    const { status, stdout } = runGate(root, '--output=/tmp/pwned..HEAD');
-
-    expect(stdout).toContain('not a well-formed commit range');
-    expect(status).toBe(1);
-  });
-
-  it('reports git’s own error rather than always blaming fetch-depth', () => {
-    const { root } = fixtureHistory([CLEAN_IDENT]);
-
-    const { stdout } = runGate(root, 'nosuchref..HEAD');
-
-    expect(stdout).toMatch(/unknown revision|ambiguous argument/);
-  });
-});
+  },
+  SUBPROCESS_BUDGET_MS,
+);

@@ -233,6 +233,30 @@ Security below).
   how to behave does not need to invoke the bundled code; a workflow that needs
   the deterministic behavior calls `canary skills run <name>`.
 
+### Invocation tiers
+
+`canary skills run <name>` resolves a skill through one of two tiers, and says
+which one it used (#756):
+
+| Tier             | Applies to             | What happens                                            | `determinism`   |
+| ---------------- | ---------------------- | ------------------------------------------------------- | --------------- |
+| **1 — target**   | `cli:` / `entry:`      | The declared target is spawned (or imported) and run    | `deterministic` |
+| **2 — dispatch** | no `cli:`, no `entry:` | The skill's workflow is resolved and handed to a caller | `agent-applied` |
+
+Tier 2 exists because a skill with no script used to be unreachable — no
+orchestrator, CI step, or sibling skill could invoke it at all. Canary has no
+agent runtime, so dispatch does not _apply_ the workflow; it resolves the skill
+and returns its contract (identity, `requires`, and the SKILL.md body with the
+frontmatter stripped), labelled `agent-applied` so a consumer never merges it
+with a deterministic detector's findings unlabelled. `--json` emits that payload
+as a machine-readable envelope.
+
+Dispatch executes nothing, so it is **not** gated by
+`--allow-executable-skills`; that flag guards spawning a `cli:` target's code. A
+skill that cannot be dispatched (unreadable SKILL.md, or a file that is all
+frontmatter and no body) exits **2** with the reason — never an empty result
+that reads like a run that found nothing.
+
 ## Bundled Skills
 
 Canary ships two layers of bundled skills:
@@ -241,6 +265,18 @@ Canary ships two layers of bundled skills:
 | ------------------------------------------- | ---------------- | -------------------------------------------------------------- |
 | `agents/skills/canary:*.md`                 | Flat `.md`       | Claude Code slash commands (`/canary:init`, `/canary:migrate`) |
 | `agents/skills/claude-code/<name>/SKILL.md` | Nested directory | Prescriptive harness skills invoked by harness agents          |
+
+The bundled root is resolved **relative to the engine's own compiled location**,
+three directories above its `core/` module — never relative to the working
+directory. That resolves to `<repo>/agents/skills` in a checkout and
+`<pkg>/agents/skills` in the published npm package, so the package must ship an
+`agents/` directory or every bundled skill becomes invisible at any cwd (#757 —
+`npm/scripts/build-engine.mjs` stages it, and `package.json#files` publishes
+it).
+
+Because discovery ignores the cwd for this tier, `canary skills list` can never
+report "none" without also reporting **where it looked**: an empty result prints
+the abstention line plus each of the four roots and whether it existed.
 
 ## Local Overlay Convention
 
@@ -340,8 +376,11 @@ canary skills list
 # Show file paths as well
 canary skills list --verbose
 
-# Invoke a code-bearing skill's bundled cli/entry
+# Invoke a skill: its cli/entry target, or its workflow via the dispatcher
 canary skills run <name> [-- arg1 arg2 ...]
+
+# Emit a dispatched prose skill's labelled payload as JSON
+canary skills run <name> --json
 ```
 
 `canary skills list` groups skills by tier and marks code-bearing skills with

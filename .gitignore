@@ -37,6 +37,8 @@ dist/
 
 # Bundled engine data artifact staged by npm/scripts/build-engine.mjs
 /npm/agent/
+# Bundled skill tree staged by npm/scripts/build-engine.mjs (#757)
+/npm/agents/
 
 # Virtual environments
 .venv/

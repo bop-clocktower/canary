@@ -88,20 +88,28 @@ describe('canary skills run', () => {
     expect(res.stdout).toContain('both cli and entry');
   });
 
-  it('exits 2 for a markdown-only skill', async () => {
+  it('exits 2 when a prose skill has no body to dispatch (#756)', async () => {
+    // The dispatcher replaced the flat markdown-only refusal, but a skill it
+    // cannot load still FAILS -- it never reports an empty run.
+    const dir = mkTmp();
+    const path = join(dir, 'SKILL.md');
+    writeFileSync(path, '---\nname: doc-skill\n---\n', 'utf-8');
     const skill = {
       error: null,
       isExecutable: false,
       cli: null,
       entry: null,
       name: 'doc-skill',
-      dir: '.',
+      path,
+      requires: [],
+      description: '',
+      dir,
     };
     const res = await invokeCanary(['skills', 'run', 'doc-skill'], {
       deps: { makeSkillRegistry: () => fake({ find: () => skill }) },
     });
     expect(res.code).toBe(2);
-    expect(res.stdout).toContain('markdown-only');
+    expect(res.stdout).toContain('no workflow body');
   });
 });
 

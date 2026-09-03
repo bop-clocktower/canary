@@ -35,7 +35,13 @@ import {
   isExecutableSkillAllowed,
   resolveCliPath,
   type SkillInfo,
+  type SkillRegistry,
 } from './core/skill-registry.js';
+import {
+  SkillDispatchError,
+  dispatchProseSkill,
+  type SkillDispatch,
+} from './core/skill-dispatch.js';
 import { CROSS, EM_DASH, type MainDeps } from './main-deps.js';
 
 interface ListOptions {
@@ -62,11 +68,43 @@ function formatSkill(skill: SkillInfo, verbose: boolean): string {
   return line;
 }
 
+/**
+ * An empty discovery, reported as the abstention it is (#757).
+ *
+ * `No skills found.` was a claim about the world made by a check that had
+ * verified nothing. All discovery can attest is that four specific roots held
+ * nothing -- so it says which four, and whether each one even existed. The
+ * distinction is what separates "this project has no skills" from "the tree I
+ * was pointed at is not there", and an installed CLI that shipped no bundled
+ * skills at all printed the first while meaning the second.
+ */
+function reportEmptyDiscovery(registry: SkillRegistry, deps: MainDeps): void {
+  const roots = registry.searchRoots();
+  const outcome = gateOutcome({ checked: 0, findings: [] }, 'advisory', {
+    noun: 'skill(s)',
+  });
+  deps.out(pc.bold(pc.yellow(outcome.summaryLine)));
+  deps.out('No skill was discoverable. Searched:');
+  for (const root of roots) {
+    const state = root.exists ? 'present, no skill inside' : 'does not exist';
+    deps.out(`  ${root.tier.padEnd(8)} ${root.path} ${pc.dim(`(${state})`)}`);
+  }
+  const bundled = roots.find((r) => r.tier === 'bundled');
+  if (bundled && !bundled.exists) {
+    deps.out(
+      `${pc.yellow(CROSS)} The bundled-skill root is missing from this ` +
+        `install ${EM_DASH} the CLI cannot see its own skills, so no cwd will ` +
+        'make them appear. Reinstall, or run from a Canary checkout.',
+    );
+  }
+}
+
 function listCmd(opts: ListOptions, deps: MainDeps): void {
   const verbose = opts.verbose ?? false;
-  const skills = deps.makeSkillRegistry().discover();
+  const registry = deps.makeSkillRegistry();
+  const skills = registry.discover();
   if (skills.length === 0) {
-    deps.out(pc.yellow('No skills found.'));
+    reportEmptyDiscovery(registry, deps);
     return;
   }
 
@@ -116,6 +154,71 @@ function listCmd(opts: ListOptions, deps: MainDeps): void {
 
 interface RunOptions {
   allowExecutableSkills?: boolean;
+  json?: boolean;
+}
+
+/**
+ * Tier 2: render a dispatched prose skill (#756).
+ *
+ * The determinism label leads, in both modes. A consumer merging this with a
+ * `cli:` detector's findings has to be able to see that an agent produced it;
+ * a payload that only carried the workflow text would read exactly like a
+ * deterministic run's output.
+ */
+function renderDispatch(
+  dispatch: SkillDispatch,
+  json: boolean,
+  deps: MainDeps,
+): void {
+  if (json) {
+    deps.out(jsonIndent2(dispatch));
+    return;
+  }
+  deps.out(
+    `${pc.bold(dispatch.skill)} ${EM_DASH} dispatched as a prose skill ` +
+      `${pc.dim('(no cli:/entry: target)')}`,
+  );
+  deps.out(
+    `${pc.yellow('determinism:')} ${pc.bold('agent-applied')} ${EM_DASH} canary ` +
+      'applied no judgment here. The workflow below must be executed by an ' +
+      'agent runtime, and its results must not be merged with a ' +
+      "deterministic detector's findings without carrying this label.",
+  );
+  if (dispatch.requires.length) {
+    deps.out(`${pc.dim('requires:')} ${dispatch.requires.join(', ')}`);
+  }
+  if (dispatch.args.length) {
+    deps.out(
+      `${pc.dim('args (forwarded, uninterpreted):')} ${dispatch.args.join(' ')}`,
+    );
+  }
+  deps.out(`${pc.dim(`source: ${dispatch.path}`)}\n`);
+  deps.out(dispatch.instructions);
+}
+
+/**
+ * Dispatch a skill with no `cli:`/`entry:` target instead of refusing it.
+ *
+ * Deliberately reached BEFORE the `--allow-executable-skills` gate: that flag
+ * guards spawning someone else's code, and dispatch spawns nothing. Gating it
+ * would leave the 14 CLI-less skills unreachable in precisely the CI contexts
+ * #756 is about. See `core/skill-dispatch.ts` for the full reasoning.
+ */
+function runProseSkill(
+  skill: SkillInfo,
+  args: string[],
+  opts: RunOptions,
+  deps: MainDeps,
+): void {
+  try {
+    renderDispatch(dispatchProseSkill(skill, args), opts.json ?? false, deps);
+  } catch (exc) {
+    if (!(exc instanceof SkillDispatchError)) throw exc;
+    // A dispatch that could not happen is reported as a failure, never as an
+    // empty run: exit 2 keeps the old "this skill is not runnable" contract.
+    deps.out(`${pc.red(CROSS)} Skill ${pc.bold(skill.name)}: ${exc.message}`);
+    throw new CliExitError(2);
+  }
 }
 
 async function runCmd(
@@ -133,13 +236,10 @@ async function runCmd(
     deps.out(`${pc.red(CROSS)} Skill ${pc.bold(name)}: ${skill.error}`);
     throw new CliExitError(2);
   }
+  // Tier 2 (#756): a skill with no cli:/entry: is dispatched, not refused.
   if (!skill.isExecutable) {
-    deps.out(
-      pc.yellow(
-        `Skill ${pc.bold(name)} is markdown-only ${EM_DASH} no cli: or entry: field to run.`,
-      ),
-    );
-    throw new CliExitError(2);
+    runProseSkill(skill, args, opts, deps);
+    return;
   }
   if (!isExecutableSkillAllowed(opts.allowExecutableSkills ?? false)) {
     deps.out(
@@ -342,34 +442,31 @@ function partition(s: string, sep: string): [string, string, string] {
   return [s.slice(0, i), sep, s.slice(i + sep.length)];
 }
 
-/** Build the `skills` sub-app wired to `deps`. */
-export function buildSkillsCommand(deps: MainDeps): Command {
-  const program = new Command('skills');
-  program
-    .description('List and invoke discoverable Canary skills.')
-    .exitOverride(normalizeUsageExit);
-
-  program
-    .command('list')
-    .description('List every skill discoverable from the current directory.')
-    .option('-v, --verbose', 'Also print the SKILL.md path for each skill.')
-    .action((opts: ListOptions) => {
-      listCmd(opts, deps);
-    });
-
+/** Register `skills run` -- the tier-1 target path plus the tier-2 dispatcher. */
+function registerRun(program: Command, deps: MainDeps): void {
   program
     .command('run')
-    .description("Invoke a code-bearing skill's declared cli or entry target.")
+    .description(
+      "Invoke a skill: a code-bearing skill's cli/entry target, or a prose " +
+        "skill's workflow via the dispatcher.",
+    )
     .argument('<name>', 'Name of the skill to invoke.')
     .argument('[args...]', "Arguments forwarded to the skill's cli/entry.")
     .option(
       '--allow-executable-skills',
       'Opt-in to invoking cli:/entry: skills in non-interactive (CI) contexts.',
     )
+    .option(
+      '--json',
+      'For a dispatched prose skill, emit the labelled payload as JSON.',
+    )
     .action(async (name: string, args: string[], opts: RunOptions) => {
       await runCmd(name, args ?? [], opts, deps);
     });
+}
 
+/** Register `skills verify` -- the two-denominator cross-surface check. */
+function registerVerify(program: Command, deps: MainDeps): void {
   program
     .command('verify')
     .description(
@@ -385,6 +482,24 @@ export function buildSkillsCommand(deps: MainDeps): Command {
     .action((opts: VerifyOptions) => {
       verifyCmd(opts, deps);
     });
+}
+
+/** Build the `skills` sub-app wired to `deps`. */
+export function buildSkillsCommand(deps: MainDeps): Command {
+  const program = new Command('skills');
+  program
+    .description('List and invoke discoverable Canary skills.')
+    .exitOverride(normalizeUsageExit);
+
+  program
+    .command('list')
+    .description('List every skill discoverable from the current directory.')
+    .option('-v, --verbose', 'Also print the SKILL.md path for each skill.')
+    .action((opts: ListOptions) => {
+      listCmd(opts, deps);
+    });
+  registerRun(program, deps);
+  registerVerify(program, deps);
 
   for (const sub of program.commands) {
     sub.exitOverride(normalizeUsageExit);

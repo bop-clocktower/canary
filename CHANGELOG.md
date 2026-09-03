@@ -16,6 +16,68 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary skills run` can invoke a skill that ships no script** (#756). The
+  dispatcher tier harness has and canary did not: 14 of canary's 21 skills carry
+  no `cli:`, and every one of them used to exit 2 for any orchestrator, CI step,
+  or sibling skill that tried to invoke it.
+
+  Canary has no agent runtime and does not grow one here. Dispatch resolves the
+  skill and returns its executable contract — identity, `requires`, and the
+  SKILL.md body with the frontmatter stripped — stamped
+  `determinism: agent-applied` against `deterministic` for a `cli:` skill, so a
+  consumer merging findings across skills can always tell an agent's reading of
+  a ruleset from a scanner's output. `--json` emits that payload.
+
+  It is deliberately **not** gated by `--allow-executable-skills`: that flag
+  guards spawning a cloned overlay's code, and dispatch spawns nothing. Gating
+  it would leave the 14 skills unreachable in exactly the non-interactive
+  contexts the issue is about. A skill that cannot be dispatched (unreadable
+  SKILL.md, or all frontmatter and no body) exits 2 with the reason — never an
+  empty result that reads like a run which found nothing.
+
+  **Deferred:** actually executing a prose skill's workflow. That needs an agent
+  runtime, and inventing one inside a CLI would have canary claim answers it did
+  not compute.
+
+- **`canary-cassandra` ships a CLI** (#755), so all four Tier-0 detectors are
+  wireable rather than three. `cli: scripts/cli.mjs` with the sibling argument
+  surface (`[-h] [--json] [--strict] [--] [path ...]`), the sibling `--json`
+  envelope (`schema_version`, `findings[]` of
+  `{file, line, rule_id, severity, snippet, why}`, `summary`), and the family's
+  exit codes — advisory 0, `--strict` findings 1, collapsed denominator 3.
+
+  It delegates detection to the engine's existing `core/vacuity-scanner` rather
+  than carrying a second copy of the rules. That module's own docstring records
+  why: #605 accepted that `static_linter` and `quality_scorer` already overlap,
+  and a third half-enforcer would be the real defect. A hand-copied scanner
+  would have traded #755's asymmetry for two detectors that disagree. The
+  test-file collector moved to `core/test-files` for the same reason, so both
+  doors report the same denominator.
+
+  Cassandra's summary adds `tests_checked` alongside `files_scanned`: files
+  matched but holding zero tests is the subtler zero, and a file-counting
+  summary prints a healthy number over it.
+
+### Fixed
+
+- **`canary skills list` could not see any bundled skill from an installed CLI**
+  (#757). It reported `No skills found.` from the repo root, from a clean
+  worktree, and from `agents/skills/claude-code/` itself — the directory holding
+  21 `SKILL.md` files.
+
+  It was never a cwd bug, which is why standing inside the skills directory
+  changed nothing: bundled discovery resolves relative to the **engine's own
+  compiled location**, three directories up from its `core/` module. In the
+  published package that is `<pkg>/agents/skills`, and `package.json#files`
+  shipped `bin/` and `dist/` only. The root the engine looked in had never
+  existed in any install. `npm/scripts/build-engine.mjs` now stages the skill
+  tree there and fails the build if it stages zero, and `files` publishes it.
+
+  The message was the second defect. A count of zero is an abstention unless the
+  denominator is stated, so an empty discovery now prints the abstention line
+  and names all four search roots with whether each one even existed — and calls
+  out a missing bundled root as an install problem rather than an empty repo.
+
 - **`guardian pr-check` states what it diffed** (#761). Every surface — the
   sticky PR comment, `--format json`, and the terminal output — now carries a
   provenance line: `Diff: <base>...<head> (N files, via <origin>)`.
@@ -69,8 +131,6 @@ under the project's former name) are documented in the
   supplied findings, so a run that verified nothing headlined a finding count
   instead. Guardian is disabled in capwell (capwell#1961) until that closes and
   the dogfooding bar in #761 is met.
-
-### Fixed
 
 - **CI signal hygiene: three checks that lied in three different ways** (#769,
   #698, #693). None of the three could stop a merge, which is what they have in
