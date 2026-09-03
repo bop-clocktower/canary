@@ -319,17 +319,25 @@ describe('workflow false-green invariants', () => {
    *
    * `harness check-arch` reported pass on #660's PR and failed on the identical
    * commit once it was on `main`; #663 then inherited the failure and read as
-   * its cause. The mechanism is confirmed against the live ruleset: GitHub's
-   * `strict_required_status_checks_policy` is FALSE, so a PR merges without
-   * being up to date with `main`, and the default `actions/checkout` on
+   * its cause. The mechanism: when GitHub's
+   * `strict_required_status_checks_policy` is false a PR merges without being
+   * up to date with `main`, and the default `actions/checkout` on
    * `pull_request` checks out the merge commit computed for that event — head
    * merged into `main` as of the last push to the PR BRANCH. Base movement
    * fires no check run, so nothing re-measures. PR-time and post-merge are
    * answers to two different questions.
    *
-   * Flipping the policy is a maintainer's decision with a real cost to
-   * concurrent work, so what is enforced here is that the state is RECORDED and
-   * that the mitigation actually in place stays in place: every workflow behind
+   * As of 2026-09-03 the policy is TRUE on the ruleset and that gap is closed.
+   * Note what these tests could NOT catch: the manifest recorded `false` while
+   * the ruleset said `true` for an unknown stretch, because the only assertion
+   * below is that the key is a boolean. Comparing the copy to the live ruleset
+   * needs a network call and a token, which is not something this offline suite
+   * should grow — so the manifest stays a human-maintained record, and the
+   * `gh api` line in its own header is the reconciliation step. Treat a
+   * disagreement between them as the manifest being wrong.
+   *
+   * What is enforced here is that the state is RECORDED and that the
+   * post-merge mitigation stays in place: every workflow behind
    * a required check also runs on `push: main`, so a stale green is caught on
    * `main` within one run instead of surfacing as the next PR's failure. A
    * required check that only ever runs on pull requests would put the repo back
@@ -347,9 +355,11 @@ describe('workflow false-green invariants', () => {
     };
 
     it('records the branch-freshness policy rather than leaving it implicit', () => {
-      // Recorded either way. `false` is a stated position with the #678
+      // Recorded either way. Either value is a stated position with the #678
       // reasoning attached; a missing key is the "nobody configured it" state
-      // that #542 was filed about.
+      // that #542 was filed about. This does not check the value against the
+      // live ruleset — see the note above on why, and on the drift that let
+      // through.
       expect(typeof manifest.mergePolicy?.strict).toBe('boolean');
     });
 
