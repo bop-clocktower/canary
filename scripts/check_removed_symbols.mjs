@@ -19,6 +19,13 @@ import { readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  checkAuthorship,
+  renderAbstention,
+  renderDenominator,
+  renderViolations,
+} from './lib/authorship-scan.mjs';
+
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Test seam (#578). The gate reads a real git working tree, so its suite needs
@@ -89,6 +96,7 @@ const GENERIC_PROPRIETARY_PATTERNS = [
 
 const DENYLIST_FILE = '.proprietary-denylist';
 const DENYLIST_ENV = 'CANARY_PROPRIETARY_DENYLIST';
+const DENYLIST_FILE_ENV_OVERRIDE = 'CANARY_DENYLIST_FILE';
 
 const PROPRIETARY_EXCLUDED_DIRS = new Set([
   '.git',
@@ -247,7 +255,18 @@ function loadDenylist() {
   // REPO_ROOT, not SCAN_ROOT, and deliberately so: the denylist is the gate's
   // own configuration, not part of the tree being scanned. A fixture root must
   // not be able to supply its own (empty) denylist and scan itself clean.
-  const f = resolve(REPO_ROOT, DENYLIST_FILE);
+  // Test seam, and deliberately a narrow one: honoured ONLY when the scan
+  // root is already overridden, i.e. a fixture run that has announced itself
+  // loudly. A real CI run cannot reach it, so the gate still cannot be
+  // cleared by supplying an empty denylist. Without this, the no-denylist
+  // test passes only on machines that happen to lack the private overlay —
+  // green in CI, red on the maintainer's laptop, which is how the assertion
+  // guarding the dark-gate disclosure would get loosened.
+  const seam = (process.env[DENYLIST_FILE_ENV_OVERRIDE] ?? '').trim();
+  const f =
+    SCAN_ROOT_IS_OVERRIDDEN && seam
+      ? resolve(seam)
+      : resolve(REPO_ROOT, DENYLIST_FILE);
   if (existsSync(f)) {
     for (const line of readFileSync(f, 'utf-8').split('\n')) {
       const s = line.trim();
@@ -305,6 +324,11 @@ function main() {
   }
   const removed = checkRemovedSymbols();
   const proprietary = checkProprietary();
+  const authorship = checkAuthorship({
+    denylist: loadDenylist(),
+    scanRoot: SCAN_ROOT,
+    scanRootOverridden: SCAN_ROOT_IS_OVERRIDDEN,
+  });
 
   if (removed.length) {
     process.stdout.write(
@@ -329,10 +353,21 @@ function main() {
     );
   }
 
-  if (removed.length || proprietary.length) return 1;
+  process.stdout.write(renderViolations(authorship));
+
+  // A gate that could not resolve what to scan has not passed; it has not run.
+  if (authorship.unresolved) {
+    process.stdout.write(renderAbstention(authorship));
+    return 1;
+  }
+
+  if (removed.length || proprietary.length || authorship.violations?.length) {
+    return 1;
+  }
 
   process.stdout.write(
-    'check_removed_symbols: clean — no removed-symbol or proprietary leaks.\n',
+    'check_removed_symbols: clean — no removed-symbol or proprietary ' +
+      `leaks; ${renderDenominator(authorship)}.\n`,
   );
   return 0;
 }
