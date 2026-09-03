@@ -239,6 +239,15 @@ jobs:
       - name: Install pytest (for the Tier-2 spawn integration test)
         run: pip install pytest
 
+      # canary-cassandra's CLI delegates to the engine's vacuity-scanner rather
+      # than carrying a second copy of the rules (#605: a third half-enforcer
+      # is the defect, not the fix), so its tests need a built engine. They
+      # assert that dependency instead of skipping when it is absent — an
+      # engine-backed case that silently no-ops is a green over nothing — so
+      # this job has to provide it.
+      - name: Build the engine (canary-cassandra delegates to it)
+        run: npm ci --prefix ts && npm run build --prefix ts
+
       - name: Install skills harness deps
         working-directory: agents/skills
         run: npm ci
