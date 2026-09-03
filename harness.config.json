@@ -152,6 +152,8 @@
     ],
     "entryPoints": [
       "agents/skills/claude-code/canary-blackhawk/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-cassandra/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-cassandra/scripts/engine.mjs",
       "agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs",
       "agents/skills/claude-code/canary-instrument/scripts/cli.mjs",
       "agents/skills/claude-code/canary-instrument/scripts/otel_bootstrap/instrument.mjs",
@@ -214,6 +216,8 @@
   "performance": {
     "entryPoints": [
       "agents/skills/claude-code/canary-blackhawk/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-cassandra/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-cassandra/scripts/engine.mjs",
       "agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs",
       "agents/skills/claude-code/canary-instrument/scripts/cli.mjs",
       "agents/skills/claude-code/canary-instrument/scripts/otel_bootstrap/instrument.mjs",

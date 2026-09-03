@@ -39,7 +39,8 @@
   "files": [
     "bin/canary.js",
     "bin/canary-mcp.js",
-    "dist/"
+    "dist/",
+    "agents/"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
