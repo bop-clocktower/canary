@@ -17,6 +17,14 @@ write-safety model. This is the **Option A** driver: the engine never calls an
 LLM; **this skill** invokes the agents in-session and enforces
 stage-and-block-once.
 
+**On the tier numbers.** Here they are the values of
+`canary guardian pr-check --tier 0|1|2`, not a repo-wide capability scale — Tier
+1 means "the `--tier 1` pass," which is the agent audit. `Tier-0` is the one
+number with a repo-wide meaning (deterministic, no network, no agent), and
+`Tier-1`/`Tier-2` are guardian-local by
+[ADR 0015](../../../../docs/knowledge/decisions/0015-skill-capability-vocabulary.md).
+Do not carry them into other skills.
+
 ## When to Use
 
 - Before opening or updating a PR, to check that new/changed code is tested.
