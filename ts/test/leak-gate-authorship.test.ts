@@ -96,9 +96,10 @@ function runGate(
       CANARY_LEAK_SCAN_ROOT: root,
       CANARY_PROPRIETARY_DENYLIST: denylist,
       CANARY_AUTHOR_SCAN_RANGE: range,
-      // Neutralised so the fixture's range is the only thing under test.
-      GITHUB_BASE_REF: '',
-      GITHUB_EVENT_BEFORE: '',
+      // The ambient GITHUB_* vars are deliberately NOT cleared. An explicit
+      // range outranks them anyway, and blanking them once hid a real defect:
+      // the suite passed locally while every fixture run failed under CI,
+      // where GITHUB_BASE_REF is set. See the ambient-env test below.
     },
   });
   return { status: res.status ?? -1, stdout: `${res.stdout}${res.stderr}` };
@@ -165,6 +166,32 @@ describe('leak gate: commit authorship', () => {
     );
     expect(stdout).not.toContain('commit(s) checked for authorship');
     expect(status).toBe(0);
+  });
+
+  it('ignores an ambient GITHUB_BASE_REF when scanning a fixture root', () => {
+    // The regression that reached CI: with CANARY_LEAK_SCAN_ROOT pointing at a
+    // fixture, the scan still resolved the *ambient* `origin/main..HEAD` and
+    // ran it inside the fixture, which has no `origin/main`. It threw, became
+    // an abstention, and failed every otherwise-clean fixture run — including
+    // the sibling suite's clean-control case. A fixture is not this repo, so
+    // the ambient environment describes the wrong tree.
+    const { root } = fixtureHistory([CLEAN_IDENT]);
+
+    const res = spawnSync(process.execPath, [SCRIPT], {
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        CANARY_LEAK_SCAN_ROOT: root,
+        CANARY_PROPRIETARY_DENYLIST: FIXTURE_TERM,
+        // No explicit range — exactly how the sibling suite invokes the gate.
+        CANARY_AUTHOR_SCAN_RANGE: '',
+        GITHUB_BASE_REF: 'main',
+      },
+    });
+
+    expect(res.stdout).toContain('no commit range resolved');
+    expect(res.stdout).not.toContain('abstention');
+    expect(res.status).toBe(0);
   });
 
   it('checks the committer identity, not only the author', () => {

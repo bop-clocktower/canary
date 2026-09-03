@@ -281,6 +281,11 @@ const AUTHOR_RANGE_ENV = 'CANARY_AUTHOR_SCAN_RANGE';
 function authorScanRange() {
   const override = (process.env[AUTHOR_RANGE_ENV] ?? '').trim();
   if (override) return override;
+  // A fixture root is not this repository, so the ambient GitHub environment
+  // describes the wrong tree: `origin/<base>` does not resolve inside it, and
+  // trying turned every fixture run into an abstention. An overridden scan
+  // root therefore needs its range stated explicitly, or the scan is skipped.
+  if (SCAN_ROOT_IS_OVERRIDDEN) return null;
   // pull_request: everything this PR adds on top of its base.
   const base = (process.env.GITHUB_BASE_REF ?? '').trim();
   if (base) return `origin/${base}..HEAD`;
