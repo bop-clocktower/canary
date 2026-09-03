@@ -143,8 +143,10 @@ under the project's former name) are documented in the
   `docPaths: [join(docsDir, '**/*.md')]` when it constructs the analyzer and
   never reads `entropy.drift.docPaths`; only the MCP `detect_entropy` path
   honours the key. So the config is **correct and currently inert on the CI
-  path**, and the widening takes effect the moment upstream honours it. Filed
-  upstream. The instrument that covers the wide surface _today_ is
+  path**, and the widening takes effect the moment upstream honours it. Tracked
+  in #788, which also records the second half of that defect: the hard-coded
+  value is `docs/**/*.md` alone, so no README anywhere is in the CI drift
+  denominator either. The instrument that covers the wide surface _today_ is
   `scripts/check_doc_links.mjs` — 249 Markdown files, no path allowlist,
   strict-at-zero in the blocking suite, exit 3 on an empty walk.
 

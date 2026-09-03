@@ -35,7 +35,7 @@
  * `entropy.drift.docPaths` is read only by the MCP `detect_entropy` path.
  * Verified with a paired planted probe at CLI 12.2.0: an identical dead link
  * appended to `docs/CANARY_STATE.md` is reported, and appended to `AGENTS.md`
- * is not. Filed upstream. This file therefore pins the DECLARED denominator,
+ * is not. Tracked in #788. This file therefore pins the DECLARED denominator,
  * which is correct and takes effect the moment the CLI honours it; the
  * repo-side instrument that covers the wide surface TODAY is
  * `scripts/check_doc_links.mjs` (249 Markdown files, no path allowlist,
