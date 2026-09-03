@@ -128,6 +128,7 @@ function toEntries(repo, base, deletions) {
       author: commit ? commit.author : 'unknown',
       date: commit ? commit.date : '',
       reason: commit ? commit.subject : '',
+      ticket: commit ? commit.ticket : '',
     });
   });
 }

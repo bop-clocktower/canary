@@ -72,6 +72,91 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **CI signal hygiene: three checks that lied in three different ways** (#769,
+  #698, #693). None of the three could stop a merge, which is what they have in
+  common and why they were batched — each one teaches a reader to trust a
+  surface that is not telling the truth.
+
+  **The permanently-red `Vercel` status is suppressed** (#769). It reported
+  failure on every PR and on `main` from 3659ea9 onward, because canary is a CLI
+  and skills toolkit with no deployable web surface and a connected Vercel
+  project has nothing it can build. It was never a required context, so it
+  blocked nothing — and that is the harm: a check that is _always_ red is
+  indistinguishable from one that is red because something broke, so it trains
+  every reviewer to skim past a red X. `vercel.json` now declares
+  `git.deploymentEnabled: false`, the documented lever that makes the Git
+  integration skip creating a deployment at all. **Disconnecting the project is
+  still the correct end state and can only be done from the Vercel dashboard** —
+  the repo-side half is the durable one, since it travels with forks and cannot
+  be undone by a click nobody sees.
+
+  It also exposed a real gap: `ts/test/workflow-false-green.test.ts` enumerates
+  checks by parsing workflow YAML, so a status posted by a **GitHub App** is
+  outside its denominator by construction, and any app can add a permanently-red
+  context that nothing in the repo accounts for. `.github/required-checks.json`
+  grows an `externalStatuses` section for exactly that class, and the suite now
+  asserts it is non-empty, that every entry names a producer and a reason, that
+  no entry double-classifies a workflow-produced check, and that an entry
+  claiming a repo-side suppression actually carries the file — the suppression
+  is asserted, not the note about it.
+
+  **The "Architecture Enforcer" check is renamed to what it does** (#698). Its
+  job ran `harness check-deps` and `harness validate`; neither reads
+  `.harness/arch/baselines.json`, so the check named for the architecture
+  ratchet never ran the architecture ratchet. That is the direct cause of the
+  "gate disagrees with itself" symptom in #678 — CI green here while a local
+  `harness check-arch` exited 1 with 21 threshold violations. Both were correct;
+  only the name said otherwise, and a wrong name is the most durable false-green
+  of the set because, unlike a wrong number, it never looks anomalous. The
+  workflow is now **Dependency & project validation** and the job — and
+  therefore the required status context — is `deps-and-validate`. The workflow
+  file keeps its name: it is referenced from AGENTS.md, ADR 0011, two guides,
+  the manifest and two suites, and renaming it would also discard the run
+  history. The rejected alternative, making the name true by adding `check-arch`
+  here, stays rejected: 21 pre-existing violations would block every merge,
+  which is a separate decision that must not ride along with a rename.
+
+  The context string is a **required** entry in ruleset 16189198, so the
+  workflow, `.github/required-checks.json` and the ruleset had to move together
+  and the ruleset edit is a manual `gh api` step — a required context that no
+  longer reports blocks every PR forever.
+
+  **`entropy.drift.docPaths` is widened past `docs/**` + READMEs** (#693). Left
+  unset it defaults to `docs/**/*.md`, `README.md`, `**/README.md`, which put
+  `AGENTS.md`, `CHANGELOG.md`, `CLAUDE.md`, `STRATEGY.md`, `DEPLOY_CHECKLIST.md`
+  and all 21 `SKILL.md` files outside the drift gate's denominator — the
+  surfaces that describe how to operate this repo, none of them read by the gate
+  that exists to keep documentation honest. It was blocked on #686 (fence-blind
+  links, emoji-heading anchors); #686 is closed and the fence fix shipped in CLI
+  11.2.0, so the false-positive wave it predicted does not arrive.
+
+  **Measured before and after, per the issue's acceptance:** `harness cleanup`
+  reports **136 findings before and 136 after** — `dead-code` 136, `drift` 0,
+  `patterns` 0 under both. The ratchet is untouched at `maxFindings: 145` and no
+  baseline was refreshed.
+
+  **Why the number did not move is the finding.** A zero delta on a widened
+  denominator is the shape of a detector that did not widen, so it was probed
+  rather than assumed: an identical dead link appended to `docs/CANARY_STATE.md`
+  is reported, and appended to `AGENTS.md` is not. `harness cleanup` — the
+  command CI and the ratchet actually run — hard-codes
+  `docPaths: [join(docsDir, '**/*.md')]` when it constructs the analyzer and
+  never reads `entropy.drift.docPaths`; only the MCP `detect_entropy` path
+  honours the key. So the config is **correct and currently inert on the CI
+  path**, and the widening takes effect the moment upstream honours it. Tracked
+  in #788, which also records the second half of that defect: the hard-coded
+  value is `docs/**/*.md` alone, so no README anywhere is in the CI drift
+  denominator either. The instrument that covers the wide surface _today_ is
+  `scripts/check_doc_links.mjs` — 249 Markdown files, no path allowlist,
+  strict-at-zero in the blocking suite, exit 3 on an empty walk.
+
+  `ts/test/entropy-doc-paths.test.ts` pins the declared list against what is on
+  disk, because an allowlist's denominator shrinks silently: it fails when a
+  root-level Markdown file, a `README.md` or a `SKILL.md` exists that no glob
+  matches, fails on an empty list, and fails on an empty walk. Adding
+  `docs/runbooks/` or a new skill now fails at the desk instead of joining an
+  invisible unscanned pile.
+
 - **The typecheck gate now covers the test tree** (#759). `npm run typecheck`
   ran `tsc -p .` against a config declaring `"include": ["src"]`, so all 150+
   files under `ts/test/` sat outside a required gate: a type error in a test

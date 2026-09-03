@@ -124,12 +124,17 @@ Search for a PR template in `.github/` first and honor it if present.
 
 ### 5 · Merge — then watch CI, sync, and prune
 
-`gh pr merge <n> --squash --delete-branch` (this repo squashes). Do **not** use
-`--auto`: repo-level auto-merge is disabled here (`allow_auto_merge: false`), so
-`--auto` is rejected; and because there are **no required status checks**, there
-is nothing for auto-merge to wait on anyway. The plain command merges
-immediately, and `--delete-branch` is needed explicitly since the repo does not
-auto-delete on merge.
+`gh pr merge <n> --squash --auto --delete-branch` (this repo squashes).
+Repo-level auto-merge is enabled (`allow_auto_merge: true`) and there are 13
+required status checks, with `strict_required_status_checks_policy: true` on
+ruleset 16189198 — so a PR cannot merge until its branch is up to date with
+`main` and every required check is green. `--auto` is therefore the right
+default: it lands the PR the moment both hold.
+
+Auto-merge **waits**; it does not update the branch. Whenever `main` moves the
+PR goes stale, so run `gh pr update-branch <n>` and let the checks re-run.
+`--delete-branch` is still needed explicitly since the repo does not auto-delete
+on merge.
 
 Merging immediately means CI runs _post-merge_ — so "merge when green" is on
 you: **watch the post-merge CI runs to completion**
@@ -142,14 +147,14 @@ merged local branch, and `git fetch --prune`.
 
 ## Conventions this gate enforces (the point of packaging it)
 
-| Convention                                              | Why                                                                            |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| No `Co-Authored-By` trailer                             | Standing user preference for this repo                                         |
-| Squash merge (`--squash --delete-branch`, not `--auto`) | Repo squashes; auto-merge is disabled and branches aren't auto-deleted         |
-| Prettier `--write` before commit                        | Formatting is a CI gate (`format:check`); avoids a red CI round-trip post-push |
-| Exclude local IDE/agent churn from staging              | `settings.json`/caches aren't part of the change                               |
-| Update `docs/roadmap.md` + check doc drift              | Drift this project explicitly tracks                                           |
-| Adversarial review before merge, not after              | Cheapest defect-catch is before `main`                                         |
+| Convention                                       | Why                                                                                                                                     |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| No `Co-Authored-By` trailer                      | Standing user preference for this repo                                                                                                  |
+| Squash merge (`--squash --auto --delete-branch`) | Repo squashes; auto-merge is on and `strict` is true, so queue it and update the branch when `main` moves; branches aren't auto-deleted |
+| Prettier `--write` before commit                 | Formatting is a CI gate (`format:check`); avoids a red CI round-trip post-push                                                          |
+| Exclude local IDE/agent churn from staging       | `settings.json`/caches aren't part of the change                                                                                        |
+| Update `docs/roadmap.md` + check doc drift       | Drift this project explicitly tracks                                                                                                    |
+| Adversarial review before merge, not after       | Cheapest defect-catch is before `main`                                                                                                  |
 
 ## Rationalizations to reject
 
