@@ -132,8 +132,6 @@ under the project's former name) are documented in the
   instead. Guardian is disabled in capwell (capwell#1961) until that closes and
   the dogfooding bar in #761 is met.
 
-### Fixed
-
 - **CI signal hygiene: three checks that lied in three different ways** (#769,
   #698, #693). None of the three could stop a merge, which is what they have in
   common and why they were batched — each one teaches a reader to trust a
