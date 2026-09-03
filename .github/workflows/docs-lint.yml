@@ -91,6 +91,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The authorship scan diffs this branch against its base, so the
+          # base commit has to be present. A shallow checkout makes the gate
+          # abstain (and fail) rather than silently pass on zero commits.
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: '20'
@@ -101,4 +106,10 @@ jobs:
         env:
           CANARY_PROPRIETARY_DENYLIST:
             ${{ secrets.CANARY_PROPRIETARY_DENYLIST }}
+          # Consumed by the authorship scan to bound the range it checks.
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          # The real PR head. Without it the scan would end its range at the
+          # checked-out `refs/pull/N/merge` commit, which GitHub synthesises
+          # per-event and never merges — see rangeFromEvent().
+          GITHUB_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/check_removed_symbols.mjs
