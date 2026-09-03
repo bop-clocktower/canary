@@ -327,10 +327,11 @@ describe('workflow false-green invariants', () => {
    * fires no check run, so nothing re-measures. PR-time and post-merge are
    * answers to two different questions.
    *
-   * As of 2026-09-03 the policy is TRUE on the ruleset and that gap is closed.
-   * Note what these tests could NOT catch: the manifest recorded `false` while
-   * the ruleset said `true` for an unknown stretch, because the only assertion
-   * below is that the key is a boolean. Comparing the copy to the live ruleset
+   * The policy is TRUE on the ruleset and that gap is closed. Note what these
+   * tests could NOT catch: the manifest recorded `false` from 2026-08-12 —
+   * six minutes before the ruleset was last edited to say otherwise — until
+   * 2026-09-03, three weeks, because the only assertion below is that the key
+   * is a boolean. Comparing the copy to the live ruleset
    * needs a network call and a token, which is not something this offline suite
    * should grow — so the manifest stays a human-maintained record, and the
    * `gh api` line in its own header is the reconciliation step. Treat a
@@ -358,7 +359,7 @@ describe('workflow false-green invariants', () => {
       // Recorded either way. Either value is a stated position with the #678
       // reasoning attached; a missing key is the "nobody configured it" state
       // that #542 was filed about. This does not check the value against the
-      // live ruleset — see the note above on why, and on the drift that let
+      // live ruleset — see the note above on why, and on the drift it let
       // through.
       expect(typeof manifest.mergePolicy?.strict).toBe('boolean');
     });

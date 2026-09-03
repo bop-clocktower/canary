@@ -723,20 +723,23 @@ Three things about that output are worth knowing before you read it:
   pristine `main` worktree — correct methodology, wrong answer, because the
   instrument misnamed its own mechanism.
 
-**A PR-time green does not measure the tree that merges (#678).** GitHub's
-`strict_required_status_checks_policy` is **false** on ruleset 16189198, so a PR
-merges without being up to date with `main`, and `actions/checkout` on
+**A PR-time green now measures the tree that merges (#678, closed).** GitHub's
+`strict_required_status_checks_policy` is **true** on ruleset 16189198, so a PR
+cannot merge until its branch is up to date with `main`. It was **false** when
+issue #660 landed, and that is what #678 is about: `actions/checkout` on
 `pull_request` checks out the merge commit computed for that event — head merged
-into `main` as of the last push to the **PR branch**. Base movement fires no
-check run, so nothing re-measures. #660's `harness` check passed, the identical
+into `main` as of the last push to the **PR branch** — and base movement fires no
+check run, so nothing re-measured. #660's `harness` check passed, the identical
 commit failed `check-arch` on `main`, and #663 inherited the failure and read as
 its cause. The state and the reasoning are recorded in
-`.github/required-checks.json` under `mergePolicy`; the mitigation in place is
-that every workflow behind a required check also runs on `push: main`
-(`guardian.yml` excepted, being a PR-diff reviewer), so a stale green surfaces
-on `main` within one run rather than as the next PR's failure.
-`gh pr update-branch` before merging is the manual version of the same
-guarantee.
+`.github/required-checks.json` under `mergePolicy`; every workflow behind a
+required check also runs on `push: main` (`guardian.yml` excepted, being a
+PR-diff reviewer), which stays as defence in depth.
+
+The practical consequence of `strict` is that **every open PR goes stale
+whenever `main` moves**. Repo-level auto-merge is enabled, but it waits rather
+than updating a branch, so `gh pr update-branch` is how you satisfy the gate —
+run it, let the checks re-run, and auto-merge takes it from there.
 
 Related: the **Architecture Enforcer** workflow does not run the architecture
 ratchet. Its `enforce` job runs `harness check-deps` and `harness validate`;
