@@ -73,18 +73,45 @@ function revExists(rev, scanRoot) {
   }
 }
 
+function envStr(env, key) {
+  return (env[key] ?? '').trim();
+}
+
+/**
+ * pull_request: everything this PR adds on top of its base.
+ *
+ * The range ends at the PR HEAD, not at `HEAD`. On a `pull_request` event
+ * `actions/checkout` checks out `refs/pull/N/merge` — an ephemeral commit
+ * GitHub synthesises by merging the branch into the base, authored with the
+ * PR author's ACCOUNT email. It is discarded at merge and never reaches the
+ * public history, so scanning it reports a leak that cannot happen: a false
+ * positive on every PR opened from an account whose commit email is not the
+ * one it should be. (Which is the very situation this gate exists to detect
+ * elsewhere, so it made for a confusing red.)
+ */
+function pullRequestRange(env) {
+  const base = envStr(env, 'GITHUB_BASE_REF');
+  if (!base) return null;
+  const head = envStr(env, 'GITHUB_PR_HEAD_SHA');
+  return `origin/${base}..${head || 'HEAD'}`;
+}
+
+/**
+ * push: the commits this push introduced. `before` is all-zeroes on the first
+ * push to a new branch, which is no usable range.
+ */
+function pushRange(env) {
+  const before = envStr(env, 'GITHUB_EVENT_BEFORE');
+  if (!before || /^0+$/.test(before)) return null;
+  return `${before}..HEAD`;
+}
+
 function rangeFromEvent(env) {
-  // pull_request: everything this PR adds on top of its base.
-  const base = (env.GITHUB_BASE_REF ?? '').trim();
-  if (base) return `origin/${base}..HEAD`;
-  // push: the commits this push introduced. `before` is all-zeroes on a new
-  // branch, in which case there is no usable range.
-  const before = (env.GITHUB_EVENT_BEFORE ?? '').trim();
-  return before && !/^0+$/.test(before) ? `${before}..HEAD` : null;
+  return pullRequestRange(env) ?? pushRange(env);
 }
 
 export function resolveRange(env, { scanRoot, scanRootOverridden }) {
-  const override = (env[AUTHOR_RANGE_ENV] ?? '').trim();
+  const override = envStr(env, AUTHOR_RANGE_ENV);
   if (override) return override;
 
   const candidate = rangeFromEvent(env);

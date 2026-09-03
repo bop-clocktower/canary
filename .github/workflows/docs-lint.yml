@@ -108,4 +108,8 @@ jobs:
             ${{ secrets.CANARY_PROPRIETARY_DENYLIST }}
           # Consumed by the authorship scan to bound the range it checks.
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          # The real PR head. Without it the scan would end its range at the
+          # checked-out `refs/pull/N/merge` commit, which GitHub synthesises
+          # per-event and never merges — see rangeFromEvent().
+          GITHUB_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/check_removed_symbols.mjs

@@ -403,6 +403,25 @@ describe('leak gate: commit authorship', () => {
       expect(status).toBe(1);
     });
 
+    it('ends the range at the PR head, not the ephemeral merge commit', () => {
+      // On `pull_request`, actions/checkout checks out `refs/pull/N/merge` —
+      // a commit GitHub synthesises per event, authored with the PR author's
+      // ACCOUNT email, and discarded at merge. Scanning it reports a leak
+      // that can never reach public history. Simulated here by putting the
+      // offender on a merge commit *above* the PR head.
+      const f = withOrigin(fixtureHistory([CLEAN_IDENT]));
+      const head = f.git('rev-parse', 'HEAD');
+      f.git('checkout', '-q', '-b', 'ephemeral');
+      commitAs(f.git, COMPANY_IDENT, 'Merge into base', '--allow-empty');
+
+      const { status, stdout } = runGate(f.root, '', {
+        env: { GITHUB_BASE_REF: 'main', GITHUB_PR_HEAD_SHA: head },
+      });
+
+      expect(stdout).toContain('1 commit(s) checked for authorship');
+      expect(status).toBe(0);
+    });
+
     it('resolves <before>..HEAD from GITHUB_EVENT_BEFORE', () => {
       const f = fixtureHistory([COMPANY_IDENT]);
 
