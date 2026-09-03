@@ -315,21 +315,112 @@ describe('workflow false-green invariants', () => {
   });
 
   /**
+   * #769 — an external app status is outside this suite's denominator.
+   *
+   * Everything above enumerates checks by parsing workflow YAML, so a commit
+   * status posted by a GitHub App rather than by a job in
+   * `.github/workflows/` is invisible to it BY CONSTRUCTION. That is not a
+   * hypothetical: the `Vercel` context reported FAILURE on every PR and on
+   * `main` from 3659ea9 onward, and nothing in the repo accounted for it. It
+   * is not in ruleset 16189198's required contexts, so it blocked nothing —
+   * which is precisely the harm. A check that is ALWAYS red is
+   * indistinguishable from a check that is red because something broke, so it
+   * trains reviewers to skim past a red X. #542 was the same signal erosion
+   * from the other direction: there nothing could stop a merge, here
+   * something always looked like it should.
+   *
+   * The fix is a denominator this suite cannot compute: an explicit
+   * `externalStatuses` list in the manifest. These tests keep that list
+   * honest — every entry names its producer and states in prose why it is
+   * acceptable, and an entry claiming a repo-side suppression must actually
+   * carry it. What they cannot do is discover an app status nobody wrote
+   * down; that still needs a human reading a PR page, which is why the entry
+   * for a suppressed status asserts the suppression file rather than trusting
+   * the note.
+   */
+  describe('#769 — external app statuses are written down', () => {
+    interface ExternalStatus {
+      context: string;
+      producer: string;
+      blocking: boolean;
+      expected: string;
+      reason: string[];
+    }
+    const manifest = JSON.parse(
+      readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
+    ) as {
+      required: Array<{ check: string }>;
+      advisory: Array<{ check: string }>;
+      externalStatuses?: { statuses?: ExternalStatus[] };
+    };
+    const statuses = manifest.externalStatuses?.statuses ?? [];
+
+    it('records at least one (a zero denominator is an abstention)', () => {
+      // The repo has a known app status. An empty list here would mean the
+      // section was gutted, not that the apps went away.
+      expect(statuses.length).toBeGreaterThan(0);
+    });
+
+    it.each(statuses.map((s) => [s.context]))(
+      '%s names a producer and a non-empty reason',
+      (context) => {
+        const status = statuses.find((s) => s.context === context)!;
+        expect(status.producer.trim()).not.toBe('');
+        expect(typeof status.blocking).toBe('boolean');
+        expect(status.reason.join('').trim()).not.toBe('');
+      },
+    );
+
+    it('does not double-classify a status that a workflow produces', () => {
+      const fromWorkflows = new Set([
+        ...manifest.required.map((r) => r.check),
+        ...manifest.advisory.map((a) => a.check),
+      ]);
+      const overlap = statuses
+        .map((s) => s.context)
+        .filter((c) => fromWorkflows.has(c));
+      expect(overlap).toEqual([]);
+    });
+
+    it('backs an expected:none entry with a repo-side suppression', () => {
+      // The Vercel Git integration reads `git.deploymentEnabled` from
+      // vercel.json and skips creating a deployment, so no status is posted.
+      // Asserting the file — not the prose — is what makes a silent deletion
+      // of the suppression fail here instead of on a PR page weeks later.
+      const suppressed = statuses.filter((s) => s.expected === 'none');
+      expect(suppressed.map((s) => s.context)).toContain('Vercel');
+      const vercelConfig = JSON.parse(
+        readFileSync(join(REPO_ROOT, 'vercel.json'), 'utf-8'),
+      ) as { git?: { deploymentEnabled?: boolean } };
+      expect(vercelConfig.git?.deploymentEnabled).toBe(false);
+    });
+  });
+
+  /**
    * #678 — a PR-time green is a verdict about a tree that may never merge.
    *
    * `harness check-arch` reported pass on #660's PR and failed on the identical
    * commit once it was on `main`; #663 then inherited the failure and read as
-   * its cause. The mechanism is confirmed against the live ruleset: GitHub's
-   * `strict_required_status_checks_policy` is FALSE, so a PR merges without
-   * being up to date with `main`, and the default `actions/checkout` on
+   * its cause. The mechanism: when GitHub's
+   * `strict_required_status_checks_policy` is false a PR merges without being
+   * up to date with `main`, and the default `actions/checkout` on
    * `pull_request` checks out the merge commit computed for that event — head
    * merged into `main` as of the last push to the PR BRANCH. Base movement
    * fires no check run, so nothing re-measures. PR-time and post-merge are
    * answers to two different questions.
    *
-   * Flipping the policy is a maintainer's decision with a real cost to
-   * concurrent work, so what is enforced here is that the state is RECORDED and
-   * that the mitigation actually in place stays in place: every workflow behind
+   * The policy is TRUE on the ruleset and that gap is closed. Note what these
+   * tests could NOT catch: the manifest recorded `false` from 2026-08-12 —
+   * six minutes before the ruleset was last edited to say otherwise — until
+   * 2026-09-03, three weeks, because the only assertion below is that the key
+   * is a boolean. Comparing the copy to the live ruleset
+   * needs a network call and a token, which is not something this offline suite
+   * should grow — so the manifest stays a human-maintained record, and the
+   * `gh api` line in its own header is the reconciliation step. Treat a
+   * disagreement between them as the manifest being wrong.
+   *
+   * What is enforced here is that the state is RECORDED and that the
+   * post-merge mitigation stays in place: every workflow behind
    * a required check also runs on `push: main`, so a stale green is caught on
    * `main` within one run instead of surfacing as the next PR's failure. A
    * required check that only ever runs on pull requests would put the repo back
@@ -347,9 +438,11 @@ describe('workflow false-green invariants', () => {
     };
 
     it('records the branch-freshness policy rather than leaving it implicit', () => {
-      // Recorded either way. `false` is a stated position with the #678
+      // Recorded either way. Either value is a stated position with the #678
       // reasoning attached; a missing key is the "nobody configured it" state
-      // that #542 was filed about.
+      // that #542 was filed about. This does not check the value against the
+      // live ruleset — see the note above on why, and on the drift it let
+      // through.
       expect(typeof manifest.mergePolicy?.strict).toBe('boolean');
     });
 

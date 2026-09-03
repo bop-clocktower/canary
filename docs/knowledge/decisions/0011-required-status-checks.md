@@ -86,13 +86,13 @@ Requiring it would deadlock every PR that is never labeled.
 
 ## Consequences
 
-- A red `markdownlint`, `enforce`, `security`, `validate`, `harness`,
+- A red `markdownlint`, `deps-and-validate`, `security`, `validate`, `harness`,
   `guardian`, `TS engine (pilot)`, `npm package`, `Skills (JS)`, or
   plugin-schema check now blocks the merge button. The #540 merge is no longer
   possible.
-- Doc-only PRs pay for `enforce` and `security` (~2 min) that they previously
-  skipped. Accepted: a gate that runs sometimes is a gate that reports "no
-  opinion" and looks identical to "pass".
+- Doc-only PRs pay for `deps-and-validate` and `security` (~2 min) that they
+  previously skipped. Accepted: a gate that runs sometimes is a gate that
+  reports "no opinion" and looks identical to "pass".
 - The unfiltering also retires the #549 self-listing workaround on those
   triggers — a workflow that always runs cannot fail to gate its own file. The
   #549 invariant remains live for the path-filtered triggers that are left
@@ -108,7 +108,31 @@ gh api repos/bop-clocktower/canary/rulesets/16189198 > /tmp/ruleset.json
 # add a required_status_checks rule whose contexts match required-checks.json
 gh api -X PUT repos/bop-clocktower/canary/rulesets/16189198 --input /tmp/ruleset.json
 gh api repos/bop-clocktower/canary/rulesets/16189198 --jq '.rules[].type'
+
+# ...and the fields the manifest only OBSERVES, which the line above misses:
+gh api repos/bop-clocktower/canary/rulesets/16189198 \
+  --jq '.rules[] | select(.type=="required_status_checks")
+        | .parameters.strict_required_status_checks_policy'
 ```
 
-The last line is the verification, not the optimism: confirm
-`required_status_checks` is present before calling this done.
+The last lines are the verification, not the optimism: confirm
+`required_status_checks` is present, **and** compare
+`strict_required_status_checks_policy` against `mergePolicy.strict` in the
+manifest, before calling this done.
+
+The second command exists because the first was documented as sufficient and was
+not. `strict` is set on the ruleset, never applied from the manifest, so for
+that field the manifest is an observation rather than a declaration — and it
+recorded `false` against a live `true` for three weeks (2026-08-12 to
+2026-09-03) while `.rules[].type` kept reporting exactly what it was asked to. A
+check that only asks whether a rule _exists_ cannot notice that its parameters
+changed underneath.
+
+## Consequences (addendum)
+
+`strict_required_status_checks_policy` is **true**. A PR cannot merge until its
+branch is up to date with `main`, which closes the #678 PR-time-vs-post-merge
+gap and costs a re-run whenever `main` moves: every open PR goes stale, and
+auto-merge waits rather than updating the branch, so `gh pr update-branch` is
+part of landing any queued PR. No `merge_queue` rule is configured, which is the
+feature that would remove that step.
