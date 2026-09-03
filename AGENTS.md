@@ -728,10 +728,10 @@ Three things about that output are worth knowing before you read it:
 cannot merge until its branch is up to date with `main`. It was **false** when
 issue #660 landed, and that is what #678 is about: `actions/checkout` on
 `pull_request` checks out the merge commit computed for that event — head merged
-into `main` as of the last push to the **PR branch** — and base movement fires no
-check run, so nothing re-measured. #660's `harness` check passed, the identical
-commit failed `check-arch` on `main`, and #663 inherited the failure and read as
-its cause. The state and the reasoning are recorded in
+into `main` as of the last push to the **PR branch** — and base movement fires
+no check run, so nothing re-measured. #660's `harness` check passed, the
+identical commit failed `check-arch` on `main`, and #663 inherited the failure
+and read as its cause. The state and the reasoning are recorded in
 `.github/required-checks.json` under `mergePolicy`; every workflow behind a
 required check also runs on `push: main` (`guardian.yml` excepted, being a
 PR-diff reviewer), which stays as defence in depth.
@@ -1181,6 +1181,47 @@ checker, and a general one is probably the wrong shape — "output scales with
 input" is a property of a specific surface, not a pattern a linter can spot.
 When you add a surface whose output grows with its input, add its own scaled
 fixture next to that one.
+
+### Naming and capability vocabulary
+
+Two pieces of shared vocabulary have a single authoritative source. Both exist
+because the alternative — every author re-deriving the meaning — already
+produced shipped contradictions.
+
+#### `Tier-0` and the three capability axes
+
+A skill's capability is three independent properties, not a point on a scale:
+
+- **deterministic** — same input, same output, or not.
+- **network** — needs to reach outside the repo, or not.
+- **agent** — invokes a model, or not.
+
+**`Tier-0` is the conjunction of all three: deterministic, no network, no agent
+or LLM.** It is the only tier number with a repo-wide meaning, it is
+mechanically enforced (`ts/test/guardian-agent-tier.test.ts` asserts the
+guardian's Tier-0 engine imports no agent module), and nothing may claim it
+without satisfying all three.
+
+`Tier-1` and `Tier-2` are **not** repo-wide vocabulary. They are valid only
+inside `canary-pr-guardian`, where they name the values of
+`canary guardian pr-check --tier 0|1|2`. A skill with internal phases names them
+for what they do — `canary-savant` has a static pass and a confirming pass — and
+states the three axes in prose rather than claiming a number.
+
+Two unrelated scales also use the word "tier" and are out of scope:
+`canary doctor`'s check provenance (engine vs overlay) and the vendored harness
+agent definitions' violation severity. See
+[ADR 0015](docs/knowledge/decisions/0015-skill-capability-vocabulary.md).
+
+#### `canary-*` names
+
+[`docs/naming-registry.md`](docs/naming-registry.md) is the one place a
+`canary-*` name is minted. Claim the name there **before** you put it in a
+roadmap row, an issue title, or a skill directory.
+`ts/test/bop-name-registry.test.ts` fails when those surfaces disagree with the
+registry. Three name collisions happened while the only safeguard was a prose
+warning; when two claims collide, the better thematic fit keeps the name and the
+later claimant renames.
 
 ### Trusted MCP hierarchy
 
