@@ -197,7 +197,18 @@
       "ts/vitest.config.ts"
     ],
     "drift": {
-      "checkApiSignatures": false
+      "checkApiSignatures": false,
+      "docPaths": [
+        "docs/**/*.md",
+        "README.md",
+        "**/README.md",
+        "AGENTS.md",
+        "CHANGELOG.md",
+        "CLAUDE.md",
+        "DEPLOY_CHECKLIST.md",
+        "STRATEGY.md",
+        "**/SKILL.md"
+      ]
     }
   },
   "performance": {

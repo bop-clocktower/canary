@@ -741,11 +741,17 @@ whenever `main` moves**. Repo-level auto-merge is enabled, but it waits rather
 than updating a branch, so `gh pr update-branch` is how you satisfy the gate —
 run it, let the checks re-run, and auto-merge takes it from there.
 
-Related: the **Architecture Enforcer** workflow does not run the architecture
-ratchet. Its `enforce` job runs `harness check-deps` and `harness validate`;
-neither reads `.harness/arch/baselines.json`. That is why it can be green while
-a local `harness check-arch` exits 1 — two different commands, not one gate
-disagreeing with itself.
+Related: `harness-architecture.yml` does not run the architecture ratchet. Its
+job runs `harness check-deps` and `harness validate`; neither reads
+`.harness/arch/baselines.json`. That is why it can be green while a local
+`harness check-arch` exits 1 — two different commands, not one gate disagreeing
+with itself. The workflow used to be called **Architecture Enforcer** and its
+job `enforce`, which is how that non-existent disagreement cost real hours in
+issue #678. Issue #698 renamed both, to **Dependency & project validation** and
+`deps-and-validate`. The ratchet itself lives in the `harness` check
+(`harness ci check` plus the `check-arch` detail report that
+`scripts/arch-verdict.mjs` classifies). Do not put "architecture" back in that
+job's name unless it actually runs `check-arch`.
 
 **A metric that silently improves is a finding (#688).** The arch analyzer skips
 55 directory names outright (`coverage`, `dist`, `build`, `bin`, `out`,

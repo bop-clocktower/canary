@@ -315,6 +315,88 @@ describe('workflow false-green invariants', () => {
   });
 
   /**
+   * #769 — an external app status is outside this suite's denominator.
+   *
+   * Everything above enumerates checks by parsing workflow YAML, so a commit
+   * status posted by a GitHub App rather than by a job in
+   * `.github/workflows/` is invisible to it BY CONSTRUCTION. That is not a
+   * hypothetical: the `Vercel` context reported FAILURE on every PR and on
+   * `main` from 3659ea9 onward, and nothing in the repo accounted for it. It
+   * is not in ruleset 16189198's required contexts, so it blocked nothing —
+   * which is precisely the harm. A check that is ALWAYS red is
+   * indistinguishable from a check that is red because something broke, so it
+   * trains reviewers to skim past a red X. #542 was the same signal erosion
+   * from the other direction: there nothing could stop a merge, here
+   * something always looked like it should.
+   *
+   * The fix is a denominator this suite cannot compute: an explicit
+   * `externalStatuses` list in the manifest. These tests keep that list
+   * honest — every entry names its producer and states in prose why it is
+   * acceptable, and an entry claiming a repo-side suppression must actually
+   * carry it. What they cannot do is discover an app status nobody wrote
+   * down; that still needs a human reading a PR page, which is why the entry
+   * for a suppressed status asserts the suppression file rather than trusting
+   * the note.
+   */
+  describe('#769 — external app statuses are written down', () => {
+    interface ExternalStatus {
+      context: string;
+      producer: string;
+      blocking: boolean;
+      expected: string;
+      reason: string[];
+    }
+    const manifest = JSON.parse(
+      readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
+    ) as {
+      required: Array<{ check: string }>;
+      advisory: Array<{ check: string }>;
+      externalStatuses?: { statuses?: ExternalStatus[] };
+    };
+    const statuses = manifest.externalStatuses?.statuses ?? [];
+
+    it('records at least one (a zero denominator is an abstention)', () => {
+      // The repo has a known app status. An empty list here would mean the
+      // section was gutted, not that the apps went away.
+      expect(statuses.length).toBeGreaterThan(0);
+    });
+
+    it.each(statuses.map((s) => [s.context]))(
+      '%s names a producer and a non-empty reason',
+      (context) => {
+        const status = statuses.find((s) => s.context === context)!;
+        expect(status.producer.trim()).not.toBe('');
+        expect(typeof status.blocking).toBe('boolean');
+        expect(status.reason.join('').trim()).not.toBe('');
+      },
+    );
+
+    it('does not double-classify a status that a workflow produces', () => {
+      const fromWorkflows = new Set([
+        ...manifest.required.map((r) => r.check),
+        ...manifest.advisory.map((a) => a.check),
+      ]);
+      const overlap = statuses
+        .map((s) => s.context)
+        .filter((c) => fromWorkflows.has(c));
+      expect(overlap).toEqual([]);
+    });
+
+    it('backs an expected:none entry with a repo-side suppression', () => {
+      // The Vercel Git integration reads `git.deploymentEnabled` from
+      // vercel.json and skips creating a deployment, so no status is posted.
+      // Asserting the file — not the prose — is what makes a silent deletion
+      // of the suppression fail here instead of on a PR page weeks later.
+      const suppressed = statuses.filter((s) => s.expected === 'none');
+      expect(suppressed.map((s) => s.context)).toContain('Vercel');
+      const vercelConfig = JSON.parse(
+        readFileSync(join(REPO_ROOT, 'vercel.json'), 'utf-8'),
+      ) as { git?: { deploymentEnabled?: boolean } };
+      expect(vercelConfig.git?.deploymentEnabled).toBe(false);
+    });
+  });
+
+  /**
    * #678 — a PR-time green is a verdict about a tree that may never merge.
    *
    * `harness check-arch` reported pass on #660's PR and failed on the identical

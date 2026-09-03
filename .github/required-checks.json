@@ -107,17 +107,33 @@
       "workflow": "docs-lint.yml"
     },
     {
-      "check": "enforce",
+      "check": "deps-and-validate",
       "workflow": "harness-architecture.yml",
       "$comment": [
-        "Despite the workflow's display name — Architecture Enforcer — this job",
-        "does NOT run the architecture ratchet (#678). It runs `harness",
-        "check-deps` and `harness validate`; neither reads",
-        "`.harness/arch/baselines.json`. The ratchet lives in the `harness`",
-        "check above, via `harness ci check` plus the `check-arch` detail report",
-        "that `scripts/arch-verdict.mjs` classifies. That is why this job can be",
-        "green while a local `harness check-arch` exits 1: they are different",
-        "commands, not one gate disagreeing with itself."
+        "RENAMED from `enforce` by #698; the workflow's display name changed",
+        "from `Architecture Enforcer` to `Dependency & project validation` in",
+        "the same commit. The old name asserted a job that does NOT exist: the",
+        "steps are `harness check-deps` and `harness validate`, and neither",
+        "reads `.harness/arch/baselines.json`. The architecture ratchet lives in",
+        "the `harness` check above, via `harness ci check` plus the `check-arch`",
+        "detail report that `scripts/arch-verdict.mjs` classifies. That is why",
+        "this job could be green while a local `harness check-arch` exited 1",
+        "with 21 threshold violations (#678): different commands, not one gate",
+        "disagreeing with itself. The previous entry here annotated the lie",
+        "(#697); this one removes it.",
+        "",
+        "The context string is the JOB ID, because the job sets no `name:`. It",
+        "is also an entry in ruleset 16189198, which this file does not edit —",
+        "the swap was applied by hand with the `gh api -X PUT` line in the",
+        "header. A required context that no longer reports blocks every PR",
+        "forever, so the workflow, this file, and the ruleset must never be",
+        "allowed to disagree about this string.",
+        "",
+        "The more ambitious fix — making the name true by adding `harness",
+        "check-arch` here — was considered and rejected in #698: the ratchet",
+        "reports 21 pre-existing threshold violations, so requiring it would",
+        "block every merge until those are allowanced. That is a separate",
+        "decision and must not ride along with a rename."
       ]
     },
     { "check": "security", "workflow": "harness-security.yml" },
@@ -164,6 +180,55 @@
       "reason": "Not a gate. Triggers only on `pull_request: types: [labeled]` — an on-demand action a maintainer invokes to refresh the architecture baseline. It does not report on an ordinary PR, so requiring it would deadlock every PR that is never labeled."
     }
   ],
+
+  "externalStatuses": {
+    "$comment": [
+      "#769. Commit statuses posted by a GitHub App rather than by a workflow in",
+      "`.github/workflows/`. They sit outside the `required`/`advisory` lists",
+      "above BY CONSTRUCTION, because those are keyed to a producing workflow —",
+      "which is exactly why one of them could be red on every commit for weeks",
+      "with nothing in the repo accounting for it.",
+      "",
+      "`ts/test/workflow-false-green.test.ts` enumerates PR checks by parsing",
+      "workflow YAML, so an app-produced context is invisible to it. This list",
+      "is the denominator that check cannot compute for itself: every entry",
+      "states who produces the status, whether it can block a merge, and what is",
+      "being done about it. An entry whose `expected` is `none` asserts the app",
+      "should stop posting at all — if the status reappears, the suppression",
+      "regressed and this file is the record of what was supposed to happen."
+    ],
+    "statuses": [
+      {
+        "context": "Vercel",
+        "producer": "Vercel GitHub App",
+        "blocking": false,
+        "expected": "none",
+        "reason": [
+          "canary is a CLI and skills toolkit with no deployable web surface, so",
+          "a Vercel project connected to this repo has nothing it can build. The",
+          "status reported FAILURE on every PR and on `main` from 3659ea9",
+          "onward. It is NOT in ruleset 16189198's required contexts, so it",
+          "blocks nothing — and that is the whole problem. A check that is",
+          "ALWAYS red is indistinguishable from a check that is red because",
+          "something broke, so it trains reviewers to skim past a red X. That is",
+          "the signal erosion #542 was filed about, arriving from the opposite",
+          "direction: there nothing could stop a merge, here something always",
+          "looks like it should.",
+          "",
+          "Repo-side fix: `vercel.json` declares `git.deploymentEnabled: false`,",
+          "the documented lever that makes the Git integration skip creating a",
+          "deployment for any branch. No deployment means no commit status.",
+          "",
+          "NOT fixed from the repo: the project remains CONNECTED in the Vercel",
+          "dashboard, and only a maintainer with dashboard access can disconnect",
+          "it. `vercel.json` suppresses the symptom from inside the repo, which",
+          "is the durable half — it travels with forks and cannot be undone by a",
+          "dashboard click nobody sees. Disconnecting the project is still the",
+          "correct end state and is tracked in #769."
+        ]
+      }
+    ]
+  },
 
   "reviews": {
     "required_approving_review_count": 0,
