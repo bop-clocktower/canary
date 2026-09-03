@@ -266,6 +266,81 @@ function loadDenylist() {
     .map((t) => [new RegExp(`\\b${reEscape(t)}\\b`, 'i'), reason]);
 }
 
+// Commit authorship is a leak surface the file scan cannot see: the company
+// email never appears *in* a tracked file, only in the metadata of the commit
+// that carries it. 190 commits reached the public history that way before this
+// guard existed (#763 era), every one of them from a clone that inherited a
+// global `user.email` instead of this repo's pin.
+//
+// Only the commits a change ADDS are scanned. Existing history is deliberately
+// left alone — rewriting it would rebase every SHA this repo cites in issues,
+// ADRs, and `.github/required-checks.json`'s own comments — so the gate stops
+// the bleed rather than relitigating the past.
+const AUTHOR_RANGE_ENV = 'CANARY_AUTHOR_SCAN_RANGE';
+
+function authorScanRange() {
+  const override = (process.env[AUTHOR_RANGE_ENV] ?? '').trim();
+  if (override) return override;
+  // pull_request: everything this PR adds on top of its base.
+  const base = (process.env.GITHUB_BASE_REF ?? '').trim();
+  if (base) return `origin/${base}..HEAD`;
+  // push: the commits this push introduced. `before` is all-zeroes on a new
+  // branch, in which case there is no usable range.
+  const before = (process.env.GITHUB_EVENT_BEFORE ?? '').trim();
+  if (before && !/^0+$/.test(before)) return `${before}..HEAD`;
+  return null;
+}
+
+function checkAuthorship() {
+  const patterns = loadDenylist();
+  // No denylist means no company terms to match. Say so rather than reporting
+  // a clean scan: zero patterns over any number of commits is an abstention.
+  if (!patterns.length) return { skipped: 'no denylist configured' };
+
+  const range = authorScanRange();
+  if (!range) return { skipped: 'no commit range resolved' };
+
+  let lines;
+  try {
+    lines = execFileSync(
+      'git',
+      ['log', '--no-merges', '--format=%H%x00%an <%ae>%x00%cn <%ce>', range],
+      // SCAN_ROOT, not REPO_ROOT: the commits are part of the tree under
+      // scan, so a fixture repo can exercise this path. (The denylist above
+      // stays on REPO_ROOT — a fixture must not supply its own.)
+      { cwd: SCAN_ROOT, encoding: 'utf-8' },
+    )
+      .split('\n')
+      .filter(Boolean);
+  } catch {
+    // A shallow clone cannot resolve the base commit. That is a degraded gate,
+    // not a clean one — actions/checkout needs `fetch-depth: 0`.
+    return { unresolved: range };
+  }
+
+  const violations = [];
+  for (const line of lines) {
+    const [sha, author, committer] = line.split('\0');
+    // One row per commit, not per field: `user.email` sets author and
+    // committer together, so the common case matches twice and would print
+    // the same commit twice. The roles that matched are named instead.
+    const roles = [
+      ['author', author],
+      ['committer', committer],
+    ].filter(([, ident]) => patterns.some(([rx]) => rx.test(ident)));
+    if (roles.length) {
+      // The denylist's own reason text is written for file contents ("use a
+      // placeholder in examples") and reads as nonsense against a commit, so
+      // the match is reported with an authorship-specific one.
+      violations.push(
+        `${sha.slice(0, 9)} ${roles.map(([who]) => who).join('/')}: ` +
+          `${roles[0][1]}\n    → company identity on a public commit`,
+      );
+    }
+  }
+  return { violations, scanned: lines.length, range };
+}
+
 function checkProprietary() {
   const patterns =
     GENERIC_PROPRIETARY_PATTERNS.map(compile).concat(loadDenylist());
@@ -305,6 +380,7 @@ function main() {
   }
   const removed = checkRemovedSymbols();
   const proprietary = checkProprietary();
+  const authorship = checkAuthorship();
 
   if (removed.length) {
     process.stdout.write(
@@ -329,10 +405,42 @@ function main() {
     );
   }
 
-  if (removed.length || proprietary.length) return 1;
+  if (authorship.violations?.length) {
+    process.stdout.write(
+      '\nCompany identifiers found in commit authorship:\n\n',
+    );
+    process.stdout.write(authorship.violations.join('\n') + '\n');
+    process.stdout.write(
+      '\nThis repo is public. Fix the commits on this branch before merging:\n' +
+        "  git config user.email '<your public address>'\n" +
+        '  git rebase -r --exec "git commit --amend --no-edit --reset-author" ' +
+        `${authorship.range?.split('..')[0] ?? 'origin/main'}\n` +
+        'Then force-push the branch. Set the address once per clone — a fresh ' +
+        'clone inherits the global identity, which is how these get in.\n',
+    );
+  }
 
+  // A gate that could not resolve what to scan has not passed; it has not run.
+  if (authorship.unresolved) {
+    process.stdout.write(
+      `\nAuthorship scan could not resolve '${authorship.unresolved}'.\n` +
+        'This is an abstention, not a clean result — no commit was checked. ' +
+        'The usual cause is a shallow checkout; the job needs ' +
+        'actions/checkout with `fetch-depth: 0`.\n',
+    );
+    return 1;
+  }
+
+  if (removed.length || proprietary.length || authorship.violations?.length) {
+    return 1;
+  }
+
+  const authorNote = authorship.skipped
+    ? `authorship scan skipped (${authorship.skipped})`
+    : `${authorship.scanned} commit(s) checked for authorship`;
   process.stdout.write(
-    'check_removed_symbols: clean — no removed-symbol or proprietary leaks.\n',
+    'check_removed_symbols: clean — no removed-symbol or proprietary ' +
+      `leaks; ${authorNote}.\n`,
   );
   return 0;
 }
