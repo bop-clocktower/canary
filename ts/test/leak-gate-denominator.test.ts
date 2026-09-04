@@ -81,12 +81,6 @@ function runGate(root: string): GateRun {
   return { status: res.status ?? -1, stdout: `${res.stdout}${res.stderr}` };
 }
 
-// Same #760 class as the authorship suite: every case builds a git fixture
-// and runs the gate as a subprocess, which is well past vitest's 5s default
-// under full-suite parallelism. The gate also grew an authorship scan, so
-// each invocation now does strictly more work than when this was written.
-const SUBPROCESS_BUDGET_MS = 60_000;
-
 describe('proprietary leak gate: which suffixes it can actually read', () => {
   // The TS/JS family is the gap #578 reports. `.ts` is listed first because
   // that is the exact suffix PR #577's leak lived in and the gate passed over.
@@ -157,33 +151,27 @@ describe('removed-symbol gate: which suffixes it can actually read', () => {
   });
 });
 
-describe(
-  'scan-root override',
-  () => {
-    // The override exists so this suite can point the gate at a fixture. That
-    // same knob could silently neuter the gate in CI — an empty directory scans
-    // clean and exits 0 — so an overridden run must say so loudly enough that
-    // nobody reads its green as a statement about the repository.
-    it('announces that an overridden run does not gate the repo', () => {
-      const root = fixtureRepo({ 'src/widget.ts': 'export const x = 1;\n' });
+describe('scan-root override', () => {
+  // The override exists so this suite can point the gate at a fixture. That
+  // same knob could silently neuter the gate in CI — an empty directory scans
+  // clean and exits 0 — so an overridden run must say so loudly enough that
+  // nobody reads its green as a statement about the repository.
+  it('announces that an overridden run does not gate the repo', () => {
+    const root = fixtureRepo({ 'src/widget.ts': 'export const x = 1;\n' });
 
-      const { stdout } = runGate(root);
+    const { stdout } = runGate(root);
 
-      expect(stdout).toContain(root);
-      expect(stdout.toLowerCase()).toContain('does not gate the repository');
+    expect(stdout).toContain(root);
+    expect(stdout.toLowerCase()).toContain('does not gate the repository');
+  });
+
+  it('scans the repo itself when no override is set', () => {
+    const res = spawnSync(process.execPath, [SCRIPT], {
+      encoding: 'utf-8',
+      env: { ...process.env, CANARY_LEAK_SCAN_ROOT: '' },
     });
+    const stdout = `${res.stdout}${res.stderr}`;
 
-    it('scans the repo itself when no override is set', () => {
-      const res = spawnSync(process.execPath, [SCRIPT], {
-        encoding: 'utf-8',
-        env: { ...process.env, CANARY_LEAK_SCAN_ROOT: '' },
-      });
-      const stdout = `${res.stdout}${res.stderr}`;
-
-      expect(stdout.toLowerCase()).not.toContain(
-        'does not gate the repository',
-      );
-    });
-  },
-  SUBPROCESS_BUDGET_MS,
-);
+    expect(stdout.toLowerCase()).not.toContain('does not gate the repository');
+  });
+});

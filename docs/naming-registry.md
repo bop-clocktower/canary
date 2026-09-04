@@ -107,6 +107,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-shiva`               | reserved | 460   | Predictive test ordering                                                   |
 | `canary-ship`                | shipped  | —     | The ship gate: adversarial review, commit, PR, merge                       |
 | `canary-signal`              | reserved | 609   | QA impact digest                                                           |
+| `canary-strix`               | shipped  | 799   | Company/consumer identifier leak scan (files + commit authorship)          |
 | `canary-sweep`               | reserved | 594   | Site-wide a11y audit                                                       |
 | `canary-test-pipeline`       | shipped  | —     | Multi-phase test intelligence orchestrator                                 |
 | `canary-test-reporter`       | shipped  | —     | Playwright JSON results to Markdown and JSON reports                       |
