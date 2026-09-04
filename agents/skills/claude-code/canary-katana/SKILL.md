@@ -27,12 +27,22 @@ any other skill at runtime.
 
 | Event     | Detected from a diff                                                                                                                                                      |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `removed` | a `def test_*` / `async def test_*` (Python) or `describe`/`it`/`test('…')` (JS/TS) that left on a `-` line                                                               |
+| `removed` | a `def test_*` / `async def test_*` (Python) or `describe`/`it`/`test('…')` (JS/TS) that left on a `-` line **and did not come back on the `+` side**                     |
 | `skipped` | a `+`-side skip/mute marker: `@pytest.mark.skip` / `skipif` / `xfail`, or `it.skip` / `test.skip` / `describe.skip`, `it.only` / `test.only`, `xit` / `xdescribe` / `fit` |
 
 A test flipped in place from `it('x')` to `it.skip('x')` is **one** event, not
 two: the skip supersedes the removal so the ledger never double-counts a
 mute-in-place as both a deletion and a skip.
+
+The general form of that rule is the emphasis above: a `(file, title)` that
+reappears on the `+` side was **modified, not removed**. Without it, any rewrite
+of a declaration line recorded a deletion of a test that is still in the tree —
+a prettier reflow of a long signature, or a `.skip` lifted in place, was enough
+(#783). The ledger is append-only, so such a row is permanent and cannot be
+corrected without the hand-edit the ledger exists to prevent; and a consumer
+that attributes on the newest matching row would hand every test under a phantom
+removal of a `describe` the wrong ticket. A **rename** is still a removal — the
+old title's coverage really is gone.
 
 ## The one thing it alarms on
 

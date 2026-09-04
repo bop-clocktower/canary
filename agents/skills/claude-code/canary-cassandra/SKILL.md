@@ -83,6 +83,18 @@ resolve one. Three rungs, and the finding says which one it used:
 | `import-inferred` | The symbols imported from first-party (relative) modules, closed over local helpers           | Medium — read the test before acting  |
 | _(skipped)_       | Neither available. Reported as a skip with its reason; the test is **not** reported as clean. | None — the check did not run          |
 
+`import-inferred` reads four binding forms, not one: a named or default import,
+a **namespace** import (`import * as store from './store.js'`), a **dynamic**
+import (`const { save } = await import('./store.js')`), and a handle bound to a
+first-party **script path** that a `spawnSync`/`execFileSync`-family call then
+runs. The last is what a subprocess test has instead of a symbol; the
+discriminator is the path, so spawning a bare command (`spawnSync('git', …)`)
+still counts as reaching nothing. A test that launches a script path written
+inline, or that carries a bare `await import('./x.js')`, is likewise read as
+reaching its target — but `VAC-003` stays dark for it and says so in the skip
+list, because "did an assertion observe the target" needs a symbol that a
+subprocess boundary does not provide (#705).
+
 To upgrade a finding from inferred to annotated, add the annotation above the
 test:
 

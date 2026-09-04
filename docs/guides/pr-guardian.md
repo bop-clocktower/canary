@@ -36,8 +36,12 @@ the design rationale.
 
   The signal is tuned for precision over recall (it should not nag on correct
   tests): snapshot/table-driven tests and the common assertion styles (`expect`,
-  `assert`, chai `.should`, `pytest.raises`, `assert_*` helpers) all count as
-  asserting, and a rename that adds only a signature line is ignored.
+  `assert`, chai `.should`, `pytest.raises`, `assert_*` helpers in Python and
+  `expect*` helpers in JS/TS) all count as asserting, and a rename that adds
+  only a signature line is ignored. The `expect*` half is [#738] — a Playwright
+  suite that routes its checks through `expectRouteTestId(...)`, the pattern
+  Playwright's own docs recommend, had every added spec flagged; the pytest side
+  had recognised the same convention under its own spelling since day one.
 
   The span it scores is the **enclosing test block** of each changed line, not
   the changed hunk ([#747]). Scoring the added lines alone reported every
@@ -52,7 +56,7 @@ the design rationale.
 
   Known limits — the span is bounded by what the diff shows, so an assertion
   further down a block than the diff's context window may be missed; and a test
-  whose only check is a custom helper _not_ named `assert*` (e.g.
+  whose only check is a custom helper named on neither convention (e.g.
   `verify_response(resp)`) may be flagged. Since the finding is advisory, the
   escape hatch is the `weakTests` toggle.
 
@@ -414,6 +418,7 @@ a reviewer facing 68 findings had no way to tell which one mattered ([#553]).
 [#553]: https://github.com/bop-clocktower/canary/issues/553
 [#655]: https://github.com/bop-clocktower/canary/issues/655
 [#657]: https://github.com/bop-clocktower/canary/issues/657
+[#738]: https://github.com/bop-clocktower/canary/issues/738
 [#747]: https://github.com/bop-clocktower/canary/issues/747
 [#761]: https://github.com/bop-clocktower/canary/issues/761
 

@@ -22,12 +22,25 @@ const ASSERTIONS: Record<string, RegExp> = {
   // nothing. (`\bassert\b` alone does NOT match `assert_valid`: `_` is a word
   // char, so the `\b` after `assert` fails there.)
   pytest: /\bassert\b|\bpytest\.raises\b|\bself\.assert\w+\b|\bassert\w*\s*\(/g,
+  // `\bexpect\w*\s*\(` is the JS/TS half of that same rationale (#738). The
+  // naming convention for a custom assertion helper is `expect*` here, not
+  // `assert*`, and it is the pattern Playwright's own docs recommend: a suite
+  // that routes its checks through `expectRouteTestId(page, id)` so the
+  // assertion semantics live in one documented place had EVERY added test
+  // flagged `added test asserts nothing`. `\w*` is zero-width-matchable, so
+  // plain `expect(` still matches and the change is purely additive.
+  //
+  // The precision cost is the mirror image of the accepted pytest one: a
+  // non-asserting function whose name happens to start with `expect` now
+  // counts. That is the right side to err on for an advisory finding that
+  // never gates — a false "asserts nothing" on a correct test is what teaches
+  // a reader to ignore the finding.
   playwright:
-    /\bexpect\s*\(|\btoBeVisible\b|\btoHaveText\b|\btoHaveTitle\b|\btoHaveURL\b|\btoBeEnabled\b|\btoBeDisabled\b|\btoBeChecked\b|\btoHaveValue\b|\btoHaveCount\b/g,
+    /\bexpect\w*\s*\(|\btoBeVisible\b|\btoHaveText\b|\btoHaveTitle\b|\btoHaveURL\b|\btoBeEnabled\b|\btoBeDisabled\b|\btoBeChecked\b|\btoHaveValue\b|\btoHaveCount\b/g,
   // Plus non-`expect` assertion styles common in JS/TS: node:assert / vitest
   // `assert(...)` / `assert.equal(...)`, and chai BDD `x.should.equal`.
   vitest:
-    /\bexpect\s*\(|\btoBe\s*\(|\btoEqual\s*\(|\btoThrow\b|\btoContain\s*\(|\btoBeNull\b|\btoBeUndefined\b|\btoMatchObject\b|\bassert\s*\(|\bassert\.\w+|\.should\b/g,
+    /\bexpect\w*\s*\(|\btoBe\s*\(|\btoEqual\s*\(|\btoThrow\b|\btoContain\s*\(|\btoBeNull\b|\btoBeUndefined\b|\btoMatchObject\b|\bassert\s*\(|\bassert\.\w+|\.should\b/g,
   k6: /\bcheck\s*\(|'[^']+'\s*:\s*\([^)]*\)\s*=>/g,
 };
 

@@ -54,6 +54,17 @@ new file mode 100644
 +})
 `;
 
+const DIFF_EXPECT_HELPER_TS = `diff --git a/apps/web-e2e/routes.spec.ts b/apps/web-e2e/routes.spec.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web-e2e/routes.spec.ts
+@@ -0,0 +1,4 @@
++test('/app/benefits/[id] renders @smoke', async ({ page }) => {
++  await gotoAppRoute(page, '/app/benefits/1')
++  await expectRouteTestId(page, 'benefit-detail-not-found')
++})
+`;
+
 // FP-3: a rename adds only the signature; the asserting body is context (not a
 // `+` line). Must NOT be flagged — there's no added body to judge.
 const DIFF_RENAME_ONLY = `diff --git a/tests/test_widget.py b/tests/test_widget.py
@@ -105,6 +116,20 @@ describe('buildWeakTestFindings', () => {
     const findings = buildWeakTestFindings(
       testUnits(DIFF_RENAME_ONLY),
       DIFF_RENAME_ONLY,
+    );
+    expect(findings).toEqual([]);
+  });
+
+  // #738, reported from a downstream Playwright suite: the added lines carry no
+  // literal `expect(`, only calls to `expectRouteTestId` / `gotoAppRoute`, which
+  // between them hold four assertions. The test was verified falsifiable by
+  // running it against a wrong route. Every added spec in that suite drew a
+  // finding, and the whole suite routes its assertions through those helpers on
+  // purpose, so the finding would have fired forever.
+  it('does not flag a test whose checks go through an expect* helper', () => {
+    const findings = buildWeakTestFindings(
+      testUnits(DIFF_EXPECT_HELPER_TS),
+      DIFF_EXPECT_HELPER_TS,
     );
     expect(findings).toEqual([]);
   });

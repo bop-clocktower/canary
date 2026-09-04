@@ -59,6 +59,20 @@ jobs:
       # time of wiring: 101 findings (27 ts/test, 2 npm, 72 agents/skills/test),
       # triage tracked in #705/#706.
       #
+      # After that triage the vacuity half reads 19 (15 ts/test, 2 npm, 2
+      # agents/skills/test), all `VAC-002` at `import-inferred` fidelity;
+      # `VAC-001`, `VAC-003` and `SOUND-*` are at zero across all three trees.
+      # The bulk of the drop was the inference learning to SEE namespace
+      # imports, dynamic imports and subprocess targets (#705) rather than any
+      # rule being narrowed -- the finding count fell because the false
+      # positives were false, and VAC-002 still fires on the residue.
+      #
+      # NOT ratcheted to strict here, and the reason is mechanical rather than
+      # a lack of appetite: this step counts every rule from three commands into
+      # one number, so there is no per-rule gate to promote `SOUND-*`/`VAC-001`
+      # through while `VAC-002` (per #705) and `review-test`'s LINT-006 backlog
+      # are deliberately still advisory. Promoting needs a per-rule count first.
+      #
       # `promote-check` is deliberately NOT here. It is a single-file gate and
       # abstains (exit 3) on a directory, so adding it would manufacture a
       # permanent "Dogfood misconfigured" error rather than coverage.

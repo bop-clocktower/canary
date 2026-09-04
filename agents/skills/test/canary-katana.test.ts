@@ -178,6 +178,54 @@ const POINTS_REMOVAL = `diff --git a/tests/test_points.py b/tests/test_points.py
  x = 1
 `;
 
+// --- fixtures for #783: a declaration line that changed but did not leave ---
+
+// Prettier reflowing a long signature. Nothing was removed.
+const JS_REFLOW = `diff --git a/tests/x.spec.ts b/tests/x.spec.ts
+--- a/tests/x.spec.ts
++++ b/tests/x.spec.ts
+@@ -1,5 +1,7 @@
+-test('a stable test that merely got reformatted', async ({ page }) => {
++test('a stable test that merely got reformatted', async ({
++    page,
++}) => {
+   await page.goto('/');
+ });
+`;
+
+// A describe-level quarantine being lifted (or split into per-test skips).
+const JS_SKIP_LIFTED = `diff --git a/tests/customers.spec.ts b/tests/customers.spec.ts
+--- a/tests/customers.spec.ts
++++ b/tests/customers.spec.ts
+@@ -1,4 +1,4 @@
+-    test.describe.skip('POST /v2/customers rejects malformed payloads', () => {
++    test.describe('POST /v2/customers rejects malformed payloads', () => {
+       test('rejects an empty body', async () => {});
+     });
+`;
+
+const PY_REINDENT = `diff --git a/tests/test_points.py b/tests/test_points.py
+--- a/tests/test_points.py
++++ b/tests/test_points.py
+@@ -1,3 +1,4 @@
+ class TestPoints:
+-def test_earns_points():
++    def test_earns_points():
+         assert earn(100) == 10
+`;
+
+// A rename genuinely IS a removal plus an addition: the old title's coverage
+// is gone, and nothing under that name remains to attribute to.
+const JS_RENAME = `diff --git a/tests/cart.spec.ts b/tests/cart.spec.ts
+--- a/tests/cart.spec.ts
++++ b/tests/cart.spec.ts
+@@ -1,3 +1,3 @@
+-  it('adds to cart', async () => {
++  it('adds an item to the cart', async () => {
+     await addToCart();
+   });
+`;
+
 // --- diffscan: test-file classification ------------------------------------
 
 describe('diffscan.isTestFile', () => {
@@ -296,6 +344,45 @@ describe('diffscan skip markers', () => {
     const found = diffscan.findDeletions(JS_SKIP);
     expect(found.length).toBe(2);
     expect(found.every((d) => d.kind === diffscan.Kind.SKIPPED)).toBe(true);
+  });
+
+  // #783. The supersede step above could only cancel a removal when the `+`
+  // side was a SKIP, so any other rewrite of a declaration line -- a prettier
+  // reflow, a `.skip` lifted in place -- recorded a deletion of a test that is
+  // still in the tree. The ledger is append-only, so that row is permanent and
+  // cannot be corrected without the hand-edit the ledger exists to prevent, and
+  // a consumer attributing on the newest matching row gets the wrong answer for
+  // every test under a phantom-removed describe.
+  describe('a re-declared test is a modification, not a removal (#783)', () => {
+    it('nets out a signature reflowed across lines', () => {
+      expect(diffscan.findDeletions(JS_REFLOW)).toEqual([]);
+    });
+
+    it('nets out a describe-level skip lifted in place', () => {
+      expect(diffscan.findDeletions(JS_SKIP_LIFTED)).toEqual([]);
+    });
+
+    it('nets out a reindented python def', () => {
+      expect(diffscan.findDeletions(PY_REINDENT)).toEqual([]);
+    });
+
+    // The half that must NOT change: cancelling on re-declaration is only safe
+    // while a genuine deletion still lands, and while a rename still reads as
+    // one (the old title is gone, so its coverage really is).
+    it('still catches a genuine deletion', () => {
+      const found = diffscan.findDeletions(PY_REMOVAL);
+      expect(found.map((d) => d.name)).toEqual([
+        'test_earns_points_on_purchase',
+        'test_points_expire',
+      ]);
+    });
+
+    it('still reports a rename as a removal of the old title', () => {
+      const found = diffscan.findDeletions(JS_RENAME);
+      expect(found.map((d) => [d.name, d.kind])).toEqual([
+        ['adds to cart', diffscan.Kind.REMOVED],
+      ]);
+    });
   });
 
   it('classifies .fixme conversions as skipped, not removed (#400)', () => {
