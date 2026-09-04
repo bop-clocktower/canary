@@ -100,7 +100,7 @@ under the project's former name) are documented in the
   feature: a reviewer checks it against the file list GitHub shows them, so it
   must count what guardian was handed, not what it went on to score.
 
-  The failure that earned it, capwell#1853: a PR whose entire diff was **one
+  The failure that earned it, in a consumer repo: a PR whose entire diff was **one
   markdown file** was analyzed as **43**, and guardian reported six files the PR
   never touched. CI had checked out the `pull_request` **merge ref** — the base
   branch merged with the PR head — so the triple-dot merge base degenerated to
@@ -129,7 +129,7 @@ under the project's former name) are documented in the
   existed, and the run should have abstained ("verified zero items; this is not
   a pass"). Abstention requires zero findings-eligible units — the phantom files
   supplied findings, so a run that verified nothing headlined a finding count
-  instead. Guardian is disabled in capwell (capwell#1961) until that closes and
+  instead. Guardian is disabled in that consumer repo until that closes and
   the dogfooding bar in #761 is met.
 
 - **CI signal hygiene: three checks that lied in three different ways** (#769,

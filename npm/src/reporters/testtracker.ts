@@ -172,7 +172,7 @@ const STATUS_SEVERITY: Record<string, number> = {
  * `test.id`, which is genuinely unique, but a title is not: a Playwright
  * `dependencies:` setup project runs in full in EVERY shard (dependencies are
  * not sharded), so a `merge-reports` payload over a sharded matrix legitimately
- * carries the same setup title once per shard. Capwell's `capwell-web` suite
+ * carries the same setup title once per shard. One consumer’s sharded suite
  * had every nightly rejected this way and never ingested a single run.
  *
  * Collapse rule keeps the merged row honest: worst status wins, the first real

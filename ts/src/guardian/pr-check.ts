@@ -1255,7 +1255,7 @@ export type DiffOrigin = 'stdin' | 'file' | 'ci-base' | 'worktree';
  *
  * Every other number guardian reports is downstream of the diff, so a wrong
  * diff silently rewrites all of them — and the comment previously named only
- * the HEAD side, via the finding permalinks. capwell#1853 is the worked
+ * the HEAD side, via the finding permalinks. #761 is the worked
  * example: a PR whose real diff was ONE markdown file was analyzed as 43,
  * because CI diffed the `pull_request` MERGE REF (main merged with the PR head)
  * rather than the PR head. Guardian then reported six files the PR never
@@ -1276,7 +1276,7 @@ export interface DiffProvenance {
   fileCount: number;
   /**
    * True when HEAD is a `pull_request` merge ref rather than the PR head — the
-   * capwell#1853 defect. Advisory: guardian reports it and carries on, because
+   * merge-ref diff defect (#761). Advisory: guardian reports it and carries on, because
    * the caller owns the checkout and only the caller can fix it.
    */
   mergeRef?: boolean;
