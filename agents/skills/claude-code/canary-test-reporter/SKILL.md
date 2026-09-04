@@ -37,6 +37,9 @@ canary skills run canary-test-reporter -- \
   --results test-results/results.json \
   --markdown-out test-results/report.md \
   --json-out test-results/report.json
+
+# Usage and the full flag list (exits 0):
+canary skills run canary-test-reporter -- --help
 ```
 
 **Exit code:** `1` when any test failed; `0` otherwise. Flaky tests and skipped

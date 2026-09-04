@@ -99,6 +99,9 @@ canary skills run canary-strix -- --range origin/main..HEAD
 
 # Machine-readable:
 canary skills run canary-strix -- --json
+
+# Usage and the full flag list (exits 0):
+canary skills run canary-strix -- --help
 ```
 
 On CI the commit range is resolved from the event: `GITHUB_BASE_REF` (with

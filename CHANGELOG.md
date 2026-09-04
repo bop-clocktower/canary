@@ -60,6 +60,32 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Five of nine `cli:` skills had no documented command anyone could run**
+  (#707). #487's checker worked on its first run and what it reported was a
+  denominator problem: 4 examples executed out of 33. A skill in that state can
+  break in every documented way and CI stays green, which is the false-green
+  shape the check was built to close.
+
+  Two changes. A code-bearing skill whose documented commands are all unrunnable
+  is now a FINDING (`no-executable-example`) rather than a bare abstention — a
+  finding outranks abstention because it proves the corpus was inspected and
+  names the skill responsible. And the five skills it named (`canary-cassandra`,
+  `canary-fail-fast`, `canary-shadow`, `canary-strix`, `canary-test-reporter`)
+  each gained a placeholder-free `--help` example. Measured: executed **4 → 9**,
+  findings 1 → 0. `canary-shadow`, which documented no command at all, has one.
+
+  The unverifiable bucket was also two facts wearing one number — "nobody could
+  run this" and "this was never meant to be run" — and merging them hid the real
+  gaps inside the pile. `<!-- canary:illustrative -->` above a fence declares
+  the second, and the summary line, `--json`, and the CI annotation all report
+  `executed / illustrative / unverifiable / total` separately. Marking is not an
+  escape hatch: it changes one block's reason and never the executable rule, so
+  a skill cannot mark its way to green.
+
+  Not the finish line, and the issue said so first: 40 examples remain
+  unverifiable. They are now readable rather than a pile — 32 are real
+  side-effecting commands and 8 carry placeholders.
+
 - **The entropy ratchet blamed whichever branch merged second** (#703). The
   ceiling in `.harness/entropy-baseline.json` is an absolute total, which makes
   headroom a shared budget no branch can see: measured off one `main` in a

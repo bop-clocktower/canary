@@ -48,6 +48,9 @@ canary skills run canary-fail-fast -- --config playwright.config.ts
 canary skills run canary-fail-fast -- \
   --results test-results/results.json \
   --config playwright.config.ts
+
+# Usage and the full flag list (exits 0):
+canary skills run canary-fail-fast -- --help
 ```
 
 At least one of `--results` / `--config` is required. The digest exits `1` when
