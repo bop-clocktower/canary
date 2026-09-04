@@ -382,34 +382,59 @@ describe('ledger', () => {
     expect(doc.entries.length).toBe(1);
   });
 
-  it('does not duplicate a row when only the ticket differs (#772)', () => {
-    // The ticket is an ATTRIBUTE of the mute, not part of its identity, and
-    // this is the case that proves why it has to be. A ledger written before
-    // the field existed holds rows with no ticket; the same capture re-run
-    // afterwards finds one. If `ticket` were part of the de-duplication key
-    // those would hash differently and the second run would append a duplicate
-    // of a row already on disk — breaking the append-only guarantee precisely
-    // at the version boundary, where nobody would be looking.
+  it('does not duplicate a row when only the issue differs (#781, #771)', () => {
+    // The issue link is an ATTRIBUTE of the mute, not part of its identity,
+    // and this is the case that proves why it has to be. A ledger written
+    // before the field existed holds rows with no link; the same capture
+    // re-run afterwards finds one. If `issue` were part of the de-duplication
+    // key those would hash differently and the second run would append a
+    // duplicate of a row already on disk — breaking the append-only guarantee
+    // precisely at the version boundary, where nobody would be looking.
     const p = path.join(mkTmp(), 'q.json');
-    ledger.appendEntries(p, [entry({ ticket: '' })]);
-    const doc = ledger.appendEntries(p, [entry({ ticket: 'PROJ-4471' })]);
+    ledger.appendEntries(p, [entry({ issue: '' })]);
+    const doc = ledger.appendEntries(p, [entry({ issue: 'PROJ-4471' })]);
 
     expect(doc.entries.length).toBe(1);
     // First write wins, because the ledger only ever grows and existing rows
-    // keep their position. Correcting a recorded ticket is a new commit and a
+    // keep their position. Correcting a recorded link is a new commit and a
     // new row, not a silent rewrite of history.
-    expect((doc.entries[0] as { ticket: string }).ticket).toBe('');
+    expect((doc.entries[0] as { issue: string }).issue).toBe('');
   });
 
-  it('keeps ticket in the row shape, in canonical field order', () => {
+  it('keeps issue in the row shape, in canonical field order', () => {
     // The field has to be PRESENT on every row for a consumer to read it
     // without special-casing; `LedgerEntry` fills it with '' when absent.
-    const row = entry() as Record<string, string>;
-    expect(Object.keys(row)).toContain('ticket');
-    expect(row.ticket).toBe('');
-    expect((entry({ ticket: 'PROJ-1' }) as Record<string, string>).ticket).toBe(
-      'PROJ-1',
-    );
+    const row = entry() as unknown as Record<string, string>;
+    expect(Object.keys(row)).toContain('issue');
+    expect(row.issue).toBe('');
+    expect(
+      (entry({ issue: 'PROJ-1' }) as unknown as Record<string, string>).issue,
+    ).toBe('PROJ-1');
+    // `ticket` is gone as a field: two names for "what is this waiting on" is
+    // how a consumer ends up reading the empty one.
+    expect(Object.keys(row)).not.toContain('ticket');
+  });
+
+  it("migrates a v1 row's `ticket` onto `issue`", () => {
+    // v1 (#781) recorded the link as `ticket`. Folding the two names into one
+    // must not lose a link already on disk, so the old key is read on load.
+    const row = ledger.LedgerEntry({
+      test: 'test_x',
+      file: 'tests/t.py',
+      ticket: 'PROJ-4471',
+    }) as unknown as Record<string, string>;
+
+    expect(row.issue).toBe('PROJ-4471');
+    expect(Object.keys(row)).not.toContain('ticket');
+  });
+
+  it('prefers an explicit issue over a legacy ticket on the same object', () => {
+    const row = ledger.LedgerEntry({
+      issue: 'PROJ-NEW',
+      ticket: 'PROJ-OLD',
+    }) as unknown as Record<string, string>;
+
+    expect(row.issue).toBe('PROJ-NEW');
   });
 
   it('sorts new entries for stable ordering', () => {
@@ -437,6 +462,147 @@ describe('ledger', () => {
   it('throws on a non-object top level', () => {
     const p = path.join(mkTmp(), 'q.json');
     fs.writeFileSync(p, '[1, 2]');
+    expect(() => ledger.load(p)).toThrow();
+  });
+
+  it('a delimiter-ambiguous pair stays two rows, not one', () => {
+    // Regression guard. The identity delimiter is a NUL, written as an escape so the
+    // file stays ASCII and git can diff it. If it is ever "tidied" back to a space,
+    // ("a b", "c") and ("a", "b c") join to the same string and one row silently
+    // disappears — a dedup that eats a real ledger entry with nothing to show for it.
+    const p = path.join(mkTmp(), 'q.json');
+    const doc = ledger.appendEntries(p, [
+      entry({ test: 'a b', file: 'c' }),
+      entry({ test: 'a', file: 'b c' }),
+    ]);
+    expect(doc.entries).toHaveLength(2);
+  });
+
+  // --- v2: cause / issue / expiry (#771) ------------------------------------
+
+  it('v2 fields default to empty so a row is always fully shaped', () => {
+    const row = entry() as unknown as Record<string, string>;
+    expect(row.cause).toBe('');
+    expect(row.issue).toBe('');
+    expect(row.expiry).toBe('');
+  });
+
+  it('normalizes a v1 file on load so schema_version 2 is a true claim', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    // A v1 document, written before cause/issue/expiry existed.
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        schema_version: 1,
+        entries: [
+          {
+            test: 'test_old',
+            file: 'tests/test_old.py',
+            kind: 'removed',
+            marker: '',
+            commit: 'old123',
+            author: 'Ada Lovelace',
+            date: '2026-01-01T00:00:00+00:00',
+            reason: 'chore: old',
+          },
+        ],
+      }),
+    );
+    const doc = ledger.load(p);
+    // The version says these rows carry the v2 fields; after load they do.
+    expect(doc.entries[0]).toHaveProperty('cause', '');
+    expect(doc.entries[0]).toHaveProperty('issue', '');
+    expect(doc.entries[0]).toHaveProperty('expiry', '');
+    // and provenance is preserved, not clobbered by the migration
+    expect(doc.entries[0].commit).toBe('old123');
+  });
+
+  it('a caused row supersedes a causeless row for the same test+file', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    ledger.appendEntries(p, [entry({ kind: 'skipped' })]);
+    const doc = ledger.appendEntries(p, [
+      entry({
+        kind: 'skipped',
+        cause: 'product-defect',
+        issue: 'acme/widgets#2181',
+      }),
+    ]);
+    // Exactly one row for the pair, and it is the one that states a cause.
+    expect(doc.entries).toHaveLength(1);
+    expect(doc.entries[0].cause).toBe('product-defect');
+    expect(doc.entries[0].issue).toBe('acme/widgets#2181');
+  });
+
+  it('a causeless row is dropped when a caused row already exists', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    ledger.appendEntries(p, [
+      entry({ cause: 'blocked-data', issue: 'acme/widgets#464' }),
+    ]);
+    // katana re-running later would otherwise re-add the causeless row and
+    // leave the ledger contradicting itself about one test.
+    const doc = ledger.appendEntries(p, [entry({ commit: 'later999' })]);
+    expect(doc.entries).toHaveLength(1);
+    expect(doc.entries[0].cause).toBe('blocked-data');
+  });
+
+  it('supersede is scoped to the pair — other tests are untouched', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    ledger.appendEntries(p, [
+      entry({ test: 'test_a' }),
+      entry({ test: 'test_b', file: 'tests/test_b.py' }),
+    ]);
+    const doc = ledger.appendEntries(p, [
+      entry({ test: 'test_a', cause: 'flaky' }),
+    ]);
+    expect(doc.entries).toHaveLength(2);
+    const byTest = Object.fromEntries(
+      doc.entries.map((e: { test: string; cause: string }) => [
+        e.test,
+        e.cause,
+      ]),
+    );
+    expect(byTest.test_a).toBe('flaky');
+    expect(byTest.test_b).toBe('');
+  });
+
+  it('two caused rows for one pair both remain — history is not collapsed', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    ledger.appendEntries(p, [entry({ cause: 'flaky' })]);
+    const doc = ledger.appendEntries(p, [
+      entry({ cause: 'product-defect', issue: 'acme/widgets#2181' }),
+    ]);
+    expect(doc.entries).toHaveLength(2);
+    expect(doc.entries.map((e: { cause: string }) => e.cause).sort()).toEqual([
+      'flaky',
+      'product-defect',
+    ]);
+  });
+
+  it('re-running the same caused capture still adds nothing', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    const e = entry({ cause: 'obsolete' });
+    ledger.appendEntries(p, [e]);
+    const doc = ledger.appendEntries(p, [e]);
+    expect(doc.entries).toHaveLength(1);
+  });
+
+  it('names the causes, and which of them require an issue link', () => {
+    expect(ledger.CAUSES).toEqual([
+      'flaky',
+      'product-defect',
+      'blocked-data',
+      'obsolete',
+    ]);
+    // The two where the TEST is correct and someone else owns the fix.
+    expect(ledger.CAUSES_REQUIRING_ISSUE).toEqual([
+      'product-defect',
+      'blocked-data',
+    ]);
+  });
+
+  it('throws when entries is not an array', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    fs.writeFileSync(p, JSON.stringify({ schema_version: 2, entries: {} }));
     expect(() => ledger.load(p)).toThrow();
   });
 });
