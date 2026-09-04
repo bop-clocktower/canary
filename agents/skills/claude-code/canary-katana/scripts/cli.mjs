@@ -128,7 +128,9 @@ function toEntries(repo, base, deletions) {
       author: commit ? commit.author : 'unknown',
       date: commit ? commit.date : '',
       reason: commit ? commit.subject : '',
-      ticket: commit ? commit.ticket : '',
+      // The `Ticket:` trailer is one way an issue link arrives; a quarantine
+      // producer writing a caused row is the other. Both land in `issue`.
+      issue: commit ? commit.ticket : '',
     });
   });
 }
