@@ -34,6 +34,15 @@
  * - neither -- the target cannot be resolved. That is "cannot verify", which is
  *   a finding about the SCAN, so it lands in `skipped` with its reason.
  *
+ * The inference reads four binding forms, because #705 measured what happens
+ * when it reads one: 65 of 99 findings on canary's own tree were the namespace
+ * import, the dynamic import, and the subprocess launch -- tests invoking
+ * exactly what they claimed, through a construct the target set could not see.
+ * The issue rules out every quiet answer (a threshold, a mute, a widened blanket
+ * skip) on the grounds that a suppressed inference and a passing check must not
+ * look alike, so the fix is to WIDEN WHAT THE INFERENCE CAN SEE and leave the
+ * rule's authority untouched.
+ *
  * A skip is PER RULE, not per test: `VAC-001` needs no target and always runs,
  * so a test whose target is unresolvable is still genuinely `checked` and stays
  * in the denominator. Saying otherwise would understate what was verified. What
@@ -86,11 +95,55 @@ export interface VacuityFinding {
  */
 const COVERS_PRAGMA = /@covers\s+([A-Za-z_$][\w$]*)/g;
 
-/** An import whose specifier is relative: the local code a test can target. */
+/**
+ * An import whose specifier is relative: the local code a test can target.
+ *
+ * The namespace form (`import * as ns from './x.js'`) needs its own alternative
+ * rather than falling out of `(\w+)`: `*` is not a word character, so a file
+ * written entirely in namespace imports resolved to an EMPTY target set and
+ * every test in it drew a `VAC-002` (#705). On canary's own `agents/skills/test`
+ * tree that single omission was the largest share of the 65 findings the issue
+ * counted -- `import * as diffscan from '../.../diffscan.mjs'` is the house
+ * style there, and `diffscan.findDeletions(...)` is unmistakably an invocation
+ * of the target.
+ */
 const JS_RELATIVE_IMPORT =
-  /import\s+(?:type\s+)?(?:\{([^}]*)\}|(\w+))[^'"]*from\s*['"](\.[^'"]*)['"]/g;
+  /import\s+(?:type\s+)?(?:\*\s+as\s+(\w+)|\{([^}]*)\}|(\w+))[^'"]*from\s*['"](\.[^'"]*)['"]/g;
 const JS_RELATIVE_REQUIRE =
   /(?:const|let|var)\s+(?:\{([^}]*)\}|(\w+))\s*=\s*require\s*\(\s*['"](\.[^'"]*)['"]/g;
+/**
+ * `const x = await import('./y.js')` / `const { a } = await import('./y.js')`.
+ *
+ * A dynamic import leaves no static import statement, so a suite that loads its
+ * subject this way -- to control module state per test, or to import a module
+ * only after an env var is set -- resolved to no target at all (#705).
+ */
+const JS_DYNAMIC_IMPORT =
+  /(?:const|let|var)\s+(?:\{([^}]*)\}|(\w+))\s*=\s*(?:await\s+)?import\s*\(\s*['"](\.[^'"]*)['"]\s*\)/g;
+/** A bare `await import('./y.js')` -- no binding, so it names no symbol. */
+const JS_BARE_DYNAMIC_IMPORT = /(?<![\w$.])import\s*\(\s*['"]\.[^'"]*['"]\s*\)/;
+
+/**
+ * A string literal naming a first-party script -- something a subprocess can be
+ * pointed at and that lives in this repo.
+ *
+ * The discriminator is deliberately the EXTENSION, not the path shape: it is
+ * what separates `spawnSync(cli, ...)` where `cli` is
+ * `path.join(SCRIPTS, 'cli.mjs')` from `spawnSync('git', args)`. A bare command
+ * name is not a repo path and must not make a test look covered.
+ */
+const SCRIPT_PATH_LITERAL =
+  /['"`][^'"`\n]*[\w$)/.-]\.(?:mjs|cjs|jsx?|tsx?|py|sh)['"`]/;
+
+/**
+ * A declaration binding one name to an expression -- the statement-bounded form
+ * used to spot a handle on a first-party script.
+ */
+const JS_SIMPLE_DECL = /(?:^|\n)\s*(?:const|let|var)\s+(\w+)\s*=\s*([^;\n]+)/g;
+
+/** The child-process launchers whose first argument is an executable target. */
+const SUBPROCESS_LAUNCH =
+  /(?<![\w$.])(?:execFileSync|execSync|spawnSync|execFile|spawn|fork)\s*\(/;
 /**
  * Python has no `.`-prefix requirement for a first-party import, so `from x
  * import y` counts. `import os` and the stdlib are excluded by name below --
@@ -260,24 +313,136 @@ function pythonImportedTargets(code: string): Set<string> {
   return names;
 }
 
+/**
+ * One binding form: which capture holds the `{...}` clause, and which the single
+ * name (default import, namespace alias, or `const x = ...`).
+ */
+const JS_BINDING_FORMS: {
+  re: RegExp;
+  clause: number;
+  singles: number[];
+}[] = [
+  { re: JS_RELATIVE_IMPORT, clause: 2, singles: [1, 3] },
+  { re: JS_RELATIVE_REQUIRE, clause: 1, singles: [2] },
+  { re: JS_DYNAMIC_IMPORT, clause: 1, singles: [2] },
+];
+
 /** JS/TS first-party imports: any `import`/`require` with a relative specifier. */
 function jsImportedTargets(code: string): Set<string> {
   const names = new Set<string>();
-  for (const re of [JS_RELATIVE_IMPORT, JS_RELATIVE_REQUIRE]) {
+  for (const { re, clause, singles } of JS_BINDING_FORMS) {
     // Reset explicitly: these are module-level `/g` patterns, so a leftover
     // `lastIndex` from an earlier file would silently skip the head of this one.
     re.lastIndex = 0;
     for (const m of code.matchAll(re)) {
-      for (const n of clauseNames(m[1])) names.add(n);
-      if (m[2]) names.add(m[2]);
+      for (const n of clauseNames(m[clause])) names.add(n);
+      for (const g of singles) if (m[g]) names.add(m[g]!);
     }
   }
+  for (const n of subprocessScriptHandles(code)) names.add(n);
   return names;
+}
+
+/**
+ * Names bound to a first-party SCRIPT PATH -- the target of a subprocess test.
+ *
+ * `agents/skills/test` drives most skill CLIs the way a user does, by spawning
+ * them: `const cli = path.join(SCRIPTS, 'cli.mjs'); spawnSync(cli, ['--help'])`.
+ * No symbol crosses that boundary, so import-inferred fidelity saw a test that
+ * referenced none of its file's imports and reported `VAC-002` on a test that is
+ * in fact exercising exactly what it claims (#705).
+ *
+ * The handle -- `cli` -- is the symbol that stands in for the target, so binding
+ * it is what lets the existing machinery work unchanged, `closeOverLocals`
+ * included. A launch site must be present in the file: a path literal on its own
+ * is data (a fixture, an expected value), not an invocation.
+ */
+function subprocessScriptHandles(code: string): Set<string> {
+  const names = new Set<string>();
+  if (!SUBPROCESS_LAUNCH.test(code)) return names;
+  JS_SIMPLE_DECL.lastIndex = 0;
+  for (const m of code.matchAll(JS_SIMPLE_DECL)) {
+    if (SCRIPT_PATH_LITERAL.test(m[2] ?? '')) names.add(m[1]!);
+  }
+  return names;
+}
+
+/**
+ * Does this test body itself reach first-party code the target set cannot name?
+ *
+ * Two shapes, both of which leave no identifier to match: a subprocess launched
+ * at a script path written inline (`spawnSync(path.join(D, 'cli.mjs'), ...)`),
+ * and a bare `await import('./x.js')` whose result is never bound. Read from the
+ * ORIGINAL source rather than the blanked copy, because the evidence in both
+ * cases IS the string literal.
+ *
+ * `SUBPROCESS_LAUNCH` and `SCRIPT_PATH_LITERAL` are required together: a test
+ * that spawns `git` and separately mentions a `.py` fixture path is not covered
+ * by either half alone.
+ */
+function reachesOutOfBandTarget(rawBody: string): boolean {
+  if (SUBPROCESS_LAUNCH.test(rawBody) && SCRIPT_PATH_LITERAL.test(rawBody))
+    return true;
+  return JS_BARE_DYNAMIC_IMPORT.test(rawBody);
 }
 
 /** Names imported from first-party (relative) modules. */
 function importedTargets(code: string, python: boolean): Set<string> {
   return python ? pythonImportedTargets(code) : jsImportedTargets(code);
+}
+
+/**
+ * Brace depth immediately BEFORE each character, over already-blanked code.
+ *
+ * Cheap and approximate on purpose: string content is blanked before this runs,
+ * so the only braces it can see are real ones (a `{` inside a comment is the
+ * residual inaccuracy, and it can only widen a body, never narrow one).
+ */
+function braceDepths(code: string): Int32Array {
+  const depths = new Int32Array(code.length);
+  let d = 0;
+  for (let i = 0; i < code.length; i += 1) {
+    depths[i] = d;
+    const c = code[i];
+    if (c === '{') d += 1;
+    else if (c === '}') d -= 1;
+  }
+  return depths;
+}
+
+/**
+ * Where declaration `i`'s body ends.
+ *
+ * Bounding it at the NEXT declaration is wrong for any helper that declares
+ * something inside itself, and that is the common shape for the subprocess
+ * helper #705 is about:
+ *
+ * ```ts
+ * const SCRIPT = join(REPO_ROOT, 'scripts', 'entropy-ratchet.mjs');
+ * function run() {
+ *   const r = spawnSync(process.execPath, [SCRIPT, ...]);   // <- next decl
+ *   ...
+ * }
+ * ```
+ *
+ * `run`'s body stopped at `const r`, so it never saw `SCRIPT`, so `run()` did
+ * not reach the target and every test calling it read as vacuous. Nesting is the
+ * discriminator: the body runs to the next declaration at the same or shallower
+ * brace depth, which is the first one that is genuinely a SIBLING.
+ */
+function declEnd(
+  code: string,
+  matches: RegExpMatchArray[],
+  i: number,
+  depth: Int32Array | null,
+): number {
+  if (depth === null) return matches[i + 1]?.index ?? code.length;
+  const own = depth[matches[i]!.index!] ?? 0;
+  for (let j = i + 1; j < matches.length; j += 1) {
+    const at = matches[j]!.index!;
+    if ((depth[at] ?? 0) <= own) return at;
+  }
+  return code.length;
 }
 
 /**
@@ -299,12 +464,13 @@ function closeOverLocals(
   const re = python ? PY_LOCAL_DECL : JS_LOCAL_DECL;
   re.lastIndex = 0;
   const matches = [...code.matchAll(re)];
+  const depth = python ? null : braceDepths(code);
   for (let i = 0; i < matches.length; i += 1) {
     const m = matches[i]!;
     const names = boundNames(m, python);
     if (names.length === 0) continue;
     const start = m.index! + m[0].length;
-    const end = matches[i + 1]?.index ?? code.length;
+    const end = declEnd(code, matches, i, depth);
     decls.push({ names, body: code.slice(start, end) });
   }
   if (!python) {
@@ -417,12 +583,13 @@ function scanBlock(
   reaching: Set<string> | null,
   annotated: string | null,
   skipped: SkipEntry[],
+  outOfBand: boolean,
 ): VacuityFinding[] {
   const lines = bodyLines(code, block).filter((l) => !isComment(l.text));
   const targets = annotated !== null ? new Set([annotated]) : reaching;
   return [
     ...tautologies(lines, block, file, python),
-    ...targetNeverInvoked(block, file, reaching, annotated),
+    ...targetNeverInvoked(block, file, reaching, annotated, outOfBand),
     ...absenceOnly(lines, block, file, python, targets, skipped),
   ];
 }
@@ -485,6 +652,7 @@ function targetNeverInvoked(
   file: string,
   reaching: Set<string> | null,
   annotated: string | null,
+  outOfBand: boolean,
 ): VacuityFinding[] {
   if (annotated !== null) {
     if (mentionsAny(block.body, new Set([annotated]))) return [];
@@ -501,6 +669,9 @@ function targetNeverInvoked(
       ),
     ];
   }
+  // The subprocess / bare-dynamic-import shapes reach first-party code without
+  // naming a symbol, so no target set can ever match them (#705).
+  if (outOfBand) return [];
   if (reaching === null || mentionsAny(block.body, reaching)) return [];
   return [
     mk(
@@ -674,7 +845,7 @@ export function scanVacuity(path: string): GateResult<VacuityFinding> {
 
   const skipped: SkipEntry[] = [];
   const findings = scanAllBlocks(
-    { code, path, python, reaching },
+    { code, source, path, python, reaching },
     blocks,
     skipped,
   );
@@ -690,6 +861,12 @@ export function scanVacuity(path: string): GateResult<VacuityFinding> {
 /** The invariants every block in one file shares. */
 interface ScanContext {
   code: string;
+  /**
+   * The unblanked text. Blanking is offset-preserving, so a block's raw body is
+   * the same slice -- needed by {@link reachesOutOfBandTarget}, whose evidence
+   * is a string literal.
+   */
+  source: string;
   path: string;
   python: boolean;
   reaching: Set<string> | null;
@@ -708,15 +885,29 @@ function scanAllBlocks(
     const prev = blocks[i - 1];
     const floor = prev ? prev.bodyStart + prev.body.length : 0;
     const annotated = annotationFor(ctx.code, block, floor);
+    const outOfBand =
+      !ctx.python &&
+      annotated === null &&
+      reachesOutOfBandTarget(
+        ctx.source.slice(block.bodyStart, block.bodyStart + block.body.length),
+      );
     if (annotated === null && ctx.reaching === null) {
       // Both target-dependent rules go dark together, and both say so. VAC-003
       // asks "does any assertion observe the target", which is unanswerable
       // without a target -- so it abstains rather than falling back to the
       // 254-false-positive version of itself.
+      //
+      // An out-of-band reach answers VAC-002 (the test DOES invoke first-party
+      // code) but not VAC-003, which needs a SYMBOL to ask "did an assertion
+      // observe it". So the skip narrows rather than disappearing: reporting
+      // both as dark would overstate the gap, dropping it entirely would hide a
+      // real one, and #705 is explicit that a suppressed inference and a passing
+      // check must not look alike.
       skipped.push({
-        name: `VAC-002/VAC-003 (${block.name})`,
-        reason:
-          'target unresolvable: no @covers annotation and no first-party relative import to infer from',
+        name: `${outOfBand ? 'VAC-003' : 'VAC-002/VAC-003'} (${block.name})`,
+        reason: outOfBand
+          ? 'target reached out of band (subprocess or bare dynamic import), so VAC-002 is answered but no symbol exists for absence-only to observe'
+          : 'target unresolvable: no @covers annotation and no first-party relative import to infer from',
       });
     }
     findings.push(
@@ -728,6 +919,7 @@ function scanAllBlocks(
         ctx.reaching,
         annotated,
         skipped,
+        outOfBand,
       ),
     );
   }

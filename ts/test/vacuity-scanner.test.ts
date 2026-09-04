@@ -308,6 +308,140 @@ describe('VAC-002 — the declared target is never invoked', () => {
   });
 });
 
+// #705. `canary vacuity-check` produced 65 VAC-002 findings on canary's own
+// `agents/skills/test` tree, and every one of them was the inference failing to
+// SEE the target rather than the test failing to invoke it: the skill suites
+// bind their subject with a namespace import, load it with `await import`, or
+// drive it as a subprocess. The issue rules out the cheap answers — no raised
+// threshold, no muted rule, no widened blanket skip — because a suppressed
+// inference and a passing check must not look alike. So each shape gets read.
+describe('VAC-002 — targets the import inference could not see (#705)', () => {
+  const NS_IMPORT = `import { it, expect } from 'vitest';\nimport * as store from './store.js';\n`;
+
+  it('binds a namespace import, so a call through it counts', () => {
+    // `*` is not a `\w`, so the original alternation could not match this form
+    // and the file resolved to an EMPTY target set — which is why the whole
+    // suite, not one test in it, drew a finding.
+    const r = scan(
+      'a.test.ts',
+      NS_IMPORT + `it('saves', () => { expect(store.save(1)).toBe(1); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('still flags a namespace-imported target that is never touched', () => {
+    // The other half of the same claim: widening the inference must not turn
+    // VAC-002 off for these files, only make it right about them.
+    const r = scan(
+      'a.test.ts',
+      NS_IMPORT + `it('adds', () => { expect(1 + 1).toBe(2); });\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-002');
+  });
+
+  it('binds a dynamically imported target', () => {
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `it('saves', async () => {\n` +
+        `  const { save } = await import('./store.js');\n` +
+        `  expect(save(1)).toBe(1);\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('accepts a bare dynamic import as reaching the target', () => {
+    // No binding at all, so no symbol exists to match. The specifier is the
+    // whole evidence — a test that imports a first-party module for its side
+    // effects has provably run it.
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `it('loads cleanly', async () => {\n` +
+        `  await import('./store.js');\n` +
+        `  expect(true).toBeTruthy();\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('binds a handle on a first-party script driven as a subprocess', () => {
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `import { spawnSync } from 'node:child_process';\n` +
+        `const cli = join(SCRIPTS, 'cli.mjs');\n` +
+        `it('runs', () => { expect(spawnSync(cli, ['--help']).status).toBe(0); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('reads a script path written inline at the launch site', () => {
+    // Nothing here binds a name to the script, so the target set stays empty
+    // and only the block-level read of the literal can clear this.
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `import { spawnSync } from 'node:child_process';\n` +
+        `it('runs', () => {\n` +
+        `  expect(spawnSync(process.execPath, [join(D, 'cli.mjs')]).status).toBe(0);\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+
+  it('does not treat spawning a bare command as reaching a target', () => {
+    // The discriminator the issue names: a string argument that resolves to a
+    // REPO PATH. `git` is not one, so this test still has no visible target and
+    // the check must still say so rather than quietly clearing it.
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `import * as store from './store.js';\n` +
+        `import { spawnSync } from 'node:child_process';\n` +
+        `it('tags', () => { expect(spawnSync('git', ['tag']).status).toBe(0); });\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-002');
+  });
+
+  it('keeps VAC-003 dark for an out-of-band reach, and says which rule', () => {
+    // VAC-002 is answered — the subprocess ran — but VAC-003 asks "did an
+    // assertion OBSERVE the target", and there is still no symbol to observe.
+    // Reporting both as dark would overstate the gap; dropping the skip
+    // entirely would hide a real one.
+    const r = scan(
+      'a.test.ts',
+      `import { it, expect } from 'vitest';\n` +
+        `import { spawnSync } from 'node:child_process';\n` +
+        `it('runs', () => {\n` +
+        `  expect(spawnSync(process.execPath, [join(D, 'cli.mjs')]).status).toBe(0);\n` +
+        `});\n`,
+    );
+    const skip = r.skipped?.find((s) => s.name.startsWith('VAC-003'));
+    expect(skip).toBeDefined();
+    expect(skip!.name).not.toContain('VAC-002');
+    expect(skip!.reason).toMatch(/out of band/i);
+  });
+
+  it('follows a helper that declares something inside itself', () => {
+    // The closure bounded each declaration's body at the NEXT declaration, so
+    // any helper containing a `const` lost everything after it — here `run`
+    // never saw `SCRIPT`, and every test calling `run()` read as vacuous. The
+    // body now runs to the next declaration at the same brace depth.
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `function run(v) {\n` +
+        `  const arg = v + 1;\n` +
+        `  return save(arg);\n` +
+        `}\n` +
+        `it('round-trips', () => { expect(run(1)).toBe(2); });\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-002');
+  });
+});
+
 describe('VAC-003 — every assertion asserts absence', () => {
   // The canary-katana case from #486: `expect(existsSync(ledger)).toBe(false)`
   // was free, because the buggy code exited before the write. An all-absence
