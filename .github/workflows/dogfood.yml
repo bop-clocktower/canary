@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       - name: Build the engine
         run: |
@@ -121,7 +121,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       # Deliberately NOT `node ts/bin/canary.js`: this installs the packed
       # tarball exactly as a consumer would, so the bundled engine, the bin
@@ -199,7 +199,7 @@ jobs:
       # whether the engine compiles on an old Node (it does not, by design).
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       - name: Pack the npm package
         run: |
@@ -267,7 +267,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       # The examples half SPAWNS the CLI, so it needs a real build. Without
       # one, `skills verify` abstains and says why rather than reporting a
@@ -321,7 +321,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       - name: Build the engine
         run: |
@@ -373,7 +373,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       - name: Fetch the base branch
         env:
