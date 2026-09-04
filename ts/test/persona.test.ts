@@ -124,6 +124,9 @@ describe('shipped persona registry', () => {
     // `voice/discovery.md` already resolves a named voice profile from its own
     // project config. Collapsing the two axes would make "terse, in a given
     // voice" inexpressible, which is the exact objection raised on #462.
+    // VAC-003 (#706): a loop of absence assertions is satisfied by an EMPTY
+    // list, so the denominator has to be asserted or the test proves nothing.
+    expect(SHIPPED.personas.length).toBeGreaterThan(0);
     for (const p of SHIPPED.personas) {
       expect(p).not.toHaveProperty('voice');
     }

@@ -71,6 +71,10 @@ describe('TS↔Python analysis parity', () => {
   }
 
   it('reports nothing degraded against the local store', () => {
+    // VAC-003 (#706): an empty `degraded` list is also what an engine that ran
+    // and produced nothing returns, so the absence only means something beside
+    // proof that the run happened.
+    expect(Object.keys(result.artifacts).length).toBeGreaterThan(0);
     expect(result.degraded).toEqual([]);
   });
 });
