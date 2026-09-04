@@ -179,6 +179,10 @@ export function main(argv = []) {
 }
 
 // Direct execution (the skill runner execs this file via its shebang).
+//
+// `process.exitCode`, not `process.exit()`: a large `--json` payload exceeds
+// the pipe buffer, and `process.exit` tears the process down mid-write, leaving
+// truncated JSON that still exits 0 (#791).
 if (import.meta.url === `file://${process.argv[1]}`) {
-  process.exit(main(process.argv.slice(2)));
+  process.exitCode = main(process.argv.slice(2));
 }
