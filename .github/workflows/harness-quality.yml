@@ -14,7 +14,12 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
+      # `fetch-depth: 0` so the merge base is a real commit in the object DB
+      # and not just a SHA in the event payload — the entropy delta gate (#703)
+      # checks the base tree out as a worktree and scans it.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: '20'
@@ -100,10 +105,51 @@ jobs:
           npx --yes -p "$HARNESS_CLI" harness cleanup --findings-json >
           entropy-report.txt || true
 
+      # The MERGE-BASE half of the ratchet (#703). The ceiling above is an
+      # absolute total, which makes headroom a shared, non-renewable budget no
+      # branch can see: two branches off the same `main` each measure
+      # themselves honestly, each fit, and whichever merges second fails on
+      # findings it did not introduce. Observed as main 294, batch C 296, batch
+      # B 297 against a 297 ceiling, C+B merged 299.
+      #
+      # Scanning the base tree as well makes each PR answerable for its own
+      # delta, which is order-independent. Two properties this step has to
+      # keep, both of which the ratchet depends on and neither of which it can
+      # check for itself:
+      #
+      #   1. SAME INSTRUMENT. The base scan runs the same resolved
+      #      `$HARNESS_CLI` in the same job as the head scan. A count is only
+      #      comparable to another count from the same analyzer — this one
+      #      moved 24 and then 110 findings across CLI minors with no code
+      #      change at all (see $driftfix in the baseline).
+      #   2. OUTSIDE THE WORKSPACE. The base worktree goes in `$RUNNER_TEMP`,
+      #      never in a subdirectory of the checkout, or the head scan walks
+      #      the base tree and counts every finding twice.
+      #
+      # `|| true` matches the head scan: `harness cleanup` exits 1 whenever it
+      # has findings, which is always, so its exit code cannot gate anything.
+      # An empty report is NOT silently tolerated — the ratchet abstains
+      # (exit 3) on a base report with no contract line.
+      - name: Harness Cleanup (Entropy Scan, merge base)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/entropy-base" "$BASE_SHA"
+          cd "$RUNNER_TEMP/entropy-base"
+          npx --yes -p "$HARNESS_CLI" harness cleanup --findings-json \
+            > "$GITHUB_WORKSPACE/entropy-base-report.txt" || true
+
       - name: Entropy ratchet (blocking)
+        env:
+          # Empty on a push to `main`, where there is no merge base to compare
+          # against and the absolute ceiling is the only rule that applies.
+          BASE_FLAG:
+            ${{ github.event_name == 'pull_request' && '--base-report
+            entropy-base-report.txt' || '' }}
         run:
           node scripts/entropy-ratchet.mjs --report entropy-report.txt
-          --cli-version "${{ steps.harness-cli.outputs.version }}"
+          --cli-version "${{ steps.harness-cli.outputs.version }}" $BASE_FLAG
 
       # WIRED as of #717. `check-perf` was referenced by no workflow at all, so
       # its 237 violations at 8c865b5 protected nothing — a check that runs

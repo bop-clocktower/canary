@@ -454,6 +454,70 @@ gone on sitting there.
   (perf). A collapse guard catches a detector going dark all at once, never an
   instrument that is merely different.
 
+## Amendment — 2026-09-04: an absolute ceiling is order-dependent (#703)
+
+The instrument amendment above is about the number on the **left** of the
+comparison moving on its own. This one is about the number on the **right**
+being a resource that branches consume from each other without seeing it.
+
+An absolute ceiling gives this ADR the property it wanted — total entropy must
+trend down, and no PR can add "just a little" forever. It also makes headroom a
+**shared, non-renewable budget that no branch can observe.** A branch author
+measures 297 against a 297 ceiling, passes honestly, and has no way to know
+another green branch is about to spend the same findings. Measured in clean
+worktrees off one `main` in a single session:
+
+| branch         | findings | verdict alone       |
+| -------------- | -------- | ------------------- |
+| `main`         | 294      | 3 of headroom       |
+| batch C (#538) | 296      | fits                |
+| batch B (#487) | 297      | fits, zero headroom |
+| C + B merged   | **299**  | **fails, +2 over**  |
+
+Neither branch is bad. Each was measured honestly and reviewed. They fail only
+in combination, and the one that fails is **whichever merges second** — so the
+gate is correct on every individual PR and wrong about the merge queue. The
+observed cost was serialization: with headroom that thin, the gate effectively
+capped the repo at one in-flight PR touching `src` at all, which is what makes
+fan-out much less useful than it looks.
+
+**The ratchet now runs two rules, and either can fail the build.**
+
+1. **Delta against the merge base.** On a pull request, `harness-quality.yml`
+   scans the base tree as well and hands both counts to the ratchet, which fails
+   when `findings(head) > findings(merge-base)`. Same "never add entropy"
+   property, expressed relative to what the branch actually started from — so it
+   is order-independent, and the author can see their own number.
+2. **The absolute ceiling, as a backstop.** Unchanged. Without it a long series
+   of +0 merges could walk the total upward and the trend-down property would
+   quietly disappear.
+
+`maxFindings` still cannot be raised to make a failing check pass. This changes
+who computes the number, not the prohibition.
+
+Two invariants the ratchet cannot verify for itself, because by the time it runs
+it holds two integers and no provenance — both are asserted against the workflow
+YAML in `ts/test/entropy-ratchet.test.ts`:
+
+- **Both scans must come from the same resolved CLI.** Otherwise the delta is
+  pure instrument drift, which the amendment above measured at 24 and then 110
+  findings with no code change at all.
+- **The base worktree must live outside the checkout** (`$RUNNER_TEMP`, never a
+  subdirectory of `$GITHUB_WORKSPACE`), or the head scan walks the base tree and
+  double-counts every finding on both sides.
+
+One property is deliberate rather than accidental: each side reads **its own**
+`harness.config.json`, so a PR that widens `entropy.excludePatterns` or
+`entropy.entryPoints` sees the denominator shift in its own delta. A branch owns
+the findings its config change surfaces, exactly as it owns the ones its code
+change surfaces.
+
+**Not closed by this.** `measuredCount` in the baseline is still a memory of the
+last time a human ran the analyzer; nothing refreshes it on merge, and the
+`.harness/arch/baselines.json` staleness #689 tracks is the identical failure
+mode one directory over. The delta rule removes the order-dependence, not the
+manual re-measure.
+
 ## Consequences
 
 - A PR that adds unreachable code now fails `Quality & Integrity` instead of
