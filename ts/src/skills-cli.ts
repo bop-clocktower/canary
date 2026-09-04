@@ -21,6 +21,7 @@ import { CliExitError, jsonIndent2, normalizeUsageExit } from './cli-common.js';
 import { gateOutcome, type GateResult } from './core/gate-result.js';
 import {
   checkExamples,
+  countDeclaredIllustrative,
   spawnRunner,
   type ExampleFinding,
 } from './core/skill-examples.js';
@@ -379,6 +380,11 @@ function verifyJson(
       abstained: !(exampleResult.checked > 0),
       findings: exampleResult.findings,
       skipped: exampleResult.skipped ?? [],
+      // The skipped bucket, split (#707). Emitted rather than left for the
+      // consumer to derive: a CI step counting declared-illustrative examples
+      // by matching the reason string would be a second copy of a literal
+      // owned here, and it would drift to 0 silently.
+      illustrative: countDeclaredIllustrative(exampleResult.skipped ?? []),
     },
   });
 }
@@ -413,6 +419,17 @@ function verifyReport(
     noun: 'documented example(s)',
   });
   deps.out(`examples: ${exampleOutcome.summaryLine}`);
+  // #707: the denominator, split. "29 unverifiable" reads as one fact and is
+  // two — blocks nobody could run, and blocks the author declared as prose.
+  // Only the first is a gap, and printing the total alone buries it.
+  const skipped = exampleResult.skipped ?? [];
+  const declared = countDeclaredIllustrative(skipped);
+  deps.out(
+    `  denominator: executed=${exampleResult.checked} ` +
+      `illustrative=${declared} ` +
+      `unverifiable=${skipped.length - declared} ` +
+      `total=${exampleResult.checked + skipped.length}`,
+  );
   if (exampleOutcome.abstained) {
     deps.out(
       `  zero documented commands were executed ${EM_DASH} nothing here is ` +

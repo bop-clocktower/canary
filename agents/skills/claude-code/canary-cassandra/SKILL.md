@@ -58,6 +58,13 @@ canary skills run canary-cassandra -- tests/
 canary skills run canary-cassandra -- tests/ --json --strict
 ```
 
+Usage, flags, and the full rule list — this one is runnable verbatim, needs no
+fixtures, and is what CI executes to prove the doc still matches the CLI:
+
+```bash
+canary skills run canary-cassandra -- --help
+```
+
 The `--json` envelope matches `canary-savant` / `canary-blackhawk` /
 `canary-katana` — `schema_version`, a `findings` array of
 `{file, line, rule_id, severity, snippet, why}`, and a `summary` — so findings

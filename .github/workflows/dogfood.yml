@@ -313,8 +313,14 @@ jobs:
                 console.log(`::warning title=${f.kind}::${f.skill ?? f.name}: ${f.detail}`);
               }
             }
+            // #707: the skipped bucket is TWO facts and only one is a gap —
+            // blocks nobody could run, and blocks the author declared prose
+            // with `<!-- canary:illustrative -->`. Reporting the sum alone is
+            // what let 4-executed-of-33 read as coverage for a full cycle.
             const skipped = r.examples.skipped.length;
-            if (skipped) console.log(`::notice title=Unverifiable examples::${skipped} documented example(s) could not be executed; each carries its reason in surfaces.json.`);
+            const illustrative = r.examples.illustrative ?? 0;
+            const total = r.examples.checked + skipped;
+            console.log(`::notice title=Example denominator::executed=${r.examples.checked} illustrative=${illustrative} unverifiable=${skipped - illustrative} total=${total}`);
             process.exit(broke);
           '
 
