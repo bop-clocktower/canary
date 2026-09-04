@@ -1,7 +1,7 @@
 /**
  * #761 — guardian must state what its diff was taken between.
  *
- * The measured failure this pins (capwell#1853): a PR whose entire
+ * The measured failure this pins (#761): a PR whose entire
  * diff was ONE markdown file was analyzed as 43 files, because CI checked out
  * the `pull_request` MERGE REF — the base branch merged with the PR head — and
  * diffed to that. The triple-dot merge base degenerates to the base sha itself
@@ -78,7 +78,7 @@ const CLEAN: DiffProvenance = {
   fileCount: 1,
 };
 
-/** The capwell#1853 shape: same base, HEAD is the merge ref, 43 files. */
+/** The #761 shape: same base, HEAD is the merge ref, 43 files. */
 const INFLATED: DiffProvenance = {
   base: BASE,
   head: MERGE_REF_HEAD,
@@ -147,7 +147,7 @@ describe('the sticky comment carries provenance (#761)', () => {
     expect(body).toContain('90e550148f...2cfb03cbfb');
   });
 
-  it('the capwell#1853 regression: 43 files and the merge-ref warning both show', () => {
+  it('the #761 regression: 43 files and the merge-ref warning both show', () => {
     const body = renderFindings(finding(), 'comment', 0, null, meta(INFLATED));
     expect(body).toContain('43 files');
     expect(body).toContain('MERGE REF');

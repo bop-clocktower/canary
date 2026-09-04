@@ -73,6 +73,16 @@ the code, not just the paths.
   file (and the `CANARY_PROPRIETARY_DENYLIST` CI secret). The public script
   names no company — keep it that way. Use a neutral placeholder (e.g. `ACME`)
   in public examples.
+- **Obfuscate consumer repos too, not just the company.** A consuming repo's
+  name, its issue numbers and its suite names identify the company as surely as
+  the company name does, and they are easy to miss because they read like
+  ordinary provenance ("the worked example is `<repo>#1853`"). 39 such
+  references accumulated here while the company name itself stayed clean,
+  because the denylist held one and not the other. When a real consumer failure
+  is worth citing, cite the **canary-side issue** that records it and describe
+  the consumer generically ("a consumer repo", "one consumer's sharded suite").
+  Fixture values take a neutral placeholder. The private tracker id belongs in
+  the private overlay, not in a comment here.
 - **That guard's denominator is the point.** Both halves scan `.md`, `.py`, the
   TS/JS family (`.ts`, `.tsx`, `.js`, `.mjs`, `.cjs`) and the data family
   (`.json`, `.yml`, `.yaml`); the proprietary half adds `.svg`, `.html`, `.txt`
