@@ -19,6 +19,16 @@ updates:
       ts-dependencies:
         patterns:
           - '*'
+    ignore:
+      # TypeScript 7 is the Go-native rewrite, not a point release, and it
+      # arrived inside three routine weekly bumps (#775, #777, #778). Two
+      # failed with `@types/node` no longer resolving at all; the third passed
+      # only because its tree is not typechecked, which is the more worrying
+      # half. Held until #792 plans the migration — minor and patch still flow.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
 
   # The published canary-test-cli package.
   - package-ecosystem: 'npm'
@@ -29,6 +39,16 @@ updates:
       npm-package-dependencies:
         patterns:
           - '*'
+    ignore:
+      # TypeScript 7 is the Go-native rewrite, not a point release, and it
+      # arrived inside three routine weekly bumps (#775, #777, #778). Two
+      # failed with `@types/node` no longer resolving at all; the third passed
+      # only because its tree is not typechecked, which is the more worrying
+      # half. Held until #792 plans the migration — minor and patch still flow.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
 
   # The skill runtimes and their vitest harness.
   - package-ecosystem: 'npm'
@@ -39,6 +59,16 @@ updates:
       skills-dependencies:
         patterns:
           - '*'
+    ignore:
+      # TypeScript 7 is the Go-native rewrite, not a point release, and it
+      # arrived inside three routine weekly bumps (#775, #777, #778). Two
+      # failed with `@types/node` no longer resolving at all; the third passed
+      # only because its tree is not typechecked, which is the more worrying
+      # half. Held until #792 plans the migration — minor and patch still flow.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
 
   # Maintain dependencies for GitHub Actions
   - package-ecosystem: 'github-actions'
