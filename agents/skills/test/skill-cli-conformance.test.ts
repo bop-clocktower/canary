@@ -20,6 +20,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
@@ -105,6 +106,22 @@ describe.each(ROWS)('$name', (row) => {
     expect(
       fs.readFileSync(row.cli, 'utf8').startsWith('#!/usr/bin/env node'),
     ).toBe(true);
+  });
+
+  it('sets process.exitCode instead of calling process.exit (#791)', () => {
+    // `process.exit()` tears the process down without waiting for stdout to
+    // drain. On a pipe -- every CI step, every `| jq`, every orchestrator call
+    // -- a `--json` payload larger than the pipe buffer is truncated while the
+    // process still exits 0. Asserted statically for every discovered row so
+    // the eighth CLI cannot reintroduce it; the behavioural proof is below.
+    const src = fs.readFileSync(row.cli, 'utf8');
+    expect(
+      src,
+      `${row.name} must not call process.exit(main(...))`,
+    ).not.toMatch(/process\.exit\(main\(/);
+    expect(src).toMatch(
+      /process\.exitCode = main\(process\.argv\.slice\(2\)\)/,
+    );
   });
 
   it('routes argument parsing through the shared parser', async () => {
@@ -200,5 +217,54 @@ describe.each(ROWS)('$name', (row) => {
     });
     expect(bogus.status).toBe(EXIT_USAGE);
     expect(bogus.stderr).toMatch(/unrecognized arguments:/);
+  });
+});
+
+describe('a --json payload larger than the pipe buffer survives (#791)', () => {
+  // The static assertion above pins the shape; this one proves the shape is
+  // what actually mattered. Measured against the pre-fix code on this machine:
+  // the payload below is 175271 bytes, and `process.exit` delivered exactly
+  // 131072 of them -- a truncated document, exit status 0.
+  //
+  // One CLI carries the behavioural case rather than all seven: the corpus has
+  // to trip a real rule to produce a large findings array, and the tear-down
+  // being tested is identical wiring in every row.
+  const BLACKHAWK = ROWS.find((r) => r.name === 'canary-blackhawk');
+  const PIPE_BUFFER_BYTES = 131072;
+
+  it('has a CLI to measure (a missing row would vacuously pass)', () => {
+    expect(BLACKHAWK, 'canary-blackhawk must be discoverable').toBeDefined();
+  });
+
+  it('emits the whole document through a pipe, not the first 128KB', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canary-791-'));
+    try {
+      // Each file trips BH002-real-delay once, so findings scale with N.
+      for (let i = 0; i < 400; i++) {
+        fs.writeFileSync(
+          path.join(dir, `sample-${i}.test.ts`),
+          `import { it } from 'vitest';\nit('waits ${i}', async () => {\n  await new Promise((r) => setTimeout(r, 1000));\n});\n`,
+        );
+      }
+
+      const run = spawnSync(BLACKHAWK!.cli, ['--json', dir], {
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+      });
+
+      expect(run.status, run.stderr).toBe(0);
+      // Guards the guard: a corpus that stopped producing a large payload
+      // would let the truncation bug back in without failing anything.
+      expect(
+        run.stdout.length,
+        'corpus no longer exceeds the pipe buffer -- the assertion below is vacuous',
+      ).toBeGreaterThan(PIPE_BUFFER_BYTES);
+
+      const parsed = JSON.parse(run.stdout);
+      expect(parsed.summary.files_scanned).toBe(400);
+      expect(parsed.findings.length).toBe(400);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
