@@ -250,33 +250,102 @@ function reEscape(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Where the denylist file lives for this run, and how we found it.
+ *
+ * The file is gitignored by design — it names the company, and this repo is
+ * public — so `git worktree add` does not copy it. Every worktree therefore
+ * started with the proprietary half of this gate dark, and said nothing about
+ * it. That is the #725 shape exactly: a gate whose coverage depended on where
+ * the tree happened to be created. The remedy is the one #725 already
+ * established for markdownlint — the common git dir points at the main
+ * checkout unconditionally, worktree or not, so its copy is the one file this
+ * script can always name.
+ *
+ * Resolution order: the fixture seam, then this tree, then the main checkout.
+ * Probed in that order because a tree carrying its own denylist should use it.
+ */
+function resolveDenylistFile() {
+  // Resolution is anchored on REPO_ROOT, not SCAN_ROOT, and deliberately so:
+  // the denylist is the gate's own configuration, not part of the tree being
+  // scanned. A fixture root must not be able to supply its own (empty)
+  // denylist and scan itself clean.
+  //
+  // The seam is narrow for the same reason: honoured ONLY when the scan root
+  // is already overridden, i.e. a fixture run that has announced itself
+  // loudly, so a real CI run cannot reach it. Without it, the no-denylist
+  // tests would pass only on machines that happen to lack the private overlay
+  // — green in CI, red on the maintainer's laptop, which is how the assertion
+  // guarding the dark-gate disclosure would get loosened.
+  //
+  // An announced fixture run resolves to exactly what it asked for, with no
+  // main-checkout fallback: falling back there would let the real denylist
+  // into a fixture scan and silently invalidate those same cases.
+  const seam = (process.env[DENYLIST_FILE_ENV_OVERRIDE] ?? '').trim();
+  if (SCAN_ROOT_IS_OVERRIDDEN && seam) {
+    return { file: resolve(seam), source: 'seam' };
+  }
+
+  const local = resolve(REPO_ROOT, DENYLIST_FILE);
+  if (existsSync(local)) return { file: local, source: 'local' };
+
+  try {
+    const commonGitDir = execFileSync(
+      'git',
+      ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+      {
+        cwd: REPO_ROOT,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    ).trim();
+    if (commonGitDir) {
+      const shared = resolve(dirname(commonGitDir), DENYLIST_FILE);
+      if (existsSync(shared)) return { file: shared, source: 'main-checkout' };
+    }
+  } catch {
+    // Not a git tree, or no git binary. Nothing to fall back to; the caller
+    // discloses the resulting gap rather than passing quietly.
+  }
+
+  return { file: null, source: 'none' };
+}
+
+/** Memoized: loadDenylist runs per-half, and resolution shells out to git. */
+let denylistCache = null;
+
+function denylistState() {
+  if (denylistCache) return denylistCache;
+  const { file, source } = resolveDenylistFile();
+  const fileTerms =
+    file && existsSync(file)
+      ? readFileSync(file, 'utf-8')
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((s) => s && !s.startsWith('#'))
+      : [];
+  const envTerms = (process.env[DENYLIST_ENV] ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  denylistCache = {
+    file,
+    source: fileTerms.length ? source : 'none',
+    fileTerms,
+    envTerms,
+    // The gate's proprietary half has nothing company-specific to match on.
+    // Structural patterns still run, which is why this cannot be read off the
+    // exit code alone -- it looks exactly like a clean run.
+    degraded: fileTerms.length === 0 && envTerms.length === 0,
+  };
+  return denylistCache;
+}
+
 function loadDenylist() {
   const terms = new Set();
-  // REPO_ROOT, not SCAN_ROOT, and deliberately so: the denylist is the gate's
-  // own configuration, not part of the tree being scanned. A fixture root must
-  // not be able to supply its own (empty) denylist and scan itself clean.
-  // Test seam, and deliberately a narrow one: honoured ONLY when the scan
-  // root is already overridden, i.e. a fixture run that has announced itself
-  // loudly. A real CI run cannot reach it, so the gate still cannot be
-  // cleared by supplying an empty denylist. Without this, the no-denylist
-  // test passes only on machines that happen to lack the private overlay —
-  // green in CI, red on the maintainer's laptop, which is how the assertion
-  // guarding the dark-gate disclosure would get loosened.
-  const seam = (process.env[DENYLIST_FILE_ENV_OVERRIDE] ?? '').trim();
-  const f =
-    SCAN_ROOT_IS_OVERRIDDEN && seam
-      ? resolve(seam)
-      : resolve(REPO_ROOT, DENYLIST_FILE);
-  if (existsSync(f)) {
-    for (const line of readFileSync(f, 'utf-8').split('\n')) {
-      const s = line.trim();
-      if (s && !s.startsWith('#')) terms.add(s);
-    }
-  }
-  for (const raw of (process.env[DENYLIST_ENV] ?? '').split(',')) {
-    const s = raw.trim();
-    if (s) terms.add(s);
-  }
+  const state = denylistState();
+  for (const s of state.fileTerms) terms.add(s);
+  for (const s of state.envTerms) terms.add(s);
   const reason =
     'company/proprietary identifier (from denylist) — keep it in the ' +
     'private overlay; use a neutral placeholder (e.g. ACME) in public examples';
@@ -322,6 +391,14 @@ function main() {
         'the tree in git. Unset the variable for the real gate.\n\n',
     );
   }
+  const denylist = denylistState();
+  if (denylist.source === 'main-checkout') {
+    process.stdout.write(
+      `check_removed_symbols: denylist resolved from the main checkout ` +
+        `(${denylist.file}) — this tree has none of its own.\n`,
+    );
+  }
+
   const removed = checkRemovedSymbols();
   const proprietary = checkProprietary();
   const authorship = checkAuthorship({
@@ -363,6 +440,22 @@ function main() {
 
   if (removed.length || proprietary.length || authorship.violations?.length) {
     return 1;
+  }
+
+  if (denylist.degraded) {
+    process.stdout.write(
+      `\ncheck_removed_symbols: DEGRADED — structural patterns only. No ` +
+        `denylist file and no ${DENYLIST_ENV}, so company identifiers were ` +
+        `NOT checked here. This is not a clean proprietary scan.\n` +
+        `Provide ${DENYLIST_FILE} in this tree or the main checkout, or set ` +
+        `${DENYLIST_ENV}.\nCI still gates the real one.\n` +
+        // The authorship half reports its own denominator on the clean line
+        // this branch replaces. Dropping it here would trade one silence for
+        // another: the same no-denylist condition degrades both halves, and
+        // both have to say so.
+        `${renderDenominator(authorship)}.\n`,
+    );
+    return 0;
   }
 
   process.stdout.write(
