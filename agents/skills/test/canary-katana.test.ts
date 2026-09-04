@@ -382,34 +382,59 @@ describe('ledger', () => {
     expect(doc.entries.length).toBe(1);
   });
 
-  it('does not duplicate a row when only the ticket differs (#772)', () => {
-    // The ticket is an ATTRIBUTE of the mute, not part of its identity, and
-    // this is the case that proves why it has to be. A ledger written before
-    // the field existed holds rows with no ticket; the same capture re-run
-    // afterwards finds one. If `ticket` were part of the de-duplication key
-    // those would hash differently and the second run would append a duplicate
-    // of a row already on disk — breaking the append-only guarantee precisely
-    // at the version boundary, where nobody would be looking.
+  it('does not duplicate a row when only the issue differs (#781, #771)', () => {
+    // The issue link is an ATTRIBUTE of the mute, not part of its identity,
+    // and this is the case that proves why it has to be. A ledger written
+    // before the field existed holds rows with no link; the same capture
+    // re-run afterwards finds one. If `issue` were part of the de-duplication
+    // key those would hash differently and the second run would append a
+    // duplicate of a row already on disk — breaking the append-only guarantee
+    // precisely at the version boundary, where nobody would be looking.
     const p = path.join(mkTmp(), 'q.json');
-    ledger.appendEntries(p, [entry({ ticket: '' })]);
-    const doc = ledger.appendEntries(p, [entry({ ticket: 'PROJ-4471' })]);
+    ledger.appendEntries(p, [entry({ issue: '' })]);
+    const doc = ledger.appendEntries(p, [entry({ issue: 'PROJ-4471' })]);
 
     expect(doc.entries.length).toBe(1);
     // First write wins, because the ledger only ever grows and existing rows
-    // keep their position. Correcting a recorded ticket is a new commit and a
+    // keep their position. Correcting a recorded link is a new commit and a
     // new row, not a silent rewrite of history.
-    expect((doc.entries[0] as { ticket: string }).ticket).toBe('');
+    expect((doc.entries[0] as { issue: string }).issue).toBe('');
   });
 
-  it('keeps ticket in the row shape, in canonical field order', () => {
+  it('keeps issue in the row shape, in canonical field order', () => {
     // The field has to be PRESENT on every row for a consumer to read it
     // without special-casing; `LedgerEntry` fills it with '' when absent.
-    const row = entry() as Record<string, string>;
-    expect(Object.keys(row)).toContain('ticket');
-    expect(row.ticket).toBe('');
-    expect((entry({ ticket: 'PROJ-1' }) as Record<string, string>).ticket).toBe(
-      'PROJ-1',
-    );
+    const row = entry() as unknown as Record<string, string>;
+    expect(Object.keys(row)).toContain('issue');
+    expect(row.issue).toBe('');
+    expect(
+      (entry({ issue: 'PROJ-1' }) as unknown as Record<string, string>).issue,
+    ).toBe('PROJ-1');
+    // `ticket` is gone as a field: two names for "what is this waiting on" is
+    // how a consumer ends up reading the empty one.
+    expect(Object.keys(row)).not.toContain('ticket');
+  });
+
+  it("migrates a v1 row's `ticket` onto `issue`", () => {
+    // v1 (#781) recorded the link as `ticket`. Folding the two names into one
+    // must not lose a link already on disk, so the old key is read on load.
+    const row = ledger.LedgerEntry({
+      test: 'test_x',
+      file: 'tests/t.py',
+      ticket: 'PROJ-4471',
+    }) as unknown as Record<string, string>;
+
+    expect(row.issue).toBe('PROJ-4471');
+    expect(Object.keys(row)).not.toContain('ticket');
+  });
+
+  it('prefers an explicit issue over a legacy ticket on the same object', () => {
+    const row = ledger.LedgerEntry({
+      issue: 'PROJ-NEW',
+      ticket: 'PROJ-OLD',
+    }) as unknown as Record<string, string>;
+
+    expect(row.issue).toBe('PROJ-NEW');
   });
 
   it('sorts new entries for stable ordering', () => {
@@ -456,7 +481,7 @@ describe('ledger', () => {
   // --- v2: cause / issue / expiry (#771) ------------------------------------
 
   it('v2 fields default to empty so a row is always fully shaped', () => {
-    const row = entry() as Record<string, string>;
+    const row = entry() as unknown as Record<string, string>;
     expect(row.cause).toBe('');
     expect(row.issue).toBe('');
     expect(row.expiry).toBe('');

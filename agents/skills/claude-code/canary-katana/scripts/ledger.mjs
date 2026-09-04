@@ -62,7 +62,8 @@ export function LedgerEntry(fields) {
   // kept alongside -- two fields answering "what is this waiting on" is how a
   // consumer ends up reading the empty one. `Ticket:` survives as the name of
   // the COMMIT TRAILER that populates it, which is a mechanism, not a schema.
-  if (!row.issue && typeof fields.ticket === 'string') row.issue = fields.ticket;
+  if (!row.issue && typeof fields.ticket === 'string')
+    row.issue = fields.ticket;
   return row;
 }
 
@@ -80,9 +81,7 @@ export function LedgerEntry(fields) {
 // on whether a row states one, so a caused and a causeless row for the same
 // test must remain distinguishable here for that decision to have anything to
 // act on.
-const IDENTITY_FIELDS = FIELDS.filter(
-  (f) => f !== 'issue' && f !== 'expiry',
-);
+const IDENTITY_FIELDS = FIELDS.filter((f) => f !== 'issue' && f !== 'expiry');
 
 const key = (row) => IDENTITY_FIELDS.map((f) => row[f] ?? '').join('\u0000');
 
