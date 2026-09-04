@@ -67,7 +67,7 @@ row carries full provenance so a vanished test leaves a trail:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "entries": [
     {
       "test": "test_points_service_earns",
@@ -78,7 +78,9 @@ row carries full provenance so a vanished test leaves a trail:
       "author": "Ada Lovelace",
       "date": "2026-07-20T10:00:00+00:00",
       "reason": "chore: drop points coverage",
-      "ticket": "PROJ-4471"
+      "cause": "",
+      "issue": "",
+      "expiry": ""
     }
   ]
 }
@@ -87,40 +89,63 @@ row carries full provenance so a vanished test leaves a trail:
 Re-running on the same change adds nothing (entries de-duplicate); a corrupt
 ledger is a hard error, never silently overwritten.
 
-### The ticket, and why it is a trailer
+### Schema v2: why a row is out, not just how it left (#771)
 
-`ticket` is the bug the quarantine is waiting on, read from a **`Ticket:`
-trailer** in the commit that muted the test (`Bug:` and `Tracked:` are accepted
-aliases; the last one wins, following git's convention that the final trailer
-block is authoritative). The value is recorded verbatim — a key, a URL, or
-several — because katana cannot know one org's issue tracker from another's, and
-turning a key into a link is the consuming tool's job.
+`cause`, `issue` and `expiry` are written by the quarantine producer, not by
+katana. Katana records what it can observe from a diff — a test was removed or
+skipped — and leaves `cause` empty, because "someone deleted this in commit
+abc123" is provenance, not a judgement about why the test is out of the suite.
 
-```text
-test: quarantine the malformed-create cases
+`reason` and `cause` are deliberately separate. `reason` is **derived** (the
+commit subject). `cause` is **asserted** — one of `flaky`, `product-defect`,
+`blocked-data`, `obsolete`. Collapsing them would dress an auto-derived string
+up as a claim someone stands behind.
 
-The assertions are correct; the platform returns 500 on an empty body.
+**One row per `(test, file)` may state a cause, and a caused row wins.** A row
+with a cause supersedes a causeless row for the same pair, and a causeless row
+is dropped when a caused row already exists. This is the one place the ledger is
+not purely append-only, and it exists because the alternative is worse: katana
+recording `{kind: 'skipped', cause: ''}` and a quarantine producer recording
+`{kind: 'skipped', cause: 'product-defect', issue: …}` differ in every-field
+identity, so **both** would persist — and a consumer that fails on an unlinked
+quarantine (`canary-ci-ready` does) would fail on the causeless row while the
+linked row sat beside it. The ledger would be contradicting itself about one
+test.
 
-Ticket: PROJ-4471
-```
+History survives that rule: only rows differing in cause-bearing state collapse.
+Two caused rows, or two causeless rows, keep the full-field identity and both
+remain.
 
-**Never inferred from the message.** The patterns that match `PROJ-1234` also
-match `UTF-8` and `SHA-1`, and a confidently wrong bug link is worse than an
-honest blank: it points a reader at the wrong defect, and nobody re-checks a
-link that looks right. A commit with no trailer records `ticket: ""`, which is a
-real and useful state — **a test switched off with nothing to chase is the worst
-row this ledger can hold, and it can only be acted on if it is recorded
-plainly.**
+### Where `issue` comes from, and why the trailer keeps its own name
 
-`ticket` is **not** part of a row's de-duplication identity. Identity is what
-happened — which test, in which file, muted how, by which commit and why — and
-the ticket is an attribute of that event. Excluding it also keeps the
-append-only guarantee across this change: rows written before the field existed
-key as an empty ticket, so re-running a capture that now finds one would
-otherwise append a duplicate of a row already on disk.
+`issue` is the bug the quarantine is waiting on. It has two sources, and both
+land in the same field:
 
-`schema_version` stays `1`: the field is additive, and a reader that does not
-know about it is unaffected.
+- **A `Ticket:` commit trailer**, read by katana at capture time (`Bug:` and
+  `Tracked:` are accepted spellings). This is the low-friction path: the person
+  switching the test off names the bug in the commit that does it.
+- **A quarantine producer**, writing a caused row directly.
+
+v1 called this field `ticket` (#781). It is folded into `issue` here rather than
+kept alongside, because two fields answering "what is this waiting on" is how a
+consumer ends up reading the empty one — and the consumer is specific:
+`canary-ci-ready` fails a quarantine with no **linked issue**, in either Jira or
+GitHub. The schema now uses the consumer's word. A v1 row's `ticket` migrates
+onto `issue` on load, so no recorded link is lost.
+
+`Ticket:` survives as the name of the **trailer**, which is a mechanism rather
+than a schema: it is what you type in a commit message, and renaming it would
+invalidate the trailers already written without teaching anyone anything.
+
+Empty is a real and important state, not a gap to paper over. A test switched
+off with nothing to chase is the worst thing this ledger can record, and it can
+only be seen if it is recorded honestly.
+
+A v1 file is normalized on load, so every row comes back carrying the v2 fields
+(empty where unrecorded). That is what makes writing `schema_version: 2` honest
+— the version claims these rows have these fields, and after load they do.
+Stamping the version over un-migrated rows would make it a promise the file does
+not keep.
 
 ## Invocation
 
@@ -162,7 +187,7 @@ a usage request or a typo never mutates the working tree.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "captured": [
     { "name": "…", "file": "…", "kind": "removed", "line": 3, "marker": "" }
   ],
