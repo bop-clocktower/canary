@@ -60,6 +60,30 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The entropy ratchet blamed whichever branch merged second** (#703). The
+  ceiling in `.harness/entropy-baseline.json` is an absolute total, which makes
+  headroom a shared budget no branch can see: measured off one `main` in a
+  single session, batch C reported 296 and batch B 297 against a 297 ceiling —
+  both green, both honest — and the merge of the two reported 299 and failed.
+  Merge order decided who got blamed for findings neither of them individually
+  caused, and with headroom that thin the gate effectively capped the repo at
+  one in-flight PR touching `src`.
+
+  `scripts/entropy-ratchet.mjs` now takes `--base-report` and fails on the delta
+  a branch introduces against **its own merge base**, which is order-independent
+  and visible to the author. `harness-quality.yml` scans the base tree in the
+  same job with the same resolved CLI — a count is only comparable to another
+  count from the same analyzer, and this one has moved 24 and then 110 findings
+  across CLI minors with no code change at all.
+
+  The absolute ceiling stays as a backstop, so a long run of +0 merges still
+  cannot walk the total upward, and raising `maxFindings` to make a failing
+  check pass remains the one forbidden move. A base report that carries no
+  contract line ABSTAINS (exit 3) rather than degrading to the absolute rule: a
+  base that could not be measured is not a base of zero. Not closed by this —
+  `measuredCount` is still refreshed by hand, and the same staleness in
+  `.harness/arch/baselines.json` (#689) is untouched.
+
 - **`canary skills list` could not see any bundled skill from an installed CLI**
   (#757). It reported `No skills found.` from the repo root, from a clean
   worktree, and from `agents/skills/claude-code/` itself — the directory holding
@@ -100,16 +124,16 @@ under the project's former name) are documented in the
   feature: a reviewer checks it against the file list GitHub shows them, so it
   must count what guardian was handed, not what it went on to score.
 
-  The failure that earned it, in a consumer repo: a PR whose entire diff was **one
-  markdown file** was analyzed as **43**, and guardian reported six files the PR
-  never touched. CI had checked out the `pull_request` **merge ref** — the base
-  branch merged with the PR head — so the triple-dot merge base degenerated to
-  the base sha itself (it is an ancestor of the merge commit) and the range
-  swept in every commit merged into the base branch since. Nothing on the
-  surface contradicted it: the comment named only the HEAD side, through finding
-  permalinks, and never said what it diffed _against_ or how many files it saw.
-  A reviewer who knows their PR is one file can now see `43 files` and stop
-  reading the rows.
+  The failure that earned it, in a consumer repo: a PR whose entire diff was
+  **one markdown file** was analyzed as **43**, and guardian reported six files
+  the PR never touched. CI had checked out the `pull_request` **merge ref** —
+  the base branch merged with the PR head — so the triple-dot merge base
+  degenerated to the base sha itself (it is an ancestor of the merge commit) and
+  the range swept in every commit merged into the base branch since. Nothing on
+  the surface contradicted it: the comment named only the HEAD side, through
+  finding permalinks, and never said what it diffed _against_ or how many files
+  it saw. A reviewer who knows their PR is one file can now see `43 files` and
+  stop reading the rows.
 
   The line prints on **every** comment, clean or not. A line that appears only
   when something is wrong teaches readers to skip it when it does appear — and
@@ -129,8 +153,8 @@ under the project's former name) are documented in the
   existed, and the run should have abstained ("verified zero items; this is not
   a pass"). Abstention requires zero findings-eligible units — the phantom files
   supplied findings, so a run that verified nothing headlined a finding count
-  instead. Guardian is disabled in that consumer repo until that closes and
-  the dogfooding bar in #761 is met.
+  instead. Guardian is disabled in that consumer repo until that closes and the
+  dogfooding bar in #761 is met.
 
 - **CI signal hygiene: three checks that lied in three different ways** (#769,
   #698, #693). None of the three could stop a merge, which is what they have in

@@ -22,15 +22,33 @@
  * exact hiding place one layer up, so an absent contract line is an ABSTENTION
  * and exits non-zero.
  *
+ * ## Two rules, not one (#703)
+ *
+ * An absolute ceiling makes headroom a shared, non-renewable budget no branch
+ * can see, so two independently-green branches collide and whichever merges
+ * second is blamed for findings it did not add. When the caller supplies
+ * `--base-report` — the same scan run against the PR's merge base — this also
+ * fails on the delta the branch itself introduced, which is order-independent.
+ * The ceiling stays as a BACKSTOP; both rules run and either can fail.
+ *
+ * The reasoning, the numbers, and the two invariants the WORKFLOW must
+ * guarantee (same resolved CLI both sides; base worktree outside the checkout)
+ * are in ADR 0012's 2026-09-04 amendment; `ts/test/entropy-ratchet.test.ts`
+ * asserts both against the YAML.
+ *
  * Usage:
  *   harness cleanup --findings-json > report.txt || true
- *   node scripts/entropy-ratchet.mjs --report report.txt
+ *   node scripts/entropy-ratchet.mjs --report report.txt \
+ *     [--base-report base-report.txt] [--cli-version 12.2.0]
  *
  * Exit codes follow the repo's gate convention (#508):
- *   0 = verified — findings are at or under the baseline
- *   1 = the ratchet fired — findings grew past the baseline
+ *   0 = verified — at or under the baseline, and at or under the merge base
+ *   1 = the ratchet fired — findings grew past the baseline or the merge base
  *   2 = error — the baseline file is missing or unreadable
- *   3 = ABSTENTION — no findings line in the input, so nothing was measured
+ *   3 = ABSTENTION — no findings line in the input, so nothing was measured. A
+ *       `--base-report` naming a report with no count abstains too: a base
+ *       that could not be measured is not a base of zero, and degrading to the
+ *       absolute rule would hide the delta gate going dark.
  */
 
 import { readFileSync } from 'node:fs';
@@ -61,9 +79,15 @@ const DEFAULT_BASELINE = join(REPO_ROOT, '.harness', 'entropy-baseline.json');
 const DEFAULT_MAX_HEADROOM = 10;
 
 function parseArgs(argv) {
-  const args = { report: null, baseline: DEFAULT_BASELINE, cliVersion: null };
+  const args = {
+    report: null,
+    baseReport: null,
+    baseline: DEFAULT_BASELINE,
+    cliVersion: null,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--report') args.report = argv[i + 1];
+    else if (argv[i] === '--base-report') args.baseReport = argv[i + 1];
     else if (argv[i] === '--baseline') args.baseline = argv[i + 1];
     else if (argv[i] === '--cli-version') args.cliVersion = argv[i + 1];
   }
@@ -142,11 +166,68 @@ function requireMatchingInstrument(
   );
 }
 
-function main() {
-  const { report, baseline, cliVersion } = parseArgs(process.argv.slice(2));
+/**
+ * Read a findings count out of a report file, or exit. `label` names which
+ * side of the comparison this is: collapsing "the head scan produced nothing"
+ * and "the base scan produced nothing" into one message is how a delta gate
+ * goes dark without anyone being able to tell which half went dark.
+ */
+function readFindings(path, label) {
+  let text;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch (err) {
+    fail(
+      2,
+      `entropy-ratchet: cannot read ${label} report ${path}: ${err.message}`,
+    );
+  }
 
-  if (!report) fail(2, 'entropy-ratchet: --report <file> is required.');
+  const findings = findingsFrom(text);
+  if (findings === null) {
+    fail(
+      3,
+      `entropy-ratchet: ABSTAINED — no \`--findings-json\` contract line in the ` +
+        `${label} entropy report, so nothing was measured. This is the #544 ` +
+        'shape: the scan most likely failed at startup. Read the step log; do ' +
+        'NOT treat an absent count as zero findings.',
+    );
+  }
+  return findings;
+}
 
+/**
+ * The delta rule (#703): fail when this branch adds findings its merge base
+ * did not have.
+ *
+ * Called BEFORE the absolute backstop, because it is the one that names what
+ * this branch actually did — a branch that inherits an over-ceiling base
+ * should read "you added 2" first, not a total it did not cause.
+ */
+function requireNoDelta(baseReport, findings) {
+  const baseFindings = readFindings(baseReport, 'merge-base');
+  if (findings > baseFindings) {
+    fail(
+      1,
+      `entropy-ratchet: FAILED — this branch introduces ` +
+        `${findings - baseFindings} entropy finding(s): ${baseFindings} at ` +
+        `the merge base, ${findings} here.\n` +
+        'This is the delta YOUR diff added, measured against the commit you ' +
+        'branched from, so it is not affected by what else merged in the ' +
+        'meantime. Either fix the new findings, or — if they are false ' +
+        "positives from the analyzer's entry-point model — declare the new " +
+        'entry point in `entropy.entryPoints` in harness.config.json.',
+    );
+  }
+  const delta = findings - baseFindings;
+  console.log(
+    `entropy-ratchet: delta OK — ${findings} findings here against ` +
+      `${baseFindings} at the merge base (${delta >= 0 ? '+' : ''}${delta}).`,
+  );
+}
+
+/** Read `maxFindings`, `maxHeadroom` and `harnessCli` out of the baseline. */
+function readBaseline(baseline) {
   let maxFindings;
   let maxHeadroom = DEFAULT_MAX_HEADROOM;
   let baselineCli = null;
@@ -167,32 +248,30 @@ function main() {
   if (!Number.isInteger(maxFindings)) {
     fail(2, `entropy-ratchet: ${baseline} has no integer "maxFindings".`);
   }
+  return { maxFindings, maxHeadroom, baselineCli };
+}
 
-  let text;
-  try {
-    text = readFileSync(report, 'utf8');
-  } catch (err) {
-    fail(2, `entropy-ratchet: cannot read report ${report}: ${err.message}`);
-  }
+function main() {
+  const { report, baseReport, baseline, cliVersion } = parseArgs(
+    process.argv.slice(2),
+  );
 
-  const findings = findingsFrom(text);
-  if (findings === null) {
-    fail(
-      3,
-      'entropy-ratchet: ABSTAINED — no `--findings-json` contract line in the ' +
-        'entropy report, so nothing was measured. This is the #544 shape: the ' +
-        'scan most likely failed at startup. Read the step log; do NOT treat ' +
-        'an absent count as zero findings.',
-    );
-  }
+  if (!report) fail(2, 'entropy-ratchet: --report <file> is required.');
+
+  const { maxFindings, maxHeadroom, baselineCli } = readBaseline(baseline);
+
+  const findings = readFindings(report, 'head');
 
   requireMatchingInstrument(baselineCli, cliVersion, maxFindings, findings);
+
+  if (baseReport !== null) requireNoDelta(baseReport, findings);
 
   if (findings > maxFindings) {
     fail(
       1,
-      `entropy-ratchet: FAILED — ${findings} entropy findings, baseline is ` +
-        `${maxFindings} (+${findings - maxFindings}).\n` +
+      `entropy-ratchet: FAILED (absolute backstop) — ${findings} entropy ` +
+        `findings, baseline is ${maxFindings} ` +
+        `(+${findings - maxFindings}).\n` +
         'Either fix the new findings, or — if they are false positives from ' +
         "the analyzer's entry-point model — declare the new entry point in " +
         '`entropy.entryPoints` in harness.config.json. Raising ' +

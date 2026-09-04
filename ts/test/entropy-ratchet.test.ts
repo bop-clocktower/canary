@@ -75,10 +75,10 @@ describe('entropy-ratchet', () => {
 
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  function run(): { status: number; out: string } {
+  function run(extra: string[] = []): { status: number; out: string } {
     const r = spawnSync(
       process.execPath,
-      [SCRIPT, '--report', report, '--baseline', baseline],
+      [SCRIPT, '--report', report, '--baseline', baseline, ...extra],
       { encoding: 'utf8' },
     );
     return { status: r.status ?? -1, out: `${r.stdout}${r.stderr}` };
@@ -173,6 +173,96 @@ describe('entropy-ratchet', () => {
     const { status, out } = run();
     expect(status).toBe(0);
     expect(out).toMatch(/lower/i);
+  });
+
+  /**
+   * The merge-base delta rule (#703).
+   *
+   * The absolute ceiling is order-dependent by construction: headroom is a
+   * shared budget no branch can see, so two independently-green branches
+   * collide and the second to merge is blamed for findings it did not add.
+   * Measured once: main 294, batch C 296, batch B 297 against a 297 ceiling,
+   * C+B merged 299.
+   *
+   * These assert the property the issue asked for — a branch is judged on the
+   * delta against its OWN merge base — plus the two ways the new rule could
+   * itself go quiet: a base report that measured nothing must abstain rather
+   * than degrade to the absolute rule, and the absolute backstop must still
+   * fire when the delta rule is satisfied.
+   */
+  describe('merge-base delta (#703)', () => {
+    let baseReport: string;
+
+    beforeEach(() => {
+      baseReport = join(dir, 'base-report.txt');
+    });
+
+    /** The order-dependence case, stated as the numbers that produced it. */
+    it('passes a branch that adds nothing, even with zero absolute headroom', () => {
+      writeBaseline(297);
+      writeFileSync(report, contractLine(297));
+      writeFileSync(baseReport, contractLine(297));
+      expect(run(['--base-report', baseReport]).status).toBe(0);
+    });
+
+    it('passes a branch whose base already sits at the ceiling', () => {
+      writeBaseline(297);
+      writeFileSync(report, contractLine(294));
+      writeFileSync(baseReport, contractLine(297));
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(0);
+      expect(out).toMatch(/-3/);
+    });
+
+    it('fails a branch that adds findings, and names its own delta', () => {
+      writeBaseline(400);
+      writeFileSync(report, contractLine(299));
+      writeFileSync(baseReport, contractLine(294));
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(1);
+      expect(out).toMatch(/introduces 5/);
+      expect(out).toMatch(/294 at the merge base/);
+    });
+
+    // The backstop half. Without it, a long run of +0 merges could walk the
+    // total upward and the delta rule would never notice.
+    it('still fires the absolute backstop when the delta is clean', () => {
+      writeBaseline(290);
+      writeFileSync(report, contractLine(294));
+      writeFileSync(baseReport, contractLine(294));
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(1);
+      expect(out).toMatch(/absolute backstop/i);
+    });
+
+    // A base that could not be measured is NOT a base of zero. Degrading to
+    // the absolute rule here would let the delta gate go dark exactly the way
+    // `harness cleanup` exiting 2 at startup let the whole step go dark (#544).
+    it('ABSTAINS when the base report carries no contract line', () => {
+      writeBaseline(400);
+      writeFileSync(report, contractLine(294));
+      writeFileSync(baseReport, 'Entropy analysis failed at startup\n');
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(3);
+      expect(out).toMatch(/merge-base/);
+    });
+
+    it('errors when the named base report does not exist', () => {
+      writeBaseline(400);
+      writeFileSync(report, contractLine(294));
+      expect(run(['--base-report', join(dir, 'absent.txt')]).status).toBe(2);
+    });
+
+    // Which side went dark has to be legible from the message alone.
+    it('distinguishes a dark head scan from a dark base scan', () => {
+      writeBaseline(400);
+      writeFileSync(report, 'Entropy analysis failed at startup\n');
+      writeFileSync(baseReport, contractLine(294));
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(3);
+      expect(out).toMatch(/head/);
+      expect(out).not.toMatch(/merge-base entropy report/);
+    });
   });
 });
 
@@ -597,5 +687,64 @@ describe('the entropy ratchet CI wiring (#744)', () => {
     const parsed = JSON.parse(readFileSync(baselineFile, 'utf8'));
     expect(typeof parsed.harnessCli).toBe('string');
     expect(parsed.harnessCli).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
+
+/**
+ * The delta rule is WIRED, not merely implemented (#703).
+ *
+ * `--base-report` is optional by design, because a push to `main` has no merge
+ * base to compare against. That same optionality is how the rule could go
+ * quiet: drop the flag from the workflow and every PR falls back to the
+ * absolute ceiling with nothing red and nothing said. This is the same shape
+ * as `--cli-version` below it — a gate whose arming lives in a YAML file needs
+ * a test that reads that YAML file.
+ *
+ * Two of these assert the invariants the ratchet CANNOT check for itself,
+ * because by the time it runs it holds two numbers and no provenance:
+ * both scans must come from the same resolved CLI, and the base worktree must
+ * live outside the checkout or the head scan walks it and double-counts.
+ */
+describe('the merge-base delta gate is wired', () => {
+  const WORKFLOW = join(
+    REPO_ROOT,
+    '.github',
+    'workflows',
+    'harness-quality.yml',
+  );
+  const yaml = (): string => readFileSync(WORKFLOW, 'utf8');
+
+  it('passes --base-report to the ratchet on pull requests', () => {
+    expect(yaml()).toMatch(/--base-report\s+entropy-base-report\.txt/);
+  });
+
+  it('gates the base scan on pull_request, so pushes to main still run', () => {
+    expect(yaml()).toMatch(
+      /Harness Cleanup \(Entropy Scan, merge base\)[\s\S]{0,200}?if:\s*github\.event_name == 'pull_request'/,
+    );
+  });
+
+  it('measures the base with the same floating pin as the head scan', () => {
+    // Not a hardcoded version, and not a second pin: the same `$HARNESS_CLI`
+    // the resolve step reported. Two analyzers produce a delta that is pure
+    // instrument drift.
+    const scans = [
+      ...yaml().matchAll(
+        /npx --yes -p "\$HARNESS_CLI" harness cleanup --findings-json/g,
+      ),
+    ];
+    expect(scans.length).toBe(2);
+  });
+
+  it('puts the base worktree outside the checkout', () => {
+    // Inside `$GITHUB_WORKSPACE` the head scan walks the base tree and counts
+    // every finding twice, which inflates BOTH numbers and quietly changes
+    // what the delta means.
+    expect(yaml()).toMatch(/git worktree add --detach "\$RUNNER_TEMP\//);
+    expect(yaml()).not.toMatch(/git worktree add[^\n]*\$GITHUB_WORKSPACE/);
+  });
+
+  it('checks out full history, without which there is no base commit to scan', () => {
+    expect(yaml()).toMatch(/fetch-depth:\s*0/);
   });
 });
