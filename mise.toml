@@ -1,2 +1,9 @@
+# Node is pinned by .nvmrc, not listed here, so one file is the single source
+# of truth for the runtime (#785). mise does not read .nvmrc by default -- without
+# the setting below a mise user silently gets their global Node while CI uses the
+# pin, which is the exact skew #785 was filed for.
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+
 [tools]
 gh = "latest"
