@@ -1,16 +1,10 @@
 // Commit authorship is a leak surface the file scan cannot see: the company
 // email never appears *in* a tracked file, only in the metadata of the commit
-// that carries it. 190 commits reached the public history that way, every one
-// of them from a clone that inherited a global `user.email` instead of this
-// repo's pin.
+// carrying it. 190 commits reached the public history that way, each from a
+// clone that inherited a global `user.email` instead of this repo's pin.
 //
-// Only the commits a change ADDS are scanned. Existing history is deliberately
-// left alone — rewriting it would rebase every SHA this repo cites in issues,
-// ADRs, and `.github/required-checks.json`'s own comments — so the gate stops
-// the bleed rather than relitigating the past.
-//
-// Split out of check_removed_symbols.mjs to keep both under the performance
-// ratchet's complexity and length thresholds.
+// Only the commits a change ADDS are scanned; existing history is left alone,
+// since rewriting it would rebase every SHA this repo cites.
 import { execFileSync } from 'node:child_process';
 
 export const AUTHOR_RANGE_ENV = 'CANARY_AUTHOR_SCAN_RANGE';
@@ -221,13 +215,21 @@ export function checkAuthorship({
   if (!patterns.length) return noDenylist(env);
 
   const range = resolveRange(env, { scanRoot, scanRootOverridden });
-  // Nothing to resolve a range *against* — a fixture root is not this repo, so
-  // skipping is correct there. In the real tree it is an abstention: the gate
-  // did not decline to run, it failed to work out what to read.
   if (!range) {
-    return scanRootOverridden
-      ? { skipped: 'scan root overridden with no explicit range' }
-      : { unresolved: 'no commit range could be determined from the event' };
+    // A fixture root is not this repo, so skipping is correct there.
+    if (scanRootOverridden) {
+      return { skipped: 'scan root overridden with no explicit range' };
+    }
+    // On CI a missing range means the gate could not work out what to read —
+    // an abstention. At the desk it means there is no PR base and no push
+    // event yet, so there is nothing to scan; failing there blocked every
+    // local commit for anyone holding the denylist file.
+    return env.GITHUB_ACTIONS
+      ? { unresolved: 'no commit range could be determined from the event' }
+      : {
+          skipped:
+            'no commit range at the desk (authorship is judged on the PR)',
+        };
   }
   // execFileSync uses no shell, so this is not injection — but `git log` still
   // reads a leading `-` as a flag (`--output=…` writes a file).

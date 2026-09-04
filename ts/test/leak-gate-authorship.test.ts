@@ -512,6 +512,44 @@ describe(
       });
     });
 
+    it('skips at the desk when no range can be determined, but abstains on CI', () => {
+      // The regression: once a contributor has the local `.proprietary-denylist`,
+      // a pre-commit run has a denylist AND no range — no PR base, no push event
+      // — so it took the abstention branch and exited 1, blocking every local
+      // commit for exactly the people the gate is for. On CI the same shape is a
+      // real abstention (the gate could not work out what to read); at the desk
+      // there is simply nothing to scan yet, and the hook's job is the file scan.
+      const { root } = fixtureHistory([CLEAN_IDENT]);
+      const noRange = {
+        // A denylist MUST be present, or this exercises the no-denylist
+        // branch instead and passes for the wrong reason.
+        // Composed at runtime on purpose: this scan targets the REAL repo,
+        // and this file is tracked, so a literal term here would match itself.
+        CANARY_PROPRIETARY_DENYLIST: ['Nowhere', 'corp'].join(''),
+        CANARY_AUTHOR_SCAN_RANGE: '',
+        GITHUB_BASE_REF: '',
+        GITHUB_EVENT_BEFORE: '',
+        // Not a fixture-root skip: make the scan root the real repo.
+        CANARY_LEAK_SCAN_ROOT: '',
+      };
+
+      const desk = spawnSync(process.execPath, [SCRIPT], {
+        encoding: 'utf-8',
+        env: { ...process.env, ...noRange, GITHUB_ACTIONS: '' },
+      });
+      expect(`${desk.stdout}`).toContain('no commit range at the desk');
+      expect(desk.status).toBe(0);
+
+      const ci = spawnSync(process.execPath, [SCRIPT], {
+        encoding: 'utf-8',
+        env: { ...process.env, ...noRange, GITHUB_ACTIONS: 'true' },
+      });
+      expect(`${ci.stdout}`).toContain('abstention, not a clean result');
+      expect(ci.status).toBe(1);
+
+      expect(root).toBeTruthy();
+    });
+
     it('ignores an ambient GITHUB_BASE_REF when scanning a fixture root', () => {
       // The regression that reached CI: with CANARY_LEAK_SCAN_ROOT pointing at
       // a fixture, the scan resolved the *ambient* `origin/main..HEAD` and ran
