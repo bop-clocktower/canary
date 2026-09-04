@@ -49,32 +49,49 @@ interface DeclinedRow {
 }
 
 /**
- * The Declined table's data rows.
+ * The lines of the `### Declined` section, exclusive of its heading.
  *
- * Located by its `### Declined` heading and terminated by the next heading, so
- * the parser cannot silently drift onto a different table if the document is
- * reorganised — it would find no rows, which the denominator assertion catches.
+ * Terminated by the next heading, so the parser cannot silently drift onto a
+ * different table if the document is reorganised — it would find no rows, which
+ * the denominator assertion catches.
  */
-function parseDeclinedRows(markdown: string): DeclinedRow[] {
+function declinedSectionLines(markdown: string): string[] {
   const lines = markdown.split('\n');
   const start = lines.findIndex((l) => l.trim() === '### Declined');
   if (start === -1) return [];
 
-  const rows: DeclinedRow[] = [];
-  for (const line of lines.slice(start + 1)) {
-    if (line.startsWith('#')) break;
-    if (!line.trim().startsWith('|')) continue;
-    const cells = line.split('|').slice(1, -1);
-    if (cells.length < 3) continue;
-    const [command, rationale, revisitWhen] = cells.map((c) => c.trim());
-    if (!command || /^-+$/.test(command)) continue; // header separator
-    rows.push({
-      command,
-      rationale: rationale ?? '',
-      revisitWhen: revisitWhen ?? '',
-    });
-  }
-  return rows;
+  const body = lines.slice(start + 1);
+  const end = body.findIndex((l) => l.startsWith('#'));
+  return end === -1 ? body : body.slice(0, end);
+}
+
+/**
+ * One Markdown table line -> a row, or `null` for anything that is not a data
+ * row: prose, the header separator, and short/blank rows.
+ *
+ * Split out from {@link parseDeclinedRows} for #767 — parse, filter and default
+ * in one pass measured cyclomaticComplexity=12 against a threshold of 10. The
+ * branching is real, so the fix is to give each part its own function rather
+ * than to raise the threshold.
+ */
+function toDeclinedRow(line: string): DeclinedRow | null {
+  if (!line.trim().startsWith('|')) return null;
+  const cells = line.split('|').slice(1, -1);
+  if (cells.length < 3) return null;
+  const [command, rationale, revisitWhen] = cells.map((c) => c.trim());
+  if (!command || /^-+$/.test(command)) return null; // header separator
+  return {
+    command,
+    rationale: rationale ?? '',
+    revisitWhen: revisitWhen ?? '',
+  };
+}
+
+/** The Declined table's data rows. */
+function parseDeclinedRows(markdown: string): DeclinedRow[] {
+  return declinedSectionLines(markdown)
+    .map(toDeclinedRow)
+    .filter((r): r is DeclinedRow => r !== null);
 }
 
 describe('ADR 0014 Declined rows are checkable (#719)', () => {
