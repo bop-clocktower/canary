@@ -247,6 +247,48 @@ under the project's former name) are documented in the
   pointing at a directory with no such manifest, and on an npm lockfile with no
   entry.
 
+- **`guardian pr-check` abstains on a zero coverage denominator instead of
+  headlining a count** (#761). A run that resolved **no** coverage judged every
+  file at the naming-heuristic tier and still printed
+  `6 files need test coverage` — a sentence indistinguishable from a measured
+  result, under a check most callers render green with `continue-on-error`.
+
+  Guardian already abstained (exit 3), but on the wrong denominator: the
+  **findings-eligible** count. A code PR whose lcov never reached the runner has
+  plenty of eligible units and has still verified nothing, because
+  "findings-eligible" and "coverage-verifiable" are different numbers. That gap
+  is now its own test (`isCoverageAbstention`): coverage `unavailable` over a
+  non-zero unit count, with every finding `heuristic`, exits 3 and headlines
+  `abstained: no coverage data (N files judged heuristically)` on the sticky
+  comment, `--format json`, the terminal, and the `--emit-analysis` record
+  (`abstained: true`).
+
+  The findings still render. They are useful advice; they are simply not a
+  coverage verdict, and the count headline is what made a reader take them for
+  one. A single coverage- or graph-verified finding proves the run measured
+  something and keeps ADR 0009's "findings outrank abstention" precedence — the
+  qualification is recorded in that ADR. A run with **no** findings is
+  unchanged: #554 already replaced its headline with
+  `no gaps found, but coverage was unavailable`.
+
+- **The "added test asserts nothing" finding no longer fires when the assertion
+  is outside the changed hunk** (#747). The heuristic scored a file's added
+  lines as a whole, so retitling a test and editing its arrange/act lines read
+  as "a test with zero assertions" whenever the `expect` one line below stayed
+  context. Every finding in the run that produced the report was of this class,
+  and a table of six confidently-worded wrong findings is what teaches reviewers
+  to skip the comment.
+
+  The span scored is now the **enclosing test block** of each changed line,
+  resolved from the diff's own context lines: up to the nearest
+  `it`/`test`/`def test_` declaration, down to the end of that block. A
+  `describe` group does not count as a declaration, so an assertion-free test
+  beside an asserting sibling is still caught, and the FP-3 rename guard now
+  applies per block rather than per file. A changed line whose enclosing test
+  **cannot** be resolved — a Playwright `setup(...)` fixture, a bare helper — is
+  abstained on rather than reported, which is the #565 fixture exclusion falling
+  out of the same rule.
+
 - **The `refresh-baseline` label refreshes the baseline again** (#749). The
   workflow ran `harness check-arch --update-baseline --allow-regress --reason`,
   which at CLI 11.x writes a per-PR file under `.harness/arch/allowances/` and

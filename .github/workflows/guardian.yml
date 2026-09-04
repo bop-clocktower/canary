@@ -75,21 +75,27 @@ jobs:
         # green, because we exercised a privileged path our users do not.
         #
         # Exit-code handling (#508 Wave 5, ADR 0009). Exit 3 means ABSTAINED:
-        # the guardian scoped zero findings-eligible units, so it verified
-        # nothing. That is NOT a failure — a docs-only or fully-skipped PR
-        # legitimately has nothing to gate — but it is also NOT a pass, so the
-        # job annotates loudly instead of exiting green in silence. Every other
-        # non-zero code propagates unchanged: 1 is a real finding and must stay
-        # red. Treating "non-zero" as one bucket is what this doctrine exists to
-        # end, so the template that consumes the code has to make the same
-        # distinction the CLI does.
+        # the guardian verified nothing. It has two causes, and the annotation
+        # names neither because only the CLI's own output can say which — the
+        # diff scoped zero findings-eligible units (a docs-only or fully-skipped
+        # PR), or it resolved no coverage at all and every finding it produced
+        # is a filename-level guess (#761). Neither is a failure; neither is a
+        # pass, so the job annotates loudly instead of exiting green in silence.
+        # Every other non-zero code propagates unchanged: 1 is a real finding
+        # and must stay red. Treating "non-zero" as one bucket is what this
+        # doctrine exists to end, so the template that consumes the code has to
+        # make the same distinction the CLI does.
+        #
+        # The `--coverage` flag plus the "Verify the coverage report exists"
+        # step above are what keep THIS repo off the #761 cause: a run that
+        # reaches here has a real lcov.
         run: |
           set +e
           node ts/bin/canary.js guardian pr-check --coverage ts/coverage/lcov.info --emit-analysis --post-comment
           rc=$?
           set -e
           if [ "$rc" -eq 3 ]; then
-            echo "::warning title=Guardian abstained::pr-check verified zero findings-eligible units (exit 3). Not a pass — nothing in this diff was gateable."
+            echo "::warning title=Guardian abstained::pr-check verified nothing (exit 3) — zero findings-eligible units, or no coverage data at all. Not a failure, and not a pass. Read the comment above for which."
             exit 0
           fi
           exit "$rc"

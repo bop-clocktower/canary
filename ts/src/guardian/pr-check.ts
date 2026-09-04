@@ -775,14 +775,237 @@ function hasAddedTestBody(added: string[]): boolean {
 }
 
 /**
+ * The declaration line of a single test, per framework family (#747).
+ *
+ * Narrower than {@link TEST_SIGNATURE_RE} on purpose: `describe(` opens a
+ * *group*, and judging assertion presence over a whole describe block would
+ * suppress a genuinely empty test sitting beside an asserting sibling. A
+ * modifier chain (`it.only`, `test.each`) still opens one test, so it counts.
+ */
+const TEST_DECL_PY = /^\s*(?:async\s+)?def\s+test\w*\s*\(/;
+const TEST_DECL_JS = /^\s*(?:async\s+)?(?:it|test)(?:\.\w+)*\s*\(/;
+
+function testDeclRe(framework: string): RegExp {
+  return framework === 'pytest' ? TEST_DECL_PY : TEST_DECL_JS;
+}
+
+/** Indentation width of `line`, counting a tab as one column. */
+function indentWidth(line: string): number {
+  return line.length - line.trimStart().length;
+}
+
+// String literals and line comments are blanked before delimiter counting, so
+// a brace inside `'a { b'` or a trailing `// }` cannot unbalance a block.
+const JS_STRING_OR_COMMENT =
+  /(['"`])(?:\\.|(?!\1).)*?\1|\/\/.*$|\/\*[\s\S]*?\*\//g;
+
+/**
+ * One file's new-side lines as the diff shows them: `lineNo -> text`, plus the
+ * set of line numbers that were ADDED (#747).
+ *
+ * The weak-test heuristic needs context lines, not only `+` lines, because the
+ * assertion it is looking for is very often exactly the context line below the
+ * hunk. Line numbering follows {@link scopeDiff} so the two agree on what line
+ * 41 is.
+ */
+interface VisibleFile {
+  text: Map<number, string>;
+  added: Set<number>;
+}
+
+/** Mutable cursor carried across the lines of one diff. */
+interface DiffCursor {
+  current: VisibleFile | null;
+  newLineno: number;
+  skipCurrent: boolean;
+  inHunk: boolean;
+}
+
+/**
+ * Consume a `diff --git` / `+++` / `---` / `@@` line, returning whether the
+ * line was a header. Split out from the content handling so neither half has
+ * to carry the other's branches.
+ */
+function applyDiffHeader(
+  line: string,
+  cur: DiffCursor,
+  files: Map<string, VisibleFile>,
+): boolean {
+  if (line.startsWith('diff --git')) {
+    cur.inHunk = false;
+    cur.current = null;
+    cur.skipCurrent = false;
+    return true;
+  }
+  if (!cur.inHunk && line.startsWith('+++ ')) {
+    const target = line.slice(4).trim();
+    if (target === '/dev/null') {
+      cur.skipCurrent = true;
+      cur.current = null;
+      return true;
+    }
+    cur.skipCurrent = false;
+    const path = target.startsWith('b/') ? target.slice(2) : target;
+    cur.current = files.get(path) ?? { text: new Map(), added: new Set() };
+    files.set(path, cur.current);
+    return true;
+  }
+  if (!cur.inHunk && line.startsWith('--- ')) return true;
+  const hunk = HUNK_RE.exec(line);
+  if (hunk) {
+    cur.newLineno = Number.parseInt(hunk[1]!, 10);
+    cur.inHunk = true;
+    return true;
+  }
+  return false;
+}
+
+/** Record one content line against the file the cursor is pointing at. */
+function applyDiffContent(line: string, cur: DiffCursor): void {
+  const file = cur.current;
+  if (!file) return;
+  // `-` is gone from the new file and `\` is the no-newline marker; neither
+  // occupies a line number on the `+` side.
+  if (line.startsWith('-') || line.startsWith('\\')) return;
+  const added = line.startsWith('+');
+  file.text.set(cur.newLineno, line.slice(1));
+  if (added) file.added.add(cur.newLineno);
+  cur.newLineno += 1;
+}
+
+function visibleLinesByPath(diffText: string): Map<string, VisibleFile> {
+  const files = new Map<string, VisibleFile>();
+  const cur: DiffCursor = {
+    current: null,
+    newLineno: 0,
+    skipCurrent: false,
+    inHunk: false,
+  };
+
+  for (const line of splitLines(diffText)) {
+    if (applyDiffHeader(line, cur, files)) continue;
+    if (cur.skipCurrent || cur.current === null) continue;
+    applyDiffContent(line, cur);
+  }
+  return files;
+}
+
+/**
+ * The line the enclosing test declaration sits on, or `null` when none is
+ * visible (#747).
+ *
+ * Walks up through the CONTIGUOUS visible run only: a gap between hunks means
+ * the lines between are unknown, so a declaration on the far side of it is not
+ * evidence about this line. Returning `null` is the abstention — a changed line
+ * whose enclosing test cannot be resolved (a Playwright `setup(...)` fixture, a
+ * bare helper) is not judged at all rather than reported as assertion-free.
+ */
+function enclosingTestDecl(
+  file: VisibleFile,
+  lineNo: number,
+  declRe: RegExp,
+): number | null {
+  for (let n = lineNo; file.text.has(n); n--) {
+    if (declRe.test(file.text.get(n)!)) return n;
+  }
+  return null;
+}
+
+/**
+ * The last line of the test block opened at `start`, bounded by what the diff
+ * shows (#747).
+ *
+ * Python closes on the first non-blank line indented no deeper than the `def`;
+ * JS/TS closes when the delimiter depth opened by the declaration returns to
+ * zero. When neither lands inside the visible run the span is truncated at its
+ * end — the assertion search is then over less than the whole block, which can
+ * still miss an assertion further down. That residual is accepted: it is a
+ * strictly smaller window of error than scoring the added lines alone, which is
+ * what #747 measured, and widening the span past what the diff shows would mean
+ * reading the working tree, which this function deliberately does not do.
+ */
+function testBlockEnd(
+  file: VisibleFile,
+  start: number,
+  isPython: boolean,
+): number {
+  let last = start;
+  if (isPython) {
+    const declIndent = indentWidth(file.text.get(start)!);
+    for (let n = start + 1; file.text.has(n); n++) {
+      const text = file.text.get(n)!;
+      if (text.trim() && indentWidth(text) <= declIndent) return n - 1;
+      last = n;
+    }
+    return last;
+  }
+  let depth = 0;
+  let opened = false;
+  for (let n = start; file.text.has(n); n++) {
+    const text = file.text.get(n)!.replace(JS_STRING_OR_COMMENT, '');
+    for (const ch of text) {
+      if (ch === '{' || ch === '(') {
+        depth += 1;
+        opened = true;
+      } else if (ch === '}' || ch === ')') depth -= 1;
+    }
+    last = n;
+    if (opened && depth <= 0) return n;
+  }
+  return last;
+}
+
+/**
+ * True iff some test block touched by `unit`'s added lines asserts nothing.
+ *
+ * A block qualifies for judgement only when it is resolvable AND at least one
+ * of its own added lines is a real body line — the FP-3 rename guard, applied
+ * per block rather than per file so a rename in one test cannot excuse an empty
+ * one elsewhere in the same diff. Blocks are visited once each.
+ */
+function weakBlockIn(
+  file: VisibleFile,
+  unit: ChangedUnit,
+  framework: string,
+): boolean {
+  const declRe = testDeclRe(framework);
+  const isPython = framework === 'pytest';
+  const seen = new Set<number>();
+  for (const lineNo of linesInRanges(unit.added_ranges)) {
+    const start = enclosingTestDecl(file, lineNo, declRe);
+    if (start === null || seen.has(start)) continue;
+    seen.add(start);
+    const end = testBlockEnd(file, start, isPython);
+    const span: string[] = [];
+    const addedInBlock: string[] = [];
+    for (let n = start; n <= end; n++) {
+      const text = file.text.get(n);
+      if (text === undefined) continue;
+      span.push(text);
+      if (file.added.has(n)) addedInBlock.push(text);
+    }
+    if (!hasAddedTestBody(addedInBlock)) continue;
+    if (isAssertionFreeTest(span.join('\n'), framework)) return true;
+  }
+  return false;
+}
+
+/**
  * Advisory `weak-test` findings for ADDED tests that assert nothing.
  *
  * Consumes the test-path units {@link filterTestUnits} sets aside (a test file
  * needs no test of its own, but an added test that asserts nothing is itself a
- * gap). Scores only the diff's *added* lines per test file via
- * {@link isAssertionFreeTest} — a high-precision signal (a real test function
- * with zero assertions), so snapshot/table-driven tests are not flagged. These
- * findings are `LOW`/`weak-test` and are **never** gated (see
+ * gap). A high-precision signal by construction: a snapshot or table-driven
+ * test still matches an assertion pattern, so it is not flagged.
+ *
+ * #747: the span scored is the ENCLOSING TEST BLOCK of each added line, not the
+ * added lines themselves. Scoring the added lines alone reported every
+ * arrange/act-only edit as assertion-free, because a test's setup is edited far
+ * more often than its `expect` — six such findings, all wrong, in the run that
+ * produced the report. A changed line whose enclosing test cannot be resolved
+ * from the diff is ABSTAINED on, never reported.
+ *
+ * These findings are `LOW`/`weak-test` and are **never** gated (see
  * {@link computeExitCode}): they surface, never block.
  */
 export function buildWeakTestFindings(
@@ -790,6 +1013,7 @@ export function buildWeakTestFindings(
   diffText: string,
 ): GuardianFinding[] {
   const addedByPath = addedContentByPath(diffText);
+  const visibleByPath = visibleLinesByPath(diffText);
   const findings: GuardianFinding[] = [];
   for (const unit of testUnits) {
     const added = addedByPath.get(unit.path);
@@ -797,9 +1021,10 @@ export function buildWeakTestFindings(
     // A rename adds only the signature line (body is unchanged context) —
     // nothing new to judge, so don't flag it (FP guard).
     if (!hasAddedTestBody(added)) continue;
-    const code = added.join('\n');
     const framework = frameworkForTestPath(unit.path);
-    if (isAssertionFreeTest(code, framework)) {
+    const file = visibleByPath.get(unit.path);
+    if (!file) continue;
+    if (weakBlockIn(file, unit, framework)) {
       findings.push(
         new GuardianFinding({
           path: unit.path,
@@ -1116,6 +1341,60 @@ function coverageBlock(state: CoverageInputState): Record<string, unknown> {
 }
 
 /**
+ * True when this run VERIFIED NO COVERAGE and every finding it produced is a
+ * naming-heuristic guess (#761) — an abstention, not a result.
+ *
+ * Guardian's existing abstention keys off the *findings-eligible* count, which
+ * is the wrong denominator: a run can have plenty of eligible units and still
+ * have verified nothing, because "findings-eligible" and "coverage-verifiable"
+ * are different counts. The measured shape is a code PR whose lcov never
+ * reached the runner: N eligible units, zero coverage denominator, and a
+ * confident "6 files need test coverage" headline under a green check.
+ *
+ * Two narrowings keep this honest rather than merely loud:
+ *
+ *   - `unitsTotal === 0` is NOT this case. A run that judged nothing makes no
+ *     coverage claim in either direction; the eligible-count abstention owns it,
+ *     the same boundary {@link coverageDegradedNotice} already draws.
+ *   - A single coverage- or graph-verified finding disproves it. Real evidence
+ *     means the run measured something, so it is a result and must not be
+ *     downgraded to an abstention.
+ *   - A run with NO findings is left alone. It states nothing a reader can
+ *     mistake for a measurement: #554 already replaced its all-clear headline
+ *     with "no gaps found, but coverage was unavailable" plus the body line
+ *     saying that is an abstention, not a pass. The defect #761 reports is
+ *     specifically a CONFIDENT COUNT over a zero coverage denominator, so that
+ *     is what changes here.
+ */
+export function isCoverageAbstention(
+  coverage: CoverageInputState | null | undefined,
+  findings: GuardianFinding[],
+): boolean {
+  if (!coverage || coverage.unitsTotal === 0) return false;
+  if (coverageStatus(coverage) !== 'unavailable') return false;
+  if (findings.length === 0) return false;
+  return findings.every((f) => f.fidelity === Fidelity.Heuristic);
+}
+
+/**
+ * The abstention headline (#761) — states what was NOT verified, and never a
+ * count of findings, which is what reads as a measured result.
+ */
+function abstentionHeadline(checked: number): string {
+  const noun = checked === 1 ? 'file' : 'files';
+  return (
+    `${WARNING} abstained: no coverage data ` +
+    `(${checked} ${noun} judged heuristically)`
+  );
+}
+
+/** The body paragraph that stops the heuristic findings reading as a verdict. */
+const ABSTENTION_BODY =
+  'No coverage report reached this run, so nothing below is a coverage ' +
+  'verdict — every finding is a filename-level guess. A gate that verified ' +
+  'zero items has abstained; this is not a pass.';
+
+/**
  * The comment body for a run with zero active findings.
  *
  * #554: the ✅ all-clear headline is reserved for a run whose coverage report
@@ -1126,11 +1405,15 @@ function coverageBlock(state: CoverageInputState): Record<string, unknown> {
 function noGapsLines(
   coverageState: CoverageInputState | null,
   suppressedCount: number,
+  abstained = false,
+  checked = 0,
 ): string[] {
   const notice = coverageState ? coverageDegradedNotice(coverageState) : null;
-  const headline = notice
-    ? `${WARNING} no gaps found, but coverage was ${coverageStatus(coverageState!)}`
-    : `${WHITE_CHECK} no test-coverage gaps`;
+  const headline = abstained
+    ? abstentionHeadline(checked)
+    : notice
+      ? `${WARNING} no gaps found, but coverage was ${coverageStatus(coverageState!)}`
+      : `${WHITE_CHECK} no test-coverage gaps`;
   const lines = [`## ${BABY_CHICK} Canary PR Guardian ${EM_DASH} ${headline}`];
   if (notice) {
     lines.push(
@@ -1158,6 +1441,8 @@ export function renderFindings(
     (a, b) => severitySortKey(a.severity) - severitySortKey(b.severity),
   );
 
+  // #761: an abstained run never headlines a count, on any surface.
+  const abstained = gateMeta?.abstained === true;
   // #554: the coverage ladder's own degradation, stated alongside the tier's.
   const coverageState = gateMeta?.coverage ?? null;
   const coverageNotice = coverageState
@@ -1258,17 +1543,32 @@ export function renderFindings(
     const lines = [STICKY_MARKER];
 
     if (active.length === 0) {
-      lines.push(...noGapsLines(coverageState, suppressed.length));
+      lines.push(
+        ...noGapsLines(
+          coverageState,
+          suppressed.length,
+          abstained,
+          gateMeta?.checked ?? 0,
+        ),
+      );
     } else {
       const noun = fileCount === 1 ? 'file needs' : 'files need';
+      // #761: on an abstained run the headline states the abstention instead of
+      // a count. The findings stay in the table below — they are useful, they
+      // are just not a coverage verdict, and a count headline is exactly what
+      // makes a reader take them for one.
       lines.push(
         `## ${BABY_CHICK} Canary PR Guardian ${EM_DASH} ` +
-          `${fileCount} ${noun} test coverage`,
+          (abstained
+            ? abstentionHeadline(gateMeta?.checked ?? 0)
+            : `${fileCount} ${noun} test coverage`),
       );
       lines.push(
-        'These lines were changed by this PR but no test exercises them. Add or ' +
-          'extend a test that covers them, or mark the line ' +
-          '`// canary:allow-untested <reason>` if it is intentionally untested.',
+        abstained
+          ? ABSTENTION_BODY
+          : 'These lines were changed by this PR but no test exercises them. Add or ' +
+              'extend a test that covers them, or mark the line ' +
+              '`// canary:allow-untested <reason>` if it is intentionally untested.',
       );
       if (coverageLine) lines.push('', coverageLine);
       lines.push(
@@ -1324,10 +1624,18 @@ export function renderFindings(
     ? // #554: same rule as the comment surface — a blind run never claims clean.
       `Canary PR Guardian — no gaps found, but coverage was ${coverageStatus(coverageState!)}`
     : 'Canary PR Guardian — no test-coverage gaps';
+  // #761: the same rule on the surface an engineer reads at their desk. The
+  // headline is stripped of the comment surface's markdown-era glyph so the
+  // terminal line stays plain text.
+  const textAbstention =
+    `Canary PR Guardian — ` +
+    abstentionHeadline(gateMeta?.checked ?? 0).replace(`${WARNING} `, '');
   const lines = [
-    active.length === 0
-      ? cleanHeadline
-      : `Canary PR Guardian — ${new Set(active.map((f) => f.path)).size} file(s) need test coverage`,
+    abstained
+      ? textAbstention
+      : active.length === 0
+        ? cleanHeadline
+        : `Canary PR Guardian — ${new Set(active.map((f) => f.path)).size} file(s) need test coverage`,
   ];
   for (const finding of ordered) {
     const unit =

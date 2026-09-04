@@ -37,6 +37,12 @@ import { GuardianFinding, renderFindings } from '../src/guardian/pr-check.js';
 import { FakeGitHubClient, STICKY_MARKER } from '../src/guardian/pr-comment.js';
 import { invokeGuardian, mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
+// #761: a `pr-check` run that resolved NO coverage and produced only heuristic
+// findings ABSTAINS -- exit 3, not a pass. Every run in this file is
+// coverage-blind by construction (no `--coverage`), so this is their exit code;
+// it is named rather than repeated so the contract is greppable.
+const ABSTAINED = 3;
+
 let tmp: string;
 beforeEach(() => {
   tmp = mkTmp();
@@ -555,7 +561,7 @@ index 1111111..2222222 100644
         },
       },
     );
-    expect(res.code).toBe(0); // soft gate: collection never changes the exit
+    expect(res.code).toBe(ABSTAINED); // soft gate: collection never changes the exit
     expect(res.stdout).toContain('adjudication recorded (1 up / 1 down)');
     const record = JSON.parse(
       readFileSync(join(analysesDir, adjudicationFilename(7)), 'utf-8'),
@@ -583,7 +589,7 @@ index 1111111..2222222 100644
         },
       },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     expect(res.stdout).toContain('adjudication collection failed');
     expect(res.stdout).toContain('gate unaffected');
   });
@@ -603,7 +609,7 @@ index 1111111..2222222 100644
         },
       },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     expect(res.stdout).toContain('adjudications not collected');
   });
 });
