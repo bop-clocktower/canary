@@ -813,51 +813,79 @@ interface VisibleFile {
   added: Set<number>;
 }
 
+/** Mutable cursor carried across the lines of one diff. */
+interface DiffCursor {
+  current: VisibleFile | null;
+  newLineno: number;
+  skipCurrent: boolean;
+  inHunk: boolean;
+}
+
+/**
+ * Consume a `diff --git` / `+++` / `---` / `@@` line, returning whether the
+ * line was a header. Split out from the content handling so neither half has
+ * to carry the other's branches.
+ */
+function applyDiffHeader(
+  line: string,
+  cur: DiffCursor,
+  files: Map<string, VisibleFile>,
+): boolean {
+  if (line.startsWith('diff --git')) {
+    cur.inHunk = false;
+    cur.current = null;
+    cur.skipCurrent = false;
+    return true;
+  }
+  if (!cur.inHunk && line.startsWith('+++ ')) {
+    const target = line.slice(4).trim();
+    if (target === '/dev/null') {
+      cur.skipCurrent = true;
+      cur.current = null;
+      return true;
+    }
+    cur.skipCurrent = false;
+    const path = target.startsWith('b/') ? target.slice(2) : target;
+    cur.current = files.get(path) ?? { text: new Map(), added: new Set() };
+    files.set(path, cur.current);
+    return true;
+  }
+  if (!cur.inHunk && line.startsWith('--- ')) return true;
+  const hunk = HUNK_RE.exec(line);
+  if (hunk) {
+    cur.newLineno = Number.parseInt(hunk[1]!, 10);
+    cur.inHunk = true;
+    return true;
+  }
+  return false;
+}
+
+/** Record one content line against the file the cursor is pointing at. */
+function applyDiffContent(line: string, cur: DiffCursor): void {
+  const file = cur.current;
+  if (!file) return;
+  // `-` is gone from the new file and `\` is the no-newline marker; neither
+  // occupies a line number on the `+` side.
+  if (line.startsWith('-') || line.startsWith('\\')) return;
+  const added = line.startsWith('+');
+  file.text.set(cur.newLineno, line.slice(1));
+  if (added) file.added.add(cur.newLineno);
+  cur.newLineno += 1;
+}
+
 function visibleLinesByPath(diffText: string): Map<string, VisibleFile> {
   const files = new Map<string, VisibleFile>();
-  let current: VisibleFile | null = null;
-  let newLineno = 0;
-  let skipCurrent = false;
-  let inHunk = false;
+  const cur: DiffCursor = {
+    current: null,
+    newLineno: 0,
+    skipCurrent: false,
+    inHunk: false,
+  };
 
   for (const line of splitLines(diffText)) {
-    if (line.startsWith('diff --git')) {
-      inHunk = false;
-      current = null;
-      skipCurrent = false;
-      continue;
-    }
-    if (!inHunk && line.startsWith('+++ ')) {
-      const target = line.slice(4).trim();
-      if (target === '/dev/null') {
-        skipCurrent = true;
-        current = null;
-        continue;
-      }
-      skipCurrent = false;
-      const path = target.startsWith('b/') ? target.slice(2) : target;
-      current = files.get(path) ?? { text: new Map(), added: new Set() };
-      files.set(path, current);
-      continue;
-    }
-    if (!inHunk && line.startsWith('--- ')) continue;
-    const hunk = HUNK_RE.exec(line);
-    if (hunk) {
-      newLineno = Number.parseInt(hunk[1]!, 10);
-      inHunk = true;
-      continue;
-    }
-    if (skipCurrent || current === null) continue;
-    if (line.startsWith('+')) {
-      current.text.set(newLineno, line.slice(1));
-      current.added.add(newLineno);
-      newLineno += 1;
-    } else if (line.startsWith('-') || line.startsWith('\\')) {
-      continue;
-    } else {
-      current.text.set(newLineno, line.slice(1));
-      newLineno += 1;
-    }
+    if (applyDiffHeader(line, cur, files)) continue;
+    if (cur.skipCurrent || cur.current === null) continue;
+    applyDiffContent(line, cur);
   }
   return files;
 }
