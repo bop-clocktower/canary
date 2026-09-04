@@ -24,59 +24,31 @@
  *
  * ## Two rules, not one (#703)
  *
- * The absolute ceiling above has a consequence that only appears under
- * concurrency: headroom is a shared, non-renewable resource that no branch can
- * see. Two branches off the same `main` each measure themselves honestly, each
- * fit under the ceiling, and the second one to merge fails on findings it did
- * not introduce — so merge order decides who gets blamed. Measured once, in
- * one session: `main` 294, batch C 296, batch B 297 (ceiling 297), C+B merged
- * 299. Neither branch is bad; only the combination fails.
+ * An absolute ceiling makes headroom a shared, non-renewable budget no branch
+ * can see, so two independently-green branches collide and whichever merges
+ * second is blamed for findings it did not add. When the caller supplies
+ * `--base-report` — the same scan run against the PR's merge base — this also
+ * fails on the delta the branch itself introduced, which is order-independent.
+ * The ceiling stays as a BACKSTOP; both rules run and either can fail.
  *
- * So when the caller supplies `--base-report` — the same scan run against the
- * PR's merge base — this compares the two and fails on the delta the branch
- * itself introduced. That is the same "never add entropy" property expressed
- * relative to what the branch actually started from, which makes it
- * order-independent and visible to its author.
- *
- * The absolute ceiling stays as a BACKSTOP, exactly as it is. Without it a long
- * series of +0 merges could walk the total upward by rounding, and the property
- * ADR 0012 wanted — total entropy trends down — would be gone. Both rules run;
- * either can fail the build.
- *
- * Two things the delta rule assumes, both guaranteed by the workflow rather
- * than by this script:
- *
- * 1. **Same instrument on both sides.** A count is only comparable to another
- *    count from the same analyzer (see `requireMatchingInstrument`), and the
- *    two reports carry no version stamp of their own. `harness-quality.yml`
- *    measures both in the same job with the same resolved CLI. Measuring the
- *    base with a different version would produce a delta that is pure
- *    instrument drift — the $driftfix episodes in the baseline file moved this
- *    count by 24 and then 110 with no code change at all.
- * 2. **Each side reads its own `harness.config.json`.** A PR that widens
- *    `entropy.excludePatterns` or `entropy.entryPoints` shifts its own
- *    denominator, and the delta will show it. That is deliberate: a branch owns
- *    the findings its config change surfaces, the same way it owns the ones its
- *    code change surfaces.
+ * The reasoning, the numbers, and the two invariants the WORKFLOW must
+ * guarantee (same resolved CLI both sides; base worktree outside the checkout)
+ * are in ADR 0012's 2026-09-04 amendment; `ts/test/entropy-ratchet.test.ts`
+ * asserts both against the YAML.
  *
  * Usage:
  *   harness cleanup --findings-json > report.txt || true
- *   node scripts/entropy-ratchet.mjs --report report.txt
- *
- *   # on a PR, with the merge base measured by the same CLI:
  *   node scripts/entropy-ratchet.mjs --report report.txt \
- *     --base-report base-report.txt --cli-version 12.2.0
+ *     [--base-report base-report.txt] [--cli-version 12.2.0]
  *
  * Exit codes follow the repo's gate convention (#508):
- *   0 = verified — findings are at or under the baseline, and at or under the
- *       merge base when one was supplied
- *   1 = the ratchet fired — findings grew past the baseline, or past the merge
- *       base
+ *   0 = verified — at or under the baseline, and at or under the merge base
+ *   1 = the ratchet fired — findings grew past the baseline or the merge base
  *   2 = error — the baseline file is missing or unreadable
- *   3 = ABSTENTION — no findings line in the input, so nothing was measured.
- *       A `--base-report` that was named but carries no count abstains too: a
- *       base that could not be measured is not a base of zero, and silently
- *       degrading to the absolute rule would hide the delta gate going dark.
+ *   3 = ABSTENTION — no findings line in the input, so nothing was measured. A
+ *       `--base-report` naming a report with no count abstains too: a base
+ *       that could not be measured is not a base of zero, and degrading to the
+ *       absolute rule would hide the delta gate going dark.
  */
 
 import { readFileSync } from 'node:fs';
@@ -195,12 +167,10 @@ function requireMatchingInstrument(
 }
 
 /**
- * Read a findings count out of a report file, or exit.
- *
- * `label` names which side of the comparison this is, so a failure says
- * whether the head scan or the merge-base scan is the one that produced
- * nothing. Collapsing those two into one message is how a delta gate goes dark
- * without anyone being able to tell which half went dark.
+ * Read a findings count out of a report file, or exit. `label` names which
+ * side of the comparison this is: collapsing "the head scan produced nothing"
+ * and "the base scan produced nothing" into one message is how a delta gate
+ * goes dark without anyone being able to tell which half went dark.
  */
 function readFindings(path, label) {
   let text;
@@ -226,13 +196,38 @@ function readFindings(path, label) {
   return findings;
 }
 
-function main() {
-  const { report, baseReport, baseline, cliVersion } = parseArgs(
-    process.argv.slice(2),
+/**
+ * The delta rule (#703): fail when this branch adds findings its merge base
+ * did not have.
+ *
+ * Called BEFORE the absolute backstop, because it is the one that names what
+ * this branch actually did — a branch that inherits an over-ceiling base
+ * should read "you added 2" first, not a total it did not cause.
+ */
+function requireNoDelta(baseReport, findings) {
+  const baseFindings = readFindings(baseReport, 'merge-base');
+  if (findings > baseFindings) {
+    fail(
+      1,
+      `entropy-ratchet: FAILED — this branch introduces ` +
+        `${findings - baseFindings} entropy finding(s): ${baseFindings} at ` +
+        `the merge base, ${findings} here.\n` +
+        'This is the delta YOUR diff added, measured against the commit you ' +
+        'branched from, so it is not affected by what else merged in the ' +
+        'meantime. Either fix the new findings, or — if they are false ' +
+        "positives from the analyzer's entry-point model — declare the new " +
+        'entry point in `entropy.entryPoints` in harness.config.json.',
+    );
+  }
+  const delta = findings - baseFindings;
+  console.log(
+    `entropy-ratchet: delta OK — ${findings} findings here against ` +
+      `${baseFindings} at the merge base (${delta >= 0 ? '+' : ''}${delta}).`,
   );
+}
 
-  if (!report) fail(2, 'entropy-ratchet: --report <file> is required.');
-
+/** Read `maxFindings`, `maxHeadroom` and `harnessCli` out of the baseline. */
+function readBaseline(baseline) {
   let maxFindings;
   let maxHeadroom = DEFAULT_MAX_HEADROOM;
   let baselineCli = null;
@@ -253,36 +248,23 @@ function main() {
   if (!Number.isInteger(maxFindings)) {
     fail(2, `entropy-ratchet: ${baseline} has no integer "maxFindings".`);
   }
+  return { maxFindings, maxHeadroom, baselineCli };
+}
+
+function main() {
+  const { report, baseReport, baseline, cliVersion } = parseArgs(
+    process.argv.slice(2),
+  );
+
+  if (!report) fail(2, 'entropy-ratchet: --report <file> is required.');
+
+  const { maxFindings, maxHeadroom, baselineCli } = readBaseline(baseline);
 
   const findings = readFindings(report, 'head');
 
   requireMatchingInstrument(baselineCli, cliVersion, maxFindings, findings);
 
-  // The delta rule (#703), when the caller measured the merge base. Evaluated
-  // BEFORE the absolute backstop, because it is the one that names what this
-  // branch actually did — a branch that inherits an over-ceiling base should
-  // read "you added 2" first, not a total it did not cause.
-  if (baseReport !== null) {
-    const baseFindings = readFindings(baseReport, 'merge-base');
-    if (findings > baseFindings) {
-      fail(
-        1,
-        `entropy-ratchet: FAILED — this branch introduces ` +
-          `${findings - baseFindings} entropy finding(s): ${baseFindings} at ` +
-          `the merge base, ${findings} here.\n` +
-          'This is the delta YOUR diff added, measured against the commit you ' +
-          'branched from, so it is not affected by what else merged in the ' +
-          'meantime. Either fix the new findings, or — if they are false ' +
-          "positives from the analyzer's entry-point model — declare the new " +
-          'entry point in `entropy.entryPoints` in harness.config.json.',
-      );
-    }
-    console.log(
-      `entropy-ratchet: delta OK — ${findings} findings here against ` +
-        `${baseFindings} at the merge base ` +
-        `(${findings - baseFindings >= 0 ? '+' : ''}${findings - baseFindings}).`,
-    );
-  }
+  if (baseReport !== null) requireNoDelta(baseReport, findings);
 
   if (findings > maxFindings) {
     fail(
