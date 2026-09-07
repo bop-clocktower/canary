@@ -35,6 +35,41 @@
           "violationCount": 0
         }
       }
+    },
+    {
+      "capturedAt": "2026-09-07T13:05:23.287Z",
+      "commitHash": "3de050d",
+      "stabilityScore": 77,
+      "metrics": {
+        "circular-deps": {
+          "value": 0,
+          "violationCount": 0
+        },
+        "layer-violations": {
+          "value": 0,
+          "violationCount": 0
+        },
+        "complexity": {
+          "value": 63,
+          "violationCount": 63
+        },
+        "coupling": {
+          "value": 0,
+          "violationCount": 0
+        },
+        "forbidden-imports": {
+          "value": 0,
+          "violationCount": 0
+        },
+        "module-size": {
+          "value": 34146,
+          "violationCount": 7
+        },
+        "dependency-depth": {
+          "value": 0,
+          "violationCount": 0
+        }
+      }
     }
   ]
 }
