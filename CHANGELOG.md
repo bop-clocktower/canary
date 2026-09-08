@@ -16,6 +16,18 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **Test duration ratchet** (#760). `scripts/test-duration-ratchet.mjs` records
+  an expected duration per slow test and fails when one gets materially slower —
+  the pairing #760 asked for alongside the 30s `testTimeout` raise, which is
+  otherwise a ~10x window in which a real slowdown is invisible (nothing in
+  either suite runs over ~3.1s idle). Each run derives its own load factor from
+  the tracked tests themselves, so contention raises the ceiling with the noise
+  instead of producing a flaky red, and the gate ABSTAINS (exit 3) rather than
+  guess when its control group is under 10 tests, the runtime differs, or the
+  run is too contended to compare. Wired non-blocking-on-abstention in the
+  `agents/skills` job; an abstention is reported as a warning that the run
+  verified nothing, never as a pass.
+
 - **`canary skills run` can invoke a skill that ships no script** (#756). The
   dispatcher tier harness has and canary did not: 14 of canary's 21 skills carry
   no `cli:`, and every one of them used to exit 2 for any orchestrator, CI step,
