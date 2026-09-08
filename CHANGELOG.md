@@ -58,6 +58,24 @@ under the project's former name) are documented in the
   matched but holding zero tests is the subtler zero, and a file-counting
   summary prints a healthy number over it.
 
+### Changed
+
+- **Retracted the "`excludePatterns` cannot reach a dot-directory" claim**
+  (#728). `AGENTS.md` and `ts/test/entropy-exclude-patterns.test.ts` both
+  recorded, as measured fact against CLI 11.1.1, that no `excludePatterns` entry
+  could suppress findings under a dot-directory the analyzer does not already
+  skip. It is false. The eleven-row table behind it was taken at a
+  long-lived-working-directory baseline of 346 — a number unresponsive to the
+  config under test — and the upstream report carrying it
+  (`Intense-Visions/harness-engineering#1345`) was withdrawn by its own author
+  as NOT_PLANNED. Re-measured in a fresh worktree at `29ad0f2` on CLI 12.4.0 and
+  12.2.0: a `.kiro` probe reads 147 unexcluded and 145 excluded against a 145
+  baseline. The dot-directory is still _walked_, so the `DEFAULT_SKIP_DIRS` half
+  stands. `.kiro/**` and `.remember/**` remain out of `harness.config.json`, but
+  for a corrected reason — they are untracked machine-local paths whose
+  suppression can never be demonstrated in CI, not because an absent directory
+  makes the pattern vacuous.
+
 ### Fixed
 
 - **Five of nine `cli:` skills had no documented command anyone could run**
