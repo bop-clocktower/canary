@@ -1,51 +1,27 @@
 #!/usr/bin/env node
 // Fails when a tracked test gets materially slower (#760).
 //
-// #760 raised testTimeout to 30s in both vitest projects to stop contended
-// tests being reported as failures. Nothing there runs over ~3.1s idle, so
-// that is a ~10x detection gap: a regression taking a 3s test to 18s now
-// passes silently. The issue asks for the raise to be PAIRED with a recorded
-// expected duration so a genuine slowdown stays visible. This is that.
+// #760 raised testTimeout to 30s in both vitest projects so contended tests
+// stop being reported as failures. Nothing in either suite runs over ~3.1s
+// idle, so that is also a ~10x window in which a real slowdown is invisible.
+// This is the recorded expected duration the issue asked to be paired with it.
 //
-// The hard part is that the thing being measured is exactly the thing #760 is
-// about. Under load these tests take a large, roughly CONSTANT additional
-// penalty — a 215ms test was recorded at 9600ms — so a naive duration
-// assertion is flaky for precisely the reason the timeouts were, and a gate
-// that fails intermittently teaches people to re-run until green, which is how
-// a real failure gets waved through.
+// A fixed ceiling is flaky for exactly the reason the timeouts were: under
+// load these tests take a large, roughly CONSTANT penalty (a 215ms test was
+// recorded at 9600ms). So the comparison gets a CONTROL GROUP -- load raises
+// every slow test together, a regression raises one -- and each run derives
+// its own load factor from the tracked tests themselves.
 //
-// The fix is to give the comparison a CONTROL GROUP. Load raises every slow
-// test together; a regression raises one. So each run measures its own load
-// factor — the MEDIAN ratio of observed to recorded across all tracked tests —
-// and every test is judged against a ceiling scaled by it. Validated on real
-// runs of this suite:
+// The design, its validation table, the two rejected alternatives, and why the
+// baseline is machine-class-specific are in
+// docs/knowledge/gates/test-duration-ratchet.md. Read it before changing a
+// constant here; every number in it cost a measurement.
 //
-//     idle    53 tracked   median ratio 1.00   worst 1.73   ceiling 2.50  ok
-//     loaded  53 tracked   median ratio 1.38   worst 2.60   ceiling 3.45  ok
-//
-// The worst case under load (2.60) would have tripped a fixed 2.5x ceiling.
-// Normalised, the ceiling moves to 3.45 and it does not. A genuinely 4x test
-// sits at ratio 4.0 against a median near 1 and fires in both conditions.
-//
-// Two designs were measured and REJECTED first, so they are not retried.
-// (1) Normalising against the WHOLE suite's median duration: that median is
-// 0.4ms because hundreds of tests are pure in-process work which never takes
-// the spawn penalty, so ratios drifted 0.98-1.52x where raw durations drifted
-// 0.87-1.34x — the wrong control group made it worse. (2) A `node -e 0` spawn
-// probe as an instrument, the shape `.harness/perf-baseline.json` uses for a
-// floating CLI: rejected because it could not be VALIDATED here — under 8
-// concurrent spawn loops it reported p90 42.5ms against 44.1ms idle, no signal
-// at all. Shipping an instrument that cannot be shown to measure what it
-// claims is the failure this repo keeps finding in its own gates.
-//
-// Exit codes follow the repo's gate convention (#508):
-//   0 = every tracked test is within tolerance
-//   1 = REGRESSION — a test exceeded its recorded duration
-//   2 = usage error
-//   3 = ABSTENTION — no reports, no tracked tests, a missing baseline, a
-//       different node, or a machine too contended to compare on. Each makes
-//       the comparison meaningless, and "0 regressions" out of nothing checked
-//       is an abstention wearing a pass.
+// Exit codes follow the repo's gate convention (#508): 0 within tolerance,
+// 1 REGRESSION, 2 usage, 3 ABSTENTION -- no reports, no tests, a missing
+// baseline, a different node, too small a control group, or a run not
+// comparable to the baseline at all. "0 regressions" out of nothing checked is
+// an abstention wearing a pass.
 //
 //   node scripts/test-duration-ratchet.mjs --report <vitest.json> [...]
 //   node scripts/test-duration-ratchet.mjs --report <vitest.json> --update
@@ -68,6 +44,14 @@ export const TOLERANCE = 2.5;
 export const MIN_CONTROL_GROUP = 10;
 /** A load factor above this means even the normalised comparison is guesswork. */
 export const MAX_LOAD_FACTOR = 5;
+/**
+ * Below this the run is a different CLASS of machine, not merely an idle one,
+ * and the baseline does not describe it. Found by CI: a macOS-recorded
+ * baseline against an ubuntu runner gave a load factor of 0.08, because Linux
+ * spawns a process about an order of magnitude faster and these tests are
+ * spawn-bound. Comparing across that is meaningless in either direction.
+ */
+export const MIN_LOAD_FACTOR = 0.5;
 
 /** Middle value of a numeric list. */
 export function median(values) {
@@ -88,6 +72,29 @@ export function loadFactor(ratios) {
   return ratios.length === 0 ? 1 : median(ratios);
 }
 
+/**
+ * The load factor to judge against, or an abstention when the run is not
+ * comparable to the baseline at all.
+ *
+ * Clamped at 1, because contention may only ever LOOSEN the ceiling. Letting a
+ * factor below 1 tighten it inverts the gate into one that fails tests for
+ * running FASTER than recorded — which is exactly what CI caught on this
+ * gate's first run.
+ */
+function usableLoad(measured) {
+  if (measured > MAX_LOAD_FACTOR) {
+    throw new Abstention(
+      `every tracked test is ${measured.toFixed(1)}x its recorded duration — the machine is far too contended for a comparison to mean anything, so this run verified nothing`,
+    );
+  }
+  if (measured < MIN_LOAD_FACTOR) {
+    throw new Abstention(
+      `every tracked test is ${measured.toFixed(2)}x its recorded duration — a different class of machine from the one the baseline was recorded on, not a fast run, so the comparison would be meaningless. Re-record the baseline where the gate runs.`,
+    );
+  }
+  return Math.max(1, measured);
+}
+
 /** `file::test title` — stable across runs and readable in a diff. */
 export function testKey(file, title) {
   return `${file.split('/').slice(-2).join('/')}::${title}`;
@@ -102,8 +109,7 @@ function fileRows(file) {
   }));
 }
 
-/** Slowest per test across all reports — the minimum would let a regression
- * hide behind one lucky run in a batch. */
+/** Slowest per test across reports; a minimum would hide a regression. */
 export function collectDurations(reports) {
   const worst = new Map();
   const files = reports.flatMap((report) => report.testResults ?? []);
@@ -173,12 +179,7 @@ export function compare(baseline, observed) {
     );
   }
 
-  const load = loadFactor(present.map((t) => t.ratio));
-  if (load > MAX_LOAD_FACTOR) {
-    throw new Abstention(
-      `every tracked test is ${load.toFixed(1)}x its recorded duration — the machine is far too contended for a comparison to mean anything, so this run verified nothing`,
-    );
-  }
+  const load = usableLoad(loadFactor(present.map((t) => t.ratio)));
 
   const regressions = present
     .filter((t) => t.ratio > load * TOLERANCE)

@@ -53,6 +53,7 @@ interface RatchetModule {
   TOLERANCE: number;
   MIN_CONTROL_GROUP: number;
   MAX_LOAD_FACTOR: number;
+  MIN_LOAD_FACTOR: number;
   median: (values: number[]) => number;
   loadFactor: (ratios: number[]) => number;
   testKey: (file: string, title: string) => string;
@@ -69,6 +70,7 @@ const {
   TOLERANCE,
   MIN_CONTROL_GROUP,
   MAX_LOAD_FACTOR,
+  MIN_LOAD_FACTOR,
   median,
   loadFactor,
   testKey,
@@ -131,6 +133,39 @@ describe('compare — no false red', () => {
     // One test at 4x recorded — but only 2x the run's own load level.
     observed.set('f.test.ts::t0', 4000);
     expect(compare(base, observed).regressions).toEqual([]);
+  });
+});
+
+describe('compare — a faster run is never a regression', () => {
+  // Found by CI on the first run of this gate, not by these tests, which had
+  // only ever exercised load factors at or above 1. A macOS-recorded baseline
+  // against an ubuntu runner gave a load factor of 0.08 — Linux spawns roughly
+  // an order of magnitude faster and these tests are spawn-bound — so the
+  // ceiling became 0.21x recorded and EIGHT tests were reported as regressions
+  // for running FASTER than baseline. The normalisation was unbounded
+  // downward; it must only ever loosen.
+  it('does not tighten the ceiling when the run is faster than the baseline', () => {
+    const base = baselineOf(20);
+    const observed = observedAt(base, 0.8);
+    // 1.5x the recorded time, but well under the nominal tolerance.
+    observed.set('f.test.ts::t0', 1500);
+    const result = compare(base, observed);
+    expect(result.regressions).toEqual([]);
+    expect(result.load).toBe(1);
+  });
+
+  it('still applies the full tolerance on a faster-than-baseline run', () => {
+    const base = baselineOf(20);
+    const observed = observedAt(base, 0.8);
+    observed.set('f.test.ts::t0', 1000 * (TOLERANCE + 1));
+    expect(compare(base, observed).regressions).toHaveLength(1);
+  });
+
+  it('abstains when the run is a different class of machine entirely', () => {
+    const base = baselineOf(20);
+    expect(() => compare(base, observedAt(base, MIN_LOAD_FACTOR / 2))).toThrow(
+      /different class of machine/,
+    );
   });
 });
 
