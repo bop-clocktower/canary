@@ -9,30 +9,47 @@ export default defineConfig({
     // (`canary-strix`, `canary-katana` — every one `Test timed out in 5000ms`,
     // not an assertion failure).
     //
-    // Measured on this suite, idle, 923 tests: the slowest test is 3056ms and
-    // exactly ZERO exceed 5000ms. So the budget is not being blown by the work
-    // a test does — it is blown by waiting to spawn. Pairing today's idle
-    // numbers against the durations recorded in #760 under load:
+    // What is measured, and what is not:
     //
-    //     idle    loaded   factor  test
-    //      215ms   9600ms   44.7x  katana  hasOwnProperty unrecognized arg
-    //      606ms  10600ms   17.5x  strix   newline-separated terms
-    //      687ms   7000ms   10.2x  strix   multi-word term vs concatenated domain
-    //      628ms   6100ms    9.7x  strix   term that is only a substring
-    //      806ms   6700ms    8.3x  strix   term carrying trailing punctuation
-    //      778ms   5400ms    6.9x  strix   unions the sources
-    //     3056ms   6600ms    2.2x  katana  commitForFile carries the ticket
+    // Measured here (2026-09-08, single idle run, 923 tests): the slowest test
+    // is ~2.7-3.1s across runs and ZERO exceed 5000ms. So the budget is not
+    // being blown by the work these tests do. Run-to-run spread on individual
+    // tests is up to ~35%, so treat any single figure as one sample, not a
+    // constant.
     //
-    // A 215ms test taking 9.6s is 44x, and it is the smallest test in the
-    // table — the factor tracks the number of spawns, not the amount of work.
-    // That is the signature of contention on process spawn, and it is why the
-    // per-test budget has to cover queueing rather than computation.
+    // NOT established: the mechanism. An earlier version of this comment
+    // claimed the amplification "tracks spawn count, not workload", citing a
+    // 215ms -> 9600ms (44x) case as proof. That case
+    // (`canary-katana` hasOwnProperty) calls `main()` IN-PROCESS and spawns
+    // nothing, so it cannot show that. The genuinely spawning cases all make
+    // roughly ONE spawn each and their factors order strictly by idle duration
+    // — the signature of a large constant penalty added under load, not of a
+    // per-spawn cost. A trivial `node -e 0` spawn does go 36ms median idle ->
+    // 3441ms p95 under 8 concurrent spawners (#760), so spawn contention is
+    // real; it is just not what this table demonstrates. Filesystem contention
+    // is equally consistent with the data and is NOT excluded.
     //
-    // 30s, matching `ts/`: ~10x headroom over the slowest test here, ~2.8x over
-    // the worst value #760 ever observed in this project. Not unbounded — a
-    // genuinely hung test must still fail. This stops a contended spawn being
-    // reported as a failure; it does NOT explain the contention, which is
-    // tracked in #760 and is a real cost worth chasing rather than absorbing.
+    // What this does and does not buy:
+    //
+    // 30s stops a contended test being reported as a failure. It does NOT
+    // bound a hang. Every subprocess call in this suite is synchronous
+    // (`spawnSync`/`execFileSync`, none passing a `timeout:` option), which
+    // blocks the worker thread so vitest's timer cannot fire — a hung child
+    // hangs the worker regardless of this value. #760's own 39-56s durations
+    // recorded against a 5000ms limit are the proof: a real interrupt reports
+    // ~5000ms. Only a child-level `timeout:` bounds a sync spawn.
+    //
+    // Cost accepted: nothing here runs over ~3.1s idle, so this is a ~10x
+    // detection gap. A regression taking a 3s test to 18s now passes silently.
+    // #760 stays open for that ratchet and for reducing spawns per test.
+    //
+    // Alternative measured, not adopted: `--no-file-parallelism` under 8-way
+    // synthetic load cut the peak from 3973ms to 2833ms (-29%), but that load
+    // did not reproduce the flake (0/923 over 5000ms either way), so it is not
+    // evidence the flake is fixed. Left to #760 with a reproducing load.
+    //
+    // Same value as `ts/`, derived independently: `ts/`'s severe 39-56s cases
+    // exceed this budget, nothing observed in this project does.
     testTimeout: 30_000,
     coverage: {
       provider: 'v8',
