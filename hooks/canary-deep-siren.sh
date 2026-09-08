@@ -104,9 +104,10 @@ elif [ -z "${NPM_VER:-}" ]; then
   FINDINGS+=("could not read npm latest for canary-test-cli — cannot verify CLI freshness")
 fi
 
-# 3. `canary doctor` in each configured consumer checkout. Any ✗ OR any skipped
-#    check is a finding — "All checks passed" with skips is exactly the silence
-#    this siren hunts (#505).
+# 3. `canary doctor` in each configured consumer checkout. Any ✗, any skipped
+#    check, OR an abstaining run is a finding — "All checks passed" with skips
+#    is exactly the silence this siren hunts (#505), and an abstention is that
+#    same silence with the denominator already at zero.
 #
 #    An unconfigured or unreadable list ABSTAINS loudly instead of passing. The
 #    original version of this check silently did nothing when its one hardcoded
@@ -136,10 +137,26 @@ else
       FINDINGS+=("configured doctorRepo $NAME does not exist — cannot verify")
       continue
     fi
+    # Capture the EXIT CODE, not just the text. Verified against the shipped
+    # implementation (canary-test-cli 7.1.0 — dist/doctor.js summarizeChecks,
+    # dist/gate-result.js gateOutcome/EXIT_ABSTAINED): doctor's denominator is
+    # `checked = passed + failed`, so informational and skipped results are
+    # EXCLUDED from it. When that denominator collapses to zero it returns
+    # EXIT_ABSTAINED (3) and the line "Abstained — verified zero items; this is
+    # not a pass" — which carries NO '✗' and, when nothing was formally skipped,
+    # no "skipped" either. Both greps below therefore miss it, and a doctor run
+    # that verified nothing renders as "doctor clean": the zero-denominator false
+    # green this siren exists to catch, occurring inside the siren.
     DOCTOR=$(cd "$REPO" && canary doctor 2>&1)
+    DOCTOR_RC=$?
     echo "$DOCTOR" | grep -q '✗' && FINDINGS+=("canary doctor reports failures in $NAME (see log)")
     SKIPPED=$(echo "$DOCTOR" | grep -c 'skipped' || true)
     [ "${SKIPPED:-0}" -gt 0 ] && FINDINGS+=("canary doctor skipped $SKIPPED check(s) in $NAME — a skipped check verified nothing")
+    # Exit code first: it is the contract. The text match is belt-and-braces for
+    # a future version that abstains without using that exit code.
+    if [ "$DOCTOR_RC" -eq 3 ] || echo "$DOCTOR" | grep -q 'Abstained'; then
+      FINDINGS+=("canary doctor ABSTAINED in $NAME (exit $DOCTOR_RC) — every check was skipped or informational, so it verified zero items. This is not a pass.")
+    fi
     echo "$DOCTOR" >>"$LOG"
   done
 fi
