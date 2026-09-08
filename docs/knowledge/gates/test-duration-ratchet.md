@@ -74,6 +74,32 @@ different instruments for a spawn-bound suite.
 uploads `test-durations-agents-skills` as an artifact for exactly this; download
 it and run the ratchet with `--update`.
 
+## The floor is set from the runner, not the laptop
+
+`FLOOR_MS` is **75ms**. At the original 250ms only **three** tests clear the
+floor on an ubuntu runner — Linux spawns roughly an order of magnitude faster
+than macOS and this suite is spawn-bound — which is below `MIN_CONTROL_GROUP`.
+The gate would then have abstained on every CI run forever while exiting 0. A
+gate that always abstains verifies nothing, which is the failure mode one level
+up from the one it was built to catch.
+
+Measured on a real CI run (927 tests, max 1392ms):
+
+| floor | tracked |
+| ----: | ------: |
+| 250ms |       3 |
+| 100ms |      15 |
+|  75ms |      38 |
+|  50ms |      54 |
+
+75ms keeps a comfortable margin over the 10-test minimum without dropping so low
+that per-test jitter dominates.
+
+**Unmeasured:** run-to-run variance on the runner itself. The baseline comes
+from a single CI run. If the gate proves flaky in practice the floor should rise
+before the tolerance does — a wider tolerance hides real regressions, a higher
+floor only narrows what is watched.
+
 ## Two designs measured and rejected
 
 Recorded so they are not retried.
