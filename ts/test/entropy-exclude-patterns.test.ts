@@ -129,13 +129,22 @@ describe('entropy.excludePatterns', () => {
  * declares. `.claude/worktrees/` is quiet because `.claude` is on that list;
  * `tests/generated/` was noisy because it is not.
  *
- * Upstream limit, measured against CLI 11.1.1 and NOT worked around here: a
- * path under a dot-directory that upstream does not already skip cannot be
- * excluded by ANY `excludePatterns` entry — eight forms were tried, down to
- * the exact literal relative path, and all left the count unchanged. That is
- * why `.kiro/**` and `.remember/**` are deliberately absent from the config: a
- * pattern that matches nothing is the vacuous-rule shape this file exists to
- * refuse. Measure the ratchet in a fresh worktree until upstream is fixed.
+ * This comment previously claimed, against CLI 11.1.1, that a path under an
+ * unskipped dot-directory could not be excluded by ANY `excludePatterns`
+ * entry. That was measurement error (#728) — the table behind it was taken at
+ * a long-lived-working-directory baseline of 346, a number that was not
+ * responsive to the config under test, and the upstream report carrying it
+ * (`Intense-Visions/harness-engineering#1345`) was withdrawn by its own author.
+ * Re-measured in a fresh worktree on CLI 12.2.0: a dead `.ts` planted under
+ * `.kiro/` reads 147 with no exclusion and 145 once a repo-wide `.kiro`
+ * exclusion glob is declared, against a 145 baseline. So the dot-directory is
+ * walked, AND `excludePatterns` suppresses what the walk finds there.
+ *
+ * `.kiro/**` and `.remember/**` stay absent from the config for the opposite
+ * reason to the one once given here: neither directory exists in this checkout,
+ * so either entry would match nothing — the vacuous-rule shape this file exists
+ * to refuse. Add one only when the directory is present, and prove it with a
+ * before/after `harness cleanup --findings-json` in a fresh worktree.
  */
 const repoRootedExcludes = EXCLUDES.filter((p) => !p.startsWith('**/'));
 

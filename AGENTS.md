@@ -534,15 +534,39 @@ ignore file at all. What keeps local junk out is upstream's hardcoded
 is why `.claude/worktrees/` is silent and `.kiro/` is not: one basename is on
 the list and the other is not, and no amount of gitignoring changes it.
 
-**Upstream limit, measured against CLI 11.1.1.** A path under a dot-directory
-upstream does not already skip cannot be excluded by _any_ `excludePatterns`
-entry — eight forms were tried, down to the exact literal relative path, and
-every one left the count unchanged; the same mechanism excludes non-dot paths
-(`tests/generated/**`) correctly. So `.kiro/**` and `.remember/**` are
-deliberately **absent** from `harness.config.json`: a pattern that matches
-nothing reads as configured and protects nothing, which is the vacuity
-`ts/test/entropy-exclude-patterns.test.ts` exists to refuse. The worktree is the
-workaround until upstream is fixed.
+**`excludePatterns` does reach dot-directories — an earlier claim here that it
+could not was measurement error (#728).** This paragraph asserted, against CLI
+11.1.1, that a path under an unskipped dot-directory could not be excluded by
+_any_ `excludePatterns` entry. That is false, and the upstream report carrying
+it (`Intense-Visions/harness-engineering#1345`) was withdrawn by its own author
+as NOT_PLANNED. The eleven-row table behind it was taken at a baseline of 346 —
+the long-lived-working-directory reading this very section calls confident
+garbage — so every "unchanged: 346" row showed only that the number being
+watched was not responsive to anything, not that the pattern was inert.
+
+Re-measured in a fresh worktree on **CLI 12.2.0**, one run per row:
+
+| probe                                        | `excludePatterns` | findings           |
+| -------------------------------------------- | ----------------- | ------------------ |
+| baseline, no probe                           | —                 | 145                |
+| `.kiro/skills/skill-creator/scripts/dead.ts` | none              | 147                |
+| same                                         | `**/.kiro/**`     | **145 — excluded** |
+| probe removed                                | —                 | 145                |
+
+Both halves settled. The dot-directory **is** walked (+2 with no exclusion), so
+everything above about `dot: true` and `DEFAULT_SKIP_DIRS` stands. But an
+`excludePatterns` entry **does** suppress what the walk finds there, so a
+dot-directory is not beyond reach and the fresh worktree is not the only remedy.
+
+`.kiro/**` and `.remember/**` nonetheless stay **absent** from
+`harness.config.json` — for the opposite reason to the one previously given.
+Neither directory exists in this checkout any more, so an entry for either would
+match nothing, and a pattern matching nothing is exactly the vacuity
+`ts/test/entropy-exclude-patterns.test.ts` exists to refuse. Add one only when
+the directory is actually present, and verify it by measurement (before/after
+`harness cleanup --findings-json` in a fresh worktree) rather than by reading
+this table — accepting an exclusion on trust is the failure this whole entry
+records.
 
 **Reading a red `Harness Checks` (#588).** The `ci check --json` report is ~162
 KB and **is not in the job log** — do not scroll for it. Two limits eat it: the
