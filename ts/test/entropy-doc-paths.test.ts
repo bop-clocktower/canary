@@ -28,18 +28,41 @@
  *    `docs/runbooks/` or a new skill fails HERE, at the desk, rather than
  *    joining an invisible unscanned pile.
  *
- * KNOWN LIMITATION, stated so nobody reads a green here as more than it is.
- * `harness cleanup` — the command the entropy ratchet and CI actually run —
- * does NOT honour this config key. It hard-codes
- * `docPaths: [join(docsDir, '**\/*.md')]` when constructing the analyzer, so
- * `entropy.drift.docPaths` is read only by the MCP `detect_entropy` path.
- * Verified with a paired planted probe at CLI 12.2.0: an identical dead link
- * appended to `docs/CANARY_STATE.md` is reported, and appended to `AGENTS.md`
- * is not. Tracked in #788. This file therefore pins the DECLARED denominator,
- * which is correct and takes effect the moment the CLI honours it; the
- * repo-side instrument that covers the wide surface TODAY is
- * `scripts/check_doc_links.mjs` (249 Markdown files, no path allowlist,
+ * ## The former caveat is RETIRED as of CLI 12.4.0 (#788)
+ *
+ * This header used to carry a standing warning that `harness cleanup` — the
+ * command the ratchet and CI actually run — ignored this key entirely,
+ * hard-coding `docPaths: [join(docsDir, '**\/*.md')]`, so the list below was
+ * correct and inert. That is fixed upstream. The key is now honoured on the
+ * CI path, and the widening #693 asked for is live rather than declared.
+ *
+ * Verified by paired planted probe on `main` at `6926e1a` under a pinned CLI
+ * 12.4.0, in a detached worktree. An identical dead link, appended one file at
+ * a time, against a clean tree that reports drift 0:
+ *
+ * | probe | drift findings |
+ * | --- | --- |
+ * | `docs/CANARY_STATE.md` (control, always covered) | 1 |
+ * | `AGENTS.md` | 1 |
+ * | `agents/skills/claude-code/canary-katana/SKILL.md` | 1 |
+ * | `STRATEGY.md` | 1 |
+ * | `AGENTS.md`, with `AGENTS.md` REMOVED from `docPaths` | **0** |
+ *
+ * The last row is the one that carries it. Three surfaces firing could just as
+ * easily mean the CLI widened its hard-coded default, which is a different
+ * fact with the same appearance — the same trap `$driftfix2_evidence` records
+ * for the entropy count. Deleting one entry and watching its planted link stop
+ * being reported is what proves the CONFIG is what widened the denominator.
+ *
+ * So #693's last open item is answerable: the widening added **0** findings.
+ * A measured floor, not an assumed one, and a real zero rather than an
+ * abstention — the planted positives above are what separate the two.
+ *
+ * `scripts/check_doc_links.mjs` remains the second, independent instrument
+ * over a larger denominator (254 Markdown files, no path allowlist,
  * strict-at-zero in `doc-links.test.ts`, exit-3 abstention on an empty walk).
+ * Keep it. It does not move when the harness CLI floats, and the CLI has now
+ * moved this check's behaviour five releases running.
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
