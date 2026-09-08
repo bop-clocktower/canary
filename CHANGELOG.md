@@ -245,20 +245,31 @@ under the project's former name) are documented in the
   `patterns` 0 under both. The ratchet is untouched at `maxFindings: 145` and no
   baseline was refreshed.
 
-  **Why the number did not move is the finding.** A zero delta on a widened
-  denominator is the shape of a detector that did not widen, so it was probed
-  rather than assumed: an identical dead link appended to `docs/CANARY_STATE.md`
-  is reported, and appended to `AGENTS.md` is not. `harness cleanup` — the
-  command CI and the ratchet actually run — hard-codes
-  `docPaths: [join(docsDir, '**/*.md')]` when it constructs the analyzer and
-  never reads `entropy.drift.docPaths`; only the MCP `detect_entropy` path
-  honours the key. So the config is **correct and currently inert on the CI
-  path**, and the widening takes effect the moment upstream honours it. Tracked
-  in #788, which also records the second half of that defect: the hard-coded
-  value is `docs/**/*.md` alone, so no README anywhere is in the CI drift
-  denominator either. The instrument that covers the wide surface _today_ is
-  `scripts/check_doc_links.mjs` — 249 Markdown files, no path allowlist,
-  strict-at-zero in the blocking suite, exit 3 on an empty walk.
+  **Why the number did not move was the finding, and it has since changed.** A
+  zero delta on a widened denominator is the shape of a detector that did not
+  widen, so it was probed rather than assumed. At CLI 12.2.0 the probe showed
+  the widening was inert: `harness cleanup` — the command CI and the ratchet
+  actually run — hard-coded `docPaths: [join(docsDir, '**/*.md')]` and never
+  read `entropy.drift.docPaths`, so the config was correct and had no effect,
+  and no README anywhere was in the CI drift denominator either (#788).
+
+  **Fixed upstream at CLI 12.4.0, and re-probed rather than taken on trust.**
+  The key is now honoured on the CI path. An identical dead link appended one
+  file at a time to a clean tree reporting drift 0 is reported for
+  `docs/CANARY_STATE.md` (the control), `AGENTS.md`, `STRATEGY.md` and
+  `agents/skills/claude-code/canary-katana/SKILL.md` — and, the row that
+  actually carries it, is **not** reported when `AGENTS.md` is deleted from
+  `docPaths`. Three surfaces firing would look identical if the CLI had merely
+  widened its hard-coded default; removing one entry and watching its planted
+  link go quiet is what proves the config is what widened the denominator. So
+  the acceptance number stands as a real measurement: the widening added **0**
+  findings across `AGENTS.md`, `CHANGELOG.md`, `CLAUDE.md`, `STRATEGY.md`,
+  `DEPLOY_CHECKLIST.md` and all 21 `SKILL.md` files. #788 is closed.
+
+  `scripts/check_doc_links.mjs` stays regardless — 254 Markdown files, no path
+  allowlist, strict-at-zero in the blocking suite, exit 3 on an empty walk. It
+  does not move when the harness CLI floats, and the CLI has now moved this
+  check's behaviour five releases running.
 
   `ts/test/entropy-doc-paths.test.ts` pins the declared list against what is on
   disk, because an allowlist's denominator shrinks silently: it fails when a
