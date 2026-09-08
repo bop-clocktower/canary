@@ -129,13 +129,36 @@ describe('entropy.excludePatterns', () => {
  * declares. `.claude/worktrees/` is quiet because `.claude` is on that list;
  * `tests/generated/` was noisy because it is not.
  *
- * Upstream limit, measured against CLI 11.1.1 and NOT worked around here: a
- * path under a dot-directory that upstream does not already skip cannot be
- * excluded by ANY `excludePatterns` entry — eight forms were tried, down to
- * the exact literal relative path, and all left the count unchanged. That is
- * why `.kiro/**` and `.remember/**` are deliberately absent from the config: a
- * pattern that matches nothing is the vacuous-rule shape this file exists to
- * refuse. Measure the ratchet in a fresh worktree until upstream is fixed.
+ * This comment previously claimed, against CLI 11.1.1, that a path under an
+ * unskipped dot-directory could not be excluded by ANY `excludePatterns`
+ * entry. That was measurement error (#728) — the table behind it was taken at
+ * a long-lived-working-directory baseline of 346, a number that was not
+ * responsive to the config under test, and the upstream report carrying it
+ * (`Intense-Visions/harness-engineering#1345`) was withdrawn by its own author.
+ * Re-measured in a fresh detached worktree at `29ad0f2` on CLI 12.4.0 (and
+ * again on 12.2.0): a dead `.ts` planted under `.kiro/` reads 147 with no
+ * exclusion and 145 once a repo-wide `.kiro` exclusion glob is declared,
+ * against a 145 baseline. The dot-directory is walked, AND `excludePatterns`
+ * suppresses what the walk finds there.
+ *
+ * Bounded, not settled: that is one file (+2), the same sample the upstream
+ * withdrawal flagged as insufficient against an original report of 53 findings
+ * from ten files. A scale-dependent mechanism is not excluded.
+ *
+ * `.kiro/**` and `.remember/**` stay absent from the config — but NOT because
+ * "the directory does not exist so the pattern would be vacuous". That reason
+ * is wrong twice: `tests/generated/**` is equally absent from a fresh checkout
+ * yet is mandatorily required below, and `harness-config-denominator.test.ts`
+ * already established that a presence check on these two paths would be
+ * "precisely inverted". This file does not refuse the shape either — adding
+ * both patterns leaves this suite green (8/8, verified); the three rules below
+ * check glob form, repo-level gitignoring, and that no tracked file is hidden,
+ * all of which `.kiro/**` satisfies.
+ *
+ * The real reason is that these are untracked machine-local paths (`.remember`
+ * 193 files / `.kiro` 75 on a dev laptop, 0 in a fresh clone), so an exclusion
+ * for them can never be demonstrated in CI, where the ratchet is
+ * authoritative. The fresh-worktree recipe carries them instead.
  */
 const repoRootedExcludes = EXCLUDES.filter((p) => !p.startsWith('**/'));
 
