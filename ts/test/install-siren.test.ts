@@ -29,12 +29,20 @@
  * writes a plist, or spawns a shell.
  */
 
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 interface Status {
   ok: boolean;
@@ -56,6 +64,11 @@ interface SirenModule {
     home?: string,
     read?: (p: string, enc: string) => string,
   ) => string[];
+  linkHooks: (
+    home?: string,
+    now?: Date,
+  ) => { name: string; action: string; backup?: string; target?: string }[];
+  SIREN_HOOKS: readonly string[];
   interactivePath: (run?: unknown) => string;
   isRegistered: (run?: unknown) => boolean;
   renderPlist: (
@@ -82,8 +95,10 @@ const SCRIPT_URL = pathToFileURL(
 
 const {
   LABEL,
+  SIREN_HOOKS,
   STALE_DAYS,
   divergentCopies,
+  linkHooks,
   interactivePath,
   isRegistered,
   renderPlist,
@@ -264,6 +279,77 @@ describe('divergent machine copies', () => {
   });
 });
 
+describe('linkHooks — one version of each siren on the machine', () => {
+  // #758 follow-up. Copies drift in BOTH directions: mid-change the ~/.claude
+  // copy was briefly AHEAD of the repo, having gained a plugin-skew check, so
+  // "overwrite from the repo" would have silently lost work. A symlink removes
+  // the category — settings.json keeps its ~/.claude path, and that path now
+  // resolves to the tracked file CI and code review actually see.
+  let home: string;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'siren-home-'));
+    mkdirSync(join(home, '.claude', 'hooks'), { recursive: true });
+  });
+  afterEach(() => rmSync(home, { recursive: true, force: true }));
+
+  it('replaces a divergent regular file with a link to the repo copy', () => {
+    const target = join(home, '.claude', 'hooks', SIREN_HOOKS[0] as string);
+    writeFileSync(target, 'stale contents\n', 'utf-8');
+
+    linkHooks(home);
+
+    expect(lstatSync(target).isSymbolicLink()).toBe(true);
+    expect(realpathSync(target)).toBe(
+      join(REPO_ROOT, 'hooks', SIREN_HOOKS[0] as string),
+    );
+  });
+
+  it('preserves the displaced file rather than deleting it', () => {
+    // The machine copy was ahead once already. Never destroy the operator's
+    // file to win a reconcile.
+    const name = SIREN_HOOKS[0] as string;
+    const target = join(home, '.claude', 'hooks', name);
+    writeFileSync(target, 'irreplaceable\n', 'utf-8');
+
+    const acted = linkHooks(home).find((a) => a.action === 'backed-up');
+    expect(acted?.backup).toBeDefined();
+    expect(readFileSync(acted?.backup as string, 'utf-8')).toBe(
+      'irreplaceable\n',
+    );
+  });
+
+  it('is idempotent — a second run re-links nothing', () => {
+    writeFileSync(
+      join(home, '.claude', 'hooks', SIREN_HOOKS[0] as string),
+      'x',
+      'utf-8',
+    );
+    linkHooks(home);
+    const second = linkHooks(home);
+    expect(second.every((a) => a.action === 'already-linked')).toBe(true);
+    expect(second.some((a) => a.action === 'backed-up')).toBe(false);
+  });
+
+  it('leaves divergentCopies clean afterwards', () => {
+    // The two functions have to agree, or --verify fails forever on a machine
+    // that install just reconciled.
+    writeFileSync(
+      join(home, '.claude', 'hooks', SIREN_HOOKS[0] as string),
+      'stale',
+      'utf-8',
+    );
+    linkHooks(home);
+    expect(divergentCopies(home)).toEqual([]);
+  });
+
+  it('does nothing when there is no hooks directory to reconcile', () => {
+    const bare = mkdtempSync(join(tmpdir(), 'siren-bare-'));
+    expect(linkHooks(bare)).toEqual([]);
+    rmSync(bare, { recursive: true, force: true });
+  });
+});
+
 describe('the deep siren script', () => {
   const script = readFileSync(
     join(REPO_ROOT, 'hooks', 'canary-deep-siren.sh'),
@@ -282,13 +368,45 @@ describe('the deep siren script', () => {
     expect(script).toContain('a check with no targets is an abstention');
   });
 
-  it('gives the notification a click action, not just a banner', () => {
-    // A weekly banner with nowhere to go is one you learn to swipe away —
-    // the same end state as not firing. osascript's `display notification`
-    // has no click handler at all, so a real action needs terminal-notifier.
+  it('makes the click DO the fix rather than describe it', () => {
+    // A banner that only opens a log leaves the work where it was. Each
+    // finding with a known remedy contributes its command to a generated
+    // script, and the click runs that.
     expect(script).toContain('terminal-notifier');
     expect(script).toContain('-execute');
-    expect(script).toContain('open -t');
+    expect(script).toContain('REMEDIES');
+    expect(script).toContain('open -a Terminal');
+  });
+
+  it('runs the fix visibly, not silently', () => {
+    // These commands reinstall plugins and upgrade a global npm package, and
+    // a notification click is a low-confirmation gesture. Terminal, not
+    // background.
+    const block = script.slice(script.indexOf('EXEC=""'));
+    expect(block).toContain('open -a Terminal');
+    expect(block).not.toMatch(/-execute\s+"[^"]*&\s*$/m);
+  });
+
+  it('verifies the END STATE by re-running the siren, not the exit codes', () => {
+    // The 2026-08-02 skew is exactly a fix reporting success while leaving
+    // the end state broken, so the generated script re-runs the siren.
+    expect(script).toContain('re-running the siren to verify the end state');
+    expect(script).toContain('$SELF');
+  });
+
+  it('resolves its own path absolutely for that re-run', () => {
+    // The fix script is opened from Terminal's cwd (the home directory), so a
+    // relative $BASH_SOURCE would not resolve. This bit the first draft.
+    expect(script).toContain('SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")"');
+  });
+
+  it('never implies it fixed findings that need a human', () => {
+    // REMEDIES is a strict subset of FINDINGS — a missing config or a failing
+    // `canary doctor` has no command that resolves it.
+    expect(script).toContain(
+      'Fixes ${#REMEDIES[@]} of ${#FINDINGS[@]} finding(s); the rest need a human.',
+    );
+    expect(script).toContain('no auto-fixable finding — click opens the log');
   });
 
   it('falls back on terminal-notifier FAILING, not merely on it being absent', () => {

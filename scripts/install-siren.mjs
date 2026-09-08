@@ -1,20 +1,18 @@
 #!/usr/bin/env node
 // Provisions and verifies the weekly deep-siren LaunchAgent (#758).
 //
-// The defect: `hooks/canary-deep-siren.sh` documented its own launchd label in
-// a header comment and nothing ever created the agent, so every network-level
-// canary check was dark from the day it was written. A never-scheduled monitor
-// gives the same signal as a healthy one — no complaint — with less behind it:
-// #508's zero-denominator green with a denominator of zero *invocations*.
+// The defect: the siren declared its launchd label in a header comment and
+// nothing ever created the agent, so every network check was dark from the day
+// it was written — #508's zero-denominator green with zero *invocations*.
 //
-// Two refusals, both load-bearing:
-//
-//   1. No install when `canary` is unreachable under the PATH this would bake
-//      in. launchd gives a job a minimal environment and `mise activate` lives
-//      in an interactive-only rc file, so an inherited PATH yields a weekly
-//      false "CLI missing" — noise from the tool meant to catch false greens.
+// Three refusals, all load-bearing:
+//   1. No install when `canary` is unreachable under the PATH this bakes in.
+//      launchd gives a minimal environment and `mise activate` lives in an
+//      interactive-only rc file, so an inherited PATH yields a weekly false
+//      "CLI missing" — noise from the tool meant to catch false greens.
 //   2. `--verify` asserts the agent RAN, not that launchd accepted the file.
-//      Registration is not execution, which is the whole lesson of #758.
+//   3. Reconcile by link or backup, never by overwrite: the machine copy has
+//      already been AHEAD of the tree once during this change.
 //
 //   node scripts/install-siren.mjs --install
 //   node scripts/install-siren.mjs --verify   [--json]
@@ -22,10 +20,14 @@
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
+  renameSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -50,9 +52,9 @@ export function logPath(home = homedir()) {
 }
 
 /**
- * The PATH an interactive login shell would give us. `-l` sources ~/.zprofile
- * and `-i` sources ~/.zshrc, where `mise activate` lives; a login-only shell
- * misses mise entirely, which is the false "CLI missing" this guards against.
+ * The PATH an interactive login shell gives. `-l` sources ~/.zprofile and `-i`
+ * ~/.zshrc, where `mise activate` lives; login-only misses mise, which is the
+ * false "CLI missing" this guards against.
  */
 export function interactivePath(run = spawnSync) {
   const r = run('/bin/zsh', ['-lic', 'printf %s "$PATH"'], {
@@ -99,11 +101,9 @@ export function logAgeDays(home = homedir(), now = Date.now()) {
 }
 
 /**
- * The health of the scheduler, as a report rather than a boolean.
- *
- * `never-ran` is deliberately distinct from `stale`: an absent log means zero
- * executions, and the deep siren's healthy path writes a line unconditionally,
- * so there is no "it ran and was clean" reading of an absent log.
+ * Scheduler health as a report, not a boolean. `never-ran` is deliberately
+ * distinct from `stale`: the siren's healthy path logs unconditionally, so an
+ * absent log means zero executions — there is no "ran and was clean" reading.
  */
 export function schedulerStatus({
   registered,
@@ -139,19 +139,21 @@ export function schedulerStatus({
   };
 }
 
+/** The sirens that live in this repo and are also wired from `~/.claude`. */
+export const SIREN_HOOKS = Object.freeze([
+  'canary-deep-siren.sh',
+  'canary-session-siren.sh',
+]);
+
 /**
- * Legacy per-machine copies of the sirens that now also live in this repo.
- *
- * Two copies of a rot detector is the rot it detects (fast-siren check 2). The
- * LaunchAgent runs the repo copy, but a SessionStart hook wired to
- * `~/.claude/hooks/` keeps running the old one — so the deep-siren self-check
- * can be missing from the running siren while present in the tree.
- *
- * Reported, never rewritten: `~/.claude` is the operator's, not this script's.
+ * Machine copies of the sirens that differ from the tracked ones. Two copies
+ * of a rot detector is the rot it detects (fast-siren check 2): a SessionStart
+ * hook wired to `~/.claude/hooks/` can run a siren missing check 5 while the
+ * tree has it. Reported here; `linkHooks` is what resolves it.
  */
 export function divergentCopies(home = homedir(), read = readFileSync) {
   const out = [];
-  for (const name of ['canary-deep-siren.sh', 'canary-session-siren.sh']) {
+  for (const name of SIREN_HOOKS) {
     const machine = join(home, '.claude', 'hooks', name);
     if (!existsSync(machine)) continue;
     try {
@@ -168,16 +170,101 @@ export function divergentCopies(home = homedir(), read = readFileSync) {
   return out;
 }
 
+/**
+ * Point `~/.claude/hooks/canary-*.sh` at the tracked copies, so exactly one
+ * version of each siren exists on the machine.
+ *
+ * A symlink rather than a copy, because copies drift in BOTH directions — the
+ * machine copy was briefly ahead during this change, so overwrite-from-tree
+ * would have lost work. `settings.json` keeps its `~/.claude` path, and that
+ * path now resolves to the file CI and code review see. Any displaced regular
+ * file is kept as a timestamped `.bak-` sibling, never deleted.
+ */
+export function linkHooks(home = homedir(), now = new Date()) {
+  const actions = [];
+  const dir = join(home, '.claude', 'hooks');
+  if (!existsSync(dir)) return actions;
+
+  const stamp = now.toISOString().replace(/[:.]/g, '-');
+  for (const name of SIREN_HOOKS) {
+    const machine = join(dir, name);
+    const repo = join(REPO_ROOT, 'hooks', name);
+    if (!existsSync(repo)) continue;
+
+    // Already correct: a symlink resolving to the repo copy.
+    if (isLinkTo(machine, repo)) {
+      actions.push({ name, action: 'already-linked' });
+      continue;
+    }
+    if (existsSync(machine)) {
+      const backup = `${machine}.bak-${stamp}`;
+      renameSync(machine, backup);
+      actions.push({ name, action: 'backed-up', backup });
+    }
+    symlinkSync(repo, machine);
+    actions.push({ name, action: 'linked', target: repo });
+  }
+  return actions;
+}
+
+/** True when `p` is a symlink already resolving to `target`. */
+function isLinkTo(p, target) {
+  try {
+    return lstatSync(p).isSymbolicLink() && realpathSync(p) === target;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Register terminal-notifier's app bundle with LaunchServices.
+ *
+ * Without this the click action cannot work AND cannot be enabled: macOS has
+ * no record of the app, so it refuses the permission request and the app never
+ * appears in System Settings for a human to allow. The banner degrades to the
+ * unclickable path forever, and the setting the log names does not exist to be
+ * changed. Best-effort — a missing terminal-notifier is supported.
+ */
+export function registerNotifier(run = spawnSync) {
+  const which = run(
+    '/usr/bin/env',
+    ['sh', '-c', 'command -v terminal-notifier'],
+    {
+      encoding: 'utf-8',
+    },
+  );
+  const bin = (which.stdout ?? '').trim();
+  if (!bin) return undefined;
+
+  // The Homebrew CLI is a shim that execs the bundled binary; the bundle is
+  // two levels up from it. Resolve via the shim rather than a version-pinned
+  // Cellar path, which would rot on the next upgrade.
+  const app = run(
+    '/usr/bin/env',
+    [
+      'sh',
+      '-c',
+      `sed -n 's|.*exec "\\(.*\\)/Contents/MacOS/.*|\\1|p' "$(readlink -f ${bin} 2>/dev/null || echo ${bin})"`,
+    ],
+    { encoding: 'utf-8' },
+  );
+  const bundle = (app.stdout ?? '').trim();
+  if (!bundle || !existsSync(bundle)) return undefined;
+
+  run(
+    '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister',
+    ['-f', bundle],
+    { stdio: 'ignore' },
+  );
+  return bundle;
+}
+
 function fail(message) {
   console.error(`install-siren: ${message}`);
   process.exit(1);
 }
 
-/**
- * Everything that must hold before a plist is written. Returns the resolved
- * PATH and canary location; exits rather than returning a partial answer, so
- * the refusals read as one list.
- */
+/** Preconditions for writing a plist; exits rather than answering partially. */
 function preflight() {
   if (process.platform !== 'darwin') {
     fail(
@@ -220,6 +307,29 @@ function loadAgent(target) {
   }
 }
 
+/** Make the machine run the tracked sirens, and the banner clickable. */
+function reconcileMachine(home) {
+  for (const a of linkHooks(home)) {
+    if (a.action === 'backed-up') console.log(`  backed up -> ${a.backup}`);
+    else if (a.action === 'linked') console.log(`  linked ${a.name} -> hooks/`);
+  }
+  const stragglers = divergentCopies(home);
+  if (stragglers.length > 0) {
+    console.log(`  WARNING: still divergent: ${stragglers.join(', ')}`);
+  }
+
+  const bundle = registerNotifier();
+  if (bundle === undefined) {
+    console.log(`  note: terminal-notifier absent — the banner cannot carry a`);
+    console.log(`    click action. brew install terminal-notifier`);
+    return;
+  }
+  console.log(`  registered ${bundle} with LaunchServices`);
+  console.log(
+    `    if the banner is still unclickable, allow it in System Settings ▸ Notifications`,
+  );
+}
+
 function install(home) {
   const { path, canary } = preflight();
 
@@ -240,13 +350,7 @@ function install(home) {
 
   console.log(`installed ${target}`);
   console.log(`  canary resolved to ${canary}`);
-  for (const p of divergentCopies(home)) {
-    console.log(
-      `  WARNING: ${p} differs from the repo copy. launchd now runs the repo\n` +
-        `    copy, but anything wired to that path (a SessionStart hook) still runs\n` +
-        `    the stale one. Point it at hooks/ or replace the file.`,
-    );
-  }
+  reconcileMachine(home);
   console.log(
     `  RunAtLoad fired the first run; confirm it with --verify (the log may take a moment).`,
   );
