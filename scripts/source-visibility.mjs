@@ -23,7 +23,7 @@
 //      with a dot) is never walked. Checked against git's index for tracked
 //      files, and against the working tree for files git has not seen.
 //   2. .GITIGNORE — `ts/.gitignore` carries `coverage/`, so the split files
-//      (see GENERATED_STAGING_DIRS for the one narrow, named exception: a
+//      (see GENERATED_STAGING for the one narrow, named exception: a
 //      build step's staged copy of source that is tracked elsewhere, #801)
 //      were unstageable. They would never have been committed, and prettier
 //      had been skipping them too. A source file git refuses to track is
@@ -123,43 +123,57 @@ export const ANALYZER_SKIP_DIRS = Object.freeze([
 const WALK_STOP = new Set(['.git', 'node_modules']);
 
 /**
- * Generated staging trees: root-relative directories into which a build step
- * copies source that already lives, tracked and visible, elsewhere in this
- * repo (#801).
+ * Generated staging trees: a build step's copy of source that is tracked and
+ * visible elsewhere in this repo (#801).
  *
  * `npm/package.json` runs `prepare: npm run build`, so `npm ci --prefix npm` —
  * the exact step the `npm-validate` CI job runs — executes
- * `npm/scripts/build-engine.mjs`, which copies `agents/skills/` to
- * `npm/agents/skills/`. Those copies are `.ts`, they are gitignored
- * (`.gitignore:39,41`), and by this guard's own definition that reads as
- * hidden source. It is not: the originals are tracked, walked and measured. A
- * contributor who follows the CI steps locally builds both workspaces in one
- * tree and sees the guard go red on a clean checkout, which CI never does
- * because `ts-validate` and `npm-validate` run on separate runners.
+ * `npm/scripts/build-engine.mjs`, whose `stageSkills()` copies `agents/skills/`
+ * to `npm/agents/skills/`. Those copies are `.ts` and gitignored
+ * (`.gitignore:41`), so by this guard's own definition they read as hidden
+ * source. They are not: the originals are tracked, walked and measured. CI
+ * never sees the red because `ts-validate` and `npm-validate` run on separate
+ * runners; it is reserved for a contributor who follows the CI steps locally.
  *
- * Two properties keep this from becoming the blanket "ignore everything
- * gitignored" that would gut the guard:
+ * Three properties bound the exclusion, so it cannot become the blanket
+ * "ignore everything gitignored" that would gut the guard #688 exists to be:
  *
- *   1. Entries are **anchored root-relative prefixes**, not basenames. A
- *      directory called `agents/` anywhere else in the tree is unaffected.
- *   2. A path is excused only when it is under one of these prefixes **and**
- *      git actually ignores it. Un-gitignore `npm/agents/` and hand-written
- *      source there is visible to the guard again — the exclusion names the
- *      tree, and the mechanism still has to agree.
+ *   1. Entries are **anchored root-relative prefixes**, not basenames, and
+ *      name the exact tree the build owns — `npm/agents/skills`, which
+ *      `stageSkills()` `rmSync`es and regenerates. A directory called
+ *      `agents/` elsewhere, or a file under `npm/agents/` but outside
+ *      `skills/`, is unaffected.
+ *   2. Git must agree. A path is excused only if `check-ignore` reports it
+ *      ignored, so un-gitignoring the tree makes hand-written source there
+ *      visible again.
+ *   3. **A tracked original must exist at the mapped source path.** This is
+ *      what makes the excusal mean "a copy of something already measured"
+ *      rather than "anything in this directory". `npm/agents/skills/x.ts` is
+ *      excused only when `agents/skills/x.ts` is in git's index; a staged file
+ *      with no counterpart is reported, because "cannot verify it is a copy"
+ *      is a finding, not a skip.
  *
- * Excused files are reported in `stagedSourceFiles` rather than dropped
- * silently, so the exclusion is always visible in the report (#508).
+ * Excused files are listed individually in `stagedSourceFiles` and printed one
+ * per line on both verdicts, so the exclusion is legible rather than merely
+ * non-silent (#508) — a count alone cannot distinguish 118 legitimate copies
+ * from 117 copies plus one smuggled module.
  */
-export const GENERATED_STAGING_DIRS = Object.freeze([
-  'npm/agent',
-  'npm/agents',
+export const GENERATED_STAGING = Object.freeze([
+  Object.freeze({ staged: 'npm/agents/skills', source: 'agents/skills' }),
 ]);
 
-/** True when `relPath` sits inside a declared generated staging tree. */
-export function isGeneratedStaging(relPath) {
-  return GENERATED_STAGING_DIRS.some(
-    (dir) => relPath === dir || relPath.startsWith(`${dir}/`),
-  );
+/**
+ * The tracked source path a staged copy claims to mirror, or undefined when
+ * `relPath` is not inside a declared staging tree.
+ */
+export function stagedOrigin(relPath) {
+  for (const { staged, source } of GENERATED_STAGING) {
+    const prefix = `${staged}/`;
+    if (relPath.startsWith(prefix)) {
+      return `${source}/${relPath.slice(prefix.length)}`;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -300,8 +314,15 @@ export function auditSourceVisibility(root, skipDirs) {
   // A staged copy is excused only where git agrees it is generated, so the
   // exclusion cannot widen into "anything gitignored is fine".
   const ignored = new Set(ignoredPaths(root, walked));
+  const trackedSet = new Set(tracked);
   const stagedSourceFiles = walked
-    .filter((f) => isGeneratedStaging(f) && ignored.has(f))
+    .filter((f) => {
+      if (!ignored.has(f)) return false;
+      const origin = stagedOrigin(f);
+      // No tracked original means this is not a copy of anything the guard
+      // already measures, so it stays a finding.
+      return origin !== undefined && trackedSet.has(origin);
+    })
     .sort();
   const staged = new Set(stagedSourceFiles);
 
@@ -317,6 +338,14 @@ export function auditSourceVisibility(root, skipDirs) {
     );
   }
 
+  // The staging excusal suppresses the NAME-COLLISION arm inside a staging
+  // tree as well as the gitignore arm, which is a second widening and is
+  // stated here rather than left to be discovered. It is sound only because of
+  // the tracked-original requirement: a staged `.../coverage/x.ts` mirrors a
+  // tracked `agents/skills/.../coverage/x.ts`, and that original is caught by
+  // the tracked-file arm below. Reporting the copy too would be a duplicate,
+  // not extra safety. Remove the tracked-original check and this stops being
+  // true — the two are load-bearing together.
   const hiddenDirs = [];
   const hidden = new Set();
   for (const [dir, files] of filesByDir) {
@@ -366,7 +395,8 @@ export function visibilityLines(report) {
     staged.length === 0
       ? []
       : [
-          `  excused ${staged.length} generated staging file(s) under ${GENERATED_STAGING_DIRS.join(', ')} — build-step copies of tracked source, gitignored by design (#801).`,
+          `  excused ${staged.length} generated staging file(s) — gitignored build-step copies whose tracked original was verified present (#801):`,
+          ...staged.map((f) => `    ${f} (copy of ${stagedOrigin(f)})`),
         ];
   if (report.verdict === 'visible') {
     return [
