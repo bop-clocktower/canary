@@ -512,6 +512,24 @@ One property is deliberate rather than accidental: each side reads **its own**
 the findings its config change surfaces, exactly as it owns the ones its code
 change surfaces.
 
+### Declined: excluding archived plan docs from the link denominator (#719)
+
+Issue #719 reported 23 `NOT_FOUND` doc-link findings, all in archived planning
+documents whose links describe a repo layout that legitimately no longer exists,
+and asked for a policy: exclude `docs/plans/**` and `docs/changes/**/plans/**`,
+or honour an `archived: true` frontmatter key.
+
+**Neither, and the reason is the measurement.** Re-measured on `main` at
+`08c15ff` under CLI 12.2.0: `harness cleanup` reports **0** `NOT_FOUND`. The 23
+were the upstream fence-blindness defect (`$driftfix`, 11.1.1 → 11.2.0) counting
+links quoted inside ` ```markdown ` fences, not real dead links — so there is
+nothing to exclude, and adding the exclusion now would shrink an
+allowlist-shaped denominator to solve a problem that no longer exists. That is
+the exact move `entropy-doc-paths.test.ts` exists to catch one directory over.
+
+If the count returns, the first question is whether the detector regressed
+before the policy is revisited.
+
 **Not closed by this.** `measuredCount` in the baseline is still a memory of the
 last time a human ran the analyzer; nothing refreshes it on merge, and the
 `.harness/arch/baselines.json` staleness #689 tracks is the identical failure
