@@ -3,6 +3,37 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['test/*.test.ts'],
+    // #760, second half. `ts/vitest.config.ts` raised this to 30s for the same
+    // reason; this project was left on the 5s default even though the issue's
+    // own follow-up comment recorded seven failures here, not in `ts/`
+    // (`canary-strix`, `canary-katana` — every one `Test timed out in 5000ms`,
+    // not an assertion failure).
+    //
+    // Measured on this suite, idle, 923 tests: the slowest test is 3056ms and
+    // exactly ZERO exceed 5000ms. So the budget is not being blown by the work
+    // a test does — it is blown by waiting to spawn. Pairing today's idle
+    // numbers against the durations recorded in #760 under load:
+    //
+    //     idle    loaded   factor  test
+    //      215ms   9600ms   44.7x  katana  hasOwnProperty unrecognized arg
+    //      606ms  10600ms   17.5x  strix   newline-separated terms
+    //      687ms   7000ms   10.2x  strix   multi-word term vs concatenated domain
+    //      628ms   6100ms    9.7x  strix   term that is only a substring
+    //      806ms   6700ms    8.3x  strix   term carrying trailing punctuation
+    //      778ms   5400ms    6.9x  strix   unions the sources
+    //     3056ms   6600ms    2.2x  katana  commitForFile carries the ticket
+    //
+    // A 215ms test taking 9.6s is 44x, and it is the smallest test in the
+    // table — the factor tracks the number of spawns, not the amount of work.
+    // That is the signature of contention on process spawn, and it is why the
+    // per-test budget has to cover queueing rather than computation.
+    //
+    // 30s, matching `ts/`: ~10x headroom over the slowest test here, ~2.8x over
+    // the worst value #760 ever observed in this project. Not unbounded — a
+    // genuinely hung test must still fail. This stops a contended spawn being
+    // reported as a failure; it does NOT explain the contention, which is
+    // tracked in #760 and is a real cost worth chasing rather than absorbing.
+    testTimeout: 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json'],
