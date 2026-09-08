@@ -71,7 +71,7 @@ function split(raw) {
  * the values -- these are the names the scan exists to keep out of a public
  * repo, and the warning goes to a CI log.
  */
-export function implausibleTerms(terms) {
+function implausibleTerms(terms) {
   return terms.filter((t) => {
     const words = t.split(/\s+/).filter(Boolean);
     return words.length >= 3 && t === t.toLowerCase();
