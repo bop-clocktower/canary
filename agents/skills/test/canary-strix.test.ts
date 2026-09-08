@@ -277,6 +277,92 @@ describe('canary-strix: term matching', () => {
 });
 
 describe('canary-strix: term sources', () => {
+  it('does not leak comment prose past a comma into the term set (#818)', () => {
+    // The parser split on `[,\n]` BEFORE dropping `#` lines, so the fragment
+    // after a comma inside a comment survived as a denylist term. In this
+    // repo's own denylist that produced 8 phantom terms out of 15, one of them
+    // `and on a`, which matched three innocent files and reported them as
+    // company identifiers.
+    const r = repo();
+    writeFileSync(
+      join(r.root, '.proprietary-denylist'),
+      `# a header, and on a second clause\n${TERM}\n`,
+      'utf-8',
+    );
+    // Prose that the phantom term would have matched, and nothing real does.
+    writeFileSync(
+      join(r.root, 'notes.md'),
+      'this sentence runs and on a while longer\n',
+      'utf-8',
+    );
+    r.git('add', 'notes.md');
+    commitAs(r, CLEAN, 'notes');
+
+    const res = runAllowFail([
+      '--root',
+      r.root,
+      '--files-only',
+      '--strict',
+      '--json',
+    ]);
+    const report = JSON.parse(res.out) as {
+      term_count: number;
+      findings: unknown[];
+    };
+    // One real term, not one real plus a fragment of the header.
+    expect(report.term_count).toBe(1);
+    expect(report.findings).toEqual([]);
+    expect(res.status).toBe(0);
+  });
+
+  it('keeps a real comma-separated list working', () => {
+    // The comma contract is documented and load-bearing; fixing #818 must not
+    // quietly turn it into newline-only.
+    const r = repo();
+    writeFileSync(
+      join(r.root, '.proprietary-denylist'),
+      `# header\nAcmeCorp, ${TERM}\n`,
+      'utf-8',
+    );
+    const res = runAllowFail(['--root', r.root, '--files-only', '--json']);
+    const report = JSON.parse(res.out) as { term_count: number };
+    expect(report.term_count).toBe(2);
+  });
+
+  it('reports the denominator honestly rather than counting prose', () => {
+    // The half that outlives the parser bug: `15 term(s)` read as fifteen
+    // protections when seven were real, on the last line of defence before a
+    // company name reaches a public repo.
+    const r = repo();
+    writeFileSync(
+      join(r.root, '.proprietary-denylist'),
+      `# one, two, three\n# four, five\n${TERM}\n`,
+      'utf-8',
+    );
+    const res = runAllowFail(['--root', r.root, '--files-only']);
+    expect(res.out).toContain('1 term(s)');
+  });
+
+  it('warns about a term that does not look like an identifier', () => {
+    // Defence in depth, independent of the parser: every one of the eight
+    // phantoms was 3+ all-lowercase words. Warned, never dropped — silently
+    // discarding a term from a leak gate is the worse failure.
+    const r = repo();
+    writeFileSync(
+      join(r.root, '.proprietary-denylist'),
+      `and from this file at the\n${TERM}\n`,
+      'utf-8',
+    );
+    const res = runAllowFail(['--root', r.root, '--files-only']);
+    expect(res.out).toContain('do not look like identifiers');
+    // Shape, never the value: the denylist holds the names this scan exists
+    // to keep out of a public repo, and this line goes to a CI log.
+    expect(res.out).not.toContain('and from this file at the');
+    // Still matched: the warning is advisory.
+    const json = runAllowFail(['--root', r.root, '--files-only', '--json']);
+    expect((JSON.parse(json.out) as { term_count: number }).term_count).toBe(2);
+  });
+
   it('reads a gitignored .proprietary-denylist', () => {
     const r = repo();
     writeFileSync(

@@ -82,19 +82,32 @@ const parseArgs = createParser(CLI_SPEC);
 
 function analyse(opts, env = process.env) {
   const root = opts.root ?? '.';
-  const { terms, sources, committedSource } = loadTerms(root, env);
+  const { terms, sources, committedSource, implausible } = loadTerms(root, env);
 
   // A denylist of zero terms matches nothing, whatever it is pointed at. That
   // is an abstention in every environment -- the single most important line in
   // this file, because the alternative reads exactly like a clean repo.
   if (!terms.length) {
-    return { abstained: 'no terms configured', terms, sources, findings: [] };
+    return {
+      abstained: 'no terms configured',
+      terms,
+      implausible,
+      sources,
+      implausible,
+      findings: [],
+    };
   }
 
   const matchers = compileTerms(terms);
   const files = scanFiles(root, matchers);
   if (files.unavailable) {
-    return { abstained: files.unavailable, terms, sources, findings: [] };
+    return {
+      abstained: files.unavailable,
+      terms,
+      sources,
+      implausible,
+      findings: [],
+    };
   }
 
   const findings = [...files.findings];
@@ -108,10 +121,35 @@ function analyse(opts, env = process.env) {
     terms,
     sources,
     committedSource,
+    implausible,
     files,
     authorship,
     findings,
   };
+}
+
+/**
+ * Warns about denylist entries that do not look like identifiers.
+ *
+ * Junk in the denylist inflates the denominator, which is the half of #818
+ * that outlives the parser bug: `15 term(s)` read as fifteen protections when
+ * seven were real, on the last line of defence before a company name reaches a
+ * public repo.
+ *
+ * Reports SHAPE, never the value. The denylist holds exactly the names this
+ * scan exists to keep out of a public repo and this line goes to a CI log, so
+ * printing a term to complain about it would be the leak itself.
+ */
+function reportImplausible(terms) {
+  const odd = terms ?? [];
+  if (odd.length === 0) return;
+  const first = odd[0];
+  console.log(
+    `${PREFIX} WARNING: ${odd.length} denylist term(s) do not look like identifiers ` +
+      `(3+ all-lowercase words, e.g. ${first.split(/\s+/).length} words starting ` +
+      `${JSON.stringify(first.slice(0, 3))}). They are still matched; check the ` +
+      `denylist for stray prose.`,
+  );
 }
 
 function reportJson(result) {
@@ -175,6 +213,7 @@ function report(result, json) {
       `${result.authorship?.scanned ?? 0} commit(s), ` +
       `${result.terms.length} term(s) from ${result.sources.join(' + ')}.`,
   );
+  reportImplausible(result.implausible);
   reportCaveats(result);
 }
 
