@@ -45,11 +45,22 @@ FIX="${CANARY_SIREN_FIX:-$HOME/.claude/logs/canary-deep-siren.fix.sh}"
 
 note() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >>"$LOG"; }
 
+# Single-quote a value for safe embedding in the generated fix script. Paths
+# here are operator-settable ($CANARY_SIREN_LOG / _FIX) or the checkout path
+# ($SELF); an apostrophe in any of them would close the quote and let the
+# remainder execute. bash 3.2 has no `${var@Q}`, so do it by hand.
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
 # 1. Marketplace checkout vs upstream (the 7-week failure: stale checkout).
 if [ -d "$MKT/.git" ]; then
   if git -C "$MKT" fetch origin --quiet 2>>"$LOG"; then
     BEHIND=$(git -C "$MKT" rev-list --count HEAD..origin/HEAD 2>/dev/null || echo "?")
-    if [ "$BEHIND" != "0" ]; then
+    if [ "$BEHIND" = "?" ]; then
+      # A clone with no resolvable origin/HEAD. Reporting "? commit(s) behind"
+      # with a remedy that cannot clear it fires the same alarm every week
+      # forever, which is how an alarm stops being read.
+      FINDINGS+=("cannot resolve origin/HEAD in $MKT — marketplace freshness unverifiable (cannot-verify is a finding, not a skip)")
+    elif [ "$BEHIND" != "0" ]; then
       FINDINGS+=("marketplace checkout is $BEHIND commit(s) behind upstream canary")
       REMEDIES+=("claude plugin marketplace update bop-clocktower")
     fi
@@ -71,15 +82,21 @@ fi
 INSTALLED_JSON="$HOME/.claude/plugins/installed_plugins.json"
 if [ -d "$MKT/.git" ] && [ -f "$INSTALLED_JSON" ]; then
   MKT_HEAD=$(git -C "$MKT" rev-parse HEAD 2>/dev/null || echo "")
+  # Path via argv, never interpolated into the Python source: an apostrophe in
+  # $HOME would be a syntax error at best. The argv form is already used for
+  # $CONFIG below; this site was the inconsistency.
   INST_SHA=$(python3 -c "
 import json,sys
 try:
-    e=json.load(open('$INSTALLED_JSON'))['plugins']['canary@bop-clocktower'][0]
+    e=json.load(open(sys.argv[1]))['plugins']['canary@bop-clocktower'][0]
 except Exception:
     sys.exit(3)
 print(e.get('gitCommitSha',''))
-" 2>/dev/null)
+" "$INSTALLED_JSON" 2>/dev/null)
   RC=$?
+  if [ "$RC" -ne 0 ] && [ "$RC" -ne 3 ]; then
+    FINDINGS+=("could not read $INSTALLED_JSON (python3 exit $RC) — plugin install state unverifiable, which is a finding rather than a clean run")
+  fi
   if [ "$RC" -eq 3 ]; then
     FINDINGS+=("canary@bop-clocktower absent from installed_plugins.json — the plugin is not installed, or the manifest moved (cannot-verify is a finding)")
   elif [ -z "$INST_SHA" ]; then
@@ -194,18 +211,22 @@ if [ "${#REMEDIES[@]}" -gt 0 ]; then
     echo "# Fixes ${#REMEDIES[@]} of ${#FINDINGS[@]} finding(s); the rest need a human."
     echo "set -u"
     echo "echo '── canary deep siren: applying ${#REMEDIES[@]} fix(es) ──'"
+    # The echoed copy is single-quoted via shq so a remedy containing $(...)
+    # cannot execute at *display* time. The command line itself is emitted
+    # verbatim, because it IS the command — every remedy is a literal defined
+    # in this file, never operator input.
     for r in "${REMEDIES[@]}"; do
-      printf 'echo\necho "$ %s"\n%s\n' "$r" "$r"
+      printf 'echo\necho %s\n%s\n' "$(shq "\$ $r")" "$r"
     done
     # Re-run the siren rather than trusting the commands' own exit codes. The
     # 2026-08-02 skew is precisely a fix reporting success while leaving the
     # end state broken, so the fix script verifies the END STATE.
     echo 'echo'
     echo "echo '── re-running the siren to verify the end state ──'"
-    printf '%s\n' "bash '$SELF'"
+    printf '%s\n' "bash $(shq "$SELF")"
     echo "echo"
     echo "echo 'Findings after the fix:'"
-    printf '%s\n' "tail -n 20 '$LOG'"
+    printf '%s\n' "tail -n 20 $(shq "$LOG")"
     echo 'echo; echo "Press return to close."; read -r _'
   } >"$FIX.tmp"
   chmod +x "$FIX.tmp"
@@ -220,11 +241,11 @@ if [ "${#REMEDIES[@]}" -gt 0 ]; then
   # which is the 2026-08-02 skew this construct exists to catch. Rename swaps
   # the inode and leaves the running process reading the old file.
   mv -f "$FIX.tmp" "$FIX"
-  EXEC="/usr/bin/open -a Terminal '$FIX'"
+  EXEC="/usr/bin/open -a Terminal $(shq "$FIX")"
   note "  fix script written to $FIX (${#REMEDIES[@]} of ${#FINDINGS[@]} finding(s) auto-fixable)"
 else
   # Nothing is auto-fixable, so the honest action is to show the detail.
-  EXEC="/usr/bin/open -t '$LOG'"
+  EXEC="/usr/bin/open -t $(shq "$LOG")"
   note "  no auto-fixable finding — click opens the log"
 fi
 
@@ -235,6 +256,12 @@ if command -v terminal-notifier >/dev/null 2>&1; then
   # scripted; without it the command FAILS and no banner appears at all —
   # strictly worse than the unclickable osascript one. So the fallback is
   # driven by the outcome, not by which binaries exist.
+  # Branch on EXIT STATUS alone. An earlier version also required empty
+  # stderr, so terminal-notifier posting the banner successfully while emitting
+  # any diagnostic noise was read as failure: the script then posted a SECOND
+  # banner via osascript and logged a remediation pointing at a System Settings
+  # toggle that was not the problem. Two banners a week plus a false diagnosis
+  # is alarm fatigue in the alarm system. $TN_ERR is kept for the log only.
   TN_ERR=$(
     terminal-notifier \
       -title "$TITLE" \
@@ -242,7 +269,7 @@ if command -v terminal-notifier >/dev/null 2>&1; then
       -sound Sosumi \
       -execute "$EXEC" \
       -group canary-deep-siren 2>&1
-  ) && [ -z "$TN_ERR" ] && notified=1
+  ) && notified=1
   if [ "$notified" -eq 1 ]; then
     note "  (banner posted; click runs: $EXEC)"
   else

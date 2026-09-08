@@ -29,7 +29,9 @@
  * writes a plist, or spawns a shell.
  */
 
+import { execFileSync } from 'node:child_process';
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -43,6 +45,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { runCapture } from './subprocess-testkit.js';
 
 interface Status {
   ok: boolean;
@@ -64,12 +68,20 @@ interface SirenModule {
     home?: string,
     read?: (p: string, enc: string) => string,
   ) => string[];
+  absentHooks: (
+    home?: string,
+    read?: (p: string, enc: string) => string,
+  ) => string[];
   installHooks: (
     home?: string,
     now?: Date,
   ) => { name: string; action: string; backup?: string; source?: string }[];
   SIREN_HOOKS: readonly string[];
-  interactivePath: (run?: unknown) => string;
+  interactivePath: (run?: unknown) => {
+    path: string;
+    degraded: boolean;
+    reason?: string;
+  };
   isRegistered: (run?: unknown) => boolean;
   renderPlist: (
     template: string,
@@ -97,6 +109,7 @@ const {
   LABEL,
   SIREN_HOOKS,
   STALE_DAYS,
+  absentHooks,
   divergentCopies,
   installHooks,
   interactivePath,
@@ -213,8 +226,34 @@ describe('environment resolution', () => {
     expect(argv[0]).toContain('i');
   });
 
-  it('falls back to the process PATH when the shell yields nothing', () => {
-    expect(interactivePath(fakeRun('  ') as never)).toBe(process.env['PATH']);
+  it('reports a degraded PATH read instead of falling back silently', () => {
+    // The install REFUSES on degraded. Silently returning the inherited PATH
+    // bakes in an environment with no mise activation, which is exactly the
+    // weekly false "canary CLI missing" the plist comment exists to prevent.
+    const r = interactivePath(fakeRun('  ') as never);
+    expect(r.degraded).toBe(true);
+    expect(r.reason).toBeTruthy();
+  });
+
+  it('reports a clean read as not degraded', () => {
+    const r = interactivePath((() => ({
+      stdout: '/opt/homebrew/bin:/usr/bin',
+      status: 0,
+    })) as never);
+    expect(r).toMatchObject({
+      path: '/opt/homebrew/bin:/usr/bin',
+      degraded: false,
+    });
+  });
+
+  it('escapes XML entities so a & in PATH cannot break the plist', () => {
+    const out = renderPlist('<string>__PATH__</string>', {
+      script: 's',
+      path: '/opt/a&b/bin',
+      home: '/h',
+    });
+    expect(out).toContain('/opt/a&amp;b/bin');
+    expect(out).not.toContain('a&b');
   });
 
   it('reports canary as unreachable rather than guessing a path', () => {
@@ -234,35 +273,65 @@ describe('environment resolution', () => {
   });
 });
 
-describe('divergent machine copies', () => {
-  // Committing the sirens creates a second copy of each on any machine that
-  // already had them in ~/.claude/hooks. Two copies of a rot detector is the
-  // rot it detects: launchd runs the repo copy while a SessionStart hook wired
-  // to the old path keeps running a siren with no deep-siren self-check in it.
-  const fakeRead =
-    (machine: string, repo: string) =>
-    (p: string): string =>
-      p.includes('/.claude/') ? machine : repo;
+describe('hook state — absent, installed, divergent, unreadable', () => {
+  // These four tests were previously vacuous and mutation-proved so: gutting
+  // `divergentCopies` to `return []` left the whole file green. They passed
+  // `homedir()` — the REAL home — and looped `for (const p of out)`, so on CI
+  // (no ~/.claude/hooks) `out` was `[]`, the loop ran zero times, and nothing
+  // was asserted. A test whose denominator is whatever happens to be in the
+  // runner's home directory has a denominator of zero in CI. Now: a temp home,
+  // real fixture files, and exact-array assertions.
+  let home: string;
+  const hookDir = () => join(home, '.claude', 'hooks');
+  const machinePath = (n: string) => join(hookDir(), n);
+  const repoText = (n: string) =>
+    readFileSync(join(REPO_ROOT, 'hooks', n), 'utf-8');
 
-  it('flags a machine copy that differs from the repo copy', () => {
-    const out = divergentCopies(homedir(), fakeRead('old', 'new')) as string[];
-    // Only counts files that actually exist on this machine, so assert the
-    // shape rather than a fixed length.
-    for (const p of out) expect(p).toContain('.claude/hooks');
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'siren-state-'));
+    mkdirSync(hookDir(), { recursive: true });
+  });
+  afterEach(() => rmSync(home, { recursive: true, force: true }));
+
+  it('reports a hook that is not on the machine as absent', () => {
+    // The zero-denominator green this split exists to close: `--verify` used
+    // to report healthy on a machine with no session siren at all.
+    expect(absentHooks(home)).toEqual(SIREN_HOOKS.map(machinePath));
+    expect(divergentCopies(home)).toEqual([]);
   });
 
-  it('stays quiet when the copies match', () => {
-    expect(divergentCopies(homedir(), fakeRead('same', 'same'))).toEqual([]);
+  it('flags a machine copy whose content differs', () => {
+    for (const n of SIREN_HOOKS)
+      writeFileSync(machinePath(n), 'stale', 'utf-8');
+    expect(divergentCopies(home)).toEqual(SIREN_HOOKS.map(machinePath));
+    expect(absentHooks(home)).toEqual([]);
   });
 
-  it('treats an unreadable machine copy as divergent, not as identical', () => {
+  it('stays quiet when the content matches exactly', () => {
+    for (const n of SIREN_HOOKS)
+      writeFileSync(machinePath(n), repoText(n), 'utf-8');
+    expect(divergentCopies(home)).toEqual([]);
+    expect(absentHooks(home)).toEqual([]);
+  });
+
+  it('separates absent from divergent rather than conflating them', () => {
+    // Exactly one installed, one missing. The old code returned [] for both
+    // and could not tell them apart.
+    const [first, second] = SIREN_HOOKS as unknown as [string, string];
+    writeFileSync(machinePath(first), 'stale', 'utf-8');
+    expect(divergentCopies(home)).toEqual([machinePath(first)]);
+    expect(absentHooks(home)).toEqual([machinePath(second)]);
+  });
+
+  it('treats an unreadable machine copy as a finding, not as identical', () => {
     // "Cannot verify" is a finding, not a skip.
+    const n = SIREN_HOOKS[0] as string;
+    writeFileSync(machinePath(n), 'x', 'utf-8');
     const exploding = (p: string): string => {
-      if (p.includes('/.claude/')) throw new Error('EACCES');
+      if (p.startsWith(home)) throw new Error('EACCES');
       return 'repo';
     };
-    const out = divergentCopies(homedir(), exploding) as string[];
-    for (const p of out) expect(p).toContain('.claude/hooks');
+    expect(divergentCopies(home, exploding)).toEqual([machinePath(n)]);
   });
 
   it('reports rather than rewrites — ~/.claude belongs to the operator', () => {
@@ -271,11 +340,12 @@ describe('divergent machine copies', () => {
       'utf-8',
     );
     const fn = src.slice(
-      src.indexOf('export function divergentCopies'),
-      src.indexOf('function fail('),
+      src.indexOf('export function hookStates'),
+      src.indexOf('export function installHooks'),
     );
     expect(fn).not.toContain('writeFileSync');
     expect(fn).not.toContain('rmSync');
+    expect(fn).not.toContain('copyFileSync');
   });
 });
 
@@ -388,91 +458,105 @@ describe('installHooks — one version of each siren on the machine', () => {
   });
 });
 
-describe('the deep siren script', () => {
-  const script = readFileSync(
-    join(REPO_ROOT, 'hooks', 'canary-deep-siren.sh'),
-    'utf-8',
-  );
+/**
+ * Execution tests for `hooks/canary-deep-siren.sh` (#758).
+ *
+ * Before these, ZERO of the ~340 lines of shell in this feature were executed
+ * by any test — not even `bash -n`. The suite asserted on the script's source
+ * text, which passes whether the code works or is commented out, while the PR
+ * reported "+21 new tests · test ✓" on top of a behavioural denominator of
+ * zero. That is the shape this whole feature was written to refuse.
+ *
+ * The env hooks these drive (`CANARY_SIREN_LOG`, `CANARY_SIREN_CONFIG`,
+ * `CANARY_MARKETPLACE_DIR`, `CANARY_SIREN_FIX`) already existed and were
+ * simply unused.
+ *
+ * Offline: no network, no launchd. `canary` and `npm` are absent from the
+ * stubbed PATH so the CLI checks report cannot-verify rather than reaching out.
+ */
+describe('canary-deep-siren.sh — executed, not read', () => {
+  const SIREN = join(REPO_ROOT, 'hooks', 'canary-deep-siren.sh');
+  let dir: string;
 
-  it('logs unconditionally on the healthy path', () => {
-    // This is what makes an absent log conclusive. If the healthy path were
-    // silent, "no log" would be ambiguous and check 5 could not exist.
-    expect(script).toContain('note "OK —');
+  const runSiren = (env: Record<string, string> = {}) => {
+    const log = join(dir, 'deep.log');
+    const r = runCapture('bash', [SIREN], {
+      env: {
+        ...process.env,
+        PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+        HOME: dir,
+        CANARY_SIREN_LOG: log,
+        CANARY_SIREN_FIX: join(dir, 'fix.sh'),
+        CANARY_SIREN_CONFIG: join(dir, 'siren.json'),
+        CANARY_MARKETPLACE_DIR: join(dir, 'marketplace'),
+        ...env,
+      },
+    });
+    return { ...r, log: existsSync(log) ? readFileSync(log, 'utf-8') : '' };
+  };
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'siren-run-'));
   });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('abstains loudly when no doctor target is configured', () => {
-    // The original silently did nothing when its one hardcoded path was
-    // absent — a check with no targets reporting no findings.
-    expect(script).toContain('a check with no targets is an abstention');
-  });
-
-  it('makes the click DO the fix rather than describe it', () => {
-    // A banner that only opens a log leaves the work where it was. Each
-    // finding with a known remedy contributes its command to a generated
-    // script, and the click runs that.
-    expect(script).toContain('terminal-notifier');
-    expect(script).toContain('-execute');
-    expect(script).toContain('REMEDIES');
-    expect(script).toContain('open -a Terminal');
-  });
-
-  it('runs the fix visibly, not silently', () => {
-    // These commands reinstall plugins and upgrade a global npm package, and
-    // a notification click is a low-confirmation gesture. Terminal, not
-    // background.
-    const block = script.slice(script.indexOf('EXEC=""'));
-    expect(block).toContain('open -a Terminal');
-    expect(block).not.toMatch(/-execute\s+"[^"]*&\s*$/m);
-  });
-
-  it('verifies the END STATE by re-running the siren, not the exit codes', () => {
-    // The 2026-08-02 skew is exactly a fix reporting success while leaving
-    // the end state broken, so the generated script re-runs the siren.
-    expect(script).toContain('re-running the siren to verify the end state');
-    expect(script).toContain('$SELF');
-  });
-
-  it('resolves its own path absolutely for that re-run', () => {
-    // The fix script is opened from Terminal's cwd (the home directory), so a
-    // relative $BASH_SOURCE would not resolve. This bit the first draft.
-    expect(script).toContain('SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")"');
-  });
-
-  it('never implies it fixed findings that need a human', () => {
-    // REMEDIES is a strict subset of FINDINGS — a missing config or a failing
-    // `canary doctor` has no command that resolves it.
-    expect(script).toContain(
-      'Fixes ${#REMEDIES[@]} of ${#FINDINGS[@]} finding(s); the rest need a human.',
+  it('always writes a dated line, so an absent log means zero runs', () => {
+    // The property every other check in this feature rests on.
+    const r = runSiren();
+    expect(r.status).toBe(0);
+    expect(r.log).toMatch(
+      /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] (OK|SIREN)/m,
     );
-    expect(script).toContain('no auto-fixable finding — click opens the log');
   });
 
-  it('falls back on terminal-notifier FAILING, not merely on it being absent', () => {
-    // terminal-notifier needs a manual macOS permission grant. Without it the
-    // command fails and NO banner appears — strictly worse than an unclickable
-    // one. So the fallback has to be driven by the outcome.
-    expect(script).toContain('TN_ERR');
-    expect(script).toContain('notified=0');
+  it('abstains loudly when no doctorRepos are configured', () => {
+    // A check with no targets reporting no findings is a zero-denominator
+    // green. The original silently did nothing when its one hardcoded path
+    // was absent.
+    expect(runSiren().log).toContain(
+      'a check with no targets is an abstention',
+    );
   });
 
-  it('records the degradation instead of quietly losing the click action', () => {
-    expect(script).toContain('UNCLICKABLE');
-    expect(script).toContain('System Settings');
+  it('reports a missing marketplace rather than passing over it', () => {
+    expect(runSiren().log).toContain('marketplace checkout missing');
   });
 
-  it('checks the installed plugin against the marketplace checkout', () => {
-    // The 2026-08-02 skew: `marketplace update` returns a tick while leaving
-    // the install pinned, because the install is keyed on a declared version
-    // that upstream ships new content under. Checking only the checkout goes
-    // green on a half-applied update.
-    expect(script).toContain('gitCommitSha');
-    expect(script).toContain('installed_plugins.json');
+  it('treats an unresolvable origin/HEAD as cannot-verify, not as "? behind"', () => {
+    // A remedy that can never clear the finding fires the same alarm every
+    // week forever, which is how an alarm stops being read.
+    const mkt = join(dir, 'marketplace');
+    mkdirSync(mkt, { recursive: true });
+    execFileSync('git', ['init', '--quiet'], { cwd: mkt });
+    execFileSync('git', ['commit', '--allow-empty', '-q', '-m', 'x'], {
+      cwd: mkt,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'T',
+        GIT_AUTHOR_EMAIL: 't@e',
+        GIT_COMMITTER_NAME: 'T',
+        GIT_COMMITTER_EMAIL: 't@e',
+      },
+    });
+    execFileSync('git', ['remote', 'add', 'origin', mkt], { cwd: mkt });
+    const log = runSiren().log;
+    expect(log).not.toMatch(/is \? commit\(s\) behind/);
   });
 
-  it('names no consumer or company in a public repo', () => {
-    // The pre-commit version hardcoded a consumer checkout path, which names
-    // the consumer. Configuration is per-machine; the tree stays neutral.
-    expect(script).toContain('CANARY_SIREN_CONFIG');
-    expect(script).not.toMatch(/projects\/[a-z]+\/[a-z]+"/);
+  it('generates no fix script when nothing is auto-fixable', () => {
+    // REMEDIES is a strict subset of FINDINGS; the click must not imply a fix
+    // exists for a finding that needs a human.
+    runSiren();
+    expect(existsSync(join(dir, 'fix.sh'))).toBe(false);
+  });
+
+  it('survives an apostrophe in the operator-settable log path', () => {
+    // $LOG and $FIX are settable by env, and a single quote would otherwise
+    // close the quoting in the generated script and execute the remainder.
+    const odd = join(dir, "bri's dir");
+    mkdirSync(odd, { recursive: true });
+    const r = runSiren({ CANARY_SIREN_LOG: join(odd, 'deep.log') });
+    expect(r.status).toBe(0);
+    expect(readFileSync(join(odd, 'deep.log'), 'utf-8')).toContain('SIREN');
   });
 });

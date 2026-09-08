@@ -66,7 +66,24 @@ export function interactivePath(run = spawnSync) {
     timeout: 20_000,
   });
   const out = (r.stdout ?? '').trim();
-  return out.length > 0 ? out : (process.env['PATH'] ?? '');
+  if (out.length > 0 && r.status === 0 && r.error === undefined) {
+    return { path: out, degraded: false };
+  }
+  // Falling back to the inherited PATH is the silent degradation this whole
+  // script exists to refuse. The installer runs from an interactive terminal,
+  // so `resolveCanary` then SUCCEEDS against a PATH that never had mise —
+  // baking in exactly the environment that produces the weekly false "canary
+  // CLI missing". Report it; the caller decides.
+  return {
+    path: process.env['PATH'] ?? '',
+    degraded: true,
+    reason:
+      r.error !== undefined
+        ? String(r.error)
+        : r.status !== 0
+          ? `zsh exited ${r.status}`
+          : 'zsh printed no PATH',
+  };
 }
 
 /** Absolute path to `canary` under `path`, or undefined when unreachable. */
@@ -82,10 +99,18 @@ export function resolveCanary(path, run = spawnSync) {
 
 /** Fill the template's placeholders. Kept pure so the substitution is testable. */
 export function renderPlist(template, { script, path, home }) {
+  // `&`, `<`, `>` in $HOME, the checkout path, or (most plausibly) the
+  // resolved PATH produce malformed XML. launchctl then fails and `fail()`
+  // reports a bootstrap status rather than the real cause.
+  const xml = (v) =>
+    String(v)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
   return template
-    .replaceAll('__SCRIPT__', script)
-    .replaceAll('__PATH__', path)
-    .replaceAll('__HOME__', home);
+    .replaceAll('__SCRIPT__', xml(script))
+    .replaceAll('__PATH__', xml(path))
+    .replaceAll('__HOME__', xml(home));
 }
 
 /** True when launchd knows the label. Registration only — never execution. */
@@ -97,11 +122,44 @@ export function isRegistered(run = spawnSync) {
   return (r.stdout ?? '').includes(LABEL);
 }
 
-/** Age of the deep siren's log in whole days, or undefined when it has none. */
-export function logAgeDays(home = homedir(), now = Date.now()) {
+/**
+ * Days since the deep siren last logged an actual RUN, or undefined when it
+ * never has.
+ *
+ * Parses the log for a dated `OK`/`SIREN` line rather than reading the file's
+ * mtime. The mtime is not evidence of a run: the siren appends git's stderr to
+ * the log (`git ... 2>>"$LOG"`) before it can possibly write a `note` line, so
+ * a run that died early still refreshes it — as does any `touch`, editor save,
+ * or a leftover log from before the agent existed. This suite's whole thesis
+ * is that the log is conclusive *because* `note` is called unconditionally on
+ * the healthy path; reading mtime instead of that line quietly discards the
+ * property the thesis rests on.
+ */
+export function logAgeDays(
+  home = homedir(),
+  now = Date.now(),
+  read = readFileSync,
+) {
   const p = logPath(home);
   if (!existsSync(p)) return undefined;
-  return (now - statSync(p).mtimeMs) / 86_400_000;
+  let text;
+  try {
+    text = read(p, 'utf-8');
+  } catch {
+    return undefined;
+  }
+  // `[YYYY-MM-DD HH:MM:SS] OK —` / `... SIREN —` — the two lines `note` writes
+  // at the end of a completed run. Anything else in the log is a side effect.
+  const runs = [
+    ...text.matchAll(
+      /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] (?:OK|SIREN)\b/gm,
+    ),
+  ];
+  const last = runs[runs.length - 1]?.[1];
+  if (last === undefined) return undefined;
+  const at = Date.parse(last.replace(' ', 'T'));
+  if (Number.isNaN(at)) return undefined;
+  return (now - at) / 86_400_000;
 }
 
 /**
@@ -155,23 +213,44 @@ export const SIREN_HOOKS = Object.freeze([
  * hook wired to `~/.claude/hooks/` can run a siren missing check 5 while the
  * tree has it. Reported here; `installHooks` is what resolves it.
  */
-export function divergentCopies(home = homedir(), read = readFileSync) {
-  const out = [];
-  for (const name of SIREN_HOOKS) {
-    const machine = join(home, '.claude', 'hooks', name);
-    if (!existsSync(machine)) continue;
-    try {
-      if (
-        read(machine, 'utf-8') !== read(join(REPO_ROOT, 'hooks', name), 'utf-8')
-      ) {
-        out.push(machine);
-      }
-    } catch {
-      // Unreadable is not "identical" — surface it as divergent.
-      out.push(machine);
+export function hookStates(home = homedir(), read = readFileSync) {
+  return SIREN_HOOKS.map((name) => {
+    const path = join(home, '.claude', 'hooks', name);
+    if (!existsSync(path) && !isBrokenLink(path)) {
+      return { name, path, state: 'absent' };
     }
-  }
-  return out;
+    try {
+      const same =
+        read(path, 'utf-8') === read(join(REPO_ROOT, 'hooks', name), 'utf-8');
+      return { name, path, state: same ? 'installed' : 'divergent' };
+    } catch {
+      // Unreadable is not "identical" — cannot-verify is a finding.
+      return { name, path, state: 'unreadable' };
+    }
+  });
+}
+
+/** Machine copies whose content differs from the tracked one. */
+export function divergentCopies(home = homedir(), read = readFileSync) {
+  return hookStates(home, read)
+    .filter((h) => h.state === 'divergent' || h.state === 'unreadable')
+    .map((h) => h.path);
+}
+
+/**
+ * Hooks that are not on the machine at all.
+ *
+ * Split from {@link divergentCopies} because the two were conflated and the
+ * conflation was a zero-denominator green: `divergentCopies` skipped every
+ * absent file, so `--verify` reported `healthy` on a machine where
+ * `canary-session-siren.sh` — the hook carrying the deep-siren self-check,
+ * the thing that closes #758's loop — did not exist. Absent and reconciled
+ * must not look the same to a verifier.
+ */
+export function absentHooks(home = homedir(), read = readFileSync) {
+  return hookStates(home, read)
+    .filter((h) => h.state === 'absent')
+    .map((h) => h.path);
 }
 
 /**
@@ -263,7 +342,7 @@ function isBrokenLink(p) {
  * unclickable path forever, and the setting the log names does not exist to be
  * changed. Best-effort — a missing terminal-notifier is supported.
  */
-export function registerNotifier(run = spawnSync) {
+export function registerNotifier(run = spawnSync, read = readFileSync) {
   const which = run(
     '/usr/bin/env',
     ['sh', '-c', 'command -v terminal-notifier'],
@@ -274,20 +353,20 @@ export function registerNotifier(run = spawnSync) {
   const bin = (which.stdout ?? '').trim();
   if (!bin) return undefined;
 
-  // The Homebrew CLI is a shim that execs the bundled binary; the bundle is
-  // two levels up from it. Resolve via the shim rather than a version-pinned
-  // Cellar path, which would rot on the next upgrade.
-  const app = run(
-    '/usr/bin/env',
-    [
-      'sh',
-      '-c',
-      `sed -n 's|.*exec "\\(.*\\)/Contents/MacOS/.*|\\1|p' "$(readlink -f ${bin} 2>/dev/null || echo ${bin})"`,
-    ],
-    { encoding: 'utf-8' },
-  );
-  const bundle = (app.stdout ?? '').trim();
-  if (!bundle || !existsSync(bundle)) return undefined;
+  // Resolve the bundle in Node rather than by interpolating `bin` into an
+  // `sh -c` string: a PATH entry containing a space silently broke the old
+  // `readlink -f ${bin}` (two args), and one containing shell metacharacters
+  // executed. The Homebrew CLI is a shim that execs the bundled binary, so the
+  // bundle path is readable straight out of it. Version-agnostic by
+  // construction — a pinned Cellar path would rot on the next upgrade.
+  let bundle;
+  try {
+    const shim = read(realpathSync(bin), 'utf-8');
+    bundle = /exec "(.*?)\/Contents\/MacOS\//.exec(shim)?.[1];
+  } catch {
+    return undefined;
+  }
+  if (bundle === undefined || !existsSync(bundle)) return undefined;
 
   run(
     '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister',
@@ -312,7 +391,18 @@ function preflight() {
   if (!existsSync(TEMPLATE)) fail(`missing plist template at ${TEMPLATE}`);
   if (!existsSync(SCRIPT)) fail(`missing deep siren at ${SCRIPT}`);
 
-  const path = interactivePath();
+  const { path, degraded, reason } = interactivePath();
+  if (degraded) {
+    fail(
+      `could not read an interactive login shell's PATH (${reason}), so the\n` +
+        `  PATH baked into the agent would be this process's own — which has no\n` +
+        `  mise activation and is not what a scheduled run gets. Installing on it\n` +
+        `  produces a weekly false "canary CLI missing" from the monitor that\n` +
+        `  exists to catch false greens.\n\n` +
+        `  Refusing to install. Fix the login shell, or set PATH explicitly in\n` +
+        `  ${TEMPLATE} and re-run.`,
+    );
+  }
   const canary = resolveCanary(path);
   if (canary === undefined) {
     fail(
@@ -410,17 +500,33 @@ function verify(home, asJson) {
     registered: isRegistered(),
     ageDays: logAgeDays(home),
   });
-  const diverged = divergentCopies(home);
-  const report = { ...status, divergentCopies: diverged };
+  const hooks = hookStates(home);
+  const diverged = hooks.filter(
+    (h) => h.state === 'divergent' || h.state === 'unreadable',
+  );
+  const absent = hooks.filter((h) => h.state === 'absent');
+  const report = {
+    ...status,
+    hooks,
+    divergentCopies: diverged.map((h) => h.path),
+    absentHooks: absent.map((h) => h.path),
+  };
   if (asJson) console.log(JSON.stringify(report));
   else {
     console.log(`deep siren — ${status.state}: ${status.detail}`);
-    for (const p of diverged) console.log(`  DIVERGED: ${p}`);
+    for (const h of diverged)
+      console.log(`  ${h.state.toUpperCase()}: ${h.path}`);
+    for (const h of absent) {
+      console.log(
+        `  ABSENT: ${h.path} — not installed; run --install (the SessionStart siren carries the deep-siren self-check)`,
+      );
+    }
   }
-  // A divergent machine copy fails the verify. The scheduler can be perfectly
-  // healthy while a SessionStart hook still runs a stale siren, and that gap
-  // is invisible from either side on its own.
-  process.exit(status.ok && diverged.length === 0 ? 0 : 1);
+  // Absent fails as loudly as divergent. A scheduler can be perfectly healthy
+  // while the hook that monitors it does not exist, which is #758 one level up.
+  process.exit(
+    status.ok && diverged.length === 0 && absent.length === 0 ? 0 : 1,
+  );
 }
 
 function main(argv) {
