@@ -46,6 +46,37 @@ else
   FINDINGS+=("bop-clocktower marketplace checkout missing at $MKT")
 fi
 
+# 1b. Installed plugin vs marketplace checkout — the OTHER half of the update.
+#     `claude plugin marketplace update` refreshes the checkout and returns ✔ while
+#     leaving the installed plugin untouched, because the install is keyed on the
+#     manifest's declared VERSION and upstream ships content under an unchanged one.
+#     Checking only §1 therefore goes green on a half-applied update: that is the
+#     2026-08-02 skew, re-reproduced 2026-09-08 (marketplace e923921→29ad0f2, install
+#     pinned at e923921, 5 SKILL.md files stale). Compare the recorded install sha to
+#     the checkout HEAD, and treat an unreadable manifest as a finding, not a skip.
+INSTALLED_JSON="$HOME/.claude/plugins/installed_plugins.json"
+if [ -d "$MKT/.git" ] && [ -f "$INSTALLED_JSON" ]; then
+  MKT_HEAD=$(git -C "$MKT" rev-parse HEAD 2>/dev/null || echo "")
+  INST_SHA=$(python3 -c "
+import json,sys
+try:
+    e=json.load(open('$INSTALLED_JSON'))['plugins']['canary@bop-clocktower'][0]
+except Exception:
+    sys.exit(3)
+print(e.get('gitCommitSha',''))
+" 2>/dev/null)
+  RC=$?
+  if [ "$RC" -eq 3 ]; then
+    FINDINGS+=("canary@bop-clocktower absent from installed_plugins.json — the plugin is not installed, or the manifest moved (cannot-verify is a finding)")
+  elif [ -z "$INST_SHA" ]; then
+    FINDINGS+=("installed canary plugin records no gitCommitSha — cannot prove it matches the marketplace checkout, so this run verified nothing about the install")
+  elif [ -n "$MKT_HEAD" ] && [ "$INST_SHA" != "$MKT_HEAD" ]; then
+    FINDINGS+=("installed canary plugin is at ${INST_SHA:0:7} but the marketplace checkout is at ${MKT_HEAD:0:7} — a marketplace update applied to only one half. Reinstall: claude plugin uninstall canary@bop-clocktower && claude plugin install canary@bop-clocktower -y")
+  fi
+elif [ ! -f "$INSTALLED_JSON" ]; then
+  FINDINGS+=("no installed_plugins.json at $INSTALLED_JSON — plugin install state unverifiable")
+fi
+
 # 2. Installed CLI vs npm latest.
 CLI_VER=$(canary -V 2>/dev/null | sed $'s/\x1b\\[[0-9;]*m//g' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
 NPM_VER=$(npm view canary-test-cli version 2>>"$LOG")
@@ -106,7 +137,49 @@ note "SIREN — ${#FINDINGS[@]} finding(s):"
 for f in "${FINDINGS[@]}"; do note "  - $f"; done
 
 SUMMARY=$(printf '%s; ' "${FINDINGS[@]}")
-if command -v osascript >/dev/null 2>&1; then
-  osascript -e "display notification \"${SUMMARY:0:230}\" with title \"🚨 Canary deep siren: ${#FINDINGS[@]} finding(s)\" sound name \"Sosumi\"" 2>>"$LOG"
+TITLE="🚨 Canary deep siren: ${#FINDINGS[@]} finding(s)"
+
+# Clicking the notification must go somewhere useful. A weekly banner that
+# vanishes with no way back to the detail is a notification you learn to swipe
+# away, which is the same end state as not firing at all.
+#
+# AppleScript's `display notification` has NO click handler — there is no flag
+# for it, so an osascript-only banner is inherently dead on click. A real
+# action needs terminal-notifier, whose `-execute` runs a command when the
+# banner is clicked. Clicking opens the log, which holds the full findings
+# (truncated to 230 chars in the banner itself) plus the remediation command
+# each finding names.
+#
+# When terminal-notifier is absent the banner still fires, but the degradation
+# is RECORDED rather than silent: a monitor that quietly loses half its
+# usefulness is the failure mode this whole script exists to catch.
+notified=0
+if command -v terminal-notifier >/dev/null 2>&1; then
+  # Not just "is it installed". terminal-notifier needs macOS notification
+  # permission, which is a manual grant in System Settings and cannot be
+  # scripted; without it the command FAILS and no banner appears at all —
+  # strictly worse than the unclickable osascript one. So the fallback is
+  # driven by the outcome, not by which binaries exist.
+  TN_ERR=$(
+    terminal-notifier \
+      -title "$TITLE" \
+      -message "${SUMMARY:0:230}" \
+      -sound Sosumi \
+      -execute "/usr/bin/open -t '$LOG'" \
+      -group canary-deep-siren 2>&1
+  ) && [ -z "$TN_ERR" ] && notified=1
+  if [ "$notified" -eq 1 ]; then
+    note "  (banner posted with click-to-open-log)"
+  else
+    note "  terminal-notifier could not post: ${TN_ERR:-unknown error}"
+    note "  → grant it notification permission in System Settings ▸ Notifications ▸ terminal-notifier, or the weekly banner stays unclickable"
+  fi
 fi
+
+if [ "$notified" -eq 0 ] && command -v osascript >/dev/null 2>&1; then
+  osascript -e "display notification \"${SUMMARY:0:230}\" with title \"$TITLE\" sound name \"Sosumi\"" 2>>"$LOG" && notified=1
+  note "  (fell back to an UNCLICKABLE banner — osascript notifications support no click action)"
+fi
+
+[ "$notified" -eq 0 ] && note "  (no notifier could post — findings are in this log only)"
 exit 0

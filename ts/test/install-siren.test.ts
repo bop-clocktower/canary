@@ -282,6 +282,37 @@ describe('the deep siren script', () => {
     expect(script).toContain('a check with no targets is an abstention');
   });
 
+  it('gives the notification a click action, not just a banner', () => {
+    // A weekly banner with nowhere to go is one you learn to swipe away —
+    // the same end state as not firing. osascript's `display notification`
+    // has no click handler at all, so a real action needs terminal-notifier.
+    expect(script).toContain('terminal-notifier');
+    expect(script).toContain('-execute');
+    expect(script).toContain('open -t');
+  });
+
+  it('falls back on terminal-notifier FAILING, not merely on it being absent', () => {
+    // terminal-notifier needs a manual macOS permission grant. Without it the
+    // command fails and NO banner appears — strictly worse than an unclickable
+    // one. So the fallback has to be driven by the outcome.
+    expect(script).toContain('TN_ERR');
+    expect(script).toContain('notified=0');
+  });
+
+  it('records the degradation instead of quietly losing the click action', () => {
+    expect(script).toContain('UNCLICKABLE');
+    expect(script).toContain('System Settings');
+  });
+
+  it('checks the installed plugin against the marketplace checkout', () => {
+    // The 2026-08-02 skew: `marketplace update` returns a tick while leaving
+    // the install pinned, because the install is keyed on a declared version
+    // that upstream ships new content under. Checking only the checkout goes
+    // green on a half-applied update.
+    expect(script).toContain('gitCommitSha');
+    expect(script).toContain('installed_plugins.json');
+  });
+
   it('names no consumer or company in a public repo', () => {
     // The pre-commit version hardcoded a consumer checkout path, which names
     // the consumer. Configuration is per-machine; the tree stays neutral.
