@@ -34,8 +34,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -64,10 +64,10 @@ interface SirenModule {
     home?: string,
     read?: (p: string, enc: string) => string,
   ) => string[];
-  linkHooks: (
+  installHooks: (
     home?: string,
     now?: Date,
-  ) => { name: string; action: string; backup?: string; target?: string }[];
+  ) => { name: string; action: string; backup?: string; source?: string }[];
   SIREN_HOOKS: readonly string[];
   interactivePath: (run?: unknown) => string;
   isRegistered: (run?: unknown) => boolean;
@@ -98,7 +98,7 @@ const {
   SIREN_HOOKS,
   STALE_DAYS,
   divergentCopies,
-  linkHooks,
+  installHooks,
   interactivePath,
   isRegistered,
   renderPlist,
@@ -279,12 +279,17 @@ describe('divergent machine copies', () => {
   });
 });
 
-describe('linkHooks — one version of each siren on the machine', () => {
-  // #758 follow-up. Copies drift in BOTH directions: mid-change the ~/.claude
-  // copy was briefly AHEAD of the repo, having gained a plugin-skew check, so
-  // "overwrite from the repo" would have silently lost work. A symlink removes
-  // the category — settings.json keeps its ~/.claude path, and that path now
-  // resolves to the tracked file CI and code review actually see.
+describe('installHooks — one version of each siren on the machine', () => {
+  // #758 follow-up, revised. The symlink this replaced pointed a machine-global
+  // hook into a working tree that changes branches, so `git checkout` silently
+  // uninstalled it: on 2026-09-08 the checkout sat on a branch without the #758
+  // commits, both links dangled, and canary-session-siren.sh — a configured
+  // SessionStart hook — failed on every session start.
+  //
+  // The original objection still stands and is tested below: copies drift in
+  // BOTH directions and the machine copy HAS been ahead, so the displaced file
+  // is always preserved and divergentCopies/--verify report drift rather than
+  // letting it pass.
   let home: string;
 
   beforeEach(() => {
@@ -293,16 +298,49 @@ describe('linkHooks — one version of each siren on the machine', () => {
   });
   afterEach(() => rmSync(home, { recursive: true, force: true }));
 
-  it('replaces a divergent regular file with a link to the repo copy', () => {
-    const target = join(home, '.claude', 'hooks', SIREN_HOOKS[0] as string);
+  it('replaces a divergent regular file with a real copy of the tracked one', () => {
+    const name = SIREN_HOOKS[0] as string;
+    const target = join(home, '.claude', 'hooks', name);
     writeFileSync(target, 'stale contents\n', 'utf-8');
 
-    linkHooks(home);
+    installHooks(home);
 
-    expect(lstatSync(target).isSymbolicLink()).toBe(true);
-    expect(realpathSync(target)).toBe(
-      join(REPO_ROOT, 'hooks', SIREN_HOOKS[0] as string),
+    expect(lstatSync(target).isSymbolicLink()).toBe(false);
+    expect(readFileSync(target, 'utf-8')).toBe(
+      readFileSync(join(REPO_ROOT, 'hooks', name), 'utf-8'),
     );
+  });
+
+  it('installs a file that survives the repo moving to another branch', () => {
+    // The regression this change exists for. A symlink into the working tree
+    // dies the moment `git checkout` lands on a commit without these files;
+    // a copy does not care what the repo is doing.
+    const name = SIREN_HOOKS[0] as string;
+    const target = join(home, '.claude', 'hooks', name);
+
+    installHooks(home);
+
+    expect(lstatSync(target).isSymbolicLink()).toBe(false);
+    expect(readFileSync(target, 'utf-8').length).toBeGreaterThan(0);
+  });
+
+  it('clears a DANGLING symlink left by the previous install strategy', () => {
+    // existsSync() follows links, so a broken link reports false: without an
+    // explicit lstat it is neither backed up nor replaced, and the copy fails
+    // on the leftover. This is the exact wreckage on a machine that ran the
+    // old installer and then switched branches.
+    const name = SIREN_HOOKS[0] as string;
+    const target = join(home, '.claude', 'hooks', name);
+    symlinkSync(join(home, 'nonexistent-target.sh'), target);
+    expect(lstatSync(target).isSymbolicLink()).toBe(true);
+
+    const acted = installHooks(home);
+
+    expect(lstatSync(target).isSymbolicLink()).toBe(false);
+    expect(readFileSync(target, 'utf-8')).toBe(
+      readFileSync(join(REPO_ROOT, 'hooks', name), 'utf-8'),
+    );
+    expect(acted.some((a) => a.action === 'backed-up')).toBe(true);
   });
 
   it('preserves the displaced file rather than deleting it', () => {
@@ -312,7 +350,7 @@ describe('linkHooks — one version of each siren on the machine', () => {
     const target = join(home, '.claude', 'hooks', name);
     writeFileSync(target, 'irreplaceable\n', 'utf-8');
 
-    const acted = linkHooks(home).find((a) => a.action === 'backed-up');
+    const acted = installHooks(home).find((a) => a.action === 'backed-up');
     expect(acted?.backup).toBeDefined();
     expect(readFileSync(acted?.backup as string, 'utf-8')).toBe(
       'irreplaceable\n',
@@ -325,9 +363,9 @@ describe('linkHooks — one version of each siren on the machine', () => {
       'x',
       'utf-8',
     );
-    linkHooks(home);
-    const second = linkHooks(home);
-    expect(second.every((a) => a.action === 'already-linked')).toBe(true);
+    installHooks(home);
+    const second = installHooks(home);
+    expect(second.every((a) => a.action === 'already-installed')).toBe(true);
     expect(second.some((a) => a.action === 'backed-up')).toBe(false);
   });
 
@@ -339,13 +377,13 @@ describe('linkHooks — one version of each siren on the machine', () => {
       'stale',
       'utf-8',
     );
-    linkHooks(home);
+    installHooks(home);
     expect(divergentCopies(home)).toEqual([]);
   });
 
   it('does nothing when there is no hooks directory to reconcile', () => {
     const bare = mkdtempSync(join(tmpdir(), 'siren-bare-'));
-    expect(linkHooks(bare)).toEqual([]);
+    expect(installHooks(bare)).toEqual([]);
     rmSync(bare, { recursive: true, force: true });
   });
 });

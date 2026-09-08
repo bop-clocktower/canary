@@ -11,14 +11,19 @@
 //      interactive-only rc file, so an inherited PATH yields a weekly false
 //      "CLI missing" — noise from the tool meant to catch false greens.
 //   2. `--verify` asserts the agent RAN, not that launchd accepted the file.
-//   3. Reconcile by link or backup, never by overwrite: the machine copy has
-//      already been AHEAD of the tree once during this change.
+//   3. Reconcile by backup, never by overwrite: the machine copy has already
+//      been AHEAD of the tree once during this change. Hooks install as COPIES
+//      (a symlink into a branch-switching tree made `git checkout` a silent
+//      hook outage), so drift is possible by construction and `--verify` fails
+//      on it rather than letting it pass unremarked.
 //
 //   node scripts/install-siren.mjs --install
 //   node scripts/install-siren.mjs --verify   [--json]
 //   node scripts/install-siren.mjs --uninstall
 import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -27,7 +32,6 @@ import {
   renameSync,
   rmSync,
   statSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -149,7 +153,7 @@ export const SIREN_HOOKS = Object.freeze([
  * Machine copies of the sirens that differ from the tracked ones. Two copies
  * of a rot detector is the rot it detects (fast-siren check 2): a SessionStart
  * hook wired to `~/.claude/hooks/` can run a siren missing check 5 while the
- * tree has it. Reported here; `linkHooks` is what resolves it.
+ * tree has it. Reported here; `installHooks` is what resolves it.
  */
 export function divergentCopies(home = homedir(), read = readFileSync) {
   const out = [];
@@ -171,16 +175,29 @@ export function divergentCopies(home = homedir(), read = readFileSync) {
 }
 
 /**
- * Point `~/.claude/hooks/canary-*.sh` at the tracked copies, so exactly one
- * version of each siren exists on the machine.
+ * Install `~/.claude/hooks/canary-*.sh` as regular files copied from the
+ * tracked ones, so exactly one *version* of each siren is in force.
  *
- * A symlink rather than a copy, because copies drift in BOTH directions — the
- * machine copy was briefly ahead during this change, so overwrite-from-tree
- * would have lost work. `settings.json` keeps its `~/.claude` path, and that
- * path now resolves to the file CI and code review see. Any displaced regular
- * file is kept as a timestamped `.bak-` sibling, never deleted.
+ * A COPY, not a symlink. The symlink this replaced pointed a machine-global
+ * hook into a working tree that changes branches, so `git checkout` silently
+ * uninstalled it: on 2026-09-08 this checkout sat on a branch where the #758
+ * commits are not ancestors of HEAD, both links dangled, and
+ * `canary-session-siren.sh` — a configured SessionStart hook — failed on every
+ * session start until someone looked. A hook whose liveness depends on which
+ * branch an unrelated repo happens to be on is not installed, it is borrowed.
+ *
+ * The objection this reverses is real and is preserved, not discarded: copies
+ * drift in BOTH directions, and the machine copy HAS been ahead of the tree.
+ * Two things keep that from losing work:
+ *   1. Any displaced regular file is still kept as a timestamped `.bak-`
+ *      sibling, never deleted — a machine copy that was ahead survives.
+ *   2. Drift is not silent. {@link divergentCopies} compares content, `--verify`
+ *      reports every divergent path and FAILS on it, so a machine copy that is
+ *      ahead of (or behind) the tree is a finding rather than a quiet mismatch.
+ * Trading an always-current link for a copy is only honest while (2) holds; if
+ * that check is ever weakened, this decision has to be revisited with it.
  */
-export function linkHooks(home = homedir(), now = new Date()) {
+export function installHooks(home = homedir(), now = new Date()) {
   const actions = [];
   const dir = join(home, '.claude', 'hooks');
   if (!existsSync(dir)) return actions;
@@ -191,28 +208,49 @@ export function linkHooks(home = homedir(), now = new Date()) {
     const repo = join(REPO_ROOT, 'hooks', name);
     if (!existsSync(repo)) continue;
 
-    // Already correct: a symlink resolving to the repo copy.
-    if (isLinkTo(machine, repo)) {
-      actions.push({ name, action: 'already-linked' });
+    // Already correct: a regular file whose CONTENT matches the tracked one.
+    // Content equality, not mtime or inode: those answer "is it the same
+    // file", and the question here is "is it the same version".
+    if (isCopyOf(machine, repo)) {
+      actions.push({ name, action: 'already-installed' });
       continue;
     }
-    if (existsSync(machine)) {
+    if (existsSync(machine) || isBrokenLink(machine)) {
+      // `existsSync` follows links, so a DANGLING symlink — the exact wreckage
+      // this change exists to clear — reports false and would otherwise be left
+      // in place for `copyFileSync` to fail on.
       const backup = `${machine}.bak-${stamp}`;
       renameSync(machine, backup);
       actions.push({ name, action: 'backed-up', backup });
     }
-    symlinkSync(repo, machine);
-    actions.push({ name, action: 'linked', target: repo });
+    copyFileSync(repo, machine);
+    chmodSync(machine, 0o755);
+    actions.push({ name, action: 'installed', source: repo });
   }
   return actions;
 }
 
-/** True when `p` is a symlink already resolving to `target`. */
-function isLinkTo(p, target) {
+/** True when `p` is a regular file whose content matches `target`'s. */
+function isCopyOf(p, target) {
   try {
-    return lstatSync(p).isSymbolicLink() && realpathSync(p) === target;
+    if (lstatSync(p).isSymbolicLink()) return false;
+    return readFileSync(p, 'utf-8') === readFileSync(target, 'utf-8');
   } catch {
     return false;
+  }
+}
+
+/** True when `p` is a symlink whose target does not resolve. */
+function isBrokenLink(p) {
+  try {
+    return lstatSync(p).isSymbolicLink() && !existsSync(realpathSync(p));
+  } catch {
+    // lstat succeeded as a link but realpath threw: unresolvable, so broken.
+    try {
+      return lstatSync(p).isSymbolicLink();
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -309,9 +347,10 @@ function loadAgent(target) {
 
 /** Make the machine run the tracked sirens, and the banner clickable. */
 function reconcileMachine(home) {
-  for (const a of linkHooks(home)) {
+  for (const a of installHooks(home)) {
     if (a.action === 'backed-up') console.log(`  backed up -> ${a.backup}`);
-    else if (a.action === 'linked') console.log(`  linked ${a.name} -> hooks/`);
+    else if (a.action === 'installed')
+      console.log(`  installed ${a.name} from hooks/`);
   }
   const stragglers = divergentCopies(home);
   if (stragglers.length > 0) {
