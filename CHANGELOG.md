@@ -14,6 +14,8 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [7.2.0] - 2026-09-08
+
 ### Added
 
 - **Test duration ratchet** (#760). `scripts/test-duration-ratchet.mjs` records
@@ -27,6 +29,28 @@ under the project's former name) are documented in the
   run is too contended to compare. Wired non-blocking-on-abstention in the
   `agents/skills` job; an abstention is reported as a warning that the run
   verified nothing, never as a pass.
+
+- **`canary-strix` ships the leak scan as a skill consumers can run** (#799).
+  The scan lived in `scripts/`, which is not in the published package's `files`,
+  so its only callers were this repo's own `docs-lint` workflow and pre-commit
+  hook — a consumer could neither run it nor add a term to it. It is now
+  family-shaped like the four deterministic detectors: `cli: scripts/cli.mjs`,
+  `--json`, the 0/1/2/3 exit contract, `requires: [node>=20]`.
+
+  It scans commit **authorship** as well as file contents, which is the half a
+  file scan can never reach: an author-field identifier is metadata, so no
+  content scan sees it.
+
+- **The katana quarantine ledger records why a test is out, not just how it
+  left** (#771, #781). Schema v2 adds `cause`, `issue`, and `expiry`, and the
+  ticket a quarantine waits on is read from a `Ticket:` trailer (`Bug:` and
+  `Tracked:` accepted, last wins) and recorded **verbatim** — a key, a URL, or
+  several — because katana cannot know one org's tracker from another's.
+
+  `cause` and `reason` stay separate on purpose: `reason` is derived from the
+  commit subject, `cause` is asserted
+  (`flaky | product-defect | blocked-data | obsolete`). Collapsing them would
+  dress an auto-derived string up as a claim someone stands behind.
 
 - **`canary skills run` can invoke a skill that ships no script** (#756). The
   dispatcher tier harness has and canary did not: 14 of canary's 21 skills carry
@@ -89,6 +113,42 @@ under the project's former name) are documented in the
   makes the pattern vacuous.
 
 ### Fixed
+
+- **Seven skill CLIs truncated a large `--json` payload while still exiting 0**
+  (#791). They ended with `process.exit(main(...))`, and `process.exit()`
+  terminates without waiting for stdout to drain. When stdout is a pipe rather
+  than a TTY — every CI step, every `| jq`, every orchestrator call — writes are
+  asynchronous, so the document was cut at the pipe buffer and the process still
+  reported success.
+
+  Measured on `canary-blackhawk` over a 400-file corpus, same tree, same minute:
+  `process.exit(main(...))` delivered **131072 bytes** — the pipe buffer,
+  exactly — and exited 0; `process.exitCode = main(...)` delivered the whole
+  **175271-byte** document and exited 0. A consumer reading exit 0 got either a
+  parse error it blamed on itself, or a valid-looking prefix.
+
+  It fires precisely on the large runs where the findings matter most, so the
+  CLIs that had not misbehaved yet were not safe, merely small. All nine now set
+  `process.exitCode`, and a conformance test fails the build if
+  `process.exit(main(...))` returns.
+
+- **`canary-instrument` wrote `url: ""` on every request while announcing the
+  artifact was written** (#782). `run.json` exists to answer "which test hit
+  which endpoint", so a URL-less artifact reads as "no endpoints exercised" and
+  renders a clean 0% as though it were a measurement. The span reader was on
+  pre-1.23 OpenTelemetry semantic conventions (`http.url`, `http.status_code`),
+  which the auto-instrumentation this skill tells consumers to install does not
+  emit; it now reads the conventions a real captured span carries.
+
+- **The strix denylist leaked comment prose past a comma** (#818). Splitting on
+  `[,\n]` happened _before_ comment fragments were dropped, so any fragment
+  after a comma on a `#` line survived as a scan term. On this repo's own
+  denylist that was **15 terms scanned against 7 real ones** — 8 phantoms, one
+  of them the words "and on a", which raised three findings on a clean `main`.
+
+  Both harms matter, and the second is the worse one: a leak gate that cries
+  wolf on the word "and" stops being read, and an inflated denominator makes the
+  scan look like it covered more than it did.
 
 - **Five of nine `cli:` skills had no documented command anyone could run**
   (#707). #487's checker worked on its first run and what it reported was a
@@ -3186,7 +3246,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v7.1.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v7.2.0...HEAD
+[7.2.0]: https://github.com/bop-clocktower/canary/compare/v7.1.0...v7.2.0
 [7.1.0]: https://github.com/bop-clocktower/canary/compare/v7.0.0...v7.1.0
 [7.0.0]: https://github.com/bop-clocktower/canary/compare/v6.8.1...v7.0.0
 [6.8.1]: https://github.com/bop-clocktower/canary/compare/v6.8.0...v6.8.1
