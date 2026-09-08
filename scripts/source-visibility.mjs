@@ -23,6 +23,8 @@
 //      with a dot) is never walked. Checked against git's index for tracked
 //      files, and against the working tree for files git has not seen.
 //   2. .GITIGNORE — `ts/.gitignore` carries `coverage/`, so the split files
+//      (see GENERATED_STAGING_DIRS for the one narrow, named exception: a
+//      build step's staged copy of source that is tracked elsewhere, #801)
 //      were unstageable. They would never have been committed, and prettier
 //      had been skipping them too. A source file git refuses to track is
 //      invisible to every gate downstream of the index, name collision or not.
@@ -119,6 +121,46 @@ export const ANALYZER_SKIP_DIRS = Object.freeze([
 
 /** Directories never descended into, independent of the skip list. */
 const WALK_STOP = new Set(['.git', 'node_modules']);
+
+/**
+ * Generated staging trees: root-relative directories into which a build step
+ * copies source that already lives, tracked and visible, elsewhere in this
+ * repo (#801).
+ *
+ * `npm/package.json` runs `prepare: npm run build`, so `npm ci --prefix npm` —
+ * the exact step the `npm-validate` CI job runs — executes
+ * `npm/scripts/build-engine.mjs`, which copies `agents/skills/` to
+ * `npm/agents/skills/`. Those copies are `.ts`, they are gitignored
+ * (`.gitignore:39,41`), and by this guard's own definition that reads as
+ * hidden source. It is not: the originals are tracked, walked and measured. A
+ * contributor who follows the CI steps locally builds both workspaces in one
+ * tree and sees the guard go red on a clean checkout, which CI never does
+ * because `ts-validate` and `npm-validate` run on separate runners.
+ *
+ * Two properties keep this from becoming the blanket "ignore everything
+ * gitignored" that would gut the guard:
+ *
+ *   1. Entries are **anchored root-relative prefixes**, not basenames. A
+ *      directory called `agents/` anywhere else in the tree is unaffected.
+ *   2. A path is excused only when it is under one of these prefixes **and**
+ *      git actually ignores it. Un-gitignore `npm/agents/` and hand-written
+ *      source there is visible to the guard again — the exclusion names the
+ *      tree, and the mechanism still has to agree.
+ *
+ * Excused files are reported in `stagedSourceFiles` rather than dropped
+ * silently, so the exclusion is always visible in the report (#508).
+ */
+export const GENERATED_STAGING_DIRS = Object.freeze([
+  'npm/agent',
+  'npm/agents',
+]);
+
+/** True when `relPath` sits inside a declared generated staging tree. */
+export function isGeneratedStaging(relPath) {
+  return GENERATED_STAGING_DIRS.some(
+    (dir) => relPath === dir || relPath.startsWith(`${dir}/`),
+  );
+}
 
 /**
  * Hand-written TypeScript. `.d.ts` is excluded so a `dist/` full of emitted
@@ -254,7 +296,22 @@ export function auditSourceVisibility(root, skipDirs) {
 
   const filesByDir = walkSourceDirs(root);
   const walked = [...filesByDir.values()].flat();
-  if (tracked.length === 0 && walked.length === 0) {
+
+  // A staged copy is excused only where git agrees it is generated, so the
+  // exclusion cannot widen into "anything gitignored is fine".
+  const ignored = new Set(ignoredPaths(root, walked));
+  const stagedSourceFiles = walked
+    .filter((f) => isGeneratedStaging(f) && ignored.has(f))
+    .sort();
+  const staged = new Set(stagedSourceFiles);
+
+  // Excused files are not inspected files. A tree holding nothing but a
+  // staging copy must abstain, not report a confident clean.
+  const inspected = new Set([
+    ...tracked,
+    ...walked.filter((f) => !staged.has(f)),
+  ]);
+  if (inspected.size === 0) {
     throw new Abstention(
       `no source files found under ${root} — zero files inspected is not a pass`,
     );
@@ -263,10 +320,12 @@ export function auditSourceVisibility(root, skipDirs) {
   const hiddenDirs = [];
   const hidden = new Set();
   for (const [dir, files] of filesByDir) {
+    const visible = files.filter((f) => !staged.has(f));
+    if (visible.length === 0) continue;
     const hiddenBy = hidingSegment(`${dir}/x`, skipDirs);
     if (hiddenBy === undefined) continue;
     hiddenDirs.push({ path: dir, hiddenBy });
-    for (const f of files) hidden.add(f);
+    for (const f of visible) hidden.add(f);
   }
 
   const hiddenFiles = [];
@@ -277,7 +336,7 @@ export function auditSourceVisibility(root, skipDirs) {
     hidden.add(file);
   }
 
-  const ignoredSourceFiles = ignoredPaths(root, walked);
+  const ignoredSourceFiles = [...ignored].filter((f) => !staged.has(f));
   for (const f of ignoredSourceFiles) hidden.add(f);
 
   let hiddenLoc = 0;
@@ -285,21 +344,34 @@ export function auditSourceVisibility(root, skipDirs) {
 
   return {
     verdict: hidden.size === 0 ? 'visible' : 'hidden',
-    filesChecked: new Set([...tracked, ...walked]).size,
-    dirsChecked: filesByDir.size,
+    filesChecked: inspected.size,
+    dirsChecked: [...filesByDir].filter(([, files]) =>
+      files.some((f) => !staged.has(f)),
+    ).length,
     skipDirCount: skipDirs.size,
     hiddenFiles: hiddenFiles.sort((a, b) => a.path.localeCompare(b.path)),
     hiddenDirs: hiddenDirs.sort((a, b) => a.path.localeCompare(b.path)),
     ignoredSourceFiles: ignoredSourceFiles.sort(),
+    stagedSourceFiles,
     hiddenLoc,
   };
 }
 
 /** Human-readable lines for a report. */
 export function visibilityLines(report) {
+  // Always printed, both verdicts: an exclusion nobody can see is the thing
+  // this guard exists to refuse.
+  const staged = report.stagedSourceFiles ?? [];
+  const stagedLine =
+    staged.length === 0
+      ? []
+      : [
+          `  excused ${staged.length} generated staging file(s) under ${GENERATED_STAGING_DIRS.join(', ')} — build-step copies of tracked source, gitignored by design (#801).`,
+        ];
   if (report.verdict === 'visible') {
     return [
       `source visibility — clean: ${report.filesChecked} source file(s) across ${report.dirsChecked} director(ies), all walkable by the arch analyzer and all stageable.`,
+      ...stagedLine,
     ];
   }
   const lines = [
@@ -322,6 +394,7 @@ export function visibilityLines(report) {
       `  ${f} — git is configured to ignore it, so it is unstageable and invisible to prettier and every index-reading gate.`,
     );
   }
+  lines.push(...stagedLine);
   return lines;
 }
 

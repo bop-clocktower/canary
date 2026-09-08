@@ -61,6 +61,7 @@ interface Report {
   hiddenFiles: Finding[];
   hiddenDirs: Finding[];
   ignoredSourceFiles: string[];
+  stagedSourceFiles: string[];
   hiddenLoc: number;
 }
 
@@ -279,6 +280,114 @@ describe('source-visibility — the skip list it vendors', () => {
       expect(names).toContain(name);
     }
     expect(names.length).toBeGreaterThanOrEqual(50);
+  });
+});
+
+describe('source-visibility — the generated staging exception (#801)', () => {
+  // `npm ci --prefix npm` runs `prepare` -> `build-engine.mjs`, which copies
+  // `agents/skills/` to the gitignored `npm/agents/skills/`. Those copies are
+  // `.ts`, so before #801 the guard read them as hidden source and went red on
+  // a clean tree the moment a contributor built both workspaces the way CI
+  // does — on two runners that never share a checkout.
+  const STAGED = 'npm/agents/skills/a/fixture.ts';
+
+  it('excuses a gitignored staged copy instead of calling it hidden source', () => {
+    const r = run(
+      fixture({
+        'src/core/thing.ts': SOURCE,
+        '.gitignore': '/npm/agents/\n',
+        [STAGED]: SOURCE,
+      }),
+    );
+    expect(r.status).toBe(0);
+    const report = parse(r.stdout);
+    expect(report.verdict).toBe('visible');
+    expect(report.ignoredSourceFiles).toEqual([]);
+    expect(report.stagedSourceFiles).toEqual([STAGED]);
+    expect(report.hiddenLoc).toBe(0);
+  });
+
+  it('leaves the denominator untouched by the staged copy', () => {
+    // The bug's quieter half: a staging tree that inflated `filesChecked`
+    // would make the guard's own denominator move with a build step.
+    const withStaging = parse(
+      run(
+        fixture({
+          'src/core/thing.ts': SOURCE,
+          '.gitignore': '/npm/agents/\n',
+          [STAGED]: SOURCE,
+        }),
+      ).stdout,
+    );
+    expect(withStaging.filesChecked).toBe(1);
+  });
+
+  it('reports the excusal rather than dropping it silently', () => {
+    // An exclusion nobody can see is the false green this guard exists for.
+    const r = runCapture('node', [
+      SCRIPT,
+      '--root',
+      fixture({
+        'src/core/thing.ts': SOURCE,
+        '.gitignore': '/npm/agents/\n',
+        [STAGED]: SOURCE,
+      }),
+    ]);
+    expect(r.stdout).toContain('excused 1 generated staging file');
+    expect(r.stdout).toContain('npm/agents');
+  });
+
+  it('still catches source under the staging path when git does NOT ignore it', () => {
+    // The anti-rot property. The exclusion names a tree AND requires the
+    // mechanism to agree, so un-gitignoring `npm/agents/` makes hand-written
+    // source there visible to the guard again rather than permanently blind.
+    const r = run(fixture({ 'src/core/thing.ts': SOURCE, [STAGED]: SOURCE }));
+    const report = parse(r.stdout);
+    expect(report.stagedSourceFiles).toEqual([]);
+    expect(report.filesChecked).toBe(2);
+    expect(r.status).toBe(0);
+  });
+
+  it('does not excuse a gitignored source file outside the named trees', () => {
+    // The exclusion must not widen into "anything gitignored is fine" — that
+    // is the whole mechanism #688 was about.
+    const r = run(
+      fixture({
+        'src/core/thing.ts': SOURCE,
+        '.gitignore': 'scratch/\n',
+        'scratch/hidden.ts': SOURCE,
+      }),
+    );
+    expect(r.status).toBe(1);
+    const report = parse(r.stdout);
+    expect(report.stagedSourceFiles).toEqual([]);
+    expect(report.ignoredSourceFiles).toContain('scratch/hidden.ts');
+  });
+
+  it('anchors the exception to the repo root, not to a basename', () => {
+    // `ts/npm/agents/` is not the staging tree. A basename match would excuse
+    // any directory called `agents/` anywhere in the tree.
+    const r = run(
+      fixture({
+        'src/core/thing.ts': SOURCE,
+        '.gitignore': 'ts/npm/agents/\n',
+        'ts/npm/agents/decoy.ts': SOURCE,
+      }),
+    );
+    expect(r.status).toBe(1);
+    const report = parse(r.stdout);
+    expect(report.stagedSourceFiles).toEqual([]);
+    expect(report.ignoredSourceFiles).toContain('ts/npm/agents/decoy.ts');
+  });
+
+  it('abstains on a tree holding nothing but a staging copy', () => {
+    // Excused files are not inspected files, so the denominator is zero and
+    // "no collisions found" would be an abstention wearing a pass (#508).
+    const r = run(
+      fixture({ '.gitignore': '/npm/agents/\n', [STAGED]: SOURCE }),
+    );
+    expect(r.status).toBe(3);
+    expect(r.stderr).toContain('zero files inspected is not a pass');
   });
 });
 
