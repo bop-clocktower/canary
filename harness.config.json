@@ -251,6 +251,7 @@
       "scripts/check_removed_symbols.mjs",
       "scripts/entropy-ratchet.mjs",
       "scripts/harness-report-summary.mjs",
+      "scripts/install-siren.mjs",
       "scripts/perf-ratchet.mjs",
       "scripts/refresh-arch-baseline.mjs",
       "scripts/roadmap-denominator-check.mjs",

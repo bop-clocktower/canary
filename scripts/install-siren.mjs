@@ -1,27 +1,18 @@
 #!/usr/bin/env node
 // Provisions and verifies the weekly deep-siren LaunchAgent (#758).
 //
-// The defect this closes: `hooks/canary-deep-siren.sh` documented its own
-// launchd label in a header comment, and nothing ever created the agent. Every
-// network-level canary check was dark from the day the script was written —
-// marketplace-vs-upstream, CLI-vs-npm-latest, and the `canary doctor` skip
-// probe from #505. A never-scheduled monitor produces the same user-visible
-// signal as a healthy one (no complaint) with even less behind it. That is
+// The defect: `hooks/canary-deep-siren.sh` documented its own launchd label in
+// a header comment and nothing ever created the agent, so every network-level
+// canary check was dark from the day it was written. A never-scheduled monitor
+// gives the same signal as a healthy one — no complaint — with less behind it:
 // #508's zero-denominator green with a denominator of zero *invocations*.
 //
-// So the scheduler is provisioned by a tool rather than by a comment, and the
-// install is not reported as successful until the agent has actually run.
+// Two refusals, both load-bearing:
 //
-// Two properties this script refuses to compromise on:
-//
-//   1. It REFUSES to install when `canary` is unreachable under the PATH it
-//      would bake in. launchd hands a job a minimal environment, and `mise
-//      activate` lives in ~/.zshrc (interactive-only), so an agent inheriting
-//      launchd's PATH finds no `canary` and reports "CLI missing" — a false
-//      finding from the monitor that exists to catch false greens. Installing
-//      anyway would be worse than not installing: it manufactures noise and
-//      teaches the reader to ignore the siren.
-//
+//   1. No install when `canary` is unreachable under the PATH this would bake
+//      in. launchd gives a job a minimal environment and `mise activate` lives
+//      in an interactive-only rc file, so an inherited PATH yields a weekly
+//      false "CLI missing" — noise from the tool meant to catch false greens.
 //   2. `--verify` asserts the agent RAN, not that launchd accepted the file.
 //      Registration is not execution, which is the whole lesson of #758.
 //
@@ -59,11 +50,9 @@ export function logPath(home = homedir()) {
 }
 
 /**
- * The PATH an interactive login shell would give us.
- *
- * `-l` sources ~/.zprofile and `-i` sources ~/.zshrc, which is where `mise
- * activate` lives. Both are needed: a login-only shell misses mise entirely,
- * which is exactly the false "CLI missing" this guards against.
+ * The PATH an interactive login shell would give us. `-l` sources ~/.zprofile
+ * and `-i` sources ~/.zshrc, where `mise activate` lives; a login-only shell
+ * misses mise entirely, which is the false "CLI missing" this guards against.
  */
 export function interactivePath(run = spawnSync) {
   const r = run('/bin/zsh', ['-lic', 'printf %s "$PATH"'], {
@@ -153,12 +142,10 @@ export function schedulerStatus({
 /**
  * Legacy per-machine copies of the sirens that now also live in this repo.
  *
- * Two copies of a rot detector is the rot it detects — check 2 of the fast
- * siren exists to catch exactly this shape ("flat-file overlay shadows the
- * plugin and drifts silently"). The LaunchAgent points at the repo copy, but
- * a SessionStart hook wired to `~/.claude/hooks/` keeps running the old one,
- * so the deep-siren self-check can be absent from the running siren while
- * present in the tree.
+ * Two copies of a rot detector is the rot it detects (fast-siren check 2). The
+ * LaunchAgent runs the repo copy, but a SessionStart hook wired to
+ * `~/.claude/hooks/` keeps running the old one — so the deep-siren self-check
+ * can be missing from the running siren while present in the tree.
  *
  * Reported, never rewritten: `~/.claude` is the operator's, not this script's.
  */
@@ -186,7 +173,12 @@ function fail(message) {
   process.exit(1);
 }
 
-function install(home) {
+/**
+ * Everything that must hold before a plist is written. Returns the resolved
+ * PATH and canary location; exits rather than returning a partial answer, so
+ * the refusals read as one list.
+ */
+function preflight() {
   if (process.platform !== 'darwin') {
     fail(
       `launchd is macOS-only and this is ${process.platform}. The deep siren itself is portable — schedule hooks/canary-deep-siren.sh with cron or a systemd timer instead.`,
@@ -207,21 +199,11 @@ function install(home) {
         `  PATH tried: ${path}`,
     );
   }
+  return { path, canary };
+}
 
-  mkdirSync(join(home, 'Library', 'LaunchAgents'), { recursive: true });
-  mkdirSync(join(home, '.claude', 'logs'), { recursive: true });
-
-  const target = plistPath(home);
-  writeFileSync(
-    target,
-    renderPlist(readFileSync(TEMPLATE, 'utf-8'), {
-      script: SCRIPT,
-      path,
-      home,
-    }),
-    'utf-8',
-  );
-
+/** Replace any loaded copy of the agent with the one at `target`. */
+function loadAgent(target) {
   // `bootout` first so a re-install replaces rather than stacks. It fails when
   // nothing is loaded, which is the ordinary first-install case.
   const domain = `gui/${process.getuid?.() ?? ''}`;
@@ -236,6 +218,25 @@ function install(home) {
       `launchctl bootstrap exited ${boot.status}: ${(boot.stderr ?? '').trim()}`,
     );
   }
+}
+
+function install(home) {
+  const { path, canary } = preflight();
+
+  mkdirSync(join(home, 'Library', 'LaunchAgents'), { recursive: true });
+  mkdirSync(join(home, '.claude', 'logs'), { recursive: true });
+
+  const target = plistPath(home);
+  writeFileSync(
+    target,
+    renderPlist(readFileSync(TEMPLATE, 'utf-8'), {
+      script: SCRIPT,
+      path,
+      home,
+    }),
+    'utf-8',
+  );
+  loadAgent(target);
 
   console.log(`installed ${target}`);
   console.log(`  canary resolved to ${canary}`);
