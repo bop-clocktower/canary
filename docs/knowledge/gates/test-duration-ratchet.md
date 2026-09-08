@@ -16,8 +16,8 @@ without new evidence.
 
 ## What it is for
 
-#760 raised `testTimeout` to 30s in both vitest projects so that contended tests
-stop being reported as failures. Nothing in either suite runs over **~3.1s
+Issue #760 raised `testTimeout` to 30s in both vitest projects so that contended
+tests stop being reported as failures. Nothing in either suite runs over **~3.1s
 idle**, so that is also a ~10x window in which a real slowdown is invisible: a
 regression taking a 3s test to 18s passes silently. #760 asks for the raise to
 be **paired with a recorded expected duration**. This gate is that pairing.
