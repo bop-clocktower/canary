@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LaunchAgent template for the weekly deep canary siren (#758).
+
+  This is a TEMPLATE, not a drop-in. `scripts/install-siren.mjs` substitutes
+  the three double-underscored placeholders below (script, PATH, home) and
+  writes the result to ~/Library/LaunchAgents/. Install it with:
+
+      node scripts/install-siren.mjs --install
+
+  Why PATH is baked in rather than inherited: launchd gives a job a minimal
+  environment, and `mise activate` lives in ~/.zshrc, which is sourced only by
+  an interactive shell. An agent that inherited launchd's PATH would find no
+  `canary` binary and report "canary CLI missing or not reporting a version" —
+  a false finding, from the very monitor that exists to catch false greens. The
+  installer resolves the interactive PATH, verifies `canary` is reachable under
+  it, and REFUSES to install if it is not.
+
+  RunAtLoad is deliberately true: it makes installation self-verifying. The
+  first run writes a log line immediately, so `--verify` can prove the agent
+  actually executes rather than merely that launchd accepted the file.
+-->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>io.github.bop-clocktower.canary-deep-siren</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/bash</string>
+      <string>__SCRIPT__</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key>
+      <string>__PATH__</string>
+      <key>HOME</key>
+      <string>__HOME__</string>
+    </dict>
+
+    <!-- Weekly: Monday 09:00. Missed runs (machine asleep) fire on wake. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Weekday</key>
+      <integer>1</integer>
+      <key>Hour</key>
+      <integer>9</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.claude/logs/canary-deep-siren.err.log</string>
+    <key>StandardOutPath</key>
+    <string>__HOME__/.claude/logs/canary-deep-siren.out.log</string>
+  </dict>
+</plist>
