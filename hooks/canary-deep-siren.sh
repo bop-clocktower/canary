@@ -207,8 +207,19 @@ if [ "${#REMEDIES[@]}" -gt 0 ]; then
     echo "echo 'Findings after the fix:'"
     printf '%s\n' "tail -n 20 '$LOG'"
     echo 'echo; echo "Press return to close."; read -r _'
-  } >"$FIX"
-  chmod +x "$FIX"
+  } >"$FIX.tmp"
+  chmod +x "$FIX.tmp"
+  # `mv`, never a direct rewrite. The generated fix script's last step re-runs
+  # this siren, so on a re-run we would truncate the very file the outer bash
+  # is mid-read of, and bash resumes from a saved byte offset. Verified on
+  # /bin/bash 3.2.57: a SHORTER regenerated file silently skips the remaining
+  # commands and exits 0; a LONGER one resumes mid-line and dies with a syntax
+  # error. The lines lost are the verification tail, and they are lost
+  # precisely when the fix did NOT work -- a successful fix exits before
+  # touching $FIX at all -- so success and silence become indistinguishable,
+  # which is the 2026-08-02 skew this construct exists to catch. Rename swaps
+  # the inode and leaves the running process reading the old file.
+  mv -f "$FIX.tmp" "$FIX"
   EXEC="/usr/bin/open -a Terminal '$FIX'"
   note "  fix script written to $FIX (${#REMEDIES[@]} of ${#FINDINGS[@]} finding(s) auto-fixable)"
 else
