@@ -24,6 +24,17 @@ under the project's former name) are documented in the
   absolute slowdown. It is a conjunction, not a wider ceiling: it can only
   suppress a firing near the floor, and above the floor the 2.5x rule binds
   exactly as before.
+- **A monorepo migrate report names the suites it walked** (#504). The workspace
+  walk landed in #586, but when the packages disagreed the scalar collapsed to
+  `Framework: unknown` and the follow-up said "no config file, dependency, or
+  language marker matched a known framework" — of a run that had just matched
+  two package configs, with the "Would Create" note adding that the project
+  "already has all Canary config files". `migrate` now prints a `## Workspace`
+  section listing every package finding beside the scanned denominator,
+  attributes the abstention to the disagreement it actually found, offers the
+  per-package route by name, and resolves a `--framework` override's shape from
+  the package that declares that framework — the root-only playwright refinement
+  reads zero spec files when the specs live in `apps/*-e2e/tests/`.
 
 ### Changed
 
