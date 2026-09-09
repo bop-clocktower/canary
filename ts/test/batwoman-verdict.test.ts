@@ -112,7 +112,7 @@ describe('tallyVerdicts', () => {
     // spec criterion 3: a file batwoman could not decide about must not be
     // countable among those it decided. The guard is structural -- there is no
     // field an aggregate could arrive in.
-    const tally = tallyVerdicts(mixed) as Record<string, unknown>;
+    const tally = tallyVerdicts(mixed) as unknown as Record<string, unknown>;
     expect(Object.keys(tally).sort()).toEqual(['byStatus', 'changed']);
     for (const forbidden of ['assessed', 'decided', 'covered', 'clean']) {
       expect(tally[forbidden]).toBeUndefined();
