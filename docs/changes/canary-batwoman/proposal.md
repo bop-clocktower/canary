@@ -377,6 +377,27 @@ Three further cases, each resolving to `abstain` rather than a verdict:
   explicit limit and report whether the window actually spans `mergedAt`; if it
   does not, the probe abstains. Inferring "never ran" from a truncated list is
   the same false-negative shape batwoman exists to catch.
+
+  **[AMENDED 2026-09-09 — BW-C2]** Two errors of fact above, found while
+  implementing Phase 3, and the abstention is narrower as a result.
+
+  The default is **20**, not 30 (`gh run list --help`). More importantly, the
+  rationale does not hold: `gh run list` returns runs **newest-first** (verified
+  against this repo's own history), so every run beyond the page is older than
+  every run in it. For a qualifying run to hide outside the window, the oldest
+  fetched run would have to postdate `mergedAt` — and that same condition puts a
+  qualifying run _inside_ the window, where it is found. **A dropped-off page
+  cannot conceal a run after the merge**, so abstaining whenever the page fails
+  to span `mergedAt` would report ignorance the tool does not have, which is its
+  own false report.
+
+  What ships instead: the port still requests an explicit limit and still
+  reports `complete`, and the probe abstains on the one window that genuinely
+  says nothing — **empty and incomplete**, an absence of evidence rather than
+  evidence of absence. `RunHistory.complete` is kept precisely so this argument
+  stays checkable: if the ordering guarantee ever changes, `windowIsBlind` is
+  the single function that has to change with it.
+
 - **File deleted by the closing PR.** There is nothing to exercise, and the file
   no longer exists to classify. Reported as `not-applicable` with the reason
   "deleted by this change".

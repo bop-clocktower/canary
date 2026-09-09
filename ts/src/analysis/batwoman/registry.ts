@@ -118,6 +118,22 @@ export async function probeFile(
   file: string,
   ctx: ExerciseContext,
 ): Promise<ExerciseVerdict> {
+  // Answered ahead of dispatch, and ahead of the no-probe fallback. A file the
+  // closing PR deleted has nothing left to execute and no longer exists to
+  // classify, so neither "nothing looked" nor a port failure is the right
+  // report for it -- the answer does not depend on run history at all
+  // (spec Phase 3).
+  if (ctx.deleted.has(file)) {
+    return {
+      file,
+      status: 'not-applicable',
+      explanation: explain(
+        'It was deleted by this change, so there is nothing left to run.',
+      ),
+      evidence: 'deleted by this change',
+    };
+  }
+
   const probe = matchProbe(probes, file);
   if (probe === null) {
     return {

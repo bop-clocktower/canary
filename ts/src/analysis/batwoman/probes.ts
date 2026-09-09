@@ -3,8 +3,8 @@
  *
  * Each answers one question about one artifact type: has this thing executed
  * since the fix merged? None of them asserts the fix is correct, and none of
- * them reaches the network -- `ExerciseContext.runs` is the single seam, and
- * the `gh` implementation behind it does not arrive until Phase 3.
+ * them reaches the network directly -- `ExerciseContext.runs` is the single
+ * seam, and the `gh` implementation behind it lives in `gh-history.ts`.
  *
  * **A probe that cannot decide throws or abstains; it never guesses.** The
  * registry turns a throw into `abstain`, so a probe is free to let a broken
@@ -14,105 +14,18 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { load } from 'js-yaml';
-import { describeTriggers } from './triggers.js';
+import { day, judgeRuns } from './run-window.js';
 import {
   explain,
   type ExerciseContext,
   type ExerciseProbe,
   type ExerciseVerdict,
-  type WorkflowRun,
 } from './verdict.js';
 
 const WORKFLOW_DIR = '.github/workflows';
 const WORKFLOW_RE = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 /** Top-level `scripts/*.mjs` only: nested helpers are not workflow entry points. */
 const SCRIPT_RE = /^scripts\/[^/]+\.mjs$/;
-
-/** `2026-08-10`, the grain a human reasons about a run in. */
-function day(when: Date): string {
-  return when.toISOString().slice(0, 10);
-}
-
-/** The most recent run, or undefined. Order from the port is not assumed. */
-function latest(runs: readonly WorkflowRun[]): WorkflowRun | undefined {
-  return [...runs].sort(
-    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
-  )[0];
-}
-
-/**
- * The workflow's trigger clause, or null when the file cannot be read.
- *
- * Deliberately swallows every read and parse error. The trigger explanation
- * and the run-history verdict come from different places and fail
- * independently: a workflow deleted by the very PR under audit still has a run
- * history worth reporting, and losing that verdict because its file is gone
- * would be a self-inflicted abstention.
- */
-function triggerClause(root: string, file: string): string | null {
-  try {
-    const doc = load(readFileSync(join(root, file), 'utf8'));
-    if (typeof doc !== 'object' || doc === null) return null;
-    const record = doc as Record<string, unknown>;
-    // `on` is read under both spellings. Under a YAML 1.1 resolver an
-    // unquoted `on:` becomes boolean true and the block vanishes; js-yaml
-    // 5.4.1 keeps it a string, so this is defence against a parser change
-    // rather than a bug being worked around.
-    return describeTriggers(record['on'] ?? record['true']);
-  } catch {
-    return null;
-  }
-}
-
-/** The sentence a dormant workflow gets: the fact, then the cause. */
-function dormantExplanation(
-  last: WorkflowRun | undefined,
-  clause: string | null,
-): string {
-  const fact =
-    last === undefined
-      ? 'It has no recorded runs at all.'
-      : `Last ran ${day(last.createdAt)}, before this fix merged.`;
-  // Without a clause the sentence stops at the fact. Saying less is the
-  // correct degradation; a guessed cause would be acted on.
-  return clause === null
-    ? fact
-    : `${fact} It is ${clause}, so it has not run since.`;
-}
-
-/** Decide one workflow from its run history. Shared with the script probe. */
-function judgeRuns(
-  file: string,
-  runs: readonly WorkflowRun[],
-  ctx: ExerciseContext,
-): ExerciseVerdict {
-  const after = runs.filter((r) => r.createdAt > ctx.mergedAt);
-  const mostRecent = latest(after);
-  if (mostRecent !== undefined) {
-    return {
-      file,
-      status: 'exercised',
-      explanation: explain(
-        `It has run ${after.length === 1 ? 'once' : `${after.length} times`} ` +
-          `since this fix merged, most recently on ${day(mostRecent.createdAt)}.`,
-      ),
-      evidence: `${runs.length} recorded run(s) for ${file}; ${after.length} after ${day(ctx.mergedAt)}`,
-    };
-  }
-  const last = latest(runs);
-  return {
-    file,
-    status: 'not-exercised',
-    explanation: explain(
-      dormantExplanation(last, triggerClause(ctx.root, file)),
-    ),
-    evidence:
-      last === undefined
-        ? `no recorded runs for ${file}`
-        : `${runs.length} recorded run(s) for ${file}, none after ${day(ctx.mergedAt)}`,
-  };
-}
 
 /**
  * `.github/workflows/*.yml` -- decided by run history, explained by `on:`.
@@ -154,16 +67,6 @@ function workflowsReferencing(root: string, name: string): string[] {
   return found;
 }
 
-/**
- * `scripts/*.mjs` -- resolved statically to the workflows that call it, then
- * decided by their run history.
- *
- * **Abstains when nothing references it**, rather than reporting it never
- * ran. Those are different facts: "no workflow calls this" is a statement
- * about the repo, and it may well be run by a human, a hook, or a workflow
- * that builds the command dynamically. Calling that `not-exercised` would
- * assert something no file supports (spec D3).
- */
 /** A caller's file name, which is what a reader recognises it by. */
 function named(verdict: ExerciseVerdict): string {
   return basename(verdict.file);
@@ -218,6 +121,34 @@ function everyCallerDormant(
   };
 }
 
+/** At least one calling workflow's history could not be read back far enough. */
+function callerHistoryUnknown(
+  file: string,
+  blind: readonly ExerciseVerdict[],
+  judged: readonly ExerciseVerdict[],
+): ExerciseVerdict {
+  return {
+    file,
+    status: 'abstain',
+    explanation: explain(
+      `The run history of ${blind.map(named).join(', ')} was truncated before ` +
+        'reaching the merge, so whether this script has run since cannot be ' +
+        'told. This is not a claim that it has not run.',
+    ),
+    evidence: `${judged.length} referencing workflow(s); ${blind.length} with a truncated history`,
+  };
+}
+
+/**
+ * `scripts/*.mjs` -- resolved statically to the workflows that call it, then
+ * decided by their run history.
+ *
+ * **Abstains when nothing references it**, rather than reporting it never
+ * ran. Those are different facts: "no workflow calls this" is a statement
+ * about the repo, and it may well be run by a human, a hook, or a workflow
+ * that builds the command dynamically. Calling that `not-exercised` would
+ * assert something no file supports (spec D3).
+ */
 export function workflowScriptProbe(): ExerciseProbe {
   return {
     id: 'workflow-script',
@@ -233,9 +164,16 @@ export function workflowScriptProbe(): ExerciseProbe {
         ),
       );
       const ran = judged.find((v) => v.status === 'exercised');
-      return ran === undefined
-        ? everyCallerDormant(file, judged, ctx)
-        : scriptRanWith(file, ran, callers, ctx);
+      if (ran !== undefined) return scriptRanWith(file, ran, callers, ctx);
+
+      // A caller whose own history was truncated has not been shown to be
+      // dormant, so the script cannot be called dormant either. Folding an
+      // abstention into "every caller dormant" would launder the one status
+      // that admits ignorance into a claim (spec Phase 3).
+      const blind = judged.filter((v) => v.status === 'abstain');
+      if (blind.length > 0) return callerHistoryUnknown(file, blind, judged);
+
+      return everyCallerDormant(file, judged, ctx);
     },
   };
 }
