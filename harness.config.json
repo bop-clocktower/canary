@@ -211,6 +211,7 @@
         "AGENTS.md",
         "CHANGELOG.md",
         "CLAUDE.md",
+        "CONTRIBUTING.md",
         "DEPLOY_CHECKLIST.md",
         "STRATEGY.md",
         "**/SKILL.md"

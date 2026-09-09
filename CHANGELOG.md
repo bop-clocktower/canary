@@ -14,6 +14,19 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`CONTRIBUTING.md`, disclosing that fork PRs cannot currently be merged**
+  (#843). `No removed-symbol or proprietary leaks` is a required check whose
+  denylist comes only from a repository secret, and GitHub does not pass secrets
+  to fork-triggered runs — so on this public repo the gate correctly abstains
+  and fails, and no fork PR can ever go green. Nothing said so. The new file
+  states it up front, explains why the gate is right to fail, and says how to
+  land a change in the meantime; everything else points at `AGENTS.md` rather
+  than restating it. `ts/test/contributing-fork-note.test.ts` couples the
+  warning to the workflow trigger that makes it true, so it retires itself when
+  #843 lands instead of becoming a stale notice.
+
 ### Fixed
 
 - **The test duration ratchet no longer fires on a contended spawn** (#760). The
