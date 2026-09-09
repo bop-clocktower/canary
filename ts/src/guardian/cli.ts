@@ -547,7 +547,7 @@ function resolveHeadSha(deps: GuardianDeps): string | null {
 /**
  * True when the checked-out HEAD is a `pull_request` MERGE REF, not the PR head.
  *
- * This is the capwell#1853 defect (#761). `actions/checkout` on a
+ * This is the merge-ref diff defect (#761). `actions/checkout` on a
  * `pull_request` event checks out `refs/pull/<n>/merge` — the base branch
  * merged with the PR head — unless the caller passes an explicit `ref`. Any
  * diff taken to that HEAD includes every commit merged into the base branch
@@ -1455,7 +1455,7 @@ async function prCheckCmd(
   // handed, which is the number a reviewer can check against their own PR.
   // Populated even for an explicit `--diff` (where `base` is unknowable): the
   // merge-ref warning and the file count are exactly what was missing on
-  // capwell#1853, and that run passed `--diff` from a file.
+  // the consumer run that surfaced #761, which passed `--diff` from a file.
   const headSha = resolveHeadSha(deps);
   const mergeRef = detectMergeRef(headSha, deps);
   const provenance: DiffProvenance = {
@@ -1558,7 +1558,7 @@ async function prCheckCmd(
   // #761: the run judged units but VERIFIED no coverage, and every finding is a
   // naming guess. That is an abstention on the coverage denominator — a
   // different test from the findings-eligible one the two `abstainPrCheck`
-  // calls above make, and the one the capwell#1853 run needed. It does not exit
+  // calls above make, and the one that consumer run needed. It does not exit
   // through `abstainPrCheck`: those findings are worth showing, so the run keeps
   // every surface and changes only its headline and its exit code.
   const coverageAbstained = isCoverageAbstention(coverage, findings);

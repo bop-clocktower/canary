@@ -4,8 +4,9 @@
  * `skills list` groups discovered skills into four source tiers and inserts a
  * blank separator only when an earlier tier printed — a grouping ladder that a
  * real on-disk discovery run never exercises fully. `skills run` has a five-rung
- * refusal ladder (missing / errored / markdown-only / not-opted-in / bad target)
- * whose exit codes are the contract. Both are driven here through an injected
+ * refusal ladder (missing / errored / not-opted-in / bad target) whose exit
+ * codes are the contract, plus the tier-2 dispatcher (#756) that replaced the
+ * old flat markdown-only refusal. Both are driven here through an injected
  * fake registry, asserting on the rendered grouping and the exit codes.
  */
 
@@ -28,11 +29,17 @@ function skill(over: Partial<ConstructorParameters<typeof SkillInfo>[0]> = {}) {
   });
 }
 
-/** A registry stub honouring only the two methods the sub-app calls. */
+/** A registry stub honouring only the methods the sub-app calls. */
 function fakeRegistry(skills: SkillInfo[]): SkillRegistry {
   return {
     discover: () => skills,
     find: (name: string) => skills.find((s) => s.name === name) ?? null,
+    searchRoots: () => [
+      { tier: 'bundled', path: '/pkg/agents/skills', exists: false },
+      { tier: 'overlay', path: '/home/.canary/overlays', exists: false },
+      { tier: 'global', path: '/home/.canary/skills', exists: false },
+      { tier: 'local', path: '/work/.canary/skills', exists: true },
+    ],
   } as unknown as SkillRegistry;
 }
 
@@ -59,11 +66,25 @@ async function runSkills(
 }
 
 describe('skills list grouping', () => {
-  it('reports an empty discovery honestly instead of printing headers', async () => {
+  it('reports an empty discovery as an abstention, naming every root (#757)', async () => {
     const res = await runSkills(['list'], []);
     expect(res.code).toBe(0);
-    expect(res.stdout).toContain('No skills found.');
+    expect(res.stdout).toContain('Abstained');
     expect(res.stdout).not.toContain('Bundled skills:');
+    // The denominator: what was searched, and whether it was even there.
+    for (const tier of ['bundled', 'overlay', 'global', 'local']) {
+      expect(res.stdout).toContain(tier);
+    }
+    expect(res.stdout).toContain('/pkg/agents/skills');
+    expect(res.stdout).toContain('does not exist');
+    expect(res.stdout).toContain('present, no skill inside');
+  });
+
+  it('flags a missing bundled root as an install problem, not an empty repo', async () => {
+    // The #757 case exactly: an installed CLI that shipped no agents/skills
+    // told the user there were no skills, from a directory holding 21.
+    const res = await runSkills(['list'], []);
+    expect(res.stdout).toContain('bundled-skill root is missing');
   });
 
   it('prints each source tier under its own header, in precedence order', async () => {
@@ -172,12 +193,6 @@ describe('skills run refusal ladder', () => {
     );
     expect(res.code).toBe(2);
     expect(res.stdout).toContain('requires: unparseable');
-  });
-
-  it('exits 2 for a markdown-only skill', async () => {
-    const res = await runSkills(['run', 'demo'], [skill()]);
-    expect(res.code).toBe(2);
-    expect(res.stdout).toContain('markdown-only');
   });
 
   it('exits 3 without --allow-executable-skills under CI', async () => {
@@ -348,6 +363,104 @@ describe('skills run entry ladder', () => {
         [skill({ entry: `${mod}:main` })],
       );
       expect(res.code).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('skills run dispatcher tier (#756)', () => {
+  /** A prose skill on disk: no cli:, no entry:, a real SKILL.md body. */
+  function proseSkill(body: string): { dir: string; info: SkillInfo } {
+    const dir = mkdtempSync(join(tmpdir(), 'canary-prose-'));
+    const path = join(dir, 'SKILL.md');
+    writeFileSync(path, body, 'utf-8');
+    return {
+      dir,
+      info: skill({ name: 'prose', path, requires: ['node>=20'] }),
+    };
+  }
+
+  const BODY = '---\nname: prose\n---\n\n# Prose\n\nStep one.\n';
+
+  it('dispatches a skill with no cli:, instead of refusing it', async () => {
+    const { dir, info } = proseSkill(BODY);
+    try {
+      const res = await runSkills(['run', 'prose'], [info]);
+      expect(res.code).toBe(0);
+      expect(res.stdout).toContain('Step one.');
+      // The frontmatter is the registry's business, not the agent's.
+      expect(res.stdout).not.toContain('name: prose');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('labels the run agent-applied, so it cannot be read as deterministic', async () => {
+    const { dir, info } = proseSkill(BODY);
+    try {
+      const res = await runSkills(['run', 'prose'], [info]);
+      expect(res.stdout).toContain('agent-applied');
+      expect(res.stdout).toContain('canary applied no judgment');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('--json carries the label, the requirements and the forwarded args', async () => {
+    const { dir, info } = proseSkill(BODY);
+    try {
+      const res = await runSkills(
+        ['run', 'prose', '--json', '--', '--scope', 'tests/'],
+        [info],
+      );
+      expect(res.code).toBe(0);
+      const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+      expect(payload['skill']).toBe('prose');
+      expect(payload['tier']).toBe('dispatcher');
+      expect(payload['determinism']).toBe('agent-applied');
+      expect(payload['requires_agent_runtime']).toBe(true);
+      expect(payload['requires']).toEqual(['node>=20']);
+      expect(payload['args']).toEqual(['--scope', 'tests/']);
+      expect(String(payload['instructions'])).toContain('Step one.');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('dispatches under CI without --allow-executable-skills', async () => {
+    // Dispatch spawns nothing, so the flag that guards spawning does not apply.
+    // Gating it would leave the 14 CLI-less skills unreachable in exactly the
+    // non-interactive contexts #756 is about.
+    const { dir, info } = proseSkill(BODY);
+    try {
+      const res = await invokeCanary(['skills', 'run', 'prose'], {
+        env: { CI: 'true' },
+        deps: { makeSkillRegistry: () => fakeRegistry([info]) },
+      });
+      expect(res.code).toBe(0);
+      expect(res.stdout).toContain('Step one.');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('exits 2 when the SKILL.md cannot be read, never an empty success', async () => {
+    const res = await runSkills(
+      ['run', 'prose'],
+      [skill({ name: 'prose', path: '/nonexistent/prose/SKILL.md' })],
+    );
+    expect(res.code).toBe(2);
+    expect(res.stdout).toContain('ENOENT');
+    expect(res.stdout).toContain('could not be loaded');
+  });
+
+  it('exits 2 when the skill is all frontmatter and no workflow', async () => {
+    const { dir, info } = proseSkill('---\nname: prose\n---\n');
+    try {
+      const res = await runSkills(['run', 'prose'], [info]);
+      expect(res.code).toBe(2);
+      expect(res.stdout).toContain('no workflow body');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

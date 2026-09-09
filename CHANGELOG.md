@@ -14,7 +14,245 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **The test duration ratchet no longer fires on a contended spawn** (#760). The
+  load factor is a median, so it cannot see contention that lands on one test at
+  a time -- on the runner, half the tracked tests ran faster than recorded while
+  a handful each took a 200-755ms penalty, on tests whose whole recorded
+  duration is one 80ms process spawn. A firing must now also clear 2000ms of
+  absolute slowdown. It is a conjunction, not a wider ceiling: it can only
+  suppress a firing near the floor, and above the floor the 2.5x rule binds
+  exactly as before.
+- **A monorepo migrate report names the suites it walked** (#504). The workspace
+  walk landed in #586, but when the packages disagreed the scalar collapsed to
+  `Framework: unknown` and the follow-up said "no config file, dependency, or
+  language marker matched a known framework" — of a run that had just matched
+  two package configs, with the "Would Create" note adding that the project
+  "already has all Canary config files". `migrate` now prints a `## Workspace`
+  section listing every package finding beside the scanned denominator,
+  attributes the abstention to the disagreement it actually found, offers the
+  per-package route by name, and resolves a `--framework` override's shape from
+  the package that declares that framework — the root-only playwright refinement
+  reads zero spec files when the specs live in `apps/*-e2e/tests/`.
+
+### Changed
+
+- **Perf ratchet judges a PR on its own merge-base delta** (#812). The perf
+  ceiling in `.harness/perf-baseline.json` reached zero headroom on 2026-09-09
+  (233 measured against 233), at which point any PR adding a single
+  function-length finding failed `validate` whatever its own diff did — the #703
+  pathology, which the entropy ratchet had already fixed and the perf ratchet
+  had not. `scripts/perf-ratchet.mjs` now takes `--base-report` and fails on the
+  violations the branch introduced against the commit it branched from; the
+  absolute ceiling stays as a backstop, and `harness-quality.yml` scans the base
+  tree in a `$RUNNER_TEMP` worktree with the same resolved CLI. A base scan that
+  produced nothing, or collapsed implausibly, abstains rather than degrading to
+  the absolute rule.
+
+## [7.2.0] - 2026-09-08
+
 ### Added
+
+- **Test duration ratchet** (#760). `scripts/test-duration-ratchet.mjs` records
+  an expected duration per slow test and fails when one gets materially slower —
+  the pairing #760 asked for alongside the 30s `testTimeout` raise, which is
+  otherwise a ~10x window in which a real slowdown is invisible (nothing in
+  either suite runs over ~3.1s idle). Each run derives its own load factor from
+  the tracked tests themselves, so contention raises the ceiling with the noise
+  instead of producing a flaky red, and the gate ABSTAINS (exit 3) rather than
+  guess when its control group is under 10 tests, the runtime differs, or the
+  run is too contended to compare. Wired non-blocking-on-abstention in the
+  `agents/skills` job; an abstention is reported as a warning that the run
+  verified nothing, never as a pass.
+
+- **`canary-strix` ships the leak scan as a skill consumers can run** (#799).
+  The scan lived in `scripts/`, which is not in the published package's `files`,
+  so its only callers were this repo's own `docs-lint` workflow and pre-commit
+  hook — a consumer could neither run it nor add a term to it. It is now
+  family-shaped like the four deterministic detectors: `cli: scripts/cli.mjs`,
+  `--json`, the 0/1/2/3 exit contract, `requires: [node>=20]`.
+
+  It scans commit **authorship** as well as file contents, which is the half a
+  file scan can never reach: an author-field identifier is metadata, so no
+  content scan sees it.
+
+- **The katana quarantine ledger records why a test is out, not just how it
+  left** (#771, #781). Schema v2 adds `cause`, `issue`, and `expiry`, and the
+  ticket a quarantine waits on is read from a `Ticket:` trailer (`Bug:` and
+  `Tracked:` accepted, last wins) and recorded **verbatim** — a key, a URL, or
+  several — because katana cannot know one org's tracker from another's.
+
+  `cause` and `reason` stay separate on purpose: `reason` is derived from the
+  commit subject, `cause` is asserted
+  (`flaky | product-defect | blocked-data | obsolete`). Collapsing them would
+  dress an auto-derived string up as a claim someone stands behind.
+
+- **`canary skills run` can invoke a skill that ships no script** (#756). The
+  dispatcher tier harness has and canary did not: 14 of canary's 21 skills carry
+  no `cli:`, and every one of them used to exit 2 for any orchestrator, CI step,
+  or sibling skill that tried to invoke it.
+
+  Canary has no agent runtime and does not grow one here. Dispatch resolves the
+  skill and returns its executable contract — identity, `requires`, and the
+  SKILL.md body with the frontmatter stripped — stamped
+  `determinism: agent-applied` against `deterministic` for a `cli:` skill, so a
+  consumer merging findings across skills can always tell an agent's reading of
+  a ruleset from a scanner's output. `--json` emits that payload.
+
+  It is deliberately **not** gated by `--allow-executable-skills`: that flag
+  guards spawning a cloned overlay's code, and dispatch spawns nothing. Gating
+  it would leave the 14 skills unreachable in exactly the non-interactive
+  contexts the issue is about. A skill that cannot be dispatched (unreadable
+  SKILL.md, or all frontmatter and no body) exits 2 with the reason — never an
+  empty result that reads like a run which found nothing.
+
+  **Deferred:** actually executing a prose skill's workflow. That needs an agent
+  runtime, and inventing one inside a CLI would have canary claim answers it did
+  not compute.
+
+- **`canary-cassandra` ships a CLI** (#755), so all four Tier-0 detectors are
+  wireable rather than three. `cli: scripts/cli.mjs` with the sibling argument
+  surface (`[-h] [--json] [--strict] [--] [path ...]`), the sibling `--json`
+  envelope (`schema_version`, `findings[]` of
+  `{file, line, rule_id, severity, snippet, why}`, `summary`), and the family's
+  exit codes — advisory 0, `--strict` findings 1, collapsed denominator 3.
+
+  It delegates detection to the engine's existing `core/vacuity-scanner` rather
+  than carrying a second copy of the rules. That module's own docstring records
+  why: #605 accepted that `static_linter` and `quality_scorer` already overlap,
+  and a third half-enforcer would be the real defect. A hand-copied scanner
+  would have traded #755's asymmetry for two detectors that disagree. The
+  test-file collector moved to `core/test-files` for the same reason, so both
+  doors report the same denominator.
+
+  Cassandra's summary adds `tests_checked` alongside `files_scanned`: files
+  matched but holding zero tests is the subtler zero, and a file-counting
+  summary prints a healthy number over it.
+
+### Changed
+
+- **Retracted the "`excludePatterns` cannot reach a dot-directory" claim**
+  (#728). `AGENTS.md` and `ts/test/entropy-exclude-patterns.test.ts` both
+  recorded, as measured fact against CLI 11.1.1, that no `excludePatterns` entry
+  could suppress findings under a dot-directory the analyzer does not already
+  skip. It is false. The eleven-row table behind it was taken at a
+  long-lived-working-directory baseline of 346 — a number unresponsive to the
+  config under test — and the upstream report carrying it
+  (`Intense-Visions/harness-engineering#1345`) was withdrawn by its own author
+  as NOT_PLANNED. Re-measured in a fresh worktree at `29ad0f2` on CLI 12.4.0 and
+  12.2.0: a `.kiro` probe reads 147 unexcluded and 145 excluded against a 145
+  baseline. The dot-directory is still _walked_, so the `DEFAULT_SKIP_DIRS` half
+  stands. `.kiro/**` and `.remember/**` remain out of `harness.config.json`, but
+  for a corrected reason — they are untracked machine-local paths whose
+  suppression can never be demonstrated in CI, not because an absent directory
+  makes the pattern vacuous.
+
+### Fixed
+
+- **Seven skill CLIs truncated a large `--json` payload while still exiting 0**
+  (#791). They ended with `process.exit(main(...))`, and `process.exit()`
+  terminates without waiting for stdout to drain. When stdout is a pipe rather
+  than a TTY — every CI step, every `| jq`, every orchestrator call — writes are
+  asynchronous, so the document was cut at the pipe buffer and the process still
+  reported success.
+
+  Measured on `canary-blackhawk` over a 400-file corpus, same tree, same minute:
+  `process.exit(main(...))` delivered **131072 bytes** — the pipe buffer,
+  exactly — and exited 0; `process.exitCode = main(...)` delivered the whole
+  **175271-byte** document and exited 0. A consumer reading exit 0 got either a
+  parse error it blamed on itself, or a valid-looking prefix.
+
+  It fires precisely on the large runs where the findings matter most, so the
+  CLIs that had not misbehaved yet were not safe, merely small. All nine now set
+  `process.exitCode`, and a conformance test fails the build if
+  `process.exit(main(...))` returns.
+
+- **`canary-instrument` wrote `url: ""` on every request while announcing the
+  artifact was written** (#782). `run.json` exists to answer "which test hit
+  which endpoint", so a URL-less artifact reads as "no endpoints exercised" and
+  renders a clean 0% as though it were a measurement. The span reader was on
+  pre-1.23 OpenTelemetry semantic conventions (`http.url`, `http.status_code`),
+  which the auto-instrumentation this skill tells consumers to install does not
+  emit; it now reads the conventions a real captured span carries.
+
+- **The strix denylist leaked comment prose past a comma** (#818). Splitting on
+  `[,\n]` happened _before_ comment fragments were dropped, so any fragment
+  after a comma on a `#` line survived as a scan term. On this repo's own
+  denylist that was **15 terms scanned against 7 real ones** — 8 phantoms, one
+  of them the words "and on a", which raised three findings on a clean `main`.
+
+  Both harms matter, and the second is the worse one: a leak gate that cries
+  wolf on the word "and" stops being read, and an inflated denominator makes the
+  scan look like it covered more than it did.
+
+- **Five of nine `cli:` skills had no documented command anyone could run**
+  (#707). #487's checker worked on its first run and what it reported was a
+  denominator problem: 4 examples executed out of 33. A skill in that state can
+  break in every documented way and CI stays green, which is the false-green
+  shape the check was built to close.
+
+  Two changes. A code-bearing skill whose documented commands are all unrunnable
+  is now a FINDING (`no-executable-example`) rather than a bare abstention — a
+  finding outranks abstention because it proves the corpus was inspected and
+  names the skill responsible. And the five skills it named (`canary-cassandra`,
+  `canary-fail-fast`, `canary-shadow`, `canary-strix`, `canary-test-reporter`)
+  each gained a placeholder-free `--help` example. Measured: executed **4 → 9**,
+  findings 1 → 0. `canary-shadow`, which documented no command at all, has one.
+
+  The unverifiable bucket was also two facts wearing one number — "nobody could
+  run this" and "this was never meant to be run" — and merging them hid the real
+  gaps inside the pile. `<!-- canary:illustrative -->` above a fence declares
+  the second, and the summary line, `--json`, and the CI annotation all report
+  `executed / illustrative / unverifiable / total` separately. Marking is not an
+  escape hatch: it changes one block's reason and never the executable rule, so
+  a skill cannot mark its way to green.
+
+  Not the finish line, and the issue said so first: 40 examples remain
+  unverifiable. They are now readable rather than a pile — 32 are real
+  side-effecting commands and 8 carry placeholders.
+
+- **The entropy ratchet blamed whichever branch merged second** (#703). The
+  ceiling in `.harness/entropy-baseline.json` is an absolute total, which makes
+  headroom a shared budget no branch can see: measured off one `main` in a
+  single session, batch C reported 296 and batch B 297 against a 297 ceiling —
+  both green, both honest — and the merge of the two reported 299 and failed.
+  Merge order decided who got blamed for findings neither of them individually
+  caused, and with headroom that thin the gate effectively capped the repo at
+  one in-flight PR touching `src`.
+
+  `scripts/entropy-ratchet.mjs` now takes `--base-report` and fails on the delta
+  a branch introduces against **its own merge base**, which is order-independent
+  and visible to the author. `harness-quality.yml` scans the base tree in the
+  same job with the same resolved CLI — a count is only comparable to another
+  count from the same analyzer, and this one has moved 24 and then 110 findings
+  across CLI minors with no code change at all.
+
+  The absolute ceiling stays as a backstop, so a long run of +0 merges still
+  cannot walk the total upward, and raising `maxFindings` to make a failing
+  check pass remains the one forbidden move. A base report that carries no
+  contract line ABSTAINS (exit 3) rather than degrading to the absolute rule: a
+  base that could not be measured is not a base of zero. Not closed by this —
+  `measuredCount` is still refreshed by hand, and the same staleness in
+  `.harness/arch/baselines.json` (#689) is untouched.
+
+- **`canary skills list` could not see any bundled skill from an installed CLI**
+  (#757). It reported `No skills found.` from the repo root, from a clean
+  worktree, and from `agents/skills/claude-code/` itself — the directory holding
+  21 `SKILL.md` files.
+
+  It was never a cwd bug, which is why standing inside the skills directory
+  changed nothing: bundled discovery resolves relative to the **engine's own
+  compiled location**, three directories up from its `core/` module. In the
+  published package that is `<pkg>/agents/skills`, and `package.json#files`
+  shipped `bin/` and `dist/` only. The root the engine looked in had never
+  existed in any install. `npm/scripts/build-engine.mjs` now stages the skill
+  tree there and fails the build if it stages zero, and `files` publishes it.
+
+  The message was the second defect. A count of zero is an abstention unless the
+  denominator is stated, so an empty discovery now prints the abstention line
+  and names all four search roots with whether each one even existed — and calls
+  out a missing bundled root as an install problem rather than an empty repo.
 
 - **`guardian pr-check` states what it diffed** (#761). Every surface — the
   sticky PR comment, `--format json`, and the terminal output — now carries a
@@ -38,16 +276,16 @@ under the project's former name) are documented in the
   feature: a reviewer checks it against the file list GitHub shows them, so it
   must count what guardian was handed, not what it went on to score.
 
-  The failure that earned it, capwell#1853: a PR whose entire diff was **one
-  markdown file** was analyzed as **43**, and guardian reported six files the PR
-  never touched. CI had checked out the `pull_request` **merge ref** — the base
-  branch merged with the PR head — so the triple-dot merge base degenerated to
-  the base sha itself (it is an ancestor of the merge commit) and the range
-  swept in every commit merged into the base branch since. Nothing on the
-  surface contradicted it: the comment named only the HEAD side, through finding
-  permalinks, and never said what it diffed _against_ or how many files it saw.
-  A reviewer who knows their PR is one file can now see `43 files` and stop
-  reading the rows.
+  The failure that earned it, in a consumer repo: a PR whose entire diff was
+  **one markdown file** was analyzed as **43**, and guardian reported six files
+  the PR never touched. CI had checked out the `pull_request` **merge ref** —
+  the base branch merged with the PR head — so the triple-dot merge base
+  degenerated to the base sha itself (it is an ancestor of the merge commit) and
+  the range swept in every commit merged into the base branch since. Nothing on
+  the surface contradicted it: the comment named only the HEAD side, through
+  finding permalinks, and never said what it diffed _against_ or how many files
+  it saw. A reviewer who knows their PR is one file can now see `43 files` and
+  stop reading the rows.
 
   The line prints on **every** comment, clean or not. A line that appears only
   when something is wrong teaches readers to skip it when it does appear — and
@@ -67,10 +305,104 @@ under the project's former name) are documented in the
   existed, and the run should have abstained ("verified zero items; this is not
   a pass"). Abstention requires zero findings-eligible units — the phantom files
   supplied findings, so a run that verified nothing headlined a finding count
-  instead. Guardian is disabled in capwell (capwell#1961) until that closes and
-  the dogfooding bar in #761 is met.
+  instead. Guardian is disabled in that consumer repo until that closes and the
+  dogfooding bar in #761 is met.
 
-### Fixed
+- **CI signal hygiene: three checks that lied in three different ways** (#769,
+  #698, #693). None of the three could stop a merge, which is what they have in
+  common and why they were batched — each one teaches a reader to trust a
+  surface that is not telling the truth.
+
+  **The permanently-red `Vercel` status is suppressed** (#769). It reported
+  failure on every PR and on `main` from 3659ea9 onward, because canary is a CLI
+  and skills toolkit with no deployable web surface and a connected Vercel
+  project has nothing it can build. It was never a required context, so it
+  blocked nothing — and that is the harm: a check that is _always_ red is
+  indistinguishable from one that is red because something broke, so it trains
+  every reviewer to skim past a red X. `vercel.json` now declares
+  `git.deploymentEnabled: false`, the documented lever that makes the Git
+  integration skip creating a deployment at all. **Disconnecting the project is
+  still the correct end state and can only be done from the Vercel dashboard** —
+  the repo-side half is the durable one, since it travels with forks and cannot
+  be undone by a click nobody sees.
+
+  It also exposed a real gap: `ts/test/workflow-false-green.test.ts` enumerates
+  checks by parsing workflow YAML, so a status posted by a **GitHub App** is
+  outside its denominator by construction, and any app can add a permanently-red
+  context that nothing in the repo accounts for. `.github/required-checks.json`
+  grows an `externalStatuses` section for exactly that class, and the suite now
+  asserts it is non-empty, that every entry names a producer and a reason, that
+  no entry double-classifies a workflow-produced check, and that an entry
+  claiming a repo-side suppression actually carries the file — the suppression
+  is asserted, not the note about it.
+
+  **The "Architecture Enforcer" check is renamed to what it does** (#698). Its
+  job ran `harness check-deps` and `harness validate`; neither reads
+  `.harness/arch/baselines.json`, so the check named for the architecture
+  ratchet never ran the architecture ratchet. That is the direct cause of the
+  "gate disagrees with itself" symptom in #678 — CI green here while a local
+  `harness check-arch` exited 1 with 21 threshold violations. Both were correct;
+  only the name said otherwise, and a wrong name is the most durable false-green
+  of the set because, unlike a wrong number, it never looks anomalous. The
+  workflow is now **Dependency & project validation** and the job — and
+  therefore the required status context — is `deps-and-validate`. The workflow
+  file keeps its name: it is referenced from AGENTS.md, ADR 0011, two guides,
+  the manifest and two suites, and renaming it would also discard the run
+  history. The rejected alternative, making the name true by adding `check-arch`
+  here, stays rejected: 21 pre-existing violations would block every merge,
+  which is a separate decision that must not ride along with a rename.
+
+  The context string is a **required** entry in ruleset 16189198, so the
+  workflow, `.github/required-checks.json` and the ruleset had to move together
+  and the ruleset edit is a manual `gh api` step — a required context that no
+  longer reports blocks every PR forever.
+
+  **`entropy.drift.docPaths` is widened past `docs/**` + READMEs** (#693). Left
+  unset it defaults to `docs/**/*.md`, `README.md`, `**/README.md`, which put
+  `AGENTS.md`, `CHANGELOG.md`, `CLAUDE.md`, `STRATEGY.md`, `DEPLOY_CHECKLIST.md`
+  and all 21 `SKILL.md` files outside the drift gate's denominator — the
+  surfaces that describe how to operate this repo, none of them read by the gate
+  that exists to keep documentation honest. It was blocked on #686 (fence-blind
+  links, emoji-heading anchors); #686 is closed and the fence fix shipped in CLI
+  11.2.0, so the false-positive wave it predicted does not arrive.
+
+  **Measured before and after, per the issue's acceptance:** `harness cleanup`
+  reports **136 findings before and 136 after** — `dead-code` 136, `drift` 0,
+  `patterns` 0 under both. The ratchet is untouched at `maxFindings: 145` and no
+  baseline was refreshed.
+
+  **Why the number did not move was the finding, and it has since changed.** A
+  zero delta on a widened denominator is the shape of a detector that did not
+  widen, so it was probed rather than assumed. At CLI 12.2.0 the probe showed
+  the widening was inert: `harness cleanup` — the command CI and the ratchet
+  actually run — hard-coded `docPaths: [join(docsDir, '**/*.md')]` and never
+  read `entropy.drift.docPaths`, so the config was correct and had no effect,
+  and no README anywhere was in the CI drift denominator either (#788).
+
+  **Fixed upstream at CLI 12.4.0, and re-probed rather than taken on trust.**
+  The key is now honoured on the CI path. An identical dead link appended one
+  file at a time to a clean tree reporting drift 0 is reported for
+  `docs/CANARY_STATE.md` (the control), `AGENTS.md`, `STRATEGY.md` and
+  `agents/skills/claude-code/canary-katana/SKILL.md` — and, the row that
+  actually carries it, is **not** reported when `AGENTS.md` is deleted from
+  `docPaths`. Three surfaces firing would look identical if the CLI had merely
+  widened its hard-coded default; removing one entry and watching its planted
+  link go quiet is what proves the config is what widened the denominator. So
+  the acceptance number stands as a real measurement: the widening added **0**
+  findings across `AGENTS.md`, `CHANGELOG.md`, `CLAUDE.md`, `STRATEGY.md`,
+  `DEPLOY_CHECKLIST.md` and all 21 `SKILL.md` files. #788 is closed.
+
+  `scripts/check_doc_links.mjs` stays regardless — 254 Markdown files, no path
+  allowlist, strict-at-zero in the blocking suite, exit 3 on an empty walk. It
+  does not move when the harness CLI floats, and the CLI has now moved this
+  check's behaviour five releases running.
+
+  `ts/test/entropy-doc-paths.test.ts` pins the declared list against what is on
+  disk, because an allowlist's denominator shrinks silently: it fails when a
+  root-level Markdown file, a `README.md` or a `SKILL.md` exists that no glob
+  matches, fails on an empty list, and fails on an empty walk. Adding
+  `docs/runbooks/` or a new skill now fails at the desk instead of joining an
+  invisible unscanned pile.
 
 - **The typecheck gate now covers the test tree** (#759). `npm run typecheck`
   ran `tsc -p .` against a config declaring `"include": ["src"]`, so all 150+
@@ -2950,7 +3282,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v7.1.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v7.2.0...HEAD
+[7.2.0]: https://github.com/bop-clocktower/canary/compare/v7.1.0...v7.2.0
 [7.1.0]: https://github.com/bop-clocktower/canary/compare/v7.0.0...v7.1.0
 [7.0.0]: https://github.com/bop-clocktower/canary/compare/v6.8.1...v7.0.0
 [6.8.1]: https://github.com/bop-clocktower/canary/compare/v6.8.0...v6.8.1

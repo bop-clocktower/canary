@@ -67,6 +67,52 @@ const HELP_FLAGS = new Set(['--help', '-h', '--version', '-V']);
 /** Non-mutating subcommands worth executing even without a help flag. */
 const READ_ONLY_COMMANDS = new Set(['canary skills list']);
 
+/**
+ * The author's declaration that a block is illustrative (#707).
+ *
+ * Placed on its own line immediately above the fence it governs:
+ *
+ *     <!-- canary:illustrative -->
+ *     ```bash
+ *     canary katana scan --since HEAD~1
+ *     ```
+ *
+ * Two facts land in the same "unverifiable" bucket and they are not the same
+ * fact: "nobody could run this" and "this was never meant to be run". The
+ * first is a gap in the corpus; the second is a deliberate authoring choice.
+ * Collapsing them is what let 88% of the corpus read as coverage debt when
+ * some of it was prose doing its job — and, worse, hid the real gaps inside
+ * the pile.
+ *
+ * Marking is NOT an escape hatch from the executable-example rule. It changes
+ * the reason on one block; a code-bearing skill still has to carry at least
+ * one example that actually runs (`no-executable-example`), so a skill cannot
+ * mark its way to green.
+ */
+const ILLUSTRATIVE_MARKER = /^\s*<!--\s*canary:illustrative\s*-->\s*$/;
+
+/**
+ * The reason carried by a declared-illustrative example.
+ *
+ * Exported because the summary line splits the unverifiable bucket on it
+ * (see {@link countDeclaredIllustrative}). A string literal compared in two
+ * files is a drift waiting to happen, and the drift would be silent: the
+ * split would quietly read 0 declared and the distinction this issue exists
+ * to draw would be gone with nothing red.
+ */
+export const ILLUSTRATIVE_REASON =
+  'declared illustrative by the author, so it is not run';
+
+/**
+ * How many of a gate's skipped examples were skipped BY DECLARATION.
+ *
+ * The rest are the honest gap: examples nobody could run and nobody said
+ * were prose.
+ */
+export function countDeclaredIllustrative(skipped: SkipEntry[]): number {
+  return skipped.filter((s) => s.reason === ILLUSTRATIVE_REASON).length;
+}
+
 /** One command line a SKILL.md tells the reader to run. */
 export interface DocumentedExample {
   /** The skill whose SKILL.md carries it. */
@@ -78,6 +124,11 @@ export interface DocumentedExample {
   /** 1-based source line, so a finding points at the doc that lied. */
   line: number;
   executable: boolean;
+  /**
+   * The author marked this block illustrative (#707), so it is unverifiable
+   * BY DECLARATION rather than because the classifier could not run it.
+   */
+  declaredIllustrative: boolean;
   /** Why it cannot be executed. Set exactly when `executable` is false. */
   reason: string | null;
 }
@@ -103,6 +154,14 @@ export enum ExampleFindingKind {
   ExampleFailed = 'example-failed',
   /** A code-bearing skill's doc offers no command to execute at all. */
   NoDocumentedExample = 'no-documented-example',
+  /**
+   * A code-bearing skill documents commands, but not one of them can be run
+   * (#707). Distinct from {@link NoDocumentedExample}, and it was the larger
+   * hole: 5 of 9 `cli:` skills sat here while the corpus looked documented.
+   * A skill in this state can break in every documented way and CI stays
+   * green, which is the false-green shape the whole check exists to close.
+   */
+  NoExecutableExample = 'no-executable-example',
 }
 
 export interface ExampleFinding {
@@ -146,11 +205,18 @@ function closesFence(
 }
 
 /** Shell-fenced lines with their 1-based source line numbers. */
-function fencedShellLines(text: string): { line: number; raw: string }[] {
-  const out: { line: number; raw: string }[] = [];
+function fencedShellLines(
+  text: string,
+): { line: number; raw: string; illustrative: boolean }[] {
+  const out: { line: number; raw: string; illustrative: boolean }[] = [];
   const lines = text.split('\n');
   let fence: string | null = null;
   let shell = false;
+  let illustrative = false;
+  // The marker governs the NEXT fence, so it survives the blank line authors
+  // naturally leave between a comment and a block, and is spent by the fence
+  // it opens — a marker cannot leak onto a later, unrelated example.
+  let pendingMarker = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     const delimiter = /^\s*(`{3,}|~{3,})\s*([A-Za-z0-9_+-]*)/.exec(line);
@@ -160,15 +226,21 @@ function fencedShellLines(text: string): { line: number; raw: string }[] {
       if (delimiter) {
         fence = delimiter[1]!;
         shell = SHELL_FENCES.has((delimiter[2] ?? '').toLowerCase());
+        illustrative = pendingMarker;
+        pendingMarker = false;
+        continue;
       }
+      if (ILLUSTRATIVE_MARKER.test(line)) pendingMarker = true;
+      else if (line.trim() !== '') pendingMarker = false;
       continue;
     }
     if (closesFence(line, delimiter, fence)) {
       fence = null;
       shell = false;
+      illustrative = false;
       continue;
     }
-    if (shell) out.push({ line: i + 1, raw: line });
+    if (shell) out.push({ line: i + 1, raw: line, illustrative });
   }
   return out;
 }
@@ -212,7 +284,7 @@ export function extractExamples(
   path: string,
 ): DocumentedExample[] {
   const out: DocumentedExample[] = [];
-  for (const { line, raw } of fencedShellLines(text)) {
+  for (const { line, raw, illustrative } of fencedShellLines(text)) {
     // Strip a `$ ` or `> ` shell prompt; a doc that shows a prompt is still
     // documenting the command after it.
     const command = raw
@@ -221,8 +293,31 @@ export function extractExamples(
       .trim();
     if (command === '' || command.startsWith('#')) continue;
     if (command !== 'canary' && !command.startsWith('canary ')) continue;
+    // A declaration beats an inference. The author saying "this is prose"
+    // is a better fact than the classifier guessing why it could not run,
+    // and it is the fact a reader of the skipped list needs.
+    if (illustrative) {
+      out.push({
+        skill,
+        path,
+        command,
+        line,
+        executable: false,
+        declaredIllustrative: true,
+        reason: ILLUSTRATIVE_REASON,
+      });
+      continue;
+    }
     const { executable, reason } = classify(command);
-    out.push({ skill, path, command, line, executable, reason });
+    out.push({
+      skill,
+      path,
+      command,
+      line,
+      executable,
+      declaredIllustrative: false,
+      reason,
+    });
   }
   return out;
 }
@@ -340,6 +435,21 @@ export function checkExamples(
         });
       }
       continue;
+    }
+    // #707: documenting commands is not the same as documenting a RUNNABLE
+    // one. The cheapest fix is the skill's own `--help`, which needs no
+    // fixtures, credentials or network — and marking blocks illustrative
+    // cannot satisfy this, so the declaration stays honest.
+    if (codeBearing(decl) && !examples.some((e) => e.executable)) {
+      tally.findings.push({
+        kind: ExampleFindingKind.NoExecutableExample,
+        skill: decl.name,
+        path: decl.path,
+        detail:
+          `declares a \`cli:\` and documents ${examples.length} command(s), ` +
+          'but none is executable, so nothing in its doc has ever been run. ' +
+          'Add one placeholder-free help-shaped example (its own `--help`).',
+      });
     }
     tallyDeclaration(decl, runExamples(examples, run, cwd), tally);
   }

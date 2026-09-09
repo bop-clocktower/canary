@@ -5,6 +5,28 @@ export default defineConfig({
     // Fixture files under test/fixtures/** are inputs, not suites — keep the
     // test/ glob shallow so a fixture named *.test.ts is never collected.
     include: ['src/**/*.test.ts', 'test/*.test.ts'],
+    // #760. A large share of this suite shells out -- `git` in a fixture repo,
+    // a skill CLI as a node subprocess -- and vitest's 5s default is a budget
+    // for an in-process unit test, not for a case that spawns half a dozen
+    // processes while the rest of the suite competes for the same cores. The
+    // symptom is unmistakable and was hit repeatedly: passes in isolation,
+    // times out under `npm test`, on a different file each run.
+    //
+    // Raised once, here, rather than per file. A per-file budget fixes the
+    // file someone happened to notice and leaves the next one to be discovered
+    // as a flake in CI -- which is exactly how this was found three times.
+    //
+    // 30s only stops a contended test being reported as a failure. It does
+    // NOT bound a hang -- an earlier version of this comment claimed "a
+    // genuinely hung test must still fail", which is false. Every subprocess
+    // call in this suite is synchronous (`spawnSync`/`execFileSync`, none
+    // passing a `timeout:`), which blocks the worker thread so vitest's timer
+    // cannot fire. #760's own 39-56s durations RECORDED AGAINST A 5000ms LIMIT
+    // are the proof: a real interrupt reports ~5000ms, so those tests ran to
+    // completion and were labelled timed-out afterwards. Only a child-level
+    // `timeout:` bounds a sync spawn. Those severe cases remain unfixed and
+    // are still real slowness worth chasing.
+    testTimeout: 30_000,
     coverage: {
       provider: 'v8',
       // `lcov` is what the PR guardian consumes (#655). Its `.json` reader

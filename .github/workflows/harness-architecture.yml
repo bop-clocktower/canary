@@ -1,10 +1,32 @@
-name: Architecture Enforcer
+# Renamed from "Architecture Enforcer" / job `enforce` by #698.
+#
+# The old name asserted something the job does not do. Its steps are
+# `harness check-deps` and `harness validate`; neither reads
+# `.harness/arch/baselines.json`, so the check named for the architecture
+# ratchet never ran the architecture ratchet. That is the direct cause of the
+# "gate disagrees with itself" symptom in #678 — CI reported pass here while a
+# local `harness check-arch` exited 1 with 21 threshold violations. Both were
+# correct; they were measuring different things, and only the name said
+# otherwise. A wrong number looks anomalous; a wrong name never does.
+#
+# The architecture ratchet lives in the `harness` required check
+# (`harness.yml` -> `harness ci check` plus the `check-arch` detail report that
+# `scripts/arch-verdict.mjs` classifies). Do NOT put "architecture" back in
+# this job's name unless it actually runs `check-arch` — see the rejected
+# alternative in #698 (21 pre-existing threshold violations would block every
+# merge).
+#
+# The FILE keeps its name. `harness-architecture.yml` is referenced from
+# AGENTS.md, ADR 0011, two guides, `.github/required-checks.json` and two test
+# suites, and a file rename also discards the workflow's run history. The
+# check context is what a reviewer reads on a PR; the filename is not.
+name: Dependency & project validation
 
-# The pull_request path filter was removed with #542: `enforce` is required by
-# ruleset 16189198, and a required check behind a path filter never reports on a
-# PR outside those paths, so the PR can never merge. This also retires the #549
-# self-listing workaround for this trigger — a workflow that always runs cannot
-# fail to gate its own file.
+# The pull_request path filter was removed with #542: this workflow's job is
+# required by ruleset 16189198, and a required check behind a path filter never
+# reports on a PR outside those paths, so the PR can never merge. This also
+# retires the #549 self-listing workaround for this trigger — a workflow that
+# always runs cannot fail to gate its own file.
 on:
   pull_request:
   push:
@@ -18,7 +40,12 @@ env:
   HARNESS_CLI: '@harness-engineering/cli@12'
 
 jobs:
-  enforce:
+  # The job id IS the check context GitHub reports (no `name:` is set), so this
+  # identifier is the string in ruleset 16189198's `required_status_checks` and
+  # in `.github/required-checks.json`. Changing it changes the required
+  # context: the three must move together, and the ruleset edit is a manual
+  # `gh api` step. See #698 and the PR that landed this rename.
+  deps-and-validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

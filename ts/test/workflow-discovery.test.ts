@@ -909,9 +909,24 @@ describe('default seams', () => {
     expect(r.returncode).toBe(3);
   });
 
+  /**
+   * The path is absolute on purpose (#785).
+   *
+   * This case used to pass a bare name, `definitely-not-a-real-binary-xyz-123`,
+   * which makes `spawnSync` hand the lookup to `execvp` and walk `$PATH`. POSIX
+   * has `execvp` report EACCES, not ENOENT, when *any* candidate directory was
+   * unsearchable — even though no candidate ever matched. On a machine with a
+   * `0700 root:wheel /usr/local/bin` (a real developer machine here) the whole
+   * walk therefore surfaced `EACCES`, `defaultSubprocess` rethrew the raw
+   * errno, and the assertion failed on an untouched checkout while CI stayed
+   * green. The Node version was never the variable; the `$PATH` was.
+   *
+   * An absolute path skips the walk entirely, so the ENOENT this case is about
+   * is the only errno it can produce, on any machine.
+   */
   it('defaultSubprocess throws CommandNotFoundError for a missing binary', () => {
     expect(() =>
-      defaultSubprocess(['definitely-not-a-real-binary-xyz-123']),
+      defaultSubprocess([join(tmp(), 'definitely-not-a-real-binary-xyz-123')]),
     ).toThrow(CommandNotFoundError);
   });
 });

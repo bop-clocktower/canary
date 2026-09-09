@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       - name: Build the engine
         run: |
@@ -58,6 +58,20 @@ jobs:
       # unchanged, and the count comes from `--json` either way. Baseline at
       # time of wiring: 101 findings (27 ts/test, 2 npm, 72 agents/skills/test),
       # triage tracked in #705/#706.
+      #
+      # After that triage the vacuity half reads 19 (15 ts/test, 2 npm, 2
+      # agents/skills/test), all `VAC-002` at `import-inferred` fidelity;
+      # `VAC-001`, `VAC-003` and `SOUND-*` are at zero across all three trees.
+      # The bulk of the drop was the inference learning to SEE namespace
+      # imports, dynamic imports and subprocess targets (#705) rather than any
+      # rule being narrowed -- the finding count fell because the false
+      # positives were false, and VAC-002 still fires on the residue.
+      #
+      # NOT ratcheted to strict here, and the reason is mechanical rather than
+      # a lack of appetite: this step counts every rule from three commands into
+      # one number, so there is no per-rule gate to promote `SOUND-*`/`VAC-001`
+      # through while `VAC-002` (per #705) and `review-test`'s LINT-006 backlog
+      # are deliberately still advisory. Promoting needs a per-rule count first.
       #
       # `promote-check` is deliberately NOT here. It is a single-file gate and
       # abstains (exit 3) on a directory, so adding it would manufacture a
@@ -121,7 +135,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       # Deliberately NOT `node ts/bin/canary.js`: this installs the packed
       # tarball exactly as a consumer would, so the bundled engine, the bin
@@ -199,7 +213,7 @@ jobs:
       # whether the engine compiles on an old Node (it does not, by design).
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       - name: Pack the npm package
         run: |
@@ -267,7 +281,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       # The examples half SPAWNS the CLI, so it needs a real build. Without
       # one, `skills verify` abstains and says why rather than reporting a
@@ -299,8 +313,14 @@ jobs:
                 console.log(`::warning title=${f.kind}::${f.skill ?? f.name}: ${f.detail}`);
               }
             }
+            // #707: the skipped bucket is TWO facts and only one is a gap —
+            // blocks nobody could run, and blocks the author declared prose
+            // with `<!-- canary:illustrative -->`. Reporting the sum alone is
+            // what let 4-executed-of-33 read as coverage for a full cycle.
             const skipped = r.examples.skipped.length;
-            if (skipped) console.log(`::notice title=Unverifiable examples::${skipped} documented example(s) could not be executed; each carries its reason in surfaces.json.`);
+            const illustrative = r.examples.illustrative ?? 0;
+            const total = r.examples.checked + skipped;
+            console.log(`::notice title=Example denominator::executed=${r.examples.checked} illustrative=${illustrative} unverifiable=${skipped - illustrative} total=${total}`);
             process.exit(broke);
           '
 
@@ -321,7 +341,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       - name: Build the engine
         run: |
@@ -373,7 +393,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       - name: Fetch the base branch
         env:

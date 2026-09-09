@@ -6,62 +6,50 @@
  * against the triaged baseline in `.harness/perf-baseline.json`. Above the
  * baseline, the build fails.
  *
- * Why this exists: `check-perf` was referenced by no workflow in
- * `.github/workflows/` at all, so its 237 violations at 8c865b5 protected
- * nothing and its output was not evidence of anything. This is the same wiring
- * `entropy-ratchet.mjs` gave `harness cleanup` in #544 — an absolute ceiling
- * that may fall and never rise — and it is a ratchet rather than strict-at-zero
- * for the same reason: 237 findings is a real backlog, and a gate that blocks
- * every PR on day one gets demoted to advisory within a week, which is how a
- * blocking gate becomes wallpaper.
+ * Why this exists: `check-perf` ran in no workflow, so its 237 violations at
+ * 8c865b5 protected nothing. Same wiring `entropy-ratchet.mjs` gave `harness
+ * cleanup` in #544 — a ceiling that may fall and never rise — and a ratchet
+ * rather than strict-at-zero because a gate that blocks every PR on day one
+ * gets demoted to advisory within a week.
  *
  * ## Why the parse is defensive
  *
- * `harness cleanup` has `--findings-json` and emits a machine contract line.
- * `check-perf` has no such flag (CLI 11.1.1 offers only `--structural`,
- * `--coupling`, `--size`, `--severity`), so this script parses human-readable
- * output — which has a failure mode the JSON contract does not:
+ * `check-perf` has no `--findings-json`, so this parses human-readable output:
  *
  *     x Validation failed (237 issues)   <- carries its own denominator
  *     v validation passed                <- carries NOTHING
  *
- * A genuinely clean tree prints the second line. So does a run that measured
- * nothing. Measured on the same tree in the same minute at 8c865b5:
+ * A clean tree prints the second line. So does a run that measured nothing —
+ * and so do `--coupling` and `--size`, which report a pass over the findings
+ * that are their own subject (ADR 0014). Hence two guards, neither sufficient
+ * alone: an IMPLAUSIBLE ZERO is an abstention here (`isImplausibleCollapse`),
+ * and `ts/test/workflow-false-green.test.ts` asserts the wired invocation
+ * carries no narrowing flag.
  *
- *     harness check-perf              -> x Validation failed (237 issues)
- *     harness check-perf --coupling   -> v validation passed
- *     harness check-perf --size       -> v validation passed
+ * ## Two rules, not one (#812, porting #703)
  *
- * The 237 is 209 structural + 26 coupling-ratio + 2 import-count findings.
- * `--structural` correctly reports its 209; `--coupling` reports a *pass* over
- * the 28 findings that are its own subject. The narrowing flags do not narrow
- * the check, they silence it into a green tick. Filed upstream; until it is
- * fixed, the flags are unusable here.
- *
- * This matters concretely rather than theoretically, because scoping the gate
- * to `--coupling` is the obvious way to make check-perf blockable on day one:
- * 28 findings is a tractable backlog and 237 is not. So there are two guards:
- *
- *   1. An IMPLAUSIBLE ZERO is an abstention (see `isImplausibleCollapse`). A
- *      repo carrying a 237-violation baseline does not reach 0 in one PR. A
- *      cliff that steep is the signature of a check that stopped measuring.
- *   2. `ts/test/workflow-false-green.test.ts` asserts the wired invocation
- *      carries no narrowing flag, so the trap cannot be entered upstream of
- *      this script.
- *
- * Neither is sufficient alone: guard 1 goes quiet once the baseline is
- * ratcheted near zero, and guard 2 cannot see an upstream change to what a
- * bare `check-perf` measures.
+ * An absolute ceiling makes headroom a shared, non-renewable budget no branch
+ * can see, so two independently-green branches collide and whichever merges
+ * second is blamed for violations it did not add. The perf ceiling reached
+ * zero headroom on 2026-09-09 (233 measured against 233). When the caller
+ * supplies `--base-report` — the same check run against the PR's merge base —
+ * this also fails on the delta the branch itself introduced, which is
+ * order-independent. The ceiling stays as a BACKSTOP; either rule can fail.
+ * The workflow must scan both sides with the same resolved CLI and keep the
+ * base worktree outside the checkout; `ts/test/perf-ratchet.test.ts` asserts
+ * both against the YAML.
  *
  * Usage:
  *   harness check-perf > report.txt 2>&1 || true
- *   node scripts/perf-ratchet.mjs --report report.txt
+ *   node scripts/perf-ratchet.mjs --report report.txt \
+ *     [--base-report base-report.txt] [--cli-version 12.6.0]
  *
  * Exit codes follow the repo's gate convention (#508):
- *   0 = verified — violations are at or under the baseline
- *   1 = the ratchet fired — violations grew past the baseline
+ *   0 = verified — at or under the baseline, and at or under the merge base
+ *   1 = the ratchet fired — violations grew past the baseline or the base
  *   2 = error — the baseline file is missing or unreadable
- *   3 = ABSTENTION — nothing was measured, or the zero is implausible
+ *   3 = ABSTENTION — nothing was measured on either side, or a zero is
+ *       implausible. A base that could not be measured is not a base of zero.
  */
 
 import { readFileSync } from 'node:fs';
@@ -72,34 +60,36 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_BASELINE = join(REPO_ROOT, '.harness', 'perf-baseline.json');
 
 /**
- * Slack above which the baseline is stale enough to mention. Not a failure —
- * a codebase that got better should never turn the build red — but an
- * unratcheted ratchet is just a number in a file.
+ * Slack above which the baseline is stale enough to mention. Never a failure:
+ * a codebase that got better must not turn the build red.
  */
 const NUDGE_SLACK = 20;
 
 /**
- * Below this baseline, the implausible-collapse guard switches off entirely.
- * A project carrying a handful of violations can legitimately clear them in
- * one change, and refusing to believe a real zero would make the gate
- * impossible to ever satisfy — the failure mode this whole file exists to
- * avoid, just pointing the other way.
+ * Below this baseline the implausible-collapse guard switches off: a handful
+ * of violations can legitimately clear in one change, and refusing to believe
+ * a real zero would make the gate impossible to ever satisfy.
  */
 const COLLAPSE_GUARD_MIN_BASELINE = 20;
 
 /**
  * The fraction of the baseline below which a sudden drop reads as a check that
  * stopped measuring rather than a codebase that improved. Deliberately loose:
- * a real paydown lands somewhere in the top of the range (the 2026-08-13
- * entropy paydown moved 296 -> 281, about 5%), so anything that removes three
- * quarters of the findings in one step is not a paydown.
+ * a real paydown is a few percent (296 -> 281 on 2026-08-13), so removing
+ * three quarters of the findings in one step is not a paydown.
  */
 const COLLAPSE_RATIO = 0.25;
 
 function parseArgs(argv) {
-  const args = { report: null, baseline: DEFAULT_BASELINE, cliVersion: null };
+  const args = {
+    report: null,
+    baseReport: null,
+    baseline: DEFAULT_BASELINE,
+    cliVersion: null,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--report') args.report = argv[i + 1];
+    else if (argv[i] === '--base-report') args.baseReport = argv[i + 1];
     else if (argv[i] === '--baseline') args.baseline = argv[i + 1];
     else if (argv[i] === '--cli-version') args.cliVersion = argv[i + 1];
   }
@@ -136,12 +126,9 @@ function fail(code, message) {
 }
 
 /**
- * The triaged ceiling, or exit 2.
- *
- * Read before the report, deliberately. A broken baseline is an operator error
- * to fix in one file; an unmeasured run is a gate that did not run. Resolving
- * the baseline first keeps a 2 from surfacing as a 3 and sending the reader to
- * the wrong place entirely.
+ * The triaged ceiling, or exit 2. Read BEFORE the report: a broken baseline is
+ * an operator error to fix in one file, an unmeasured run is a gate that did
+ * not run, and resolving the baseline first keeps a 2 from surfacing as a 3.
  */
 function readBaseline(baseline) {
   let maxViolations;
@@ -161,19 +148,11 @@ function readBaseline(baseline) {
 
 /**
  * Abstain unless the CLI that produced this report is the one the ceiling was
- * calibrated against (#744).
- *
- * The workflows pin a FLOATING `@harness-engineering/cli@11`, so the analyzer
- * behind this absolute count changes with no commit here — and it did, twice,
- * moving the entropy count 281 -> 257 and then 257 -> 147 against a ceiling
- * left at 267. The existing guards could not see either move: they compare the
- * baseline against itself, and a floating minor clears a MAJOR check by
- * construction.
- *
- * Deliberately NOT the implausible-collapse guard's job. That one fires below
- * 25% of the baseline and catches a detector going dark; this catches an
- * instrument that is merely different, which is a far quieter failure and the
- * one that actually happened.
+ * calibrated against (#744). The workflows pin a FLOATING major, so the
+ * analyzer behind this absolute count changes with no commit here, and the
+ * offline guards compare the baseline against itself. Deliberately NOT the
+ * collapse guard's job: that catches a detector going dark, this catches an
+ * instrument that is merely different — the quieter failure that happened.
  */
 function requireMatchingInstrument(harnessCli, cliVersion, maxViolations) {
   if (harnessCli === null || cliVersion === harnessCli) return;
@@ -193,56 +172,86 @@ function requireMatchingInstrument(harnessCli, cliVersion, maxViolations) {
 }
 
 /**
- * The measured violation count, or exit 3.
- *
- * Every path out of here that is not a real number is an ABSTENTION, because
- * every one of them means the check did not measure the codebase: an absent
- * report, an unparseable one, or a collapse too steep to be real work.
+ * The raw text of one report, or exit 3. `label` names which side this is —
+ * one message for "head produced nothing" and "base produced nothing" is how
+ * a delta gate goes dark with nobody able to tell which half. An unreadable
+ * report is an ABSTENTION, not an error: the workflow step redirects stdout,
+ * so a missing file means check-perf died before writing anything.
  */
-function readViolations(report, maxViolations) {
-  let text;
+function readReportText(path, label) {
   try {
-    text = readFileSync(report, 'utf8');
+    return readFileSync(path, 'utf8');
   } catch (err) {
-    // Unreadable report is an ABSTENTION, not an error: the step that produces
-    // it redirects stdout, so a missing file means check-perf died before
-    // writing anything — nothing was measured.
-    fail(
+    return fail(
       3,
-      `perf-ratchet: ABSTAINED — cannot read report ${report}: ${err.message}\n` +
-        'The check-perf step most likely failed before producing output. Read ' +
-        'the step log; do NOT treat an absent report as zero violations.',
+      `perf-ratchet: ABSTAINED — cannot read ${label} report ${path}: ` +
+        `${err.message}\nThe check-perf step most likely failed before ` +
+        'producing output. Read the step log; do NOT treat an absent report ' +
+        'as zero violations.',
     );
   }
+}
 
-  const violations = violationsFrom(text);
+/**
+ * The measured violation count for one side, or exit 3. Every non-numeric
+ * path is an ABSTENTION, because each means the check did not measure the
+ * codebase: an unparseable report, or a collapse too steep to be real work.
+ */
+function readViolations(path, maxViolations, label) {
+  const violations = violationsFrom(readReportText(path, label));
   if (violations === null) {
     fail(
       3,
-      'perf-ratchet: ABSTAINED — the report has neither a "Validation failed ' +
-        '(N issues)" header nor a "validation passed" line, so nothing was ' +
-        'measured. This is the #544 shape: the check most likely failed at ' +
-        'startup (`Could not resolve entry points` means `performance.' +
-        'entryPoints` went missing from harness.config.json — see ADR 0012). ' +
-        'Read the step log; do NOT treat an unparseable report as zero.',
+      `perf-ratchet: ABSTAINED — the ${label} perf report has neither a ` +
+        '"Validation failed (N issues)" header nor a "validation passed" ' +
+        'line, so nothing was measured. This is the #544 shape: the check ' +
+        'most likely failed at startup (`Could not resolve entry points` ' +
+        'means `performance.entryPoints` went missing from ' +
+        'harness.config.json — see ADR 0012). Read the step log; do NOT ' +
+        'treat an unparseable report as zero.',
     );
   }
 
   if (isImplausibleCollapse(violations, maxViolations)) {
     fail(
       3,
-      `perf-ratchet: ABSTAINED — ${violations} violations against a baseline ` +
-        `of ${maxViolations} is too steep a drop to be real work.\n` +
-        'Check the invocation FIRST: `check-perf --coupling` and ' +
-        '`--size` report "validation passed" over findings they should be ' +
-        'reporting, so a narrowed run looks exactly like a clean one. The ' +
-        'gate must call a bare `harness check-perf` with no narrowing flag.\n' +
-        'If the drop is genuine, lower "maxViolations" in the baseline in the ' +
-        'same commit that earned it, and this stops firing.',
+      `perf-ratchet: ABSTAINED — ${violations} violations in the ${label} ` +
+        `perf report against a baseline of ${maxViolations} is too steep a ` +
+        'drop to be real work.\nCheck the invocation FIRST: `check-perf ' +
+        '--coupling` and `--size` report "validation passed" over findings ' +
+        'they should be reporting, so a narrowed run looks exactly like a ' +
+        'clean one. The gate must call a bare `harness check-perf` with no ' +
+        'narrowing flag.\nIf the drop is genuine, lower "maxViolations" in ' +
+        'the baseline in the same commit that earned it, and this stops firing.',
     );
   }
 
   return violations;
+}
+
+/**
+ * The delta rule (#812): fail when this branch adds violations its merge base
+ * did not have. Called BEFORE the absolute backstop, because it names what
+ * this branch actually did — a branch that inherits an over-ceiling base
+ * should read "you added 2" first, not a total it did not cause.
+ */
+function requireNoDelta(baseReport, violations, maxViolations) {
+  const base = readViolations(baseReport, maxViolations, 'merge-base');
+  const delta = violations - base;
+  if (delta > 0) {
+    fail(
+      1,
+      `perf-ratchet: FAILED — this branch introduces ${delta} performance ` +
+        `violation(s): ${base} at the merge base, ${violations} here.\n` +
+        'This is the delta YOUR diff added, measured against the commit you ' +
+        'branched from, so it is not affected by what else merged in the ' +
+        'meantime. Fix the new violations or split the file that grew.',
+    );
+  }
+  console.log(
+    `perf-ratchet: delta OK — ${violations} violations here against ` +
+      `${base} at the merge base (${delta >= 0 ? '+' : ''}${delta}).`,
+  );
 }
 
 /** Compare the measurement to the ceiling and report. Exits 1 when it fires. */
@@ -250,12 +259,12 @@ function applyRatchet(violations, maxViolations, baseline) {
   if (violations > maxViolations) {
     fail(
       1,
-      `perf-ratchet: FAILED — ${violations} performance violations, baseline ` +
-        `is ${maxViolations} (+${violations - maxViolations}).\n` +
+      `perf-ratchet: FAILED (absolute backstop) — ${violations} performance ` +
+        `violations, baseline is ${maxViolations} ` +
+        `(+${violations - maxViolations}).\n` +
         'Either fix the new violations (complexity, nesting depth, function ' +
         'and file length, coupling ratio, import count) or split the file ' +
-        'that grew. Raising "maxViolations" to make this pass is the one move ' +
-        'that is never the right one.',
+        'that grew. Raising "maxViolations" is the one move that is never right.',
     );
   }
 
@@ -274,12 +283,16 @@ function applyRatchet(violations, maxViolations, baseline) {
 }
 
 function main() {
-  const { report, baseline, cliVersion } = parseArgs(process.argv.slice(2));
+  const { report, baseReport, baseline, cliVersion } = parseArgs(
+    process.argv.slice(2),
+  );
   if (!report) fail(2, 'perf-ratchet: --report <file> is required.');
 
   const { maxViolations, harnessCli } = readBaseline(baseline);
-  const violations = readViolations(report, maxViolations);
+  const violations = readViolations(report, maxViolations, 'head');
   requireMatchingInstrument(harnessCli, cliVersion, maxViolations);
+  if (baseReport !== null)
+    requireNoDelta(baseReport, violations, maxViolations);
   applyRatchet(violations, maxViolations, baseline);
 }
 

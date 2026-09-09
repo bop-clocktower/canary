@@ -73,6 +73,16 @@ the code, not just the paths.
   file (and the `CANARY_PROPRIETARY_DENYLIST` CI secret). The public script
   names no company — keep it that way. Use a neutral placeholder (e.g. `ACME`)
   in public examples.
+- **Obfuscate consumer repos too, not just the company.** A consuming repo's
+  name, its issue numbers and its suite names identify the company as surely as
+  the company name does, and they are easy to miss because they read like
+  ordinary provenance ("the worked example is `<repo>#1853`"). 39 such
+  references accumulated here while the company name itself stayed clean,
+  because the denylist held one and not the other. When a real consumer failure
+  is worth citing, cite the **canary-side issue** that records it and describe
+  the consumer generically ("a consumer repo", "one consumer's sharded suite").
+  Fixture values take a neutral placeholder. The private tracker id belongs in
+  the private overlay, not in a comment here.
 - **That guard's denominator is the point.** Both halves scan `.md`, `.py`, the
   TS/JS family (`.ts`, `.tsx`, `.js`, `.mjs`, `.cjs`) and the data family
   (`.json`, `.yml`, `.yaml`); the proprietary half adds `.svg`, `.html`, `.txt`
@@ -524,15 +534,65 @@ ignore file at all. What keeps local junk out is upstream's hardcoded
 is why `.claude/worktrees/` is silent and `.kiro/` is not: one basename is on
 the list and the other is not, and no amount of gitignoring changes it.
 
-**Upstream limit, measured against CLI 11.1.1.** A path under a dot-directory
-upstream does not already skip cannot be excluded by _any_ `excludePatterns`
-entry — eight forms were tried, down to the exact literal relative path, and
-every one left the count unchanged; the same mechanism excludes non-dot paths
-(`tests/generated/**`) correctly. So `.kiro/**` and `.remember/**` are
-deliberately **absent** from `harness.config.json`: a pattern that matches
-nothing reads as configured and protects nothing, which is the vacuity
-`ts/test/entropy-exclude-patterns.test.ts` exists to refuse. The worktree is the
-workaround until upstream is fixed.
+**`excludePatterns` does reach dot-directories — an earlier claim here that it
+could not was measurement error (#728).** This paragraph asserted, against CLI
+11.1.1, that a path under an unskipped dot-directory could not be excluded by
+_any_ `excludePatterns` entry. That is false, and the upstream report carrying
+it (`Intense-Visions/harness-engineering#1345`) was withdrawn by its own author
+as NOT_PLANNED. The eleven-row table behind it was taken at a baseline of 346 —
+the long-lived-working-directory reading this very section calls confident
+garbage — so every "unchanged: 346" row showed only that the number being
+watched was not responsive to anything, not that the pattern was inert.
+
+Re-measured in a fresh detached worktree at `29ad0f2`, no `node_modules`
+installed, one `harness cleanup --findings-json` run per row. Taken on **CLI
+12.4.0** (what the floating `@12` pin resolves to today) and reproduced
+identically on 12.2.0:
+
+| probe                                        | `excludePatterns` | findings           |
+| -------------------------------------------- | ----------------- | ------------------ |
+| baseline, no probe                           | —                 | 145                |
+| `.kiro/skills/skill-creator/scripts/dead.ts` | none              | 147                |
+| same                                         | `**/.kiro/**`     | **145 — excluded** |
+| probe removed                                | —                 | 145                |
+
+The dot-directory **is** walked (+2 with no exclusion), so everything above
+about `dot: true` and `DEFAULT_SKIP_DIRS` stands unchanged. But an
+`excludePatterns` entry **does** suppress what the walk finds there.
+
+**Bounded, not settled.** This probe is a single file (+2 findings) — the same
+sample size the upstream withdrawal itself flagged as insufficient, under the
+heading _"Not fully excluded"_: the original report claimed 53 findings from ten
+`.py` files, and that volume has never been re-run. A scale-dependent mechanism
+is therefore not excluded, and the probe here is `.ts` where the original was
+`.py`, so the one genuinely odd observation in the old report (`**/*.py` removed
+43 findings, none of them under `.kiro`) is untested. What is established is
+that the universal claim — _no_ entry can exclude _any_ such path — is false at
+single-file scale.
+
+`.kiro/**` and `.remember/**` still stay **absent** from `harness.config.json`,
+but neither of the reasons previously given here is the right one. "It would
+match nothing because the directory is not in this checkout" is wrong twice
+over: `tests/generated/**` is also absent from a fresh checkout yet is
+_mandatorily required_ by `ts/test/entropy-exclude-patterns.test.ts`, and
+`ts/test/harness-config-denominator.test.ts` already worked this through for
+these exact two paths — a presence check "would go red in CI on both live
+entries while passing on the two that were deleted for being inert, precisely
+inverted". Nor does `entropy-exclude-patterns.test.ts` refuse the shape: adding
+both patterns leaves that suite green (8/8, verified), because its three
+repo-rooted rules only check the glob form, repo-level gitignoring, and that no
+tracked file is hidden — all of which `.kiro/**` satisfies.
+
+The actual reason is the one that survives being on someone else's machine:
+these are **untracked, machine-local paths** — `.remember` 193 files and `.kiro`
+75 on a dev laptop, 0 in a fresh clone — so an exclusion for them can never be
+verified by CI, which is the only place the ratchet is authoritative. The
+fresh-worktree recipe carries them instead. Add an entry only when its effect
+can be demonstrated in a tree CI can also see, and prove it by measurement
+(before/after `harness cleanup --findings-json`) rather than by reading this
+table — accepting an exclusion on trust is the failure this whole entry records.
+Note the worktree recipe remains the remedy in force for these two paths; it is
+only not the sole remedy _in principle_.
 
 **Reading a red `Harness Checks` (#588).** The `ci check --json` report is ~162
 KB and **is not in the job log** — do not scroll for it. Two limits eat it: the
@@ -723,26 +783,35 @@ Three things about that output are worth knowing before you read it:
   pristine `main` worktree — correct methodology, wrong answer, because the
   instrument misnamed its own mechanism.
 
-**A PR-time green does not measure the tree that merges (#678).** GitHub's
-`strict_required_status_checks_policy` is **false** on ruleset 16189198, so a PR
-merges without being up to date with `main`, and `actions/checkout` on
+**A PR-time green now measures the tree that merges (#678, closed).** GitHub's
+`strict_required_status_checks_policy` is **true** on ruleset 16189198, so a PR
+cannot merge until its branch is up to date with `main`. It was **false** when
+issue #660 landed, and that is what #678 is about: `actions/checkout` on
 `pull_request` checks out the merge commit computed for that event — head merged
-into `main` as of the last push to the **PR branch**. Base movement fires no
-check run, so nothing re-measures. #660's `harness` check passed, the identical
-commit failed `check-arch` on `main`, and #663 inherited the failure and read as
-its cause. The state and the reasoning are recorded in
-`.github/required-checks.json` under `mergePolicy`; the mitigation in place is
-that every workflow behind a required check also runs on `push: main`
-(`guardian.yml` excepted, being a PR-diff reviewer), so a stale green surfaces
-on `main` within one run rather than as the next PR's failure.
-`gh pr update-branch` before merging is the manual version of the same
-guarantee.
+into `main` as of the last push to the **PR branch** — and base movement fires
+no check run, so nothing re-measured. #660's `harness` check passed, the
+identical commit failed `check-arch` on `main`, and #663 inherited the failure
+and read as its cause. The state and the reasoning are recorded in
+`.github/required-checks.json` under `mergePolicy`; every workflow behind a
+required check also runs on `push: main` (`guardian.yml` excepted, being a
+PR-diff reviewer), which stays as defence in depth.
 
-Related: the **Architecture Enforcer** workflow does not run the architecture
-ratchet. Its `enforce` job runs `harness check-deps` and `harness validate`;
-neither reads `.harness/arch/baselines.json`. That is why it can be green while
-a local `harness check-arch` exits 1 — two different commands, not one gate
-disagreeing with itself.
+The practical consequence of `strict` is that **every open PR goes stale
+whenever `main` moves**. Repo-level auto-merge is enabled, but it waits rather
+than updating a branch, so `gh pr update-branch` is how you satisfy the gate —
+run it, let the checks re-run, and auto-merge takes it from there.
+
+Related: `harness-architecture.yml` does not run the architecture ratchet. Its
+job runs `harness check-deps` and `harness validate`; neither reads
+`.harness/arch/baselines.json`. That is why it can be green while a local
+`harness check-arch` exits 1 — two different commands, not one gate disagreeing
+with itself. The workflow used to be called **Architecture Enforcer** and its
+job `enforce`, which is how that non-existent disagreement cost real hours in
+issue #678. Issue #698 renamed both, to **Dependency & project validation** and
+`deps-and-validate`. The ratchet itself lives in the `harness` check
+(`harness ci check` plus the `check-arch` detail report that
+`scripts/arch-verdict.mjs` classifies). Do not put "architecture" back in that
+job's name unless it actually runs `check-arch`.
 
 **A metric that silently improves is a finding (#688).** The arch analyzer skips
 55 directory names outright (`coverage`, `dist`, `build`, `bin`, `out`,
@@ -1178,6 +1247,47 @@ checker, and a general one is probably the wrong shape — "output scales with
 input" is a property of a specific surface, not a pattern a linter can spot.
 When you add a surface whose output grows with its input, add its own scaled
 fixture next to that one.
+
+### Naming and capability vocabulary
+
+Two pieces of shared vocabulary have a single authoritative source. Both exist
+because the alternative — every author re-deriving the meaning — already
+produced shipped contradictions.
+
+#### `Tier-0` and the three capability axes
+
+A skill's capability is three independent properties, not a point on a scale:
+
+- **deterministic** — same input, same output, or not.
+- **network** — needs to reach outside the repo, or not.
+- **agent** — invokes a model, or not.
+
+**`Tier-0` is the conjunction of all three: deterministic, no network, no agent
+or LLM.** It is the only tier number with a repo-wide meaning, it is
+mechanically enforced (`ts/test/guardian-agent-tier.test.ts` asserts the
+guardian's Tier-0 engine imports no agent module), and nothing may claim it
+without satisfying all three.
+
+`Tier-1` and `Tier-2` are **not** repo-wide vocabulary. They are valid only
+inside `canary-pr-guardian`, where they name the values of
+`canary guardian pr-check --tier 0|1|2`. A skill with internal phases names them
+for what they do — `canary-savant` has a static pass and a confirming pass — and
+states the three axes in prose rather than claiming a number.
+
+Two unrelated scales also use the word "tier" and are out of scope:
+`canary doctor`'s check provenance (engine vs overlay) and the vendored harness
+agent definitions' violation severity. See
+[ADR 0015](docs/knowledge/decisions/0015-skill-capability-vocabulary.md).
+
+#### `canary-*` names
+
+[`docs/naming-registry.md`](docs/naming-registry.md) is the one place a
+`canary-*` name is minted. Claim the name there **before** you put it in a
+roadmap row, an issue title, or a skill directory.
+`ts/test/bop-name-registry.test.ts` fails when those surfaces disagree with the
+registry. Three name collisions happened while the only safeguard was a prose
+warning; when two claims collide, the better thematic fit keeps the name and the
+later claimant renames.
 
 ### Trusted MCP hierarchy
 

@@ -65,6 +65,42 @@ describe('isAssertionFreeTest', () => {
     const code = "it('x', () => {\n  assert(a === b)\n})";
     expect(isAssertionFreeTest(code, 'vitest')).toBe(false);
   });
+
+  // #738. `assert*`-named helpers counted for pytest but the JS/TS naming
+  // convention for the same thing is `expect*`, and it had no counterpart — so
+  // a Playwright suite that factors its assertions into `expectRouteTestId()`
+  // helpers (the pattern Playwright's own docs recommend) had every added test
+  // reported as asserting nothing. The rationale on the pytest line is
+  // language-agnostic; only its spelling was not.
+  it('counts a playwright expect* helper call as an assertion', () => {
+    const code =
+      "test('renders', async ({ page }) => {\n" +
+      "  await gotoAppRoute(page, '/app/benefits/1')\n" +
+      "  await expectRouteTestId(page, 'benefit-detail')\n" +
+      '})';
+    expect(isAssertionFreeTest(code, 'playwright')).toBe(false);
+  });
+
+  it('counts a vitest expect* helper call as an assertion', () => {
+    const code = "it('x', () => {\n  expectValidWidget(makeWidget())\n})";
+    expect(isAssertionFreeTest(code, 'vitest')).toBe(false);
+  });
+
+  it('still matches a plain expect( — the widening is additive', () => {
+    // `\w*` is zero-width-matchable, so nothing that counted before stops
+    // counting. Asserted rather than assumed, because a regex edit that
+    // silently narrowed this would turn every correct test into a finding.
+    const code = "test('x', async ({ page }) => {\n  await expect(el)\n})";
+    expect(isAssertionFreeTest(code, 'playwright')).toBe(false);
+  });
+
+  it('still flags a playwright test that really asserts nothing', () => {
+    // The precision cost is bounded: widening the NAME pattern must not make
+    // the rule unable to fire. A test that only navigates is still weak.
+    const code =
+      "test('renders', async ({ page }) => {\n  await page.goto('/')\n})";
+    expect(isAssertionFreeTest(code, 'playwright')).toBe(true);
+  });
 });
 
 describe('QualityScorer edge branches', () => {

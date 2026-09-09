@@ -24,7 +24,7 @@
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -173,5 +173,152 @@ describe('scan-root override', () => {
     const stdout = `${res.stdout}${res.stderr}`;
 
     expect(stdout.toLowerCase()).not.toContain('does not gate the repository');
+  });
+});
+
+describe('where the denylist comes from', () => {
+  /**
+   * The file is gitignored by design, so `git worktree add` never copies it.
+   * Every worktree therefore ran the proprietary half with an empty denylist
+   * and still printed the clean line — a gate that fails open, silently, in
+   * the trees where essentially all work on this repo happens.
+   */
+  function fixtureRepoWithCommit(files: Record<string, string>): string {
+    const root = fixtureRepo(files);
+    execFileSync('git', ['-C', root, 'commit', '-qm', 'fixture'], {
+      encoding: 'utf-8',
+    });
+    // Written AFTER the commit, and never tracked -- the whole reason a
+    // worktree lacks one. A committed fixture denylist would be copied into
+    // the worktree by git itself and the fallback would never be exercised.
+    writeFileSync(
+      join(root, '.proprietary-denylist'),
+      `${FIXTURE_TERM}\n`,
+      'utf-8',
+    );
+    return root;
+  }
+
+  /** Counter, not a clock: canary-blackhawk flags wall-clock reads (BH001). */
+  let worktreeSeq = 0;
+
+  /** A worktree of `root`, carrying its own copy of the gate to run. */
+  function worktreeOf(root: string): string {
+    const wt = join(root, '..', `wt-${(worktreeSeq += 1)}`);
+    execFileSync('git', ['-C', root, 'worktree', 'add', '-q', wt, 'HEAD'], {
+      encoding: 'utf-8',
+    });
+    tempRoots.push(wt);
+    cpSync(join(REPO_ROOT, 'scripts'), join(wt, 'scripts'), {
+      recursive: true,
+    });
+    return wt;
+  }
+
+  /** Run a worktree's own copy of the gate, with no env denylist at all. */
+  function runInTree(tree: string): GateRun {
+    const env = { ...process.env };
+    delete env.CANARY_PROPRIETARY_DENYLIST;
+    delete env.CANARY_DENYLIST_FILE;
+    const res = spawnSync(
+      process.execPath,
+      [join(tree, 'scripts', 'check_removed_symbols.mjs')],
+      { encoding: 'utf-8', env: { ...env, CANARY_LEAK_SCAN_ROOT: '' } },
+    );
+    return { status: res.status ?? -1, stdout: `${res.stdout}${res.stderr}` };
+  }
+
+  it('falls back to the main checkout when the worktree has no denylist', () => {
+    const root = fixtureRepoWithCommit({
+      'docs/note.md': `Nothing to see here.\n`,
+    });
+    const wt = worktreeOf(root);
+
+    const { stdout } = runInTree(wt);
+
+    expect(stdout).toContain('resolved from the main checkout');
+    expect(stdout).toContain(join(root, '.proprietary-denylist'));
+  });
+
+  it('and the denylist it fell back to actually bites', () => {
+    // Resolution without enforcement would be the same false green wearing a
+    // more reassuring message, so the fallback is asserted by a planted
+    // offender, not by the disclosure line alone.
+    const root = fixtureRepoWithCommit({
+      'docs/note.md': `Built for ${FIXTURE_TERM} internally.\n`,
+    });
+    const wt = worktreeOf(root);
+
+    const { status, stdout } = runInTree(wt);
+
+    expect(stdout).toContain('docs/note.md');
+    expect(status).toBe(1);
+  });
+
+  it('prefers the tree it is run in over the main checkout', () => {
+    const root = fixtureRepoWithCommit({
+      'docs/note.md': 'Nothing to see here.\n',
+    });
+    const wt = worktreeOf(root);
+    writeFileSync(
+      join(wt, '.proprietary-denylist'),
+      'Somethingelse\n',
+      'utf-8',
+    );
+
+    const { stdout } = runInTree(wt);
+
+    expect(stdout).not.toContain('resolved from the main checkout');
+  });
+
+  /** Run with no denylist reachable at all, on or off CI. */
+  function runWithNoDenylist(onCi: boolean): GateRun {
+    const root = fixtureRepo({ 'src/widget.ts': 'export const x = 1;\n' });
+    const res = spawnSync(process.execPath, [SCRIPT], {
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        CANARY_LEAK_SCAN_ROOT: root,
+        CANARY_PROPRIETARY_DENYLIST: '',
+        CANARY_DENYLIST_FILE: join(root, '.no-such-denylist'),
+        // Pinned, never inherited. Left ambient, this pair passes at the desk
+        // and fails in CI — the same environment-dependent shape the
+        // authorship suite documents, just pointing the other way.
+        GITHUB_ACTIONS: onCi ? 'true' : '',
+      },
+    });
+    return { status: res.status ?? -1, stdout: `${res.stdout}${res.stderr}` };
+  }
+
+  it('says DEGRADED, never clean, at the desk with no denylist', () => {
+    // The whole point: structural patterns still run and still find nothing,
+    // so the exit code cannot tell this apart from a real clean scan. Only
+    // the wording can. Exit 0 is right here — a contributor legitimately has
+    // no secret, and must still be able to commit.
+    const { status, stdout } = runWithNoDenylist(false);
+
+    expect(stdout).toContain('DEGRADED');
+    expect(stdout).not.toContain('clean — no removed-symbol');
+    expect(status).toBe(0);
+  });
+
+  it('abstains outright on CI with no denylist, rather than degrading', () => {
+    // On CI the denylist arrives as a secret, so its absence means the secret
+    // did not reach the job. The authorship half already treats that as an
+    // abstention and exits 1; this pins that the softer desk-side disclosure
+    // never downgrades it on the path that gates merges.
+    const { status, stdout } = runWithNoDenylist(true);
+
+    expect(stdout).not.toContain('clean — no removed-symbol');
+    expect(status).toBe(1);
+  });
+
+  it('does not cry DEGRADED when a denylist is present', () => {
+    const root = fixtureRepo({ 'src/widget.ts': 'export const x = 1;\n' });
+
+    const { stdout } = runGate(root);
+
+    expect(stdout).not.toContain('DEGRADED');
+    expect(stdout).toContain('clean — no removed-symbol');
   });
 });

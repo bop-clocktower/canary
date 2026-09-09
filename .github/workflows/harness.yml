@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
       - run: npm install -g "$HARNESS_CLI"
 
       # The `traceability` check inside `harness ci check` is a pure function of
