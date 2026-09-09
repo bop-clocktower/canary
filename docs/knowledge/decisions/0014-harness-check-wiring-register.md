@@ -167,9 +167,13 @@ be stated at the point of use rather than discovered later.
   measures. Together they cover both. Removing either reopens a real hole, so
   neither is redundant belt-and-braces.
 - The perf baseline is an **absolute** total, so concurrent branches consume a
-  shared non-renewable budget none of them can see (#700, #703). It carries 8
+  shared non-renewable budget none of them can see (#700, #703). It carried 8
   violations of headroom for the same reason `.harness/entropy-baseline.json`
-  carries 10. Measure it in a fresh `git worktree` — the shared working
+  carries 10, and that headroom reached zero on 2026-09-09. As of #812 the
+  ceiling is a backstop: on pull requests `perf-ratchet.mjs` also takes
+  `--base-report` and fails on the delta the branch introduced against its own
+  merge base, the same two-rule shape ADR 0012's #703 amendment gives the
+  entropy ratchet. Measure it in a fresh `git worktree` — the shared working
   directory reads high, and a mid-conflict tree returns confident garbage.
 - Declining a check is now a recorded decision with a revisit condition. An
   unwired check that appears in neither table above is a finding.

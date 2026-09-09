@@ -174,10 +174,38 @@ jobs:
           npx --yes -p "$HARNESS_CLI" harness check-perf > perf-report.txt 2>&1
           || true
 
+      # The MERGE-BASE half of the perf ratchet (#812), the same two-rule shape
+      # the entropy ratchet gained in #703 and for the same reason: the ceiling
+      # above is an absolute total, so headroom is a shared budget no branch
+      # can see. It reached ZERO on 2026-09-09 (233 measured against 233), at
+      # which point any PR adding a single function-length finding failed the
+      # gate whatever its own diff did. Scanning the base tree makes each PR
+      # answerable for its own delta. The two properties the entropy step
+      # documents apply verbatim — SAME INSTRUMENT (`$HARNESS_CLI`, same job)
+      # and OUTSIDE THE WORKSPACE (`$RUNNER_TEMP`, or the head scan walks the
+      # base tree and double-counts) — and `ts/test/perf-ratchet.test.ts`
+      # asserts both. `2>&1 || true` matches the head scan; an empty base
+      # report is NOT silently tolerated, the ratchet abstains (exit 3) on it.
+      - name: Harness Performance Check (merge base)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/perf-base" "$BASE_SHA"
+          cd "$RUNNER_TEMP/perf-base"
+          npx --yes -p "$HARNESS_CLI" harness check-perf \
+            > "$GITHUB_WORKSPACE/perf-base-report.txt" 2>&1 || true
+
       - name: Performance ratchet (blocking)
+        env:
+          # Empty on a push to `main`, where there is no merge base to compare
+          # against and the absolute ceiling is the only rule that applies.
+          PERF_BASE_FLAG:
+            ${{ github.event_name == 'pull_request' && '--base-report
+            perf-base-report.txt' || '' }}
         run:
           node scripts/perf-ratchet.mjs --report perf-report.txt --cli-version
-          "${{ steps.harness-cli.outputs.version }}"
+          "${{ steps.harness-cli.outputs.version }}" $PERF_BASE_FLAG
 
       # `check-operational-drift` is deliberately NOT wired here. #717 proposed
       # wiring it blocking precisely because it was clean — no backlog to
