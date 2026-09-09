@@ -16,6 +16,14 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The test duration ratchet no longer fires on a contended spawn** (#760). The
+  load factor is a median, so it cannot see contention that lands on one test at
+  a time -- on the runner, half the tracked tests ran faster than recorded while
+  a handful each took a 200-755ms penalty, on tests whose whole recorded
+  duration is one 80ms process spawn. A firing must now also clear 2000ms of
+  absolute slowdown. It is a conjunction, not a wider ceiling: it can only
+  suppress a firing near the floor, and above the floor the 2.5x rule binds
+  exactly as before.
 - **A monorepo migrate report names the suites it walked** (#504). The workspace
   walk landed in #586, but when the packages disagreed the scalar collapsed to
   `Framework: unknown` and the follow-up said "no config file, dependency, or
