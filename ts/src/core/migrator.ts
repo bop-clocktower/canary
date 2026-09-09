@@ -426,6 +426,91 @@ function findWorkspaceSuites(root: string, framework: string): ExistingSuite[] {
 }
 
 /**
+ * Why no single framework resolved, in the terms of what was actually probed.
+ *
+ * A workspace whose packages disagree is a different failure from a repo where
+ * nothing matched, and telling the user "no config file, dependency, or
+ * language marker matched" when two package configs *did* match is a claim the
+ * run's own evidence contradicts (#504 part 1).
+ */
+/**
+ * The distinct `framework/shape` pairs the workspace packages declare, in the
+ * order the (path-sorted) findings first mention them.
+ *
+ * The scalar resolution collapses more than one pair to `unknown` (see
+ * `resolveFromWorkspace`). Reporting that bare `unknown` without also
+ * reporting *what* was found is the residue of #504 part 1: the walk observed
+ * two real suites and the report claimed nothing matched.
+ */
+function workspacePairs(ws: WorkspaceInfo): string[] {
+  return [...new Set(ws.findings.map((f) => `${f.framework}/${f.shape}`))];
+}
+
+/** How many distinct package directories carry at least one finding. */
+function packagesWithFindings(ws: WorkspaceInfo): number {
+  return new Set(ws.findings.map((f) => f.dir)).size;
+}
+
+/** The suites a workspace walk found, rendered as `` `dir/` (framework) ``. */
+function namedWorkspaceSuites(ws: WorkspaceInfo): string {
+  return ws.findings.map((f) => `\`${f.dir}/\` (${f.framework})`).join(', ');
+}
+
+/**
+ * The follow-ups for a run that resolved no framework: the uncertain-detection
+ * message, plus -- only when the walk actually found suites -- the per-package
+ * route, which needs no override at all (#504 part 1).
+ */
+function unresolvedFrameworkFollowups(ws: WorkspaceInfo | null): string[] {
+  const out = [
+    uncertainDetectionMessage('test framework', {
+      reason: unresolvedFrameworkReason(ws),
+      candidates: KNOWN_FRAMEWORKS,
+      overrideHint: '`canary migrate --framework <name>`',
+    }),
+  ];
+  if (ws !== null && ws.findings.length > 0) {
+    out.push(
+      `Or re-run \`canary migrate\` from inside a package ${EMDASH} ` +
+        `${namedWorkspaceSuites(ws)}.`,
+    );
+  }
+  return out;
+}
+
+function unresolvedFrameworkReason(ws: WorkspaceInfo | null): string {
+  const nothingMatched =
+    'no config file, dependency, or language marker matched a known framework';
+  if (ws === null || ws.findings.length === 0) return nothingMatched;
+  const pairs = workspacePairs(ws);
+  const n = packagesWithFindings(ws);
+  const combos = pairs.length === 1 ? 'combination' : 'combinations';
+  return (
+    `this workspace's packages declare ${pairs.length} different ` +
+    `framework/shape ${combos} across ${n} ` +
+    `package${n === 1 ? '' : 's'} (${pairs.join(', ')}), ` +
+    'so no single framework applies at the root'
+  );
+}
+
+/**
+ * The shape the workspace packages already resolved for *framework*, when they
+ * agree on one. Null when no package declares it, or when they disagree --
+ * either way the caller falls back to the root-only probe rather than picking
+ * a winner out of a tie (#504).
+ */
+function workspaceShapeForFramework(
+  ws: WorkspaceInfo | null,
+  framework: string,
+): string | null {
+  if (ws === null) return null;
+  const shapes = new Set(
+    ws.findings.filter((f) => f.framework === framework).map((f) => f.shape),
+  );
+  return shapes.size === 1 ? [...shapes][0]! : null;
+}
+
+/**
  * The shape implied by an explicit `--framework` override (#504 (2)).
  *
  * Reuses the probe table so the override resolves exactly the shape a matching
@@ -971,11 +1056,61 @@ export class MigrationReport {
     } else if (ws.scanned > 0 && ws.findings.length === 0) {
       const p = ws.scanned === 1 ? '1 package' : `${ws.scanned} packages`;
       notes.push(`${p} scanned, none carries a recognizable test config.`);
+    } else if (ws.findings.length > 0) {
+      // The other half of the denominator: what the walk *did* observe. The
+      // scalar above collapses disagreeing packages to `unknown`, so without
+      // these lines a repo with two real suites reads as a repo with none
+      // (#504 part 1).
+      const withFindings = packagesWithFindings(ws);
+      const p = ws.scanned === 1 ? '1 package' : `${ws.scanned} packages`;
+      notes.push(
+        `${ws.manager} workspace ${EMDASH} ${p} scanned, ` +
+          `${withFindings} carrying a test config.`,
+      );
+      for (const f of ws.findings) {
+        notes.push(
+          `\`${f.dir}/\` ${EMDASH} ${f.framework} / ${f.shape} ` +
+            `(\`${f.source}\`)`,
+        );
+      }
     }
     for (const dir of ws.unreadable) {
       notes.push(`\`${dir}/\` could not be read and was not scanned.`);
     }
     return notes;
+  }
+
+  /**
+   * Why a dry run proposes nothing. Three different situations reach this
+   * line and they are not interchangeable: a suite already exists for this
+   * framework, the workspace packages disagree so no root framework applies,
+   * or the project genuinely carries everything already. Rendering the third
+   * sentence for the second case tells a monorepo with no Canary config that
+   * it has all of it (#504 parts 1 and 3).
+   */
+  private nothingToCreateNote(): string {
+    if (this.existing_suites.length > 0) {
+      const names = this.existing_suites.map((s) => `\`${s.dir}/\``);
+      return (
+        `_Nothing ${EMDASH} ${names.join(', ')} already ` +
+        `carries a ${this.framework} suite. To scaffold a second one, ` +
+        're-run `canary migrate` from inside that package._'
+      );
+    }
+    const ws = this.workspace;
+    if (this.framework === 'unknown' && ws !== null && ws.findings.length > 0) {
+      return (
+        `_Nothing ${EMDASH} this workspace's packages declare more than ` +
+        `one framework: ${namedWorkspaceSuites(ws)}. Re-run ` +
+        '`canary migrate` from inside a package, or pass ' +
+        '`--framework <name>` to pick one._'
+      );
+    }
+    return (
+      '_Nothing new ' +
+      EMDASH +
+      ' project already has all Canary config files._'
+    );
   }
 
   /**
@@ -1059,30 +1194,13 @@ export class MigrationReport {
         lines.push('');
       }
 
+      lines.push('## Would Create', '');
       if (this.would_create.length > 0) {
-        lines.push('## Would Create', '');
         for (const f of this.would_create) lines.push(`- \`${f}\``);
-        lines.push('');
-      } else if (this.existing_suites.length > 0) {
-        const names = this.existing_suites.map((s) => `\`${s.dir}/\``);
-        lines.push(
-          '## Would Create',
-          '',
-          `_Nothing ${EMDASH} ${names.join(', ')} already ` +
-            `carries a ${this.framework} suite. To scaffold a second one, ` +
-            're-run `canary migrate` from inside that package._',
-          '',
-        );
       } else {
-        lines.push(
-          '## Would Create',
-          '',
-          '_Nothing new ' +
-            EMDASH +
-            ' project already has all Canary config files._',
-          '',
-        );
+        lines.push(this.nothingToCreateNote());
       }
+      lines.push('');
 
       if (this.skipped_configs.length > 0) {
         lines.push('## Already Present (will not be touched)', '');
@@ -1341,7 +1459,13 @@ export class HarnessMigrator {
       .toLowerCase();
     const overrideShape =
       pyTruthy(framework) && explicitShape === ''
-        ? shapeForFrameworkOverride(framework as string, projectRoot)
+        ? // A workspace package that already declares this framework has
+          // already had its shape refined against its OWN spec files. The
+          // root-only refinement cannot see them -- in the reported repo the
+          // specs live in `apps/web-e2e/tests/`, so refining at the root reads
+          // zero spec files and falls back to the table default (#504).
+          (workspaceShapeForFramework(ctx.workspace, framework as string) ??
+          shapeForFrameworkOverride(framework as string, projectRoot))
         : null;
     const shape = overrideShape ?? ctx.detected_shape;
     // The set that actually drives deployment. Re-derived from the *effective*
@@ -1351,14 +1475,7 @@ export class HarnessMigrator {
     const followups: string[] = [];
 
     if (effectiveFramework === null) {
-      followups.push(
-        uncertainDetectionMessage('test framework', {
-          reason:
-            'no config file, dependency, or language marker matched a known framework',
-          candidates: KNOWN_FRAMEWORKS,
-          overrideHint: '`canary migrate --framework <name>`',
-        }),
-      );
+      followups.push(...unresolvedFrameworkFollowups(ctx.workspace));
       // Issue #295 point 3: a detection miss must not block skill deployment --
       // nor, for the same reason, the workflow install (#459). The guardian
       // workflow is exactly what an unrecognised repo most needs.
