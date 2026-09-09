@@ -5,8 +5,8 @@
  * `no-probe` verdict that names what it could not classify rather than
  * silence. The noun phrase comes from the path, not from a probe -- by
  * construction no probe matched, so no probe can supply it.
- * `ExerciseProbe.artifact` is the matched-probe counterpart, used by the probes
- * themselves in Phase 2.
+ * `ExerciseProbe.artifact` is the matched-probe counterpart, supplied by the
+ * probes themselves (see `probes.ts`).
  */
 
 import {

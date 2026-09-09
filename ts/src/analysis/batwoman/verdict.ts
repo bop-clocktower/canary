@@ -131,7 +131,7 @@ export interface ExerciseContext {
   readonly root: string;
 }
 
-/** One artifact type's detector. Shipped probes arrive in Phase 2. */
+/** One artifact type's detector. The shipped three live in `probes.ts`. */
 export interface ExerciseProbe {
   readonly id: string;
   /** Human noun phrase: "workflow", "workflow script". */

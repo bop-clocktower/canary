@@ -22,7 +22,7 @@ export const WIDTH = 78;
  * **Explanations are single-paragraph prose.** `split(/\s+/)` normalises all
  * internal whitespace, so a newline becomes a space and a run of spaces becomes
  * one. That is a decision, not an accident, and it is recorded here because
- * Phase 2 probes will compose explanations out of evidence and the temptation
+ * the probes compose explanations out of evidence, and the temptation
  * to embed a command, a YAML fragment or an indented log line is real. A verdict
  * sentence is a sentence: the thing a probe wants to quote belongs in
  * `evidence`, which {@link fitLine} wraps without reflowing it, or in a future
