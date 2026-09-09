@@ -50,6 +50,41 @@ the other half — a regression during a contended run is still caught.
 A single regressed test barely moves a median over dozens of entries. That
 asymmetry is the whole design.
 
+## The median cannot see a contended spawn (#760, second instance)
+
+The load factor assumes contention is roughly uniform across the tracked group.
+On the GitHub runner it is not. In CI run 34327672926 half the tracked tests ran
+**faster** than recorded while a handful each took a 200-755ms penalty, and
+those landed on tests whose entire recorded duration is one 80ms process spawn.
+The median moved to 1.71; the penalised tests measured 5-10x. The same commit
+re-run reported 0 regressions at load factor 1.00.
+
+A multiplicative ceiling over an 80ms recording asks the runner to spawn a
+process within 200ms, which it does not promise. So a firing must **also** clear
+`SPAWN_SLACK_MS` (2000ms) of absolute slowdown over the load-adjusted
+expectation.
+
+**It is a conjunction, never a wider ceiling.** Both conditions must hold:
+
+```text
+actual > recorded x load x TOLERANCE      (the rule, unchanged)
+actual - recorded x load > SPAWN_SLACK_MS (the resolution limit)
+```
+
+Adding the slack to the ceiling instead was tried first and is wrong: it spends
+2000ms on every test, so a test recorded at 1000ms could reach 4500ms
+unreported. That trades one run's false red for a permanent false green, and
+three of the no-false-green tests in `ts/test/test-duration-ratchet.test.ts`
+catch it. As a conjunction the slack can only ever **suppress** a firing near
+the floor -- a test recorded in seconds clears 2000ms of absolute slowdown the
+moment it clears 2.5x, so above the floor this is precisely the old instrument.
+
+Sizing: 755ms was the largest single-test penalty observed on the runner, and
+issue #760 measured a 3.4s p95 spawn on a laptop under 8 concurrent spawners.
+2000ms covers the observed sample with margin while staying an order of
+magnitude inside the 30s timeout window the gate exists to watch -- nothing in
+the suite runs over ~3.1s idle.
+
 ## The factor may only ever loosen
 
 Clamped at 1. **Found by CI, not by the tests**, which had only exercised

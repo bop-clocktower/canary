@@ -12,7 +12,18 @@
 // every slow test together, a regression raises one -- and each run derives
 // its own load factor from the tracked tests themselves.
 //
-// The design, its validation table, the two rejected alternatives, and why the
+// The load factor is not the whole story. On the runner, contention is not
+// uniform: in one contended run half the tracked tests ran FASTER than
+// recorded while a handful each took a 200-755ms hit, and those landed on
+// tests whose entire recorded duration is one 80ms spawn. A median sees
+// nothing; a multiplicative ceiling over 80ms is 200ms, which the runner
+// cannot promise. So a firing ALSO has to clear SPAWN_SLACK_MS of absolute
+// slowdown: a slowdown smaller than that is below the resolution of this
+// instrument, and reporting it is the false red that teaches
+// re-run-until-green. It is a conjunction, never a wider ceiling -- it can
+// only suppress a firing near the floor, never license one above it.
+//
+// The design, its validation table, the three rejected alternatives, and why the
 // baseline is machine-class-specific are in
 // docs/knowledge/gates/test-duration-ratchet.md. Read it before changing a
 // constant here; every number in it cost a measurement.
@@ -40,6 +51,20 @@ export const BASELINE = join(
 export const FLOOR_MS = 75;
 /** A tracked test may take this multiple of its recorded duration. */
 export const TOLERANCE = 2.5;
+/**
+ * A firing must ALSO clear this much absolute slowdown. One contended spawn.
+ *
+ * Set from the runner, not the laptop. CI run 34327672926 (attempt 1, the
+ * same tree that passed on attempt 2) put a penalty of up to 755ms on single
+ * tests recorded at 80-87ms — 5-10x, against a load-scaled ceiling of 4.29x.
+ * 2000ms covers that sample with margin against a tail one sample cannot
+ * bound (#760 measured a 3.4s p95 spawn on a laptop under 8 concurrent
+ * spawners) while staying an order of magnitude inside the 30s window the
+ * gate exists to watch: nothing in the suite runs over ~3.1s idle, so a
+ * regression of seconds still clears both terms. Raising the FLOOR instead
+ * does not work here — see the doc; it was measured.
+ */
+export const SPAWN_SLACK_MS = 2000;
 /** Fewer tracked tests than this cannot yield a trustworthy load factor. */
 export const MIN_CONTROL_GROUP = 10;
 /** A load factor above this means even the normalised comparison is guesswork. */
@@ -181,9 +206,26 @@ export function compare(baseline, observed) {
 
   const load = usableLoad(loadFactor(present.map((t) => t.ratio)));
 
+  // Two independent conditions, BOTH required. The multiplicative ceiling is
+  // the rule and stays exactly what it was; SPAWN_SLACK_MS is a resolution
+  // limit layered under it, not added to it.
+  //
+  // Additive was the obvious shape and it is wrong: `ceiling * load + slack`
+  // spends the slack on every test, so a test recorded at 1000ms could reach
+  // 4500ms unreported. That trades this run's false red for a permanent false
+  // green, and three of this file's own no-false-green tests catch it.
+  //
+  // As a conjunction the slack can only ever SUPPRESS a firing near the
+  // floor, where the multiplicative ceiling asks the runner to spawn a
+  // process within 200ms and it cannot. A test recorded in seconds clears
+  // 2000ms of absolute delta the moment it clears 2.5x, so for everything
+  // above the floor this is precisely the old instrument.
   const regressions = present
-    .filter((t) => t.ratio > load * TOLERANCE)
-    .map((t) => ({ ...t, ceiling: t.recorded * load * TOLERANCE }));
+    .map((t) => ({ ...t, ceiling: t.recorded * load * TOLERANCE }))
+    .filter(
+      (t) =>
+        t.actual > t.ceiling && t.actual - t.recorded * load > SPAWN_SLACK_MS,
+    );
 
   return { regressions, missing, checked: present.length, load };
 }
@@ -195,13 +237,14 @@ export function buildBaseline(observed) {
     if (ms >= FLOOR_MS) tests[key] = Math.round(ms);
   }
   return {
-    $comment: `Recorded test durations for #760. A tracked test may take ${TOLERANCE}x its recorded value before this gate fails. Refresh with --update on an idle machine; never widen TOLERANCE to make CI pass.`,
+    $comment: `Recorded test durations for #760. A tracked test must exceed BOTH ${TOLERANCE}x its recorded value and ${SPAWN_SLACK_MS}ms of absolute slowdown before this gate fails. Refresh with --update from a CI artifact; never widen TOLERANCE or SPAWN_SLACK_MS to make CI pass.`,
     $why: '#760 raised testTimeout to 30s in both vitest projects. Nothing here runs over ~3.1s idle, so that is a ~10x detection gap in which a real slowdown is invisible. This is the recorded expected duration the issue asked to be paired with the raise.',
-    $instrument: `Each run computes its own load factor — the MEDIAN ratio of observed to recorded across every tracked test that ran — and each test is judged against a ceiling scaled by it. Contention raises all of them together so the ceiling rises with it; a regression raises one, which a median over dozens barely moves. Validated on this suite: idle median ratio 1.00 / worst 1.73, loaded median 1.38 / worst 2.60. A run with fewer than ${MIN_CONTROL_GROUP} tracked tests present, or a load factor over ${MAX_LOAD_FACTOR}, ABSTAINS (exit 3) rather than compare.`,
+    $instrument: `Each run computes its own load factor — the MEDIAN ratio of observed to recorded across every tracked test that ran — and each test is judged against a ceiling scaled by it. A firing must also clear ${SPAWN_SLACK_MS}ms of absolute slowdown -- the one contended spawn that lands on a single test and that no group statistic can see. The two are a conjunction, so the slack can only suppress a firing near the floor, never widen the ceiling above it. Contention raises all of them together so the ceiling rises with it; a regression raises one, which a median over dozens barely moves. Validated on this suite: idle median ratio 1.00 / worst 1.73, loaded median 1.38 / worst 2.60; on the runner a contended run put 755ms on an 80ms test while the median moved to 1.71. A run with fewer than ${MIN_CONTROL_GROUP} tracked tests present, or a load factor over ${MAX_LOAD_FACTOR}, ABSTAINS (exit 3) rather than compare.`,
     nodeVersion: process.version,
     measuredAt: new Date().toISOString().slice(0, 10),
     floorMs: FLOOR_MS,
     toleranceFactor: TOLERANCE,
+    spawnSlackMs: SPAWN_SLACK_MS,
     tests,
   };
 }
@@ -242,7 +285,7 @@ function reportRegressions(result, observed) {
   }
   console.log(
     `test-duration-ratchet: ${result.regressions.length} regression(s) over ${result.checked} tracked test(s) actually checked ` +
-      `(${observed.size} collected, load factor ${result.load.toFixed(2)}x, ceiling ${(result.load * TOLERANCE).toFixed(2)}x recorded).`,
+      `(${observed.size} collected, load factor ${result.load.toFixed(2)}x, ceiling ${(result.load * TOLERANCE).toFixed(2)}x recorded, and at least ${SPAWN_SLACK_MS}ms slower).`,
   );
 }
 
@@ -278,7 +321,7 @@ function main(argv) {
     reportRegressions(result, observed);
     if (result.regressions.length > 0) {
       console.log(
-        `::error title=test duration::${result.regressions.length} test(s) exceeded ${TOLERANCE}x their recorded duration`,
+        `::error title=test duration::${result.regressions.length} test(s) exceeded ${TOLERANCE}x their recorded duration by more than ${SPAWN_SLACK_MS}ms`,
       );
       process.exit(1);
     }
