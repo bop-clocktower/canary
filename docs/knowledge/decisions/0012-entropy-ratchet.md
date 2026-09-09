@@ -512,6 +512,17 @@ One property is deliberate rather than accidental: each side reads **its own**
 the findings its config change surfaces, exactly as it owns the ones its code
 change surfaces.
 
+**Ported to the perf ratchet on 2026-09-09 (#812).**
+`.harness/perf-baseline.json` reached zero headroom (233 measured against 233),
+which is this pathology with no slack left: the next PR adding one violation
+fails whatever its own diff did. `scripts/perf-ratchet.mjs` now takes the same
+`--base-report`, runs the same two rules in the same order, and keeps the same
+two YAML invariants (asserted in `ts/test/perf-ratchet.test.ts`). One difference
+is deliberate: a missing base report abstains (exit 3) there rather than
+erroring (exit 2), because the perf step redirects stdout and an absent file
+means `check-perf` died before writing — the convention the perf ratchet already
+used for its head report.
+
 ### Declined: excluding archived plan docs from the link denominator (#719)
 
 Issue #719 reported 23 `NOT_FOUND` doc-link findings, all in archived planning
