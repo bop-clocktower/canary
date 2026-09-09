@@ -6,12 +6,8 @@ import { describe, expect, it } from 'vitest';
 
 import { resolvePersona } from '../src/core/persona.js';
 import { explain } from '../src/analysis/batwoman/verdict.js';
-import {
-  fitLine,
-  renderReport,
-  summaryLine,
-  wrap,
-} from '../src/analysis/batwoman/render.js';
+import { renderReport, summaryLine } from '../src/analysis/batwoman/render.js';
+import { fitLine, wrap } from '../src/analysis/batwoman/text.js';
 import {
   FIXTURE_REGISTRY,
   HEADER,
