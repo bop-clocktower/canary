@@ -197,8 +197,12 @@
       "scripts/test-duration-collect.mjs",
       "scripts/test-duration-ratchet.mjs",
       "ts/scripts/copy-data.mjs",
+      "ts/src/analysis/batwoman/registry.ts",
+      "ts/src/analysis/batwoman/render.ts",
+      "ts/src/analysis/batwoman/verdict.ts",
       "ts/src/cli.ts",
       "ts/src/mcp-server.ts",
+      "ts/test/batwoman-testkit.ts",
       "ts/test/doc-links-testkit.ts",
       "ts/vitest.config.ts"
     ],
@@ -265,8 +269,12 @@
       "scripts/test-duration-collect.mjs",
       "scripts/test-duration-ratchet.mjs",
       "ts/scripts/copy-data.mjs",
+      "ts/src/analysis/batwoman/registry.ts",
+      "ts/src/analysis/batwoman/render.ts",
+      "ts/src/analysis/batwoman/verdict.ts",
       "ts/src/cli.ts",
       "ts/src/mcp-server.ts",
+      "ts/test/batwoman-testkit.ts",
       "ts/test/doc-links-testkit.ts",
       "ts/vitest.config.ts"
     ]

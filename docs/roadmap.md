@@ -374,6 +374,16 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#594
 
+### canary-batwoman — post-merge closure verification
+
+- **Status:** planned
+- **Spec:** docs/changes/canary-batwoman/proposal.md
+- **Summary:** Audits closed issues and reports, per file the closing PR changed, whether that artifact has actually EXECUTED since the merge. GitHub closes an issue on a `Closes #N` string match — a claim of completion with no denominator. Founding case is #749: fix merged, issue auto-closed, and the label-triggered workflow it repaired has not run since 2026-08-10, i.e. never with the fix in place. Deterministic, network-requiring (GitHub Actions run history), agent-free; advisory only — never blocks a job, never reopens an issue. Ships a probe registry so unassessable artifact types become countable NO PROBE rows rather than silence, and a summary line carrying one column per status so an abstention can never be folded into a pass. NAMING 2026-08-23: originally scoped as `canary-manhunter`; renamed because #611 already reserved that name for the release quality dossier and has the stronger claim on it (a prosecutor assembling a case file is what a dossier is). Same roadmap-vs-tracker minting collision recorded on the canary-cassandra row on 2026-08-07 — third occurrence, see #753's sibling discussion.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** —
+
 ## Engine and Platform
 
 ### ADR — sync vs async history-store interface for the TS cutover
