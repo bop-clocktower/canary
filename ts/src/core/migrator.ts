@@ -426,14 +426,6 @@ function findWorkspaceSuites(root: string, framework: string): ExistingSuite[] {
 }
 
 /**
- * Why no single framework resolved, in the terms of what was actually probed.
- *
- * A workspace whose packages disagree is a different failure from a repo where
- * nothing matched, and telling the user "no config file, dependency, or
- * language marker matched" when two package configs *did* match is a claim the
- * run's own evidence contradicts (#504 part 1).
- */
-/**
  * The distinct `framework/shape` pairs the workspace packages declare, in the
  * order the (path-sorted) findings first mention them.
  *
@@ -478,6 +470,14 @@ function unresolvedFrameworkFollowups(ws: WorkspaceInfo | null): string[] {
   return out;
 }
 
+/**
+ * Why no single framework resolved, in the terms of what was actually probed.
+ *
+ * A workspace whose packages disagree is a different failure from a repo where
+ * nothing matched, and telling the user "no config file, dependency, or
+ * language marker matched" when two package configs *did* match is a claim the
+ * run's own evidence contradicts (#504 part 1).
+ */
 function unresolvedFrameworkReason(ws: WorkspaceInfo | null): string {
   const nothingMatched =
     'no config file, dependency, or language marker matched a known framework';
