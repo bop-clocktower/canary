@@ -7,3 +7,5 @@ idiomatic_version_file_enable_tools = ["node"]
 
 [tools]
 gh = "latest"
+"npm:@harness-engineering/cli" = "latest"
+"npm:canary-test-cli" = { version = "latest", npm_args = "--ignore-scripts=false" }

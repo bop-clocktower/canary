@@ -100,10 +100,10 @@ describe('perf-ratchet', () => {
 
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  function run(): { status: number; out: string } {
+  function run(extra: string[] = []): { status: number; out: string } {
     const r = spawnSync(
       process.execPath,
-      [SCRIPT, '--report', report, '--baseline', baseline],
+      [SCRIPT, '--report', report, '--baseline', baseline, ...extra],
       { encoding: 'utf8' },
     );
     return { status: r.status ?? -1, out: `${r.stdout}${r.stderr}` };
@@ -112,6 +112,139 @@ describe('perf-ratchet', () => {
   function writeBaseline(maxViolations: unknown): void {
     writeFileSync(baseline, JSON.stringify({ maxViolations }));
   }
+
+  /**
+   * The merge-base delta rule (#812), ported from the entropy ratchet (#703).
+   *
+   * `maxViolations` is an absolute total, so headroom is a shared budget no
+   * branch can see. The perf baseline reached the end of that budget on
+   * 2026-09-09: measured 233 against a 233 ceiling, so the next PR adding ONE
+   * function-length finding would fail the gate regardless of what its own
+   * diff did. With `--base-report`, the ratchet judges the branch on the delta
+   * it introduced against the commit it branched from — order-independent,
+   * and visible to the author — while the ceiling stays as a backstop.
+   */
+  describe('merge-base delta (#812)', () => {
+    let baseReport: string;
+
+    beforeEach(() => {
+      baseReport = join(dir, 'base-report.txt');
+    });
+
+    function writeReports(head: number, base: number): void {
+      writeFileSync(report, failureHeader(head) + SAMPLE_BODY);
+      writeFileSync(baseReport, failureHeader(base) + SAMPLE_BODY);
+    }
+
+    /** The zero-headroom state the baseline recorded, as a passing case. */
+    it('passes a branch that adds nothing, even with zero absolute headroom', () => {
+      writeBaseline(233);
+      writeReports(233, 233);
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(0);
+      expect(out).toMatch(/delta OK/);
+    });
+
+    it('passes a branch that pays violations down, and shows the negative delta', () => {
+      writeBaseline(233);
+      writeReports(230, 233);
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(0);
+      expect(out).toMatch(/-3/);
+    });
+
+    it('fails a branch that adds violations, and names its own delta', () => {
+      writeBaseline(300);
+      writeReports(236, 233);
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(1);
+      expect(out).toMatch(/introduces 3/);
+      expect(out).toMatch(/233 at the merge base/);
+    });
+
+    // A branch that inherits an over-ceiling base should be told "you added
+    // 3" rather than handed a total it did not cause, which is why the script
+    // evaluates the delta rule ahead of the backstop.
+    it('reports the branch delta ahead of an inherited ceiling overage', () => {
+      writeBaseline(230);
+      writeReports(236, 233);
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(1);
+      expect(out).toMatch(/introduces 3/);
+      expect(out).not.toMatch(/absolute backstop/i);
+    });
+
+    // The backstop half. Without it a long run of +0 merges could walk the
+    // total upward and the delta rule would never notice.
+    it('still fires the absolute backstop when the delta is clean', () => {
+      writeBaseline(230);
+      writeReports(233, 233);
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(1);
+      expect(out).toMatch(/absolute backstop/i);
+    });
+
+    // A base that could not be measured is NOT a base of zero. Degrading to
+    // the absolute rule would let the delta gate go dark the way check-perf
+    // going unwired let the whole check go dark (#717).
+    it('ABSTAINS when the base report has neither header', () => {
+      writeBaseline(300);
+      writeFileSync(report, failureHeader(233) + SAMPLE_BODY);
+      writeFileSync(baseReport, 'Could not resolve entry points\n');
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(3);
+      expect(out).toMatch(/merge-base/);
+    });
+
+    // Same convention as a missing head report: the workflow step redirects
+    // stdout, so an absent file means check-perf died before writing.
+    it('ABSTAINS when the named base report does not exist', () => {
+      writeBaseline(300);
+      writeFileSync(report, failureHeader(233) + SAMPLE_BODY);
+      const { status, out } = run(['--base-report', join(dir, 'absent.txt')]);
+      expect(status).toBe(3);
+      expect(out).toMatch(/merge-base/);
+    });
+
+    // A narrowed or startup-failed base scan prints `v validation passed`,
+    // which would make ANY head count read as a huge regression. The collapse
+    // guard has to protect the base side too.
+    it('ABSTAINS when the base scan collapsed implausibly', () => {
+      writeBaseline(233);
+      writeFileSync(report, failureHeader(233) + SAMPLE_BODY);
+      writeFileSync(baseReport, PASS_LINE);
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(3);
+      expect(out).toMatch(/merge-base/);
+    });
+
+    // Which side went dark has to be legible from the message alone.
+    it('distinguishes a dark head scan from a dark base scan', () => {
+      writeBaseline(300);
+      writeFileSync(report, 'Could not resolve entry points\n');
+      writeFileSync(baseReport, failureHeader(233) + SAMPLE_BODY);
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(3);
+      expect(out).toMatch(/head/);
+      expect(out).not.toMatch(/merge-base perf report/);
+    });
+
+    it('still ABSTAINS on an instrument mismatch before comparing deltas', () => {
+      writeFileSync(
+        baseline,
+        JSON.stringify({ maxViolations: 300, harnessCli: '12.6.0' }),
+      );
+      writeReports(233, 233);
+      const { status, out } = run([
+        '--base-report',
+        baseReport,
+        '--cli-version',
+        '12.7.0',
+      ]);
+      expect(status).toBe(3);
+      expect(out).toMatch(/calibrated against harness CLI 12\.6\.0/);
+    });
+  });
 
   describe('the ratchet', () => {
     it('passes when violations sit under the baseline', () => {
@@ -408,5 +541,52 @@ describe('the checked-in perf baseline (#744)', () => {
   it('hands the resolved CLI version to the ratchet in CI', () => {
     const yaml = readFileSync(WORKFLOW, 'utf8');
     expect(yaml).toMatch(/perf-ratchet\.mjs[\s\S]{0,200}?--cli-version/);
+  });
+});
+
+/**
+ * The delta half is armed in YAML, not in the script (#812). Two invariants
+ * the ratchet cannot verify for itself — by the time it runs it holds two
+ * integers and no provenance — are asserted here against the workflow, the
+ * same way `ts/test/entropy-ratchet.test.ts` asserts them for #703.
+ */
+describe('the perf merge-base delta gate is wired (#812)', () => {
+  const WORKFLOW = join(
+    REPO_ROOT,
+    '.github',
+    'workflows',
+    'harness-quality.yml',
+  );
+  const yaml = (): string => readFileSync(WORKFLOW, 'utf8');
+
+  it('passes --base-report to the ratchet on pull requests', () => {
+    expect(yaml()).toMatch(/--base-report\s+perf-base-report\.txt/);
+    expect(yaml()).toMatch(/perf-ratchet\.mjs[\s\S]{0,200}?\$PERF_BASE_FLAG/);
+  });
+
+  it('gates the base scan on pull_request, so pushes to main still run', () => {
+    expect(yaml()).toMatch(
+      /Harness Performance Check \(merge base\)[\s\S]{0,200}?if:\s*github\.event_name == 'pull_request'/,
+    );
+  });
+
+  it('measures the base with the same floating pin as the head scan', () => {
+    // Not a hardcoded version, and not a second pin: the same `$HARNESS_CLI`
+    // the resolve step reported. Two analyzers produce a delta that is pure
+    // instrument drift.
+    const scans = [
+      ...yaml().matchAll(/npx --yes -p "\$HARNESS_CLI" harness check-perf/g),
+    ];
+    expect(scans.length).toBe(2);
+  });
+
+  it('puts the base worktree outside the checkout', () => {
+    // Inside `$GITHUB_WORKSPACE` the head scan walks the base tree and counts
+    // every violation twice, which inflates BOTH numbers and quietly changes
+    // what the delta means.
+    expect(yaml()).toMatch(
+      /git worktree add --detach "\$RUNNER_TEMP\/perf-base"/,
+    );
+    expect(yaml()).not.toMatch(/git worktree add[^\n]*\$GITHUB_WORKSPACE/);
   });
 });

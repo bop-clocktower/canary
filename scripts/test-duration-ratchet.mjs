@@ -36,8 +36,8 @@ export const BASELINE = join(
   'test-duration-baseline.json',
 );
 
-/** Tests faster than this are not tracked — their timings are mostly noise. */
-export const FLOOR_MS = 250;
+/** Below this, timings are mostly noise. Set from the RUNNER; see the doc. */
+export const FLOOR_MS = 75;
 /** A tracked test may take this multiple of its recorded duration. */
 export const TOLERANCE = 2.5;
 /** Fewer tracked tests than this cannot yield a trustworthy load factor. */
@@ -84,7 +84,7 @@ export function loadFactor(ratios) {
 function usableLoad(measured) {
   if (measured > MAX_LOAD_FACTOR) {
     throw new Abstention(
-      `every tracked test is ${measured.toFixed(1)}x its recorded duration — the machine is far too contended for a comparison to mean anything, so this run verified nothing`,
+      `every tracked test is ${measured.toFixed(1)}x its recorded duration — either far too contended, or a slower class of machine than the baseline was recorded on. Either way not comparable, so this run verified nothing.`,
     );
   }
   if (measured < MIN_LOAD_FACTOR) {
