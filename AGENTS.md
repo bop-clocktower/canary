@@ -17,6 +17,9 @@ integrity.
 - **LLM Configuration:** [LLM Providers][llm-config]
 - **Self-Healing Loop:** [Self-Healing Loop][self-healing]
 - **Main README:** [README.md](README.md)
+- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md) — thin pointer to this
+  file, plus the one thing a contributor cannot discover from it: fork PRs
+  currently cannot pass a required check (#843)
 - **Roadmap:** [docs/roadmap.md](docs/roadmap.md)
 - **State:** [CANARY_STATE.md](docs/CANARY_STATE.md)
 - **Engineering Learnings:** [CANARY_LEARNINGS.md](docs/CANARY_LEARNINGS.md)
