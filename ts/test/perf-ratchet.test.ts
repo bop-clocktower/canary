@@ -162,9 +162,9 @@ describe('perf-ratchet', () => {
       expect(out).toMatch(/233 at the merge base/);
     });
 
-    // A branch that inherits an over-ceiling base should read "you added 3"
-    // first, not a total it did not cause. The delta rule runs before the
-    // backstop for exactly this reason.
+    // A branch that inherits an over-ceiling base should be told "you added
+    // 3" rather than handed a total it did not cause, which is why the script
+    // evaluates the delta rule ahead of the backstop.
     it('reports the branch delta ahead of an inherited ceiling overage', () => {
       writeBaseline(230);
       writeReports(236, 233);
