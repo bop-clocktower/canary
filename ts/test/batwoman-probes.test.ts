@@ -26,6 +26,7 @@ import { matchProbe } from '../src/analysis/batwoman/registry.js';
 import type {
   ExerciseContext,
   ExerciseVerdict,
+  RunHistory,
   RunHistoryPort,
   WorkflowRun,
 } from '../src/analysis/batwoman/verdict.js';
@@ -39,16 +40,18 @@ function fixturePort(
   const asked: string[] = [];
   return {
     asked,
-    async runsForWorkflow(path: string): Promise<WorkflowRun[]> {
+    async runsForWorkflow(path: string): Promise<RunHistory> {
       asked.push(path);
-      return [...(byWorkflow[path] ?? [])];
+      // `complete: true` throughout: these fixtures are whole histories, not
+      // pages. Truncation has its own suite.
+      return { runs: [...(byWorkflow[path] ?? [])], complete: true };
     },
   };
 }
 
 /** A port that fails, standing in for an unreachable or unauthenticated `gh`. */
 const brokenPort: RunHistoryPort = {
-  async runsForWorkflow(): Promise<WorkflowRun[]> {
+  async runsForWorkflow(): Promise<RunHistory> {
     throw new Error('gh: not authenticated');
   },
 };
@@ -70,7 +73,13 @@ afterEach(() => {
 });
 
 function ctx(runs: RunHistoryPort): ExerciseContext {
-  return { mergedAt: MERGED_AT, repo: 'bop-clocktower/canary', runs, root };
+  return {
+    mergedAt: MERGED_AT,
+    repo: 'bop-clocktower/canary',
+    runs,
+    root,
+    deleted: new Set<string>(),
+  };
 }
 
 /** Writes #749's workflow: label-gated, exactly as the real file triggers. */
@@ -248,6 +257,7 @@ describe('workflowScriptProbe', () => {
         repo: 'bop-clocktower/canary',
         runs: fixturePort({}),
         root: bare,
+        deleted: new Set<string>(),
       });
       expect(verdict.status).toBe('abstain');
     } finally {
@@ -297,6 +307,7 @@ describe('noExecutionProbe', () => {
       repo: 'bop-clocktower/canary',
       runs: brokenPort,
       root: '/nonexistent-batwoman-root',
+      deleted: new Set<string>(),
     });
 
     expect(verdict.status).toBe('not-applicable');

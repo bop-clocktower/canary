@@ -28,6 +28,9 @@ const OFFLINE_CTX: ExerciseContext = {
       throw new Error('no test may reach the network');
     },
   },
+  // Nothing in this suite is a deletion; the deleted-file path has its own
+  // suite in batwoman-truncation.test.ts.
+  deleted: new Set<string>(),
 };
 
 function fakeProbe(id: string, pattern: RegExp): ExerciseProbe {

@@ -115,11 +115,27 @@ export interface WorkflowRun {
 }
 
 /**
+ * One fetched window of a workflow's run history.
+ *
+ * `complete` is the field that keeps batwoman honest about its own reach.
+ * `gh run list` paginates, so a page that filled to its limit may have older
+ * runs behind it. If that window never got back past the merge, then "no run
+ * after the merge" and "I stopped looking" are the same observation, and only
+ * one of them is a verdict. The port reports what it saw; the probe decides
+ * what that is worth (spec Phase 3).
+ */
+export interface RunHistory {
+  readonly runs: readonly WorkflowRun[];
+  /** False when the page hit its limit -- older runs may exist behind it. */
+  readonly complete: boolean;
+}
+
+/**
  * The single network seam (spec D6). The real implementation shells out to
- * `gh` in Phase 3; every test in Phases 1 and 2 injects a fixture.
+ * `gh` (see `gh-history.ts`); every probe test injects a fixture.
  */
 export interface RunHistoryPort {
-  runsForWorkflow(workflowPath: string): Promise<WorkflowRun[]>;
+  runsForWorkflow(workflowPath: string): Promise<RunHistory>;
 }
 
 /** Everything a probe is allowed to read. */
@@ -129,6 +145,13 @@ export interface ExerciseContext {
   readonly runs: RunHistoryPort;
   /** Repo root, for static resolution (e.g. which workflow calls a script). */
   readonly root: string;
+  /**
+   * Paths the closing PR deleted.
+   *
+   * A deleted file has nothing left to execute and no longer exists to
+   * classify, so it is answered before any probe is consulted (spec Phase 3).
+   */
+  readonly deleted: ReadonlySet<string>;
 }
 
 /** One artifact type's detector. The shipped three live in `probes.ts`. */
