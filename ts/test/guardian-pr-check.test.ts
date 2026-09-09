@@ -22,7 +22,6 @@ import {
   GuardianFinding,
   applySuppressions,
   buildFindings,
-  buildWeakTestFindings,
   computeExitCode,
   filterSkipped,
   filterTestUnits,
@@ -30,6 +29,7 @@ import {
   renderFindings,
   scopeDiff,
 } from '../src/guardian/pr-check.js';
+import { buildWeakTestFindings } from '../src/guardian/weak-test.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures

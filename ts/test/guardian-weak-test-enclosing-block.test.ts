@@ -15,11 +15,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { type ChangedUnit } from '../src/guardian/coverage.js';
-import {
-  buildWeakTestFindings,
-  filterTestUnits,
-  scopeDiff,
-} from '../src/guardian/pr-check.js';
+import { filterTestUnits, scopeDiff } from '../src/guardian/pr-check.js';
+import { buildWeakTestFindings } from '../src/guardian/weak-test.js';
 
 function testUnits(diff: string): ChangedUnit[] {
   const [, units] = filterTestUnits(scopeDiff(diff));
