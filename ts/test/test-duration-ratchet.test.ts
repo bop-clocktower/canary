@@ -26,6 +26,7 @@
  * a real report, or touches the committed baseline.
  */
 
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -51,6 +52,7 @@ interface Baseline {
 interface RatchetModule {
   FLOOR_MS: number;
   TOLERANCE: number;
+  SPAWN_SLACK_MS: number;
   MIN_CONTROL_GROUP: number;
   MAX_LOAD_FACTOR: number;
   MIN_LOAD_FACTOR: number;
@@ -68,6 +70,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const {
   FLOOR_MS,
   TOLERANCE,
+  SPAWN_SLACK_MS,
   MIN_CONTROL_GROUP,
   MAX_LOAD_FACTOR,
   MIN_LOAD_FACTOR,
@@ -166,6 +169,95 @@ describe('compare — a faster run is never a regression', () => {
     expect(() => compare(base, observedAt(base, MIN_LOAD_FACTOR / 2))).toThrow(
       /different class of machine/,
     );
+  });
+});
+
+describe('compare — a contended spawn is below the resolution of the instrument', () => {
+  // The second instance of #760, this time surfacing THROUGH the ratchet
+  // rather than through the 5000ms timeout: CI run 34327672926 fired on four
+  // tests recorded at 80-87ms that measured 425-835ms, and the re-run of the
+  // same commit reported 0 regressions at load factor 1.00. The load factor
+  // could not have saved them, because the runner's contention is not uniform
+  // — half the tracked tests ran FASTER than recorded in the same run while a
+  // handful took a 200-755ms penalty each — so the median saw little and the
+  // penalty landed on tests whose whole recorded duration is one spawn.
+  //
+  // A multiplicative ceiling over an 80ms recording asks the runner to spawn
+  // a process within 200ms every time, which it does not. The ceiling now
+  // carries an absolute slack of one contended spawn: a slowdown smaller than
+  // that is noise this instrument cannot distinguish from a regression, and
+  // claiming otherwise is the false red that teaches re-run-until-green.
+  interface RealRun {
+    recorded: Record<string, number>;
+    contended: Record<string, number>;
+    rerun: Record<string, number>;
+  }
+  const run = JSON.parse(
+    readFileSync(
+      join(
+        REPO_ROOT,
+        'ts',
+        'test',
+        'fixtures',
+        'duration-ratchet-run-34327672926.json',
+      ),
+      'utf-8',
+    ),
+  ) as RealRun;
+  const baseline: Baseline = {
+    nodeVersion: process.version,
+    tests: run.recorded,
+  };
+
+  it('does not fire on the real contended run that fired in CI', () => {
+    const result = compare(baseline, new Map(Object.entries(run.contended)));
+    expect(result.regressions.map((r) => r.key)).toEqual([]);
+    expect(result.checked).toBe(Object.keys(run.recorded).length);
+  });
+
+  it('does not fire on the re-run of the same commit either', () => {
+    const result = compare(baseline, new Map(Object.entries(run.rerun)));
+    expect(result.regressions).toEqual([]);
+  });
+
+  it('still fires when a small test regresses by more than one contended spawn', () => {
+    // The slack is a resolution limit, not an exemption: a test recorded at
+    // 80ms that now takes seconds is exactly the 30s-window regression the
+    // gate exists for.
+    const observed = new Map(Object.entries(run.contended));
+    const key =
+      'test/canary-katana.test.ts::commitForFile returns null for an unknown path';
+    observed.set(key, run.recorded[key]! * TOLERANCE + SPAWN_SLACK_MS + 1);
+    expect(compare(baseline, observed).regressions.map((r) => r.key)).toEqual([
+      key,
+    ]);
+  });
+
+  it('does not let the slack loosen the multiplicative rule on a large test', () => {
+    // The slack is a conjunction, not a wider ceiling. On a test recorded in
+    // seconds a 2.5x overrun is already tens of thousands of ms of absolute
+    // slowdown, so the second condition is satisfied the moment the first is
+    // and the reported ceiling is the multiplicative one, exactly as before.
+    // Added instead, this ceiling would have been 27,000ms and this 26,000ms
+    // regression would have gone unreported.
+    const base = baselineOf(20, 10_000);
+    const observed = observedAt(base, 1);
+    observed.set('f.test.ts::t0', 10_000 * (TOLERANCE + 0.1));
+    const [first] = compare(base, observed).regressions;
+    expect(first?.key).toBe('f.test.ts::t0');
+    expect(first?.ceiling).toBeCloseTo(10_000 * TOLERANCE);
+  });
+
+  it('is sized from the runner, not the laptop, and stays inside the gate’s purpose', () => {
+    // 755ms was the largest single-test penalty on the contended run; the
+    // slack must cover it with margin, and must stay well under the 30s
+    // timeout window the gate exists to watch — a slack that swallowed
+    // seconds would recreate the detection gap #760 opened.
+    const penalties = Object.keys(run.recorded).map(
+      (k) => run.contended[k]! - run.recorded[k]!,
+    );
+    expect(Math.max(...penalties)).toBeLessThan(SPAWN_SLACK_MS);
+    expect(SPAWN_SLACK_MS).toBeLessThanOrEqual(3_000);
   });
 });
 
