@@ -147,6 +147,60 @@ describe('buildFlakyTestsReport', () => {
     const md = buildFlakyTestsReport(rows, 30, 10.0, 20);
     expect(md.match(/\| t\d+ \|/g)?.length).toBe(20);
   });
+
+  describe('cross-run alternation section (#604)', () => {
+    const alternator: FlakyRow = {
+      ...flakyRow('test alt', 'unit', 'cart', 0, 0, 8),
+      flip_count: 6,
+      flip_rate_pct: 85.7,
+    };
+
+    it('lists an alternator under its own heading, not in the flake table', () => {
+      const md = buildFlakyTestsReport([alternator], 30, 10.0);
+      expect(md).toContain('No tests above 10.0% flake rate');
+      expect(md).toContain('Cross-run alternation');
+      expect(md).toContain('| test alt | unit | cart | 85.7% | 6/8 |');
+      // Not a row in the flake table: a 0.0% line there would read as noise.
+      expect(md).not.toContain('| test alt | unit | cart | 0.0% |');
+    });
+
+    it('omits the section when no row alternates, so the goldens hold', () => {
+      const md = buildFlakyTestsReport(
+        [
+          {
+            ...flakyRow('t', 'api', 'a', 34.0),
+            flip_count: 1,
+            flip_rate_pct: 50,
+          },
+        ],
+        30,
+        10.0,
+      );
+      expect(md).not.toContain('Cross-run alternation');
+    });
+
+    it('omits the section for rows a backend never measured', () => {
+      // Supabase rows carry no flip fields: UNKNOWN, rendered as absent here
+      // and named as a caveat by the skill, never as a clean alternation line.
+      const md = buildFlakyTestsReport(
+        [flakyRow('t', 'api', 'a', 34.0)],
+        30,
+        10.0,
+      );
+      expect(md).not.toContain('Cross-run alternation');
+    });
+
+    it('lists a row in both tables when it both retries and alternates', () => {
+      const both: FlakyRow = {
+        ...flakyRow('test both', 'unit', 'cart', 30, 3, 10),
+        flip_count: 3,
+        flip_rate_pct: 33.3,
+      };
+      const md = buildFlakyTestsReport([both], 30, 10.0);
+      expect(md).toContain('| test both | unit | cart | 30.0% | 3/10 |');
+      expect(md).toContain('| test both | unit | cart | 33.3% | 3/10 |');
+    });
+  });
 });
 
 describe('buildFailureSpikesReport', () => {

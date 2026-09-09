@@ -170,6 +170,89 @@ describe('NdjsonHistoryStore.queryFlaky', () => {
     // window=1 keeps only r2 → test a passed once → 0% → below threshold
     expect(store.queryFlaky(1, 'api', 10.0)).toEqual([]);
   });
+
+  it('stamps every row with its cross-run flip count and rate (#604)', () => {
+    const store = new NdjsonHistoryStore(writeHistory(records));
+    const [row] = store.queryFlaky(30, null, 10.0);
+    // `a` was flaky then passed: one definitive observation, no flips.
+    expect(row!.flip_count).toBe(0);
+    expect(row!.flip_rate_pct).toBe(0);
+  });
+});
+
+describe('NdjsonHistoryStore.queryFlaky cross-run alternation (#604)', () => {
+  // What `canary history record` actually writes: vitest has no `flaky`
+  // status, so a test that alternates passed/failed ACROSS runs arrives with
+  // flake_count 0 and was invisible to every flake surface before #604.
+  const run = (id: string, statuses: Record<string, string>) => ({
+    run_id: id,
+    suite: 'unit',
+    timestamp: `2026-09-0${id.slice(1)}T00:00:00Z`,
+    tests: Object.entries(statuses).map(([test_name, status]) => ({
+      test_name,
+      status,
+    })),
+  });
+  const records = [
+    run('r1', { alt: 'passed', reg: 'passed', once: 'passed' }),
+    run('r2', { alt: 'failed', reg: 'passed', once: 'passed' }),
+    run('r3', { alt: 'passed', reg: 'passed', once: 'passed' }),
+    run('r4', { alt: 'failed', reg: 'failed', once: 'failed' }),
+    run('r5', { alt: 'passed', reg: 'failed', once: 'passed' }),
+  ];
+
+  it('surfaces a passed/failed alternator that never carried a flaky status', () => {
+    const store = new NdjsonHistoryStore(writeHistory(records));
+    const rows = store.queryFlaky(30, null, 10.0);
+    const alt = rows.find((r) => r.test_name === 'alt');
+    expect(alt).toBeDefined();
+    expect(alt!.flake_count).toBe(0);
+    expect(alt!.flake_rate_pct).toBe(0);
+    expect(alt!.flip_count).toBe(4);
+    expect(alt!.flip_rate_pct).toBe(100);
+    expect(alt!.pass_count).toBe(3);
+    expect(alt!.fail_count).toBe(2);
+  });
+
+  it('does NOT surface a single-flip regression as alternation', () => {
+    // `reg` went green -> red once and stayed: that is detectRegressions'
+    // shape. Reporting it as flaky would misdirect a reader to a retry.
+    const store = new NdjsonHistoryStore(writeHistory(records));
+    const names = store.queryFlaky(30, null, 10.0).map((r) => r.test_name);
+    expect(names).not.toContain('reg');
+  });
+
+  it('surfaces a fail-and-recover blip only when it clears the rate threshold', () => {
+    // `once`: p p p f p -> 2 flips of 4 transitions = 50%.
+    const store = new NdjsonHistoryStore(writeHistory(records));
+    expect(store.queryFlaky(30, null, 10.0).map((r) => r.test_name)).toContain(
+      'once',
+    );
+    expect(
+      store.queryFlaky(30, null, 60.0).map((r) => r.test_name),
+    ).not.toContain('once');
+  });
+
+  it('measures flips inside the window only', () => {
+    const store = new NdjsonHistoryStore(writeHistory(records));
+    // Last two runs: alt f -> p is one flip, below the two-flip floor.
+    expect(store.queryFlaky(2, null, 10.0)).toEqual([]);
+  });
+
+  it('orders by the larger of the two rates, so an alternator is not buried', () => {
+    const store = new NdjsonHistoryStore(
+      writeHistory([
+        ...records.map((r) => ({
+          ...r,
+          tests: [...r.tests, { test_name: 'retry', status: 'flaky' }],
+        })),
+      ]),
+    );
+    const names = store.queryFlaky(30, null, 10.0).map((r) => r.test_name);
+    // retry: 100% flake rate; alt: 100% flip rate; once: 50% flip rate.
+    expect(names.indexOf('once')).toBeGreaterThan(names.indexOf('alt'));
+    expect(names.indexOf('once')).toBeGreaterThan(names.indexOf('retry'));
+  });
 });
 
 describe('NdjsonHistoryStore.queryTimeline / querySummary', () => {

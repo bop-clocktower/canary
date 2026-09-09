@@ -156,6 +156,37 @@ describe('history flaky (populated store)', () => {
     expect(res.stdout).toContain('\u{2014}');
   });
 
+  it('renders a cross-run alternator in its own table, not the flake one (#604)', async () => {
+    const res = await runHistory(['flaky'], {
+      countRuns: 10,
+      flaky: [
+        flakyRow({
+          test_name: 'cart total',
+          flake_count: 0,
+          flake_rate_pct: 0,
+          pass_count: 5,
+          fail_count: 5,
+          flip_count: 9,
+          flip_rate_pct: 100,
+        }),
+      ],
+    });
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('No tests above 10.0% flake rate');
+    expect(res.stdout).toContain('Alternating Tests');
+    expect(res.stdout).toContain('cart total');
+    expect(res.stdout).toContain('100.0%');
+    expect(res.stdout).toContain('9/10');
+  });
+
+  it('omits the alternation table when no row alternates', async () => {
+    const res = await runHistory(['flaky'], {
+      countRuns: 10,
+      flaky: [flakyRow({ flip_count: 1, flip_rate_pct: 11.1 })],
+    });
+    expect(res.stdout).not.toContain('Alternating Tests');
+  });
+
   it('honours --window and --min-rate in the table header', async () => {
     const res = await runHistory(
       ['flaky', '--window', '5', '--min-rate', '2.5'],
