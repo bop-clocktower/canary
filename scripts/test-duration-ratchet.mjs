@@ -40,6 +40,27 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import {
+  Abstention,
+  MAX_LOAD_FACTOR,
+  collectDurations,
+  loadFactor,
+  median,
+  testKey,
+  usableLoad,
+} from './test-duration-collect.mjs';
+
+// Re-exported so this module stays the single public surface of the gate:
+// the workflow and ts/test/test-duration-ratchet.test.ts import from here.
+export {
+  MAX_LOAD_FACTOR,
+  MIN_LOAD_FACTOR,
+  collectDurations,
+  loadFactor,
+  median,
+  testKey,
+} from './test-duration-collect.mjs';
+
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const BASELINE = join(
   REPO_ROOT,
@@ -67,86 +88,6 @@ export const TOLERANCE = 2.5;
 export const SPAWN_SLACK_MS = 2000;
 /** Fewer tracked tests than this cannot yield a trustworthy load factor. */
 export const MIN_CONTROL_GROUP = 10;
-/** A load factor above this means even the normalised comparison is guesswork. */
-export const MAX_LOAD_FACTOR = 5;
-/**
- * Below this the run is a different CLASS of machine, not merely an idle one,
- * and the baseline does not describe it. Found by CI: a macOS-recorded
- * baseline against an ubuntu runner gave a load factor of 0.08, because Linux
- * spawns a process about an order of magnitude faster and these tests are
- * spawn-bound. Comparing across that is meaningless in either direction.
- */
-export const MIN_LOAD_FACTOR = 0.5;
-
-/** Middle value of a numeric list. */
-export function median(values) {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)] ?? 0;
-}
-
-/**
- * How much slower this run is than the baseline, across the whole tracked set.
- *
- * The control group. Contention adds a large, roughly uniform penalty to every
- * test that spawns, so the median of the per-test ratios IS this run's load
- * level — taken from the same population being judged, on the same machine, in
- * the same run. One regressed test barely moves a median over dozens, which is
- * the asymmetry that separates the two.
- */
-export function loadFactor(ratios) {
-  return ratios.length === 0 ? 1 : median(ratios);
-}
-
-/**
- * The load factor to judge against, or an abstention when the run is not
- * comparable to the baseline at all.
- *
- * Clamped at 1, because contention may only ever LOOSEN the ceiling. Letting a
- * factor below 1 tighten it inverts the gate into one that fails tests for
- * running FASTER than recorded — which is exactly what CI caught on this
- * gate's first run.
- */
-function usableLoad(measured) {
-  if (measured > MAX_LOAD_FACTOR) {
-    throw new Abstention(
-      `every tracked test is ${measured.toFixed(1)}x its recorded duration — either far too contended, or a slower class of machine than the baseline was recorded on. Either way not comparable, so this run verified nothing.`,
-    );
-  }
-  if (measured < MIN_LOAD_FACTOR) {
-    throw new Abstention(
-      `every tracked test is ${measured.toFixed(2)}x its recorded duration — a different class of machine from the one the baseline was recorded on, not a fast run, so the comparison would be meaningless. Re-record the baseline where the gate runs.`,
-    );
-  }
-  return Math.max(1, measured);
-}
-
-/** `file::test title` — stable across runs and readable in a diff. */
-export function testKey(file, title) {
-  return `${file.split('/').slice(-2).join('/')}::${title}`;
-}
-
-/** One `{key, ms}` per assertion in a single report file. */
-function fileRows(file) {
-  const name = file.name ?? '';
-  return (file.assertionResults ?? []).map((a) => ({
-    key: testKey(name, a.title ?? ''),
-    ms: a.duration ?? 0,
-  }));
-}
-
-/** Slowest per test across reports; a minimum would hide a regression. */
-export function collectDurations(reports) {
-  const worst = new Map();
-  const files = reports.flatMap((report) => report.testResults ?? []);
-  for (const row of files.flatMap(fileRows)) {
-    const seen = worst.get(row.key) ?? 0;
-    if (row.ms > seen) worst.set(row.key, row.ms);
-  }
-  return worst;
-}
-
-class Abstention extends Error {}
-
 function readBaseline() {
   if (!existsSync(BASELINE)) {
     throw new Abstention(
@@ -170,6 +111,31 @@ function requireComparable(baseline) {
 }
 
 /**
+ * Splits the tracked set into what this run can judge and what it cannot.
+ *
+ * `missing` is every tracked test the run did not produce a usable timing for
+ * — absent from the report, or recorded at a non-positive duration there is no
+ * meaningful ratio against. It is returned rather than dropped because a
+ * tracked test that vanished is a finding: the gate covered less than it
+ * claims and nobody would otherwise notice.
+ */
+function partitionTracked(tracked, observed) {
+  const rows = tracked.map(([key, recorded]) => ({
+    key,
+    recorded,
+    actual: observed.get(key),
+  }));
+  return {
+    missing: rows
+      .filter((r) => r.actual === undefined || r.recorded <= 0)
+      .map((r) => r.key),
+    present: rows
+      .filter((r) => r.actual !== undefined && r.recorded > 0)
+      .map((r) => ({ ...r, ratio: r.actual / r.recorded })),
+  };
+}
+
+/**
  * Compares observed durations to the baseline.
  *
  * A tracked test missing from the run is a finding, not a skip: it means the
@@ -183,17 +149,7 @@ export function compare(baseline, observed) {
     );
   }
 
-  const rows = tracked.map(([key, recorded]) => ({
-    key,
-    recorded,
-    actual: observed.get(key),
-  }));
-  const missing = rows
-    .filter((r) => r.actual === undefined || r.recorded <= 0)
-    .map((r) => r.key);
-  const present = rows
-    .filter((r) => r.actual !== undefined && r.recorded > 0)
-    .map((r) => ({ ...r, ratio: r.actual / r.recorded }));
+  const { missing, present } = partitionTracked(tracked, observed);
 
   // The control group has to be big enough for its median to mean anything.
   // Comparing against a load factor derived from three tests is the
