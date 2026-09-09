@@ -475,7 +475,8 @@ describe('canary migrate --json carries the workspace surface (#504)', () => {
 
       for (const key of PRE_504_JSON_KEYS) expect(payload).toHaveProperty(key);
       expect(payload['workspace']).toBeNull();
-      expect(payload['shapes']).toEqual(['backend_unit']);
+      // `language: python` resolves via the language tier to pytest / api.
+      expect(payload['shapes']).toEqual(['api']);
       expect(payload['existing_suites']).toEqual([]);
     } finally {
       rmTmp(base);
