@@ -139,8 +139,8 @@ describe('truncated run history', () => {
   });
 
   it('still reports exercised when a qualifying run is in a truncated page', async () => {
-    // Finding a run after the merge is a positive result; nothing older could
-    // overturn it, so truncation is irrelevant on this path.
+    // A run that postdates the merge is positive evidence, and a page that
+    // omits earlier history cannot retract it, so truncation is moot here.
     const verdict = await probe.probe(
       WF,
       ctx(port({ runs: [run('2026-09-01T09:00:00Z')], complete: false })),
