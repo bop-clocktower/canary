@@ -111,7 +111,6 @@ import {
   GuardianConfig,
   applySuppressions,
   buildFindings,
-  buildWeakTestFindings,
   computeExitCode,
   effectiveGraphDepth,
   filterHeuristicNoise,
@@ -125,6 +124,7 @@ import {
   renderFindings,
   scopeDiff,
 } from './pr-check.js';
+import { buildWeakTestFindings } from './weak-test.js';
 import {
   GitHubClient,
   RestGitHubClient,
