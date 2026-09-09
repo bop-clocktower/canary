@@ -14,6 +14,20 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- **Perf ratchet judges a PR on its own merge-base delta** (#812). The perf
+  ceiling in `.harness/perf-baseline.json` reached zero headroom on 2026-09-09
+  (233 measured against 233), at which point any PR adding a single
+  function-length finding failed `validate` whatever its own diff did — the #703
+  pathology, which the entropy ratchet had already fixed and the perf ratchet
+  had not. `scripts/perf-ratchet.mjs` now takes `--base-report` and fails on the
+  violations the branch introduced against the commit it branched from; the
+  absolute ceiling stays as a backstop, and `harness-quality.yml` scans the base
+  tree in a `$RUNNER_TEMP` worktree with the same resolved CLI. A base scan that
+  produced nothing, or collapsed implausibly, abstains rather than degrading to
+  the absolute rule.
+
 ## [7.2.0] - 2026-09-08
 
 ### Added
