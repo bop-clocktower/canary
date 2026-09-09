@@ -94,10 +94,10 @@ slash-command entry points.
 ### Test hygiene & reliability
 
 - [`canary-savant`](./claude-code/canary-savant/SKILL.md) — Order-dependence &
-  isolation detector. A Tier-1 static scan flags shared-state smells that
-  predict order-dependent tests; an opt-in dynamic confirmer shuffles the suite
-  under a pinned seed and (for pytest) bisects the prefix to name the polluter.
-  The first JS/Node skill (`requires: node>=20`).
+  isolation detector. A static pass flags shared-state smells that predict
+  order-dependent tests; an opt-in confirming pass shuffles the suite under a
+  pinned seed and (for pytest) bisects the prefix to name the polluter. The
+  first JS/Node skill (`requires: node>=20`).
 - [`canary-katana`](./claude-code/canary-katana/SKILL.md) — Quarantines deleted
   and newly-skipped tests into an append-only provenance ledger, alarming in
   exactly one case: the deletion dropped the last coverage of a critical-area

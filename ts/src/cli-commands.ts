@@ -11,13 +11,7 @@
  * `\u{...}` escapes emitted verbatim.
  */
 
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, resolve } from 'node:path';
 
 import pc from 'picocolors';
@@ -42,7 +36,8 @@ import {
   listOverlays,
   resolveOverlay,
 } from './core/overlays.js';
-import { JS_TEST_EXTENSIONS, frameworkForPath } from './core/static-linter.js';
+import { frameworkForPath } from './core/static-linter.js';
+import { SCANNABLE_DESC, collectTestFiles, isDir } from './core/test-files.js';
 import type { LintFinding } from './core/static-linter.js';
 import { RunSummary } from './core/ticket-updater.js';
 import { renderBanner } from './ui/banner.js';
@@ -75,71 +70,6 @@ function isFile(p: string): boolean {
   } catch {
     return false;
   }
-}
-
-function isDir(p: string): boolean {
-  try {
-    return statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Directories never worth walking. A dependency's own test suite is not the
- * consumer's to fix: before #566, `node_modules` accounted for 254 of 256
- * findings in one downstream run, and the only `critical` sat inside vendored
- * code. `pattern-matcher.ts` has carried this set since the Python port; this
- * walk was the copy that never got it.
- */
-const IGNORED_DIRS: ReadonlySet<string> = new Set([
-  'node_modules',
-  '.git',
-  '__pycache__',
-  '.venv',
-  'venv',
-  'dist',
-  'build',
-  '.next',
-  '.nuxt',
-]);
-
-function walkFiles(dir: string): string[] {
-  const out: string[] = [];
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return out;
-  }
-  for (const e of entries) {
-    const full = join(dir, e.name);
-    if (e.isDirectory()) {
-      if (!IGNORED_DIRS.has(e.name)) out.push(...walkFiles(full));
-    } else if (e.isFile()) out.push(full);
-  }
-  return out;
-}
-
-/**
- * `test_*.py` plus `*.test.*` / `*.spec.*` over every extension the scanners
- * can actually read -- `.mjs` and `.cjs` included, which is the half of #566
- * that made a directory of ESM tests collect zero files.
- */
-const JS_TEST_FILE_RE = new RegExp(
-  `\\.(test|spec)\\.(${JS_TEST_EXTENSIONS.map((e) => e.slice(1)).join('|')})$`,
-);
-
-/** Recursive test-file glob matching Python's `rglob` union, sorted by path. */
-function collectTestFiles(dir: string): string[] {
-  return walkFiles(dir)
-    .filter((p) => {
-      const b = basename(p);
-      return (
-        (b.startsWith('test_') && b.endsWith('.py')) || JS_TEST_FILE_RE.test(b)
-      );
-    })
-    .sort();
 }
 
 // --- recommend ---------------------------------------------------------------
@@ -697,11 +627,6 @@ function findingPayload(f: LintFinding): Record<string, unknown> {
     suggestion: f.suggestion,
   };
 }
-
-/** Human-readable list of what the collectors look for, for remedy text. */
-const SCANNABLE_DESC = `test_*.py, *.test|spec.{${JS_TEST_EXTENSIONS.map((e) =>
-  e.slice(1),
-).join(',')}}`;
 
 /** Emit the abstention notice in the caller's output mode, then exit 3. */
 function abstain(

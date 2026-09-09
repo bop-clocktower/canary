@@ -106,6 +106,23 @@ reason, or one that quietly grows, is a smell.
 2. Add a handful of **asserted** cases (expected exact output/exit for a few
    invocations) so the suite also catches "both sides are wrong the same way."
 
+## Invocation
+
+```bash
+# Usage, flags, and the cases-file contract (exits 0):
+canary skills run canary-shadow -- --help
+```
+
+A run needs a cases file, so the shape below is illustrative — copy
+`scripts/cases.example.json`, point it at your two implementations, and
+substitute the path:
+
+<!-- canary:illustrative -->
+
+```bash
+canary skills run canary-shadow -- --cases <cases.json>
+```
+
 ## Caveat — agreement is not correctness
 
 Differential testing proves the two implementations AGREE. If the baseline has a

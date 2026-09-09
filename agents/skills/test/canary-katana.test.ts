@@ -178,6 +178,54 @@ const POINTS_REMOVAL = `diff --git a/tests/test_points.py b/tests/test_points.py
  x = 1
 `;
 
+// --- fixtures for #783: a declaration line that changed but did not leave ---
+
+// Prettier reflowing a long signature. Nothing was removed.
+const JS_REFLOW = `diff --git a/tests/x.spec.ts b/tests/x.spec.ts
+--- a/tests/x.spec.ts
++++ b/tests/x.spec.ts
+@@ -1,5 +1,7 @@
+-test('a stable test that merely got reformatted', async ({ page }) => {
++test('a stable test that merely got reformatted', async ({
++    page,
++}) => {
+   await page.goto('/');
+ });
+`;
+
+// A describe-level quarantine being lifted (or split into per-test skips).
+const JS_SKIP_LIFTED = `diff --git a/tests/customers.spec.ts b/tests/customers.spec.ts
+--- a/tests/customers.spec.ts
++++ b/tests/customers.spec.ts
+@@ -1,4 +1,4 @@
+-    test.describe.skip('POST /v2/customers rejects malformed payloads', () => {
++    test.describe('POST /v2/customers rejects malformed payloads', () => {
+       test('rejects an empty body', async () => {});
+     });
+`;
+
+const PY_REINDENT = `diff --git a/tests/test_points.py b/tests/test_points.py
+--- a/tests/test_points.py
++++ b/tests/test_points.py
+@@ -1,3 +1,4 @@
+ class TestPoints:
+-def test_earns_points():
++    def test_earns_points():
+         assert earn(100) == 10
+`;
+
+// A rename genuinely IS a removal plus an addition: the old title's coverage
+// is gone, and nothing under that name remains to attribute to.
+const JS_RENAME = `diff --git a/tests/cart.spec.ts b/tests/cart.spec.ts
+--- a/tests/cart.spec.ts
++++ b/tests/cart.spec.ts
+@@ -1,3 +1,3 @@
+-  it('adds to cart', async () => {
++  it('adds an item to the cart', async () => {
+     await addToCart();
+   });
+`;
+
 // --- diffscan: test-file classification ------------------------------------
 
 describe('diffscan.isTestFile', () => {
@@ -298,6 +346,45 @@ describe('diffscan skip markers', () => {
     expect(found.every((d) => d.kind === diffscan.Kind.SKIPPED)).toBe(true);
   });
 
+  // #783. The supersede step above could only cancel a removal when the `+`
+  // side was a SKIP, so any other rewrite of a declaration line -- a prettier
+  // reflow, a `.skip` lifted in place -- recorded a deletion of a test that is
+  // still in the tree. The ledger is append-only, so that row is permanent and
+  // cannot be corrected without the hand-edit the ledger exists to prevent, and
+  // a consumer attributing on the newest matching row gets the wrong answer for
+  // every test under a phantom-removed describe.
+  describe('a re-declared test is a modification, not a removal (#783)', () => {
+    it('nets out a signature reflowed across lines', () => {
+      expect(diffscan.findDeletions(JS_REFLOW)).toEqual([]);
+    });
+
+    it('nets out a describe-level skip lifted in place', () => {
+      expect(diffscan.findDeletions(JS_SKIP_LIFTED)).toEqual([]);
+    });
+
+    it('nets out a reindented python def', () => {
+      expect(diffscan.findDeletions(PY_REINDENT)).toEqual([]);
+    });
+
+    // The half that must NOT change: cancelling on re-declaration is only safe
+    // while a genuine deletion still lands, and while a rename still reads as
+    // one (the old title is gone, so its coverage really is).
+    it('still catches a genuine deletion', () => {
+      const found = diffscan.findDeletions(PY_REMOVAL);
+      expect(found.map((d) => d.name)).toEqual([
+        'test_earns_points_on_purchase',
+        'test_points_expire',
+      ]);
+    });
+
+    it('still reports a rename as a removal of the old title', () => {
+      const found = diffscan.findDeletions(JS_RENAME);
+      expect(found.map((d) => [d.name, d.kind])).toEqual([
+        ['adds to cart', diffscan.Kind.REMOVED],
+      ]);
+    });
+  });
+
   it('classifies .fixme conversions as skipped, not removed (#400)', () => {
     const byName = Object.fromEntries(
       diffscan.findDeletions(FIXME_CONVERSION).map((d) => [d.name, d]),
@@ -382,6 +469,61 @@ describe('ledger', () => {
     expect(doc.entries.length).toBe(1);
   });
 
+  it('does not duplicate a row when only the issue differs (#781, #771)', () => {
+    // The issue link is an ATTRIBUTE of the mute, not part of its identity,
+    // and this is the case that proves why it has to be. A ledger written
+    // before the field existed holds rows with no link; the same capture
+    // re-run afterwards finds one. If `issue` were part of the de-duplication
+    // key those would hash differently and the second run would append a
+    // duplicate of a row already on disk — breaking the append-only guarantee
+    // precisely at the version boundary, where nobody would be looking.
+    const p = path.join(mkTmp(), 'q.json');
+    ledger.appendEntries(p, [entry({ issue: '' })]);
+    const doc = ledger.appendEntries(p, [entry({ issue: 'PROJ-4471' })]);
+
+    expect(doc.entries.length).toBe(1);
+    // First write wins, because the ledger only ever grows and existing rows
+    // keep their position. Correcting a recorded link is a new commit and a
+    // new row, not a silent rewrite of history.
+    expect((doc.entries[0] as { issue: string }).issue).toBe('');
+  });
+
+  it('keeps issue in the row shape, in canonical field order', () => {
+    // The field has to be PRESENT on every row for a consumer to read it
+    // without special-casing; `LedgerEntry` fills it with '' when absent.
+    const row = entry() as unknown as Record<string, string>;
+    expect(Object.keys(row)).toContain('issue');
+    expect(row.issue).toBe('');
+    expect(
+      (entry({ issue: 'PROJ-1' }) as unknown as Record<string, string>).issue,
+    ).toBe('PROJ-1');
+    // `ticket` is gone as a field: two names for "what is this waiting on" is
+    // how a consumer ends up reading the empty one.
+    expect(Object.keys(row)).not.toContain('ticket');
+  });
+
+  it("migrates a v1 row's `ticket` onto `issue`", () => {
+    // v1 (#781) recorded the link as `ticket`. Folding the two names into one
+    // must not lose a link already on disk, so the old key is read on load.
+    const row = ledger.LedgerEntry({
+      test: 'test_x',
+      file: 'tests/t.py',
+      ticket: 'PROJ-4471',
+    }) as unknown as Record<string, string>;
+
+    expect(row.issue).toBe('PROJ-4471');
+    expect(Object.keys(row)).not.toContain('ticket');
+  });
+
+  it('prefers an explicit issue over a legacy ticket on the same object', () => {
+    const row = ledger.LedgerEntry({
+      issue: 'PROJ-NEW',
+      ticket: 'PROJ-OLD',
+    }) as unknown as Record<string, string>;
+
+    expect(row.issue).toBe('PROJ-NEW');
+  });
+
   it('sorts new entries for stable ordering', () => {
     const p = path.join(mkTmp(), 'q.json');
     const doc = ledger.appendEntries(p, [
@@ -407,6 +549,147 @@ describe('ledger', () => {
   it('throws on a non-object top level', () => {
     const p = path.join(mkTmp(), 'q.json');
     fs.writeFileSync(p, '[1, 2]');
+    expect(() => ledger.load(p)).toThrow();
+  });
+
+  it('a delimiter-ambiguous pair stays two rows, not one', () => {
+    // Regression guard. The identity delimiter is a NUL, written as an escape so the
+    // file stays ASCII and git can diff it. If it is ever "tidied" back to a space,
+    // ("a b", "c") and ("a", "b c") join to the same string and one row silently
+    // disappears — a dedup that eats a real ledger entry with nothing to show for it.
+    const p = path.join(mkTmp(), 'q.json');
+    const doc = ledger.appendEntries(p, [
+      entry({ test: 'a b', file: 'c' }),
+      entry({ test: 'a', file: 'b c' }),
+    ]);
+    expect(doc.entries).toHaveLength(2);
+  });
+
+  // --- v2: cause / issue / expiry (#771) ------------------------------------
+
+  it('v2 fields default to empty so a row is always fully shaped', () => {
+    const row = entry() as unknown as Record<string, string>;
+    expect(row.cause).toBe('');
+    expect(row.issue).toBe('');
+    expect(row.expiry).toBe('');
+  });
+
+  it('normalizes a v1 file on load so schema_version 2 is a true claim', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    // A v1 document, written before cause/issue/expiry existed.
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        schema_version: 1,
+        entries: [
+          {
+            test: 'test_old',
+            file: 'tests/test_old.py',
+            kind: 'removed',
+            marker: '',
+            commit: 'old123',
+            author: 'Ada Lovelace',
+            date: '2026-01-01T00:00:00+00:00',
+            reason: 'chore: old',
+          },
+        ],
+      }),
+    );
+    const doc = ledger.load(p);
+    // The version says these rows carry the v2 fields; after load they do.
+    expect(doc.entries[0]).toHaveProperty('cause', '');
+    expect(doc.entries[0]).toHaveProperty('issue', '');
+    expect(doc.entries[0]).toHaveProperty('expiry', '');
+    // and provenance is preserved, not clobbered by the migration
+    expect(doc.entries[0].commit).toBe('old123');
+  });
+
+  it('a caused row supersedes a causeless row for the same test+file', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    ledger.appendEntries(p, [entry({ kind: 'skipped' })]);
+    const doc = ledger.appendEntries(p, [
+      entry({
+        kind: 'skipped',
+        cause: 'product-defect',
+        issue: 'acme/widgets#2181',
+      }),
+    ]);
+    // Exactly one row for the pair, and it is the one that states a cause.
+    expect(doc.entries).toHaveLength(1);
+    expect(doc.entries[0].cause).toBe('product-defect');
+    expect(doc.entries[0].issue).toBe('acme/widgets#2181');
+  });
+
+  it('a causeless row is dropped when a caused row already exists', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    ledger.appendEntries(p, [
+      entry({ cause: 'blocked-data', issue: 'acme/widgets#464' }),
+    ]);
+    // katana re-running later would otherwise re-add the causeless row and
+    // leave the ledger contradicting itself about one test.
+    const doc = ledger.appendEntries(p, [entry({ commit: 'later999' })]);
+    expect(doc.entries).toHaveLength(1);
+    expect(doc.entries[0].cause).toBe('blocked-data');
+  });
+
+  it('supersede is scoped to the pair — other tests are untouched', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    ledger.appendEntries(p, [
+      entry({ test: 'test_a' }),
+      entry({ test: 'test_b', file: 'tests/test_b.py' }),
+    ]);
+    const doc = ledger.appendEntries(p, [
+      entry({ test: 'test_a', cause: 'flaky' }),
+    ]);
+    expect(doc.entries).toHaveLength(2);
+    const byTest = Object.fromEntries(
+      doc.entries.map((e: { test: string; cause: string }) => [
+        e.test,
+        e.cause,
+      ]),
+    );
+    expect(byTest.test_a).toBe('flaky');
+    expect(byTest.test_b).toBe('');
+  });
+
+  it('two caused rows for one pair both remain — history is not collapsed', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    ledger.appendEntries(p, [entry({ cause: 'flaky' })]);
+    const doc = ledger.appendEntries(p, [
+      entry({ cause: 'product-defect', issue: 'acme/widgets#2181' }),
+    ]);
+    expect(doc.entries).toHaveLength(2);
+    expect(doc.entries.map((e: { cause: string }) => e.cause).sort()).toEqual([
+      'flaky',
+      'product-defect',
+    ]);
+  });
+
+  it('re-running the same caused capture still adds nothing', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    const e = entry({ cause: 'obsolete' });
+    ledger.appendEntries(p, [e]);
+    const doc = ledger.appendEntries(p, [e]);
+    expect(doc.entries).toHaveLength(1);
+  });
+
+  it('names the causes, and which of them require an issue link', () => {
+    expect(ledger.CAUSES).toEqual([
+      'flaky',
+      'product-defect',
+      'blocked-data',
+      'obsolete',
+    ]);
+    // The two where the TEST is correct and someone else owns the fix.
+    expect(ledger.CAUSES_REQUIRING_ISSUE).toEqual([
+      'product-defect',
+      'blocked-data',
+    ]);
+  });
+
+  it('throws when entries is not an array', () => {
+    const p = path.join(mkTmp(), 'q.json');
+    fs.writeFileSync(p, JSON.stringify({ schema_version: 2, entries: {} }));
     expect(() => ledger.load(p)).toThrow();
   });
 });
@@ -706,7 +989,7 @@ const git = (repo: string, ...args: string[]) => {
   if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
 };
 
-function fixtureRepo(): string {
+function fixtureRepo(quarantineMessage?: string): string {
   const repo = path.join(mkTmp(), 'repo');
   fs.mkdirSync(repo);
   git(repo, 'init', '-b', 'main');
@@ -722,9 +1005,89 @@ function fixtureRepo(): string {
   git(repo, 'checkout', '-b', 'feat/drop');
   fs.writeFileSync(path.join(repo, 'tests', 'test_points.py'), 'x = 1\n');
   git(repo, 'add', '-A');
-  git(repo, 'commit', '-m', 'chore: drop points coverage');
+  git(repo, 'commit', '-m', quarantineMessage ?? 'chore: drop points coverage');
   return repo;
 }
+
+/**
+ * The ticket a quarantine is waiting on (#772).
+ *
+ * A quarantined test with no recoverable bug is the worst row this ledger can
+ * hold -- coverage switched off with nothing to chase -- so the ticket belongs
+ * beside the rest of the provenance rather than in a consuming tool's own
+ * bookkeeping, where it would drift from the ledger that records the mute.
+ *
+ * Read from a `Ticket:` trailer and never guessed: the patterns that match
+ * `PROJ-1234` also match `UTF-8` and `SHA-1`, and a confidently wrong bug link is
+ * worse than an honest blank.
+ */
+describe('ticketFromMessage', () => {
+  it('reads a Ticket: trailer out of the commit body', () => {
+    expect(
+      diffscan.ticketFromMessage(
+        'test: quarantine the create cases\n\nTicket: PROJ-4471',
+      ),
+    ).toBe('PROJ-4471');
+  });
+
+  it('accepts Bug: and Tracked: as aliases, case-insensitively', () => {
+    expect(diffscan.ticketFromMessage('x\n\nBug: PROJ-1')).toBe('PROJ-1');
+    expect(diffscan.ticketFromMessage('x\n\ntracked: PROJ-2')).toBe('PROJ-2');
+  });
+
+  it('takes the LAST trailer, following git convention', () => {
+    // An amended commit corrects the ticket rather than duplicating it.
+    expect(
+      diffscan.ticketFromMessage('x\n\nTicket: PROJ-1\nTicket: PROJ-2'),
+    ).toBe('PROJ-2');
+  });
+
+  it('records the value verbatim — a key, a URL, or several', () => {
+    // Katana cannot know one org's tracker from another's; turning a key into a
+    // link is the consuming tool's job.
+    expect(
+      diffscan.ticketFromMessage('x\n\nTicket: https://jira/browse/AB-9'),
+    ).toBe('https://jira/browse/AB-9');
+  });
+
+  it('returns empty rather than guessing at anything issue-shaped', () => {
+    // The whole reason this is a trailer. Each of these would be a false
+    // positive under a bare `[A-Z]+-\d+` scan.
+    expect(diffscan.ticketFromMessage('fix: decode as UTF-8, not SHA-1')).toBe(
+      '',
+    );
+    expect(diffscan.ticketFromMessage('refs PROJ-1234 in passing')).toBe('');
+    expect(diffscan.ticketFromMessage('')).toBe('');
+    expect(diffscan.ticketFromMessage(undefined as unknown as string)).toBe('');
+  });
+
+  it('ignores a trailer with no value', () => {
+    expect(diffscan.ticketFromMessage('x\n\nTicket:')).toBe('');
+    expect(diffscan.ticketFromMessage('x\n\nTicket:   ')).toBe('');
+  });
+});
+
+describe('ticket provenance end to end', () => {
+  it('commitForFile carries the ticket from the real commit body', () => {
+    const repo = fixtureRepo(
+      'chore: drop points coverage\n\nTicket: PROJ-4471',
+    );
+    const base = diffscan.resolveBase(repo, null);
+    const commit = diffscan.commitForFile(repo, base, 'tests/test_points.py');
+
+    expect(commit!.ticket).toBe('PROJ-4471');
+    // The subject stays the subject -- adding %b must not fold the body into it.
+    expect(commit!.subject).toBe('chore: drop points coverage');
+  });
+
+  it('leaves the ticket empty when the commit named none', () => {
+    const repo = fixtureRepo();
+    const base = diffscan.resolveBase(repo, null);
+    expect(
+      diffscan.commitForFile(repo, base, 'tests/test_points.py')!.ticket,
+    ).toBe('');
+  });
+});
 
 describe('git plumbing', () => {
   it('resolveBase defaults to the merge-base', () => {

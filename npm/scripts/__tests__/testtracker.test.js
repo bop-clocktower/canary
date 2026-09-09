@@ -118,8 +118,8 @@ test("a recovered flake is flaky per-test but does NOT fail the run", () => {
 // A Playwright `dependencies:` setup project runs in full in EVERY shard, so a
 // merge-reports payload over a sharded matrix carries the same setup title once
 // per shard. TestTracker's ingest holds a unique index on
-// (run_id, full_title) and rejects the WHOLE run on a collision — capwell's
-// `capwell-web` suite never ingested a single nightly because of this.
+// (run_id, full_title) and rejects the WHOLE run on a collision — one
+// consumer's sharded suite never ingested a single nightly because of this.
 
 test("dedupeByFullTitle collapses repeated titles, worst status wins", () => {
   const out = dedupeByFullTitle([
@@ -165,8 +165,8 @@ test("dedupeByFullTitle is a no-op on already-unique results", () => {
 });
 
 test("buildPayload dedupes, and totals agree with the rows actually sent", () => {
-  const cfg = resolveConfig({ suite: "capwell-web" }, {});
-  // The real capwell shape: two chromium shards each ran the setup project.
+  const cfg = resolveConfig({ suite: "acme-web" }, {});
+  // The real consumer shape: two chromium shards each ran the setup project.
   const results = [
     { full_title: "setup > auth.setup.ts > authenticate", test_file: "auth.setup.ts", status: "passed", retries: 0, tags: [] },
     { full_title: "setup > auth.setup.ts > authenticate", test_file: "auth.setup.ts", status: "passed", retries: 0, tags: [] },

@@ -252,9 +252,9 @@ describe('TestDetectFramework', () => {
       makeHarnessProject(root, { language: 'unknown-lang' });
       const canaryDir = join(root, '.canary');
       mkdirSync(canaryDir);
-      write(join(canaryDir, 'company.json'), '{"canary_shape": "capwell"}');
+      write(join(canaryDir, 'company.json'), '{"canary_shape": "acme"}');
       const ctx = mig().detect(root);
-      expect(ctx.detected_shape).toBe('capwell');
+      expect(ctx.detected_shape).toBe('acme');
       expect(ctx.detected_framework).toBeNull();
     }));
   it('explicit canary_shape overrides the language-fallback shape', () =>
@@ -262,10 +262,10 @@ describe('TestDetectFramework', () => {
       makeHarnessProject(root, { language: 'typescript' });
       const canaryDir = join(root, '.canary');
       mkdirSync(canaryDir);
-      write(join(canaryDir, 'company.json'), '{"canary_shape": "capwell"}');
+      write(join(canaryDir, 'company.json'), '{"canary_shape": "acme"}');
       const ctx = mig().detect(root);
       expect(ctx.detected_framework).toBe('playwright');
-      expect(ctx.detected_shape).toBe('capwell');
+      expect(ctx.detected_shape).toBe('acme');
     }));
   it('falls back to python language as pytest', () =>
     withTmp((root) => {
@@ -512,11 +512,11 @@ describe('TestFrameworkOverrideResolvesShape', () => {
 describe('TestWorkspaceExistingSuiteScan', () => {
   /** pnpm/turbo monorepo with a playwright suite in apps/web-e2e. */
   function pnpmMonorepo(root: string): void {
-    harnessProject(root, { version: 1, name: 'capwell' });
+    harnessProject(root, { version: 1, name: 'acme' });
     write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
     write(
       join(root, 'package.json'),
-      JSON.stringify({ name: 'capwell', scripts: { test: 'turbo test' } }),
+      JSON.stringify({ name: 'acme', scripts: { test: 'turbo test' } }),
     );
     mkdirSync(join(root, 'apps', 'web-e2e', 'tests'), { recursive: true });
     write(
@@ -570,10 +570,10 @@ describe('TestWorkspaceExistingSuiteScan', () => {
 
   it('reads npm/yarn workspaces from package.json too', () =>
     withTmp((root) => {
-      harnessProject(root, { version: 1, name: 'capwell' });
+      harnessProject(root, { version: 1, name: 'acme' });
       write(
         join(root, 'package.json'),
-        JSON.stringify({ name: 'capwell', workspaces: ['apps/*'] }),
+        JSON.stringify({ name: 'acme', workspaces: ['apps/*'] }),
       );
       mkdirSync(join(root, 'apps', 'e2e'), { recursive: true });
       write(join(root, 'apps', 'e2e', 'playwright.config.ts'), 'export {};');
@@ -586,11 +586,11 @@ describe('TestWorkspaceExistingSuiteScan', () => {
 
   it('reads the workspaces.packages object form', () =>
     withTmp((root) => {
-      harnessProject(root, { version: 1, name: 'capwell' });
+      harnessProject(root, { version: 1, name: 'acme' });
       write(
         join(root, 'package.json'),
         JSON.stringify({
-          name: 'capwell',
+          name: 'acme',
           workspaces: { packages: ['apps/*'] },
         }),
       );
@@ -605,7 +605,7 @@ describe('TestWorkspaceExistingSuiteScan', () => {
 
   it('ignores a package suite for a different framework', () =>
     withTmp((root) => {
-      harnessProject(root, { version: 1, name: 'capwell' });
+      harnessProject(root, { version: 1, name: 'acme' });
       write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "packages/*"\n');
       mkdirSync(join(root, 'packages', 'core'), { recursive: true });
       write(join(root, 'packages', 'core', 'vitest.config.ts'), 'export {};');
@@ -629,7 +629,7 @@ describe('TestWorkspaceExistingSuiteScan', () => {
 
   it('does not treat the root itself as an existing workspace suite', () =>
     withTmp((root) => {
-      harnessProject(root, { version: 1, name: 'capwell' });
+      harnessProject(root, { version: 1, name: 'acme' });
       write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
       write(join(root, 'playwright.config.ts'), 'export default {};');
       // The root config is already handled by skipped_configs; reporting it as
@@ -662,7 +662,7 @@ describe('TestWorkspaceExistingSuiteScan', () => {
 
   it('reads unquoted and commented pnpm package entries', () =>
     withTmp((root) => {
-      harnessProject(root, { version: 1, name: 'capwell' });
+      harnessProject(root, { version: 1, name: 'acme' });
       write(
         join(root, 'pnpm-workspace.yaml'),
         '# the workspace\npackages:\n  - apps/*   # unquoted\n  - "tools/*"\n',
@@ -678,7 +678,7 @@ describe('TestWorkspaceExistingSuiteScan', () => {
 
   it('treats an unparseable workspace file as a single-package repo', () =>
     withTmp((root) => {
-      harnessProject(root, { version: 1, name: 'capwell' });
+      harnessProject(root, { version: 1, name: 'acme' });
       write(join(root, 'pnpm-workspace.yaml'), 'not: a packages list\n');
       // A parse miss must never invent a suite -- it falls back to the old
       // behavior, which proposes the root scaffold.
@@ -692,7 +692,7 @@ describe('TestWorkspaceExistingSuiteScan', () => {
 
   it('survives a package.json that is not valid JSON', () =>
     withTmp((root) => {
-      harnessProject(root, { version: 1, name: 'capwell' });
+      harnessProject(root, { version: 1, name: 'acme' });
       write(join(root, 'package.json'), '{ not json');
       expect(() =>
         mig().migrate(root, { dryRun: true, framework: 'playwright' }),
@@ -701,7 +701,7 @@ describe('TestWorkspaceExistingSuiteScan', () => {
 
   it('lists every matching package suite, in path order', () =>
     withTmp((root) => {
-      harnessProject(root, { version: 1, name: 'capwell' });
+      harnessProject(root, { version: 1, name: 'acme' });
       write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
       for (const name of ['zeta', 'alpha']) {
         mkdirSync(join(root, 'apps', name), { recursive: true });
@@ -716,7 +716,7 @@ describe('TestWorkspaceExistingSuiteScan', () => {
 
   it('reports a config-only package suite as zero test files', () =>
     withTmp((root) => {
-      harnessProject(root, { version: 1, name: 'capwell' });
+      harnessProject(root, { version: 1, name: 'acme' });
       write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/*"\n');
       mkdirSync(join(root, 'apps', 'e2e'), { recursive: true });
       write(join(root, 'apps', 'e2e', 'playwright.config.ts'), 'export {};');
@@ -730,7 +730,7 @@ describe('TestWorkspaceExistingSuiteScan', () => {
 
   it('handles a workspace glob that matches no directory', () =>
     withTmp((root) => {
-      harnessProject(root, { version: 1, name: 'capwell' });
+      harnessProject(root, { version: 1, name: 'acme' });
       write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "nope/*"\n');
       expect(
         mig().migrate(root, { dryRun: true, framework: 'playwright' })
@@ -740,7 +740,7 @@ describe('TestWorkspaceExistingSuiteScan', () => {
 
   it('never counts a dependency’s own config as an existing suite', () =>
     withTmp((root) => {
-      harnessProject(root, { version: 1, name: 'capwell' });
+      harnessProject(root, { version: 1, name: 'acme' });
       write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/**"\n');
       mkdirSync(join(root, 'apps', 'web', 'node_modules', 'some-dep'), {
         recursive: true,
@@ -768,7 +768,7 @@ describe('TestWorkspaceExistingSuiteScan', () => {
 
   it('does not descend into .git while walking workspace globs', () =>
     withTmp((root) => {
-      harnessProject(root, { version: 1, name: 'capwell' });
+      harnessProject(root, { version: 1, name: 'acme' });
       write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/**"\n');
       mkdirSync(join(root, 'apps', '.git', 'objects'), { recursive: true });
       write(join(root, 'apps', '.git', 'playwright.config.ts'), 'export {};');
@@ -780,7 +780,7 @@ describe('TestWorkspaceExistingSuiteScan', () => {
 
   it('walks a deep ** workspace glob', () =>
     withTmp((root) => {
-      harnessProject(root, { version: 1, name: 'capwell' });
+      harnessProject(root, { version: 1, name: 'acme' });
       write(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "apps/**"\n');
       mkdirSync(join(root, 'apps', 'group', 'e2e'), { recursive: true });
       write(
@@ -2972,9 +2972,9 @@ describe('TestWorkspaceScalarResolution', () => {
       pkg(root, 'apps/a', 'playwright.config.ts');
       const canaryDir = join(root, '.canary');
       mkdirSync(canaryDir, { recursive: true });
-      write(join(canaryDir, 'company.json'), '{"canary_shape": "capwell"}');
+      write(join(canaryDir, 'company.json'), '{"canary_shape": "acme"}');
       const ctx = mig().detect(root);
-      expect(ctx.detected_shape).toBe('capwell');
+      expect(ctx.detected_shape).toBe('acme');
     }));
 });
 

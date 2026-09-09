@@ -284,7 +284,17 @@ describe('detectEnvironment', () => {
       user_level: 'sdet',
       user_level_confidence: 1 / 3,
     });
-    expect(ctx.toDict().user_level_confidence).toBe(0.333);
+    // SOUND-002 (#706). `toBe(0.333)` was exact equality against a value with
+    // no exact binary representation: it passed only because the rounding path
+    // happened to produce the same double as the literal, so it pinned that
+    // implementation rather than the contract, and any change to the rounding
+    // would fail here without saying what broke.
+    //
+    // The contract has two halves, so both are asserted: the value still means
+    // 1/3 (within 3 decimals), and it has been rounded to 3 decimals.
+    const rounded = ctx.toDict().user_level_confidence as number;
+    expect(rounded).toBeCloseTo(1 / 3, 3);
+    expect(String(rounded)).toBe('0.333');
   });
 
   it('degrades to null when .env is unreadable (a directory)', () => {

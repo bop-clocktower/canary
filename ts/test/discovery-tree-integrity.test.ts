@@ -49,7 +49,7 @@ function frontmatter(path: string): Record<string, unknown> | null {
   const parts = text.split('---');
   if (parts.length < 3) return null;
   // Python's split('---', 2) → parts[1] is the frontmatter body.
-  return (loadYaml(parts[1]) as Record<string, unknown>) ?? {};
+  return (loadYaml(parts[1]!) as Record<string, unknown>) ?? {};
 }
 
 function existingAgents(): Set<string> {
@@ -140,7 +140,7 @@ describe('command references', () => {
         dangling.push(`${rel}: no 'Use the \`X\` agent/skill' reference found`);
         continue;
       }
-      const target = m[1];
+      const target = m[1]!;
       if (!agents.has(target) && !skills.has(target)) {
         dangling.push(
           `${rel}: references '${target}' which is neither agent nor skill`,
@@ -166,7 +166,7 @@ describe('agent-command @-references', () => {
       const text = readFileSync(cmd, 'utf-8');
       for (const match of text.matchAll(AT_REF_RE)) {
         checked += 1;
-        const ref = match[1];
+        const ref = match[1]!;
         if (!existsSync(join(REPO, ref))) {
           missing.push(`${relative(REPO, cmd)} → @${ref} (missing)`);
         }

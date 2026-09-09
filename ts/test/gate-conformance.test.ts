@@ -278,13 +278,19 @@ const ROWS: GateRow[] = [
     forbid: ['documented example(s) passed'],
     // A surface EXISTS here, so only the examples denominator collapses -- the
     // case a single combined denominator would hide.
+    //
+    // The skill is deliberately PROSE (no `cli:`) as of #707. A code-bearing
+    // skill whose documented commands are all unrunnable now raises
+    // `no-executable-example`, and a finding outranks abstention -- so a
+    // `cli:` fixture here would exercise the finding path and stop testing
+    // the abstention this row exists for.
     run: (base) => {
       const root = join(base, 'illustrative');
       const dir = join(root, 'agents', 'skills', 'cc', 'canary-x');
       mkdirSync(dir, { recursive: true });
       writeFileSync(
         join(dir, 'SKILL.md'),
-        '---\nname: canary-x\ncli: scripts/cli.mjs\n---\n\n' +
+        '---\nname: canary-x\n---\n\n' +
           '```bash\ncanary skills run canary-x -- <path>\n```\n',
         'utf-8',
       );

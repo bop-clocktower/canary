@@ -26,6 +26,12 @@ import {
 import { FakeGitHubClient, STICKY_MARKER } from '../src/guardian/pr-comment.js';
 import { invokeGuardian, mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
+// #761: a `pr-check` run that resolved NO coverage and produced only heuristic
+// findings ABSTAINS -- exit 3, not a pass. Every run in this file is
+// coverage-blind by construction (no `--coverage`), so this is their exit code;
+// it is named rather than repeated so the contract is greppable.
+const ABSTAINED = 3;
+
 const DIFF_NEW_UNIT = `diff --git a/pkg/widget.py b/pkg/widget.py
 index 1111111..2222222 100644
 --- a/pkg/widget.py
@@ -386,7 +392,7 @@ describe('pr-check post pipeline', () => {
         deps: { buildCommentClient: () => fake },
       },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     const marked = fake.comments.filter((c) => c.body.includes(STICKY_MARKER));
     expect(marked.length).toBe(1);
   });
@@ -446,9 +452,13 @@ describe('pr-check post pipeline', () => {
       ['pr-check', '--diff', '-', '--format', 'json', '--gate', 'soft'],
       { input: DIFF_SRC_AND_TEST, cwd: tmp },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     const data = JSON.parse(res.stdout);
-    expect(data.abstained).toBe(false);
+    // #761: the run judged units (`checked` > 0) but verified no coverage, so
+    // `abstained` is the honest answer on both surfaces. The pairing is the
+    // point of this case: a non-zero denominator does NOT make a blind run a
+    // result.
+    expect(data.abstained).toBe(true);
     expect(data.checked).toBeGreaterThan(0);
   });
 
@@ -496,7 +506,7 @@ describe('pr-check post pipeline', () => {
       ['pr-check', '--diff', '-', '--format', 'json', '--gate', 'soft'],
       { input: DIFF_SRC_AND_TEST, cwd: tmp },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     const data = JSON.parse(res.stdout);
     const paths = new Set(data.findings.map((f: { path: string }) => f.path));
     expect(paths.has('agent/core/foo.py')).toBe(true);
@@ -522,7 +532,7 @@ describe('pr-check post pipeline', () => {
       ['pr-check', '--diff', '-', '--config', cfg, '--format', 'json'],
       { input: DIFF_DIST_BUNDLE_JS, cwd: tmp },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     const data = JSON.parse(res.stdout);
     const paths = new Set(data.findings.map((f: { path: string }) => f.path));
     expect(paths.has('dist/bundle.js')).toBe(true);
@@ -579,7 +589,7 @@ describe('pr-check post pipeline', () => {
         deps: { buildCommentClient: () => fake },
       },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     expect(res.stdout).toContain('::warning::');
   });
 
@@ -591,7 +601,7 @@ describe('pr-check post pipeline', () => {
         cwd: tmp,
       },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     expect(res.stdout).toContain(STICKY_MARKER);
   });
 });
@@ -630,7 +640,7 @@ describe('pr-check tier degradation (SC-5)', () => {
       ['pr-check', '--diff', '-', '--config', cfg, '--format', 'text'],
       { input: DIFF_NEW_UNIT, cwd: tmp },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     expect(res.stdout).toContain('::warning::');
     expect(res.stdout).toContain('tier 1');
     expect(res.stdout).toContain('degraded');
@@ -683,7 +693,7 @@ describe('pr-check tier degradation (SC-5)', () => {
         deps: { buildCommentClient: () => fake },
       },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     const marked = fake.comments.filter((c) => c.body.includes(STICKY_MARKER));
     expect(marked.length).toBe(1);
     expect(marked[0]!.body).toContain('degraded: tier 2');
@@ -712,7 +722,7 @@ describe('pr-check emit-analysis (SC-10)', () => {
         deps: { buildCommentClient: () => fake },
       },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     expect(res.stdout).toContain('wrote analysis record');
     const record = JSON.parse(
       readFileSync(join(analysesDir, 'canary-pr-guardian-local.json'), 'utf-8'),
@@ -734,7 +744,7 @@ describe('pr-check emit-analysis (SC-10)', () => {
         deps: { buildCommentClient: () => fake },
       },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     expect(res.stdout).toContain('::warning::');
     expect(res.stdout).toContain('falling back');
     const marked = fake.comments.filter((c) => c.body.includes(STICKY_MARKER));
@@ -762,7 +772,7 @@ describe('pr-check emit-analysis (SC-10)', () => {
         deps: { buildCommentClient: () => fake },
       },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     expect(res.stdout).toContain('wrote analysis record');
     const marked = fake.comments.filter((c) => c.body.includes(STICKY_MARKER));
     expect(marked.length).toBe(1);
@@ -812,7 +822,7 @@ describe('pr-check emit-analysis (SC-10)', () => {
       ['pr-check', '--diff', '-', '--config', cfg, '--format', 'json'],
       { input: DIFF_NEW_UNIT, cwd: tmp },
     );
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(ABSTAINED);
     expect(res.stderr).toContain('WARNING:');
   });
 });

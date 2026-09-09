@@ -1,0 +1,26 @@
+{
+  // The typecheck GATE's project (#759). `tsconfig.json` stays emit-shaped —
+  // rootDir `src`, outDir `dist` — so it cannot also cover `test/` without
+  // either failing on rootDir or emitting compiled tests into the published
+  // tree. The gate and the build do not have to share a file, so they don't:
+  // this one adds the test tree and emits nothing.
+  //
+  // `vitest.config.ts` is listed because `format:check` already covers `*.ts`
+  // at this level; `scripts/` is deliberately absent, as it holds only .mjs and
+  // an include matching nothing is the kind of vacuous coverage this fixes.
+  //
+  // Guarded by test/typecheck-denominator.test.ts, which derives the project
+  // from the `typecheck` script rather than hardcoding this filename.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src", "test", "vitest.config.ts"],
+  // `test/fixtures/**` is sample INPUT, not code this repo compiles: files
+  // there deliberately import absent packages and reference undefined names
+  // because scanners and linters are pointed at them and expected to complain.
+  // Type-checking them would assert the opposite of what they exist to prove.
+  // This is the only exclusion, and it is scoped to fixtures for that reason.
+  "exclude": ["test/fixtures"]
+}

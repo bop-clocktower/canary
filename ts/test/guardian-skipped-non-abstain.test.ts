@@ -74,8 +74,12 @@ describe('non-abstain --format json carries `skipped` (#582)', () => {
   it('names the dropped path and why, alongside a real denominator', async () => {
     const data = await jsonPayload(DIFF_MIXED);
 
-    // The run genuinely verified something -- this is not the abstain path.
-    expect(data['abstained']).toBe(false);
+    // The run kept a real unit -- this is not the zero-ELIGIBLE-units abstain
+    // path #579/#582 are about, which returns an empty `skipped`-only payload.
+    // It does abstain on the COVERAGE denominator (#761: no `--coverage` here),
+    // and the two are independent: `checked` and `skipped` below are what this
+    // case pins, and they survive the abstention intact.
+    expect(data['abstained']).toBe(true);
     expect(data['checked']).toBe(1);
 
     // ...and it also says what it declined to judge.

@@ -375,10 +375,12 @@ convention — advisory, then triage, then ratchet.
 ## Amendment — 2026-08-20: the ceiling is only as good as the instrument (#744)
 
 This ADR chose an **absolute** ceiling. That choice has a consequence nobody
-wrote down at the time, and it has now cost two silent drifts: the number on the
-left of the comparison is produced by a tool the workflows pin as a **floating
-major** (`@harness-engineering/cli@11`), so the analyzer behind the count can
-change without a single commit to this repository.
+wrote down at the time, and it has now cost two silent drifts (plus a third
+move, 147 -> 135 on the @11 -> @12 bump, which the #744 abstention caught before
+it landed rather than days after): the number on the left of the comparison is
+produced by a tool the workflows pin as a **floating major**
+(`@harness-engineering/cli@12`), so the analyzer behind the count can change
+without a single commit to this repository.
 
 Both moves were downward, which is why neither was noticed:
 
@@ -451,6 +453,99 @@ gone on sitting there.
   fires below 25% of the baseline; the real drops were 55% (entropy) and 92%
   (perf). A collapse guard catches a detector going dark all at once, never an
   instrument that is merely different.
+
+## Amendment — 2026-09-04: an absolute ceiling is order-dependent (#703)
+
+The instrument amendment above is about the number on the **left** of the
+comparison moving on its own. This one is about the number on the **right**
+being a resource that branches consume from each other without seeing it.
+
+An absolute ceiling gives this ADR the property it wanted — total entropy must
+trend down, and no PR can add "just a little" forever. It also makes headroom a
+**shared, non-renewable budget that no branch can observe.** A branch author
+measures 297 against a 297 ceiling, passes honestly, and has no way to know
+another green branch is about to spend the same findings. Measured in clean
+worktrees off one `main` in a single session:
+
+| branch         | findings | verdict alone       |
+| -------------- | -------- | ------------------- |
+| `main`         | 294      | 3 of headroom       |
+| batch C (#538) | 296      | fits                |
+| batch B (#487) | 297      | fits, zero headroom |
+| C + B merged   | **299**  | **fails, +2 over**  |
+
+Neither branch is bad. Each was measured honestly and reviewed. They fail only
+in combination, and the one that fails is **whichever merges second** — so the
+gate is correct on every individual PR and wrong about the merge queue. The
+observed cost was serialization: with headroom that thin, the gate effectively
+capped the repo at one in-flight PR touching `src` at all, which is what makes
+fan-out much less useful than it looks.
+
+**The ratchet now runs two rules, and either can fail the build.**
+
+1. **Delta against the merge base.** On a pull request, `harness-quality.yml`
+   scans the base tree as well and hands both counts to the ratchet, which fails
+   when `findings(head) > findings(merge-base)`. Same "never add entropy"
+   property, expressed relative to what the branch actually started from — so it
+   is order-independent, and the author can see their own number.
+2. **The absolute ceiling, as a backstop.** Unchanged. Without it a long series
+   of +0 merges could walk the total upward and the trend-down property would
+   quietly disappear.
+
+`maxFindings` still cannot be raised to make a failing check pass. This changes
+who computes the number, not the prohibition.
+
+Two invariants the ratchet cannot verify for itself, because by the time it runs
+it holds two integers and no provenance — both are asserted against the workflow
+YAML in `ts/test/entropy-ratchet.test.ts`:
+
+- **Both scans must come from the same resolved CLI.** Otherwise the delta is
+  pure instrument drift, which the amendment above measured at 24 and then 110
+  findings with no code change at all.
+- **The base worktree must live outside the checkout** (`$RUNNER_TEMP`, never a
+  subdirectory of `$GITHUB_WORKSPACE`), or the head scan walks the base tree and
+  double-counts every finding on both sides.
+
+One property is deliberate rather than accidental: each side reads **its own**
+`harness.config.json`, so a PR that widens `entropy.excludePatterns` or
+`entropy.entryPoints` sees the denominator shift in its own delta. A branch owns
+the findings its config change surfaces, exactly as it owns the ones its code
+change surfaces.
+
+**Ported to the perf ratchet on 2026-09-09 (#812).**
+`.harness/perf-baseline.json` reached zero headroom (233 measured against 233),
+which is this pathology with no slack left: the next PR adding one violation
+fails whatever its own diff did. `scripts/perf-ratchet.mjs` now takes the same
+`--base-report`, runs the same two rules in the same order, and keeps the same
+two YAML invariants (asserted in `ts/test/perf-ratchet.test.ts`). One difference
+is deliberate: a missing base report abstains (exit 3) there rather than
+erroring (exit 2), because the perf step redirects stdout and an absent file
+means `check-perf` died before writing — the convention the perf ratchet already
+used for its head report.
+
+### Declined: excluding archived plan docs from the link denominator (#719)
+
+Issue #719 reported 23 `NOT_FOUND` doc-link findings, all in archived planning
+documents whose links describe a repo layout that legitimately no longer exists,
+and asked for a policy: exclude `docs/plans/**` and `docs/changes/**/plans/**`,
+or honour an `archived: true` frontmatter key.
+
+**Neither, and the reason is the measurement.** Re-measured on `main` at
+`08c15ff` under CLI 12.2.0: `harness cleanup` reports **0** `NOT_FOUND`. The 23
+were the upstream fence-blindness defect (`$driftfix`, 11.1.1 → 11.2.0) counting
+links quoted inside ` ```markdown ` fences, not real dead links — so there is
+nothing to exclude, and adding the exclusion now would shrink an
+allowlist-shaped denominator to solve a problem that no longer exists. That is
+the exact move `entropy-doc-paths.test.ts` exists to catch one directory over.
+
+If the count returns, the first question is whether the detector regressed
+before the policy is revisited.
+
+**Not closed by this.** `measuredCount` in the baseline is still a memory of the
+last time a human ran the analyzer; nothing refreshes it on merge, and the
+`.harness/arch/baselines.json` staleness #689 tracks is the identical failure
+mode one directory over. The delta rule removes the order-dependence, not the
+manual re-measure.
 
 ## Consequences
 

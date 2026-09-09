@@ -108,11 +108,18 @@ describe('the flag name carries the unit', () => {
     // command tree so a NEW option cannot reintroduce the gap unnoticed.
     const cmd = createAnalyzeCommand({ out: () => {}, err: () => {} });
     const blank: string[] = [];
+    let seen = 0;
     for (const sub of cmd.commands) {
       for (const opt of sub.options) {
+        seen += 1;
         if (!opt.description) blank.push(`${sub.name()} ${opt.flags}`);
       }
     }
+    // VAC-003 (#706): `expect(blank).toEqual([])` alone is satisfied by a
+    // command tree with no options at all — the same shape as #486, where the
+    // absence was free because the code exited before it could do anything.
+    // The denominator is the load-bearing half, so it is asserted first.
+    expect(seen).toBeGreaterThan(10);
     expect(blank).toEqual([]);
   });
 });

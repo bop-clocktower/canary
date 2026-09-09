@@ -44,7 +44,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { exec, kitFor, parseContract, type Kit } from './doc-links-testkit';
+import { exec, kitFor, parseContract, type Kit } from './doc-links-testkit.js';
 
 let root: string;
 let write: Kit['write'];
@@ -302,7 +302,7 @@ describe('check_doc_links', () => {
       write('docs/changes/c.md', '[x](./nope.md)\n');
       write('a-directory-invented-later/d.md', '[x](./nope.md)\n');
 
-      const dirs = findings().map((f) => f.file.split('/')[0]);
+      const dirs = findings().map((f) => f.file!.split('/')[0]);
       expect(new Set(dirs)).toEqual(
         new Set(['docs', 'docs', 'docs', 'a-directory-invented-later']),
       );

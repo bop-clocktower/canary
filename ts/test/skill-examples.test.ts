@@ -23,12 +23,26 @@
  * credentials or a network. Those are classified UNVERIFIABLE with the reason
  * carried, and they travel in `GateResult.skipped` so `gateOutcome` renders
  * them in every summary line (D7). What they must never do is quietly leave
- * the denominator — "all 0 examples passed" is the shape #508 exists to catch,
- * and an all-illustrative corpus therefore ABSTAINS.
+ * the denominator — "all 0 examples passed" is the shape #508 exists to catch.
  *
  * This mirrors the dead-vs-slow distinction `reachability.ts` draws for #452:
  * an outcome the checker is not entitled to assert on gets its own status
  * rather than being folded into either pass or fail.
+ *
+ * ## Amended by #707 — the unverifiable bucket was two facts
+ *
+ * The checker's first real run reported 4 executed against 29 unverifiable,
+ * and 5 of the 9 `cli:`-declaring skills had no runnable example at all. Two
+ * changes followed, both asserted below:
+ *
+ * 1. A code-bearing skill with commands but none runnable is a FINDING
+ *    (`no-executable-example`), not a bare abstention. A finding outranks
+ *    abstention because it proves the corpus was inspected and names the
+ *    skill responsible; the old behaviour said only "zero checked".
+ * 2. `<!-- canary:illustrative -->` lets an author DECLARE a block as prose.
+ *    "Nobody could run this" and "this was never meant to run" landed in one
+ *    bucket, so the real gaps hid inside it. Marking changes the reason on
+ *    one block and never the rule — a skill cannot mark its way to green.
  */
 
 import {
@@ -48,6 +62,8 @@ import { collectSurfaces } from '../src/core/skill-surfaces.js';
 import {
   ExampleFindingKind,
   ExampleVerdict,
+  ILLUSTRATIVE_REASON,
+  countDeclaredIllustrative,
   type ExampleRunner,
   checkExamples,
   exampleArgv,
@@ -284,9 +300,13 @@ describe('checkExamples', () => {
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  it('ABSTAINS when no example could be executed', () => {
-    // The non-negotiable case: an all-illustrative corpus executed zero
-    // commands, so it verified nothing. "0 examples passed" is not a pass.
+  // A code-bearing skill whose every documented command is unrunnable used to
+  // land here as a bare abstention: zero checked, nothing said about WHY, and
+  // nothing naming the skill responsible. #707 measured that state across the
+  // real corpus — 5 of 9 `cli:` skills — so it is now a finding, which
+  // outranks abstention precisely because it proves the corpus WAS inspected.
+  // Still not a pass, which is what the original case defended.
+  it('reports a FINDING, not a pass, when no example could be executed', () => {
     execSkill(
       'canary-illustrative',
       '```bash\ncanary skills run canary-illustrative -- <path>\n```\n',
@@ -297,6 +317,29 @@ describe('checkExamples', () => {
     const outcome = gateOutcome(result, 'advisory', { noun: 'example(s)' });
 
     expect(result.checked).toBe(0);
+    expect(result.findings.map((f) => f.kind)).toContain(
+      ExampleFindingKind.NoExecutableExample,
+    );
+    expect(result.findings[0]!.skill).toBe('canary-illustrative');
+    expect(outcome.summaryLine.toLowerCase()).not.toContain('passed');
+  });
+
+  // The abstention path is still reachable, and this is what it looks like
+  // now: nothing code-bearing to hold to the rule, so there is no finding to
+  // outrank it — a zero denominator with no explanation attached.
+  it('ABSTAINS when a prose-only corpus executes nothing', () => {
+    write(
+      join('agents', 'skills', 'claude-code', 'canary-prose', 'SKILL.md'),
+      '---\nname: canary-prose\ndescription: d\n---\n\n' +
+        '```bash\ncanary skills run canary-prose -- <path>\n```\n',
+    );
+    const { runner } = recordingRunner();
+
+    const result = checkExamples(collectSurfaces(root), runner, root);
+    const outcome = gateOutcome(result, 'advisory', { noun: 'example(s)' });
+
+    expect(result.checked).toBe(0);
+    expect(result.findings).toHaveLength(0);
     expect(outcome.abstained).toBe(true);
     expect(outcome.summaryLine.toLowerCase()).toContain('abstained');
   });
@@ -394,5 +437,121 @@ describe('checkExamples', () => {
     const result = checkExamples(surfaces, runner, REPO_ROOT);
 
     expect(result.checked).toBeGreaterThan(0);
+  });
+
+  // The acceptance #707 asked for, asserted against the REAL corpus rather
+  // than a fixture: every skill declaring a `cli:` carries at least one
+  // example that actually runs. This is the assertion that keeps the
+  // denominator from sliding back — a new code-bearing skill fails here.
+  it('leaves no cli-declaring skill in this repo without a runnable example', () => {
+    const surfaces = collectSurfaces(REPO_ROOT);
+    const { runner } = recordingRunner();
+
+    const result = checkExamples(surfaces, runner, REPO_ROOT);
+
+    const unproven = result.findings.filter(
+      (f) =>
+        f.kind === ExampleFindingKind.NoExecutableExample ||
+        f.kind === ExampleFindingKind.NoDocumentedExample,
+    );
+    expect(
+      unproven.map((f) => f.skill),
+      'A skill declaring `cli:` must document at least one placeholder-free, ' +
+        'help-shaped command. The cheapest one is its own `--help`: it needs ' +
+        'no fixtures, credentials or network. Marking blocks ' +
+        '`<!-- canary:illustrative -->` does NOT satisfy this.',
+    ).toEqual([]);
+  });
+});
+
+/**
+ * The illustrative marker (#707).
+ *
+ * "29 unverifiable" was one number standing for two different facts: blocks
+ * nobody could run, and blocks nobody ever meant to run. Only the first is a
+ * gap, and merging them hid the real gaps inside the pile. The marker lets an
+ * author declare the second, and these pin the two properties that keep the
+ * declaration honest — it changes the REASON, never the executable rule.
+ */
+describe('the illustrative marker', () => {
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'skill-examples-'));
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it('records a marked block as declared rather than guessed-at', () => {
+    const examples = extractExamples(
+      '<!-- canary:illustrative -->\n```bash\ncanary katana scan\n```\n',
+      'canary-katana',
+      '/x/SKILL.md',
+    );
+    expect(examples).toHaveLength(1);
+    expect(examples[0]!.declaredIllustrative).toBe(true);
+    expect(examples[0]!.executable).toBe(false);
+    expect(examples[0]!.reason).toBe(ILLUSTRATIVE_REASON);
+  });
+
+  it('survives the blank line an author leaves after the comment', () => {
+    const examples = extractExamples(
+      '<!-- canary:illustrative -->\n\n```bash\ncanary katana scan\n```\n',
+      'canary-katana',
+      '/x/SKILL.md',
+    );
+    expect(examples[0]!.declaredIllustrative).toBe(true);
+  });
+
+  // A marker that leaked forward would silently excuse later blocks, which is
+  // the failure mode of every opt-out annotation: it stops meaning anything
+  // in particular and the bucket it feeds stops being trustworthy.
+  it('is spent by the fence it opens and never leaks to the next one', () => {
+    const examples = extractExamples(
+      '<!-- canary:illustrative -->\n```bash\ncanary katana scan\n```\n\n' +
+        'Prose in between.\n\n```bash\ncanary katana purge\n```\n',
+      'canary-katana',
+      '/x/SKILL.md',
+    );
+    expect(examples.map((e) => e.declaredIllustrative)).toEqual([true, false]);
+  });
+
+  it('does not carry across intervening prose', () => {
+    const examples = extractExamples(
+      '<!-- canary:illustrative -->\nProse.\n```bash\ncanary katana scan\n```\n',
+      'canary-katana',
+      '/x/SKILL.md',
+    );
+    expect(examples[0]!.declaredIllustrative).toBe(false);
+  });
+
+  // The load-bearing one. If marking could satisfy the executable rule, a
+  // skill could mark its way to green and the rule would protect nothing.
+  it('cannot satisfy the executable-example rule', () => {
+    execSkill(
+      'canary-marked',
+      '<!-- canary:illustrative -->\n```bash\ncanary skills run canary-marked\n```\n',
+    );
+    const { runner } = recordingRunner();
+
+    const result = checkExamples(collectSurfaces(root), runner, root);
+
+    expect(result.findings.map((f) => f.kind)).toContain(
+      ExampleFindingKind.NoExecutableExample,
+    );
+  });
+
+  it('splits the skipped bucket into declared and undeclared', () => {
+    execSkill(
+      'canary-mixed',
+      '<!-- canary:illustrative -->\n```bash\ncanary skills run canary-mixed\n```\n\n' +
+        '```bash\ncanary skills run canary-mixed -- <path>\n```\n\n' +
+        '```bash\ncanary skills run canary-mixed --help\n```\n',
+    );
+    const { runner } = recordingRunner();
+
+    const result = checkExamples(collectSurfaces(root), runner, root);
+    const skipped = result.skipped ?? [];
+
+    expect(result.checked).toBe(1);
+    expect(skipped).toHaveLength(2);
+    expect(countDeclaredIllustrative(skipped)).toBe(1);
   });
 });

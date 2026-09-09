@@ -18,7 +18,12 @@ function result<F>(
   findings: F[] = [],
   skipped?: { name: string; reason: string }[],
 ): GateResult<F> {
-  return { checked, findings, skipped };
+  // `exactOptionalPropertyTypes` distinguishes an absent `skipped` from one
+  // present-and-undefined, and `GateResult` means the former — so the key is
+  // omitted rather than set to undefined.
+  return skipped === undefined
+    ? { checked, findings }
+    : { checked, findings, skipped };
 }
 
 describe('gate-result helper', () => {
