@@ -339,6 +339,150 @@ describe('canary migrate --check', () => {
   });
 });
 
+// --- migrate --json: workspace surface (#504 part 1, spec test 28) -----------
+
+/** Parse the JSON object `migrate --json` printed after its banner lines. */
+function migrateJson(stdout: string): Record<string, unknown> {
+  return JSON.parse(
+    stdout.slice(stdout.indexOf('{'), stdout.lastIndexOf('}') + 1),
+  );
+}
+
+/**
+ * A monorepo whose root probe misses every tier (`language: go` is not a
+ * language fallback), so everything the payload knows came from the workspace.
+ */
+function workspaceProject(root: string): void {
+  fakeHarnessProject(root, '{"language": "go"}');
+  writeFileSync(
+    join(root, 'pnpm-workspace.yaml'),
+    'packages:\n  - "apps/*"\n',
+    'utf-8',
+  );
+  for (const [pkg, config] of [
+    ['e2e', 'playwright.config.ts'],
+    ['lib', 'vitest.config.ts'],
+  ]) {
+    mkdirSync(join(root, 'apps', pkg!), { recursive: true });
+    writeFileSync(join(root, 'apps', pkg!, config!), 'export default {};');
+  }
+}
+
+/** Every key `migrate --json` carried before #504 part 1 -- none may go. */
+const PRE_504_JSON_KEYS = [
+  'framework',
+  'shape',
+  'dry_run',
+  'created_files',
+  'created_dirs',
+  'skipped_configs',
+  'preserved_files',
+  'would_create',
+  'manual_followups',
+  'config_warnings',
+  'deployed_skills',
+  'installed_workflows',
+];
+
+describe('canary migrate --json carries the workspace surface (#504)', () => {
+  it('reports workspace, shapes and existing_suites for a monorepo', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      workspaceProject(project);
+
+      const res = await run(project, home, '--json');
+      expect(res.code).toBe(0);
+      const payload = migrateJson(res.stdout);
+
+      // The scalar collapses on disagreement; the set does not.
+      expect(payload['shape']).toBe('unknown');
+      expect(payload['shapes']).toEqual(['e2e_ui', 'frontend_unit']);
+
+      const ws = payload['workspace'] as Record<string, unknown>;
+      expect(ws['manager']).toBe('pnpm');
+      expect(ws['globs']).toEqual(['apps/*']);
+      expect(ws['scanned']).toBe(2);
+      expect(ws['unreadable']).toEqual([]);
+      expect(ws['findings']).toEqual([
+        {
+          dir: 'apps/e2e',
+          framework: 'playwright',
+          shape: 'e2e_ui',
+          source: 'playwright.config.ts',
+          confidence: 'config',
+        },
+        {
+          dir: 'apps/lib',
+          framework: 'vitest',
+          shape: 'frontend_unit',
+          source: 'vitest.config.ts',
+          confidence: 'config',
+        },
+      ]);
+      // Mixed workspace: no scalar framework, so no suite scan ran.
+      expect(payload['existing_suites']).toEqual([]);
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('surfaces the existing suite that made would_create empty (#585 gap)', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      workspaceProject(project);
+
+      const res = await run(
+        project,
+        home,
+        '--framework',
+        'playwright',
+        '--json',
+      );
+      expect(res.code).toBe(0);
+      const payload = migrateJson(res.stdout);
+
+      // Before this field surfaced, a scripted consumer saw `would_create: []`
+      // with no reason attached -- an abstention without its denominator.
+      expect(payload['would_create']).toEqual([]);
+      expect(payload['existing_suites']).toEqual([
+        { dir: 'apps/e2e', config: 'playwright.config.ts', test_count: 0 },
+      ]);
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('is additive: a single-package repo keeps every prior key and gains the new ones', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+
+      const res = await run(project, home, '--json');
+      expect(res.code).toBe(0);
+      const payload = migrateJson(res.stdout);
+
+      for (const key of PRE_504_JSON_KEYS) expect(payload).toHaveProperty(key);
+      expect(payload['workspace']).toBeNull();
+      expect(payload['shapes']).toEqual(['backend_unit']);
+      expect(payload['existing_suites']).toEqual([]);
+    } finally {
+      rmTmp(base);
+    }
+  });
+});
+
 // --- workflow install (#459) -------------------------------------------------
 
 const WORKFLOW_YML = 'name: guardian\non: pull_request\njobs: {}\n';
