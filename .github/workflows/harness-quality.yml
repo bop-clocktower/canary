@@ -308,7 +308,48 @@ jobs:
 
       - name: Test + coverage gate (vitest)
         working-directory: agents/skills
-        run: npm test
+        run:
+          npm test -- --reporter=default --reporter=json
+          --outputFile=/tmp/durations.json
+
+      # Duration ratchet (#760). The 30s testTimeout stops a contended test
+      # being reported as a failure, but nothing in this suite runs over ~3.1s
+      # idle, so it is also a ~10x window in which a real slowdown is
+      # invisible. This is the recorded expected duration the issue asked to be
+      # paired with the raise.
+      #
+      # It normalises against the tracked tests themselves — contention lifts
+      # them all, a regression lifts one — and ABSTAINS (exit 3) rather than
+      # guess when the control group is too small, the runtime differs, or the
+      # run is too contended to compare. Exit 3 is deliberately NOT a failure
+      # here: an abstention means it verified nothing, which is reported and
+      # must not be read as a pass.
+      # Uploaded so the baseline can be RE-RECORDED from a real CI run. A
+      # baseline taken on a maintainer's laptop does not describe this runner:
+      # the first run of this gate abstained at a load factor of 0.08 because
+      # Linux spawns a process roughly an order of magnitude faster than macOS
+      # and these tests are spawn-bound. Download this artifact and run the
+      # ratchet with --update to refresh it.
+      - name: Upload test durations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-durations-agents-skills
+          path: /tmp/durations.json
+          retention-days: 7
+
+      - name: Test duration ratchet (blocking on regression)
+        working-directory: agents/skills
+        run: |
+          set +e
+          node ../../scripts/test-duration-ratchet.mjs --report /tmp/durations.json
+          status=$?
+          set -e
+          if [ "$status" -eq 3 ]; then
+            echo "::warning title=Test durations unverified::the ratchet abstained (exit 3) — this run verified NOTHING about test durations"
+            exit 0
+          fi
+          exit "$status"
 
       # Dogfood (#485), promoted to STRICT: both detectors run over canary's
       # own suites and FAIL the build on any unsuppressed finding. The backlog

@@ -28,15 +28,58 @@ export const COMPANY_FILE = '.canary/company.json';
 /** The company.json key. Array of strings. */
 export const COMPANY_KEY = 'proprietary_denylist';
 
+/**
+ * Terms from a comma- or newline-separated source.
+ *
+ * Comments are stripped PER LINE, before the comma split. The order matters
+ * and getting it wrong is #818: splitting on `[,\n]` first meant a comment
+ * line containing a comma survived in part — the fragment before the comma
+ * starts with `#` and is dropped, but every fragment after one does not, and
+ * was kept as a denylist term. This repo's own `.proprietary-denylist` has a
+ * commented header, so 8 of the 15 terms it appeared to declare were
+ * fragments of its own prose. One of them was `and on a`, which matched three
+ * innocent files and reported them as company identifiers.
+ *
+ * Two harms, and the second is worse: a leak gate that cries wolf on the word
+ * "and" is an alarm nobody reads, and the run summary said `15 term(s)` when
+ * seven were real — an inflated denominator on the last line of defence
+ * before a company name reaches a public repo.
+ */
 function split(raw) {
   return String(raw)
-    .split(/[,\n]/)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+    .flatMap((line) => line.split(','))
     .map((s) => s.trim())
-    .filter((s) => s && !s.startsWith('#'));
+    .filter(Boolean);
 }
 
 /**
- * @returns {{terms: string[], sources: string[], committedSource: boolean}}
+/**
+ * Terms that do not look like an identifier anyone would need to hide.
+ *
+ * Defence in depth for #818, independent of the parser that produced it: the
+ * eight phantom terms leaked from comment prose were all three-or-more
+ * all-lowercase words, and this would have caught every one of them without
+ * knowing anything about comments. A company, client or consumer name is one
+ * or two tokens, or carries capitals; `and from this file at the` is neither.
+ *
+ * Reported, never dropped. A consumer could legitimately declare an odd
+ * phrase, and silently discarding a term from a leak gate is a worse failure
+ * than flagging a suspicious one. The caller surfaces the COUNT and shape, not
+ * the values -- these are the names the scan exists to keep out of a public
+ * repo, and the warning goes to a CI log.
+ */
+function implausibleTerms(terms) {
+  return terms.filter((t) => {
+    const words = t.split(/\s+/).filter(Boolean);
+    return words.length >= 3 && t === t.toLowerCase();
+  });
+}
+
+/**
+ * @returns {{terms: string[], sources: string[], committedSource: boolean, implausible: string[]}}
  *   `committedSource` is true when a term came from a file that is tracked,
  *   which is the shape a caller should warn about on a public repo.
  */
@@ -79,5 +122,11 @@ export function loadTerms(root, env = process.env) {
     }
   }
 
-  return { terms: [...terms].sort(), sources, committedSource };
+  const sorted = [...terms].sort();
+  return {
+    terms: sorted,
+    sources,
+    committedSource,
+    implausible: implausibleTerms(sorted),
+  };
 }

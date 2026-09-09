@@ -14,7 +14,43 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [7.2.0] - 2026-09-08
+
 ### Added
+
+- **Test duration ratchet** (#760). `scripts/test-duration-ratchet.mjs` records
+  an expected duration per slow test and fails when one gets materially slower —
+  the pairing #760 asked for alongside the 30s `testTimeout` raise, which is
+  otherwise a ~10x window in which a real slowdown is invisible (nothing in
+  either suite runs over ~3.1s idle). Each run derives its own load factor from
+  the tracked tests themselves, so contention raises the ceiling with the noise
+  instead of producing a flaky red, and the gate ABSTAINS (exit 3) rather than
+  guess when its control group is under 10 tests, the runtime differs, or the
+  run is too contended to compare. Wired non-blocking-on-abstention in the
+  `agents/skills` job; an abstention is reported as a warning that the run
+  verified nothing, never as a pass.
+
+- **`canary-strix` ships the leak scan as a skill consumers can run** (#799).
+  The scan lived in `scripts/`, which is not in the published package's `files`,
+  so its only callers were this repo's own `docs-lint` workflow and pre-commit
+  hook — a consumer could neither run it nor add a term to it. It is now
+  family-shaped like the four deterministic detectors: `cli: scripts/cli.mjs`,
+  `--json`, the 0/1/2/3 exit contract, `requires: [node>=20]`.
+
+  It scans commit **authorship** as well as file contents, which is the half a
+  file scan can never reach: an author-field identifier is metadata, so no
+  content scan sees it.
+
+- **The katana quarantine ledger records why a test is out, not just how it
+  left** (#771, #781). Schema v2 adds `cause`, `issue`, and `expiry`, and the
+  ticket a quarantine waits on is read from a `Ticket:` trailer (`Bug:` and
+  `Tracked:` accepted, last wins) and recorded **verbatim** — a key, a URL, or
+  several — because katana cannot know one org's tracker from another's.
+
+  `cause` and `reason` stay separate on purpose: `reason` is derived from the
+  commit subject, `cause` is asserted
+  (`flaky | product-defect | blocked-data | obsolete`). Collapsing them would
+  dress an auto-derived string up as a claim someone stands behind.
 
 - **`canary skills run` can invoke a skill that ships no script** (#756). The
   dispatcher tier harness has and canary did not: 14 of canary's 21 skills carry
@@ -58,7 +94,61 @@ under the project's former name) are documented in the
   matched but holding zero tests is the subtler zero, and a file-counting
   summary prints a healthy number over it.
 
+### Changed
+
+- **Retracted the "`excludePatterns` cannot reach a dot-directory" claim**
+  (#728). `AGENTS.md` and `ts/test/entropy-exclude-patterns.test.ts` both
+  recorded, as measured fact against CLI 11.1.1, that no `excludePatterns` entry
+  could suppress findings under a dot-directory the analyzer does not already
+  skip. It is false. The eleven-row table behind it was taken at a
+  long-lived-working-directory baseline of 346 — a number unresponsive to the
+  config under test — and the upstream report carrying it
+  (`Intense-Visions/harness-engineering#1345`) was withdrawn by its own author
+  as NOT_PLANNED. Re-measured in a fresh worktree at `29ad0f2` on CLI 12.4.0 and
+  12.2.0: a `.kiro` probe reads 147 unexcluded and 145 excluded against a 145
+  baseline. The dot-directory is still _walked_, so the `DEFAULT_SKIP_DIRS` half
+  stands. `.kiro/**` and `.remember/**` remain out of `harness.config.json`, but
+  for a corrected reason — they are untracked machine-local paths whose
+  suppression can never be demonstrated in CI, not because an absent directory
+  makes the pattern vacuous.
+
 ### Fixed
+
+- **Seven skill CLIs truncated a large `--json` payload while still exiting 0**
+  (#791). They ended with `process.exit(main(...))`, and `process.exit()`
+  terminates without waiting for stdout to drain. When stdout is a pipe rather
+  than a TTY — every CI step, every `| jq`, every orchestrator call — writes are
+  asynchronous, so the document was cut at the pipe buffer and the process still
+  reported success.
+
+  Measured on `canary-blackhawk` over a 400-file corpus, same tree, same minute:
+  `process.exit(main(...))` delivered **131072 bytes** — the pipe buffer,
+  exactly — and exited 0; `process.exitCode = main(...)` delivered the whole
+  **175271-byte** document and exited 0. A consumer reading exit 0 got either a
+  parse error it blamed on itself, or a valid-looking prefix.
+
+  It fires precisely on the large runs where the findings matter most, so the
+  CLIs that had not misbehaved yet were not safe, merely small. All nine now set
+  `process.exitCode`, and a conformance test fails the build if
+  `process.exit(main(...))` returns.
+
+- **`canary-instrument` wrote `url: ""` on every request while announcing the
+  artifact was written** (#782). `run.json` exists to answer "which test hit
+  which endpoint", so a URL-less artifact reads as "no endpoints exercised" and
+  renders a clean 0% as though it were a measurement. The span reader was on
+  pre-1.23 OpenTelemetry semantic conventions (`http.url`, `http.status_code`),
+  which the auto-instrumentation this skill tells consumers to install does not
+  emit; it now reads the conventions a real captured span carries.
+
+- **The strix denylist leaked comment prose past a comma** (#818). Splitting on
+  `[,\n]` happened _before_ comment fragments were dropped, so any fragment
+  after a comma on a `#` line survived as a scan term. On this repo's own
+  denylist that was **15 terms scanned against 7 real ones** — 8 phantoms, one
+  of them the words "and on a", which raised three findings on a clean `main`.
+
+  Both harms matter, and the second is the worse one: a leak gate that cries
+  wolf on the word "and" stops being read, and an inflated denominator makes the
+  scan look like it covered more than it did.
 
 - **Five of nine `cli:` skills had no documented command anyone could run**
   (#707). #487's checker worked on its first run and what it reported was a
@@ -245,20 +335,31 @@ under the project's former name) are documented in the
   `patterns` 0 under both. The ratchet is untouched at `maxFindings: 145` and no
   baseline was refreshed.
 
-  **Why the number did not move is the finding.** A zero delta on a widened
-  denominator is the shape of a detector that did not widen, so it was probed
-  rather than assumed: an identical dead link appended to `docs/CANARY_STATE.md`
-  is reported, and appended to `AGENTS.md` is not. `harness cleanup` — the
-  command CI and the ratchet actually run — hard-codes
-  `docPaths: [join(docsDir, '**/*.md')]` when it constructs the analyzer and
-  never reads `entropy.drift.docPaths`; only the MCP `detect_entropy` path
-  honours the key. So the config is **correct and currently inert on the CI
-  path**, and the widening takes effect the moment upstream honours it. Tracked
-  in #788, which also records the second half of that defect: the hard-coded
-  value is `docs/**/*.md` alone, so no README anywhere is in the CI drift
-  denominator either. The instrument that covers the wide surface _today_ is
-  `scripts/check_doc_links.mjs` — 249 Markdown files, no path allowlist,
-  strict-at-zero in the blocking suite, exit 3 on an empty walk.
+  **Why the number did not move was the finding, and it has since changed.** A
+  zero delta on a widened denominator is the shape of a detector that did not
+  widen, so it was probed rather than assumed. At CLI 12.2.0 the probe showed
+  the widening was inert: `harness cleanup` — the command CI and the ratchet
+  actually run — hard-coded `docPaths: [join(docsDir, '**/*.md')]` and never
+  read `entropy.drift.docPaths`, so the config was correct and had no effect,
+  and no README anywhere was in the CI drift denominator either (#788).
+
+  **Fixed upstream at CLI 12.4.0, and re-probed rather than taken on trust.**
+  The key is now honoured on the CI path. An identical dead link appended one
+  file at a time to a clean tree reporting drift 0 is reported for
+  `docs/CANARY_STATE.md` (the control), `AGENTS.md`, `STRATEGY.md` and
+  `agents/skills/claude-code/canary-katana/SKILL.md` — and, the row that
+  actually carries it, is **not** reported when `AGENTS.md` is deleted from
+  `docPaths`. Three surfaces firing would look identical if the CLI had merely
+  widened its hard-coded default; removing one entry and watching its planted
+  link go quiet is what proves the config is what widened the denominator. So
+  the acceptance number stands as a real measurement: the widening added **0**
+  findings across `AGENTS.md`, `CHANGELOG.md`, `CLAUDE.md`, `STRATEGY.md`,
+  `DEPLOY_CHECKLIST.md` and all 21 `SKILL.md` files. #788 is closed.
+
+  `scripts/check_doc_links.mjs` stays regardless — 254 Markdown files, no path
+  allowlist, strict-at-zero in the blocking suite, exit 3 on an empty walk. It
+  does not move when the harness CLI floats, and the CLI has now moved this
+  check's behaviour five releases running.
 
   `ts/test/entropy-doc-paths.test.ts` pins the declared list against what is on
   disk, because an allowlist's denominator shrinks silently: it fails when a
@@ -3145,7 +3246,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v7.1.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v7.2.0...HEAD
+[7.2.0]: https://github.com/bop-clocktower/canary/compare/v7.1.0...v7.2.0
 [7.1.0]: https://github.com/bop-clocktower/canary/compare/v7.0.0...v7.1.0
 [7.0.0]: https://github.com/bop-clocktower/canary/compare/v6.8.1...v7.0.0
 [6.8.1]: https://github.com/bop-clocktower/canary/compare/v6.8.0...v6.8.1

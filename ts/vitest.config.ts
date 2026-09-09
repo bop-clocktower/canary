@@ -16,10 +16,16 @@ export default defineConfig({
     // file someone happened to notice and leaves the next one to be discovered
     // as a flake in CI -- which is exactly how this was found three times.
     //
-    // 30s, not unbounded: a genuinely hung test must still fail. The severe
-    // cases in #760 (39-56s) are NOT fixed by this and are still real
-    // slowness worth chasing -- this only stops a marginal case being
-    // reported as a failure.
+    // 30s only stops a contended test being reported as a failure. It does
+    // NOT bound a hang -- an earlier version of this comment claimed "a
+    // genuinely hung test must still fail", which is false. Every subprocess
+    // call in this suite is synchronous (`spawnSync`/`execFileSync`, none
+    // passing a `timeout:`), which blocks the worker thread so vitest's timer
+    // cannot fire. #760's own 39-56s durations RECORDED AGAINST A 5000ms LIMIT
+    // are the proof: a real interrupt reports ~5000ms, so those tests ran to
+    // completion and were labelled timed-out afterwards. Only a child-level
+    // `timeout:` bounds a sync spawn. Those severe cases remain unfixed and
+    // are still real slowness worth chasing.
     testTimeout: 30_000,
     coverage: {
       provider: 'v8',
