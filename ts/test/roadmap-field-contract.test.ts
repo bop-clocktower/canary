@@ -238,7 +238,7 @@ interface ScanResult {
 /** Mutable state threaded through the walk, so each helper does one job. */
 interface ScanState extends ScanResult {
   /** The `### ` row currently being filled, if any. */
-  current?: Row;
+  current?: Row | undefined;
   /** Name of the current row, for violation messages. */
   rowName: string;
   inFence: boolean;
@@ -295,7 +295,7 @@ function skipBlock(line: string, state: ScanState): boolean {
 function handleHeading(line: string, index: number, state: ScanState): boolean {
   const rowMatch = ROW.exec(line);
   if (rowMatch) {
-    state.rowName = rowMatch[1].trim();
+    state.rowName = rowMatch[1]!.trim();
     state.current = { name: state.rowName, line: index + 1, fields: new Map() };
     state.rows.push(state.current);
     return true;
@@ -434,7 +434,11 @@ function handleField(
   const match = FIELD_ANY.exec(line);
   if (!match) return;
 
-  const [, indent, bullet, name, value] = match;
+  // All four groups are required by the pattern, so a match populates them.
+  const indent = match[1]!;
+  const bullet = match[2]!;
+  const name = match[3]!;
+  const value = match[4]!;
   state.fieldShapedLines++;
 
   const wrongShape = shapeViolation(indent, bullet, name, index, state.rowName);
@@ -477,9 +481,10 @@ function scanRoadmap(text: string): ScanResult {
   };
 
   for (let i = 0; i < lines.length; i++) {
-    if (skipBlock(lines[i], state)) continue;
-    if (handleHeading(lines[i], i, state)) continue;
-    handleField(lines[i], i, lines[i + 1] ?? '', state);
+    const line = lines[i]!;
+    if (skipBlock(line, state)) continue;
+    if (handleHeading(line, i, state)) continue;
+    handleField(line, i, lines[i + 1] ?? '', state);
   }
 
   const { fieldsInspected, fieldShapedLines, violations, rows } = state;
@@ -554,7 +559,7 @@ describe('roadmap one-line field contract', () => {
         field: 'Summary',
         kind: 'wrapped',
       });
-      expect(result.violations[0].detail).toContain('invisible to harness');
+      expect(result.violations[0]!.detail).toContain('invisible to harness');
     });
 
     it.each([
@@ -625,8 +630,8 @@ describe('roadmap one-line field contract', () => {
       // Critically, the second row's fields must NOT land on the first row —
       // that overwrite is what used to mask the P9 above.
       expect(result.rows).toHaveLength(1);
-      expect(result.rows[0].fields.get('Priority')).toBe('P9');
-      expect(result.rows[0].fields.has('Status')).toBe(false);
+      expect(result.rows[0]!.fields.get('Priority')).toBe('P9');
+      expect(result.rows[0]!.fields.has('Status')).toBe(false);
     });
 
     it.each([
@@ -751,8 +756,8 @@ describe('roadmap one-line field contract', () => {
       );
 
       expect(bad).toHaveLength(1);
-      expect(bad[0].name).toBe('Bad row');
-      expect(bad[0].fields.get('Priority')).toBe('P9');
+      expect(bad[0]!.name).toBe('Bad row');
+      expect(bad[0]!.fields.get('Priority')).toBe('P9');
     });
   });
 
@@ -778,7 +783,7 @@ describe('roadmap one-line field contract', () => {
         row: 'A row',
         field: 'Summary',
       });
-      expect(result.violations[0].detail).toContain('mid-sentence');
+      expect(result.violations[0]!.detail).toContain('mid-sentence');
     });
 
     it('accepts a long Summary that ends where its author meant it to', () => {

@@ -28,6 +28,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { main as blackhawkMain } from '../claude-code/canary-blackhawk/scripts/cli.mjs';
 import { main as savantMain } from '../claude-code/canary-savant/scripts/cli.mjs';
 import { main as katanaMain } from '../claude-code/canary-katana/scripts/cli.mjs';
+import { main as cassandraMain } from '../claude-code/canary-cassandra/scripts/cli.mjs';
 
 /** Exit code reserved CLI-wide for "abstained" (D4, mirrors gate-result.ts). */
 const EXIT_ABSTAINED = 3;
@@ -84,6 +85,12 @@ const ROWS: SkillGateRow[] = [
     forbid: ['No order-dependence'],
     run: (base) => run(savantMain, [base]),
     strict: (base) => run(savantMain, [base, '--strict']),
+  },
+  {
+    command: 'canary-cassandra (zero tests read)',
+    forbid: ['Advisory by default'],
+    run: (base) => run(cassandraMain, [base]),
+    strict: (base) => run(cassandraMain, [base, '--strict']),
   },
   {
     command: 'canary-katana (empty diff)',

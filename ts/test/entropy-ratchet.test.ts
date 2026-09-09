@@ -75,10 +75,10 @@ describe('entropy-ratchet', () => {
 
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  function run(): { status: number; out: string } {
+  function run(extra: string[] = []): { status: number; out: string } {
     const r = spawnSync(
       process.execPath,
-      [SCRIPT, '--report', report, '--baseline', baseline],
+      [SCRIPT, '--report', report, '--baseline', baseline, ...extra],
       { encoding: 'utf8' },
     );
     return { status: r.status ?? -1, out: `${r.stdout}${r.stderr}` };
@@ -174,13 +174,103 @@ describe('entropy-ratchet', () => {
     expect(status).toBe(0);
     expect(out).toMatch(/lower/i);
   });
+
+  /**
+   * The merge-base delta rule (#703).
+   *
+   * The absolute ceiling is order-dependent by construction: headroom is a
+   * shared budget no branch can see, so two independently-green branches
+   * collide and the second to merge is blamed for findings it did not add.
+   * Measured once: main 294, batch C 296, batch B 297 against a 297 ceiling,
+   * C+B merged 299.
+   *
+   * These assert the property the issue asked for — a branch is judged on the
+   * delta against its OWN merge base — plus the two ways the new rule could
+   * itself go quiet: a base report that measured nothing must abstain rather
+   * than degrade to the absolute rule, and the absolute backstop must still
+   * fire when the delta rule is satisfied.
+   */
+  describe('merge-base delta (#703)', () => {
+    let baseReport: string;
+
+    beforeEach(() => {
+      baseReport = join(dir, 'base-report.txt');
+    });
+
+    /** The order-dependence case, stated as the numbers that produced it. */
+    it('passes a branch that adds nothing, even with zero absolute headroom', () => {
+      writeBaseline(297);
+      writeFileSync(report, contractLine(297));
+      writeFileSync(baseReport, contractLine(297));
+      expect(run(['--base-report', baseReport]).status).toBe(0);
+    });
+
+    it('passes a branch whose base already sits at the ceiling', () => {
+      writeBaseline(297);
+      writeFileSync(report, contractLine(294));
+      writeFileSync(baseReport, contractLine(297));
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(0);
+      expect(out).toMatch(/-3/);
+    });
+
+    it('fails a branch that adds findings, and names its own delta', () => {
+      writeBaseline(400);
+      writeFileSync(report, contractLine(299));
+      writeFileSync(baseReport, contractLine(294));
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(1);
+      expect(out).toMatch(/introduces 5/);
+      expect(out).toMatch(/294 at the merge base/);
+    });
+
+    // The backstop half. Without it, a long run of +0 merges could walk the
+    // total upward and the delta rule would never notice.
+    it('still fires the absolute backstop when the delta is clean', () => {
+      writeBaseline(290);
+      writeFileSync(report, contractLine(294));
+      writeFileSync(baseReport, contractLine(294));
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(1);
+      expect(out).toMatch(/absolute backstop/i);
+    });
+
+    // A base that could not be measured is NOT a base of zero. Degrading to
+    // the absolute rule here would let the delta gate go dark exactly the way
+    // `harness cleanup` exiting 2 at startup let the whole step go dark (#544).
+    it('ABSTAINS when the base report carries no contract line', () => {
+      writeBaseline(400);
+      writeFileSync(report, contractLine(294));
+      writeFileSync(baseReport, 'Entropy analysis failed at startup\n');
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(3);
+      expect(out).toMatch(/merge-base/);
+    });
+
+    it('errors when the named base report does not exist', () => {
+      writeBaseline(400);
+      writeFileSync(report, contractLine(294));
+      expect(run(['--base-report', join(dir, 'absent.txt')]).status).toBe(2);
+    });
+
+    // Which side went dark has to be legible from the message alone.
+    it('distinguishes a dark head scan from a dark base scan', () => {
+      writeBaseline(400);
+      writeFileSync(report, 'Entropy analysis failed at startup\n');
+      writeFileSync(baseReport, contractLine(294));
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(3);
+      expect(out).toMatch(/head/);
+      expect(out).not.toMatch(/merge-base entropy report/);
+    });
+  });
 });
 
 /**
  * The checked-in baseline, as opposed to the script that reads it (#744).
  *
  * `maxFindings` is an ABSOLUTE count, but the workflows pin the measuring tool
- * to a floating major (`@harness-engineering/cli@11`). Those two facts together
+ * to a floating major (`@harness-engineering/cli@12`). Those two facts together
  * mean a patch release can move the number with no change to this repo at all,
  * and it has: measured on one commit, CLI 11.1.1 reports 281 findings and
  * 11.2.0 reports 257 — a 24-finding move that is entirely the doc-drift
@@ -210,23 +300,58 @@ describe('entropy-ratchet', () => {
  *   - a missing, range-valued, or major-mismatched `harnessCli`
  *
  * And they explicitly do NOT catch minor-version drift: the workflows pin a
- * floating `@11`, so 11.1.1 -> 11.2.0 passes the major check. Closing that needs
+ * floating `@12`, so a 12.1.0 -> 12.2.0 move would pass the major check just as
+ * 11.1.1 -> 11.2.0 did. Closing that needs
  * CI to capture the resolved version and the ratchet to abstain on a mismatch
  * (#744). Do not let the presence of this block imply otherwise.
  */
 describe('the checked-in entropy baseline', () => {
   const BASELINE_PATH = join(REPO_ROOT, '.harness', 'entropy-baseline.json');
   const BASELINE_REL = '.harness/entropy-baseline.json';
+  const WORKFLOW_PATH = join(
+    REPO_ROOT,
+    '.github',
+    'workflows',
+    'harness-quality.yml',
+  );
+
+  /**
+   * Every `HARNESS_CLI` assignment in the quality workflow, as major strings.
+   *
+   * Anchored to the assignment rather than matched anywhere in the file: a
+   * prose comment mentioning an older `@10` used to become the authority,
+   * failing the pin test with a message that pointed at the baseline.
+   */
+  function pinnedMajors(): string[] {
+    const yml = readFileSync(WORKFLOW_PATH, 'utf8');
+    return [
+      ...yml.matchAll(/^\s*HARNESS_CLI:\s*'@harness-engineering\/cli@(\d+)'/gm),
+    ].map((m) => m[1]!);
+  }
+
+  /** The single pinned major, or `?` when the pin is missing or ambiguous. */
+  function pinnedMajor(): string {
+    const majors = pinnedMajors();
+    return majors.length === 1 ? majors[0]! : '?';
+  }
 
   /**
    * How to re-measure, quoted into every failure message that needs it. The
    * clean-worktree part is load-bearing: the count reads high in the main
    * working directory (#700), so a re-measure taken in place is worse than
    * none — it is a confident wrong number.
+   *
+   * The major is READ FROM THE WORKFLOW PIN rather than written here. It used
+   * to be a hardcoded `@11`, which made this hint actively harmful in the one
+   * case it exists for: the major-mismatch failure quotes it, so a maintainer
+   * following it re-measured with the OLD analyzer and reproduced exactly the
+   * stale number the guard had just caught. A remediation hint that names a
+   * version has to derive it, or it goes stale on precisely the bump that
+   * makes someone read it.
    */
   const REMEASURE =
     'Re-measure in a CLEAN WORKTREE (`git worktree add`) with ' +
-    '`npx --yes -p @harness-engineering/cli@11 harness cleanup --findings-json`' +
+    `\`npx --yes -p @harness-engineering/cli@${pinnedMajor()} harness cleanup --findings-json\`` +
     ' — the count reads high in the main working dir (#700).';
 
   function baselineFile(): Record<string, unknown> {
@@ -301,7 +426,7 @@ describe('the checked-in entropy baseline', () => {
         `produced "measuredCount". Without it there is no way to tell a real ` +
         `count change from an analyzer change (#744). ${REMEASURE}`,
     ).toBe('string');
-    // A range would defeat the point — the whole failure mode is that `@11`
+    // A range would defeat the point — the whole failure mode is that `@12`
     // resolves to different analyzers on different days.
     expect(
       cli,
@@ -310,19 +435,10 @@ describe('the checked-in entropy baseline', () => {
     ).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  // NOTE: major only. A minor bump under the floating `@11` pin — the exact
+  // NOTE: major only. A minor bump under the floating `@12` pin — the exact
   // drift that moved this count 24 findings — passes. See the block docblock.
   it('was measured by a CLI whose MAJOR matches the workflow pin', () => {
-    const yml = readFileSync(
-      join(REPO_ROOT, '.github', 'workflows', 'harness-quality.yml'),
-      'utf8',
-    );
-    // Anchored to the assignment rather than matched anywhere in the file: a
-    // prose comment mentioning an older `@10` used to become the authority,
-    // failing this test with a message that pointed at the baseline.
-    const pins = [
-      ...yml.matchAll(/^\s*HARNESS_CLI:\s*'@harness-engineering\/cli@(\d+)'/gm),
-    ];
+    const pins = pinnedMajors();
     expect(
       pins.length,
       `No HARNESS_CLI pin found in .github/workflows/harness-quality.yml. If ` +
@@ -330,14 +446,30 @@ describe('the checked-in entropy baseline', () => {
         `— do not delete it.`,
     ).toBe(1);
     const { harnessCli } = baselineFile() as { harnessCli: string };
+    // The assertion above already pins this to exactly one match with one
+    // capture group; named here so the comparison below reads as a value.
+    const workflowMajor = pins[0]!;
     expect(
       String(harnessCli).split('.')[0],
       `${BASELINE_REL} was measured with CLI ${String(harnessCli)}, but the ` +
-        `workflow now runs major @${pins[0][1]}. The baseline is stale, not ` +
+        `workflow now runs major @${workflowMajor}. The baseline is stale, not ` +
         `the workflow. FIX: ${REMEASURE} Then update "measuredCount", ` +
         `"measuredAt", "harnessCli", and lower "maxFindings" to the new count ` +
         `plus "maxHeadroom".`,
-    ).toBe(pins[0][1]);
+    ).toBe(workflowMajor);
+  });
+
+  // The hint is quoted BY the major-mismatch failure above, so a hardcoded
+  // major in it is wrong exactly when someone reads it: following it
+  // re-measures with the analyzer the baseline is already stale against, and
+  // reproduces the stale number. Derive it, or delete the version from it.
+  it('quotes a re-measure command naming the major the workflow pins', () => {
+    expect(
+      REMEASURE,
+      `The re-measure hint names a CLI major that is not the pinned ` +
+        `@${pinnedMajor()}. It is quoted into the major-mismatch failure, so ` +
+        `a stale major here sends the reader back to the wrong analyzer.`,
+    ).toContain(`@harness-engineering/cli@${pinnedMajor()} `);
   });
 
   it('never sets a ceiling below the count it last measured', () => {
@@ -388,13 +520,13 @@ describe('the checked-in entropy baseline', () => {
  * The hole this closes is the one `$whatIsGuarded` in the baseline names and
  * that nothing could see: `measuredCount` is a memory of the last time a human
  * ran the analyzer, and the workflows pin a FLOATING `@harness-engineering/
- * cli@11`, so the analyzer under this absolute count can change with no commit
- * to this repo. It happened twice. 11.1.1 -> 11.2.0 moved the count 281 -> 257
- * (#694, a fence-awareness fix). 11.2.0 -> 11.3.0 then moved it 257 -> 147 —
- * a 110-finding drop, purely subtractive, with the ceiling left at 267. For
- * four days the gate would have taken 120 net-new findings to turn red: a
- * blocking check that had been deliberately TIGHTENED to 267 was, in practice,
- * wallpaper.
+ * cli@12`, so the analyzer under this absolute count can change with no commit
+ * to this repo. It happened twice under the old `@11` pin: 11.1.1 -> 11.2.0
+ * moved the count 281 -> 257 (#694, a fence-awareness fix), and 11.2.0 ->
+ * 11.3.0 then moved it 257 -> 147 — a 110-finding drop, purely subtractive,
+ * with the ceiling left at 267. For four days the gate would have taken 120
+ * net-new findings to turn red: a blocking check that had been deliberately
+ * TIGHTENED to 267 was, in practice, wallpaper.
  *
  * Neither move was catchable offline. The existing guards compare the baseline
  * against ITSELF (the ceiling did not rise, `measuredCount` matches the
@@ -555,5 +687,64 @@ describe('the entropy ratchet CI wiring (#744)', () => {
     const parsed = JSON.parse(readFileSync(baselineFile, 'utf8'));
     expect(typeof parsed.harnessCli).toBe('string');
     expect(parsed.harnessCli).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
+
+/**
+ * The delta rule is WIRED, not merely implemented (#703).
+ *
+ * `--base-report` is optional by design, because a push to `main` has no merge
+ * base to compare against. That same optionality is how the rule could go
+ * quiet: drop the flag from the workflow and every PR falls back to the
+ * absolute ceiling with nothing red and nothing said. This is the same shape
+ * as `--cli-version` below it — a gate whose arming lives in a YAML file needs
+ * a test that reads that YAML file.
+ *
+ * Two of these assert the invariants the ratchet CANNOT check for itself,
+ * because by the time it runs it holds two numbers and no provenance:
+ * both scans must come from the same resolved CLI, and the base worktree must
+ * live outside the checkout or the head scan walks it and double-counts.
+ */
+describe('the merge-base delta gate is wired', () => {
+  const WORKFLOW = join(
+    REPO_ROOT,
+    '.github',
+    'workflows',
+    'harness-quality.yml',
+  );
+  const yaml = (): string => readFileSync(WORKFLOW, 'utf8');
+
+  it('passes --base-report to the ratchet on pull requests', () => {
+    expect(yaml()).toMatch(/--base-report\s+entropy-base-report\.txt/);
+  });
+
+  it('gates the base scan on pull_request, so pushes to main still run', () => {
+    expect(yaml()).toMatch(
+      /Harness Cleanup \(Entropy Scan, merge base\)[\s\S]{0,200}?if:\s*github\.event_name == 'pull_request'/,
+    );
+  });
+
+  it('measures the base with the same floating pin as the head scan', () => {
+    // Not a hardcoded version, and not a second pin: the same `$HARNESS_CLI`
+    // the resolve step reported. Two analyzers produce a delta that is pure
+    // instrument drift.
+    const scans = [
+      ...yaml().matchAll(
+        /npx --yes -p "\$HARNESS_CLI" harness cleanup --findings-json/g,
+      ),
+    ];
+    expect(scans.length).toBe(2);
+  });
+
+  it('puts the base worktree outside the checkout', () => {
+    // Inside `$GITHUB_WORKSPACE` the head scan walks the base tree and counts
+    // every finding twice, which inflates BOTH numbers and quietly changes
+    // what the delta means.
+    expect(yaml()).toMatch(/git worktree add --detach "\$RUNNER_TEMP\//);
+    expect(yaml()).not.toMatch(/git worktree add[^\n]*\$GITHUB_WORKSPACE/);
+  });
+
+  it('checks out full history, without which there is no base commit to scan', () => {
+    expect(yaml()).toMatch(/fetch-depth:\s*0/);
   });
 });

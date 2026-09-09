@@ -50,7 +50,7 @@ remediation text naming why the denominator collapsed and how to fix it.
 
 ## Non-goals
 
-- No re-verification layers in consuming repos (the point is to make capwell's
+- No re-verification layers in consuming repos (the point is to make a consumer's
   belt-and-suspenders overlay siren unnecessary, not to add more).
 - No behavior flags: no `--strict-abstention`, no env toggle (D1 rejected staged
   rollout).

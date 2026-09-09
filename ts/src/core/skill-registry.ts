@@ -82,11 +82,36 @@ function codePointCompare(a: string, b: string): number {
   return ca.length - cb.length;
 }
 
-/** Bundled skills live at `<repo>/agents/skills`. Python: `_AGENTS_SKILLS_DIR`. */
+/**
+ * Bundled skills live at `<root>/agents/skills`, where `<root>` is three
+ * directories above this module. Python: `_AGENTS_SKILLS_DIR`.
+ *
+ * The "three levels up" is a PACKAGING CONTRACT, not an implementation detail
+ * (#757). It holds in the source tree (`ts/src/core`), in the compiled tree
+ * (`ts/dist/core`), and in the published npm package (`dist/engine/core`) --
+ * but only while whatever sits at that root actually ships an `agents/skills`.
+ * It did not: `canary-test-cli@7.1.0` published `bin/` and `dist/` only, so an
+ * installed CLI resolved this to a directory that has never existed and
+ * reported every bundled skill as absent, from any cwd. Exported so
+ * `ts/test/skill-packaging.test.ts` can pin both halves of the contract.
+ */
+export function bundledSkillsDirFrom(moduleDir: string): string {
+  // moduleDir = <root>/<a>/<b>/core -> the root is three levels up.
+  return resolve(moduleDir, '..', '..', '..', 'agents', 'skills');
+}
+
 function defaultAgentsSkillsDir(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  // here = ts/src/core -> repo root is three levels up (Python: parents[2]).
-  return resolve(here, '..', '..', '..', 'agents', 'skills');
+  return bundledSkillsDirFrom(dirname(fileURLToPath(import.meta.url)));
+}
+
+/** One directory tier that {@link SkillRegistry.searchRoots} consulted. */
+export interface SkillSearchRoot {
+  /** Discovery tier: `bundled` | `overlay` | `global` | `local`. */
+  tier: string;
+  /** What the tier looked at, rendered for a human. */
+  path: string;
+  /** Whether there was anything there to read. */
+  exists: boolean;
 }
 
 /** A parsed frontmatter block: scalar strings or flow-list values. */
@@ -191,6 +216,49 @@ export class SkillRegistry {
     return [...skills.values()].sort((a, b) =>
       codePointCompare(a.name, b.name),
     );
+  }
+
+  /**
+   * The directory tiers {@link discover} consults, in precedence order.
+   *
+   * Exists so an empty discovery can state its denominator (#757). "No skills
+   * found." is a claim about the world; what discovery can actually attest is
+   * "none of THESE four roots held one", and the two read very differently to
+   * someone standing in a directory full of SKILL.md files. The local tier
+   * walks cwd up to the git root, so it renders as the range it swept rather
+   * than one line per ancestor.
+   */
+  searchRoots(root?: string): SkillSearchRoot[] {
+    const searchRoot = resolve(root ?? process.cwd());
+    const ancestors = SkillRegistry.ancestorsToGitRoot(searchRoot);
+    const localDirs = ancestors.map((a) => join(a, '.canary', 'skills'));
+    const overlaysRoot = join(this.home, '.canary', 'overlays');
+    const globalDir = join(this.home, '.canary', 'skills');
+    return [
+      {
+        tier: 'bundled',
+        path: this.agentsSkillsDir,
+        exists: existsSync(this.agentsSkillsDir),
+      },
+      {
+        tier: 'overlay',
+        path: overlaysRoot,
+        exists: SkillRegistry.isDir(overlaysRoot),
+      },
+      {
+        tier: 'global',
+        path: globalDir,
+        exists: SkillRegistry.isDir(globalDir),
+      },
+      {
+        tier: 'local',
+        path:
+          localDirs.length > 1
+            ? `${localDirs[0]!} (and ${localDirs.length - 1} ancestor(s) up to the git root)`
+            : (localDirs[0] ?? join(searchRoot, '.canary', 'skills')),
+        exists: localDirs.some((d) => existsSync(d)),
+      },
+    ];
   }
 
   /** Return the SkillInfo for `name` honoring precedence, or null. */

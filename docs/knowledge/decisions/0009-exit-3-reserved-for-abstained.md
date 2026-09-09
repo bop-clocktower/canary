@@ -60,6 +60,20 @@ Three consequences follow, and they are the load-bearing part:
 - **Findings outrank abstention.** A finding proves something was checked, so a
   weird denominator must never mask it. `gateOutcome` enforces the precedence in
   one place rather than at each call site.
+
+  Qualified by #761, for one case and on one surface: a finding proves something
+  was checked **only when the finding is evidence**. `guardian pr-check` at the
+  naming-heuristic tier produces findings from filenames alone, so a run with no
+  coverage report at all can emit six of them having measured nothing — "6 files
+  need test coverage" over a zero coverage denominator, which reads exactly like
+  a verified run. Where every finding in a run is `heuristic` **and** the
+  coverage denominator is zero, that run abstains (exit 3) and says so in its
+  headline; the findings still render, as evidence-free advice rather than as a
+  verdict. A single coverage- or graph-verified finding restores the precedence
+  above, because that finding really does prove a measurement happened.
+  `gateOutcome` is untouched: the test lives in `isCoverageAbstention`, at the
+  one surface that has a fidelity ladder to read.
+
 - **Unknown is not zero.** A surface that _cannot_ determine its denominator
   (the remote Supabase history backend; a precision sample with no
   adjudications) reports unknown and does not abstain. Inventing an abstention

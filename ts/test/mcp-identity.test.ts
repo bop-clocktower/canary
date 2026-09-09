@@ -43,7 +43,7 @@ describe('MCP server identity', () => {
       mcpServers: Record<string, { command: string }>;
     };
     expect(data.mcpServers).toHaveProperty(CANONICAL);
-    expect(data.mcpServers[CANONICAL].command).toBe(CANONICAL);
+    expect(data.mcpServers[CANONICAL]!.command).toBe(CANONICAL);
   });
 
   it('plugin.json carries the canonical-name "//" comment', () => {
@@ -57,7 +57,7 @@ describe('MCP server identity', () => {
       mcpServers: Record<string, { command: string }>;
     };
     expect(data.mcpServers).toHaveProperty(CANONICAL);
-    expect(data.mcpServers[CANONICAL].command).toBe(CANONICAL);
+    expect(data.mcpServers[CANONICAL]!.command).toBe(CANONICAL);
   });
 
   it('marketplace description names the canonical server', () => {

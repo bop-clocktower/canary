@@ -25,6 +25,7 @@ import {
   TransitionEntry,
   WorkflowMapping,
 } from '../src/core/workflow-discovery.js';
+import type { MainDeps } from '../src/main-deps.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 
 function fake<T>(obj: unknown): T {
@@ -365,12 +366,23 @@ describe('overlay / doctor npm-shim pointers', () => {
 });
 
 describe('skills sub-app', () => {
-  it('list: no skills', async () => {
+  it('list: no skills abstains and names every root it searched (#757)', async () => {
     const res = await invokeCanary(['skills', 'list'], {
-      deps: { makeSkillRegistry: () => fake({ discover: () => [] }) },
+      deps: {
+        makeSkillRegistry: () =>
+          fake({
+            discover: () => [],
+            searchRoots: () => [
+              { tier: 'bundled', path: '/pkg/agents/skills', exists: false },
+            ],
+          }),
+      },
     });
     expect(res.code).toBe(0);
-    expect(res.stdout).toContain('No skills found');
+    expect(res.stdout).toContain('Abstained');
+    expect(res.stdout).toContain('/pkg/agents/skills');
+    // The old copy claimed there were none; it must not come back.
+    expect(res.stdout).not.toContain('No skills found');
   });
 
   it('list: all sources + markers (+ verbose)', async () => {
@@ -464,7 +476,8 @@ describe('workflow show / init', () => {
   }
 
   it('show: human, --json, --roles-only, json+roles', async () => {
-    const wd = () => fake({ show: () => mapping() });
+    const wd: MainDeps['makeWorkflowDiscovery'] = () =>
+      fake({ show: () => mapping() });
     const human = await invokeCanary(
       ['workflow', 'show', '--project', 'ACME'],
       {

@@ -27,12 +27,22 @@ any other skill at runtime.
 
 | Event     | Detected from a diff                                                                                                                                                      |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `removed` | a `def test_*` / `async def test_*` (Python) or `describe`/`it`/`test('…')` (JS/TS) that left on a `-` line                                                               |
+| `removed` | a `def test_*` / `async def test_*` (Python) or `describe`/`it`/`test('…')` (JS/TS) that left on a `-` line **and did not come back on the `+` side**                     |
 | `skipped` | a `+`-side skip/mute marker: `@pytest.mark.skip` / `skipif` / `xfail`, or `it.skip` / `test.skip` / `describe.skip`, `it.only` / `test.only`, `xit` / `xdescribe` / `fit` |
 
 A test flipped in place from `it('x')` to `it.skip('x')` is **one** event, not
 two: the skip supersedes the removal so the ledger never double-counts a
 mute-in-place as both a deletion and a skip.
+
+The general form of that rule is the emphasis above: a `(file, title)` that
+reappears on the `+` side was **modified, not removed**. Without it, any rewrite
+of a declaration line recorded a deletion of a test that is still in the tree —
+a prettier reflow of a long signature, or a `.skip` lifted in place, was enough
+(#783). The ledger is append-only, so such a row is permanent and cannot be
+corrected without the hand-edit the ledger exists to prevent; and a consumer
+that attributes on the newest matching row would hand every test under a phantom
+removal of a `describe` the wrong ticket. A **rename** is still a removal — the
+old title's coverage really is gone.
 
 ## The one thing it alarms on
 
@@ -67,7 +77,7 @@ row carries full provenance so a vanished test leaves a trail:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "entries": [
     {
       "test": "test_points_service_earns",
@@ -77,7 +87,10 @@ row carries full provenance so a vanished test leaves a trail:
       "commit": "…40 hex…",
       "author": "Ada Lovelace",
       "date": "2026-07-20T10:00:00+00:00",
-      "reason": "chore: drop points coverage"
+      "reason": "chore: drop points coverage",
+      "cause": "",
+      "issue": "",
+      "expiry": ""
     }
   ]
 }
@@ -85,6 +98,64 @@ row carries full provenance so a vanished test leaves a trail:
 
 Re-running on the same change adds nothing (entries de-duplicate); a corrupt
 ledger is a hard error, never silently overwritten.
+
+### Schema v2: why a row is out, not just how it left (#771)
+
+`cause`, `issue` and `expiry` are written by the quarantine producer, not by
+katana. Katana records what it can observe from a diff — a test was removed or
+skipped — and leaves `cause` empty, because "someone deleted this in commit
+abc123" is provenance, not a judgement about why the test is out of the suite.
+
+`reason` and `cause` are deliberately separate. `reason` is **derived** (the
+commit subject). `cause` is **asserted** — one of `flaky`, `product-defect`,
+`blocked-data`, `obsolete`. Collapsing them would dress an auto-derived string
+up as a claim someone stands behind.
+
+**One row per `(test, file)` may state a cause, and a caused row wins.** A row
+with a cause supersedes a causeless row for the same pair, and a causeless row
+is dropped when a caused row already exists. This is the one place the ledger is
+not purely append-only, and it exists because the alternative is worse: katana
+recording `{kind: 'skipped', cause: ''}` and a quarantine producer recording
+`{kind: 'skipped', cause: 'product-defect', issue: …}` differ in every-field
+identity, so **both** would persist — and a consumer that fails on an unlinked
+quarantine (`canary-ci-ready` does) would fail on the causeless row while the
+linked row sat beside it. The ledger would be contradicting itself about one
+test.
+
+History survives that rule: only rows differing in cause-bearing state collapse.
+Two caused rows, or two causeless rows, keep the full-field identity and both
+remain.
+
+### Where `issue` comes from, and why the trailer keeps its own name
+
+`issue` is the bug the quarantine is waiting on. It has two sources, and both
+land in the same field:
+
+- **A `Ticket:` commit trailer**, read by katana at capture time (`Bug:` and
+  `Tracked:` are accepted spellings). This is the low-friction path: the person
+  switching the test off names the bug in the commit that does it.
+- **A quarantine producer**, writing a caused row directly.
+
+v1 called this field `ticket` (#781). It is folded into `issue` here rather than
+kept alongside, because two fields answering "what is this waiting on" is how a
+consumer ends up reading the empty one — and the consumer is specific:
+`canary-ci-ready` fails a quarantine with no **linked issue**, in either Jira or
+GitHub. The schema now uses the consumer's word. A v1 row's `ticket` migrates
+onto `issue` on load, so no recorded link is lost.
+
+`Ticket:` survives as the name of the **trailer**, which is a mechanism rather
+than a schema: it is what you type in a commit message, and renaming it would
+invalidate the trailers already written without teaching anyone anything.
+
+Empty is a real and important state, not a gap to paper over. A test switched
+off with nothing to chase is the worst thing this ledger can record, and it can
+only be seen if it is recorded honestly.
+
+A v1 file is normalized on load, so every row comes back carrying the v2 fields
+(empty where unrecorded). That is what makes writing `schema_version: 2` honest
+— the version claims these rows have these fields, and after load they do.
+Stamping the version over un-migrated rows would make it a promise the file does
+not keep.
 
 ## Invocation
 
@@ -126,7 +197,7 @@ a usage request or a typo never mutates the working tree.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "captured": [
     { "name": "…", "file": "…", "kind": "removed", "line": 3, "marker": "" }
   ],

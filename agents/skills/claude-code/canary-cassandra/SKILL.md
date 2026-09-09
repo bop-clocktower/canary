@@ -11,6 +11,7 @@ description: >
   execution. NOT for tests with zero assertions (that is `canary review-test`'s
   LINT-006), NOT for flaky tests (canary-flake-hunter), and NOT a coverage tool
   — a vacuous test has coverage, which is exactly why coverage never caught it.
+cli: scripts/cli.mjs
 requires: [node>=20]
 ---
 
@@ -40,11 +41,36 @@ they are `warning` and carry a fidelity tier.
 
 ## Run it
 
+Two doors, one detector. Both run the same engine rules, so they cannot disagree
+about a finding or about the denominator.
+
 ```bash
 canary vacuity-check tests/            # human-readable
 canary vacuity-check tests/ --json     # verdict + denominator + skips
 canary vacuity-check tests/a.test.ts   # one file
 ```
+
+As a skill, for an orchestrator or a CI step composing all four Tier-0
+detectors:
+
+```bash
+canary skills run canary-cassandra -- tests/
+canary skills run canary-cassandra -- tests/ --json --strict
+```
+
+Usage, flags, and the full rule list — this one is runnable verbatim, needs no
+fixtures, and is what CI executes to prove the doc still matches the CLI:
+
+```bash
+canary skills run canary-cassandra -- --help
+```
+
+The `--json` envelope matches `canary-savant` / `canary-blackhawk` /
+`canary-katana` — `schema_version`, a `findings` array of
+`{file, line, rule_id, severity, snippet, why}`, and a `summary` — so findings
+from all four merge without special-casing one. Cassandra adds `suggestion` and
+`fidelity` per finding, and `tests_checked` to the summary, because its
+denominator is tests rather than files.
 
 **Advisory by design.** Findings exit **0**. This is the repo's established
 shape for a new detector — advisory first, ratchet to strict only after triage
@@ -63,6 +89,18 @@ resolve one. Three rungs, and the finding says which one it used:
 | `annotated`       | The author wrote `// @covers <symbol>`. That exact symbol is checked.                         | High — the author stated the contract |
 | `import-inferred` | The symbols imported from first-party (relative) modules, closed over local helpers           | Medium — read the test before acting  |
 | _(skipped)_       | Neither available. Reported as a skip with its reason; the test is **not** reported as clean. | None — the check did not run          |
+
+`import-inferred` reads four binding forms, not one: a named or default import,
+a **namespace** import (`import * as store from './store.js'`), a **dynamic**
+import (`const { save } = await import('./store.js')`), and a handle bound to a
+first-party **script path** that a `spawnSync`/`execFileSync`-family call then
+runs. The last is what a subprocess test has instead of a symbol; the
+discriminator is the path, so spawning a bare command (`spawnSync('git', …)`)
+still counts as reaching nothing. A test that launches a script path written
+inline, or that carries a bare `await import('./x.js')`, is likewise read as
+reaching its target — but `VAC-003` stays dark for it and says so in the skip
+list, because "did an assertion observe the target" needs a symbol that a
+subprocess boundary does not provide (#705).
 
 To upgrade a finding from inferred to annotated, add the annotation above the
 test:

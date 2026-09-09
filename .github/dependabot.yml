@@ -1,20 +1,77 @@
 # Dependabot configuration file
 # Ref: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Guarded by ts/test/dependabot-ecosystems.test.ts (#752): every entry here must
+# point at a directory that actually has that ecosystem's manifest, and every
+# directory with an npm lockfile must have an entry. The `pip` entry that used
+# to sit at the top of this file violated the first rule for three weeks after
+# v6.0.0 deleted agent/, and its weekly red run hid the fact that npm version
+# updates had never been configured at all.
 
 version: 2
 updates:
-  # Maintain dependencies for Python (pip)
-  - package-ecosystem: "pip"
-    directory: "/"
+  # The live TypeScript engine.
+  - package-ecosystem: 'npm'
+    directory: '/ts'
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
     groups:
-      python-dependencies:
+      ts-dependencies:
         patterns:
-          - "*"
+          - '*'
+    ignore:
+      # TypeScript 7 is the Go-native rewrite, not a point release, and it
+      # arrived inside three routine weekly bumps (#775, #777, #778). Two
+      # failed with `@types/node` no longer resolving at all; the third passed
+      # only because its tree is not typechecked, which is the more worrying
+      # half. Held until #792 plans the migration — minor and patch still flow.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+
+  # The published canary-test-cli package.
+  - package-ecosystem: 'npm'
+    directory: '/npm'
+    schedule:
+      interval: 'weekly'
+    groups:
+      npm-package-dependencies:
+        patterns:
+          - '*'
+    ignore:
+      # TypeScript 7 is the Go-native rewrite, not a point release, and it
+      # arrived inside three routine weekly bumps (#775, #777, #778). Two
+      # failed with `@types/node` no longer resolving at all; the third passed
+      # only because its tree is not typechecked, which is the more worrying
+      # half. Held until #792 plans the migration — minor and patch still flow.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+
+  # The skill runtimes and their vitest harness.
+  - package-ecosystem: 'npm'
+    directory: '/agents/skills'
+    schedule:
+      interval: 'weekly'
+    groups:
+      skills-dependencies:
+        patterns:
+          - '*'
+    ignore:
+      # TypeScript 7 is the Go-native rewrite, not a point release, and it
+      # arrived inside three routine weekly bumps (#775, #777, #778). Two
+      # failed with `@types/node` no longer resolving at all; the third passed
+      # only because its tree is not typechecked, which is the more worrying
+      # half. Held until #792 plans the migration — minor and patch still flow.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
 
   # Maintain dependencies for GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "weekly"
+      interval: 'weekly'

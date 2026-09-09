@@ -53,7 +53,7 @@ function baselineValue(): number {
     string,
     { value: number }
   >;
-  return metrics[METRIC].value;
+  return metrics[METRIC]!.value;
 }
 
 /**
@@ -93,12 +93,16 @@ describe('arch baseline floor tracks the accepted ceiling (#736)', () => {
 
   it('keeps the floor within one tolerance-width of the highest allowance', () => {
     const floor = baselineValue();
-    const ceiling = allowanceValues()[0];
+    const [ceiling] = allowanceValues();
+    // An empty allowance list would make `gap` NaN and the assertion below
+    // vacuously true, so it is asserted here rather than assumed from the
+    // sibling denominator test above.
+    expect(ceiling).toBeDefined();
     const absorber = floor * regressionTolerance();
 
     // Below the floor is fine and needs no refresh — that is the ratchet
     // working. Only a ceiling that has climbed AWAY from the floor is drift.
-    const gap = Math.max(0, ceiling - floor);
+    const gap = Math.max(0, ceiling! - floor);
 
     expect(
       gap,

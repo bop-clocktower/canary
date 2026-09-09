@@ -251,8 +251,11 @@ describe('the CI workflow builds the graph the traceability check reads', () => 
     // failure has to be the loud one, because it names the real cause.
     const steps = harnessSteps();
     const build = steps[stepIndex(steps, 'harness graph scan')];
-    expect(build.run).not.toMatch(/\|\|\s*(true|echo|:)/);
-    expect(build['continue-on-error']).not.toBe(true);
+    // `stepIndex` returns -1 when the step is gone, which would otherwise make
+    // both assertions below pass against undefined.
+    expect(build).toBeDefined();
+    expect(build!.run).not.toMatch(/\|\|\s*(true|echo|:)/);
+    expect(build!['continue-on-error']).not.toBe(true);
   });
 
   it('states in a comment why the build step is allowed to fail the job', () => {

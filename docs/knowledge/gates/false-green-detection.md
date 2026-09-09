@@ -104,6 +104,86 @@ why it survived: every mechanism this repo has for catching stale references
 (`check_removed_symbols.mjs`, the ratchets, review itself) reads tracked files
 only. An ignored file cannot drift loudly.
 
+## A fixture that guarantees the precondition
+
+Every shape above is a _check_ that could not fail. This one is a **test** that
+could not fail, and it is the harder half to see, because the assertion is
+correct and specific.
+
+A web E2E suite set `storageState` — an authenticated session — once on the
+Playwright project. No spec cleared it. The suite's `/auth/*` specs therefore
+ran with a session, against pages a member reaches precisely _because_ they have
+none. The app gated its whole component tree on a hydrated identity, so the page
+that CREATES a session rendered an empty placeholder for anyone without one:
+production served a blank login page. The spec asserting `landing-screen`,
+`landing-screen-cta` and `landing-screen-headline` visible passed the entire
+time, because the stored session made the identity resolve and the gate open.
+
+Nothing was wrong with the assertion. The fixture had made its precondition
+unfalsifiable.
+
+The shape: **a fixture that supplies the state under test converts an assertion
+into a tautology, with no syntactic tell.** `VAC-001`-style detection cannot see
+it — the expectation is not identical to the value, the target is referenced,
+the assertions observe presence. What gives it away is a question about intent:
+_is the state this test needs supplied by the fixture, or established by the
+code under test?_
+
+Corollary worth stating separately, because it cost a second wrong diagnosis:
+**"which routes does it visit" is not the test.** A sibling spec navigated only
+public `/auth/*` routes and still needed a session, because two of its
+assertions checked the _destination_ after a redirect — and that destination was
+gated. Reading the navigation calls cannot reveal it. Running it unauthenticated
+can.
+
+## A skip condition keyed on the behaviour under test
+
+A guard meant to keep a test honest on under-configured targets:
+
+```ts
+// skip when the gate is inert on this target
+test.skip(!redirected && status === 200 && url.includes('/app'), 'gate inert');
+await expect(page).toHaveURL(/\/auth/);
+```
+
+Mutating the code so the gate stopped covering that route produced _exactly the
+state the skip describes_. The test **skipped instead of failing**, and the run
+reported clean. The escape hatch swallowed the defect the test existed to catch.
+
+The shape: **a skip whose condition is a function of the behaviour under test is
+self-excusing.** It cannot distinguish "this environment cannot exercise the
+behaviour" from "the behaviour is broken", because both present identically.
+
+The fix is a probe that is _independent_ of the assertion. Here, the sibling
+branch of the same matcher: if the exact-match path still redirects, the gate is
+configured and enforcing, so a prefixed path that does not redirect is a real
+failure with no way out. Only a target where nothing is gated skips. Re-running
+the same mutation then failed rather than skipping.
+
+Generalised: **a skip condition must key on something the code under test cannot
+change.** Configuration, credentials, platform — not the outcome being asserted.
+This one is mechanically detectable and is specced as `VAC-004`
+(`docs/changes/vac-004-self-excusing-skip/proposal.md`).
+
+## A claim that outruns its probe
+
+A test named `the gate is active in this tier` asserted that a gated BFF route
+answered 401 to an anonymous caller. It passed. It did not support its name: the
+route handler performs its own session check, so it answers 401 even on a boot
+with no tenant configured and the edge gate entirely inert. The assertion was
+true; the claim in the name was not.
+
+An existing helper in the same repo had already written the distinction down —
+"this proves the ROUTE refuses an anonymous caller, NOT specifically that the
+edge gate is live" — which is how the overclaim was caught at review rather than
+in production.
+
+The shape: **the test name is a claim, and nothing checks it against the
+evidence.** A green run confirms the assertion, never the sentence describing
+it, so an overclaiming name survives indefinitely and is read as coverage of
+something no test observes. Two probes producing the same signal for different
+reasons is the condition to look for.
+
 ## Why these are worth writing down
 
 Each was diagnosed once, at cost, and each looked like an isolated bug. They are

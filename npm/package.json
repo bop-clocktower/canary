@@ -1,6 +1,6 @@
 {
   "name": "canary-test-cli",
-  "version": "7.1.0",
+  "version": "7.2.0",
   "description": "Canary — AI-powered test automation agent",
   "license": "MIT",
   "repository": {
@@ -39,7 +39,8 @@
   "files": [
     "bin/canary.js",
     "bin/canary-mcp.js",
-    "dist/"
+    "dist/",
+    "agents/"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

@@ -22,6 +22,9 @@
  *      own build copies `src/data` -> `dist/data`), so staging `.json` files
  *      alongside the compiled `.js` bundles it at the matching location with no
  *      Python and no separate copy step.
+ *   6. Stage `agents/skills` -> `<pkg>/agents/skills`, the bundled-skill root
+ *      the engine's `SkillRegistry` resolves three directories above its own
+ *      compiled location. Without it an installed CLI sees zero skills (#757).
  */
 'use strict';
 
@@ -30,12 +33,13 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -108,6 +112,75 @@ function buildEngine() {
   }
 
   process.stdout.write(`[build-engine] engine staged at ${engineOut}\n`);
+
+  stageSkills();
+}
+
+/**
+ * Stage the bundled skill tree so an installed CLI can actually see it (#757).
+ *
+ * `SkillRegistry` resolves its bundled root three directories above the
+ * compiled `core/` module -- `<pkg>/dist/engine/core` -> `<pkg>/agents/skills`.
+ * That is the same arithmetic that lands on the repo root in a checkout, so it
+ * was never wrong; the package simply never shipped an `agents/`. The result
+ * was that `canary skills list` reported "No skills found." from every
+ * directory including one holding 21 SKILL.md files, and `skills run` could
+ * resolve none of them.
+ *
+ * What is copied is the runnable half: SKILL.md, the skill `scripts/`, the
+ * shared `lib/`, and the flat slash-command `*.md`. The skill tree's own vitest
+ * package (its `test/`, manifests and config) is development scaffolding and
+ * stays behind.
+ */
+function stageSkills() {
+  const from = resolve(repoRoot, 'agents', 'skills');
+  const to = resolve(npmRoot, 'agents', 'skills');
+  if (!existsSync(from)) {
+    throw new Error(`bundled skills not found at ${from}; cannot stage them`);
+  }
+  rmSync(to, { recursive: true, force: true });
+  mkdirSync(to, { recursive: true });
+  cpSync(from, to, { recursive: true, filter: shipSkillFile });
+
+  // The whole point of the step is that the tree is present at runtime, so a
+  // staging that produced nothing must fail the build rather than publish an
+  // empty directory that reproduces the bug it was added to fix.
+  const staged = countSkillManifests(to);
+  if (staged === 0) {
+    throw new Error(`no SKILL.md staged into ${to}; the filter dropped them`);
+  }
+  process.stdout.write(
+    `[build-engine] ${staged} bundled skill(s) staged at ${to}\n`,
+  );
+}
+
+/** Development scaffolding inside the skill tree; never shipped. */
+const SKILL_EXCLUDED_DIRS = new Set(['test', 'node_modules', '__pycache__']);
+const SKILL_EXCLUDED_FILES = new Set([
+  'package.json',
+  'package-lock.json',
+  'tsconfig.json',
+  'vitest.config.ts',
+]);
+
+function shipSkillFile(src) {
+  const name = basename(src);
+  if (statSync(src).isDirectory()) return !SKILL_EXCLUDED_DIRS.has(name);
+  if (SKILL_EXCLUDED_FILES.has(name)) return false;
+  return !name.endsWith('.test.ts') && !name.endsWith('.d.ts');
+}
+
+/** How many `SKILL.md` files landed -- the staging step's denominator. */
+function countSkillManifests(dir) {
+  let total = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      total += countSkillManifests(resolve(dir, entry.name));
+    } else if (entry.name === 'SKILL.md') {
+      total += 1;
+    }
+  }
+  return total;
 }
 
 /**

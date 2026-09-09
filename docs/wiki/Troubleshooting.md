@@ -25,6 +25,36 @@ pip install -e .
 If you're using a virtual environment, make sure it's activated before
 installing and before running Canary.
 
+## `canary migrate` Reports `Framework: unknown` in a Monorepo
+
+**Symptom:** In a pnpm/npm/yarn workspace repo, `canary migrate` prints
+`Framework: unknown` even though packages carry real test suites.
+
+`migrate` resolves **one** framework for the root. It walks the workspace globs
+(`pnpm-workspace.yaml`, `package.json` `workspaces`) and probes each package,
+but when the packages disagree — Playwright in one, Vitest in another — no
+single root framework applies, so the scalar abstains rather than picking a
+winner.
+
+The report says what the walk actually found, and that is the part to read:
+
+```text
+## Workspace
+
+- pnpm workspace — 3 packages scanned, 2 carrying a test config.
+- `apps/web-e2e/` — playwright / e2e_ui (`playwright.config.ts`)
+- `apps/web/` — vitest / frontend_unit (`vitest.config.ts`)
+```
+
+**Fix:** Either re-run `canary migrate` from inside the package you want to
+migrate (no flag needed — that package's own config detects normally), or name
+the framework for the root with `canary migrate --framework playwright`, which
+resolves its shape from the package that already declares it.
+
+Note what `migrate` will _not_ do: propose a suite at the workspace root when a
+package already carries one for that framework. It names the existing suite
+under **Existing Suites Found** and proposes nothing, on `--apply` too.
+
 ## No Framework Resolved
 
 **Error:** `No framework found for category: ...`

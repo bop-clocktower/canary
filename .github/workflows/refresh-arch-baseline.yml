@@ -20,7 +20,7 @@ concurrency:
 
 # Pin the harness CLI to a major (#318 A) — see AGENTS.md "Harness dependency surface".
 env:
-  HARNESS_CLI: '@harness-engineering/cli@11'
+  HARNESS_CLI: '@harness-engineering/cli@12'
 
 jobs:
   refresh:
@@ -42,7 +42,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
 
       - run: npm install -g "$HARNESS_CLI"
 

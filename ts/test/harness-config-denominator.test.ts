@@ -48,7 +48,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { reportAbstention, reportVerified } from './abstention-testkit';
+import { reportAbstention, reportVerified } from './abstention-testkit.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -115,7 +115,7 @@ function globToRegExp(pattern: string): RegExp {
     } else if (pattern[i] === '*') {
       out += '[^/]*';
     } else {
-      out += pattern[i].replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+      out += pattern[i]!.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
     }
   }
   return new RegExp(`^${out}$`);

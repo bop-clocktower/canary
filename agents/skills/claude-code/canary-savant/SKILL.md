@@ -1,11 +1,11 @@
 ---
 name: canary-savant
 description:
-  Order-dependence and isolation detector for test suites. A Tier-1 static
-  scanner flags the shared-state smells which predict order-dependent tests - a
-  module-level mutable a test writes to, a setup with no matching teardown, a
-  mutated process singleton, an order-coupled name - with no test execution, so
-  it runs anywhere node does and on every PR. An opt-in Tier-2 confirmer
+  Order-dependence and isolation detector for test suites. A deterministic
+  static scan flags the shared-state smells which predict order-dependent tests
+  - a module-level mutable a test writes to, a setup with no matching teardown,
+  a mutated process singleton, an order-coupled name - with no test execution,
+  so it runs anywhere node does and on every PR. An opt-in confirming pass
   (--confirm) shuffles the suite under a pinned seed and bisects the prefix to
   name the polluting test. Advisory by default; pytest and vitest idioms.
 cli: scripts/cli.mjs
@@ -15,15 +15,19 @@ requires: [node>=20]
 # Canary Savant
 
 A test that only passes because of the tests that ran before it is a lie that
-passes CI. Savant finds shared-state leakage and names the culprit. **Tier 1**
-is the cheap, static half that runs on every PR and points at the _suspects_.
-**Tier 2** (`--confirm`, opt-in) proves a leak by shuffling the suite under a
-pinned seed and bisecting the prefix to name the polluter — not just the victim.
+passes CI. Savant finds shared-state leakage and names the culprit. The **static
+pass** is the cheap half that runs on every PR and points at the _suspects_. The
+**confirming pass** (`--confirm`, opt-in) proves a leak by shuffling the suite
+under a pinned seed and bisecting the prefix to name the polluter — not just the
+victim.
 
-Tier-0 in the real sense: no LLM, no network, no secrets, no dependency on any
-other skill.
+Tier-0 by the definition in
+[ADR 0015](../../../../docs/knowledge/decisions/0015-skill-capability-vocabulary.md):
+deterministic, no network, no agent or LLM. Also no secrets and no dependency on
+any other skill. Both passes qualify — `--confirm` runs the suite locally, which
+needs no network and no model.
 
-## Rules (Tier 1 — static suspects)
+## Rules (static pass — suspects)
 
 | Rule                              | Severity | Fires on                                                                                                                                                                                                                                                                                                                                                                                                            |
 | --------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -44,7 +48,7 @@ each file is judged by its own ecosystem's conventions.
 
 ## Fidelity limits (AST-lite, on purpose)
 
-Savant Tier 1 is a scanner with no parser dependency, so it ships anywhere
+The static pass is a scanner with no parser dependency, so it ships anywhere
 `node` does. The cost, stated plainly:
 
 - **`SV001` mutation is file-scoped, not flow-scoped.** Any in-place mutation of
@@ -146,7 +150,7 @@ flag exists to prevent.
 (`--seed -5`, `--seed=-5`). Use `--` to end option parsing when a path itself
 starts with a dash.
 
-### Tier 2 — dynamic confirmation (`--confirm`, opt-in)
+### The confirming pass — dynamic confirmation (`--confirm`, opt-in)
 
 `--confirm` runs the suite in declared order, re-runs it shuffled under a pinned
 seed, and for each order-dependent victim runs it alone and **bisects the prefix
@@ -207,7 +211,7 @@ correctly.
 
 ## Dogfooding and the `--strict` promotion path
 
-canary runs savant's Tier-1 scan over its **own** test suite on every PR
+canary runs savant's static pass over its **own** test suite on every PR
 (`.github/workflows/harness-quality.yml`, the `Skills (JS)` job), **advisory**:
 it prints suspects to the log and always exits 0. Tuning the rules against that
 real suite dropped the backlog from 37 findings to a handful of genuine
@@ -219,11 +223,11 @@ or confirmed benign) - the same advisory-first path every canary gate takes.
 
 ## Roadmap
 
-- **Shipped:** Tier 1 static scan; Tier 2 dynamic confirmer (baseline → shuffle
-  → classify) with isolation + polluter bisect (pytest); vitest as a Tier-2
-  classify target; pytest node-id capture for class-based layouts; advisory CI
-  gate dogfooded on canary's own suite (rules tuned to kill the dominant false
-  positives).
+- **Shipped:** the static pass; the dynamic confirming pass (baseline → shuffle
+  → classify) with isolation + polluter bisect (pytest); vitest as a
+  confirming-pass classify target; pytest node-id capture for class-based
+  layouts; advisory CI gate dogfooded on canary's own suite (rules tuned to kill
+  the dominant false positives).
 - **Remaining:** flip the advisory gate to `--strict` once the suspect backlog
   is triaged; vitest polluter naming is out of scope until vitest gains ordered
   per-test execution. See `docs/changes/canary-savant/proposal.md`.

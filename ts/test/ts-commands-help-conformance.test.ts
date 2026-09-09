@@ -50,7 +50,7 @@ function readTsCommands(): string[] {
         'the parse, not the CLI, is what broke',
     );
   }
-  return [...decl[1].matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
+  return [...decl[1]!.matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]!);
 }
 
 /** Command names commander lists in the engine's top-level `--help`. */
