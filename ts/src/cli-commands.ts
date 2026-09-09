@@ -588,6 +588,14 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
           note: r.note,
         })),
         installed_workflows: report.installed_workflows.map((r) => r.to_dict()),
+        // #504 part 1 (spec test 28), additive: every key above keeps its name
+        // and value. `existing_suites` closes a #585 gap -- it was on the
+        // report but never in JSON, leaving a scripted consumer with
+        // `would_create: []` and no reason attached. `workspace` is `null`
+        // for a single-package repo; `shapes` is the set deployment used.
+        existing_suites: report.existing_suites,
+        workspace: report.workspace,
+        shapes: report.shapes,
       }),
     );
     return;
