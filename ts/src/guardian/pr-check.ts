@@ -89,73 +89,90 @@ function mergeLines(lines: number[]): LineRange[] {
  */
 export function scopeDiff(diffText: string): ChangedUnit[] {
   const addedByPath = new Map<string, number[]>();
-  let currentPath: string | null = null;
-  let newLineno = 0;
-  let skipCurrent = false;
+  walkDiff(diffText, (line) => {
+    if (!line.added) return;
+    const lines = addedByPath.get(line.path);
+    if (lines) lines.push(line.lineno);
+    else addedByPath.set(line.path, [line.lineno]);
+  });
+
+  const units: ChangedUnit[] = [];
+  for (const [path, lines] of addedByPath) {
+    units.push({ path, added_ranges: mergeLines(lines) });
+  }
+  return units;
+}
+
+/** One new-side (`b/`) line of a diff body, as {@link walkDiff} emits it. */
+export interface DiffLine {
+  /** The file's new-side path, `b/` prefix stripped. */
+  path: string;
+  /** The line's number on the new side. */
+  lineno: number;
+  /** The line's text, with the `+`/space diff marker removed. */
+  text: string;
+  /** True for a `+` line; false for a context line. */
+  added: boolean;
+}
+
+/** The new-side path a `+++ ` header names, or `null` for a deleted file. */
+function headerPath(line: string): string | null {
+  const target = line.slice(4).trim();
+  if (target === '/dev/null') return null;
+  // Strip the conventional "b/" prefix.
+  return target.startsWith('b/') ? target.slice(2) : target;
+}
+
+/**
+ * Walk a unified diff, calling `emit` once per NEW-SIDE line, in file order.
+ *
+ * The single parser behind {@link scopeDiff}, {@link addedContentByPath} and
+ * `visibleLinesByPath`. Those three read different things off the same walk —
+ * added line numbers, added text, and added-plus-context text — and each used
+ * to carry its own copy of the header/hunk bookkeeping, which is three places
+ * for a diff-format edge case to be fixed in two of.
+ *
+ * Removed (`-`) lines and the `\ No newline at end of file` marker are not
+ * emitted and do not advance the new-side counter, since neither exists on that
+ * side. Deleted files (`+++ /dev/null`) emit nothing at all.
+ *
+ * FIX 7: `--- `/`+++ ` are file headers ONLY before the first hunk of a file.
+ * Inside a hunk body a `+++ ...` line is ADDED CONTENT whose real text is
+ * `++ ...`, and mistaking it for a header loses the rest of the file.
+ */
+export function walkDiff(
+  diffText: string,
+  emit: (line: DiffLine) => void,
+): void {
+  let path: string | null = null;
+  let lineno = 0;
   let inHunk = false;
 
   for (const line of splitLines(diffText)) {
     if (line.startsWith('diff --git')) {
-      // New file block begins → leave any prior hunk body; path is set by the
-      // upcoming `+++ ` header.
+      // A new file block begins → leave any prior hunk body; the path is set
+      // by the upcoming `+++ ` header.
       inHunk = false;
-      currentPath = null;
-      skipCurrent = false;
+      path = null;
       continue;
     }
-
-    // `--- `/`+++ ` are file headers ONLY before the first hunk of a file. Once
-    // inside a hunk body a `+++ ...` line is an ADDED content line whose real
-    // text is `++ ...` and must not be mistaken for a header (FIX 7).
     if (!inHunk && line.startsWith('+++ ')) {
-      const target = line.slice(4).trim();
-      if (target === '/dev/null') {
-        skipCurrent = true;
-        currentPath = null;
-        continue;
-      }
-      skipCurrent = false;
-      // Strip the conventional "b/" prefix.
-      currentPath = target.startsWith('b/') ? target.slice(2) : target;
-      if (!addedByPath.has(currentPath)) addedByPath.set(currentPath, []);
+      path = headerPath(line);
       continue;
     }
-
-    if (!inHunk && line.startsWith('--- ')) {
-      // Old-file header; ignored (path comes from +++).
-      continue;
-    }
-
+    // Old-file header; ignored (the path comes from `+++`).
+    if (!inHunk && line.startsWith('--- ')) continue;
     const hunk = HUNK_RE.exec(line);
     if (hunk) {
-      newLineno = Number.parseInt(hunk[1]!, 10);
+      lineno = Number.parseInt(hunk[1]!, 10);
       inHunk = true;
       continue;
     }
-
-    if (skipCurrent || currentPath === null) continue;
-
-    if (line.startsWith('+')) {
-      addedByPath.get(currentPath)!.push(newLineno);
-      newLineno += 1;
-    } else if (line.startsWith('-')) {
-      // Removed line: does not advance the new-file counter.
-      continue;
-    } else if (line.startsWith('\\')) {
-      // "\ No newline at end of file" — metadata, ignore.
-      continue;
-    } else {
-      // Context line (leading space) or blank — advances new-file counter.
-      newLineno += 1;
-    }
+    if (path === null) continue;
+    if (line.startsWith('-') || line.startsWith('\\')) continue;
+    emit({ path, lineno, text: line.slice(1), added: line.startsWith('+') });
+    lineno += 1;
   }
-
-  const units: ChangedUnit[] = [];
-  for (const [path, lines] of addedByPath) {
-    if (lines.length === 0) continue;
-    units.push({ path, added_ranges: mergeLines(lines) });
-  }
-  return units;
 }
 
 // FIX 2 (signal-quality): a changed file whose ADDED lines are ONLY imports /
@@ -196,46 +213,17 @@ function isNeutralLine(stripped: string): boolean {
 /**
  * Map each changed file to the CONTENT of its added (`+`) lines.
  *
- * Mirrors {@link scopeDiff}'s parser but captures the added-line *text* (the
- * `+` stripped) rather than line numbers. Deleted files (`+++ /dev/null`) are
- * excluded; a `+++ ` line inside a hunk body is added content, not a header
- * (same FIX 7 guard as `scopeDiff`).
+ * The same walk {@link scopeDiff} takes, reading the added-line *text* rather
+ * than its line number.
  */
-function addedContentByPath(diffText: string): Map<string, string[]> {
+export function addedContentByPath(diffText: string): Map<string, string[]> {
   const added = new Map<string, string[]>();
-  let currentPath: string | null = null;
-  let skipCurrent = false;
-  let inHunk = false;
-
-  for (const line of splitLines(diffText)) {
-    if (line.startsWith('diff --git')) {
-      inHunk = false;
-      currentPath = null;
-      skipCurrent = false;
-      continue;
-    }
-    if (!inHunk && line.startsWith('+++ ')) {
-      const target = line.slice(4).trim();
-      if (target === '/dev/null') {
-        skipCurrent = true;
-        currentPath = null;
-        continue;
-      }
-      skipCurrent = false;
-      currentPath = target.startsWith('b/') ? target.slice(2) : target;
-      if (!added.has(currentPath)) added.set(currentPath, []);
-      continue;
-    }
-    if (!inHunk && line.startsWith('--- ')) continue;
-    if (HUNK_RE.test(line)) {
-      inHunk = true;
-      continue;
-    }
-    if (skipCurrent || currentPath === null) continue;
-    if (line.startsWith('+')) {
-      added.get(currentPath)!.push(line.slice(1));
-    }
-  }
+  walkDiff(diffText, (line) => {
+    if (!line.added) return;
+    const texts = added.get(line.path);
+    if (texts) texts.push(line.text);
+    else added.set(line.path, [line.text]);
+  });
   return added;
 }
 
@@ -725,299 +713,8 @@ export function buildFindings(results: CoverageResult[]): GuardianFinding[] {
   );
 }
 
-// Map a test file's extension to the framework whose assertion/test patterns
-// the quality scorer should use. Unknown → pytest (the scorer's own fallback).
-const TEST_FRAMEWORK_BY_EXT: Record<string, string> = {
-  '.py': 'pytest',
-  '.ts': 'vitest',
-  '.tsx': 'vitest',
-  '.js': 'vitest',
-  '.jsx': 'vitest',
-  '.mjs': 'vitest',
-  '.cjs': 'vitest',
-};
-
-function frameworkForTestPath(path: string): string {
-  return TEST_FRAMEWORK_BY_EXT[extname(path).toLowerCase()] ?? 'pytest';
-}
-
-// A test-function signature / decorator / block-close / comment — lines that
-// are not a test *body*. If a diff's added lines are ONLY these (e.g. a rename
-// that adds just `def test_new():` while the asserting body stays as context),
-// there is no added body to judge and we must not flag it.
-const TEST_SIGNATURE_RE =
-  /^\s*(?:async\s+)?def\s+test\w*\s*\(|^\s*(?:it|test|describe)\s*\(/;
-
-const BLOCK_DELIMITERS = new Set(['})', '});', '}', ')', '{']);
-
-/**
- * True iff the added lines contain a real body line — not just a test
- * signature, decorator, comment, or a bare block delimiter.
- */
-function hasAddedTestBody(added: string[]): boolean {
-  for (const line of added) {
-    const stripped = line.trim();
-    if (!stripped) continue;
-    if (
-      stripped.startsWith('#') ||
-      stripped.startsWith('//') ||
-      stripped.startsWith('@') ||
-      stripped.startsWith('*') ||
-      stripped.startsWith('/*')
-    ) {
-      continue;
-    }
-    if (BLOCK_DELIMITERS.has(stripped)) continue;
-    if (TEST_SIGNATURE_RE.test(line)) continue;
-    return true;
-  }
-  return false;
-}
-
-/**
- * The declaration line of a single test, per framework family (#747).
- *
- * Narrower than {@link TEST_SIGNATURE_RE} on purpose: `describe(` opens a
- * *group*, and judging assertion presence over a whole describe block would
- * suppress a genuinely empty test sitting beside an asserting sibling. A
- * modifier chain (`it.only`, `test.each`) still opens one test, so it counts.
- */
-const TEST_DECL_PY = /^\s*(?:async\s+)?def\s+test\w*\s*\(/;
-const TEST_DECL_JS = /^\s*(?:async\s+)?(?:it|test)(?:\.\w+)*\s*\(/;
-
-function testDeclRe(framework: string): RegExp {
-  return framework === 'pytest' ? TEST_DECL_PY : TEST_DECL_JS;
-}
-
-/** Indentation width of `line`, counting a tab as one column. */
-function indentWidth(line: string): number {
-  return line.length - line.trimStart().length;
-}
-
-// String literals and line comments are blanked before delimiter counting, so
-// a brace inside `'a { b'` or a trailing `// }` cannot unbalance a block.
-const JS_STRING_OR_COMMENT =
-  /(['"`])(?:\\.|(?!\1).)*?\1|\/\/.*$|\/\*[\s\S]*?\*\//g;
-
-/**
- * One file's new-side lines as the diff shows them: `lineNo -> text`, plus the
- * set of line numbers that were ADDED (#747).
- *
- * The weak-test heuristic needs context lines, not only `+` lines, because the
- * assertion it is looking for is very often exactly the context line below the
- * hunk. Line numbering follows {@link scopeDiff} so the two agree on what line
- * 41 is.
- */
-interface VisibleFile {
-  text: Map<number, string>;
-  added: Set<number>;
-}
-
-function visibleLinesByPath(diffText: string): Map<string, VisibleFile> {
-  const files = new Map<string, VisibleFile>();
-  let current: VisibleFile | null = null;
-  let newLineno = 0;
-  let skipCurrent = false;
-  let inHunk = false;
-
-  for (const line of splitLines(diffText)) {
-    if (line.startsWith('diff --git')) {
-      inHunk = false;
-      current = null;
-      skipCurrent = false;
-      continue;
-    }
-    if (!inHunk && line.startsWith('+++ ')) {
-      const target = line.slice(4).trim();
-      if (target === '/dev/null') {
-        skipCurrent = true;
-        current = null;
-        continue;
-      }
-      skipCurrent = false;
-      const path = target.startsWith('b/') ? target.slice(2) : target;
-      current = files.get(path) ?? { text: new Map(), added: new Set() };
-      files.set(path, current);
-      continue;
-    }
-    if (!inHunk && line.startsWith('--- ')) continue;
-    const hunk = HUNK_RE.exec(line);
-    if (hunk) {
-      newLineno = Number.parseInt(hunk[1]!, 10);
-      inHunk = true;
-      continue;
-    }
-    if (skipCurrent || current === null) continue;
-    if (line.startsWith('+')) {
-      current.text.set(newLineno, line.slice(1));
-      current.added.add(newLineno);
-      newLineno += 1;
-    } else if (line.startsWith('-') || line.startsWith('\\')) {
-      continue;
-    } else {
-      current.text.set(newLineno, line.slice(1));
-      newLineno += 1;
-    }
-  }
-  return files;
-}
-
-/**
- * The line the enclosing test declaration sits on, or `null` when none is
- * visible (#747).
- *
- * Walks up through the CONTIGUOUS visible run only: a gap between hunks means
- * the lines between are unknown, so a declaration on the far side of it is not
- * evidence about this line. Returning `null` is the abstention — a changed line
- * whose enclosing test cannot be resolved (a Playwright `setup(...)` fixture, a
- * bare helper) is not judged at all rather than reported as assertion-free.
- */
-function enclosingTestDecl(
-  file: VisibleFile,
-  lineNo: number,
-  declRe: RegExp,
-): number | null {
-  for (let n = lineNo; file.text.has(n); n--) {
-    if (declRe.test(file.text.get(n)!)) return n;
-  }
-  return null;
-}
-
-/**
- * The last line of the test block opened at `start`, bounded by what the diff
- * shows (#747).
- *
- * Python closes on the first non-blank line indented no deeper than the `def`;
- * JS/TS closes when the delimiter depth opened by the declaration returns to
- * zero. When neither lands inside the visible run the span is truncated at its
- * end — the assertion search is then over less than the whole block, which can
- * still miss an assertion further down. That residual is accepted: it is a
- * strictly smaller window of error than scoring the added lines alone, which is
- * what #747 measured, and widening the span past what the diff shows would mean
- * reading the working tree, which this function deliberately does not do.
- */
-function testBlockEnd(
-  file: VisibleFile,
-  start: number,
-  isPython: boolean,
-): number {
-  let last = start;
-  if (isPython) {
-    const declIndent = indentWidth(file.text.get(start)!);
-    for (let n = start + 1; file.text.has(n); n++) {
-      const text = file.text.get(n)!;
-      if (text.trim() && indentWidth(text) <= declIndent) return n - 1;
-      last = n;
-    }
-    return last;
-  }
-  let depth = 0;
-  let opened = false;
-  for (let n = start; file.text.has(n); n++) {
-    const text = file.text.get(n)!.replace(JS_STRING_OR_COMMENT, '');
-    for (const ch of text) {
-      if (ch === '{' || ch === '(') {
-        depth += 1;
-        opened = true;
-      } else if (ch === '}' || ch === ')') depth -= 1;
-    }
-    last = n;
-    if (opened && depth <= 0) return n;
-  }
-  return last;
-}
-
-/**
- * True iff some test block touched by `unit`'s added lines asserts nothing.
- *
- * A block qualifies for judgement only when it is resolvable AND at least one
- * of its own added lines is a real body line — the FP-3 rename guard, applied
- * per block rather than per file so a rename in one test cannot excuse an empty
- * one elsewhere in the same diff. Blocks are visited once each.
- */
-function weakBlockIn(
-  file: VisibleFile,
-  unit: ChangedUnit,
-  framework: string,
-): boolean {
-  const declRe = testDeclRe(framework);
-  const isPython = framework === 'pytest';
-  const seen = new Set<number>();
-  for (const lineNo of linesInRanges(unit.added_ranges)) {
-    const start = enclosingTestDecl(file, lineNo, declRe);
-    if (start === null || seen.has(start)) continue;
-    seen.add(start);
-    const end = testBlockEnd(file, start, isPython);
-    const span: string[] = [];
-    const addedInBlock: string[] = [];
-    for (let n = start; n <= end; n++) {
-      const text = file.text.get(n);
-      if (text === undefined) continue;
-      span.push(text);
-      if (file.added.has(n)) addedInBlock.push(text);
-    }
-    if (!hasAddedTestBody(addedInBlock)) continue;
-    if (isAssertionFreeTest(span.join('\n'), framework)) return true;
-  }
-  return false;
-}
-
-/**
- * Advisory `weak-test` findings for ADDED tests that assert nothing.
- *
- * Consumes the test-path units {@link filterTestUnits} sets aside (a test file
- * needs no test of its own, but an added test that asserts nothing is itself a
- * gap). A high-precision signal by construction: a snapshot or table-driven
- * test still matches an assertion pattern, so it is not flagged.
- *
- * #747: the span scored is the ENCLOSING TEST BLOCK of each added line, not the
- * added lines themselves. Scoring the added lines alone reported every
- * arrange/act-only edit as assertion-free, because a test's setup is edited far
- * more often than its `expect` — six such findings, all wrong, in the run that
- * produced the report. A changed line whose enclosing test cannot be resolved
- * from the diff is ABSTAINED on, never reported.
- *
- * These findings are `LOW`/`weak-test` and are **never** gated (see
- * {@link computeExitCode}): they surface, never block.
- */
-export function buildWeakTestFindings(
-  testUnits: ChangedUnit[],
-  diffText: string,
-): GuardianFinding[] {
-  const addedByPath = addedContentByPath(diffText);
-  const visibleByPath = visibleLinesByPath(diffText);
-  const findings: GuardianFinding[] = [];
-  for (const unit of testUnits) {
-    const added = addedByPath.get(unit.path);
-    if (!added || added.length === 0) continue;
-    // A rename adds only the signature line (body is unchanged context) —
-    // nothing new to judge, so don't flag it (FP guard).
-    if (!hasAddedTestBody(added)) continue;
-    const framework = frameworkForTestPath(unit.path);
-    const file = visibleByPath.get(unit.path);
-    if (!file) continue;
-    if (weakBlockIn(file, unit, framework)) {
-      findings.push(
-        new GuardianFinding({
-          path: unit.path,
-          unit: unit.path,
-          kind: 'weak-test',
-          fidelity: Fidelity.Heuristic,
-          severity: Severity.LOW,
-          evidence:
-            'added test asserts nothing (advisory — never blocks the gate)',
-          suggestion:
-            'add at least one assertion, or delete the test if it is a placeholder.',
-          added_ranges: [...unit.added_ranges],
-        }),
-      );
-    }
-  }
-  return findings;
-}
-
 /** Flatten inclusive `[start, end]` ranges into a sorted list of line numbers. */
-function linesInRanges(ranges: LineRange[]): number[] {
+export function linesInRanges(ranges: LineRange[]): number[] {
   const lines = new Set<number>();
   for (const [start, end] of ranges) {
     for (let ln = start; ln <= end; ln++) lines.add(ln);

@@ -39,10 +39,10 @@ import {
 import { Severity } from '../src/guardian/impact-mapper.js';
 import {
   buildFindings,
-  buildWeakTestFindings,
   GuardianFinding,
   renderFindings,
 } from '../src/guardian/pr-check.js';
+import { buildWeakTestFindings } from '../src/guardian/weak-test.js';
 
 function unit(
   path: string,
