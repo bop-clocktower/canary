@@ -120,6 +120,28 @@ describe('the report header', () => {
     expect(render('junior')).toContain('2026-08-22 17:34 UTC');
   });
 
+  it('abbreviates the closing sha rather than wrapping 40 characters of it', () => {
+    // Found by the first live run: a full oid pushed the subject onto a
+    // second line and broke the hash across the wrap, which reads as
+    // corruption. Seven characters is what the spec's own sample shows and
+    // what a human pastes into `git show`.
+    const out = renderReport({
+      header: {
+        ...HEADER,
+        mergeSha: '1e0c05b201d90261f206d9d48103e3e32480b74b',
+      },
+      repo: 'canary',
+      verdicts: MIXED,
+      persona: resolvePersona({
+        explicit: 'junior',
+        registry: FIXTURE_REGISTRY,
+      }),
+    });
+
+    expect(out).toContain('1e0c05b');
+    expect(out).not.toContain('1e0c05b201d90261f206d9d48103e3e32480b74b');
+  });
+
   it('always ends with the summary line', () => {
     for (const id of ['sdet', 'junior', 'manual']) {
       expect(render(id).trimEnd().endsWith(summaryLine(MIXED))).toBe(true);

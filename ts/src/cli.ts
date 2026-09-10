@@ -41,6 +41,7 @@ import {
   vacuityCheckCmd,
   versionCmd,
 } from './cli-commands.js';
+import { buildBatwomanCommand } from './batwoman-cli.js';
 import { buildCompanyKnowledgeCommand } from './company-knowledge-cli.js';
 import { createGuardianCommand } from './guardian/cli.js';
 import { createHistoryCommand } from './history/cli.js';
@@ -360,6 +361,7 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
   program.addCommand(buildSkillsCommand(deps));
   program.addCommand(buildWorkflowCommand(deps));
   program.addCommand(buildCompanyKnowledgeCommand(deps));
+  program.addCommand(buildBatwomanCommand(deps));
 
   // Propagate the usage-exit normalization to every top-level command (the
   // sub-apps also set it on their own subcommands internally).

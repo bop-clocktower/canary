@@ -83,12 +83,29 @@ function labelled(label: string, value: string): string[] {
   return [prefix + first.slice(prefix.length), ...rest];
 }
 
+/**
+ * A commit oid at the length a human reads and pastes.
+ *
+ * The closure adapter carries the full 40-character oid, which is right for
+ * data and wrong for a 78-column report: printed whole it pushed the subject
+ * onto a second line and split the hash across the wrap, which reads as
+ * corruption rather than as a hash. Seven is git's own short form, and what
+ * the spec's sample shows. A value that is not an oid is left alone -- an
+ * abbreviated non-hash would be a lie about what it is.
+ */
+function abbreviate(sha: string): string {
+  return /^[0-9a-f]{40}$/i.test(sha) ? sha.slice(0, 7) : sha;
+}
+
 function headerLines(options: RenderOptions): string[] {
   const { header, repo, persona } = options;
   return [
     `canary batwoman — ${repo}#${header.issue}`,
     '',
-    ...labelled('Closed by', `${header.mergeSha}  ${header.mergeSubject}`),
+    ...labelled(
+      'Closed by',
+      `${abbreviate(header.mergeSha)}  ${header.mergeSubject}`,
+    ),
     ...labelled('Merged', stamp(header.mergedAt)),
     // Printed so a reader who got terse output when they wanted guided output
     // can tell a short report from a truncated one (spec criterion 9).
