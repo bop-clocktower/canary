@@ -590,3 +590,374 @@ describe('the perf merge-base delta gate is wired (#812)', () => {
     expect(yaml()).not.toMatch(/git worktree add[^\n]*\$GITHUB_WORKSPACE/);
   });
 });
+
+/**
+ * Structural allowances for the merge-base delta rule (#850).
+ *
+ * The delta rule compared two SCALAR counts, which made it blind to what the
+ * findings were — and that blindness had a direction. `harness check-perf`
+ * flags a coupling ratio of 1.00, which is the definition of a CLI wiring
+ * module (it imports many things and is imported by few), so every one of this
+ * repo's five CLI modules already carries one. Adding a subcommand in a NEW
+ * module therefore cost +2 findings and failed the delta rule, while adding
+ * the same subcommand to `ts/src/cli.ts` — already over the 300-line threshold
+ * and already carrying both findings — cost +0, because a file that is already
+ * flagged for a rule does not get flagged twice.
+ *
+ * The gate was cheapest to satisfy by making an oversized file more oversized.
+ * PR #851 paid the tax the honest way, retiring six findings in
+ * `workflow-cli.ts` to buy room for two.
+ *
+ * The fix is to diff finding IDENTITIES rather than counts, so a reviewed
+ * allowance can exempt the structural findings that a legitimate module shape
+ * causes. Two properties keep an allowance list from becoming the false-green
+ * it is trying to prevent:
+ *
+ *   1. Every allowance MUST carry a `why`, and an applied allowance is NAMED
+ *      in the output — a suppressed finding stays visible, never silent.
+ *   2. The allowances apply ONLY to the delta rule. The absolute ceiling still
+ *      counts every finding, allowed or not, so an allowance can never lower
+ *      the total this repo is held to.
+ *
+ * Deliberately NOT fixed here (tracked separately): growth of an ALREADY
+ * flagged finding is still free, because identity ignores magnitude. A test
+ * below pins that as known and open rather than leaving it to be discovered.
+ */
+describe('perf-ratchet structural allowances (#850)', () => {
+  let dir: string;
+  let report: string;
+  let baseReport: string;
+  let baseline: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'perf-allow-'));
+    report = join(dir, 'report.txt');
+    baseReport = join(dir, 'base-report.txt');
+    baseline = join(dir, 'baseline.json');
+  });
+
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  function run(extra: string[] = []): { status: number; out: string } {
+    const r = spawnSync(
+      process.execPath,
+      [SCRIPT, '--report', report, '--baseline', baseline, ...extra],
+      { encoding: 'utf8' },
+    );
+    return { status: r.status ?? -1, out: `${r.stdout}${r.stderr}` };
+  }
+
+  /**
+   * Run with both scan roots declared. The head scan runs in the checkout and
+   * the merge-base scan in a worktree deliberately outside it, so the two
+   * reports name the same file under different absolute roots. The roots are
+   * passed explicitly so alignment is derived, never guessed.
+   */
+  function runDelta(): { status: number; out: string } {
+    return run([
+      '--base-report',
+      baseReport,
+      '--report-root',
+      HEAD_ROOT,
+      '--base-report-root',
+      BASE_ROOT,
+    ]);
+  }
+
+  /** Build a report whose findings live under `root`, as a real scan's do. */
+  function reportText(root: string, findings: [string, string][]): string {
+    const body = findings
+      .map(([file, message]) => `  * ${root}/${file}\n    ${message}`)
+      .join('\n');
+    return `x Validation failed (${findings.length} issues)\n\n${body}\n`;
+  }
+
+  /** The checkout the head scan runs in, as GitHub Actions names it. */
+  const HEAD_ROOT = '/home/runner/work/canary/canary';
+  /** The merge-base worktree, deliberately outside the checkout. */
+  const BASE_ROOT = '/home/runner/_temp/perf-base';
+
+  const COUPLING = 'Coupling ratio is 1.00 (threshold: 0.7)';
+  const SIZE_310 = 'File has 310 lines (threshold: 300)';
+
+  /** The findings a stable base tree carries, before the branch touches it. */
+  const BASE: [string, string][] = [
+    ['ts/src/cli.ts', COUPLING],
+    ['ts/src/cli.ts', 'File has 377 lines (threshold: 300)'],
+    ['ts/src/guardian/cli.ts', COUPLING],
+  ];
+
+  /**
+   * A deliberately SMALL ceiling. `isImplausibleCollapse` only engages once the
+   * baseline reaches COLLAPSE_GUARD_MIN_BASELINE (20), so a large ceiling here
+   * would abstain on these few-finding fixtures before the delta rule ever ran
+   * — and every assertion below would be testing the collapse guard instead.
+   */
+  function writeBaseline(extra: Record<string, unknown> = {}): void {
+    writeFileSync(baseline, JSON.stringify({ maxViolations: 10, ...extra }));
+  }
+
+  /**
+   * THE LANDMINE. The head scan runs in `$GITHUB_WORKSPACE`; the merge-base
+   * scan runs in `$RUNNER_TEMP/perf-base`, deliberately outside the checkout.
+   * So the two reports name the SAME file under DIFFERENT absolute roots. A
+   * naive identity diff sees every base finding vanish and every head finding
+   * appear, and fires on a branch that changed nothing.
+   */
+  it('aligns findings across the two different scan roots', () => {
+    writeBaseline();
+    writeFileSync(report, reportText(HEAD_ROOT, BASE));
+    writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+    const { status, out } = runDelta();
+    expect(status).toBe(0);
+    expect(out).toMatch(/delta OK/);
+  });
+
+  it('still fails a genuinely new finding, and names the file', () => {
+    writeBaseline();
+    writeFileSync(
+      report,
+      reportText(HEAD_ROOT, [...BASE, ['ts/src/history/cli.ts', SIZE_310]]),
+    );
+    writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+    const { status, out } = runDelta();
+    expect(status).toBe(1);
+    expect(out).toMatch(/ts\/src\/history\/cli\.ts/);
+  });
+
+  it('allows a coupling finding on a new CLI module, and names the allowance', () => {
+    writeBaseline({
+      deltaAllowances: [
+        {
+          rule: 'coupling',
+          path: 'ts/src/**/cli.ts',
+          why: 'a CLI wiring module triggers the coupling rule by definition',
+        },
+      ],
+    });
+    writeFileSync(
+      report,
+      reportText(HEAD_ROOT, [...BASE, ['ts/src/history/cli.ts', COUPLING]]),
+    );
+    writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+    const { status, out } = runDelta();
+    expect(status).toBe(0);
+    // The suppressed finding must stay VISIBLE — an allowance that applies
+    // silently is the false green this whole file exists to prevent.
+    expect(out).toMatch(/ts\/src\/history\/cli\.ts/);
+    expect(out).toMatch(/wiring module triggers the coupling rule/);
+  });
+
+  it('does not let an allowance cover a rule it does not name', () => {
+    // The allowance is for coupling; the new finding is a size violation.
+    writeBaseline({
+      deltaAllowances: [
+        { rule: 'coupling', path: 'ts/src/**/cli.ts', why: 'wiring module' },
+      ],
+    });
+    writeFileSync(
+      report,
+      reportText(HEAD_ROOT, [...BASE, ['ts/src/history/cli.ts', SIZE_310]]),
+    );
+    writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+    const { status } = runDelta();
+    expect(status).toBe(1);
+  });
+
+  it('does not let an allowance cover a path it does not match', () => {
+    writeBaseline({
+      deltaAllowances: [
+        { rule: 'coupling', path: 'ts/src/**/cli.ts', why: 'wiring module' },
+      ],
+    });
+    writeFileSync(
+      report,
+      reportText(HEAD_ROOT, [...BASE, ['ts/src/analysis/parser.ts', COUPLING]]),
+    );
+    writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+    const { status } = runDelta();
+    expect(status).toBe(1);
+  });
+
+  it('refuses an allowance with no stated reason', () => {
+    // An allowance list that can grow by one unexplained line is how a gate
+    // rots. `why` is load-bearing, so its absence is a config ERROR.
+    writeBaseline({
+      deltaAllowances: [{ rule: 'coupling', path: 'ts/src/**/cli.ts' }],
+    });
+    writeFileSync(report, reportText(HEAD_ROOT, BASE));
+    writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+    const { status, out } = runDelta();
+    expect(status).toBe(2);
+    expect(out).toMatch(/why/i);
+  });
+
+  it('refuses an allowance naming a rule that does not exist', () => {
+    // A typo'd rule name would silently match nothing and look exactly like a
+    // working allowance — right up until the day it was needed. Rejecting it
+    // at config time is the difference between a gate and a decoration.
+    writeBaseline({
+      deltaAllowances: [
+        { rule: 'coupling-ratio', path: 'ts/src/**', why: 'typo' },
+      ],
+    });
+    writeFileSync(report, reportText(HEAD_ROOT, BASE));
+    writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+    const { status, out } = runDelta();
+    expect(status).toBe(2);
+    expect(out).toMatch(/unknown rule/i);
+    // The message must name the legal values, or the author is left guessing.
+    expect(out).toMatch(/coupling/);
+  });
+
+  it('refuses a deltaAllowances that is not an array', () => {
+    writeBaseline({ deltaAllowances: { rule: 'coupling' } });
+    writeFileSync(report, reportText(HEAD_ROOT, BASE));
+    writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+    const { status, out } = runDelta();
+    expect(status).toBe(2);
+    expect(out).toMatch(/non-array/i);
+  });
+
+  it('reports an allowance that covers nothing in the tree', () => {
+    // Coverage that is no longer needed should be visible, so the list can be
+    // pruned instead of accumulating forever.
+    writeBaseline({
+      deltaAllowances: [
+        { rule: 'coupling', path: 'does/not/exist/**', why: 'stale entry' },
+      ],
+    });
+    writeFileSync(report, reportText(HEAD_ROOT, BASE));
+    writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+    const { status, out } = runDelta();
+    expect(status).toBe(0);
+    expect(out).toMatch(/covers no finding/i);
+  });
+
+  it('stays quiet about an allowance that still covers the tree', () => {
+    // Staleness is judged against ALL head findings, not just the ones an
+    // allowance suppressed on this run. Most PRs add no finding at all, so
+    // "did it apply?" would flag every allowance on nearly every run — noise
+    // that trains people to skip the line.
+    writeBaseline({
+      deltaAllowances: [
+        { rule: 'coupling', path: 'ts/src/**/cli.ts', why: 'wiring module' },
+      ],
+    });
+    writeFileSync(report, reportText(HEAD_ROOT, BASE));
+    writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+    const { status, out } = runDelta();
+    expect(status).toBe(0);
+    expect(out).not.toMatch(/covers no finding/i);
+  });
+
+  it('falls back to the count rule when a report does not parse completely', () => {
+    // The header carries the denominator. When the body does not account for
+    // it, the identity set is NOT the set that was measured, so allowances
+    // cannot be applied honestly. The count rule still governs, and the
+    // downgrade is announced rather than assumed.
+    writeBaseline({
+      maxViolations: 10,
+      deltaAllowances: [
+        { rule: 'coupling', path: 'ts/src/**/cli.ts', why: 'wiring module' },
+      ],
+    });
+    writeFileSync(
+      report,
+      `x Validation failed (8 issues)\n\n  * ${HEAD_ROOT}/ts/src/a.ts\n    ${COUPLING}\n`,
+    );
+    writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+    const { status, out } = runDelta();
+    // 8 here against 3 at the base: the count rule fires.
+    expect(status).toBe(1);
+    expect(out).toMatch(/count/i);
+  });
+
+  it('abstains when the two reports share no file at all', () => {
+    // Non-empty on both sides and zero overlap means the roots did not align.
+    // Reporting "everything is new" there is a false RED built on a bad parse.
+    writeBaseline();
+    writeFileSync(report, reportText(HEAD_ROOT, [['ts/src/a.ts', COUPLING]]));
+    writeFileSync(
+      baseReport,
+      reportText(BASE_ROOT, [['other/b.ts', COUPLING]]),
+    );
+    const { status, out } = runDelta();
+    expect(status).toBe(3);
+    expect(out).toMatch(/align/i);
+  });
+
+  it('keeps the absolute ceiling blind to allowances', () => {
+    // An allowance buys room in the DELTA rule only. If it could also lower
+    // the total, the ceiling would drift upward invisibly.
+    writeBaseline({
+      maxViolations: 3,
+      deltaAllowances: [
+        { rule: 'coupling', path: 'ts/src/**/cli.ts', why: 'wiring module' },
+      ],
+    });
+    writeFileSync(
+      report,
+      reportText(HEAD_ROOT, [...BASE, ['ts/src/history/cli.ts', COUPLING]]),
+    );
+    writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+    const { status, out } = runDelta();
+    expect(status).toBe(1);
+    expect(out).toMatch(/absolute backstop/);
+  });
+
+  it('counts repeated identical findings, and catches one more of them', () => {
+    // Identity is not unique per file. `ts/src/core/migrator.ts` really does
+    // carry THREE `for` function-length findings, so the 236 findings measured
+    // on main collapse to 230 distinct identities. Comparing sets rather than
+    // multisets would let a branch add a fourth and have it swallowed by the
+    // third — a silent regression in the exact class this gate exists to catch.
+    const FOR_LEN = 'Function "for" is 60 lines long (threshold: 50)';
+    const twice: [string, string][] = [
+      ['ts/src/core/migrator.ts', FOR_LEN],
+      ['ts/src/core/migrator.ts', FOR_LEN],
+    ];
+    writeBaseline();
+    writeFileSync(
+      report,
+      reportText(HEAD_ROOT, [...twice, ['ts/src/core/migrator.ts', FOR_LEN]]),
+    );
+    writeFileSync(baseReport, reportText(BASE_ROOT, twice));
+    const { status, out } = runDelta();
+    expect(status).toBe(1);
+    expect(out).toMatch(/1 performance violation/);
+  });
+
+  it('passes when the same repeated findings are unchanged', () => {
+    const FOR_LEN = 'Function "for" is 60 lines long (threshold: 50)';
+    const twice: [string, string][] = [
+      ['ts/src/core/migrator.ts', FOR_LEN],
+      ['ts/src/core/migrator.ts', FOR_LEN],
+    ];
+    writeBaseline();
+    writeFileSync(report, reportText(HEAD_ROOT, twice));
+    writeFileSync(baseReport, reportText(BASE_ROOT, twice));
+    const { status } = runDelta();
+    expect(status).toBe(0);
+  });
+
+  it('KNOWN GAP: growth of an already-flagged finding is still free', () => {
+    // Identity ignores magnitude, so cli.ts going 377 -> 900 lines is the same
+    // finding and the delta rule stays green. This is the second half of #850,
+    // tracked as #854 and deliberately out of scope here; pinned so it is a
+    // recorded decision rather than a surprise. Invert this test rather than
+    // deleting it when #854 lands, so the behaviour change shows in the diff.
+    writeBaseline();
+    writeFileSync(
+      report,
+      reportText(HEAD_ROOT, [
+        ['ts/src/cli.ts', COUPLING],
+        ['ts/src/cli.ts', 'File has 900 lines (threshold: 300)'],
+        ['ts/src/guardian/cli.ts', COUPLING],
+      ]),
+    );
+    writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+    const { status } = runDelta();
+    expect(status).toBe(0);
+  });
+});
