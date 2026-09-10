@@ -103,8 +103,11 @@ capability claim:
   which is more informative than a number a reader had to look up.
 - `agents/skills/README.md` matches the skills it summarises.
 - New skills state the three axes and do not re-litigate the scale.
-  `canary-manhunter` can now describe itself honestly: deterministic, network,
-  no agent.
+  `canary-batwoman` — written here under its pre-rename name `canary-manhunter`,
+  see `docs/naming-registry.md` — now describes itself honestly in exactly those
+  terms: deterministic, network, no agent. It shipped under #749 and is the
+  first skill in the repo to require the network, which is what this ADR was
+  written in anticipation of.
 - `canary-pr-guardian` is unchanged in behaviour. Its numbers are now scoped in
   writing to the flag they name, so a reader who meets "Tier 1" there knows it
   is a flag value and not a capability class.

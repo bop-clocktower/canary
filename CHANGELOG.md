@@ -14,6 +14,24 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`canary batwoman --issue N [--json]` — closure auditing** (#749). GitHub
+  closes an issue when a merged PR body matches `Closes #N`: a string match with
+  no denominator, checking neither that the fix works nor that it ever ran.
+  Batwoman answers the second question per changed file, and names the files it
+  could not answer for. Five statuses -- `exercised`, `not-exercised`,
+  `abstain`, `no-probe`, `not-applicable` -- always printed with counts that sum
+  to the changed-file total, with no `assessed` figure and no success token
+  anywhere in either output path. Three probes ship: `workflow` (decided by run
+  history, with the `on:` block explaining a dormant one), `workflow-script`
+  (resolved statically to its callers, abstaining when nothing references it),
+  and `no-execution`. Advisory: `.github/workflows/batwoman.yml` runs it on
+  every push to `main` and never fails a build. The first skill in the repo to
+  require the network, stated as a property on the axes of ADR 0015 rather than
+  as a tier; ADR 0016 records the two unrelated meanings of "persona" it uses at
+  once, and ADR 0017 the probe registry and why `abstain` is not `no-probe`.
+
 ### Fixed
 
 - **The test duration ratchet no longer fires on a contended spawn** (#760). The
