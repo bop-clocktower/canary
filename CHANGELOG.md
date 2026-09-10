@@ -34,6 +34,11 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary vacuity-check` no longer prints a several-thousand-character
+  summary** (#860). Skips are counted per reason on the summary line; the
+  per-test list (now `file:line` plus a title capped at 80 chars) moves behind
+  the new `--verbose` flag and stays in `--json`. A mis-parsed title can no
+  longer inline raw test source into the output.
 - **The test duration ratchet no longer fires on a contended spawn** (#760). The
   load factor is a median, so it cannot see contention that lands on one test at
   a time -- on the runner, half the tracked tests ran faster than recorded while

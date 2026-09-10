@@ -701,6 +701,22 @@ function targetNeverInvoked(
  * the write. Reported at the first absence assertion, the line an author adds a
  * precondition next to.
  */
+/**
+ * A test title safe to put in a skip label: its first line, capped at 80.
+ *
+ * The title parser can mis-read a declaration and hand back the source after
+ * it (#860 -- whole `describe` bodies reached the summary line). Bounding the
+ * label here means a parser slip degrades to a truncated name, never a flood.
+ */
+export function boundedTitle(name: string): string {
+  const first = name.split('\n', 1)[0]!.trim();
+  return first.length > 80 ? `${first.slice(0, 80)}…` : first;
+}
+
+function skipLabel(rules: string, file: string, block: TestBlock): string {
+  return `${file}:${block.line} ${rules} (${boundedTitle(block.name)})`;
+}
+
 function absenceOnly(
   lines: { text: string; line: number }[],
   block: TestBlock,
@@ -719,7 +735,7 @@ function absenceOnly(
     // assertion style is one the vocabulary does not know. Both are "cannot
     // verify", so both are recorded rather than passed over in silence.
     skipped.push({
-      name: `VAC-003 (${block.name})`,
+      name: skipLabel('VAC-003', file, block),
       reason:
         'no recognised assertion, so absence-only could not be judged -- the test may assert nothing (LINT-006) or use an unrecognised assertion style',
     });
@@ -904,7 +920,11 @@ function scanAllBlocks(
       // real one, and #705 is explicit that a suppressed inference and a passing
       // check must not look alike.
       skipped.push({
-        name: `${outOfBand ? 'VAC-003' : 'VAC-002/VAC-003'} (${block.name})`,
+        name: skipLabel(
+          outOfBand ? 'VAC-003' : 'VAC-002/VAC-003',
+          ctx.path,
+          block,
+        ),
         reason: outOfBand
           ? 'target reached out of band (subprocess or bare dynamic import), so VAC-002 is answered but no symbol exists for absence-only to observe'
           : 'target unresolvable: no @covers annotation and no first-party relative import to infer from',

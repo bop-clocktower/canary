@@ -905,10 +905,11 @@ export function flakeCheckCmd(
  */
 export function vacuityCheckCmd(
   path: string,
-  opts: { json?: boolean },
+  opts: { json?: boolean; verbose?: boolean },
   deps: MainDeps,
 ): void {
   const json = opts.json === true;
+  const verbose = opts.verbose === true;
   const files = isDir(path) ? collectTestFiles(path) : [path];
 
   const findings: VacuityFinding[] = [];
@@ -927,9 +928,27 @@ export function vacuityCheckCmd(
     });
   }
 
-  const result: GateResult<VacuityFinding> = { checked, findings };
-  if (skipped.length > 0) result.skipped = skipped;
-  const outcome = gateOutcome(result, 'advisory', { noun: 'test(s)' });
+  // #860: the summary line carries one entry per skip REASON with its count,
+  // not one per test -- 232 titles on one line is how skips get ignored. The
+  // per-test list stays reachable (--verbose, --json), so every skip remains
+  // countable and locatable; only the summary line is compacted.
+  const byReason = new Map<string, number>();
+  for (const s of skipped)
+    byReason.set(s.reason, (byReason.get(s.reason) ?? 0) + 1);
+  // The suffix is built here rather than by `skippedSuffix`, whose count is the
+  // number of ENTRIES -- fed per-reason groups it would report "1 skipped" for
+  // 13 skipped tests.
+  const groups = [...byReason]
+    .map(([reason, n]) => `${n} test(s) [${reason}]`)
+    .join('; ');
+  const outcome = gateOutcome({ checked, findings }, 'advisory', {
+    noun: 'test(s)',
+  });
+  const summaryLine =
+    skipped.length === 0
+      ? outcome.summaryLine
+      : `${outcome.summaryLine} (${skipped.length} skipped: ${groups})` +
+        (verbose ? '' : ` ${pc.dim('(--verbose to list skipped tests)')}`);
   // `advisory` keeps findings at exit 0; the abstention still has to be loud, so
   // the exit code for a zero denominator is taken from the gate contract.
   const exitCode = outcome.abstained ? EXIT_ABSTAINED : 0;
@@ -956,10 +975,14 @@ export function vacuityCheckCmd(
     deps.out(`  ${f.test}: ${f.message}`);
     deps.out(`  ${pc.dim(`${ARROW} ${f.suggestion}`)}\n`);
   }
+  if (verbose && skipped.length > 0) {
+    deps.out(pc.bold('Skipped:'));
+    for (const s of skipped) deps.out(`  ${s.name} ${pc.dim(`[${s.reason}]`)}`);
+  }
   deps.out(
     outcome.abstained
-      ? pc.bold(pc.yellow(outcome.summaryLine))
-      : `${pc.bold(outcome.summaryLine)}`,
+      ? pc.bold(pc.yellow(summaryLine))
+      : `${pc.bold(summaryLine)}`,
   );
   if (exitCode !== 0) throw new CliExitError(exitCode);
 }

@@ -45,7 +45,8 @@ Two doors, one detector. Both run the same engine rules, so they cannot disagree
 about a finding or about the denominator.
 
 ```bash
-canary vacuity-check tests/            # human-readable
+canary vacuity-check tests/            # human-readable, skips counted per reason
+canary vacuity-check tests/ --verbose  # ...plus every skipped test at file:line
 canary vacuity-check tests/ --json     # verdict + denominator + skips
 canary vacuity-check tests/a.test.ts   # one file
 ```

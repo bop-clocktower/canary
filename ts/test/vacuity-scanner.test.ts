@@ -418,7 +418,7 @@ describe('VAC-002 — targets the import inference could not see (#705)', () => 
         `  expect(spawnSync(process.execPath, [join(D, 'cli.mjs')]).status).toBe(0);\n` +
         `});\n`,
     );
-    const skip = r.skipped?.find((s) => s.name.startsWith('VAC-003'));
+    const skip = r.skipped?.find((s) => s.name.includes(' VAC-003 ('));
     expect(skip).toBeDefined();
     expect(skip!.name).not.toContain('VAC-002');
     expect(skip!.reason).toMatch(/out of band/i);

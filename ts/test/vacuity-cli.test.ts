@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
+import { boundedTitle } from '../src/core/vacuity-scanner.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 
 const VACUOUS = [
@@ -174,5 +175,76 @@ describe('canary vacuity-check', () => {
     } finally {
       rmTmp(home);
     }
+  });
+
+  // #860: 232 skips rendered as one several-thousand-character summary line,
+  // with raw `describe` bodies inlined. A wall of text is how skips get ignored,
+  // so the summary counts per reason and the per-test list moves behind a flag.
+  describe('skip summary shape (#860)', () => {
+    const UNRESOLVABLE = [
+      `import { it, expect } from 'vitest';`,
+      ...Array.from(
+        { length: 12 },
+        (_, i) =>
+          `it('adds ${i}', () => { expect(${i} + 1).toBe(${i + 1}); });`,
+      ),
+      // Mixed quotes in a title is the real-suite shape that made the title
+      // parser swallow the source after it, inlining it into the summary.
+      `it('multi "quoted" title', () => {`,
+      `  const a = 1;`,
+      ...Array.from({ length: 10 }, (_, i) => `  // filler line ${i}`),
+      `  expect(a).toBe(1);`,
+      `});`,
+      ``,
+    ].join('\n');
+
+    function withSuite(run: (dir: string) => Promise<void>) {
+      return async () => {
+        const home = mkTmp();
+        try {
+          const dir = join(home, 'tests');
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(join(dir, 'a.test.ts'), UNRESOLVABLE, 'utf-8');
+          await run(dir);
+        } finally {
+          rmTmp(home);
+        }
+      };
+    }
+
+    it(
+      'counts skips per reason instead of listing every test',
+      withSuite(async (dir) => {
+        const res = await invokeCanary(['vacuity-check', dir]);
+        expect(res.code).toBe(0);
+        const summary = res.stdout.trim().split('\n').at(-1)!;
+        expect(summary).toMatch(
+          /13 skipped: 13 test\(s\) \[target unresolvable/,
+        );
+        expect(summary).not.toContain('adds 3');
+        expect(summary).toMatch(/--verbose/);
+        expect(summary.length).toBeLessThan(400);
+      }),
+    );
+
+    it(
+      'lists each skipped test, one per line with file:line, under --verbose',
+      withSuite(async (dir) => {
+        const res = await invokeCanary(['vacuity-check', dir, '--verbose']);
+        expect(res.code).toBe(0);
+        expect(res.stdout).toMatch(/a\.test\.ts:2 .*adds 0/);
+        expect(res.stdout).toMatch(/a\.test\.ts:14 .*multi "quoted" title/);
+      }),
+    );
+
+    // A mis-parsed title can carry the source after it (seen on this repo's
+    // own suite). The label is bounded so a parser slip can never flood output.
+    it('bounds a skip label to the first line of the title', () => {
+      const raw = `keeps it', () => {\n    // body\n  ${'x'.repeat(300)}`;
+      const label = boundedTitle(raw);
+      expect(label).not.toContain('\n');
+      expect(label.length).toBeLessThanOrEqual(81);
+      expect(boundedTitle('short')).toBe('short');
+    });
   });
 });
