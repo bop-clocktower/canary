@@ -251,7 +251,8 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
     )
     .argument('<path>', 'Test file or directory to scan.')
     .option('--json', 'Output the verdict and its denominator as JSON.')
-    .action((path: string, opts: { json?: boolean }) => {
+    .option('--verbose', 'List every skipped test with its file:line.')
+    .action((path: string, opts: { json?: boolean; verbose?: boolean }) => {
       vacuityCheckCmd(path, opts, deps);
     });
 
