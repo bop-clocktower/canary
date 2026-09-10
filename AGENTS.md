@@ -1279,6 +1279,21 @@ Two unrelated scales also use the word "tier" and are out of scope:
 agent definitions' violation severity. See
 [ADR 0015](docs/knowledge/decisions/0015-skill-capability-vocabulary.md).
 
+`canary-batwoman` (#749) is the **first shipped skill that requires the
+network** — it reads run history and closing pull requests through `gh`. That is
+stated as a property on the network axis, never as a tier: the four
+deterministic offline detectors (`canary-savant`, `canary-blackhawk`,
+`canary-cassandra`, `canary-katana`) sit at no number that batwoman is one step
+above. An unauthenticated `gh` does not degrade to a clean report; every
+affected file becomes an `abstain` naming the failure, because cannot-verify is
+a finding.
+
+It is also the first thing here to use **both** kinds of persona at once — a
+harness persona for its CI trigger, a canary persona for its output register.
+The two share only a word; see
+[ADR 0016](docs/knowledge/decisions/0016-two-meanings-of-persona.md) before
+assuming they are one mechanism.
+
 #### `canary-*` names
 
 [`docs/naming-registry.md`](docs/naming-registry.md) is the one place a

