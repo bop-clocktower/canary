@@ -384,6 +384,46 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Priority:** P3
 - **External-ID:** —
 
+### Audit evidence export — control-mapped evidence pack
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #855. Bundle what canary already produces as a byproduct — batwoman closure verification (the "proof, not assurance" re-test artifact), the katana deleted/skipped-test ledger, run history, ci-ready scores — into one time-windowed evidence pack with each item mapped to the control it supports (NIST SP 800-40 Rev. 4, ISO/IEC 27001:2022 A.8.8, CIS Control 7, SOC 2 CC7.1/CC8.1). JSON for GRC tooling plus a human-readable report. STRATEGY track 5 (quality made legible) aimed at auditors and procurement reviewers instead of engineers. Accepted risk to handle in spec: a control with zero backing evidence must render as NO EVIDENCE, never be omitted — an evidence pack that drops its empty rows is a false-green handed to an auditor. The mapping is an aid, not an attestation, and the report says so. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#855
+
+### Scaling-curve probe — growth exponent across input sizes
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #856. Run one operation (k6/locust scenario or benchmark) across a ladder of input sizes, fit the log-log growth exponent of latency and throughput, and report where the curve bends. Catches the component whose work grows faster than its input — it passes every fixed-size load test, then buckles exactly when input peaks. New analysis over runners already in the registry. Accepted risk to handle in spec: too few sizes or too much variance is INSUFFICIENT DATA with a reason, never "linear ✓" off three noisy points. Synthetic data only; advisory, not a gate. Pairs with #858. Small-to-medium effort. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#856
+
+### Permission-matrix tests — server-side role × tenant × endpoint
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #857. From a human-declared allow/deny matrix of roles × tenants × endpoints, generate API-level tests that hit the server directly (bypassing the UI) for every cell including cross-tenant ones, plus an existence-oracle probe that flags lookup endpoints whose responses distinguish present from absent records. Targets the two findings ordinary suites miss: cross-tenant reads and role boundaries enforced only in the UI. Accepted risk to handle in spec: the matrix must be declared, never inferred from current behavior (that would bake existing bugs in as "expected"); undeclared cells report as UNDECLARED, never skipped. Complements a pen test, doesn't replace one. Security findings feed it via the #614 intake extension. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#857
+
+### Load scenario composer — multi-population load with SLO thresholds
+
+- **Status:** backlog
+- **Spec:** —
+- **Summary:** Issue #858. Compose several actor populations (public submitters, staff consoles, partner integrations, background jobs) into one run as parallel k6 scenarios, with SLOs as thresholds (p99 of a user-visible latency, not just error rate), attachable network-degradation profiles, and named templates (single large event, many concurrent events, upload flood, mass reconnect). Fills the gap between write-test's one-scenario-at-a-time generation and real surge load. Accepted risk to handle in spec: the traffic model is the deliverable — every population states the source of its numbers, and a threshold whose metric was never emitted fails as an abstention. Shares its degradation vocabulary with #592 (canary-misfit, route-layer injection); pairs with #856. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#858
+
 ## Engine and Platform
 
 ### ADR — sync vs async history-store interface for the TS cutover
