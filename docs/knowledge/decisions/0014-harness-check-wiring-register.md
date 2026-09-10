@@ -175,6 +175,34 @@ be stated at the point of use rather than discovered later.
   merge base, the same two-rule shape ADR 0012's #703 amendment gives the
   entropy ratchet. Measure it in a fresh `git worktree` — the shared working
   directory reads high, and a mid-conflict tree returns confident garbage.
+- **AMENDED 2026-09-10 (#850): the delta rule compares finding IDENTITIES, not
+  counts, and takes a reviewed allowance list.** Comparing two scalars made the
+  rule blind to _what_ changed, and that blindness had a direction. A coupling
+  ratio of 1.00 is the definition of a CLI wiring module, so a new `*-cli.ts`
+  cost +2 findings and failed the gate, while adding the same subcommand to
+  `ts/src/cli.ts` — already over 300 lines and already carrying both findings —
+  cost +0, because a file already flagged for a rule is not flagged twice. The
+  gate was cheapest to satisfy by making an oversized file more oversized.
+  `deltaAllowances` in `.harness/perf-baseline.json` now exempts named
+  `(rule, path)` shapes from the DELTA rule only; `maxViolations` still counts
+  every finding, so an allowance can never raise the total. Every entry must
+  carry a `why` (exit 2 without one), an unknown `rule` is a config error rather
+  than an entry that silently matches nothing, and an applied allowance is NAMED
+  in the output — a suppressed finding that nobody can see would be the false
+  green the list is meant to prevent.
+- The two scans run under **different absolute roots** by design (the base
+  worktree lives outside the checkout), so the workflow passes `--report-root`
+  and `--base-report-root` explicitly. Identity comparison needs the paths to
+  align, and a wrong guess fails in both directions: calling every finding new
+  (false red) or falling back to counting and silently losing the allowances.
+  With no shared file at all the ratchet **abstains** rather than reporting a
+  number it cannot stand behind. When either report cannot be parsed into
+  per-finding detail it falls back to the count rule and says so — allowances do
+  not apply to a set it does not fully understand.
+- **Still open, deliberately:** identity ignores magnitude, so growing an
+  already-flagged file (377 -> 900 lines) is still free. That is the second half
+  of #850, pinned by a test named `KNOWN GAP` in `ts/test/perf-ratchet.test.ts`
+  so it stays a recorded decision rather than a surprise.
 - Declining a check is now a recorded decision with a revisit condition. An
   unwired check that appears in neither table above is a finding.
 - **A check is not wired until it has been seen to fire.** This ADR shipped one

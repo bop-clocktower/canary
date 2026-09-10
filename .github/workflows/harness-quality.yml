@@ -186,6 +186,14 @@ jobs:
       # base tree and double-counts) — and `ts/test/perf-ratchet.test.ts`
       # asserts both. `2>&1 || true` matches the head scan; an empty base
       # report is NOT silently tolerated, the ratchet abstains (exit 3) on it.
+      # The two scans necessarily run under DIFFERENT absolute roots — that is
+      # the point of putting the base worktree outside the checkout — so the
+      # same file appears as two different paths across the two reports. The
+      # ratchet compares finding IDENTITIES now (#850), so it is handed both
+      # roots explicitly rather than inferring them: a wrong guess would either
+      # call every finding new (false red) or fall back to counting and lose
+      # the allowances (silently weaker). With no shared file at all it
+      # abstains rather than reporting a number it cannot stand behind.
       - name: Harness Performance Check (merge base)
         if: github.event_name == 'pull_request'
         env:
@@ -205,7 +213,9 @@ jobs:
             perf-base-report.txt' || '' }}
         run:
           node scripts/perf-ratchet.mjs --report perf-report.txt --cli-version
-          "${{ steps.harness-cli.outputs.version }}" $PERF_BASE_FLAG
+          "${{ steps.harness-cli.outputs.version }}" --report-root
+          "$GITHUB_WORKSPACE" --base-report-root "$RUNNER_TEMP/perf-base"
+          $PERF_BASE_FLAG
 
       # `check-operational-drift` is deliberately NOT wired here. #717 proposed
       # wiring it blocking precisely because it was clean — no backlog to
