@@ -5,13 +5,13 @@ description:
   the fix merged. Advisory; never asserts the fix is correct.
 role: >
   Audit closure claims. GitHub closes an issue on a keyword match in a pull
-  request body, which is a string match with no denominator: nothing checks
-  that the fix works, and nothing checks that the fix ever ran. Batwoman
-  answers only the second question, per changed file, and says plainly which
-  files it could not answer for.
+  request body, which is a string match with no denominator: nothing checks that
+  the fix works, and nothing checks that the fix ever ran. Batwoman answers only
+  the second question, per changed file, and says plainly which files it could
+  not answer for.
 
-  It never asserts correctness, never fails a job, and never reopens an issue.
-  A strict mode is deliberately deferred until the advisory volume has been
+  It never asserts correctness, never fails a job, and never reopens an issue. A
+  strict mode is deliberately deferred until the advisory volume has been
   triaged.
 skills:
   - canary-batwoman
@@ -28,7 +28,7 @@ skills:
 triggers:
   - event: on_commit
     conditions:
-      branches: ["main"]
+      branches: ['main']
   - event: manual
 config:
 outputs:
