@@ -265,7 +265,8 @@ function readViolations(path, maxViolations, label) {
  *
  * Identity is `(file, rule, subject)` and deliberately EXCLUDES magnitude: a
  * file going 377 -> 900 lines is the same identity and still passes. That is
- * the second half of #850, left open on purpose and pinned by a test.
+ * the second half of #850, left open on purpose (tracked as #854) and pinned
+ * by a test.
  * Severity IS part of identity, because a function crossing from the warning
  * to the error threshold is reported as a different finding, and a gate that
  * called that "unchanged" would be lying about an escalation.

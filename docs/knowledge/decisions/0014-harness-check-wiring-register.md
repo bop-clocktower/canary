@@ -201,8 +201,9 @@ be stated at the point of use rather than discovered later.
   not apply to a set it does not fully understand.
 - **Still open, deliberately:** identity ignores magnitude, so growing an
   already-flagged file (377 -> 900 lines) is still free. That is the second half
-  of #850, pinned by a test named `KNOWN GAP` in `ts/test/perf-ratchet.test.ts`
-  so it stays a recorded decision rather than a surprise.
+  of #850 and is tracked as **#854**, pinned by a test named `KNOWN GAP` in
+  `ts/test/perf-ratchet.test.ts` so it stays a recorded decision, not a
+  surprise.
 - Declining a check is now a recorded decision with a revisit condition. An
   unwired check that appears in neither table above is a finding.
 - **A check is not wired until it has been seen to fire.** This ADR shipped one

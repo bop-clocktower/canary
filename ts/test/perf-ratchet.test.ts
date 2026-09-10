@@ -943,9 +943,10 @@ describe('perf-ratchet structural allowances (#850)', () => {
 
   it('KNOWN GAP: growth of an already-flagged finding is still free', () => {
     // Identity ignores magnitude, so cli.ts going 377 -> 900 lines is the same
-    // finding and the delta rule stays green. This is the second half of #850
-    // and is deliberately out of scope here; pinned so it is a recorded
-    // decision rather than a surprise.
+    // finding and the delta rule stays green. This is the second half of #850,
+    // tracked as #854 and deliberately out of scope here; pinned so it is a
+    // recorded decision rather than a surprise. Invert this test rather than
+    // deleting it when #854 lands, so the behaviour change shows in the diff.
     writeBaseline();
     writeFileSync(
       report,
