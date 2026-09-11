@@ -208,11 +208,19 @@ be stated at the point of use rather than discovered later.
   number it cannot stand behind. When either report cannot be parsed into
   per-finding detail it falls back to the count rule and says so — allowances do
   not apply to a set it does not fully understand.
-- **Still open, deliberately:** identity ignores magnitude, so growing an
-  already-flagged file (377 -> 900 lines) is still free. That is the second half
-  of #850 and is tracked as **#854**, pinned by a test named `KNOWN GAP` in
-  `ts/test/perf-ratchet.test.ts` so it stays a recorded decision, not a
-  surprise.
+- **Magnitude growth is reported, ADVISORY (#854).** Identity still ignores
+  magnitude, so the blocking rule is unchanged. The ratchet now also pairs each
+  identity's findings between base and head, largest with largest, and emits a
+  `::warning` for every already-flagged finding that grew (`377 -> 900`).
+  **Advisory by decision, from measurement:** replayed over the 40 merges before
+  it landed, 11 (27.5%) grew at least one flagged finding. Most were
+  `ts/src/cli.ts` gaining 1–2 lines per subcommand, and the largest was
+  `vacuity-scanner.ts` +192. Blocking would have failed more than a quarter of
+  merges, mostly over noise. That is the "demoted to advisory within a week"
+  outcome, reached the hard way. Any tolerance that passed the small cases would
+  be an invented number. **Revisit** once the annotations have run long enough
+  to show whether the large growths repeat; promote with data, not instead of
+  it. The former `KNOWN GAP` test is inverted in `ts/test/perf-ratchet.test.ts`.
 - Declining a check is now a recorded decision with a revisit condition. An
   unwired check that appears in neither table above is a finding.
 - **A check is not wired until it has been seen to fire.** This ADR shipped one

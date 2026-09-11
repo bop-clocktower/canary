@@ -18,8 +18,9 @@
  * legitimate module shape causes.
  *
  * Identity is `(file, rule, subject)` and deliberately EXCLUDES magnitude: a
- * file going 377 -> 900 lines is the same identity and still passes. That is
- * the second half of #850, tracked as #854 and pinned by a test. Severity IS
+ * file going 377 -> 900 lines is the same identity. Magnitude is compared
+ * separately (#854, `grownFindings`) and reported as ADVISORY, because it
+ * would have failed 11 of the 40 merges before it landed. Severity IS
  * part of identity, because a function crossing from the warning to the error
  * threshold is reported as a different finding, and a gate that called that
  * "unchanged" would be lying about an escalation.
@@ -29,17 +30,26 @@
  * gate caught its own change, which is the outcome #850 was arguing for.
  */
 
-/** The rules `harness check-perf` reports, and how to recognise each one. */
+/**
+ * The rules `harness check-perf` reports, and how to recognise each one.
+ * `fn` and `band` form the subject; `mag` is the magnitude #854 compares.
+ */
 const RULES = [
-  { rule: 'file-length', re: /^File has \d+ lines/ },
-  { rule: 'import-count', re: /^File has \d+ imports/ },
-  { rule: 'coupling', re: /^Coupling ratio is/ },
+  { rule: 'file-length', re: /^File has (?<mag>\d+) lines/ },
+  { rule: 'import-count', re: /^File has (?<mag>\d+) imports/ },
+  { rule: 'coupling', re: /^Coupling ratio is (?<mag>\d+(?:\.\d+)?)/ },
   {
     rule: 'complexity',
-    re: /^Function "(.+)" has cyclomatic complexity of \d+ \((error|warning) threshold/,
+    re: /^Function "(?<fn>.+)" has cyclomatic complexity of (?<mag>\d+) \((?<band>error|warning) threshold/,
   },
-  { rule: 'function-length', re: /^Function "(.+)" is \d+ lines long/ },
-  { rule: 'nesting-depth', re: /^Function "(.+)" has nesting depth of \d+/ },
+  {
+    rule: 'function-length',
+    re: /^Function "(?<fn>.+)" is (?<mag>\d+) lines long/,
+  },
+  {
+    rule: 'nesting-depth',
+    re: /^Function "(?<fn>.+)" has nesting depth of (?<mag>\d+)/,
+  },
 ];
 
 /** Every rule name an allowance may legally name. */
@@ -56,8 +66,9 @@ function classify(message) {
     if (!m) continue;
     // The subject distinguishes findings sharing a file and a rule: the
     // function name, plus the severity band for complexity.
-    const subject = [m[1] ?? '', m[2] ?? ''].filter(Boolean).join('@');
-    return { rule, subject };
+    const { fn, band, mag } = m.groups;
+    const subject = [fn ?? '', band ?? ''].filter(Boolean).join('@');
+    return { rule, subject, magnitude: Number(mag) };
   }
   return null;
 }
@@ -199,6 +210,40 @@ function addedFindings(head, base) {
   return added;
 }
 
+/** Group findings by identity, each group sorted largest magnitude first. */
+function byIdentity(findings) {
+  const groups = new Map();
+  for (const f of findings) {
+    const k = identity(f);
+    (groups.get(k) ?? groups.set(k, []).get(k)).push(f);
+  }
+  for (const g of groups.values()) g.sort((a, b) => b.magnitude - a.magnitude);
+  return groups;
+}
+
+/**
+ * Findings present on both sides whose magnitude grew (#854), as
+ * `{ finding, from, to }`.
+ *
+ * Duplicate identities pair LARGEST with largest, not in report order: the
+ * scanner's order is not a contract, and pairing by it would call a pure
+ * reorder of migrator.ts's three `for` findings growth. Head findings beyond
+ * the base's count are not growth; `addedFindings` already owns them.
+ */
+function grownFindings(head, base) {
+  const baseGroups = byIdentity(base);
+  const grown = [];
+  for (const [k, group] of byIdentity(head)) {
+    const was = baseGroups.get(k) ?? [];
+    for (let i = 0; i < Math.min(group.length, was.length); i += 1) {
+      const from = was[i].magnitude;
+      const to = group[i].magnitude;
+      if (to > from) grown.push({ finding: group[i], from, to });
+    }
+  }
+  return grown;
+}
+
 /**
  * Parse both reports, or return `null` when either cannot be trusted.
  *
@@ -219,7 +264,7 @@ function parseBoth(headText, baseText, headCount, baseCount) {
  *
  * Returns `null` when the comparison cannot be made honestly (so the caller
  * falls back to the count rule), the string `'unaligned'` when the two reports
- * describe different trees, or `{ head, added }`.
+ * describe different trees, or `{ head, added, grown }`.
  */
 export function diffFindings(headText, baseText, headCount, baseCount, roots) {
   const parsed = parseBoth(headText, baseText, headCount, baseCount);
@@ -228,5 +273,9 @@ export function diffFindings(headText, baseText, headCount, baseCount, roots) {
   for (const f of head) f.path = relativize(f.file, roots.head);
   for (const f of base) f.path = relativize(f.file, roots.base);
   if (!aligned(head, base)) return 'unaligned';
-  return { head, added: addedFindings(head, base) };
+  return {
+    head,
+    added: addedFindings(head, base),
+    grown: grownFindings(head, base),
+  };
 }
