@@ -1,0 +1,8 @@
+{
+  "reason": "#870 adds VAC-005 to ts/src/core/vacuity-scanner.ts (+127 lines, about half of it comments recording why the bystander clause is the rule and why closeOverLocals can't be reused, #871). 0 new violations. presenceSubject's complexity finding from the first cut was fixed by splitting, not allowed. Module-size growth only, measured at 37164 against origin/main 93c26b19.",
+  "categories": {
+    "module-size": 37164
+  },
+  "violationIds": [],
+  "createdFrom": "93c26b19"
+}
