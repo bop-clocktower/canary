@@ -273,6 +273,22 @@ describe('StaticLinter', () => {
       expect(rules(lint('k.spec.ts', code))).not.toContain('LINT-006');
     });
 
+    it('LINT-006 names the test exactly when an emoji literal precedes it', () => {
+      // #861: blanking collapsed each surrogate pair to one unit, so names
+      // sliced from the original source were shifted by one per emoji.
+      const code = [
+        "const GLYPHS = ['🟢', '👍'];",
+        "it('keeps sections of their own', () => {",
+        '  GLYPHS.join();',
+        '});',
+      ].join('\n');
+      const six = lint('e.spec.ts', code).filter((f) => f.rule === 'LINT-006');
+      expect(six).toHaveLength(1);
+      expect(six[0]!.message).toBe(
+        'Test "keeps sections of their own" contains no assertions.',
+      );
+    });
+
     it('does not let a lone backtick swallow the rest of the file', () => {
       // An unbalanced backtick (e.g. inside a comment) must not blank every
       // following line -- that would silently disable the rule file-wide, which

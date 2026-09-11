@@ -72,7 +72,9 @@ export function blankStringContent(
   const spans = literalContentSpans(code, options.python === true);
   if (spans.length === 0) return code;
 
-  const out = [...code];
+  // `split('')`, not `[...code]`: spans are UTF-16 offsets, and spreading by
+  // code point would collapse each surrogate pair and shift every offset (#861).
+  const out = code.split('');
   for (const [start, end] of spans) {
     for (let i = start; i < end; i += 1) {
       // Newlines survive so line numbering is unchanged; everything else goes.
