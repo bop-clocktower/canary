@@ -16,6 +16,15 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary scaling-curve` — how does cost grow with input?** (#856). Fixed-size
+  load tests cannot see an O(n·m) component; the growth exponent can. Fits the
+  log-log slope of a metric across input sizes, classifies it
+  (`LINEAR_OR_BETTER` / `SUPERLINEAR` / `STRONGLY_SUPERLINEAR`), reports the
+  knee, and extrapolates with `--target` (labelled as an extrapolation). Reads a
+  points file, or runs the ladder itself with `--run <k6-script> --sizes ...`.
+  Advisory; exits 3 with `INSUFFICIENT_DATA` on fewer than 4 sizes, under an 8x
+  span, noisy repeats, a poor fit, or a metric the run never emitted.
+
 - **`canary batwoman --issue N [--json]` — closure auditing** (#749). GitHub
   closes an issue when a merged PR body matches `Closes #N`: a string match with
   no denominator, checking neither that the fix works nor that it ever ran.

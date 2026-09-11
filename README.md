@@ -267,6 +267,7 @@ Use, process, escalation) lives in
 | `/canary-review-test <file\|description>` | Claude Code — `canary-test-reviewer`; brittleness, anti-patterns, coverage gaps. |
 | `canary review-test <path>`               | CLI, deterministic — static lint only, no LLM.                                   |
 | `canary vacuity-check <path>`             | CLI, deterministic — tests that pass without proving anything; advisory.         |
+| `canary scaling-curve [points]`           | CLI, deterministic — growth exponent of cost vs input size (`--run` drives k6).  |
 | `canary promote-check <file>`             | CLI, deterministic — may this generated test enter the committed suite?          |
 
 ### I want to run the full pipeline
