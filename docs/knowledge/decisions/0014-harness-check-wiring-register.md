@@ -81,7 +81,7 @@ with no entry in this table is a finding, not a default.
 | Command                                                             | Where                 | How it blocks                                                                                                                                                                                                           |
 | ------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `check-perf`                                                        | `harness-quality.yml` | Ratcheted against `.harness/perf-baseline.json` (`maxViolations` 233 against a measured 225, CLI 11.3.0) via `scripts/perf-ratchet.mjs`, which abstains when the running CLI is not the one that set the ceiling (#744) |
-| `check-docs`                                                        | `harness-quality.yml` | Blocking at `--min-coverage 3`, a floor at today's measurement                                                                                                                                                          |
+| `check-docs`                                                        | `harness-quality.yml` | Blocking merge-base ratchet via `scripts/docs-ratchet.mjs` (#865): fails only when a file documented at the base loses its link (was a `--min-coverage 3` floor)                                                        |
 | `check-deps`, `check-security`, `check-arch`, `cleanup`, `validate` | pre-existing          | See ADR 0011 / ADR 0012                                                                                                                                                                                                 |
 
 `check-perf` is ratcheted rather than strict for the reason ADR 0012 gives: 237
@@ -100,6 +100,15 @@ check blocks, so it cannot be ignored, but it blocks on _regression_ rather than
 on an 80% aspiration this repo has never met and has scheduled no campaign to
 meet. Coverage rises opportunistically and can never fall back. Raise the floor
 when the number goes up; never lower it to make CI pass.
+
+**Superseded by #865.** The floor had zero slack: main sat at 5/199 = 2.51%
+(printed 3.0%), so #864 adding two undocumented files failed a PR that removed
+nothing. A ratio taxes new files instead of catching regressions. The gate is
+now `scripts/docs-ratchet.mjs`, which compares documented-file identities
+against the merge base and fails only when a file documented at the base is
+still present and has lost its `[..](path)` link. Adding files is free; the
+property above, that coverage cannot silently fall back, now holds per file
+rather than per percentage point.
 
 ### Declined
 
