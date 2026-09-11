@@ -117,7 +117,7 @@ export function expandMatrix(model: MatrixModel): {
 }
 
 /** Env-var-safe form of a role or tenant name. */
-export function envName(s: string): string {
+function envName(s: string): string {
   return s.toUpperCase().replace(/[^A-Z0-9]/g, '_');
 }
 
