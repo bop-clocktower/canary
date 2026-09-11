@@ -76,7 +76,7 @@ export type VacuityFidelity = 'annotated' | 'import-inferred';
 export interface VacuityFinding {
   file: string;
   line: number;
-  rule: 'VAC-001' | 'VAC-002' | 'VAC-003';
+  rule: 'VAC-001' | 'VAC-002' | 'VAC-003' | 'VAC-005';
   severity: 'critical' | 'warning';
   /** The test this is about, so a report can group by test rather than line. */
   test: string;
@@ -591,6 +591,7 @@ function scanBlock(
     ...tautologies(lines, block, file, python),
     ...targetNeverInvoked(block, file, reaching, annotated, outOfBand),
     ...absenceOnly(lines, block, file, python, targets, skipped),
+    ...presenceOnBystander(lines, block, file, python, targets),
   ];
 }
 
@@ -752,6 +753,132 @@ function absenceOnly(
       block.name,
       'Every assertion in this test asserts an absence, and none of them observes the target.',
       'Add one assertion proving the operation actually ran (exit code, returned value, a positive existence) -- otherwise the test passes identically when the code crashed before doing anything.',
+    ),
+  ];
+}
+
+/**
+ * Presence matchers that a value the test built for itself satisfies before the
+ * target ever runs. The negated-null forms belong here too, but on their own they
+ * also match `ABSENCE_ASSERTION` (via `.not.to*`), so an all-negated test stays
+ * VAC-003's -- see {@link presenceOnBystander}.
+ */
+const TRIVIAL_PRESENCE_JS =
+  /\.toBeDefined\s*\(\s*\)|\.toBeTruthy\s*\(\s*\)|\.not\s*\.\s*(?:toBeNull|toBeUndefined|toBeFalsy)\s*\(\s*\)/;
+const TRIVIAL_PRESENCE_PY =
+  /^assert\s+([A-Za-z_][\w.]*?)(?:\s+is\s+not\s+None)?\s*(?:,|$)/;
+const SUBJECT_ROOT = /^([A-Za-z_$][\w$]*)(?:\.[A-Za-z_$][\w$]*)*$/;
+
+function subjectRoot(expr: string | null | undefined): string | null {
+  return expr ? (SUBJECT_ROOT.exec(normalize(expr))?.[1] ?? null) : null;
+}
+
+/** The root identifier a trivial presence assertion observes, or null. */
+function presenceSubject(text: string, python: boolean): string | null {
+  const t = text.trim();
+  if (python) return subjectRoot(TRIVIAL_PRESENCE_PY.exec(t)?.[1]);
+  return TRIVIAL_PRESENCE_JS.test(t) ? subjectRoot(expectArgument(t)) : null;
+}
+
+/**
+ * Every binding of a name inside the body: `const x = rhs` / `x = rhs` (JS) or
+ * `x = rhs` (pytest), with the RHS bounded to its own line.
+ *
+ * Deliberately NOT `closeOverLocals`: that bounds a declaration at its next
+ * sibling, so a `const subs = [...]` inside a test absorbs the rest of the test
+ * -- including the target call -- and `subs` reads as reaching the target. That
+ * is exactly the bystander this rule exists to see.
+ */
+function bodyBindings(
+  lines: { text: string; line: number }[],
+  python: boolean,
+): { name: string; rhs: string; declared: boolean }[] {
+  const re = python
+    ? /^\s*([A-Za-z_]\w*)\s*=(?!=)\s*(.*)$/
+    : /^\s*(const\s+|let\s+|var\s+)?([A-Za-z_$][\w$]*)\s*=(?!=)\s*(.*)$/;
+  const out: { name: string; rhs: string; declared: boolean }[] = [];
+  for (const { text } of lines) {
+    const m = re.exec(text);
+    if (!m) continue;
+    if (python) out.push({ name: m[1]!, rhs: m[2]!, declared: true });
+    else out.push({ name: m[2]!, rhs: m[3]!, declared: m[1] !== undefined });
+  }
+  return out;
+}
+
+/** Is `rhs` a whole statement on its line? A dangling bracket means it is not. */
+function balanced(rhs: string): boolean {
+  let d = 0;
+  for (const c of rhs) {
+    if (c === '(' || c === '[' || c === '{') d += 1;
+    else if (c === ')' || c === ']' || c === '}') d -= 1;
+  }
+  return d === 0;
+}
+
+/**
+ * VAC-005 -- every assertion is a trivially true presence check, and its subject
+ * is a BYSTANDER: a name the test itself bound, never from anything reaching the
+ * target (#870). The mirror image of VAC-003:
+ *
+ * ```js
+ * const subs = [{ id: 's1' }];
+ * matchSubmissions([], subs);
+ * expect(subs).toBeDefined();   // true before the call, true after it
+ * ```
+ *
+ * The bystander clause is the rule, for the same reason VAC-003's is:
+ * `const r = target(); expect(r).toBeDefined()` DOES observe the target, and a
+ * throw from it would fail the test. Anything the rule cannot prove is a
+ * bystander -- a name bound in a hook or at module scope, a multi-line RHS --
+ * yields no finding, so the error direction is always a miss, never a false
+ * accusation.
+ */
+function presenceOnBystander(
+  lines: { text: string; line: number }[],
+  block: TestBlock,
+  file: string,
+  python: boolean,
+  targets: Set<string> | null,
+): VacuityFinding[] {
+  if (targets === null) return [];
+  const anyAssertion = python ? PY_ASSERTION : JS_ASSERTION;
+  const absence = python ? PY_ABSENCE_ASSERTION : ABSENCE_ASSERTION;
+  const assertions = lines.filter((l) => anyAssertion.test(l.text));
+  if (assertions.length === 0) return [];
+  // All-absence (the negated-null forms included) is VAC-003's to report.
+  if (assertions.every((l) => absence.test(l.text))) return [];
+  const subjects = assertions.map((l) => presenceSubject(l.text, python));
+  if (subjects.some((s) => s === null)) return [];
+
+  const bindings = bodyBindings(lines, python);
+  if (bindings.some((b) => !balanced(b.rhs))) return [];
+  // The body's own names are removed first -- `closeOverLocals` over-attributes
+  // them (see `bodyBindings`) -- then re-derived here from their real RHS, to a
+  // fixpoint so `const r = save(); const s = r;` still reaches.
+  const bound = new Set(bindings.map((b) => b.name));
+  const reaching = new Set([...targets].filter((t) => !bound.has(t)));
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const b of bindings) {
+      if (reaching.has(b.name) || !mentionsAny(b.rhs, reaching)) continue;
+      reaching.add(b.name);
+      grew = true;
+    }
+  }
+  const bystander = (name: string) =>
+    !reaching.has(name) && bindings.some((b) => b.name === name && b.declared);
+  if (!subjects.every((s) => bystander(s!))) return [];
+  return [
+    mk(
+      file,
+      assertions[0]!.line,
+      'VAC-005',
+      'warning',
+      block.name,
+      `Every assertion is a presence check on \`${subjects[0]}\`, a value the test built itself; it holds whether or not the target ran.`,
+      'Assert on what the target returns or changes -- e.g. `expect(target(input)).toEqual(expected)` -- so the test fails when the target is wrong.',
     ),
   ];
 }
