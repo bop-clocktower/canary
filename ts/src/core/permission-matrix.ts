@@ -18,6 +18,8 @@ export interface MatrixModel {
   roles: string[];
   tenants: string[];
   endpoints: Record<string, Record<string, unknown>>;
+  /** Lookup endpoints whose denied cells also get an existence-oracle probe. */
+  existenceProbes: string[];
 }
 
 export interface Cell {
@@ -68,7 +70,25 @@ export function parseMatrix(text: string): MatrixModel {
     roles,
     tenants,
     endpoints: endpoints as Record<string, Record<string, unknown>>,
+    existenceProbes: probeList(raw['existence_probes'], endpoints),
   };
+}
+
+/**
+ * A probe on an undeclared endpoint is a model error, not a skip: the author
+ * asked for a check, and quietly not running it would read as "no oracle".
+ */
+function probeList(v: unknown, endpoints: object): string[] {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v) || !v.every((x) => typeof x === 'string')) {
+    throw new Error('"existence_probes" must be a list of "METHOD /path"');
+  }
+  for (const p of v as string[]) {
+    if (!Object.hasOwn(endpoints, p)) {
+      throw new Error(`existence probe "${p}" is not in endpoints`);
+    }
+  }
+  return v as string[];
 }
 
 /** The declared value for one cell, or `null` (recorded in `undeclared`). */
@@ -175,15 +195,11 @@ function renderCell(c: Cell): string[] {
       '',
     ];
   }
-  const url = c.path.replace(
-    /\{[^}]+\}/g,
-    `\${env('CANARY_ID_${envName(c.targetTenant)}')}`,
-  );
   return [
     `test(${title}, async ({ request }) => {`,
-    `  const res = await request.fetch(\`${url}\`, {`,
+    `  const res = await request.fetch(\`${urlFor(c, targetId(c))}\`, {`,
     `    method: '${c.method}',`,
-    `    headers: { Authorization: \`Bearer \${env('CANARY_TOKEN_${envName(c.role)}_${envName(c.actingTenant)}')}\` },`,
+    `    headers: ${authHeader(c)},`,
     '  });',
     c.expect === 'allow'
       ? '  expect(res.status()).toBeLessThan(400);'
@@ -193,6 +209,77 @@ function renderCell(c: Cell): string[] {
   ];
 }
 
-export function renderPlaywright(cells: Cell[]): string {
-  return [...HEADER, ...cells.flatMap(renderCell)].join('\n');
+function targetId(c: Cell): string {
+  return `\${env('CANARY_ID_${envName(c.targetTenant)}')}`;
+}
+
+function urlFor(c: Cell, idExpr: string): string {
+  return c.path.replace(/\{[^}]+\}/g, idExpr);
+}
+
+function authHeader(c: Cell): string {
+  return `{ Authorization: \`Bearer \${env('CANARY_TOKEN_${envName(c.role)}_${envName(c.actingTenant)}')}\` }`;
+}
+
+// Emitted only when a probe exists, so a model without probes generates the
+// same file it always did.
+const SHAPE_HELPER = [
+  '// Existence probes also need CANARY_ABSENT_ID: an id that exists in no',
+  '// tenant, compared against each denied real record.',
+  '//',
+  '// What a caller can observe about a response body: sorted top-level keys',
+  '// for a JSON object, otherwise the raw text. Values are deliberately not',
+  '// compared -- two "not found" bodies may differ in a request id.',
+  'async function shape(res: { text(): Promise<string> }): Promise<unknown> {',
+  '  const text = await res.text();',
+  '  try {',
+  '    const body: unknown = JSON.parse(text);',
+  "    return body !== null && typeof body === 'object' && !Array.isArray(body)",
+  '      ? Object.keys(body).sort()',
+  '      : typeof body;',
+  '  } catch {',
+  '    return text;',
+  '  }',
+  '}',
+  '',
+];
+
+/**
+ * A denied caller must get the same answer for a real record as for a
+ * missing one; otherwise the endpoint confirms the record exists.
+ */
+function renderProbe(c: Cell): string[] {
+  const title = JSON.stringify(
+    `${c.role}@${c.actingTenant} -> ${c.targetTenant}: ${c.endpoint} existence is not revealed`,
+  );
+  const opts = `{ method: '${c.method}', headers: ${authHeader(c)} }`;
+  return [
+    `test(${title}, async ({ request }) => {`,
+    `  const present = await request.fetch(\`${urlFor(c, targetId(c))}\`, ${opts});`,
+    `  const absent = await request.fetch(\`${urlFor(c, "${env('CANARY_ABSENT_ID')}")}\`, ${opts});`,
+    '  expect(absent.status()).toBe(present.status());',
+    '  expect(await shape(absent)).toEqual(await shape(present));',
+    '});',
+    '',
+  ];
+}
+
+/** Denied cells of probed endpoints: allowed callers may know a record exists. */
+export function probedCells(cells: Cell[], existenceProbes: string[]): Cell[] {
+  return cells.filter(
+    (c) => c.expect === 'deny' && existenceProbes.includes(c.endpoint),
+  );
+}
+
+export function renderPlaywright(
+  cells: Cell[],
+  existenceProbes: string[] = [],
+): string {
+  const probed = probedCells(cells, existenceProbes);
+  return [
+    ...HEADER,
+    ...(probed.length > 0 ? SHAPE_HELPER : []),
+    ...cells.flatMap(renderCell),
+    ...probed.flatMap(renderProbe),
+  ].join('\n');
 }

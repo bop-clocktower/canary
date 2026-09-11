@@ -72,10 +72,30 @@ are relative, so the consuming Playwright config sets `use.baseURL`.
   the `canary permission-matrix` command. Reads the model, writes the suite, and
   exits 3 on undeclared cells.
 
-## Phase 2 (follow-up): existence-oracle probe
+## Phase 2: existence-oracle probe
 
-For lookup endpoints, compare responses for a known-present vs known-absent id
-under each role and flag distinguishable status, body shape or timing.
+A caller who is denied a record must not be able to tell whether it exists. A
+403 for a real record next to a 404 for a missing one is enough to confirm a
+named person is in the system. That is a privacy incident with no data leak.
+
+The model lists the lookup endpoints to probe:
+
+```yaml
+existence_probes:
+  - GET /persons/{id}
+```
+
+For every **denied** cell of a probed endpoint, the suite also requests a
+known-absent id (`CANARY_ABSENT_ID`) under the same credentials and asserts the
+two responses are indistinguishable: same status and the same body shape (sorted
+top-level JSON keys, or the raw body when it isn't JSON). Allowed cells are not
+probed, because a caller who may read the record may also know it exists.
+
+- A probe naming an endpoint missing from `endpoints` is a model error, so
+  parsing fails. It is never silently skipped.
+- **Timing is out of scope for generated tests.** A timing assertion in CI is a
+  flake generator; a timing oracle needs repeated, statistically compared
+  samples and belongs in a dedicated probe, not per-cell codegen.
 
 ## Non-goals
 

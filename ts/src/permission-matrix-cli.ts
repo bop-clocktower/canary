@@ -16,9 +16,49 @@ import { EXIT_ABSTAINED } from './core/gate-result.js';
 import {
   expandMatrix,
   parseMatrix,
+  probedCells,
   renderPlaywright,
+  type Cell,
+  type MatrixModel,
 } from './core/permission-matrix.js';
 import { WARN, type MainDeps } from './main-deps.js';
+
+interface Opts {
+  out: string;
+  json?: boolean;
+}
+
+function writeSuite(
+  parsed: MatrixModel,
+  cells: Cell[],
+  undeclared: string[],
+  opts: Opts,
+  deps: MainDeps,
+): void {
+  writeFileSync(
+    opts.out,
+    renderPlaywright(cells, parsed.existenceProbes),
+    'utf-8',
+  );
+  const cross = cells.filter((c) => c.actingTenant !== c.targetTenant).length;
+  const probes = probedCells(cells, parsed.existenceProbes).length;
+  deps.out(
+    `Wrote ${cells.length} cell test(s)` +
+      (probes > 0 ? ` + ${probes} existence probe(s)` : '') +
+      ` to ${opts.out} ` +
+      pc.dim(`(${cross} cross-tenant)`),
+  );
+  if (undeclared.length === 0) return;
+  deps.out(
+    pc.bold(
+      pc.yellow(
+        `${WARN} ${undeclared.length} UNDECLARED cell(s) -- emitted as ` +
+          'test.fixme; this matrix cannot verify them:',
+      ),
+    ),
+  );
+  for (const u of undeclared) deps.out(`  - ${u}`);
+}
 
 export function buildPermissionMatrixCommand(deps: MainDeps): Command {
   return new Command('permission-matrix')
@@ -33,32 +73,14 @@ export function buildPermissionMatrixCommand(deps: MainDeps): Command {
       'permission-matrix.spec.ts',
     )
     .option('--json', 'Print the expanded cells as JSON instead of writing.')
-    .action((model: string, opts: { out: string; json?: boolean }) => {
-      const { cells, undeclared } = expandMatrix(
-        parseMatrix(readFileSync(model, 'utf-8')),
-      );
+    .action((model: string, opts: Opts) => {
+      const parsed = parseMatrix(readFileSync(model, 'utf-8'));
+      const { cells, undeclared } = expandMatrix(parsed);
       if (opts.json) {
-        deps.out(jsonIndent2({ cells, undeclared }));
+        const { existenceProbes } = parsed;
+        deps.out(jsonIndent2({ cells, undeclared, existenceProbes }));
       } else {
-        writeFileSync(opts.out, renderPlaywright(cells), 'utf-8');
-        const cross = cells.filter(
-          (c) => c.actingTenant !== c.targetTenant,
-        ).length;
-        deps.out(
-          `Wrote ${cells.length} cell test(s) to ${opts.out} ` +
-            pc.dim(`(${cross} cross-tenant)`),
-        );
-        if (undeclared.length > 0) {
-          deps.out(
-            pc.bold(
-              pc.yellow(
-                `${WARN} ${undeclared.length} UNDECLARED cell(s) -- emitted as ` +
-                  'test.fixme; this matrix cannot verify them:',
-              ),
-            ),
-          );
-          for (const u of undeclared) deps.out(`  - ${u}`);
-        }
+        writeSuite(parsed, cells, undeclared, opts, deps);
       }
       if (undeclared.length > 0) throw new CliExitError(EXIT_ABSTAINED);
     });

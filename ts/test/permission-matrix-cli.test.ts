@@ -42,6 +42,14 @@ describe('canary permission-matrix', () => {
     expect(res.spec).toContain('staff@a -> b: GET /persons/{id} is denied');
   });
 
+  it('counts existence probes in the summary', async () => {
+    const res = await run(`${MODEL}existence_probes:\n  - GET /persons/{id}\n`);
+    expect(res.code).toBe(0);
+    // staff is own-tenant over 2 tenants: 2 denied cross-tenant cells.
+    expect(res.stdout).toMatch(/\+ 2 existence probe\(s\)/);
+    expect(res.spec).toContain('existence is not revealed');
+  });
+
   it('still writes the suite but exits 3 when a cell is undeclared', async () => {
     const res = await run(MODEL.replace('staff:', 'other:'));
     expect(res.code).toBe(EXIT_ABSTAINED);
