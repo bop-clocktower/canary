@@ -135,6 +135,31 @@ function failWithBlocking(blocking) {
 }
 
 /**
+ * Annotate already-flagged findings that grew (#854). ADVISORY by decision:
+ * over the 40 merges before this landed, 11 grew one, mostly `cli.ts` by a
+ * line or two per subcommand, so blocking would have failed over a quarter
+ * of all merges. A `::warning` reaches the PR's Checks summary, which a log
+ * line does not (#718). Promote to blocking only on evidence from these
+ * annotations; ADR 0014 records the decision.
+ */
+function annotateGrowth(grown) {
+  for (const { finding: f, from, to } of grown) {
+    const subject = f.subject ? ` ${f.subject}` : '';
+    console.log(
+      `::warning title=perf growth (advisory)::${f.path} ${f.rule}${subject} ` +
+        `grew ${from} -> ${to}. Already over threshold at the merge base; ` +
+        'this branch made it bigger.',
+    );
+  }
+  if (grown.length > 0) {
+    console.log(
+      `perf-ratchet: ${grown.length} already-flagged finding(s) grew ` +
+        '(advisory, does not affect the verdict).',
+    );
+  }
+}
+
+/**
  * Fail when this branch introduced findings its merge base did not have.
  *
  * Prefers an IDENTITY diff, which is what lets a reviewed allowance exempt a
@@ -154,7 +179,8 @@ export function requireNoDelta(baseReport, violations, maxViolations, opts) {
   if (diff === 'unaligned') return abstainUnaligned();
   if (diff === null) return compareByCount(violations, base);
 
-  const { head, added } = diff;
+  const { head, added, grown } = diff;
+  annotateGrowth(grown);
   const blocking = partition(added, opts.allowances);
   reportUnusedAllowances(opts.allowances, head);
   if (blocking.length > 0) failWithBlocking(blocking);

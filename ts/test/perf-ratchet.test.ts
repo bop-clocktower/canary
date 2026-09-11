@@ -941,12 +941,14 @@ describe('perf-ratchet structural allowances (#850)', () => {
     expect(status).toBe(0);
   });
 
-  it('KNOWN GAP: growth of an already-flagged finding is still free', () => {
-    // Identity ignores magnitude, so cli.ts going 377 -> 900 lines is the same
-    // finding and the delta rule stays green. This is the second half of #850,
-    // tracked as #854 and deliberately out of scope here; pinned so it is a
-    // recorded decision rather than a surprise. Invert this test rather than
-    // deleting it when #854 lands, so the behaviour change shows in the diff.
+  it('growth of an already-flagged finding is no longer silent (#854)', () => {
+    // Was KNOWN GAP: identity ignores magnitude, so cli.ts going 377 -> 900
+    // lines was the same finding and nothing was said. #854 compares the
+    // magnitude too. It lands ADVISORY: measured over the 40 merges before it,
+    // 11 grew an already-flagged finding, most by 1-2 lines of cli.ts, so a
+    // blocking rule would have failed over a quarter of all merges. The growth
+    // is annotated (a ::warning reaches the Checks summary) and the exit code
+    // is unchanged.
     writeBaseline();
     writeFileSync(
       report,
@@ -957,7 +959,114 @@ describe('perf-ratchet structural allowances (#850)', () => {
       ]),
     );
     writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
-    const { status } = runDelta();
+    const { status, out } = runDelta();
     expect(status).toBe(0);
+    expect(out).toMatch(/::warning[^\n]*ts\/src\/cli\.ts[^\n]*377 -> 900/);
+  });
+
+  describe('magnitude growth (#854)', () => {
+    const fnLen = (name: string, n: number): string =>
+      `Function "${name}" is ${n} lines long (threshold: 50)`;
+
+    it('says nothing when no already-flagged finding grew', () => {
+      writeBaseline();
+      writeFileSync(report, reportText(HEAD_ROOT, BASE));
+      writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+      const { status, out } = runDelta();
+      expect(status).toBe(0);
+      expect(out).not.toContain('::warning');
+    });
+
+    it('does not report a shrinking finding as growth', () => {
+      writeBaseline();
+      writeFileSync(
+        report,
+        reportText(HEAD_ROOT, [
+          ['ts/src/cli.ts', COUPLING],
+          ['ts/src/cli.ts', 'File has 301 lines (threshold: 300)'],
+          ['ts/src/guardian/cli.ts', COUPLING],
+        ]),
+      );
+      writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+      expect(runDelta().out).not.toContain('::warning');
+    });
+
+    it('pairs duplicate identities by size, so reordering is not growth', () => {
+      // migrator.ts carries three `for` function-length findings. Pairing by
+      // report order would call a pure reorder growth; pairing largest with
+      // largest does not.
+      writeBaseline();
+      const f = 'ts/src/core/migrator.ts';
+      writeFileSync(
+        baseReport,
+        reportText(BASE_ROOT, [
+          [f, fnLen('for', 60)],
+          [f, fnLen('for', 90)],
+        ]),
+      );
+      writeFileSync(
+        report,
+        reportText(HEAD_ROOT, [
+          [f, fnLen('for', 90)],
+          [f, fnLen('for', 60)],
+        ]),
+      );
+      expect(runDelta().out).not.toContain('::warning');
+    });
+
+    it('names growth in a duplicate identity with both sizes', () => {
+      writeBaseline();
+      const f = 'ts/src/core/migrator.ts';
+      writeFileSync(
+        baseReport,
+        reportText(BASE_ROOT, [
+          [f, fnLen('for', 60)],
+          [f, fnLen('for', 90)],
+        ]),
+      );
+      writeFileSync(
+        report,
+        reportText(HEAD_ROOT, [
+          [f, fnLen('for', 60)],
+          [f, fnLen('for', 140)],
+        ]),
+      );
+      const { status, out } = runDelta();
+      expect(status).toBe(0);
+      expect(out).toMatch(/::warning[^\n]*function-length[^\n]*90 -> 140/);
+    });
+
+    it('compares a coupling ratio as a decimal', () => {
+      writeBaseline();
+      const f = 'ts/src/router.ts';
+      writeFileSync(
+        baseReport,
+        reportText(BASE_ROOT, [[f, 'Coupling ratio is 0.75 (threshold: 0.7)']]),
+      );
+      writeFileSync(
+        report,
+        reportText(HEAD_ROOT, [[f, 'Coupling ratio is 0.80 (threshold: 0.7)']]),
+      );
+      expect(runDelta().out).toMatch(/::warning[^\n]*0\.75 -> 0\.8/);
+    });
+
+    it('keeps growth advisory even when another finding blocks', () => {
+      // The blocking verdict is still the added-finding rule; growth is
+      // reported alongside it, never instead of it.
+      writeBaseline();
+      writeFileSync(
+        report,
+        reportText(HEAD_ROOT, [
+          ...BASE.slice(0, 1),
+          ['ts/src/cli.ts', 'File has 500 lines (threshold: 300)'],
+          ['ts/src/guardian/cli.ts', COUPLING],
+          ['ts/src/new.ts', SIZE_310],
+        ]),
+      );
+      writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+      const { status, out } = runDelta();
+      expect(status).toBe(1);
+      expect(out).toMatch(/377 -> 500/);
+    });
   });
 });
