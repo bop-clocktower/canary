@@ -16,6 +16,14 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`permission-matrix` existence probes** (#857, phase 2). A denied caller must
+  not be able to tell a real record from a missing one: a 403 next to a 404
+  confirms a named person is in the system. List lookup endpoints under
+  `existence_probes:` and every denied cell also compares the real record with
+  `CANARY_ABSENT_ID` on status and body shape (sorted JSON keys). A probe naming
+  an undeclared endpoint is a model error, not a skip. Timing is deliberately
+  out of scope for generated tests (a flake generator).
+
 - **`canary scaling-curve` — how does cost grow with input?** (#856). Fixed-size
   load tests cannot see an O(n·m) component; the growth exponent can. Fits the
   log-log slope of a metric across input sizes, classifies it

@@ -115,3 +115,42 @@ describe('renderPlaywright', () => {
     expect(out).toContain('UNDECLARED');
   });
 });
+
+// Phase 2: a denied caller must not learn whether a record exists.
+describe('existence probes', () => {
+  const PROBED = `${MODEL}existence_probes:\n  - GET /persons/{id}\n`;
+
+  it('parses the probe list, and rejects a probe naming no declared endpoint', () => {
+    expect(parseMatrix(PROBED).existenceProbes).toEqual(['GET /persons/{id}']);
+    expect(parseMatrix(MODEL).existenceProbes).toEqual([]);
+    expect(() =>
+      parseMatrix(`${MODEL}existence_probes:\n  - GET /nope/{id}\n`),
+    ).toThrow(/GET \/nope\/\{id\}.*not in endpoints/);
+  });
+
+  const model = parseMatrix(PROBED);
+  const src = renderPlaywright(
+    expandMatrix(model).cells,
+    model.existenceProbes,
+  );
+
+  it('probes every denied cell of a probed endpoint, and no allowed cell', () => {
+    // family + staff are own-tenant: 2 roles x 2 cross-tenant pairs denied.
+    // examiner is allow everywhere, so it is never probed.
+    expect(src.match(/existence is not revealed/g)).toHaveLength(4);
+    expect(src).not.toMatch(/examiner@[^']*existence is not revealed/);
+  });
+
+  it('compares status and body shape against a known-absent id', () => {
+    expect(src).toContain("env('CANARY_ABSENT_ID')");
+    expect(src).toContain('expect(absent.status()).toBe(present.status())');
+    expect(src).toContain(
+      'expect(await shape(absent)).toEqual(await shape(present))',
+    );
+  });
+
+  it('adds nothing when no probes are declared', () => {
+    const plain = renderPlaywright(expandMatrix(parseMatrix(MODEL)).cells);
+    expect(plain).not.toContain('existence');
+  });
+});
