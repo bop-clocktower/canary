@@ -64,6 +64,14 @@ alphanumerics mapped to `_`.
 Generated assertions: allowed → status < 400; denied → 401, 403 or 404. Paths
 are relative, so the consuming Playwright config sets `use.baseURL`.
 
+## Where it lives
+
+- [`ts/src/core/permission-matrix.ts`](../../../ts/src/core/permission-matrix.ts):
+  pure parse, expand and render. No I/O.
+- [`ts/src/permission-matrix-cli.ts`](../../../ts/src/permission-matrix-cli.ts):
+  the `canary permission-matrix` command. Reads the model, writes the suite, and
+  exits 3 on undeclared cells.
+
 ## Phase 2 (follow-up): existence-oracle probe
 
 For lookup endpoints, compare responses for a known-present vs known-absent id

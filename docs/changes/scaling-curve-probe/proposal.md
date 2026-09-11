@@ -42,7 +42,10 @@ support a verdict.
 Input: JSON `{ "metric": "p95_ms", "points": [{ "size": 1000, "value": 42 }] }`
 or CSV with `size,value` header. Repeated sizes are samples.
 
-Verdict rules (in `ts/src/core/scaling-curve.ts`, pure):
+Verdict rules (in
+[`ts/src/core/scaling-curve.ts`](../../../ts/src/core/scaling-curve.ts), pure;
+the command is
+[`ts/src/scaling-curve-cli.ts`](../../../ts/src/scaling-curve-cli.ts)):
 
 1. **Abstain** (`INSUFFICIENT_DATA`) when any of:
    - fewer than 4 distinct sizes;
