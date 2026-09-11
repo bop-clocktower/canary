@@ -45,7 +45,7 @@ export type K6Runner = (
 ) => number | null;
 
 /** `trend:stat`, e.g. `http_req_duration:p(95)`, read from k6's summary export. */
-export const defaultK6Runner: K6Runner = (script, size, metric) => {
+const defaultK6Runner: K6Runner = (script, size, metric) => {
   const [trend, stat = 'p(95)'] = metric.split(':');
   const dir = mkdtempSync(join(tmpdir(), 'canary-scaling-'));
   try {
