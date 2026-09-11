@@ -24,6 +24,13 @@ under the project's former name) are documented in the
   points file, or runs the ladder itself with `--run <k6-script> --sizes ...`.
   Advisory; exits 3 with `INSUFFICIENT_DATA` on fewer than 4 sizes, under an 8x
   span, noisy repeats, a poor fit, or a metric the run never emitted.
+- **`canary permission-matrix <model.yaml>` — server-direct authz tests from a
+  declared grid** (#857). Roles × endpoints are declared by a human (`allow`,
+  `deny`, `own-tenant`), expanded across every acting × target tenant, and
+  emitted as Playwright `request` tests that bypass the UI — where cross-tenant
+  reads and UI-only role checks hide. An undeclared cell or unknown value is
+  named, emitted as `test.fixme`, and exits 3; nothing defaults to allow or
+  deny. Credentials come from `CANARY_TOKEN_<ROLE>_<TENANT>`, never the model.
 
 - **`canary batwoman --issue N [--json]` — closure auditing** (#749). GitHub
   closes an issue when a merged PR body matches `Closes #N`: a string match with
