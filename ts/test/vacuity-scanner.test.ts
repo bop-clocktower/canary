@@ -541,6 +541,117 @@ describe('VAC-003 — every assertion asserts absence', () => {
   });
 });
 
+describe('VAC-005 — trivially true presence on a bystander (#870)', () => {
+  // VAC-003's mirror image. The planted defect from #870: the subject was built
+  // by the test BEFORE the target ran, so `toBeDefined()` was true before the
+  // call and stays true for any implementation, a deleted one included.
+  it('flags the planted #870 shape', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('handles an empty victim list', () => {\n` +
+        `  const subs = [{ id: 's1', name: 'x' }];\n` +
+        `  save([], subs);\n` +
+        `  expect(subs).toBeDefined();\n` +
+        `});\n`,
+    );
+    const f = r.findings.filter((x) => x.rule === 'VAC-005');
+    expect(f).toHaveLength(1);
+    expect(f[0]!.line).toBe(6);
+    expect(f[0]!.severity).toBe('warning');
+    expect(f[0]!.suggestion).toMatch(/returns or changes/);
+  });
+
+  it.each([
+    'expect(subs).toBeDefined();',
+    'expect(subs).toBeTruthy();',
+    'expect(subs.length).toBeTruthy();',
+  ])('recognises %s as trivially true on a bystander', (line) => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('x', () => {\n  const subs = [1];\n  save(subs);\n  ${line}\n});\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-005');
+  });
+
+  // Clause 2 is the rule, not a refinement (the VAC-003 lesson: 254 findings
+  // before "observes the target" was added).
+  it.each([
+    [
+      'the target’s return value',
+      `const r = save(1);\n  expect(r).toBeDefined();`,
+    ],
+    ['the target inline', `expect(save(1)).toBeDefined();`],
+    [
+      'a later reassignment from the target',
+      `let r = null;\n  r = save(1);\n  expect(r).toBeTruthy();`,
+    ],
+    [
+      'an awaited target',
+      `const r = await save(1);\n  expect(r).toBeDefined();`,
+    ],
+  ])('does not flag presence on %s', (_label, body) => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS + `it('x', async () => {\n  ${body}\n});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-005');
+  });
+
+  it('does not flag a test with one non-trivial assertion', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('x', () => {\n  const subs = [1];\n  save(subs);\n` +
+        `  expect(subs).toBeDefined();\n  expect(subs).toEqual([1, 2]);\n});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-005');
+  });
+
+  it('does not flag a subject it cannot prove is a bystander', () => {
+    // Declared outside the body (a hook, module scope): the target may have
+    // assigned it. Unprovable means no finding, never a guess.
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('x', () => {\n  save(1);\n  expect(shared).toBeDefined();\n});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-005');
+  });
+
+  it('leaves an all-absence test to VAC-003 rather than reporting it twice', () => {
+    // `.not.toBeNull()` already counts as absence (via `.not.to*`), so an
+    // all-negated test is VAC-003's to judge. VAC-005 needs at least one plain
+    // presence matcher.
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('x', () => {\n  const subs = [1];\n  save(subs);\n  expect(subs).not.toBeNull();\n});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-005');
+  });
+
+  it.each([['assert subs is not None'], ['assert subs']])(
+    'flags the pytest form `%s`',
+    (line) => {
+      const r = scan(
+        'test_a.py',
+        `from store import save\n\ndef test_x():\n    subs = [1]\n    save(subs)\n    ${line}\n`,
+      );
+      expect(rules(r.findings)).toContain('VAC-005');
+    },
+  );
+
+  it('does not flag pytest presence on the target’s return value', () => {
+    const r = scan(
+      'test_a.py',
+      `from store import save\n\ndef test_x():\n    r = save(1)\n    assert r is not None\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-005');
+  });
+});
+
 describe('severity reflects confidence, not appetite', () => {
   it('rates the deterministic rule critical and the inferred ones warning', () => {
     const r = scan(

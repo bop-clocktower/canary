@@ -3,14 +3,15 @@ name: canary-cassandra
 description: >
   Vacuous-test detection — finds tests that PASS WITHOUT PROVING ANYTHING: an
   assertion that compares a value with itself, a test that never invokes the
-  target it claims to cover, and a test whose every assertion is an absence
-  observed on a bystander rather than on the code under test. Use when the user
-  says "why did this pass against the bug", "are these tests actually testing
-  anything", "audit my suite for vacuous tests", "green but worthless", or after
-  a bug shipped through a green suite. Advisory and deterministic — no LLM, no
-  execution. NOT for tests with zero assertions (that is `canary review-test`'s
-  LINT-006), NOT for flaky tests (canary-flake-hunter), and NOT a coverage tool
-  — a vacuous test has coverage, which is exactly why coverage never caught it.
+  target it claims to cover, and a test whose every assertion is an absence, or
+  a trivially true presence check, observed on a bystander rather than on the
+  code under test. Use when the user says "why did this pass against the bug",
+  "are these tests actually testing anything", "audit my suite for vacuous
+  tests", "green but worthless", or after a bug shipped through a green suite.
+  Advisory and deterministic — no LLM, no execution. NOT for tests with zero
+  assertions (that is `canary review-test`'s LINT-006), NOT for flaky tests
+  (canary-flake-hunter), and NOT a coverage tool — a vacuous test has coverage,
+  which is exactly why coverage never caught it.
 cli: scripts/cli.mjs
 requires: [node>=20]
 ---
@@ -29,15 +30,20 @@ Cassandra is Tier-0: deterministic, no LLM, no network, no execution.
 
 ## What it finds
 
-| Rule      | Severity | Fires on                                                                                                          |
-| --------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| `VAC-001` | critical | An assertion whose expectation is identical to the value it checks — `expect(true).toBe(true)`, `assert x == x`   |
-| `VAC-002` | warning  | The test never references the target it claims to cover                                                           |
-| `VAC-003` | warning  | Every assertion in the test asserts an _absence_, and none of them observes the target — so nothing proves it ran |
+| Rule      | Severity | Fires on                                                                                                                                                          |
+| --------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VAC-001` | critical | An assertion whose expectation is identical to the value it checks — `expect(true).toBe(true)`, `assert x == x`                                                   |
+| `VAC-002` | warning  | The test never references the target it claims to cover                                                                                                           |
+| `VAC-003` | warning  | Every assertion in the test asserts an _absence_, and none of them observes the target — so nothing proves it ran                                                 |
+| `VAC-005` | warning  | Every assertion is a trivially true _presence_ check (`toBeDefined`, `toBeTruthy`, `assert x is not None`) on a value the test built itself before the target ran |
 
 `VAC-001` is deterministic, hence `critical`: no implementation can fail it.
-`VAC-002` and `VAC-003` depend on resolving a target, which is inference, so
-they are `warning` and carry a fidelity tier.
+`VAC-005` abstains (no finding) whenever it cannot prove the subject is a
+bystander, such as a name bound in a hook or a multi-line initialiser. `VAC-004`
+is reserved for the self-excusing-skip rule
+(`docs/changes/vac-004-self-excusing-skip/`). `VAC-002` and `VAC-003` depend on
+resolving a target, which is inference, so they are `warning` and carry a
+fidelity tier.
 
 ## Run it
 

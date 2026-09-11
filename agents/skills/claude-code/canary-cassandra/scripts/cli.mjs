@@ -4,7 +4,8 @@
 // Finds tests that PASS WITHOUT PROVING ANYTHING: an assertion that compares a
 // value with itself (VAC-001), a test that never invokes the target it claims
 // to cover (VAC-002), and a test whose every assertion is an absence observed
-// on a bystander (VAC-003).
+// on a bystander (VAC-003), and a test whose every assertion is a trivially
+// true presence check on a value the test built itself (VAC-005).
 //
 //   <paths>    files or directories to scan (default: the current directory).
 //   --json     emit machine-readable findings instead of human text.
@@ -53,6 +54,7 @@ const USAGE =
   '  VAC-001 (critical)  assertion compares a value with itself\n' +
   '  VAC-002 (warning)   the test never invokes the target it covers\n' +
   '  VAC-003 (warning)   every assertion is an absence, on a bystander\n' +
+  '  VAC-005 (warning)   every assertion is trivial presence, on a bystander\n' +
   '\n' +
   'The denominator is TESTS read, not files. A zero denominator exits 3 under\n' +
   '--strict; it is never reported as a clean scan.';

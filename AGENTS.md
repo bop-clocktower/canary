@@ -204,11 +204,12 @@ docs/branching-convention
   `canary-cassandra` detection (#612). Finds tests that pass without proving
   anything: `VAC-001` an assertion identical to the value it checks, `VAC-002` a
   target never referenced, `VAC-003` every assertion an absence observed on a
-  bystander rather than on the target. `VAC-002`/`VAC-003` carry a fidelity
-  ladder (`annotated` via `// @covers <symbol>` over `import-inferred`); a test
-  resolvable at neither tier becomes a recorded **skip**, never a pass. Returns
-  a `GateResult` whose `checked` counts **tests**, not files. Surfaced as
-  `canary vacuity-check`.
+  bystander rather than on the target, `VAC-005` every assertion a trivially
+  true presence check on a value the test built itself (#870).
+  `VAC-002`/`VAC-003` carry a fidelity ladder (`annotated` via
+  `// @covers <symbol>` over `import-inferred`); a test resolvable at neither
+  tier becomes a recorded **skip**, never a pass. Returns a `GateResult` whose
+  `checked` counts **tests**, not files. Surfaced as `canary vacuity-check`.
 - **Promotion Verdict:**
   [ts/src/core/promotion-verdict.ts](ts/src/core/promotion-verdict.ts) — The
   structured verdict `canary-promote-test` gates on (#477). Composes the static

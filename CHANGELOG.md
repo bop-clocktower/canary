@@ -16,6 +16,14 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`vacuity-check` VAC-005: trivially true presence on a bystander** (#870).
+  VAC-003's mirror image: a test whose every assertion is `toBeDefined()` /
+  `toBeTruthy()` / `assert x is not None` on a value the test built itself
+  before the target ran passes for any implementation, including a deleted one.
+  The rule only fires when it can prove the subject is a bystander, so a name
+  bound in a hook or through the target's return value is left alone. Measured
+  on canary's own 3,626 tests: 0 findings, and every other rule's count is
+  unchanged. `VAC-004` stays reserved for the drafted self-excusing-skip rule.
 - **`permission-matrix` existence probes** (#857, phase 2). A denied caller must
   not be able to tell a real record from a missing one: a 403 next to a 404
   confirms a named person is in the system. List lookup endpoints under

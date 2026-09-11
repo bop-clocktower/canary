@@ -100,9 +100,9 @@ describe('argument surface', () => {
     }
   });
 
-  it('documents all three rules in --help', () => {
+  it('documents every rule in --help', () => {
     const { stdout } = run(['--help']);
-    for (const rule of ['VAC-001', 'VAC-002', 'VAC-003']) {
+    for (const rule of ['VAC-001', 'VAC-002', 'VAC-003', 'VAC-005']) {
       expect(stdout).toContain(rule);
     }
   });
