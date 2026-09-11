@@ -30,7 +30,8 @@ jobs:
         # non-blocking telemetry decision). See #318 C.
         run: node scripts/check_hook_customizations.mjs
 
-      # BLOCKING as of #718, at a floor rather than at the tool's default.
+      # BLOCKING as of #718; a merge-base RATCHET rather than a floor as of
+      # #865. History below, then why the floor went.
       #
       # This step was `continue-on-error: true` with the comment "allow warnings
       # for now as we transition". The transition had no end condition, no
@@ -48,8 +49,55 @@ jobs:
       # fall back. Raise the floor when the number goes up; never lower it to
       # make CI pass. Verified against CLI 11.1.1: exit 1 at the default 80,
       # exit 0 at `--min-coverage 3`.
-      - name: Harness Docs Coverage (blocking, floor at today's 3%)
-        run: npx --yes -p "$HARNESS_CLI" harness check-docs --min-coverage 3
+      #
+      # #865: the floor had ZERO slack. Main sat at 5/199 = 2.51% (printed
+      # 3.0%), so #864 adding two undocumented files (2.49%) failed a PR that
+      # removed nothing. A ratio taxes new files; it does not catch
+      # regressions. `scripts/docs-ratchet.mjs` compares documented-file
+      # IDENTITIES against the merge base instead and fails only when a file
+      # documented at the base loses its link. `--min-coverage 0` keeps the
+      # tool's own exit out of the decision, which belongs to the ratchet;
+      # `|| true` matches the other scans, and an empty report abstains
+      # (exit 3). Same two properties as the entropy and perf base scans:
+      # SAME INSTRUMENT and OUTSIDE THE WORKSPACE, asserted by
+      # `ts/test/docs-ratchet.test.ts`.
+      - name: Harness Docs Coverage
+        run:
+          npx --yes -p "$HARNESS_CLI" harness check-docs --json --min-coverage 0
+          > docs-report.json || true
+
+      - name: Harness Docs Coverage (merge base)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/docs-base" "$BASE_SHA"
+          (cd "$RUNNER_TEMP/docs-base" &&
+            npx --yes -p "$HARNESS_CLI" harness check-docs --json --min-coverage 0) \
+            > docs-base-report.json || true
+
+      - name: Docs coverage ratchet (blocking)
+        env:
+          # Empty on a push to `main`: no merge base, so it reports only.
+          DOCS_BASE_FLAG:
+            ${{ github.event_name == 'pull_request' && '--base-report
+            docs-base-report.json' || '' }}
+        run:
+          node scripts/docs-ratchet.mjs --report docs-report.json
+          $DOCS_BASE_FLAG
+
+      # #588: a report that dies with the runner is unreadable on the one run
+      # that needs it, the failing one.
+      - name: Upload docs coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-coverage-reports
+          path: |
+            docs-report.json
+            docs-base-report.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       # #744. Both ratchets below carry an ABSOLUTE count produced by this CLI,
       # and `HARNESS_CLI` is a FLOATING major (`@harness-engineering/cli@12`),
