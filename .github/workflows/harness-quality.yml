@@ -90,7 +90,7 @@ jobs:
       # that needs it, the failing one.
       - name: Upload docs coverage reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docs-coverage-reports
           path: |
@@ -418,7 +418,7 @@ jobs:
       # ratchet with --update to refresh it.
       - name: Upload test durations
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-durations-agents-skills
           path: /tmp/durations.json
