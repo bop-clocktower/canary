@@ -1,0 +1,98 @@
+{
+  "slug": "canary-screech",
+  "issue": 591,
+  "route": "feature",
+  "branch": "feat/591-canary-screech",
+  "date": "2026-09-13",
+  "plan": "docs/changes/canary-screech/plans/2026-09-13-canary-screech-plan.md",
+  "stages": [
+    {
+      "stage": "intake",
+      "ran": true,
+      "detail": "Read issue #591 and the canary-fail-fast skill it was told to pattern-match, plus the run-history schema in ts/src/history/record.ts."
+    },
+    {
+      "stage": "design",
+      "ran": true,
+      "detail": "Wrote the plan artifact: module breakdown, exit contract, abstention rule, recommendation heuristic, and the gate wiring the entropy ratchet requires. Resolved both of the issue's open questions (see assumptions)."
+    },
+    {
+      "stage": "tdd",
+      "ran": true,
+      "detail": "agents/skills/test/canary-screech.test.ts written FIRST and run red (module-not-found across all five modules) before any implementation existed. Implementation then taken to 29 passing tests."
+    },
+    {
+      "stage": "implementation",
+      "ran": true,
+      "detail": "Five self-contained ESM modules under agents/skills/claude-code/canary-screech/scripts/ plus SKILL.md, following the canary-fail-fast shape and routing argv through the shared lib/parse-args.mjs."
+    },
+    {
+      "stage": "gate-wiring",
+      "ran": true,
+      "detail": "Declared the new cli.mjs in BOTH harness.config.json entryPoints arrays (entropy + performance), added the scripts glob to agents/skills/vitest.config.ts coverage include and to the format:check glob in agents/skills/package.json, and registered an abstention row in agents/skills/test/gate-conformance.test.ts. maxFindings was NOT raised."
+    },
+    {
+      "stage": "docs",
+      "ran": true,
+      "detail": "agents/skills/README.md (tree, skill list, programmatic section), docs/naming-registry.md (reserved -> shipped), docs/roadmap.md (backlog -> done, plan link, open questions recorded as resolved)."
+    },
+    {
+      "stage": "verification",
+      "ran": true,
+      "detail": "agents/skills suite green with coverage; ts/ four gates (build, typecheck, format:check, test) run from ts/. See the PR body for the recorded results."
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "A1",
+      "topic": "output channel",
+      "decision": "Standalone markdown artifact plus a GitHub Actions ::error annotation. No Slack, Teams, or webhook integration.",
+      "source": "answered by the human before work started; matches the canary-fail-fast pattern"
+    },
+    {
+      "id": "A2",
+      "topic": "branch-is-red signal source (issue open question 1)",
+      "decision": "The run-history store, test-results/reports/history-v2.jsonl, one RunRecord per line.",
+      "source": "taken by this lane. The issue listed webhook / polling / history store as candidates and did not pick one. The store was chosen because it needs no network, no credentials, and no service, which preserves the family's self-contained-and-deterministic contract, and because it already carries every field the blast needs (branch, commit_sha, timestamp, failed counts, per-test area and failure_category)."
+    },
+    {
+      "id": "A3",
+      "topic": "write access (issue open question 2)",
+      "decision": "None. The skill emits the blast and the chat-ready block; it never posts them and writes nothing but the --out artifact.",
+      "source": "follows directly from A1"
+    },
+    {
+      "id": "A4",
+      "topic": "advisory vs blocking",
+      "decision": "Advisory by default (exit 0 whatever it finds); --strict opts into the exit contract 1=red, 3=abstained, 0=green.",
+      "source": "taken by this lane, mirroring the #508 D3/D4 convention every other skill CLI in this family follows"
+    },
+    {
+      "id": "A5",
+      "topic": "zero denominator",
+      "decision": "A store with no run for the requested branch prints a loud ABSTAINED line and never the green copy; under --strict it exits 3. A MISSING store is a different thing and exits 1.",
+      "source": "taken by this lane, per the repo's no-silent-abstention doctrine (#508). A green verdict derived from zero observations is the failure mode the doctrine exists to prevent."
+    },
+    {
+      "id": "A6",
+      "topic": "recommendation when ownership data is absent",
+      "decision": "investigate, not revert or quarantine.",
+      "source": "taken by this lane. Recommending an action from absent area data would be a confident answer derived from nothing."
+    },
+    {
+      "id": "A7",
+      "topic": "culprit range width",
+      "decision": "The range is (last green commit, first red commit]. Only the observed first-red commit is enumerated; interior commits are not, because enumerating them needs git and this skill shells out to nothing. When no green run precedes the break the range is reported bounded:false rather than implying a lower bound.",
+      "source": "taken by this lane"
+    },
+    {
+      "id": "A8",
+      "topic": "roadmap and naming-registry status",
+      "decision": "Flipped to done / shipped in this change, on the convention that the row lands with the merge commit.",
+      "source": "taken by this lane, matching how the sibling skill rows were handled"
+    }
+  ],
+  "not_done": [
+    "No CI workflow was added that runs the siren on this repo's own default branch. The SKILL.md documents the wiring, but adopting it here is a separate scope call (the repo's dogfood.yml is where it would land) and #591 did not ask for it."
+  ]
+}

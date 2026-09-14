@@ -13,8 +13,9 @@ it), see [Guides](../../docs/guides/index.md).
 
 ```text
 agents/skills/
-├── claude-code/                    # Claude Code skills (21)
+├── claude-code/                    # Claude Code skills (24)
 │   ├── canary-add-framework/
+│   ├── canary-batwoman/
 │   ├── canary-blackhawk/
 │   ├── canary-cassandra/
 │   ├── canary-ci-ready/
@@ -30,9 +31,11 @@ agents/skills/
 │   ├── canary-pr-guardian/
 │   ├── canary-promote-test/
 │   ├── canary-savant/
+│   ├── canary-screech/
 │   ├── canary-setup-harness/
 │   ├── canary-shadow/
 │   ├── canary-ship/
+│   ├── canary-strix/
 │   ├── canary-test-pipeline/
 │   └── canary-test-reporter/
 └── README.md                       # this file
@@ -90,6 +93,13 @@ slash-command entry points.
   into a Markdown and/or JSON report with pass/fail/flaky/skipped counts.
   Complements `canary-fail-fast` (which aborts early) by summarising the full
   run at the end.
+- [`canary-screech`](./claude-code/canary-screech/SKILL.md) — Bundled executable
+  skill (`scripts/cli.mjs`). Broken-main siren: reads the cross-run history
+  store, decides whether the default branch is red, and emits a one-page blast
+  (culprit commit range, failure cluster, owning area, quarantine-or-revert
+  recommendation, chat-ready block) as a markdown artifact plus a `::error`
+  annotation. The cross-run complement to the two above — neither of them can
+  tell that the branch itself went red.
 
 ### Closure auditing
 
@@ -212,9 +222,10 @@ Use the canary-generate-test skill to write a load test for /v1/search.
 Most skills here are documentation, not executable artifacts — they describe
 _how an agent should behave_, not a function to call. Several are bundled
 executable skills with their own CLI entry point (`cli:` in frontmatter).
-`canary-fail-fast`, `canary-katana`, and `canary-blackhawk` ship a Node entry
-(`scripts/cli.mjs`); `canary-instrument` and `canary-test-reporter` ship a
-Python entry (`scripts/cli.py`). Run those directly, e.g.:
+`canary-fail-fast`, `canary-katana`, `canary-screech`, and `canary-blackhawk`
+ship a Node entry (`scripts/cli.mjs`); `canary-instrument` and
+`canary-test-reporter` ship a Python entry (`scripts/cli.py`). Run those
+directly, e.g.:
 
 ```bash
 node agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs --help

@@ -101,7 +101,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-question`            | reserved | 613   | Test-bug vs product-bug triage                                             |
 | `canary-rewind`              | reserved | 461   | Time-travel run debugging                                                  |
 | `canary-savant`              | shipped  | —     | Order-dependence and isolation detector                                    |
-| `canary-screech`             | reserved | 591   | Broken-main siren                                                          |
+| `canary-screech`             | shipped  | 591   | Broken-main siren (cross-run, branch-level)                                |
 | `canary-setup-harness`       | shipped  | —     | Configure the Harness Engineering guardrails in a project                  |
 | `canary-shadow`              | shipped  | —     | Differential parity testing between a baseline and a candidate             |
 | `canary-shiva`               | reserved | 460   | Predictive test ordering                                                   |

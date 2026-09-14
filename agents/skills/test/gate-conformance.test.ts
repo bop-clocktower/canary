@@ -29,6 +29,7 @@ import { main as blackhawkMain } from '../claude-code/canary-blackhawk/scripts/c
 import { main as savantMain } from '../claude-code/canary-savant/scripts/cli.mjs';
 import { main as katanaMain } from '../claude-code/canary-katana/scripts/cli.mjs';
 import { main as cassandraMain } from '../claude-code/canary-cassandra/scripts/cli.mjs';
+import { main as screechMain } from '../claude-code/canary-screech/scripts/cli.mjs';
 
 /** Exit code reserved CLI-wide for "abstained" (D4, mirrors gate-result.ts). */
 const EXIT_ABSTAINED = 3;
@@ -106,7 +107,25 @@ const ROWS: SkillGateRow[] = [
         '--strict',
       ]),
   },
+  {
+    // The store exists and parses; it simply holds no run for the branch. That
+    // is the shape that matters here -- a missing store is an error (exit 1),
+    // but a real store with zero rows for `main` is the one an operator would
+    // otherwise read as "main is fine".
+    command: 'canary-screech (no run recorded for the branch)',
+    forbid: ['is green'],
+    run: (base) => run(screechMain, ['--history', emptyStore(base)]),
+    strict: (base) =>
+      run(screechMain, ['--history', emptyStore(base), '--strict']),
+  },
 ];
+
+/** A parseable history store holding no run for the default branch. */
+function emptyStore(base: string): string {
+  const file = path.join(base, 'history-v2.jsonl');
+  fs.writeFileSync(file, '', 'utf-8');
+  return file;
+}
 
 /** An existing but empty diff file: `loadDiff` succeeds and returns nothing. */
 function emptyDiff(base: string): string {
