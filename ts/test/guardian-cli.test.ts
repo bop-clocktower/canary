@@ -542,14 +542,19 @@ describe('pr-check post pipeline', () => {
     // #413 BEHAVIOR CHANGE: the heuristic source floor is not config-defeatable.
     // `skipGlobs: []` re-admits the lockfile to the gate, but the naming
     // heuristic has nothing to judge on it, so no finding is manufactured.
-    // Real evidence (a coverage row / graph edge) would still fire.
+    // #928: the floor now applies before coverage, so this is case E ("nothing
+    // to test", exit 0) with the lockfile in the skip denominator.
     const cfg = writeConfig({ skipGlobs: [] });
     const res = await invokeGuardian(
       ['pr-check', '--diff', '-', '--config', cfg, '--format', 'json'],
       { input: DIFF_LOCKFILE_ONLY, cwd: tmp },
     );
-    expect(res.code).toBe(3);
-    expect(res.stdout.toLowerCase()).toContain('abstained');
+    expect(res.code).toBe(0);
+    const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    expect(data.findings).toEqual([]);
+    expect(data.skipped.map((s: { reason: string }) => s.reason)).toEqual([
+      'non-source',
+    ]);
   });
 
   it('barrel index.ts is not flagged', async () => {

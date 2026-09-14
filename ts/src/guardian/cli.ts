@@ -86,6 +86,7 @@ import {
   ChangedUnit,
   coverageDegradedNotice,
   coverageDeltaNotice,
+  isSourcePath,
   resolveCoverage,
   resolveCoverageDelta,
   resolveCoverageWithInput,
@@ -554,20 +555,10 @@ function resolveHeadSha(deps: GuardianDeps): string | null {
 }
 
 /**
- * True when the checked-out HEAD is a `pull_request` MERGE REF, not the PR head.
- *
- * This is the merge-ref diff defect (#761). `actions/checkout` on a
- * `pull_request` event checks out `refs/pull/<n>/merge` — the base branch
- * merged with the PR head — unless the caller passes an explicit `ref`. Any
- * diff taken to that HEAD includes every commit merged into the base branch
- * since the base sha, because the triple-dot merge base degenerates to the base
- * sha itself (it is an ancestor of the merge commit). A one-file docs PR was
- * analyzed as 43 files that way.
- *
- * Detection is a comparison, not a heuristic: the event payload states the PR
- * head sha outright, so a HEAD that differs from it is diffing something else.
- * Returns false whenever either side is unknown — an undetectable case must not
- * masquerade as a detected-clean one.
+ * True when HEAD is a `pull_request` MERGE REF, not the PR head (#761): a diff
+ * to `refs/pull/<n>/merge` sweeps in every commit merged into base since the
+ * base sha (a one-file PR read as 43 files). A comparison against the event's
+ * PR head sha, false whenever either side is unknown.
  */
 export function detectMergeRef(
   headSha: string | null,
@@ -1286,6 +1277,7 @@ function prCheckSkipEntries(
   barrelUnits: ChangedUnit[],
   supportUnits: ChangedUnit[] = [],
   typeOnlyUnits: ChangedUnit[] = [],
+  nonSourceUnits: ChangedUnit[] = [],
 ): SkipEntry[] {
   return [
     ...skipped.map((u) => ({ name: u.path, reason: 'skipGlobs' })),
@@ -1297,6 +1289,8 @@ function prCheckSkipEntries(
     // #562: likewise distinct -- adjudication has to be able to measure this
     // class separately, since it is the one that held precision at 13/20.
     ...typeOnlyUnits.map((u) => ({ name: u.path, reason: 'type-only module' })),
+    // #928: config/data files, below the source floor.
+    ...nonSourceUnits.map((u) => ({ name: u.path, reason: 'non-source' })),
     ...barrelUnits.map((u) => ({
       name: u.path,
       reason: 're-export barrel',
@@ -1520,7 +1514,13 @@ async function prCheckCmd(
   // FIX 2: drop pure re-export/barrel files.
   const reexportPaths = findReexportOnly(diffText);
   const barrelUnits = keptTyped.filter((u) => reexportPaths.has(u.path));
-  const kept = keptTyped.filter((u) => !reexportPaths.has(u.path));
+  const keptBarrel = keptTyped.filter((u) => !reexportPaths.has(u.path));
+  // #928: the heuristic tier's source floor (#413) applies to coverage units
+  // too; a config/data file can never match a coverage report.
+  const nonSourceUnits = keptBarrel.filter((u) => !isSourcePath(u.path));
+  const kept = keptBarrel.filter((u) => isSourcePath(u.path));
+  // Case E: the floor alone emptied the diff. A result, not an abstention.
+  const nothingToTest = kept.length === 0 && nonSourceUnits.length > 0;
 
   // Advisory weak-test findings for added tests that assert nothing.
   const weakFindings = config.weak_tests
@@ -1541,9 +1541,10 @@ async function prCheckCmd(
     barrelUnits,
     supportUnits,
     typeOnlyUnits,
+    nonSourceUnits,
   );
 
-  if (kept.length === 0 && weakFindings.length === 0) {
+  if (kept.length === 0 && weakFindings.length === 0 && !nothingToTest) {
     abstainPrCheck(preCoverageSkips, opts.format, deps, provenance);
   }
 
@@ -1585,7 +1586,7 @@ async function prCheckCmd(
   // #413: if the heuristic filter consumed every scorable unit, report it as a
   // SKIP rather than rendering an empty "0 unaddressed" report -- an adopter
   // must be able to tell "nothing was judgeable" from "everything passed".
-  if (scoredResults.length === 0 && findings.length === 0) {
+  if (scoredResults.length === 0 && findings.length === 0 && !nothingToTest) {
     abstainPrCheck(allSkips, opts.format, deps, provenance);
   }
 
@@ -1759,19 +1760,10 @@ interface AuthorPlanOptions {
 }
 
 /**
- * author-plan's denominator decision (#508, review-round gap).
- *
- * The spec's audit list named `author-plan` next to `pr-check`, but #515
- * deferred it ("guardian internals being reworked in parallel") and Wave 2 only
- * took pr-check. On an EMPTY diff this surface emitted
- * `block: false, authored_count: 0` and exited 0 -- "we examined nothing,
- * therefore do not block", which is the #456 class verbatim.
- *
- * ADVISORY, not a gate: author-plan is an authoring aid whose JSON an agent
- * reads (see `canary-pr-guardian/SKILL.md`); the exit-code contract belongs to
- * `pr-check` and the pre-commit gate. So the exit stays 0 and stdout stays a
- * single parseable object -- `checked`/`abstained` ride the payload additively
- * and the loud line goes to stderr, keeping `--json` consumers byte-compatible.
+ * author-plan's denominator decision (#508): an empty diff must not read as
+ * "examined nothing, so do not block" (#456). ADVISORY, not a gate: exit stays
+ * 0 and stdout one parseable object; `checked`/`abstained` ride the payload and
+ * the loud line goes to stderr.
  */
 function authorPlanOutcome(
   checked: number,

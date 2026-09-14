@@ -126,15 +126,10 @@ export function readReportIndex(reportPath: string): ReportRead {
 }
 
 /**
- * The repo-relative prefix a report's relative paths are rooted at (#883).
- *
- * Tools write `SF:` paths relative to their own project root (vitest under
- * `ts/` writes `src/cli.ts`), so the prefix is the nearest ancestor of the
- * report's directory under which one of `samples` exists. Every sample is tried
- * because a stale report names files that were since deleted, and anchoring on
- * one missing file would misread that stale report as a scope gap. Without the
- * prefix `src/` would claim `npm/src/` too. A report outside the repo, or no
- * hit, anchors at the root.
+ * The repo-relative prefix a report's relative paths are rooted at (#883): the
+ * nearest ancestor of the report's directory under which any of `samples`
+ * exists (vitest under `ts/` writes `src/cli.ts`). Every sample is tried, since
+ * a stale report names deleted files. No hit, or outside the repo: the root.
  */
 function anchorPrefix(
   samples: string[],
@@ -169,11 +164,12 @@ function commonDir(paths: string[]): string {
  * segment of its (anchored) paths, narrowed to the deepest shared directory.
  * `''` means the report is rooted at the repo itself and covers everything.
  */
-function instrumentedTrees(
+export function instrumentedTrees(
   index: ReportIndex,
   reportPath: string,
-  root: string,
-) {
+  repoRoot: string,
+): string[] {
+  const root = resolve(repoRoot);
   const groups = new Map<string, string[]>();
   for (const raw of Object.keys(index)) {
     const p = isAbsolute(raw) ? relative(root, raw).split(sep).join('/') : raw;
@@ -199,7 +195,7 @@ export function countEligible(
   reportPath: string,
   repoRoot: string,
 ): number {
-  const trees = instrumentedTrees(index, reportPath, resolve(repoRoot));
+  const trees = instrumentedTrees(index, reportPath, repoRoot);
   const inside = (p: string) =>
     trees.some((t) => t === '' || p.startsWith(`${t}/`));
   return paths.filter(inside).length;
@@ -245,21 +241,22 @@ function parseByFormat(name: string, text: string): ReportIndex | null {
   return null;
 }
 
-/** Resolve every unit the report index can speak to (COVERAGE_VERIFIED). */
+/**
+ * Resolve every unit the report index can speak to (COVERAGE_VERIFIED). Units
+ * the report lists but whose changed lines are all non-coverable are pushed to
+ * `nonCoverable`, so a caller can tell them from absent units (#928).
+ */
 export function matchUnitsToIndex(
   units: ChangedUnit[],
   index: ReportIndex,
+  nonCoverable: ChangedUnit[] = [],
 ): CoverageResult[] {
   const results: CoverageResult[] = [];
   for (const unit of units) {
     const file = matchFile(unit.path, index);
-    if (file === null) {
-      // Unit path is nowhere in the report index → "not instrumented", which is
-      // NOT the same as "instrumented and unhit". Emit no COVERAGE_VERIFIED
-      // result so the orchestrator falls through to a lower-fidelity tier for
-      // this unit (FIX 2).
-      continue;
-    }
+    // Absent → "not instrumented", NOT "instrumented and unhit": no result, so
+    // the unit falls through to a lower-fidelity tier (FIX 2).
+    if (file === null) continue;
     const { hits, coverable: measured } = file;
     const added = expandRanges(unit.added_ranges);
     // The per-line form of the check above (#655/#657): where the report says
@@ -269,9 +266,9 @@ export function matchUnitsToIndex(
     const coverable =
       measured === null ? added : added.filter((ln) => measured.has(ln));
     if (coverable.length === 0) {
-      // Every changed line is non-coverable, so this report has nothing to say
-      // about the unit. An abstention — never a clean pass, never a finding.
-      // Falls through to the graph/heuristic tier exactly as an absent path does.
+      // Nothing coverable changed: never a pass or a finding here, and it falls
+      // through like an absent path — but it is recorded as its own cause.
+      nonCoverable.push(unit);
       continue;
     }
     const uncovered = coverable.filter((ln) => (hits[ln] ?? 0) <= 0);

@@ -260,16 +260,21 @@ describe('pr-check heuristic FP suppression (#413)', () => {
     expect(paths).not.toContain('path/to/service.config');
   });
 
-  it('counts a suppressed heuristic path as skipped, not verified', async () => {
+  it('a config-only diff is skipped below the source floor, never verified (#928)', async () => {
     const diffConfigOnly = DIFF_CONFIG_AND_SRC.split('diff --git a/src')[0]!;
-    const res = await invokeGuardian(['pr-check', '--diff', '-'], {
-      input: diffConfigOnly,
-      cwd: tmp,
-    });
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--format', 'json'],
+      { input: diffConfigOnly, cwd: tmp },
+    );
 
-    expect(res.code).toBe(3);
-    expect(res.stdout.toLowerCase()).toContain('abstained');
-    expect(res.stdout).toContain('(1 skipped');
+    // #928 case E: "nothing to test", a result rather than an abstention, and
+    // the config path still sits in the skip denominator with its reason.
+    expect(res.code).toBe(0);
+    const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    expect(data.checked).toBe(0);
+    expect(data.skipped).toEqual([
+      { name: 'path/to/service.config', reason: 'non-source' },
+    ]);
   });
 
   it('--heuristic-exclude suppresses an ad-hoc source path', async () => {
