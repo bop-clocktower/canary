@@ -2,7 +2,7 @@
 number: 0019
 title: TypeScript 7 migrates by workspace; /agents/skills gets a typecheck first
 date: 2026-09-13
-status: proposed
+status: accepted
 tier: large
 source: 'adr'
 ---
@@ -11,7 +11,7 @@ source: 'adr'
 
 # ADR 0019 — TypeScript 7 migrates workspace by workspace
 
-**Status:** proposed **Date:** 2026-09-13 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-09-13 **Deciders:** Bri Stevenski
 (maintainer) **Related:** #792 (source issue); #775, #777, #778 (the three
 dependabot PRs); ADR 0014 (checks that report over nothing)
 
