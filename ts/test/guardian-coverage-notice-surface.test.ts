@@ -237,12 +237,32 @@ describe('pr-check end-to-end (#554)', () => {
       'SF:pkg/widget.py\nDA:1,1\nDA:2,1\nDA:3,1\nend_of_record\n',
       'utf-8',
     );
+    // #606: a head-only run is degraded about REGRESSIONS even when the head
+    // coverage itself is fully verified, so "nothing degraded" now needs a base
+    // report too — the same amendment #554 made to this fixture one level up.
+    const baseLcov = join(tmp, 'base-lcov.info');
+    writeFileSync(
+      baseLcov,
+      'SF:pkg/widget.py\nDA:1,1\nDA:2,1\nDA:3,1\nend_of_record\n',
+      'utf-8',
+    );
     const res = await invokeGuardian(
-      ['pr-check', '--diff', '-', '--coverage', lcov, '--format', 'json'],
+      [
+        'pr-check',
+        '--diff',
+        '-',
+        '--coverage',
+        lcov,
+        '--base-coverage',
+        baseLcov,
+        '--format',
+        'json',
+      ],
       { input: DIFF_NEW_UNIT, cwd: tmp },
     );
     const payload = JSON.parse(res.stdout);
     expect(payload.coverage.status).toBe('verified');
+    expect(payload.coverage_delta.status).toBe('compared');
     expect(payload.degraded_notice).toBeUndefined();
   });
 

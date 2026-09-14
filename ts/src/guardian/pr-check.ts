@@ -33,11 +33,16 @@ import { SkipEntry } from '../core/gate-result.js';
 import { isAssertionFreeTest } from '../core/quality-scorer.js';
 import {
   ChangedUnit,
+  CoverageDeltaState,
   CoverageInputState,
+  CoverageRatio,
   CoverageResult,
   Fidelity,
   LineRange,
+  UnitCoverageDelta,
   coverageDegradedNotice,
+  coverageDeltaNotice,
+  coverageDeltaStatus,
   coverageStatus,
   isSourcePath,
   isTestPath,
@@ -713,6 +718,72 @@ export function buildFindings(results: CoverageResult[]): GuardianFinding[] {
   );
 }
 
+/**
+ * Percentage-point bands for a coverage **regression** (#606).
+ *
+ * A drop is graded by how far it fell and stops at `HIGH` — it never reaches
+ * `CRITICAL`. An uncovered new block is a fact about one artifact; a drop is a
+ * *relative* measurement across two, and guardian cannot verify that the base
+ * artifact it was handed is genuinely the base of this PR. The top of the scale
+ * is reserved for what guardian can prove on its own.
+ */
+const REGRESSION_HIGH_POINTS = 20;
+const REGRESSION_MEDIUM_POINTS = 5;
+
+/** `92.0% (23/25)` — a ratio a reviewer can check without doing the division. */
+function ratioLabel(ratio: CoverageRatio): string {
+  const pct = ((ratio.covered / ratio.coverable) * 100).toFixed(1);
+  return `${pct}% (${ratio.covered}/${ratio.coverable})`;
+}
+
+/**
+ * Turn regressed base-vs-head deltas into `coverage-regression` findings (#606).
+ *
+ * Only `regressed` deltas become findings — an improvement and a flat result
+ * are not news. Fidelity is `COVERAGE_VERIFIED` because both sides of the
+ * comparison were measured by a real coverage run; there is no graph or
+ * heuristic path to a delta, and a tier that cannot measure must not guess one.
+ *
+ * The evidence carries both ratios AND both raw counts on purpose: base and
+ * head can disagree about how many lines are coverable at all (a diff adds
+ * lines; two producers may instrument differently), and a bare pair of
+ * percentages would hide that.
+ */
+export function buildRegressionFindings(
+  deltas: UnitCoverageDelta[],
+): GuardianFinding[] {
+  const findings: GuardianFinding[] = [];
+  for (const delta of deltas) {
+    if (!delta.regressed) continue;
+    const points = delta.dropPoints;
+    const severity =
+      points >= REGRESSION_HIGH_POINTS
+        ? Severity.HIGH
+        : points >= REGRESSION_MEDIUM_POINTS
+          ? Severity.MEDIUM
+          : Severity.LOW;
+    findings.push(
+      new GuardianFinding({
+        path: delta.path,
+        unit: delta.path,
+        kind: 'coverage-regression',
+        fidelity: Fidelity.CoverageVerified,
+        severity,
+        evidence:
+          `coverage fell ${points.toFixed(1)} points on a file this change ` +
+          `touches: base ${ratioLabel(delta.base)} ${ARROW} head ` +
+          `${ratioLabel(delta.head)}`,
+        suggestion:
+          `Restore the lost coverage in \`${delta.path}\` — a test that ` +
+          'exercised this file on the base ref no longer reaches part of it.',
+      }),
+    );
+  }
+  return [...findings].sort(
+    (a, b) => severitySortKey(a.severity) - severitySortKey(b.severity),
+  );
+}
+
 /** Flatten inclusive `[start, end]` ranges into a sorted list of line numbers. */
 export function linesInRanges(ranges: LineRange[]): number[] {
   const lines = new Set<number>();
@@ -979,6 +1050,14 @@ export interface GateMeta {
   abstained: boolean;
   /** The run's coverage-input state, when the coverage ladder ran (#554). */
   coverage?: CoverageInputState | null;
+  /**
+   * The base-vs-head delta run's state (#606), when the delta was attempted.
+   *
+   * `null`/absent means this producer never ran the delta at all — distinct
+   * from a delta that ran and could compare nothing, which is a populated
+   * state whose `unitsCompared` is 0 and whose notice says so.
+   */
+  coverageDelta?: CoverageDeltaState | null;
   /** What the diff was taken between (#761). */
   provenance?: DiffProvenance | null;
   /**
@@ -1117,7 +1196,11 @@ export function renderFindings(
   const coverageNotice = coverageState
     ? coverageDegradedNotice(coverageState)
     : null;
-  const notice = combineNotices(degradedNotice, coverageNotice);
+  // #606: the delta's own degradation is a THIRD independent reason a run can
+  // be blind, so it joins the same combined notice rather than replacing one.
+  const deltaState = gateMeta?.coverageDelta ?? null;
+  const deltaNotice = deltaState ? coverageDeltaNotice(deltaState) : null;
+  const notice = combineNotices(degradedNotice, coverageNotice, deltaNotice);
 
   if (fmt === 'json') {
     const payload: Record<string, unknown> = {
@@ -1134,6 +1217,14 @@ export function renderFindings(
       // the field exists to state.
       payload['skipped'] = gateMeta.skipped ?? [];
       if (coverageState) payload['coverage'] = coverageBlock(coverageState);
+      // #606: the delta's denominator, so a machine consumer can tell "no
+      // regressions" from "never compared" without re-deriving it.
+      if (deltaState) {
+        payload['coverage_delta'] = {
+          status: coverageDeltaStatus(deltaState),
+          ...deltaState,
+        };
+      }
       // #761: machine consumers need the diff's endpoints for the same reason
       // humans do — every count in this payload is scoped by them.
       if (gateMeta.provenance)

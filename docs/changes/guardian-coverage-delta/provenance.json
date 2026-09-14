@@ -1,0 +1,102 @@
+{
+  "issue": 606,
+  "slug": "guardian-coverage-delta",
+  "route": "feature",
+  "branch": "feat/606-guardian-coverage-delta",
+  "base": "origin/main @ 326bd2ce",
+  "date": "2026-09-13",
+  "session": "https://claude.ai/code/session_014rqmk7Q3zCJiZ1dNNYKzMn",
+  "pipelineStages": [
+    {
+      "stage": "intake",
+      "ran": true,
+      "detail": "gh issue view 606; read the ideation row's accepted-risk section"
+    },
+    {
+      "stage": "seam-location",
+      "ran": true,
+      "detail": "Located the live seam in ts/src/guardian/diff-coverage/; the issue's cited agent/guardian/delta_emitter.py is retired AND its TS descendant is an unrelated api-delta emitter"
+    },
+    {
+      "stage": "design",
+      "ran": true,
+      "artifact": "docs/changes/guardian-coverage-delta/plans/2026-09-13-guardian-coverage-delta-plan.md"
+    },
+    {
+      "stage": "tdd-red",
+      "ran": true,
+      "detail": "ts/test/guardian-coverage-delta.test.ts written first: 9 failed (module absent) before any implementation"
+    },
+    {
+      "stage": "tdd-green",
+      "ran": true,
+      "detail": "ts/src/guardian/diff-coverage/coverage-delta.ts, then buildRegressionFindings in pr-check.ts, then the --base-coverage CLI wiring; each preceded by its own failing test"
+    },
+    {
+      "stage": "doc-drift-check",
+      "ran": true,
+      "detail": "agents/skills/claude-code/canary-pr-guardian/SKILL.md Phase 0 documents --base-coverage and the head-only abstention"
+    },
+    {
+      "stage": "four-gates",
+      "ran": true,
+      "detail": "build, typecheck, format:check, test — all run from ts/"
+    },
+    {
+      "stage": "ratchets",
+      "ran": true,
+      "detail": "entropy and architecture ratchets re-measured after the new module"
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "A1",
+      "assumption": "The issue's named seam (agent/guardian/delta_emitter.py) is not the right one and was not used.",
+      "rationale": "The agent/ Python tree is retired. Its live descendant ts/src/guardian/delta-emitter.ts serializes the api-delta.json endpoint contract and has no coverage concept. The real seam is the diff-coverage ladder (report-tier.ts + orchestrator.ts), which is what this change extends.",
+      "default": "Built ts/src/guardian/diff-coverage/coverage-delta.ts as a leaf of that package."
+    },
+    {
+      "id": "A2",
+      "assumption": "A regression is a drop in the whole-file covered ratio, not a per-line 'was hit, now unhit' comparison.",
+      "rationale": "A diff shifts line numbers, so base line N and head line N are not the same line; a line-identity rule would manufacture findings out of an insertion.",
+      "default": "ratio = covered/coverable per file per report; regression when the drop exceeds 0.1 percentage points (float-noise guard)."
+    },
+    {
+      "id": "A3",
+      "assumption": "A file whose report record has zero coverable lines is skipped, not scored.",
+      "rationale": "0/0 is a ratio guardian would be inventing. Consistent with the ladder never grading a unit it could not measure.",
+      "default": "Excluded from deltas AND from unitsCompared, so it lowers the denominator loudly rather than passing quietly."
+    },
+    {
+      "id": "A4",
+      "assumption": "A coverage regression is graded HIGH / MEDIUM / LOW by percentage points lost (>=20 / >=5 / >0) and NEVER CRITICAL.",
+      "rationale": "An uncovered new block is a fact about one artifact; a drop is a relative measurement across two artifacts guardian cannot verify are genuinely base-and-head of the same PR. The top of the scale stays reserved for what guardian proves alone.",
+      "default": "Regressions are ordinary findings; the configured gate (soft/hard) decides whether they block, exactly like every other guardian finding. No new blocking rule was added."
+    },
+    {
+      "id": "A5",
+      "assumption": "The head-only degradation notice fires on EVERY pr-check run that judged units without a base artifact, including runs that never asked for a delta.",
+      "rationale": "Pre-answered in the issue's accepted-risk section: 'degrade to delta unavailable - head-only with a LOUD note when no base artifact is present. Do not silently pass.' A notice gated on opting in would make the silent case the default, which is the exact failure the issue names.",
+      "consequence": "Two existing fixtures asserted 'nothing is degraded' on runs that supply --coverage but no base report. Both were amended to supply a base report so they remain genuine non-degraded cases — the assertions were NOT relaxed. This mirrors the amendment #554 already made to the same guardian-cli.test.ts fixture for the same reason one level up.",
+      "reviewNote": "This is the one judgement call in the change and the thing to review first: until base-coverage artifacts are wired into CI, every guardian pr-check run gains one ::warning:: line."
+    },
+    {
+      "id": "A6",
+      "assumption": "The archived analysis record's schema stays at 1.3; the delta is not added to it.",
+      "rationale": "Extending that record is a schema-versioned change with its own consumers. The delta reaches machine consumers through the --format json surface's additive coverage_delta block.",
+      "default": "Out of scope; noted in the plan as a follow-up."
+    },
+    {
+      "id": "A7",
+      "assumption": "The delta is wired to pr-check only, not to author-plan or analyze.",
+      "rationale": "A base-vs-head comparison is a PR-time question; author-plan has no base ref to compare against.",
+      "default": "Single CLI surface."
+    },
+    {
+      "id": "A8",
+      "assumption": "The worktree lives at /Users/bs/Github/canary-606-coverage-delta, outside .claude/.",
+      "rationale": "A worktree under .claude/ breaks the pre-push check-docs gate, which self-excludes that path and then scans zero files — a zero denominator reporting as a pass.",
+      "default": "Sibling worktree of the main checkout."
+    }
+  ]
+}
