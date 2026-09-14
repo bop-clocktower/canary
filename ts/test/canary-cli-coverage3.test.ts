@@ -222,3 +222,37 @@ describe('analyze filter branches', () => {
     }
   });
 });
+
+/**
+ * A `--result` file that parses as valid JSON but is not an object (e.g. a
+ * bare `null`, or a top-level array) slipped past the try/catch, which only
+ * covers a read/parse THROW. The handler then indexed `null` and the CLI died
+ * with a raw TypeError stack instead of the "could not read result file"
+ * message the same input shape already gets when it is malformed.
+ */
+describe('ticket-update: a non-object report JSON', () => {
+  it('reports a clean error instead of crashing on `null`', async () => {
+    const tmp = mkTmp();
+    try {
+      const report = join(tmp, 'report.json');
+      writeFileSync(report, 'null', 'utf-8');
+      let thrown: unknown;
+      let res: Awaited<ReturnType<typeof invokeCanary>> | undefined;
+      try {
+        res = await invokeCanary([
+          'ticket-update',
+          '--result',
+          report,
+          '--dry-run',
+        ]);
+      } catch (e) {
+        thrown = e;
+      }
+      expect(thrown).toBeUndefined();
+      expect(res?.code).toBe(1);
+      expect(res?.stdout).toContain('report.json');
+    } finally {
+      rmTmp(tmp);
+    }
+  });
+});
