@@ -3,7 +3,7 @@ number: 0022
 title: harness-repo-hygiene is the branch cleanup path; worktree pruning waits
   for #889
 date: 2026-09-13
-status: proposed
+status: accepted
 tier: small
 source: 'adr'
 ---
@@ -12,7 +12,7 @@ source: 'adr'
 
 # ADR 0022 — harness-repo-hygiene is the branch cleanup path
 
-**Status:** proposed **Date:** 2026-09-13 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-09-13 **Deciders:** Bri Stevenski
 (maintainer) **Related:** #836 (source issue); #889 (worktrees deleted mid-run,
 the reason the worktree half is deferred)
 

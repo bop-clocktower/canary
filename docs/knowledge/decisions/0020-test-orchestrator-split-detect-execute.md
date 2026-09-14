@@ -2,7 +2,7 @@
 number: 0020
 title: Canary detects, harness test-fleet executes
 date: 2026-09-13
-status: proposed
+status: accepted
 tier: medium
 source: 'adr'
 ---
@@ -11,7 +11,7 @@ source: 'adr'
 
 # ADR 0020 — Canary detects, harness test-fleet executes
 
-**Status:** proposed **Date:** 2026-09-13 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-09-13 **Deciders:** Bri Stevenski
 (maintainer) **Related:** #835 (source issue); ADR 0008 (guardian ownership, the
 same canary-owned/harness-leveraged pattern)
 
