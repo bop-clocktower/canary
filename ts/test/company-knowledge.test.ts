@@ -908,6 +908,30 @@ describe('EdgeCoverage', () => {
     ).toBe(true);
   });
 
+  // `internal_doc_urls` is the one list field parsed by a hand-rolled loop
+  // rather than `validateStrings`, so a type-confused value (a bare string, an
+  // object, a number) was dropped with NO warning at all -- a silent
+  // abstention: the operator's reference docs vanish from every generated
+  // prompt and nothing in `company-knowledge show` says why.
+  it('non-list internal_doc_urls warns like every other list field', () => {
+    const fromString = loadData({
+      internal_doc_urls: 'https://docs.example.com/page',
+    });
+    expect(fromString.internal_doc_urls).toEqual([]);
+    expect(
+      fromString.warnings.some((w) =>
+        w.includes('internal_doc_urls: expected list, got str'),
+      ),
+    ).toBe(true);
+    expect(
+      loadData({
+        internal_doc_urls: { a: 'https://x.example.com' },
+      }).warnings.some((w) =>
+        w.includes('internal_doc_urls: expected list, got dict'),
+      ),
+    ).toBe(true);
+  });
+
   it('non-string url field warns', () => {
     expect(
       loadData({ dashboard_url: 123 }).warnings.some((w) =>
