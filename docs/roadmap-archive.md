@@ -525,3 +525,273 @@ last_manual_edit: 2026-06-30T01:18:39.592Z
 - **Plan:** —
 - **Priority:** P1
 - **External-ID:** github:bop-clocktower/canary#590
+
+### harness-config-denominator — cover knowledge.domainBlocklist
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** ts/test/harness-config-denominator.test.ts encodes four invariants against vacuous rules in harness.config.json — every layers[].pattern, forbiddenImports[].from/disallow, and allowedDependencies name must match something real, and every tracked source file must belong to a layer. PR #563 added knowledge.domainBlocklist, which can go vacuous the same way: a segment matching no real path still reports as configured. It already bit once — two of four initially-blocklisted segments (.claude, .cursor) matched no graph nodes. Extend the test with a fifth invariant so a blocklist entry that matches nothing fails rather than reading as protection. Same class as #481 and #544: a rule that checks zero things is an abstention, not a pass.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#564
+
+### Field contract — extend it to the archive and shard output
+
+- **Status:** done
+- **Spec:** docs/changes/roadmap-priority-and-field-contract/proposal.md
+- **Summary:** #628 fixed docs/roadmap.md and guards it with ts/test/roadmap-field-contract.test.ts, but three gaps remain. (1) docs/roadmap-archive.md carries the identical defect — 60 wrapped Summary fields, no Priority, still prettier-governed and therefore held that way — and roadmap-groom.mjs moves rows into it verbatim, which makes the archive prettier-dirty and blocks every subsequent agent write to it. (2) The guarded set is a hardcoded single path, so committed shard output would go unscanned while both denominators stayed non-zero; derive it from .prettierignore so the exempted and guarded sets are the same set mechanically. (3) The test detects wrapping but not truncation — a file already flattened by shard+regen is one-line-clean and passes — so it needs a content floor. Deferred from #628 deliberately: item 1 is 60 rows of prose, and items 2-3 are only worth building once the archive is in the guarded set.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#630
+
+### agents-roadmap-counts checks a claim it cannot derive
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #640, found while grooming in #639. ts/test/agents-roadmap-counts.test.ts extracts three claims from AGENTS.md and asserts each equals the linked-row count, but the third pattern captures "(N of M open issues carry the label today)" — labelled open issues, a quantity with no reason to equal the number of rows. It passes only because both are currently equal, and the file's own docstring says the open-issue side is deliberately not checked, so the intent and the implementation disagree. Two failure modes, both bad: a false red on a correct edit that changes rows without changing labels, where the obvious fix is to edit the prose into being wrong; and a false green on the claim it is nominally guarding, which is the shape the file was written to catch. Fix is to drop the third pattern and lower the length floor to 2, or assert it against something derivable offline.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#640
+
+### Execute the documented commands — run SKILL.md examples in CI
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Docs promise commands nothing has ever executed. #472 added a `canary skills run canary-blackhawk -- --help` example in the same PR that left the command broken — mode 644, so the spawn hit EACCES and mapped to a bare exit 1 with no output. Same class as #465 (architecture page describing an engine deleted four majors earlier) and #455 (operator guide pointing at a file deleted as dead code): plausible prose, nothing executing it. Extract each SKILL.md example and run it in CI, catching missing exec bits, broken --help and flag handling, references to deleted files or renamed flags, and unresolvable `cli:` paths in one pass.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#487
+
+### check-arch and ci check disagree on the same architecture data
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #626, split out of #622. `harness check-arch` exits 1 with "Validation failed (28 issues)" while `harness ci check` — the command the required `harness` job actually runs — reports `arch: pass` and exits 0, from the same data. Both are correct: check-arch counts absolute violations, ci check counts the delta against the baseline, and all 28 findings are baselined complexity. Neither output says which number it is reporting, so a human running the local command reads a green CI job as a disagreement rather than as a different question, and a genuine new violation is indistinguishable from the standing baseline. The fix is wording, not thresholds — each output should name its own mode. Priority is P1 rather than P0 under the predicate in AGENTS.md: the required check is right, and only the local command misleads. Same family as #588 (a report CI truncated) and #584.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#626
+
+### harness roadmap regen strips the roadmap's header comment block
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #629, found while verifying #628 against `@harness-engineering/cli` v10.2.0. A `harness roadmap shard` + `regen` round-trip deletes this file's 8-line header comment — including the `markdownlint-disable-file MD013` directive and the note recording why each field must stay one physical line — and exits 0 both ways with no warning. Field values survive intact. Latent rather than active: neither subcommand is referenced by any workflow or script in this repo, so it only bites someone running them by hand, which is why it is P3 rather than P1 — no CI path and no dependent rows. The hazard is that the tooling erases its own contract note, after which the `.prettierignore` exemption reads as arbitrary and the next cleanup reflows the file. Guarded, not fixed: `scripts/roadmap_comment_guard.mjs` restores the block (now also on a partial strip, and abstaining with exit 3 rather than reporting success when it finds no `# Roadmap` heading), and `ts/test/roadmap-comment-guard.test.ts` fails if the live file loses the note — `roadmap-field-contract.test.ts` only ever covered the MD013 directive, whose absence fails docs-lint anyway, so the note was the unguarded half. Root cause stays upstream: `shard` writes the block into neither a shard nor `_meta.md`, reported as Intense-Visions/harness-engineering#1328, and this row closes when that lands.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#629
+
+### harness check-perf abstains — performance.entryPoints is never declared
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #638, found while triaging #544. `harness ci check` reports `perf: warn — Could not resolve entry points`, inside the required `harness` job. Same failure class as #544 at a different config key: the entropy analyzer reads `entropy.entryPoints`, the perf checker reads `performance.entryPoints`, and harness.config.json declares the latter nowhere, so auto-detection fails and the check reports a colour instead of an abstention. P0 under the written predicate — a check in required-checks.json is wrong, in that `warn` claims a measurement that never happened. Pre-existing on main and unchanged by #637, which is why it was filed rather than folded in: it needs its own decision about whether the repo wants perf budgets at all, and either answer must be legible — declared roots mirroring the entropy list, or the check turned off explicitly rather than left auto-detecting and failing. The gate-conformance route is the same one #544 took: a missing count exits 3, never 0.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P0
+- **External-ID:** github:bop-clocktower/canary#638
+
+### refresh-arch-baseline is a no-op on the case it exists for
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #634. The refresh-arch-baseline workflow exists for exactly one situation — the arch ratchet inside the required `harness` job trips and the baseline needs regenerating — and does nothing in that situation, so the red gets waited out or refreshed by hand locally instead. A repair tool that silently declines to repair is worse than no tool, because its existence is what stops someone building the manual habit. Adjacent to #626: that row is about the arch verdict being unreadable, this one is about the documented remedy not working, and the two are one sitting together. P3 rather than P1 by the written predicate and worth naming as such — the workflow is not reachable from a consumer CLI or skill invocation, has no open PR, and no other row blocks on it, so it lands in the residual bucket the way #629 did. That is a gap in the scale, not a judgement that the bug is small.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#634
+
+### Resolve roadmap api-signature doc drift
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** RESOLVED. Two upstream gaps and one project-side error, all now closed. Upstream: harness#723 (drift config ignored + Python symbol mis-resolution) fixed by harness#724, and harness#838 (`harness ci check` missing the config as a fourth call site) is closed on the harness CLI 11 line every workflow now pins. Re-measured on harness 11.1.1 against this repo: the suppression is honoured by both call sites, `harness ci check --json` reporting 290 entropy findings with the flag off against 1195 with it on — 905 api-signature findings suppressed, 0 remaining, none of them blocking either way (warn severity). Project-side, both this row and the integration guide named the flag as `entropy.analyze.drift.checkApiSignatures`, echoing the upstream issue title; the key harness reads, and the one whose value moves those counts, is `entropy.drift.checkApiSignatures: false` at harness.config.json. That mis-stated path is guarded by ts/test/harness-config-doc-claims.test.ts, which resolves every documented config setting against the file. (refs: Issue #246 [closed]; Issue #266; upstream harness#838 [closed]) [Note: symbol names intentionally omitted from this summary so the drift-tracking row does not itself register as drift.]
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#601
+
+### Generated-test soundness linter
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Ideation pick (score 3.00) from docs/ideation/deepen-core-test-intelligence-2026-07-19.md. Reject generated tests that pin non-deterministic values or leave numeric input contracts unpinned (ties to realworld S4 integer/fractional soundness rule). Accepted risk to handle in spec: agent/core/static_linter.py and quality_scorer.py already exist - EXTEND them with the new rule in-place rather than adding a third overlapping half-enforcer. Medium effort. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#605
+
+### Guardian coverage-delta (regression on touched units)
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Ideation pick (score 3.00) from docs/ideation/deepen-core-test-intelligence-2026-07-19.md. Flag coverage REGRESSION on units a PR touches (vs base), not just absent coverage; reuse the existing agent/guardian/delta_emitter.py seam. Accepted risk to handle in spec: needs a base-branch coverage artifact most CI does not upload - degrade to 'delta unavailable - head-only' with a loud note when no base artifact is present. Medium effort. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#606
+
+### Edge-case-discovery to generate-test handoff
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Ideation pick (score 2.00) from docs/ideation/deepen-core-test-intelligence-2026-07-19.md. Wire canary-edge-case-discovery output directly into canary-generate-test input so users stop re-describing discovered cases by hand. Accepted risk to handle in spec: the separation may be intentional (discovery exploratory, generation committal) - wire as an explicit human-confirmed pass-through (discovery emits a structured artifact the user reviews before generation consumes it), not an automatic pipe. Medium effort. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#607
+
+### canary-cassandra — vacuous-test detection
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Ideation rank 7 (score 3.00) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Diff execution traces (from canary-instrument's OTel) against each test's declared target to find tests that PASS WITHOUT EVER INVOKING the code they claim to cover. Addresses the STRATEGY.md target problem more directly than any other candidate in the batch; its mid rank is driven by effort and confidence, not relevance. Accepted risk to handle in spec: "declared target" is not declared anywhere and must be inferred from test names/imports - precisely the heuristic tier the strategy distrusts, and it will confidently flag a correct integration test as vacuous when the call sits several frames deeper. Needs an explicit @covers annotation or trace-to-symbol resolution good enough to earn graph-verified rather than heuristic. Medium effort / medium confidence. Next: /harness:brainstorming to spec. NAME COLLISION RESOLVED 2026-08-07: Issue #460 also claimed `canary-cassandra`, for predictive test ordering — an unrelated feature. This row keeps the name (Cassandra Cain reads the fake, which is what vacuous-test detection does); #460 was renamed `canary-shiva` and has its own row below. The collision was possible because roadmap rows and tracker issues both mint Birds of Prey names and neither reads the other. MECHANISED 2026-09-03 (#754): that diagnosis was correct and did not prevent a third collision, because a comment inside one of the colliding surfaces is not a check. Names are now minted in docs/naming-registry.md and `ts/test/bop-name-registry.test.ts` fails when the roadmap, the registry, and the shipped skill directories disagree.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#612
+
+### canary-screech — broken-main siren
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Split from the Skill Forge umbrella (Issue #339, now closed) into Issue #591. Wave 1, small and visible. When the default branch goes red, emit a one-page blast: culprit commit range, failure cluster, owning area, a quarantine-or-revert recommendation, and a chat-ready block. Distinct from canary-fail-fast (in-run, aborts early) and canary-test-reporter (per-run summary) — neither looks across runs or knows the branch went red. Both of #591's open questions are resolved in the plan: the branch-is-red signal comes from the run-history store (`history-v2.jsonl`), not a webhook or a polling loop, and the skill only emits — a markdown artifact plus a `::error` annotation, no write access and no chat integration.
+- **Blockers:** —
+- **Plan:** `docs/changes/canary-screech/plans/2026-09-13-canary-screech-plan.md`
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#591
+
+### Scaling-curve probe — growth exponent across input sizes
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #856. Run one operation (k6/locust scenario or benchmark) across a ladder of input sizes, fit the log-log growth exponent of latency and throughput, and report where the curve bends. Catches the component whose work grows faster than its input — it passes every fixed-size load test, then buckles exactly when input peaks. New analysis over runners already in the registry. Accepted risk to handle in spec: too few sizes or too much variance is INSUFFICIENT DATA with a reason, never "linear ✓" off three noisy points. Synthetic data only; advisory, not a gate. Pairs with #858. Small-to-medium effort. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#856
+
+### Permission-matrix tests — server-side role × tenant × endpoint
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #857. From a human-declared allow/deny matrix of roles × tenants × endpoints, generate API-level tests that hit the server directly (bypassing the UI) for every cell including cross-tenant ones, plus an existence-oracle probe that flags lookup endpoints whose responses distinguish present from absent records. Targets the two findings ordinary suites miss: cross-tenant reads and role boundaries enforced only in the UI. Accepted risk to handle in spec: the matrix must be declared, never inferred from current behavior (that would bake existing bugs in as "expected"); undeclared cells report as UNDECLARED, never skipped. Complements a pen test, doesn't replace one. Security findings feed it via the #614 intake extension. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#857
+
+### ADR — sync vs async history-store interface for the TS cutover
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Python's HistoryStore ABC is synchronous, but @supabase/supabase-js is async-only, so the TS port introduced an AsyncHistoryStore contract rather than mirroring the sync shape. Fine while both engines run side by side; at cutover the async interface propagates upward and AnalysisEngine plus every consumer must become async too — a cross-cutting shape decision, not a local one. Three options to weigh: async all the way up, a sync facade over async, or split read/write so the local NDJSON path stays sync and only Supabase is async behind a capability check. Decide before porting core/ and guardian/ so those adopt the final shape.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#390
+
+### Shared skill-CLI arg parser and table-driven conformance suite
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Five skills hand-roll their own parseArgs and share four invariants — null-prototype lookup for value-flag maps, empty-value rejection in both spellings, arity checking, and --flag=value support — with nothing enforcing any of them. The only thing holding the line is a block of tests hand-copied into each suite, which is exactly how they get weakened: during #472 two copies drifted, and canary-fail-fast’s prototype test was structurally unreachable and passed against the buggy code. No test today would catch a sixth skill landing with a plain-object VALUE_FLAGS. canary-shadow (#478) is the proof it already happened.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#479
+
+### Persona system as a first-class engine concept
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #462, split from #340. Audience adaptation is hand-rolled per skill today — each re-implements some variant of "if tester, use simpler words" — so tone drifts between skills and an overlay cannot override it. Replace with a persona definition (audience, technical depth, preferred output formats, voice) that skills CONSULT rather than reimplement, extensible by downstream overlays through the same `precedence` arbitration the overlay contract already defines. Inventory the existing surface first: `canary doctor --audience` (renamed from `--persona` in v5.12.0, legacy aliases retained), the sdet/tester onboarding tracks, and the tester-facing skills that scale run-summary tone. Accepted risk to handle in spec: if the persona is inferred rather than configured this collides with Issue #341, and inferring an audience wrongly is the failure mode users notice and resent; the no-persona fallback must be a real good default, not a degraded mode.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P2
+- **External-ID:** github:bop-clocktower/canary#462
+
+### Skill Forge primitives — cross-surface consistency and reachability
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #452. A skill exists across several surfaces at once (the SKILL.md, the plugin manifest, the slash command, the agent definition, the docs), and nothing checks that those agree or that every declared skill is actually reachable. Build the two primitives: a cross-surface consistency check and a reachability sweep. Accepted risk to handle in spec: this is denominator-shaped work, so the check must report what it could not examine rather than passing quietly — a sweep that finds zero unreachable skills because it enumerated zero skills is an abstention, not a pass.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#452
+
+### Gate canary-promote-test on structured test-craft verdicts
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #477. Promotion out of `tests/generated/` into the committed suite is currently a review-and-move flow with no machine gate. Require a structured verdict from test-craft before a generated test can be promoted, so the quality bar is enforced rather than remembered. Accepted risk to handle in spec: a gate that blocks promotion needs an abstention path — if test-craft cannot form a verdict, that must be reported as unable-to-assess and not silently treated as a pass, which is the exact failure class the no-silent-abstention work exists to close.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#477
+
+### Monorepo-aware detection and a --framework override that resolves shape
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Run against a Turborepo + pnpm workspace with Playwright and Vitest already in place, all probes are root-only, so the repo detects as Framework: unknown — root scripts.test is `turbo test`, which matches nothing. The --framework playwright override sets the framework but leaves Shape: unknown, so overlay-skill matching and shape-prefixed workflow templates never fire. Worse, the scaffold proposal then offers to create playwright.config.ts and tests/e2e at the monorepo root, a duplicate suite beside the apps/web-e2e project it never noticed. The dry run also prints "Migration complete" when nothing was migrated.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#504
+
+### review-test LINT-006 reports the line one too low
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #633, found while fixing #590. LINT-006 reports its finding one line above the test it is about, for any test not starting on line 1 — an off-by-one in the line accounting, so the consumer is pointed at the wrong place in their own file. Narrower than #590 and the same kind of damage: a report whose locations have to be distrusted is a report that stops being read, and this one is worse per-finding because a wrong line still looks plausible where a wrong verdict at least invites a second look. P1 under the written predicate — reproducible from `canary review-test`, a consumer-facing CLI invocation. The fix lands in the string-literals module #632 built rather than anywhere new, which is why it is worth doing while that code is still warm.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#633
+
+### canary history record — a writer for the local history store
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #538. The local history store has a schema, a store abstraction, a local and a Supabase backend, a flake-trend detector, and a `canary history` CLI — but no command writes to the local store. The only writer is `dogfood-record-run.mjs`, a script. Promote it to a real `canary history record` command. This is the product-lies class: the capability is documented and the read side exists, so the gap is invisible until someone queries an empty store. It also gates real work — the canary-shiva and canary-rewind rows above both depend on history having content, and the canary-clocktower gap analysis is partly answered by it.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#538
+
+### Uninstall path
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #523. The word "uninstall" appears zero times in README, docs/, and source. Canary writes into consumer repos — skills, workflows, config, generated tests — and offers no documented way to take it back out. Product-lies class, and the one with the clearest reputational cost: a tool that cannot be removed cleanly is a tool people hesitate to install. Accepted risk to handle in spec: uninstall must distinguish what canary authored from what the user has since edited, and must never delete a test someone has come to rely on without saying so first.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#523
+
+### doctor — detect a stale Claude Code plugin
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #522. The CLI and the Claude Code plugin version independently, so a user can run a current CLI against a stale plugin and get behavior from neither. `canary doctor` has no check for this. Tooling-rot class: the failure is silent and presents as inexplicable behavior rather than as a version problem. Small, well-bounded, and directly serves the denominator principle — a doctor that cannot see a whole surface should say so.
+- **Blockers:** —
+- **Plan:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#522
+
+### Consume the detected environment and user-level context
+
+- **Status:** done
+- **Spec:** —
+- **Summary:** Issue #341. Environment and user-level context detection ships and works; nothing reads it. Product-lies class in its purest form — the feature is present, tested, and inert. Wire the existing detection into the consumers that should adapt to it. Accepted risk to handle in spec: the SDET-vs-manual detection half collides with the persona work in Issue #462 and needs its own design default, because inferring a user's skill level wrongly is the failure people resent; decide there whether detection proposes or decides.
+- **Blockers:** Issue #462 (persona definition — overlapping audience model)
+- **Plan:** —
+- **Priority:** P1
+- **External-ID:** github:bop-clocktower/canary#341
