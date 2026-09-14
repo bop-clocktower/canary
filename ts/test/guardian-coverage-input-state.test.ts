@@ -285,4 +285,31 @@ describe('zero-match abstention names its cause (#883)', () => {
     expect(coverage.unitsMatched).toBe(0);
     expect(coverage.unitsEligible).toBe(1);
   });
+
+  it('anchors from any surviving sample when the first report path was deleted', () => {
+    // A stale report is exactly the case (a) must name: its first SF path may no
+    // longer exist, and anchoring on that one sample alone would drop the ts/
+    // prefix and misreport ts/src changes as an instrumentation-scope gap.
+    const root = emptyRoot();
+    mkdirSync(join(root, 'ts', 'src'), { recursive: true });
+    mkdirSync(join(root, 'ts', 'coverage'), { recursive: true });
+    writeFileSync(join(root, 'ts', 'src', 'cli.ts'), '', 'utf-8');
+    const report = join(root, 'ts', 'coverage', 'lcov.info');
+    writeFileSync(
+      report,
+      'SF:src/deleted.ts\nDA:1,1\nend_of_record\n' +
+        'SF:src/cli.ts\nDA:1,1\nend_of_record\n',
+      'utf-8',
+    );
+    const changed: ChangedUnit[] = [
+      { path: 'ts/src/brand-new.ts', added_ranges: [[1, 2]] },
+    ];
+    const { coverage } = resolveCoverageWithInput(changed, {
+      coveragePath: report,
+      graphPath: join(tmp, 'missing-graph.json'),
+      repoRoot: root,
+    });
+    expect(coverage.unitsEligible).toBe(1);
+    expect(coverageDegradedNotice(coverage)).toContain('stale');
+  });
 });

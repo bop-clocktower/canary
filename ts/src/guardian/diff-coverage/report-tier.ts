@@ -130,11 +130,14 @@ export function readReportIndex(reportPath: string): ReportRead {
  *
  * Tools write `SF:` paths relative to their own project root (vitest under
  * `ts/` writes `src/cli.ts`), so the prefix is the nearest ancestor of the
- * report's directory under which `sample` exists. Without it `src/` would claim
- * `npm/src/` too. A report outside the repo, or no hit, anchors at the root.
+ * report's directory under which one of `samples` exists. Every sample is tried
+ * because a stale report names files that were since deleted, and anchoring on
+ * one missing file would misread that stale report as a scope gap. Without the
+ * prefix `src/` would claim `npm/src/` too. A report outside the repo, or no
+ * hit, anchors at the root.
  */
 function anchorPrefix(
-  sample: string,
+  samples: string[],
   reportPath: string,
   root: string,
 ): string {
@@ -142,7 +145,9 @@ function anchorPrefix(
   if (dir[0] === '..' || isAbsolute(dir.join('/'))) return '';
   for (let i = dir.length; i > 0 && dir[0] !== ''; i--) {
     const prefix = dir.slice(0, i).join('/');
-    if (existsSync(join(root, prefix, sample))) return `${prefix}/`;
+    if (samples.some((s) => existsSync(join(root, prefix, s)))) {
+      return `${prefix}/`;
+    }
   }
   return '';
 }
@@ -177,7 +182,7 @@ function instrumentedTrees(
     groups.set(top, [...(groups.get(top) ?? []), clean]);
   }
   return [...groups.values()].map((paths) => {
-    const tree = anchorPrefix(paths[0]!, reportPath, root) + commonDir(paths);
+    const tree = anchorPrefix(paths, reportPath, root) + commonDir(paths);
     return tree.replace(/\/$/, '');
   });
 }
