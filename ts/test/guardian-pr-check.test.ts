@@ -23,6 +23,7 @@ import {
   applySuppressions,
   buildFindings,
   computeExitCode,
+  filterHeuristicNoise,
   filterSkipped,
   filterTestUnits,
   findReexportOnly,
@@ -137,6 +138,39 @@ describe('scopeDiff', () => {
     expect('pkg/mod.py' in by).toBe(true);
     // The `+++ evil` add lands on new-file line 2 (after context ` keep`).
     expect(by['pkg/mod.py']!.added_ranges).toEqual([[2, 2]]);
+  });
+
+  it('decodes a git-quoted (non-ASCII) path header', () => {
+    // `git diff` quotes a path containing non-ASCII bytes (core.quotePath
+    // defaults to true), emitting `+++ "b/caf\303\251.ts"`. The quotes and the
+    // octal escapes are diff SYNTAX, not part of the filename.
+    const diff =
+      'diff --git "a/caf\\303\\251.ts" "b/caf\\303\\251.ts"\n' +
+      'index 1111111..2222222 100644\n' +
+      '--- "a/caf\\303\\251.ts"\n' +
+      '+++ "b/caf\\303\\251.ts"\n' +
+      '@@ -1 +1,2 @@\n' +
+      ' a\n' +
+      '+b\n';
+    const paths = scopeDiff(diff).map((u) => u.path);
+    expect(paths).toEqual(['café.ts']);
+
+    // False-green consequence: with the quotes left on, the unit's extension
+    // reads as `.ts"`, `isSourcePath` says "not program source", and
+    // filterHeuristicNoise drops the uncovered finding silently.
+    const unit = scopeDiff(diff)[0]!;
+    const [kept] = filterHeuristicNoise(
+      [
+        {
+          unit,
+          covered: false,
+          fidelity: Fidelity.Heuristic,
+          evidence: 'no test file mentions this',
+        } as CoverageResult,
+      ],
+      [],
+    );
+    expect(kept).toHaveLength(1);
   });
 });
 

@@ -120,9 +120,74 @@ export interface DiffLine {
   added: boolean;
 }
 
+// Single-character C escapes git's `quote_c_style` emits, per `sq_lookup`.
+const C_ESCAPES: Record<string, number> = {
+  a: 0x07,
+  b: 0x08,
+  f: 0x0c,
+  n: 0x0a,
+  r: 0x0d,
+  t: 0x09,
+  v: 0x0b,
+  '"': 0x22,
+  '\\': 0x5c,
+};
+
+const UTF8_DECODER = new TextDecoder('utf-8');
+
+/**
+ * Undo git's C-style path quoting (`core.quotePath`, on by default).
+ *
+ * A path with a non-ASCII (or control) byte is emitted by `git diff` wrapped in
+ * double quotes with its bytes octal-escaped:
+ * `+++ "b/caf\303\251.ts"`. Left as-is, the quotes ride along in the unit's
+ * path, so the file resolves to nothing: `extname` reads `.ts"`,
+ * {@link isSourcePath} says "not program source", and
+ * {@link filterHeuristicNoise} drops the finding — a silent false negative on
+ * every non-ASCII-named file. A value that is not quoted is returned verbatim.
+ */
+function unquoteCStyle(value: string): string {
+  if (!isCQuoted(value)) return value;
+  const body = value.slice(1, -1);
+  const bytes: number[] = [];
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]!;
+    if (ch !== '\\') {
+      // Any non-escaped character is already a decoded code point; re-encode it
+      // so the whole path decodes as one UTF-8 byte stream.
+      for (const byte of new TextEncoder().encode(ch)) bytes.push(byte);
+      continue;
+    }
+    const next = body[i + 1];
+    if (next === undefined) return value; // trailing backslash → not quoted
+    if (next >= '0' && next <= '7') {
+      const octal = /^[0-7]{1,3}/.exec(body.slice(i + 1))![0];
+      bytes.push(Number.parseInt(octal, 8) & 0xff);
+      i += octal.length;
+      continue;
+    }
+    const mapped = C_ESCAPES[next];
+    if (mapped === undefined) return value; // unknown escape → leave alone
+    bytes.push(mapped);
+    i += 1;
+  }
+  return UTF8_DECODER.decode(new Uint8Array(bytes));
+}
+
+/**
+ * True when `value` is wrapped in the double quotes git uses for C-style path
+ * quoting. Split out of {@link unquoteCStyle} to keep its decode loop under
+ * the cyclomatic-complexity threshold.
+ */
+function isCQuoted(value: string): boolean {
+  return value.length >= 2 && value.startsWith('"') && value.endsWith('"');
+}
+
 /** The new-side path a `+++ ` header names, or `null` for a deleted file. */
 function headerPath(line: string): string | null {
-  const target = line.slice(4).trim();
+  // A quoted path is unquoted BEFORE the `b/` strip: the quotes wrap the
+  // prefix too (`"b/caf\303\251.ts"`), so stripping first would never match.
+  const target = unquoteCStyle(line.slice(4).trim());
   if (target === '/dev/null') return null;
   // Strip the conventional "b/" prefix.
   return target.startsWith('b/') ? target.slice(2) : target;
