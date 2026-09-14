@@ -119,9 +119,9 @@ function pyGet(
 }
 
 /**
- * Deep equality mirroring Python `==` on JSON-shaped data: arrays compare
- * order-sensitively, objects compare by key set (order-insensitive), and
- * `None`/`undefined` are interchangeable.
+ * Deep equality for spec values: arrays by order, objects by key set, null and
+ * undefined interchangeable. A boolean never equals a number (#922): a spec's
+ * true -> 1 rewrite changes the type consumers see, so it is a change.
  */
 function pyEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
