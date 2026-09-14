@@ -35,6 +35,14 @@ import { clusterFailures } from '../claude-code/canary-screech/scripts/cluster.m
 import { renderBlast } from '../claude-code/canary-screech/scripts/blast.mjs';
 import { main } from '../claude-code/canary-screech/scripts/cli.mjs';
 
+/**
+ * `assessBranch` returns a discriminated union expressed in JSDoc, which `tsc
+ * --strict` reads as "every branch-specific field may be null". The assertions
+ * below ARE the narrowing, so they are made through this helper rather than
+ * scattering non-null assertions over every line.
+ */
+const assess = (rows: unknown[]): any => assessBranch(rows as never[]);
+
 const tmps: string[] = [];
 function tmpdir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canary-screech-'));
@@ -140,16 +148,16 @@ describe('history.mjs', () => {
 
 describe('redness.mjs', () => {
   it('abstains on an empty run list instead of calling it green', () => {
-    const a = assessBranch([]);
+    const a = assess([]);
     expect(a.state).toBe('abstained');
   });
 
   it('reports green when the latest run had no failures', () => {
-    expect(assessBranch([run()]).state).toBe('green');
+    expect(assess([run()]).state).toBe('green');
   });
 
   it('reports red when the latest run had failures', () => {
-    expect(assessBranch([run({ failed: 2 })]).state).toBe('red');
+    expect(assess([run({ failed: 2 })]).state).toBe('red');
   });
 
   it('walks back to the FIRST red run, not the latest one', () => {
@@ -172,7 +180,7 @@ describe('redness.mjs', () => {
         timestamp: '2026-09-03T00:00:00Z',
       }),
     ];
-    const a = assessBranch(rows);
+    const a = assess(rows);
     expect(a.state).toBe('red');
     expect(a.firstRed.run_id).toBe('r1');
     expect(a.lastGreen.run_id).toBe('g');
@@ -183,7 +191,7 @@ describe('redness.mjs', () => {
   });
 
   it('admits an unknown lower bound when no green run precedes the break', () => {
-    const a = assessBranch([run({ commit_sha: 'red001', failed: 1 })]);
+    const a = assess([run({ commit_sha: 'red001', failed: 1 })]);
     expect(a.culpritRange.from).toBeNull();
     expect(a.culpritRange.bounded).toBe(false);
   });
@@ -279,7 +287,7 @@ describe('blast.mjs', () => {
   });
 
   it('renders all five sections of the one-pager', () => {
-    const assessment = assessBranch([
+    const assessment = assess([
       run({ commit_sha: 'green01', timestamp: '2026-09-01T00:00:00Z' }),
       { ...redRun, timestamp: '2026-09-02T00:00:00Z' },
     ]);
@@ -299,7 +307,7 @@ describe('blast.mjs', () => {
   });
 
   it('emits exactly one ::error annotation for a red branch', () => {
-    const assessment = assessBranch([redRun]);
+    const assessment = assess([redRun]);
     const cluster = clusterFailures(
       assessment.firstRed,
       assessment.culpritRange,
@@ -311,14 +319,14 @@ describe('blast.mjs', () => {
   });
 
   it('emits no annotation for a green branch', () => {
-    const assessment = assessBranch([run()]);
+    const assessment = assess([run()]);
     const blast = renderBlast({ branch: 'main', assessment, cluster: null });
     expect(blast.annotations).toEqual([]);
     expect(blast.markdown).toContain('green');
   });
 
   it('puts the chat block in a fenced code block so it pastes cleanly', () => {
-    const assessment = assessBranch([redRun]);
+    const assessment = assess([redRun]);
     const cluster = clusterFailures(
       assessment.firstRed,
       assessment.culpritRange,

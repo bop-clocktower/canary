@@ -54,6 +54,28 @@ export const CLI_SPEC = {
 
 const parseArgs = createParser(CLI_SPEC);
 
+/**
+ * Write the artifact, or return the message explaining why it could not be.
+ * Extracted so `main` stays under the complexity the perf gate allows.
+ *
+ * @returns {string|null} null on success
+ */
+function writeArtifact(out, markdown) {
+  try {
+    fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
+    fs.writeFileSync(out, markdown, 'utf8');
+    return null;
+  } catch (exc) {
+    return `cannot write artifact: ${exc.message}`;
+  }
+}
+
+/** The `--strict` exit contract. Advisory callers never reach this. */
+function strictExitFor(state) {
+  if (state === 'abstained') return EXIT_ABSTAINED;
+  return state === 'red' ? 1 : 0;
+}
+
 export function main(argv = []) {
   const { opts: args, help, error } = parseArgs(argv);
 
@@ -86,18 +108,14 @@ export function main(argv = []) {
   for (const annotation of blast.annotations) console.log(annotation);
 
   if (args.out) {
-    try {
-      fs.mkdirSync(path.dirname(path.resolve(args.out)), { recursive: true });
-      fs.writeFileSync(args.out, blast.markdown, 'utf8');
-    } catch (exc) {
-      console.error(`${PREFIX} cannot write artifact: ${exc.message}`);
+    const failure = writeArtifact(args.out, blast.markdown);
+    if (failure) {
+      console.error(`${PREFIX} ${failure}`);
       return 1;
     }
   }
 
-  if (!args.strict) return 0;
-  if (assessment.state === 'abstained') return EXIT_ABSTAINED;
-  return assessment.state === 'red' ? 1 : 0;
+  return args.strict ? strictExitFor(assessment.state) : 0;
 }
 
 // Direct execution (the skill runner execs this file via its shebang).
