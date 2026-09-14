@@ -190,6 +190,72 @@ describe('guardian workflow', () => {
     ).toBe(true);
   });
 
+  // #930: coverage-delta (#881) never ran here because nothing supplied
+  // --base-coverage — 24 of 24 guardian comments read `head-only`. The base
+  // report now comes from the lcov artifact that `TS engine (pilot)` uploads on
+  // every push to main, looked up by the PR's merge-base SHA.
+  describe('#930 — base coverage for the coverage-delta tier', () => {
+    const resolveStep = () =>
+      Object.values(load().jobs!)
+        .flatMap((j) => j.steps)
+        .find(
+          (s) =>
+            typeof s.run === 'string' && s.run.includes('ts-coverage-lcov-'),
+        );
+
+    it('can read artifacts from other runs', () => {
+      expect(load().permissions!['actions']).toBe('read');
+    });
+
+    it('looks the artifact up by the merge-base SHA, not the latest main run', () => {
+      const run = resolveStep()?.run ?? '';
+      expect(run).toContain('git merge-base');
+      expect(run).toMatch(/ts-coverage-lcov-\$\{?BASE_SHA/);
+      // The artifact name alone is not trusted: the run that produced it must
+      // have been built from that exact commit.
+      expect(run).toMatch(/head_sha/);
+    });
+
+    it('never swallows a failed lookup into a green', () => {
+      const run = resolveStep()?.run ?? '';
+      expect(run).not.toMatch(/\|\|\s*(true|echo|:)/);
+    });
+
+    it('passes --base-coverage only when a base report resolved', () => {
+      const prCheck =
+        runBlocks(load()).find((b) => b.includes('guardian pr-check')) ?? '';
+      expect(prCheck).toContain('--base-coverage');
+      // Conditional on the resolver's output, so an unresolved base keeps the
+      // loud head-only notice instead of pointing pr-check at a missing file.
+      expect(prCheck).toMatch(/BASE_COVERAGE/);
+      expect(prCheck).toMatch(/if \[ -n "\$BASE_COVERAGE" \]/);
+    });
+
+    it('says in the log when it falls back to head-only', () => {
+      const run = resolveStep()?.run ?? '';
+      expect(run).toMatch(/::notice[^\n]*head-only/);
+    });
+
+    it('main uploads the lcov under a SHA-keyed name, on push only', () => {
+      const hq = loadYaml(
+        readFileSync(
+          join(REPO_ROOT, '.github', 'workflows', 'harness-quality.yml'),
+          'utf-8',
+        ),
+      ) as { jobs: Record<string, Job & { name?: string }> };
+      const upload = hq.jobs['ts-validate']!.steps.find(
+        (s) =>
+          String(s.with?.['name'] ?? '').startsWith('ts-coverage-lcov-') &&
+          (s as { uses?: string }).uses?.startsWith('actions/upload-artifact'),
+      ) as (Step & { if?: string }) | undefined;
+      expect(upload).toBeDefined();
+      expect(upload!.with!['name']).toBe('ts-coverage-lcov-${{ github.sha }}');
+      expect(upload!.with!['path']).toBe('ts/coverage/lcov.info');
+      expect(upload!.if).toMatch(/github\.event_name == 'push'/);
+      expect(upload!.with!['if-no-files-found']).toBe('error');
+    });
+  });
+
   it('agentless — no extra secret', () => {
     // Only GITHUB_TOKEN / github.token may appear — no `secrets.` reference,
     // proving the surface is agentless (no API key, no LLM secret).
