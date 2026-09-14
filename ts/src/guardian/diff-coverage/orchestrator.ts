@@ -6,7 +6,12 @@
 
 import { resolveFromGraph } from './graph-tier.js';
 import { resolveFromHeuristic } from './heuristic-tier.js';
-import { matchUnitsToIndex, readReportIndex } from './report-tier.js';
+import {
+  countEligible,
+  matchUnitsToIndex,
+  readReportIndex,
+  zeroMatchClause,
+} from './report-tier.js';
 import type { ChangedUnit, CoverageResult } from './types.js';
 
 /** Options for {@link resolveCoverage}. */
@@ -62,6 +67,12 @@ export interface CoverageInputState {
   unitsMatched: number;
   /** Changed units submitted to the ladder. */
   unitsTotal: number;
+  /**
+   * Changed units inside a tree the parsed report instruments (#883), or
+   * absent when no report parsed. Splits a zero match into "outside the
+   * instrumentation scope" (0) versus "the report is stale" (> 0).
+   */
+  unitsEligible?: number;
 }
 
 /**
@@ -120,7 +131,7 @@ export function coverageDegradedNotice(
   }
   return (
     `${head}report at '${requested}' covers ${filesInReport} file(s) but ` +
-    `matched 0 of ${total} changed file(s); ${FALLBACK_TIER}`
+    `${zeroMatchClause(state.unitsEligible, total)}; ${FALLBACK_TIER}`
   );
 }
 
@@ -167,6 +178,15 @@ export function resolveCoverageWithInput(
     coverage.parsed = read.index !== null;
     coverage.filesInReport =
       read.index === null ? 0 : Object.keys(read.index).length;
+    if (read.index !== null) {
+      const paths = units.map((u) => u.path);
+      coverage.unitsEligible = countEligible(
+        paths,
+        read.index,
+        coveragePath,
+        repoRoot,
+      );
+    }
     const report =
       read.index === null ? null : matchUnitsToIndex(remaining, read.index);
     // An empty array (no unit matched the report) is falsy-equivalent in the

@@ -209,3 +209,63 @@ describe('coverageDegradedNotice states the actual input state (#554)', () => {
     expect(coverageDegradedNotice(state({ unitsTotal: 0 }))).toBeNull();
   });
 });
+
+/**
+ * #883 (a) — "matched 0" has two causes that call for opposite fixes: the
+ * changed files lie outside every tree the report instruments (a scope gap —
+ * no fresh report would ever match), or they lie inside one and the report is
+ * stale. The state must carry the ELIGIBLE denominator and the notice must say
+ * which case this is.
+ */
+describe('zero-match abstention names its cause (#883)', () => {
+  it('changed files outside every instrumented tree: scope gap, 0 eligible', () => {
+    const path = writeLcov(['other/unrelated.ts']);
+    const { coverage } = resolveCoverageWithInput(units(), {
+      coveragePath: path,
+      graphPath: join(tmp, 'missing-graph.json'),
+      repoRoot: emptyRoot(),
+    });
+    expect(coverage.unitsEligible).toBe(0);
+    const notice = coverageDegradedNotice(coverage)!;
+    expect(notice).toContain('coverage unavailable');
+    expect(notice).toContain('0 of 2 changed file(s)');
+    expect(notice).toContain('outside every tree');
+    expect(notice).toContain('instrumentation-scope gap');
+    expect(notice).not.toContain('stale');
+  });
+
+  it('changed files inside an instrumented tree but unmatched: likely stale', () => {
+    const path = writeLcov(['pkg/c.ts']);
+    const { coverage } = resolveCoverageWithInput(units(), {
+      coveragePath: path,
+      graphPath: join(tmp, 'missing-graph.json'),
+      repoRoot: emptyRoot(),
+    });
+    expect(coverage.unitsEligible).toBe(2);
+    const notice = coverageDegradedNotice(coverage)!;
+    expect(notice).toContain('2 of 2 changed file(s)');
+    expect(notice).toContain('stale');
+    expect(notice).not.toContain('instrumentation-scope gap');
+  });
+
+  it('anchors report-relative paths so npm/src is not mistaken for ts/src', () => {
+    // The canary shape: report at ts/coverage/lcov.info, SF paths rooted at ts/.
+    const root = emptyRoot();
+    mkdirSync(join(root, 'ts', 'src'), { recursive: true });
+    mkdirSync(join(root, 'ts', 'coverage'), { recursive: true });
+    writeFileSync(join(root, 'ts', 'src', 'cli.ts'), '', 'utf-8');
+    const report = join(root, 'ts', 'coverage', 'lcov.info');
+    writeFileSync(report, 'SF:src/cli.ts\nDA:1,1\nend_of_record\n', 'utf-8');
+    const changed: ChangedUnit[] = [
+      { path: 'npm/src/overlays-registry.ts', added_ranges: [[1, 2]] },
+      { path: 'ts/src/brand-new.ts', added_ranges: [[1, 2]] },
+    ];
+    const { coverage } = resolveCoverageWithInput(changed, {
+      coveragePath: report,
+      graphPath: join(tmp, 'missing-graph.json'),
+      repoRoot: root,
+    });
+    expect(coverage.unitsMatched).toBe(0);
+    expect(coverage.unitsEligible).toBe(1);
+  });
+});

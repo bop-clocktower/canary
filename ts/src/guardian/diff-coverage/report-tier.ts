@@ -6,7 +6,15 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { basename } from 'node:path';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 
 import { parseCobertura } from './formats/cobertura.js';
 import { parseCoverageJson } from './formats/coverage-json.js';
@@ -115,6 +123,104 @@ export function readReportIndex(reportPath: string): ReportRead {
   const index = parseByFormat(basename(reportPath).toLowerCase(), text);
   if (index === null || Object.keys(index).length === 0) return unusable(true);
   return { found: true, index };
+}
+
+/**
+ * The repo-relative prefix a report's relative paths are rooted at (#883).
+ *
+ * Tools write `SF:` paths relative to their own project root (vitest under
+ * `ts/` writes `src/cli.ts`), so the prefix is the nearest ancestor of the
+ * report's directory under which `sample` exists. Without it `src/` would claim
+ * `npm/src/` too. A report outside the repo, or no hit, anchors at the root.
+ */
+function anchorPrefix(
+  sample: string,
+  reportPath: string,
+  root: string,
+): string {
+  const dir = relative(root, resolve(dirname(reportPath))).split(sep);
+  if (dir[0] === '..' || isAbsolute(dir.join('/'))) return '';
+  for (let i = dir.length; i > 0 && dir[0] !== ''; i--) {
+    const prefix = dir.slice(0, i).join('/');
+    if (existsSync(join(root, prefix, sample))) return `${prefix}/`;
+  }
+  return '';
+}
+
+/** The deepest directory shared by every path in `paths` ('' when none). */
+function commonDir(paths: string[]): string {
+  const dirs = paths.map((p) => p.split('/').slice(0, -1));
+  const first = dirs[0] ?? [];
+  let n = first.length;
+  for (const d of dirs) {
+    while (n > 0 && d.slice(0, n).join('/') !== first.slice(0, n).join('/'))
+      n--;
+  }
+  return first.slice(0, n).join('/');
+}
+
+/**
+ * The repo-relative source trees a report instruments (#883): one per top-level
+ * segment of its (anchored) paths, narrowed to the deepest shared directory.
+ * `''` means the report is rooted at the repo itself and covers everything.
+ */
+function instrumentedTrees(
+  index: ReportIndex,
+  reportPath: string,
+  root: string,
+) {
+  const groups = new Map<string, string[]>();
+  for (const raw of Object.keys(index)) {
+    const p = isAbsolute(raw) ? relative(root, raw).split(sep).join('/') : raw;
+    const clean = p.replace(/^\.\//, '');
+    const top = clean.split('/')[0]!;
+    groups.set(top, [...(groups.get(top) ?? []), clean]);
+  }
+  return [...groups.values()].map((paths) => {
+    const tree = anchorPrefix(paths[0]!, reportPath, root) + commonDir(paths);
+    return tree.replace(/\/$/, '');
+  });
+}
+
+/**
+ * How many changed `paths` lie inside a tree the report instruments (#883) —
+ * the denominator a zero-match abstention needs. Zero eligible means the files
+ * are outside the instrumentation scope, so no fresh report could match them;
+ * eligible-but-unmatched means the report itself is stale.
+ */
+export function countEligible(
+  paths: string[],
+  index: ReportIndex,
+  reportPath: string,
+  repoRoot: string,
+): number {
+  const trees = instrumentedTrees(index, reportPath, resolve(repoRoot));
+  const inside = (p: string) =>
+    trees.some((t) => t === '' || p.startsWith(`${t}/`));
+  return paths.filter(inside).length;
+}
+
+/**
+ * The "matched 0" clause for a zero-match notice, naming its cause (#883).
+ * `eligible` is undefined for a producer that never computed it.
+ */
+export function zeroMatchClause(
+  eligible: number | undefined,
+  total: number,
+): string {
+  const matched = `matched 0 of ${total} changed file(s)`;
+  if (eligible === undefined) return matched;
+  if (eligible === 0) {
+    return (
+      `${matched}: 0 of ${total} changed file(s) lie inside a tree it ` +
+      'instruments, so they are outside every tree the report covers ' +
+      '(an instrumentation-scope gap; regenerating the report cannot fix it)'
+    );
+  }
+  return (
+    `${matched}, though ${eligible} of ${total} changed file(s) lie inside a ` +
+    'tree it instruments (the report is likely stale or from another checkout)'
+  );
 }
 
 /** Pick the reader by report filename; `null` for a format we don't know. */

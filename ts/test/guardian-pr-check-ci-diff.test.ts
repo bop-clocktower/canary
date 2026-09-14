@@ -146,6 +146,70 @@ describe('readPrDiff base-ref resolution (#369)', () => {
     }
   });
 
+  it('diffs to the event-declared PR head, not a merge-ref HEAD (#883)', () => {
+    const tmp = mkTmp();
+    try {
+      const eventPath = join(tmp, 'event.json');
+      writeFileSync(
+        eventPath,
+        JSON.stringify({ pull_request: { head: { sha: 'headsha1' } } }),
+        'utf-8',
+      );
+      const git = fakeGit({
+        'rev-parse --verify --quiet origin/main^{commit}': ok('abc123\n'),
+        'rev-parse --verify --quiet headsha1^{commit}': ok('headsha1\n'),
+        'diff origin/main...headsha1': ok(DIFF_NEW_UNIT),
+      });
+      const res = readPrDiff(
+        null,
+        depsFor(git, {
+          GITHUB_ACTIONS: 'true',
+          GITHUB_EVENT_NAME: 'pull_request',
+          GITHUB_BASE_REF: 'main',
+          GITHUB_EVENT_PATH: eventPath,
+        }),
+      );
+
+      expect(res.origin).toBe('ci-base');
+      expect(res.head).toBe('headsha1');
+      expect(res.text).toBe(DIFF_NEW_UNIT);
+      expect(git.calls).not.toContainEqual(['diff', 'origin/main...HEAD']);
+    } finally {
+      rmTmp(tmp);
+    }
+  });
+
+  it('keeps diffing to HEAD when the declared PR head is not fetched (#883)', () => {
+    const tmp = mkTmp();
+    try {
+      const eventPath = join(tmp, 'event.json');
+      writeFileSync(
+        eventPath,
+        JSON.stringify({ pull_request: { head: { sha: 'headsha1' } } }),
+        'utf-8',
+      );
+      const git = fakeGit({
+        'rev-parse --verify --quiet origin/main^{commit}': ok('abc123\n'),
+        'diff origin/main...HEAD': ok(DIFF_NEW_UNIT),
+      });
+      const res = readPrDiff(
+        null,
+        depsFor(git, {
+          GITHUB_ACTIONS: 'true',
+          GITHUB_EVENT_NAME: 'pull_request',
+          GITHUB_BASE_REF: 'main',
+          GITHUB_EVENT_PATH: eventPath,
+        }),
+      );
+
+      expect(res.origin).toBe('ci-base');
+      expect(res.head ?? null).toBeNull();
+      expect(res.text).toBe(DIFF_NEW_UNIT);
+    } finally {
+      rmTmp(tmp);
+    }
+  });
+
   it('keeps working-tree behavior when not in CI', () => {
     const git = fakeGit({ diff: ok(DIFF_NEW_UNIT) });
     const res = readPrDiff(null, depsFor(git, {}));
