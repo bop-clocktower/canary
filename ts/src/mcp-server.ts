@@ -41,8 +41,22 @@
  *   - File writes are LF + UTF-8 on every platform (matches the sibling ports).
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, dirname, extname, join, relative, resolve } from 'node:path';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from 'node:path';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -513,11 +527,68 @@ export function analyzeFileImpl(filePath: string): Record<string, unknown> {
   };
 }
 
+/**
+ * Resolve `candidate` against `root` and return it only if it stays inside.
+ *
+ * A tool argument arrives from the MCP host, so a path is untrusted input: an
+ * absolute path, a `..` climb, or a symlinked parent directory would otherwise
+ * let a caller reach outside the served project. Containment is therefore
+ * checked *after* symlink resolution -- a textual `..`-and-absolute test looks
+ * like a guard but cannot see a symlink, which is the gap this exists to close.
+ *
+ * `realpathSync` throws on a missing path, so the nearest existing ancestor is
+ * resolved and the not-yet-created tail re-joined onto it. That is what lets a
+ * write to a new file still be checked against the real location of the
+ * directory it would be created in. Mirrors `resolveCliPath`
+ * (`core/skill-registry.ts`), the guard already proven in this codebase.
+ *
+ * @returns the resolved absolute path, or `null` when it escapes `root`.
+ */
+export function resolveInsideRoot(
+  candidate: string,
+  root: string,
+): string | null {
+  let realRoot: string;
+  try {
+    realRoot = realpathSync(resolve(root));
+  } catch {
+    return null;
+  }
+
+  const target = resolve(realRoot, candidate);
+  // Walk up to the nearest ancestor that exists, remembering the tail.
+  const tail: string[] = [];
+  let probe = target;
+  while (!existsSync(probe)) {
+    const parent = dirname(probe);
+    if (parent === probe) return null;
+    tail.unshift(basename(probe));
+    probe = parent;
+  }
+
+  let resolved: string;
+  try {
+    resolved = join(realpathSync(probe), ...tail);
+  } catch {
+    return null;
+  }
+
+  const rel = relative(realRoot, resolved);
+  if (rel !== '' && (rel.startsWith('..') || isAbsolute(rel))) return null;
+  return resolved;
+}
+
+/** The refusal an MCP tool returns when a path argument escapes its root. */
+function escapeError(path: string): Record<string, unknown> {
+  return { error: `path escapes the project root: ${path}` };
+}
+
 /** Python: `_write_test_file_impl`. */
 export function writeTestFileImpl(
   filePath: string,
   content: string,
   framework: string,
+  root: string = WORKING_DIR,
 ): Record<string, unknown> {
   let outPath = filePath;
   if (pySuffix(basename(filePath)) === '') {
@@ -531,13 +602,26 @@ export function writeTestFileImpl(
     // with no existing suffix to strip, that is a plain concatenation.
     outPath = filePath + (extMap[framework] ?? '.ts');
   }
+  // Checked on the FINAL path, after the extension is inferred, and before the
+  // first filesystem mutation -- `mkdirSync` below would otherwise create
+  // directories outside the root even when the write itself were refused.
+  if (resolveInsideRoot(outPath, root) === null) return escapeError(outPath);
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, content, 'utf-8');
   return { written_path: outPath };
 }
 
 /** Python: `_run_tests_impl`. */
-export function runTestsImpl(testFile: string): Record<string, unknown> {
+export function runTestsImpl(
+  testFile: string,
+  root: string = WORKING_DIR,
+): Record<string, unknown> {
+  // The same containment the write path gets: this spawns a test runner over
+  // the named file, so an unconfined path is arbitrary code execution, not
+  // merely an arbitrary read. Refused before the executor is constructed.
+  if (resolveInsideRoot(testFile, root) === null) {
+    return { passed: 0, failed: 1, exit_code: 1, ...escapeError(testFile) };
+  }
   const suffix = extname(testFile).toLowerCase();
   const framework = suffix === '.py' ? 'pytest' : 'playwright';
   const executor = new CanaryTestExecutor();

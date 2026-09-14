@@ -18,10 +18,11 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -481,7 +482,12 @@ describe('writeTestFileImpl', () => {
   it('creates parent dirs and writes file, returning written_path', () => {
     const root = mkroot();
     const deep = join(root, 'nested', 'dir', 'my_test.spec.ts');
-    const result = writeTestFileImpl(deep, '// test content', 'playwright');
+    const result = writeTestFileImpl(
+      deep,
+      '// test content',
+      'playwright',
+      root,
+    );
     expect(result['written_path']).toBe(deep);
     expect(existsSync(deep)).toBe(true);
     expect(readFileSync(deep, 'utf-8')).toBe('// test content');
@@ -490,20 +496,148 @@ describe('writeTestFileImpl', () => {
   it('infers a .spec.ts extension for playwright when none is given', () => {
     const root = mkroot();
     const noExt = join(root, 'my_test');
-    const result = writeTestFileImpl(noExt, 'content', 'playwright');
+    const result = writeTestFileImpl(noExt, 'content', 'playwright', root);
     expect(String(result['written_path']).endsWith('.spec.ts')).toBe(true);
   });
 
   it('infers a .py extension for pytest', () => {
     const root = mkroot();
-    const result = writeTestFileImpl(join(root, 'my_test'), 'x', 'pytest');
+    const result = writeTestFileImpl(
+      join(root, 'my_test'),
+      'x',
+      'pytest',
+      root,
+    );
     expect(String(result['written_path']).endsWith('.py')).toBe(true);
   });
 
   it('falls back to .ts for an unknown framework', () => {
     const root = mkroot();
-    const result = writeTestFileImpl(join(root, 'my_test'), 'x', 'mystery');
+    const result = writeTestFileImpl(
+      join(root, 'my_test'),
+      'x',
+      'mystery',
+      root,
+    );
     expect(String(result['written_path']).endsWith('.ts')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Path containment (CWE-22): the MCP tool surface is a trust boundary, so a
+// tool argument is untrusted input. Each case below asserts the ESCAPE IS
+// REJECTED and that nothing was written or executed -- asserting only that a
+// normal path still works would not distinguish a real guard from no guard.
+// The symlinked-parent case is the one a textual `..`-and-absolute check
+// cannot see, so it is the case a containment guard must be proven against.
+// ---------------------------------------------------------------------------
+
+describe('writeTestFileImpl path containment', () => {
+  it('rejects an absolute path outside the root and writes nothing', () => {
+    const root = mkroot();
+    const outside = join(mkroot(), 'pwned.spec.ts');
+    const result = writeTestFileImpl(outside, 'x', 'playwright', root);
+    expect(result).toHaveProperty('error');
+    expect(result).not.toHaveProperty('written_path');
+    expect(existsSync(outside)).toBe(false);
+  });
+
+  it('rejects a `..` climb out of the root and writes nothing', () => {
+    const root = mkroot();
+    const sibling = mkroot();
+    // Climb out of `root` and back down into a sibling temp dir, so the escape
+    // target is still cleaned up if the guard ever regresses and lets it land.
+    const escaped = join(root, '..', basename(sibling), 'climbed.spec.ts');
+    const result = writeTestFileImpl(escaped, 'x', 'playwright', root);
+    expect(result).toHaveProperty('error');
+    expect(result).not.toHaveProperty('written_path');
+    expect(existsSync(resolve(escaped))).toBe(false);
+  });
+
+  it('rejects a path whose PARENT IS A SYMLINK pointing outside the root', () => {
+    const root = mkroot();
+    const elsewhere = mkroot();
+    // `<root>/link` -> `<elsewhere>`: every path segment is textually inside
+    // `root`, so a `..`-and-absolute check passes it. Only symlink resolution
+    // sees that the write lands in `elsewhere`.
+    symlinkSync(elsewhere, join(root, 'link'), 'dir');
+    const viaLink = join(root, 'link', 'pwned.spec.ts');
+    const result = writeTestFileImpl(viaLink, 'x', 'playwright', root);
+    expect(result).toHaveProperty('error');
+    expect(result).not.toHaveProperty('written_path');
+    expect(existsSync(join(elsewhere, 'pwned.spec.ts'))).toBe(false);
+  });
+
+  it('rejects an escape that only appears after the extension is inferred', () => {
+    const root = mkroot();
+    const elsewhere = mkroot();
+    symlinkSync(elsewhere, join(root, 'link'), 'dir');
+    // No suffix, so the impl appends `.spec.ts` before writing; the guard has
+    // to run on the FINAL path, not the one the caller passed.
+    const result = writeTestFileImpl(
+      join(root, 'link', 'pwned'),
+      'x',
+      'playwright',
+      root,
+    );
+    expect(result).toHaveProperty('error');
+    expect(existsSync(join(elsewhere, 'pwned.spec.ts'))).toBe(false);
+  });
+
+  it('still writes a legitimate path inside the root', () => {
+    const root = mkroot();
+    const inside = join(root, 'tests', 'ok.spec.ts');
+    const result = writeTestFileImpl(inside, 'ok', 'playwright', root);
+    expect(result['written_path']).toBe(inside);
+    expect(readFileSync(inside, 'utf-8')).toBe('ok');
+  });
+});
+
+describe('runTestsImpl path containment', () => {
+  it('rejects an absolute path outside the root without executing', () => {
+    const root = mkroot();
+    const spy = vi
+      .spyOn(CanaryTestExecutor.prototype, 'execute')
+      .mockReturnValue([0, '1 passed', '']);
+    const result = runTestsImpl(join(mkroot(), 'evil.py'), root);
+    expect(result['exit_code']).toBe(1);
+    expect(result).toHaveProperty('error');
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('rejects a `..` climb without executing', () => {
+    const root = mkroot();
+    const spy = vi
+      .spyOn(CanaryTestExecutor.prototype, 'execute')
+      .mockReturnValue([0, '1 passed', '']);
+    const result = runTestsImpl(join(root, '..', 'evil.py'), root);
+    expect(result['exit_code']).toBe(1);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('rejects a SYMLINKED PARENT pointing outside the root without executing', () => {
+    const root = mkroot();
+    const elsewhere = mkroot();
+    symlinkSync(elsewhere, join(root, 'link'), 'dir');
+    writeFileSync(join(elsewhere, 'evil.py'), 'x', 'utf-8');
+    const spy = vi
+      .spyOn(CanaryTestExecutor.prototype, 'execute')
+      .mockReturnValue([0, '1 passed', '']);
+    const result = runTestsImpl(join(root, 'link', 'evil.py'), root);
+    expect(result['exit_code']).toBe(1);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('still executes a legitimate path inside the root', () => {
+    const root = mkroot();
+    const inside = join(root, 'test_ok.py');
+    writeFileSync(inside, 'x', 'utf-8');
+    const spy = vi
+      .spyOn(CanaryTestExecutor.prototype, 'execute')
+      .mockReturnValue([0, '1 passed in 0.01s', '']);
+    const result = runTestsImpl(inside, root);
+    expect(result['exit_code']).toBe(0);
+    expect(spy).toHaveBeenCalled();
   });
 });
 
@@ -518,7 +652,8 @@ describe('runTestsImpl', () => {
       '1 passed in 0.01s',
       '',
     ]);
-    const result = runTestsImpl('/tmp/test_ok.py');
+    const root = mkroot();
+    const result = runTestsImpl(join(root, 'test_ok.py'), root);
     expect(result['exit_code']).toBe(0);
     expect(result['failed']).toBe(0);
     expect(result['passed'] as number).toBeGreaterThan(0);
@@ -530,7 +665,8 @@ describe('runTestsImpl', () => {
       '',
       'AssertionError',
     ]);
-    const result = runTestsImpl('/tmp/test_bad.py');
+    const root = mkroot();
+    const result = runTestsImpl(join(root, 'test_bad.py'), root);
     expect(result['exit_code']).toBe(1);
     expect(result['failed']).toBe(1);
   });
@@ -539,7 +675,8 @@ describe('runTestsImpl', () => {
     vi.spyOn(CanaryTestExecutor.prototype, 'execute').mockImplementation(() => {
       throw new Error('boom');
     });
-    const result = runTestsImpl('/tmp/test_x.spec.ts');
+    const root = mkroot();
+    const result = runTestsImpl(join(root, 'test_x.spec.ts'), root);
     expect(result).toEqual({
       passed: 0,
       failed: 0,
@@ -552,7 +689,8 @@ describe('runTestsImpl', () => {
     vi.spyOn(CanaryTestExecutor.prototype, 'execute').mockImplementation(() => {
       throw 'stringy';
     });
-    const result = runTestsImpl('/tmp/test_x.spec.ts');
+    const root = mkroot();
+    const result = runTestsImpl(join(root, 'test_x.spec.ts'), root);
     expect(result['output']).toBe('stringy');
     expect(result['exit_code']).toBe(1);
   });
@@ -717,7 +855,10 @@ describe('tool wrappers delegate to their impls', () => {
   });
 
   it('write wrapper forwards all three args', () => {
-    const root = mkroot();
+    // The wrapper uses the server's own WORKING_DIR as the containment root,
+    // so the target has to be inside it.
+    const root = mkdtempSync(join(process.cwd(), 'canary-wrapper-'));
+    roots.push(root);
     const out = writeTestFileTool({
       file_path: join(root, 'x'),
       content: 'body',
@@ -734,7 +875,8 @@ describe('tool wrappers delegate to their impls', () => {
       '',
     ]);
     const parsed = JSON.parse(
-      runTestsTool({ test_file: '/t/x.py' }).content[0]!.text,
+      runTestsTool({ test_file: join(process.cwd(), 't', 'x.py') }).content[0]!
+        .text,
     );
     expect(parsed.exit_code).toBe(0);
   });
