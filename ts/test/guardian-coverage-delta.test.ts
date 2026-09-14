@@ -188,6 +188,26 @@ describe('resolveCoverageDelta', () => {
     expect(state.unitsCompared).toBe(0);
     expect(coverageDeltaStatus(state)).toBe('unavailable');
     expect(coverageDeltaNotice(state)).toContain('matched 0 of 1');
+    // #883: src/a.ts sits inside the base report's src/ tree.
+    expect(state.unitsEligible).toBe(1);
+    expect(coverageDeltaNotice(state)).toContain('stale');
+  });
+
+  it('names the scope gap when no touched unit lies in a base-report tree (#883)', () => {
+    const base = writeLcov('base.info', { 'src/other.ts': { 1: 1 } });
+    const head = writeLcov('head.info', { 'src/other.ts': { 1: 1 } });
+
+    const { state } = resolveCoverageDelta([unit('scripts/lib/foo.mjs')], {
+      baseCoveragePath: base,
+      headCoveragePath: head,
+    });
+
+    expect(state.unitsCompared).toBe(0);
+    expect(state.unitsEligible).toBe(0);
+    const notice = coverageDeltaNotice(state)!;
+    expect(notice).toContain('0 of 1 changed file(s)');
+    expect(notice).toContain('instrumentation-scope gap');
+    expect(notice).not.toContain('stale');
   });
 
   it('reports partial when only some touched units could be compared', () => {

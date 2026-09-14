@@ -1,0 +1,31 @@
+{
+  "item": "#883",
+  "scope": [
+    "a: honest zero-match abstention with eligible denominator",
+    "b: diff the PR head, not the merge ref"
+  ],
+  "phase": "VERIFY",
+  "tasks": [
+    { "id": 1, "title": "Write failing tests (6 red)", "status": "done" },
+    {
+      "id": 2,
+      "title": "Eligibility count + zero-match wording in report-tier/orchestrator/coverage-delta",
+      "status": "done"
+    },
+    {
+      "id": 3,
+      "title": "Resolve event-declared PR head in readPrDiff; use it for provenance",
+      "status": "done"
+    },
+    {
+      "id": 4,
+      "title": "Local gates from ts/: build, typecheck, format:check, test",
+      "status": "done"
+    }
+  ],
+  "outOfScope": [
+    "instrumenting npm/, scripts/, agents/skills/",
+    "coverage-exempt trees (#883 part c)"
+  ],
+  "verdict": "local gates green; awaiting CI and human review (not merged)"
+}

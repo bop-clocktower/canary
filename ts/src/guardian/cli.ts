@@ -515,6 +515,12 @@ export interface ResolvedDiff {
   origin: DiffOrigin;
   /** The git rev the diff was taken against; only set for `ci-base`. */
   base: string | null;
+  /**
+   * The PR head sha the diff was taken to, when it was not `HEAD` (#883): a
+   * `pull_request` checkout sits on the MERGE REF, so the PR's own diff has to
+   * be taken to the event-declared head instead.
+   */
+  head?: string | null;
 }
 
 /**
@@ -571,6 +577,27 @@ export function detectMergeRef(
   const declared = eventHeadSha(deps.env);
   if (!declared || !headSha) return false;
   return declared !== headSha;
+}
+
+/**
+ * The event-declared PR head, when it resolves to a local commit (#883).
+ *
+ * Diffing to it instead of `HEAD` judges the PR's own changes rather than the
+ * merge ref's widened set. Null outside a `pull_request` event or when the sha
+ * was not fetched (a shallow checkout) — the caller then diffs to `HEAD` and
+ * {@link detectMergeRef} still discloses the widening.
+ */
+function resolvePrHead(deps: GuardianDeps): string | null {
+  if (deps.env['GITHUB_EVENT_NAME'] !== 'pull_request') return null;
+  const sha = eventHeadSha(deps.env);
+  if (!sha) return null;
+  const res = deps.runGit([
+    'rev-parse',
+    '--verify',
+    '--quiet',
+    `${sha}^{commit}`,
+  ]);
+  return res !== null && res.code === 0 ? sha : null;
 }
 
 /** True when the process looks like a CI runner rather than a dev worktree. */
@@ -670,9 +697,10 @@ export function readPrDiff(
   if (isCiContext(deps.env)) {
     const base = resolveBaseRev(deps);
     if (base !== null) {
-      const res = deps.runGit(['diff', `${base}...HEAD`]);
+      const head = resolvePrHead(deps);
+      const res = deps.runGit(['diff', `${base}...${head ?? 'HEAD'}`]);
       if (res !== null && res.code === 0) {
-        return { text: res.stdout, origin: 'ci-base', base };
+        return { text: res.stdout, origin: 'ci-base', base, head };
       }
     }
   }
@@ -1460,7 +1488,8 @@ async function prCheckCmd(
   // Populated even for an explicit `--diff` (where `base` is unknowable): the
   // merge-ref warning and the file count are exactly what was missing on
   // the consumer run that surfaced #761, which passed `--diff` from a file.
-  const headSha = resolveHeadSha(deps);
+  // #883: a diff taken to the PR head is the PR's own, so it is not widened.
+  const headSha = resolvedDiff.head ?? resolveHeadSha(deps);
   const mergeRef = detectMergeRef(headSha, deps);
   const provenance: DiffProvenance = {
     base: resolvedDiff.base,
