@@ -1,28 +1,17 @@
 /**
- * Flake signals from GitHub Actions run history that survive an in-place
- * Re-run (#884).
- *
- * GitHub's Re-run does not add a run record. It bumps `run_attempt` and
- * REPLACES the run's conclusion, so a run that failed and was re-run to green
- * leaves one row reading `success`. A scan keyed only on the same-SHA outcome
- * flip (one sha, one workflow, a success and a failure) reads that row and
- * reports "0 candidates" whether flakes exist or not.
- *
- * So this reads two signatures and never reports a zero without naming the
- * signatures it was verified against:
+ * Flake signals from GitHub Actions runs that survive an in-place Re-run
+ * (#884). A Re-run bumps `run_attempt` and REPLACES the conclusion, so a
+ * same-SHA outcome-flip scan alone reads a rerun-to-green run as `success`.
+ * This reads two signatures and never reports a zero without naming them:
  *   - `same-sha-flip`: two runs of one workflow on one sha that disagree.
- *   - `rerun-attempt`: a run on attempt > 1 that is green now, but whose
- *     earlier attempt, read from `/actions/runs/{id}/attempts/{n}`, was not.
- *
- * An earlier attempt that cannot be read is recorded as unverifiable with the
- * endpoint named. It is never folded into a zero.
- *
+ *   - `rerun-attempt`: a green run on attempt > 1 whose earlier attempt, read
+ *     from `/actions/runs/{id}/attempts/{n}`, was not. An unreadable attempt
+ *     is recorded as unverifiable with the endpoint named, never as zero.
  * gh is reached only through the injected {@link SubprocessRun} seam that
- * `batwoman/gh-history.ts` uses, so the classification stays pure and tests
- * never shell out.
+ * `analysis/batwoman/gh-history.ts` uses, so tests never shell out.
  */
-import type { SubprocessRun } from '../core/workflow-discovery.js';
-import { EXIT_ABSTAINED, gateOutcome } from '../core/gate-result.js';
+import type { SubprocessRun } from '../../core/workflow-discovery.js';
+import { EXIT_ABSTAINED, gateOutcome } from '../../core/gate-result.js';
 
 /** Default window, stated explicitly: gh's own default is silent about it. */
 export const GH_FLAKY_RUN_LIMIT = 100;
@@ -65,6 +54,12 @@ interface GhFlakyReport {
   verifiedAgainst: Signature[];
   candidates: Candidate[];
   unverifiable: Unverifiable[];
+  /** False when the page filled to the limit (batwoman's `RunHistory.complete`). */
+  complete: boolean;
+  /** The window disclosure, stated in both the text and JSON output. */
+  window: string;
+  /** gh rows that could not be parsed into a run, so were never checked. */
+  skippedRows: number;
   reason?: string;
 }
 
@@ -98,12 +93,24 @@ function toRunRow(raw: unknown): RunRow | null {
   };
 }
 
-function listRuns(repo: string, limit: number, run: SubprocessRun): RunRow[] {
+/** The parsed runs plus the RAW row count: a malformed row still fills the page. */
+function listRuns(
+  repo: string,
+  limit: number,
+  run: SubprocessRun,
+): { rows: RunRow[]; rawCount: number } {
   const cmd = ['gh', 'run', 'list', '--repo', repo, '--limit', String(limit)];
   cmd.push('--json', 'databaseId,headSha,workflowName,conclusion,attempt');
   const parsed = ghJson(run, cmd);
   if (!Array.isArray(parsed)) throw new Error('output was not a list');
-  return parsed.map(toRunRow).filter((r): r is RunRow => r !== null);
+  const rows = parsed.map(toRunRow).filter((r): r is RunRow => r !== null);
+  return { rows, rawCount: parsed.length };
+}
+
+function windowNote(complete: boolean, limit: number, runs: number): string {
+  return complete
+    ? `window complete: all ${runs} runs checked`
+    : `window truncated at ${limit} runs; older runs unchecked`;
 }
 
 /** A sha + workflow group holding both a success and a non-success outcome. */
@@ -167,6 +174,9 @@ function abstained(repo: string, reason: string): GhFlakyReport {
     verifiedAgainst: [],
     candidates: [],
     unverifiable: [],
+    complete: false,
+    window: 'no runs read',
+    skippedRows: 0,
     reason,
   };
 }
@@ -183,8 +193,9 @@ export function scanGhFlaky(
   run: SubprocessRun,
 ): GhFlakyReport {
   let rows: RunRow[];
+  let rawCount: number;
   try {
-    rows = listRuns(repo, limit, run);
+    ({ rows, rawCount } = listRuns(repo, limit, run));
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     return abstained(repo, `gh run list could not be read (${why}).`);
@@ -202,6 +213,8 @@ export function scanGhFlaky(
   }
   const verifiedAgainst: Signature[] = ['same-sha-flip'];
   if (unverifiable.length === 0) verifiedAgainst.push('rerun-attempt');
+  // Disclosure only: the verdict covers the declared window either way.
+  const complete = rawCount < limit;
   return {
     repo,
     verdict: verdictOf(candidates.length, unverifiable.length),
@@ -209,6 +222,10 @@ export function scanGhFlaky(
     verifiedAgainst,
     candidates,
     unverifiable,
+    complete,
+    window: windowNote(complete, limit, rows.length),
+    // A malformed row is a run nobody checked: count it, never let it vanish.
+    skippedRows: rawCount - rows.length,
   };
 }
 
@@ -253,6 +270,12 @@ export function renderGhFlaky(report: GhFlakyReport): string[] {
     lines.push('0 candidates.');
   }
   lines.push(verifiedLine(report));
+  if (!report.complete) lines.push(`Note: ${report.window}.`);
+  if (report.skippedRows > 0) {
+    lines.push(
+      `Note: ${report.skippedRows} malformed run row(s) from gh skipped; not checked.`,
+    );
+  }
   return lines;
 }
 

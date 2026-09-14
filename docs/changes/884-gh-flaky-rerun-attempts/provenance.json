@@ -8,11 +8,12 @@
   "plan": "docs/changes/884-gh-flaky-rerun-attempts/plans/plan.md",
   "assumptions": [
     "gh-flaky follows the CLI-wide gate contract (0 verified zero, 1 candidates, 3 abstained or unverifiable), unlike the history-backed analyze subcommands, which stay advisory at exit 0.",
+    "A gh row missing a numeric databaseId or a string headSha is skipped but counted as skippedRows and disclosed in the text output, so the checked-run denominator cannot shrink silently.",
     "A rerun is inspected only when its current conclusion is success; a rerun still red is already a visible failure and not a hidden flake.",
     "Any non-success earlier attempt (failure, cancelled, timed_out, ...) counts as a rerun-attempt candidate.",
     "A same-SHA flip is any sha + workflow group holding a success and at least one other conclusion.",
     "--repo is required rather than inferred from the working directory, matching batwoman's gh seam.",
-    "The window is the last --limit-runs runs (default 100) across all workflows; a full page is not flagged as truncated in this slice.",
+    "The window is the last --limit-runs runs (default 100) across all workflows. A page that fills to the limit is reported as truncated (complete: false, 'window truncated at N runs; older runs unchecked') in both text and --json output; the verdict and exit code still cover the declared window, so truncation is disclosed, not abstained on.",
     "Perf paydown is the commonFailuresCmd row-building loop in ts/src/analysis/cli.ts, which decides no gate verdict and is not one of #904-#907."
   ],
   "closingKeyword": "Closes",

@@ -47,7 +47,7 @@ import {
   ghFlakyExitCode,
   renderGhFlaky,
   scanGhFlaky,
-} from './gh-run-attempts.js';
+} from './gh-flaky/gh-run-attempts.js';
 import {
   buildCommonFailuresReport,
   buildFlakyTestsReport,

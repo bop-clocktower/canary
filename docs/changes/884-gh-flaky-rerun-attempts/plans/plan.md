@@ -44,3 +44,25 @@ Spec: `docs/changes/884-gh-flaky-rerun-attempts/proposal.md`
    `harness check-perf` plus `scripts/perf-ratchet.mjs --base-report`, the
    entropy scan and ratchet, and `harness check-deps`.
 8. Write the provenance file, commit, push, and open the PR (`Closes #884`).
+9. **Review fix (PR #920), RED to GREEN:** when `gh run list` returns exactly
+   `--limit-runs` rows, the report carries `complete: false`. Both the text and
+   `--json` output name the cutoff ("window truncated at N runs; older runs
+   unchecked"). With fewer rows, `complete` is `true`.
+
+## Assumptions
+
+- **The window is the last `--limit-runs` runs** (default 100) across all
+  workflows.
+- **A page that fills to the limit is truncated.** Following batwoman's
+  `RunHistory.complete` rule, it is disclosed as `complete: false`, never
+  presented as a whole answer. Truncation is measured against the raw rows gh
+  returned, not the rows that parsed.
+- **Malformed rows are disclosed.** A gh row without a numeric `databaseId` and
+  a string `headSha` is skipped. It is counted as `skippedRows` and named in the
+  text output, the same way truncation is, so the checked-run count can never
+  quietly shrink.
+- **Truncation is disclosure, not an abstention.** The verdict and exit code
+  still cover the declared window, so a zero over a truncated window stays
+  `verified-zero` (exit 0) with the cutoff named next to it.
+- **Only green reruns are inspected.** A rerun whose current conclusion is not
+  `success` is a visible failure, so it is not checked as a hidden flake.

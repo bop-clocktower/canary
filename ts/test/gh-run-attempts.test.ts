@@ -23,7 +23,7 @@ import {
   ghFlakyExitCode,
   renderGhFlaky,
   scanGhFlaky,
-} from '../src/analysis/gh-run-attempts.js';
+} from '../src/analysis/gh-flaky/gh-run-attempts.js';
 
 const REPO = 'bop-clocktower/canary';
 
@@ -204,6 +204,51 @@ describe('scanGhFlaky', () => {
     expect(report.reason).toContain('gh auth login required');
   });
 
+  it('marks a page that filled to the limit as truncated, and says so', () => {
+    const full = [run({ databaseId: 60 }), run({ databaseId: 61 })];
+    const report = scanGhFlaky(REPO, 2, fakeGh(full));
+    expect(report.complete).toBe(false);
+    // Disclosure only: a zero over the declared window stays verified.
+    expect(report.verdict).toBe('verified-zero');
+    expect(ghFlakyExitCode(report)).toBe(0);
+    expect(renderGhFlaky(report).join('\n')).toContain(
+      'window truncated at 2 runs; older runs unchecked',
+    );
+  });
+
+  it('marks a page with fewer rows than the limit as complete', () => {
+    const report = scanGhFlaky(REPO, 100, fakeGh(CLEAN, CLEAN_ATTEMPTS));
+    expect(report.complete).toBe(true);
+    expect(renderGhFlaky(report).join('\n')).not.toContain('truncated');
+  });
+
+  it('renders the same-SHA flip line in text output', () => {
+    const gh = fakeGh([
+      run({ databaseId: 80, headSha: 'abc', conclusion: 'failure' }),
+      run({ databaseId: 81, headSha: 'abc', conclusion: 'success' }),
+    ]);
+    const text = renderGhFlaky(scanGhFlaky(REPO, 100, gh)).join('\n');
+    expect(text).toContain('  same-SHA flip  CI @ abc: failure / success');
+  });
+
+  it('discloses malformed gh rows it skipped instead of dropping them silently', () => {
+    const gh = fakeGh([
+      run({ databaseId: 90 }),
+      {
+        headSha: 'no-id',
+        workflowName: 'CI',
+        conclusion: 'failure',
+        attempt: 1,
+      },
+    ] as RunFixture[]);
+    const report = scanGhFlaky(REPO, 100, gh);
+    expect(report.runsChecked).toBe(1);
+    expect(report.skippedRows).toBe(1);
+    expect(renderGhFlaky(report).join('\n')).toContain(
+      '1 malformed run row(s) from gh skipped; not checked',
+    );
+  });
+
   it('abstains when gh itself cannot be spawned', () => {
     const missing: SubprocessRun = () => {
       throw new Error('spawn gh ENOENT');
@@ -269,6 +314,22 @@ describe('canary analyze gh-flaky', () => {
     const gh = fakeGh(CLEAN, CLEAN_ATTEMPTS);
     await invokeGhFlaky(['--repo', REPO, '--limit-runs', '7'], gh);
     expect(gh.calls[0]).toContain('7');
+  });
+
+  it('names the cutoff in --json when the window is truncated', async () => {
+    const res = await invokeGhFlaky(
+      ['--repo', REPO, '--limit-runs', '2', '--json'],
+      fakeGh([run({ databaseId: 70 }), run({ databaseId: 71 })]),
+    );
+    expect(res.code).toBe(0);
+    const parsed = JSON.parse(res.stdout) as {
+      complete: boolean;
+      window: string;
+    };
+    expect(parsed.complete).toBe(false);
+    expect(parsed.window).toBe(
+      'window truncated at 2 runs; older runs unchecked',
+    );
   });
 
   it('rejects a missing --repo as a usage error', async () => {
