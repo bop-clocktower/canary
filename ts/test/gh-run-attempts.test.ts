@@ -249,6 +249,91 @@ describe('scanGhFlaky', () => {
     );
   });
 
+  it('(a) never verifies rerun-attempt when rows carry no attempt number', () => {
+    const noAttempt = [
+      {
+        databaseId: 100,
+        headSha: 'x',
+        workflowName: 'CI',
+        conclusion: 'success',
+      },
+      {
+        databaseId: 101,
+        headSha: 'y',
+        workflowName: 'CI',
+        conclusion: 'success',
+      },
+    ] as RunFixture[];
+    const report = scanGhFlaky(REPO, 100, fakeGh(noAttempt));
+    expect(report.verifiedAgainst).toEqual(['same-sha-flip']);
+    expect(report.verdict).toBe('flake-signal-unverifiable');
+    expect(ghFlakyExitCode(report)).toBe(EXIT_ABSTAINED);
+    expect(report.missingAttemptRows).toBe(2);
+    const text = renderGhFlaky(report).join('\n');
+    expect(text).toContain(
+      '2 run row(s) carried no attempt number; rerun-attempt not verified',
+    );
+    expect(text).not.toMatch(/(^|\n)0 candidates/);
+  });
+
+  it('(b) does not treat an in-progress run ("") as a flip partner', () => {
+    const report = scanGhFlaky(
+      REPO,
+      100,
+      fakeGh([
+        run({ databaseId: 110, headSha: 'p', conclusion: 'success' }),
+        run({ databaseId: 111, headSha: 'p', conclusion: '' }),
+      ]),
+    );
+    expect(report.candidates).toEqual([]);
+    expect(report.nonOutcomeRows).toBe(1);
+    expect(ghFlakyExitCode(report)).toBe(0);
+    expect(renderGhFlaky(report).join('\n')).toContain(
+      '1 run row(s) had no completed outcome',
+    );
+  });
+
+  it('(c) does not treat skipped or action_required runs as flip partners', () => {
+    const report = scanGhFlaky(
+      REPO,
+      100,
+      fakeGh([
+        run({ databaseId: 120, headSha: 'q', conclusion: 'success' }),
+        run({ databaseId: 121, headSha: 'q', conclusion: 'skipped' }),
+        run({ databaseId: 122, headSha: 'q', conclusion: 'action_required' }),
+      ]),
+    );
+    expect(report.candidates).toEqual([]);
+    expect(report.nonOutcomeRows).toBe(2);
+    expect(ghFlakyExitCode(report)).toBe(0);
+  });
+
+  it('(c) does not count a non-outcome earlier attempt as a rerun candidate', () => {
+    const report = scanGhFlaky(
+      REPO,
+      100,
+      fakeGh([run({ databaseId: 130, attempt: 2 })], { '130/1': 'skipped' }),
+    );
+    expect(report.candidates).toEqual([]);
+    expect(report.verdict).toBe('verified-zero');
+  });
+
+  it('(d) still reports success + failure on one sha as a flip', () => {
+    const report = scanGhFlaky(
+      REPO,
+      100,
+      fakeGh([
+        run({ databaseId: 140, headSha: 'r', conclusion: 'success' }),
+        run({ databaseId: 141, headSha: 'r', conclusion: 'failure' }),
+        run({ databaseId: 142, headSha: 'r', conclusion: '' }),
+      ]),
+    );
+    expect(report.candidates).toEqual([
+      expect.objectContaining({ signature: 'same-sha-flip', headSha: 'r' }),
+    ]);
+    expect(ghFlakyExitCode(report)).toBe(1);
+  });
+
   it('abstains when gh itself cannot be spawned', () => {
     const missing: SubprocessRun = () => {
       throw new Error('spawn gh ENOENT');

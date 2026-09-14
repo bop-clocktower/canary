@@ -485,13 +485,7 @@ async function commonFailuresCmd(
   }
 }
 
-/**
- * One run record's failed and flaky tests, as common-failures rows.
- *
- * Split out of `commonFailuresCmd` so that loop stays under the perf
- * complexity threshold. It paid for the `gh-flaky` surface (#884) without a
- * new perf identity.
- */
+/** One run record's failed/flaky tests as rows (split out for perf, #884). */
 function failureRowsOf(
   record: Awaited<
     ReturnType<NonNullable<AsyncHistoryStore['readAll']>>

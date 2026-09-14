@@ -1,24 +1,24 @@
 /**
- * Flake signals from GitHub Actions runs that survive an in-place Re-run
- * (#884). A Re-run bumps `run_attempt` and REPLACES the conclusion, so a
- * same-SHA outcome-flip scan alone reads a rerun-to-green run as `success`.
- * This reads two signatures and never reports a zero without naming them:
- *   - `same-sha-flip`: two runs of one workflow on one sha that disagree.
- *   - `rerun-attempt`: a green run on attempt > 1 whose earlier attempt, read
- *     from `/actions/runs/{id}/attempts/{n}`, was not. An unreadable attempt
- *     is recorded as unverifiable with the endpoint named, never as zero.
- * gh is reached only through the injected {@link SubprocessRun} seam that
- * `analysis/batwoman/gh-history.ts` uses, so tests never shell out.
+ * Flake signals that survive an in-place Re-run (#884): `same-sha-flip` and
+ * `rerun-attempt` (earlier attempts read from `/actions/runs/{id}/attempts/{n}`).
+ * Never a zero without naming its signatures; gh only via {@link SubprocessRun}.
  */
 import type { SubprocessRun } from '../../core/workflow-discovery.js';
 import { EXIT_ABSTAINED, gateOutcome } from '../../core/gate-result.js';
 
 /** Default window, stated explicitly: gh's own default is silent about it. */
 export const GH_FLAKY_RUN_LIMIT = 100;
-
 const GH_TIMEOUT_SECONDS = 30;
 
+/** Conclusions that are not a completed outcome ("" is still in progress). */
+const NON_OUTCOME_NAMES = 'action_required neutral skipped stale';
+const NON_OUTCOMES = new Set(['', ...NON_OUTCOME_NAMES.split(' ')]);
+const isOutcome = (c: string | null): c is string =>
+  c !== null && !NON_OUTCOMES.has(c);
+
 type Signature = 'same-sha-flip' | 'rerun-attempt';
+const SIGNATURES: Signature[] = ['same-sha-flip', 'rerun-attempt'];
+const label = (s: Signature) => (s === 'same-sha-flip' ? 'same-SHA flip' : s);
 
 type Verdict =
   'candidates' | 'verified-zero' | 'flake-signal-unverifiable' | 'abstained';
@@ -28,7 +28,7 @@ interface RunRow {
   headSha: string;
   workflow: string;
   conclusion: string | null;
-  attempt: number;
+  attempt: number | null;
 }
 
 interface Candidate {
@@ -47,6 +47,12 @@ interface Unverifiable {
   reason: string;
 }
 
+interface RerunRead {
+  candidates: Candidate[];
+  unverifiable: Unverifiable[];
+  nonOutcome: number;
+}
+
 interface GhFlakyReport {
   repo: string;
   verdict: Verdict;
@@ -54,27 +60,19 @@ interface GhFlakyReport {
   verifiedAgainst: Signature[];
   candidates: Candidate[];
   unverifiable: Unverifiable[];
-  /** False when the page filled to the limit (batwoman's `RunHistory.complete`). */
   complete: boolean;
-  /** The window disclosure, stated in both the text and JSON output. */
   window: string;
-  /** gh rows that could not be parsed into a run, so were never checked. */
   skippedRows: number;
+  missingAttemptRows: number;
+  nonOutcomeRows: number;
+  notes: string[];
   reason?: string;
 }
 
-const SIGNATURE_LABEL: Record<Signature, string> = {
-  'same-sha-flip': 'same-SHA flip',
-  'rerun-attempt': 'rerun-attempt',
-};
-
-/** Run one gh call and parse its JSON, throwing on anything but a clean answer. */
 function ghJson(run: SubprocessRun, cmd: string[]): unknown {
   const result = run(cmd, { timeout: GH_TIMEOUT_SECONDS });
   if (result.returncode !== 0) {
-    throw new Error(
-      `exit ${result.returncode}: ${result.stderr.trim() || 'no stderr'}`,
-    );
+    throw new Error(`exit ${result.returncode}: ${result.stderr.trim()}`);
   }
   return JSON.parse(result.stdout) as unknown;
 }
@@ -89,11 +87,11 @@ function toRunRow(raw: unknown): RunRow | null {
     headSha: r.headSha,
     workflow: typeof r.workflowName === 'string' ? r.workflowName : '',
     conclusion: typeof r.conclusion === 'string' ? r.conclusion : null,
-    attempt: typeof r.attempt === 'number' ? r.attempt : 1,
+    // Never defaulted to 1: that would verify a rerun signature never read.
+    attempt: typeof r.attempt === 'number' ? r.attempt : null,
   };
 }
 
-/** The parsed runs plus the RAW row count: a malformed row still fills the page. */
 function listRuns(
   repo: string,
   limit: number,
@@ -107,63 +105,61 @@ function listRuns(
   return { rows, rawCount: parsed.length };
 }
 
-function windowNote(complete: boolean, limit: number, runs: number): string {
-  return complete
-    ? `window complete: all ${runs} runs checked`
-    : `window truncated at ${limit} runs; older runs unchecked`;
-}
-
-/** A sha + workflow group holding both a success and a non-success outcome. */
 function sameShaFlips(rows: RunRow[]): Candidate[] {
-  const groups = new Map<string, RunRow[]>();
-  for (const row of rows) {
-    const key = JSON.stringify([row.workflow, row.headSha]);
-    groups.set(key, [...(groups.get(key) ?? []), row]);
+  const groups = new Map<string, string[]>();
+  for (const { workflow, headSha, conclusion } of rows) {
+    if (!isOutcome(conclusion)) continue;
+    const key = JSON.stringify([workflow, headSha]);
+    groups.set(key, [...(groups.get(key) ?? []), conclusion]);
   }
   const flips: Candidate[] = [];
-  for (const group of groups.values()) {
-    const conclusions = [...new Set(group.map((r) => r.conclusion ?? 'null'))];
-    if (conclusions.includes('success') && conclusions.length > 1) {
-      const { headSha, workflow } = group[0]!;
-      flips.push({
-        signature: 'same-sha-flip',
-        headSha,
-        workflow,
-        conclusions,
-      });
-    }
+  for (const [key, all] of groups) {
+    const conclusions = [...new Set(all)];
+    if (!conclusions.includes('success') || conclusions.length < 2) continue;
+    const [workflow, headSha] = JSON.parse(key) as [string, string];
+    flips.push({ signature: 'same-sha-flip', headSha, workflow, conclusions });
   }
   return flips;
 }
 
-/** Read every earlier attempt of one green rerun. */
-function readEarlierAttempts(
+/** Read every earlier attempt of every green rerun. */
+function rerunSignals(
   repo: string,
-  row: RunRow,
+  rows: RunRow[],
   run: SubprocessRun,
-): { candidates: Candidate[]; unverifiable: Unverifiable[] } {
-  const candidates: Candidate[] = [];
-  const unverifiable: Unverifiable[] = [];
-  for (let attempt = 1; attempt < row.attempt; attempt++) {
-    const path = `repos/${repo}/actions/runs/${row.id}/attempts/${attempt}`;
-    try {
-      const body = ghJson(run, ['gh', 'api', path]) as { conclusion?: unknown };
-      const earlier = String(body?.conclusion ?? 'null');
-      if (earlier === 'success') continue;
-      const { headSha, workflow, id: runId } = row;
-      candidates.push({
-        signature: 'rerun-attempt',
-        headSha,
-        workflow,
-        runId,
-        earlierConclusion: earlier,
-      });
-    } catch (e) {
-      const reason = e instanceof Error ? e.message : String(e);
-      unverifiable.push({ runId: row.id, attempt, source: `/${path}`, reason });
+): RerunRead {
+  const read: RerunRead = { candidates: [], unverifiable: [], nonOutcome: 0 };
+  for (const row of rows) {
+    if (row.conclusion !== 'success') continue;
+    for (let n = 1; n < (row.attempt ?? 1); n++) {
+      readAttempt(repo, row, n, run, read);
     }
   }
-  return { candidates, unverifiable };
+  return read;
+}
+
+function readAttempt(
+  repo: string,
+  row: RunRow,
+  attempt: number,
+  run: SubprocessRun,
+  read: RerunRead,
+): void {
+  const source = `/repos/${repo}/actions/runs/${row.id}/attempts/${attempt}`;
+  try {
+    const body = ghJson(run, ['gh', 'api', source.slice(1)]) as {
+      conclusion?: unknown;
+    };
+    const c = typeof body?.conclusion === 'string' ? body.conclusion : null;
+    if (!isOutcome(c)) read.nonOutcome++;
+    if (!isOutcome(c) || c === 'success') return;
+    const { headSha, workflow, id: runId } = row;
+    const hit = { headSha, workflow, runId, earlierConclusion: c };
+    read.candidates.push({ signature: 'rerun-attempt', ...hit });
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    read.unverifiable.push({ runId: row.id, attempt, source, reason });
+  }
 }
 
 function abstained(repo: string, reason: string): GhFlakyReport {
@@ -177,13 +173,37 @@ function abstained(repo: string, reason: string): GhFlakyReport {
     complete: false,
     window: 'no runs read',
     skippedRows: 0,
+    missingAttemptRows: 0,
+    nonOutcomeRows: 0,
+    notes: [],
     reason,
   };
 }
 
-function verdictOf(candidates: number, unverifiable: number): Verdict {
+function verdictOf(candidates: number, unverified: number): Verdict {
   if (candidates > 0) return 'candidates';
-  return unverifiable > 0 ? 'flake-signal-unverifiable' : 'verified-zero';
+  return unverified > 0 ? 'flake-signal-unverifiable' : 'verified-zero';
+}
+
+/** Every disclosure, in words, for both the text and JSON output. */
+function notesFor(r: GhFlakyReport): string[] {
+  const kinds = `in progress, ${NON_OUTCOME_NAMES.split(' ').join(', ')}`;
+  const notes: [number, string][] = [
+    [r.complete ? 0 : 1, r.window],
+    [
+      r.skippedRows,
+      `${r.skippedRows} malformed run row(s) from gh skipped; not checked`,
+    ],
+    [
+      r.missingAttemptRows,
+      `${r.missingAttemptRows} run row(s) carried no attempt number; rerun-attempt not verified`,
+    ],
+    [
+      r.nonOutcomeRows,
+      `${r.nonOutcomeRows} run row(s) had no completed outcome (${kinds}); never a flip or rerun candidate`,
+    ],
+  ];
+  return notes.filter(([n]) => n > 0).map(([, text]) => text);
 }
 
 /** Scan the last `limit` runs of `repo` for both flake signatures. */
@@ -203,30 +223,31 @@ export function scanGhFlaky(
   if (rows.length === 0) {
     return abstained(repo, 'gh run list returned zero runs.');
   }
-  const candidates = sameShaFlips(rows);
-  const unverifiable: Unverifiable[] = [];
-  for (const row of rows) {
-    if (row.attempt <= 1 || row.conclusion !== 'success') continue;
-    const read = readEarlierAttempts(repo, row, run);
-    candidates.push(...read.candidates);
-    unverifiable.push(...read.unverifiable);
-  }
-  const verifiedAgainst: Signature[] = ['same-sha-flip'];
-  if (unverifiable.length === 0) verifiedAgainst.push('rerun-attempt');
-  // Disclosure only: the verdict covers the declared window either way.
-  const complete = rawCount < limit;
-  return {
+  const reruns = rerunSignals(repo, rows, run);
+  const candidates = [...sameShaFlips(rows), ...reruns.candidates];
+  const missingAttemptRows = rows.filter((r) => r.attempt === null).length;
+  const unverified = reruns.unverifiable.length + missingAttemptRows;
+  const nonOutcomeRows =
+    rows.filter((r) => !isOutcome(r.conclusion)).length + reruns.nonOutcome;
+  const complete = rawCount < limit; // disclosed; the verdict covers the window
+  const report: GhFlakyReport = {
     repo,
-    verdict: verdictOf(candidates.length, unverifiable.length),
+    verdict: verdictOf(candidates.length, unverified),
     runsChecked: rows.length,
-    verifiedAgainst,
+    verifiedAgainst: SIGNATURES.slice(0, unverified > 0 ? 1 : 2),
     candidates,
-    unverifiable,
+    unverifiable: reruns.unverifiable,
     complete,
-    window: windowNote(complete, limit, rows.length),
-    // A malformed row is a run nobody checked: count it, never let it vanish.
+    window: complete
+      ? `window complete: all ${rows.length} runs checked`
+      : `window truncated at ${limit} runs; older runs unchecked`,
     skippedRows: rawCount - rows.length,
+    missingAttemptRows,
+    nonOutcomeRows,
+    notes: [],
   };
+  report.notes = notesFor(report);
+  return report;
 }
 
 function describeCandidate(c: Candidate): string {
@@ -242,11 +263,6 @@ function describeCandidate(c: Candidate): string {
   );
 }
 
-function verifiedLine(report: GhFlakyReport): string {
-  const names = report.verifiedAgainst.map((s) => SIGNATURE_LABEL[s]);
-  return `Verified against: ${names.join(', ')} (${report.runsChecked} runs).`;
-}
-
 /** Human-readable report. Never prints a zero without its signatures. */
 export function renderGhFlaky(report: GhFlakyReport): string[] {
   if (report.verdict === 'abstained') {
@@ -256,26 +272,16 @@ export function renderGhFlaky(report: GhFlakyReport): string[] {
   const lines = [`gh-flaky ${report.repo}: ${report.verdict}`];
   lines.push(...report.candidates.map(describeCandidate));
   for (const u of report.unverifiable) {
-    lines.push(
-      `  unverifiable   run ${u.runId} attempt ${u.attempt}: ` +
-        `could not read ${u.source} (${u.reason})`,
-    );
+    lines.push(`  unverifiable   run ${u.runId}: ${u.source} (${u.reason})`);
   }
   if (report.verdict === 'flake-signal-unverifiable') {
-    lines.push(
-      'flake-signal-unverifiable: the rerun-attempt signature is NOT ' +
-        'verified, so no zero is reported for it.',
-    );
+    lines.push('flake-signal-unverifiable: rerun-attempt is NOT verified.');
   } else if (report.verdict === 'verified-zero') {
     lines.push('0 candidates.');
   }
-  lines.push(verifiedLine(report));
-  if (!report.complete) lines.push(`Note: ${report.window}.`);
-  if (report.skippedRows > 0) {
-    lines.push(
-      `Note: ${report.skippedRows} malformed run row(s) from gh skipped; not checked.`,
-    );
-  }
+  const names = report.verifiedAgainst.map(label).join(', ');
+  lines.push(`Verified against: ${names} (${report.runsChecked} runs).`);
+  lines.push(...report.notes.map((n) => `Note: ${n}.`));
   return lines;
 }
 

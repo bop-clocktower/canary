@@ -66,3 +66,13 @@ Spec: `docs/changes/884-gh-flaky-rerun-attempts/proposal.md`
   `verified-zero` (exit 0) with the cutoff named next to it.
 - **Only green reruns are inspected.** A rerun whose current conclusion is not
   `success` is a visible failure, so it is not checked as a hidden flake.
+- **No attempt number, no rerun verification.** A row with no numeric `attempt`
+  is never defaulted to 1. Such rows are counted as `missingAttemptRows`,
+  `rerun-attempt` is dropped from `verifiedAgainst`, and a window with no
+  candidates becomes `flake-signal-unverifiable` (exit 3). The output says "N
+  run row(s) carried no attempt number; rerun-attempt not verified".
+- **Only completed outcomes can flip.** A conclusion of `""` (in progress),
+  null, `skipped`, `neutral`, `action_required` or `stale` is not an outcome.
+  Such runs, and earlier attempts that ended that way, are never a flip partner
+  or a rerun candidate. They are counted as `nonOutcomeRows` and disclosed.
+  `failure`, `cancelled`, `timed_out` and `startup_failure` are failure-class.
