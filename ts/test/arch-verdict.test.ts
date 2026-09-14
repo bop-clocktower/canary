@@ -28,7 +28,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -113,6 +113,127 @@ function writeJson(name: string, body: unknown | string): string {
 function runVerdict(path: string) {
   return runCapture('node', [VERDICT, path]);
 }
+
+// #905: the decision table of `classifyArchReport`, pinned branch by branch so
+// a refactor cannot reorder or collapse a verdict without a red test. Each case
+// asserts the WHOLE returned object, so a changed default or a leaked `reason`
+// key is caught as surely as a flipped verdict.
+describe('classifyArchReport decision table (#905)', () => {
+  type Classify = (report: unknown) => Record<string, unknown>;
+  let classify: Classify;
+  beforeEach(async () => {
+    const mod = (await import(pathToFileURL(VERDICT).href)) as {
+      classifyArchReport: Classify;
+    };
+    classify = mod.classifyArchReport;
+  });
+  const REASON =
+    'the report carries no `newViolations` array — the new-vs-pre-existing split cannot be read from it';
+  const v1 = violation('a.ts', 'x');
+
+  it('B1: a null report abstains with every shape field defaulted', () => {
+    expect(classify(null)).toEqual({
+      newCount: 0,
+      regressionCount: 0,
+      preExistingCount: 0,
+      totalViolations: 0,
+      mode: 'unknown',
+      newViolations: [],
+      regressions: [],
+      verdict: 'unknown',
+      reason: REASON,
+    });
+  });
+
+  it('B1: a missing newViolations abstains even over regressions and passed', () => {
+    expect(
+      classify({ passed: true, regressions: [{ metric: 'm' }], mode: 'm1' }),
+    ).toEqual({
+      newCount: 0,
+      regressionCount: 1,
+      preExistingCount: 0,
+      totalViolations: 0,
+      mode: 'm1',
+      newViolations: [],
+      regressions: [{ metric: 'm' }],
+      verdict: 'unknown',
+      reason: REASON,
+    });
+  });
+
+  it('B1: a non-array newViolations abstains rather than counting it', () => {
+    expect(classify({ passed: true, newViolations: 'nope' })).toMatchObject({
+      verdict: 'unknown',
+      newCount: 0,
+      newViolations: [],
+      reason: REASON,
+    });
+  });
+
+  it('B2: a new violation is a regression even when passed is true', () => {
+    expect(
+      classify({
+        passed: true,
+        newViolations: [v1],
+        regressions: 'bad',
+        preExisting: ['p1', 'p2'],
+        totalViolations: '7',
+        mode: 'baseline',
+      }),
+    ).toEqual({
+      newCount: 1,
+      regressionCount: 0,
+      preExistingCount: 2,
+      totalViolations: 7,
+      mode: 'baseline',
+      newViolations: [v1],
+      regressions: [],
+      verdict: 'regression',
+    });
+  });
+
+  it('B3: a metric regression alone is a regression even when passed is true', () => {
+    const r = classify({
+      passed: true,
+      newViolations: [],
+      regressions: [{ metric: 'module-size' }],
+    });
+    expect(r).toEqual({
+      newCount: 0,
+      regressionCount: 1,
+      preExistingCount: 0,
+      totalViolations: 0,
+      mode: 'unknown',
+      newViolations: [],
+      regressions: [{ metric: 'module-size' }],
+      verdict: 'regression',
+    });
+  });
+
+  it('B4: nothing new and passed === true is clean', () => {
+    const r = classify({ passed: true, newViolations: [], regressions: [] });
+    expect(r.verdict).toBe('clean');
+    expect(r).not.toHaveProperty('reason');
+  });
+
+  it('B5: nothing new and passed false is a baseline trip', () => {
+    const r = classify({
+      passed: false,
+      newViolations: [],
+      preExisting: ['p'],
+    });
+    expect(r.verdict).toBe('baseline');
+    expect(r.preExistingCount).toBe(1);
+    expect(r).not.toHaveProperty('reason');
+  });
+
+  it('B5: passed must be strictly true — missing or "true" is a baseline trip', () => {
+    expect(classify({ newViolations: [] }).verdict).toBe('baseline');
+    expect(classify({ passed: 'true', newViolations: [] }).verdict).toBe(
+      'baseline',
+    );
+  });
+});
 
 describe('arch-verdict', () => {
   describe('a ratchet trip and a real regression read differently', () => {
