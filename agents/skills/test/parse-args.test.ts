@@ -233,6 +233,372 @@ describe('formatUsageError', () => {
   });
 });
 
+/**
+ * Public-API pin table (#906). `createParser` is the parser behind every
+ * bundled skill's `cli:` entry, so the WHOLE parse result -- opts, positionals,
+ * help and the exact error text skills print -- is the contract. Each row pins
+ * one branch end to end, so a refactor that moves a branch's result anywhere
+ * (not only its error) goes red here before it reaches a skill.
+ */
+describe('createParser -- public-API pin table (#906)', () => {
+  const full = () =>
+    createParser({
+      prog: 'canary-test',
+      booleans: { '--json': 'json', '-v': 'verbose' },
+      values: {
+        '--repo': { key: 'repo' },
+        '-o': { key: 'out' },
+        '--seed': { key: 'seed', type: 'int' },
+      },
+      defaults: { repo: '.' },
+      positionals: { key: 'paths', defaults: ['.'] },
+    });
+  const noPositionals = () =>
+    createParser({
+      prog: 'canary-test',
+      booleans: { '--json': 'json' },
+      values: {
+        '--repo': { key: 'repo' },
+        '--seed': { key: 'seed', type: 'int' },
+      },
+    });
+
+  const plain = (r: {
+    opts: Record<string, unknown>;
+    positionals: string[];
+    help: boolean;
+    error: string | null;
+  }) => ({ ...r, opts: { ...r.opts } });
+
+  const base = {
+    json: false,
+    verbose: false,
+    repo: '.',
+    out: null,
+    seed: null,
+  };
+  const bare = { json: false, repo: null, seed: null };
+
+  type Result = {
+    opts: Record<string, unknown>;
+    positionals: string[];
+    help: boolean;
+    error: string | null;
+  };
+  type Row = [
+    string,
+    () => (argv: string[]) => Result,
+    string[] | undefined,
+    Result,
+  ];
+  type Opts = Record<string, unknown>;
+  const ok = (opts: Opts, positionals: string[] = ['.']): Result => ({
+    opts,
+    positionals,
+    help: false,
+    error: null,
+  });
+  const err = (
+    opts: Opts,
+    error: string,
+    positionals: string[] = [],
+  ): Result => ({
+    opts,
+    positionals,
+    help: false,
+    error,
+  });
+
+  const rows: Row[] = [
+    ['no argv at all uses [] and applies defaults', full, undefined, ok(base)],
+    ['empty argv', full, [], ok(base)],
+    ['--flag value', full, ['--repo', 'r'], ok({ ...base, repo: 'r' })],
+    ['--flag=value', full, ['--repo=r'], ok({ ...base, repo: 'r' })],
+    [
+      'inline value may itself look like a flag',
+      full,
+      ['--repo=--json'],
+      ok({ ...base, repo: '--json' }),
+    ],
+    ['declared short value flag', full, ['-o', 'x'], ok({ ...base, out: 'x' })],
+    ['declared short boolean', full, ['-v'], ok({ ...base, verbose: true })],
+    [
+      'short flags never split on =',
+      full,
+      ['-o=x'],
+      err(base, 'unrecognized arguments: -o=x'),
+    ],
+    [
+      'a boolean given an inline value is unrecognized',
+      full,
+      ['--json=1'],
+      err(base, 'unrecognized arguments: --json=1'),
+    ],
+    [
+      'repeated value flag: last wins',
+      full,
+      ['--repo', 'a', '--repo=b'],
+      ok({ ...base, repo: 'b' }),
+    ],
+    [
+      'repeated boolean stays true',
+      full,
+      ['--json', '--json'],
+      ok({ ...base, json: true }),
+    ],
+    [
+      'unknown long flag',
+      full,
+      ['--bogus'],
+      err(base, 'unrecognized arguments: --bogus'),
+    ],
+    [
+      'unknown short flag with positionals declared',
+      full,
+      ['-x'],
+      err(base, 'unrecognized arguments: -x'),
+    ],
+    [
+      '--=x is not the terminator',
+      full,
+      ['--=x'],
+      err(base, 'unrecognized arguments: --=x'),
+    ],
+    [
+      'first failure stops the scan',
+      full,
+      ['--bogus', '--json', '-h'],
+      err(base, 'unrecognized arguments: --bogus'),
+    ],
+    [
+      'options before help are kept',
+      full,
+      ['--json', '-h', '--bogus'],
+      {
+        opts: { ...base, json: true },
+        positionals: [],
+        help: true,
+        error: null,
+      },
+    ],
+    [
+      'help after -- is a positional',
+      full,
+      ['--', '-h', '--'],
+      ok(base, ['-h', '--']),
+    ],
+    [
+      'positionals mixed with flags keep order',
+      full,
+      ['a', '--json', 'b', '-'],
+      ok({ ...base, json: true }, ['a', 'b', '-']),
+    ],
+    [
+      'value consumed by a flag is not re-read as a positional',
+      full,
+      ['--repo', 'r', 'p'],
+      ok({ ...base, repo: 'r' }, ['p']),
+    ],
+    [
+      'value flag at end of argv',
+      full,
+      ['--seed'],
+      err(base, 'argument --seed: expected one argument'),
+    ],
+    [
+      'value flag given the empty string',
+      full,
+      ['--seed', ''],
+      err(base, 'argument --seed: expected one argument'),
+    ],
+    [
+      'int flag given --seed=',
+      full,
+      ['--seed='],
+      err(base, 'argument --seed: expected one argument'),
+    ],
+    [
+      'short value flag at end of argv',
+      full,
+      ['-o'],
+      err(base, 'argument -o: expected one argument'),
+    ],
+    [
+      'int flag refuses a non-integer dash token',
+      full,
+      ['--seed', '-abc'],
+      err(base, 'argument --seed: expected one argument'),
+    ],
+    [
+      'string flag refuses even an integer-looking dash token',
+      full,
+      ['--repo', '-5'],
+      err(base, 'argument --repo: expected one argument'),
+    ],
+    [
+      'int flag takes a separate negative token',
+      full,
+      ['--seed', '-7'],
+      ok({ ...base, seed: -7 }),
+    ],
+    [
+      'int flag with leading zeros',
+      full,
+      ['--seed', '007'],
+      ok({ ...base, seed: 7 }),
+    ],
+    [
+      'int flag invalid value (separate token)',
+      full,
+      ['--seed', '1.5'],
+      err(base, "argument --seed: invalid int value: '1.5'"),
+    ],
+    [
+      'int flag invalid value keeps surrounding whitespace in the message',
+      full,
+      ['--seed', ' 5'],
+      err(base, "argument --seed: invalid int value: ' 5'"),
+    ],
+    [
+      'int flag out of safe range (negative, separate token)',
+      full,
+      ['--seed', '-9007199254740992'],
+      err(
+        base,
+        "argument --seed: integer out of safe range: '-9007199254740992'",
+      ),
+    ],
+    [
+      'the largest safe integer is accepted',
+      full,
+      ['--seed=9007199254740991'],
+      ok({ ...base, seed: 9007199254740991 }),
+    ],
+    [
+      'no positionals: -- is unrecognized',
+      noPositionals,
+      ['--', 'x'],
+      err(bare, 'unrecognized arguments: --'),
+    ],
+    [
+      'no positionals: lone - is unrecognized',
+      noPositionals,
+      ['-'],
+      err(bare, 'unrecognized arguments: -'),
+    ],
+    [
+      'no positionals: stray token',
+      noPositionals,
+      ['--json', 'stray'],
+      err({ ...bare, json: true }, 'unrecognized arguments: stray'),
+    ],
+    [
+      'no positionals: clean run has an empty positional list',
+      noPositionals,
+      ['--seed=3'],
+      ok({ ...bare, seed: 3 }, []),
+    ],
+  ];
+
+  for (const [name, make, argv, expected] of rows) {
+    it(name, () => {
+      const parse = make();
+      const r =
+        argv === undefined ? (parse as unknown as () => Result)() : parse(argv);
+      expect(plain(r)).toEqual(expected);
+      expect(Object.getPrototypeOf(r.opts)).toBeNull();
+    });
+  }
+
+  it('gives each call fresh opts and positionals', () => {
+    const parse = full();
+    const first = parse(['--json', 'a']);
+    const second = parse([]);
+    expect(second.opts.json).toBe(false);
+    expect(second.positionals).toEqual(['.']);
+    expect(first.positionals).toEqual(['a']);
+  });
+
+  it('applies defaults to boolean keys and int keys', () => {
+    const parse = createParser({
+      prog: 'p',
+      booleans: { '--json': 'json' },
+      values: { '--seed': { key: 'seed', type: 'int' } },
+      defaults: { json: true, seed: 7 },
+    });
+    expect(plain(parse([]))).toEqual({
+      opts: { json: true, seed: 7 },
+      positionals: [],
+      help: false,
+      error: null,
+    });
+  });
+
+  it('does not apply positional defaults when none are declared', () => {
+    const parse = createParser({ prog: 'p', positionals: { key: 'paths' } });
+    expect(parse([]).positionals).toEqual([]);
+  });
+
+  it('a default satisfies a required flag', () => {
+    const parse = createParser({
+      prog: 'p',
+      values: { '--branch': { key: 'branch' } },
+      defaults: { branch: 'main' },
+      required: ['--branch'],
+    });
+    expect(plain(parse([]))).toEqual({
+      opts: { branch: 'main' },
+      positionals: [],
+      help: false,
+      error: null,
+    });
+  });
+
+  it('reports only the missing required flags, before positional defaults', () => {
+    const parse = createParser({
+      prog: 'p',
+      values: { '--a': { key: 'a' }, '--b': { key: 'b' } },
+      required: ['--a', '--b'],
+      positionals: { key: 'paths', defaults: ['.'] },
+    });
+    expect(plain(parse(['--a', 'x']))).toEqual({
+      opts: { a: 'x', b: null },
+      positionals: [],
+      help: false,
+      error: 'the following arguments are required: --b',
+    });
+  });
+
+  it('help wins over missing required flags with exact result', () => {
+    const parse = createParser({
+      prog: 'p',
+      values: { '--a': { key: 'a' } },
+      required: ['--a'],
+    });
+    expect(plain(parse(['-h']))).toEqual({
+      opts: { a: null },
+      positionals: [],
+      help: true,
+      error: null,
+    });
+  });
+
+  it('construction errors carry exact messages', () => {
+    expect(() => createParser({} as never)).toThrow(
+      new Error('createParser: spec.prog is required'),
+    );
+    expect(() => createParser(undefined as never)).toThrow(
+      new Error('createParser: spec.prog is required'),
+    );
+    expect(() =>
+      createParser({ prog: 'x', booleans: { '--j': 'j' }, defaults: { k: 1 } }),
+    ).toThrow(new Error("createParser: defaults names unknown key 'k'"));
+    expect(() =>
+      createParser({ prog: 'x', booleans: { '--j': 'j' }, required: ['--j'] }),
+    ).toThrow(new Error("createParser: required names undeclared flag '--j'"));
+  });
+});
+
 describe('createParser -- spec validation', () => {
   it('rejects a spec whose default names no declared flag', () => {
     // Cheap guard against a rename leaving a dead default behind.
