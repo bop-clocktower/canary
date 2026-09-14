@@ -108,6 +108,10 @@ blob-report/
 .cursor/hooks.json
 .cursor/learning/
 .cursor/skills/
+# The vendor-neutral `.agents/` mirror of the same install set. Scoped to
+# `skills/` for the same reason as `.cursor/`: nothing else under `.agents/`
+# is known to be extension-written, so a blanket rule could hide real config.
+.agents/skills/
 .kiro/
 # Remember plugin scratch state. It writes its own `.remember/.gitignore`, but
 # that file lives INSIDE the untracked directory, so it does not exist in
