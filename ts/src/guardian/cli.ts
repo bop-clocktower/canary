@@ -85,7 +85,9 @@ import {
 import {
   ChangedUnit,
   coverageDegradedNotice,
+  coverageDeltaNotice,
   resolveCoverage,
+  resolveCoverageDelta,
   resolveCoverageWithInput,
   validateCoverageJson,
 } from './coverage.js';
@@ -111,6 +113,7 @@ import {
   GuardianConfig,
   applySuppressions,
   buildFindings,
+  buildRegressionFindings,
   computeExitCode,
   effectiveGraphDepth,
   filterHeuristicNoise,
@@ -1409,6 +1412,7 @@ interface PrCheckOptions {
   diff?: string;
   heuristicExclude?: string[];
   coverage?: string;
+  baseCoverage?: string;
   format: string;
   config: string;
   gate?: string;
@@ -1527,8 +1531,18 @@ async function prCheckCmd(
     results,
     opts.heuristicExclude ?? config.heuristic_exclude,
   );
+  // #606: the second coverage question — did coverage go DOWN on a unit this
+  // PR touches? Run over the same `kept` units the ladder scored, so the two
+  // denominators are the same surface. With no base artifact this returns no
+  // deltas and a state that says so, which the notice below reports loudly.
+  const { deltas, state: coverageDelta } = resolveCoverageDelta(kept, {
+    baseCoveragePath: opts.baseCoverage ?? null,
+    headCoveragePath: opts.coverage ?? null,
+  });
+
   const findings = [
     ...applySuppressions(buildFindings(scoredResults)),
+    ...buildRegressionFindings(deltas),
     ...weakFindings,
   ];
 
@@ -1575,23 +1589,31 @@ async function prCheckCmd(
     checked: scoredResults.length,
     abstained: coverageAbstained,
     coverage,
+    // #606: the delta's own denominator, so "no regressions" can never be read
+    // as "compared and clean" on a run that compared nothing.
+    coverageDelta,
     // #761: the endpoints every count above is scoped by.
     provenance,
     // #582: `checked` is the numerator of a fraction whose denominator was
     // never printed. This is the rest of it.
     skipped: allSkips,
   };
-  const coverageNotice = coverageDegradedNotice(coverage);
-  if (coverageNotice) {
-    // `--format json` owns stdout: a `::warning::` line there would make the
-    // document unparseable, so the annotation goes to stderr on that path. Both
-    // streams are scanned for workflow commands, so CI still sees it.
-    const machineStdout =
-      !opts.postComment && !opts.emitAnalysis && opts.format === 'json';
-    (machineStdout ? deps.err : deps.out)(
-      degradationAnnotation(coverageNotice),
-    );
-    appendStepSummary(deps.env, coverageNotice);
+  // #606: the delta degradation rides the exact same surfaces as the coverage
+  // one — a head-only run is as blind about regressions as a report-less run is
+  // about coverage, and must be as loud.
+  const notices = [
+    coverageDegradedNotice(coverage),
+    coverageDeltaNotice(coverageDelta),
+  ];
+  // `--format json` owns stdout: a `::warning::` line there would make the
+  // document unparseable, so the annotation goes to stderr on that path. Both
+  // streams are scanned for workflow commands, so CI still sees it.
+  const machineStdout =
+    !opts.postComment && !opts.emitAnalysis && opts.format === 'json';
+  for (const notice of notices) {
+    if (!notice) continue;
+    (machineStdout ? deps.err : deps.out)(degradationAnnotation(notice));
+    appendStepSummary(deps.env, notice);
   }
 
   let commentPosted = false;
@@ -1987,6 +2009,12 @@ export function createGuardianCommand(
         '(`<base>...HEAD`) in CI, else the local working-tree `git diff`.',
     )
     .option('--coverage <path>', 'Coverage report path (lcov/json).')
+    .option(
+      '--base-coverage <path>',
+      "Coverage report for the PR's BASE ref (#606). Enables coverage-" +
+        'regression findings on touched units. Without it the run degrades ' +
+        'LOUDLY to head-only — it never silently reports no regressions.',
+    )
     .addOption(
       new Option('--format <fmt>', 'comment|json|text').default('comment'),
     )

@@ -39,6 +39,17 @@ export {
   validateCoverageJson,
   type CoverageProblem,
 } from './diff-coverage/formats/coverage-json-lint.js';
+export {
+  coverageDeltaNotice,
+  coverageDeltaStatus,
+  resolveCoverageDelta,
+  type CoverageDeltaState,
+  type CoverageDeltaStatus,
+  type CoverageRatio,
+  type ResolveCoverageDeltaOptions,
+  type ResolvedCoverageDelta,
+  type UnitCoverageDelta,
+} from './diff-coverage/coverage-delta.js';
 export { resolveFromGraph } from './diff-coverage/graph-tier.js';
 export { resolveFromHeuristic } from './diff-coverage/heuristic-tier.js';
 export {

@@ -651,9 +651,17 @@ describe('pr-check tier degradation (SC-5)', () => {
     const cfg = writeConfig({ pr: { tier: 0 } });
     // #554: a run with NO coverage report is itself a degradation now, so this
     // "nothing is degraded" fixture has to supply one that covers the diff.
+    // #606: and a run with no BASE coverage report is head-only, which is the
+    // same class of degradation one level down — so the fixture supplies both.
     const lcov = join(tmp, 'lcov.info');
     writeFileSync(
       lcov,
+      'SF:pkg/widget.py\nDA:1,1\nDA:2,1\nDA:3,1\nend_of_record\n',
+      'utf-8',
+    );
+    const baseLcov = join(tmp, 'base-lcov.info');
+    writeFileSync(
+      baseLcov,
       'SF:pkg/widget.py\nDA:1,1\nDA:2,1\nDA:3,1\nend_of_record\n',
       'utf-8',
     );
@@ -666,6 +674,8 @@ describe('pr-check tier degradation (SC-5)', () => {
         cfg,
         '--coverage',
         lcov,
+        '--base-coverage',
+        baseLcov,
         '--format',
         'text',
       ],
