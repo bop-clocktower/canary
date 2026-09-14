@@ -130,7 +130,7 @@ jobs:
         id: upload
         if: always() && steps.resolve.outputs.issue != ''
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: batwoman-report
           path: batwoman-report.json
