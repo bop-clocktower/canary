@@ -148,6 +148,31 @@ describe('resolveCoverageDelta', () => {
     expect(coverageDeltaNotice(state)).toContain(missing);
   });
 
+  it('separates a base report that is present but unusable from a missing one', () => {
+    // #554's distinction, carried into the delta: "no base artifact" and "a
+    // base artifact we could not read" are different operator problems — one
+    // is a missing upload, the other a broken producer. A notice that blamed
+    // both on absence would send the reader to the wrong fix.
+    const head = writeLcov('head.info', { 'src/a.ts': { 1: 1 } });
+    const unusable = join(dir, 'garbage.info');
+    writeFileSync(unusable, 'not an lcov report at all\n', 'utf-8');
+
+    const { state } = resolveCoverageDelta([unit('src/a.ts')], {
+      baseCoveragePath: unusable,
+      headCoveragePath: head,
+    });
+
+    expect(state.baseFound).toBe(true);
+    expect(state.baseParsed).toBe(false);
+    expect(coverageDeltaStatus(state)).toBe('unavailable');
+
+    const notice = coverageDeltaNotice(state);
+    expect(notice).toContain('yielded no usable records');
+    expect(notice).toContain(unusable);
+    // Not the missing-artifact wording — that is the branch above.
+    expect(notice).not.toContain('not found at');
+  });
+
   it('is unavailable — not compared — when the base report matches no unit', () => {
     const base = writeLcov('base.info', { 'src/other.ts': { 1: 1 } });
     const head = writeLcov('head.info', { 'src/a.ts': { 1: 1 } });

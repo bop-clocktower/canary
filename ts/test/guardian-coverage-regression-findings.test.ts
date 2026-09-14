@@ -73,4 +73,27 @@ describe('buildRegressionFindings', () => {
     ]);
     expect(finding!.fidelity).toBe('coverage-verified');
   });
+
+  it('orders several regressions worst-first, whatever order they arrive in', () => {
+    // Every other case here passes a single delta, so the sort never runs on
+    // more than one element. A reviewer reads the table top-down and treats
+    // the first row as the worst, so the ordering is load-bearing, not
+    // cosmetic — fed in deliberately worst-last.
+    const findings = buildRegressionFindings([
+      delta('src/low.ts', [100, 100], [97, 100]), // 3 points  -> LOW
+      delta('src/high.ts', [100, 100], [50, 100]), // 50 points -> HIGH
+      delta('src/medium.ts', [100, 100], [90, 100]), // 10 points -> MEDIUM
+    ]);
+
+    expect(findings.map((f) => f.severity)).toEqual([
+      Severity.HIGH,
+      Severity.MEDIUM,
+      Severity.LOW,
+    ]);
+    expect(findings.map((f) => f.path)).toEqual([
+      'src/high.ts',
+      'src/medium.ts',
+      'src/low.ts',
+    ]);
+  });
 });
