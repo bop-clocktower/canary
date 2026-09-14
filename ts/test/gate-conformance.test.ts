@@ -22,6 +22,8 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { createAnalyzeCommand } from '../src/analysis/cli.js';
+import { CliExitError } from '../src/cli-common.js';
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { HarnessMigrator } from '../src/core/migrator.js';
 import { FakeBranchProtectionClient } from '../src/guardian/hard-gate.js';
@@ -408,6 +410,32 @@ const ROWS: GateRow[] = [
       const path = join(dir, 'gen.test.ts');
       writeFileSync(path, 'export const fixture = 1;\n', 'utf-8');
       return invokeCanary(['promote-check', path]);
+    },
+  },
+  {
+    // #884: gh returned no runs, so neither flake signature was checked. A
+    // "0 candidates" here would be the unverified zero the command exists
+    // to refuse.
+    command: 'analyze gh-flaky (gh run list returned zero runs)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['0 candidates', 'Verified against'],
+    run: async () => {
+      const out: string[] = [];
+      const cmd = createAnalyzeCommand({
+        out: (s) => out.push(s),
+        err: () => undefined,
+        runGh: () => ({ returncode: 0, stdout: '[]', stderr: '' }),
+      });
+      let code = 0;
+      try {
+        await cmd.parseAsync(['gh-flaky', '--repo', 'o/r'], { from: 'user' });
+      } catch (e) {
+        if (!(e instanceof CliExitError)) throw e;
+        code = e.code;
+      }
+      return { code, stdout: out.join('\n') };
     },
   },
 ];

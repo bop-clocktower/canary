@@ -6,8 +6,10 @@
  *
  * Follows the guardian CLI conventions (see `../cli-common.ts`): a
  * {@link createAnalyzeCommand} factory wired to an injectable {@link AnalyzeDeps},
- * and `normalizeUsageExit` on every command so usage errors exit 2. No command
- * raises a business exit -- every analyze subcommand returns 0 (matching Python).
+ * and `normalizeUsageExit` on every command so usage errors exit 2. The
+ * history-backed subcommands raise no business exit and return 0 (matching
+ * Python). `gh-flaky` (#884) has no Python original and follows the CLI-wide
+ * gate contract: 1 for candidates, 3 when abstained or unverifiable.
  *
  * Python->TS fidelity notes:
  *   - `json.dumps(x, indent=2)` -> {@link jsonIndent2} (byte-exact + ensure_ascii).
@@ -29,9 +31,23 @@ import { join } from 'node:path';
 
 import { Command, InvalidArgumentError, Option } from 'commander';
 
-import { jsonIndent2, normalizeUsageExit } from '../cli-common.js';
+import {
+  CliExitError,
+  jsonIndent2,
+  normalizeUsageExit,
+} from '../cli-common.js';
 import { gateOutcome } from '../core/gate-result.js';
+import {
+  defaultSubprocess,
+  type SubprocessRun,
+} from '../core/workflow-discovery.js';
 import { AnalysisEngine } from './engine.js';
+import {
+  GH_FLAKY_RUN_LIMIT,
+  ghFlakyExitCode,
+  renderGhFlaky,
+  scanGhFlaky,
+} from './gh-run-attempts.js';
 import {
   buildCommonFailuresReport,
   buildFlakyTestsReport,
@@ -49,6 +65,8 @@ export interface AnalyzeDeps {
   err(s: string): void;
   env: NodeJS.ProcessEnv;
   makeStore(dbUrl?: string): AsyncHistoryStore;
+  /** The gh seam for `gh-flaky` (#884); tests inject a fake. */
+  runGh: SubprocessRun;
 }
 
 /** Process-backed defaults for production. */
@@ -64,6 +82,7 @@ export function defaultAnalyzeDeps(): AnalyzeDeps {
     // Where a remote backend cannot answer a given section, the command says so
     // by name (see `cannotVerifyRawRecords`) rather than rendering an empty one.
     makeStore: (dbUrl?: string) => makeStore(dbUrl, DEFAULT_HISTORY_PATH),
+    runGh: defaultSubprocess,
   };
 }
 
@@ -457,23 +476,59 @@ async function commonFailuresCmd(
   }[] = [];
   for (const record of await store.readAll!()) {
     if (opts.since && (record.timestamp ?? '') < opts.since) continue;
-    for (const t of record.tests ?? []) {
-      if ((t.status === 'failed' || t.status === 'flaky') && t.error_text) {
-        rows.push({
-          test_name: t.test_name,
-          suite: record.suite ?? '',
-          failure_category: t.failure_category ?? 'other',
-          error_text: t.error_text ?? '',
-          run_count: 1,
-        });
-      }
-    }
+    rows.push(...failureRowsOf(record));
   }
   if (opts.json) {
     deps.out(jsonIndent2(rows));
   } else {
     deps.out(buildCommonFailuresReport(rows, opts.minSuites));
   }
+}
+
+/**
+ * One run record's failed and flaky tests, as common-failures rows.
+ *
+ * Split out of `commonFailuresCmd` so that loop stays under the perf
+ * complexity threshold. It paid for the `gh-flaky` surface (#884) without a
+ * new perf identity.
+ */
+function failureRowsOf(
+  record: Awaited<
+    ReturnType<NonNullable<AsyncHistoryStore['readAll']>>
+  >[number],
+) {
+  const suite = record.suite ?? '';
+  return (record.tests ?? [])
+    .filter(
+      (t) => (t.status === 'failed' || t.status === 'flaky') && t.error_text,
+    )
+    .map((t) => ({
+      test_name: t.test_name,
+      suite,
+      failure_category: t.failure_category ?? 'other',
+      error_text: t.error_text ?? '',
+      run_count: 1,
+    }));
+}
+
+// --- gh-flaky (#884) ---------------------------------------------------------
+
+interface GhFlakyOptions {
+  repo: string;
+  limitRuns: number;
+  json?: boolean;
+}
+
+/** Gate-shaped: exit 1 on candidates, 3 when abstained or unverifiable. */
+function ghFlakyCmd(opts: GhFlakyOptions, deps: AnalyzeDeps): void {
+  const report = scanGhFlaky(opts.repo, opts.limitRuns, deps.runGh);
+  if (opts.json) {
+    deps.out(jsonIndent2(report));
+  } else {
+    deps.out(renderGhFlaky(report).join('\n'));
+  }
+  const code = ghFlakyExitCode(report);
+  if (code !== 0) throw new CliExitError(code);
 }
 
 // --- regression-candidates ---------------------------------------------------
@@ -690,6 +745,23 @@ export function createAnalyzeCommand(
     .option('--json', JSON_DESC)
     .action(async (opts: SpikesOptions, cmd: Command) => {
       await spikesCmd(resolveUnitFlags(opts, cmd, deps, [DELTA_ALIAS]), deps);
+    });
+
+  program
+    .command('gh-flaky')
+    .description(
+      'Flake signals from GitHub Actions runs: same-SHA outcome flips and ' +
+        'reruns to green. Exits 3 when a signature could not be verified.',
+    )
+    .requiredOption('--repo <owner/name>', 'GitHub repository to scan.')
+    .addOption(
+      new Option('--limit-runs <runs>', 'How many recent RUNS to scan.')
+        .default(GH_FLAKY_RUN_LIMIT)
+        .argParser(parseRuns('--limit-runs')),
+    )
+    .option('--json', 'Emit the full report as JSON.')
+    .action((opts: GhFlakyOptions) => {
+      ghFlakyCmd(opts, deps);
     });
 
   program
