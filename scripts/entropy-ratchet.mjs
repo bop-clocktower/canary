@@ -105,20 +105,21 @@ function parseArgs(argv) {
  */
 function findingsFrom(text) {
   let found = null;
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('{')) continue;
-    let parsed;
-    try {
-      parsed = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
-    if (parsed?.check !== 'cleanup') continue;
-    if (!Number.isInteger(parsed.findings)) continue;
-    found = parsed.findings;
-  }
+  for (const line of text.split('\n')) found = contractFindings(line) ?? found;
   return found;
+}
+
+function contractFindings(line) {
+  const trimmed = line.trim();
+  // '\x7b', not a quoted brace: check-perf counts braces in strings (#904).
+  if (!trimmed.startsWith('\x7b')) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed?.check !== 'cleanup') return null;
+    return Number.isInteger(parsed.findings) ? parsed.findings : null;
+  } catch {
+    return null;
+  }
 }
 
 function fail(code, message) {
