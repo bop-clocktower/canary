@@ -4,7 +4,7 @@ title:
   'Guardian coverage scope for non-ts trees: instrument npm/, exempt scripts/
   and agents/skills/'
 date: 2026-09-14
-status: proposed
+status: accepted
 tier: medium
 source: 'adr'
 ---
@@ -13,7 +13,7 @@ source: 'adr'
 
 # ADR 0024 — Guardian coverage scope for non-ts trees
 
-**Status:** proposed **Date:** 2026-09-14 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-09-14 **Deciders:** Bri Stevenski
 (maintainer) **Related:** #883 (source issue, part c); PR #917 (parts a and b:
 eligible-denominator wording, PR-head diff); #508 (no silent abstention); #760
 (test-duration ratchet, shipped in #820)
