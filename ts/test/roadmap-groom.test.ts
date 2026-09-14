@@ -196,6 +196,72 @@ describe('roadmap-groom', () => {
     expect(run('--apply').status).toBe(2);
   });
 
+  describe('tracker cross-check (#879)', () => {
+    // The groom never looked at GitHub, so a row whose issue was closed — or
+    // whose work already merged — sat as `backlog` and was ranked into build
+    // batches (4 of 45 in the 2026-09-13 intake). The groom must surface those
+    // rows before anyone ranks the roadmap. It reports; it never reconciles.
+    const linked = (name: string, status: string, n: number) =>
+      row(name, status).replace(
+        '- **Plan:** —\n',
+        `- **Plan:** —\n- **External-ID:** github:o/r#${n}\n`,
+      );
+
+    beforeEach(() => {
+      writeFileSync(
+        roadmap,
+        ROADMAP_HEAD +
+          '## Intake\n\n' +
+          linked('Closed upstream', 'backlog', 452) +
+          linked('Merged elsewhere', 'planned', 477) +
+          linked('Genuinely open', 'backlog', 604) +
+          row('Unlinked', 'backlog'),
+      );
+    });
+
+    const withStates = (states: object, ...args: string[]) => {
+      const file = join(dir, 'states.json');
+      writeFileSync(file, JSON.stringify(states));
+      return run('--issue-states', file, ...args);
+    };
+
+    it('flags a not-done row whose issue is closed or has a merged PR', () => {
+      const r = withStates({
+        '452': { state: 'CLOSED', mergedPrs: [] },
+        '477': { state: 'OPEN', mergedPrs: [714] },
+        '604': { state: 'OPEN', mergedPrs: [] },
+      });
+      expect(r.status).toBe(0);
+      expect(r.stdout).toMatch(/Closed upstream.*#452.*closed/i);
+      expect(r.stdout).toMatch(/Merged elsewhere.*#477.*PR #714/i);
+      expect(r.stdout).not.toMatch(/Genuinely open.*#604/);
+      // Denominator: linked rows checked, unlinked rows counted separately.
+      expect(r.stdout).toMatch(/Checked 3 linked row\(s\).*2 stale/);
+      expect(r.stdout).toMatch(/1 row\(s\) with no External-ID/);
+    });
+
+    it('never moves or edits a stale row, even with --apply', () => {
+      // --apply re-serializes the roadmap as it always has; what must not
+      // happen is a stale-but-not-done row being reconciled on the tracker's say.
+      withStates({ '452': { state: 'CLOSED', mergedPrs: [] } }, '--apply');
+      const after = readFileSync(roadmap, 'utf-8');
+      expect(after).toContain(
+        linked('Closed upstream', 'backlog', 452).trimEnd(),
+      );
+      expect(readFileSync(archive, 'utf-8')).not.toContain('Closed upstream');
+    });
+
+    it('abstains on a linked row the state source has no answer for', () => {
+      // An unknown issue state is not "open": say it could not be checked.
+      const r = withStates({ '452': { state: 'CLOSED', mergedPrs: [] } });
+      expect(r.stdout).toMatch(/2 linked row\(s\) not checked/);
+    });
+
+    it('says so when it did not cross-check the tracker at all', () => {
+      expect(run().stdout).toMatch(/tracker not checked/i);
+    });
+  });
+
   it('leaves a section heading in place even when it empties out', () => {
     // Removing the heading would make the next row land in the wrong section.
     writeFileSync(
