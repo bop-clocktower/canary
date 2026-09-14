@@ -1,8 +1,6 @@
 ---
 number: 0024
-title:
-  'Guardian coverage scope for non-ts trees: instrument npm/, exempt scripts/
-  and agents/skills/'
+title: Guardian coverage scope for non-ts trees
 date: 2026-09-14
 status: accepted
 tier: medium
