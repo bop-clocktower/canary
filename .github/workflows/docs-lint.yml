@@ -101,8 +101,15 @@ jobs:
           node-version: '20'
       - name: Check for removed-symbol drift and proprietary leaks
         # The company denylist is supplied privately via a repo secret so the
-        # public workflow names no company. If the secret is unset, only the
-        # generic structural checks run.
+        # public workflow names no company. If the secret is unset the
+        # authorship scan ABSTAINS and this step fails (#784) — it does not fall
+        # back to the generic structural checks, because a gate matching zero
+        # patterns has verified nothing and cannot report a pass.
+        #
+        # The secret must therefore exist in every store a run of this workflow
+        # can read. It is in both Actions and Dependabot (#831); forks have no
+        # equivalent store, which is why a fork PR cannot pass this required
+        # check at all — see CONTRIBUTING.md and #843.
         env:
           CANARY_PROPRIETARY_DENYLIST:
             ${{ secrets.CANARY_PROPRIETARY_DENYLIST }}
