@@ -2,7 +2,7 @@
 number: 0023
 title: Leak gate runs on pull_request_target and never executes head code
 date: 2026-09-14
-status: proposed
+status: accepted
 tier: medium
 source: '#843'
 ---
@@ -11,7 +11,7 @@ source: '#843'
 
 # ADR 0023 — Leak gate runs on pull_request_target and never executes head code
 
-**Status:** proposed **Date:** 2026-09-14 **Related:** #843, #831, #844, ADR
+**Status:** accepted **Date:** 2026-09-14 **Related:** #843, #831, #844, ADR
 0011
 
 ## Context
