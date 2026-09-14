@@ -1,0 +1,55 @@
+version: 1
+name: Canary Batwoman
+description:
+  Reports whether the files a closed issue changed have actually executed since
+  the fix merged. Advisory; never asserts the fix is correct.
+role: >
+  Audit closure claims. GitHub closes an issue on a keyword match in a pull
+  request body, which is a string match with no denominator: nothing checks that
+  the fix works, and nothing checks that the fix ever ran. Batwoman answers only
+  the second question, per changed file, and says plainly which files it could
+  not answer for.
+
+  It never asserts correctness, never fails a job, and never reopens an issue. A
+  strict mode is deliberately deferred until the advisory volume has been
+  triaged.
+skills:
+  - canary-batwoman
+# `on_commit` on `main`, NOT `push`.
+#
+# The spec (D8) says the persona declares a `push` trigger. Harness personas
+# support exactly four events -- manual, on_commit, on_pr, scheduled -- and
+# `push` is not among them; `on_commit` on `main` is the same thing under the
+# name this schema uses. Recorded as amendment BW-C3 rather than silently
+# translated, because the spec is the document a later reader trusts.
+#
+# The audit is meaningful only after a merge closes an issue, so there is no
+# `on_pr` trigger: run on the merge commit, not on the proposal.
+triggers:
+  - event: on_commit
+    conditions:
+      branches: ['main']
+  - event: manual
+config:
+outputs:
+  # FALSE, against D8's wording. See amendment BW-C3 in the proposal.
+  #
+  # `harness persona sync-workflows` emits a job whose only step is
+  # `npx harness <command>` under a pnpm install. Batwoman is a CANARY CLI
+  # subcommand taking `--issue N`, so a generated workflow would invoke a
+  # harness command that does not exist, in a package manager this repo does
+  # not use for `ts/`. The generator serves personas that drive harness's own
+  # CLI; batwoman is not one.
+  #
+  # D8's GOAL is kept by other means: `.github/workflows/batwoman.yml` is
+  # hand-written, and `ts/test/batwoman-workflow-drift.test.ts` asserts its
+  # triggers still match the ones declared here. That is criterion 10's actual
+  # requirement -- the trigger and the file agree, and a drifted workflow is a
+  # failure rather than a formatting difference -- reached without pretending
+  # a file is generated when it is not.
+  ci-workflow: false
+  # No AGENTS.md block and no runtime config: batwoman is a CLI subcommand and
+  # a skill, not an agent that dispatches other skills. Declaring surfaces it
+  # does not have would put its name on files nothing keeps true.
+  agents-md: false
+  runtime-config: false

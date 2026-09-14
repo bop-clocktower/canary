@@ -138,4 +138,21 @@ describe('blankStringContent', () => {
     const code = 'const a = 1 + 2;\nconst b = a * 3;\n';
     expect(blankStringContent(code)).toBe(code);
   });
+
+  // #861: spans are UTF-16 offsets, so the blanking must index UTF-16 units
+  // too. Splitting by code point collapsed each surrogate pair to one space
+  // and shifted every offset after the first emoji.
+  it('preserves length when a literal holds an astral character', () => {
+    const code = "const g = ['🟢', '👍'];\nit('after', () => {});\n";
+    const out = blankStringContent(code);
+    expectShapePreserved(code, out);
+    expect(out.slice(out.indexOf('it('))).toBe("it('     ', () => {});\n");
+  });
+
+  it('blanks the right units after an astral character in a comment', () => {
+    const code = "// every 👎 counts\nconst s = 'abc';\n";
+    expect(blankStringContent(code)).toBe(
+      "// every 👎 counts\nconst s = '   ';\n",
+    );
+  });
 });

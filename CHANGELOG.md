@@ -16,6 +16,53 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`vacuity-check` VAC-005: trivially true presence on a bystander** (#870).
+  VAC-003's mirror image: a test whose every assertion is `toBeDefined()` /
+  `toBeTruthy()` / `assert x is not None` on a value the test built itself
+  before the target ran passes for any implementation, including a deleted one.
+  The rule only fires when it can prove the subject is a bystander, so a name
+  bound in a hook or through the target's return value is left alone. Measured
+  on canary's own 3,626 tests: 0 findings, and every other rule's count is
+  unchanged. `VAC-004` stays reserved for the drafted self-excusing-skip rule.
+- **`permission-matrix` existence probes** (#857, phase 2). A denied caller must
+  not be able to tell a real record from a missing one: a 403 next to a 404
+  confirms a named person is in the system. List lookup endpoints under
+  `existence_probes:` and every denied cell also compares the real record with
+  `CANARY_ABSENT_ID` on status and body shape (sorted JSON keys). A probe naming
+  an undeclared endpoint is a model error, not a skip. Timing is deliberately
+  out of scope for generated tests (a flake generator).
+
+- **`canary scaling-curve` — how does cost grow with input?** (#856). Fixed-size
+  load tests cannot see an O(n·m) component; the growth exponent can. Fits the
+  log-log slope of a metric across input sizes, classifies it
+  (`LINEAR_OR_BETTER` / `SUPERLINEAR` / `STRONGLY_SUPERLINEAR`), reports the
+  knee, and extrapolates with `--target` (labelled as an extrapolation). Reads a
+  points file, or runs the ladder itself with `--run <k6-script> --sizes ...`.
+  Advisory; exits 3 with `INSUFFICIENT_DATA` on fewer than 4 sizes, under an 8x
+  span, noisy repeats, a poor fit, or a metric the run never emitted.
+- **`canary permission-matrix <model.yaml>` — server-direct authz tests from a
+  declared grid** (#857). Roles × endpoints are declared by a human (`allow`,
+  `deny`, `own-tenant`), expanded across every acting × target tenant, and
+  emitted as Playwright `request` tests that bypass the UI — where cross-tenant
+  reads and UI-only role checks hide. An undeclared cell or unknown value is
+  named, emitted as `test.fixme`, and exits 3; nothing defaults to allow or
+  deny. Credentials come from `CANARY_TOKEN_<ROLE>_<TENANT>`, never the model.
+
+- **`canary batwoman --issue N [--json]` — closure auditing** (#749). GitHub
+  closes an issue when a merged PR body matches `Closes #N`: a string match with
+  no denominator, checking neither that the fix works nor that it ever ran.
+  Batwoman answers the second question per changed file, and names the files it
+  could not answer for. Five statuses -- `exercised`, `not-exercised`,
+  `abstain`, `no-probe`, `not-applicable` -- always printed with counts that sum
+  to the changed-file total, with no `assessed` figure and no success token
+  anywhere in either output path. Three probes ship: `workflow` (decided by run
+  history, with the `on:` block explaining a dormant one), `workflow-script`
+  (resolved statically to its callers, abstaining when nothing references it),
+  and `no-execution`. Advisory: `.github/workflows/batwoman.yml` runs it on
+  every push to `main` and never fails a build. The first skill in the repo to
+  require the network, stated as a property on the axes of ADR 0015 rather than
+  as a tier; ADR 0016 records the two unrelated meanings of "persona" it uses at
+  once, and ADR 0017 the probe registry and why `abstain` is not `no-probe`.
 - **`CONTRIBUTING.md`, disclosing that fork PRs cannot currently be merged**
   (#843). `No removed-symbol or proprietary leaks` is a required check whose
   denylist comes only from a repository secret, and GitHub does not pass secrets
@@ -29,6 +76,11 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary vacuity-check` no longer prints a several-thousand-character
+  summary** (#860). Skips are counted per reason on the summary line; the
+  per-test list (now `file:line` plus a title capped at 80 chars) moves behind
+  the new `--verbose` flag and stays in `--json`. A mis-parsed title can no
+  longer inline raw test source into the output.
 - **The test duration ratchet no longer fires on a contended spawn** (#760). The
   load factor is a median, so it cannot see contention that lands on one test at
   a time -- on the runner, half the tracked tests ran faster than recorded while

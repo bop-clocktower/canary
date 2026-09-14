@@ -1,0 +1,418 @@
+/**
+ * The invariants that bind across every register (spec criteria 3, 8, 11).
+ *
+ * Kept in their own file and driven by `describe.each` over the three register
+ * ids, so that adding a fourth register makes these fail rather than quietly
+ * leaving it unasserted. Asserting once against the default is the failure this
+ * file exists to prevent: terse output is where a bare check mark is most
+ * tempting.
+ */
+import * as fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it, vi } from 'vitest';
+
+/**
+ * Records every `readFileSync` path, then delegates to the real implementation.
+ *
+ * The plan called for `vi.spyOn(fs, 'readFileSync')`, which cannot work here:
+ * `ts/package.json` is `type: module`, so the ESM namespace object is frozen
+ * and the spy throws `Cannot redefine property`. A hoisted `vi.mock` of a node
+ * builtin is the idiom this repo already uses twice -- see `ci-env.test.ts` and
+ * `executor.test.ts`, both mocking `node:child_process`.
+ *
+ * Passthrough, not stub: the other assertions in this file must keep exercising
+ * real behaviour.
+ */
+const fsReads = vi.hoisted(() => [] as string[]);
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    readFileSync: (...args: Parameters<typeof actual.readFileSync>) => {
+      fsReads.push(String(args[0]));
+      return actual.readFileSync(...args);
+    },
+  };
+});
+
+import { summaryLine } from '../src/analysis/batwoman/render.js';
+import {
+  EmptyExplanationError,
+  explain,
+  type ExerciseVerdict,
+} from '../src/analysis/batwoman/verdict.js';
+import type { PersonaRegistry } from '../src/core/persona.js';
+import {
+  ALL_EXERCISED,
+  ALL_STATUSES,
+  FIXTURE_REGISTRY,
+  LONG_PATHS,
+  MIXED,
+  WIDTH,
+  render,
+  v,
+} from './batwoman-testkit.js';
+
+const REGISTERS = ['sdet', 'junior', 'manual'] as const;
+
+/**
+ * Glyphs match literally; words need boundaries so `look` is not `OK`.
+ *
+ * This list is a **denylist, and a denylist can only ever be a floor.** Review
+ * appended ' - verified 🟢' to the terse exercised rows and ' (nothing to do)'
+ * to the brief ones and the whole suite stayed green at 226/226 -- none of those
+ * tokens was on the list, and no list of tokens will be complete. The rule that
+ * actually holds spec criterion 3 is the exact-output assertion further down;
+ * this list stays because it is cheap, it applies to every case rather than one,
+ * and it names the specific glyphs a future author would reach for first.
+ */
+const GLYPHS = ['✓', '✔', '✅', '☑', '🟢', '🎉', '👍', '🆗', '💚'];
+const WORDS = [
+  /\bOK\b/,
+  /\bclean\b/i,
+  /\bpassed\b/i,
+  /\bsuccess(ful)?\b/i,
+  /\ball clear\b/i,
+  /\bno issues\b/i,
+  /\bverified\b/i,
+  /\bconfirmed\b/i,
+  /\bup to date\b/i,
+  /\ball good\b/i,
+  /\bnothing to do\b/i,
+  /\blooks good\b/i,
+];
+
+const CASES: ReadonlyArray<readonly [string, ExerciseVerdict[]]> = [
+  ['a run with findings', MIXED],
+  ['a run carrying all five statuses', ALL_STATUSES],
+  ['an all-exercised run', [v('a.yml', 'exercised'), v('b.yml', 'exercised')]],
+  ['an all-not-applicable run', [v('AGENTS.md', 'not-applicable')]],
+  ['a run with paths too long to fit', LONG_PATHS],
+  ['an empty run', []],
+];
+
+/** The summary line as a reader sees it: the last content line of the report. */
+function renderedSummary(
+  register: string,
+  verdicts: ExerciseVerdict[],
+): string {
+  return render(register, verdicts).trimEnd().split('\n').at(-1) ?? '';
+}
+
+describe.each(REGISTERS)('the %s register', (register) => {
+  it.each(CASES)('prints no success glyph over %s', (_name, verdicts) => {
+    const out = render(register, verdicts);
+    for (const glyph of GLYPHS) expect(out).not.toContain(glyph);
+  });
+
+  it.each(CASES)('prints no success word over %s', (_name, verdicts) => {
+    const out = render(register, verdicts);
+    for (const word of WORDS) expect(out).not.toMatch(word);
+  });
+
+  it.each(CASES)('ends with the full summary line over %s', (_n, verdicts) => {
+    const out = render(register, verdicts).trimEnd();
+    expect(out.endsWith(summaryLine(verdicts))).toBe(true);
+  });
+
+  it.each(CASES)('sums its summary columns to the total over %s', (_n, vs) => {
+    // Parsed out of the *rendered* report, not out of `summaryLine(vs)`. As
+    // written before, this test never called `render` and never used its
+    // `register` parameter -- it ran the identical pure-function assertion
+    // three times and would not have noticed a register whose rendered summary
+    // was mangled. Invariant 3 is about what a reader sees.
+    const numbers = [...renderedSummary(register, vs).matchAll(/(\d+) /g)].map(
+      (m) => Number(m[1]),
+    );
+    const [total, ...columns] = numbers;
+    expect(columns).toHaveLength(5);
+    expect(columns.reduce((a, b) => a + b, 0)).toBe(total);
+    expect(total).toBe(vs.length);
+  });
+
+  it.each(CASES)('holds the 78-column limit over %s', (_n, verdicts) => {
+    // BW-I1: the limit used to be asserted for the junior register only, over
+    // fixtures that already fitted. Removing the wrap from the terse or the
+    // guided register survived the whole suite 127/127. It is now asserted for
+    // every register over every case, including one whose paths and evidence
+    // command do not fit.
+    const longest = Math.max(
+      0,
+      ...render(register, verdicts)
+        .split('\n')
+        .map((line) => line.length),
+    );
+    expect(longest).toBeLessThanOrEqual(WIDTH);
+  });
+
+  it.each(CASES)('orphans no row marker while wrapping %s', (_n, verdicts) => {
+    // Fitting a long path to the width must not leave `  -`, `    1.` or an
+    // empty string alone on a line -- the first break candidate inside a row is
+    // the space right after its marker, so this is the shape a naive fit
+    // produces.
+    for (const line of render(register, verdicts).split('\n')) {
+      if (line === '') continue;
+      expect(line.trim()).not.toBe('');
+      expect(line.trim()).not.toBe('-');
+      expect(line.trim()).not.toMatch(/^\d+\.$/);
+    }
+  });
+
+  it('has a long-path case that would overflow if nothing wrapped it', () => {
+    // Guard the guard: if every fixture fitted, the assertion above would pass
+    // without exercising any wrapping, which is the abstention shape.
+    const longest = Math.max(
+      ...LONG_PATHS.map(
+        (verdict) => verdict.file.length + (verdict.evidence?.length ?? 0),
+      ),
+    );
+    expect(longest).toBeGreaterThan(WIDTH);
+  });
+
+  it('never folds abstain or no-probe into a decided figure', () => {
+    // Asserted over `ALL_STATUSES`, where every column is 1. It used to run
+    // against `MIXED`, which carries *zero* abstain rows -- so
+    // `toContain('0 abstained')` was preserved by any mutation that folded
+    // abstain into another column, because there was nothing to fold. Folding
+    // abstain into no-probe in `tallyVerdicts` left this whole file green.
+    const out = render(register, ALL_STATUSES);
+    expect(out).not.toMatch(/\bassessed\b/i);
+    expect(out).not.toMatch(/\bdecided\b/i);
+    expect(out).toContain('5 changed');
+    expect(out).toContain('1 exercised');
+    expect(out).toContain('1 not exercised');
+    expect(out).toContain('1 abstained');
+    expect(out).toContain('1 no probe');
+    expect(out).toContain('1 n/a');
+  });
+
+  it('keeps abstain and no-probe in sections of their own', () => {
+    // The counts above could still be right while the two were rendered as one
+    // body section. The terse register prints the raw status on each row and
+    // the other two print a heading, so both spellings are accepted -- but they
+    // must both be present, and they must not be the same marker.
+    const out = render(register, ALL_STATUSES);
+    expect(out).toMatch(/ABSTAINED|\babstain\b/);
+    expect(out).toMatch(/NO PROBE|\bno-probe\b/);
+  });
+});
+
+describe.each(REGISTERS)('%s renders sentences, not codes', (register) => {
+  it('gives every not-exercised row an observation and a cause', () => {
+    // Asserted against the rendered string, not the verdict object: the goal is
+    // what a human reads (spec criterion 11).
+    const out = render(register, MIXED);
+    expect(out).toContain('twelve days before this fix merged');
+    expect(out).toContain('`refresh-baseline` label');
+    expect(out).toContain('which has not run since');
+  });
+
+  it('gives every abstain row an observation and a cause', () => {
+    const out = render(register, [
+      {
+        file: 'ci.yml',
+        status: 'abstain',
+        explanation: explain(
+          'The workflow probe could not decide whether ci.yml ran, because ' +
+            'the run history it fetched did not reach back past the merge.',
+        ),
+      },
+    ]);
+    expect(out).toContain('could not decide');
+    expect(out).toContain('because');
+  });
+
+  it('cannot be handed a row with no sentence at all', () => {
+    // This test used to render an empty explanation and assert that the file
+    // name and the count survived -- both of which the defect preserved, so it
+    // could not fail on the thing it was named for. The gap is now
+    // unrepresentable: `Explanation` is branded and `explain` rejects the empty
+    // string, so the failure happens before any renderer sees the row.
+    expect(() => v('x.yml', 'not-exercised', '')).toThrow(
+      EmptyExplanationError,
+    );
+    expect(() => v('x.yml', 'abstain', '   ')).toThrow(EmptyExplanationError);
+  });
+
+  it('gives every row a line of its own beyond the file name', () => {
+    // The renderer's half of the same invariant: a row is a file line plus at
+    // least one line of sentence. Asserted over a fixture carrying all five
+    // statuses, whose paths are short enough that each file line is one line.
+    const out = render(register, ALL_STATUSES);
+    const lines = out.split('\n');
+    for (const verdict of ALL_STATUSES) {
+      const at = lines.findIndex((line) => line.includes(verdict.file));
+      expect(at).toBeGreaterThanOrEqual(0);
+      expect((lines[at + 1] ?? '').trim()).not.toBe('');
+    }
+  });
+});
+
+describe('offline guarantee', () => {
+  it('observes reads at all, so an empty result means something', () => {
+    // The planted positive. Without it, "no personas were read" and "the
+    // recorder is broken" produce an identical empty list -- a pass over a
+    // denominator of zero, which is the exact shape this whole feature exists
+    // to catch. Assert the instrument works before trusting its silence.
+    fsReads.length = 0;
+    fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
+    expect(fsReads.length).toBeGreaterThan(0);
+  });
+
+  it('renders every register from the injected registry, reading no disk', () => {
+    // Unfiltered on purpose. This assertion used to be
+    // `fsReads.filter((p) => p.includes('personas'))`, which threw away most of
+    // what the recorder had just proved it could see: a renderer reading
+    // `package.json`, or anything else off disk, passed it 66/66. Invariant 4
+    // is "reads no disk", not "reads no persona file". If a read ever has to be
+    // permitted, name the exact path in an allowlist here, so the exception is
+    // visible rather than implied by a substring match.
+    fsReads.length = 0;
+    for (const register of REGISTERS) render(register, MIXED);
+    expect(fsReads).toEqual([]);
+  });
+
+  it('would notice a read of a path that has nothing to do with personas', () => {
+    // The falsification, kept: the assertion above is only worth having if a
+    // non-persona read fails it. Reading through the same recorder the renderer
+    // would go through proves the recorder sees those paths too.
+    fsReads.length = 0;
+    fs.readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)));
+    expect(fsReads).not.toEqual([]);
+    expect(fsReads.some((path) => path.includes('personas'))).toBe(false);
+  });
+});
+
+/**
+ * The whole report, written out, for the run where a success token is most
+ * tempting.
+ *
+ * A denylist enforces "none of these fourteen tokens"; spec criterion 3 says
+ * "no success token appears in any output path". The gap between those two is
+ * where ' - verified 🟢' and ' (nothing to do)' both survived the full suite.
+ * An exact-output assertion closes it for good: anything added anywhere, in any
+ * wording, fails. This is the style that killed ' - all good' on the summary
+ * line when the denylist did not, applied per register instead of once.
+ *
+ * When this fails after a deliberate change, read the diff as the report a
+ * human would receive, and check the new line is not a way of saying "fine".
+ */
+const EXPECTED_ALL_EXERCISED: Readonly<Record<string, string>> = {
+  sdet: [
+    'canary batwoman — canary#749',
+    '',
+    '  Closed by  1e0c05b fix(ci): make the refresh-baseline label refresh the',
+    '             baseline',
+    '  Merged     2026-08-22 17:34 UTC',
+    "  Register   sdet (Senior SDET) — explicit: explicit persona 'sdet'",
+    '',
+    '  - .github/workflows/ci.yml  exercised',
+    '    It ran on 2026-08-23, after this fix merged, on a push to main.',
+    '  - scripts/release.mjs  exercised',
+    '    It runs from release.yml, which ran on 2026-08-23 after the merge.',
+    `  ${'─'.repeat(62)}`,
+    '  2 changed · 2 exercised · 0 not exercised · 0 abstained · 0 no probe · 0 n/a',
+    '',
+  ].join('\n'),
+  junior: [
+    'canary batwoman — canary#749',
+    '',
+    '  Closed by  1e0c05b fix(ci): make the refresh-baseline label refresh the',
+    '             baseline',
+    '  Merged     2026-08-22 17:34 UTC',
+    "  Register   junior (Junior SDET) — explicit: explicit persona 'junior'",
+    '',
+    '  EXERCISED — 2 files',
+    '    .github/workflows/ci.yml',
+    '      It ran on 2026-08-23, after this fix merged, on a push to main.',
+    '      Read: gh run list --workflow ci.yml',
+    '',
+    '    scripts/release.mjs',
+    '      It runs from release.yml, which ran on 2026-08-23 after the merge.',
+    '      Read: release.yml, which names this script',
+    '',
+    `  ${'─'.repeat(62)}`,
+    '  2 changed · 2 exercised · 0 not exercised · 0 abstained · 0 no probe · 0 n/a',
+    '',
+  ].join('\n'),
+  manual: [
+    'canary batwoman — canary#749',
+    '',
+    '  Closed by  1e0c05b fix(ci): make the refresh-baseline label refresh the',
+    '             baseline',
+    '  Merged     2026-08-22 17:34 UTC',
+    "  Register   manual (Manual tester) — explicit: explicit persona 'manual'",
+    '',
+    '  EXERCISED — 2 files',
+    '    1. .github/workflows/ci.yml',
+    '       It ran on 2026-08-23, after this fix merged, on a push to main.',
+    '       Read: gh run list --workflow ci.yml',
+    '',
+    '    2. scripts/release.mjs',
+    '       It runs from release.yml, which ran on 2026-08-23 after the merge.',
+    '       Read: release.yml, which names this script',
+    '',
+    `  ${'─'.repeat(62)}`,
+    '  2 changed · 2 exercised · 0 not exercised · 0 abstained · 0 no probe · 0 n/a',
+    '',
+  ].join('\n'),
+};
+
+describe.each(REGISTERS)('the %s register, all-exercised', (register) => {
+  it('renders exactly this report, so no token can be added to it', () => {
+    expect(render(register, ALL_EXERCISED)).toBe(
+      EXPECTED_ALL_EXERCISED[register],
+    );
+  });
+
+  it('has an expectation on file for this register', () => {
+    // Guard the guard: a missing key would make `toBe(undefined)` the
+    // assertion, which fails loudly -- but a register added to REGISTERS and
+    // forgotten here should say why, not just fail on a type.
+    expect(EXPECTED_ALL_EXERCISED[register]).toBeDefined();
+  });
+});
+
+/**
+ * The drift guard, read from the *shipped* registry.
+ *
+ * It used to compare `FIXTURE_REGISTRY.personas` against `REGISTERS` -- two
+ * constants three lines apart in the test tree, neither of them the file canary
+ * actually ships. Appending a fourth persona to
+ * `ts/src/data/personas/registry.json` left all 149 batwoman tests green: the
+ * guard guarded the copy against itself, which is the "asserted once against the
+ * default" failure spec criterion 8 names, one level of indirection up.
+ *
+ * This is the one test in the file that touches disk, deliberately, and it does
+ * so outside the offline assertions above: those reset the recorder before they
+ * render, so a read here cannot make them pass. Nothing about invariant 4 is
+ * weakened -- the *renderer* still reads nothing; a drift guard by definition
+ * has to compare against the artifact it is guarding.
+ */
+describe('the shipped persona registry', () => {
+  const SHIPPED = JSON.parse(
+    fs.readFileSync(
+      fileURLToPath(
+        new URL('../src/data/personas/registry.json', import.meta.url),
+      ),
+      'utf8',
+    ),
+  ) as PersonaRegistry;
+
+  it('declares exactly the registers these invariants are asserted over', () => {
+    // Add a register to the shipped registry without adding it to REGISTERS and
+    // the no-success-token rule is unasserted for it. This is what fails.
+    expect(SHIPPED.personas.map((persona) => persona.id).sort()).toEqual(
+      [...REGISTERS].sort(),
+    );
+  });
+
+  it('is what the testkit claims to be a verbatim copy of', () => {
+    // The testkit docstring says "a verbatim copy of the three shipped
+    // registers". Review found its audience strings were truncated versions of
+    // the shipped ones, so the claim was false and nothing could notice. Either
+    // the copy is verbatim or the docstring is a lie; this makes it the former.
+    expect(FIXTURE_REGISTRY).toEqual(SHIPPED);
+  });
+});

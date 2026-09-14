@@ -55,6 +55,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readAllowances, requireNoDelta } from './lib/perf-delta.mjs';
+import { fail, readViolations } from './lib/perf-report.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_BASELINE = join(REPO_ROOT, '.harness', 'perf-baseline.json');
@@ -86,43 +88,19 @@ function parseArgs(argv) {
     baseReport: null,
     baseline: DEFAULT_BASELINE,
     cliVersion: null,
+    reportRoot: null,
+    baseReportRoot: null,
   };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--report') args.report = argv[i + 1];
     else if (argv[i] === '--base-report') args.baseReport = argv[i + 1];
     else if (argv[i] === '--baseline') args.baseline = argv[i + 1];
     else if (argv[i] === '--cli-version') args.cliVersion = argv[i + 1];
+    else if (argv[i] === '--report-root') args.reportRoot = argv[i + 1];
+    else if (argv[i] === '--base-report-root')
+      args.baseReportRoot = argv[i + 1];
   }
   return args;
-}
-
-/**
- * Pull the violation count out of a `harness check-perf` run.
- *
- * Returns the integer count, `0` for an explicit pass line, or `null` when the
- * output matches neither shape — which the caller must treat as an abstention,
- * never as zero. A bare `Validation failed` with no parseable count is `null`
- * too: a header that stopped carrying its denominator is an unmeasured run.
- */
-function violationsFrom(text) {
-  const failure = /Validation failed\s*\((\d+)\s+issues?\)/i.exec(text);
-  if (failure) return Number.parseInt(failure[1], 10);
-  if (/validation passed/i.test(text)) return 0;
-  return null;
-}
-
-/**
- * Is this drop too steep to be real work? See `COLLAPSE_RATIO`. Only consulted
- * when the baseline is large enough for the question to be meaningful.
- */
-function isImplausibleCollapse(violations, maxViolations) {
-  if (maxViolations < COLLAPSE_GUARD_MIN_BASELINE) return false;
-  return violations < maxViolations * COLLAPSE_RATIO;
-}
-
-function fail(code, message) {
-  console.error(message);
-  process.exit(code);
 }
 
 /**
@@ -133,17 +111,23 @@ function fail(code, message) {
 function readBaseline(baseline) {
   let maxViolations;
   let harnessCli = null;
+  let allowances = [];
   try {
     const parsed = JSON.parse(readFileSync(baseline, 'utf8'));
     maxViolations = parsed.maxViolations;
     if (typeof parsed.harnessCli === 'string') harnessCli = parsed.harnessCli;
+    allowances = parsed.deltaAllowances ?? [];
   } catch (err) {
     fail(2, `perf-ratchet: cannot read baseline ${baseline}: ${err.message}`);
   }
   if (!Number.isInteger(maxViolations)) {
     fail(2, `perf-ratchet: ${baseline} has no integer "maxViolations".`);
   }
-  return { maxViolations, harnessCli };
+  return {
+    maxViolations,
+    harnessCli,
+    allowances: readAllowances(allowances, baseline),
+  };
 }
 
 /**
@@ -172,87 +156,11 @@ function requireMatchingInstrument(harnessCli, cliVersion, maxViolations) {
 }
 
 /**
- * The raw text of one report, or exit 3. `label` names which side this is —
- * one message for "head produced nothing" and "base produced nothing" is how
- * a delta gate goes dark with nobody able to tell which half. An unreadable
- * report is an ABSTENTION, not an error: the workflow step redirects stdout,
- * so a missing file means check-perf died before writing anything.
- */
-function readReportText(path, label) {
-  try {
-    return readFileSync(path, 'utf8');
-  } catch (err) {
-    return fail(
-      3,
-      `perf-ratchet: ABSTAINED — cannot read ${label} report ${path}: ` +
-        `${err.message}\nThe check-perf step most likely failed before ` +
-        'producing output. Read the step log; do NOT treat an absent report ' +
-        'as zero violations.',
-    );
-  }
-}
-
-/**
- * The measured violation count for one side, or exit 3. Every non-numeric
- * path is an ABSTENTION, because each means the check did not measure the
- * codebase: an unparseable report, or a collapse too steep to be real work.
- */
-function readViolations(path, maxViolations, label) {
-  const violations = violationsFrom(readReportText(path, label));
-  if (violations === null) {
-    fail(
-      3,
-      `perf-ratchet: ABSTAINED — the ${label} perf report has neither a ` +
-        '"Validation failed (N issues)" header nor a "validation passed" ' +
-        'line, so nothing was measured. This is the #544 shape: the check ' +
-        'most likely failed at startup (`Could not resolve entry points` ' +
-        'means `performance.entryPoints` went missing from ' +
-        'harness.config.json — see ADR 0012). Read the step log; do NOT ' +
-        'treat an unparseable report as zero.',
-    );
-  }
-
-  if (isImplausibleCollapse(violations, maxViolations)) {
-    fail(
-      3,
-      `perf-ratchet: ABSTAINED — ${violations} violations in the ${label} ` +
-        `perf report against a baseline of ${maxViolations} is too steep a ` +
-        'drop to be real work.\nCheck the invocation FIRST: `check-perf ' +
-        '--coupling` and `--size` report "validation passed" over findings ' +
-        'they should be reporting, so a narrowed run looks exactly like a ' +
-        'clean one. The gate must call a bare `harness check-perf` with no ' +
-        'narrowing flag.\nIf the drop is genuine, lower "maxViolations" in ' +
-        'the baseline in the same commit that earned it, and this stops firing.',
-    );
-  }
-
-  return violations;
-}
-
-/**
  * The delta rule (#812): fail when this branch adds violations its merge base
  * did not have. Called BEFORE the absolute backstop, because it names what
  * this branch actually did — a branch that inherits an over-ceiling base
  * should read "you added 2" first, not a total it did not cause.
  */
-function requireNoDelta(baseReport, violations, maxViolations) {
-  const base = readViolations(baseReport, maxViolations, 'merge-base');
-  const delta = violations - base;
-  if (delta > 0) {
-    fail(
-      1,
-      `perf-ratchet: FAILED — this branch introduces ${delta} performance ` +
-        `violation(s): ${base} at the merge base, ${violations} here.\n` +
-        'This is the delta YOUR diff added, measured against the commit you ' +
-        'branched from, so it is not affected by what else merged in the ' +
-        'meantime. Fix the new violations or split the file that grew.',
-    );
-  }
-  console.log(
-    `perf-ratchet: delta OK — ${violations} violations here against ` +
-      `${base} at the merge base (${delta >= 0 ? '+' : ''}${delta}).`,
-  );
-}
 
 /** Compare the measurement to the ceiling and report. Exits 1 when it fires. */
 function applyRatchet(violations, maxViolations, baseline) {
@@ -283,16 +191,25 @@ function applyRatchet(violations, maxViolations, baseline) {
 }
 
 function main() {
-  const { report, baseReport, baseline, cliVersion } = parseArgs(
-    process.argv.slice(2),
-  );
+  const {
+    report,
+    baseReport,
+    baseline,
+    cliVersion,
+    reportRoot,
+    baseReportRoot,
+  } = parseArgs(process.argv.slice(2));
   if (!report) fail(2, 'perf-ratchet: --report <file> is required.');
 
-  const { maxViolations, harnessCli } = readBaseline(baseline);
+  const { maxViolations, harnessCli, allowances } = readBaseline(baseline);
   const violations = readViolations(report, maxViolations, 'head');
   requireMatchingInstrument(harnessCli, cliVersion, maxViolations);
   if (baseReport !== null)
-    requireNoDelta(baseReport, violations, maxViolations);
+    requireNoDelta(baseReport, violations, maxViolations, {
+      report,
+      allowances,
+      roots: { head: reportRoot, base: baseReportRoot },
+    });
   applyRatchet(violations, maxViolations, baseline);
 }
 

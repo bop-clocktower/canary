@@ -81,7 +81,7 @@ with no entry in this table is a finding, not a default.
 | Command                                                             | Where                 | How it blocks                                                                                                                                                                                                           |
 | ------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `check-perf`                                                        | `harness-quality.yml` | Ratcheted against `.harness/perf-baseline.json` (`maxViolations` 233 against a measured 225, CLI 11.3.0) via `scripts/perf-ratchet.mjs`, which abstains when the running CLI is not the one that set the ceiling (#744) |
-| `check-docs`                                                        | `harness-quality.yml` | Blocking at `--min-coverage 3`, a floor at today's measurement                                                                                                                                                          |
+| `check-docs`                                                        | `harness-quality.yml` | Blocking merge-base ratchet via `scripts/docs-ratchet.mjs` (#865): fails only when a file documented at the base loses its link (was a `--min-coverage 3` floor)                                                        |
 | `check-deps`, `check-security`, `check-arch`, `cleanup`, `validate` | pre-existing          | See ADR 0011 / ADR 0012                                                                                                                                                                                                 |
 
 `check-perf` is ratcheted rather than strict for the reason ADR 0012 gives: 237
@@ -100,6 +100,15 @@ check blocks, so it cannot be ignored, but it blocks on _regression_ rather than
 on an 80% aspiration this repo has never met and has scheduled no campaign to
 meet. Coverage rises opportunistically and can never fall back. Raise the floor
 when the number goes up; never lower it to make CI pass.
+
+**Superseded by #865.** The floor had zero slack: main sat at 5/199 = 2.51%
+(printed 3.0%), so #864 adding two undocumented files failed a PR that removed
+nothing. A ratio taxes new files instead of catching regressions. The gate is
+now `scripts/docs-ratchet.mjs`, which compares documented-file identities
+against the merge base and fails only when a file documented at the base is
+still present and has lost its `[..](path)` link. Adding files is free; the
+property above, that coverage cannot silently fall back, now holds per file
+rather than per percentage point.
 
 ### Declined
 
@@ -175,6 +184,43 @@ be stated at the point of use rather than discovered later.
   merge base, the same two-rule shape ADR 0012's #703 amendment gives the
   entropy ratchet. Measure it in a fresh `git worktree` — the shared working
   directory reads high, and a mid-conflict tree returns confident garbage.
+- **AMENDED 2026-09-10 (#850): the delta rule compares finding IDENTITIES, not
+  counts, and takes a reviewed allowance list.** Comparing two scalars made the
+  rule blind to _what_ changed, and that blindness had a direction. A coupling
+  ratio of 1.00 is the definition of a CLI wiring module, so a new `*-cli.ts`
+  cost +2 findings and failed the gate, while adding the same subcommand to
+  `ts/src/cli.ts` — already over 300 lines and already carrying both findings —
+  cost +0, because a file already flagged for a rule is not flagged twice. The
+  gate was cheapest to satisfy by making an oversized file more oversized.
+  `deltaAllowances` in `.harness/perf-baseline.json` now exempts named
+  `(rule, path)` shapes from the DELTA rule only; `maxViolations` still counts
+  every finding, so an allowance can never raise the total. Every entry must
+  carry a `why` (exit 2 without one), an unknown `rule` is a config error rather
+  than an entry that silently matches nothing, and an applied allowance is NAMED
+  in the output — a suppressed finding that nobody can see would be the false
+  green the list is meant to prevent.
+- The two scans run under **different absolute roots** by design (the base
+  worktree lives outside the checkout), so the workflow passes `--report-root`
+  and `--base-report-root` explicitly. Identity comparison needs the paths to
+  align, and a wrong guess fails in both directions: calling every finding new
+  (false red) or falling back to counting and silently losing the allowances.
+  With no shared file at all the ratchet **abstains** rather than reporting a
+  number it cannot stand behind. When either report cannot be parsed into
+  per-finding detail it falls back to the count rule and says so — allowances do
+  not apply to a set it does not fully understand.
+- **Magnitude growth is reported, ADVISORY (#854).** Identity still ignores
+  magnitude, so the blocking rule is unchanged. The ratchet now also pairs each
+  identity's findings between base and head, largest with largest, and emits a
+  `::warning` for every already-flagged finding that grew (`377 -> 900`).
+  **Advisory by decision, from measurement:** replayed over the 40 merges before
+  it landed, 11 (27.5%) grew at least one flagged finding. Most were
+  `ts/src/cli.ts` gaining 1–2 lines per subcommand, and the largest was
+  `vacuity-scanner.ts` +192. Blocking would have failed more than a quarter of
+  merges, mostly over noise. That is the "demoted to advisory within a week"
+  outcome, reached the hard way. Any tolerance that passed the small cases would
+  be an invented number. **Revisit** once the annotations have run long enough
+  to show whether the large growths repeat; promote with data, not instead of
+  it. The former `KNOWN GAP` test is inverted in `ts/test/perf-ratchet.test.ts`.
 - Declining a check is now a recorded decision with a revisit condition. An
   unwired check that appears in neither table above is a finding.
 - **A check is not wired until it has been seen to fire.** This ADR shipped one

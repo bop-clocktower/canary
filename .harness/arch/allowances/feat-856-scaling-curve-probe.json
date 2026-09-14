@@ -1,0 +1,8 @@
+{
+  "reason": "#856 adds scaling-curve core + CLI (~330 lines of new modules); 0 new violations, module-size growth only",
+  "categories": {
+    "module-size": 36696
+  },
+  "violationIds": [],
+  "createdFrom": "4fc2fbdf"
+}

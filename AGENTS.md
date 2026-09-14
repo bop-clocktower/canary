@@ -207,11 +207,12 @@ docs/branching-convention
   `canary-cassandra` detection (#612). Finds tests that pass without proving
   anything: `VAC-001` an assertion identical to the value it checks, `VAC-002` a
   target never referenced, `VAC-003` every assertion an absence observed on a
-  bystander rather than on the target. `VAC-002`/`VAC-003` carry a fidelity
-  ladder (`annotated` via `// @covers <symbol>` over `import-inferred`); a test
-  resolvable at neither tier becomes a recorded **skip**, never a pass. Returns
-  a `GateResult` whose `checked` counts **tests**, not files. Surfaced as
-  `canary vacuity-check`.
+  bystander rather than on the target, `VAC-005` every assertion a trivially
+  true presence check on a value the test built itself (#870).
+  `VAC-002`/`VAC-003` carry a fidelity ladder (`annotated` via
+  `// @covers <symbol>` over `import-inferred`); a test resolvable at neither
+  tier becomes a recorded **skip**, never a pass. Returns a `GateResult` whose
+  `checked` counts **tests**, not files. Surfaced as `canary vacuity-check`.
 - **Promotion Verdict:**
   [ts/src/core/promotion-verdict.ts](ts/src/core/promotion-verdict.ts) — The
   structured verdict `canary-promote-test` gates on (#477). Composes the static
@@ -923,13 +924,13 @@ Two related facts worth not rediscovering:
   _optional extended field_ serialized beside
   `Assignee`/`Priority`/`Updated-At`. It is not one of the five documented
   fields (`Status`, `Spec`, `Summary`, `Blockers`, `Plan`), so it is easy to
-  conclude no link field exists. All 51 rows carry one — 47 as of #628, plus the
+  conclude no link field exists. All 55 rows carry one — 47 as of #628, plus the
   three added for #626/#590/#629, then #481/#544/#590 archived and
   #633/#634/#638 filed in their place — and `Priority`, serialized in that same
   extended group, is populated on every one of them.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
-  effectively blind gate that reported a real number nobody read. All 51 rows
+  effectively blind gate that reported a real number nobody read. All 55 rows
   now carry an `External-ID` (#596, #601–#619, #628, #626/#590/#629) and sync
   reports `would create 0`. `scripts/roadmap-denominator-check.mjs` now keeps it
   that way: the wrapper runs it before every sync, and it exits 3 unless
@@ -1281,6 +1282,21 @@ Two unrelated scales also use the word "tier" and are out of scope:
 `canary doctor`'s check provenance (engine vs overlay) and the vendored harness
 agent definitions' violation severity. See
 [ADR 0015](docs/knowledge/decisions/0015-skill-capability-vocabulary.md).
+
+`canary-batwoman` (#749) is the **first shipped skill that requires the
+network** — it reads run history and closing pull requests through `gh`. That is
+stated as a property on the network axis, never as a tier: the four
+deterministic offline detectors (`canary-savant`, `canary-blackhawk`,
+`canary-cassandra`, `canary-katana`) sit at no number that batwoman is one step
+above. An unauthenticated `gh` does not degrade to a clean report; every
+affected file becomes an `abstain` naming the failure, because cannot-verify is
+a finding.
+
+It is also the first thing here to use **both** kinds of persona at once — a
+harness persona for its CI trigger, a canary persona for its output register.
+The two share only a word; see
+[ADR 0016](docs/knowledge/decisions/0016-two-meanings-of-persona.md) before
+assuming they are one mechanism.
 
 #### `canary-*` names
 

@@ -91,6 +91,14 @@ slash-command entry points.
   Complements `canary-fail-fast` (which aborts early) by summarising the full
   run at the end.
 
+### Closure auditing
+
+- [`canary-batwoman`](./claude-code/canary-batwoman/SKILL.md) — Reports whether
+  the files a closed issue's fix changed have actually **executed** since that
+  fix merged. GitHub closes an issue on a keyword match, which checks neither
+  that the fix works nor that it ever ran. Advisory, and the only skill here
+  that requires the network (`gh`): deterministic, network, no agent.
+
 ### Test hygiene & reliability
 
 - [`canary-savant`](./claude-code/canary-savant/SKILL.md) — Order-dependence &

@@ -16,12 +16,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type ChangedUnit } from '../src/guardian/coverage.js';
 import {
   GuardianConfig,
-  buildWeakTestFindings,
   computeExitCode,
   filterTestUnits,
   loadGuardianConfig,
   scopeDiff,
 } from '../src/guardian/pr-check.js';
+import { buildWeakTestFindings } from '../src/guardian/weak-test.js';
 
 const DIFF_WEAK_PY = `diff --git a/tests/test_widget.py b/tests/test_widget.py
 new file mode 100644

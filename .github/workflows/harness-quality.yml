@@ -30,7 +30,8 @@ jobs:
         # non-blocking telemetry decision). See #318 C.
         run: node scripts/check_hook_customizations.mjs
 
-      # BLOCKING as of #718, at a floor rather than at the tool's default.
+      # BLOCKING as of #718; a merge-base RATCHET rather than a floor as of
+      # #865. History below, then why the floor went.
       #
       # This step was `continue-on-error: true` with the comment "allow warnings
       # for now as we transition". The transition had no end condition, no
@@ -48,8 +49,55 @@ jobs:
       # fall back. Raise the floor when the number goes up; never lower it to
       # make CI pass. Verified against CLI 11.1.1: exit 1 at the default 80,
       # exit 0 at `--min-coverage 3`.
-      - name: Harness Docs Coverage (blocking, floor at today's 3%)
-        run: npx --yes -p "$HARNESS_CLI" harness check-docs --min-coverage 3
+      #
+      # #865: the floor had ZERO slack. Main sat at 5/199 = 2.51% (printed
+      # 3.0%), so #864 adding two undocumented files (2.49%) failed a PR that
+      # removed nothing. A ratio taxes new files; it does not catch
+      # regressions. `scripts/docs-ratchet.mjs` compares documented-file
+      # IDENTITIES against the merge base instead and fails only when a file
+      # documented at the base loses its link. `--min-coverage 0` keeps the
+      # tool's own exit out of the decision, which belongs to the ratchet;
+      # `|| true` matches the other scans, and an empty report abstains
+      # (exit 3). Same two properties as the entropy and perf base scans:
+      # SAME INSTRUMENT and OUTSIDE THE WORKSPACE, asserted by
+      # `ts/test/docs-ratchet.test.ts`.
+      - name: Harness Docs Coverage
+        run:
+          npx --yes -p "$HARNESS_CLI" harness check-docs --json --min-coverage 0
+          > docs-report.json || true
+
+      - name: Harness Docs Coverage (merge base)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/docs-base" "$BASE_SHA"
+          (cd "$RUNNER_TEMP/docs-base" &&
+            npx --yes -p "$HARNESS_CLI" harness check-docs --json --min-coverage 0) \
+            > docs-base-report.json || true
+
+      - name: Docs coverage ratchet (blocking)
+        env:
+          # Empty on a push to `main`: no merge base, so it reports only.
+          DOCS_BASE_FLAG:
+            ${{ github.event_name == 'pull_request' && '--base-report
+            docs-base-report.json' || '' }}
+        run:
+          node scripts/docs-ratchet.mjs --report docs-report.json
+          $DOCS_BASE_FLAG
+
+      # #588: a report that dies with the runner is unreadable on the one run
+      # that needs it, the failing one.
+      - name: Upload docs coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-coverage-reports
+          path: |
+            docs-report.json
+            docs-base-report.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       # #744. Both ratchets below carry an ABSOLUTE count produced by this CLI,
       # and `HARNESS_CLI` is a FLOATING major (`@harness-engineering/cli@12`),
@@ -186,6 +234,14 @@ jobs:
       # base tree and double-counts) — and `ts/test/perf-ratchet.test.ts`
       # asserts both. `2>&1 || true` matches the head scan; an empty base
       # report is NOT silently tolerated, the ratchet abstains (exit 3) on it.
+      # The two scans necessarily run under DIFFERENT absolute roots — that is
+      # the point of putting the base worktree outside the checkout — so the
+      # same file appears as two different paths across the two reports. The
+      # ratchet compares finding IDENTITIES now (#850), so it is handed both
+      # roots explicitly rather than inferring them: a wrong guess would either
+      # call every finding new (false red) or fall back to counting and lose
+      # the allowances (silently weaker). With no shared file at all it
+      # abstains rather than reporting a number it cannot stand behind.
       - name: Harness Performance Check (merge base)
         if: github.event_name == 'pull_request'
         env:
@@ -205,7 +261,9 @@ jobs:
             perf-base-report.txt' || '' }}
         run:
           node scripts/perf-ratchet.mjs --report perf-report.txt --cli-version
-          "${{ steps.harness-cli.outputs.version }}" $PERF_BASE_FLAG
+          "${{ steps.harness-cli.outputs.version }}" --report-root
+          "$GITHUB_WORKSPACE" --base-report-root "$RUNNER_TEMP/perf-base"
+          $PERF_BASE_FLAG
 
       # `check-operational-drift` is deliberately NOT wired here. #717 proposed
       # wiring it blocking precisely because it was clean — no backlog to
@@ -360,7 +418,7 @@ jobs:
       # ratchet with --update to refresh it.
       - name: Upload test durations
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-durations-agents-skills
           path: /tmp/durations.json

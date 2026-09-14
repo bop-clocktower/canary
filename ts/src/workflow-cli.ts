@@ -123,28 +123,151 @@ interface ShowOptions {
   json?: boolean;
 }
 
-function showCmd(opts: ShowOptions, deps: MainDeps): void {
-  const wd = deps.makeWorkflowDiscovery();
+/**
+ * Which project keys `show` should report on.
+ *
+ * `--project` names one; otherwise every cached `.canary/workflow-*.json` is
+ * listed. An unreadable `.canary` yields no keys rather than throwing: a
+ * missing cache is the ordinary first-run state, not an error.
+ */
+function resolveProjectKeys(opts: ShowOptions, deps: MainDeps): string[] {
+  if (opts.project) return [opts.project];
 
   let keys: string[] = [];
-  if (opts.project) {
-    keys = [opts.project];
-  } else {
-    const canaryDir = join(deps.cwd(), '.canary');
-    if (existsSync(canaryDir)) {
-      try {
-        keys = readdirSync(canaryDir)
-          .filter((f) => f.startsWith('workflow-') && f.endsWith('.json'))
-          .map((f) => f.slice('workflow-'.length, -'.json'.length));
-      } catch {
-        keys = [];
-      }
-    }
-    if (keys.length === 0) {
-      deps.out(pc.yellow('No cached workflow mappings found.'));
-      throw new CliExitError(0);
+  const canaryDir = join(deps.cwd(), '.canary');
+  if (existsSync(canaryDir)) {
+    try {
+      keys = readdirSync(canaryDir)
+        .filter((f) => f.startsWith('workflow-') && f.endsWith('.json'))
+        .map((f) => f.slice('workflow-'.length, -'.json'.length));
+    } catch {
+      keys = [];
     }
   }
+  if (keys.length === 0) {
+    deps.out(pc.yellow('No cached workflow mappings found.'));
+    throw new CliExitError(0);
+  }
+  return keys;
+}
+
+/** One mapping as JSON: the whole document, or just its semantic roles. */
+function mappingAsJson(
+  mapping: {
+    semantic_roles: Record<string, SemanticRoleLike>;
+    toJson(): string;
+  },
+  rolesOnly: boolean,
+): string {
+  if (!rolesOnly) return mapping.toJson();
+  const rolesDict: Record<string, unknown> = {};
+  for (const [r, sr] of Object.entries(mapping.semantic_roles)) {
+    rolesDict[r] = { status_name: sr.status_name, issue_type: sr.issue_type };
+  }
+  return jsonIndent2(rolesDict);
+}
+
+/** The two fields `--roles-only` projects out of a semantic role. */
+interface SemanticRoleLike {
+  status_name: unknown;
+  issue_type: unknown;
+}
+
+/** `role -> status` lines, indented under a heading. Shared by both modes. */
+function printSemanticRoles(
+  roles: Record<string, { status_name: unknown; issue_type: unknown }>,
+  lead: string,
+  deps: MainDeps,
+): void {
+  deps.out(`${lead}${pc.bold('Semantic roles:')}`);
+  for (const [role, sr] of Object.entries(roles)) {
+    deps.out(
+      `    ${role.padEnd(20)} ${'\u{2192}'} '${sr.status_name}'  ${pc.dim(`(${sr.issue_type})`)}`,
+    );
+  }
+}
+
+/** Each issue type, its statuses, and its transitions. */
+function printIssueTypes(
+  issueTypes: ReadonlyArray<{
+    name: string;
+    statuses: ReadonlyArray<{ category: string; name: string }>;
+    transitions: ReadonlyArray<{
+      from_status: string;
+      to_status: string;
+      name: string;
+    }>;
+  }>,
+  deps: MainDeps,
+): void {
+  for (const it of issueTypes) {
+    deps.out(`\n  ${pc.bold(it.name)}`);
+    for (const s of it.statuses) {
+      deps.out(`    [${s.category}] ${s.name}`);
+    }
+    if (it.transitions.length === 0) continue;
+    deps.out('    Transitions:');
+    for (const t of it.transitions) {
+      deps.out(
+        `      ${t.from_status} ${'\u{2192}'} ${t.to_status}  ${pc.dim(`(${t.name})`)}`,
+      );
+    }
+  }
+}
+
+/**
+ * One cached mapping, rendered for a human.
+ *
+ * Extracted from `showCmd`, which had grown to hold key resolution, JSON
+ * emission and this rendering at once -- and carried the semantic-roles block
+ * TWICE, once per mode, which is why the two had already drifted in their
+ * indentation.
+ */
+function printMapping(
+  key: string,
+  mapping: WorkflowMappingLike,
+  rolesOnly: boolean,
+  deps: MainDeps,
+): void {
+  const confirmedTag = mapping.role_annotations_confirmed
+    ? pc.green('confirmed')
+    : pc.yellow('unconfirmed');
+  deps.out(
+    `\n${pc.bold(key)}  ${pc.dim(`source=${mapping.source}  discovered=${mapping.discovered_at}  roles=${confirmedTag}`)}`,
+  );
+
+  const hasRoles = Object.keys(mapping.semantic_roles).length > 0;
+  if (rolesOnly) {
+    if (hasRoles) printSemanticRoles(mapping.semantic_roles, '  ', deps);
+    else deps.out(`  ${pc.yellow('No semantic roles resolved yet.')}`);
+    return;
+  }
+
+  printIssueTypes(mapping.issue_types, deps);
+  if (hasRoles) printSemanticRoles(mapping.semantic_roles, '\n  ', deps);
+}
+
+/** The shape `show` reads off a cached mapping. */
+interface WorkflowMappingLike {
+  role_annotations_confirmed: boolean;
+  source: unknown;
+  discovered_at: unknown;
+  semantic_roles: Record<string, { status_name: unknown; issue_type: unknown }>;
+  issue_types: ReadonlyArray<{
+    name: string;
+    statuses: ReadonlyArray<{ category: string; name: string }>;
+    transitions: ReadonlyArray<{
+      from_status: string;
+      to_status: string;
+      name: string;
+    }>;
+  }>;
+  toJson(): string;
+}
+
+function showCmd(opts: ShowOptions, deps: MainDeps): void {
+  const wd = deps.makeWorkflowDiscovery();
+  const keys = resolveProjectKeys(opts, deps);
 
   let anyFound = false;
   for (const key of keys) {
@@ -159,65 +282,11 @@ function showCmd(opts: ShowOptions, deps: MainDeps): void {
     anyFound = true;
 
     if (opts.json) {
-      if (opts.rolesOnly) {
-        const rolesDict: Record<string, unknown> = {};
-        for (const [r, sr] of Object.entries(mapping.semantic_roles)) {
-          rolesDict[r] = {
-            status_name: sr.status_name,
-            issue_type: sr.issue_type,
-          };
-        }
-        deps.out(jsonIndent2(rolesDict));
-      } else {
-        deps.out(mapping.toJson());
-      }
+      deps.out(mappingAsJson(mapping, opts.rolesOnly === true));
       continue;
     }
 
-    const confirmedTag = mapping.role_annotations_confirmed
-      ? pc.green('confirmed')
-      : pc.yellow('unconfirmed');
-    deps.out(
-      `\n${pc.bold(key)}  ${pc.dim(`source=${mapping.source}  discovered=${mapping.discovered_at}  roles=${confirmedTag}`)}`,
-    );
-
-    if (opts.rolesOnly) {
-      if (Object.keys(mapping.semantic_roles).length) {
-        deps.out(`  ${pc.bold('Semantic roles:')}`);
-        for (const [role, sr] of Object.entries(mapping.semantic_roles)) {
-          deps.out(
-            `    ${role.padEnd(20)} ${'\u{2192}'} '${sr.status_name}'  ${pc.dim(`(${sr.issue_type})`)}`,
-          );
-        }
-      } else {
-        deps.out(`  ${pc.yellow('No semantic roles resolved yet.')}`);
-      }
-      continue;
-    }
-
-    for (const it of mapping.issue_types) {
-      deps.out(`\n  ${pc.bold(it.name)}`);
-      for (const s of it.statuses) {
-        deps.out(`    [${s.category}] ${s.name}`);
-      }
-      if (it.transitions.length) {
-        deps.out('    Transitions:');
-        for (const t of it.transitions) {
-          deps.out(
-            `      ${t.from_status} ${'\u{2192}'} ${t.to_status}  ${pc.dim(`(${t.name})`)}`,
-          );
-        }
-      }
-    }
-
-    if (Object.keys(mapping.semantic_roles).length) {
-      deps.out(`\n  ${pc.bold('Semantic roles:')}`);
-      for (const [role, sr] of Object.entries(mapping.semantic_roles)) {
-        deps.out(
-          `    ${role.padEnd(20)} ${'\u{2192}'} '${sr.status_name}'  ${pc.dim(`(${sr.issue_type})`)}`,
-        );
-      }
-    }
+    printMapping(key, mapping, opts.rolesOnly === true, deps);
   }
 
   if (!anyFound) {

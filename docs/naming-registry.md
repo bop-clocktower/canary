@@ -59,9 +59,9 @@ subject is worth more than the order two people happened to type it in.
 | 2026-08-07 | Issue #460 and a roadmap row both claimed `canary-cassandra`                                                                       | #460 renamed to `canary-shiva`; the roadmap row kept the name |
 | 2026-08-23 | A closure-verification detector was scoped as `canary-manhunter`; roadmap row #611 already held it for the release quality dossier | The new work renamed to `canary-batwoman`; #611 kept the name |
 
-`canary-batwoman` is reserved below on the strength of that second resolution.
-It has no roadmap row, no issue, and no shipped skill — the rename was agreed
-and then recorded nowhere, which is the same failure in a smaller form.
+`canary-batwoman` shipped under that second resolution (#749, Phases 1-5). It
+has no roadmap row, no issue, and no shipped skill — the rename was agreed and
+then recorded nowhere, which is the same failure in a smaller form.
 
 ## The registry
 
@@ -73,7 +73,7 @@ Status is one of `shipped` (a directory exists under
 | ---------------------------- | -------- | ----- | -------------------------------------------------------------------------- |
 | `canary-add-framework`       | shipped  | —     | Add a testing framework to the registry end-to-end                         |
 | `canary-batgirl`             | reserved | 619   | Developer and team quality scorecard                                       |
-| `canary-batwoman`            | reserved | —     | Closure-verification detector (renamed out of the 2026-08-23 collision)    |
+| `canary-batwoman`            | shipped  | 749   | Closure-verification detector (renamed out of the 2026-08-23 collision)    |
 | `canary-blackhawk`           | shipped  | —     | Temporal-dependency linter for test files                                  |
 | `canary-cassandra`           | shipped  | 612   | Vacuous-test detection                                                     |
 | `canary-ci-ready`            | shipped  | —     | Suite CI-readiness analysis                                                |
