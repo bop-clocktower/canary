@@ -76,6 +76,42 @@ function requiredCheckNames(): Set<string> {
   );
 }
 
+/** Every workflow file under `.github/workflows`. */
+function workflowFiles(): string[] {
+  return readdirSync(WORKFLOW_DIR).filter(
+    (f) => f.endsWith('.yml') || f.endsWith('.yaml'),
+  );
+}
+
+/**
+ * A `pull_request` workflow carrying no trigger that would also run it in
+ * base-repo context — so a fork's run of it resolves no secrets.
+ */
+function isForkBlindPrWorkflow(wf: Workflow): boolean {
+  const triggers = triggersOf(wf);
+  if (!triggers.includes('pull_request')) return false;
+  return !triggers.some((t) => FORK_SAFE_TRIGGERS.includes(t));
+}
+
+/** Required check names produced by this workflow's secret-reading jobs. */
+function secretGatedRequiredChecks(
+  wf: Workflow,
+  required: Set<string>,
+): string[] {
+  const names: string[] = [];
+  for (const job of Object.values(wf.jobs ?? {})) {
+    const readsSecret = (job.steps ?? []).some((s) =>
+      JSON.stringify(s.env ?? {}).includes('secrets.'),
+    );
+    if (!readsSecret) continue;
+    // A job's check name on the PR is its display `name`, which is what
+    // required-checks.json records for these jobs.
+    const label = job.name;
+    if (label && required.has(label)) names.push(label);
+  }
+  return names;
+}
+
 /**
  * Required checks produced by a job that reads a secret, in a workflow with no
  * fork-safe trigger. Each one is a check a fork PR can never satisfy.
@@ -84,26 +120,12 @@ function secretGatedOnForkBlindTrigger(): string[] {
   const required = requiredCheckNames();
   const blocked: string[] = [];
 
-  for (const file of readdirSync(WORKFLOW_DIR)) {
-    if (!file.endsWith('.yml') && !file.endsWith('.yaml')) continue;
+  for (const file of workflowFiles()) {
     const wf = loadYaml(
       readFileSync(join(WORKFLOW_DIR, file), 'utf-8'),
     ) as Workflow;
-
-    const triggers = triggersOf(wf);
-    if (!triggers.includes('pull_request')) continue;
-    if (triggers.some((t) => FORK_SAFE_TRIGGERS.includes(t))) continue;
-
-    for (const job of Object.values(wf.jobs ?? {})) {
-      const readsSecret = (job.steps ?? []).some((s) =>
-        JSON.stringify(s.env ?? {}).includes('secrets.'),
-      );
-      if (!readsSecret) continue;
-      // A job's check name on the PR is its display `name`, which is what
-      // required-checks.json records for these jobs.
-      const label = job.name;
-      if (label && required.has(label)) blocked.push(label);
-    }
+    if (!isForkBlindPrWorkflow(wf)) continue;
+    blocked.push(...secretGatedRequiredChecks(wf, required));
   }
   return [...new Set(blocked)].sort();
 }
