@@ -437,12 +437,29 @@ function declEnd(
   depth: Int32Array | null,
 ): number {
   if (depth === null) return matches[i + 1]?.index ?? code.length;
-  const own = depth[matches[i]!.index!] ?? 0;
+  const m = matches[i]!;
+  const own = depth[m.index!] ?? 0;
+  let sibling = code.length;
   for (let j = i + 1; j < matches.length; j += 1) {
     const at = matches[j]!.index!;
-    if ((depth[at] ?? 0) <= own) return at;
+    if ((depth[at] ?? 0) <= own) {
+      sibling = at;
+      break;
+    }
   }
-  return code.length;
+  // A `function` owns the text up to its next sibling. A `const`/`let`/`var`
+  // owns only its initializer (#871): inside a test body there is usually no
+  // later sibling, so bounding a bystander at one let it absorb the target
+  // call below it and read as reaching the target, silencing VAC-003. The
+  // statement ends at the first `;` or line break at the declaration's own
+  // brace depth, so an arrow helper's braced body still belongs to it.
+  if (m[1]) return sibling;
+  const from = m.index! + m[0].length;
+  for (let k = from; k < sibling; k += 1) {
+    const ch = code[k];
+    if ((ch === ';' || ch === '\n') && (depth[k] ?? 0) <= own) return k;
+  }
+  return sibling;
 }
 
 /**
