@@ -522,6 +522,36 @@ describe('VAC-003 — every assertion asserts absence', () => {
     expect(rules(r.findings)).not.toContain('VAC-003');
   });
 
+  it('flags a bystander declared inside the test body (#871)', () => {
+    // `closeOverLocals` bounded a declaration at its next sibling. Inside a
+    // test body there is usually no later sibling, so `subs` absorbed the rest
+    // of the test — including `save(subs)` — and read as reaching the target,
+    // which silenced VAC-003 on exactly the all-absence-on-a-bystander shape.
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('x', () => {\n` +
+        `  const subs = [1];\n` +
+        `  save(subs);\n` +
+        `  expect(subs).not.toBeNull();\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-003');
+  });
+
+  it('still clears a local whose own initializer calls the target (#871)', () => {
+    // The fix must not blind the helper case: `res` is built BY the target.
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('x', () => {\n` +
+        `  const res = save([1]);\n` +
+        `  expect(res).not.toBeNull();\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-003');
+  });
+
   it('flags the pytest form', () => {
     const r = scan(
       'test_a.py',

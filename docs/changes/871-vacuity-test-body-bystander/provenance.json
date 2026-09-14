@@ -1,0 +1,17 @@
+{
+  "issues": [871],
+  "fleet": "roadmap-fleet",
+  "route": "bug",
+  "routeSignal": "label",
+  "stages": ["debugging"],
+  "pipelineProvenance": "degraded: lane executed the debugging discipline (reproduce -> fix -> red/green) inline in the fleet orchestrator session; no harness-debugging skill run, no session artifact",
+  "reproducingTest": "ts/test/vacuity-scanner.test.ts :: VAC-003 > flags a bystander declared inside the test body (#871)",
+  "redAtBase": "9951c02357cdae9a77c79c6838ea161ec73be08c",
+  "closingKeyword": "Closes #871",
+  "assumptions": [
+    "A const/let/var declaration owns only its initializer statement (to the first ';' or line break at its own brace depth); a function declaration keeps the next-sibling bound.",
+    "Python (def) bodies are unchanged; #871 is a JS/TS shape.",
+    "A multi-line initializer whose target call is not on the first line reads as not reaching the target (error direction: an extra VAC-003 finding, not a silenced one)."
+  ],
+  "ci": "degraded: CI is single-OS (ubuntu-latest only, #892); all-OS verification not applicable"
+}

@@ -315,6 +315,29 @@ describe('company-knowledge init', () => {
     }
   });
 
+  // `--force` is documented as "Overwrite an existing .canary/company.json" and
+  // the no-force banner tells the operator to pass it to "start from scratch".
+  // It only ever suppressed that banner: the existing config was still loaded
+  // as the prompt defaults, doc URLs were pre-seeded into the accumulator and
+  // the brand map was pre-spread, so skipping every prompt under --force
+  // rewrote the old file verbatim and there was no way to clear a field.
+  it('--force starts from scratch rather than re-writing the existing config', async () => {
+    const tmp = mkTmp();
+    try {
+      writeCompanyJson(tmp, {
+        jira_projects: ['KEEP'],
+        internal_doc_urls: ['https://old.example.com/a'],
+        notes: 'old note',
+        brand: { company_name: 'Old Corp' },
+      });
+      const { code, written } = await initWith(tmp, [], ['--force']);
+      expect(code).toBe(0);
+      expect(written).toEqual({});
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('appends .canary/ to an existing .gitignore that lacks it', async () => {
     const tmp = mkTmp();
     try {

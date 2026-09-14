@@ -280,6 +280,28 @@ describe('check_doc_links', () => {
       expect(r.filesScanned).toBe(1);
     });
 
+    it('scans tracked Markdown under a dot-directory (#887)', () => {
+      // The walker skipped every `.`-prefixed directory except `.github`, so
+      // the tracked `.harness/learnings.md` was never read: 268 tracked, 267
+      // scanned. The denominator must be the tracked set, by construction.
+      spawnSync('git', ['init', '-q'], { cwd: root });
+      write('.harness/learnings.md', '[dead](./nope.md)\n');
+      write('.config-docs/nested/b.md', '# b\n');
+      write('real.md', '# Real\n');
+      spawnSync('git', ['add', '-A'], { cwd: root });
+
+      const tracked = spawnSync('git', ['ls-files', '*.md'], {
+        cwd: root,
+        encoding: 'utf8',
+      })
+        .stdout.split('\n')
+        .filter(Boolean);
+
+      expect(findings().map((f) => f.file)).toEqual(['.harness/learnings.md']);
+      expect(report().filesScanned).toBe(tracked.length);
+      expect(tracked).toHaveLength(3);
+    });
+
     it('still scans everything when the root is not a git repository', () => {
       // No git means no ignore rules to consult, not an excuse to scan
       // nothing. Abstaining here would turn a tarball export into a silent

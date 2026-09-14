@@ -153,6 +153,22 @@ describe('harness-report-summary', () => {
       expect(r.output).toMatch(/fail\s+arch/);
     });
 
+    // Pins the headline before the complexity paydown of `headline`: each
+    // summary count and the exit code print as-is, and a missing one prints
+    // `?` rather than a fabricated 0.
+    it('headlines every summary count and the exit code, with ? for a missing one', () => {
+      const full = run(write(report({ exitCode: 1 })));
+      expect(full.output).toContain(
+        'harness ci check — 9 check(s): 5 passed, 0 failed, 4 warning(s), 0 skipped (exit 1)',
+      );
+
+      const { summary: _dropped, exitCode: _gone, ...bare } = report();
+      const partial = run(write({ ...bare, summary: { passed: 9 } }));
+      expect(partial.output).toContain(
+        'harness ci check — 9 check(s): 9 passed, ? failed, ? warning(s), ? skipped (exit ?)',
+      );
+    });
+
     it('reports the check count so a short summary is self-evidently short', () => {
       const r = run(write(report()));
       expect(r.output).toContain('9 check(s)');
