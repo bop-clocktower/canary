@@ -39,7 +39,7 @@
     {
       "stage": "verification",
       "ran": true,
-      "detail": "agents/skills suite green with coverage; ts/ four gates (build, typecheck, format:check, test) run from ts/. See the PR body for the recorded results."
+      "detail": "agents/skills suite + its own typecheck green with coverage; ts/ four gates (build, typecheck, format:check, test) run from ts/; entropy, perf (absolute and delta-vs-base), check-deps, and the doc link/fence checks run locally. All 19 CI checks green on PR #882. The agents/skills typecheck was MISSED on the first local pass and failed CI -- recorded here rather than smoothed over."
     }
   ],
   "assumptions": [
@@ -90,6 +90,12 @@
       "topic": "roadmap and naming-registry status",
       "decision": "Flipped to done / shipped in this change, on the convention that the row lands with the merge commit.",
       "source": "taken by this lane, matching how the sibling skill rows were handled"
+    },
+    {
+      "id": "A9",
+      "topic": "perf ratchet delta",
+      "decision": "Four of the five findings this change first introduced were FIXED by splitting functions (assessBranch 12/53 lines, clusterFailures 23 over the error threshold, main 11). The fifth -- the coupling ratio on scripts/cli.mjs -- got a reviewed deltaAllowances entry scoped to agents/skills/claude-code/*/scripts/cli.mjs. No ceiling, baseline, or maxFindings was raised.",
+      "source": "taken by this lane after CI failed the delta rule on the first push. The coupling finding is structural (a skill CLI imports its pure modules plus parse-args and is imported only by its test, which IS a ratio of 1.00); canary-katana's cli.mjs already trips it from the absolute backlog, and the entry mirrors the two ts/src CLI entries already in that list. Re-measured against a detached base worktree the way CI does: 1 new, 1 allowed, 0 blocking, 229 vs 228 at the base, ceiling 233."
     }
   ],
   "not_done": [
