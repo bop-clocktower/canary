@@ -125,33 +125,31 @@ function pyGet(
  */
 function pyEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
-  if (a === null || a === undefined) return b === null || b === undefined;
-  if (b === null || b === undefined) return false;
+  if (isNone(a) || isNone(b)) return isNone(a) && isNone(b);
+  if (Array.isArray(a) || Array.isArray(b)) return pyListEqual(a, b);
+  return pyDictEqual(a, b);
+}
 
-  const aArr = Array.isArray(a);
-  const bArr = Array.isArray(b);
-  if (aArr || bArr) {
-    if (!aArr || !bArr || a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-      if (!pyEqual(a[i], b[i])) return false;
-    }
-    return true;
-  }
+/** Python `None`: JSON `null` or a missing key read as `undefined`. */
+function isNone(value: unknown): boolean {
+  return value === null || value === undefined;
+}
 
-  if (typeof a === 'object' && typeof b === 'object') {
-    const ao = a as Record<string, unknown>;
-    const bo = b as Record<string, unknown>;
-    const aKeys = Object.keys(ao);
-    const bKeys = Object.keys(bo);
-    if (aKeys.length !== bKeys.length) return false;
-    for (const key of aKeys) {
-      if (!Object.prototype.hasOwnProperty.call(bo, key)) return false;
-      if (!pyEqual(ao[key], bo[key])) return false;
-    }
-    return true;
-  }
+/** Python `list == list`: same length, element-wise equal in order. */
+function pyListEqual(a: unknown, b: unknown): boolean {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (!pyEqual(a[i], b[i])) return false;
+  return true;
+}
 
-  return false;
+/** Python `dict == dict`: same key set in any order, values equal. */
+function pyDictEqual(a: unknown, b: unknown): boolean {
+  if (typeof a !== 'object' || typeof b !== 'object') return false;
+  const [ao, bo] = [a, b] as Record<string, unknown>[];
+  const keys = Object.keys(ao!);
+  if (keys.length !== Object.keys(bo!).length) return false;
+  return keys.every((k) => Object.hasOwn(bo!, k) && pyEqual(ao![k], bo![k]));
 }
 
 function setEqual(a: Set<string>, b: Set<string>): boolean {
