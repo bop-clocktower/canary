@@ -428,6 +428,62 @@ export class WorkflowMapping {
 export class WorkflowDiscoveryError extends Error {}
 
 // ---------------------------------------------------------------------------
+// Jira request helpers
+// ---------------------------------------------------------------------------
+// Split out of `WorkflowDiscovery.fetchJira` to pay down its complexity. Kept
+// at module level so the class keeps the Python port's method set, and each
+// stays at or under the perf-ratchet warning threshold (10).
+
+/** Read the ATLASSIAN_* env vars, refusing when any is unset or empty. */
+function jiraCredentials(): {
+  baseUrl: string;
+  headers: Record<string, string>;
+} {
+  const baseUrl = rstripChar(process.env['ATLASSIAN_URL'] ?? '', '/');
+  const user = process.env['ATLASSIAN_USER'] ?? '';
+  const token = process.env['ATLASSIAN_TOKEN'] ?? '';
+
+  if (!pyTruthy(baseUrl) || !pyTruthy(user) || !pyTruthy(token)) {
+    throw new WorkflowDiscoveryError(
+      'Jira credentials not configured.  Set ATLASSIAN_URL, ' +
+        'ATLASSIAN_USER, and ATLASSIAN_TOKEN environment variables.\n' +
+        'Tip: add them to .canary/company.local.json or your shell profile.',
+    );
+  }
+
+  const auth = Buffer.from(`${user}:${token}`).toString('base64');
+  return {
+    baseUrl,
+    headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' },
+  };
+}
+
+/**
+ * The issue-type list from the `issuetypes` response. An error object (Jira
+ * answers a missing project with `errorMessages` in a 200) is refused; any
+ * other non-list shape yields no issue types.
+ */
+function jiraIssueTypeList(
+  issueTypesRaw: unknown,
+  projectKey: string,
+): Record<string, unknown>[] {
+  if (Array.isArray(issueTypesRaw)) {
+    return issueTypesRaw as Record<string, unknown>[];
+  }
+  if (
+    typeof issueTypesRaw === 'object' &&
+    issueTypesRaw !== null &&
+    'errorMessages' in issueTypesRaw
+  ) {
+    throw new WorkflowDiscoveryError(
+      `Jira project ${pyRepr(projectKey)} not found or access denied: ` +
+        `${pyRepr((issueTypesRaw as Record<string, unknown>)['errorMessages'])}`,
+    );
+  }
+  return [];
+}
+
+// ---------------------------------------------------------------------------
 // Main class
 // ---------------------------------------------------------------------------
 
@@ -543,23 +599,7 @@ export class WorkflowDiscovery {
 
   /** Python: `WorkflowDiscovery._fetch_jira`. */
   async fetchJira(projectKey: string): Promise<WorkflowMapping> {
-    const baseUrl = rstripChar(process.env['ATLASSIAN_URL'] ?? '', '/');
-    const user = process.env['ATLASSIAN_USER'] ?? '';
-    const token = process.env['ATLASSIAN_TOKEN'] ?? '';
-
-    if (!pyTruthy(baseUrl) || !pyTruthy(user) || !pyTruthy(token)) {
-      throw new WorkflowDiscoveryError(
-        'Jira credentials not configured.  Set ATLASSIAN_URL, ' +
-          'ATLASSIAN_USER, and ATLASSIAN_TOKEN environment variables.\n' +
-          'Tip: add them to .canary/company.local.json or your shell profile.',
-      );
-    }
-
-    const auth = Buffer.from(`${user}:${token}`).toString('base64');
-    const headers: Record<string, string> = {
-      Authorization: `Basic ${auth}`,
-      Accept: 'application/json',
-    };
+    const { baseUrl, headers } = jiraCredentials();
     // Capture the URL so ticket_updater can use it without requiring the env var.
     const discoveredBaseUrl = baseUrl;
 
@@ -568,22 +608,9 @@ export class WorkflowDiscovery {
       `${baseUrl}/rest/api/3/project/${projectKey}/issuetypes`,
       headers,
     );
-    if (
-      !Array.isArray(issueTypesRaw) &&
-      typeof issueTypesRaw === 'object' &&
-      issueTypesRaw !== null &&
-      'errorMessages' in issueTypesRaw
-    ) {
-      throw new WorkflowDiscoveryError(
-        `Jira project ${pyRepr(projectKey)} not found or access denied: ` +
-          `${pyRepr((issueTypesRaw as Record<string, unknown>)['errorMessages'])}`,
-      );
-    }
+    const list = jiraIssueTypeList(issueTypesRaw, projectKey);
 
     const issueTypes: IssueType[] = [];
-    const list = Array.isArray(issueTypesRaw)
-      ? (issueTypesRaw as Record<string, unknown>[])
-      : [];
     for (const itRaw of list) {
       const itId = String(pyGet(itRaw, 'id', ''));
       const itName = String(pyGet(itRaw, 'name', ''));
