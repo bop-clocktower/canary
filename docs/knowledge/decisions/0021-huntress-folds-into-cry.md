@@ -2,7 +2,7 @@
 number: 0021
 title: Targeted pursuit is a canary-cry mode; canary-huntress stays reserved
 date: 2026-09-13
-status: proposed
+status: accepted
 tier: small
 source: 'adr'
 ---
@@ -11,7 +11,7 @@ source: 'adr'
 
 # ADR 0021 — Targeted pursuit is a mode of canary-cry
 
-**Status:** proposed **Date:** 2026-09-13 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-09-13 **Deciders:** Bri Stevenski
 (maintainer) **Related:** #617 (canary-huntress, second scope attempt); #608
 (canary-cry); ADR 0015 (skill capability vocabulary)
 

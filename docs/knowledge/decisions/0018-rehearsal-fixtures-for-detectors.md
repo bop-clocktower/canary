@@ -2,7 +2,7 @@
 number: 0018
 title: Every detector is rehearsed against a planted defect
 date: 2026-09-13
-status: proposed
+status: accepted
 tier: medium
 source: 'adr'
 ---
@@ -11,7 +11,7 @@ source: 'adr'
 
 # ADR 0018 — Every detector is rehearsed against a planted defect
 
-**Status:** proposed **Date:** 2026-09-13 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-09-13 **Deciders:** Bri Stevenski
 (maintainer) **Related:** #834 (source issue); #884, #887 (false-green defects
 found this run); ADR 0012 (entropy ratchet); ADR 0014 (gate wiring); ADR 0017
 (named gaps)
