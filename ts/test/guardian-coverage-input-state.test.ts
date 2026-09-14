@@ -268,4 +268,21 @@ describe('zero-match abstention names its cause (#883)', () => {
     expect(coverage.unitsMatched).toBe(0);
     expect(coverage.unitsEligible).toBe(1);
   });
+
+  it('narrows divergent report directories to their shared parent tree', () => {
+    // src/a and src/b diverge, so the instrumented tree is src/, not src/a/:
+    // a sibling src/c file is eligible, a file outside src/ is not.
+    const path = writeLcov(['src/a/x.ts', 'src/b/y.ts']);
+    const changed: ChangedUnit[] = [
+      { path: 'src/c/z.ts', added_ranges: [[1, 2]] },
+      { path: 'lib/z.ts', added_ranges: [[1, 2]] },
+    ];
+    const { coverage } = resolveCoverageWithInput(changed, {
+      coveragePath: path,
+      graphPath: join(tmp, 'missing-graph.json'),
+      repoRoot: emptyRoot(),
+    });
+    expect(coverage.unitsMatched).toBe(0);
+    expect(coverage.unitsEligible).toBe(1);
+  });
 });
