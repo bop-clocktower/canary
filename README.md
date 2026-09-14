@@ -286,11 +286,12 @@ Use, process, escalation) lives in
 
 ### I want fleet-wide health, not a single suite
 
-| Tool                                                                                          | What it does                                                        |
-| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `canary analyze {flaky\|spikes\|area-health\|common-failures\|regression-candidates\|digest}` | CLI — cross-suite fleet health reports; `digest` combines all five. |
-| `canary history {record\|push\|flaky\|timeline\|summary\|migrate}`                            | CLI — query and manage the per-suite run-history store.             |
-| `canary history record <vitest.json> --suite <name>`                                          | CLI — record a finished run INTO the store (the write side).        |
+| Tool                                                                                          | What it does                                                                                                                                                                          |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canary analyze {flaky\|spikes\|area-health\|common-failures\|regression-candidates\|digest}` | CLI — cross-suite fleet health reports; `digest` combines all five.                                                                                                                   |
+| `canary analyze gh-flaky --repo <owner/name>`                                                 | CLI — flake signals from GitHub Actions runs (same-SHA flips and reruns to green, read per attempt); names the signatures a zero was verified against, exits 3 when one could not be. |
+| `canary history {record\|push\|flaky\|timeline\|summary\|migrate}`                            | CLI — query and manage the per-suite run-history store.                                                                                                                               |
+| `canary history record <vitest.json> --suite <name>`                                          | CLI — record a finished run INTO the store (the write side).                                                                                                                          |
 
 ### I want to watch API changes for test impact
 

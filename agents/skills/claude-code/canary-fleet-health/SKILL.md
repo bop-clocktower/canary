@@ -75,6 +75,7 @@ of the full digest — cheaper and more focused:
 | --------------------------------------- | -------------------------------------------------------------------- |
 | Flaky tests fleet-wide                  | `canary analyze flaky --window-runs 30 --min-rate-pct 10 --json`     |
 | Failure spikes                          | `canary analyze spikes --delta-pp 20 --json`                         |
+| CI-run flakes (reruns to green)         | `canary analyze gh-flaky --repo <owner/name> --json`                 |
 | Cross-suite common failures             | `canary analyze common-failures --min-suites 2 --json`               |
 | Newly broken tests after a green streak | `canary analyze regression-candidates --json`                        |
 | "Area health" / degrading areas         | See the caveat below — this dimension does not currently return data |
