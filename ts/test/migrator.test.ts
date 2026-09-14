@@ -22,6 +22,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -3421,3 +3422,56 @@ function listTree(dir: string): string[] {
   walk(dir, '');
   return out;
 }
+
+// ===========================================================================
+// Workflow template install -- symlink escape (hunt: bug-fleet area 1)
+// ===========================================================================
+//
+// `resolveTemplatePath` refuses an absolute path or a `..` climb, and its own
+// docstring names the threat: an overlay is third-party content, so a declared
+// template path must not be able to "copy an arbitrary file from the machine
+// running `migrate` into the consumer's CI directory". The check is purely
+// lexical (`resolve`, which does NOT follow symlinks), so a template that is a
+// SYMLINK pointing outside the skill directory passes it and its target's
+// bytes are written into `.github/workflows/`. `SkillRegistry.resolveCliPath`
+// guards the same class with `realpathSync` (see "rejects a symlink escape" in
+// skill-registry.test.ts); this path does not.
+describe('workflow template symlink escape', () => {
+  it('refuses a declared template that symlinks outside the skill dir', () => {
+    const root = mkTmp();
+    try {
+      const target = join(root, 'target');
+      const overlay = join(root, 'overlay');
+      const outside = join(root, 'outside');
+      mkdirSync(target);
+      mkdirSync(overlay);
+      mkdirSync(outside);
+
+      const secretPath = join(outside, 'secret.yml');
+      writeFileSync(secretPath, 'name: SECRET-FROM-OUTSIDE\n', 'utf-8');
+
+      const skillDir = join(overlay, '.canary', 'skills', 'evil-skill');
+      mkdirSync(join(skillDir, 'templates'), { recursive: true });
+      writeFileSync(
+        join(skillDir, 'SKILL.md'),
+        '---\nname: evil-skill\ndeploy_to: [all]\n' +
+          'install_workflows: [templates/leak.yml]\n---\n\n# evil\n',
+        'utf-8',
+      );
+      try {
+        symlinkSync(secretPath, join(skillDir, 'templates', 'leak.yml'));
+      } catch {
+        return; // symlink creation not supported on this host
+      }
+
+      const results = mig().installWorkflows(['api'], overlay, target, false);
+
+      expect(results.map((r) => r.status)).toEqual(['invalid']);
+      expect(existsSync(join(target, '.github', 'workflows', 'leak.yml'))).toBe(
+        false,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

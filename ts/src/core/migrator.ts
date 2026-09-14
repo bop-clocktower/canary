@@ -44,6 +44,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -303,10 +304,32 @@ function parseWorkflowEntry(entry: string): [string | null, string] {
  */
 function resolveTemplatePath(skillDir: string, rel: string): string | null {
   if (!rel || isAbsolute(rel) || /^[A-Za-z]:/.test(rel)) return null;
-  const base = resolve(skillDir);
+  const base = realPathIfPresent(resolve(skillDir));
   const full = resolve(base, rel);
-  if (full !== base && !full.startsWith(base + sep)) return null;
+  // Containment is judged on the REAL path: `resolve` normalizes `..` but
+  // never follows a symlink, so a lexically-contained `templates/x.yml` that
+  // is a link to /etc/passwd would otherwise pass and have its target's bytes
+  // written into the consumer's `.github/workflows/`. This mirrors
+  // `SkillRegistry.resolveCliPath`, which guards the same class the same way.
+  const real = realPathIfPresent(full);
+  if (real !== base && !real.startsWith(base + sep)) return null;
+  // The declared path (resolved against the real skill dir) is returned rather
+  // than its own realpath: an intra-skill symlink is legitimate, and
+  // `basename(src)` is what names the installed workflow file.
   return full;
+}
+
+/**
+ * *path* with symlinks resolved, or *path* itself when it does not exist --
+ * `realpathSync` throws on a missing path, and a declared-but-unshipped
+ * template must still reach the `missing` report rather than `invalid`.
+ */
+function realPathIfPresent(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
 }
 
 /**
