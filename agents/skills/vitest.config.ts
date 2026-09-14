@@ -75,6 +75,7 @@ export default defineConfig({
         'claude-code/canary-fail-fast/scripts/**/*.mjs',
         'claude-code/canary-test-reporter/scripts/**/*.mjs',
         'claude-code/canary-shadow/scripts/*.mjs',
+        'claude-code/canary-screech/scripts/**/*.mjs',
       ],
       exclude: ['**/*.test.*'],
       // Fresh-code floor, matching the ts/ engine port. Ratchets up over time.

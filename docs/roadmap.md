@@ -336,11 +336,11 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ### canary-screech — broken-main siren
 
-- **Status:** backlog
+- **Status:** done
 - **Spec:** —
-- **Summary:** Split from the Skill Forge umbrella (Issue #339, now closed) into Issue #591. Wave 1, small and visible. When the default branch goes red, emit a one-page blast: culprit commit range, failure cluster, owning area, a quarantine-or-revert recommendation, and a chat-ready block. Distinct from canary-fail-fast (in-run, aborts early) and canary-test-reporter (per-run summary) — neither looks across runs or knows the branch went red. Open in #591: where the branch-is-red signal comes from (Actions webhook, polling, or the history store), and whether it posts the blast or only emits it.
+- **Summary:** Split from the Skill Forge umbrella (Issue #339, now closed) into Issue #591. Wave 1, small and visible. When the default branch goes red, emit a one-page blast: culprit commit range, failure cluster, owning area, a quarantine-or-revert recommendation, and a chat-ready block. Distinct from canary-fail-fast (in-run, aborts early) and canary-test-reporter (per-run summary) — neither looks across runs or knows the branch went red. Both of #591's open questions are resolved in the plan: the branch-is-red signal comes from the run-history store (`history-v2.jsonl`), not a webhook or a polling loop, and the skill only emits — a markdown artifact plus a `::error` annotation, no write access and no chat integration.
 - **Blockers:** —
-- **Plan:** —
+- **Plan:** `docs/changes/canary-screech/plans/2026-09-13-canary-screech-plan.md`
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#591
 
