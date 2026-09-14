@@ -1,0 +1,20 @@
+{
+  "issues": [879],
+  "fleet": "roadmap-fleet",
+  "route": "bug",
+  "routeSignal": "label",
+  "stages": ["debugging"],
+  "pipelineProvenance": "degraded: lane executed the debugging discipline (reproduce -> fix -> red/green) inline in the fleet orchestrator session; no harness-debugging skill run, no session artifact",
+  "reproducingTest": "ts/test/roadmap-groom.test.ts :: tracker cross-check (#879) (4 tests)",
+  "redAtBase": "9951c02357cdae9a77c79c6838ea161ec73be08c",
+  "closingKeyword": "Refs #879",
+  "closingKeywordReason": "Partial slice: this lands the groom-side cross-check (proposal 1). Proposal 2 (emit a type label) is upstream harness `roadmap sync` (Intense-Visions/harness-engineering#2146, tracked by #880); proposal 3 (back-fill) was done by issue-fleet. The filing-side cross-check in `roadmap sync` is also upstream.",
+  "forkAnswers": { "F4": "(a) cross-check merged PRs and issue state before ranking/filing; report only, no auto-reconcile" },
+  "assumptions": [
+    "Opt-in: the tracker is only queried with --check-issues (live gh) or --issue-states <file>; the default run prints that the tracker was not checked.",
+    "A merged PR counts only when its body carries a closing keyword (close/fix/resolve #n); bare mentions flagged 44 of 53 rows on the live roadmap and were rejected as noise.",
+    "A gh failure for a row is counted as 'not checked', never as open.",
+    "Stale rows are reported and never moved or edited, with or without --apply."
+  ],
+  "ci": "degraded: CI is single-OS (ubuntu-latest only, #892); all-OS verification not applicable"
+}

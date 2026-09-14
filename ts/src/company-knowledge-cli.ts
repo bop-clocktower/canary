@@ -108,8 +108,16 @@ export function ckInitCmd(opts: InitOptions, deps: MainDeps): void {
   const canaryDir = join(deps.cwd(), '.canary');
   const outPath = join(canaryDir, 'company.json');
 
-  // Existing values become the shown defaults (load() returns empty when absent).
-  const existing = CompanyKnowledge.load(deps.cwd(), null, deps.home());
+  // Existing values become the shown defaults (load() returns empty when
+  // absent). `--force` means "start from scratch", which is what the
+  // already-exists banner promises and what the flag's own help text says, so
+  // it must drop those defaults entirely -- otherwise every prompt still falls
+  // back to the old value, the doc-URL accumulator and brand map are still
+  // pre-seeded, and --force only silences the banner while rewriting the old
+  // file verbatim, with no way to clear a field.
+  const existing = opts.force
+    ? new CompanyKnowledge()
+    : CompanyKnowledge.load(deps.cwd(), null, deps.home());
 
   if (existsSync(outPath) && !opts.force) {
     deps.out(
