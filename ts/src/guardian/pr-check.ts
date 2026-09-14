@@ -147,9 +147,7 @@ const UTF8_DECODER = new TextDecoder('utf-8');
  * every non-ASCII-named file. A value that is not quoted is returned verbatim.
  */
 function unquoteCStyle(value: string): string {
-  if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) {
-    return value;
-  }
+  if (!isCQuoted(value)) return value;
   const body = value.slice(1, -1);
   const bytes: number[] = [];
   for (let i = 0; i < body.length; i++) {
@@ -174,6 +172,15 @@ function unquoteCStyle(value: string): string {
     i += 1;
   }
   return UTF8_DECODER.decode(new Uint8Array(bytes));
+}
+
+/**
+ * True when `value` is wrapped in the double quotes git uses for C-style path
+ * quoting. Split out of {@link unquoteCStyle} to keep its decode loop under
+ * the cyclomatic-complexity threshold.
+ */
+function isCQuoted(value: string): boolean {
+  return value.length >= 2 && value.startsWith('"') && value.endsWith('"');
 }
 
 /** The new-side path a `+++ ` header names, or `null` for a deleted file. */
