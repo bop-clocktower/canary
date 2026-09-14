@@ -14,6 +14,14 @@ Analyses a test suite across five dimensions and produces a readiness score. Use
 this before promoting a suite to CI, or as the convergence gate in
 `/canary-test-pipeline`.
 
+**Deterministic scorer:** run `canary ci-ready [--root <dir>] [--json]` first.
+It scores every check that has a real input and reports `skip`, naming the
+missing input, for every check that does not. A skip is never a pass. Today only
+flakiness has a producer behind it, so expect the other four to skip until
+their inputs exist. The verdict is `ready` (all five passed), `incomplete`
+(nothing failed, something skipped), `not-ready` (exit 1) or `abstained`
+(nothing scored, exit 3).
+
 ## When to Use
 
 - Before wiring a new test suite into CI for the first time
@@ -30,8 +38,9 @@ Run all five checks and score each pass / warn / fail.
 
 ### 1. Coverage depth
 
-Read `.canary/test-inventory.json` if present. If absent or older than 7 days,
-run `canary coverage` to generate fresh data.
+Read `.canary/test-inventory.json` if present. Nothing in canary produces this
+file yet (there is no `canary coverage` command), so when it is absent this
+check is a `skip`, not a pass or a fail.
 
 Default threshold: depth ≥ 2 for all endpoints in critical areas. Override with
 `--threshold <n>`.
@@ -46,6 +55,11 @@ Default threshold: depth ≥ 2 for all endpoints in critical areas. Override wit
 
 Read `test-results/quarantine-ledger.json` (or the path in
 `.canary/company.json` under `quarantine_ledger_path` if set).
+
+No tool writes a quarantine ledger yet, so `canary ci-ready` scores flakiness
+from the run-history store instead: the last 30 runs in
+`test-results/reports/history-v2.jsonl`. Any test flaking in 10% or more of its
+runs fails the check, any lower flake rate warns, and no flakes passes.
 
 A quarantined test is acceptable only when it has a linked open issue (Jira or
 GitHub). Check issue state:
@@ -83,7 +97,10 @@ Cross-reference the top 5 risk-scored areas from `critical-areas.json` against
 
 ### 5. Suite runtime
 
-Read `test-results/run-history.ndjson`. Use the p95 of the last 10 runs.
+Run history lives in `test-results/reports/history-v2.jsonl`. The store does not
+record run or test durations today, so there is no p95 to compute and
+`canary ci-ready` reports this check as `skip`. The scoring below applies once
+durations are recorded.
 
 **With harness MCP available:** score the p95 against trend history rather than
 an absolute clock. Call `get_perf_baselines` and compare this run's p95 to the

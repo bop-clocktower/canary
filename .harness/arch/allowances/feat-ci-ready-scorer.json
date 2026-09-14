@@ -1,0 +1,8 @@
+{
+  "reason": "canary ci-ready (#885): new deterministic CI-readiness scorer. Real growth from this change is +250 src lines: ts/src/core/ci-ready.ts (165), ts/src/ci-ready-cli.ts (83), and the cli.ts registration (+2). Main had already grown past the floor refreshed in #897 (37549), so the aggregate lands at 37940, 391 over that floor and 16 over the 1% tolerance. The growth is the feature itself; nothing was split or padded.",
+  "categories": {
+    "module-size": 37940
+  },
+  "violationIds": [],
+  "createdFrom": "9651bc15"
+}
