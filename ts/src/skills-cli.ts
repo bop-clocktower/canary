@@ -100,8 +100,53 @@ function reportEmptyDiscovery(registry: SkillRegistry, deps: MainDeps): void {
   }
 }
 
+/**
+ * Print one source tier: a separating blank line only when an earlier tier
+ * printed, then the header, then its skills. Split out of `listCmd` to pay
+ * down its complexity; every helper here stays at or under the perf-ratchet
+ * warning threshold (10) so the paydown adds no new finding identity.
+ */
+function printTier(
+  deps: MainDeps,
+  header: string,
+  skills: SkillInfo[],
+  verbose: boolean,
+  printedAbove: boolean,
+): void {
+  if (printedAbove) deps.out('');
+  deps.out(header);
+  for (const skill of skills) deps.out(formatSkill(skill, verbose));
+}
+
+function byOverlayName(a: SkillInfo, b: SkillInfo): number {
+  return overlayName(a).localeCompare(overlayName(b));
+}
+
+/** Overlay skills print one header per overlay, groups sorted by name. */
+function printOverlayGroups(
+  deps: MainDeps,
+  overlay: SkillInfo[],
+  verbose: boolean,
+  printedAbove: boolean,
+): void {
+  let above = printedAbove;
+  let cur: string | null = null;
+  for (const skill of [...overlay].sort(byOverlayName)) {
+    const oname = overlayName(skill);
+    if (oname !== cur) {
+      if (above) deps.out('');
+      deps.out(
+        `${pc.bold('Overlay skills')} ${pc.dim(`(${oname} ${EM_DASH} override bundled):`)}`,
+      );
+      cur = oname;
+      above = true;
+    }
+    deps.out(formatSkill(skill, verbose));
+  }
+}
+
 function listCmd(opts: ListOptions, deps: MainDeps): void {
-  const verbose = opts.verbose ?? false;
+  const verbose = opts.verbose === true;
   const registry = deps.makeSkillRegistry();
   const skills = registry.discover();
   if (skills.length === 0) {
@@ -109,47 +154,30 @@ function listCmd(opts: ListOptions, deps: MainDeps): void {
     return;
   }
 
-  const bundled = skills.filter((s) => s.source === 'bundled');
-  const overlay = skills.filter((s) => s.source === 'overlay');
-  const globalSkills = skills.filter((s) => s.source === 'global');
-  const local = skills.filter((s) => s.source === 'local');
+  const bySource = (source: string) =>
+    skills.filter((s) => s.source === source);
+  const bundled = bySource('bundled');
+  const overlay = bySource('overlay');
+  const globalSkills = bySource('global');
+  const local = bySource('local');
+  let printed = false;
 
   if (bundled.length) {
-    deps.out(pc.bold('Bundled skills:'));
-    for (const skill of bundled) deps.out(formatSkill(skill, verbose));
+    printTier(deps, pc.bold('Bundled skills:'), bundled, verbose, printed);
+    printed = true;
   }
   if (overlay.length) {
-    const sorted = [...overlay].sort((a, b) =>
-      overlayName(a).localeCompare(overlayName(b)),
-    );
-    let idx = 0;
-    let cur: string | null = null;
-    for (const skill of sorted) {
-      const oname = overlayName(skill);
-      if (oname !== cur) {
-        if (bundled.length || idx > 0) deps.out('');
-        deps.out(
-          `${pc.bold('Overlay skills')} ${pc.dim(`(${oname} ${EM_DASH} override bundled):`)}`,
-        );
-        cur = oname;
-        idx += 1;
-      }
-      deps.out(formatSkill(skill, verbose));
-    }
+    printOverlayGroups(deps, overlay, verbose, printed);
+    printed = true;
   }
   if (globalSkills.length) {
-    if (bundled.length || overlay.length) deps.out('');
-    deps.out(
-      `${pc.bold('Global skills')} ${pc.dim(`(~/.canary/skills/ ${EM_DASH} override overlay):`)}`,
-    );
-    for (const skill of globalSkills) deps.out(formatSkill(skill, verbose));
+    const header = `${pc.bold('Global skills')} ${pc.dim(`(~/.canary/skills/ ${EM_DASH} override overlay):`)}`;
+    printTier(deps, header, globalSkills, verbose, printed);
+    printed = true;
   }
   if (local.length) {
-    if (bundled.length || overlay.length || globalSkills.length) deps.out('');
-    deps.out(
-      `${pc.bold('Local overlay skills')} ${pc.dim('(override global):')}`,
-    );
-    for (const skill of local) deps.out(formatSkill(skill, verbose));
+    const header = `${pc.bold('Local overlay skills')} ${pc.dim('(override global):')}`;
+    printTier(deps, header, local, verbose, printed);
   }
 }
 

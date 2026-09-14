@@ -108,6 +108,59 @@ describe('skills list grouping', () => {
     expect(idx('Local overlay skills')).toBeGreaterThan(idx('Global skills'));
   });
 
+  // Pins the separator ladder before the complexity paydown of listCmd: a blank
+  // line precedes a header only when some earlier tier (or overlay group)
+  // already printed. Asserted per header, so a refactor cannot move one.
+  it('puts a blank line before a header only when something printed above it', async () => {
+    const blankBefore = (stdout: string, header: string) => {
+      const lines = stdout.split('\n');
+      const i = lines.findIndex((l) => l.includes(header));
+      expect(i).toBeGreaterThanOrEqual(0);
+      return i > 0 && lines[i - 1] === '';
+    };
+    const overlay = (name: string, group: string) =>
+      skill({
+        name,
+        source: 'overlay',
+        path: `/h/.canary/overlays/${group}/.canary/skills/${name}/SKILL.md`,
+      });
+
+    const noBundled = await runSkills(
+      ['list'],
+      [
+        overlay('z1', 'zeta'),
+        overlay('a1', 'acme'),
+        skill({ name: 'l', source: 'local' }),
+      ],
+    );
+    expect(blankBefore(noBundled.stdout, '(acme')).toBe(false);
+    expect(blankBefore(noBundled.stdout, '(zeta')).toBe(true);
+    expect(blankBefore(noBundled.stdout, 'Local overlay skills')).toBe(true);
+
+    const globalOnly = await runSkills(
+      ['list'],
+      [skill({ name: 'g', source: 'global' })],
+    );
+    expect(blankBefore(globalOnly.stdout, 'Global skills')).toBe(false);
+
+    const localAfterGlobal = await runSkills(
+      ['list'],
+      [
+        skill({ name: 'g', source: 'global' }),
+        skill({ name: 'l', source: 'local' }),
+      ],
+    );
+    expect(blankBefore(localAfterGlobal.stdout, 'Local overlay skills')).toBe(
+      true,
+    );
+
+    const localOnly = await runSkills(
+      ['list'],
+      [skill({ name: 'l', source: 'local' })],
+    );
+    expect(blankBefore(localOnly.stdout, 'Local overlay skills')).toBe(false);
+  });
+
   it('names each overlay group and sorts the groups by overlay name', async () => {
     const res = await runSkills(
       ['list'],
