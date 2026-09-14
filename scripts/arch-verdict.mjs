@@ -93,30 +93,48 @@ function count(value) {
  *   regressions: object[]}}
  */
 export function classifyArchReport(report) {
-  const shape = {
-    newCount: count(report?.newViolations),
-    regressionCount: count(report?.regressions),
-    preExistingCount: count(report?.preExisting),
-    totalViolations: Number(report?.totalViolations ?? 0),
-    mode: String(report?.mode ?? 'unknown'),
-    newViolations: Array.isArray(report?.newViolations)
-      ? report.newViolations
-      : [],
-    regressions: Array.isArray(report?.regressions) ? report.regressions : [],
+  // `?? {}` once, instead of `?.` on every read: each optional chain counts as
+  // a branch, which is how this function reached complexity 20 (#905).
+  const fields = report ?? {};
+  const shape = readArchShape(fields);
+  const verdict = archVerdictFor(fields, shape);
+  if (verdict === 'unknown') {
+    return { ...shape, verdict, reason: NO_SPLIT_REASON };
+  }
+  return { ...shape, verdict };
+}
+
+const NO_SPLIT_REASON =
+  'the report carries no `newViolations` array — the new-vs-pre-existing split cannot be read from it';
+
+function listOrEmpty(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+/** The counts and lists every verdict carries, with absent fields defaulted. */
+function readArchShape(fields) {
+  const newViolations = listOrEmpty(fields.newViolations);
+  const regressions = listOrEmpty(fields.regressions);
+  return {
+    newCount: newViolations.length,
+    regressionCount: regressions.length,
+    preExistingCount: count(fields.preExisting),
+    totalViolations: Number(fields.totalViolations ?? 0),
+    mode: String(fields.mode ?? 'unknown'),
+    newViolations,
+    regressions,
   };
-  if (!Array.isArray(report?.newViolations)) {
-    return {
-      ...shape,
-      verdict: 'unknown',
-      reason:
-        'the report carries no `newViolations` array — the new-vs-pre-existing split cannot be read from it',
-    };
-  }
-  if (shape.newCount > 0 || shape.regressionCount > 0) {
-    return { ...shape, verdict: 'regression' };
-  }
-  if (report?.passed === true) return { ...shape, verdict: 'clean' };
-  return { ...shape, verdict: 'baseline' };
+}
+
+/**
+ * The decision table, in precedence order: abstain when the split is
+ * unreadable, then any change-caused finding is a regression, then only a
+ * strict `passed === true` is clean; everything else is the ratchet.
+ */
+function archVerdictFor(fields, shape) {
+  if (!Array.isArray(fields.newViolations)) return 'unknown';
+  if (shape.newCount > 0 || shape.regressionCount > 0) return 'regression';
+  return fields.passed === true ? 'clean' : 'baseline';
 }
 
 function describeViolation(v) {
