@@ -363,6 +363,17 @@ const ROWS: GateRow[] = [
     run: (base) => invokeCanary(['vacuity-check', emptyTestDir(base)]),
   },
   {
+    // Every one of the five checks has its input missing, so every check skips.
+    // A readiness score built from zero checks is not a score: it must abstain
+    // loudly rather than read as "ready".
+    command: 'ci-ready (root holding none of its five inputs)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['CI ready', 'All checks passed'],
+    run: (base) => invokeCanary(['ci-ready', '--root', base]),
+  },
+  {
     command: 'vacuity-check (files matched, but they held zero tests)',
     layer: 'engine',
     kind: 'gate',
