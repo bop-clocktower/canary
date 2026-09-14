@@ -226,7 +226,9 @@ describe('RestGitHubClient', () => {
   it('upsertStickyComment drives the REAL client — update-existing path', async () => {
     const marked = '<!-- canary-pr-guardian -->\nold';
     fetchMock
-      .mockResolvedValueOnce(ok([{ id: 9, body: marked }])) // listComments → sticky
+      .mockResolvedValueOnce(
+        ok([{ id: 9, body: marked, user: { login: 'github-actions[bot]' } }]),
+      ) // listComments → sticky
       .mockResolvedValueOnce(ok({ id: 9, body: 'updated' })); // updateComment
     const result = await upsertStickyComment(client(), 'updated');
     expect(result.action).toBe('updated');

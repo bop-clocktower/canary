@@ -51,6 +51,7 @@ afterEach(() => rmTmp(tmp));
 
 // --- fixtures -------------------------------------------------------------
 
+const BOT = { login: 'github-actions[bot]', type: 'Bot' };
 const up = (user: string): Reaction => ({ user, content: '+1' });
 const down = (user: string): Reaction => ({ user, content: '-1' });
 
@@ -203,7 +204,7 @@ describe('collectAdjudications', () => {
     const client = new FakeReactionsClient({
       comments: [
         { id: 1, body: 'unrelated human comment' },
-        { id: 2, body: BODY },
+        { id: 2, body: BODY, user: BOT },
       ],
       reactions: { 2: [up('alice'), down('bob')] },
     });
@@ -225,10 +226,28 @@ describe('collectAdjudications', () => {
     expect(record.attributedPath).toBe('pkg/widget.py');
   });
 
+  it('#931: reads reactions from the bot sticky, not a human comment carrying the marker', async () => {
+    const analysesDir = mkAnalysesDir();
+    const client = new FakeReactionsClient({
+      comments: [
+        { id: 1, body: BODY, user: { login: 'alice', type: 'User' } },
+        { id: 2, body: BODY, user: BOT },
+      ],
+      reactions: { 1: [down('carol'), down('dan')], 2: [up('alice')] },
+    });
+    const res = await collectAdjudications(client, {
+      repo: 'o/r',
+      prNumber: 7,
+      analysesDir,
+    });
+    expect(res.record?.commentId).toBe(2);
+    expect([res.record?.tp, res.record?.fp]).toEqual([1, 0]);
+  });
+
   it('is idempotent per PR: re-collection overwrites, never duplicates', async () => {
     const analysesDir = mkAnalysesDir();
     const client = new FakeReactionsClient({
-      comments: [{ id: 2, body: BODY }],
+      comments: [{ id: 2, body: BODY, user: BOT }],
       reactions: { 2: [up('alice')] },
     });
     const args = { repo: 'o/r', prNumber: 7, analysesDir };
@@ -260,7 +279,7 @@ describe('collectAdjudications', () => {
   it('zero verdicts -> no-reactions, nothing written (neutral, not a vote)', async () => {
     const analysesDir = mkAnalysesDir();
     const client = new FakeReactionsClient({
-      comments: [{ id: 2, body: BODY }],
+      comments: [{ id: 2, body: BODY, user: BOT }],
       reactions: { 2: [{ user: 'alice', content: 'heart' }] },
     });
     const res = await collectAdjudications(client, {
@@ -274,7 +293,7 @@ describe('collectAdjudications', () => {
 
   it('absent .harness/ channel -> unavailable with a loud notice', async () => {
     const client = new FakeReactionsClient({
-      comments: [{ id: 2, body: BODY }],
+      comments: [{ id: 2, body: BODY, user: BOT }],
       reactions: { 2: [up('alice')] },
     });
     const res = await collectAdjudications(client, {
@@ -429,7 +448,7 @@ describe('guardian collect-adjudications (CLI)', () => {
   it('collects via --repo/--pr and persists the record', async () => {
     const analysesDir = mkAnalysesDir();
     const fake = new FakeReactionsClient({
-      comments: [{ id: 5, body: BODY }],
+      comments: [{ id: 5, body: BODY, user: BOT }],
       reactions: { 5: [up('alice')] },
     });
     const res = await invokeGuardian(
@@ -452,7 +471,7 @@ describe('guardian collect-adjudications (CLI)', () => {
   it('resolves the PR from Actions env when flags are omitted', async () => {
     const analysesDir = mkAnalysesDir();
     const fake = new FakeReactionsClient({
-      comments: [{ id: 5, body: BODY }],
+      comments: [{ id: 5, body: BODY, user: BOT }],
       reactions: { 5: [down('bob')] },
     });
     const res = await invokeGuardian(
@@ -475,7 +494,7 @@ describe('guardian collect-adjudications (CLI)', () => {
 
   it('an unavailable channel fails LOUDLY (exit 1) on the explicit surface', async () => {
     const fake = new FakeReactionsClient({
-      comments: [{ id: 5, body: BODY }],
+      comments: [{ id: 5, body: BODY, user: BOT }],
       reactions: { 5: [up('alice')] },
     });
     const res = await invokeGuardian(
@@ -496,7 +515,9 @@ describe('guardian collect-adjudications (CLI)', () => {
 
   it('no reactions yet reports neutrally, writes nothing, exits 0', async () => {
     const analysesDir = mkAnalysesDir();
-    const fake = new FakeReactionsClient({ comments: [{ id: 5, body: BODY }] });
+    const fake = new FakeReactionsClient({
+      comments: [{ id: 5, body: BODY, user: BOT }],
+    });
     const res = await invokeGuardian(
       [
         'collect-adjudications',
@@ -536,7 +557,7 @@ index 1111111..2222222 100644
   it('harvests reactions off the previous sticky comment before reposting', async () => {
     const analysesDir = mkAnalysesDir();
     const previousBody = `${STICKY_MARKER}\nprevious run\n| \u{1F534} high | \`pkg/widget.py\` | untested | heuristic |`;
-    const comments = [{ id: 42, body: previousBody }];
+    const comments = [{ id: 42, body: previousBody, user: BOT }];
     const reactions = new FakeReactionsClient({
       comments,
       reactions: { 42: [up('alice'), down('bob')] },

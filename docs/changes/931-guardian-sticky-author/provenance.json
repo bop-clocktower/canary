@@ -1,0 +1,22 @@
+{
+  "issues": [931],
+  "fleet": "roadmap-fleet",
+  "route": "bug",
+  "branch": "fix/931-guardian-sticky-author",
+  "plan": "docs/changes/931-guardian-sticky-author/plans/plan.md",
+  "stages": ["intake", "debugging", "tdd", "implementation", "verification"],
+  "pipelineProvenance": "degraded: debugging discipline (reproduce -> red -> fix -> green) run inline by the fleet build worker; no harness-debugging session artifact",
+  "reproducingTests": [
+    "ts/test/guardian-pr-comment.test.ts :: Author-aware sticky (#931): never overwrite a human comment (8 tests)",
+    "ts/test/guardian-adjudication.test.ts :: collectAdjudications > #931: reads reactions from the bot sticky, not a human comment carrying the marker"
+  ],
+  "redAtBase": "3ddac9d9",
+  "assumptions": [
+    "Identity rule: a comment is guardian's sticky only when its body, after leading whitespace, starts with the marker AND its author is guardian's identity: user.login equals the expected login (default github-actions[bot]), or user.type is Bot and performed_via_github_app.slug equals a configured appSlug.",
+    "The posting identity is configured, not discovered: GET /user is not available to the Actions GITHUB_TOKEN. findSticky takes an optional GuardianIdentity; the default is github-actions[bot] with no app slug. Wiring an env var or flag would touch cli.ts, which is out of scope for this item.",
+    "A comment with no user field is never guardian's sticky. The REST API always returns user, so only hand-built fixtures lacked it; those that model guardian's own sticky were re-seeded with the bot author.",
+    "Newest wins by created_at (ISO-8601 string order); on a missing or equal timestamp the later list entry wins, which matches the REST API's ascending order.",
+    "The degraded notice now names the HTTP 403 write-permission failure and no longer guesses 'fork PR?'."
+  ],
+  "closingKeyword": "Closes"
+}

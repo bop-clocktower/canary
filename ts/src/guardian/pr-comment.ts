@@ -1,50 +1,35 @@
 /**
- * Deterministic GitHub PR comment poster (Tier 0, agent-free).
- *
- * Faithful TypeScript port of `agent/guardian/pr_comment.py`.
- *
- * This module posts/updates the single sticky guardian findings comment on a
- * pull request. It is **deterministic HTTP behind an interface seam** — it
- * imports no agent/LLM module (SC-11).
- *
- * Design:
- *
- * - {@link GitHubClient} is the seam every consumer talks to
- *   (`listComments` / `createComment` / `updateComment`).
- * - {@link FakeGitHubClient} is the in-memory implementation used by every unit
- *   test — **no network**. It can simulate a fork read-only token via
- *   `deny_writes=true` (writes reject with {@link GitHubPermissionError}).
- * - {@link RestGitHubClient} (Python's private `_RestGitHubClient`) is the thin
- *   real client. Network lives **only** here; `guardian-rest-clients.test.ts`
- *   drives it through a stubbed global `fetch`, so the URL, headers, error
- *   mapping, and #528 pagination are covered without a socket.
- *
- * Python→TS nuances:
- *   - **async**: Python's `urllib` client is synchronous; Node's global `fetch`
- *     is async. The seam methods are therefore `Promise`-returning, so the
- *     real client can `await fetch`. The fakes satisfy the async interface by
- *     being `async` (returning already-resolved values), and
- *     {@link upsertStickyComment} becomes `async`. The pure helpers
- *     ({@link findSticky}, {@link degradationAnnotation}) stay synchronous.
- *   - **error mapping**: `fetch` resolves (does not throw) on a 4xx/5xx status,
- *     so the 403→{@link GitHubPermissionError} mapping is done off `resp.status`
- *     rather than off a raised `HTTPError`. As in the oracle, ONLY 403 maps to a
- *     permission error here; any other non-2xx propagates as a generic error.
+ * Deterministic poster of the single sticky guardian PR comment (Tier 0; no
+ * agent/LLM import, SC-11). {@link GitHubClient} is the seam;
+ * {@link FakeGitHubClient} is the in-memory test double (`deny_writes` models a
+ * 403); {@link RestGitHubClient} is the only code that touches the network.
  */
 
 import { PageReader, readAllPages, restPageReader } from './github-paging.js';
 
-// Single source of truth for the sticky-comment marker.
-// `pr_check.renderFindings` emits the identical literal at the head of a
-// `comment`-format body so `findSticky` can locate the guardian comment for
-// in-place upsert.
+// `renderFindings` writes this literal on a comment body's first line.
 export const STICKY_MARKER = '<!-- canary-pr-guardian -->';
 
-/** A GitHub issue comment row: `{ id, body }`. */
+/** A GitHub issue comment row, with the REST author fields #931 needs. */
 export interface Comment {
   id: number;
   body: string;
+  user?: { login: string; type?: string } | null;
+  performed_via_github_app?: { slug: string } | null;
+  created_at?: string;
 }
+
+/**
+ * Who guardian posts as. The Actions token cannot call `GET /user`, so the
+ * login is configured (default `github-actions[bot]`); `appSlug` admits a
+ * `Bot` author acting through that GitHub App.
+ */
+export interface GuardianIdentity {
+  login: string;
+  appSlug?: string;
+}
+
+const DEFAULT_IDENTITY: GuardianIdentity = { login: 'github-actions[bot]' };
 
 /** The comment-poster seam. Every consumer depends on this, not on HTTP. */
 export interface GitHubClient {
@@ -69,12 +54,7 @@ export class GitHubPermissionError extends Error {
   }
 }
 
-/**
- * Map a non-2xx status to an error. As in the Python reference, ONLY 403 is a
- * permission error; every other non-2xx propagates (the analog of urllib's
- * HTTPError re-raise). Shared by the write path and the paged read path so the
- * two cannot drift.
- */
+/** Map a non-2xx status to an error; ONLY 403 is a permission error. */
 function toGitHubError(status: number, url: string): Error {
   return status === 403
     ? new GitHubPermissionError(
@@ -110,7 +90,11 @@ export class FakeGitHubClient implements GitHubClient {
       throw new GitHubPermissionError('read-only token: cannot create comment');
     }
     this.nextId += 1;
-    const row: Comment = { id: this.nextId, body };
+    const row: Comment = {
+      id: this.nextId,
+      body,
+      user: { login: DEFAULT_IDENTITY.login, type: 'Bot' },
+    };
     this.comments.push(row);
     return row;
   }
@@ -142,25 +126,36 @@ export interface UpsertResult {
   notice: string | null;
 }
 
-/** Return the first comment whose body contains `marker`, else `null`. */
+/**
+ * Return guardian's sticky comment, else `null` (#931). A comment qualifies
+ * only when its body STARTS WITH `marker` and `identity` wrote it, so a human
+ * who pasted guardian's output is never overwritten. Newest qualifier wins.
+ */
 export function findSticky(
   comments: Comment[],
   marker: string = STICKY_MARKER,
+  identity: GuardianIdentity = DEFAULT_IDENTITY,
 ): Comment | null {
-  for (const comment of comments) {
-    if ((comment.body ?? '').includes(marker)) {
-      return comment;
-    }
+  let best: Comment | null = null;
+  for (const c of comments.filter((x) => isSticky(x, marker, identity))) {
+    if (!best || (c.created_at ?? '') >= (best.created_at ?? '')) best = c;
   }
-  return null;
+  return best;
+}
+
+function isSticky(c: Comment, marker: string, id: GuardianIdentity): boolean {
+  return isAuthoredBy(c, id) && (c.body ?? '').trimStart().startsWith(marker);
+}
+
+function isAuthoredBy(c: Comment, identity: GuardianIdentity): boolean {
+  if (c.user?.login === identity.login) return true;
+  const slug = c.performed_via_github_app?.slug;
+  return c.user?.type === 'Bot' && !!slug && slug === identity.appSlug;
 }
 
 /**
- * Post or update the single sticky guardian comment (SC-9).
- *
- * Locates the existing comment by `marker`; updates it in place when present,
- * otherwise creates a new one. Never stacks duplicates. A read-only token (fork
- * PR?) degrades loudly to a `degraded` result rather than crashing (OT-4).
+ * Update guardian's own sticky in place, else create one (SC-9: never stacks).
+ * A 403 degrades to a `degraded` result instead of crashing the job (OT-4).
  */
 export async function upsertStickyComment(
   client: GitHubClient,
@@ -177,14 +172,10 @@ export async function upsertStickyComment(
     return { action: 'created', comment_id: created.id, notice: null };
   } catch (err) {
     if (err instanceof GitHubPermissionError) {
-      // OT-4 / SC-1+D6: a read-only token (fork PR?) must degrade loudly, not
-      // crash the job. The caller emits `notice` as a `::warning::` annotation.
       return {
         action: 'degraded',
         comment_id: null,
-        notice:
-          'guardian: read-only token (fork PR?) — findings not posted as ' +
-          'a comment',
+        notice: `guardian: token lacks write permission on PR comments (HTTP 403) — findings not posted as a comment`,
       };
     }
     throw err;
