@@ -70,6 +70,11 @@ const ARTIFACT_PATHS = [
   '.cursor/hooks.json',
   '.cursor/skills/self-learning/SKILL.md',
   '.cursor/learning/cost-profile.json',
+  // The same mirror re-emitted for the vendor-neutral `.agents/` convention.
+  // It appeared unannounced beside `.cursor/skills/`, carrying the identical
+  // personal install set — the Terraform and Azure skills included.
+  '.agents/skills/self-learning/SKILL.md',
+  '.agents/skills/terraform-plan-review/SKILL.md',
   '.kiro/learning/skill-stats.json',
   '.github/copilot-instructions.md',
   '.github/instructions/self-learning.instructions.md',
@@ -186,6 +191,7 @@ describe('agent-tooling artifacts stay out of the repo', () => {
       ...trackedUnder('.cursor/hooks.json'),
       ...trackedUnder('.cursor/learning'),
       ...trackedUnder('.cursor/skills'),
+      ...trackedUnder('.agents/skills'),
       ...trackedUnder('.kiro'),
       ...trackedUnder('.github/instructions'),
       ...trackedUnder('.github/hooks'),
