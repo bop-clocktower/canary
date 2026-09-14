@@ -21,6 +21,7 @@
 //   2  error — missing file, or an archive with no `## Shipped` section
 //   3  ZERO DENOMINATOR — parsed no rows at all. An abstention, never a pass:
 //      "nothing to groom" and "the parser broke" must not look identical.
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,8 +39,111 @@ function parseArgs(argv) {
     if (argv[i] === '--apply') opts.apply = true;
     else if (argv[i] === '--roadmap') opts.roadmap = resolve(argv[++i]);
     else if (argv[i] === '--archive') opts.archive = resolve(argv[++i]);
+    else if (argv[i] === '--issue-states')
+      opts.issueStates = resolve(argv[++i]);
+    else if (argv[i] === '--check-issues') opts.checkIssues = true;
   }
   return opts;
+}
+
+const EXTERNAL_ID_RE =
+  /^- \*\*External-ID:\*\*\s*github:([\w.-]+\/[\w.-]+)#(\d+)\s*$/;
+
+/**
+ * Ask GitHub for one issue's state and the merged PRs that cite it. Returns
+ * null when gh cannot answer, so an outage reads as "not checked", never "open".
+ */
+function liveIssueState(repo, n) {
+  const gh = (args) =>
+    spawnSync('gh', args, { encoding: 'utf8', timeout: 30_000 });
+  const issue = gh(['issue', 'view', n, '--repo', repo, '--json', 'state']);
+  if (issue.status !== 0) return null;
+  const prs = gh([
+    'pr',
+    'list',
+    '--repo',
+    repo,
+    '--state',
+    'merged',
+    '--limit',
+    '20',
+    '--search',
+    `${n} in:body`,
+    '--json',
+    'number,body',
+  ]);
+  if (prs.status !== 0) return null;
+  // Only a CLOSING reference counts. A bare `#n` mention is noise: measured on
+  // this roadmap, roadmap and doc PRs (#596, #597, #859) cite dozens of issues
+  // they did not resolve, and counting mentions flagged 44 of 53 rows stale.
+  const cites = new RegExp(
+    `\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s+#${n}(?!\\d)`,
+    'i',
+  );
+  return {
+    state: JSON.parse(issue.stdout).state,
+    mergedPrs: JSON.parse(prs.stdout)
+      .filter((p) => cites.test(p.body ?? ''))
+      .map((p) => p.number),
+  };
+}
+
+/**
+ * Surface not-done rows whose tracker issue is closed or already has a merged
+ * PR citing it (#879). The groom never looked at GitHub, so shipped work sat as
+ * `backlog` and got ranked into build batches. This REPORTS only: reconciling
+ * a row is a human call, so nothing here writes, with or without --apply.
+ */
+function reportStaleRows(roadmap, opts) {
+  if (!opts.issueStates && !opts.checkIssues) {
+    console.log(
+      'i Tracker not checked — pass --check-issues (live gh) or ' +
+        '--issue-states <file> to flag rows whose issue already closed or merged.',
+    );
+    return;
+  }
+  const fixture = opts.issueStates
+    ? JSON.parse(readFileSync(opts.issueStates, 'utf-8'))
+    : null;
+
+  let linked = 0;
+  let unlinked = 0;
+  let unknown = 0;
+  const stale = [];
+  for (const section of roadmap.sections) {
+    for (const row of section.rows) {
+      if (isDone(row)) continue;
+      const id = row.lines.map((l) => EXTERNAL_ID_RE.exec(l)).find(Boolean);
+      if (!id) {
+        unlinked += 1;
+        continue;
+      }
+      linked += 1;
+      const [, repo, n] = id;
+      const s = fixture ? (fixture[n] ?? null) : liveIssueState(repo, n);
+      if (!s) {
+        unknown += 1;
+        continue;
+      }
+      const why = [];
+      if (String(s.state).toUpperCase() === 'CLOSED') why.push('issue closed');
+      for (const pr of s.mergedPrs ?? []) why.push(`merged PR #${pr} cites it`);
+      if (why.length > 0)
+        stale.push(`${row.name} — ${repo}#${n}: ${why.join('; ')}`);
+    }
+  }
+
+  console.log(
+    `i Checked ${linked} linked row(s): ${stale.length} stale; ` +
+      `${unknown} linked row(s) not checked (no tracker answer); ` +
+      `${unlinked} row(s) with no External-ID.`,
+  );
+  for (const line of stale) console.log(`! ${line}`);
+  if (stale.length > 0) {
+    console.log(
+      'i Stale rows are reported, not moved — reconcile them by hand.',
+    );
+  }
 }
 
 /**
@@ -129,7 +233,8 @@ function main() {
   const shipped = archive.sections.find(
     (s) => s.heading.split('\n')[0].trim() === ARCHIVE_SECTION,
   );
-  if (!shipped) fail(`archive has no \`${ARCHIVE_SECTION}\` section to append to`);
+  if (!shipped)
+    fail(`archive has no \`${ARCHIVE_SECTION}\` section to append to`);
 
   const moved = [];
   for (const section of roadmap.sections) {
@@ -148,6 +253,8 @@ function main() {
       `${ARCHIVE_SECTION}${opts.apply ? '' : ' [dry-run]'}.`,
   );
   for (const row of moved) console.log(`  ${row.name}`);
+
+  reportStaleRows(roadmap, opts);
 
   if (!opts.apply) {
     console.log('i Dry run — nothing written. Re-run with --apply.');
