@@ -1,0 +1,14 @@
+{
+  "issues": [930],
+  "fleet": "roadmap-fleet",
+  "route": "bug",
+  "stages": ["select", "confirm", "plan", "tdd", "implement", "verify"],
+  "plan": "docs/changes/930-guardian-base-coverage/plans/plan.md",
+  "assumptions": [
+    "Shape (1), artifact from main, was chosen over (2), measuring the base in-job, because (2) roughly doubles the guardian test time against the duration ratchet (#760/#820).",
+    "The existing TS engine (pilot) job already runs vitest with the lcov reporter on every push to main, so a push-only upload step there adds no new job or check context.",
+    "A base artifact counts only if its producing run's head_sha equals the PR's merge-base SHA and its head_branch equals the PR base. Otherwise the result is head-only and is never substituted.",
+    "Fork PRs, expired artifacts (after 30 days) and merge bases from before this change degrade to the existing head-only notice with exit 0."
+  ],
+  "closingKeyword": "Closes"
+}
