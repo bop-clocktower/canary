@@ -273,6 +273,15 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
         path: string,
         opts: { pattern?: boolean; dryRun?: boolean; json?: boolean },
       ) => {
+        // heal-test applies only pattern fixes, so --no-pattern leaves nothing to
+        // do. Guarded here rather than in healTestCmd to keep that function under
+        // the complexity threshold the perf ratchet enforces.
+        if (opts.pattern === false) {
+          deps.out(
+            'Pattern fixes disabled (--no-pattern); file left unchanged.',
+          );
+          return;
+        }
         healTestCmd(path, opts, deps);
       },
     );
