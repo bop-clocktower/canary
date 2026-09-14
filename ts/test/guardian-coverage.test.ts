@@ -437,6 +437,33 @@ describe('resolveFromReport', () => {
     expect(results![0]!.uncovered_lines).toEqual([]);
   });
 
+  // Comment stripping runs as a plain regex over the whole document, so a
+  // `<!--`/`-->` pair that lives inside CDATA (where it is ordinary character
+  // data, not a comment) deletes every real element between the two markers.
+  // The damage is not an abstention: the surviving `</class>` rebinds the NEXT
+  // class's lines to the PREVIOUS class's filename.
+  it('cobertura comment markers inside CDATA do not rebind lines', () => {
+    const xml =
+      '<coverage><classes>' +
+      '<class filename="a.py"><![CDATA[<!--]]>' +
+      '<lines><line number="1" hits="1"/></lines></class>' +
+      '<class filename="b.py"><![CDATA[-->]]>' +
+      '<lines><line number="9" hits="0"/></lines></class>' +
+      '</classes></coverage>';
+    const report = write('coverage.xml', xml);
+    const aUnit: ChangedUnit = { path: 'a.py', added_ranges: [[1, 1]] };
+    const bUnit: ChangedUnit = { path: 'b.py', added_ranges: [[9, 9]] };
+    const results = resolveFromReport([aUnit, bUnit], report);
+    expect(results).not.toBeNull();
+    const by = byPath(results!);
+    // a.py owns line 1 (hit); b.py owns line 9 (unhit). Neither may inherit
+    // the other's lines.
+    expect(Object.keys(by).sort()).toEqual(['a.py', 'b.py']);
+    expect(by['a.py']!.covered).toBe(true);
+    expect(by['b.py']!.covered).toBe(false);
+    expect(by['b.py']!.uncovered_lines).toEqual([9]);
+  });
+
   it('exact report path preferred over suffix', () => {
     const report = write(
       'coverage.json',
