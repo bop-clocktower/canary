@@ -66,10 +66,53 @@ function coberturaBody(text: string): string | null {
   // Pin to the canonical (namespace-free) Cobertura root; anything else is a
   // different XML format and is rejected rather than guessed at. Strip comments
   // first so a `<foo>` inside a comment can't masquerade as the root element.
-  const withoutComments = text.replace(/<!--[\s\S]*?-->/g, '');
+  const withoutComments = stripComments(text);
   const rootMatch = /<(?![?!])([A-Za-z_][\w.:-]*)/.exec(withoutComments);
   if (rootMatch === null || rootMatch[1] !== 'coverage') return null;
   return withoutComments;
+}
+
+const CDATA_OPEN = '<![CDATA[';
+const CDATA_CLOSE = ']]>';
+const COMMENT_OPEN = '<!--';
+const COMMENT_CLOSE = '-->';
+
+/**
+ * Drop every XML comment, leaving CDATA sections intact.
+ *
+ * Must not be a plain `/<!--[\s\S]*?-->/g` replace: inside CDATA those markers
+ * are ordinary character data, so a document carrying `<!--` in one CDATA
+ * section and `-->` in a later one would have every real element between them
+ * deleted. The damage is worse than data loss — the surviving `</class>` then
+ * rebinds the next class's `<line>` records to the previous class's filename,
+ * so a crafted report can attribute one file's hit counts to another.
+ *
+ * Chunked with `indexOf` rather than scanned per character so the cost stays
+ * proportional to the number of markers, not the size of the capped document.
+ */
+function stripComments(text: string): string {
+  const out: string[] = [];
+  let i = 0;
+  for (;;) {
+    const cdata = text.indexOf(CDATA_OPEN, i);
+    const comment = text.indexOf(COMMENT_OPEN, i);
+    if (comment === -1) break;
+    // A CDATA section that opens first swallows this comment marker: copy the
+    // whole section verbatim and resume looking after it.
+    if (cdata !== -1 && cdata < comment) {
+      const end = text.indexOf(CDATA_CLOSE, cdata + CDATA_OPEN.length);
+      if (end === -1) break; // unterminated CDATA — nothing further is markup
+      out.push(text.slice(i, end + CDATA_CLOSE.length));
+      i = end + CDATA_CLOSE.length;
+      continue;
+    }
+    const end = text.indexOf(COMMENT_CLOSE, comment + COMMENT_OPEN.length);
+    if (end === -1) break; // unterminated comment — leave the tail as-is
+    out.push(text.slice(i, comment));
+    i = end + COMMENT_CLOSE.length;
+  }
+  out.push(text.slice(i));
+  return out.join('');
 }
 
 const CLOSE_CLASS = '</class>';
