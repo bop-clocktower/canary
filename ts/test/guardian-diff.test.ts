@@ -279,33 +279,33 @@ const PY_EQUAL_ROWS: Row[] = [
 ];
 
 /**
- * Rows where the TS port currently DISAGREES with real Python (`True == 1`,
- * `False == 0`, `True == 1.0`, `[True] == [1]` are all True in Python).
- * Pinned at the current TS behaviour so the #907 refactor stays
- * behaviour-preserving; the divergence itself is parked in its own issue.
+ * A boolean never equals a number, at any depth (#922, decided strict). The
+ * deleted Python reference said `True == 1`; that was never the contract for a
+ * spec diff: `required: true` -> `required: 1` changes the type a generated
+ * client or validator sees, so guardian reports it.
  */
-const KNOWN_DIVERGENCE_ROWS: Row[] = [
-  ['bool-int-true', true, 1, true],
-  ['bool-int-false', false, 0, true],
-  ['bool-float', true, 1.0, true],
-  ['list-bool-int', [true], [1], true],
+const BOOL_NUMBER_DISTINCT_ROWS: Row[] = [
+  ['bool-int-true', true, 1, false],
+  ['bool-int-false', false, 0, false],
+  ['bool-float', true, 1.0, false],
+  ['list-bool-int', [true], [1], false],
 ];
 
 function op(value: unknown): Record<string, unknown> {
   return value === MISSING ? {} : { requestBody: value };
 }
 
-describe('pyEqual parity with the Python reference (#907)', () => {
+describe('pyEqual equality contract (#907, #922)', () => {
   it.each(PY_EQUAL_ROWS)('%s', (_id, a, b, pythonEqual) => {
     expect(classifyChanges(op(a), op(b))).toEqual(
       pythonEqual ? [] : ['request-body'],
     );
   });
 
-  it.each(KNOWN_DIVERGENCE_ROWS)(
-    'known divergence (TS != Python): %s',
-    (_id, a, b, pythonEqual) => {
-      expect(pythonEqual).toBe(true);
+  it.each(BOOL_NUMBER_DISTINCT_ROWS)(
+    'boolean vs number is a change: %s',
+    (_id, a, b, equal) => {
+      expect(equal).toBe(false);
       expect(classifyChanges(op(a), op(b))).toEqual(['request-body']);
     },
   );

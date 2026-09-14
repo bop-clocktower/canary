@@ -1,0 +1,15 @@
+{
+  "issues": [922],
+  "fleet": "roadmap-fleet",
+  "route": "bug",
+  "outcome": "wont-fix: decided strict",
+  "stages": ["select", "confirm", "decision"],
+  "pipelineProvenance": "degraded: no debugging run, because CONFIRM decided the current behavior is the intended contract. There was no defect to reproduce or fix. The change only renames the four pinned rows from 'known divergence' to deliberate behavior and rewrites pyEqual's doc comment.",
+  "decision": "A boolean never equals a number in guardian's API-diff comparison. true -> 1 in a spec changes the type a generated client or validator sees, so it is reported as a contract change.",
+  "assumptions": [
+    "The deleted Python reference (agent/, removed in 3f3cd877) is not a contract. TypeScript equality is decided on its own merits.",
+    "No logic change: the four rows already asserted ['request-body']; only their name, description and meaning change.",
+    "pyEqual keeps its name here. Renaming the py* helpers is #926."
+  ],
+  "closingKeyword": "Refs"
+}
