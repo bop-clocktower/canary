@@ -1,0 +1,18 @@
+{
+  "issues": [887],
+  "fleet": "roadmap-fleet",
+  "route": "bug",
+  "routeSignal": "label",
+  "stages": ["debugging"],
+  "pipelineProvenance": "degraded: lane executed the debugging discipline (reproduce -> fix -> red/green) inline in the fleet orchestrator session; no harness-debugging skill run, no session artifact",
+  "reproducingTest": "ts/test/doc-links.test.ts :: the denominator > scans tracked Markdown under a dot-directory (#887)",
+  "redAtBase": "9951c02357cdae9a77c79c6838ea161ec73be08c",
+  "closingKeyword": "Closes #887",
+  "forkAnswers": { "F1": "(a) enumerate via git ls-files so scanned set == tracked set" },
+  "assumptions": [
+    "Enumeration is `git ls-files --cached --others --exclude-standard`: tracked plus untracked-not-ignored, so a new doc is checked before its first commit; in a clean checkout this equals the tracked set.",
+    "Outside a git work tree the previous directory walk is kept as the fallback (no git is not zero files).",
+    "The gitignore filter and exit-3 zero-scan abstention are unchanged."
+  ],
+  "ci": "degraded: CI is single-OS (ubuntu-latest only, #892); all-OS verification not applicable"
+}

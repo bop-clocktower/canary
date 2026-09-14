@@ -132,15 +132,20 @@ function checkLine(check) {
   return `  ${status} ${name} ${count} ${check.durationMs ?? '?'}ms`;
 }
 
+/** A count the report did not carry prints as `?`, never as a fabricated 0. */
+function orUnknown(value) {
+  return value ?? '?';
+}
+
 function headline(report) {
   const s = report.summary ?? {};
   const counts = [
-    `${s.passed ?? '?'} passed`,
-    `${s.failed ?? '?'} failed`,
-    `${s.warnings ?? '?'} warning(s)`,
-    `${s.skipped ?? '?'} skipped`,
+    `${orUnknown(s.passed)} passed`,
+    `${orUnknown(s.failed)} failed`,
+    `${orUnknown(s.warnings)} warning(s)`,
+    `${orUnknown(s.skipped)} skipped`,
   ].join(', ');
-  return `harness ci check — ${report.checks.length} check(s): ${counts} (exit ${report.exitCode ?? '?'})`;
+  return `harness ci check — ${report.checks.length} check(s): ${counts} (exit ${orUnknown(report.exitCode)})`;
 }
 
 /** Detail lines for one check: every error, then capped warnings. */

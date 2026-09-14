@@ -1212,10 +1212,18 @@ export async function ticketUpdateCmd(
   let reportData: Record<string, unknown> = {};
   if (opts.result) {
     try {
-      reportData = JSON.parse(readFileSync(opts.result, 'utf-8')) as Record<
-        string,
-        unknown
-      >;
+      const parsed: unknown = JSON.parse(readFileSync(opts.result, 'utf-8'));
+      // Valid JSON is not necessarily a report. A bare `null` or a top-level
+      // array parses fine and then gets indexed: `null` threw a raw TypeError
+      // out of the handler, and an array silently defaulted every field. Both
+      // belong on the same "could not read result file" path as a parse error.
+      if (
+        parsed === null ||
+        typeof parsed !== 'object' ||
+        Array.isArray(parsed)
+      )
+        throw new Error('expected a JSON object at the top level');
+      reportData = parsed as Record<string, unknown>;
     } catch (exc) {
       deps.out(
         pc.red(
