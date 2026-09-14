@@ -111,7 +111,9 @@ function findingsFrom(text) {
 
 function contractFindings(line) {
   const trimmed = line.trim();
-  // '\x7b', not a quoted brace: check-perf counts braces in strings (#904).
+  // '\x7b', not a quoted brace: harness check-perf brace-counts string
+  // literals (Intense-Visions/harness-engineering#2037). Revert to '{' once
+  // that ships; #904 has the evidence.
   if (!trimmed.startsWith('\x7b')) return null;
   try {
     const parsed = JSON.parse(trimmed);
