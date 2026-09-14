@@ -748,3 +748,132 @@ describe('the merge-base delta gate is wired', () => {
     expect(yaml()).toMatch(/fetch-depth:\s*0/);
   });
 });
+
+/**
+ * Characterization pins for `findingsFrom` (#904).
+ *
+ * `findingsFrom` parses the report of a BLOCKING gate, so a refactor that
+ * extracts a different number keeps the gate green over findings it no longer
+ * sees — and a silent drop reads exactly like a paydown. These pin the EXACT
+ * integer it extracts (via the exact OK line the script prints) for a real
+ * `harness cleanup --findings-json` report captured at CLI 12.7.0 (paths
+ * rewritten to `/repo`) and for every branch of the parser. `null` means the
+ * script abstained (exit 3). Never edit an expected value to make a refactor
+ * pass.
+ */
+describe('findingsFrom characterization (#904)', () => {
+  const REAL_REPORT = readFileSync(
+    join(
+      REPO_ROOT,
+      'ts',
+      'test',
+      'fixtures',
+      'entropy-cleanup-report-12.7.0.txt',
+    ),
+    'utf8',
+  );
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'entropy-findings-from-'));
+  });
+
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  /** Run the script over `text`; return the extracted count, or null on abstention. */
+  function extracted(text: string): number | null {
+    const report = join(dir, 'report.txt');
+    const baseline = join(dir, 'baseline.json');
+    writeFileSync(report, text);
+    writeFileSync(
+      baseline,
+      JSON.stringify({ maxFindings: 100000, maxHeadroom: 1000000 }),
+    );
+    const r = spawnSync(
+      process.execPath,
+      [SCRIPT, '--report', report, '--baseline', baseline],
+      { encoding: 'utf8' },
+    );
+    if (r.status === 3) return null;
+    const m =
+      /^entropy-ratchet: OK — (-?\d+) findings, baseline 100000 \((-?\d+) of headroom\)\.\n$/.exec(
+        r.stdout,
+      );
+    expect(r.status, `${r.stdout}${r.stderr}`).toBe(0);
+    expect(m, r.stdout).not.toBeNull();
+    const n = Number(m![1]);
+    expect(Number(m![2])).toBe(100000 - n);
+    return n;
+  }
+
+  const cl = (findings: unknown, check: unknown = 'cleanup'): string =>
+    JSON.stringify({ findings, v: 1, check });
+
+  it('extracts exactly 144 from the real 12.7.0 report', () => {
+    expect(REAL_REPORT.split('\n')).toHaveLength(16);
+    expect(extracted(REAL_REPORT)).toBe(144);
+  });
+
+  it('PLANTED POSITIVE: a planted extra finding comes out of the real report', () => {
+    const planted = REAL_REPORT.replace(
+      '  ... and 134 more',
+      '  - /repo/ts/src/planted-904.ts\n  ... and 134 more',
+    ).replace(cl(144), cl(145));
+    expect(planted).not.toBe(REAL_REPORT);
+    expect(extracted(planted)).toBe(145);
+
+    const report = join(dir, 'planted.txt');
+    const baseline = join(dir, 'b144.json');
+    writeFileSync(report, planted);
+    writeFileSync(baseline, JSON.stringify({ maxFindings: 144 }));
+    const r = spawnSync(
+      process.execPath,
+      [SCRIPT, '--report', report, '--baseline', baseline],
+      { encoding: 'utf8' },
+    );
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('+1');
+  });
+
+  it.each<[string, string, number | null]>([
+    ['empty report', '', null],
+    ['whitespace-only report', '\n  \n\t\n', null],
+    [
+      'report truncated before the contract line',
+      REAL_REPORT.split('\n').slice(0, 14).join('\n'),
+      null,
+    ],
+    ['explicit zero is a measurement, not an abstention', cl(0), 0],
+    ['negative integer passes the integer check', cl(-1), -1],
+    ['no trailing newline', cl(7), 7],
+    ['CRLF line endings', `noise\r\n${cl(7)}\r\n`, 7],
+    ['leading indentation', `   ${cl(7)}   `, 7],
+    ['JSON not at line start', `x ${cl(7)}`, null],
+    ['JSON array line', `[${cl(7)}]`, null],
+    ['malformed JSON', '{"findings":7,', null],
+    ['lone open brace', '{', null],
+    [
+      'malformed line after a valid one keeps the valid one',
+      `${cl(7)}\n{oops`,
+      7,
+    ],
+    ['malformed line before a valid one is skipped', `{oops\n${cl(7)}`, 7],
+    ['different check', cl(7, 'check-docs'), null],
+    ['missing check', JSON.stringify({ findings: 7, v: 1 }), null],
+    ['check case differs', cl(7, 'Cleanup'), null],
+    ['findings as a string', cl('7'), null],
+    ['findings as a float', cl(7.5), null],
+    ['findings missing', JSON.stringify({ v: 1, check: 'cleanup' }), null],
+    ['findings null', cl(null), null],
+    ['last valid contract line wins', `${cl(1)}\n${cl(7)}`, 7],
+    [
+      'a later other-check line does not override',
+      `${cl(7)}\n${cl(9999, 'check-docs')}`,
+      7,
+    ],
+    ['a later non-integer line does not override', `${cl(7)}\n${cl('x')}`, 7],
+    ['contract line in the middle of noise', `a\n${cl(7)}\nb\nc`, 7],
+  ])('%s', (_name, text, expected) => {
+    expect(extracted(text)).toBe(expected);
+  });
+});
