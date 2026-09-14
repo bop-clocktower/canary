@@ -1,0 +1,15 @@
+x Entropy issues: 144
+
+Dead code:
+  - /repo/ts/test/subprocess-testkit.ts
+  - /repo/ts/test/scanner-testkit.ts
+  - /repo/ts/test/guardian-cli-testkit.ts
+  - /repo/ts/test/canary-cli-testkit.ts
+  - /repo/ts/test/abstention-testkit.ts
+  - /repo/ts/src/core/reporter.ts
+  - /repo/ts/src/core/metadata-scanner.ts
+  - /repo/ts/src/core/mcp-validator.ts
+  - /repo/ts/src/core/fixture-scanner.ts
+  - /repo/ts/src/analysis/reachability.ts
+  ... and 134 more
+{"findings":144,"v":1,"check":"cleanup"}
