@@ -1,8 +1,6 @@
 ---
 number: 0019
-title:
-  TypeScript 7 migrates workspace by workspace, and /agents/skills comes under
-  typecheck first
+title: TypeScript 7 migrates by workspace; /agents/skills gets a typecheck first
 date: 2026-09-13
 status: proposed
 tier: large

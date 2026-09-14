@@ -1,8 +1,6 @@
 ---
 number: 0021
-title:
-  Targeted pursuit is a mode of canary-cry; canary-huntress returns to the
-  reserved pool
+title: Targeted pursuit is a canary-cry mode; canary-huntress stays reserved
 date: 2026-09-13
 status: proposed
 tier: small
