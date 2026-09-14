@@ -27,7 +27,11 @@
  * denominator classifies as `unavailable` rather than as agreement (ADR 0010).
  */
 
-import { readReportIndex } from './report-tier.js';
+import {
+  countEligible,
+  readReportIndex,
+  zeroMatchClause,
+} from './report-tier.js';
 import { matchFile, type ChangedUnit, type ReportIndex } from './types.js';
 
 /** One report's opinion of a file: covered lines out of coverable lines. */
@@ -70,6 +74,11 @@ export interface CoverageDeltaState {
   unitsCompared: number;
   /** Touched units submitted for comparison. */
   unitsTotal: number;
+  /**
+   * Touched units inside a tree the parsed base report instruments (#883), or
+   * absent when no base report parsed. See `CoverageInputState.unitsEligible`.
+   */
+  unitsEligible?: number;
 }
 
 /**
@@ -136,7 +145,7 @@ export function coverageDeltaNotice(state: CoverageDeltaState): string | null {
   }
   return (
     `${head}base report at '${baseRequested}' covers ${filesInBaseReport} ` +
-    `file(s) but matched 0 of ${total} changed file(s)${tail}`
+    `file(s) but ${zeroMatchClause(state.unitsEligible, total)}${tail}`
   );
 }
 
@@ -146,6 +155,8 @@ export interface ResolveCoverageDeltaOptions {
   baseCoveragePath?: string | null;
   /** Coverage report for the PR head — the same file `--coverage` names. */
   headCoveragePath?: string | null;
+  /** Repo root that report-relative paths are anchored against (#883). */
+  repoRoot?: string;
 }
 
 /** {@link resolveCoverageDelta}'s findings-input plus the run's state. */
@@ -195,6 +206,7 @@ export function resolveCoverageDelta(
   options: ResolveCoverageDeltaOptions = {},
 ): ResolvedCoverageDelta {
   const { baseCoveragePath = null, headCoveragePath = null } = options;
+  const repoRoot = options.repoRoot ?? '.';
 
   const state: CoverageDeltaState = {
     baseRequested: baseCoveragePath,
@@ -212,9 +224,15 @@ export function resolveCoverageDelta(
   state.baseParsed = baseRead.index !== null;
   state.filesInBaseReport =
     baseRead.index === null ? 0 : Object.keys(baseRead.index).length;
-  if (baseRead.index === null || headCoveragePath === null) {
-    return { deltas: [], state };
-  }
+  if (baseRead.index === null) return { deltas: [], state };
+  const paths = units.map((u) => u.path);
+  state.unitsEligible = countEligible(
+    paths,
+    baseRead.index,
+    baseCoveragePath,
+    repoRoot,
+  );
+  if (headCoveragePath === null) return { deltas: [], state };
 
   const headRead = readReportIndex(headCoveragePath);
   if (headRead.index === null) return { deltas: [], state };
