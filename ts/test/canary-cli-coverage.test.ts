@@ -10,7 +10,7 @@
  * live where that is simpler.
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
@@ -274,6 +274,26 @@ describe('heal-test (injected healer)', () => {
       expect(res.code).toBe(0);
       expect(res.stdout).toContain('No auto-fixable patterns found');
       expect(res.stdout).toContain('Skipped:');
+    } finally {
+      rmTmp(tmp);
+    }
+  });
+
+  // Reproduction only -- documents a defect, no fix applied.
+  // `heal-test` declares `--pattern` / `--no-pattern` (ts/src/cli.ts), but
+  // `opts.pattern` is read nowhere in src/: healTestCmd applies the healer and
+  // writes unconditionally, gated only by `--dry-run`. So a user who explicitly
+  // disables pattern fixes still has the file rewritten in place.
+  it('--no-pattern does not rewrite the file', async () => {
+    const tmp = mkTmp();
+    try {
+      const file = join(tmp, 't.py');
+      writeFileSync(file, 'orig\n', 'utf-8');
+      const res = await invokeCanary(['heal-test', file, '--no-pattern'], {
+        deps: { makeHealer: () => fake({ heal: () => healResult(true) }) },
+      });
+      expect(res.code).toBe(0);
+      expect(readFileSync(file, 'utf-8')).toBe('orig\n');
     } finally {
       rmTmp(tmp);
     }
