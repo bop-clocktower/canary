@@ -58,6 +58,21 @@ canary guardian pr-check --format json
 
 Findings are `untested-new-code` gaps. If there are none, report clean and stop.
 
+**Coverage regressions (#606).** `--coverage` alone answers only "is this
+changed unit covered at all?". To also catch a unit whose coverage _fell_
+against the base branch, pass the base ref's report as well:
+
+```bash
+canary guardian pr-check --coverage lcov.info --base-coverage base-lcov.info --format json
+```
+
+That adds `coverage-regression` findings, graded by how many percentage points
+were lost. Most CI never uploads a base-branch artifact; without
+`--base-coverage` the run degrades **loudly** to "delta unavailable — head-only"
+and `coverage_delta.status` reports `unavailable`. Read that field before
+treating an empty finding list as "no regressions" — a run that compared nothing
+has abstained, not passed.
+
 ### Phase 1 — Quality audit (Tier ≥ 1, read-only)
 
 Export the availability signal so the probe reports the ceiling, then audit the
