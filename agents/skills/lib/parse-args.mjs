@@ -19,6 +19,10 @@
 // `test/skill-cli-conformance.test.ts` discovers every SKILL.md declaring
 // `cli:` and asserts the module exports the `CLI_SPEC` it passed here, so a
 // sixth hand-rolled copy fails CI instead of quietly starting the cycle again.
+//
+// The parse is split into one small helper per decision (#906): the single
+// 155-line closure it replaced measured cyclomatic complexity 42, and every
+// branch of it is pinned end to end in `test/parse-args.test.ts`.
 
 /** Exit code argparse reserves for usage errors; the whole family follows it. */
 export const EXIT_USAGE = 2;
@@ -40,6 +44,191 @@ export function formatUsageError(prog, message) {
 /** Inherited keys must not resolve, so every lookup map is null-prototype. */
 function nullProtoMap(entries) {
   return Object.assign(Object.create(null), entries);
+}
+
+function expectedOneArgument(flag) {
+  return `argument ${flag}: expected one argument`;
+}
+
+/**
+ * Fail loudly at construction on a spec that cannot be satisfied -- a rename
+ * that leaves a stale default or a required flag behind is otherwise silent.
+ */
+function assertSpecSatisfiable(config) {
+  const { booleans, values, defaults, required, VALUES } = config;
+  const declaredKeys = new Set([
+    ...Object.values(booleans),
+    ...Object.values(values).map((v) => v.key),
+  ]);
+  for (const key of Object.keys(defaults)) {
+    if (!declaredKeys.has(key)) {
+      throw new Error(`createParser: defaults names unknown key '${key}'`);
+    }
+  }
+  for (const flag of required) {
+    if (VALUES[flag] === undefined) {
+      throw new Error(`createParser: required names undeclared flag '${flag}'`);
+    }
+  }
+}
+
+/** Booleans start false, value flags start at their default or null. */
+function initialOpts({ booleans, values, defaults }) {
+  const opts = Object.create(null);
+  for (const key of Object.values(booleans)) opts[key] = false;
+  for (const { key } of Object.values(values)) {
+    opts[key] = key in defaults ? defaults[key] : null;
+  }
+  Object.assign(opts, defaults);
+  return opts;
+}
+
+/** Split `--flag=value` once, up front, so both spellings share one path. */
+function splitInlineValue(arg) {
+  const eq = arg.startsWith('--') ? arg.indexOf('=') : -1;
+  if (eq === -1) return { flag: arg, inline: null };
+  return { flag: arg.slice(0, eq), inline: arg.slice(eq + 1) };
+}
+
+/**
+ * A leading '-' normally means "the next flag, not my value" -- but a
+ * well-formed integer is a legitimate value for an int flag, so `--seed -5`
+ * and `--seed=-5` stay the same command.
+ */
+function cannotBeValue(def, next) {
+  if (next === undefined) return true;
+  return next.startsWith('-') && !(def.type === 'int' && INT_RE.test(next));
+}
+
+/** The raw value text and how many extra argv tokens it used, or an error. */
+function readRawValue(flag, def, inline, next) {
+  if (inline !== null) return { raw: inline, consumed: 0 };
+  if (cannotBeValue(def, next)) return { error: expectedOneArgument(flag) };
+  return { raw: next, consumed: 1 };
+}
+
+/** Validate an int value's syntax AND its exactness. */
+function parseIntValue(flag, raw) {
+  // Validate the VALUE, not just its presence: a flag whose purpose is
+  // determinism must not decay to a default when its value is junk.
+  if (!INT_RE.test(raw)) {
+    return { error: `argument ${flag}: invalid int value: '${raw}'` };
+  }
+  // Syntactically an integer is not enough: Number() silently rounds past
+  // 2^53-1, so `--seed 9007199254740993` would RUN with ...992 -- the value
+  // used differing from the value asked for, which is the exact class of lie
+  // a determinism flag must not tell.
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed)) {
+    return { error: `argument ${flag}: integer out of safe range: '${raw}'` };
+  }
+  return { value: parsed };
+}
+
+function coerceValue(flag, def, raw) {
+  // Empty is the missing-value case wearing a disguise. `--repo=` is typed by
+  // nobody, but `--repo "$UNSET_VAR"` expands to `--repo ''` in any shell, and
+  // an accepted empty path silently retargets writes at the process CWD.
+  if (raw === '') return { error: expectedOneArgument(flag) };
+  if (def.type === 'int') return parseIntValue(flag, raw);
+  return { value: raw };
+}
+
+/** Store a value flag's value; the outcome says how many tokens it took. */
+function takeValue(state, flag, inline, index) {
+  const def = state.VALUES[flag];
+  const read = readRawValue(flag, def, inline, state.argv[index + 1]);
+  if (read.error !== undefined) return read;
+  const coerced = coerceValue(flag, def, read.raw);
+  if (coerced.error !== undefined) return coerced;
+  state.opts[def.key] = coerced.value;
+  return { consumed: read.consumed };
+}
+
+/** A lone `-` is a positional, as argparse treats it. */
+function isPositional(state, arg) {
+  if (!state.positionals) return false;
+  return arg === '-' || !arg.startsWith('-');
+}
+
+/** A token that is neither help nor `--`: a flag, a positional, or junk. */
+function readOptionToken(state, arg, index) {
+  const { flag, inline } = splitInlineValue(arg);
+  if (state.BOOLEANS[flag] !== undefined && inline === null) {
+    state.opts[state.BOOLEANS[flag]] = true;
+    return { consumed: 0 };
+  }
+  if (state.VALUES[flag] !== undefined) {
+    return takeValue(state, flag, inline, index);
+  }
+  if (isPositional(state, arg)) {
+    state.found.push(arg);
+    return { consumed: 0 };
+  }
+  return { error: `unrecognized arguments: ${arg}` };
+}
+
+function endOptions(state) {
+  if (!state.positionals) return { error: 'unrecognized arguments: --' };
+  state.endOfOptions = true;
+  return { consumed: 0 };
+}
+
+/**
+ * One token's outcome: `{consumed}` to keep scanning, or `{help}` / `{error}`
+ * to stop.
+ */
+function readToken(state, index) {
+  const arg = state.argv[index];
+  if (state.endOfOptions) {
+    state.found.push(arg);
+    return { consumed: 0 };
+  }
+  // Help short-circuits everything, including the required-flag check --
+  // otherwise `--help` reports the arguments it is being asked to explain as
+  // missing.
+  if (arg === '-h' || arg === '--help') return { help: true };
+  if (arg === '--') return endOptions(state);
+  return readOptionToken(state, arg, index);
+}
+
+/** Scan argv; returns the stopping outcome, or null when argv ran out. */
+function scanTokens(state) {
+  for (let i = 0; i < state.argv.length; i += 1) {
+    const outcome = readToken(state, i);
+    if (outcome.consumed === undefined) return outcome;
+    i += outcome.consumed;
+  }
+  return null;
+}
+
+function missingRequired({ required, VALUES }, opts) {
+  return required.filter((flag) => {
+    const value = opts[VALUES[flag].key];
+    return value === null || value === undefined;
+  });
+}
+
+function parseArgv(config, argv) {
+  const opts = initialOpts(config);
+  const found = [];
+  const result = { opts, positionals: found, help: false, error: null };
+  const state = { ...config, argv, opts, found, endOfOptions: false };
+
+  const stop = scanTokens(state);
+  if (stop !== null) return Object.assign(result, stop);
+
+  const missing = missingRequired(config, opts);
+  if (missing.length) {
+    result.error = `the following arguments are required: ${missing.join(', ')}`;
+    return result;
+  }
+
+  const { positionals } = config;
+  if (positionals && !found.length && positionals.defaults) {
+    found.push(...positionals.defaults);
+  }
+  return result;
 }
 
 /**
@@ -69,146 +258,18 @@ export function createParser(spec) {
 
   if (!prog) throw new Error('createParser: spec.prog is required');
 
-  const BOOLEANS = nullProtoMap(booleans);
-  const VALUES = nullProtoMap(values);
-
-  // Fail loudly at construction on a spec that cannot be satisfied -- a rename
-  // that leaves a stale default or a required flag behind is otherwise silent.
-  const declaredKeys = new Set([
-    ...Object.values(booleans),
-    ...Object.values(values).map((v) => v.key),
-  ]);
-  for (const key of Object.keys(defaults)) {
-    if (!declaredKeys.has(key)) {
-      throw new Error(`createParser: defaults names unknown key '${key}'`);
-    }
-  }
-  for (const flag of required) {
-    if (VALUES[flag] === undefined) {
-      throw new Error(`createParser: required names undeclared flag '${flag}'`);
-    }
-  }
+  const config = {
+    booleans,
+    values,
+    defaults,
+    required,
+    positionals,
+    BOOLEANS: nullProtoMap(booleans),
+    VALUES: nullProtoMap(values),
+  };
+  assertSpecSatisfiable(config);
 
   return function parse(argv = []) {
-    const opts = Object.create(null);
-    for (const key of Object.values(booleans)) opts[key] = false;
-    for (const { key } of Object.values(values)) {
-      opts[key] = key in defaults ? defaults[key] : null;
-    }
-    Object.assign(opts, defaults);
-
-    const found = [];
-    const result = { opts, positionals: found, help: false, error: null };
-    const fail = (message) => {
-      result.error = message;
-      return result;
-    };
-
-    let endOfOptions = false;
-
-    for (let i = 0; i < argv.length; i += 1) {
-      const arg = argv[i];
-
-      if (endOfOptions) {
-        found.push(arg);
-        continue;
-      }
-
-      // Help short-circuits everything, including the required-flag check
-      // below -- otherwise `--help` reports the arguments it is being asked to
-      // explain as missing.
-      if (arg === '-h' || arg === '--help') {
-        result.help = true;
-        return result;
-      }
-
-      if (arg === '--') {
-        if (!positionals) return fail('unrecognized arguments: --');
-        endOfOptions = true;
-        continue;
-      }
-
-      // Split `--flag=value` once, up front, so both spellings share one path.
-      const eq = arg.startsWith('--') ? arg.indexOf('=') : -1;
-      const flag = eq === -1 ? arg : arg.slice(0, eq);
-      const inline = eq === -1 ? null : arg.slice(eq + 1);
-
-      if (BOOLEANS[flag] !== undefined && inline === null) {
-        opts[BOOLEANS[flag]] = true;
-        continue;
-      }
-
-      const def = VALUES[flag];
-      if (def !== undefined) {
-        let raw;
-        if (inline !== null) {
-          raw = inline;
-        } else {
-          const next = argv[i + 1];
-          // A leading '-' normally means "the next flag, not my value" -- but a
-          // well-formed integer is a legitimate value for an int flag, so
-          // `--seed -5` and `--seed=-5` stay the same command.
-          const looksLikeFlag =
-            next !== undefined &&
-            next.startsWith('-') &&
-            !(def.type === 'int' && INT_RE.test(next));
-          if (next === undefined || looksLikeFlag) {
-            return fail(`argument ${flag}: expected one argument`);
-          }
-          raw = next;
-          i += 1;
-        }
-        // Empty is the missing-value case wearing a disguise. `--repo=` is
-        // typed by nobody, but `--repo "$UNSET_VAR"` expands to `--repo ''` in
-        // any shell, and an accepted empty path silently retargets writes at
-        // the process CWD.
-        if (raw === '') return fail(`argument ${flag}: expected one argument`);
-        if (def.type === 'int') {
-          // Validate the VALUE, not just its presence: a flag whose purpose is
-          // determinism must not decay to a default when its value is junk.
-          if (!INT_RE.test(raw)) {
-            return fail(`argument ${flag}: invalid int value: '${raw}'`);
-          }
-          // Syntactically an integer is not enough: Number() silently rounds
-          // past 2^53-1, so `--seed 9007199254740993` would RUN with ...992 --
-          // the value used differing from the value asked for, which is the
-          // exact class of lie a determinism flag must not tell.
-          const parsed = Number(raw);
-          if (!Number.isSafeInteger(parsed)) {
-            return fail(
-              `argument ${flag}: integer out of safe range: '${raw}'`,
-            );
-          }
-          opts[def.key] = parsed;
-        } else {
-          opts[def.key] = raw;
-        }
-        continue;
-      }
-
-      // A lone `-` is a positional, as argparse treats it.
-      if (positionals && (arg === '-' || !arg.startsWith('-'))) {
-        found.push(arg);
-        continue;
-      }
-
-      return fail(`unrecognized arguments: ${arg}`);
-    }
-
-    const missing = required.filter((flag) => {
-      const value = opts[VALUES[flag].key];
-      return value === null || value === undefined;
-    });
-    if (missing.length) {
-      return fail(
-        `the following arguments are required: ${missing.join(', ')}`,
-      );
-    }
-
-    if (positionals && !found.length && positionals.defaults) {
-      found.push(...positionals.defaults);
-    }
-
-    return result;
+    return parseArgv(config, argv);
   };
 }
