@@ -556,6 +556,11 @@ function parseLayer(data: Record<string, unknown>, source: string): Layer {
     warns,
   );
 
+  // `internal_doc_urls` cannot go through `validateStrings` (each entry needs
+  // the URL validator's own per-entry warning), but it is still a list field
+  // and must abstain out loud like one: a type-confused value used to be
+  // dropped in silence, so the operator's reference docs vanished from every
+  // generated prompt with nothing in `company-knowledge show` to say why.
   const rawUrls = dictGet(data, 'internal_doc_urls', []);
   const internal_doc_urls: string[] = [];
   if (Array.isArray(rawUrls)) {
@@ -564,6 +569,10 @@ function parseLayer(data: Record<string, unknown>, source: string): Layer {
       const validated = validateUrl(u, 'internal_doc_urls', warns);
       if (validated) internal_doc_urls.push(validated);
     }
+  } else {
+    warns.push(
+      `internal_doc_urls: expected list, got ${pyTypeName(rawUrls)} ${EMDASH} skipped`,
+    );
   }
 
   const internal_domains = validateStrings(
