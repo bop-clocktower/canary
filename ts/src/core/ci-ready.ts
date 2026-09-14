@@ -11,7 +11,9 @@
  * Pure: callers read files and pass the results in, which keeps every rule here
  * testable without a filesystem.
  */
-import type { RunRecord } from '../history/record.js';
+interface ScoredRun {
+  tests?: { test_name: string; status: string }[];
+}
 
 export type CheckVerdict = 'pass' | 'warn' | 'fail' | 'skip';
 export type ReadinessVerdict =
@@ -32,7 +34,7 @@ export interface CiReadyReport {
 
 export interface CiReadyInputs {
   /** Stored runs, or null when the history file does not exist. */
-  runs: RunRecord[] | null;
+  runs: ScoredRun[] | null;
   historyPath: string;
   hasInventory: boolean;
   hasCriticalAreas: boolean;
@@ -50,7 +52,7 @@ function inventoryMissingReason(): string {
 }
 
 /** Per-test flake rate across the window, for tests that appeared at all. */
-function flakeRates(runs: RunRecord[]): Map<string, number> {
+function flakeRates(runs: ScoredRun[]): Map<string, number> {
   const seen = new Map<string, { present: number; flaky: number }>();
   for (const run of runs) {
     for (const t of run.tests ?? []) {
@@ -68,7 +70,7 @@ function flakeRates(runs: RunRecord[]): Map<string, number> {
 }
 
 function scoreFlakiness(
-  runs: RunRecord[] | null,
+  runs: ScoredRun[] | null,
   historyPath: string,
 ): CiCheck {
   const name = 'flakiness';
