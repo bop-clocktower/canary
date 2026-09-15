@@ -868,8 +868,8 @@ function mergeLayers(layers: Layer[]): MergedFields {
 // ---------------------------------------------------------------------------
 
 const _ATTRIBUTION = 'made with Canary';
-// Voice is garnish, never load-bearing (#340). One tasteful Oracle line.
-const _VOICE_LINE = 'Oracle: eyes on every test.';
+// Voice is garnish, never load-bearing (#340). One tasteful Canary line.
+const _VOICE_LINE = 'Canary: eyes on every test.';
 const _FLAVOR_OFF_ENV = ['CANARY_NO_FLAVOR', 'NO_FLAVOR'];
 const _FALSEY = new Set(['', '0', 'false', 'no', 'off']);
 
