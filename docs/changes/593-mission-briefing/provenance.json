@@ -1,0 +1,17 @@
+{
+  "issues": [593],
+  "route": "spec-only",
+  "stages": ["brainstorming"],
+  "specArtifact": "docs/changes/593-mission-briefing/proposal.md",
+  "closingKeyword": "Refs",
+  "decisionsForHuman": 6,
+  "assumptions": [
+    "harness-brainstorming run non-interactively per fleet brief; EVALUATE questions answered with recommended defaults; soundness-review, advise_skills and sign-off not run.",
+    "Coverage half reuses guardian Tier-0 scopeDiff, filters and CoverageInputState.",
+    "Output is stdout Markdown by default; sticky PR comment opt-in with its own marker.",
+    "Both a deterministic CLI subcommand (canary briefing) and a judgment skill.",
+    "Inventory import matches are reported separately from executed coverage.",
+    "Empty, unparseable or zero-unit diffs abstain with exit 3.",
+    "GitHub is the only comment host in v1."
+  ]
+}
