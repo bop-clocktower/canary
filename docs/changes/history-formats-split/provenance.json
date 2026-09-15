@@ -1,0 +1,16 @@
+{
+  "issues": [969],
+  "route": "bug",
+  "stages": ["harness-debugging"],
+  "reproducingTest": "harness check-arch --json before/after",
+  "archBefore": 2013,
+  "archAfter": 1726,
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "The arch module-size count is top-level only, so files under ts/src/history/formats/ do not count toward ts/src/history (confirmed: violation absent after the move).",
+    "No new unit test was added: this is a pure move with zero behavior change, and the existing history-record and history-record-playwright suites already pin shape detection and conversion through the unchanged run-recorder API.",
+    "buildRunFromVitestReport stays exported from run-recorder.ts as a thin validated wrapper so callers and tests are untouched; the unvalidated reader is formats/vitest-report.ts readVitestReport, mirroring buildRunFromPlaywrightReport.",
+    "Historical docs under docs/changes/playwright-history-record/ that name ts/src/history/playwright-report.ts are left as point-in-time records, not live docs.",
+    "No CHANGELOG entry: internal refactor with no user-visible change."
+  ]
+}

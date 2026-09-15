@@ -14,10 +14,10 @@
  *     wall clock -- Playwright runs workers in parallel, so the sum of tests
  *     overstates it.
  *
- * Validation is the caller's job (`run-recorder.ts` `validateBuiltRun`); this
+ * Validation is the caller's job (`../run-recorder.ts` `validateBuiltRun`); this
  * module only imports the schema so the two files cannot form an import cycle.
  */
-import { makeRunId, type RunInput, type TestResultInput } from './schema.js';
+import { makeRunId, type RunInput, type TestResultInput } from '../schema.js';
 
 interface PwAttempt {
   status?: string;
