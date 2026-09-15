@@ -322,6 +322,32 @@ describe('skills run cli invocation', () => {
     }
   });
 
+  it("spawns in the caller's cwd, so relative path args resolve there (#955)", async () => {
+    // The skill used to run with cwd = its own install dir, so
+    // `-- tests/unit` was looked up inside the skill and reported missing.
+    const { dir, info } = withCliSkill('run.js');
+    try {
+      const cwds: (string | undefined)[] = [];
+      const res = await invokeCanary(
+        ['skills', 'run', 'demo', '--allow-executable-skills', '--', 'tests'],
+        {
+          deps: {
+            makeSkillRegistry: () => fakeRegistry([info]),
+            cwd: () => '/caller/repo',
+            runSubprocess: (_cmd, _args, opts) => {
+              cwds.push(opts?.cwd);
+              return { status: 0, stdout: '', stderr: '' };
+            },
+          },
+        },
+      );
+      expect(res.code).toBe(0);
+      expect(cwds).toEqual(['/caller/repo']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('runs a .py target through the configured interpreter', async () => {
     const { dir, info } = withCliSkill('run.py');
     try {
