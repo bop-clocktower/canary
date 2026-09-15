@@ -557,10 +557,10 @@ describe('cli', () => {
     expect(JSON.parse(out.join('\n')).summary.findings).toBe(2);
   });
 
-  it('returns 1 for a missing path', () => {
+  it('returns 2 (usage) for a missing path (#955)', () => {
     const root = tmp();
     capture();
-    expect(main([path.join(root, 'nope')])).toBe(1);
+    expect(main([path.join(root, 'nope')])).toBe(2);
     expect(err.join('\n')).toContain('not found');
   });
 
@@ -622,7 +622,7 @@ describe('cli', () => {
     expect(main(['--bogus'])).toBe(2);
     expect(err.join('\n')).toMatch(/^canary-blackhawk: /);
     capture();
-    expect(main(['/definitely/not/here'])).toBe(1);
+    expect(main(['/definitely/not/here'])).toBe(2);
     expect(err.join('\n')).toMatch(/^canary-blackhawk: /);
   });
 
@@ -644,13 +644,13 @@ describe('cli', () => {
     capture();
     // After `--`, `--json` is a positional -- and a nonexistent one, which is
     // the observable proof it was not parsed as the JSON flag.
-    expect(main(['--', '--json'])).toBe(1);
+    expect(main(['--', '--json'])).toBe(2);
     expect(err.join('\n')).toContain('path not found: --json');
   });
 
   it('a lone `-` is a positional, not a flag', () => {
     capture();
-    expect(main(['-'])).toBe(1);
+    expect(main(['-'])).toBe(2);
     expect(err.join('\n')).toContain('path not found: -');
   });
 

@@ -291,7 +291,10 @@ async function runCmd(
     }
     const cmd = target.endsWith('.py') ? [deps.pythonExe(), target] : [target];
     const res = deps.runSubprocess(cmd[0]!, [...cmd.slice(1), ...forwarded], {
-      cwd: skill.dir,
+      // The caller's cwd, not skill.dir (#955): a relative path argument (and
+      // a skill's own `.` default) means the caller's directory. The script
+      // locates its own files via import.meta, so it needs no cwd of its own.
+      cwd: deps.cwd(),
       inherit: true,
     });
     // A spawn failure (missing interpreter/binary) yields status=null; Python's

@@ -205,7 +205,11 @@ function report(result, files, outcome, json) {
 function scan(paths) {
   if (!ENGINE.ok) return fail(ENGINE.error);
   for (const entry of paths) {
-    if (!fs.existsSync(entry)) return fail(`path not found: ${entry}`);
+    if (!fs.existsSync(entry)) {
+      // A missing path is a usage error, not a finding (#955).
+      console.error(`${PREFIX} path not found: ${entry}`);
+      return EXIT_USAGE;
+    }
   }
   const files = collectFiles(paths, ENGINE);
   const result = scanFiles(files, ENGINE);

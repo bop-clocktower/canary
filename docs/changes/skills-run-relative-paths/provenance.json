@@ -1,0 +1,12 @@
+{
+  "issues": [955],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/skills-cli-branches.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Root-cause fix is spawning the skill in the caller's cwd rather than rewriting individual path arguments; no bundled skill script depends on cwd being its own directory (they locate their files via import.meta).",
+    "canary-instrument's test-results/trace output now lands under the caller's cwd instead of the skill install dir, which is the intended location.",
+    "The exit-2 change is applied in the skill scripts that own the path check (savant, blackhawk, and cassandra, which has the same check); katana and fail-fast have no path-not-found check and are fixed by the cwd change alone."
+  ]
+}

@@ -907,10 +907,10 @@ describe('cli', () => {
     expect(main([root, '--strict'])).toBe(0);
   });
 
-  it('returns 1 for a missing path', () => {
+  it('returns 2 (usage) for a missing path (#955)', () => {
     const root = tmp();
     capture();
-    expect(main([path.join(root, 'nope')])).toBe(1);
+    expect(main([path.join(root, 'nope')])).toBe(2);
     expect(err.join('\n')).toContain('not found');
   });
 
@@ -967,13 +967,13 @@ describe('cli', () => {
 
   it('`--` stops flag parsing so a dash-leading path is a path', () => {
     capture();
-    expect(main(['--', '--json'])).toBe(1);
+    expect(main(['--', '--json'])).toBe(2);
     expect(err.join('\n')).toContain('path not found: --json');
   });
 
   it('a lone `-` is a positional, not a flag', () => {
     capture();
-    expect(main(['-'])).toBe(1);
+    expect(main(['-'])).toBe(2);
     expect(err.join('\n')).toContain('path not found: -');
   });
 
