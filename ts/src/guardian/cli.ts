@@ -1239,10 +1239,14 @@ async function abstainPrCheck(
   const outcome = gateOutcome({ checked: 0, findings: [], skipped }, 'gate', {
     noun: 'unit(s)',
   });
-  deps.out(outcome.summaryLine);
+  // #940: `--format json` owns stdout (same rule as the scored path's
+  // `machineStdout`), so the human banner goes to stderr or the document is
+  // unparseable. The abstention itself is encoded in the JSON below.
+  const say = opts.format === 'json' && !opts.postComment ? deps.err : deps.out;
+  say(outcome.summaryLine);
   // #761: state the range, so "correctly abstained" and "wrong diff" differ.
-  if (provenance) deps.out(provenanceLine(provenance));
-  for (const line of PR_CHECK_ABSTAIN_REMEDIATION) deps.out(line);
+  if (provenance) say(provenanceLine(provenance));
+  for (const line of PR_CHECK_ABSTAIN_REMEDIATION) say(line);
   if (opts.postComment) {
     const coverage = { requested: null, found: false, parsed: false };
     await postStickyComment([], NO_TIER, deps, {
