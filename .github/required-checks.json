@@ -104,12 +104,7 @@
     { "check": "Wiki diagrams render", "workflow": "docs-lint.yml" },
     {
       "check": "No removed-symbol or proprietary leaks",
-      "workflow": "leak-gate.yml",
-      "$comment": [
-        "Moved from docs-lint.yml to its own pull_request_target workflow by #843",
-        "(ADR 0023), so fork PRs resolve the denylist secret. The context string",
-        "is unchanged, so ruleset 16189198 needs no edit."
-      ]
+      "workflow": "docs-lint.yml"
     },
     {
       "check": "deps-and-validate",
@@ -153,6 +148,11 @@
       "check": "Test quality (canary on canary)",
       "workflow": "dogfood.yml",
       "reason": "Precision not yet known (ADR 0010). The dogfood jobs run canary against canary and currently report a 409-finding baseline that #544 has not triaged. Promoting before the triage would block every PR on findings nobody has confirmed are real."
+    },
+    {
+      "check": "Leak gate (pull_request_target, transitional)",
+      "workflow": "leak-gate.yml",
+      "reason": "Step 1 of the two-step #843 migration (ADR 0023). pull_request_target runs the base branch's workflow, so this job cannot report on the PR that introduces it; the required context `No removed-symbol or proprietary leaks` stays on docs-lint.yml until step 2 renames this job to it and removes the docs-lint.yml job. Advisory only for that transition window."
     },
     {
       "check": "Doctor (from a packed install)",

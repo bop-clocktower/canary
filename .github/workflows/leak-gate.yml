@@ -2,8 +2,9 @@ name: Leak Gate
 
 # #843, ADR 0023 (docs/knowledge/decisions/0023-leak-gate-pull-request-target.md).
 #
-# `No removed-symbol or proprietary leaks` is REQUIRED (.github/required-checks.json)
-# and needs `secrets.CANARY_PROPRIETARY_DENYLIST`. GitHub withholds secrets from
+# This job is the future producer of the REQUIRED context
+# `No removed-symbol or proprietary leaks` (see the two-step note on the job),
+# which needs `secrets.CANARY_PROPRIETARY_DENYLIST`. GitHub withholds secrets from
 # fork-triggered `pull_request` runs, so under that trigger no fork PR could
 # ever pass. `pull_request_target` runs in BASE-repo context, where the secret
 # resolves, and always uses this file as it exists on the base branch, so a PR
@@ -31,13 +32,21 @@ on:
     branches:
       - main
 
+# contents: read only. Neither script calls the API, and fetching the head
+# commit of this public repo needs no broader scope (#948 security review).
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
   removed-symbols:
-    name: No removed-symbol or proprietary leaks
+    # TRANSITIONAL NAME (#843 step 1). pull_request_target runs the workflow
+    # as it exists on the base branch, so on the PR that adds this file it
+    # cannot report. The required context therefore stays on docs-lint.yml's
+    # pull_request job until this file is on main. Step 2 renames this job to
+    # `No removed-symbol or proprietary leaks` and deletes the docs-lint.yml
+    # job in the same PR. Until then a distinct name avoids two workflows
+    # reporting one context on the same PR.
+    name: Leak gate (pull_request_target, transitional)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

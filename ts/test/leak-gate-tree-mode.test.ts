@@ -178,8 +178,31 @@ describe('leak gate tree mode reads the named commit, not the working tree', () 
     const { status, out } = run(root, { CANARY_LEAK_SCAN_TREE: sha });
 
     expect(status).toBe(1);
-    expect(out.split('\n').some((l) => l.startsWith('::'))).toBe(false);
+    // The runner may honour an indented command, so leading whitespace is no guard.
+    expect(
+      out.split(/\r?\n|\r/).some((l) => l.trimStart().startsWith('::')),
+    ).toBe(false);
   });
+
+  // NTFS forbids "\n" in a file name, so the fixture cannot exist on Windows.
+  it.skipIf(process.platform === 'win32')(
+    'a newline inside a head file name cannot start a workflow command line',
+    () => {
+      // Security review of #948: ls-tree -z permits "\n" in a path, which would
+      // put attacker text on its own log line.
+      const [root, sha] = committed({
+        'docs/guides/x\n::add-mask::spoof.md': 'Run `python3 -m agent.cli`.\n',
+      });
+
+      const { status, out } = run(root, { CANARY_LEAK_SCAN_TREE: sha });
+
+      expect(status).toBe(1);
+      expect(out).toContain('spoof');
+      expect(
+        out.split(/\r?\n|\r/).some((l) => l.trimStart().startsWith('::')),
+      ).toBe(false);
+    },
+  );
 
   it('refuses to scan the base checkout under pull_request_target', () => {
     const [root] = committed({ 'docs/a.md': 'ok\n' });

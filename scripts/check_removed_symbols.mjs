@@ -331,7 +331,9 @@ function checkRemovedSymbols() {
       for (const [rx, reason] of patterns) {
         if (rx.test(line)) {
           violations.push(
-            indent(`${rel}:${i + 1}: ${line.trim()}\n    → ${reason}`),
+            indent(
+              `${inert(rel)}:${i + 1}: ${inert(line.trim())}\n    → ${reason}`,
+            ),
           );
         }
       }
@@ -502,7 +504,9 @@ function matchLines(text, patterns, rel) {
     for (const [rx, reason] of patterns) {
       if (rx.test(lines[i])) {
         hits.push(
-          indent(`${rel}:${i + 1}: ${lines[i].trim()}\n    → ${reason}`),
+          indent(
+            `${inert(rel)}:${i + 1}: ${inert(lines[i].trim())}\n    → ${reason}`,
+          ),
         );
       }
     }
@@ -542,6 +546,20 @@ function resolveSource() {
  */
 function indent(line) {
   return `  ${line}`;
+}
+
+/**
+ * Make head-controlled text (a path or a matched line) unable to form a runner
+ * workflow command. Indenting alone is not a guard: the runner may honour an
+ * indented `::cmd`, and `ls-tree -z` allows a newline inside a path, which
+ * would put attacker text at the start of its own log line (#948 review).
+ * Line breaks become visible escapes and every `::` is split.
+ */
+function inert(text) {
+  return String(text)
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/::/g, ': :');
 }
 
 function main() {

@@ -86,6 +86,37 @@ jobs:
           fi
           exit $status
 
-  # The `No removed-symbol or proprietary leaks` job moved to leak-gate.yml
-  # (#843, ADR 0023): it needs a secret, so it runs on pull_request_target
-  # where fork PRs can reach it. The jobs above need no secrets and stay here.
+  removed-symbols:
+    name: No removed-symbol or proprietary leaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The authorship scan diffs this branch against its base, so the
+          # base commit has to be present. A shallow checkout makes the gate
+          # abstain (and fail) rather than silently pass on zero commits.
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      - name: Check for removed-symbol drift and proprietary leaks
+        # The company denylist is supplied privately via a repo secret so the
+        # public workflow names no company. If the secret is unset the
+        # authorship scan ABSTAINS and this step fails (#784) — it does not fall
+        # back to the generic structural checks, because a gate matching zero
+        # patterns has verified nothing and cannot report a pass.
+        #
+        # The secret must therefore exist in every store a run of this workflow
+        # can read. It is in both Actions and Dependabot (#831); forks have no
+        # equivalent store, which is why a fork PR cannot pass this required
+        # check at all — see CONTRIBUTING.md and #843.
+        env:
+          CANARY_PROPRIETARY_DENYLIST:
+            ${{ secrets.CANARY_PROPRIETARY_DENYLIST }}
+          # Consumed by the authorship scan to bound the range it checks.
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          # The real PR head. Without it the scan would end its range at the
+          # checked-out `refs/pull/N/merge` commit, which GitHub synthesises
+          # per-event and never merges — see rangeFromEvent().
+          GITHUB_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/check_removed_symbols.mjs

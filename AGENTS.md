@@ -65,9 +65,8 @@ the code, not just the paths.
   and update docs/examples in the **same** change. The v3.0 cut removed the
   provider layer, orchestrator, and keyed generate command but left months of
   stale references behind (this drift was the motivation for the guard).
-  `scripts/check_removed_symbols.mjs` (run in CI via `leak-gate.yml` on
-  `pull_request_target`, #843) now fails the build on that drift — add a row
-  there for each newly-removed surface.
+  `scripts/check_removed_symbols.mjs` (run in CI via `docs-lint`) now fails the
+  build on that drift — add a row there for each newly-removed surface.
 - **Open-core boundary.** This repo is public/open-source. The generic engine
   lives here; **company-specific content** (client names, internal domains,
   proprietary skills, populated `company.json`) lives **only** in a private

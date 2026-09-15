@@ -14,9 +14,9 @@
  *   5. minimal permissions
  *
  * plus: no `${{ }}` inside a `run:` script (event values reach the shell only
- * through `env:`), and the check context stays byte-identical to the entry in
- * `.github/required-checks.json`, because a renamed required context blocks
- * every PR forever.
+ * through `env:`), and the transitional two-step naming (see below): the
+ * required context keeps its docs-lint.yml producer until leak-gate.yml is on
+ * main, because a required context with no producer blocks every PR forever.
  *
  * Offline: parses YAML and JSON. Never executes a workflow.
  */
@@ -31,6 +31,8 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
 const CHECK = 'No removed-symbol or proprietary leaks';
 const WORKFLOW = 'leak-gate.yml';
+/** leak-gate.yml's job name until step 2 renames it to CHECK (#843). */
+const TRANSITIONAL_CHECK = 'Leak gate (pull_request_target, transitional)';
 
 interface Step {
   name?: string;
@@ -61,7 +63,7 @@ const wf = load(WORKFLOW);
 const triggers = (wf.true ?? wf.on ?? {}) as Record<string, unknown>;
 const jobs = Object.values(wf.jobs ?? {});
 const steps = jobs.flatMap((j) => j.steps ?? []);
-const gateJob = jobs.find((j) => j.name === CHECK);
+const gateJob = jobs[0];
 
 describe('leak gate workflow is fork-reachable (#843)', () => {
   it('runs on pull_request_target, not pull_request', () => {
@@ -84,21 +86,36 @@ describe('leak gate workflow is fork-reachable (#843)', () => {
     expect(push?.branches).toContain('main');
   });
 
-  it('produces the required check under its exact context string', () => {
-    expect(gateJob, `no job named "${CHECK}"`).toBeDefined();
-    expect(gateJob?.if).toBeUndefined();
+  /*
+   * Two-step migration (#843). `pull_request_target` runs the workflow as it
+   * exists on the BASE branch, so on the PR that introduces leak-gate.yml it
+   * cannot report at all. Moving the required context in that same PR left it
+   * permanently missing and unmergeable (ruleset 16189198 has no bypass). So
+   * step 1 keeps docs-lint.yml as the required producer and adds leak-gate.yml
+   * under a DISTINCT name; step 2 (a follow-up PR, once this file is on main)
+   * renames the job to CHECK and removes the docs-lint.yml job.
+   */
+  it('step 1: docs-lint.yml still produces the required context on pull_request', () => {
+    const docsLint = load('docs-lint.yml');
+    const names = Object.values(docsLint.jobs ?? {}).map((j) => j.name);
+    expect(names).toContain(CHECK);
+    const dlTriggers = (docsLint.true ?? docsLint.on ?? {}) as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(dlTriggers)).toContain('pull_request');
     const manifest = JSON.parse(
       readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
     ) as { required: Array<{ check: string; workflow: string }> };
     const entry = manifest.required.find((r) => r.check === CHECK);
-    expect(entry?.workflow).toBe(WORKFLOW);
+    expect(entry?.workflow).toBe('docs-lint.yml');
   });
 
-  it('docs-lint.yml no longer produces the check (one producer only)', () => {
-    const names = Object.values(load('docs-lint.yml').jobs ?? {}).map(
-      (j) => j.name,
-    );
-    expect(names).not.toContain(CHECK);
+  it('step 1: leak-gate.yml has exactly one job, named distinctly from the required context', () => {
+    expect(jobs.length).toBe(1);
+    expect(gateJob?.name).toBe(TRANSITIONAL_CHECK);
+    expect(gateJob?.if).toBeUndefined();
+    expect(jobs.map((j) => j.name)).not.toContain(CHECK);
   });
 });
 
@@ -108,11 +125,8 @@ describe('leak gate never executes head code under secrets (ADR 0023)', () => {
     expect(steps.filter((s) => s.run).length).toBeGreaterThan(0);
   });
 
-  it('rule 5: permissions are exactly contents+pull-requests read', () => {
-    expect(wf.permissions).toEqual({
-      contents: 'read',
-      'pull-requests': 'read',
-    });
+  it('rule 5: permissions are exactly contents read (no API use needs more)', () => {
+    expect(wf.permissions).toEqual({ contents: 'read' });
     for (const job of jobs) expect(job.permissions).toBeUndefined();
   });
 
