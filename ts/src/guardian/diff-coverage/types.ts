@@ -113,11 +113,11 @@ export function splitLines(text: string): string[] {
 }
 
 /**
- * Parse an integer the way Python's `int(str)` does for our inputs: optional
- * surrounding whitespace and sign, digits only. Returns `null` on failure
- * (Python would raise `ValueError`, which the callers catch-and-skip).
+ * Parse a strict base-10 integer: optional surrounding whitespace and sign,
+ * digits only (no decimals, exponents, or trailing junk, unlike
+ * `Number.parseInt`). Returns `null` on failure so callers can skip the entry.
  */
-export function pyInt(value: string): number | null {
+export function parseStrictInt(value: string): number | null {
   const trimmed = value.trim();
   if (!/^[+-]?\d+$/.test(trimmed)) return null;
   return Number.parseInt(trimmed, 10);
