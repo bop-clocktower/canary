@@ -54,6 +54,8 @@ function isTruthy(value: unknown): boolean {
   return Boolean(value);
 }
 
+type JsonRow = Record<string, unknown>;
+
 /** Python `dict.get(key, default)`: default only on a missing key. */
 function getOrDefault(
   obj: Record<string, unknown>,
@@ -648,22 +650,17 @@ export class WorkflowDiscovery {
     if (!Array.isArray(statusesRaw)) {
       return [];
     }
-    const entries = statusesRaw as Record<string, unknown>[];
+    const entries = statusesRaw as JsonRow[];
     for (const entry of entries) {
       const entryName = (getOrDefault(entry, 'name', '') as string) ?? '';
       if (entryName.toLowerCase() === issueTypeName.toLowerCase()) {
-        return (
-          getOrDefault(entry, 'statuses', []) as Record<string, unknown>[]
-        ).map(
+        return (getOrDefault(entry, 'statuses', []) as JsonRow[]).map(
           (s) =>
             new StatusEntry(
               String(getOrDefault(s, 'id', '')),
               getOrDefault(s, 'name', '') as string,
               getOrDefault(
-                getOrDefault(s, 'statusCategory', {}) as Record<
-                  string,
-                  unknown
-                >,
+                getOrDefault(s, 'statusCategory', {}) as JsonRow,
                 'key',
                 'indeterminate',
               ) as string,
@@ -675,10 +672,7 @@ export class WorkflowDiscovery {
     const seen = new Set<string>();
     const result: StatusEntry[] = [];
     for (const entry of entries) {
-      for (const s of getOrDefault(entry, 'statuses', []) as Record<
-        string,
-        unknown
-      >[]) {
+      for (const s of getOrDefault(entry, 'statuses', []) as JsonRow[]) {
         const name = getOrDefault(s, 'name', '') as string;
         if (isTruthy(name) && !seen.has(name)) {
           seen.add(name);
@@ -687,10 +681,7 @@ export class WorkflowDiscovery {
               String(getOrDefault(s, 'id', '')),
               name,
               getOrDefault(
-                getOrDefault(s, 'statusCategory', {}) as Record<
-                  string,
-                  unknown
-                >,
+                getOrDefault(s, 'statusCategory', {}) as JsonRow,
                 'key',
                 'indeterminate',
               ) as string,
