@@ -94,7 +94,7 @@ export function analysisFilename(
   let safe = stripDashes(ref.replace(REF_SAFE, '-')) || 'local';
   if (safe.length > REF_MAX) {
     // sha1 is a filename disambiguator (not a security digest); it matches the
-    // Python oracle's hashlib.sha1(ref)[:8] cache-filename contract and the
+    // Python hashlib.sha1(ref)[:8] cache-filename contract and the
     // input is a non-secret git ref. Changing it would break that byte contract.
     const algo = 'sha1'; // harness-ignore SEC-CRY-001: filename hash, not crypto
     const digest = createHash(algo)

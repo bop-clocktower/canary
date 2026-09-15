@@ -813,7 +813,7 @@ describe('TestReportBranding', () => {
     expect(b['primary_color']).toBe('#26A9E1');
     expect(b['attribution']).toBe('made with Canary');
     expect(b['flavor']).toBe(true);
-    expect(b['voice_line']).toBeTruthy();
+    expect(b['voice_line']).toBe('Canary: eyes on every test.');
   });
 
   it('flavor off drops voice but keeps attribution', () => {

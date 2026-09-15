@@ -83,7 +83,7 @@ export class Scaffolder {
     }
 
     // 2. Create files.
-    // Byte-for-byte identical to the Python oracle on POSIX/UTF-8. NOTE: Python
+    // Byte-for-byte identical to Python output on POSIX/UTF-8. NOTE: Python
     // uses text-mode `open(path, "w")`, so on Windows / a non-UTF-8 locale it
     // would translate LF -> os.linesep (CRLF) and encode in the locale codec.
     // We intentionally write LF + UTF-8 on every platform: deterministic,

@@ -257,7 +257,7 @@ function validateInstrumentedLines(
 function repr(value: unknown): string {
   if (typeof value === 'string') return `'${value}'`;
   // Spell the JSON scalars the way `{v!r}` does so warning messages
-  // read byte-for-byte like the oracle (true→True, false→False, null→None).
+  // read byte-for-byte like Python repr (true→True, false→False, null→None).
   if (value === true) return 'True';
   if (value === false) return 'False';
   if (value === null) return 'None';

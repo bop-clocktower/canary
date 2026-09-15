@@ -12,7 +12,7 @@
  * the pieces a call site has on hand, so every uncertain-detection path reads
  * the same way instead of each inventing its own ad hoc string. It is pure
  * string-building — it never prints, raises, or decides control flow; the
- * caller owns those. Message text is byte-for-byte identical to the oracle.
+ * caller owns those. Message text is byte-for-byte identical to the contract.
  */
 
 /** Optional pieces a call site can supply to describe an uncertain detection. */

@@ -60,7 +60,7 @@ function coberturaBody(text: string): string | null {
   // lower-fidelity tier. Without
   // this, a lenient scanner would happily extract coverage from a broken
   // document, flipping both the fidelity tier AND the covered/uncovered verdict
-  // relative to the oracle.
+  // relative to the reference reader.
   if (!isWellFormedXml(text)) return null;
 
   // Pin to the canonical (namespace-free) Cobertura root; anything else is a

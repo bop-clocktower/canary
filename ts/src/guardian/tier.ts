@@ -19,7 +19,7 @@
 // The degradation notice text carries a warning sign (U+26A0) and an em-dash
 // (U+2014) as load-bearing OUTPUT DATA -- it is rendered verbatim into the PR
 // comment footer and the Actions `::warning::` channel, and asserted byte-exact
-// against the Python oracle. Written as escapes to honor the ASCII-source rule.
+// against the expected footer. Written as escapes to honor the ASCII-source rule.
 const WARNING_SIGN = '\u{26A0}';
 const EM_DASH = '\u{2014}';
 
