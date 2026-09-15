@@ -1,0 +1,19 @@
+{
+  "issues": [880],
+  "fleet": "roadmap-fleet",
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "plan": "docs/changes/880-type-label-backfill/plans/plan.md",
+  "upstreamIssue": "https://github.com/Intense-Visions/harness-engineering/issues/2146",
+  "upstreamIssueDisposition": "cited (pre-existing; not filed)",
+  "tests": ["ts/test/backfill-type-labels.test.ts"],
+  "assumptions": [
+    "Inference is a keyword heuristic over title then body. Rule order is bug > documentation > chore, and anything unmatched defaults to enhancement, which matches roadmap-fleet's documented safe default. Every item carries a reason so the dry run can be reviewed.",
+    "Roadmap rows carry no type field, so the roadmap row is not an inference source. Title and body only.",
+    "An issue is already typed if it has any label from the existing vocabulary: bug, enhancement, documentation, chore, question, spike or decision. No new labels are minted.",
+    "Only open harness-managed issues are in scope. --apply only adds labels and never removes one.",
+    "Exit 3 means zero denominator (no harness-managed issue examined), following the repo gate convention (#508).",
+    "The live dry run on 2026-09-15 examined 26 open harness-managed issues and found 0 untyped. The backlog has since been hand-typed (all carry enhancement), so the script is a standing tool for new roadmap-synced issues until upstream #2146 lands. --apply was not run."
+  ],
+  "closingKeyword": "Fixes"
+}
