@@ -1,0 +1,12 @@
+{
+  "issues": [953],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/adr-index.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Index titles drop the leading 'ADR NNNN — ' that 0016/0017 frontmatter titles carry, matching the existing 0001-0015 rows (which also drop it); the title text is otherwise verbatim.",
+    "The drift check compares number and status only, per the settled scope; titles are not asserted, so wording edits to a row do not fail the build.",
+    "The check lives in ts/test (run by the existing vitest gate) rather than a new workflow or scripts/lib module, so no entropy.entryPoints change is needed."
+  ]
+}
