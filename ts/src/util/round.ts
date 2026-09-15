@@ -36,10 +36,11 @@ export function roundHalfEvenInt(x: number): number {
 }
 
 /**
- * Render a float the way Python's `str(float)` would: an integer-valued float
- * keeps a trailing ".0" (Python `str(10.0)` → "10.0", whereas JS `${10.0}`
- * yields "10"). Used for threshold parameters interpolated raw into headers.
+ * Render a number so it always shows a decimal point: an integer value gets a
+ * trailing ".0" (`10` → "10.0", whereas JS `${10}` yields "10"); any other
+ * value renders unchanged. Used for threshold parameters interpolated raw
+ * into headers.
  */
-export function pyFloat(x: number): string {
+export function formatWithDecimalPoint(x: number): string {
   return Number.isInteger(x) ? `${x}.0` : `${x}`;
 }

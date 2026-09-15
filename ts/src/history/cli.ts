@@ -52,7 +52,7 @@ import {
   type ReportShape,
 } from './run-recorder.js';
 import { def } from '../util/coalesce.js';
-import { pyFloat } from '../util/round.js';
+import { formatWithDecimalPoint } from '../util/round.js';
 
 const EM_DASH = '\u{2014}';
 const GEQ = '\u{2265}';
@@ -530,7 +530,7 @@ async function flakyCmd(opts: FlakyOptions, deps: HistoryDeps): Promise<void> {
   if (results.length === 0) {
     deps.out(
       pc.green(
-        `No tests above ${pyFloat(opts.minRate)}% flake rate in the last ${opts.window} runs.`,
+        `No tests above ${formatWithDecimalPoint(opts.minRate)}% flake rate in the last ${opts.window} runs.`,
       ),
     );
     return;
@@ -540,13 +540,13 @@ async function flakyCmd(opts: FlakyOptions, deps: HistoryDeps): Promise<void> {
     r.test_name,
     r.suite ?? '',
     r.area || MDASH_CELL,
-    // pyFloat so a whole-number rate renders `10.0%` like Python str(float),
+    // formatWithDecimalPoint so a whole-number rate renders `10.0%` like Python str(float),
     // not `10%` (JS number has no int/float distinction).
-    `${pyFloat(r.flake_rate_pct)}%`,
+    `${formatWithDecimalPoint(r.flake_rate_pct)}%`,
     `${r.flake_count}/${r.total_runs}`,
   ]);
   const lines = renderTable(
-    `Flaky Tests (window: ${opts.window} runs, threshold: ${GEQ} ${pyFloat(opts.minRate)}%)`,
+    `Flaky Tests (window: ${opts.window} runs, threshold: ${GEQ} ${formatWithDecimalPoint(opts.minRate)}%)`,
     ['Test', 'Suite', 'Area', 'Flake %', 'Flake/Total'],
     rows,
     [false, false, false, true, true],
@@ -656,7 +656,7 @@ async function summaryCmd(
   const avg = result.avg_pass_rate ?? 0.0;
   const colorize = avg >= 90 ? pc.green : avg >= 70 ? pc.yellow : pc.red;
   deps.out(
-    `Suite ${pc.bold(suite)} ${EM_DASH} last ${total} runs ${EM_DASH} avg pass rate: ${colorize(`${pyFloat(avg)}%`)}`,
+    `Suite ${pc.bold(suite)} ${EM_DASH} last ${total} runs ${EM_DASH} avg pass rate: ${colorize(`${formatWithDecimalPoint(avg)}%`)}`,
   );
 }
 

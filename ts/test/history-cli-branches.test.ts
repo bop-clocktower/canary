@@ -141,7 +141,7 @@ describe('history flaky (populated store)', () => {
       flaky: [flakyRow()],
     });
     expect(res.code).toBe(0);
-    // pyFloat: a whole-number rate must render `30.0%`, not `30%`.
+    // formatWithDecimalPoint: a whole-number rate must render `30.0%`, not `30%`.
     expect(res.stdout).toContain('30.0%');
     expect(res.stdout).toContain('checkout renders');
     expect(res.stdout).toContain('3/10');
