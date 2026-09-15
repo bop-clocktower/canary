@@ -1,0 +1,25 @@
+{
+  "issues": [956],
+  "route": "feature",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "execution",
+    "verification",
+    "review"
+  ],
+  "specArtifact": "docs/changes/playwright-history-record/proposal.md",
+  "planArtifact": "docs/changes/playwright-history-record/plans/2026-09-15-playwright-history-record-plan.md",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Playwright JSON is detected by a top-level suites array; a document carrying both testResults and suites is read as vitest.",
+    "Playwright statuses map as canary-test-reporter's parse.mjs does; timedOut and interrupted are failed unless a later retry passed (then flaky).",
+    "Test name is the suite path joined with ' > ' plus a [project] suffix when projectName is set; empty suite titles are dropped from the path.",
+    "Per-test duration_ms is the sum of all attempts; run duration_ms is stats.duration when numeric, else the sum of tests.",
+    "Vitest already persisted per-test duration_ms; only readers changed for vitest.",
+    "suite-runtime uses the ci-ready SKILL's no-MCP absolute thresholds: nearest-rank p95 over the last 30 runs with a positive duration; pass < 5 min, warn 5-10 min inclusive, fail > 10 min.",
+    "No recorded duration keeps suite-runtime at skip (abstention), not fail; legacy rows without duration_ms still load.",
+    "JUnit XML stays out of scope as a follow-up."
+  ]
+}

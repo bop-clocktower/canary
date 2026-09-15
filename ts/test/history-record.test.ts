@@ -138,6 +138,109 @@ describe('canary history record', () => {
     }
   });
 
+  describe('Playwright JSON (#956)', () => {
+    /** A synthetic Playwright `json` reporter file: one flake, one failure. */
+    function playwrightReport(): unknown {
+      const test = (status: string, attempts: string[]): unknown => ({
+        status,
+        projectName: 'chromium',
+        results: attempts.map((s) => ({ status: s, duration: 100 })),
+      });
+      return {
+        stats: { startTime: '2026-09-01T12:00:00.000Z', duration: 900 },
+        suites: [
+          {
+            title: 'checkout.spec.ts',
+            file: 'checkout.spec.ts',
+            suites: [
+              {
+                title: 'cart',
+                specs: [
+                  { title: 'adds', tests: [test('expected', ['passed'])] },
+                  {
+                    title: 'totals',
+                    tests: [test('flaky', ['failed', 'passed'])],
+                  },
+                  { title: 'coupon', tests: [test('unexpected', ['failed'])] },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+    }
+
+    it('records a run the read side can then query, flakes included', async () => {
+      const tmp = mkTmp();
+      try {
+        const src = writeJson(join(tmp, 'pw.json'), playwrightReport());
+        const res = await invokeCanary(
+          ['history', 'record', src, '--suite', 'web'],
+          { cwd: tmp, env: CI_ENV },
+        );
+        expect(res.code).toBe(0);
+        const rec = readStore(tmp)[0]!;
+        expect(rec).toMatchObject({
+          suite: 'web',
+          total: 3,
+          passed: 1,
+          failed: 1,
+          flaky: 1,
+          duration_ms: 900,
+        });
+        const tests = rec['tests'] as Record<string, unknown>[];
+        expect(tests[1]).toMatchObject({
+          test_name: 'checkout.spec.ts > cart > totals [chromium]',
+          status: 'flaky',
+          duration_ms: 200,
+        });
+
+        const summary = await invokeCanary(
+          ['history', 'summary', 'web', '--json'],
+          { cwd: tmp, env: CI_ENV },
+        );
+        const parsed = JSON.parse(summary.stdout) as { total_runs: number };
+        expect(parsed.total_runs).toBe(1);
+      } finally {
+        rmTmp(tmp);
+      }
+    });
+
+    it('does not print the vitest flaky=0 note for a Playwright report', async () => {
+      const tmp = mkTmp();
+      try {
+        const src = writeJson(join(tmp, 'pw.json'), playwrightReport());
+        const res = await invokeCanary(
+          ['history', 'record', src, '--suite', 'web'],
+          { cwd: tmp, env: CI_ENV },
+        );
+        expect(res.code).toBe(0);
+        expect(res.stdout).not.toContain('retried');
+      } finally {
+        rmTmp(tmp);
+      }
+    });
+
+    it('abstains with exit 3 on a Playwright report with zero tests', async () => {
+      const tmp = mkTmp();
+      try {
+        const src = writeJson(join(tmp, 'pw.json'), {
+          stats: { duration: 1 },
+          suites: [],
+        });
+        const res = await invokeCanary(
+          ['history', 'record', src, '--suite', 'web'],
+          { cwd: tmp, env: CI_ENV },
+        );
+        expect(res.code).toBe(EXIT_ABSTAINED);
+        expect(res.stdout).toContain('--reporter=json');
+        expect(() => readStore(tmp)).toThrow();
+      } finally {
+        rmTmp(tmp);
+      }
+    });
+  });
+
   it('writes full per-test rows, so timeline resolves the recorded test', async () => {
     const tmp = mkTmp();
     try {
@@ -287,11 +390,10 @@ describe('canary history record', () => {
   it('refuses an unrecognized report shape and names what it does support', async () => {
     const tmp = mkTmp();
     try {
-      // A Playwright JSON report: valid JSON, right domain, wrong shape. The
-      // failure mode to avoid is recording zero results from it and calling
-      // that a run.
-      const src = writeJson(join(tmp, 'playwright.json'), {
-        suites: [{ specs: [{ title: 'a', ok: true }] }],
+      // Valid JSON, right domain, neither supported shape. The failure mode to
+      // avoid is recording zero results from it and calling that a run.
+      const src = writeJson(join(tmp, 'other.json'), {
+        specs: [{ title: 'a', ok: true }],
       });
       const res = await invokeCanary(
         ['history', 'record', src, '--suite', 'e2e'],
@@ -300,6 +402,9 @@ describe('canary history record', () => {
       expect(res.code).toBe(1);
       expect(res.stdout).toContain('vitest');
       expect(res.stdout).toContain('testResults');
+      expect(res.stdout).toContain('Playwright');
+      expect(res.stdout).toContain('suites');
+      expect(res.stdout).toContain('JUnit XML');
       expect(() => readStore(tmp)).toThrow();
     } finally {
       rmTmp(tmp);

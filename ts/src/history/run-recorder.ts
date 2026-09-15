@@ -10,18 +10,23 @@
  *
  * Two deliberate limits, both of them data-honesty calls rather than laziness:
  *
- *   - **vitest `--reporter=json` only.** The shape is detected rather than
+ *   - **vitest `--reporter=json` and Playwright `json` only** (Playwright since
+ *     #956, in `playwright-report.ts`). The shape is detected rather than
  *     declared by flag, and an unrecognized shape is refused loudly. The
  *     alternative -- reading an unknown document and finding zero tests in it --
  *     is indistinguishable from a suite that genuinely ran nothing, which is
- *     exactly the denominator collapse #508 exists to make visible. Playwright
- *     JSON and JUnit XML are parsed elsewhere in the repo (canary-test-reporter,
- *     canary-savant) but by self-contained skill CLIs the engine cannot import.
- *   - **`flaky` is always 0.** Canary's status vocabulary is
+ *     exactly the denominator collapse #508 exists to make visible. JUnit XML is
+ *     parsed elsewhere in the repo (canary-savant) but by a self-contained skill
+ *     CLI the engine cannot import; it is not supported here yet.
+ *   - **vitest `flaky` is always 0.** Canary's status vocabulary is
  *     passed/failed/flaky/skipped; vitest has no flaky status, so a test that
  *     was retried and then passed arrives as `passed` and is invisible here.
  *     Recorded as zero and SAID OUT LOUD by the command, because a reader who
- *     takes `flaky: 0` for a clean fleet has been misled by the tool.
+ *     takes `flaky: 0` for a clean fleet has been misled by the tool. Playwright
+ *     does report flakes, and those are recorded as `flaky`.
+ *
+ * Both formats write per-test and per-run `duration_ms`, which is what
+ * `canary ci-ready` scores `suite-runtime` from.
  */
 
 import {
@@ -30,12 +35,17 @@ import {
   type RunInput,
   type TestResultInput,
 } from './schema.js';
+import {
+  buildRunFromPlaywrightReport,
+  countPlaywrightResults,
+  isPlaywrightReport,
+} from './playwright-report.js';
 
 /** Canary's per-test status vocabulary (the store's read side keys on these). */
 const RECORD_STATUSES = ['passed', 'failed', 'flaky', 'skipped'] as const;
 
 /** Report formats `record` can convert. `unknown` is refused, never guessed. */
-export type ReportShape = 'vitest' | 'unknown';
+export type ReportShape = 'vitest' | 'playwright' | 'unknown';
 
 /** The run-level facts the report itself cannot carry (repo, branch, commit). */
 export interface RecordContext {
@@ -89,8 +99,26 @@ interface VitestReport {
 /** Detect by shape, not by flag -- callers should not have to know the format. */
 export function detectReportShape(parsed: unknown): ReportShape {
   if (parsed === null || typeof parsed !== 'object') return 'unknown';
-  const testResults = (parsed as VitestReport).testResults;
-  return Array.isArray(testResults) ? 'vitest' : 'unknown';
+  if (Array.isArray((parsed as VitestReport).testResults)) return 'vitest';
+  return isPlaywrightReport(parsed) ? 'playwright' : 'unknown';
+}
+
+/**
+ * Convert a report of a known shape, then validate it before any append.
+ * Callers refuse `unknown` first; passing it here is a programming error.
+ */
+export function buildRunFromReport(
+  shape: ReportShape,
+  parsed: unknown,
+  ctx: RecordContext,
+): BuiltRun {
+  if (shape === 'vitest') return buildRunFromVitestReport(parsed, ctx);
+  if (shape !== 'playwright') {
+    throw new Error(`cannot build a run from a report of shape '${shape}'`);
+  }
+  const built = buildRunFromPlaywrightReport(parsed, ctx);
+  validateBuiltRun(built);
+  return built;
 }
 
 /**
@@ -102,6 +130,9 @@ export function detectReportShape(parsed: unknown): ReportShape {
  * record either way, and the abstention is the finding worth reporting.
  */
 export function countReportResults(parsed: unknown): number {
+  if (detectReportShape(parsed) === 'playwright') {
+    return countPlaywrightResults(parsed);
+  }
   const report = parsed as VitestReport;
   let n = 0;
   for (const file of report.testResults ?? []) {

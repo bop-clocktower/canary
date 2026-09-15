@@ -1,17 +1,23 @@
 /**
  * Deterministic scoring for the canary-ci-ready skill's five checks.
  *
- * The skill describes five pass/warn/fail checks. Only one has a real producer
- * in canary today: flakiness, scored from the run-history store. The other four
- * name inputs nothing writes: there is no `canary coverage` command to produce
- * `.canary/test-inventory.json`, and the history store records no durations. A
- * check without its input reports `skip` and names what is missing. It never
- * passes, and the overall verdict never treats a skip as a pass.
+ * The skill describes five pass/warn/fail checks. Two have a real producer in
+ * canary today, both scored from the run-history store: flakiness, and suite
+ * runtime (p95 of recorded run `duration_ms`, which `canary history record`
+ * writes since #956). The other three need `.canary/test-inventory.json`, and
+ * there is no `canary coverage` command to produce it. A check without its
+ * input -- including suite runtime over legacy runs that carry no duration --
+ * reports `skip` and names what is missing. It never passes, and the overall
+ * verdict never treats a skip as a pass.
+ *
+ * Suite runtime is scored against the SKILL's absolute-threshold fallback
+ * (5 / 10 minutes), not a perf baseline; the reason says so.
  *
  * Pure: callers read files and pass the results in, which keeps every rule here
  * testable without a filesystem.
  */
 interface ScoredRun {
+  duration_ms?: number | null;
   tests?: { test_name: string; status: string }[];
 }
 
@@ -127,12 +133,51 @@ function scoreCriticalPaths(
   };
 }
 
-function scoreRuntime(): CiCheck {
+/**
+ * 30 runs, but counted among runs that CARRY a duration, so the window can
+ * reach further back than flakiness's. Thresholds from the SKILL's fallback.
+ */
+const RUNTIME_WINDOW_RUNS = 30;
+const RUNTIME_WARN_MS = 5 * 60_000;
+const RUNTIME_FAIL_MS = 10 * 60_000;
+
+/** Nearest-rank percentile of a non-empty list. */
+function nearestRank(values: number[], pct: number): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = Math.ceil((pct / 100) * sorted.length);
+  return sorted[Math.max(rank, 1) - 1]!;
+}
+
+function humanDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+function runtimeVerdict(p95: number): CheckVerdict {
+  if (p95 > RUNTIME_FAIL_MS) return 'fail';
+  return p95 >= RUNTIME_WARN_MS ? 'warn' : 'pass';
+}
+
+function scoreRuntime(runs: ScoredRun[] | null, historyPath: string): CiCheck {
+  const name = 'suite-runtime';
+  const durations = (runs ?? [])
+    .map((r) => r.duration_ms)
+    .filter((d): d is number => typeof d === 'number' && d > 0 && isFinite(d))
+    .slice(-RUNTIME_WINDOW_RUNS);
+  if (durations.length === 0) {
+    return {
+      name,
+      verdict: 'skip',
+      reason: `no run in ${historyPath} carries a duration_ms, so a p95 runtime cannot be computed`,
+    };
+  }
+  const p95 = nearestRank(durations, 95);
   return {
-    name: 'suite-runtime',
-    verdict: 'skip',
-    reason:
-      'the run-history store records no durations, so a p95 runtime cannot be computed',
+    name,
+    verdict: runtimeVerdict(p95),
+    reason: `p95 ${humanDuration(p95)} across ${durations.length} run(s) vs. absolute threshold (warn at 5m, fail over 10m)`,
   };
 }
 
@@ -155,7 +200,7 @@ export function scoreCiReady(inputs: CiReadyInputs): CiReadyReport {
     scoreFlakiness(inputs.runs, inputs.historyPath),
     scoreInventoryCheck('assertion-quality', inputs.hasInventory),
     scoreCriticalPaths(inputs.hasCriticalAreas, inputs.hasInventory),
-    scoreRuntime(),
+    scoreRuntime(inputs.runs, inputs.historyPath),
   ];
   return {
     verdict: readinessVerdict(checks),

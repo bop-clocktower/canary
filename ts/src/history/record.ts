@@ -53,6 +53,8 @@ export interface TestResultRecord {
   failure_category?: string | null;
   error_text?: string | null;
   retry_count?: number;
+  /** Absent on rows written before `history record` (#538/#956) wrote it. */
+  duration_ms?: number | null;
 }
 
 export interface RunRecord {
@@ -66,6 +68,11 @@ export interface RunRecord {
   failed?: number;
   flaky?: number;
   skipped?: number;
+  /**
+   * Wall-clock run duration. Optional: legacy rows carry none, and
+   * `canary ci-ready` skips suite runtime rather than scoring them as zero.
+   */
+  duration_ms?: number | null;
   /**
    * Stamped by every writer since #701. Absent only on legacy rows, which
    * resolve to `LEGACY_UNVERSIONED_SCHEMA_VERSION`; any version this build does

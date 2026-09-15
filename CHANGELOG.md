@@ -14,6 +14,15 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- `canary history record` accepts a Playwright `json` reporter file, detected by
+  shape. Playwright `flaky` (and failed-then-passed retries) are recorded as
+  `flaky`, and each test and run carries `duration_ms`. JUnit XML is still
+  unsupported (#963). `canary ci-ready` now scores `suite-runtime` as the p95 of
+  recorded run durations against absolute 5/10-minute thresholds, and still
+  skips when no run carries a duration (#956).
+
 ### Fixed
 
 - **`canary skills run` resolves relative paths against the caller's directory**
