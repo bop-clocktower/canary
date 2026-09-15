@@ -33,12 +33,12 @@ index c69e0bb5..a1420abc 100644
 
    it('reads the workspaces.packages object form', () =>
      withTmp((root) => {
--      harnessProject(root, { version: 1, name: 'capwell' });
+-      harnessProject(root, { version: 1, name: 'legacy-name' });
 +      harnessProject(root, { version: 1, name: 'acme' });
        write(
          join(root, 'package.json'),
          JSON.stringify({
--          name: 'capwell',
+-          name: 'legacy-name',
 +          name: 'acme',
            workspaces: { packages: ['apps/*'] },
          }),
