@@ -1,666 +1,328 @@
 /**
- * Tests for finding adjudication collection (#490): reaction tallying,
- * comment-body attribution, the persisted record, precision aggregation with
- * the zero-denominator discipline, and the CLI surfaces (`pr-check` inline
- * collection, `collect-adjudications`, `precision`, `harden-gate` readiness).
+ * Tests for adjudication without reactions (ADR 0025, #938).
  *
- * Network-free: every collection path runs against {@link FakeReactionsClient}
- * fixture payloads.
+ * Precision is derived on demand from what GitHub already holds: the sticky
+ * comment's edit history (first vs last verdict), the merged diff's
+ * `canary:allow-untested` suppressions, and the merged file list. These tests
+ * pin each signal, the 30-finding floor, and the disclosed denominators (a PR
+ * with no retrievable history or an unparseable sticky is COUNTED, never
+ * dropped silently).
+ *
+ * Network-free: the CLI and evidence collection run against
+ * {@link FakeAdjudicationSource}.
  */
 
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from 'node:fs';
-import { join } from 'node:path';
-
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
-  ADJUDICATION_SOURCE,
-  AdjudicationRecord,
-  FakeReactionsClient,
-  Reaction,
-  activeFindingPaths,
-  adjudicationFilename,
-  buildAdjudicationRecord,
-  collectAdjudications,
-  loadAdjudicationRecords,
-  renderPrecision,
-  summarizePrecision,
-  tallyAdjudications,
+  PRECISION_FLOOR,
+  PrEvidence,
+  classifyFinding,
+  deriveReport,
+  parseStickyFindings,
+  renderReport,
+  suppressionKind,
+  suppressionsByPath,
 } from '../src/guardian/adjudication.js';
+import {
+  FakeAdjudicationSource,
+  collectEvidence,
+} from '../src/guardian/adjudication-github.js';
 import { GuardianFinding, renderFindings } from '../src/guardian/pr-check.js';
-import { FakeGitHubClient, STICKY_MARKER } from '../src/guardian/pr-comment.js';
-import { invokeGuardian, mkTmp, rmTmp } from './guardian-cli-testkit.js';
-
-// #761: a `pr-check` run that resolved NO coverage and produced only heuristic
-// findings ABSTAINS -- exit 3, not a pass. Every run in this file is
-// coverage-blind by construction (no `--coverage`), so this is their exit code;
-// it is named rather than repeated so the contract is greppable.
-const ABSTAINED = 3;
-
-let tmp: string;
-beforeEach(() => {
-  tmp = mkTmp();
-});
-afterEach(() => rmTmp(tmp));
+import { Fidelity } from '../src/guardian/diff-coverage/types.js';
+import { invokeGuardian } from './guardian-cli-testkit.js';
 
 // --- fixtures -------------------------------------------------------------
 
-const BOT = { login: 'github-actions[bot]', type: 'Bot' };
-const up = (user: string): Reaction => ({ user, content: '+1' });
-const down = (user: string): Reaction => ({ user, content: '-1' });
-
 function finding(
   path: string,
-  init: Partial<GuardianFinding> = {},
+  fidelity = Fidelity.CoverageVerified,
 ): GuardianFinding {
   return new GuardianFinding({
     path,
     unit: path,
-    evidence: 'no test references this file',
-    ...init,
+    evidence: 'lines 1-9: 2 of 9 coverable line(s) uncovered',
+    fidelity,
   });
 }
 
-/** A rendered sticky-comment body carrying the given active findings. */
-function stickyBody(findings: GuardianFinding[]): string {
+/** A sticky body rendered by the real producer, so parser and renderer agree. */
+function sticky(...findings: GuardianFinding[]): string {
   return renderFindings(findings, 'comment', 0, null);
 }
 
-/** Analyses dir under an existing `.harness/` home (channel available). */
-function mkAnalysesDir(): string {
-  const dir = join(tmp, '.harness', 'analyses');
-  mkdirSync(join(tmp, '.harness'), { recursive: true });
-  return dir;
+const addSuppression = (reason: string): string =>
+  `@@ -1,1 +1,2 @@\n const x = 1;\n+export type T = 1; // canary:allow-untested ${reason}`;
+
+function pr(
+  number: number,
+  revisions: string[] | null,
+  files: PrEvidence['files'] = [{ filename: 'src/a.ts', patch: '' }],
+): PrEvidence {
+  return { number, revisions, files };
 }
 
-// --- tallyAdjudications -----------------------------------------------------
+// --- fp: parsing ------------------------------------------------------------
 
-describe('tallyAdjudications', () => {
-  it('counts thumbs-up as TP and thumbs-down as FP', () => {
-    const tally = tallyAdjudications([up('alice'), up('bob'), down('carol')]);
-    expect(tally).toEqual({ tp: 2, fp: 1, ambiguous: 0 });
+describe('suppressionKind', () => {
+  it('a plain reason is intentional', () => {
+    expect(suppressionKind('type-only barrel')).toBe('intentional');
   });
 
-  it('is one vote per user (duplicate reactions collapse)', () => {
-    const tally = tallyAdjudications([up('alice'), up('alice'), up('alice')]);
-    expect(tally.tp).toBe(1);
+  it('an fp: reason is a false positive', () => {
+    expect(suppressionKind('fp: type-only barrel')).toBe('false-positive');
   });
 
-  it('a user reacting both ways is ambiguous, excluded from TP and FP', () => {
-    const tally = tallyAdjudications([up('alice'), down('alice'), up('bob')]);
-    expect(tally).toEqual({ tp: 1, fp: 0, ambiguous: 1 });
+  it('is case- and whitespace-insensitive', () => {
+    expect(suppressionKind('  FP :  wrong file')).toBe('false-positive');
+    expect(suppressionKind('Fp:x')).toBe('false-positive');
   });
 
-  it('bot reactions never count', () => {
-    const tally = tallyAdjudications([
-      up('github-actions[bot]'),
-      down('some-other[bot]'),
-      up('human'),
-    ]);
-    expect(tally).toEqual({ tp: 1, fp: 0, ambiguous: 0 });
+  it('a bare fp: with no reason still records a false positive', () => {
+    expect(suppressionKind('fp:')).toBe('false-positive');
   });
 
-  it('non-verdict reactions (heart, laugh, ...) are ignored', () => {
-    const tally = tallyAdjudications([
-      { user: 'alice', content: 'heart' },
-      { user: 'bob', content: 'laugh' },
-      { user: 'carol', content: 'confused' },
-    ]);
-    expect(tally).toEqual({ tp: 0, fp: 0, ambiguous: 0 });
-  });
-
-  it('empty reactions tally to zero', () => {
-    expect(tallyAdjudications([])).toEqual({ tp: 0, fp: 0, ambiguous: 0 });
+  it('fp inside a word is not the prefix', () => {
+    expect(suppressionKind('fpga shim, no runtime')).toBe('intentional');
   });
 });
 
-// --- activeFindingPaths (parses the real rendered comment) -------------------
-
-describe('activeFindingPaths', () => {
-  it('extracts every active finding path from a rendered comment', () => {
-    const body = stickyBody([finding('pkg/a.py'), finding('pkg/b.py')]);
-    expect(activeFindingPaths(body)).toEqual(['pkg/a.py', 'pkg/b.py']);
-  });
-
-  it('a path-with-unit label yields the path, not the unit', () => {
-    const body = stickyBody([finding('pkg/a.py', { unit: 'frobnicate' })]);
-    expect(activeFindingPaths(body)).toEqual(['pkg/a.py']);
-  });
-
-  it('a no-gaps body has no attributable findings', () => {
-    expect(activeFindingPaths(stickyBody([]))).toEqual([]);
-  });
-
-  it('suppressed findings are not attributable (not table rows)', () => {
-    const body = stickyBody([
-      finding('pkg/a.py'),
-      finding('pkg/b.py', { suppressed: true, suppression_reason: 'ok' }),
+describe('suppressionsByPath', () => {
+  it('reads suppressions on ADDED lines of the merged diff only', () => {
+    const map = suppressionsByPath([
+      { filename: 'src/a.ts', patch: addSuppression('fp: barrel') },
+      { filename: 'src/b.ts', patch: addSuppression('generated') },
+      {
+        filename: 'src/c.ts',
+        patch: '@@ -1 +1 @@\n-// canary:allow-untested fp: gone\n x',
+      },
+      { filename: 'src/d.ts' },
     ]);
-    expect(activeFindingPaths(body)).toEqual(['pkg/a.py']);
+    expect(map.get('src/a.ts')).toBe('false-positive');
+    expect(map.get('src/b.ts')).toBe('intentional');
+    expect(map.has('src/c.ts')).toBe(false);
+    expect(map.has('src/d.ts')).toBe(false);
   });
 
-  it('never mistakes the table header or separator for a finding', () => {
-    const body = stickyBody([finding('pkg/a.py')]);
-    const paths = activeFindingPaths(body);
-    expect(paths).not.toContain(' File ');
-    expect(paths).not.toContain(' --- ');
+  it('fp: wins when a file carries both kinds', () => {
+    const patch = `${addSuppression('generated')}\n+y; # canary:allow-untested fp: nope`;
+    expect(suppressionsByPath([{ filename: 'a.py', patch }]).get('a.py')).toBe(
+      'false-positive',
+    );
   });
 });
 
-// --- buildAdjudicationRecord: attribution granularity -------------------------
+// --- sticky parsing -----------------------------------------------------------
 
-describe('buildAdjudicationRecord attribution', () => {
+describe('parseStickyFindings', () => {
+  it('reads path and fidelity from every finding row', () => {
+    const body = sticky(
+      finding('src/a.ts'),
+      finding('src/b.ts', Fidelity.Heuristic),
+    );
+    expect(parseStickyFindings(body)).toEqual([
+      { path: 'src/a.ts', fidelity: 'coverage-verified' },
+      { path: 'src/b.ts', fidelity: 'heuristic' },
+    ]);
+  });
+
+  it('a no-gaps body parses to zero findings, not null', () => {
+    expect(parseStickyFindings(sticky())).toEqual([]);
+  });
+
+  it('a body that is not a guardian sticky is unparseable (null)', () => {
+    expect(parseStickyFindings('thanks, looks good')).toBeNull();
+  });
+
+  it('a findings table whose rows no longer parse is null, never zero', () => {
+    const body =
+      '<!-- canary-pr-guardian -->\n## Canary PR Guardian - 2 files need test coverage\n\n' +
+      '| Sev | File | What | Confidence |\n| --- | --- | --- | --- |\n| high | src/a.ts | x |';
+    expect(parseStickyFindings(body)).toBeNull();
+  });
+});
+
+// --- signal classification ----------------------------------------------------
+
+describe('classifyFinding', () => {
   const base = {
-    repo: 'o/r',
-    prNumber: 7,
-    commentId: 1001,
-    tally: { tp: 1, fp: 0, ambiguous: 0 },
-    collectedAt: '2026-07-30T00:00:00+00:00',
+    last: [] as { path: string; fidelity: string }[],
+    suppressions: new Map<string, 'false-positive' | 'intentional'>(),
+    mergedPaths: new Set(['src/a.ts']),
   };
+  const f = { path: 'src/a.ts', fidelity: 'coverage-verified' };
 
-  it('exactly one active finding -> finding-level attribution', () => {
-    const record = buildAdjudicationRecord({
-      ...base,
-      commentBody: stickyBody([finding('pkg/only.py')]),
-    });
-    expect(record.granularity).toBe('finding');
-    expect(record.attributedPath).toBe('pkg/only.py');
-    expect(record.findingPaths).toEqual(['pkg/only.py']);
+  it('disappears and becomes covered -> true positive', () => {
+    expect(classifyFinding(f, base)).toBe('true-positive');
   });
 
-  it('several active findings -> run-level (cannot name which was wrong)', () => {
-    const record = buildAdjudicationRecord({
-      ...base,
-      commentBody: stickyBody([finding('pkg/a.py'), finding('pkg/b.py')]),
-    });
-    expect(record.granularity).toBe('run');
-    expect(record.attributedPath).toBeNull();
-    expect(record.findingPaths).toEqual(['pkg/a.py', 'pkg/b.py']);
+  it('allow-untested <reason> -> intentional', () => {
+    const suppressions = new Map([['src/a.ts', 'intentional' as const]]);
+    expect(classifyFinding(f, { ...base, suppressions })).toBe('intentional');
   });
 
-  it('a no-gaps comment -> run-level with no paths', () => {
-    const record = buildAdjudicationRecord({
-      ...base,
-      commentBody: stickyBody([]),
-    });
-    expect(record.granularity).toBe('run');
-    expect(record.attributedPath).toBeNull();
+  it('allow-untested fp: <reason> -> false positive', () => {
+    const suppressions = new Map([['src/a.ts', 'false-positive' as const]]);
+    expect(classifyFinding(f, { ...base, suppressions })).toBe(
+      'false-positive',
+    );
+  });
+
+  it('still active at merge -> unresolved, not a false positive', () => {
+    expect(classifyFinding(f, { ...base, last: [f] })).toBe('unresolved');
+  });
+
+  it('disappears because the file left the diff -> ambiguous', () => {
+    expect(classifyFinding(f, { ...base, mergedPaths: new Set() })).toBe(
+      'ambiguous',
+    );
+  });
+
+  it('disappears with no coverage evidence (heuristic tier) -> ambiguous', () => {
+    expect(classifyFinding({ ...f, fidelity: 'heuristic' }, base)).toBe(
+      'ambiguous',
+    );
   });
 });
 
-// --- collectAdjudications ------------------------------------------------------
+// --- report: floor and denominators --------------------------------------------
 
-describe('collectAdjudications', () => {
-  const BODY = stickyBody([finding('pkg/widget.py')]);
-
-  it('writes the record for a reacted-to sticky comment', async () => {
-    const analysesDir = mkAnalysesDir();
-    const client = new FakeReactionsClient({
-      comments: [
-        { id: 1, body: 'unrelated human comment' },
-        { id: 2, body: BODY, user: BOT },
-      ],
-      reactions: { 2: [up('alice'), down('bob')] },
-    });
-    const res = await collectAdjudications(client, {
-      repo: 'o/r',
-      prNumber: 7,
-      analysesDir,
-    });
-    expect(res.action).toBe('collected');
-    expect(res.path).toBe(join(analysesDir, adjudicationFilename(7)));
-    const record = JSON.parse(
-      readFileSync(res.path!, 'utf-8'),
-    ) as AdjudicationRecord;
-    expect(record.source).toBe(ADJUDICATION_SOURCE);
-    expect(record.tp).toBe(1);
-    expect(record.fp).toBe(1);
-    expect(record.commentId).toBe(2);
-    expect(record.granularity).toBe('finding');
-    expect(record.attributedPath).toBe('pkg/widget.py');
-  });
-
-  it('#931: reads reactions from the bot sticky, not a human comment carrying the marker', async () => {
-    const analysesDir = mkAnalysesDir();
-    const client = new FakeReactionsClient({
-      comments: [
-        { id: 1, body: BODY, user: { login: 'alice', type: 'User' } },
-        { id: 2, body: BODY, user: BOT },
-      ],
-      reactions: { 1: [down('carol'), down('dan')], 2: [up('alice')] },
-    });
-    const res = await collectAdjudications(client, {
-      repo: 'o/r',
-      prNumber: 7,
-      analysesDir,
-    });
-    expect(res.record?.commentId).toBe(2);
-    expect([res.record?.tp, res.record?.fp]).toEqual([1, 0]);
-  });
-
-  it('is idempotent per PR: re-collection overwrites, never duplicates', async () => {
-    const analysesDir = mkAnalysesDir();
-    const client = new FakeReactionsClient({
-      comments: [{ id: 2, body: BODY, user: BOT }],
-      reactions: { 2: [up('alice')] },
-    });
-    const args = { repo: 'o/r', prNumber: 7, analysesDir };
-    await collectAdjudications(client, args);
-    client.reactionsByComment.set(2, [up('alice'), down('bob')]);
-    await collectAdjudications(client, args);
-    const files = readdirSync(analysesDir).filter((n) => !n.startsWith('.'));
-    expect(files).toEqual([adjudicationFilename(7)]);
-    const record = JSON.parse(
-      readFileSync(join(analysesDir, files[0]!), 'utf-8'),
-    ) as AdjudicationRecord;
-    expect([record.tp, record.fp]).toEqual([1, 1]);
-  });
-
-  it('no sticky comment -> no-comment, nothing written', async () => {
-    const analysesDir = mkAnalysesDir();
-    const client = new FakeReactionsClient({
-      comments: [{ id: 1, body: 'no marker here' }],
-    });
-    const res = await collectAdjudications(client, {
-      repo: 'o/r',
-      prNumber: 7,
-      analysesDir,
-    });
-    expect(res.action).toBe('no-comment');
-    expect(existsSync(analysesDir)).toBe(false); // nothing even created
-  });
-
-  it('zero verdicts -> no-reactions, nothing written (neutral, not a vote)', async () => {
-    const analysesDir = mkAnalysesDir();
-    const client = new FakeReactionsClient({
-      comments: [{ id: 2, body: BODY, user: BOT }],
-      reactions: { 2: [{ user: 'alice', content: 'heart' }] },
-    });
-    const res = await collectAdjudications(client, {
-      repo: 'o/r',
-      prNumber: 7,
-      analysesDir,
-    });
-    expect(res.action).toBe('no-reactions');
-    expect(existsSync(analysesDir)).toBe(false); // neutral: no record at all
-  });
-
-  it('absent .harness/ channel -> unavailable with a loud notice', async () => {
-    const client = new FakeReactionsClient({
-      comments: [{ id: 2, body: BODY, user: BOT }],
-      reactions: { 2: [up('alice')] },
-    });
-    const res = await collectAdjudications(client, {
-      repo: 'o/r',
-      prNumber: 7,
-      analysesDir: join(tmp, 'no-harness-home', 'analyses'),
-    });
-    expect(res.action).toBe('unavailable');
-    expect(res.notice).toContain('.harness/ absent');
-  });
-});
-
-// --- loadAdjudicationRecords ----------------------------------------------------
-
-describe('loadAdjudicationRecords', () => {
-  it('reads only adjudication records; findings records and junk are skipped', () => {
-    const analysesDir = mkAnalysesDir();
-    mkdirSync(analysesDir, { recursive: true });
-    const good: Partial<AdjudicationRecord> = {
-      source: ADJUDICATION_SOURCE,
-      tp: 2,
-      fp: 1,
-      ambiguous: 0,
-    };
-    writeFileSync(
-      join(analysesDir, adjudicationFilename(7)),
-      JSON.stringify(good),
+describe('deriveReport', () => {
+  /** A PR whose one coverage-verified finding was fixed by a later commit. */
+  const fixed = (n: number): PrEvidence =>
+    pr(n, [sticky(finding('src/a.ts')), sticky()]);
+  const falsePositive = (n: number): PrEvidence =>
+    pr(
+      n,
+      [sticky(finding('src/a.ts')), sticky()],
+      [{ filename: 'src/a.ts', patch: addSuppression('fp: barrel') }],
     );
-    // A pr-check FINDINGS record shares the parent prefix but not this source.
-    writeFileSync(
-      join(analysesDir, 'canary-pr-guardian-pr-7.json'),
-      JSON.stringify({ source: 'canary-pr-guardian', findings: [] }),
-    );
-    writeFileSync(
-      join(analysesDir, `${ADJUDICATION_SOURCE}-pr-8.json`),
-      'not json at all {',
-    );
-    const records = loadAdjudicationRecords(analysesDir);
-    expect(records).toHaveLength(1);
-    expect(records[0]!.tp).toBe(2);
+
+  it('below the floor precision is null (unknown), never a number', () => {
+    const report = deriveReport([fixed(1), fixed(2)], 2);
+    expect(report.counts['true-positive']).toBe(2);
+    expect(report.adjudicated).toBe(2);
+    expect(report.precision).toBeNull();
+    expect(renderReport(report)).toContain(`unknown (N < ${PRECISION_FLOOR})`);
+    expect(renderReport(report)).not.toContain('100%');
   });
 
-  it('a missing dir yields no records, not a crash', () => {
-    expect(loadAdjudicationRecords(join(tmp, 'nope'))).toEqual([]);
-  });
-});
-
-// --- precision summary: the zero-denominator discipline --------------------------
-
-describe('summarizePrecision / renderPrecision', () => {
-  const record = (tp: number, fp: number): AdjudicationRecord => ({
-    schemaVersion: '1.0',
-    source: ADJUDICATION_SOURCE,
-    repo: 'o/r',
-    prNumber: 1,
-    commentId: 1,
-    granularity: 'run',
-    attributedPath: null,
-    findingPaths: [],
-    tp,
-    fp,
-    ambiguous: 0,
-    collectedAt: 'now',
+  it('at the floor precision is measured and rendered with its sample size', () => {
+    const prs = [
+      ...Array.from({ length: 27 }, (_, i) => fixed(i)),
+      ...Array.from({ length: 3 }, (_, i) => falsePositive(100 + i)),
+    ];
+    const report = deriveReport(prs, prs.length);
+    expect(report.precision).toBeCloseTo(0.9);
+    const text = renderReport(report);
+    expect(text).toContain('90%');
+    expect(text).toContain('n=30');
   });
 
-  it('zero adjudications -> precision is null, NOT 1.0', () => {
-    const summary = summarizePrecision([]);
-    expect(summary.precision).toBeNull();
-    expect(summary.adjudicated).toBe(0);
-  });
-
-  it('zero adjudications render as unknown and never imply 100%', () => {
-    const text = renderPrecision(summarizePrecision([]));
-    expect(text).toContain('unknown');
-    expect(text).toContain('no adjudications yet');
-    expect(text).not.toContain('100');
-    expect(text).not.toContain('%');
-  });
-
-  it('aggregates TP/FP across PRs and carries the sample size', () => {
-    const summary = summarizePrecision([record(4, 1), record(1, 0)]);
-    expect(summary).toMatchObject({
-      tp: 5,
-      fp: 1,
-      adjudicated: 6,
-      prCount: 2,
-    });
-    expect(summary.precision).toBeCloseTo(5 / 6);
-    const text = renderPrecision(summary);
-    expect(text).toContain('83.3%');
-    expect(text).toContain('n=6');
-    expect(text).toContain('2 PR(s)');
-    expect(text).toContain('self-selected');
-  });
-
-  it('an all-FP sample reads 0%, not unknown (measured, just bad)', () => {
-    const summary = summarizePrecision([record(0, 3)]);
-    expect(summary.precision).toBe(0);
-    expect(renderPrecision(summary)).toContain('0%');
-  });
-});
-
-// --- CLI: precision command -------------------------------------------------------
-
-describe('guardian precision (CLI)', () => {
-  it('with no records says unknown, exits 0', async () => {
-    const res = await invokeGuardian(
-      ['precision', '--analyses-dir', join(tmp, 'empty')],
-      { cwd: tmp },
-    );
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('guardian precision: unknown');
-    expect(res.stdout).toContain('no adjudications yet');
-  });
-
-  it('--json reports precision null (unknown), never 1.0, on zero records', async () => {
-    const res = await invokeGuardian(
-      ['precision', '--json', '--analyses-dir', join(tmp, 'empty')],
-      { cwd: tmp },
-    );
-    expect(res.code).toBe(0);
-    const payload = JSON.parse(res.stdout) as {
-      precision: number | null;
-      adjudicated: number;
-    };
-    expect(payload.precision).toBeNull();
-    expect(payload.adjudicated).toBe(0);
-  });
-
-  it('reports the aggregate over persisted records', async () => {
-    const analysesDir = mkAnalysesDir();
-    mkdirSync(analysesDir, { recursive: true });
-    writeFileSync(
-      join(analysesDir, adjudicationFilename(7)),
-      JSON.stringify({ source: ADJUDICATION_SOURCE, tp: 3, fp: 1 }),
-    );
-    const res = await invokeGuardian(
-      ['precision', '--analyses-dir', analysesDir],
-      { cwd: tmp },
-    );
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('75%');
-    expect(res.stdout).toContain('n=4');
-  });
-});
-
-// --- CLI: collect-adjudications ----------------------------------------------------
-
-describe('guardian collect-adjudications (CLI)', () => {
-  const BODY = stickyBody([finding('pkg/widget.py')]);
-
-  it('collects via --repo/--pr and persists the record', async () => {
-    const analysesDir = mkAnalysesDir();
-    const fake = new FakeReactionsClient({
-      comments: [{ id: 5, body: BODY, user: BOT }],
-      reactions: { 5: [up('alice')] },
-    });
-    const res = await invokeGuardian(
+  it('intentional, ambiguous and unresolved never count toward the floor', () => {
+    const report = deriveReport(
       [
-        'collect-adjudications',
-        '--repo',
-        'o/r',
-        '--pr',
-        '7',
-        '--analyses-dir',
-        analysesDir,
+        pr(1, [sticky(finding('src/a.ts')), sticky(finding('src/a.ts'))]),
+        pr(2, [sticky(finding('src/a.ts', Fidelity.Heuristic)), sticky()]),
+        pr(
+          3,
+          [sticky(finding('src/a.ts')), sticky()],
+          [{ filename: 'src/a.ts', patch: addSuppression('generated') }],
+        ),
       ],
-      { cwd: tmp, deps: { buildReactionsClient: () => fake } },
+      3,
     );
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('adjudication recorded');
-    expect(readdirSync(analysesDir)).toContain(adjudicationFilename(7));
-  });
-
-  it('resolves the PR from Actions env when flags are omitted', async () => {
-    const analysesDir = mkAnalysesDir();
-    const fake = new FakeReactionsClient({
-      comments: [{ id: 5, body: BODY, user: BOT }],
-      reactions: { 5: [down('bob')] },
+    expect(report.adjudicated).toBe(0);
+    expect(report.counts).toMatchObject({
+      unresolved: 1,
+      ambiguous: 1,
+      intentional: 1,
     });
-    const res = await invokeGuardian(
-      ['collect-adjudications', '--analyses-dir', analysesDir],
-      {
-        cwd: tmp,
-        env: { GITHUB_REPOSITORY: 'o/r', GITHUB_REF: 'refs/pull/9/merge' },
-        deps: { buildReactionsClient: () => fake },
-      },
-    );
-    expect(res.code).toBe(0);
-    expect(readdirSync(analysesDir)).toContain(adjudicationFilename(9));
   });
 
-  it('no PR context anywhere exits 2', async () => {
-    const res = await invokeGuardian(['collect-adjudications'], { cwd: tmp });
+  it('missing edit history excludes the PR and COUNTS it in the denominator', () => {
+    const report = deriveReport([fixed(1), pr(2, null)], 5);
+    expect(report.prs).toEqual({
+      scanned: 5,
+      withSticky: 2,
+      noHistory: 1,
+      unparseable: 0,
+    });
+    expect(renderReport(report)).toContain('1 excluded: no edit history');
+  });
+
+  it('an unparseable sticky excludes the PR and counts it, never as zero findings', () => {
+    const report = deriveReport(
+      [pr(1, ['<!-- canary-pr-guardian -->\ngarbage', sticky()])],
+      1,
+    );
+    expect(report.prs.unparseable).toBe(1);
+    expect(report.counts['true-positive']).toBe(0);
+    expect(renderReport(report)).toContain('1 excluded: unparseable sticky');
+  });
+});
+
+// --- evidence collection (seam) -------------------------------------------------
+
+describe('collectEvidence', () => {
+  it('skips PRs without a sticky but still counts them as scanned', async () => {
+    const source = new FakeAdjudicationSource({
+      merged: [1, 2],
+      stickies: { 1: [sticky(finding('src/a.ts')), sticky()] },
+      files: { 1: [{ filename: 'src/a.ts', patch: '' }] },
+    });
+    const { evidence, scanned } = await collectEvidence(source, '2026-09-01');
+    expect(scanned).toBe(2);
+    expect(evidence.map((e) => e.number)).toEqual([1]);
+  });
+});
+
+// --- CLI ----------------------------------------------------------------------
+
+describe('guardian precision (CLI, derived)', () => {
+  const env = { GITHUB_TOKEN: 'tok', GITHUB_REPOSITORY: 'o/r' };
+
+  it('reports unknown with the sample size below the floor', async () => {
+    const source = new FakeAdjudicationSource({
+      merged: [7],
+      stickies: { 7: [sticky(finding('src/a.ts')), sticky()] },
+      files: { 7: [{ filename: 'src/a.ts', patch: '' }] },
+    });
+    const res = await invokeGuardian(['precision'], {
+      env,
+      deps: { buildAdjudicationSource: () => source },
+    });
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('unknown (N < 30)');
+    expect(res.stdout).toContain('n=1');
+  });
+
+  it('--json carries precision null and the counts', async () => {
+    const source = new FakeAdjudicationSource({ merged: [] });
+    const res = await invokeGuardian(['precision', '--json'], {
+      env,
+      deps: { buildAdjudicationSource: () => source },
+    });
+    const json = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(json['precision']).toBeNull();
+    expect(json['adjudicated']).toBe(0);
+  });
+
+  it('without a token it exits 2 loudly instead of calling the API', async () => {
+    const res = await invokeGuardian(['precision'], {
+      env: { GITHUB_REPOSITORY: 'o/r' },
+      deps: {
+        buildAdjudicationSource: () => {
+          throw new Error('must not be built without a token');
+        },
+      },
+    });
     expect(res.code).toBe(2);
-    expect(res.stdout).toContain('no PR context');
+    expect(res.stdout).toContain('GITHUB_TOKEN');
   });
 
-  it('an unavailable channel fails LOUDLY (exit 1) on the explicit surface', async () => {
-    const fake = new FakeReactionsClient({
-      comments: [{ id: 5, body: BODY, user: BOT }],
-      reactions: { 5: [up('alice')] },
-    });
-    const res = await invokeGuardian(
-      [
-        'collect-adjudications',
-        '--repo',
-        'o/r',
-        '--pr',
-        '7',
-        '--analyses-dir',
-        join(tmp, 'no-home', 'analyses'),
-      ],
-      { cwd: tmp, deps: { buildReactionsClient: () => fake } },
-    );
-    expect(res.code).toBe(1);
-    expect(res.stdout).toContain('not persisted');
-  });
-
-  it('no reactions yet reports neutrally, writes nothing, exits 0', async () => {
-    const analysesDir = mkAnalysesDir();
-    const fake = new FakeReactionsClient({
-      comments: [{ id: 5, body: BODY, user: BOT }],
-    });
-    const res = await invokeGuardian(
-      [
-        'collect-adjudications',
-        '--repo',
-        'o/r',
-        '--pr',
-        '7',
-        '--analyses-dir',
-        analysesDir,
-      ],
-      { cwd: tmp, deps: { buildReactionsClient: () => fake } },
-    );
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('no reviewer verdicts');
-  });
-});
-
-// --- CLI: pr-check inline collection (the #490 loop) --------------------------------
-
-describe('pr-check inline adjudication collection', () => {
-  const DIFF_NEW_UNIT = `diff --git a/pkg/widget.py b/pkg/widget.py
-index 1111111..2222222 100644
---- a/pkg/widget.py
-+++ b/pkg/widget.py
-@@ -0,0 +1,3 @@
-+def widget():
-+    return 42
-+
-`;
-
-  const CI_ENV = {
-    GITHUB_REPOSITORY: 'o/r',
-    GITHUB_REF: 'refs/pull/7/merge',
-    GITHUB_TOKEN: 't',
-  };
-
-  it('harvests reactions off the previous sticky comment before reposting', async () => {
-    const analysesDir = mkAnalysesDir();
-    const previousBody = `${STICKY_MARKER}\nprevious run\n| \u{1F534} high | \`pkg/widget.py\` | untested | heuristic |`;
-    const comments = [{ id: 42, body: previousBody, user: BOT }];
-    const reactions = new FakeReactionsClient({
-      comments,
-      reactions: { 42: [up('alice'), down('bob')] },
-    });
-    const poster = new FakeGitHubClient({ comments });
-    const res = await invokeGuardian(
-      [
-        'pr-check',
-        '--diff',
-        '-',
-        '--post-comment',
-        '--analyses-dir',
-        analysesDir,
-      ],
-      {
-        input: DIFF_NEW_UNIT,
-        env: CI_ENV,
-        cwd: tmp,
-        deps: {
-          buildCommentClient: () => poster,
-          buildReactionsClient: () => reactions,
-        },
-      },
-    );
-    expect(res.code).toBe(ABSTAINED); // soft gate: collection never changes the exit
-    expect(res.stdout).toContain('adjudication recorded (1 up / 1 down)');
-    const record = JSON.parse(
-      readFileSync(join(analysesDir, adjudicationFilename(7)), 'utf-8'),
-    ) as AdjudicationRecord;
-    expect([record.tp, record.fp]).toEqual([1, 1]);
-    // The sticky comment was still upserted (single marked comment remains).
-    const marked = poster.comments.filter((c) =>
-      c.body.includes(STICKY_MARKER),
-    );
-    expect(marked).toHaveLength(1);
-  });
-
-  it('a collection failure warns and never turns the gate red', async () => {
-    const res = await invokeGuardian(
-      ['pr-check', '--diff', '-', '--post-comment'],
-      {
-        input: DIFF_NEW_UNIT,
-        env: CI_ENV,
-        cwd: tmp,
-        deps: {
-          buildCommentClient: () => new FakeGitHubClient(),
-          buildReactionsClient: () => {
-            throw new Error('boom');
-          },
-        },
-      },
-    );
-    expect(res.code).toBe(ABSTAINED);
-    expect(res.stdout).toContain('adjudication collection failed');
-    expect(res.stdout).toContain('gate unaffected');
-  });
-
-  it('without a token it skips LOUDLY instead of calling the API', async () => {
-    const res = await invokeGuardian(
-      ['pr-check', '--diff', '-', '--post-comment'],
-      {
-        input: DIFF_NEW_UNIT,
-        env: { GITHUB_REPOSITORY: 'o/r', GITHUB_REF: 'refs/pull/7/merge' },
-        cwd: tmp,
-        deps: {
-          buildCommentClient: () => new FakeGitHubClient(),
-          buildReactionsClient: () => {
-            throw new Error('must not be constructed without a token');
-          },
-        },
-      },
-    );
-    expect(res.code).toBe(ABSTAINED);
-    expect(res.stdout).toContain('adjudications not collected');
-  });
-});
-
-// --- CLI: harden-gate consults the evidence ------------------------------------------
-
-describe('harden-gate precision readiness (#490)', () => {
-  it('dry-run reports unknown precision when nothing is collected', async () => {
-    const res = await invokeGuardian(
-      ['harden-gate', '--repo', 'o/r', '--analyses-dir', join(tmp, 'empty')],
-      { cwd: tmp },
-    );
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('guardian precision: unknown');
-    expect(res.stdout).toContain('no adjudications yet');
-  });
-
-  it('dry-run reports the measured precision with its sample size', async () => {
-    const analysesDir = mkAnalysesDir();
-    mkdirSync(analysesDir, { recursive: true });
-    writeFileSync(
-      join(analysesDir, adjudicationFilename(3)),
-      JSON.stringify({ source: ADJUDICATION_SOURCE, tp: 9, fp: 1 }),
-    );
-    const res = await invokeGuardian(
-      ['harden-gate', '--repo', 'o/r', '--analyses-dir', analysesDir],
-      { cwd: tmp },
-    );
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('90%');
-    expect(res.stdout).toContain('n=10');
+  it('collect-adjudications is gone (ADR 0025)', async () => {
+    const res = await invokeGuardian(['collect-adjudications']);
+    expect(res.code).not.toBe(0);
   });
 });

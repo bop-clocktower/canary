@@ -26,7 +26,10 @@ import {
   readAllPages,
   withPerPage,
 } from '../src/guardian/github-paging.js';
-import { Reaction, RestReactionsClient } from '../src/guardian/adjudication.js';
+import {
+  GitHubAdjudicationSource,
+  revisionsFrom,
+} from '../src/guardian/adjudication-github.js';
 import { Comment } from '../src/guardian/pr-comment.js';
 
 const API = 'https://api.github.com';
@@ -179,45 +182,112 @@ describe('readAllPages', () => {
   });
 });
 
-describe('RestReactionsClient paging (#528)', () => {
-  it('reads a sticky comment that sits beyond GitHub default page 1', async () => {
-    // 45 comments: the old unpaginated read stopped at 30 and never saw #45.
-    const { read, requested } = pagedReader([
+describe('GitHubAdjudicationSource paging and history (ADR 0025)', () => {
+  const BOT = { login: 'github-actions[bot]', type: 'Bot' };
+  const marker = '<!-- canary-pr-guardian -->';
+
+  it('finds the bot sticky beyond page 1 and returns its revisions', async () => {
+    const stickyRow = {
+      id: 45,
+      node_id: 'IC_45',
+      body: `${marker}\nlast`,
+      user: BOT,
+    };
+    const { read } = pagedReader([
       {
         url: `${API}/repos/o/r/issues/7/comments?per_page=${DEFAULT_PER_PAGE}`,
         body: comments(1, 30),
-        next: `${API}/repos/o/r/issues/7/comments?per_page=${DEFAULT_PER_PAGE}&page=2`,
+        next: `${API}/repos/o/r/issues/7/comments?page=2`,
       },
       {
-        url: `${API}/repos/o/r/issues/7/comments?per_page=${DEFAULT_PER_PAGE}&page=2`,
-        body: comments(31, 15),
+        url: `${API}/repos/o/r/issues/7/comments?page=2`,
+        body: [...comments(31, 14), stickyRow],
       },
     ]);
-    const client = new RestReactionsClient('o/r', 7, 'tok', read);
-    const rows = await client.listComments();
-    expect(rows).toHaveLength(45);
-    expect(rows.at(-1)!.id).toBe(45);
-    expect(requested[0]).toContain(`per_page=${DEFAULT_PER_PAGE}`);
+    const asked: unknown[] = [];
+    const edits = {
+      totalCount: 2,
+      nodes: [{ diff: `${marker}\nlast` }, { diff: `${marker}\nfirst` }],
+    };
+    const graphql = async (_q: string, vars: Record<string, unknown>) => {
+      asked.push(vars['id']);
+      return { node: { userContentEdits: edits } };
+    };
+    const source = new GitHubAdjudicationSource('o/r', 'tok', {
+      read,
+      graphql,
+    });
+    const history = await source.stickyHistory(7);
+    expect(asked).toEqual(['IC_45']);
+    expect(history?.revisions?.[0]).toContain('first');
+    expect(history?.revisions?.at(-1)).toContain('last');
   });
 
-  it('tallies reactions past the first page instead of biasing the count', async () => {
-    const thumbs = (n: number, content: string): Reaction[] =>
-      Array.from({ length: n }, (_, i) => ({ user: `u${i}`, content }));
+  it('a human comment carrying the marker is not the sticky (#931)', async () => {
+    const human = { id: 1, body: `${marker}\npasted`, user: { login: 'bri' } };
     const { read } = pagedReader([
       {
-        url: `${API}/repos/o/r/issues/comments/9/reactions?per_page=${DEFAULT_PER_PAGE}`,
-        body: thumbs(30, '+1'),
-        next: `${API}/repos/o/r/issues/comments/9/reactions?page=2`,
-      },
-      {
-        url: `${API}/repos/o/r/issues/comments/9/reactions?page=2`,
-        body: thumbs(12, '-1'),
+        url: `${API}/repos/o/r/issues/7/comments?per_page=${DEFAULT_PER_PAGE}`,
+        body: [human],
       },
     ]);
-    const client = new RestReactionsClient('o/r', 7, 'tok', read);
-    const rows = await client.listReactions(9);
-    expect(rows).toHaveLength(42);
-    expect(rows.filter((r) => r.content === '-1')).toHaveLength(12);
+    const graphql = async () => {
+      throw new Error('no sticky: must not query edits');
+    };
+    const source = new GitHubAdjudicationSource('o/r', 'tok', {
+      read,
+      graphql,
+    });
+    expect(await source.stickyHistory(7)).toBeNull();
+  });
+
+  it('refuses a merged-PR window past the bound instead of truncating', async () => {
+    const graphql = async () => ({
+      search: { issueCount: 400, nodes: [{ number: 1 }] },
+    });
+    const source = new GitHubAdjudicationSource('o/r', 'tok', { graphql });
+    await expect(source.mergedPrs('2026-09-01')).rejects.toThrow(
+      /narrow --days/,
+    );
+  });
+
+  it('lists merged PR numbers and reads merged files through paging', async () => {
+    const graphql = async () => ({
+      search: { issueCount: 2, nodes: [{ number: 3 }, { number: 4 }] },
+    });
+    const { read } = pagedReader([
+      {
+        url: `${API}/repos/o/r/pulls/3/files?per_page=${DEFAULT_PER_PAGE}`,
+        body: [{ filename: 'src/a.ts', patch: '+x' }],
+      },
+    ]);
+    const source = new GitHubAdjudicationSource('o/r', 'tok', {
+      read,
+      graphql,
+    });
+    expect(await source.mergedPrs('2026-09-01')).toEqual([3, 4]);
+    expect(await source.prFiles(3)).toEqual([
+      { filename: 'src/a.ts', patch: '+x' },
+    ]);
+  });
+});
+
+describe('revisionsFrom', () => {
+  it('a never-edited sticky has one revision, its body', () => {
+    expect(revisionsFrom('b', { totalCount: 0, nodes: [] })).toEqual(['b']);
+  });
+
+  it('a truncated history is null, never a shorter list', () => {
+    expect(
+      revisionsFrom('b', { totalCount: 3, nodes: [{ diff: 'a' }] }),
+    ).toBeNull();
+  });
+
+  it('a redacted revision or absent history is null', () => {
+    expect(
+      revisionsFrom('b', { totalCount: 1, nodes: [{ diff: null }] }),
+    ).toBeNull();
+    expect(revisionsFrom('b', undefined)).toBeNull();
   });
 });
 

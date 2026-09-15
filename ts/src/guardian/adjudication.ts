@@ -1,528 +1,208 @@
 /**
- * Guardian finding adjudication collection — the precision the hard gate depends on
- * (#490).
+ * Guardian adjudication without reactions (ADR 0025, #938).
  *
- * `pr-check.ts` documents the soft→hard promotion contract as
- * `precision = TP / (TP + FP)` fed by reviewer adjudication — but until this
- * module nothing collected adjudications, so no repo could ever earn the hard
- * gate. Reviewers already give the lowest-friction feedback available: a 👍
- * (true positive) or 👎 (false positive) reaction on the guardian's sticky
- * comment. This module reads those reactions back off the comment the guardian
- * already upserts by marker, and persists a per-PR adjudication record to the
- * existing `.harness/analyses/` channel (no new store — see
- * {@link module:./analysis-emit}).
+ * The soft→hard promotion rests on `precision = TP / (TP + FP)`. Reaction
+ * collection (#490) read an input nobody produces (0 reactions on 290 stickies),
+ * so precision is now DERIVED on demand from signals the team already leaves:
  *
- * Granularity (per the #490 design sketch): **whole-comment first**. One sticky
- * comment carries N findings, so a reaction adjudicates the *run*, not one
- * finding — except when the comment shows exactly one active finding, in which
- * case the reaction is attributable to that finding's path. Per-finding
- * comments were rejected as a worse artifact (N comments per PR).
+ * - **true positive**: a coverage-verified finding on the first sticky revision
+ *   is gone from the last one while its file is still in the merged diff (a
+ *   later commit covered it).
+ * - **intentional**: the merged diff adds `canary:allow-untested <reason>`.
+ * - **false positive**: the reason starts with `fp:`.
+ * - **ambiguous**: it disappeared with no coverage evidence (heuristic/graph
+ *   tier, or the file left the diff).
+ * - **unresolved**: still active at merge. Not a false positive.
  *
- * Zero-denominator discipline: a precision computed over 0 adjudicated
- * findings is **unknown**, never 100%. {@link summarizePrecision} returns
- * `precision: null` and {@link renderPrecision} says so in words. Most
- * reviewers react to neither — the sample is small and self-selected, and every
- * rendered surface states the sample size rather than presenting the number as
- * ground truth.
+ * Nothing is stored. Precision is `null` below {@link PRECISION_FLOOR}
+ * adjudicated findings (TP + FP), and every excluded PR is counted in a
+ * disclosed denominator rather than dropped (#508, ADR 0009).
  *
- * SC-11 boundary: deterministic HTTP/filesystem behind seams — no agent/LLM
- * import. Network lives ONLY in {@link RestReactionsClient}; every unit test
- * uses {@link FakeReactionsClient}.
+ * PURE: no network, no filesystem. GitHub access lives in
+ * `adjudication-github.ts` behind an injected seam.
  */
 
-import {
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
-import { randomBytes } from 'node:crypto';
-import { dirname, join } from 'node:path';
+import { STICKY_MARKER } from './pr-comment.js';
+import { suppressionReason } from './pr-check.js';
 
-import { Comment, STICKY_MARKER, findSticky } from './pr-comment.js';
-import { PageReader, readAllPages, restPageReader } from './github-paging.js';
+/** Minimum TP + FP before precision is reported as a number. */
+export const PRECISION_FLOOR = 30;
 
-/** Schema tag for adjudication records (independent of the findings schema). */
-const ADJUDICATION_SCHEMA_VERSION = '1.0';
+export type Verdict =
+  | 'true-positive'
+  | 'false-positive'
+  | 'intentional'
+  | 'ambiguous'
+  | 'unresolved';
 
-/**
- * Record `source` + filename prefix. Deliberately namespaced UNDER the
- * `canary-pr-guardian-` prefix, because harness's `AnalysisArchive` reads every
- * `*.json` in `.harness/analyses/`.
- *
- * The filenames are not provably distinct, though: a branch named
- * `adjudication/pr-42` sanitizes through `analysisFilename` to exactly
- * `canary-pr-guardian-adjudication-pr-42.json`, colliding with this prefix.
- * What actually keeps the precision summary honest is the `source` field —
- * `loadAdjudicationRecords` requires `source === ADJUDICATION_SOURCE` plus
- * numeric `tp`/`fp`, so a findings record landing on that name is skipped, not
- * mis-tallied. Read the field, never the filename.
- */
-export const ADJUDICATION_SOURCE = 'canary-pr-guardian-adjudication';
+export type SuppressionKind = 'false-positive' | 'intentional';
 
-/** GitHub reaction contents that carry an adjudication verdict. */
-const THUMBS_UP = '+1';
-const THUMBS_DOWN = '-1';
+/** One finding row as rendered in a sticky revision. */
+export interface StickyFinding {
+  path: string;
+  fidelity: string;
+}
 
-// Loud notices carry an em-dash as output data; escaped per the ASCII-source rule.
-const EM_DASH = '\u{2014}';
-
-/** One reaction row off the GitHub API (only the fields we read). */
-export interface Reaction {
-  /** Reacting user's login (`user.login` in the REST payload). */
-  user: string;
-  /** Reaction content: `+1`, `-1`, `laugh`, `confused`, `heart`, ... */
-  content: string;
+/** A merged-PR file as REST `/pulls/{n}/files` returns it (`patch` may be absent). */
+export interface PrFile {
+  filename: string;
+  patch?: string;
 }
 
 /**
- * The reactions seam. Reads the PR's comments (to locate the sticky comment by
- * marker) and a comment's reactions. Read-only — collection never writes to
- * GitHub, so it works on fork PRs where the token cannot comment.
+ * One merged PR's evidence. `revisions` holds the sticky's bodies oldest to
+ * newest, or `null` when its edit history could not be retrieved.
  */
-export interface ReactionsClient {
-  listComments(): Promise<Comment[]>;
-  listReactions(commentId: number): Promise<Reaction[]>;
+export interface PrEvidence {
+  number: number;
+  revisions: string[] | null;
+  files: PrFile[];
 }
 
-/** In-memory {@link ReactionsClient} for unit tests — no network. */
-export class FakeReactionsClient implements ReactionsClient {
-  comments: Comment[];
-  reactionsByComment: Map<number, Reaction[]>;
-
-  constructor(
-    init: {
-      comments?: Comment[];
-      reactions?: Record<number, Reaction[]>;
-    } = {},
-  ) {
-    this.comments = init.comments ?? [];
-    this.reactionsByComment = new Map(
-      Object.entries(init.reactions ?? {}).map(([id, rows]) => [
-        Number(id),
-        rows,
-      ]),
-    );
-  }
-
-  async listComments(): Promise<Comment[]> {
-    return this.comments;
-  }
-
-  async listReactions(commentId: number): Promise<Reaction[]> {
-    return this.reactionsByComment.get(commentId) ?? [];
-  }
-}
+// A finding row: `| <sev> | [`path`](url) or `path` | what | fidelity |`. The
+// header and separator never open their second cell with a backtick.
+const FINDING_ROW_RE = /^\|[^|]*\|\s*\[?`([^`]+)`.*\|\s*([a-z-]+)\s*\|\s*$/;
+const TABLE_HEADER = '| Sev | File |';
+const HEADING = 'Canary PR Guardian';
 
 /**
- * Thin real {@link ReactionsClient} over the GitHub REST API (`fetch`).
- * Network lives ONLY in the default {@link restPageReader}; both endpoints are
- * reads, so a fork's read-only token is sufficient. The `read` seam exists so
- * the #528 paging wiring is testable without a socket — production callers
- * construct this with three arguments and get the real reader.
+ * `fp:` (any case, optional space before the colon) marks a false positive;
+ * any other reason is intentional. A bare `fp:` still counts: the prefix is
+ * the reviewer's verdict, the text after it is only the explanation.
  */
-export class RestReactionsClient implements ReactionsClient {
-  private static readonly API = 'https://api.github.com';
+export function suppressionKind(reason: string): SuppressionKind {
+  return /^fp\s*:/i.test(reason.trim()) ? 'false-positive' : 'intentional';
+}
 
-  private readonly read: PageReader;
-
-  constructor(
-    private readonly repo: string,
-    private readonly prNumber: number,
-    token: string,
-    read?: PageReader,
-  ) {
-    this.read =
-      read ??
-      restPageReader(
-        {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          'User-Agent': 'canary-pr-guardian',
-        },
-        (status, url) => new Error(`GitHub API ${status}: ${url}`),
-      );
-  }
-
-  async listComments(): Promise<Comment[]> {
-    const url = `${RestReactionsClient.API}/repos/${this.repo}/issues/${this.prNumber}/comments`;
-    return (await readAllPages(url, this.read)) as Comment[];
-  }
-
-  async listReactions(commentId: number): Promise<Reaction[]> {
-    const url = `${RestReactionsClient.API}/repos/${this.repo}/issues/comments/${commentId}/reactions`;
-    const result = await readAllPages(url, this.read);
-    const rows: Reaction[] = [];
-    for (const raw of result) {
-      if (typeof raw !== 'object' || raw === null) continue;
-      const rec = raw as { content?: unknown; user?: { login?: unknown } };
-      const content = typeof rec.content === 'string' ? rec.content : '';
-      const user =
-        typeof rec.user?.login === 'string' ? rec.user.login : 'unknown';
-      if (content) rows.push({ user, content });
+/** Suppressions ADDED by the merged diff, per path (`fp:` wins on a tie). */
+export function suppressionsByPath(
+  files: PrFile[],
+): Map<string, SuppressionKind> {
+  const out = new Map<string, SuppressionKind>();
+  for (const file of files) {
+    for (const line of (file.patch ?? '').split('\n')) {
+      if (!line.startsWith('+') || line.startsWith('+++')) continue;
+      const reason = suppressionReason(line.slice(1));
+      if (reason === null || out.get(file.filename) === 'false-positive')
+        continue;
+      out.set(file.filename, suppressionKind(reason));
     }
-    return rows;
   }
-}
-
-/** The 👍/👎 tally over one comment's reactions, one vote per human user. */
-export interface AdjudicationTally {
-  /** Users whose only verdict reaction was 👍 (true positive). */
-  tp: number;
-  /** Users whose only verdict reaction was 👎 (false positive). */
-  fp: number;
-  /** Users who reacted BOTH ways — contradictory, dropped from the sample. */
-  ambiguous: number;
+  return out;
 }
 
 /**
- * Tally verdict reactions: one vote per user, bots excluded (PURE).
- *
- * - Only `+1`/`-1` carry a verdict; every other content is ignored.
- * - Logins ending in `[bot]` are excluded so the guardian's own automation (or
- *   any other bot) can never inflate its own precision.
- * - A user who reacted both 👍 and 👎 is contradictory: counted as `ambiguous`
- *   and excluded from both TP and FP rather than guessed at.
+ * Parse the finding rows of one sticky revision. Returns `null` for a body
+ * that is not a guardian sticky, or whose findings table yields no row: an
+ * unparseable body is unknown, never zero findings.
  */
-export function tallyAdjudications(reactions: Reaction[]): AdjudicationTally {
-  const up = new Set<string>();
-  const down = new Set<string>();
-  for (const reaction of reactions) {
-    if (reaction.user.endsWith('[bot]')) continue;
-    if (reaction.content === THUMBS_UP) up.add(reaction.user);
-    else if (reaction.content === THUMBS_DOWN) down.add(reaction.user);
-  }
-  let ambiguous = 0;
-  for (const user of up) {
-    if (down.has(user)) ambiguous += 1;
-  }
-  return {
-    tp: up.size - ambiguous,
-    fp: down.size - ambiguous,
-    ambiguous,
-  };
-}
-
-// A findings-table row in the sticky comment: `| <icon> <sev> | `path`... |`.
-// The header row's second cell is ` File ` and the separator's is ` --- `,
-// neither of which starts with a backtick, so anchoring on the second cell's
-// leading backtick selects exactly the finding rows. Paths never contain `|`
-// or backticks (see `fileLabel` in pr-check.ts), so the naive anchor is safe.
-//
-// The optional `[` accommodates the permalinked cell — `fileLabel` wraps the
-// path as `[`path`](<blob url>)` whenever a blob base is resolvable, which is
-// the normal case in CI. Without it this regex matched nothing on every posted
-// comment and `activeFindingPaths` returned `[]`, zeroing the precision
-// denominator silently instead of failing (#490, #508).
-const FINDING_ROW_RE = /^\|[^|]*\|\s*\[?`([^`]+)`/;
-
-/**
- * Extract the file paths of the ACTIVE findings shown in a sticky-comment body
- * (PURE). Reads the rendered table `renderFindings(fmt='comment')` emitted —
- * this is deliberately parsing the exact body reviewers reacted to, not the
- * current finding set, so a reaction is attributed to what the reviewer saw.
- * Returns `[]` for a no-gaps body (no table).
- */
-export function activeFindingPaths(commentBody: string): string[] {
-  const paths: string[] = [];
-  for (const line of commentBody.split(/\r\n|\r|\n/)) {
+export function parseStickyFindings(body: string): StickyFinding[] | null {
+  const trimmed = body.trimStart();
+  if (!trimmed.startsWith(STICKY_MARKER) || !body.includes(HEADING))
+    return null;
+  const rows: StickyFinding[] = [];
+  for (const line of body.split(/\r\n|\r|\n/)) {
     const match = FINDING_ROW_RE.exec(line);
-    if (match) paths.push(match[1]!);
+    if (match) rows.push({ path: match[1]!, fidelity: match[2]! });
   }
-  return paths;
+  if (rows.length === 0 && body.includes(TABLE_HEADER)) return null;
+  return rows;
 }
 
-/** One persisted adjudication record — the latest reaction state for one PR. */
-export interface AdjudicationRecord {
-  schemaVersion: string;
-  source: string;
-  repo: string;
-  prNumber: number;
-  commentId: number;
-  /**
-   * `finding` when the comment showed exactly one active finding (the reaction
-   * adjudicates that finding); `run` when it showed several (the reaction
-   * adjudicates the run as a whole and cannot name which finding was wrong).
-   */
-  granularity: 'finding' | 'run';
-  /** The adjudicated finding's path; set only when `granularity === 'finding'`. */
-  attributedPath: string | null;
-  /** Active finding paths shown in the reacted-to comment body. */
-  findingPaths: string[];
-  tp: number;
-  fp: number;
-  ambiguous: number;
-  collectedAt: string;
-}
-
-/** ISO-8601 UTC timestamp with a `+00:00` offset (matches analysis-emit). */
-function isoUtcNow(): string {
-  return new Date().toISOString().replace('Z', '+00:00');
-}
-
-/** Build the v1.0 adjudication record (PURE given `collectedAt`). */
-export function buildAdjudicationRecord(init: {
-  repo: string;
-  prNumber: number;
-  commentId: number;
-  commentBody: string;
-  tally: AdjudicationTally;
-  collectedAt?: string | undefined;
-}): AdjudicationRecord {
-  const findingPaths = activeFindingPaths(init.commentBody);
-  const single = findingPaths.length === 1;
-  return {
-    schemaVersion: ADJUDICATION_SCHEMA_VERSION,
-    source: ADJUDICATION_SOURCE,
-    repo: init.repo,
-    prNumber: init.prNumber,
-    commentId: init.commentId,
-    granularity: single ? 'finding' : 'run',
-    attributedPath: single ? findingPaths[0]! : null,
-    findingPaths,
-    tp: init.tally.tp,
-    fp: init.tally.fp,
-    ambiguous: init.tally.ambiguous,
-    collectedAt: init.collectedAt ?? isoUtcNow(),
-  };
-}
-
-/** `canary-pr-guardian-adjudication-pr-<n>.json` under the analyses dir. */
-export function adjudicationFilename(prNumber: number): string {
-  return `${ADJUDICATION_SOURCE}-pr-${prNumber}.json`;
-}
-
-/**
- * Outcome of a {@link collectAdjudications} attempt.
- *
- * `action`:
- *   - `collected`     — reactions found; record written to `path`.
- *   - `no-comment`    — the PR has no guardian sticky comment (nothing posted
- *                       yet, or a fork degradation) — nothing to adjudicate.
- *   - `no-reactions`  — sticky comment exists but carries no 👍/👎 yet; no
- *                       record is written (absence of a reaction is neutral,
- *                       never a data point).
- *   - `unavailable`   — the `.harness/` channel is absent or the write failed;
- *                       `notice` carries the loud message.
- */
-export interface CollectResult {
-  action: 'collected' | 'no-comment' | 'no-reactions' | 'unavailable';
-  path: string | null;
-  record: AdjudicationRecord | null;
-  notice: string | null;
-}
-
-/** True iff the harness home (`dirname(analysesDir)`) exists. */
-function isChannelAvailable(analysesDir: string): boolean {
-  try {
-    return statSync(dirname(analysesDir)).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Read the sticky comment's reactions and persist the PR's adjudication record.
- *
- * Idempotent per PR: the record is the LATEST reaction state, overwritten in
- * place on each collection (reactions live on the comment, which the guardian
- * upserts rather than re-creates, so they accumulate monotonically). Records
- * for different PRs never collide — the store is append-only across PRs.
- *
- * Never throws for an expected shape: a missing comment, zero reactions, or an
- * unavailable channel each return a distinct non-`collected` result so the
- * caller can report honestly instead of crashing the gate.
- */
-export async function collectAdjudications(
-  client: ReactionsClient,
-  args: {
-    repo: string;
-    prNumber: number;
-    analysesDir: string;
-    marker?: string;
-    collectedAt?: string;
+/** Classify one first-revision finding against the merge-time evidence. */
+export function classifyFinding(
+  finding: StickyFinding,
+  ctx: {
+    last: StickyFinding[];
+    suppressions: Map<string, SuppressionKind>;
+    mergedPaths: Set<string>;
   },
-): Promise<CollectResult> {
-  const sticky = findSticky(
-    await client.listComments(),
-    args.marker ?? STICKY_MARKER,
-  );
-  if (sticky === null) {
-    return { action: 'no-comment', path: null, record: null, notice: null };
-  }
-
-  const tally = tallyAdjudications(await client.listReactions(sticky.id));
-  if (tally.tp + tally.fp + tally.ambiguous === 0) {
-    return { action: 'no-reactions', path: null, record: null, notice: null };
-  }
-
-  const record = buildAdjudicationRecord({
-    repo: args.repo,
-    prNumber: args.prNumber,
-    commentId: sticky.id,
-    commentBody: sticky.body,
-    tally,
-    collectedAt: args.collectedAt,
-  });
-
-  if (!isChannelAvailable(args.analysesDir)) {
-    return {
-      action: 'unavailable',
-      path: null,
-      record,
-      notice:
-        'guardian: harness analyses channel unavailable (.harness/ absent) ' +
-        `${EM_DASH} adjudication not persisted`,
-    };
-  }
-
-  const target = join(args.analysesDir, adjudicationFilename(args.prNumber));
-  try {
-    mkdirSync(args.analysesDir, { recursive: true });
-    // Atomic write (same-dir temp + rename), matching analysis-emit: a torn
-    // record would poison every later precision summary.
-    const tmp = join(
-      args.analysesDir,
-      `.tmp-${randomBytes(8).toString('hex')}.json`,
-    );
-    writeFileSync(tmp, JSON.stringify(record, null, 2), 'utf-8');
-    try {
-      renameSync(tmp, target);
-    } catch (err) {
-      try {
-        unlinkSync(tmp);
-      } catch {
-        // best-effort cleanup
-      }
-      throw err;
-    }
-  } catch (exc) {
-    const message = exc instanceof Error ? exc.message : String(exc);
-    return {
-      action: 'unavailable',
-      path: null,
-      record,
-      notice:
-        `guardian: adjudication write failed (${message}) ${EM_DASH} ` +
-        'adjudication not persisted',
-    };
-  }
-  return { action: 'collected', path: target, record, notice: null };
+): Verdict {
+  const suppression = ctx.suppressions.get(finding.path);
+  if (suppression) return suppression;
+  if (ctx.last.some((f) => f.path === finding.path)) return 'unresolved';
+  const covered =
+    finding.fidelity === 'coverage-verified' &&
+    ctx.mergedPaths.has(finding.path);
+  return covered ? 'true-positive' : 'ambiguous';
 }
 
-/**
- * Load every adjudication record under `analysesDir` (best-effort).
- *
- * Reads only `canary-pr-guardian-adjudication-*.json`; pr-check findings
- * records and harness's own records are never touched. A malformed or
- * wrong-`source` file is skipped, never fatal — one corrupt record must not
- * take down the precision report.
- */
-export function loadAdjudicationRecords(
-  analysesDir: string,
-): AdjudicationRecord[] {
-  let names: string[];
-  try {
-    names = readdirSync(analysesDir);
-  } catch {
-    return [];
-  }
-  const records: AdjudicationRecord[] = [];
-  for (const name of names.sort()) {
-    if (!name.startsWith(`${ADJUDICATION_SOURCE}-`) || !name.endsWith('.json'))
-      continue;
-    try {
-      const raw = JSON.parse(
-        readFileSync(join(analysesDir, name), 'utf-8'),
-      ) as Partial<AdjudicationRecord> | null;
-      if (
-        raw !== null &&
-        typeof raw === 'object' &&
-        raw.source === ADJUDICATION_SOURCE &&
-        typeof raw.tp === 'number' &&
-        typeof raw.fp === 'number'
-      ) {
-        records.push(raw as AdjudicationRecord);
-      }
-    } catch {
-      // skip malformed record
-    }
-  }
-  return records;
-}
-
-/** The aggregate precision a rollout decision consumes. */
-export interface PrecisionSummary {
-  /** Adjudicated verdicts: `tp + fp` (the fair denominator, per #490). */
+/** The derived precision report. `precision` is null below the floor. */
+export interface AdjudicationReport {
+  counts: Record<Verdict, number>;
+  /** TP + FP: the only findings that count toward the floor. */
   adjudicated: number;
-  tp: number;
-  fp: number;
-  ambiguous: number;
-  /** PRs contributing at least one verdict. */
-  prCount: number;
-  /**
-   * `tp / (tp + fp)`, or `null` when nothing has been adjudicated. A `null`
-   * here MUST render as "unknown" — zero adjudications is an absent
-   * measurement, not a perfect score.
-   */
   precision: number | null;
-}
-
-/** Aggregate records into the precision summary (PURE). */
-export function summarizePrecision(
-  records: AdjudicationRecord[],
-): PrecisionSummary {
-  let tp = 0;
-  let fp = 0;
-  let ambiguous = 0;
-  let prCount = 0;
-  for (const record of records) {
-    tp += record.tp;
-    fp += record.fp;
-    ambiguous += record.ambiguous ?? 0;
-    if (record.tp + record.fp > 0) prCount += 1;
-  }
-  const adjudicated = tp + fp;
-  return {
-    adjudicated,
-    tp,
-    fp,
-    ambiguous,
-    prCount,
-    precision: adjudicated === 0 ? null : tp / adjudicated,
+  prs: {
+    scanned: number;
+    withSticky: number;
+    noHistory: number;
+    unparseable: number;
   };
 }
 
-/**
- * Render the precision summary as human text (PURE).
- *
- * Zero-denominator discipline: with no adjudications the FIRST word after the
- * label is `unknown` — the report never implies 100% (or any number) from an
- * empty sample. With data, the sample size and its self-selected nature ride
- * alongside the number on the same line.
- */
-export function renderPrecision(summary: PrecisionSummary): string {
-  if (summary.precision === null) {
-    return (
-      `guardian precision: unknown ${EM_DASH} no adjudications yet ` +
-      `(0 reviewer verdicts collected). React with a thumbs-up (finding was ` +
-      `right) or thumbs-down (false positive) on the guardian's PR comment.`
-    );
+function emptyCounts(): Record<Verdict, number> {
+  return {
+    'true-positive': 0,
+    'false-positive': 0,
+    intentional: 0,
+    ambiguous: 0,
+    unresolved: 0,
+  };
+}
+
+/** Tally one PR into `report`, or count it as excluded. */
+function tallyPr(pr: PrEvidence, report: AdjudicationReport): void {
+  if (pr.revisions === null || pr.revisions.length === 0) {
+    report.prs.noHistory += 1;
+    return;
   }
-  const pct = (summary.precision * 100).toFixed(1).replace(/\.0$/, '');
-  const ambiguousNote =
-    summary.ambiguous > 0
-      ? ` ${summary.ambiguous} contradictory verdict(s) excluded.`
-      : '';
-  return (
-    `guardian precision: ${pct}% (${summary.tp} true / ${summary.fp} false ` +
-    `positive${summary.adjudicated === 1 ? '' : 's'}, n=${summary.adjudicated} ` +
-    `across ${summary.prCount} PR(s)).${ambiguousNote} Sample is ` +
-    `self-selected (reviewers who chose to react) ${EM_DASH} a signal, not ` +
-    `ground truth.`
-  );
+  const first = parseStickyFindings(pr.revisions[0]!);
+  const last = parseStickyFindings(pr.revisions.at(-1)!);
+  if (first === null || last === null) {
+    report.prs.unparseable += 1;
+    return;
+  }
+  const ctx = {
+    last,
+    suppressions: suppressionsByPath(pr.files),
+    mergedPaths: new Set(pr.files.map((f) => f.filename)),
+  };
+  for (const finding of first) report.counts[classifyFinding(finding, ctx)]++;
+}
+
+/** Derive the report over the PRs that carried a sticky (PURE). */
+export function deriveReport(
+  prs: PrEvidence[],
+  scanned: number,
+): AdjudicationReport {
+  const report: AdjudicationReport = {
+    counts: emptyCounts(),
+    adjudicated: 0,
+    precision: null,
+    prs: { scanned, withSticky: prs.length, noHistory: 0, unparseable: 0 },
+  };
+  for (const pr of prs) tallyPr(pr, report);
+  const { 'true-positive': tp, 'false-positive': fp } = report.counts;
+  report.adjudicated = tp + fp;
+  if (report.adjudicated >= PRECISION_FLOOR) report.precision = tp / (tp + fp);
+  return report;
+}
+
+/** Render the report; the number never appears without its sample size. */
+export function renderReport(report: AdjudicationReport): string {
+  const c = report.counts;
+  const sample = `n=${report.adjudicated}: ${c['true-positive']} TP / ${c['false-positive']} FP`;
+  const value =
+    report.precision === null
+      ? `unknown (N < ${PRECISION_FLOOR}) (${sample})`
+      : `${(report.precision * 100).toFixed(1).replace(/\.0$/, '')}% (${sample})`;
+  const p = report.prs;
+  return [
+    `guardian precision: ${value}`,
+    `excluded from precision: ${c.intentional} intentional, ${c.ambiguous} ambiguous, ${c.unresolved} unresolved at merge`,
+    `merged PRs: ${p.scanned} scanned, ${p.withSticky} with a guardian sticky, ` +
+      `${p.noHistory} excluded: no edit history, ${p.unparseable} excluded: unparseable sticky`,
+    '`fp:` suppressions are a convention: under-use biases precision upward.',
+  ].join('\n');
 }

@@ -865,7 +865,7 @@ export function linesInRanges(ranges: LineRange[]): number[] {
  * Requires a `//`/`#` comment leader (FIX 1), strips a trailing inline-comment
  * close (e.g. `*​/`), and trims surrounding whitespace.
  */
-function suppressionReason(line: string): string | null {
+export function suppressionReason(line: string): string | null {
   const match = SUPPRESS_RE.exec(line);
   if (match === null) return null;
   let reason = match[1]!;

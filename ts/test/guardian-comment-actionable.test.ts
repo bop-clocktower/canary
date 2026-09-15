@@ -29,7 +29,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { activeFindingPaths } from '../src/guardian/adjudication.js';
+import { parseStickyFindings } from '../src/guardian/adjudication.js';
 import { blobBaseFromEnv } from '../src/guardian/cli.js';
 import {
   ChangedUnit,
@@ -61,6 +61,9 @@ function result(over: Partial<CoverageResult> = {}): CoverageResult {
     ...over,
   } as CoverageResult;
 }
+
+const activeFindingPaths = (body: string): string[] =>
+  (parseStickyFindings(body) ?? []).map((f) => f.path);
 
 // ---------------------------------------------------------------------------
 // 1. Which lines are uncovered
@@ -340,7 +343,7 @@ describe('comment permalinks', () => {
 // The adjudication parser consumes renderFindings' output — no drift allowed.
 // ---------------------------------------------------------------------------
 
-describe('activeFindingPaths survives the linked file cell', () => {
+describe('parseStickyFindings survives the linked file cell', () => {
   // Fed from renderFindings' OWN output, not a hand-written fixture: a fixture
   // would re-encode the very assumption under test (that the cell opens with a
   // backtick), so producer and consumer could drift apart again unnoticed.
