@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   type Comment,
+  type GuardianIdentity,
   type UpsertResult,
   FakeGitHubClient,
   GitHubPermissionError,
@@ -103,7 +104,7 @@ describe('Upsert — SC-9: sticky comment upserted by marker, never stacked', ()
   it('findSticky ignores non-marker comments', () => {
     const comments: Comment[] = [
       { id: 1, body: 'unrelated chatter' },
-      { id: 2, body: marked('guardian findings') },
+      { id: 2, body: marked('guardian findings'), user: BOT },
     ];
     const found = findSticky(comments);
     expect(found).not.toBeNull();
@@ -126,6 +127,122 @@ describe('Upsert — SC-9: sticky comment upserted by marker, never stacked', ()
   });
 });
 
+// #931: a comment is guardian's sticky only when its body STARTS WITH the
+// marker AND it was written by the identity guardian posts as.
+const BOT = { login: 'github-actions[bot]', type: 'Bot' };
+const HUMAN = { login: 'alice', type: 'User' };
+
+/** A FakeGitHubClient whose updateComment calls are recorded. */
+function spyClient(comments: Comment[]): {
+  client: FakeGitHubClient;
+  updatedIds: number[];
+} {
+  const client = new FakeGitHubClient({ comments });
+  const updatedIds: number[] = [];
+  const update = client.updateComment.bind(client);
+  client.updateComment = async (id, body) => {
+    updatedIds.push(id);
+    return update(id, body);
+  };
+  return { client, updatedIds };
+}
+
+describe('Author-aware sticky (#931): never overwrite a human comment', () => {
+  it('a human comment with the marker mid-body is left alone; guardian creates its own', async () => {
+    const humanBody = `root cause write-up\n${STICKY_MARKER}\nquoted output`;
+    const { client, updatedIds } = spyClient([
+      { id: 1, body: humanBody, user: HUMAN },
+    ]);
+    const result = await upsertStickyComment(client, marked('findings'));
+    expect(result.action).toBe('created');
+    expect(result.comment_id).not.toBe(1);
+    expect(updatedIds).not.toContain(1);
+    expect(client.comments[0]!.body).toBe(humanBody);
+  });
+
+  it('a human comment STARTING with the marker (pasted output) is still not updated', async () => {
+    const pasted = marked('pasted guardian output');
+    const { client, updatedIds } = spyClient([
+      { id: 1, body: pasted, user: HUMAN },
+    ]);
+    const result = await upsertStickyComment(client, marked('findings'));
+    expect(result.action).toBe('created');
+    expect(updatedIds).toEqual([]);
+    expect(client.comments[0]!.body).toBe(pasted);
+  });
+
+  it('a bot comment that merely CONTAINS the marker is not the sticky', () => {
+    expect(
+      findSticky([{ id: 1, body: `note\n${STICKY_MARKER}`, user: BOT }]),
+    ).toBeNull();
+  });
+
+  it('an existing bot sticky is updated in place, no duplicate (SC-9)', async () => {
+    const { client, updatedIds } = spyClient([
+      { id: 1, body: marked('human paste'), user: HUMAN },
+      { id: 2, body: marked('old'), user: BOT },
+    ]);
+    const result = await upsertStickyComment(client, marked('new'));
+    expect(result).toEqual({ action: 'updated', comment_id: 2, notice: null });
+    expect(updatedIds).toEqual([2]);
+    expect(client.comments).toHaveLength(2);
+  });
+});
+
+describe('Author-aware sticky (#931): which guardian comment qualifies', () => {
+  it('with two bot stickies the most recently created one is updated', async () => {
+    const { client, updatedIds } = spyClient([
+      {
+        id: 9,
+        body: marked('newer'),
+        user: BOT,
+        created_at: '2026-09-14T10:00:00Z',
+      },
+      {
+        id: 3,
+        body: marked('older'),
+        user: BOT,
+        created_at: '2026-09-01T10:00:00Z',
+      },
+    ]);
+    const result = await upsertStickyComment(client, marked('latest'));
+    expect(result.comment_id).toBe(9);
+    expect(updatedIds).toEqual([9]);
+  });
+
+  it('a Bot comment is guardian-authored only when its app slug is the configured app', () => {
+    const appComment: Comment = {
+      id: 4,
+      body: marked('x'),
+      user: { login: 'canary-guardian[bot]', type: 'Bot' },
+      performed_via_github_app: { slug: 'canary-guardian' },
+    };
+    expect(findSticky([appComment])).toBeNull();
+    const identity: GuardianIdentity = {
+      login: 'github-actions[bot]',
+      appSlug: 'canary-guardian',
+    };
+    expect(findSticky([appComment], STICKY_MARKER, identity)?.id).toBe(4);
+    const human = { ...appComment, user: HUMAN };
+    expect(findSticky([human], STICKY_MARKER, identity)).toBeNull();
+  });
+});
+
+describe('Author-aware sticky (#931): fake author and degraded notice', () => {
+  it('comments the fake client creates carry the bot identity', async () => {
+    const client = new FakeGitHubClient();
+    const row = await client.createComment(marked('x'));
+    expect(row.user?.login).toBe('github-actions[bot]');
+  });
+
+  it('the degraded notice names the permission failure without assuming a fork', async () => {
+    const client = new FakeGitHubClient({ deny_writes: true });
+    const result = await upsertStickyComment(client, marked('body'));
+    expect(result.notice).toContain('403');
+    expect(result.notice).not.toContain('fork PR?');
+  });
+});
+
 describe('Degradation — OT-4 / SC-1+D6: read-only token degrades, never crashes', () => {
   it('create path degrades without raising', async () => {
     const client = new FakeGitHubClient({ deny_writes: true });
@@ -138,7 +255,7 @@ describe('Degradation — OT-4 / SC-1+D6: read-only token degrades, never crashe
   it('update path degrades without raising', async () => {
     // Seed one existing marked comment so the update branch is taken.
     const client = new FakeGitHubClient({
-      comments: [{ id: 1, body: marked('old') }],
+      comments: [{ id: 1, body: marked('old'), user: BOT }],
       deny_writes: true,
     });
     const result = await upsertStickyComment(client, marked('new'));

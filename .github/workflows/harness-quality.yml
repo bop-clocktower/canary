@@ -327,6 +327,19 @@ jobs:
         working-directory: ts
         run: npm test
 
+      # #930: the base report for guardian's coverage-delta tier (#881). PR
+      # Guardian downloads this by its PR's merge-base SHA, so the name carries
+      # the commit it measured. Push-only: a PR's lcov is never a base. A step
+      # `if:` adds no check context, so branch protection waits on nothing new.
+      - name: Upload lcov as the guardian base report
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ts-coverage-lcov-${{ github.sha }}
+          path: ts/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 30
+
   npm-validate:
     # The shipped `canary-test-cli` package (doctor, overlay commands, the MCP
     # bin). Its suite ran in NO CI job until #508 Wave 3: `release.yml` builds

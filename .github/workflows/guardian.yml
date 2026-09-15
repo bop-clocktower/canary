@@ -3,6 +3,7 @@ on:
   pull_request:
 permissions:
   contents: read
+  actions: read # #930: download main's lcov artifact for the merge base
   pull-requests: write # commenting; fork PRs get read-only → poster degrades
 concurrency:
   group: guardian-${{ github.event.pull_request.number }}
@@ -57,9 +58,53 @@ jobs:
         env:
           BASE: ${{ github.base_ref }}
         run: git fetch --no-tags origin "$BASE"
+      # Base coverage for the coverage-delta tier (#881, #930). Without it
+      # every comment read `head-only` (24 of 24): a coverage REGRESSION was
+      # undetectable. The report is main's own lcov, uploaded by `TS engine
+      # (pilot)` in harness-quality.yml on each push as
+      # `ts-coverage-lcov-<sha>`. Downloading it costs seconds; measuring the
+      # base in-job would roughly double this job's test time (#760/#820).
+      #
+      # Staleness: the artifact is looked up by THIS PR's merge-base SHA — the
+      # same base pr-check diffs against — and accepted only if the run that
+      # produced it was a `$BASE` push built from exactly that SHA. The latest
+      # main run is never substituted. No match (expired, run still pending,
+      # cancelled, fork token without access) leaves BASE_COVERAGE empty and
+      # pr-check posts its loud head-only notice. That is an abstention, not a
+      # failure and not a pass; each exit below says which case it was.
+      - name: Resolve base coverage for the merge base
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.base_ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          BASE_SHA=$(git merge-base "origin/$BASE" HEAD)
+          head_only() {
+            echo "::notice title=Coverage delta head-only::no base lcov for merge base ${BASE_SHA}: $1"
+            exit 0
+          }
+          if ! listing=$(gh api "repos/$REPO/actions/artifacts?name=ts-coverage-lcov-${BASE_SHA}&per_page=100"); then
+            head_only "artifact lookup failed"
+          fi
+          id=$(printf '%s' "$listing" | jq -r --arg sha "$BASE_SHA" --arg br "$BASE" \
+            '[.artifacts[] | select(.expired == false and .workflow_run.head_sha == $sha and .workflow_run.head_branch == $br)][0].id // empty')
+          if [ -z "$id" ]; then
+            head_only "no unexpired artifact from a $BASE run at that SHA"
+          fi
+          if ! gh api "repos/$REPO/actions/artifacts/$id/zip" > "$RUNNER_TEMP/base-lcov.zip"; then
+            head_only "artifact $id download failed"
+          fi
+          unzip -o -q "$RUNNER_TEMP/base-lcov.zip" -d "$RUNNER_TEMP/base-lcov"
+          if [ ! -s "$RUNNER_TEMP/base-lcov/lcov.info" ]; then
+            head_only "artifact $id holds no lcov.info"
+          fi
+          echo "Base coverage: artifact $id at ${BASE_SHA}"
+          echo "path=$RUNNER_TEMP/base-lcov/lcov.info" >> "$GITHUB_OUTPUT"
       - name: Guardian pr-check
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          BASE_COVERAGE: ${{ steps.base.outputs.path }}
         # `--emit-analysis` writes the finding record to the .harness/analyses/
         # channel (the #899 harness reverse-handoff producer); `--post-comment`
         # keeps findings visible while the harness consumer (#899) is pending —
@@ -90,8 +135,12 @@ jobs:
         # step above are what keep THIS repo off the #761 cause: a run that
         # reaches here has a real lcov.
         run: |
+          base_args=()
+          if [ -n "$BASE_COVERAGE" ]; then
+            base_args=(--base-coverage "$BASE_COVERAGE")
+          fi
           set +e
-          node ts/bin/canary.js guardian pr-check --coverage ts/coverage/lcov.info --emit-analysis --post-comment
+          node ts/bin/canary.js guardian pr-check --coverage ts/coverage/lcov.info "${base_args[@]}" --emit-analysis --post-comment
           rc=$?
           set -e
           if [ "$rc" -eq 3 ]; then
