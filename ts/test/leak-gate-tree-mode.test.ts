@@ -152,6 +152,35 @@ describe('leak gate tree mode reads the named commit, not the working tree', () 
     expect(status).toBe(1);
   });
 
+  it('withholds the matched line text in a pull_request_target log', () => {
+    // Two guesses, one per file: the log must not reveal which one matched.
+    const [root, sha] = committed({
+      'docs/probe-a.md': `guess list: ${FIXTURE_TERM}\n`,
+      'docs/probe-b.md': 'guess list: Nonmatchia\n',
+    });
+
+    const { status, out } = run(root, {
+      CANARY_LEAK_SCAN_TREE: sha,
+      GITHUB_EVENT_NAME: 'pull_request_target',
+    });
+
+    expect(out).toContain('withheld');
+    expect(out).not.toContain('probe-a');
+    expect(out).not.toContain('guess list');
+    expect(status).toBe(1);
+  });
+
+  it('never prints matched head content at column zero (workflow commands)', () => {
+    const [root, sha] = committed({
+      'docs/guides/cmd.md': '::error::agent.cli spoof\n',
+    });
+
+    const { status, out } = run(root, { CANARY_LEAK_SCAN_TREE: sha });
+
+    expect(status).toBe(1);
+    expect(out.split('\n').some((l) => l.startsWith('::'))).toBe(false);
+  });
+
   it('refuses to scan the base checkout under pull_request_target', () => {
     const [root] = committed({ 'docs/a.md': 'ok\n' });
 

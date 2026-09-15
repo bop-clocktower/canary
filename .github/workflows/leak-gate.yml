@@ -24,6 +24,9 @@ name: Leak Gate
 # filter never reports, and the PR can never merge.
 on:
   pull_request_target:
+    # `edited` re-runs the gate when a PR is retargeted to another base, which
+    # changes the authorship range. The default types omit it.
+    types: [opened, synchronize, reopened, edited]
   push:
     branches:
       - main
