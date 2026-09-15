@@ -1,0 +1,6 @@
+{
+  "id": "entropy-over-ceiling",
+  "target": "entropy-ratchet",
+  "plantedDefect": "a cleanup report one finding over its ceiling",
+  "expect": { "exitCode": 1 }
+}

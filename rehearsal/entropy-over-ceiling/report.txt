@@ -1,0 +1,2 @@
+REHEARSAL FIXTURE (#834): a synthetic `harness cleanup --findings-json` report one finding over its ceiling.
+{"findings":6,"v":1,"check":"cleanup"}

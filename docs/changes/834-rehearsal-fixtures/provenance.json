@@ -1,0 +1,19 @@
+{
+  "issues": [834],
+  "fleet": "roadmap-fleet",
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "plan": "docs/changes/834-rehearsal-fixtures/plans/2026-09-15-rehearsal-fixtures-plan.md",
+  "spec": "docs/changes/834-rehearsal-fixtures/proposal.md",
+  "tests": ["ts/test/rehearse.test.ts"],
+  "assumptions": [
+    "Ratchets are rehearsed at the ratchet script (synthetic report + fixture baseline), not at the upstream harness analyzers, which need the network-installed floating-major CLI.",
+    "The duration ratchet is probed through its exported compare(), because its CLI hard-codes the repo baseline path.",
+    "Fixtures live at repo-root rehearsal/, because blackhawk and savant skip fixtures/ directories and the strict dogfood steps scan ts/test and agents/skills/test.",
+    "The gate is a blocking step in the existing skills-validate job (after the engine build), not a new required check, so ruleset contexts are unchanged.",
+    "The ts unit suite runs the six offline probes; canary-cassandra needs a built engine, so its probe is exercised end to end by the CI step, whose wiring the suite asserts.",
+    "entryPoints edits are append-only (end of each array) so the rebase against open PRs #947 and #949 stays trivial.",
+    "No excludePatterns entry for rehearsal/: ts/test/entropy-exclude-patterns.test.ts forbids a repo-rooted exclude over tracked files (it would shrink the CI denominator). Fixture code files are *.test.mjs, already excluded; the rest are JSON/txt/diff data."
+  ],
+  "closingKeyword": "Fixes"
+}
