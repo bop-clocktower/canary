@@ -1,0 +1,21 @@
+{
+  "issues": [963],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "planArtifact": "docs/changes/history-junit-xml/plans/2026-09-15-history-junit-xml-plan.md",
+  "closingKeyword": "Closes",
+  "retryEncodingsSupported": [
+    "surefire flakyFailure/flakyError on a testcase with no final failure/error -> flaky",
+    "surefire rerunFailure/rerunError with no final failure/error -> flaky (with a final failure -> failed)",
+    "same classname::name repeated in one report -> one row, last attempt's status, flaky when an earlier attempt failed"
+  ],
+  "assumptions": [
+    "Both skills were invoked through the Skill tool, run autonomously with recommended defaults. No human sign-off gates were held. Autopilot's planner, executor, verifier and reviewer steps were run inline by the lane rather than as separate persona subagents, so planning, execution, verification and review are not listed as stages.",
+    "Test name is classname::name (pytest node-id style); a bare name is used when classname is absent (jest-junit style).",
+    "Retries in any other encoding, such as separate report files per attempt, are recorded per attempt.",
+    "A zone-less suite timestamp is read as UTC; without a timestamp the run uses the record-time clock.",
+    "Run duration_ms is the sum of per-test durations (as vitest), not the suite time attribute.",
+    "XML is detected by content starting with '<' and a testsuites/testsuite root; malformed XML is refused with exit 1 like bad JSON.",
+    "No new npm dependency: ts/src/guardian/diff-coverage/formats/xml.ts moved to ts/src/util/xml.ts so history (core+util only) can reuse it."
+  ]
+}

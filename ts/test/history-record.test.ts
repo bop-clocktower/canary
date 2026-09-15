@@ -17,6 +17,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -385,6 +386,85 @@ describe('canary history record', () => {
     } finally {
       rmTmp(tmp);
     }
+  });
+
+  describe('JUnit XML (#963)', () => {
+    it('records a pytest-style JUnit report end to end', async () => {
+      const tmp = mkTmp();
+      try {
+        const src = join(tmp, 'junit.xml');
+        writeFileSync(
+          src,
+          readFileSync(
+            join(
+              dirname(fileURLToPath(import.meta.url)),
+              'fixtures',
+              'junit',
+              'pytest-style.xml',
+            ),
+            'utf-8',
+          ),
+          'utf-8',
+        );
+        const res = await invokeCanary(
+          ['history', 'record', src, '--suite', 'py'],
+          { cwd: tmp, env: CI_ENV },
+        );
+        expect(res.code).toBe(0);
+        expect(readStore(tmp)[0]).toMatchObject({
+          suite: 'py',
+          total: 5,
+          passed: 1,
+          failed: 2,
+          flaky: 1,
+          skipped: 1,
+        });
+      } finally {
+        rmTmp(tmp);
+      }
+    });
+
+    it('exits 1 on malformed XML and records nothing', async () => {
+      const tmp = mkTmp();
+      try {
+        const src = join(tmp, 'broken.xml');
+        writeFileSync(
+          src,
+          '<testsuite><testcase name="a"></testsuite>',
+          'utf-8',
+        );
+        const res = await invokeCanary(
+          ['history', 'record', src, '--suite', 'py'],
+          { cwd: tmp, env: CI_ENV },
+        );
+        expect(res.code).toBe(1);
+        expect(res.stdout.toLowerCase()).toContain('could not be read');
+        expect(() => readStore(tmp)).toThrow();
+      } finally {
+        rmTmp(tmp);
+      }
+    });
+
+    it('abstains with exit 3 on a JUnit report with zero testcases', async () => {
+      const tmp = mkTmp();
+      try {
+        const src = join(tmp, 'empty.xml');
+        writeFileSync(
+          src,
+          '<testsuites><testsuite name="x" tests="0"/></testsuites>',
+          'utf-8',
+        );
+        const res = await invokeCanary(
+          ['history', 'record', src, '--suite', 'py'],
+          { cwd: tmp, env: CI_ENV },
+        );
+        expect(res.code).toBe(EXIT_ABSTAINED);
+        expect(res.stdout).toContain('--junitxml');
+        expect(() => readStore(tmp)).toThrow();
+      } finally {
+        rmTmp(tmp);
+      }
+    });
   });
 
   it('refuses an unrecognized report shape and names what it does support', async () => {

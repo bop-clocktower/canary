@@ -10,14 +10,14 @@
  *
  * Two deliberate limits, both of them data-honesty calls rather than laziness:
  *
- *   - **vitest `--reporter=json` and Playwright `json` only** (Playwright since
- *     #956); each format's reader lives in `formats/` (#969). The shape is detected rather than
- *     declared by flag, and an unrecognized shape is refused loudly. The
- *     alternative -- reading an unknown document and finding zero tests in it --
- *     is indistinguishable from a suite that genuinely ran nothing, which is
- *     exactly the denominator collapse #508 exists to make visible. JUnit XML is
- *     parsed elsewhere in the repo (canary-savant) but by a self-contained skill
- *     CLI the engine cannot import; it is not supported here yet.
+ *   - **vitest `--reporter=json`, Playwright `json` (#956) and JUnit XML
+ *     (#963) only**; each format's reader lives in `formats/` (#969). The shape
+ *     is detected rather than declared by flag, and an unrecognized shape is
+ *     refused loudly. The alternative -- reading an unknown document and finding
+ *     zero tests in it -- is indistinguishable from a suite that genuinely ran
+ *     nothing, which is exactly the denominator collapse #508 exists to make
+ *     visible. JUnit flakiness is read only from the retry encodings listed in
+ *     `formats/junit-report.ts`.
  *   - **vitest `flaky` is always 0.** Canary's status vocabulary is
  *     passed/failed/flaky/skipped; vitest has no flaky status, so a test that
  *     was retried and then passed arrives as `passed` and is invisible here.
@@ -40,6 +40,11 @@ import {
   isPlaywrightReport,
 } from './formats/playwright-report.js';
 import {
+  countJunitResults,
+  isJunitReport,
+  readJunitReport,
+} from './formats/junit-report.js';
+import {
   countVitestResults,
   isVitestReport,
   readVitestReport,
@@ -49,7 +54,7 @@ import {
 const RECORD_STATUSES = ['passed', 'failed', 'flaky', 'skipped'] as const;
 
 /** Report formats `record` can convert. `unknown` is refused, never guessed. */
-export type ReportShape = 'vitest' | 'playwright' | 'unknown';
+export type ReportShape = 'vitest' | 'playwright' | 'junit' | 'unknown';
 
 /** The run-level facts the report itself cannot carry (repo, branch, commit). */
 export interface RecordContext {
@@ -84,10 +89,22 @@ export class RecordValidationError extends Error {
 
 /** Detect by shape, not by flag -- callers should not have to know the format. */
 export function detectReportShape(parsed: unknown): ReportShape {
+  // JUnit arrives as the report's text (the CLI does not JSON-parse XML).
+  if (typeof parsed === 'string') {
+    return isJunitReport(parsed) ? 'junit' : 'unknown';
+  }
   if (parsed === null || typeof parsed !== 'object') return 'unknown';
   if (isVitestReport(parsed)) return 'vitest';
   return isPlaywrightReport(parsed) ? 'playwright' : 'unknown';
 }
+
+/** Readers that return an unvalidated run, keyed by shape (vitest is above). */
+const READERS: Partial<
+  Record<ReportShape, (parsed: unknown, ctx: RecordContext) => BuiltRun>
+> = {
+  playwright: buildRunFromPlaywrightReport,
+  junit: readJunitReport,
+};
 
 /**
  * Convert a report of a known shape, then validate it before any append.
@@ -99,10 +116,11 @@ export function buildRunFromReport(
   ctx: RecordContext,
 ): BuiltRun {
   if (shape === 'vitest') return buildRunFromVitestReport(parsed, ctx);
-  if (shape !== 'playwright') {
+  const reader = READERS[shape];
+  if (reader === undefined) {
     throw new Error(`cannot build a run from a report of shape '${shape}'`);
   }
-  const built = buildRunFromPlaywrightReport(parsed, ctx);
+  const built = reader(parsed, ctx);
   validateBuiltRun(built);
   return built;
 }
@@ -116,9 +134,9 @@ export function buildRunFromReport(
  * record either way, and the abstention is the finding worth reporting.
  */
 export function countReportResults(parsed: unknown): number {
-  if (detectReportShape(parsed) === 'playwright') {
-    return countPlaywrightResults(parsed);
-  }
+  const shape = detectReportShape(parsed);
+  if (shape === 'playwright') return countPlaywrightResults(parsed);
+  if (shape === 'junit') return countJunitResults(parsed);
   return countVitestResults(parsed);
 }
 

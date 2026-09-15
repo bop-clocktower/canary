@@ -102,11 +102,12 @@ Cross-reference the top 5 risk-scored areas from `critical-areas.json` against
 ### 5. Suite runtime
 
 Run history lives in `test-results/reports/history-v2.jsonl`.
-`canary history record` writes run and test `duration_ms` for vitest and
-Playwright JSON reports. The deterministic `canary ci-ready` CLI scores the p95
-of run durations over the last 30 runs that carry one, using the absolute
-thresholds in the fallback below ("vs. absolute threshold"). It reports `skip`
-when no stored run carries a duration, such as a store of legacy records.
+`canary history record` writes run and test `duration_ms` for vitest JSON,
+Playwright JSON and JUnit XML reports (pytest, jest-junit, surefire, Gradle).
+The deterministic `canary ci-ready` CLI scores the p95 of run durations over the
+last 30 runs that carry one, using the absolute thresholds in the fallback below
+("vs. absolute threshold"). It reports `skip` when no stored run carries a
+duration, such as a store of legacy records.
 
 **With harness MCP available:** score the p95 against trend history rather than
 an absolute clock. Call `get_perf_baselines` and compare this run's p95 to the

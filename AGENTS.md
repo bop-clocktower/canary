@@ -367,11 +367,12 @@ Python from the plugin hooks and maintenance scripts. There is no longer a
 - **Run history:** `test-results/reports/history-v2.jsonl` (NDJSON, one
   run-record per line) remains the on-disk contract between the executor, the
   history store, and `analysis/`. **`canary history record` is the writer**
-  (#538; reads vitest JSON, and Playwright JSON since #956, both with
-  `duration_ms`) — before it existed nothing in the product wrote the file, so
-  the whole `analyze` / `history` surface had only ever been read against
-  synthetic fixtures. New history consumers take the async `AsyncHistoryStore`
-  from `makeStore()`, never `NdjsonHistoryStore` directly; see
+  (#538; reads vitest JSON, Playwright JSON since #956 and JUnit XML since #963,
+  all with `duration_ms`) — before it existed nothing in the product wrote the
+  file, so the whole `analyze` / `history` surface had only ever been read
+  against synthetic fixtures. New history consumers take the async
+  `AsyncHistoryStore` from `makeStore()`, never `NdjsonHistoryStore` directly;
+  see
   [ADR 0013](docs/knowledge/decisions/0013-history-store-async-interface.md).
 - **Subprocess contract tests:** spawn through `runCapture()` in
   `ts/test/subprocess-testkit.ts`, never a hand-rolled `execFileSync` try/catch.

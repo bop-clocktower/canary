@@ -33,6 +33,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { Command, Option } from 'commander';
 import pc from 'picocolors';
 
+import { isWellFormedXml } from '../util/xml.js';
+
 import {
   CliExitError,
   jsonIndent2,
@@ -248,6 +250,16 @@ const FLAKY_VOCABULARY_NOTE =
   'note: flaky=0 \u{2014} vitest reports no flaky status, so a test that was ' +
   'retried and then passed is recorded as passed.';
 
+/**
+ * XML (JUnit, #963) stays text for the reader; everything else is JSON. A
+ * malformed XML document throws, so it is refused exactly like bad JSON.
+ */
+function parseReportText(text: string): unknown {
+  if (!text.trimStart().startsWith('<')) return JSON.parse(text);
+  if (!isWellFormedXml(text)) throw new Error('XML is not well formed');
+  return text;
+}
+
 /** Read + parse the results file, or exit 1 having said which and why. */
 function readReport(resultsFile: string, deps: HistoryDeps): unknown {
   if (!existsSync(resultsFile)) {
@@ -255,7 +267,7 @@ function readReport(resultsFile: string, deps: HistoryDeps): unknown {
     throw new CliExitError(1);
   }
   try {
-    return JSON.parse(readFileSync(resultsFile, 'utf-8'));
+    return parseReportText(readFileSync(resultsFile, 'utf-8'));
   } catch (err) {
     // Loud, not silent: an unreadable report means this run recorded NOTHING,
     // and a later `analyze` would abstain without ever saying why.
@@ -317,9 +329,10 @@ async function recordCmd(
   if (shape === 'unknown') {
     deps.out(
       `${pc.red('Unrecognized report:')} ${resultsFile} carries neither a ` +
-        `\`testResults\` array (vitest --reporter=json) nor a top-level ` +
-        `\`suites\` array (Playwright --reporter=json). \`record\` reads ` +
-        `vitest JSON and Playwright JSON; JUnit XML is not supported yet.`,
+        `\`testResults\` array (vitest --reporter=json), a top-level ` +
+        `\`suites\` array (Playwright --reporter=json), nor a ` +
+        `\`<testsuites>\`/\`<testsuite>\` root (JUnit XML). \`record\` reads ` +
+        `vitest JSON, Playwright JSON and JUnit XML.`,
     );
     throw new CliExitError(1);
   }
@@ -413,7 +426,8 @@ function abstainOnEmptyReport(
     `nothing was recorded \u{2014} an empty run is the denominator ` +
     `collapsing, not a passing suite. Check that the runner wrote its report ` +
     `(\`vitest --reporter=json --outputFile=<path>\`, or Playwright ` +
-    `\`--reporter=json\` with \`PLAYWRIGHT_JSON_OUTPUT_NAME=<path>\`) and ` +
+    `\`--reporter=json\` with \`PLAYWRIGHT_JSON_OUTPUT_NAME=<path>\`, or a ` +
+    `JUnit XML file such as \`pytest --junitxml=<path>\`) and ` +
     `that the suite ran.`;
   if (opts.json) {
     deps.out(
@@ -774,9 +788,12 @@ export function createHistoryCommand(
   program
     .command('record')
     .description(
-      'Record a finished test run into the history store (vitest or Playwright JSON).',
+      'Record a finished test run into the history store (vitest JSON, Playwright JSON or JUnit XML).',
     )
-    .argument('<results_file>', "Path to the runner's JSON report.")
+    .argument(
+      '<results_file>',
+      "Path to the runner's report (vitest/Playwright JSON or JUnit XML).",
+    )
     .requiredOption('--suite <suite>', 'Suite name for this run (e.g. e2e).')
     .option('--repo <repo>', 'GitHub repo slug (default: $GITHUB_REPOSITORY).')
     .option('--branch <branch>', 'Branch name (default: $GITHUB_REF_NAME).')
