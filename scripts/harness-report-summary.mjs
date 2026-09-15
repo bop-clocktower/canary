@@ -25,15 +25,29 @@
 // than not summarising at all.
 //
 // Exit codes follow the repo's gate convention (#508):
-//   0 = summarised (regardless of what the report itself said — the
-//       `harness ci check` step is what gates; a second failure here would
-//       only obscure which step is authoritative)
+//   0 = summarised. What the CI report itself said does not change this —
+//       `harness ci check` gates its own failures (metric regressions among
+//       them), and a second failure here would only obscure which step is
+//       authoritative. Pre-existing threshold violations over baselined debt,
+//       and violations an allowance covers, also exit 0.
+//   1 = NEW ARCH VIOLATION (#968) — the `--arch` detail report lists at least
+//       one entry in `newViolations`. `harness ci check` prints these as
+//       warnings and exits 0, so without this exit NOTHING gated them: PR #959
+//       merged `ts/src/history` at 2,013 lines (threshold 1,800) on a green
+//       required check whose own summary said "REGRESSION … Fix the code".
+//       Allowances cannot hide a real one by accident: `check-arch` removes an
+//       allowance's `violationIds` from `newViolations` before emitting JSON.
+//       Takes precedence over exit 3, because a known failure is the more
+//       actionable of the two.
 //   2 = usage error
 //   3 = ABSTENTION — the report is missing, truncated, or has zero checks,
 //       so this script verified nothing. That is precisely the #588 condition
 //       returning, so it is reported loudly rather than passing quietly.
 //       ALSO returned when the `traceability` check reports on a denominator
-//       this script cannot see (below).
+//       this script cannot see (below), and when an `--arch` report WAS
+//       supplied but is unreadable or lacks `newViolations` — now that this
+//       script gates new violations, a crashed `check-arch` must not read as
+//       "none new".
 //
 // The `traceability` check gets the same treatment, for a harder reason. It is
 // a pure function of `.harness/graph/graph.json`, which is gitignored and
@@ -188,18 +202,21 @@ function annotations(report) {
  */
 function archSection(report, archPath) {
   const check = report.checks.find((c) => c.name === 'arch');
-  if (!check) return { lines: [], annotations: [] };
+  if (!check) return { lines: [], annotations: [], exitCode: 0 };
   const failing = check.status === 'fail' || check.status === 'warn';
 
   if (archPath === undefined) {
-    if (!failing) return { lines: [], annotations: [] };
+    if (!failing) return { lines: [], annotations: [], exitCode: 0 };
     const message =
       'arch — CANNOT DISAMBIGUATE: no `harness check-arch --json` report was supplied, ' +
       'so a new violation and a stale baseline are indistinguishable here. Re-run with ' +
       '`--arch <report>`, or run `harness check-arch --json` locally and read `newViolations`.';
+    // No detail report was asked for, so there is nothing to abstain on — the
+    // local and test invocations that omit `--arch` keep their exit 0.
     return {
       lines: [message],
       annotations: [`::error title=harness arch::${message}`],
+      exitCode: 0,
     };
   }
 
@@ -212,11 +229,16 @@ function archSection(report, archPath) {
     return {
       lines: [message],
       annotations: [`::error title=harness arch::${message}`],
+      exitCode: 3,
     };
   }
+  // Only NEW violations block here (#968). A metric regression is already
+  // gated by `harness ci check`; failing on it twice would blur which step
+  // owns it.
   return {
     lines: archVerdictLines(verdict),
     annotations: archAnnotations(verdict),
+    exitCode: verdict.newCount > 0 ? 1 : 0,
   };
 }
 
@@ -349,10 +371,19 @@ function main() {
     console.log(line);
   }
   writeStepSummary(lines);
-  // Last, so the summary above is delivered in full first. A traceability
-  // status reported over an unknown denominator is not a summary of a passing
-  // check — it is this script failing to verify one, which is exit 3.
-  if (trace.abstained) process.exit(3);
+  // Last, so the summary above is delivered in full first.
+  process.exit(exitCodeFor(arch, trace));
+}
+
+/**
+ * A new arch violation (1) outranks an abstention (3): both fail the job, and
+ * the known failure is the one a reader can act on. A traceability status
+ * reported over an unknown denominator is this script failing to verify a
+ * check, which is exit 3, as is a supplied arch report it could not read.
+ */
+function exitCodeFor(arch, trace) {
+  if (arch.exitCode === 1) return 1;
+  return trace.abstained ? 3 : arch.exitCode;
 }
 
 main();

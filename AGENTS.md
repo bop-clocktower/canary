@@ -653,6 +653,14 @@ diff on the same day. Only `check-arch --json` carries the split
 sentences: `REGRESSION`, `BASELINE TRIP`, or `CANNOT DISAMBIGUATE` when the
 detail report is missing.
 
+**The summariser is what gates a new violation (#968).** `harness ci check`
+fails on a metric regression but prints a new threshold violation as a warning
+and exits 0. PR #959 merged a 2,013-line `ts/src/history` that way. So the
+summary step exits **1** whenever `newViolations` is non-empty, and **3** when
+the supplied arch report is unreadable. Pre-existing violations over baselined
+debt exit 0. So do violations an allowance's `violationIds` covers, because
+`check-arch` removes those from `newViolations` before writing the report.
+
 Locally, run the same classifier rather than `check-arch` on its own:
 
 ```bash

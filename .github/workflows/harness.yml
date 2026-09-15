@@ -61,8 +61,9 @@ jobs:
       # NEW violation or on the ratchet firing over pre-existing debt (#626).
       # Only `check-arch --json` carries that split, so capture it and hand it
       # to the summariser. `|| true`: this command exits 1 on the *absolute*
-      # count, which is exactly the verdict we are here to reinterpret — the
-      # `harness ci check` step above stays the thing that gates.
+      # count, which is exactly the verdict we are here to reinterpret. The
+      # failure is not swallowed: the summariser reads a missing, empty or
+      # field-less report as an ABSTENTION and exits 3.
       - name: Capture arch detail for the ratchet verdict
         if: ${{ !cancelled() }}
         run: harness check-arch --json > arch-report.json || true
@@ -79,6 +80,13 @@ jobs:
 
       # The readable part, small enough that no byte limit can reach it. Runs
       # on failure too — that is the only run anyone needs it for.
+      #
+      # This step GATES new architecture violations (#968). `harness ci check`
+      # above fails only on a metric regression; a NEW threshold violation is a
+      # warning there and exits 0, which is how PR #959 merged a 2,013-line
+      # `ts/src/history` on green. The summariser exits 1 when the arch detail
+      # lists any `newViolations`. Pre-existing violations over baselined debt
+      # and violations covered by `.harness/arch/allowances/` do not block.
       - name: Summarise harness checks
         if: ${{ !cancelled() }}
         run: |
