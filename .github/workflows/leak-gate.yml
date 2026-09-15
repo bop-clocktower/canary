@@ -1,0 +1,95 @@
+name: Leak Gate
+
+# #843, ADR 0023 (docs/knowledge/decisions/0023-leak-gate-pull-request-target.md).
+#
+# This job is the future producer of the REQUIRED context
+# `No removed-symbol or proprietary leaks` (see the two-step note on the job),
+# which needs `secrets.CANARY_PROPRIETARY_DENYLIST`. GitHub withholds secrets from
+# fork-triggered `pull_request` runs, so under that trigger no fork PR could
+# ever pass. `pull_request_target` runs in BASE-repo context, where the secret
+# resolves, and always uses this file as it exists on the base branch, so a PR
+# cannot weaken its own gate.
+#
+# SAFETY INVARIANT (pwn-request). Under base-repo secrets this workflow NEVER
+# checks out, installs, builds or runs head code:
+#   1. actions/checkout takes the base ref (the default) and never sets `ref:`.
+#   2. The head commit is fetched into the object store as DATA and never
+#      checked out. The scanner reads its blobs (`CANARY_LEAK_SCAN_TREE`).
+#   3. The script that runs is base's scripts/check_removed_symbols.mjs.
+#   4. No install, build or dependency cache.
+#   5. Minimal token permissions, and no persisted credentials.
+# Event values reach shell scripts only through `env:`, never as `${{ }}`
+# inside `run:`. ts/test/leak-gate-workflow.test.ts enforces all of this.
+#
+# No `paths:` filter, deliberately (#542). A required check behind a path
+# filter never reports, and the PR can never merge.
+on:
+  pull_request_target:
+    # `edited` re-runs the gate when a PR is retargeted to another base, which
+    # changes the authorship range. The default types omit it.
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches:
+      - main
+
+# contents: read only. Neither script calls the API, and fetching the head
+# commit of this public repo needs no broader scope (#948 security review).
+permissions:
+  contents: read
+
+jobs:
+  removed-symbols:
+    # TRANSITIONAL NAME (#843 step 1). pull_request_target runs the workflow
+    # as it exists on the base branch, so on the PR that adds this file it
+    # cannot report. The required context therefore stays on docs-lint.yml's
+    # pull_request job until this file is on main. Step 2 renames this job to
+    # `No removed-symbol or proprietary leaks` and deletes the docs-lint.yml
+    # job in the same PR. Until then a distinct name avoids two workflows
+    # reporting one context on the same PR.
+    name: Leak gate (pull_request_target, transitional)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Base ref only (see invariant 1). Full history so that the
+          # authorship scan can resolve `origin/<base>`. A shallow clone makes
+          # it abstain and fail rather than pass on zero commits.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      - name: Fetch the PR head commit as data (never checked out)
+        if: github.event_name == 'pull_request_target'
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          case "$PR_HEAD_SHA" in
+            *[!0-9a-f]* | '') echo "::error::PR head SHA is not hex"; exit 1 ;;
+          esac
+          if [ "${#PR_HEAD_SHA}" -ne 40 ]; then
+            echo "::error::PR head SHA is not a full 40-hex SHA"
+            exit 1
+          fi
+          # Fork heads are served from the base repo (refs/pull/N/head), so
+          # fetching by exact SHA pins the event's commit with no ref race.
+          # The fetch writes objects only. Nothing touches the working tree.
+          git fetch --no-tags --no-recurse-submodules origin "$PR_HEAD_SHA"
+          git cat-file -e "${PR_HEAD_SHA}^{commit}"
+      - name: Check for removed-symbol drift and proprietary leaks
+        # If the secret is unset the authorship scan ABSTAINS and this step
+        # fails (#784). A gate matching zero patterns has verified nothing.
+        # Under pull_request_target with no readable head commit the scanner
+        # also abstains rather than scanning the base checkout (#843).
+        env:
+          CANARY_PROPRIETARY_DENYLIST:
+            ${{ secrets.CANARY_PROPRIETARY_DENYLIST }}
+          # push: bounds the authorship range. Empty on PR events.
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          # PR events: the real head, which ends the authorship range.
+          GITHUB_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # PR events: file contents come from this commit's blobs. Empty on
+          # push, where the checkout already is the commit under test.
+          CANARY_LEAK_SCAN_TREE: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/check_removed_symbols.mjs
