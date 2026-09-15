@@ -37,6 +37,16 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`vacuity-check` no longer reports `import-inferred` VAC-002 on E2E specs**
+  (#971). A Playwright or WebDriver spec drives `page`/`browser`/`driver`, so
+  its target is the application and it references none of its first-party
+  imports by construction. On one E2E suite that produced 70 false positives in
+  128 tests, burying 10 real no-assertion findings. When a file imports a
+  browser-driver package (`@playwright/test`, `playwright`, `@wdio/*`,
+  `cypress`, `selenium-webdriver`, `appwright`), or a test destructures a
+  `page`/`browser`/`driver` fixture, the finding is now counted as a skip:
+  `N test(s) [E2E context, target is the application]`. `annotated` VAC-002,
+  unit-test files and the no-assertion skip are unchanged.
 - **`canary skills run` resolves relative paths against the caller's directory**
   (#955). Code-bearing skills were spawned with their own install directory as
   cwd, so `-- tests/unit` (the form each `SKILL.md` documents), katana's
