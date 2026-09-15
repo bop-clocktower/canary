@@ -1,11 +1,12 @@
 /**
  * `canary ci-ready` — the deterministic half of the canary-ci-ready skill.
  *
- * The skill defines five checks. Today only one of them has a real producer
- * behind it: flakiness, read from the run-history store. The other four name
- * inputs nothing in canary writes (no `canary coverage` command exists, and the
- * history store records no durations), so they must report `skip` with the
- * missing input named. They must never pass.
+ * The skill defines five checks. Two of them have a real producer behind them,
+ * both read from the run-history store: flakiness, and suite runtime (p95 of
+ * recorded run durations, since #956). The other three name an input nothing
+ * in canary writes (no `canary coverage` command exists), so they must report
+ * `skip` with the missing input named. So must suite runtime when no stored run
+ * carries a duration. A skip must never pass.
  *
  * The verdict contract these tests pin:
  *   - abstained  (exit 3): every check skipped. "Checked nothing" is not ready.
@@ -32,11 +33,16 @@ interface Report {
 
 const HISTORY = join('test-results', 'reports', 'history-v2.jsonl');
 
-/** One stored run per entry; `flakyIn` lists the run indexes where `t1` flaked. */
+/**
+ * One stored run per entry; `flakyIn` lists the run indexes where `t1` flaked,
+ * and `durations[i]` (when defined) is run i's `duration_ms`. A run with no
+ * entry is written without the field, like a legacy record.
+ */
 function writeHistory(
   root: string,
   runs: number,
   flakyIn: number[] = [],
+  durations: (number | undefined)[] = [],
 ): void {
   mkdirSync(join(root, 'test-results', 'reports'), { recursive: true });
   const lines: string[] = [];
@@ -54,6 +60,7 @@ function writeHistory(
         failed: 0,
         flaky: flaky ? 1 : 0,
         skipped: 0,
+        ...(durations[i] === undefined ? {} : { duration_ms: durations[i] }),
         schema_version: 2,
         tests: [
           {
@@ -143,12 +150,55 @@ describe('canary ci-ready', () => {
     expect(f.reason).toMatch(/history-v2\.jsonl/);
   });
 
-  it('always skips suite runtime, because the history store records no durations', async () => {
-    writeHistory(root, 5);
-    const { report } = await runJson(root);
-    const r = check(report, 'suite-runtime');
-    expect(r.verdict).toBe('skip');
-    expect(r.reason).toMatch(/duration/i);
+  describe('suite runtime (p95 of recorded run durations, #956)', () => {
+    const MIN = 60_000;
+
+    it('skips, naming the store, when no stored run carries a duration', async () => {
+      writeHistory(root, 5);
+      const { report } = await runJson(root);
+      const r = check(report, 'suite-runtime');
+      expect(r.verdict).toBe('skip');
+      expect(r.reason).toMatch(/duration/i);
+      expect(r.reason).toMatch(/history-v2\.jsonl/);
+    });
+
+    it('passes when the p95 is under 5 minutes, and says what it measured', async () => {
+      // One legacy run (no field) and one zero duration are not counted.
+      writeHistory(root, 6, [], [undefined, 0, MIN, MIN, 2 * MIN, 90_000]);
+      const { report } = await runJson(root);
+      const r = check(report, 'suite-runtime');
+      expect(r.verdict).toBe('pass');
+      expect(r.reason).toMatch(/p95/);
+      expect(r.reason).toMatch(/2m 0s/);
+      expect(r.reason).toMatch(/4 run\(s\)/);
+      expect(r.reason).toMatch(/vs\. absolute threshold/);
+      expect(report.checked).toBe(2);
+    });
+
+    it('warns when the p95 is between 5 and 10 minutes', async () => {
+      // Nearest-rank p95 of 20 runs is the 19th smallest: a 400s run.
+      const durations = [...Array(18).fill(MIN), 400_000, 400_000];
+      writeHistory(root, 20, [], durations);
+      const { report } = await runJson(root);
+      expect(check(report, 'suite-runtime').verdict).toBe('warn');
+    });
+
+    it('fails when the p95 is over 10 minutes', async () => {
+      writeHistory(root, 5, [], Array(5).fill(11 * MIN));
+      const { code, report } = await runJson(root);
+      expect(check(report, 'suite-runtime').verdict).toBe('fail');
+      expect(report.verdict).toBe('not-ready');
+      expect(code).toBe(1);
+    });
+
+    it('scores only the last 30 runs that carry a duration', async () => {
+      const durations = [...Array(10).fill(20 * MIN), ...Array(30).fill(MIN)];
+      writeHistory(root, 40, [], durations);
+      const { report } = await runJson(root);
+      const r = check(report, 'suite-runtime');
+      expect(r.verdict).toBe('pass');
+      expect(r.reason).toMatch(/30 run\(s\)/);
+    });
   });
 
   it('skips the inventory checks and names test-inventory.json as the missing input', async () => {
