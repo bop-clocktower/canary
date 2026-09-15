@@ -17,7 +17,7 @@ import { Comment, findSticky } from './pr-comment.js';
 const API = 'https://api.github.com';
 
 /** The most merged PRs one report walks (bounds API cost and rate limits). */
-export const MERGED_PR_LIMIT = 300;
+const MERGED_PR_LIMIT = 300;
 
 /** `revisions` oldest to newest, or `null` when history is not retrievable. */
 export interface StickyHistory {
