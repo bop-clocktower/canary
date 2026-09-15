@@ -43,12 +43,13 @@ import type { RunInput, TestResultInput } from './schema.js';
 import { makeRunId } from './schema.js';
 import { makeStore as realMakeStore, type AsyncHistoryStore } from './store.js';
 import {
-  buildRunFromVitestReport,
+  buildRunFromReport,
   countReportResults,
   detectReportShape,
   RecordValidationError,
   type BuiltRun,
   type RecordContext,
+  type ReportShape,
 } from './run-recorder.js';
 import { def } from '../util/coalesce.js';
 import { pyFloat } from '../util/round.js';
@@ -312,12 +313,13 @@ async function recordCmd(
   deps: HistoryDeps,
 ): Promise<void> {
   const parsed = readReport(resultsFile, deps);
-  if (detectReportShape(parsed) !== 'vitest') {
+  const shape = detectReportShape(parsed);
+  if (shape === 'unknown') {
     deps.out(
-      `${pc.red('Unrecognized report:')} ${resultsFile} carries no ` +
-        `\`testResults\` array, so it is not a vitest --reporter=json report. ` +
-        `\`record\` reads vitest JSON today; Playwright JSON and JUnit XML ` +
-        `are not supported yet.`,
+      `${pc.red('Unrecognized report:')} ${resultsFile} carries neither a ` +
+        `\`testResults\` array (vitest --reporter=json) nor a top-level ` +
+        `\`suites\` array (Playwright --reporter=json). \`record\` reads ` +
+        `vitest JSON and Playwright JSON; JUnit XML is not supported yet.`,
     );
     throw new CliExitError(1);
   }
@@ -330,25 +332,14 @@ async function recordCmd(
     return;
   }
 
-  const ctx = recordContext(opts, deps);
-  let built;
-  try {
-    built = buildRunFromVitestReport(parsed, ctx);
-  } catch (err) {
-    if (!(err instanceof RecordValidationError)) throw err;
-    deps.out(
-      `${pc.red('Invalid results:')} ${err.message}. Nothing was recorded ` +
-        `\u{2014} a malformed record degrades every later read of the store.`,
-    );
-    throw new CliExitError(1);
-  }
+  const built = buildOrRefuse(shape, parsed, recordContext(opts, deps), deps);
 
   const remote = opts.dbUrl ?? deps.env['CANARY_HISTORY_DB_URL'];
   const storePath = opts.path ?? DEFAULT_HISTORY_FILE;
   const target = remote ? 'the configured remote store' : storePath;
 
   if (opts.dryRun) {
-    reportDryRun(built, target, opts, deps);
+    reportDryRun(built, target, opts, deps, shape);
     return;
   }
 
@@ -384,7 +375,31 @@ async function recordCmd(
     );
   }
 
-  reportRecorded(built, target, opts, deps);
+  reportRecorded(built, target, opts, deps, shape);
+}
+
+/** Convert the report, or exit 1 before any append if it would poison reads. */
+function buildOrRefuse(
+  shape: ReportShape,
+  parsed: unknown,
+  ctx: RecordContext,
+  deps: HistoryDeps,
+): BuiltRun {
+  try {
+    return buildRunFromReport(shape, parsed, ctx);
+  } catch (err) {
+    if (!(err instanceof RecordValidationError)) throw err;
+    deps.out(
+      `${pc.red('Invalid results:')} ${err.message}. Nothing was recorded ` +
+        `\u{2014} a malformed record degrades every later read of the store.`,
+    );
+    throw new CliExitError(1);
+  }
+}
+
+/** vitest cannot report a flake; Playwright can, so its `flaky` is real. */
+function printFlakyNote(shape: ReportShape, deps: HistoryDeps): void {
+  if (shape === 'vitest') deps.out(FLAKY_VOCABULARY_NOTE);
 }
 
 function abstainOnEmptyReport(
@@ -397,7 +412,9 @@ function abstainOnEmptyReport(
     `${outcome.summaryLine} ${resultsFile} carried zero test results, so ` +
     `nothing was recorded \u{2014} an empty run is the denominator ` +
     `collapsing, not a passing suite. Check that the runner wrote its report ` +
-    `(\`vitest --reporter=json --outputFile=<path>\`) and that the suite ran.`;
+    `(\`vitest --reporter=json --outputFile=<path>\`, or Playwright ` +
+    `\`--reporter=json\` with \`PLAYWRIGHT_JSON_OUTPUT_NAME=<path>\`) and ` +
+    `that the suite ran.`;
   if (opts.json) {
     deps.out(
       jsonIndent2({
@@ -449,6 +466,7 @@ function reportDryRun(
   target: string,
   opts: RecordOptions,
   deps: HistoryDeps,
+  shape: ReportShape,
 ): void {
   if (opts.json) {
     deps.out(
@@ -462,7 +480,7 @@ function reportDryRun(
     `${pc.cyan('dry-run:')} would record ${countsLine(built)} as ` +
       `${pc.bold(built.run.run_id)} \u{2192} ${target}`,
   );
-  deps.out(FLAKY_VOCABULARY_NOTE);
+  printFlakyNote(shape, deps);
 }
 
 function reportRecorded(
@@ -470,6 +488,7 @@ function reportRecorded(
   target: string,
   opts: RecordOptions,
   deps: HistoryDeps,
+  shape: ReportShape,
 ): void {
   if (opts.json) {
     deps.out(jsonIndent2(recordPayload(built, target, { recorded: true })));
@@ -477,7 +496,7 @@ function reportRecorded(
   }
   deps.out(`${pc.green('Recorded')} ${countsLine(built)} \u{2192} ${target}`);
   deps.out(`run_id: ${built.run.run_id}`);
-  deps.out(FLAKY_VOCABULARY_NOTE);
+  printFlakyNote(shape, deps);
 }
 
 // --- flaky -------------------------------------------------------------------
@@ -755,7 +774,7 @@ export function createHistoryCommand(
   program
     .command('record')
     .description(
-      'Record a finished test run into the history store (vitest JSON).',
+      'Record a finished test run into the history store (vitest or Playwright JSON).',
     )
     .argument('<results_file>', "Path to the runner's JSON report.")
     .requiredOption('--suite <suite>', 'Suite name for this run (e.g. e2e).')
