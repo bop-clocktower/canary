@@ -1,0 +1,6 @@
+{
+  "id": "perf-over-ceiling",
+  "target": "perf-ratchet",
+  "plantedDefect": "a check-perf report one violation over its ceiling",
+  "expect": { "exitCode": 1 }
+}

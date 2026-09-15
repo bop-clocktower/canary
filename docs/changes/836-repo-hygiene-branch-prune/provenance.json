@@ -1,0 +1,20 @@
+{
+  "issues": [836],
+  "fleet": "roadmap-fleet",
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "plan": "docs/changes/836-repo-hygiene-branch-prune/plans/plan.md",
+  "spec": "docs/changes/836-repo-hygiene-branch-prune/proposal.md",
+  "tests": ["ts/test/branch-prune.test.ts"],
+  "assumptions": [
+    "Human decision: pruning enabled for BRANCHES ONLY; worktree pruning deferred per ADR 0022.",
+    "The audit is shipped as a canary script (scripts/branch-prune.mjs) rather than only an AGENTS.md pointer, because the harness skill's audit could not be verified to use cherry + ls-remote; the script is the verified classifier the skill or a human acts on.",
+    "A local branch is deletable only if cherry-clean against origin/main AND (its tip equals the ls-remote tip OR it has no remote and cherry shows zero unique commits) — or its PR is MERGED and the tip equals the PR headRefOid.",
+    "A local-only branch with unique commits is always kept, even with a merged PR, unless the tip equals the PR head.",
+    "Protect-list is permanent and matched before any merge logic: main, release/*, fix/mcp-tool-path-containment, fix/migrator-workflow-symlink-escape.",
+    "No remote deletion flag exists at all; unknown flags exit 2, so --apply-remote cannot be silently ignored.",
+    "PR state unavailable (gh missing/unauthenticated) degrades to 'keep' for every branch with unique commits, with a stderr warning; it never enables deletion.",
+    "Exit 3 when zero non-protected branches were examined, so a misconfigured CI checkout (shallow, no remote refs) reads as an abstention, not a clean sweep.",
+    "CI dry-run is advisory in dogfood.yml, not a required check."
+  ]
+}

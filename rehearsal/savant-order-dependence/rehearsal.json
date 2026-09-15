@@ -1,0 +1,6 @@
+{
+  "id": "savant-order-dependence",
+  "target": "canary-savant",
+  "plantedDefect": "a module-level array one test writes and the next test reads",
+  "expect": { "ruleId": "SV001-module-mutable-global" }
+}

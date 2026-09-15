@@ -467,3 +467,14 @@ jobs:
         run:
           node agents/skills/claude-code/canary-savant/scripts/cli.mjs ts/test
           agents/skills/test --strict
+
+      # Rehearsal (#834, ADR 0018). Every detector and ratchet above reports
+      # green by reporting zero or a number, and zero is indistinguishable from
+      # a dead instrument. This runs each against a planted defect under
+      # `rehearsal/` and fails unless all of them FIRE, printing
+      # `n fired of n expected`. A target with no fixture, a probe that examined
+      # zero items, or an empty fixture root (exit 3) fails the step. Placed
+      # after the engine build because canary-cassandra delegates to ts/dist.
+      # Never add `|| true` or continue-on-error here.
+      - name: Rehearse detectors and ratchets (blocking)
+        run: node scripts/rehearse.mjs

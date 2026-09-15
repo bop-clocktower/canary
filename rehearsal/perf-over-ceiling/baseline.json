@@ -1,0 +1,5 @@
+{
+  "$comment": "REHEARSAL FIXTURE (#834, ADR 0018). Synthetic ceiling, not the repo baseline.",
+  "maxViolations": 5,
+  "deltaAllowances": []
+}
