@@ -1,0 +1,23 @@
+{
+  "issues": [929],
+  "fleet": "roadmap-fleet",
+  "route": "bug",
+  "branch": "fix/929-weak-test-precision",
+  "plan": "docs/changes/929-weak-test-precision/plans/plan.md",
+  "stages": ["intake", "debugging", "tdd", "implementation", "verification"],
+  "pipelineProvenance": "degraded: debugging discipline (reproduce -> red -> fix -> green) run inline by the fleet build worker; no harness-debugging session artifact",
+  "reproducingTests": [
+    "ts/test/guardian-weak-test-precision.test.ts :: #929: a block whose end is out of view is abstained on (3 tests)",
+    "ts/test/guardian-weak-test-precision.test.ts :: #929: assertions routed through helpers are recognised (3 tests)",
+    "ts/test/guardian-weak-test-precision.test.ts :: #929: true positives still fire and name their test (2 tests)"
+  ],
+  "redAtBase": "c41bb85d",
+  "assumptions": [
+    "A block whose end is not visible is abstained on, except in a new file (--- /dev/null), where the last visible line is end-of-file and closes the block.",
+    "Helper resolution reads the diff's visible lines unioned with the file's own text under the working directory ('.', the repoRoot convention guardian's CLI already uses); a helper only counts when its body closes inside the text it was read from.",
+    "A helper is a same-file `function name(`, `const|let|var name = (…) =>` / `function`, or Python `def name(` whose closed body matches the framework's assertion pattern. Helpers calling other helpers are not followed.",
+    "One weak-test finding is emitted per weak test block (previously at most one per file), so each row names its test; added_ranges is the test's line span.",
+    "The existing pytest true-positive fixture gained a dedented context line: without it the block's end was never visible and the new rule abstains, which is the intended behaviour."
+  ],
+  "closingKeyword": "Closes"
+}
