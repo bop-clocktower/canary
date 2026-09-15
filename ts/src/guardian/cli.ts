@@ -211,6 +211,33 @@ export interface GuardianDeps {
   sleep(secs: number): Promise<void>;
 }
 
+/** Run `git`; `null` when the binary is missing (Python OSError fail-safe). */
+function spawnGit(args: string[], cwd?: string): GitResult | null {
+  const res = spawnSync('git', args, {
+    encoding: 'utf-8',
+    maxBuffer: Infinity,
+    ...(cwd ? { cwd } : {}),
+  });
+  if (res.error) return null;
+  return { code: res.status ?? 1, stdout: res.stdout ?? '' };
+}
+
+/** Run `gh` with a 30s timeout; `failed` when it could not be spawned. */
+function spawnGh(args: string[]): GhResult {
+  const res = spawnSync('gh', args, {
+    encoding: 'utf-8',
+    timeout: 30_000,
+    maxBuffer: Infinity,
+  });
+  if (res.error) return { status: null, stdout: '', stderr: '', failed: true };
+  return {
+    status: res.status,
+    stdout: res.stdout ?? '',
+    stderr: res.stderr ?? '',
+    failed: false,
+  };
+}
+
 /** Process-backed defaults for production (the `guardianCommand` export). */
 export function defaultDeps(): GuardianDeps {
   return {
@@ -225,31 +252,8 @@ export function defaultDeps(): GuardianDeps {
     },
     env: process.env,
     cwd: () => process.cwd(),
-    runGit: (args, cwd) => {
-      const res = spawnSync('git', args, {
-        encoding: 'utf-8',
-        maxBuffer: Infinity,
-        ...(cwd ? { cwd } : {}),
-      });
-      if (res.error) return null; // missing binary -> Python OSError fail-safe
-      return { code: res.status ?? 1, stdout: res.stdout ?? '' };
-    },
-    runGh: (args) => {
-      const res = spawnSync('gh', args, {
-        encoding: 'utf-8',
-        timeout: 30_000,
-        maxBuffer: Infinity,
-      });
-      if (res.error) {
-        return { status: null, stdout: '', stderr: '', failed: true };
-      }
-      return {
-        status: res.status,
-        stdout: res.stdout ?? '',
-        stderr: res.stderr ?? '',
-        failed: false,
-      };
-    },
+    runGit: spawnGit,
+    runGh: spawnGh,
     buildCommentClient: (repo, prNumber) =>
       new RestGitHubClient(repo, prNumber, process.env['GITHUB_TOKEN'] ?? ''),
     buildAdjudicationSource: (repo, token) =>
