@@ -14,6 +14,16 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **`canary skills run` resolves relative paths against the caller's directory**
+  (#955). Code-bearing skills were spawned with their own install directory as
+  cwd, so `-- tests/unit` (the form each `SKILL.md` documents), katana's
+  `--repo`/default `.`, and fail-fast's `--config` all failed. They now run in
+  the caller's cwd. `canary-savant`, `canary-blackhawk` and `canary-cassandra`
+  now exit **2** (usage error) on a path that does not exist, instead of 1, so a
+  typo can no longer read as "findings" under `--strict`.
+
 ## [8.0.0] - 2026-09-15
 
 > **Breaking:** `canary guardian collect-adjudications` is removed (see

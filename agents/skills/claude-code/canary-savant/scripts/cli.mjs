@@ -207,7 +207,8 @@ export function main(argv = []) {
   for (const entry of paths) {
     if (!fs.existsSync(entry)) {
       console.error(`${PREFIX} path not found: ${entry}`);
-      return 1;
+      // A missing path is a usage error, not a finding (#955).
+      return EXIT_USAGE;
     }
   }
 

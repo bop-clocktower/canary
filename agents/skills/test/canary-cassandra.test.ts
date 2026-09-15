@@ -168,9 +168,9 @@ describe('scanning', () => {
     ).toBe(true);
   });
 
-  it('fails with exit 1 on a path that does not exist', () => {
+  it('fails with exit 2 (usage) on a path that does not exist (#955)', () => {
     const r = run([path.join(mkTmp(), 'nope')]);
-    expect(r.code).toBe(1);
+    expect(r.code).toBe(2);
     expect(r.stderr).toContain('path not found');
   });
 
