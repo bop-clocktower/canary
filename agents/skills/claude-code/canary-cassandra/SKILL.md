@@ -106,6 +106,17 @@ resolve one. Three rungs, and the finding says which one it used:
 | `import-inferred` | The symbols imported from first-party (relative) modules, closed over local helpers           | Medium — read the test before acting  |
 | _(skipped)_       | Neither available. Reported as a skip with its reason; the test is **not** reported as clean. | None — the check did not run          |
 
+**E2E / browser-driver specs skip `import-inferred` VAC-002** (#971). A spec
+that drives `page`/`browser`/`driver` targets the application, not the symbols
+it imports, so "references none of its first-party imports" is true by
+construction. When the file imports `@playwright/test`, `playwright`, `@wdio/*`,
+`cypress`, `selenium-webdriver` or `appwright`, or the test callback
+destructures a `page`/`browser`/`driver` fixture, that finding moves to the skip
+list as `E2E context, target is the application`. The file path is never
+evidence (`*.spec.ts` is a vitest convention too). An `annotated` VAC-002 still
+reports, and the no-assertion skip is unaffected — so real no-assertion E2E
+tests stay visible.
+
 `import-inferred` reads four binding forms, not one: a named or default import,
 a **namespace** import (`import * as store from './store.js'`), a **dynamic**
 import (`const { save } = await import('./store.js')`), and a handle bound to a
@@ -179,6 +190,10 @@ with no denominator is not a result.
   that `await import(...)` their target have no static import for the inference
   to read. Annotate them, or accept the tier and move on — do not rewrite the
   suite to satisfy a heuristic.
+- **An E2E suite that still shows many VAC-002 findings** is not being detected
+  as browser-driver context — check that it imports its driver package or uses a
+  `page`/`browser`/`driver` fixture, and read the
+  `E2E context, target is the application` skip count on the summary line.
 - **A finding you disagree with is a doc gap, not an argument.** Write the
   `@covers` annotation; the next reader gets the answer for free.
 

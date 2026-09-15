@@ -223,8 +223,11 @@ remote deletion is a human act. Worktree pruning waits for #889.
   true presence check on a value the test built itself (#870).
   `VAC-002`/`VAC-003` carry a fidelity ladder (`annotated` via
   `// @covers <symbol>` over `import-inferred`); a test resolvable at neither
-  tier becomes a recorded **skip**, never a pass. Returns a `GateResult` whose
-  `checked` counts **tests**, not files. Surfaced as `canary vacuity-check`.
+  tier becomes a recorded **skip**, never a pass. In a browser-driver (E2E)
+  test, detected by [ts/src/core/e2e-context.ts](ts/src/core/e2e-context.ts), an
+  `import-inferred` `VAC-002` is also a named skip (#971). Returns a
+  `GateResult` whose `checked` counts **tests**, not files. Surfaced as
+  `canary vacuity-check`.
 - **Promotion Verdict:**
   [ts/src/core/promotion-verdict.ts](ts/src/core/promotion-verdict.ts) — The
   structured verdict `canary-promote-test` gates on (#477). Composes the static
