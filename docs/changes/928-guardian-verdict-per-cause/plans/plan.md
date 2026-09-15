@@ -27,8 +27,9 @@ Route: bug (debugging discipline + TDD). The design was decided in the issue
    (the stale count); `coverageCauses` splits stale / scope gap / non-coverable;
    the notice is `null` when the report spoke to every unit.
 4. `cli.ts`: apply the existing `isSourcePath` floor before coverage. Dropped
-   units become `non-source` skip entries. When the floor alone empties the
-   diff, the run is case E (a result, exit 0), not an abstention.
+   units become `non-source` skip entries. A run with nothing eligible still
+   abstains (exit 3, ADR 0009), and under `--post-comment` `abstainPrCheck`
+   upserts the ✅ E sticky so an earlier ⚠️ one cannot linger.
 5. `pr-check.ts`: `coverageHeadline` picks the worst cause (C > B > A/E), lists
    the rest as counts, and feeds both the comment and text surfaces. The comment
    footer no longer repeats the coverage notice.

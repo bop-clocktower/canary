@@ -452,20 +452,9 @@ function headSha(deps: GuardianDeps, root: string): string | null {
 }
 
 /**
- * Is the loop guard live -- i.e. does a sentinel stamped at the CURRENT `HEAD`
- * exist?
- *
- * This is the surviving half of the stage-and-block-once contract (#456). The
- * component that CLEARED the sentinel on the next commit
- * (`hooks/guardian_precommit.py`) was deleted as dead code in #449, which left
- * `author-plan` fail-closed forever: author once in a clone and Tier-2 authoring
- * never ran again. Stamping HEAD makes the guard self-expiring -- once the human
- * reviews and commits the staged tests, `HEAD` moves, the stamp stops matching,
- * and authoring re-enables itself with no manual step and no hook.
- *
- * Every unverifiable state FAILS OPEN (returns `false`, authoring allowed):
- * missing or unreadable sentinel, a malformed/absent `HEAD` header, or a `HEAD`
- * we cannot resolve. Fail-closed here is exactly the bug being fixed.
+ * Is the loop guard live, i.e. is the sentinel stamped at the CURRENT `HEAD`
+ * (#456)? Stamping HEAD makes the guard self-expiring once the staged tests are
+ * committed. Every unverifiable state FAILS OPEN (returns `false`).
  */
 function authoredSentinelActive(deps: GuardianDeps, root: string): boolean {
   let body: string;
@@ -661,19 +650,9 @@ function resolveBaseRev(deps: GuardianDeps): string | null {
 }
 
 /**
- * Resolve the diff `pr-check` should scope, preferring the PR diff in CI (#369).
- *
- * An explicit `--diff` (stdin or file) always wins and never shells out. With
- * `--diff` omitted:
- *
- *   - **In CI** with a resolvable base rev → `git diff <base>...HEAD`. The
- *     TRIPLE-dot form diffs against the merge base, so commits that land on the
- *     base branch mid-PR never appear as part of this PR's changed surface.
- *   - **Otherwise** → the at-desk working-tree diff ({@link readWorktreeDiff}).
- *
- * The legacy behavior was the working-tree diff unconditionally, which is empty
- * on a clean CI checkout — the gate then scoped zero paths and exited 0, so an
- * adopting repo could not tell a working gate from a broken one.
+ * Resolve the diff `pr-check` should scope (#369). An explicit `--diff` wins;
+ * in CI with a base rev it is `git diff <base>...HEAD` (merge base, so commits
+ * landing on base mid-PR stay out); otherwise the working-tree diff.
  */
 export function readPrDiff(
   source: string | null,
@@ -1267,6 +1246,13 @@ async function postStickyComment(
   }
 }
 
+/** An abstained run judged nothing, so no agent tier was ever in play. */
+const NO_TIER: TierResolution = {
+  requested: 0,
+  effective: 0,
+  degraded_notice: null,
+};
+
 /** The gate's no-op line, shared by the pre- and post-filter exits. */
 // D7: every filtered path stays visible as a SkipEntry, never folded
 // into "passed". One entry per path so the rendered count still equals
@@ -1319,32 +1305,44 @@ const PR_CHECK_ABSTAIN_REMEDIATION = [
     'every path.',
 ];
 
-/** Exit 3 with the structural abstention line + remediation (#508). */
-function abstainPrCheck(
+/**
+ * Exit 3 with the structural abstention line + remediation (#508). Nothing was
+ * eligible (docs, tests, config), so under `--post-comment` it also upserts the
+ * ✅ "nothing to test" sticky and an earlier ⚠️ one cannot linger (#928).
+ */
+async function abstainPrCheck(
   skipped: SkipEntry[],
-  format: string,
+  opts: { format: string; postComment?: boolean },
   deps: GuardianDeps,
   provenance: DiffProvenance | null = null,
-): never {
+): Promise<never> {
   const outcome = gateOutcome({ checked: 0, findings: [], skipped }, 'gate', {
     noun: 'unit(s)',
   });
   deps.out(outcome.summaryLine);
-  // #761: an abstention says "I verified zero items" — the immediate next
-  // question is "over WHAT?", and the run that motivated this feature is
-  // precisely one that should have abstained. Stating the range here is what
-  // separates "correctly abstained on a docs-only PR" from "abstained because
-  // the diff was wrong", which read identically without it.
+  // #761: state the range, so "correctly abstained" and "wrong diff" differ.
   if (provenance) deps.out(provenanceLine(provenance));
   for (const line of PR_CHECK_ABSTAIN_REMEDIATION) deps.out(line);
-  if (format === 'json') {
+  if (opts.postComment) {
+    const coverage = { requested: null, found: false, parsed: false };
+    await postStickyComment([], NO_TIER, deps, {
+      checked: 0,
+      abstained: false,
+      coverage: {
+        ...coverage,
+        filesInReport: 0,
+        unitsMatched: 0,
+        unitsTotal: 0,
+      },
+      skipped,
+      provenance,
+    });
+  }
+  if (opts.format === 'json') {
     deps.out(
       ensureAscii(
         JSON.stringify(
-          // #579: `skipped` carries the denominator the abstention collapsed
-          // to. Without it a consumer sees `abstained: true` and cannot tell
-          // WHAT was dropped or why -- the #508 class one layer down, on the
-          // only surface a machine can read.
+          // #579: `skipped` is the denominator the abstention collapsed to.
           {
             findings: [],
             tier: 0,
@@ -1519,22 +1517,14 @@ async function prCheckCmd(
   // too; a config/data file can never match a coverage report.
   const nonSourceUnits = keptBarrel.filter((u) => !isSourcePath(u.path));
   const kept = keptBarrel.filter((u) => isSourcePath(u.path));
-  // Case E: the floor alone emptied the diff. A result, not an abstention.
-  const nothingToTest = kept.length === 0 && nonSourceUnits.length > 0;
 
   // Advisory weak-test findings for added tests that assert nothing.
   const weakFindings = config.weak_tests
     ? buildWeakTestFindings(testUnits, diffText)
     : [];
 
-  // #582: build the skip list ONCE, above the abstain exit, so the surviving
-  // (non-abstain) path carries the same denominator the abstain payload has
-  // carried since #579. The heuristic-noise class is not known until the
-  // coverage ladder has run, so it is appended below rather than passed here.
-  //
-  // This supersedes a `preFilterSkipped` count that was computed at this point
-  // and read by nothing — the fossil of an earlier attempt to surface the same
-  // number on this path.
+  // #582: build the skip list ONCE, above the abstain exit, so both paths carry
+  // the same denominator; the heuristic-noise class is appended below.
   const preCoverageSkips = prCheckSkipEntries(
     skipped,
     testUnits,
@@ -1544,8 +1534,8 @@ async function prCheckCmd(
     nonSourceUnits,
   );
 
-  if (kept.length === 0 && weakFindings.length === 0 && !nothingToTest) {
-    abstainPrCheck(preCoverageSkips, opts.format, deps, provenance);
+  if (kept.length === 0 && weakFindings.length === 0) {
+    await abstainPrCheck(preCoverageSkips, opts, deps, provenance);
   }
 
   const { results, coverage } = resolveCoverageWithInput(kept, {
@@ -1586,8 +1576,8 @@ async function prCheckCmd(
   // #413: if the heuristic filter consumed every scorable unit, report it as a
   // SKIP rather than rendering an empty "0 unaddressed" report -- an adopter
   // must be able to tell "nothing was judgeable" from "everything passed".
-  if (scoredResults.length === 0 && findings.length === 0 && !nothingToTest) {
-    abstainPrCheck(allSkips, opts.format, deps, provenance);
+  if (scoredResults.length === 0 && findings.length === 0) {
+    await abstainPrCheck(allSkips, opts, deps, provenance);
   }
 
   // SC-5 (PR half): resolve the requested tier against actual capability. No

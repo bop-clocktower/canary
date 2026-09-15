@@ -267,11 +267,11 @@ describe('pr-check heuristic FP suppression (#413)', () => {
       { input: diffConfigOnly, cwd: tmp },
     );
 
-    // #928 case E: "nothing to test", a result rather than an abstention, and
-    // the config path still sits in the skip denominator with its reason.
-    expect(res.code).toBe(0);
+    // #928 case E is still an abstention (ADR 0009); the config path sits in
+    // the skip denominator with its reason.
+    expect(res.code).toBe(3);
     const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
-    expect(data.checked).toBe(0);
+    expect(data.abstained).toBe(true);
     expect(data.skipped).toEqual([
       { name: 'path/to/service.config', reason: 'non-source' },
     ]);

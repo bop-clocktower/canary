@@ -210,48 +210,74 @@ const DIFF_720 =
 
 const E_HEADLINE = 'nothing to test: no source files changed';
 
-describe('case E: no source files changed', () => {
-  it('#658 three JSON manifests: ✅, exit 0, each file a non-source skip', async () => {
-    const res = await invokeGuardian(['pr-check', '--diff', '-'], {
-      input: DIFF_658,
-      cwd: tmp,
-    });
-    expect(res.code).toBe(0);
-    expect(headline(res.stdout)).toBe(`${HEAD}\u{2705} ${E_HEADLINE}`);
-    expect(res.stdout).not.toContain('matched 0');
+const DIFF_DOCS =
+  'diff --git a/docs/guide.md b/docs/guide.md\n' +
+  '--- a/docs/guide.md\n+++ b/docs/guide.md\n@@ -1,0 +2,1 @@\n+More words.\n';
+const DIFF_TESTS = DIFF_720.slice(DIFF_720.indexOf('diff --git a/ts/test'));
+const DIFF_SOURCE =
+  'diff --git a/pkg/widget.py b/pkg/widget.py\n' +
+  '--- a/pkg/widget.py\n+++ b/pkg/widget.py\n' +
+  '@@ -0,0 +1,2 @@\n+def widget():\n+    return 42\n';
 
+/** Run pr-check with --post-comment against `fake`; returns the exit code. */
+async function post(diff: string, fake: FakeGitHubClient): Promise<number> {
+  const res = await invokeGuardian(
+    ['pr-check', '--diff', '-', '--post-comment'],
+    {
+      input: diff,
+      env: { GITHUB_REPOSITORY: 'o/r', GITHUB_REF: 'refs/pull/7/merge' },
+      cwd: tmp,
+      deps: { buildCommentClient: () => fake },
+    },
+  );
+  return res.code;
+}
+
+const stickies = (fake: FakeGitHubClient) =>
+  fake.comments.filter((c) => c.body.includes(STICKY_MARKER));
+
+// ADR 0009: every "nothing to judge" run abstains (exit 3), and still posts
+// the ✅ E sticky so an earlier ⚠️ one can never linger.
+describe('case E: no source files changed', () => {
+  it('#658 three JSON manifests: exit 3, each file a non-source skip', async () => {
     const data = await invokeGuardianJson(
       ['pr-check', '--diff', '-', '--format', 'json'],
       { input: DIFF_658, cwd: tmp },
     );
-    expect((data['coverage'] as CoverageInputState).unitsTotal).toBe(0);
+    expect(data['abstained']).toBe(true);
     const skipped = data['skipped'] as Array<{ name: string; reason: string }>;
     expect(skipped.filter((s) => s.reason === 'non-source')).toHaveLength(3);
   });
 
-  it('#720 workflow + test: the sticky comment headlines ✅ E', async () => {
+  it.each([
+    ['config-only (#658)', DIFF_658],
+    ['workflow + test (#720)', DIFF_720],
+    ['docs-only', DIFF_DOCS],
+    ['tests-only', DIFF_TESTS],
+  ])('%s: exit 3 and a posted ✅ E sticky', async (_name, diff) => {
     const fake = new FakeGitHubClient();
-    const res = await invokeGuardian(
-      ['pr-check', '--diff', '-', '--post-comment'],
-      {
-        input: DIFF_720,
-        env: { GITHUB_REPOSITORY: 'o/r', GITHUB_REF: 'refs/pull/7/merge' },
-        cwd: tmp,
-        deps: { buildCommentClient: () => fake },
-      },
-    );
-    expect(res.code).toBe(0);
-    const sticky = fake.comments.find((c) => c.body.includes(STICKY_MARKER))!;
-    expect(headline(sticky.body)).toBe(`${HEAD}\u{2705} ${E_HEADLINE}`);
-    expect(sticky.body).not.toContain('\u{26A0}');
+    expect(await post(diff, fake)).toBe(3);
+    const [sticky] = stickies(fake);
+    expect(headline(sticky!.body)).toBe(`${HEAD}\u{2705} ${E_HEADLINE}`);
+    expect(sticky!.body).not.toContain('\u{26A0}');
   });
 
-  it('a docs/tests-only diff still abstains: the floor dropped nothing', async () => {
-    const testOnly = DIFF_720.slice(DIFF_720.indexOf('diff --git a/ts/test'));
-    const res = await invokeGuardian(['pr-check', '--diff', '-'], {
-      input: testOnly,
-      cwd: tmp,
-    });
-    expect(res.code).toBe(3);
+  it('a ⚠️ sticky from an earlier push is updated, not duplicated', async () => {
+    const fake = new FakeGitHubClient();
+    await post(DIFF_SOURCE, fake);
+    expect(headline(stickies(fake)[0]!.body)).toContain('\u{26A0}');
+    expect(await post(DIFF_658, fake)).toBe(3);
+    expect(stickies(fake)).toHaveLength(1);
+    expect(headline(stickies(fake)[0]!.body)).toBe(
+      `${HEAD}\u{2705} ${E_HEADLINE}`,
+    );
+  });
+
+  it('a heuristic-only no-coverage abstention keeps its own headline (#761)', async () => {
+    const fake = new FakeGitHubClient();
+    expect(await post(DIFF_SOURCE, fake)).toBe(3);
+    const line = headline(stickies(fake)[0]!.body);
+    expect(line).toContain('abstained: no coverage data');
+    expect(line).not.toContain(E_HEADLINE);
   });
 });
