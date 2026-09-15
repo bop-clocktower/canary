@@ -69,7 +69,7 @@ export function validateMcpServers(
       results.push(new MCPValidationResult(sid, 'not_found'));
     }
   }
-  return results;
+  return results.slice();
 }
 
 /**
