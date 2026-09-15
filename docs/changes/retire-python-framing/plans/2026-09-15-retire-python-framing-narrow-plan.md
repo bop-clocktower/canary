@@ -26,11 +26,18 @@ only the sites Issue #926 enumerates. No behavior change.
 4. **Gates** from `ts/`: build, typecheck, format:check, test. Confirm no net
    non-blank growth in `ts/src` and measure `harness check-arch`.
 
-## Out of scope (left for a follow-up)
+## Issue group 4
 
-- Private `py*` copies in other modules (`pyTruthy`, `pyGet`, `pyRepr`, ...).
+- `spike/schemathesis/` is kept, per ADR 0012 and because
+  `docs/roadmap-archive.md` links its `SPIKE_REPORT.md`. A `README.md` in the
+  directory says why it stays, which meets #926's acceptance item. Decided by
+  the human after the rebuild.
+
+## Out of scope (tracked elsewhere)
+
+- "Faithful port" headers in modules the issue does not list, private `py*`
+  copies in other modules (`pyTruthy`, `pyGet`, `pyRepr`, ...), and the stale
+  MCP registry path: #970.
 - `pyInt` / `pyFloat` / `pySlice` (#964); "oracle" comments (#965).
-- Python-behavior comparisons (`str.splitlines()`, `Path.suffix`, ...).
-- "Faithful port" headers in modules the issue does not list.
-- `spike/schemathesis/` (issue group 4): a keep-or-delete decision, not a
-  rename.
+- Python-behavior comparisons (`str.splitlines()`, `Path.suffix`, ...) stay,
+  because they document behavior the code still reproduces.
