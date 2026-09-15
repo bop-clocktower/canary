@@ -62,3 +62,13 @@ changed here; option B stays available if the ci-ready checks never fill in.
   specific skipping checks, so any change in `canary ci-ready` coverage makes
   the text visibly stale.
 - #885 can close once the STRATEGY.md wording merges.
+
+## Update 2026-09-15 (#956)
+
+The decision stands; one of the facts behind it changed. `canary history record`
+now writes per-run and per-test `duration_ms` (vitest and Playwright JSON), and
+`canary ci-ready` scores suite runtime as the p95 of recorded run durations
+against the absolute 5/10-minute thresholds. It still skips when no stored run
+carries a duration. `canary ci-ready` therefore scores 2 of 5 checks, and the
+STRATEGY.md disclosure now names only the remaining gap: the test-inventory
+producer.

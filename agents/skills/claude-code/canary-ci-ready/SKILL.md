@@ -16,11 +16,11 @@ this before promoting a suite to CI, or as the convergence gate in
 
 **Deterministic scorer:** run `canary ci-ready [--root <dir>] [--json]` first.
 It scores every check that has a real input and reports `skip`, naming the
-missing input, for every check that does not. A skip is never a pass. Today only
-flakiness has a producer behind it, so expect the other four to skip until
-their inputs exist. The verdict is `ready` (all five passed), `incomplete`
-(nothing failed, something skipped), `not-ready` (exit 1) or `abstained`
-(nothing scored, exit 3).
+missing input, for every check that does not. A skip is never a pass. Today
+flakiness and suite runtime have a producer behind them (the run-history store),
+so expect the three inventory-based checks to skip until their input exists. The
+verdict is `ready` (all five passed), `incomplete` (nothing failed, something
+skipped), `not-ready` (exit 1) or `abstained` (nothing scored, exit 3).
 
 ## When to Use
 
@@ -97,10 +97,12 @@ Cross-reference the top 5 risk-scored areas from `critical-areas.json` against
 
 ### 5. Suite runtime
 
-Run history lives in `test-results/reports/history-v2.jsonl`. The store does not
-record run or test durations today, so there is no p95 to compute and
-`canary ci-ready` reports this check as `skip`. The scoring below applies once
-durations are recorded.
+Run history lives in `test-results/reports/history-v2.jsonl`.
+`canary history record` writes run and test `duration_ms` for vitest and
+Playwright JSON reports. The deterministic `canary ci-ready` CLI scores the p95
+of run durations over the last 30 runs that carry one, using the absolute
+thresholds in the fallback below ("vs. absolute threshold"). It reports `skip`
+when no stored run carries a duration, such as a store of legacy records.
 
 **With harness MCP available:** score the p95 against trend history rather than
 an absolute clock. Call `get_perf_baselines` and compare this run's p95 to the
