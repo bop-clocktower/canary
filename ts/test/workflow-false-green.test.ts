@@ -261,9 +261,17 @@ describe('workflow false-green invariants', () => {
       );
     }
 
+    /**
+     * PR triggers. `pull_request_target` counts (#843, ADR 0023): it reports a
+     * check on the PR exactly like `pull_request`, only in base-repo context.
+     */
+    const PR_TRIGGERS = ['pull_request', 'pull_request_target'];
+
     /** Workflows that report a check on a pull request. */
     function prWorkflows(): Array<[string, Workflow]> {
-      return allWorkflows().filter(([, wf]) => 'pull_request' in triggers(wf));
+      return allWorkflows().filter(([, wf]) =>
+        PR_TRIGGERS.some((t) => t in triggers(wf)),
+      );
     }
 
     it('lists checks to enforce (zero denominator is an abstention)', () => {
@@ -284,11 +292,16 @@ describe('workflow false-green invariants', () => {
       [...new Set(manifest.required.map((r) => r.workflow))].map((w) => [w]),
     )('%s runs on every PR (no paths filter)', (workflow) => {
       const wf = allWorkflows().find(([n]) => n === workflow)?.[1];
-      const pr = triggers(wf!)['pull_request'] as Trigger | null;
-      expect(pr?.paths).toBeUndefined();
-      expect(
-        (pr as { 'paths-ignore'?: string[] } | null)?.['paths-ignore'],
-      ).toBeUndefined();
+      const present = PR_TRIGGERS.filter((t) => t in triggers(wf!));
+      // A required workflow with no PR trigger at all never reports.
+      expect(present.length).toBeGreaterThan(0);
+      for (const t of present) {
+        const pr = triggers(wf!)[t] as Trigger | null;
+        expect(pr?.paths).toBeUndefined();
+        expect(
+          (pr as { 'paths-ignore'?: string[] } | null)?.['paths-ignore'],
+        ).toBeUndefined();
+      }
     });
 
     it('every PR check is either required or advisory with a reason', () => {

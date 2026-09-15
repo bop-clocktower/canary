@@ -1,0 +1,22 @@
+{
+  "issues": [486],
+  "fleet": "roadmap-fleet",
+  "route": "feature",
+  "branch": "docs/486-diff-scoped-mutation-spec",
+  "spec": "docs/changes/486-diff-scoped-mutation-testing/proposal.md",
+  "stages": ["brainstorming"],
+  "specOnly": true,
+  "pipelineProvenance": "degraded: harness-brainstorming run non-interactively per human fleet brief (no questions); EVALUATE answers replaced by recorded assumptions, sign-off pending; soundness-review and advise_skills not run",
+  "assumptions": [
+    "Tool is StrykerJS with the vitest runner and perTest coverage analysis.",
+    "Scope is added-line ranges from guardian scopeDiff under ts/src only; skill scripts deferred.",
+    "Placement is a guardian subcommand plus a non-required guardian.yml job, not a skill.",
+    "Advisory first; promotion after 20 mutant-producing PRs with false-survivor rate <= 10% and p90 within budget.",
+    "Zero generated mutants, all no-coverage, crash, or timeout is abstained (exit 3), never a pass.",
+    "Budget is a 10-minute job cap and 150 mutants per PR, deterministically sampled when over.",
+    "StringLiteral and ObjectLiteral mutators disabled in v1.",
+    "Survivor obligation: kill it with a test or suppress with // canary:allow-mutant <reason>.",
+    "Runs on ubuntu-latest only."
+  ],
+  "closingKeyword": "Refs"
+}

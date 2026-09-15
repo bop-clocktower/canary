@@ -1,0 +1,6 @@
+{
+  "id": "duration-slow-test",
+  "target": "duration-ratchet",
+  "plantedDefect": "one tracked test 30x slower than recorded among eleven steady ones",
+  "expect": { "regressedTest": "rehearsal::planted slow widget" }
+}

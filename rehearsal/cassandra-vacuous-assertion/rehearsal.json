@@ -1,0 +1,6 @@
+{
+  "id": "cassandra-vacuous-assertion",
+  "target": "canary-cassandra",
+  "plantedDefect": "an assertion that compares a value with itself",
+  "expect": { "ruleId": "VAC-001" }
+}
