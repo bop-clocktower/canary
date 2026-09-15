@@ -93,6 +93,15 @@ Both follow the same present-vs-absent contract: omit the key to keep the
 built-in default, or supply an explicit list — including `[]`, which means
 "nothing" rather than "use the default".
 
+Underneath `heuristicExclude` sits a built-in **source floor** that is not
+configurable: only files with a programming-language extension are heuristic
+source. Data, config, markup, and style are outside it, and since [#933] so is
+shell (`.sh`, `.bash`, `.zsh`, `.ps1`, `.psm1`). Ops and seed scripts drew "no
+test file references" findings that could never be satisfied. A coverage- or
+graph-verified finding on a shell file still fires.
+
+[#933]: https://github.com/bop-clocktower/canary/issues/933
+
 There are also two suppressions that are **not** configurable, because no repo
 should want them off.
 

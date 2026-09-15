@@ -103,6 +103,12 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **Guardian no longer treats shell scripts as program source** (#933). `.sh`,
+  `.bash`, `.zsh`, `.ps1` and `.psm1` are gone from the source floor, so a
+  changed ops or seed script no longer draws an unsatisfiable "no test file
+  references" heuristic finding. Coverage- and graph-verified findings on shell
+  files still fire.
+
 - **Perf ratchet judges a PR on its own merge-base delta** (#812). The perf
   ceiling in `.harness/perf-baseline.json` reached zero headroom on 2026-09-09
   (233 measured against 233), at which point any PR adding a single
