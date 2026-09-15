@@ -1,7 +1,7 @@
 /**
  * TypeScript types for the v2 run-history record schema.
  *
- * Mirrors `agent/history/schema.py` (RunRecord + TestResult) as persisted, one
+ * RunRecord + TestResult as persisted, one
  * JSON object per line, in `test-results/reports/history-v2.jsonl`.
  *
  * Every row the store writes now carries its own `schema_version` (#701) — the

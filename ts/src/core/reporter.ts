@@ -1,7 +1,7 @@
 /**
  * Standardized reporting for Canary execution results.
  *
- * Faithful TypeScript port of `agent/core/reporter.py`. Exports generation and
+ * Exports generation and
  * execution results to JSON or SARIF format for consumption by Datadog,
  * SonarQube, GitHub Code Scanning, and similar dashboards.
  *

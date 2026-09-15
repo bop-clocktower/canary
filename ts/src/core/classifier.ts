@@ -1,10 +1,9 @@
 /**
  * Test Classifier — rule-based intent/test-type detection from a prompt.
  *
- * Faithful TypeScript port of `agent/core/classifier.py`. Confidence values are
- * hand-picked heuristic priors (ordinal signal strength), NOT calibrated
- * probabilities — see the Python module docstring. `TestClassifier` is a domain
- * class name, not a test suite.
+ * Confidence values are hand-picked heuristic priors (ordinal signal strength),
+ * NOT calibrated probabilities. `TestClassifier` is a domain class name, not a
+ * test suite.
  */
 
 // HTTP verb + slash-prefixed path: "GET /users", "POST /items/{id}".

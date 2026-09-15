@@ -1,6 +1,5 @@
 /**
- * `canary skills` sub-app -- faithful port of the `skills_app` commands in
- * `agent/cli.py` (`list`, `run`), wired to the already-ported `SkillRegistry`.
+ * `canary skills` sub-app (`list`, `run`), wired to `SkillRegistry`.
  *
  * INTENTIONAL DEVIATION (`skills run`, entry-target branch): Python's `entry:`
  * skills load a Python `module:callable` via `importlib` and invoke it in-process

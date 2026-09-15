@@ -1,7 +1,7 @@
 /**
  * CompanyKnowledge -- load and validate `.canary/company.json`.
  *
- * Faithful TypeScript port of `agent/core/company_knowledge.py`. Stores
+ * Stores
  * *pointers only* (Confluence space keys, Jira project keys, internal URLs, MCP
  * server identifiers, Claude Code skill slugs, free-text notes). No proprietary
  * content is ever committed here; AI agents retrieve actual content at runtime

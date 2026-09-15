@@ -1,8 +1,6 @@
 /**
  * Tier 0 deterministic PR guardian engine.
  *
- * Faithful TypeScript port of `agent/guardian/pr_check.py`.
- *
  * Scopes a git diff into changed units, resolves diff-coverage at the highest
  * available fidelity (see {@link module:./coverage}), builds fidelity-labeled
  * findings, honors `canary:allow-untested` suppressions, renders output, and

@@ -1,7 +1,7 @@
 /**
  * Canary Scaffolder - bootstraps new test suites with Gold Standard configs.
  *
- * Faithful TypeScript port of `agent/core/scaffolder.py`. Provides templates and
+ * Provides templates and
  * logic to initialize directory structures and configuration files for the
  * supported testing frameworks.
  *

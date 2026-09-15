@@ -1,7 +1,7 @@
 /**
  * MCP server identifier validation for company knowledge.
  *
- * Faithful TypeScript port of `agent/core/mcp_validator.py`. Resolves which MCP
+ * Resolves which MCP
  * server identifiers are registered in the current Claude Code session by
  * scanning:
  *

@@ -1,6 +1,5 @@
 /**
- * Project metadata scanner — faithful TS port of
- * `agent/core/metadata_scanner.py`.
+ * Project metadata scanner.
  *
  * Scans a project root for package.json / requirements.txt / pyproject.toml /
  * tsconfig.json and surfaces dependency versions. Pure filesystem reads; no

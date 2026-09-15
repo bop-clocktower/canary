@@ -2,8 +2,6 @@
  * Ticket Updater -- posts a structured run comment and optionally transitions
  * the linked ticket after a Canary test run.
  *
- * Faithful TypeScript port of `agent/core/ticket_updater.py`.
- *
  * Canary never hardcodes Jira status names. Transition targets are resolved via
  * the semantic-role mapping persisted by `WorkflowDiscovery`.
  *

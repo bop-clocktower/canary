@@ -1,7 +1,7 @@
 /**
  * Canary Test Executor — a framework-agnostic execution engine.
  *
- * Faithful TypeScript port of `agent/core/executor.py`. Executes generated
+ * Executes generated
  * test files using the CLI command declared for each supported framework.
  *
  * Python→TS nuances:

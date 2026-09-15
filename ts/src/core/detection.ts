@@ -1,8 +1,6 @@
 /**
  * Fail-loud auto-detection messaging.
  *
- * Faithful TypeScript port of `agent/core/detection.py`.
- *
  * Several CLI paths auto-detect something (a test framework, a doctor persona)
  * and, when detection is uncertain, used to silently fall back to `unknown` /
  * `None` or a bare "flag required" failure. That erodes user trust: the caller

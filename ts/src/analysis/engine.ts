@@ -1,13 +1,11 @@
 /**
  * AnalysisEngine — queries the history store and runs all report types.
  *
- * Faithful TS port of `agent/analysis/engine.py`. Thin coordinator: calls the
- * store's query methods, passes results to the pure builders in reports.ts, and
- * returns structured data plus Markdown artifacts.
+ * Thin coordinator: calls the store's query methods, passes results to the pure
+ * builders in reports.ts, and returns structured data plus Markdown artifacts.
  *
- * Fidelity note: as in Python, `areaHealth` is intentionally never populated by
- * `run()` (the Python engine initialises `area_rows = []` and never appends), so
- * the area-health artifact always renders the empty-data message.
+ * `areaHealth` is intentionally never populated by `run()`, so the area-health
+ * artifact always renders the empty-data message.
  */
 
 import {

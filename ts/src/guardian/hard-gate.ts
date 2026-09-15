@@ -3,8 +3,6 @@
  * as a **required** check in branch protection — the one admin step the
  * operator guide says the guardian can't do for you.
  *
- * Faithful TypeScript port of `agent/guardian/hard_gate.py`.
- *
  * Structure mirrors {@link ./pr-comment}: a {@link BranchProtection} interface,
  * an in-memory fake for network-free tests, and a thin `fetch` REST client. The
  * decision logic ({@link planHardGate}) is pure. Any barrier — no admin scope, a

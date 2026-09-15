@@ -1,8 +1,6 @@
 /**
  * Deterministic emit for the harness reverse-handoff (#899) producer contract.
  *
- * Faithful TypeScript port of `agent/guardian/analysis_emit.py`.
- *
  * Phase 5 turns the guardian's Tier-0 result into a **structured canary
  * analysis** that a future harness gate surface can consume in-flow. This module
  * owns the producer half:

@@ -1,7 +1,7 @@
 /**
- * Top-level `canary` command handlers -- faithful ports of the module-level
- * commands in `agent/cli.py` (recommend, frameworks, feedback, run, init, setup,
- * migrate, review-test, flake-check, heal-test, version, upgrade, overlay,
+ * Top-level `canary` command handlers (recommend, frameworks, feedback, run,
+ * init, setup, migrate, review-test, flake-check, heal-test, version, upgrade,
+ * overlay,
  * doctor, ticket-update). The commander wiring (options/args/defaults) lives in
  * `cli.ts`; these functions are the thin handlers it dispatches to.
  *

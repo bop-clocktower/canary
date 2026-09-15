@@ -1,7 +1,6 @@
 /**
- * `canary company-knowledge` sub-app -- faithful port of the `ck_app` commands
- * in `agent/cli.py` (`show` + `init`). `init` is exported as {@link ckInitCmd}
- * so the top-level `setup` alias can call it directly (Python `setup` -> `ck_init`).
+ * `canary company-knowledge` sub-app (`show` + `init`). `init` is exported as
+ * {@link ckInitCmd} so the top-level `setup` alias can call it directly.
  *
  * The interactive `init` wizard reads through {@link MainDeps.prompt} (typer.prompt
  * analog); the production default reads piped stdin lines and falls back to the

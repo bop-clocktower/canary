@@ -1,7 +1,7 @@
 /**
  * Flakiness and regression detection on top of history query results.
  *
- * Faithful TS port of `agent/history/detector.py`. Pure functions — no I/O.
+ * Pure functions — no I/O.
  * Input is the timeline output from the history store.
  */
 

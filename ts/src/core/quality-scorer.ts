@@ -1,7 +1,7 @@
 /**
  * Test quality static analyser.
  *
- * Faithful TypeScript port of `agent/core/quality_scorer.py`. Scores test code
+ * Scores test code
  * on coverage breadth, assertion density, and flakiness risk, plus a
  * magic-number maintainability nudge. Purely lexical — no execution.
  */

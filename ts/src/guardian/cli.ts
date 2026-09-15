@@ -1,8 +1,7 @@
 /**
  * CLI subcommands for `canary guardian`.
  *
- * Faithful TypeScript port of `agent/guardian/cli.py` -- the FIRST commander CLI
- * in the repo, establishing the pattern the later main-cli port follows:
+ * The first commander CLI in the repo; the other sub-apps follow its pattern:
  *
  *   - A **factory** {@link createGuardianCommand} builds a fresh `commander`
  *     `Command` wired to an injectable {@link GuardianDeps} (stdout/stderr sinks,

@@ -2,8 +2,6 @@
  * Canary Migrator -- detects harness-scaffolded test-suite projects and migrates
  * them to Canary's layout without touching existing test files.
  *
- * Faithful TypeScript port of `agent/core/migrator.py`.
- *
  * Python->TS nuances:
  *   - `_PYTHON_DEP_PATTERNS` are `re.MULTILINE | re.IGNORECASE` `^`-anchored
  *     patterns. Python `re.MULTILINE` anchors `^` on `\n` ONLY, whereas JS `^`

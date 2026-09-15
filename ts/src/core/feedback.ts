@@ -1,7 +1,7 @@
 /**
  * In-CLI feedback / issue reporting (#345).
  *
- * Faithful TypeScript port of `agent/core/feedback.py`. `canary feedback` lowers
+ * `canary feedback` lowers
  * the discoverability barrier that makes feedback evaporate at submission time:
  * instead of hunting for where the tracker lives, a user runs one command and
  * gets a **pre-filled GitHub issue** with non-sensitive context already

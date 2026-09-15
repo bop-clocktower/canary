@@ -1,8 +1,6 @@
 /**
  * Tiered, agent-free coverage-fidelity resolution for the PR guardian.
  *
- * Faithful TypeScript port of `agent/guardian/coverage.py`.
- *
  * Phase 1 (Tier 0) — resolves diff-coverage for a changed unit at the highest
  * available fidelity: an explicit coverage **report** beats a **graph**-derived
  * signal beats a naming **heuristic**. Each result is labeled with its

@@ -1,8 +1,6 @@
 /**
  * Tier-resolution seam for canary-pr-guardian (SC-5 core).
  *
- * Faithful TypeScript port of `agent/guardian/tier.py`.
- *
  * Resolves a *requested* guardian tier against the tier an agent runtime can
  * actually serve, and emits a **loud** degradation notice whenever the effective
  * tier drops below the request. The capability probe is an interface; the

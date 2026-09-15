@@ -1,8 +1,6 @@
 /**
  * Agent-tier capability boundary for canary-pr-guardian (Phase 4).
  *
- * Faithful TypeScript port of `agent/guardian/agent_tier.py`.
- *
  * This is the **one** module where agent orchestration is allowed -- it sits
  * OUTSIDE the Tier-0 deterministic engine (`pr-check.ts`/`coverage.ts`/
  * `tier.ts`), which imports it never (SC-11). Under the chosen **Option A**

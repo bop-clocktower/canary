@@ -1,6 +1,5 @@
 /**
- * Project test-fixture / helper symbol scanner — faithful TS port of
- * `agent/core/fixture_scanner.py`.
+ * Project test-fixture / helper symbol scanner.
  *
  * Extracts named exports from files under conventional fixture/helper dirs so
  * downstream generation imports real identifiers. Regex-based, no AST.

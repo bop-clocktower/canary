@@ -1,7 +1,6 @@
 /**
- * CLI subcommands for `canary history` -- faithful port of
- * `agent/history/cli.py` (the `history_app` Typer sub-app), wired to the
- * already-ported async history store (`store.ts` / `schema.ts` / `record.ts`).
+ * CLI subcommands for `canary history`, wired to the async history store
+ * (`store.ts` / `schema.ts` / `record.ts`).
  *
  * Follows the guardian CLI conventions (see `../cli-common.ts`): a
  * {@link createHistoryCommand} factory wired to an injectable {@link HistoryDeps}

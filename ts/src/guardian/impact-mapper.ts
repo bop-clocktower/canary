@@ -1,7 +1,7 @@
 /**
  * Map an `ApiDiff` against test coverage rows to produce impact gaps.
  *
- * Faithful TypeScript port of `agent/guardian/impact_mapper.py`. Coverage rows
+ * Coverage rows
  * come from canary coverage (coverage-report.json) — each row identifies which
  * test exercises which endpoint.
  *

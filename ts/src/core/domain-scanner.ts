@@ -1,6 +1,5 @@
 /**
- * Domain knowledge scanner — faithful TS port of
- * `agent/core/domain_scanner.py`.
+ * Domain knowledge scanner.
  *
  * Scans a project's source files (not test files) to extract components, public
  * functions, and API routes. Regex-based, no AST. Pure filesystem reads.

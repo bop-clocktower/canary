@@ -1,7 +1,7 @@
 /**
  * Pattern-based test healer.
  *
- * Faithful TypeScript port of `agent/core/pattern_healer.py`. Applies
+ * Applies
  * regex-safe, deterministic fixes to test files without an LLM. Powers
  * `canary heal-test --pattern`.
  *

@@ -1,7 +1,7 @@
 /**
  * Emit the machine-readable api-delta.json v1 artifact.
  *
- * Faithful TypeScript port of `agent/guardian/delta_emitter.py`. Serializes an
+ * Serializes an
  * `ApiDiff` into the frozen contract (docs/specs/api-delta-contract.md) that
  * downstream tooling consumes to trigger library-stub regeneration. Generic and
  * company-neutral — the shape carries only HTTP method/path/change categories.
