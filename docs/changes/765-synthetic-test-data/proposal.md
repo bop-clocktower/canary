@@ -313,8 +313,8 @@ EARS-style; each is checkable by a later build lane and `outcome-eval`.
     pytest output under `pytest.mark.parametrize` in the
     `examples/vitest-unit-validation` and `examples/pytest-api-checkout` style
     projects without edits.
-11. **No confidential content.** The emitted placeholders and fixtures corpus
-    shall pass the repo's leak gate (no real names, emails or domains).
+11. **No company-specific content.** The emitted placeholders and fixtures
+    corpus shall pass the repo's leak gate (no real names, emails or domains).
 
 ## Implementation order
 
