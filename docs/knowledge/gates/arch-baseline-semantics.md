@@ -37,8 +37,16 @@ reports `newViolations` and `regressions`. Pre-existing violations are the
 denominator, not the finding.
 
 So: `check-arch` answers _what violates the thresholds today_; `ci check`
-answers _did this change make it worse_. Only the second one is a gate, and
-confusing them is why a clean branch can look red.
+answers _did this change make it worse_. Confusing them is why a clean branch
+can look red.
+
+`ci check` gates only half of "worse", though. It fails on a metric
+**regression**, but a **new threshold violation** comes out as a warning with
+exit 0. PR #959 merged an over-threshold module on that green (#968). In
+`harness.yml` the new violations are gated by
+`scripts/harness-report-summary.mjs`, which exits 1 when the `check-arch --json`
+detail lists any `newViolations`. Allowance-covered violations are already
+filtered out of that list by the CLI.
 
 ## Optional markers in inline type literals cost branches
 

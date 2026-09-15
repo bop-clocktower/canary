@@ -1,0 +1,15 @@
+{
+  "issues": [968],
+  "route": "bug",
+  "stages": ["harness:debugging"],
+  "reproducingTest": "ts/test/arch-verdict.test.ts",
+  "mainNewViolationsBefore": 0,
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Only newViolations block in the summariser; metric regressions stay gated by `harness ci check` (which already exits non-zero on them), so they are not double-failed.",
+    "An allowance covers a violation by removing its id from newViolations: verified in harness CLI 12.7.0 checkArch, which applies filterDiffByAllowances before emitting --json. The CLI refuses to write an allowance for an error-severity new violation, so those have no escape hatch other than fixing the code, which matches the CLI's own stance.",
+    "A supplied --arch report that is missing, empty, unparseable or lacks newViolations now exits 3 (abstention) instead of 0; with the summariser as the gate, a crashed check-arch must not read as 'none new'. Omitting --arch entirely keeps exit 0.",
+    "Exit 1 (new violation) takes precedence over exit 3 (traceability or arch abstention) when both occur; both fail the job.",
+    "main new-violation count measured with the harness binary on PATH (CLI 12.7.0) at origin/main cf804b98; CI installs @harness-engineering/cli@12."
+  ]
+}

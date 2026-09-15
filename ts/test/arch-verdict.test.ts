@@ -461,6 +461,7 @@ describe('harness-report-summary --arch', () => {
     );
     expect(r.output).toMatch(/::error[^\n]*arch/i);
     expect(r.output).toContain('ts/src/new.ts');
+    expect(r.status).toBe(1);
   });
 
   it('says it cannot tell when arch failed with no detail report', () => {
@@ -478,12 +479,15 @@ describe('harness-report-summary --arch', () => {
     expect(r.output).not.toMatch(/cannot/i);
   });
 
-  it('does not let an unreadable arch report break the summary', () => {
+  // #968: once the summariser gates new violations, a supplied-but-unreadable
+  // detail report is an ABSTENTION (exit 3) — exiting 0 would let a crashed
+  // `check-arch` wave a new violation through. The summary still renders first.
+  it('abstains, after rendering the summary, on an unreadable arch report', () => {
     const r = runSummary(
       writeJson('harness-report.json', ciReport('fail')),
       join(dir, 'missing.json'),
     );
-    expect(r.status).toBe(0);
+    expect(r.status).toBe(3);
     expect(r.output).toContain('validate');
     expect(r.output).toMatch(/cannot/i);
   });
@@ -496,8 +500,82 @@ describe('harness-report-summary --arch', () => {
       writeJson('harness-report.json', ciReport('fail')),
       writeJson('arch.json', ''),
     );
-    expect(r.status).toBe(0);
+    expect(r.status).toBe(3);
     expect(r.output).toMatch(/cannot/i);
+  });
+});
+
+/**
+ * #968 — the required `harness` check let NEW threshold violations merge.
+ *
+ * `harness ci check` exits non-zero only on a metric regression; a new
+ * threshold violation is a warning. The summariser printed `REGRESSION … Fix
+ * the code` and exited 0, so PR #959 merged `ts/src/history` at 2,013 lines
+ * (threshold 1,800) on a green required check. These are planted positives:
+ * each fixture is one row of the exit-code contract in the script header.
+ */
+describe('#968 — the summariser blocks new arch violations', () => {
+  function ciReport() {
+    const checks = [
+      { name: 'arch', status: 'warn', issues: [], durationMs: 1 },
+    ];
+    return {
+      version: 1,
+      checks,
+      summary: { total: 1, passed: 0, failed: 0, warnings: 1, skipped: 0 },
+      exitCode: 0,
+    };
+  }
+
+  function runSummary(archBody: unknown | string | undefined) {
+    const args = [SUMMARY, writeJson('harness-report.json', ciReport())];
+    if (archBody !== undefined) {
+      args.push('--arch', writeJson('arch.json', archBody));
+    }
+    return runCapture('node', args, { env: { ...process.env } });
+  }
+
+  it('exits 1 on one new violation (the #959 shape)', () => {
+    const fresh = violation(
+      'ts/src/history',
+      'Module has 2013 lines of code (threshold: 1800)',
+    );
+    const trip = ratchetTrip();
+    const r = runSummary(
+      archReport({
+        newViolations: [fresh],
+        thresholdViolations: [...trip.thresholdViolations, fresh],
+        preExisting: trip.preExisting,
+      }),
+    );
+    expect(r.status).toBe(1);
+    expect(r.output).toContain('REGRESSION');
+    expect(r.output).toContain('ts/src/history');
+  });
+
+  it('exits 0 when every threshold violation is pre-existing debt', () => {
+    const r = runSummary(ratchetTrip());
+    expect(r.status).toBe(0);
+    expect(r.output).toMatch(/0 new/i);
+  });
+
+  it('exits 0 on a violation an allowance covers', () => {
+    // `check-arch` applies `.harness/arch/allowances/*.json` `violationIds`
+    // (filterDiffByAllowances) before emitting JSON, so an allowed violation
+    // is counted in `thresholdViolations` and never appears in `newViolations`.
+    const allowed = violation('ts/src/allowed.ts', 'cyclomaticComplexity=19');
+    const r = runSummary(
+      archReport({ passed: true, thresholdViolations: [allowed] }),
+    );
+    expect(r.status).toBe(0);
+    expect(r.output).not.toContain('REGRESSION');
+  });
+
+  it('abstains with exit 3 when the ci report itself is missing', () => {
+    const r = runCapture('node', [SUMMARY, join(dir, 'absent.json')], {
+      env: { ...process.env },
+    });
+    expect(r.status).toBe(3);
   });
 });
 

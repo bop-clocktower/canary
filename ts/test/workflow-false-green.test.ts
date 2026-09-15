@@ -513,6 +513,27 @@ describe('workflow false-green invariants', () => {
       const gatingCommands = runBlocks(gating!).flatMap(logicalLines);
       expect(gatingCommands.some((c) => c.includes('check-arch'))).toBe(true);
     });
+
+    it('lets the summariser step fail the job, since it gates new arch violations (#968)', () => {
+      // `harness ci check` exits 0 on a new threshold violation, so the
+      // summariser's exit 1 is the only thing that blocks one. A `|| true` or a
+      // `continue-on-error` on that step would reopen #968 with every test in
+      // arch-verdict.test.ts still green.
+      const gating = allWorkflows().find(([n]) => n === 'harness.yml')?.[1];
+      const steps = Object.values(gating?.jobs ?? {}).flatMap(
+        (j) => j.steps ?? [],
+      );
+      const summarisers = steps.filter((s) =>
+        s.run?.includes('harness-report-summary.mjs'),
+      );
+      expect(summarisers.length).toBeGreaterThan(0);
+      for (const step of summarisers) {
+        const lines = logicalLines(step.run!);
+        expect(lines.some((l) => /\|\|\s*(true|:|exit 0)/.test(l))).toBe(false);
+        expect(step['continue-on-error']).not.toBe(true);
+        expect(lines.some((l) => l.includes('--arch'))).toBe(true);
+      }
+    });
   });
 
   /**
