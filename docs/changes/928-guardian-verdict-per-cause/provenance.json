@@ -1,0 +1,17 @@
+{
+  "issues": [928],
+  "fleet": "roadmap-fleet",
+  "route": "bug",
+  "stages": ["reproduce", "red", "implement", "green", "ratchets"],
+  "plan": "docs/changes/928-guardian-verdict-per-cause/plans/plan.md",
+  "reproducingTests": ["ts/test/guardian-verdict-per-cause.test.ts"],
+  "assumptions": [
+    "Decided 2026-09-14 (ADR 0009): docs-only, tests-only and config/data-only runs are all abstentions (exit 3). Under --post-comment the abstain path also upserts the sticky with the ✅ 'nothing to test: no source files changed' headline, so an earlier ⚠️ sticky cannot linger. The #761 heuristic-only no-coverage abstention keeps its own headline.",
+    "Headline nouns are pluralised (1 file / 2 files, 1 changed file) rather than always 'files'.",
+    "Case A renders its headline only when no unit was coverage-matched. Matched units plus non-coverable ones render the plain 'no test-coverage gaps' headline.",
+    "coverageStatus is unchanged, so an all-A run is still 'unavailable' in the json status field and still abstains when it has heuristic-only findings (#761). Only the no-findings headline and notice change.",
+    "The B headline lists the report's instrumented trees, with '.' for a report rooted at the repo.",
+    "The text surface keeps the coverage notice in its footer and adds none to the body, so it appears once there too."
+  ],
+  "closingKeyword": "Closes"
+}

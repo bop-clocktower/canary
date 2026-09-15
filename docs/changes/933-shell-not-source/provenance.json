@@ -1,0 +1,11 @@
+{
+  "issues": [933],
+  "route": "feature",
+  "stages": ["plan", "tdd-red", "implement", "docs", "gates", "pr"],
+  "plan": "docs/changes/933-shell-not-source/plans/plan.md",
+  "assumptions": [
+    "PR #936 (coverage-unit source floor) is unmerged at start; the verified-tier test targets filterHeuristicNoise directly, and #936 reads the same SOURCE_EXTENSIONS set",
+    "No config knob is added: the source floor stays non-configurable, heuristicExclude remains the tuning layer"
+  ],
+  "closingKeyword": "Closes"
+}

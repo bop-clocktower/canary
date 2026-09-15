@@ -82,9 +82,11 @@ export function isTestSupportPath(path: string): boolean {
  * Extensions that denote hand-authored, executable program source (#413).
  *
  * The membership rule is deliberately simple and defensible: **a programming
- * language belongs; data, config, markup, and style do not.** `.sh` is in (it is
- * executable logic — bats/shunit2 exist); `.json`, `.yaml`, `.sql`, `.css`, and
- * `.html` are out (nothing a naming heuristic could meaningfully judge).
+ * language belongs; data, config, markup, and style do not.** Shell (`.sh`,
+ * `.bash`, `.zsh`, `.ps1`, `.psm1`) is out since #933: ops and seed scripts drew
+ * "no test file references" findings no repo will ever satisfy. `.json`,
+ * `.yaml`, `.sql`, `.css`, and `.html` are out (nothing to meaningfully judge).
+ * This one set feeds both the heuristic noise filter and the coverage-unit floor.
  *
  * A repo that disagrees at the margins tunes the glob layer
  * (`canary.guardian.pr.heuristicExclude`) rather than this list.
@@ -141,12 +143,6 @@ const SOURCE_EXTENSIONS: ReadonlySet<string> = new Set([
   '.dart',
   '.r',
   '.jl',
-  // Shell.
-  '.sh',
-  '.bash',
-  '.zsh',
-  '.ps1',
-  '.psm1',
 ]);
 
 /**

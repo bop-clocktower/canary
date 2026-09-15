@@ -397,7 +397,7 @@ describe('pr-check post pipeline', () => {
     expect(marked.length).toBe(1);
   });
 
-  it('docs-only skips and posts nothing', async () => {
+  it('docs-only abstains and posts the nothing-to-test sticky (#928)', async () => {
     const fake = new FakeGitHubClient();
     const cfg = writeConfig({ skipGlobs: ['docs/**'] });
     const res = await invokeGuardian(
@@ -411,7 +411,12 @@ describe('pr-check post pipeline', () => {
     );
     expect(res.code).toBe(3);
     expect(res.stdout.toLowerCase()).toContain('abstained');
-    expect(fake.comments).toEqual([]);
+    // ADR 0009: still an abstention, but the sticky says so, so an earlier
+    // warning comment on the PR cannot linger.
+    expect(fake.comments).toHaveLength(1);
+    expect(fake.comments[0]!.body).toContain(
+      'nothing to test: no source files changed',
+    );
   });
 
   it('empty diff can never render as a pass (#456 permanent fixture)', async () => {
@@ -542,14 +547,19 @@ describe('pr-check post pipeline', () => {
     // #413 BEHAVIOR CHANGE: the heuristic source floor is not config-defeatable.
     // `skipGlobs: []` re-admits the lockfile to the gate, but the naming
     // heuristic has nothing to judge on it, so no finding is manufactured.
-    // Real evidence (a coverage row / graph edge) would still fire.
+    // #928: the floor now applies before coverage, so this abstains as case E
+    // (exit 3) with the lockfile in the skip denominator.
     const cfg = writeConfig({ skipGlobs: [] });
     const res = await invokeGuardian(
       ['pr-check', '--diff', '-', '--config', cfg, '--format', 'json'],
       { input: DIFF_LOCKFILE_ONLY, cwd: tmp },
     );
     expect(res.code).toBe(3);
-    expect(res.stdout.toLowerCase()).toContain('abstained');
+    const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    expect(data.findings).toEqual([]);
+    expect(data.skipped.map((s: { reason: string }) => s.reason)).toEqual([
+      'non-source',
+    ]);
   });
 
   it('barrel index.ts is not flagged', async () => {

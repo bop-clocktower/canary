@@ -43,6 +43,7 @@ import {
   coverageDegradedNotice,
   coverageDeltaNotice,
   coverageDeltaStatus,
+  coverageCauses,
   coverageStatus,
   isSourcePath,
   isTestPath,
@@ -966,26 +967,11 @@ export function computeExitCode(
 
 const STICKY_MARKER = '<!-- canary-pr-guardian -->';
 
-// Severity → status icon for the sticky comment (encodes severity in form, not
-// just text, so the most urgent findings read at a glance).
-//
-// Written as `\u{...}` escapes, not literal glyphs: this file is `.ts`, and the
-// house rule keeps emitted non-ASCII out of non-Markdown source (see the
-// "Output data glyphs" block in `cli.ts`). They are emitted verbatim.
 /**
- * Character budget for a rendered sticky comment (#457).
- *
- * GitHub rejects an issue/PR comment body over **65,536** characters. The post
- * path reports that as "could not post", so an over-long body means the gate
- * silently produces nothing on exactly the large PRs that need it most -- the
- * same silent-green failure #369 was filed for.
- *
- * 60,000 leaves ~5.5k of headroom for anything appended outside
- * `renderFindings` (degradation annotations, upsert wrappers) without inviting
- * a body that only *just* fits and then breaks when a filename grows.
- *
- * The cap applies ONLY to the comment. The `--emit-analysis` JSON record is the
- * authoritative complete set and is never truncated.
+ * Character budget for a rendered sticky comment (#457). GitHub rejects a body
+ * over 65,536 characters, which would silently post nothing on the largest PRs
+ * (#369); 60,000 leaves headroom for appended annotations. The comment only:
+ * the `--emit-analysis` record is complete and never truncated.
  */
 export const COMMENT_CHAR_BUDGET = 60_000;
 
@@ -1154,30 +1140,11 @@ function coverageBlock(state: CoverageInputState): Record<string, unknown> {
 }
 
 /**
- * True when this run VERIFIED NO COVERAGE and every finding it produced is a
- * naming-heuristic guess (#761) — an abstention, not a result.
- *
- * Guardian's existing abstention keys off the *findings-eligible* count, which
- * is the wrong denominator: a run can have plenty of eligible units and still
- * have verified nothing, because "findings-eligible" and "coverage-verifiable"
- * are different counts. The measured shape is a code PR whose lcov never
- * reached the runner: N eligible units, zero coverage denominator, and a
- * confident "6 files need test coverage" headline under a green check.
- *
- * Two narrowings keep this honest rather than merely loud:
- *
- *   - `unitsTotal === 0` is NOT this case. A run that judged nothing makes no
- *     coverage claim in either direction; the eligible-count abstention owns it,
- *     the same boundary {@link coverageDegradedNotice} already draws.
- *   - A single coverage- or graph-verified finding disproves it. Real evidence
- *     means the run measured something, so it is a result and must not be
- *     downgraded to an abstention.
- *   - A run with NO findings is left alone. It states nothing a reader can
- *     mistake for a measurement: #554 already replaced its all-clear headline
- *     with "no gaps found, but coverage was unavailable" plus the body line
- *     saying that is an abstention, not a pass. The defect #761 reports is
- *     specifically a CONFIDENT COUNT over a zero coverage denominator, so that
- *     is what changes here.
+ * True when this run VERIFIED NO COVERAGE and every finding is a naming guess
+ * (#761): a confident count over a zero coverage denominator is an abstention.
+ * Not this case: `unitsTotal === 0` (no claim either way), any coverage- or
+ * graph-verified finding (real evidence), or no findings at all (the per-cause
+ * headline already says what was not verified, #928).
  */
 export function isCoverageAbstention(
   coverage: CoverageInputState | null | undefined,
@@ -1207,13 +1174,60 @@ const ABSTENTION_BODY =
   'verdict — every finding is a filename-level guess. A gate that verified ' +
   'zero items has abstained; this is not a pass.';
 
+const files = (n: number): string => `${n} file${n === 1 ? '' : 's'}`;
+type CauseEntry = [count: number, headline: string, label: string];
+
+/** The unverified-unit causes present on a run, worst first (#928). */
+function causeEntries(state: CoverageInputState): CauseEntry[] {
+  const { stale, scopeGap, nonCoverable } = coverageCauses(state);
+  const trees = (state.instrumentedTrees ?? []).map((t) => t || '.');
+  const entries: CauseEntry[] = [
+    [
+      stale,
+      `${WARNING} coverage report stale: ${stale} changed ${files(stale).split(' ')[1]} missing from it`,
+      'coverage report stale (changed lines missing from it)',
+    ],
+    [
+      scopeGap,
+      `${WARNING} not coverage-checked: ${files(scopeGap)} outside instrumented trees (${trees.join(', ')})`,
+      'not coverage-checked (outside instrumented trees)',
+    ],
+    [
+      nonCoverable,
+      `${WHITE_CHECK} nothing to test: only non-executable lines changed (${files(nonCoverable)})`,
+      'nothing to test (only non-executable lines changed)',
+    ],
+  ];
+  return entries.filter(([n]) => n > 0);
+}
+
 /**
- * The comment body for a run with zero active findings.
- *
- * #554: the ✅ all-clear headline is reserved for a run whose coverage report
- * spoke to every changed file. Anything less says so in the body — a `<sub>`
- * footer under a green headline is read as boilerplate, and this is the exact
- * shape that let 43 coverage-blind PRs read as covered.
+ * One headline per cause (#928) plus the lesser causes as count lines. ✅ only
+ * when the report spoke to every changed unit (#554): any B or C unit is ⚠️.
+ */
+function coverageHeadline(
+  state: CoverageInputState | null,
+  notice: string | null,
+): [string, string[]] {
+  const clean = `${WHITE_CHECK} no test-coverage gaps`;
+  if (state?.unitsTotal === 0) {
+    return [`${WHITE_CHECK} nothing to test: no source files changed`, []];
+  }
+  if (!state?.parsed) {
+    const blind = `${WARNING} no gaps found, but coverage was ${state ? coverageStatus(state) : ''}`;
+    return [notice ? blind : clean, []];
+  }
+  const [worst, ...rest] = causeEntries(state);
+  // Matched units plus non-executable ones: nothing is missing, so plain ✅.
+  if (!worst || (worst[1].startsWith(WHITE_CHECK) && state.unitsMatched > 0)) {
+    return [clean, []];
+  }
+  return [worst[1], rest.map(([n, , label]) => `- ${files(n)}: ${label}`)];
+}
+
+/**
+ * The comment body for a run with zero active findings. The notice goes in the
+ * body, not only a `<sub>` footer, which is read as boilerplate (#554).
  */
 function noGapsLines(
   coverageState: CoverageInputState | null,
@@ -1222,12 +1236,12 @@ function noGapsLines(
   checked = 0,
 ): string[] {
   const notice = coverageState ? coverageDegradedNotice(coverageState) : null;
-  const headline = abstained
-    ? abstentionHeadline(checked)
-    : notice
-      ? `${WARNING} no gaps found, but coverage was ${coverageStatus(coverageState!)}`
-      : `${WHITE_CHECK} no test-coverage gaps`;
-  const lines = [`## ${BABY_CHICK} Canary PR Guardian ${EM_DASH} ${headline}`];
+  const [cause, counts] = coverageHeadline(coverageState, notice);
+  const headline = abstained ? abstentionHeadline(checked) : cause;
+  const lines = [
+    `## ${BABY_CHICK} Canary PR Guardian ${EM_DASH} ${headline}`,
+    ...counts,
+  ];
   if (notice) {
     lines.push(
       `> **${notice}**`,
@@ -1349,11 +1363,11 @@ export function renderFindings(
     '**graph-verified**: inferred from the call graph · **heuristic**: filename ' +
     `guess (lowest). tier ${tier}: deterministic check, no LLM.`;
 
-  const footerLine = `<sub>${CONFIDENCE_NOTE}${notice ? ` ${EM_DASH} ${notice}` : ''}</sub>`;
+  // #928: the coverage notice is rendered in the body, so the footer omits it.
+  const footerNotice = combineNotices(degradedNotice, deltaNotice);
+  const footerLine = `<sub>${CONFIDENCE_NOTE}${footerNotice ? ` ${EM_DASH} ${footerNotice}` : ''}</sub>`;
 
-  // #554: a coverage-blind run must not present as a run that checked and found
-  // nothing. The notice goes in the BODY, not only the footer — a `<sub>` line
-  // under a green headline is read as boilerplate.
+  // #554: a coverage-blind run must not present as one that checked and passed.
   const coverageLine = coverageNotice ? `> **${coverageNotice}**` : null;
 
   // #761: shown on EVERY comment, clean or not. The run that motivated this was
@@ -1445,10 +1459,9 @@ export function renderFindings(
   }
 
   // fmt == "text" (default fallback): plain, no markdown/HTML.
-  const cleanHeadline = coverageNotice
-    ? // #554: same rule as the comment surface — a blind run never claims clean.
-      `Canary PR Guardian — no gaps found, but coverage was ${coverageStatus(coverageState!)}`
-    : 'Canary PR Guardian — no test-coverage gaps';
+  // #554/#928: the comment surface's per-cause headline, without its glyph.
+  const [cause, causeCounts] = coverageHeadline(coverageState, coverageNotice);
+  const cleanHeadline = `Canary PR Guardian — ${cause.replace(/^\S+ /, '')}`;
   // #761: the same rule on the surface an engineer reads at their desk. The
   // headline is stripped of the comment surface's markdown-era glyph so the
   // terminal line stays plain text.
@@ -1461,6 +1474,7 @@ export function renderFindings(
       : active.length === 0
         ? cleanHeadline
         : `Canary PR Guardian — ${new Set(active.map((f) => f.path)).size} file(s) need test coverage`,
+    ...(abstained || active.length > 0 ? [] : causeCounts),
   ];
   for (const finding of ordered) {
     const unit =
@@ -1532,16 +1546,8 @@ export const DEFAULT_SKIP_GLOBS: readonly string[] = [
 ];
 
 /**
- * Parsed `canary.guardian` config block.
- *
- * Phase 1 stores every field but only `pr_*` gate/tier drive behavior.
- * `skip_globs` and the `precommit_*`/`coverage_paths` fields are read into the
- * object (scaffold) for later phases (SC-2 skip, SC-5 tier).
- *
- * `skip_globs` defaults to docs/markdown PLUS generated/dependency artifacts
- * (lockfiles, `dist`/`build` outputs, minified JS, snapshots — see
- * {@link DEFAULT_SKIP_GLOBS}) so noise-only paths skip out of the box; an
- * explicit `skipGlobs` in config (even `[]`) overrides it.
+ * Parsed `canary.guardian` config block. `skip_globs` defaults to
+ * {@link DEFAULT_SKIP_GLOBS}; an explicit `skipGlobs` (even `[]`) overrides it.
  */
 export class GuardianConfig {
   pr_enabled: boolean;

@@ -53,6 +53,7 @@ export {
 export { resolveFromGraph } from './diff-coverage/graph-tier.js';
 export { resolveFromHeuristic } from './diff-coverage/heuristic-tier.js';
 export {
+  coverageCauses,
   coverageDegradedNotice,
   coverageStatus,
   resolveCoverage,

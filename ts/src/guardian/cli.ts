@@ -86,6 +86,7 @@ import {
   ChangedUnit,
   coverageDegradedNotice,
   coverageDeltaNotice,
+  isSourcePath,
   resolveCoverage,
   resolveCoverageDelta,
   resolveCoverageWithInput,
@@ -451,20 +452,9 @@ function headSha(deps: GuardianDeps, root: string): string | null {
 }
 
 /**
- * Is the loop guard live -- i.e. does a sentinel stamped at the CURRENT `HEAD`
- * exist?
- *
- * This is the surviving half of the stage-and-block-once contract (#456). The
- * component that CLEARED the sentinel on the next commit
- * (`hooks/guardian_precommit.py`) was deleted as dead code in #449, which left
- * `author-plan` fail-closed forever: author once in a clone and Tier-2 authoring
- * never ran again. Stamping HEAD makes the guard self-expiring -- once the human
- * reviews and commits the staged tests, `HEAD` moves, the stamp stops matching,
- * and authoring re-enables itself with no manual step and no hook.
- *
- * Every unverifiable state FAILS OPEN (returns `false`, authoring allowed):
- * missing or unreadable sentinel, a malformed/absent `HEAD` header, or a `HEAD`
- * we cannot resolve. Fail-closed here is exactly the bug being fixed.
+ * Is the loop guard live, i.e. is the sentinel stamped at the CURRENT `HEAD`
+ * (#456)? Stamping HEAD makes the guard self-expiring once the staged tests are
+ * committed. Every unverifiable state FAILS OPEN (returns `false`).
  */
 function authoredSentinelActive(deps: GuardianDeps, root: string): boolean {
   let body: string;
@@ -554,20 +544,10 @@ function resolveHeadSha(deps: GuardianDeps): string | null {
 }
 
 /**
- * True when the checked-out HEAD is a `pull_request` MERGE REF, not the PR head.
- *
- * This is the merge-ref diff defect (#761). `actions/checkout` on a
- * `pull_request` event checks out `refs/pull/<n>/merge` — the base branch
- * merged with the PR head — unless the caller passes an explicit `ref`. Any
- * diff taken to that HEAD includes every commit merged into the base branch
- * since the base sha, because the triple-dot merge base degenerates to the base
- * sha itself (it is an ancestor of the merge commit). A one-file docs PR was
- * analyzed as 43 files that way.
- *
- * Detection is a comparison, not a heuristic: the event payload states the PR
- * head sha outright, so a HEAD that differs from it is diffing something else.
- * Returns false whenever either side is unknown — an undetectable case must not
- * masquerade as a detected-clean one.
+ * True when HEAD is a `pull_request` MERGE REF, not the PR head (#761): a diff
+ * to `refs/pull/<n>/merge` sweeps in every commit merged into base since the
+ * base sha (a one-file PR read as 43 files). A comparison against the event's
+ * PR head sha, false whenever either side is unknown.
  */
 export function detectMergeRef(
   headSha: string | null,
@@ -670,19 +650,9 @@ function resolveBaseRev(deps: GuardianDeps): string | null {
 }
 
 /**
- * Resolve the diff `pr-check` should scope, preferring the PR diff in CI (#369).
- *
- * An explicit `--diff` (stdin or file) always wins and never shells out. With
- * `--diff` omitted:
- *
- *   - **In CI** with a resolvable base rev → `git diff <base>...HEAD`. The
- *     TRIPLE-dot form diffs against the merge base, so commits that land on the
- *     base branch mid-PR never appear as part of this PR's changed surface.
- *   - **Otherwise** → the at-desk working-tree diff ({@link readWorktreeDiff}).
- *
- * The legacy behavior was the working-tree diff unconditionally, which is empty
- * on a clean CI checkout — the gate then scoped zero paths and exited 0, so an
- * adopting repo could not tell a working gate from a broken one.
+ * Resolve the diff `pr-check` should scope (#369). An explicit `--diff` wins;
+ * in CI with a base rev it is `git diff <base>...HEAD` (merge base, so commits
+ * landing on base mid-PR stay out); otherwise the working-tree diff.
  */
 export function readPrDiff(
   source: string | null,
@@ -1276,6 +1246,13 @@ async function postStickyComment(
   }
 }
 
+/** An abstained run judged nothing, so no agent tier was ever in play. */
+const NO_TIER: TierResolution = {
+  requested: 0,
+  effective: 0,
+  degraded_notice: null,
+};
+
 /** The gate's no-op line, shared by the pre- and post-filter exits. */
 // D7: every filtered path stays visible as a SkipEntry, never folded
 // into "passed". One entry per path so the rendered count still equals
@@ -1286,6 +1263,7 @@ function prCheckSkipEntries(
   barrelUnits: ChangedUnit[],
   supportUnits: ChangedUnit[] = [],
   typeOnlyUnits: ChangedUnit[] = [],
+  nonSourceUnits: ChangedUnit[] = [],
 ): SkipEntry[] {
   return [
     ...skipped.map((u) => ({ name: u.path, reason: 'skipGlobs' })),
@@ -1297,6 +1275,8 @@ function prCheckSkipEntries(
     // #562: likewise distinct -- adjudication has to be able to measure this
     // class separately, since it is the one that held precision at 13/20.
     ...typeOnlyUnits.map((u) => ({ name: u.path, reason: 'type-only module' })),
+    // #928: config/data files, below the source floor.
+    ...nonSourceUnits.map((u) => ({ name: u.path, reason: 'non-source' })),
     ...barrelUnits.map((u) => ({
       name: u.path,
       reason: 're-export barrel',
@@ -1325,32 +1305,44 @@ const PR_CHECK_ABSTAIN_REMEDIATION = [
     'every path.',
 ];
 
-/** Exit 3 with the structural abstention line + remediation (#508). */
-function abstainPrCheck(
+/**
+ * Exit 3 with the structural abstention line + remediation (#508). Nothing was
+ * eligible (docs, tests, config), so under `--post-comment` it also upserts the
+ * ✅ "nothing to test" sticky and an earlier ⚠️ one cannot linger (#928).
+ */
+async function abstainPrCheck(
   skipped: SkipEntry[],
-  format: string,
+  opts: { format: string; postComment?: boolean },
   deps: GuardianDeps,
   provenance: DiffProvenance | null = null,
-): never {
+): Promise<never> {
   const outcome = gateOutcome({ checked: 0, findings: [], skipped }, 'gate', {
     noun: 'unit(s)',
   });
   deps.out(outcome.summaryLine);
-  // #761: an abstention says "I verified zero items" — the immediate next
-  // question is "over WHAT?", and the run that motivated this feature is
-  // precisely one that should have abstained. Stating the range here is what
-  // separates "correctly abstained on a docs-only PR" from "abstained because
-  // the diff was wrong", which read identically without it.
+  // #761: state the range, so "correctly abstained" and "wrong diff" differ.
   if (provenance) deps.out(provenanceLine(provenance));
   for (const line of PR_CHECK_ABSTAIN_REMEDIATION) deps.out(line);
-  if (format === 'json') {
+  if (opts.postComment) {
+    const coverage = { requested: null, found: false, parsed: false };
+    await postStickyComment([], NO_TIER, deps, {
+      checked: 0,
+      abstained: false,
+      coverage: {
+        ...coverage,
+        filesInReport: 0,
+        unitsMatched: 0,
+        unitsTotal: 0,
+      },
+      skipped,
+      provenance,
+    });
+  }
+  if (opts.format === 'json') {
     deps.out(
       ensureAscii(
         JSON.stringify(
-          // #579: `skipped` carries the denominator the abstention collapsed
-          // to. Without it a consumer sees `abstained: true` and cannot tell
-          // WHAT was dropped or why -- the #508 class one layer down, on the
-          // only surface a machine can read.
+          // #579: `skipped` is the denominator the abstention collapsed to.
           {
             findings: [],
             tier: 0,
@@ -1520,31 +1512,30 @@ async function prCheckCmd(
   // FIX 2: drop pure re-export/barrel files.
   const reexportPaths = findReexportOnly(diffText);
   const barrelUnits = keptTyped.filter((u) => reexportPaths.has(u.path));
-  const kept = keptTyped.filter((u) => !reexportPaths.has(u.path));
+  const keptBarrel = keptTyped.filter((u) => !reexportPaths.has(u.path));
+  // #928: the heuristic tier's source floor (#413) applies to coverage units
+  // too; a config/data file can never match a coverage report.
+  const nonSourceUnits = keptBarrel.filter((u) => !isSourcePath(u.path));
+  const kept = keptBarrel.filter((u) => isSourcePath(u.path));
 
   // Advisory weak-test findings for added tests that assert nothing.
   const weakFindings = config.weak_tests
     ? buildWeakTestFindings(testUnits, diffText)
     : [];
 
-  // #582: build the skip list ONCE, above the abstain exit, so the surviving
-  // (non-abstain) path carries the same denominator the abstain payload has
-  // carried since #579. The heuristic-noise class is not known until the
-  // coverage ladder has run, so it is appended below rather than passed here.
-  //
-  // This supersedes a `preFilterSkipped` count that was computed at this point
-  // and read by nothing — the fossil of an earlier attempt to surface the same
-  // number on this path.
+  // #582: build the skip list ONCE, above the abstain exit, so both paths carry
+  // the same denominator; the heuristic-noise class is appended below.
   const preCoverageSkips = prCheckSkipEntries(
     skipped,
     testUnits,
     barrelUnits,
     supportUnits,
     typeOnlyUnits,
+    nonSourceUnits,
   );
 
   if (kept.length === 0 && weakFindings.length === 0) {
-    abstainPrCheck(preCoverageSkips, opts.format, deps, provenance);
+    await abstainPrCheck(preCoverageSkips, opts, deps, provenance);
   }
 
   const { results, coverage } = resolveCoverageWithInput(kept, {
@@ -1586,7 +1577,7 @@ async function prCheckCmd(
   // SKIP rather than rendering an empty "0 unaddressed" report -- an adopter
   // must be able to tell "nothing was judgeable" from "everything passed".
   if (scoredResults.length === 0 && findings.length === 0) {
-    abstainPrCheck(allSkips, opts.format, deps, provenance);
+    await abstainPrCheck(allSkips, opts, deps, provenance);
   }
 
   // SC-5 (PR half): resolve the requested tier against actual capability. No
@@ -1759,19 +1750,10 @@ interface AuthorPlanOptions {
 }
 
 /**
- * author-plan's denominator decision (#508, review-round gap).
- *
- * The spec's audit list named `author-plan` next to `pr-check`, but #515
- * deferred it ("guardian internals being reworked in parallel") and Wave 2 only
- * took pr-check. On an EMPTY diff this surface emitted
- * `block: false, authored_count: 0` and exited 0 -- "we examined nothing,
- * therefore do not block", which is the #456 class verbatim.
- *
- * ADVISORY, not a gate: author-plan is an authoring aid whose JSON an agent
- * reads (see `canary-pr-guardian/SKILL.md`); the exit-code contract belongs to
- * `pr-check` and the pre-commit gate. So the exit stays 0 and stdout stays a
- * single parseable object -- `checked`/`abstained` ride the payload additively
- * and the loud line goes to stderr, keeping `--json` consumers byte-compatible.
+ * author-plan's denominator decision (#508): an empty diff must not read as
+ * "examined nothing, so do not block" (#456). ADVISORY, not a gate: exit stays
+ * 0 and stdout one parseable object; `checked`/`abstained` ride the payload and
+ * the loud line goes to stderr.
  */
 function authorPlanOutcome(
   checked: number,
