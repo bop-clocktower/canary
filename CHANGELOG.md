@@ -16,6 +16,19 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary history record` reads JUnit XML** (#963). A report whose root is
+  `<testsuites>` or `<testsuite>` is detected by shape, so pytest `--junitxml`,
+  jest-junit, Maven surefire and Gradle runs feed the same history store that
+  `ci-ready` and `analyze` read. Each testcase is recorded as `classname::name`.
+  `<failure>`/`<error>` map to failed, `<skipped>` to skipped, and `time` (in
+  seconds) to `duration_ms`. Three retry encodings are recorded as `flaky`:
+  surefire `flakyFailure`/`flakyError`, a `rerunFailure`/`rerunError` with no
+  final failure, and the same test repeated in one report where the last attempt
+  passed. Retries in any other encoding are recorded once per attempt. A report
+  with zero testcases abstains (exit 3), and malformed XML exits 1. No new
+  dependency: the in-repo XML scanner moved from the guardian to
+  `ts/src/util/xml.ts` so `history` can use it.
+
 - **`canary inventory`: ci-ready's coverage, assertion and critical-path checks
   now score** (#957). The new command writes `.canary/test-inventory.json` in a
   documented, versioned schema (`docs/guides/test-inventory.md`). Each test gets

@@ -14,10 +14,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  attrValue,
-  isWellFormedXml,
-} from '../src/guardian/diff-coverage/formats/xml.js';
+import { attrValue, isWellFormedXml } from '../src/util/xml.js';
 
 describe('isWellFormedXml', () => {
   describe('well-formed input it must accept', () => {

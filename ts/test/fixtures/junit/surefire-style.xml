@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic Maven-surefire-style JUnit report for #963. All names are invented. -->
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="com.example.widgets.GadgetTest" time="2.5" tests="4" errors="0" skipped="0" failures="1">
+  <properties>
+    <property name="java.version" value="21"/>
+  </properties>
+  <testcase name="spinsUp" classname="com.example.widgets.GadgetTest" time="1.2">
+    <flakyFailure message="timeout" type="java.lang.AssertionError"><![CDATA[java.lang.AssertionError: timeout > 5s]]></flakyFailure>
+  </testcase>
+  <testcase name="spinsDown" classname="com.example.widgets.GadgetTest" time="0.8">
+    <failure message="still broken" type="java.lang.AssertionError">java.lang.AssertionError: still broken</failure>
+    <rerunFailure message="still broken" type="java.lang.AssertionError">java.lang.AssertionError: still broken</rerunFailure>
+  </testcase>
+  <testcase name="idles" classname="com.example.widgets.GadgetTest" time="0.5"/>
+  <testcase name="restarts" classname="com.example.widgets.GadgetTest" time="0">
+    <rerunError message="flaked once" type="java.io.IOException">java.io.IOException</rerunError>
+  </testcase>
+</testsuite>

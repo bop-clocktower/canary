@@ -1,6 +1,8 @@
 /**
- * The XML primitives the Cobertura reader stands on: a non-throwing
- * well-formedness check and an attribute extractor.
+ * The XML primitives the Cobertura reader (guardian) and the JUnit history
+ * reader stand on: a non-throwing well-formedness check and an attribute
+ * extractor. Lives in `util` (moved from guardian for #963) because the
+ * `history` layer may not import `guardian`.
  *
  * Node has no built-in XML parser, and pulling one in would put a third-party
  * parser inside the guardian's security boundary. Instead the check below is a

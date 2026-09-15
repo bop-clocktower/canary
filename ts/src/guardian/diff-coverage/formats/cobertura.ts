@@ -4,7 +4,7 @@
  * rather than a general XML parser (see `./xml.ts` for why).
  */
 
-import { attrValue, isWellFormedXml } from './xml.js';
+import { attrValue, isWellFormedXml } from '../../../util/xml.js';
 import {
   parseStrictInt,
   selfDescribing,
