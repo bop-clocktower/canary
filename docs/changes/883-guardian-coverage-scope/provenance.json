@@ -1,0 +1,13 @@
+{
+  "issues": [883],
+  "fleet": "roadmap-fleet",
+  "route": "feature",
+  "routeSignal": "human answer F3",
+  "stages": ["brainstorming", "tdd"],
+  "pipelineProvenance": "degraded: brainstorming and TDD disciplines followed by hand inline in the lane session; no harness-brainstorming or harness-tdd skill run, no session artifact",
+  "adr": "docs/knowledge/decisions/0024-guardian-coverage-scope-non-ts-trees.md",
+  "reproducingTest": "ts/test/guardian-coverage-exempt.test.ts (7 tests, all red before the change)",
+  "closingKeyword": "Refs #883",
+  "closingKeywordReason": "Partial slice: ADR 0024 decisions 3 and 4 shipped; decisions 1 (npm/ instrumentation) and 2 (multi-report merge) are follow-ups listed in proposal.md",
+  "ci": "degraded: CI is single-OS (ubuntu-latest only, #892)"
+}

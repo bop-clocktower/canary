@@ -123,6 +123,7 @@ import {
   findReexportOnly,
   isCoverageAbstention,
   loadGuardianConfig,
+  coverageExemptMatcher,
   renderFindings,
   scopeDiff,
 } from './pr-check.js';
@@ -1402,6 +1403,10 @@ async function prCheckCmd(
     // #320: under a hard gate the graph tier requires a DIRECT test->source edge
     // (depth 1); soft stays unbounded. An explicit config value wins.
     graphMaxDepth: effectiveGraphDepth(config, effectiveGate),
+    // #883 / ADR 0024: uninstrumented trees leave the coverage denominator.
+    coverageExempt: coverageExemptMatcher(
+      config.coverage_exempt.map((e) => e.glob),
+    ),
   });
   // #413: drop uncovered HEURISTIC verdicts on paths a naming heuristic can
   // never judge (non-source, or an excluded glob). Coverage/graph-verified
