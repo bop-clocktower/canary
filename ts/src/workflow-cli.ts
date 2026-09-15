@@ -1,6 +1,5 @@
 /**
- * `canary workflow` sub-app -- faithful port of the `workflow_app` commands in
- * `agent/cli.py` (`discover`, `show`, `init`), wired to the already-ported
+ * `canary workflow` sub-app (`discover`, `show`, `init`), wired to
  * `WorkflowDiscovery` / `WorkflowMapping` / `SemanticRole`.
  *
  * `discover` is async (the discovery HTTP path returns Promises), so its handler

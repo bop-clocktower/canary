@@ -26,8 +26,8 @@
  *     with the library-default `ensure_ascii=True` reproduced via
  *     {@link ensureAscii}. Object key insertion order preserves Python's field
  *     order exactly (see {@link WorkflowMapping.toDict}).
- *   - **Python truthiness** (`""`/`[]`/`{}`/`None` falsy) via {@link pyTruthy};
- *     missing dict keys via {@link pyGet}.
+ *   - **Python truthiness** (`""`/`[]`/`{}`/`None` falsy) via {@link isTruthy};
+ *     missing dict keys via {@link getOrDefault}.
  *   - **String slicing by code point**: `body[:200]` uses `[...s]` so an astral
  *     character in an error body is never split mid-surrogate.
  */
@@ -46,7 +46,7 @@ import { ensureAscii } from '../util/ensure-ascii.js';
  * Python-truthiness for JSON-shaped values: `None`/`undefined`, `false`, `0`,
  * `""`, empty array, and empty object are all falsy (mirrors `if x:`).
  */
-function pyTruthy(value: unknown): boolean {
+function isTruthy(value: unknown): boolean {
   if (value === null || value === undefined || value === false) return false;
   if (value === 0 || value === '') return false;
   if (Array.isArray(value)) return value.length > 0;
@@ -54,8 +54,10 @@ function pyTruthy(value: unknown): boolean {
   return Boolean(value);
 }
 
+type JsonRow = Record<string, unknown>;
+
 /** Python `dict.get(key, default)`: default only on a missing key. */
-function pyGet(
+function getOrDefault(
   obj: Record<string, unknown>,
   key: string,
   fallback: unknown,
@@ -284,7 +286,7 @@ export class WorkflowMapping {
       role_annotations_confirmed: this.role_annotations_confirmed,
     };
     // atlassian_url is appended LAST, only when truthy (Python `if self.atlassian_url`).
-    if (pyTruthy(this.atlassian_url)) {
+    if (isTruthy(this.atlassian_url)) {
       d['atlassian_url'] = this.atlassian_url;
     }
     const issueTypes = d['issue_types'] as unknown[];
@@ -323,13 +325,13 @@ export class WorkflowMapping {
       throw new Error("missing key 'project_key'");
     }
     const issueTypes: IssueType[] = [];
-    const rawIssueTypes = pyGet(data, 'issue_types', []) as Record<
+    const rawIssueTypes = getOrDefault(data, 'issue_types', []) as Record<
       string,
       unknown
     >[];
     for (const itD of rawIssueTypes) {
       const statuses = (
-        pyGet(itD, 'statuses', []) as Record<string, unknown>[]
+        getOrDefault(itD, 'statuses', []) as Record<string, unknown>[]
       ).map((s) => {
         // Python builds StatusEntry(**s); **-unpacking raises TypeError on a
         // missing key, which _load_cached catches -> returns null. Mirror that
@@ -350,7 +352,7 @@ export class WorkflowMapping {
         );
       });
       const transitions = (
-        pyGet(itD, 'transitions', []) as Record<string, unknown>[]
+        getOrDefault(itD, 'transitions', []) as Record<string, unknown>[]
       ).map((t) => {
         if (
           !Object.prototype.hasOwnProperty.call(t, 'id') ||
@@ -361,8 +363,8 @@ export class WorkflowMapping {
         return new TransitionEntry(
           t['id'] as string,
           t['name'] as string,
-          pyGet(t, 'from', pyGet(t, 'from_status', '')) as string,
-          pyGet(t, 'to', pyGet(t, 'to_status', '')) as string,
+          getOrDefault(t, 'from', getOrDefault(t, 'from_status', '')) as string,
+          getOrDefault(t, 'to', getOrDefault(t, 'to_status', '')) as string,
         );
       });
       if (
@@ -381,7 +383,7 @@ export class WorkflowMapping {
       );
     }
     const semanticRoles: Record<string, SemanticRole> = {};
-    const rawRoles = pyGet(data, 'semantic_roles', {}) as Record<
+    const rawRoles = getOrDefault(data, 'semantic_roles', {}) as Record<
       string,
       Record<string, unknown>
     >;
@@ -403,17 +405,17 @@ export class WorkflowMapping {
     }
     return new WorkflowMapping({
       project_key: data['project_key'] as string,
-      source: pyGet(data, 'source', 'jira') as string,
-      discovered_at: pyGet(data, 'discovered_at', '') as string,
+      source: getOrDefault(data, 'source', 'jira') as string,
+      discovered_at: getOrDefault(data, 'discovered_at', '') as string,
       issue_types: issueTypes,
       semantic_roles: semanticRoles,
-      role_annotations_confirmed: pyGet(
+      role_annotations_confirmed: getOrDefault(
         data,
         'role_annotations_confirmed',
         false,
       ) as boolean,
       atlassian_url:
-        (pyGet(data, 'atlassian_url', null) as string | null) ?? null,
+        (getOrDefault(data, 'atlassian_url', null) as string | null) ?? null,
     });
   }
 }
@@ -441,7 +443,7 @@ function jiraCredentials(): {
   const user = process.env['ATLASSIAN_USER'] ?? '';
   const token = process.env['ATLASSIAN_TOKEN'] ?? '';
 
-  if (!pyTruthy(baseUrl) || !pyTruthy(user) || !pyTruthy(token)) {
+  if (!isTruthy(baseUrl) || !isTruthy(user) || !isTruthy(token)) {
     throw new WorkflowDiscoveryError(
       'Jira credentials not configured.  Set ATLASSIAN_URL, ' +
         'ATLASSIAN_USER, and ATLASSIAN_TOKEN environment variables.\n' +
@@ -474,8 +476,8 @@ function jiraIssueTypeList(
     'errorMessages' in issueTypesRaw
   ) {
     throw new WorkflowDiscoveryError(
-      `Jira project ${pyRepr(projectKey)} not found or access denied: ` +
-        `${pyRepr((issueTypesRaw as Record<string, unknown>)['errorMessages'])}`,
+      `Jira project ${quoteValue(projectKey)} not found or access denied: ` +
+        `${quoteValue((issueTypesRaw as Record<string, unknown>)['errorMessages'])}`,
     );
   }
   return [];
@@ -610,9 +612,9 @@ export class WorkflowDiscovery {
 
     const issueTypes: IssueType[] = [];
     for (const itRaw of list) {
-      const itId = String(pyGet(itRaw, 'id', ''));
-      const itName = String(pyGet(itRaw, 'name', ''));
-      if (!pyTruthy(itName)) {
+      const itId = String(getOrDefault(itRaw, 'id', ''));
+      const itName = String(getOrDefault(itRaw, 'name', ''));
+      if (!isTruthy(itName)) {
         continue;
       }
 
@@ -648,17 +650,17 @@ export class WorkflowDiscovery {
     if (!Array.isArray(statusesRaw)) {
       return [];
     }
-    const entries = statusesRaw as Record<string, unknown>[];
+    const entries = statusesRaw as JsonRow[];
     for (const entry of entries) {
-      const entryName = (pyGet(entry, 'name', '') as string) ?? '';
+      const entryName = (getOrDefault(entry, 'name', '') as string) ?? '';
       if (entryName.toLowerCase() === issueTypeName.toLowerCase()) {
-        return (pyGet(entry, 'statuses', []) as Record<string, unknown>[]).map(
+        return (getOrDefault(entry, 'statuses', []) as JsonRow[]).map(
           (s) =>
             new StatusEntry(
-              String(pyGet(s, 'id', '')),
-              pyGet(s, 'name', '') as string,
-              pyGet(
-                pyGet(s, 'statusCategory', {}) as Record<string, unknown>,
+              String(getOrDefault(s, 'id', '')),
+              getOrDefault(s, 'name', '') as string,
+              getOrDefault(
+                getOrDefault(s, 'statusCategory', {}) as JsonRow,
                 'key',
                 'indeterminate',
               ) as string,
@@ -670,19 +672,16 @@ export class WorkflowDiscovery {
     const seen = new Set<string>();
     const result: StatusEntry[] = [];
     for (const entry of entries) {
-      for (const s of pyGet(entry, 'statuses', []) as Record<
-        string,
-        unknown
-      >[]) {
-        const name = pyGet(s, 'name', '') as string;
-        if (pyTruthy(name) && !seen.has(name)) {
+      for (const s of getOrDefault(entry, 'statuses', []) as JsonRow[]) {
+        const name = getOrDefault(s, 'name', '') as string;
+        if (isTruthy(name) && !seen.has(name)) {
           seen.add(name);
           result.push(
             new StatusEntry(
-              String(pyGet(s, 'id', '')),
+              String(getOrDefault(s, 'id', '')),
               name,
-              pyGet(
-                pyGet(s, 'statusCategory', {}) as Record<string, unknown>,
+              getOrDefault(
+                getOrDefault(s, 'statusCategory', {}) as JsonRow,
                 'key',
                 'indeterminate',
               ) as string,
@@ -724,22 +723,22 @@ export class WorkflowDiscovery {
       typeof searchResult === 'object' &&
       !Array.isArray(searchResult);
     const issues = isDict
-      ? (pyGet(
+      ? (getOrDefault(
           searchResult as Record<string, unknown>,
           'issues',
           [],
         ) as unknown[])
       : [];
-    if (!pyTruthy(issues)) {
+    if (!isTruthy(issues)) {
       return [];
     }
 
-    const issueKey = pyGet(
+    const issueKey = getOrDefault(
       issues[0] as Record<string, unknown>,
       'key',
       '',
     ) as string;
-    if (!pyTruthy(issueKey)) {
+    if (!isTruthy(issueKey)) {
       return [];
     }
 
@@ -760,22 +759,26 @@ export class WorkflowDiscovery {
     ) {
       return [];
     }
-    const rawList = pyGet(
+    const rawList = getOrDefault(
       transitionsRaw as Record<string, unknown>,
       'transitions',
       [],
     ) as Record<string, unknown>[];
     return rawList.map((t) => {
-      const from = pyGet(t, 'from', null);
-      const to = pyGet(t, 'to', null);
+      const from = getOrDefault(t, 'from', null);
+      const to = getOrDefault(t, 'to', null);
       return new TransitionEntry(
-        String(pyGet(t, 'id', '')),
-        pyGet(t, 'name', '') as string,
+        String(getOrDefault(t, 'id', '')),
+        getOrDefault(t, 'name', '') as string,
         from !== null && typeof from === 'object'
-          ? (pyGet(from as Record<string, unknown>, 'name', '') as string)
+          ? (getOrDefault(
+              from as Record<string, unknown>,
+              'name',
+              '',
+            ) as string)
           : '',
         to !== null && typeof to === 'object'
-          ? (pyGet(to as Record<string, unknown>, 'name', '') as string)
+          ? (getOrDefault(to as Record<string, unknown>, 'name', '') as string)
           : '',
       );
     });
@@ -833,7 +836,7 @@ export class WorkflowDiscovery {
       throw exc;
     }
 
-    if (result.returncode !== 0 || !pyTruthy(result.stdout.trim())) {
+    if (result.returncode !== 0 || !isTruthy(result.stdout.trim())) {
       // No project board found -- synthesize a minimal "open / closed" mapping.
       return new WorkflowMapping({
         project_key: repoSlug,
@@ -967,7 +970,7 @@ function reasonOf(exc: unknown): string {
  * Minimal Python `repr()` for the values that reach the Jira error message
  * (a string project key and a list of error strings). Not a general repr.
  */
-function pyRepr(value: unknown): string {
+function quoteValue(value: unknown): string {
   if (typeof value === 'string') {
     // Python prefers single quotes unless the string has a single quote but no
     // double quote.
@@ -977,7 +980,7 @@ function pyRepr(value: unknown): string {
     return "'" + value.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
   }
   if (Array.isArray(value)) {
-    return '[' + value.map((v) => pyRepr(v)).join(', ') + ']';
+    return '[' + value.map((v) => quoteValue(v)).join(', ') + ']';
   }
   if (value === null || value === undefined) {
     return 'None';

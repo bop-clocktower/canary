@@ -1,7 +1,7 @@
 /**
  * Resolve tracked overlays for `canary migrate --from`.
  *
- * Faithful TypeScript port of `agent/core/overlays.py`. Tracked overlays are git
+ * Tracked overlays are git
  * clones under `~/.canary/overlays/<name>/` created by `canary overlay add`.
  * This module maps a `--from` value to a clone path.
  *

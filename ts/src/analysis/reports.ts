@@ -1,10 +1,10 @@
 /**
  * Markdown report builders for cross-suite analysis.
  *
- * Faithful TypeScript port of `agent/analysis/reports.py`. Pure functions: each
- * builder takes pre-fetched query rows and returns Markdown. No I/O.
+ * Pure functions: each builder takes pre-fetched query rows and returns
+ * Markdown. No I/O.
  *
- * Parity notes:
+ * Number formatting:
  * - `round1` reproduces Python's round-half-to-even so `round(x, 1)` matches.
  * - Rounded values are rendered with `num1` (one decimal, trailing zero kept),
  *   matching `str(float)` for any 1-decimal-rounded float ("50.0", "33.3").

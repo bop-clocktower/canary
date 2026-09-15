@@ -1,8 +1,6 @@
 /**
  * Context-aware environment & persona detection (issue #341).
  *
- * Faithful TypeScript port of `agent/core/environment_detect.py`.
- *
  * Canary tailors which skills load, which user pool it queries, and how it
  * phrases output based on *who* is driving and *what* they are testing. This
  * module gathers that context from cheap, local, deterministic signals so a

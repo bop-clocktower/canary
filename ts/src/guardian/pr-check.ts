@@ -1,8 +1,6 @@
 /**
  * Tier 0 deterministic PR guardian engine.
  *
- * Faithful TypeScript port of `agent/guardian/pr_check.py`.
- *
  * Scopes a git diff into changed units, resolves diff-coverage at the highest
  * available fidelity (see {@link module:./coverage}), builds fidelity-labeled
  * findings, honors `canary:allow-untested` suppressions, renders output, and
@@ -1659,7 +1657,7 @@ function parseCoverageExempt(
       });
     } else {
       warnings.push(
-        `guardian coverageExempt entry needs a glob, got ${pyRepr(item)}; ignoring`,
+        `guardian coverageExempt entry needs a glob, got ${quoteValue(item)}; ignoring`,
       );
     }
   }
@@ -1684,16 +1682,16 @@ interface GuardianConfigFields {
 const VALID_GATES = new Set(['soft', 'hard']);
 
 /** Rough analog of Python's `repr()` for a diagnostic value. */
-function pyRepr(value: unknown): string {
+function quoteValue(value: unknown): string {
   if (typeof value === 'string') return `'${value}'`;
   if (value === true) return 'True';
   if (value === false) return 'False';
   if (value === null || value === undefined) return 'None';
-  if (Array.isArray(value)) return `[${value.map(pyRepr).join(', ')}]`;
+  if (Array.isArray(value)) return `[${value.map(quoteValue).join(', ')}]`;
   if (typeof value === 'object') {
     // Python dict repr: `{'k': 'v'}` (keys and values repr'd, comma-space).
     const entries = Object.entries(value as Record<string, unknown>).map(
-      ([k, v]) => `${pyRepr(k)}: ${pyRepr(v)}`,
+      ([k, v]) => `${quoteValue(k)}: ${quoteValue(v)}`,
     );
     return `{${entries.join(', ')}}`;
   }
@@ -1705,7 +1703,7 @@ function pyRepr(value: unknown): string {
  * surrounding whitespace and sign, digits only. Returns `null` on failure
  * (Python would raise `ValueError`, which the coercers catch-and-default).
  */
-function pyIntFromValue(raw: unknown): number | null {
+function parseStrictIntFromValue(raw: unknown): number | null {
   const s =
     typeof raw === 'string' ? raw : typeof raw === 'number' ? String(raw) : '';
   const trimmed = s.trim();
@@ -1723,15 +1721,15 @@ function pyIntFromValue(raw: unknown): number | null {
 function coerceTier(raw: unknown, def: number, warnings: string[]): number {
   if (typeof raw === 'boolean') {
     warnings.push(
-      `guardian pr.tier must be an integer, got ${pyRepr(raw)}; using ${def}`,
+      `guardian pr.tier must be an integer, got ${quoteValue(raw)}; using ${def}`,
     );
     return def;
   }
   if (typeof raw === 'number' && Number.isInteger(raw)) return raw;
-  const parsed = pyIntFromValue(raw);
+  const parsed = parseStrictIntFromValue(raw);
   if (parsed === null) {
     warnings.push(
-      `guardian pr.tier must be an integer, got ${pyRepr(raw)}; using ${def}`,
+      `guardian pr.tier must be an integer, got ${quoteValue(raw)}; using ${def}`,
     );
     return def;
   }
@@ -1760,11 +1758,11 @@ function coerceOptionalInt(
   } else if (typeof raw === 'number' && Number.isInteger(raw)) {
     parsed = raw;
   } else {
-    parsed = pyIntFromValue(raw);
+    parsed = parseStrictIntFromValue(raw);
   }
   if (parsed === null) {
     warnings.push(
-      `guardian ${fieldName} must be an integer, got ${pyRepr(raw)}; ignoring`,
+      `guardian ${fieldName} must be an integer, got ${quoteValue(raw)}; ignoring`,
     );
     return null;
   }
@@ -1797,7 +1795,7 @@ function coerceGate(
 ): string {
   if (typeof raw !== 'string' && typeof raw !== 'number') {
     warnings.push(
-      `guardian ${fieldName} must be 'soft' or 'hard', got ${pyRepr(raw)}; ` +
+      `guardian ${fieldName} must be 'soft' or 'hard', got ${quoteValue(raw)}; ` +
         `using ${def}`,
     );
     return def;
@@ -1805,7 +1803,7 @@ function coerceGate(
   const normalized = String(raw).trim().toLowerCase();
   if (VALID_GATES.has(normalized)) return normalized;
   warnings.push(
-    `guardian ${fieldName} must be 'soft' or 'hard', got ${pyRepr(raw)}; ` +
+    `guardian ${fieldName} must be 'soft' or 'hard', got ${quoteValue(raw)}; ` +
       `using ${def}`,
   );
   return def;
@@ -1819,7 +1817,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Python-truthiness for JSON-shaped values: `null`/`undefined`, `false`, `0`,
  * `""`, empty array, and empty object are all falsy (mirrors `bool(x)`).
  */
-function pyTruthy(value: unknown): boolean {
+function isTruthy(value: unknown): boolean {
   if (value === null || value === undefined || value === false) return false;
   if (value === 0 || value === '') return false;
   if (Array.isArray(value)) return value.length > 0;
@@ -1828,7 +1826,7 @@ function pyTruthy(value: unknown): boolean {
 }
 
 /** Python `dict.get(key, default)`: default only on a missing key. */
-function pyGet(
+function getOrDefault(
   obj: Record<string, unknown>,
   key: string,
   fallback: unknown,
@@ -1857,8 +1855,10 @@ export function loadGuardianConfig(
     return [new GuardianConfig(), warning];
   }
 
-  const canary = pyGet(data, 'canary', {});
-  const block: unknown = isRecord(canary) ? pyGet(canary, 'guardian', {}) : {};
+  const canary = getOrDefault(data, 'canary', {});
+  const block: unknown = isRecord(canary)
+    ? getOrDefault(canary, 'guardian', {})
+    : {};
   if (!isRecord(block) || Object.keys(block).length === 0) {
     return [new GuardianConfig(), null];
   }
@@ -1866,9 +1866,11 @@ export function loadGuardianConfig(
   const config = new GuardianConfig();
   const warnings: string[] = [];
 
-  const pr = pyGet(block, 'pr', {});
+  const pr = getOrDefault(block, 'pr', {});
   if (isRecord(pr)) {
-    config.pr_enabled = pyTruthy(pyGet(pr, 'enabled', config.pr_enabled));
+    config.pr_enabled = isTruthy(
+      getOrDefault(pr, 'enabled', config.pr_enabled),
+    );
     if ('tier' in pr) {
       config.pr_tier = coerceTier(pr['tier'], config.pr_tier, warnings);
     }
@@ -1880,7 +1882,9 @@ export function loadGuardianConfig(
         warnings,
       );
     }
-    config.weak_tests = pyTruthy(pyGet(pr, 'weakTests', config.weak_tests));
+    config.weak_tests = isTruthy(
+      getOrDefault(pr, 'weakTests', config.weak_tests),
+    );
     // #413: same present-vs-absent contract as `skipGlobs` (FIX B) — absent
     // keeps the built-in default, an explicit list (including `[]`) is honored
     // verbatim so `heuristicExclude: []` means "no glob layer". The
@@ -1891,13 +1895,13 @@ export function loadGuardianConfig(
     }
   }
 
-  const precommit = pyGet(block, 'preCommit', {});
+  const precommit = getOrDefault(block, 'preCommit', {});
   if (isRecord(precommit)) {
-    config.precommit_enabled = pyTruthy(
-      pyGet(precommit, 'enabled', config.precommit_enabled),
+    config.precommit_enabled = isTruthy(
+      getOrDefault(precommit, 'enabled', config.precommit_enabled),
     );
-    config.precommit_author_tests = pyTruthy(
-      pyGet(precommit, 'authorTests', config.precommit_author_tests),
+    config.precommit_author_tests = isTruthy(
+      getOrDefault(precommit, 'authorTests', config.precommit_author_tests),
     );
     if ('gate' in precommit) {
       config.precommit_gate = coerceGate(

@@ -1,7 +1,7 @@
 /**
  * Build the Phase 1 impact summary Markdown.
  *
- * Faithful TypeScript port of `agent/guardian/summary_emitter.py`. This is the
+ * This is the
  * content posted as a PR comment on the SUT repo after a merge to main. Pure
  * function: takes gaps and metadata, returns a Markdown string.
  *

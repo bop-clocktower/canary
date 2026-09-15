@@ -1,8 +1,6 @@
 /**
  * History store factory + the async store contract.
  *
- * Port of `agent/history/store.py` (`HistoryStore` ABC + `make_store`).
- *
  * DISCOVERED BOUNDARY CONSTRAINT (differs from Python): the Python stores are
  * synchronous because `supabase-py`'s `.execute()` is blocking. The JS SDK
  * (`@supabase/supabase-js`) is Promise-based, so a remote store cannot expose

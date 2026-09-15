@@ -1,7 +1,7 @@
 /**
  * Supabase-backed history store.
  *
- * Port of `agent/history/supabase_store.py`, using `@supabase/supabase-js`.
+ * Uses `@supabase/supabase-js`.
  * The JS SDK is Promise-based, so every method is async (see the boundary note
  * in `store.ts`). The client is injectable so tests can mock it — no live
  * network is ever required.

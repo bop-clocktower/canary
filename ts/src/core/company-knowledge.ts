@@ -1,7 +1,7 @@
 /**
  * CompanyKnowledge -- load and validate `.canary/company.json`.
  *
- * Faithful TypeScript port of `agent/core/company_knowledge.py`. Stores
+ * Stores
  * *pointers only* (Confluence space keys, Jira project keys, internal URLs, MCP
  * server identifiers, Claude Code skill slugs, free-text notes). No proprietary
  * content is ever committed here; AI agents retrieve actual content at runtime
@@ -33,8 +33,8 @@
  *   - Notes are capped by CODE POINT (`str[:2048]`) and the brand-text cap by
  *     code point (`str[:200]`), so both use a code-point slice helper rather
  *     than a UTF-16 `.slice`.
- *   - Python truthiness (`""`/`None`/`{}`/`[]` falsy) via {@link pyTruthy}.
- *   - `type(x).__name__` in warning text maps to {@link pyTypeName} so a
+ *   - Python truthiness (`""`/`None`/`{}`/`[]` falsy) via {@link isTruthy}.
+ *   - `type(x).__name__` in warning text maps to {@link typeLabel} so a
  *     non-list / non-string / non-dict value is named `str`/`list`/`dict`/...
  *     exactly as Python renders it.
  *   - `_warn` printed rich-markup to stderr; this port keeps the warning strings
@@ -56,7 +56,7 @@ import { readJsonWithWarning } from './config-validation.js';
  * Python-truthiness: `null`/`undefined`/`false`/`0`/`""` and an empty array or
  * object are falsy (mirrors `if x:`).
  */
-function pyTruthy(value: unknown): boolean {
+function isTruthy(value: unknown): boolean {
   if (value === null || value === undefined || value === false) return false;
   if (value === 0 || value === '') return false;
   if (Array.isArray(value)) return value.length > 0;
@@ -65,7 +65,7 @@ function pyTruthy(value: unknown): boolean {
 }
 
 /** Python `type(x).__name__` for JSON-derived values. */
-function pyTypeName(value: unknown): string {
+function typeLabel(value: unknown): string {
   if (value === null || value === undefined) return 'NoneType';
   if (typeof value === 'boolean') return 'bool';
   if (typeof value === 'number')
@@ -197,7 +197,7 @@ function validateStrings(
   if (!Array.isArray(raw)) {
     if (warnings !== null) {
       warnings.push(
-        `${fieldName}: expected list, got ${pyTypeName(raw)} ${EMDASH} skipped`,
+        `${fieldName}: expected list, got ${typeLabel(raw)} ${EMDASH} skipped`,
       );
     }
     return [];
@@ -210,7 +210,9 @@ function validateStrings(
     if (looksLikeSecret(val)) throw new SecretDetected(fieldName, val);
     if (!validate(val)) {
       if (warnings !== null) {
-        warnings.push(`${fieldName}: dropped invalid entry ${pyRepr(item)}`);
+        warnings.push(
+          `${fieldName}: dropped invalid entry ${quoteValue(item)}`,
+        );
       }
       continue;
     }
@@ -223,7 +225,7 @@ function validateStrings(
 }
 
 /** Python `repr()` of a string: single-quoted, with `'`/`\` escaped. */
-function pyRepr(s: string): string {
+function quoteValue(s: string): string {
   // Python prefers single quotes unless the string contains a single quote and
   // no double quote (then it uses double quotes). Matches the common case used
   // in these warnings (identifiers, URLs -- no embedded quotes).
@@ -242,14 +244,14 @@ function validateUrl(
 ): string {
   if (typeof raw !== 'string') {
     warnings.push(
-      `${fieldName}: expected string, got ${pyTypeName(raw)} ${EMDASH} skipped`,
+      `${fieldName}: expected string, got ${typeLabel(raw)} ${EMDASH} skipped`,
     );
     return '';
   }
   if (looksLikeSecret(raw)) throw new SecretDetected(fieldName, raw);
   const { scheme, netloc } = parseSchemeNetloc(raw);
   if ((scheme !== 'http' && scheme !== 'https') || !netloc) {
-    warnings.push(`${fieldName}: dropped invalid URL ${pyRepr(raw)}`);
+    warnings.push(`${fieldName}: dropped invalid URL ${quoteValue(raw)}`);
     return '';
   }
   return raw;
@@ -264,7 +266,7 @@ function validateOtelEndpoint(
 ): string {
   if (typeof raw !== 'string') {
     warnings.push(
-      `${fieldName}: expected string, got ${pyTypeName(raw)} ${EMDASH} skipped`,
+      `${fieldName}: expected string, got ${typeLabel(raw)} ${EMDASH} skipped`,
     );
     return '';
   }
@@ -272,7 +274,7 @@ function validateOtelEndpoint(
   if (looksLikeSecret(raw)) throw new SecretDetected(fieldName, raw);
   const { scheme, netloc } = parseSchemeNetloc(raw);
   if (!_OTEL_SCHEMES.includes(scheme) || !netloc) {
-    warnings.push(`${fieldName}: dropped invalid endpoint ${pyRepr(raw)}`);
+    warnings.push(`${fieldName}: dropped invalid endpoint ${quoteValue(raw)}`);
     return '';
   }
   return raw;
@@ -311,7 +313,7 @@ function validateRepoRelativePath(
 ): string {
   if (typeof raw !== 'string') {
     warnings.push(
-      `${fieldName}: expected string, got ${pyTypeName(raw)} ${EMDASH} skipped`,
+      `${fieldName}: expected string, got ${typeLabel(raw)} ${EMDASH} skipped`,
     );
     return '';
   }
@@ -324,7 +326,7 @@ function validateRepoRelativePath(
     _PATH_CONTROL_RE.test(value)
   ) {
     warnings.push(
-      `${fieldName}: dropped invalid repo-relative path ${pyRepr(raw)} ` +
+      `${fieldName}: dropped invalid repo-relative path ${quoteValue(raw)} ` +
         `${EMDASH} must stay inside the repo (no absolute path, no '..')`,
     );
     return '';
@@ -340,7 +342,7 @@ function validateHexColor(
 ): string {
   if (typeof raw !== 'string' || !raw) return '';
   if (_HEX_COLOR_RE.test(raw)) return raw;
-  warnings.push(`${fieldName}: dropped invalid hex color ${pyRepr(raw)}`);
+  warnings.push(`${fieldName}: dropped invalid hex color ${quoteValue(raw)}`);
   return '';
 }
 
@@ -353,7 +355,7 @@ function brandText(
   if (typeof raw !== 'string') {
     if (raw !== null && raw !== undefined) {
       warnings.push(
-        `${fieldName}: expected string, got ${pyTypeName(raw)} ${EMDASH} skipped`,
+        `${fieldName}: expected string, got ${typeLabel(raw)} ${EMDASH} skipped`,
       );
     }
     return '';
@@ -391,7 +393,7 @@ export class Brand {
   }
 
   get isEmpty(): boolean {
-    return !pyTruthy(this.assets);
+    return !isTruthy(this.assets);
   }
 
   toDict(): Record<string, unknown> {
@@ -487,7 +489,7 @@ function parseBrand(raw: unknown, warnings: Warnings): Brand {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     if (raw !== null && raw !== undefined) {
       warnings.push(
-        `brand: expected object, got ${pyTypeName(raw)} ${EMDASH} skipped`,
+        `brand: expected object, got ${typeLabel(raw)} ${EMDASH} skipped`,
       );
     }
     return new Brand();
@@ -571,7 +573,7 @@ function parseLayer(data: Record<string, unknown>, source: string): Layer {
     }
   } else {
     warns.push(
-      `internal_doc_urls: expected list, got ${pyTypeName(rawUrls)} ${EMDASH} skipped`,
+      `internal_doc_urls: expected list, got ${typeLabel(rawUrls)} ${EMDASH} skipped`,
     );
   }
 
@@ -612,7 +614,7 @@ function parseLayer(data: Record<string, unknown>, source: string): Layer {
         dashboard_token_env = rawEnv;
       } else {
         warns.push(
-          `dashboard_token_env: dropped invalid env-var name ${pyRepr(rawEnv)}`,
+          `dashboard_token_env: dropped invalid env-var name ${quoteValue(rawEnv)}`,
         );
       }
     }
@@ -713,7 +715,7 @@ function loadLayer(path: string, label: string): [Layer | null, string] {
     if (exc instanceof SecretDetected) {
       const msg =
         `[red]![/red] ${label} contains a secret-like value in ` +
-        `${pyRepr(exc.fieldName)} ${EMDASH} remove it and store secrets in environment variables`;
+        `${quoteValue(exc.fieldName)} ${EMDASH} remove it and store secrets in environment variables`;
       return [null, msg];
     }
     throw exc;
@@ -958,7 +960,7 @@ export class CompanyKnowledge {
       this.notes,
       !this.brand.isEmpty,
     ];
-    return !signals.some((x) => pyTruthy(x));
+    return !signals.some((x) => isTruthy(x));
   }
 
   // -- factory --------------------------------------------------------------
@@ -1041,33 +1043,33 @@ export class CompanyKnowledge {
     ];
 
     let mcpHint = '';
-    if (pyTruthy(this.mcp_servers)) {
+    if (isTruthy(this.mcp_servers)) {
       mcpHint = ` (via ${this.mcp_servers.join(', ')} MCP)`;
     }
 
-    if (pyTruthy(this.confluence_spaces)) {
+    if (isTruthy(this.confluence_spaces)) {
       lines.push(
         `- Confluence spaces${mcpHint}: ${this.confluence_spaces.join(', ')}`,
       );
     }
-    if (pyTruthy(this.jira_projects)) {
+    if (isTruthy(this.jira_projects)) {
       lines.push(`- Jira projects${mcpHint}: ${this.jira_projects.join(', ')}`);
     }
-    if (pyTruthy(this.internal_doc_urls)) {
+    if (isTruthy(this.internal_doc_urls)) {
       lines.push('- Reference docs (fetch via MCP / authenticated tool):');
       for (const url of this.internal_doc_urls) lines.push(`    - ${url}`);
     }
-    if (pyTruthy(this.internal_domains)) {
+    if (isTruthy(this.internal_domains)) {
       lines.push(`- Internal domains: ${this.internal_domains.join(', ')}`);
     }
-    if (pyTruthy(this.claude_code_skills)) {
+    if (isTruthy(this.claude_code_skills)) {
       const skillList = this.claude_code_skills.map((s) => `/${s}`).join(', ');
       lines.push(
         `- Claude Code skills available for this project: ${skillList}. ` +
           'Invoke the relevant skill when its scope matches the task.',
       );
     }
-    if (pyTruthy(this.notes)) {
+    if (isTruthy(this.notes)) {
       lines.push(`- Notes from the project owner: ${this.notes}`);
     }
 
@@ -1099,7 +1101,7 @@ export class CompanyKnowledge {
       sources: this.sources,
       warnings: this.warnings,
     };
-    if (pyTruthy(this.error)) out['error'] = this.error;
+    if (isTruthy(this.error)) out['error'] = this.error;
     return out;
   }
 

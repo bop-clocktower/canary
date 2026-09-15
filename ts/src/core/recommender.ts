@@ -1,7 +1,7 @@
 /**
  * Framework Recommender — picks testing tools for a classification, ranked.
  *
- * Faithful TypeScript port of `agent/core/recommender.py`. Wires the classifier
+ * Wires the classifier
  * result + the framework registry into a ranked candidate list.
  */
 

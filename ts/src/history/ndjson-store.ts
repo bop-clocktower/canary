@@ -1,14 +1,10 @@
 /**
- * Local NDJSON-backed history store — the TS side of the TS↔Python seam.
+ * Local NDJSON-backed history store.
  *
- * Reads `history-v2.jsonl` (one JSON RunRecord per line) written by the Python
- * `LocalHistoryStore`. Faithful port of the query_* semantics from
- * `agent/history/local_store.py`.
- *
- * Deviation from the Python reader (deliberate): where Python's `_read_all`
- * swallows any parse error and returns `[]`, this reader throws on malformed
- * JSON and on an unrecognized `schema_version`, so a corrupt or future-version
- * history fails loudly rather than silently analysing nothing.
+ * Reads `history-v2.jsonl` (one JSON RunRecord per line) and answers the
+ * query_* methods over it. Malformed JSON and an unrecognized `schema_version`
+ * throw instead of reading as empty, so a corrupt or future-version history
+ * fails loudly rather than silently analysing nothing.
  *
  * Version resolution lives in `resolveSchemaVersion` (#701): rows written by
  * this store carry their version, and a legacy unstamped row is read as the

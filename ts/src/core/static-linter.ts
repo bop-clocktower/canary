@@ -1,6 +1,5 @@
 /**
- * Static linter for test files — faithful TS port of
- * `agent/core/static_linter.py`.
+ * Static linter for test files.
  *
  * Produces file:line findings without executing tests. Powers the static
  * review + flake-check subsets. Regex/line based; pure filesystem reads.

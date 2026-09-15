@@ -1,10 +1,9 @@
 /**
  * Pattern matcher — extracts a project's existing test conventions.
  *
- * Faithful TypeScript port of `agent/core/pattern_matcher.py`. Scans a project
- * for existing test files and summarises naming/import/assertion conventions so
- * generated tests match. Uses a dependency-free recursive walk with the same
- * glob tails and ignore-dir set as the Python original.
+ * Scans a project for existing test files and summarises naming, import and
+ * assertion conventions so generated tests match. Uses a dependency-free
+ * recursive walk over fixed glob tails, skipping a fixed ignore-dir set.
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';

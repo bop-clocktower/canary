@@ -26,14 +26,14 @@
  *   - **subprocess.** `_run_tests_impl` delegates to the already-ported
  *     {@link CanaryTestExecutor} (spawnSync, maxBuffer:Infinity).
  *   - **pathlib -> node:path/fs.** `Path(...).suffix` semantics are reproduced
- *     by {@link pySuffix} (empty for a trailing dot or dotfile).
+ *     by {@link fileExtension} (empty for a trailing dot or dotfile).
  *   - **Python truthiness.** `target_dir or _WORKING_DIR` uses `||`; the env
  *     default for `_WORKING_DIR` uses `??` to mirror `os.environ.get(k, cwd)`
  *     (an explicitly-empty env var stays `""`).
  *   - **ensure_ascii.** Hand-built JSON returned to the MCP host is escaped via
  *     the shared {@link ensureAscii} (`util/ensure-ascii.ts`) so non-ASCII units
  *     emit `\uXXXX` (ASCII-safe JSON).
- *   - **splitlines.** `context_snippets` uses {@link pySplitlines}, which drops
+ *   - **splitlines.** `context_snippets` uses {@link splitLinesDropTrailing}, which drops
  *     a single trailing-newline empty tail exactly as `str.splitlines()` does.
  *   - File writes are LF + UTF-8 on every platform (matches the sibling ports).
  */
@@ -138,7 +138,7 @@ const MAX_FILE_FUNCTIONS = 20;
  * `\r\n` / `\r` / `\n` and drops the single empty tail a trailing separator
  * would otherwise leave (so `"a\nb\n"` -> `["a", "b"]`, not `["a", "b", ""]`).
  */
-function pySplitlines(text: string): string[] {
+function splitLinesDropTrailing(text: string): string[] {
   if (text === '') return [];
   const parts = text.split(/\r\n|\r|\n/);
   if (parts[parts.length - 1] === '') parts.pop();
@@ -149,7 +149,7 @@ function pySplitlines(text: string): string[] {
  * Python `Path(name).suffix`: the last dotted extension, but empty when the dot
  * is the first character (`.gitignore`) or the last character (`foo.`).
  */
-function pySuffix(name: string): string {
+function fileExtension(name: string): string {
   const i = name.lastIndexOf('.');
   if (i > 0 && i < name.length - 1) return name.slice(i);
   return '';
@@ -320,7 +320,7 @@ const PY_DEF_RE = /^(\s*)(?:async\s+)?def\s+([A-Za-z_]\w*)/;
  * (a mid-edit unclosed paren) so we return `[]` like Python did instead of
  * best-effort names. It does NOT catch every SyntaxError; see the note below.
  */
-function pyBracketsBalanced(s: string): boolean {
+function bracketsBalanced(s: string): boolean {
   const close: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
   const stack: string[] = [];
   for (const ch of s) {
@@ -351,7 +351,7 @@ function extractPyFunctions(text: string): string[] {
   const joined = text.replace(/\\\n/g, '');
   const cleaned = blankPyStringsAndComments(joined);
   // Unbalanced brackets -> the module cannot parse -> Python's ast returns [].
-  if (!pyBracketsBalanced(cleaned)) return [];
+  if (!bracketsBalanced(cleaned)) return [];
   const found: { indent: number; order: number; name: string }[] = [];
   let order = 0;
   for (const line of cleaned.split('\n')) {
@@ -457,10 +457,9 @@ export function analyzeFileImpl(filePath: string): Record<string, unknown> {
 
   let contextSnippets: string[];
   try {
-    contextSnippets = pySplitlines(readFileSync(filePath, 'utf-8')).slice(
-      0,
-      40,
-    );
+    contextSnippets = splitLinesDropTrailing(
+      readFileSync(filePath, 'utf-8'),
+    ).slice(0, 40);
   } catch {
     contextSnippets = [];
   }
@@ -588,7 +587,7 @@ export function writeTestFileImpl(
   root: string = WORKING_DIR,
 ): Record<string, unknown> {
   let outPath = filePath;
-  if (pySuffix(basename(filePath)) === '') {
+  if (fileExtension(basename(filePath)) === '') {
     const extMap: Record<string, string> = {
       playwright: '.spec.ts',
       vitest: '.test.ts',
@@ -832,7 +831,7 @@ export function createServer(): McpServer {
     'canary__list_frameworks',
     {
       description:
-        'Return all frameworks registered in agent/frameworks/registry.json.',
+        "Return all frameworks in Canary's bundled registry (data/frameworks/registry.json).",
     },
     listFrameworksTool,
   );

@@ -1,7 +1,7 @@
 /**
  * Shared fail-loud-but-not-hard-fail JSON config reading.
  *
- * Faithful TypeScript port of `agent/core/config_validation.py`. Callers that
+ * Callers that
  * read a config file (`harness.config.json`, `.mcp.json`,
  * `.canary/company.json`, ...) have historically caught every read/parse error
  * in one blanket `catch` and treated the result the same as "file doesn't

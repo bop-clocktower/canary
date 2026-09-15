@@ -1,0 +1,38 @@
+{
+  "issues": [970],
+  "route": "feature",
+  "stages": ["harness:brainstorming"],
+  "planArtifact": "docs/changes/retire-port-headers/plans/2026-09-15-retire-port-headers-plan.md",
+  "closingKeyword": "Closes",
+  "headersBefore": 52,
+  "headersAfter": 0,
+  "pyIdentifierLinesBefore": 202,
+  "pyIdentifierLinesAfter": 7,
+  "renames": {
+    "pyTruthy": "isTruthy",
+    "pyGet": "getOrDefault",
+    "pyOr": "orDefault",
+    "pyRepr": "quoteValue",
+    "pyTypeName": "typeLabel",
+    "pyDefaultStr": "stringifyBigInt",
+    "pyJsonDumps": "jsonWithSpacedSeparators",
+    "pyFloatStr": "withTrailingDecimal",
+    "pyIntFromValue": "parseStrictIntFromValue",
+    "pySplitlines": "splitLinesDropTrailing",
+    "pySuffix": "fileExtension",
+    "pyBracketsBalanced": "bracketsBalanced"
+  },
+  "userVisibleChanges": ["mcp-server canary__list_frameworks description path"],
+  "tsTestHitsLeft": 29,
+  "assumptions": [
+    "harness:brainstorming was invoked and run autonomously with recommended defaults. Its own When-to-Use excludes simple refactors with no design decisions, and the scope was already settled by a human, so there was no spec and no sign-off step. The only choices (names, rename versus reuse) were made by recommendation.",
+    "harness:autopilot was NOT invoked. Its When-to-Use needs an approved multi-phase spec and excludes single-phase work, and this change has neither. harness:refactoring was followed as discipline (green before, identical behavior, green after) but not invoked, so it is not listed in stages.",
+    "The 7 remaining py* lines are domain names about Python source files, not Python-emulation helpers: pyFiles (core/domain-scanner.ts), pyModulePath (core/test-inventory.ts), pyTautology (core/vacuity-scanner.ts). They are left alone.",
+    "No shared helper was reused. util/round.ts formatWithDecimalPoint uses `${x}.0` while pyFloatStr used toFixed(1); they differ for integers of 1e21 and above. diff-coverage parseStrictInt takes a string while pyIntFromValue takes unknown and stringifies numbers. Both private copies were renamed instead.",
+    "The per-module private copies differ from each other (for example quoteValue in mcp-validator.ts only wraps in single quotes, while pr-check.ts also renders arrays and objects). They were renamed in place, not merged, to keep the change behavior-free.",
+    "Header rewrites remove only the port claim and any sentence that depended on it. 'Python->TS nuances' blocks that describe behavior the code still reproduces were kept, as the settled scope says.",
+    "Renaming pyGet to the longer getOrDefault made prettier wrap parseStatuses in core/workflow-discovery.ts past the 50-line function-length threshold (a new arch violation). A module-level `type JsonRow = Record<string, unknown>` alias used inside parseStatuses brings it back to 46 lines, with no runtime effect.",
+    "The packaged npm install ships dist/, so the registry sits at dist/data/frameworks/registry.json (ts/src/data/frameworks/registry.json in source, copied by scripts/copy-data.mjs). The new description names the path relative to the package data dir: data/frameworks/registry.json.",
+    "perf-ratchet reports 4 existing findings grew (advisory only). This is expected from longer identifiers. The ratchet has 0 new findings and the delta is OK."
+  ]
+}

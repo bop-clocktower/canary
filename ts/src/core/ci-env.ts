@@ -1,14 +1,8 @@
 /**
  * CI environment detection for Canary headless optimizations.
  *
- * Faithful TypeScript port of `agent/core/ci_env.py`.
- *
- * Python→TS nuances:
- *   - `os.environ.get(v)` → `process.env[v]` (an unset var is `undefined`).
- *   - Python's `any(os.environ.get(v) ...)` uses truthiness: a non-empty
- *     string is truthy, `""` is falsy, and `"0"` is truthy (non-empty). JS
- *     `Boolean(process.env[v])` matches exactly — `undefined`/`""` → false,
- *     `"0"`/`"true"` → true.
+ * A variable counts as set when it is a non-empty string: `undefined` and `""`
+ * are unset, while `"0"` and `"true"` are both set.
  */
 
 // Most platforms set CI=true; GitLab sets CI_SERVER; Bitbucket sets

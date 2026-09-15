@@ -1,7 +1,7 @@
 /**
  * Write-side schema for run-history records.
  *
- * Originally a faithful TS port of `agent/history/schema.py`. `record.ts` holds
+ * `record.ts` holds
  * the *read* shapes (loose, as parsed from disk); this module holds the *write*
  * inputs (the dataclass field sets) and the serializers that produce the on-disk
  * and remote-table shapes.
