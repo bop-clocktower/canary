@@ -308,7 +308,10 @@ index 5555555..6666666 100644
     // heuristic finding, and #936's coverage-unit floor skips it as non-source.
     expect(res.code).toBe(ABSTAINED);
     expect(res.stdout).not.toContain('no test file references');
-    const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    // #940: stdout is the whole JSON document -- no human banner ahead of it.
+    const data = JSON.parse(res.stdout);
+    expect(data.abstained).toBe(true);
+    expect(res.stderr).toContain('no findings-eligible units');
     expect(data.findings).toEqual([]);
     expect(data.skipped).toEqual([
       { name: 'scripts/seed.sh', reason: 'non-source' },
@@ -325,8 +328,10 @@ index 5555555..6666666 100644
     // #928 case E is still an abstention (ADR 0009); the config path sits in
     // the skip denominator with its reason.
     expect(res.code).toBe(3);
-    const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    // #940: stdout must parse as-is; the abstain banner belongs on stderr.
+    const data = JSON.parse(res.stdout);
     expect(data.abstained).toBe(true);
+    expect(res.stderr.toLowerCase()).toContain('abstained');
     expect(data.skipped).toEqual([
       { name: 'path/to/service.config', reason: 'non-source' },
     ]);
@@ -350,8 +355,12 @@ index 5555555..6666666 100644
     // by the extension floor), so there is nothing scorable left — reported as
     // a SKIP of 2 paths rather than an empty "everything passed" report.
     expect(res.code).toBe(3);
-    expect(res.stdout.toLowerCase()).toContain('abstained');
-    expect(res.stdout).toContain('(2 skipped');
+    // #940: JSON on stdout carries the abstention; the banner moves to stderr.
+    const data = JSON.parse(res.stdout);
+    expect(data.abstained).toBe(true);
+    expect(data.skipped).toHaveLength(2);
+    expect(res.stderr.toLowerCase()).toContain('abstained');
+    expect(res.stderr).toContain('(2 skipped');
   });
 
   it('an explicit empty config list restores the pre-#413 behavior', async () => {
