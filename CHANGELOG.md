@@ -14,8 +14,35 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+## [8.0.0] - 2026-09-15
+
+> **Breaking:** `canary guardian collect-adjudications` is removed (see
+> **Removed**). Guardian precision is now derived on demand from merged PRs (ADR
+> 0025). This release also patches two published security advisories:
+> `canary-test-cli < 8.0.0` is affected (see **Security**).
+
 ### Added
 
+- **`canary analyze gh-flaky`: a Re-run can no longer hide a flake** (#884,
+  #920). Reads GitHub Actions runs for two signatures: a same-SHA outcome flip,
+  and a rerun-to-green whose earlier attempt failed (from
+  `/actions/runs/{id}/attempts/{n}`). An earlier attempt it cannot read, or a
+  run with no attempt number, gives `flake-signal-unverifiable` (exit 3), never
+  a zero. Every zero names the signatures it was verified against, and a
+  truncated run window or malformed row is disclosed.
+- **`canary ci-ready`: a deterministic scorer for the canary-ci-ready skill**
+  (#885, #914). It runs the skill's five checks with its thresholds. A check
+  with no input reports `skip` and names what is missing. Verdicts follow the
+  gate contract: `abstained` exits 3, `not-ready` exits 1, `incomplete` and
+  `ready` exit 0.
+- **Guardian coverage-delta: flags coverage regressions on units a PR touches**
+  (#606, #881). `pr-check --base-coverage <lcov>` compares head and base
+  coverage per touched unit. Without a base report it states `head-only`; it
+  never implies there was no regression.
+- **`canary-screech` skill: a cross-run broken-main siren** (#882).
+- **Perf ratchet: growth of already-flagged findings is annotated** (#854,
+  #869). Advisory `::warning` when a flagged `(file, rule, subject)` grows. It
+  never fails the gate.
 - **`vacuity-check` VAC-005: trivially true presence on a bystander** (#870).
   VAC-003's mirror image: a test whose every assertion is `toBeDefined()` /
   `toBeTruthy()` / `assert x is not None` on a value the test built itself
@@ -87,6 +114,46 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Guardian weak-test no longer flags correct tests** (#929, #942). A test
+  block whose end the diff doesn't show is skipped instead of judged, so an edit
+  inside an existing test with its `expect` out of view no longer reads as
+  assertion-free. JS/TS now recognizes `assert*(` helpers, and a same-file
+  helper whose body asserts counts as an assertion.
+- **Coverage-delta now runs in CI** (#930, #934). Pushes to `main` upload
+  `ts/coverage/lcov.info` as an artifact, and the PR guardian job resolves the
+  artifact for its merge base and passes `--base-coverage`. Before this, every
+  run was `head-only`. Verified on a real PR: a planted regression reported
+  "coverage fell 97.4 points on a file this change touches".
+- **Guardian no longer overwrites a human's comment** (#931, #935). The sticky
+  comment is matched only when its body starts with the marker AND guardian's
+  own identity (`github-actions[bot]`, or a configured app) wrote it. The newest
+  match wins. The 403 notice names the permission failure instead of assuming a
+  fork PR.
+- **Perf ratchet compares finding identities, not counts** (#850, #853). A PR
+  that removed one finding and added another no longer read as net zero.
+- **Test-duration ratchet requires an absolute slowdown before it fires** (#833,
+  #845). A firing must clear 2000ms of absolute slowdown, so contended spawns
+  stop returning different verdicts for the same tree.
+- **Static linter: strings are blanked by UTF-16 unit** (#861, #867). An emoji
+  inside a literal no longer shifts every later test name out of alignment.
+- **Cobertura reports: comment stripping is CDATA-aware** (#897). Hits stay
+  bound to the right file.
+- **Guardian: quoted diff paths are decoded** (#896), so changed files with
+  non-ASCII names are no longer invisible to the gate.
+- **Guardian: a zero-match coverage abstention names its cause, and CI diffs the
+  PR head instead of the merge ref** (#883, #917).
+- **`company-knowledge`: a mistyped `internal_doc_urls` warns** instead of being
+  silently dropped (#893), and **`init --force` starts from scratch** instead of
+  rewriting the old config (#894).
+- **`ticket-update` no longer crashes on a non-object report JSON** (#895).
+- **`vacuity-check`: a local's body ends at its own statement**, so a bystander
+  in the test body can no longer silence VAC-003 (#871, #901).
+- **Doc-link check: scans the Markdown git tracks**, so dot-directories cannot
+  fall out of the denominator (#887, #902).
+- **`roadmap-groom` reports rows whose tracker issue already closed or merged**
+  (#879, #903).
+- **`heal-test` honors `--no-pattern`** instead of rewriting the file anyway
+  (#898).
 - **`canary vacuity-check` no longer prints a several-thousand-character
   summary** (#860). Skips are counted per reason on the summary line; the
   per-test list (now `file:line` plus a title capped at 80 chars) moves behind
@@ -142,6 +209,37 @@ under the project's former name) are documented in the
   tree in a `$RUNNER_TEMP` worktree with the same resolved CLI. A base scan that
   produced nothing, or collapsed implausibly, abstains rather than degrading to
   the absolute rule.
+- **Guardian: one headline per coverage cause** (#928, #936). A run with no gaps
+  now says why coverage didn't verify something, instead of a generic "⚠️
+  coverage was unavailable":
+  `✅ nothing to test: only non-executable lines changed`,
+  `⚠️ not coverage-checked: N files outside instrumented trees`,
+  `⚠️ coverage report stale: N changed files missing from it`, or
+  `✅ nothing to test: no source files changed` (docs, tests or config only;
+  still exits 3, and the sticky comment is updated so an earlier ⚠️ can't
+  linger). Config/data files (`.json`, `.yml`, `.toml`, …) no longer count
+  toward the coverage denominator; they are skipped as `non-source`. The
+  coverage notice appears once, instead of again in the footer.
+- **Guardian weak-test findings name the test and its lines** (#929, #942):
+  `added test "<title>" (Lx–Ly) asserts nothing`, one row per weak test.
+- **Docs coverage: the fixed 3% floor is replaced by a merge-base ratchet**
+  (#865, #868). A PR fails only when a file documented at the base loses its
+  documentation; adding undocumented files no longer fails a PR that removed
+  nothing.
+
+### Security
+
+- **MCP server: `write_test_file` and `run_tests` are confined to the working
+  directory** (#916,
+  [GHSA-xh7m-4j2q-5fcc](https://github.com/bop-clocktower/canary/security/advisories/GHSA-xh7m-4j2q-5fcc)).
+  Absolute paths, `..` climbs, symlinked parents and escapes that only appear
+  after extension inference are all rejected, and nothing is written.
+- **Migrator: symlinks are resolved before the overlay template containment
+  check** (#915,
+  [GHSA-w687-29vw-cr45](https://github.com/bop-clocktower/canary/security/advisories/GHSA-w687-29vw-cr45)).
+  A workflow template that symlinks outside the skill directory is refused.
+- Both advisories now name the published package, `canary-test-cli`: `< 8.0.0`
+  is affected and **8.0.0 is patched**.
 
 ## [7.2.0] - 2026-09-08
 
@@ -3375,7 +3473,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v7.2.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v8.0.0...HEAD
+[8.0.0]: https://github.com/bop-clocktower/canary/compare/v7.2.0...v8.0.0
 [7.2.0]: https://github.com/bop-clocktower/canary/compare/v7.1.0...v7.2.0
 [7.1.0]: https://github.com/bop-clocktower/canary/compare/v7.0.0...v7.1.0
 [7.0.0]: https://github.com/bop-clocktower/canary/compare/v6.8.1...v7.0.0
