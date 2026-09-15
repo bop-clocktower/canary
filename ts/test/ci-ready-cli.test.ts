@@ -1,12 +1,12 @@
 /**
  * `canary ci-ready` — the deterministic half of the canary-ci-ready skill.
  *
- * The skill defines five checks. Two of them have a real producer behind them,
- * both read from the run-history store: flakiness, and suite runtime (p95 of
- * recorded run durations, since #956). The other three name an input nothing
- * in canary writes (no `canary coverage` command exists), so they must report
- * `skip` with the missing input named. So must suite runtime when no stored run
- * carries a duration. A skip must never pass.
+ * The skill defines five checks. Flakiness and suite runtime (p95 of recorded
+ * run durations, since #956) read the run-history store; coverage-depth,
+ * assertion-quality and critical-paths read the inventory that
+ * `canary inventory` writes (#957). A check without its input -- including
+ * suite runtime when no stored run carries a duration -- reports `skip` with
+ * the missing input named. It must never pass.
  *
  * The verdict contract these tests pin:
  *   - abstained  (exit 3): every check skipped. "Checked nothing" is not ready.
@@ -232,6 +232,53 @@ describe('canary ci-ready', () => {
       const c = check(report, name);
       expect(c.verdict).toBe('skip');
       expect(c.reason).toMatch(/test-inventory\.json/);
+      expect(c.reason).toMatch(/canary inventory/);
     }
+  });
+
+  it('scores the three inventory checks once `canary inventory` has run', async () => {
+    mkdirSync(join(root, 'tests'), { recursive: true });
+    writeFileSync(
+      join(root, 'tests', 'cart.test.ts'),
+      "import { add } from '../src/cart.js';\nit('adds', () => {\n  expect(add(1)).toBe(1);\n});\n",
+      'utf-8',
+    );
+    mkdirSync(join(root, '.canary'), { recursive: true });
+    writeFileSync(
+      join(root, '.canary', 'critical-areas.json'),
+      JSON.stringify({ areas: [{ path: 'src/cart.ts', risk_score: 0.9 }] }),
+      'utf-8',
+    );
+    expect((await invokeCanary(['inventory', '--root', root])).code).toBe(0);
+
+    const { code, report } = await runJson(root);
+    for (const name of [
+      'coverage-depth',
+      'assertion-quality',
+      'critical-paths',
+    ]) {
+      expect(check(report, name).verdict).toBe('pass');
+    }
+    expect(report.checked).toBe(3);
+    expect(report.verdict).toBe('incomplete');
+    expect(code).toBe(0);
+  });
+
+  it('abstains on an inventory that lists zero tests rather than passing it', async () => {
+    mkdirSync(join(root, '.canary'), { recursive: true });
+    writeFileSync(
+      join(root, '.canary', 'test-inventory.json'),
+      JSON.stringify({
+        schema_version: 1,
+        generated: 'x',
+        files: [],
+        skipped: [],
+      }),
+      'utf-8',
+    );
+    const { code, report } = await runJson(root);
+    expect(check(report, 'coverage-depth').reason).toMatch(/0 tests/);
+    expect(report.verdict).toBe('abstained');
+    expect(code).toBe(EXIT_ABSTAINED);
   });
 });

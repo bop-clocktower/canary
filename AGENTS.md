@@ -153,7 +153,8 @@ remote deletion is a human act. Worktree pruning waits for #889.
   agent. Handles command-line arguments and high-level orchestration. Commands:
   `recommend`, `frameworks`, `feedback`, `run`, `init`, `migrate`, `setup`,
   `skills list`, `env-setup` (alias for `setup`), `version`, `review-test`,
-  `flake-check`, `heal-test`, `vacuity-check`, `promote-check`, `ci-ready`.
+  `flake-check`, `heal-test`, `vacuity-check`, `promote-check`, `ci-ready`,
+  `inventory`.
 
 ### Core Services (`ts/src/core/`)
 

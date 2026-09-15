@@ -1,14 +1,15 @@
 /**
  * Deterministic scoring for the canary-ci-ready skill's five checks.
  *
- * The skill describes five pass/warn/fail checks. Two have a real producer in
- * canary today, both scored from the run-history store: flakiness, and suite
- * runtime (p95 of recorded run `duration_ms`, which `canary history record`
- * writes since #956). The other three need `.canary/test-inventory.json`, and
- * there is no `canary coverage` command to produce it. A check without its
- * input -- including suite runtime over legacy runs that carry no duration --
- * reports `skip` and names what is missing. It never passes, and the overall
- * verdict never treats a skip as a pass.
+ * The skill describes five pass/warn/fail checks. Flakiness and suite runtime
+ * are scored from the run-history store (suite runtime is the p95 of recorded
+ * run `duration_ms`, which `canary history record` writes since #956);
+ * coverage-depth, assertion-quality and critical-paths from
+ * `.canary/test-inventory.json`, which `canary inventory` writes (#957; scoring
+ * in `inventory-checks.ts`). A check without its input -- including suite
+ * runtime over legacy runs that carry no duration -- reports `skip` and names
+ * what is missing. It never passes, and the overall verdict never treats a skip
+ * as a pass.
  *
  * Suite runtime is scored against the SKILL's absolute-threshold fallback
  * (5 / 10 minutes), not a perf baseline; the reason says so.
@@ -16,6 +17,12 @@
  * Pure: callers read files and pass the results in, which keeps every rule here
  * testable without a filesystem.
  */
+import {
+  scoreInventoryChecks,
+  type CriticalAreasInput,
+  type InventoryInput,
+} from './inventory-checks.js';
+
 interface ScoredRun {
   duration_ms?: number | null;
   tests?: { test_name: string; status: string }[];
@@ -42,20 +49,15 @@ export interface CiReadyInputs {
   /** Stored runs, or null when the history file does not exist. */
   runs: ScoredRun[] | null;
   historyPath: string;
-  hasInventory: boolean;
-  hasCriticalAreas: boolean;
+  /** Parsed `.canary/test-inventory.json`, or the reason it cannot be scored. */
+  inventory: InventoryInput;
+  /** Parsed `.canary/critical-areas.json`, or the reason it is unusable. */
+  criticalAreas: CriticalAreasInput;
 }
 
 /** Matches `canary analyze flaky`'s defaults: a 30-run window, 10% flake rate. */
 const FLAKY_WINDOW_RUNS = 30;
 const FLAKY_FAIL_RATE = 0.1;
-
-const INVENTORY = '.canary/test-inventory.json';
-const CRITICAL_AREAS = '.canary/critical-areas.json';
-
-function inventoryMissingReason(): string {
-  return `no ${INVENTORY}: nothing in canary produces it (the documented \`canary coverage\` command does not exist)`;
-}
 
 /** Per-test flake rate across the window, for tests that appeared at all. */
 function flakeRates(runs: ScoredRun[]): Map<string, number> {
@@ -104,32 +106,6 @@ function scoreFlakiness(
     name,
     verdict,
     reason: `${rates.size} flaky test(s) across ${window.length} run(s); worst is ${worst[0]} at ${pct}%`,
-  };
-}
-
-function scoreInventoryCheck(name: string, hasInventory: boolean): CiCheck {
-  const reason = hasInventory
-    ? `${INVENTORY} is present, but no documented schema exists to score it against`
-    : inventoryMissingReason();
-  return { name, verdict: 'skip', reason };
-}
-
-function scoreCriticalPaths(
-  hasCriticalAreas: boolean,
-  hasInventory: boolean,
-): CiCheck {
-  const name = 'critical-paths';
-  if (!hasCriticalAreas) {
-    return {
-      name,
-      verdict: 'skip',
-      reason: `no ${CRITICAL_AREAS}, and cross-referencing it also needs ${INVENTORY}`,
-    };
-  }
-  return {
-    name,
-    verdict: 'skip',
-    reason: scoreInventoryCheck(name, hasInventory).reason,
   };
 }
 
@@ -195,11 +171,15 @@ function readinessVerdict(checks: CiCheck[]): ReadinessVerdict {
 }
 
 export function scoreCiReady(inputs: CiReadyInputs): CiReadyReport {
+  const [coverage, assertions, criticalPaths] = scoreInventoryChecks(
+    inputs.inventory,
+    inputs.criticalAreas,
+  );
   const checks: CiCheck[] = [
-    scoreInventoryCheck('coverage-depth', inputs.hasInventory),
+    coverage!,
     scoreFlakiness(inputs.runs, inputs.historyPath),
-    scoreInventoryCheck('assertion-quality', inputs.hasInventory),
-    scoreCriticalPaths(inputs.hasCriticalAreas, inputs.hasInventory),
+    assertions!,
+    criticalPaths!,
     scoreRuntime(inputs.runs, inputs.historyPath),
   ];
   return {

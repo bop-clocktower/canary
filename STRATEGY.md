@@ -55,11 +55,12 @@ canary for coverage, health, and fleet status.
   real coverage evidence rather than heuristic inference; read from
   `canary guardian pr-check` output.
 - Time to first trustworthy gate: elapsed time from install to a passing
-  guardian gate; derived from `canary ci-ready` scoring. Only partially produced
-  today: `canary ci-ready` scores 2 of its 5 checks (flakiness and suite
-  runtime). Coverage depth, assertion quality and critical paths report `skip`
-  because nothing produces `.canary/test-inventory.json` — tracked manually
-  until that lands (ADR 0026).
+  guardian gate; derived from `canary ci-ready` scoring. `canary ci-ready` can
+  score all 5 of its checks: flakiness and suite runtime from the run history
+  (`canary history record`), and coverage depth, assertion quality and critical
+  paths from `.canary/test-inventory.json` (`canary inventory`). Depth there is
+  a static assertion tier, not runtime coverage, and a check whose input is
+  absent still reports `skip` (ADR 0026).
 
 ## Tracks
 

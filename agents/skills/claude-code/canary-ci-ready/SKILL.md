@@ -16,11 +16,12 @@ this before promoting a suite to CI, or as the convergence gate in
 
 **Deterministic scorer:** run `canary ci-ready [--root <dir>] [--json]` first.
 It scores every check that has a real input and reports `skip`, naming the
-missing input, for every check that does not. A skip is never a pass. Today
-flakiness and suite runtime have a producer behind them (the run-history store),
-so expect the three inventory-based checks to skip until their input exists. The
-verdict is `ready` (all five passed), `incomplete` (nothing failed, something
-skipped), `not-ready` (exit 1) or `abstained` (nothing scored, exit 3).
+missing input, for every check that does not. A skip is never a pass. Run
+`canary inventory` first so coverage depth, assertion quality and critical paths
+have their input; flakiness and suite runtime read the run-history store that
+`canary history record` writes. The verdict is `ready` (all five passed),
+`incomplete` (nothing failed, something skipped), `not-ready` (exit 1) or
+`abstained` (nothing scored, exit 3).
 
 ## When to Use
 
@@ -38,9 +39,12 @@ Run all five checks and score each pass / warn / fail.
 
 ### 1. Coverage depth
 
-Read `.canary/test-inventory.json` if present. Nothing in canary produces this
-file yet (there is no `canary coverage` command), so when it is absent this
-check is a `skip`, not a pass or a fail.
+Read `.canary/test-inventory.json`, which `canary inventory` writes. Its
+documented schema is in `docs/guides/test-inventory.md`, and depth there is a
+static assertion tier (0/1/2). When the file is absent, lists zero tests, or has
+an unknown `schema_version`, this check is a `skip`, not a pass or a fail. Run
+`canary inventory` first, and `canary ci-ready` scores this check
+deterministically.
 
 Default threshold: depth ≥ 2 for all endpoints in critical areas. Override with
 `--threshold <n>`.
