@@ -2,7 +2,7 @@
 number: 0025
 title: Guardian adjudication without reactions
 date: 2026-09-14
-status: proposed
+status: accepted
 tier: medium
 source: 'adr'
 ---
@@ -11,7 +11,7 @@ source: 'adr'
 
 # ADR 0025 — Guardian adjudication without reactions
 
-**Status:** proposed **Date:** 2026-09-14 **Deciders:** Bri Stevenski
+**Status:** accepted **Date:** 2026-09-14 **Deciders:** Bri Stevenski
 (maintainer) **Related:** #932 (source issue); #490 (reaction-based collection);
 issue #508 (no silent abstention); #553; #312; ADR 0009
 (`precision: number | null`); ADR 0011 (promote a check once its precision is
