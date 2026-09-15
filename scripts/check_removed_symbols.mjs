@@ -165,8 +165,91 @@ function relPosix(absPath) {
   return relative(SCAN_ROOT, absPath).split('\\').join('/');
 }
 
-function inScope(absPath) {
-  const rel = relPosix(absPath);
+// Tree mode (#843, ADR 0023). Under `pull_request_target` the checkout is the
+// BASE branch, so scanning the working tree would report a verdict about the
+// wrong tree. Instead the PR head commit is read straight from the object
+// store: `git ls-tree` + `git cat-file --batch`. Head files are never written
+// to disk, never followed through a symlink, and never executed.
+const SCAN_TREE_ENV = 'CANARY_LEAK_SCAN_TREE';
+const FULL_SHA = /^[0-9a-f]{40}$/;
+const REGULAR_BLOB_MODES = new Set(['100644', '100755']);
+
+function gitData(args, input) {
+  return execFileSync('git', args, {
+    cwd: SCAN_ROOT,
+    input,
+    maxBuffer: 1024 * 1024 * 1024,
+    stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+  });
+}
+
+/**
+ * Every regular file of `sha` whose suffix either half scans, as rel → text.
+ * Returns `{ error }` rather than an empty map when the commit cannot be read,
+ * so the caller abstains instead of passing over zero files.
+ */
+function treeSource(sha) {
+  if (!FULL_SHA.test(sha)) {
+    return {
+      error: `${SCAN_TREE_ENV} must be a full 40-hex commit SHA, got ${JSON.stringify(sha)}`,
+    };
+  }
+  let listing;
+  try {
+    gitData(['cat-file', '-e', `${sha}^{commit}`]);
+    listing = gitData(['ls-tree', '-r', '-z', '--full-tree', sha]).toString(
+      'utf-8',
+    );
+  } catch (err) {
+    const detail = String(err?.stderr ?? '')
+      .trim()
+      .split('\n')[0];
+    return {
+      error: `commit ${sha} is not readable here${detail ? ` — ${detail}` : ''}`,
+    };
+  }
+  const wanted = [];
+  for (const entry of listing.split('\0')) {
+    const tab = entry.indexOf('\t');
+    if (tab < 0) continue;
+    const [mode, type, object] = entry.slice(0, tab).split(' ');
+    const rel = entry.slice(tab + 1);
+    // Symlinks (120000) and gitlinks (160000) are skipped: a symlink's target
+    // is not content this commit publishes, and following one would read
+    // whatever the runner has at that path.
+    if (type !== 'blob' || !REGULAR_BLOB_MODES.has(mode)) continue;
+    const suffix = suffixOf(rel);
+    if (!PROPRIETARY_SUFFIXES.has(suffix) && !SCANNED_SUFFIXES.has(suffix)) {
+      continue;
+    }
+    wanted.push([rel, object]);
+  }
+  const files = new Map();
+  if (wanted.length === 0) return { sha, files };
+  const out = gitData(
+    ['cat-file', '--batch'],
+    wanted.map(([, o]) => o).join('\n') + '\n',
+  );
+  let pos = 0;
+  for (const [rel] of wanted) {
+    const nl = out.indexOf(0x0a, pos);
+    const size = Number(out.subarray(pos, nl).toString('utf-8').split(' ')[2]);
+    files.set(rel, out.subarray(nl + 1, nl + 1 + size).toString('utf-8'));
+    pos = nl + 1 + size + 1;
+  }
+  return { sha, files };
+}
+
+/** The file source for this run: the working tree, or a commit's blobs. */
+let source = { sha: null, files: null };
+
+function readRel(rel) {
+  return source.files
+    ? (source.files.get(rel) ?? '')
+    : readFileSync(resolve(SCAN_ROOT, rel), 'utf-8');
+}
+
+function inScopeRel(rel) {
   if (rel.includes('__pycache__')) return false;
   return INCLUDE_PATHS.some((inc) => rel === inc || rel.startsWith(inc + '/'));
 }
@@ -196,23 +279,26 @@ function checkRemovedSymbols() {
   const patterns = REMOVED_SYMBOLS.map(compile);
   const violations = [];
   const candidates = new Set();
-  for (const inc of INCLUDE_PATHS) {
-    const p = resolve(SCAN_ROOT, inc);
-    if (!existsSync(p)) continue;
-    const st = statSync(p);
-    if (st.isFile()) candidates.add(p);
-    else if (st.isDirectory()) {
-      for (const q of walkFiles(p)) {
-        if (SCANNED_SUFFIXES.has(suffixOf(q))) candidates.add(q);
+  if (source.files) {
+    for (const rel of source.files.keys()) candidates.add(rel);
+  } else {
+    for (const inc of INCLUDE_PATHS) {
+      const p = resolve(SCAN_ROOT, inc);
+      if (!existsSync(p)) continue;
+      const st = statSync(p);
+      if (st.isFile()) candidates.add(relPosix(p));
+      else if (st.isDirectory()) {
+        for (const q of walkFiles(p)) {
+          if (SCANNED_SUFFIXES.has(suffixOf(q))) candidates.add(relPosix(q));
+        }
       }
     }
   }
 
-  for (const path of [...candidates].sort()) {
-    if (!SCANNED_SUFFIXES.has(suffixOf(path)) || !inScope(path)) continue;
-    const text = readFileSync(path, 'utf-8');
+  for (const rel of [...candidates].sort()) {
+    if (!SCANNED_SUFFIXES.has(suffixOf(rel)) || !inScopeRel(rel)) continue;
+    const text = readRel(rel);
     if (isRemovalNoteDoc(text)) continue;
-    const rel = relPosix(path);
     const lines = text.split('\n');
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -358,18 +444,18 @@ function checkProprietary() {
   const patterns =
     GENERIC_PROPRIETARY_PATTERNS.map(compile).concat(loadDenylist());
   const violations = [];
-  for (const rel of trackedFiles().sort()) {
+  const listed = source.files ? [...source.files.keys()] : trackedFiles();
+  for (const rel of listed.sort()) {
     if (rel === SELF) continue;
     const path = resolve(SCAN_ROOT, rel);
     if (
       !PROPRIETARY_SUFFIXES.has(suffixOf(rel)) ||
-      !existsSync(path) ||
-      !statSync(path).isFile() ||
-      propExcluded(rel)
+      propExcluded(rel) ||
+      (!source.files && (!existsSync(path) || !statSync(path).isFile()))
     ) {
       continue;
     }
-    const lines = readFileSync(path, 'utf-8').split('\n');
+    const lines = readRel(rel).split('\n');
     for (let i = 0; i < lines.length; i++) {
       for (const [rx, reason] of patterns) {
         if (rx.test(lines[i])) {
@@ -391,6 +477,36 @@ function main() {
         'the tree in git. Unset the variable for the real gate.\n\n',
     );
   }
+  const abstain = (why) => {
+    process.stdout.write(
+      `check_removed_symbols: ABSTAIN — ${why}. Nothing was verified; this ` +
+        'is not a pass.\n',
+    );
+    return 1;
+  };
+  const treeSha = (process.env[SCAN_TREE_ENV] ?? '').trim();
+  if (
+    !treeSha &&
+    (process.env.GITHUB_EVENT_NAME ?? '').trim() === 'pull_request_target'
+  ) {
+    return abstain(
+      `pull_request_target checks out the BASE branch, and ${SCAN_TREE_ENV} ` +
+        'does not name the PR head commit, so a scan here would describe the ' +
+        'wrong tree',
+    );
+  }
+  if (treeSha) {
+    source = treeSource(treeSha);
+    if (source.error) return abstain(source.error);
+    if (source.files.size === 0) {
+      return abstain(`commit ${treeSha} has no scannable files`);
+    }
+    process.stdout.write(
+      `check_removed_symbols: scanned commit ${treeSha}: ` +
+        `${source.files.size} files (blobs only, working tree not read).\n`,
+    );
+  }
+
   const denylist = denylistState();
   if (denylist.source === 'main-checkout') {
     process.stdout.write(

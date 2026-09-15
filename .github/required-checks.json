@@ -104,7 +104,12 @@
     { "check": "Wiki diagrams render", "workflow": "docs-lint.yml" },
     {
       "check": "No removed-symbol or proprietary leaks",
-      "workflow": "docs-lint.yml"
+      "workflow": "leak-gate.yml",
+      "$comment": [
+        "Moved from docs-lint.yml to its own pull_request_target workflow by #843",
+        "(ADR 0023), so fork PRs resolve the denylist secret. The context string",
+        "is unchanged, so ruleset 16189198 needs no edit."
+      ]
     },
     {
       "check": "deps-and-validate",
