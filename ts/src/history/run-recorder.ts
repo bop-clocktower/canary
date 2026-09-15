@@ -11,7 +11,7 @@
  * Two deliberate limits, both of them data-honesty calls rather than laziness:
  *
  *   - **vitest `--reporter=json` and Playwright `json` only** (Playwright since
- *     #956, in `playwright-report.ts`). The shape is detected rather than
+ *     #956); each format's reader lives in `formats/` (#969). The shape is detected rather than
  *     declared by flag, and an unrecognized shape is refused loudly. The
  *     alternative -- reading an unknown document and finding zero tests in it --
  *     is indistinguishable from a suite that genuinely ran nothing, which is
@@ -30,7 +30,6 @@
  */
 
 import {
-  makeRunId,
   serializeLocalRecord,
   type RunInput,
   type TestResultInput,
@@ -39,7 +38,12 @@ import {
   buildRunFromPlaywrightReport,
   countPlaywrightResults,
   isPlaywrightReport,
-} from './playwright-report.js';
+} from './formats/playwright-report.js';
+import {
+  countVitestResults,
+  isVitestReport,
+  readVitestReport,
+} from './formats/vitest-report.js';
 
 /** Canary's per-test status vocabulary (the store's read side keys on these). */
 const RECORD_STATUSES = ['passed', 'failed', 'flaky', 'skipped'] as const;
@@ -78,28 +82,10 @@ export class RecordValidationError extends Error {
   }
 }
 
-interface VitestAssertion {
-  fullName?: string;
-  title?: string;
-  status?: string;
-  duration?: number;
-  failureMessages?: unknown[];
-}
-
-interface VitestFile {
-  name?: string;
-  assertionResults?: VitestAssertion[];
-}
-
-interface VitestReport {
-  startTime?: number;
-  testResults?: VitestFile[];
-}
-
 /** Detect by shape, not by flag -- callers should not have to know the format. */
 export function detectReportShape(parsed: unknown): ReportShape {
   if (parsed === null || typeof parsed !== 'object') return 'unknown';
-  if (Array.isArray((parsed as VitestReport).testResults)) return 'vitest';
+  if (isVitestReport(parsed)) return 'vitest';
   return isPlaywrightReport(parsed) ? 'playwright' : 'unknown';
 }
 
@@ -133,90 +119,15 @@ export function countReportResults(parsed: unknown): number {
   if (detectReportShape(parsed) === 'playwright') {
     return countPlaywrightResults(parsed);
   }
-  const report = parsed as VitestReport;
-  let n = 0;
-  for (const file of report.testResults ?? []) {
-    n += file.assertionResults?.length ?? 0;
-  }
-  return n;
+  return countVitestResults(parsed);
 }
 
-/** vitest status -> canary status. Anything not pass/fail is a skip. */
-function toCanaryStatus(status: string | undefined): string {
-  if (status === 'passed') return 'passed';
-  if (status === 'failed') return 'failed';
-  return 'skipped';
-}
-
-function toResultRow(
-  assertion: VitestAssertion,
-  file: VitestFile,
-  ids: { runId: string; suite: string; repo: string },
-): TestResultInput {
-  const first = assertion.failureMessages?.[0];
-  return {
-    run_id: ids.runId,
-    suite: ids.suite,
-    repo: ids.repo,
-    // No `(unnamed)` fallback: the test name is the join key every later query
-    // groups on, so inventing one would merge unrelated tests into a single
-    // history. A nameless row is a validation failure instead.
-    test_name: assertion.fullName ?? assertion.title ?? '',
-    test_file: file.name ?? '',
-    status: toCanaryStatus(assertion.status),
-    duration_ms: Math.round(assertion.duration ?? 0),
-    ...(first === undefined
-      ? {}
-      : { error_text: String(first).slice(0, 2000) }),
-  };
-}
-
-/** Convert a parsed vitest JSON report into a run + its per-test rows. */
+/** Convert a parsed vitest JSON report into a validated run + its rows. */
 export function buildRunFromVitestReport(
   parsed: unknown,
   ctx: RecordContext,
 ): BuiltRun {
-  const report = parsed as VitestReport;
-  const startedMs =
-    typeof report.startTime === 'number' ? report.startTime : ctx.nowMs;
-  const epochSeconds = Math.floor(startedMs / 1000);
-  const runId = ctx.runId ?? makeRunId(ctx.suite, ctx.commitSha, epochSeconds);
-
-  const results: TestResultInput[] = [];
-  for (const file of report.testResults ?? []) {
-    for (const assertion of file.assertionResults ?? []) {
-      results.push(
-        toResultRow(assertion, file, {
-          runId,
-          suite: ctx.suite,
-          repo: ctx.repo,
-        }),
-      );
-    }
-  }
-
-  const count = (status: string): number =>
-    results.filter((r) => r.status === status).length;
-
-  const run: RunInput = {
-    run_id: runId,
-    suite: ctx.suite,
-    repo: ctx.repo,
-    branch: ctx.branch,
-    commit_sha: ctx.commitSha,
-    // The store's own timestamps use `+00:00` rather than `Z` (Python
-    // `datetime.isoformat()`), and `queryTimeline` sorts these as strings.
-    timestamp: new Date(startedMs).toISOString().replace('Z', '+00:00'),
-    total: results.length,
-    passed: count('passed'),
-    failed: count('failed'),
-    // See the module docstring: vitest has no flaky status to read.
-    flaky: 0,
-    skipped: count('skipped'),
-    duration_ms: results.reduce((n, r) => n + (r.duration_ms ?? 0), 0),
-  };
-
-  const built = { run, results };
+  const built = readVitestReport(parsed, ctx);
   validateBuiltRun(built);
   return built;
 }
