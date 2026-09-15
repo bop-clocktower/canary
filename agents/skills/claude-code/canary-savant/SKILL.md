@@ -132,6 +132,15 @@ canary skills run canary-savant -- tests --strict
 canary skills run canary-savant -- --help
 ```
 
+Exit codes:
+
+| Code | Meaning                                                                                 |
+| ---- | --------------------------------------------------------------------------------------- |
+| `0`  | Advisory run (the default), or `--strict` with no suspects                              |
+| `1`  | `--strict` and at least one suspect                                                     |
+| `2`  | Usage error: unknown flag, bad `--seed`, or a path not found (`path not found: <path>`) |
+| `3`  | `--strict` and zero files scanned (abstained, not clean)                                |
+
 An unknown flag is rejected with `unrecognized arguments: <flag>` and exit 2.
 `--seed` is validated as a determinism flag rather than being allowed to decay
 into a random seed. All three failures exit 2:

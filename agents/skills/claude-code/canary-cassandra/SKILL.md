@@ -86,6 +86,15 @@ you adopt it; run it, triage the count, then decide.
 
 A collapsed denominator is **not** advisory and exits **3**. See below.
 
+Exit codes:
+
+| Code | Meaning                                                                       |
+| ---- | ----------------------------------------------------------------------------- |
+| `0`  | Advisory run (the default), or `--strict` with no findings                    |
+| `1`  | `--strict` and at least one finding, or the vacuity engine could not be found |
+| `2`  | Usage error: unknown flag, or a path not found (`path not found: <path>`)     |
+| `3`  | `--strict` and zero tests checked (abstained, not clean)                      |
+
 ## The fidelity ladder (the part that decides whether to trust a finding)
 
 A test's "declared target" is declared nowhere, so `VAC-002`/`VAC-003` have to
