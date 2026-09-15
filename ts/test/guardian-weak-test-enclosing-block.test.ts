@@ -90,11 +90,12 @@ const DIFF_TRULY_WEAK = `diff --git a/src/DonationsSection.web.test.tsx b/src/Do
 const DIFF_TRULY_WEAK_PY = `diff --git a/tests/test_widget.py b/tests/test_widget.py
 --- a/tests/test_widget.py
 +++ b/tests/test_widget.py
-@@ -10,3 +10,4 @@
+@@ -10,4 +10,5 @@
  def test_widget_resizes():
      w = make_widget()
 +    print(w.size)
 
+ def test_other():
 `;
 
 describe('weak-test findings judge the enclosing block (#747)', () => {
