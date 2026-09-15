@@ -1,0 +1,12 @@
+{
+  "issues": [966],
+  "route": "bug",
+  "stages": ["harness-debugging"],
+  "reproducingTest": "agents/skills/test/skill-cli-conformance.test.ts (describe.each '<skill> documents exit 2 for an unresolvable path'): 3 SKILL.md cases failed on origin/main, pass after",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Documented verified behavior beyond #966's claim: exit 3 (--strict, zero denominator) and cassandra's exit 1 for an unlocatable engine were also undocumented in the savant/blackhawk tables, so each table lists 0/1/2/3.",
+    "No generated or mirrored copies of these SKILL.md files exist under agents/ (checked for gemini-cli/other platform copies); nothing to regenerate.",
+    "Added the doc-contract test to the existing skill-cli-conformance suite rather than a new file, to avoid tripping the entropy entryPoints ratchet."
+  ]
+}
