@@ -831,7 +831,7 @@ export function createServer(): McpServer {
     'canary__list_frameworks',
     {
       description:
-        'Return all frameworks registered in agent/frameworks/registry.json.',
+        "Return all frameworks in Canary's bundled registry (data/frameworks/registry.json).",
     },
     listFrameworksTool,
   );

@@ -844,6 +844,18 @@ describe('tool registration', () => {
     const server = createServer();
     expect(server).toBeInstanceOf(McpServer);
   });
+
+  it('names the shipped framework registry path in list_frameworks', () => {
+    const server = createServer() as unknown as {
+      _registeredTools: Record<string, { description?: string }>;
+    };
+    const desc =
+      server._registeredTools['canary__list_frameworks']!.description;
+    expect(desc).toBe(
+      "Return all frameworks in Canary's bundled registry (data/frameworks/registry.json).",
+    );
+    expect(desc).not.toContain('agent/');
+  });
 });
 
 describe('tool wrappers delegate to their impls', () => {
