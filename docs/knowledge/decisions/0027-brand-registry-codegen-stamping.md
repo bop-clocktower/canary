@@ -2,7 +2,7 @@
 number: 0027
 title: Brand registry with codegen stamping and a drift gate
 date: 2026-09-15
-status: proposed
+status: accepted
 tier: medium
 source: docs/changes/bop-subbranding/proposal.md
 ---
@@ -11,8 +11,9 @@ source: docs/changes/bop-subbranding/proposal.md
 
 # ADR 0027 — Brand registry with codegen stamping and a drift gate
 
-**Status:** proposed **Date:** 2026-09-15 **Related:**
-docs/changes/bop-subbranding/proposal.md (D5, D8); ADR 0028 (flair cascade)
+**Status:** accepted **Date:** 2026-09-15 **Deciders:** Bri Stevenski
+**Related:** docs/changes/bop-subbranding/proposal.md (D5, D8); ADR 0028 (flair
+cascade)
 
 ## Context
 

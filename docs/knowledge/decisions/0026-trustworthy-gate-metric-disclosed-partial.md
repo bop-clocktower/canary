@@ -2,7 +2,7 @@
 number: 0026
 title: Trustworthy-gate metric is kept and disclosed as partial
 date: 2026-09-15
-status: proposed
+status: accepted
 tier: small
 source: '#885'
 ---
@@ -11,8 +11,8 @@ source: '#885'
 
 # ADR 0026 — Trustworthy-gate metric is kept and disclosed as partial
 
-**Status:** proposed **Date:** 2026-09-15 **Related:** PR #914
-(`canary ci-ready`); issue #885 (source issue)
+**Status:** accepted **Date:** 2026-09-15 **Deciders:** Bri Stevenski
+**Related:** PR #914 (`canary ci-ready`); issue #885 (source issue)
 
 ## Context
 
