@@ -163,7 +163,7 @@ function parseSchemeNetloc(raw: string): { scheme: string; netloc: string } {
   // Python's urlsplit strips leading C0-control/space bytes and removes any
   // \t\r\n throughout BEFORE parsing, so " http://x.com" is a valid http URL.
   // Mirror that front-strip so a value with accidental leading whitespace is
-  // accepted (not dropped) the same as the oracle.
+  // accepted (not dropped) the same as the original reader.
   const cleaned = raw.replace(/[\t\r\n]/g, '').replace(/^[\x00-\x20]+/, '');
   const m = /^([a-zA-Z][a-zA-Z0-9+.-]*):(.*)$/s.exec(cleaned);
   let scheme = '';

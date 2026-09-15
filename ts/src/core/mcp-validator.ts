@@ -132,7 +132,7 @@ function ingestMcpJson(
   } catch {
     return;
   }
-  // INTENTIONAL DIVERGENCE from the oracle: on a valid-JSON-but-non-object top
+  // INTENTIONAL DIVERGENCE from Python: on a valid-JSON-but-non-object top
   // level (e.g. a bare array `[]`), Python calls `data.get("mcpServers", {})`
   // on a list → uncaught AttributeError, crashing the caller. We degrade to
   // "no servers" instead — safer, never reachable via a well-formed config, and

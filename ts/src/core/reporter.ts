@@ -12,7 +12,7 @@
  *     `json.dumps(..., indent=2, default=str)`: `JSON.stringify(x, replacer, 2)`
  *     with the library-default `ensure_ascii=True` reproduced via
  *     {@link ensureAscii} (so an em-dash in a message emits `—`, exactly
- *     as the oracle does). Object key insertion order preserves the field order
+ *     as Python did). Object key insertion order preserves the field order
  *     Python emits.
  *   - **`default=str`.** Python coerces any value its encoder cannot natively
  *     serialize (a `Path`, a `datetime`, ...) via `str()`. JS inputs are already

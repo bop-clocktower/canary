@@ -1,0 +1,18 @@
+{
+  "issues": [965],
+  "route": "feature",
+  "stages": ["harness:brainstorming"],
+  "planArtifact": "docs/changes/remove-oracle-comments/plans/2026-09-15-remove-oracle-comments-plan.md",
+  "closingKeyword": "Refs",
+  "countBefore": 27,
+  "countAfter": 4,
+  "testsOracleCount": 29,
+  "assumptions": [
+    "harness:brainstorming was invoked and its EXPLORE phase was run. Its own When-to-Use excludes simple refactors that need no design decisions, so the EVALUATE/PRIORITIZE/sign-off gates were settled by the fleet's recommended defaults and the fixed scope instead of a live human interview. No proposal.md was written.",
+    "harness:autopilot was NOT invoked: this is single-phase, comment-only work with no plan phases to chain. It is therefore not listed in stages.",
+    "core/company-knowledge.ts:872 is a runtime string literal ('Oracle: eyes on every test.'). It was left untouched per the no-behavior-change rule, together with its describing comment at :871. This is why the closing keyword is Refs, not Closes.",
+    "core/permission-matrix.ts:21,79 say 'existence-oracle', a security term for a probe that reveals whether a resource exists. That is not the retired brand, so both were kept.",
+    "Every rewrite is same-line, so the net line delta is 0. The diff touches only comment lines, checked by a grep of changed lines against comment prefixes.",
+    "ts/test has 29 'oracle' lines. They were not edited (out of scope) and are left as a follow-up."
+  ]
+}

@@ -13,7 +13,7 @@
  * Python->TS fidelity notes:
  *   - `json.dumps(x, indent=2)` -> {@link jsonIndent2} (byte-exact + ensure_ascii).
  *   - The report builders are byte-exact ports (Markdown), so the human-readable
- *     paths match the oracle exactly.
+ *     paths match the reference output exactly.
  *   - `--db-url` / `CANARY_HISTORY_DB_URL` are HONOURED as of #711 (ADR 0013
  *     Decision 4): the engine is async, so analyze selects its backend through
  *     the shared `makeStore` factory like every other history consumer. Three

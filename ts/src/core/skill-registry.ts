@@ -68,7 +68,7 @@ function pyTruthy(value: unknown): boolean {
  * default string comparison is by UTF-16 code unit, which mis-orders names
  * containing astral characters (a lead surrogate 0xD800-0xDBFF sorts before
  * BMP chars like U+E000, where Python orders by the true code point). Skill
- * names are realistically ASCII, but this keeps discovery order oracle-faithful.
+ * names are realistically ASCII, but this keeps discovery order Python-faithful.
  */
 function codePointCompare(a: string, b: string): number {
   const ca = [...a];
@@ -646,7 +646,7 @@ export class SkillRegistry {
   static validateExecutableFields(fm: Frontmatter): string | null {
     const cli = fm['cli'];
     const entry = fm['entry'];
-    // INTENTIONAL DIVERGENCE from the oracle: Python stores a list-valued
+    // INTENTIONAL DIVERGENCE from Python: Python stores a list-valued
     // `cli:`/`entry:` as-is (marking the skill executable), then crashes with a
     // TypeError in resolve_cli_path (`skill_dir / [...]`). Reject the malformed
     // shape loudly here instead — a non-executable skill with a clear diagnostic
