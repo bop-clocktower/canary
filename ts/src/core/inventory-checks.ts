@@ -67,27 +67,30 @@ export function parseInventory(text: string | null): InventoryInput {
   if (data === undefined || data === null || typeof data !== 'object') {
     return { ok: false, reason: `${INVENTORY} is not valid JSON` };
   }
+  const problem = shapeProblem(data);
+  if (problem !== null) return { ok: false, reason: problem };
+  return { ok: true, inventory: data as TestInventory };
+}
+
+/** A files entry is scorable only with both of its arrays. */
+function isMalformedFile(f: Partial<InventoryFile> | null): boolean {
+  return !Array.isArray(f?.tests) || !Array.isArray(f?.targets);
+}
+
+/**
+ * Why a parsed object is not a scorable v1 inventory, or null when it is. Split
+ * from `parseInventory` to keep each function under the perf complexity rule.
+ */
+function shapeProblem(data: Partial<TestInventory>): string | null {
   if (data.schema_version !== INVENTORY_SCHEMA_VERSION) {
-    return {
-      ok: false,
-      reason: `${INVENTORY} has unsupported schema_version ${String(data.schema_version)} (this canary reads ${INVENTORY_SCHEMA_VERSION}); re-run \`canary inventory\``,
-    };
+    return `${INVENTORY} has unsupported schema_version ${String(data.schema_version)} (this canary reads ${INVENTORY_SCHEMA_VERSION}); re-run \`canary inventory\``;
   }
-  if (!Array.isArray(data.files)) {
-    return { ok: false, reason: `${INVENTORY} has no files list` };
-  }
+  if (!Array.isArray(data.files)) return `${INVENTORY} has no files list`;
   // The schema is documented for hand-written inventories too, so an entry
   // without its arrays must abstain with a reason rather than crash scoring.
-  const malformed = data.files.findIndex(
-    (f) => !Array.isArray(f?.tests) || !Array.isArray(f?.targets),
-  );
-  if (malformed !== -1) {
-    return {
-      ok: false,
-      reason: `${INVENTORY} has a malformed files entry at index ${malformed} (needs tests and targets arrays)`,
-    };
-  }
-  return { ok: true, inventory: data as TestInventory };
+  const malformed = data.files.findIndex(isMalformedFile);
+  if (malformed === -1) return null;
+  return `${INVENTORY} has a malformed files entry at index ${malformed} (needs tests and targets arrays)`;
 }
 
 /** Parse critical-areas.json's text; `null` means the file does not exist. */
