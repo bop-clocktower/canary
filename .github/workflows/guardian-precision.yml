@@ -13,6 +13,12 @@ on:
   schedule:
     - cron: '23 6 * * 1'
   workflow_dispatch:
+  # TEMPORARY (reverted in the next commit): workflow_dispatch only resolves a
+  # workflow that already exists on the default branch, so this one-off push
+  # trigger produces the real pre-merge run #938's acceptance asks for.
+  push:
+    branches:
+      - feat/938-adjudication-without-reactions
 
 permissions:
   contents: read
