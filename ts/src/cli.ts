@@ -43,7 +43,7 @@ import {
 } from './cli-commands.js';
 import { buildBatwomanCommand } from './batwoman-cli.js';
 import { buildCiReadyCommand } from './ci-ready-cli.js';
-import { buildInventoryCommand } from './inventory-cli.js';
+import { buildInventoryCommand } from './inventory/inventory-cli.js';
 import { buildScalingCurveCommand } from './scaling-curve-cli.js';
 import { buildPermissionMatrixCommand } from './permission-matrix-cli.js';
 import { buildCompanyKnowledgeCommand } from './company-knowledge-cli.js';

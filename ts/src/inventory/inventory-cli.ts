@@ -13,11 +13,11 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Command } from 'commander';
 
-import { CliExitError, jsonIndent2 } from './cli-common.js';
-import { EXIT_ABSTAINED } from './core/gate-result.js';
-import { SCANNABLE_DESC, collectTestFiles } from './core/test-files.js';
-import { buildInventory, inventoryTestCount } from './core/test-inventory.js';
-import type { MainDeps } from './main-deps.js';
+import { CliExitError, jsonIndent2 } from '../cli-common.js';
+import { EXIT_ABSTAINED } from '../core/gate-result.js';
+import { SCANNABLE_DESC, collectTestFiles } from '../core/test-files.js';
+import { buildInventory, inventoryTestCount } from '../core/test-inventory.js';
+import type { MainDeps } from '../main-deps.js';
 
 interface InventoryOpts {
   root?: string;
