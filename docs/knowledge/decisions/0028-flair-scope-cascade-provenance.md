@@ -2,7 +2,7 @@
 number: 0028
 title: Six-scope flair cascade with per-value provenance
 date: 2026-09-15
-status: proposed
+status: accepted
 tier: medium
 source: docs/changes/bop-subbranding/proposal.md
 ---
@@ -11,9 +11,10 @@ source: docs/changes/bop-subbranding/proposal.md
 
 # ADR 0028 — Six-scope flair cascade with per-value provenance
 
-**Status:** proposed **Date:** 2026-09-15 **Related:**
-docs/changes/bop-subbranding/proposal.md (D7, D9, success criterion 5); ADR 0027
-(registry + codegen); `ts/src/core/company-knowledge.ts` (merge cascade)
+**Status:** accepted **Date:** 2026-09-15 **Deciders:** Bri Stevenski
+**Related:** docs/changes/bop-subbranding/proposal.md (D7, D9, success criterion
+5); ADR 0027 (registry + codegen); `ts/src/core/company-knowledge.ts` (merge
+cascade)
 
 ## Context
 
