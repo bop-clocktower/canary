@@ -398,6 +398,16 @@ function globMatches(path: string, pattern: string): boolean {
 }
 
 /**
+ * The `coverageExempt` predicate the coverage ladder takes (#883, ADR 0024):
+ * the first glob a path matches, or `null` when the path is not exempt.
+ */
+export function coverageExemptMatcher(
+  globs: string[],
+): (path: string) => string | null {
+  return (path) => globs.find((glob) => globMatches(path, glob)) ?? null;
+}
+
+/**
  * Partition `units` into `[kept, skipped]` by `skipGlobs` (SC-2).
  *
  * A unit is *skipped* iff its `.path` matches ANY glob in `skipGlobs`.
@@ -1210,9 +1220,35 @@ function coverageHeadline(
   notice: string | null,
 ): [string, string[]] {
   const clean = `${WHITE_CHECK} no test-coverage gaps`;
+  // #883 / ADR 0024: an exempt skip is disclosed with count and globs (#508).
+  const exempt = state?.unitsExempt ?? 0;
+  const exemptGlobs = (state?.exemptGlobs ?? []).join(', ');
+  const exemptCount = exempt
+    ? [`- ${files(exempt)}: skipped as coverage-exempt (${exemptGlobs})`]
+    : [];
   if (state?.unitsTotal === 0) {
+    if (exempt) {
+      return [
+        `${WARNING} coverage skipped: ${files(exempt)} coverage-exempt (${exemptGlobs})`,
+        [],
+      ];
+    }
     return [`${WHITE_CHECK} nothing to test: no source files changed`, []];
   }
+  const [head, counts] = perCauseHeadline(state, notice, clean);
+  // A verdict that left files out is never a plain ✅.
+  const shown =
+    exempt && head === clean
+      ? `${WARNING} no test-coverage gaps in the files judged`
+      : head;
+  return [shown, [...counts, ...exemptCount]];
+}
+
+function perCauseHeadline(
+  state: CoverageInputState | null,
+  notice: string | null,
+  clean: string,
+): [string, string[]] {
   if (!state?.parsed) {
     const blind = `${WARNING} no gaps found, but coverage was ${state ? coverageStatus(state) : ''}`;
     return [notice ? blind : clean, []];
@@ -1410,6 +1446,14 @@ export function renderFindings(
               '`// canary:allow-untested <reason>` if it is intentionally untested.',
       );
       if (coverageLine) lines.push('', coverageLine);
+      // #883 / ADR 0024: an exempt skip is disclosed on the findings path too.
+      if (coverageState?.unitsExempt) {
+        const n = coverageState.unitsExempt;
+        lines.push(
+          '',
+          `_${files(n)} skipped as coverage-exempt (${(coverageState.exemptGlobs ?? []).join(', ')}); judged at graph/heuristic tier only._`,
+        );
+      }
       lines.push(
         '',
         '| Sev | File | What is uncovered, and what to do | Confidence |',
@@ -1565,6 +1609,10 @@ export class GuardianConfig {
   // still has nothing a naming heuristic can judge). Distinct from
   // `skip_globs`, which drops a path from the gate entirely at every tier.
   heuristic_exclude: string[];
+  // #883 / ADR 0024: trees with no coverage instrumentation. Removed only from
+  // the coverage-tier denominator (still judged at graph/heuristic) and always
+  // disclosed. Distinct from `skip_globs` and `heuristic_exclude`.
+  coverage_exempt: CoverageExemptEntry[];
   // #320: bound the graph-coverage reverse-BFS. `null` means "gate-derived"
   // (see {@link effectiveGraphDepth} — hard→1 direct edge, soft→unbounded); an
   // explicit int here overrides the gate default on BOTH surfaces.
@@ -1583,11 +1631,43 @@ export class GuardianConfig {
     this.heuristic_exclude = init.heuristic_exclude ?? [
       ...DEFAULT_HEURISTIC_EXCLUDE_GLOBS,
     ];
+    this.coverage_exempt = init.coverage_exempt ?? [];
     this.graph_coverage_max_depth = init.graph_coverage_max_depth ?? null;
   }
 }
 
+/** One `canary.guardian.coverageExempt` entry; `reason` states why it exists. */
+export interface CoverageExemptEntry {
+  glob: string;
+  reason: string | null;
+}
+
+/** Parse `coverageExempt`: bare globs or `{glob, reason}`; a bad entry warns. */
+function parseCoverageExempt(
+  raw: unknown[],
+  warnings: string[],
+): CoverageExemptEntry[] {
+  const entries: CoverageExemptEntry[] = [];
+  for (const item of raw) {
+    if (typeof item === 'string' && item) {
+      entries.push({ glob: item, reason: null });
+    } else if (isRecord(item) && typeof item['glob'] === 'string') {
+      const reason = item['reason'];
+      entries.push({
+        glob: item['glob'],
+        reason: typeof reason === 'string' ? reason : null,
+      });
+    } else {
+      warnings.push(
+        `guardian coverageExempt entry needs a glob, got ${pyRepr(item)}; ignoring`,
+      );
+    }
+  }
+  return entries;
+}
+
 interface GuardianConfigFields {
+  coverage_exempt: CoverageExemptEntry[];
   pr_enabled: boolean;
   pr_tier: number;
   pr_gate: string;
@@ -1852,6 +1932,11 @@ export function loadGuardianConfig(
   const skipGlobs = block['skipGlobs'];
   if (Array.isArray(skipGlobs)) {
     config.skip_globs = skipGlobs.map((g) => String(g));
+  }
+
+  const coverageExempt = block['coverageExempt'];
+  if (Array.isArray(coverageExempt)) {
+    config.coverage_exempt = parseCoverageExempt(coverageExempt, warnings);
   }
 
   return [config, warnings.length > 0 ? warnings.join('; ') : null];

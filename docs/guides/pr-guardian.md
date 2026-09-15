@@ -32,7 +32,7 @@ the design rationale.
 - **Flags weak added tests** — an added test that defines a test function but
   asserts nothing gets an **advisory** `weak-test` finding. It is **never
   gating**, even under `gate: hard` — it surfaces the gap, never blocks the
-  merge. Disable with `canary.guardian.pr.weakTests: false`.
+  merge. Disable by setting `canary.guardian.pr.weakTests` to `false`.
 
   The signal is tuned for precision over recall (it should not nag on correct
   tests): snapshot/table-driven tests and the common assertion styles (`expect`,
@@ -77,12 +77,19 @@ defaults).
 }
 ```
 
-Two different exclusion knobs, easily confused:
+Three different exclusion knobs, easily confused:
 
 | Key                   | Scope                   | Effect                                                                                                                                                |
 | --------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `skipGlobs`           | the whole gate          | The path is dropped before any tier runs — no finding at any fidelity.                                                                                |
 | `pr.heuristicExclude` | the heuristic tier only | The path is still scored; only an **uncovered heuristic** verdict is suppressed. A coverage- or graph-verified finding on that same path still fires. |
+| `coverageExempt`      | the coverage tier only  | The path has no coverage instrumentation. It leaves the coverage denominator, is still judged at graph/heuristic, and the skip is always disclosed.   |
+
+`coverageExempt` (ADR 0024) takes bare globs or `{ "glob", "reason" }` entries.
+A PR whose source files are all exempt reports
+`⚠️ coverage skipped: N files coverage-exempt (<globs>)`, never a pass; a mixed
+PR lists `- N files: skipped as coverage-exempt (<globs>)` under its verdict.
+Each entry is a recorded gap: instrument the tree, then delete the entry.
 
 Reach for `heuristicExclude` when a path _can_ carry real coverage evidence but
 the naming heuristic would only guess (generated clients, ambient `.d.ts`
@@ -168,14 +175,14 @@ the reason vocabulary.
 
 ### PR check
 
-Set `canary.guardian.pr.enabled: true`. The stock workflow
+Set `canary.guardian.pr.enabled` to `true`. The stock workflow
 (`.github/workflows/guardian.yml`) installs canary and runs
 `canary guardian pr-check --post-comment` (Tier 0). Docs/config-only diffs
 (matching `skipGlobs`) are skipped with a "nothing to verify" notice.
 
 ### At-desk check and authoring (the `preCommit` surface)
 
-Set `canary.guardian.preCommit.enabled: true`, and opt in to authoring with
+Set `canary.guardian.preCommit.enabled` to `true`, and opt in to authoring with
 `authorTests: true`. When new code is untested the guardian authors the missing
 tests, `git add`s them, and **stops once** with a "N tests authored & staged —
 review and re-commit" message. No autonomous commit, no push. `authorTests`

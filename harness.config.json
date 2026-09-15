@@ -334,5 +334,19 @@
         "open:planned": "planned"
       }
     }
+  },
+  "canary": {
+    "guardian": {
+      "coverageExempt": [
+        {
+          "glob": "scripts/**",
+          "reason": "node --test without lcov; instrument and delete (#883, ADR 0024)"
+        },
+        {
+          "glob": "agents/skills/**",
+          "reason": "skill scripts emit no lcov; instrument and delete (#883, ADR 0024)"
+        }
+      ]
+    }
   }
 }

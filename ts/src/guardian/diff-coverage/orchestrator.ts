@@ -21,6 +21,12 @@ export interface ResolveCoverageOptions {
   graphPath?: string;
   repoRoot?: string;
   graphMaxDepth?: number | null;
+  /**
+   * #883 / ADR 0024: returns the `coverageExempt` glob a path matches, or null.
+   * An exempt unit skips the report tier and leaves its denominator, but is
+   * still judged at the graph and heuristic tiers.
+   */
+  coverageExempt?: (path: string) => string | null;
 }
 
 /**
@@ -63,6 +69,10 @@ export interface CoverageInputState {
   unitsNonCoverable?: number;
   /** The repo-relative trees the parsed report instruments (#928). */
   instrumentedTrees?: string[];
+  /** Units kept out of `unitsTotal` by `coverageExempt` (#883, ADR 0024). */
+  unitsExempt?: number;
+  /** The `coverageExempt` globs that matched at least one unit, in order. */
+  exemptGlobs?: string[];
 }
 
 /** The units the report did not verify, split by cause (#928). */
@@ -158,19 +168,27 @@ export function resolveCoverageWithInput(
     graphPath = '.harness/graph/graph.json',
     repoRoot = '.',
     graphMaxDepth = null,
+    coverageExempt = null,
   } = options;
 
   // Reference-keyed map mirrors the Python `id(unit)` bookkeeping, so distinct
   // units that happen to share a path are still tracked independently.
   const resolved = new Map<ChangedUnit, CoverageResult>();
-  let remaining: ChangedUnit[] = [...units];
+  const exemptGlobs: string[] = [];
+  const exempt = units.filter((u) => {
+    const glob = coverageExempt?.(u.path) ?? null;
+    if (glob !== null && !exemptGlobs.includes(glob)) exemptGlobs.push(glob);
+    return glob !== null;
+  });
+  let remaining: ChangedUnit[] = units.filter((u) => !exempt.includes(u));
   const coverage: CoverageInputState = {
     requested: coveragePath,
     found: false,
     parsed: false,
     filesInReport: 0,
     unitsMatched: 0,
-    unitsTotal: units.length,
+    unitsTotal: remaining.length,
+    ...(exempt.length > 0 ? { unitsExempt: exempt.length, exemptGlobs } : {}),
   };
 
   if (coveragePath !== null) {
@@ -186,7 +204,8 @@ export function resolveCoverageWithInput(
       coverage.unitsMatched = report.length;
       coverage.unitsNonCoverable = nonCoverable.length;
       remaining = remaining.filter((u) => !resolved.has(u));
-      // #928: only ABSENT units can make a report stale.
+      // #928: only ABSENT units can make a report stale. Exempt units join
+      // below this count, so they never read as stale or as a scope gap.
       const absent = remaining.filter((u) => !nonCoverable.includes(u));
       coverage.unitsEligible = countEligible(
         absent.map((u) => u.path),
@@ -201,6 +220,7 @@ export function resolveCoverageWithInput(
       );
     }
   }
+  remaining.push(...exempt);
 
   if (remaining.length > 0) {
     const graph = resolveFromGraph(remaining, graphPath, graphMaxDepth);
