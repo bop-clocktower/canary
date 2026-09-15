@@ -1,0 +1,47 @@
+name: Guardian precision
+
+# ADR 0025: guardian precision is derived on demand from merged PRs (each
+# sticky comment's first vs last revision, plus `canary:allow-untested fp:`
+# suppressions in the merged diff). Nothing is stored and nothing is pushed.
+#
+# ADVISORY by construction: no `pull_request` trigger, so this job never
+# reports a PR check, and it is never listed in `.github/required-checks.json`.
+# Below 30 adjudicated findings the report says `unknown (N < 30)`; the number
+# never appears without its sample size (ADR 0009, #508).
+
+on:
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  precision:
+    name: Guardian precision (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Build the TypeScript engine
+        run: |
+          npm --prefix ts ci
+          npm --prefix ts run build
+      - name: Derive precision into the step summary
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          report="$(node ts/bin/canary.js guardian precision --repo "$GITHUB_REPOSITORY")"
+          echo "$report"
+          {
+            echo '## Guardian precision (ADR 0025)'
+            echo
+            echo '```text'
+            echo "$report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

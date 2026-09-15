@@ -19,9 +19,9 @@
  *     test never terminates the process.
  *
  * Command surface (kebab-case names; the first seven match the shipping Typer
- * CLI, the last two are TS-native additions for #490):
+ * CLI, the last is a TS-native addition, derived per ADR 0025):
  *   analyze | validate-coverage | harden-gate | pr-check | author-plan |
- *   mark-authored | watch | collect-adjudications | precision.
+ *   mark-authored | watch | precision.
  *
  * Python->TS nuances honored:
  *   - `json.dumps(obj, indent=2)` -> `ensureAscii(JSON.stringify(obj, null, 2))`
@@ -67,14 +67,12 @@ import {
   InSessionAgentTier,
   decideBlock,
 } from './agent-tier.js';
+import { deriveReport, renderReport } from './adjudication.js';
 import {
-  ReactionsClient,
-  RestReactionsClient,
-  collectAdjudications,
-  loadAdjudicationRecords,
-  renderPrecision,
-  summarizePrecision,
-} from './adjudication.js';
+  AdjudicationSource,
+  GitHubAdjudicationSource,
+  collectEvidence,
+} from './adjudication-github.js';
 import { emitAnalysis } from './analysis-emit.js';
 import {
   EXIT_ABSTAINED,
@@ -207,10 +205,37 @@ export interface GuardianDeps {
   runGit(args: string[], cwd?: string): GitResult | null;
   runGh(args: string[]): GhResult;
   buildCommentClient(repo: string, prNumber: number): GitHubClient;
-  buildReactionsClient(repo: string, prNumber: number): ReactionsClient;
+  buildAdjudicationSource(repo: string, token: string): AdjudicationSource;
   buildBranchProtectionClient(repo: string, token: string): BranchProtection;
   makeAgentTier(): AgentTier;
   sleep(secs: number): Promise<void>;
+}
+
+/** Run `git`; `null` when the binary is missing (Python OSError fail-safe). */
+function spawnGit(args: string[], cwd?: string): GitResult | null {
+  const res = spawnSync('git', args, {
+    encoding: 'utf-8',
+    maxBuffer: Infinity,
+    ...(cwd ? { cwd } : {}),
+  });
+  if (res.error) return null;
+  return { code: res.status ?? 1, stdout: res.stdout ?? '' };
+}
+
+/** Run `gh` with a 30s timeout; `failed` when it could not be spawned. */
+function spawnGh(args: string[]): GhResult {
+  const res = spawnSync('gh', args, {
+    encoding: 'utf-8',
+    timeout: 30_000,
+    maxBuffer: Infinity,
+  });
+  if (res.error) return { status: null, stdout: '', stderr: '', failed: true };
+  return {
+    status: res.status,
+    stdout: res.stdout ?? '',
+    stderr: res.stderr ?? '',
+    failed: false,
+  };
 }
 
 /** Process-backed defaults for production (the `guardianCommand` export). */
@@ -227,39 +252,12 @@ export function defaultDeps(): GuardianDeps {
     },
     env: process.env,
     cwd: () => process.cwd(),
-    runGit: (args, cwd) => {
-      const res = spawnSync('git', args, {
-        encoding: 'utf-8',
-        maxBuffer: Infinity,
-        ...(cwd ? { cwd } : {}),
-      });
-      if (res.error) return null; // missing binary -> Python OSError fail-safe
-      return { code: res.status ?? 1, stdout: res.stdout ?? '' };
-    },
-    runGh: (args) => {
-      const res = spawnSync('gh', args, {
-        encoding: 'utf-8',
-        timeout: 30_000,
-        maxBuffer: Infinity,
-      });
-      if (res.error) {
-        return { status: null, stdout: '', stderr: '', failed: true };
-      }
-      return {
-        status: res.status,
-        stdout: res.stdout ?? '',
-        stderr: res.stderr ?? '',
-        failed: false,
-      };
-    },
+    runGit: spawnGit,
+    runGh: spawnGh,
     buildCommentClient: (repo, prNumber) =>
       new RestGitHubClient(repo, prNumber, process.env['GITHUB_TOKEN'] ?? ''),
-    buildReactionsClient: (repo, prNumber) =>
-      new RestReactionsClient(
-        repo,
-        prNumber,
-        process.env['GITHUB_TOKEN'] ?? '',
-      ),
+    buildAdjudicationSource: (repo, token) =>
+      new GitHubAdjudicationSource(repo, token),
     buildBranchProtectionClient: (repo, token) =>
       new RestBranchProtectionClient(repo, token),
     makeAgentTier: () => new InSessionAgentTier(),
@@ -996,25 +994,6 @@ interface HardenGateOptions {
   check: string;
   token?: string;
   force?: boolean;
-  analysesDir?: string;
-}
-
-/**
- * Print the precision evidence the promotion contract depends on (#490).
- *
- * The soft→hard promotion is earned by reviewer adjudication feeding
- * `precision = TP / (TP + FP)`; before #490 that contract lived only in a
- * comment with nothing feeding it. This surfaces the measured number — or an
- * honest `unknown` over an empty sample — in the readiness output. Advisory:
- * it informs the operator's decision, it does not block the registration.
- */
-function reportPrecisionEvidence(
-  analysesDir: string,
-  deps: GuardianDeps,
-): void {
-  const summary = summarizePrecision(loadAdjudicationRecords(analysesDir));
-  const line = renderPrecision(summary);
-  deps.out(summary.precision === null ? pc.yellow(line) : line);
 }
 
 async function hardenGateCmd(
@@ -1031,8 +1010,13 @@ async function hardenGateCmd(
 
   const playbook = renderPlaybook(repo, opts.branch, opts.check);
 
-  // #490: the readiness evidence the promotion is supposed to rest on.
-  reportPrecisionEvidence(resolveAnalysesDir(opts.analysesDir, deps), deps);
+  // ADR 0025: precision is derived from merged PRs, not stored locally.
+  deps.out(
+    pc.yellow(
+      `guardian precision: not measured here ${EM_DASH} run ` +
+        '`canary guardian precision` (or the weekly Guardian precision workflow).',
+    ),
+  );
 
   if (!opts.apply) {
     deps.out(
@@ -1109,106 +1093,42 @@ async function hardenGateCmd(
   );
 }
 
-// --- collect-adjudications / precision (#490) ----------------------------------
+// --- precision (ADR 0025) -----------------------------------------------------
 
-interface CollectAdjudicationsOptions {
+interface PrecisionOptions {
   repo?: string;
-  pr?: number;
-  analysesDir?: string;
+  days: number;
   json?: boolean;
 }
 
 /**
- * Explicit adjudication sweep for one PR (the scheduled-sweep / at-desk shape;
- * `pr-check` runs the same collection inline on its CI surfaces). Unlike the
- * inline best-effort path this one FAILS LOUDLY (exit 1 on an unavailable
- * channel) — an operator who asked for a collection must know it did not land.
+ * Derive guardian precision from merged PRs on demand (ADR 0025): the sticky's
+ * first vs last revision, the merged diff's suppressions, and nothing stored.
+ * Exits 2 without a repo or token rather than reporting an empty sample.
  */
-async function collectAdjudicationsCmd(
-  opts: CollectAdjudicationsOptions,
+async function precisionCmd(
+  opts: PrecisionOptions,
   deps: GuardianDeps,
 ): Promise<void> {
-  let repo = opts.repo;
-  let prNumber = opts.pr;
-  if (!repo || prNumber === undefined) {
-    const ctx = prContextFromEnv(deps.env);
-    if (ctx !== null) {
-      repo = repo ?? ctx[0];
-      prNumber = prNumber ?? ctx[1];
-    }
-  }
-  if (!repo || prNumber === undefined) {
+  const token = deps.env['GITHUB_TOKEN'];
+  if (!opts.repo || !token) {
     deps.out(
-      `${pc.red(pc.bold(`${CROSS} no PR context`))} ${EM_DASH} pass --repo and --pr, or run in Actions.`,
+      `${pc.red(pc.bold(`${CROSS} precision needs --repo and GITHUB_TOKEN`))} ` +
+        `${EM_DASH} nothing was measured.`,
     );
     throw new CliExitError(2);
   }
-
-  const client = deps.buildReactionsClient(repo, prNumber);
-  const res = await collectAdjudications(client, {
-    repo,
-    prNumber,
-    analysesDir: resolveAnalysesDir(opts.analysesDir, deps),
-  });
-
-  if (opts.json) {
-    deps.out(
-      ensureAscii(
-        JSON.stringify(
-          { action: res.action, path: res.path, record: res.record },
-          null,
-          2,
-        ),
-      ),
-    );
-  } else if (res.action === 'collected' && res.record) {
-    deps.out(
-      pc.green(
-        `${CHECK} adjudication recorded (${res.record.tp} up / ` +
-          `${res.record.fp} down, ${res.record.granularity}-level) ` +
-          `${RIGHT_ARROW} ${res.path}`,
-      ),
-    );
-  } else if (res.action === 'no-comment') {
-    deps.out(
-      `guardian: no sticky comment on ${repo}#${prNumber} ${EM_DASH} nothing to adjudicate.`,
-    );
-  } else if (res.action === 'no-reactions') {
-    deps.out(
-      `guardian: sticky comment on ${repo}#${prNumber} has no reviewer ` +
-        `verdicts yet ${EM_DASH} nothing recorded (no reaction is neutral, ` +
-        `not a data point).`,
-    );
-  }
-
-  if (res.action === 'unavailable') {
-    deps.out(pc.red(pc.bold(`${CROSS} ${res.notice ?? 'not persisted'}`)));
-    throw new CliExitError(1);
-  }
-}
-
-interface PrecisionOptions {
-  analysesDir?: string;
-  json?: boolean;
-}
-
-/** Aggregate the persisted adjudications into the promotion evidence (#490). */
-function precisionCmd(opts: PrecisionOptions, deps: GuardianDeps): void {
-  const analysesDir = resolveAnalysesDir(opts.analysesDir, deps);
-  const records = loadAdjudicationRecords(analysesDir);
-  const summary = summarizePrecision(records);
-  if (opts.json) {
-    // `precision: null` is the honest zero-denominator value — consumers must
-    // treat it as unknown, never as 1.0 (#490).
-    deps.out(
-      ensureAscii(
-        JSON.stringify({ ...summary, records: records.length }, null, 2),
-      ),
-    );
-    return;
-  }
-  const line = renderPrecision(summary);
-  deps.out(summary.precision === null ? pc.yellow(line) : line);
+  const since = new Date(Date.now() - opts.days * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const source = deps.buildAdjudicationSource(opts.repo, token);
+  const { evidence, scanned } = await collectEvidence(source, since);
+  const report = deriveReport(evidence, scanned);
+  deps.out(
+    opts.json
+      ? JSON.stringify({ since, ...report }, null, 2)
+      : `${renderReport(report)}\nwindow: merged since ${since}`,
+  );
 }
 
 // --- pr-check -----------------------------------------------------------------
@@ -1370,64 +1290,6 @@ function resolveAnalysesDir(
   return override ?? join(gitToplevel(deps), '.harness', 'analyses');
 }
 
-/**
- * Collect 👍/👎 adjudications off the sticky comment, best-effort (#490).
- *
- * Runs on the NEXT `pr-check` for a PR (the collection loop the #490 sketch
- * chose over a scheduled sweep — the guardian already authenticates against
- * this API and already finds its own comment by marker). Read-only against
- * GitHub, so it works where the fork-degraded poster could not write.
- *
- * NEVER affects the gate: any failure prints a `::warning::` and returns —
- * a broken feedback loop must not turn a coverage gate red.
- */
-async function collectAdjudicationsBestEffort(
-  analysesDirOverride: string | undefined,
-  deps: GuardianDeps,
-): Promise<void> {
-  const ctx = prContextFromEnv(deps.env);
-  if (ctx === null) return; // no PR context — nothing to collect against
-  if (!deps.env['GITHUB_TOKEN']) {
-    // Every read here needs a token; skipping LOUDLY beats a guaranteed 401.
-    deps.out(
-      degradationAnnotation(
-        `guardian: no GITHUB_TOKEN ${EM_DASH} reviewer adjudications not ` +
-          'collected this run',
-      ),
-    );
-    return;
-  }
-  // Resolved lazily (shells out to git) only once a collection will happen —
-  // an explicit `--diff` run without PR context must stay subprocess-free.
-  const analysesDir = resolveAnalysesDir(analysesDirOverride, deps);
-  try {
-    const client = deps.buildReactionsClient(ctx[0], ctx[1]);
-    const res = await collectAdjudications(client, {
-      repo: ctx[0],
-      prNumber: ctx[1],
-      analysesDir,
-    });
-    if (res.action === 'collected' && res.record) {
-      deps.out(
-        `guardian: adjudication recorded (${res.record.tp} up / ` +
-          `${res.record.fp} down) ${RIGHT_ARROW} ${res.path}`,
-      );
-    } else if (res.action === 'unavailable' && res.notice) {
-      deps.out(degradationAnnotation(res.notice));
-    }
-    // no-comment / no-reactions: nothing to say — absence of a reaction is
-    // neutral, not a data point (#490).
-  } catch (exc) {
-    const message = exc instanceof Error ? exc.message : String(exc);
-    deps.out(
-      degradationAnnotation(
-        `guardian: adjudication collection failed (${message}) ${EM_DASH} ` +
-          'findings and gate unaffected',
-      ),
-    );
-  }
-}
-
 interface PrCheckOptions {
   diff?: string;
   heuristicExclude?: string[];
@@ -1459,13 +1321,6 @@ async function prCheckCmd(
   }
 
   const effectiveGate = opts.gate ?? config.pr_gate;
-
-  // #490: read reviewer 👍/👎 off the PREVIOUS run's sticky comment before this
-  // run touches it. Runs on the posting/emitting (CI) surfaces only, before the
-  // early exits so a docs-only follow-up push still harvests the verdicts.
-  if (opts.postComment || opts.emitAnalysis) {
-    await collectAdjudicationsBestEffort(opts.analysesDir, deps);
-  }
 
   // #369: in CI an omitted `--diff` resolves the PR diff from the base ref;
   // the working-tree fallback is empty on a clean checkout.
@@ -1959,56 +1814,27 @@ export function createGuardianCommand(
       ),
     )
     .option('--force', 'Skip the check-context-exists verification (risky).')
-    .addOption(
-      new Option(
-        '--analyses-dir <dir>',
-        'Override the analyses dir (tests).',
-      ).hideHelp(),
-    )
     .action(async (opts: HardenGateOptions) => {
       await hardenGateCmd(opts, deps);
     });
 
   program
-    .command('collect-adjudications')
+    .command('precision')
     .description(
-      "Read reviewer thumbs-up/down reactions off the guardian's sticky PR " +
-        'comment and persist the adjudication record (#490).',
+      'Derive guardian finding precision (TP / (TP + FP)) from merged PRs, ' +
+        'with its sample size (ADR 0025).',
     )
     .addOption(
       new Option('--repo <repo>', 'owner/repo.').env('GITHUB_REPOSITORY'),
     )
     .addOption(
-      new Option('--pr <number>', 'Pull-request number.').argParser((v) =>
-        Number.parseInt(v, 10),
-      ),
+      new Option('--days <n>', 'Merged-PR window in days.')
+        .default(14)
+        .argParser((v) => Number.parseInt(v, 10)),
     )
-    .option('--json', 'Emit the collection result as JSON.')
-    .addOption(
-      new Option(
-        '--analyses-dir <dir>',
-        'Override the analyses dir (tests).',
-      ).hideHelp(),
-    )
-    .action(async (opts: CollectAdjudicationsOptions) => {
-      await collectAdjudicationsCmd(opts, deps);
-    });
-
-  program
-    .command('precision')
-    .description(
-      'Report guardian finding precision (TP / (TP + FP)) from collected ' +
-        'adjudications, with its sample size.',
-    )
-    .option('--json', 'Emit the summary as JSON (precision null = unknown).')
-    .addOption(
-      new Option(
-        '--analyses-dir <dir>',
-        'Override the analyses dir (tests).',
-      ).hideHelp(),
-    )
-    .action((opts: PrecisionOptions) => {
-      precisionCmd(opts, deps);
+    .option('--json', 'Emit the report as JSON (precision null = unknown).')
+    .action(async (opts: PrecisionOptions) => {
+      await precisionCmd(opts, deps);
     });
 
   program

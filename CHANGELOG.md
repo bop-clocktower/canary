@@ -74,6 +74,17 @@ under the project's former name) are documented in the
   warning to the workflow trigger that makes it true, so it retires itself when
   #843 lands instead of becoming a stale notice.
 
+### Removed
+
+- **BREAKING: `canary guardian collect-adjudications` is removed** (ADR 0025,
+  #938, #932). Reaction-based adjudication read an input nobody produces: 0
+  reactions across 290 guardian sticky comments, no workflow ran collection, and
+  its records were written to a gitignored directory that vanished with the
+  runner. Scripts calling `collect-adjudications` now fail with an unknown
+  command. `pr-check` no longer reads reactions inline, and `precision` no
+  longer reads `.harness/analyses/` (its hidden `--analyses-dir` flag is gone,
+  as is `harden-gate`'s).
+
 ### Fixed
 
 - **`canary vacuity-check` no longer prints a several-thousand-character
@@ -108,6 +119,17 @@ under the project's former name) are documented in the
   changed ops or seed script no longer draws an unsatisfiable "no test file
   references" heuristic finding. Coverage- and graph-verified findings on shell
   files still fire.
+- **`canary guardian precision` is derived from merged PRs** (ADR 0025, #938).
+  It rebuilds adjudication on demand from GitHub: each guardian sticky's first
+  and last revision (GraphQL `userContentEdits`), and the
+  `canary:allow-untested` suppressions in the merged diff. A covered finding is
+  a true positive, `// canary:allow-untested fp: <reason>` is a false positive,
+  and intentional, ambiguous and unresolved findings are counted but excluded.
+  Precision is `unknown (N < 30)` below 30 adjudicated findings, and PRs with no
+  edit history or an unparseable sticky are counted, not dropped. It needs
+  `--repo` (or `GITHUB_REPOSITORY`) and `GITHUB_TOKEN`; `--days` bounds the
+  window (default 14). A weekly advisory workflow, `guardian-precision.yml`,
+  writes the report to its step summary.
 
 - **Perf ratchet judges a PR on its own merge-base delta** (#812). The perf
   ceiling in `.harness/perf-baseline.json` reached zero headroom on 2026-09-09

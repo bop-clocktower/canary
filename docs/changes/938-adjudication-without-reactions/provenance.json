@@ -1,0 +1,20 @@
+{
+  "issues": [938, 932],
+  "fleet": "roadmap-fleet",
+  "route": "spec-ready",
+  "branch": "feat/938-adjudication-without-reactions",
+  "spec": "docs/knowledge/decisions/0025-adjudication-without-reactions.md",
+  "plan": "docs/changes/938-adjudication-without-reactions/plans/plan.md",
+  "stages": ["autopilot", "planning", "tdd", "implementation", "verification"],
+  "pipelineProvenance": "degraded: autopilot phases (plan -> red -> green -> verify) run inline by the fleet build worker; no harness-autopilot session artifact",
+  "redAtBase": "edb94690",
+  "assumptions": [
+    "Granularity is per file row: the sticky renders one row per file or unit, and merged-diff suppressions are located per file.",
+    "'Lines become covered' = a coverage-verified finding on the first sticky revision is absent from the last revision while its file is still in the merged PR's files; heuristic/graph findings that disappear are ambiguous.",
+    "A bare 'fp:' suppression counts as a false positive: the prefix is the verdict.",
+    "A never-edited sticky (totalCount 0) has one revision; fewer edit nodes than totalCount, or a null diff, is 'no edit history' and is counted in the report.",
+    "Window defaults to --days 14, at most 300 merged PRs; a larger window throws instead of truncating.",
+    "'precision' survives as the derived report command; only reaction collection is removed."
+  ],
+  "closingKeyword": "Closes"
+}
