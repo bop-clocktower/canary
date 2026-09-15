@@ -422,3 +422,37 @@ jobs:
             3) echo "::notice title=Katana abstained::the PR diff was empty for katana, so nothing was examined. Not a clean run, but nothing to report." ;;
             *) echo "::error title=Katana failed::unexpected exit $rc"; exit "$rc" ;;
           esac
+
+  # --- Branch prune, DRY-RUN only (#836, ADR 0022) ---------------------------
+  # Prints the remote deletion set scripts/branch-prune.mjs would propose. It
+  # never deletes anything: the script has no remote-deletion flag and this
+  # step passes no --apply-local. Real remote deletion is a human act. Exit 3
+  # (nothing but protected refs examined) means the checkout lost its remote
+  # refs, which is a misconfiguration, not a clean sweep.
+  branch-prune-dry-run:
+    name: Branch prune (dry-run)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Compute the deletion set
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          node scripts/branch-prune.mjs --repo .
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo "::notice title=Branch prune (dry-run)::deletion set printed above; nothing was deleted." ;;
+            3) echo "::error title=Branch prune abstained::no non-protected branch was examined - the checkout has no remote refs."; exit 3 ;;
+            *) echo "::error title=Branch prune failed::unexpected exit $rc"; exit "$rc" ;;
+          esac
