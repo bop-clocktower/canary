@@ -34,7 +34,7 @@
  *   - `Path.home()` (the `~/.canary/skills` overlay tier) is an injectable
  *     constructor argument (defaults to `os.homedir()`), the same test seam the
  *     skill-registry port uses -- Python patches `Path.home()` in its tests.
- *   - Python truthiness (`""`/`None`/`{}`/`[]` falsy) via {@link pyTruthy}.
+ *   - Python truthiness (`""`/`None`/`{}`/`[]` falsy) via {@link isTruthy}.
  */
 
 import { createHash } from 'node:crypto';
@@ -86,7 +86,7 @@ import { ensureAscii } from '../util/ensure-ascii.js';
 // ---------------------------------------------------------------------------
 
 /** Python-truthiness (`null`/`undefined`/`false`/`0`/`""`/`[]`/`{}` falsy). */
-function pyTruthy(value: unknown): boolean {
+function isTruthy(value: unknown): boolean {
   if (value === null || value === undefined || value === false) return false;
   if (value === 0 || value === '') return false;
   if (Array.isArray(value)) return value.length > 0;
@@ -563,7 +563,7 @@ function shapeForFrameworkOverride(
 function skillsDocsOverlayReason(
   config: Record<string, unknown>,
 ): string | null {
-  if (pyTruthy(config['entryPoints'])) return null;
+  if (isTruthy(config['entryPoints'])) return null;
   const layersRaw = config['layers'];
   // Python does `config.get("layers") or []` then `for layer in layers`. If
   // `layers` is a truthy non-list (e.g. a dict), Python iterates its keys --
@@ -576,7 +576,7 @@ function skillsDocsOverlayReason(
   for (const layer of layers) {
     if (layer !== null && typeof layer === 'object' && !Array.isArray(layer)) {
       const raw = (layer as Record<string, unknown>)['name'];
-      const name = (pyTruthy(raw) ? String(raw) : '').toLowerCase();
+      const name = (isTruthy(raw) ? String(raw) : '').toLowerCase();
       names.add(name);
     }
   }
@@ -1170,7 +1170,7 @@ export class MigrationReport {
     lines.push(`**Framework:** ${this.framework}`, `**Shape:** ${this.shape}`);
 
     if (
-      pyTruthy(this.detection_source) &&
+      isTruthy(this.detection_source) &&
       this.detection_source !== 'none' &&
       this.detection_source !== ''
     ) {
@@ -1385,8 +1385,8 @@ export class HarnessMigrator {
     const [rawConfig, warning] = readJsonWithWarning(
       join(projectRoot, 'harness.config.json'),
     );
-    if (pyTruthy(warning)) configWarnings.push(warning as string);
-    let harnessConfig: Record<string, unknown> = pyTruthy(rawConfig)
+    if (isTruthy(warning)) configWarnings.push(warning as string);
+    let harnessConfig: Record<string, unknown> = isTruthy(rawConfig)
       ? (rawConfig as Record<string, unknown>)
       : {};
 
@@ -1395,9 +1395,9 @@ export class HarnessMigrator {
     // detection.
     const canaryCompany = join(projectRoot, '.canary', 'company.json');
     const [overlay, warning2] = readJsonWithWarning(canaryCompany);
-    if (pyTruthy(warning2)) configWarnings.push(warning2 as string);
+    if (isTruthy(warning2)) configWarnings.push(warning2 as string);
     if (
-      pyTruthy(overlay) &&
+      isTruthy(overlay) &&
       Object.prototype.hasOwnProperty.call(overlay, 'canary_shape')
     ) {
       harnessConfig = {
@@ -1461,14 +1461,14 @@ export class HarnessMigrator {
       );
     }
 
-    const effectiveFramework = pyTruthy(framework)
+    const effectiveFramework = isTruthy(framework)
       ? (framework as string)
       : ctx.detected_framework;
-    const source = pyTruthy(framework) ? 'CLI override' : ctx.detection_source;
+    const source = isTruthy(framework) ? 'CLI override' : ctx.detection_source;
     // #504 (2): an override is high-confidence *user intent*, not a config-file
     // find. Reporting it as 'config' rendered "high -- dedicated config file",
     // asserting evidence no probe ever gathered.
-    const confidence = pyTruthy(framework)
+    const confidence = isTruthy(framework)
       ? 'override'
       : ctx.detection_confidence;
 
@@ -1481,7 +1481,7 @@ export class HarnessMigrator {
       .trim()
       .toLowerCase();
     const overrideShape =
-      pyTruthy(framework) && explicitShape === ''
+      isTruthy(framework) && explicitShape === ''
         ? // A workspace package that already declares this framework has
           // already had its shape refined against its OWN spec files. The
           // root-only refinement cannot see them -- in the reported repo the
@@ -1538,7 +1538,7 @@ export class HarnessMigrator {
     ) {
       const cmd =
         reg.executionInfo(effectiveFramework)?.execution_command ?? null;
-      const run = pyTruthy(cmd) ? ` Run its tests via \`${cmd}\`.` : '';
+      const run = isTruthy(cmd) ? ` Run its tests via \`${cmd}\`.` : '';
       followups.push(
         `No scaffold template for '${effectiveFramework}' yet ${EMDASH} the ` +
           'layout and skills were migrated, but test config was not ' +
@@ -1688,7 +1688,7 @@ export class HarnessMigrator {
         // Parse frontmatter directly to avoid full registry overhead.
         const info = reg.parseNested(skillMd, name, 'overlay');
         if (info === null || seenNames.has(info.name)) continue;
-        if (!pyTruthy(info.deploy_to)) continue;
+        if (!isTruthy(info.deploy_to)) continue;
         if (
           !shapes.some((s) => info.deploy_to.includes(s)) &&
           !info.deploy_to.includes('all')

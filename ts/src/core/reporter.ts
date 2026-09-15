@@ -20,8 +20,8 @@
  *     on is `BigInt`, which the replacer stringifies. There is no JS analog of a
  *     `Path` object, so that specific coercion is not reproducible — see the
  *     ported test, which exercises the BigInt path instead.
- *   - Python truthiness (`""`/`{}`/`None` falsy) via {@link pyTruthy}; missing
- *     dict keys via {@link pyGet}.
+ *   - Python truthiness (`""`/`{}`/`None` falsy) via {@link isTruthy}; missing
+ *     dict keys via {@link getOrDefault}.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -59,7 +59,7 @@ export const SUPPORTED_FORMATS = ['json', 'sarif'] as const;
  * Python-truthiness for JSON-shaped values: `None`/`undefined`, `false`, `0`,
  * `""`, empty array, and empty object are all falsy (mirrors `if x:`).
  */
-function pyTruthy(value: unknown): boolean {
+function isTruthy(value: unknown): boolean {
   if (value === null || value === undefined || value === false) return false;
   if (value === 0 || value === '') return false;
   if (Array.isArray(value)) return value.length > 0;
@@ -68,12 +68,12 @@ function pyTruthy(value: unknown): boolean {
 }
 
 /** Python `a or b`: the fallback wins only when `a` is falsy. */
-function pyOr<T>(value: unknown, fallback: T): unknown {
-  return pyTruthy(value) ? value : fallback;
+function orDefault<T>(value: unknown, fallback: T): unknown {
+  return isTruthy(value) ? value : fallback;
 }
 
 /** Python `dict.get(key, default)`: default only on a missing key. */
-function pyGet(
+function getOrDefault(
   obj: Record<string, unknown>,
   key: string,
   fallback: unknown,
@@ -86,7 +86,7 @@ function pyGet(
  * are coerced via `str()`; in JS the only common such value that would
  * otherwise *throw* is `BigInt`, which we stringify.
  */
-function pyDefaultStr(_key: string, value: unknown): unknown {
+function stringifyBigInt(_key: string, value: unknown): unknown {
   return typeof value === 'bigint' ? value.toString() : value;
 }
 
@@ -111,7 +111,7 @@ export class Reporter {
       );
     }
 
-    const path = pyTruthy(outputPath)
+    const path = isTruthy(outputPath)
       ? (outputPath as string)
       : `canary-report.${fmt}`;
 
@@ -124,7 +124,7 @@ export class Reporter {
 
   /** Serialize `result` as pretty-printed JSON. */
   toJson(result: ReportResult): string {
-    return ensureAscii(JSON.stringify(result, pyDefaultStr, 2));
+    return ensureAscii(JSON.stringify(result, stringifyBigInt, 2));
   }
 
   /** Serialize `result` as SARIF 2.1.0 JSON. */
@@ -134,7 +134,7 @@ export class Reporter {
       $schema: SARIF_SCHEMA,
       runs: [this.buildRun(result)],
     };
-    return ensureAscii(JSON.stringify(sarif, pyDefaultStr, 2));
+    return ensureAscii(JSON.stringify(sarif, stringifyBigInt, 2));
   }
 
   // --------------------------------------------------------------------
@@ -158,17 +158,17 @@ export class Reporter {
   private buildResults(result: ReportResult): Record<string, unknown>[] {
     const sarifResults: Record<string, unknown>[] = [];
 
-    const outputFile = pyGet(result, 'output_file', '');
-    const testType = pyGet(result, 'test_type', 'unknown');
-    const framework = pyGet(result, 'framework', 'unknown');
+    const outputFile = getOrDefault(result, 'output_file', '');
+    const testType = getOrDefault(result, 'test_type', 'unknown');
+    const framework = getOrDefault(result, 'framework', 'unknown');
 
     // Generation result — always present.
     const genProps: Record<string, unknown> = {
       framework,
       test_type: testType,
-      reasoning: pyGet(result, 'reasoning', []),
+      reasoning: getOrDefault(result, 'reasoning', []),
     };
-    if (pyTruthy(pyGet(result, 'quality', null))) {
+    if (isTruthy(getOrDefault(result, 'quality', null))) {
       genProps['quality'] = result['quality'];
     }
     sarifResults.push({
@@ -176,34 +176,34 @@ export class Reporter {
       message: {
         text:
           `Generated ${String(framework)} test (${String(testType)})` +
-          (pyTruthy(outputFile) ? ` — ${String(outputFile)}` : ''),
+          (isTruthy(outputFile) ? ` — ${String(outputFile)}` : ''),
       },
       level: 'none',
-      locations: pyTruthy(outputFile) ? [location(String(outputFile))] : [],
+      locations: isTruthy(outputFile) ? [location(String(outputFile))] : [],
       properties: genProps,
     });
 
     // Execution result — only if the test was run.
-    const execution = pyGet(result, 'execution', null);
-    if (pyTruthy(execution)) {
+    const execution = getOrDefault(result, 'execution', null);
+    if (isTruthy(execution)) {
       const exec = execution as Record<string, unknown>;
-      const exitCode = pyGet(exec, 'exit_code', -1);
+      const exitCode = getOrDefault(exec, 'exit_code', -1);
       const passed = exitCode === 0;
-      const fixed = pyGet(exec, 'fixed', false);
+      const fixed = getOrDefault(exec, 'fixed', false);
 
       const messageParts: string[] = [
         `Test execution ${passed ? 'passed' : 'failed'} ` +
           `(exit code ${String(exitCode)})`,
       ];
-      if (pyTruthy(fixed)) {
+      if (isTruthy(fixed)) {
         messageParts.push('Self-healed after initial failure.');
       }
       if (!passed) {
-        const stderr = pyOr(
-          pyGet(exec, 'stderr', null),
-          pyGet(exec, 'stdout', ''),
+        const stderr = orDefault(
+          getOrDefault(exec, 'stderr', null),
+          getOrDefault(exec, 'stdout', ''),
         );
-        if (pyTruthy(stderr)) {
+        if (isTruthy(stderr)) {
           const s = String(stderr);
           // Truncate long error output for readability in dashboards. Python
           // `stderr[:300]` and `len(stderr) > 300` count code points; JS slice
@@ -220,7 +220,7 @@ export class Reporter {
         ruleId: 'canary/test-execution',
         message: { text: messageParts.join(' ') },
         level: passed ? 'none' : 'error',
-        locations: pyTruthy(outputFile) ? [location(String(outputFile))] : [],
+        locations: isTruthy(outputFile) ? [location(String(outputFile))] : [],
         properties: {
           exit_code: exitCode,
           fixed,

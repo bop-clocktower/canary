@@ -23,7 +23,7 @@
  *     except a *non-existent* candidate is normalized without throwing (Python's
  *     non-strict `resolve()` does not raise), so {@link resolveCliPath} only
  *     realpaths a path that exists.
- *   - Python truthiness (`""`/`None` falsy) via {@link pyTruthy}.
+ *   - Python truthiness (`""`/`None` falsy) via {@link isTruthy}.
  */
 
 import {
@@ -55,7 +55,7 @@ import { registryPrecedence } from './overlays.js';
  * Python-truthiness for the values used here: `null`/`undefined`/`""` and an
  * empty array are falsy (mirrors `if x:`).
  */
-function pyTruthy(value: unknown): boolean {
+function isTruthy(value: unknown): boolean {
   if (value === null || value === undefined || value === false) return false;
   if (value === 0 || value === '') return false;
   if (Array.isArray(value)) return value.length > 0;
@@ -447,7 +447,7 @@ export class SkillRegistry {
     const { frontmatter: fm, errors } =
       SkillRegistry.parseFrontmatterWithDiagnostics(text);
     const stem = basename(path, extname(path));
-    const name = pyTruthy(fm['name']) ? (fm['name'] as string) : stem;
+    const name = isTruthy(fm['name']) ? (fm['name'] as string) : stem;
     return new SkillInfo({
       name,
       path,
@@ -471,9 +471,9 @@ export class SkillRegistry {
     }
     const { frontmatter: fm, errors } =
       SkillRegistry.parseFrontmatterWithDiagnostics(text);
-    const name = pyTruthy(fm['name']) ? (fm['name'] as string) : dirName;
+    const name = isTruthy(fm['name']) ? (fm['name'] as string) : dirName;
     // Python: `fm.get("description") or self._blockquote_tagline(text)`.
-    const description = pyTruthy(fm['description'])
+    const description = isTruthy(fm['description'])
       ? (fm['description'] as string)
       : SkillRegistry.blockquoteTagline(text);
     return new SkillInfo({
@@ -655,7 +655,7 @@ export class SkillRegistry {
     if (Array.isArray(cli) || Array.isArray(entry)) {
       return 'cli:/entry: must be a scalar path, not a list';
     }
-    if (pyTruthy(cli) && pyTruthy(entry)) {
+    if (isTruthy(cli) && isTruthy(entry)) {
       return 'skill declares both cli: and entry: \u{2014} they are mutually exclusive';
     }
     return null;
@@ -683,7 +683,7 @@ export class SkillRegistry {
  * escapes the skill dir after symlink resolution, or the target doesn't exist.
  */
 export function resolveCliPath(skill: SkillInfo): string {
-  if (!pyTruthy(skill.cli)) {
+  if (!isTruthy(skill.cli)) {
     throw new Error(`skill '${skill.name}' has no cli: field`);
   }
   const skillDir = realpathSync(skill.dir);

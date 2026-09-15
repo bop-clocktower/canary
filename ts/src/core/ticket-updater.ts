@@ -22,8 +22,8 @@
  *     `!resp.ok` exactly as Python's caught-exception path.
  *   - **JSON payload shape** mirrors `json.dumps` with library-default
  *     `ensure_ascii=True` reproduced by {@link ensureAscii}.
- *   - **Python truthiness** (`""`/`[]`/`None` falsy) via {@link pyTruthy}.
- *   - **`{value!r}`** reproduced by {@link pyRepr} for the one user-facing
+ *   - **Python truthiness** (`""`/`[]`/`None` falsy) via {@link isTruthy}.
+ *   - **`{value!r}`** reproduced by {@link quoteValue} for the one user-facing
  *     `repr()` in the "unrecognised key" message.
  *   - `duration_s` prints via JS `String(number)`; unlike Python's `float`
  *     `repr`, an integral value like `12` yields `"12"`, not `"12.0"` (JS has no
@@ -50,7 +50,7 @@ import { ensureAscii } from '../util/ensure-ascii.js';
  * Python-truthiness for the values used here: `None`/`undefined`, `false`, `0`,
  * `""`, empty array, and empty object are all falsy (mirrors `if x:`).
  */
-function pyTruthy(value: unknown): boolean {
+function isTruthy(value: unknown): boolean {
   if (value === null || value === undefined || value === false) return false;
   if (value === 0 || value === '') return false;
   if (Array.isArray(value)) return value.length > 0;
@@ -59,7 +59,7 @@ function pyTruthy(value: unknown): boolean {
 }
 
 /** Python `dict.get(key, default)`: default only on a missing key. */
-function pyGet(
+function getOrDefault(
   obj: Record<string, unknown>,
   key: string,
   fallback: unknown,
@@ -75,13 +75,13 @@ function pyGet(
  * the result in {@link ensureAscii} for `ensure_ascii=True` parity. These
  * payloads carry no floats, so the `str(float)` `.0` question does not arise.
  */
-function pyJsonDumps(value: unknown): string {
+function jsonWithSpacedSeparators(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) {
-    return '[' + value.map(pyJsonDumps).join(', ') + ']';
+    return '[' + value.map(jsonWithSpacedSeparators).join(', ') + ']';
   }
   const parts = Object.entries(value as Record<string, unknown>).map(
-    ([k, v]) => `${JSON.stringify(k)}: ${pyJsonDumps(v)}`,
+    ([k, v]) => `${JSON.stringify(k)}: ${jsonWithSpacedSeparators(v)}`,
   );
   return '{' + parts.join(', ') + '}';
 }
@@ -93,7 +93,7 @@ function pyJsonDumps(value: unknown): string {
  * (`0.0`) and whole-second values are integral and reachable, so restore `.0`.
  * Non-integral values match `String(d)` for the realistic seconds domain.
  */
-function pyFloatStr(value: number): string {
+function withTrailingDecimal(value: number): string {
   return Number.isInteger(value) ? value.toFixed(1) : String(value);
 }
 
@@ -112,7 +112,7 @@ function lstripChar(s: string, ch: string): string {
 }
 
 /** Minimal Python `repr()` for a string (single-quoted unless it needs double). */
-function pyRepr(value: string): string {
+function quoteValue(value: string): string {
   if (value.includes("'") && !value.includes('"')) {
     return '"' + value.replace(/\\/g, '\\\\') + '"';
   }
@@ -301,14 +301,14 @@ export class TicketUpdater {
     let projectKey = summary.project_key;
     let linkageSource = summary.linkage_source;
 
-    if (!pyTruthy(ticketKey) && pyTruthy(summary.test_file)) {
+    if (!isTruthy(ticketKey) && isTruthy(summary.test_file)) {
       [ticketKey, projectKey, linkageSource] = this.detectLinkage(
         summary.test_file,
       );
     }
 
     // 2. Safety gate -- no ticket found.
-    if (!pyTruthy(ticketKey)) {
+    if (!isTruthy(ticketKey)) {
       messages.push(
         'No ticket linkage found \u2014 skipping comment and transition.\n' +
           "Add '# canary:ticket: PROJ-123' to the test file frontmatter, " +
@@ -333,7 +333,7 @@ export class TicketUpdater {
     }
 
     // Infer project_key from ticket_key if not set.
-    if (!pyTruthy(projectKey)) {
+    if (!isTruthy(projectKey)) {
       const m = TICKET_PROJECT.exec(ticketKey!);
       projectKey = m ? m[1]! : null;
     }
@@ -353,13 +353,13 @@ export class TicketUpdater {
         );
       } else if (/^#\d+$/.test(ticketKey!) || /^\d+$/.test(ticketKey!)) {
         // GitHub issue -- needs project_key as "owner/repo".
-        const issueRef = pyTruthy(projectKey)
+        const issueRef = isTruthy(projectKey)
           ? `${projectKey}#${lstripChar(ticketKey!, '#')}`
           : ticketKey!;
         commentPosted = this.postGithubComment(issueRef, commentBody, dryRun);
       } else {
         messages.push(
-          `Unrecognised ticket key format: ${pyRepr(ticketKey!)}. ` +
+          `Unrecognised ticket key format: ${quoteValue(ticketKey!)}. ` +
             'Expected PROJ-NNN (Jira) or #NNN (GitHub Issue).',
         );
       }
@@ -386,7 +386,7 @@ export class TicketUpdater {
     if (!commentOnly) {
       transitionResult = await this.transitionJira(
         ticketKey!,
-        pyTruthy(projectKey) ? projectKey! : '',
+        isTruthy(projectKey) ? projectKey! : '',
         summary.result,
         dryRun,
       );
@@ -460,26 +460,26 @@ export class TicketUpdater {
       `Environment: ${summary.env}`,
       `Result: ${summary.result} (${summary.passed}/${summary.total} tests)`,
       `Flaky: ${summary.flaky_count}`,
-      `Duration: ${pyFloatStr(summary.duration_s)}s`,
+      `Duration: ${withTrailingDecimal(summary.duration_s)}s`,
       `Run by: canary report ${flags}`,
       '',
       `Test file: ${summary.test_file}`,
     ];
 
-    if (pyTruthy(summary.report_url)) {
+    if (isTruthy(summary.report_url)) {
       lines.push(`Report: ${summary.report_url}`);
     }
 
     lines.push('', '---');
 
-    if (pyTruthy(summary.passed_names)) {
+    if (isTruthy(summary.passed_names)) {
       lines.push('Passed:');
       for (const name of summary.passed_names) {
         lines.push(`  \u2713 ${name}`);
       }
     }
 
-    if (pyTruthy(summary.failed_names)) {
+    if (isTruthy(summary.failed_names)) {
       lines.push('Failed:');
       for (const [name, category] of summary.failed_names) {
         lines.push(`  \u2717 ${name} \u2014 ${category}`);
@@ -511,7 +511,7 @@ export class TicketUpdater {
 
     const url = `${baseUrl}/rest/api/3/issue/${ticketKey}/comment`;
     const payload = ensureAscii(
-      pyJsonDumps({
+      jsonWithSpacedSeparators({
         body: {
           type: 'doc',
           version: 1,
@@ -564,7 +564,7 @@ export class TicketUpdater {
     }
 
     const cmd = ['gh', 'issue', 'comment', number, '--body', body];
-    if (pyTruthy(repo)) {
+    if (isTruthy(repo)) {
       cmd.push('--repo', repo);
     }
 
@@ -720,9 +720,15 @@ export class TicketUpdater {
         return null;
       }
       const data = JSON.parse(resp.text) as Record<string, unknown>;
-      const fields = pyGet(data, 'fields', {}) as Record<string, unknown>;
-      const status = pyGet(fields, 'status', {}) as Record<string, unknown>;
-      return (pyGet(status, 'name', null) as string | null) ?? null;
+      const fields = getOrDefault(data, 'fields', {}) as Record<
+        string,
+        unknown
+      >;
+      const status = getOrDefault(fields, 'status', {}) as Record<
+        string,
+        unknown
+      >;
+      return (getOrDefault(status, 'name', null) as string | null) ?? null;
     } catch {
       return null;
     }
@@ -752,12 +758,12 @@ export class TicketUpdater {
       return null;
     }
 
-    for (const t of pyGet(data, 'transitions', []) as Record<
+    for (const t of getOrDefault(data, 'transitions', []) as Record<
       string,
       unknown
     >[]) {
-      const to = pyGet(t, 'to', {}) as Record<string, unknown>;
-      const toName = (pyGet(to, 'name', '') as string) ?? '';
+      const to = getOrDefault(t, 'to', {}) as Record<string, unknown>;
+      const toName = (getOrDefault(to, 'name', '') as string) ?? '';
       if (toName.toLowerCase() === targetStatus.toLowerCase()) {
         return String(t['id']);
       }
@@ -774,7 +780,7 @@ export class TicketUpdater {
   ): Promise<boolean> {
     const url = `${baseUrl}/rest/api/3/issue/${ticketKey}/transitions`;
     const payload = ensureAscii(
-      pyJsonDumps({ transition: { id: transitionId } }),
+      jsonWithSpacedSeparators({ transition: { id: transitionId } }),
     );
     try {
       const resp = await this.http({
@@ -822,20 +828,20 @@ export function jiraAuth(
 ): [string | null, string | null] {
   // Prefer the URL stored in the per-project mapping.
   let baseUrl = '';
-  if (pyTruthy(projectKey)) {
+  if (isTruthy(projectKey)) {
     const stored = atlassianUrlFor(projectKey!, canaryDir);
-    if (pyTruthy(stored)) {
+    if (isTruthy(stored)) {
       baseUrl = rstripChar(stored!, '/');
     }
   }
 
-  if (!pyTruthy(baseUrl)) {
+  if (!isTruthy(baseUrl)) {
     baseUrl = rstripChar(process.env['ATLASSIAN_URL'] ?? '', '/');
   }
 
   const user = process.env['ATLASSIAN_USER'] ?? '';
   const token = process.env['ATLASSIAN_TOKEN'] ?? '';
-  if (!pyTruthy(baseUrl) || !pyTruthy(user) || !pyTruthy(token)) {
+  if (!isTruthy(baseUrl) || !isTruthy(user) || !isTruthy(token)) {
     return [null, null];
   }
   const auth = Buffer.from(`${user}:${token}`).toString('base64');

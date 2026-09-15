@@ -191,8 +191,8 @@ function ingestPlugins(
             const status = isEnabled ? 'registered' : 'plugin_disabled';
             const note = isEnabled
               ? ''
-              : `plugin ${pyRepr(pluginKey)} is installed but not enabled`;
-            const source = `plugin ${pyRepr(pluginKey)}`;
+              : `plugin ${quoteValue(pluginKey)} is installed but not enabled`;
+            const source = `plugin ${quoteValue(pluginKey)}`;
             registry.set(derivedId, [source, note, status]);
           }
         }
@@ -243,6 +243,6 @@ function listDirs(path: string): string[] {
 }
 
 /** Python `repr()` of a simple string: single-quote wrapped. */
-function pyRepr(s: string): string {
+function quoteValue(s: string): string {
   return `'${s}'`;
 }

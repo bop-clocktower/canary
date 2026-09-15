@@ -17,7 +17,7 @@
  *     `Path.exists()` -> `existsSync`; `dir.mkdir(parents=True)` ->
  *     `mkdirSync(p, { recursive: true })`.
  *   - Python truthiness (`""`/`null` falsy) for the degrade path via
- *     {@link pyTruthy}.
+ *     {@link isTruthy}.
  *   - `raise ValueError` -> `throw new Error` (mirrors reporter.ts).
  */
 
@@ -39,7 +39,7 @@ export { TEMPLATES, scaffoldableFrameworks } from './scaffold-templates.js';
  * Python-truthiness for the values used here: `null`/`undefined`/`""` are falsy
  * (mirrors `if x:`).
  */
-function pyTruthy(value: unknown): boolean {
+function isTruthy(value: unknown): boolean {
   if (value === null || value === undefined || value === false) return false;
   if (value === 0 || value === '') return false;
   if (Array.isArray(value)) return value.length > 0;
@@ -127,7 +127,7 @@ export class Scaffolder {
 
     // Python `entry.get("execution_command")` -> null for an absent key.
     const execCmd = entry.execution_command ?? null;
-    const runNote = pyTruthy(execCmd)
+    const runNote = isTruthy(execCmd)
       ? `canary can run it via: ${execCmd}`
       : 'canary does not yet have a run command for it either';
     const guidance =
