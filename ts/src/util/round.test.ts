@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { num1, pyFloat, round1, roundHalfEvenInt } from './round.js';
+import {
+  num1,
+  formatWithDecimalPoint,
+  round1,
+  roundHalfEvenInt,
+} from './round.js';
 
 describe('round1 half-to-even ties', () => {
   it('rounds an even-floor tie down', () => {
@@ -41,13 +46,13 @@ describe('roundHalfEvenInt (Python round() parity)', () => {
   });
 });
 
-describe('pyFloat (Python str(float) parity)', () => {
+describe('formatWithDecimalPoint (Python str(float) parity)', () => {
   it('keeps a trailing .0 for integer-valued floats', () => {
-    expect(pyFloat(10)).toBe('10.0');
-    expect(pyFloat(20)).toBe('20.0');
+    expect(formatWithDecimalPoint(10)).toBe('10.0');
+    expect(formatWithDecimalPoint(20)).toBe('20.0');
   });
   it('renders non-integers naturally', () => {
-    expect(pyFloat(15.5)).toBe('15.5');
-    expect(pyFloat(12.25)).toBe('12.25');
+    expect(formatWithDecimalPoint(15.5)).toBe('15.5');
+    expect(formatWithDecimalPoint(12.25)).toBe('12.25');
   });
 });

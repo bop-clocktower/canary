@@ -7,7 +7,7 @@
 import {
   isInt,
   isRecord,
-  pyInt,
+  parseStrictInt,
   recordedLines,
   type LineHits,
   type FileCoverage,
@@ -72,7 +72,7 @@ function readLineHits(value: unknown): LineHits {
   for (const [key, count] of Object.entries(value)) {
     // Integers only, 1-based line, non-negative hits (see docstring).
     if (!(isInt(count) && count >= 0)) continue;
-    const lineno = pyInt(key);
+    const lineno = parseStrictInt(key);
     if (lineno === null || lineno < 1) continue;
     hits[lineno] = count;
   }

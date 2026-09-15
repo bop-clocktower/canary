@@ -101,7 +101,7 @@ function rstripNewlines(s: string): string {
  * an astral char (e.g. an emoji) counts as 2 and truncates early. Slice by code
  * point to match Python slicing.
  */
-function pySlice(s: string, n: number): string {
+function takeCodePoints(s: string, n: number): string {
   return Array.from(s).slice(0, n).join('');
 }
 
@@ -162,7 +162,7 @@ function fixMissingAwait(code: string, changes: HealChange[]): string {
           'HEAL-003',
           before,
           after,
-          `Added missing \`await\` before \`${pySlice(call, 40)}\`.`,
+          `Added missing \`await\` before \`${takeCodePoints(call, 40)}\`.`,
         ),
       );
       return after;

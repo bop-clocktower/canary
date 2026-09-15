@@ -268,3 +268,29 @@ describe('a --json payload larger than the pipe buffer survives (#791)', () => {
     }
   });
 });
+
+/**
+ * Docs pinned to behavior (#966). #958 made these three exit 2 on an
+ * unresolvable path, and their SKILL.md files kept documenting only 0/1/3, so
+ * a CI wrapper author could not learn the usage-error code from the docs.
+ * Each row asserts both halves: the CLI emits the code, and the doc's
+ * exit-code table has a `2` row that names the missing path.
+ */
+describe.each(['canary-savant', 'canary-blackhawk', 'canary-cassandra'])(
+  '%s documents exit 2 for an unresolvable path',
+  (name) => {
+    const dir = path.join(SKILL_ROOT, name);
+
+    it('the CLI returns EXIT_USAGE on a missing path', () => {
+      const src = fs.readFileSync(path.join(dir, 'scripts', 'cli.mjs'), 'utf8');
+      expect(src).toMatch(
+        /path not found[^\n]*\n\s*(?:\/\/[^\n]*\n\s*)?return EXIT_USAGE/,
+      );
+    });
+
+    it('SKILL.md has an exit-code row for 2 naming the missing path', () => {
+      const md = fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8');
+      expect(md).toMatch(/^\|\s*`?2`?\s*\|[^\n]*path[^\n]*not found/im);
+    });
+  },
+);

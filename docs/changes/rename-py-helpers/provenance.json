@@ -1,0 +1,23 @@
+{
+  "issues": [964],
+  "route": "feature",
+  "stages": ["harness:brainstorming"],
+  "planArtifact": "docs/changes/rename-py-helpers/plans/2026-09-15-rename-py-helpers-plan.md",
+  "closingKeyword": "Closes",
+  "renames": {
+    "pyInt": "parseStrictInt",
+    "pyFloat": "formatWithDecimalPoint",
+    "pySlice": "takeCodePoints"
+  },
+  "assumptions": [
+    "harness:brainstorming was invoked and run autonomously with recommended defaults; its own When-to-Use excludes simple refactors with no design decisions, so EXPLORE (re-measure) was done and the only decision (names) was taken by recommendation without a spec or human sign-off.",
+    "harness:autopilot was NOT invoked: this is single-phase rename work with no spec, which autopilot's multi-phase loop does not fit. harness:refactoring was followed as discipline (green before, identical behavior, green after) but not invoked as a skill, so neither is listed in stages.",
+    "The issue places the private pySlice copies in core/company-knowledge.ts and core/workflow-discovery.ts; the re-measure on origin/main found none there and exactly one private pySlice in core/pattern-healer.ts, which was renamed instead.",
+    "pySlice has no negative-index semantics: it returns the first n code points (Array.from(s).slice(0, n)), hence takeCodePoints.",
+    "pyInt is a strict base-10 integer parse returning null on failure (not truncation or floor of a float), hence parseStrictInt.",
+    "The takeCodePoints doc comment text was left unchanged because it contains wording owned by #965.",
+    "Similarly named but distinct helpers pyFloatStr (core/ticket-updater.ts) and pyIntFromValue (guardian/pr-check.ts) are outside the named scope and left for #970.",
+    "history/cli.ts is also touched by the #969 lane; this change there is identifier-only (4 lines) to keep the rebase trivial.",
+    "Historical docs mentioning pyFloat (docs/plans/ts-migration-pilot-DECISION.md, the #962 plan) are records of past decisions and were not rewritten."
+  ]
+}

@@ -124,6 +124,15 @@ canary skills run canary-blackhawk -- --help
 An unknown flag is rejected with `unrecognized arguments: <flag>` and exit 2;
 use `--` to end option parsing when a path itself starts with a dash.
 
+Exit codes:
+
+| Code | Meaning                                                                   |
+| ---- | ------------------------------------------------------------------------- |
+| `0`  | Advisory run (the default), or `--strict` with no findings                |
+| `1`  | `--strict` and at least one finding                                       |
+| `2`  | Usage error: unknown flag, or a path not found (`path not found: <path>`) |
+| `3`  | `--strict` and zero files scanned (abstained, not clean)                  |
+
 `--json` shape:
 
 ```json

@@ -17,7 +17,7 @@ import type {
   RegressionRow,
   SpikeRow,
 } from './rows.js';
-import { num1, pyFloat, round1 } from '../util/round.js';
+import { num1, formatWithDecimalPoint, round1 } from '../util/round.js';
 import { def } from '../util/coalesce.js';
 
 // Re-exported so existing callers/tests importing round1 from here still work.
@@ -34,14 +34,14 @@ export function buildFlakyTestsReport(
   limit = 20,
 ): string {
   if (rows.length === 0) {
-    return `No tests above ${pyFloat(minRatePct)}% flake rate in the last ${windowRuns} runs.\n`;
+    return `No tests above ${formatWithDecimalPoint(minRatePct)}% flake rate in the last ${windowRuns} runs.\n`;
   }
 
   const sorted = [...rows]
     .sort((a, b) => b.flake_rate_pct - a.flake_rate_pct)
     .slice(0, limit);
   const lines = [
-    `## Fleet-wide Flaky Tests (top ${limit}, window: ${windowRuns} runs, threshold: ≥ ${pyFloat(minRatePct)}%)\n`,
+    `## Fleet-wide Flaky Tests (top ${limit}, window: ${windowRuns} runs, threshold: ≥ ${formatWithDecimalPoint(minRatePct)}%)\n`,
     '| Test | Suite | Area | Flake % | Flake/Total |',
     '|------|-------|------|---------|-------------|',
   ];
@@ -115,11 +115,11 @@ export function buildFailureSpikesReport(
   }
   const spikes = detectSpikes(rows, deltaPp);
   if (spikes.length === 0) {
-    return `No spikes detected (threshold: ${pyFloat(deltaPp)}pp increase in failure rate).\n`;
+    return `No spikes detected (threshold: ${formatWithDecimalPoint(deltaPp)}pp increase in failure rate).\n`;
   }
 
   const lines = [
-    `## Failure Spikes (threshold: ≥ ${pyFloat(deltaPp)}pp increase)\n`,
+    `## Failure Spikes (threshold: ≥ ${formatWithDecimalPoint(deltaPp)}pp increase)\n`,
     '| Suite | Early Fail % | Recent Fail % | Increase | Since |',
     '|-------|-------------|--------------|----------|-------|',
   ];
