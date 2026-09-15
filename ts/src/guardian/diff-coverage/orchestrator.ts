@@ -8,6 +8,7 @@ import { resolveFromGraph } from './graph-tier.js';
 import { resolveFromHeuristic } from './heuristic-tier.js';
 import {
   countEligible,
+  instrumentedTrees,
   matchUnitsToIndex,
   readReportIndex,
   zeroMatchClause,
@@ -23,21 +24,10 @@ export interface ResolveCoverageOptions {
 }
 
 /**
- * SC-3 orchestrator: resolve each unit at the highest available fidelity.
- *
- * The ladder is applied **per unit**, not per batch. For each unit the first
- * tier that has a signal for *that* unit wins:
- *
- *   1. `coveragePath` lists the unit's path → `COVERAGE_VERIFIED`
- *   2. else a graph node for the unit exists → `GRAPH_VERIFIED`
- *   3. else the naming heuristic             → `HEURISTIC` (always returns)
- *
- * A unit absent from the report is NOT judged COVERAGE_VERIFIED-uncovered; it
- * falls through to the graph then heuristic tier (FIX 2). Returns exactly one
- * {@link CoverageResult} per input unit, in input order, fidelity-labeled.
- *
- * `graphMaxDepth` bounds the graph tier's reverse-BFS hop distance (#320) and
- * is forwarded verbatim to `resolveFromGraph`.
+ * SC-3 orchestrator, applied per unit: the report (`COVERAGE_VERIFIED`), else
+ * the graph (`GRAPH_VERIFIED`, bounded by `graphMaxDepth`, #320), else the
+ * naming heuristic. An absent unit falls through, never uncovered (FIX 2).
+ * Returns one {@link CoverageResult} per unit, in input order.
  */
 export function resolveCoverage(
   units: ChangedUnit[],
@@ -47,12 +37,9 @@ export function resolveCoverage(
 }
 
 /**
- * The coverage input's actual state for one run (#554).
- *
- * Every field is a count or a fact about what the run *observed*, never a
- * verdict. `unitsMatched` of `unitsTotal` is the load-bearing pair: it is the
- * denominator that tells a later reader whether "no coverage findings" meant
- * "checked and clean" or "never checked".
+ * What the coverage input actually was on one run (#554): observed counts and
+ * facts, never a verdict. `unitsMatched` of `unitsTotal` separates "checked and
+ * clean" from "never checked".
  */
 export interface CoverageInputState {
   /** The `--coverage` path as given, or `null` when none was supplied. */
@@ -68,11 +55,22 @@ export interface CoverageInputState {
   /** Changed units submitted to the ladder. */
   unitsTotal: number;
   /**
-   * Changed units inside a tree the parsed report instruments (#883), or
-   * absent when no report parsed. Splits a zero match into "outside the
-   * instrumentation scope" (0) versus "the report is stale" (> 0).
+   * Units ABSENT from the parsed report that lie inside a tree it instruments
+   * (#883, #928): the stale count. Absent when no report parsed.
    */
   unitsEligible?: number;
+  /** Units the report lists whose changed lines are all non-coverable (#928). */
+  unitsNonCoverable?: number;
+  /** The repo-relative trees the parsed report instruments (#928). */
+  instrumentedTrees?: string[];
+}
+
+/** The units the report did not verify, split by cause (#928). */
+export function coverageCauses(state: CoverageInputState) {
+  const nonCoverable = state.unitsNonCoverable ?? 0;
+  const stale = state.unitsEligible ?? 0;
+  const absent = state.unitsTotal - state.unitsMatched - nonCoverable;
+  return { stale, scopeGap: absent - stale, nonCoverable };
 }
 
 /**
@@ -105,6 +103,9 @@ export function coverageDegradedNotice(
   const { requested, found, parsed, filesInReport } = state;
   const { unitsMatched: matched, unitsTotal: total } = state;
   if (total === 0) return null;
+  const { stale, scopeGap } = coverageCauses(state);
+  // The report spoke to every unit, even if only to say "nothing coverable".
+  if (parsed && stale + scopeGap === 0) return null;
   const status = coverageStatus(state);
   if (status === 'verified') return null;
   const dash = ` ${COVERAGE_EM_DASH} `;
@@ -131,7 +132,7 @@ export function coverageDegradedNotice(
   }
   return (
     `${head}report at '${requested}' covers ${filesInReport} file(s) but ` +
-    `${zeroMatchClause(state.unitsEligible, total)}; ${FALLBACK_TIER}`
+    `${zeroMatchClause(state.unitsEligible, stale + scopeGap)}; ${FALLBACK_TIER}`
   );
 }
 
@@ -179,22 +180,25 @@ export function resolveCoverageWithInput(
     coverage.filesInReport =
       read.index === null ? 0 : Object.keys(read.index).length;
     if (read.index !== null) {
-      const paths = units.map((u) => u.path);
+      const nonCoverable: ChangedUnit[] = [];
+      const report = matchUnitsToIndex(remaining, read.index, nonCoverable);
+      for (const r of report) resolved.set(r.unit, r);
+      coverage.unitsMatched = report.length;
+      coverage.unitsNonCoverable = nonCoverable.length;
+      remaining = remaining.filter((u) => !resolved.has(u));
+      // #928: only ABSENT units can make a report stale.
+      const absent = remaining.filter((u) => !nonCoverable.includes(u));
       coverage.unitsEligible = countEligible(
-        paths,
+        absent.map((u) => u.path),
         read.index,
         coveragePath,
         repoRoot,
       );
-    }
-    const report =
-      read.index === null ? null : matchUnitsToIndex(remaining, read.index);
-    // An empty array (no unit matched the report) is falsy-equivalent in the
-    // Python `if report:` guard — fall through rather than lock in nothing.
-    if (report !== null && report.length > 0) {
-      for (const r of report) resolved.set(r.unit, r);
-      coverage.unitsMatched = report.length;
-      remaining = remaining.filter((u) => !resolved.has(u));
+      coverage.instrumentedTrees = instrumentedTrees(
+        read.index,
+        coveragePath,
+        repoRoot,
+      );
     }
   }
 
