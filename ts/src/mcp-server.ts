@@ -1,15 +1,12 @@
 /**
  * Canary MCP server - exposes Canary intelligence tools to Claude Code.
  *
- * Faithful TypeScript port of `agent/mcp_server.py`. The Python original builds
- * a `FastMCP("canary")` server and registers six `canary__*` tools; this port
- * uses the official MCP TypeScript SDK (`@modelcontextprotocol/sdk`) with
- * `McpServer.registerTool` over a stdio transport.
+ * Registers six `canary__*` tools with the official MCP TypeScript SDK
+ * (`@modelcontextprotocol/sdk`) via `McpServer.registerTool` over stdio.
  *
- * The internal implementation functions (`analyzeFileImpl`, ...) mirror the
- * Python `_*_impl` functions one-for-one and are exported so unit tests can
- * exercise them directly without a live MCP client - exactly as the Python
- * tests call the `_impl` functions. The thin tool wrappers only JSON-wrap the
+ * The internal implementation functions (`analyzeFileImpl`, ...) are exported
+ * so unit tests can exercise them without a live MCP client. The thin tool
+ * wrappers only JSON-wrap the
  * dict the impl returns; the returned dict SHAPE (field names + values) is the
  * MCP contract and is preserved byte-for-byte with the Python oracle.
  *
@@ -35,7 +32,7 @@
  *     (an explicitly-empty env var stays `""`).
  *   - **ensure_ascii.** Hand-built JSON returned to the MCP host is escaped via
  *     the shared {@link ensureAscii} (`util/ensure-ascii.ts`) so non-ASCII units
- *     emit `\uXXXX`, matching Python's default `json.dumps`.
+ *     emit `\uXXXX` (ASCII-safe JSON).
  *   - **splitlines.** `context_snippets` uses {@link pySplitlines}, which drops
  *     a single trailing-newline empty tail exactly as `str.splitlines()` does.
  *   - File writes are LF + UTF-8 on every platform (matches the sibling ports).
@@ -80,7 +77,7 @@ import { Scaffolder } from './core/scaffolder.js';
 import { ensureAscii } from './util/ensure-ascii.js';
 
 // ---------------------------------------------------------------------------
-// Module constants (mirror agent/mcp_server.py)
+// Module constants
 // ---------------------------------------------------------------------------
 
 const SERVER_NAME = 'canary';

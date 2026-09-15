@@ -190,8 +190,8 @@ export function degradationAnnotation(notice: string): string {
 /**
  * Thin real {@link GitHubClient} over the GitHub REST API (`fetch`).
  *
- * Python's private `_RestGitHubClient`, exported here (public, like
- * {@link RestBranchProtectionClient}). Network lives ONLY in `request` and in
+ * Exported (public, like {@link RestBranchProtectionClient}). Network lives
+ * ONLY in `request` and in
  * the default {@link restPageReader}; the write paths have no unit test by
  * design, while the paged read path is covered through the injected `read`
  * seam (#528). A 403 (fork read-only token) surfaces as

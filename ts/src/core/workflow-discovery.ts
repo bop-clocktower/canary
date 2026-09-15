@@ -2,8 +2,6 @@
  * Workflow Discovery -- discovers per-project Jira / GitHub issue workflows
  * and persists the mapping to `.canary/workflow-<key>.json`.
  *
- * Faithful TypeScript port of `agent/core/workflow_discovery.py`.
- *
  * Canary never hardcodes Jira status names or GitHub board columns. Instead, it
  * calls `resolveRole()` which looks up the persisted mapping. If the mapping is
  * missing, `WorkflowDiscovery.discover()` must be called first.
@@ -87,7 +85,7 @@ export interface HttpRequest {
   method?: string;
   headers?: Record<string, string>;
   body?: string;
-  timeout?: number; // seconds (informational; matches Python's timeout arg)
+  timeout?: number; // seconds (informational)
 }
 
 /** A read HTTP response (body already consumed). */
@@ -567,8 +565,8 @@ export class WorkflowDiscovery {
 
   /** Python: `WorkflowDiscovery._mapping_path`. */
   mappingPath(projectKey: string): string {
-    // `u` flag: an astral code point is ONE unit (one `_`), matching Python's
-    // re.sub over code points; without it a surrogate pair becomes two `_`.
+    // `u` flag: an astral code point is ONE unit (one `_`); without it a
+    // surrogate pair becomes two `_`.
     const safeKey = projectKey.replace(/[^A-Za-z0-9_-]/gu, '_');
     return join(this.canaryDir, `workflow-${safeKey}.json`);
   }

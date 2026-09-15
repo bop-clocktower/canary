@@ -15,8 +15,8 @@
  */
 
 /**
- * Escape every non-ASCII UTF-16 code UNIT to `\uXXXX`, matching Python
- * `json.dumps(ensure_ascii=True)`.
+ * Escape every non-ASCII UTF-16 code UNIT to `\uXXXX` (the
+ * same escaping as `json.dumps(ensure_ascii=True)`).
  *
  * Iterating by code unit rather than code point is the load-bearing detail: an
  * astral character's surrogate pair emits `\udXXX\udXXX`, exactly as CPython

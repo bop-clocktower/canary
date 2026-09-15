@@ -256,7 +256,7 @@ function validateInstrumentedLines(
 /** Rough analog of Python's `repr()` for scalar diagnostic values. */
 function repr(value: unknown): string {
   if (typeof value === 'string') return `'${value}'`;
-  // Match Python's `{v!r}` spelling of the JSON scalars so warning messages
+  // Spell the JSON scalars the way `{v!r}` does so warning messages
   // read byte-for-byte like the oracle (true→True, false→False, null→None).
   if (value === true) return 'True';
   if (value === false) return 'False';

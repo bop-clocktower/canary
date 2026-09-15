@@ -1,15 +1,11 @@
 /**
- * CLI startup banner -- faithful TypeScript port of `agent/ui/banner.py`.
+ * CLI startup banner.
  *
- * The Python banner writes raw ANSI escape codes with `print()` (NOT rich), so
- * it never strips color for a non-TTY sink -- the bytes are identical whether
- * stdout is a terminal or a captured test buffer. This port reproduces those
- * exact bytes: the ESC byte (Python `\033`) as `\u{1b}`, the SGR sequences
- * verbatim, and the box-drawing glyphs as `\u{...}` escapes (ASCII-source rule).
- *
- * Only `renderBanner` is ported -- it is all the CLI's `version` command and
- * `--version` option need. `print_result_line` / `print_section` are unused by
- * the CLI and intentionally omitted.
+ * Writes raw ANSI escape codes and never strips color for a non-TTY sink, so
+ * the bytes are identical whether stdout is a terminal or a captured test
+ * buffer: the ESC byte as `\u{1b}`, the SGR sequences verbatim, and the
+ * box-drawing glyphs as `\u{...}` escapes (ASCII-source rule). `renderBanner`
+ * serves the CLI's `version` command and `--version` option.
  */
 
 const ESC = '\u{1b}';
@@ -38,7 +34,7 @@ const RULE = '\u{2500}'.repeat(44); // U+2500 box drawings light horizontal
 
 /**
  * Render the Canary startup banner as a single string (no trailing newline;
- * the caller's line sink adds one, matching Python `print(banner)`).
+ * the caller's line sink adds one).
  */
 export function renderBanner(version: string): string {
   const divider = `${DARK}${RULE}${RESET}`;
