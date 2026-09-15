@@ -1,0 +1,11 @@
+{
+  "issues": [940],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/guardian-heuristic-source-gate.test.ts",
+  "assumptions": [
+    "Root cause: abstainPrCheck wrote the gate summary, provenance and remediation lines to stdout before the JSON document; the scored path already routes human output to stderr under --format json (machineStdout).",
+    "Mirroring the scored path's rule (format json and not --post-comment) is the intended contract; with --post-comment the text stays on stdout as before.",
+    "The JSON shape (abstained: true, skipped, provenance) was already correct; only stream routing changed, so no schema change."
+  ]
+}
