@@ -145,6 +145,11 @@
 
   "advisory": [
     {
+      "check": "Branch prune (dry-run)",
+      "workflow": "dogfood.yml",
+      "reason": "Reports only (#836, ADR 0022): it prints the remote branch deletion set and deletes nothing, so there is nothing to block on. It depends on the GitHub API for PR state, and an API flake must not read as a code failure. It still fails loudly when it abstains (exit 3), because that means the checkout had no remote refs to classify."
+    },
+    {
       "check": "Test quality (canary on canary)",
       "workflow": "dogfood.yml",
       "reason": "Precision not yet known (ADR 0010). The dogfood jobs run canary against canary and currently report a 409-finding baseline that #544 has not triaged. Promoting before the triage would block every PR on findings nobody has confirmed are real."
