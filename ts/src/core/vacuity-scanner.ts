@@ -60,6 +60,11 @@
 
 import { readFileSync } from 'node:fs';
 
+import {
+  declaresDriverFixture,
+  divertE2EInferred,
+  importsBrowserDriver,
+} from './e2e-context.js';
 import type { GateResult, SkipEntry } from './gate-result.js';
 import {
   ASSERT_JS,
@@ -1028,7 +1033,15 @@ export function scanVacuity(path: string): GateResult<VacuityFinding> {
 
   const skipped: SkipEntry[] = [];
   const findings = scanAllBlocks(
-    { code, source, path, python, reaching },
+    {
+      code,
+      source,
+      path,
+      python,
+      reaching,
+      driverImport: !python && importsBrowserDriver(source),
+      sourceLines: source.split('\n'),
+    },
     blocks,
     skipped,
   );
@@ -1053,6 +1066,18 @@ interface ScanContext {
   path: string;
   python: boolean;
   reaching: Set<string> | null;
+  /** The file imports a browser-driver package (#971). */
+  driverImport: boolean;
+  /** `source` by line, for reading a test's declaration signature. */
+  sourceLines: string[];
+}
+
+/** Is `block` a browser-driver test -- by file import, or by fixture (#971)? */
+function inE2EContext(ctx: ScanContext, block: TestBlock): boolean {
+  if (ctx.driverImport) return true;
+  return (
+    !ctx.python && declaresDriverFixture(ctx.sourceLines[block.line - 1] ?? '')
+  );
 }
 
 function scanAllBlocks(
@@ -1097,16 +1122,22 @@ function scanAllBlocks(
           : 'target unresolvable: no @covers annotation and no first-party relative import to infer from',
       });
     }
+    const blockFindings = scanBlock(
+      ctx.code,
+      block,
+      ctx.path,
+      ctx.python,
+      ctx.reaching,
+      annotated,
+      skipped,
+      outOfBand,
+    );
     findings.push(
-      ...scanBlock(
-        ctx.code,
-        block,
-        ctx.path,
-        ctx.python,
-        ctx.reaching,
-        annotated,
+      ...divertE2EInferred(
+        blockFindings,
+        inE2EContext(ctx, block),
+        skipLabel('VAC-002', ctx.path, block),
         skipped,
-        outOfBand,
       ),
     );
   }

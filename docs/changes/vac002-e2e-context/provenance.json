@@ -1,0 +1,14 @@
+{
+  "issues": [971],
+  "route": "bug",
+  "stages": ["harness-debugging"],
+  "reproducingTest": "ts/test/vacuity-e2e-context.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Skip + disclose (issue option 1): an import-inferred VAC-002 in an E2E context moves to skipped with reason 'E2E context, target is the application'; annotated VAC-002 and unit-test files are unchanged.",
+    "Import evidence is file-level: any import/require of @playwright/test, playwright, @wdio/*, cypress, selenium-webdriver or appwright marks every test in the file as E2E context.",
+    "Fixture evidence is per test and read from the declaration line only: a destructured page/browser/driver parameter. A multi-line signature is not detected unless the file also has import evidence.",
+    "File path and name are never evidence (*.spec.ts is also a vitest convention). WebdriverIO specs relying only on injected globals with no import and no fixture are not detected.",
+    "Detection applies to JS/TS files only; pytest files are unchanged."
+  ]
+}
