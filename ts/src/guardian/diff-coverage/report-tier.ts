@@ -25,7 +25,7 @@ import {
   rangesStr,
   selfDescribing,
   splitLines,
-  pyInt,
+  parseStrictInt,
   Fidelity,
   type ChangedUnit,
   type CoverageResult,
@@ -63,8 +63,8 @@ function parseLcov(text: string): ReportIndex {
 function recordDa(hits: LineHits, body: string): void {
   const parts = body.split(',');
   if (parts.length < 2) return;
-  const lineno = pyInt(parts[0]!);
-  const count = pyInt(parts[1]!);
+  const lineno = parseStrictInt(parts[0]!);
+  const count = parseStrictInt(parts[1]!);
   if (lineno === null || count === null) return;
   hits[lineno] = count;
 }

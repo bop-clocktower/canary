@@ -6,7 +6,7 @@
 
 import { attrValue, isWellFormedXml } from './xml.js';
 import {
-  pyInt,
+  parseStrictInt,
   selfDescribing,
   type LineHits,
   type ReportIndex,
@@ -60,7 +60,7 @@ function coberturaBody(text: string): string | null {
   // lower-fidelity tier. Without
   // this, a lenient scanner would happily extract coverage from a broken
   // document, flipping both the fidelity tier AND the covered/uncovered verdict
-  // relative to the oracle.
+  // relative to the reference reader.
   if (!isWellFormedXml(text)) return null;
 
   // Pin to the canonical (namespace-free) Cobertura root; anything else is a
@@ -168,8 +168,8 @@ function readClassLines(body: string, hitsByLine: LineHits): void {
   for (let ln = lineRe.exec(body); ln !== null; ln = lineRe.exec(body)) {
     const num = attrValue(ln[1]!, 'number');
     if (num === null) continue;
-    const lineno = pyInt(num);
-    const hits = pyInt(attrValue(ln[1]!, 'hits') ?? '0');
+    const lineno = parseStrictInt(num);
+    const hits = parseStrictInt(attrValue(ln[1]!, 'hits') ?? '0');
     if (lineno === null || hits === null) continue;
     // A line can appear at both method and class scope; keep the max.
     hitsByLine[lineno] = Math.max(hitsByLine[lineno] ?? 0, hits);

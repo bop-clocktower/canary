@@ -8,7 +8,7 @@ import {
   COVERAGE_JSON_SCHEMA_VERSION,
   isSupportedSchemaVersion,
 } from './coverage-json.js';
-import { isInt, isRecord, pyInt, type LineHits } from '../types.js';
+import { isInt, isRecord, parseStrictInt, type LineHits } from '../types.js';
 
 /**
  * One issue found validating a coverage-json document against the contract.
@@ -124,7 +124,7 @@ function validateLineHits(
       warn(kloc, `hits ${v} is negative; dropped`);
       continue;
     }
-    const lineno = pyInt(k);
+    const lineno = parseStrictInt(k);
     if (lineno === null) {
       warn(kloc, 'line key is not an integer; dropped');
       continue;
@@ -257,7 +257,7 @@ function validateInstrumentedLines(
 function repr(value: unknown): string {
   if (typeof value === 'string') return `'${value}'`;
   // Spell the JSON scalars the way `{v!r}` does so warning messages
-  // read byte-for-byte like the oracle (true→True, false→False, null→None).
+  // read byte-for-byte like Python repr (true→True, false→False, null→None).
   if (value === true) return 'True';
   if (value === false) return 'False';
   if (value === null) return 'None';

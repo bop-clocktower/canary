@@ -724,7 +724,7 @@ function loadSpec(path: string, deps: GuardianDeps): Record<string, unknown> {
   // Python `_load_spec`: `.json` -> json.loads; otherwise yaml.safe_load (with a
   // json.loads fallback only if PyYAML is absent, which it isn't in practice).
   // YAML is a JSON superset, so js-yaml `load` parses .yaml/.yml OpenAPI specs
-  // the oracle accepts. A parse error propagates (Python lets it raise too).
+  // Python accepted. A parse error propagates (Python lets it raise too).
   if (path.endsWith('.json')) {
     return JSON.parse(text) as Record<string, unknown>;
   }
@@ -1931,7 +1931,7 @@ export function createGuardianCommand(
         .argParser((v) => Number.parseInt(v, 10)),
     )
     // Python's `watch` declares `--suite` with NO `-s` short form (unlike
-    // `analyze`); adding `-s` here would accept an invocation the oracle rejects.
+    // `analyze`); adding `-s` here would accept an invocation Python rejected.
     .addOption(new Option('--suite <suite>').default('api'))
     .addOption(new Option('--db-url <url>').env('CANARY_HISTORY_DB_URL'))
     .action(async (opts: WatchOptions) => {

@@ -8,7 +8,7 @@
  * so unit tests can exercise them without a live MCP client. The thin tool
  * wrappers only JSON-wrap the
  * dict the impl returns; the returned dict SHAPE (field names + values) is the
- * MCP contract and is preserved byte-for-byte with the Python oracle.
+ * MCP contract and is preserved byte-for-byte with the original contract.
  *
  * Python->TS nuances:
  *   - **AST-free function extraction.** Python `_extract_file_functions`
@@ -317,7 +317,7 @@ const PY_DEF_RE = /^(\s*)(?:async\s+)?def\s+([A-Za-z_]\w*)/;
  * imbalance means the file would raise `SyntaxError` -- where Python's `ast.parse`
  * returns no functions. A cheap proxy for "parseable": it never rejects valid
  * Python (so it introduces no divergence), and it catches the common WIP case
- * (a mid-edit unclosed paren) so we return `[]` like the oracle instead of
+ * (a mid-edit unclosed paren) so we return `[]` like Python did instead of
  * best-effort names. It does NOT catch every SyntaxError; see the note below.
  */
 function pyBracketsBalanced(s: string): boolean {
@@ -343,7 +343,7 @@ function pyBracketsBalanced(s: string): boolean {
  * not a machine contract): inconsistent indent WIDTHS across sibling blocks can
  * reorder (indent columns approximate AST depth); a non-ASCII identifier name is
  * missed (`\w` is ASCII); and a file that is unparseable in a way brackets still
- * balance yields best-effort names rather than the oracle's `[]`.
+ * balance yields best-effort names rather than Python's `[]`.
  */
 function extractPyFunctions(text: string): string[] {
   // Join backslash-continued physical lines so a `def \\<newline>foo():` header

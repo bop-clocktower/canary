@@ -8,7 +8,7 @@
  *   - `_PYTHON_DEP_PATTERNS` are `re.MULTILINE | re.IGNORECASE` `^`-anchored
  *     patterns. Python `re.MULTILINE` anchors `^` on `\n` ONLY, whereas JS `^`
  *     under the `m` flag also breaks on `\r`, U+2028 and U+2029. To preserve the
- *     oracle exactly, these do NOT use the `m` flag: the `^` is expressed as
+ *     Python behaviour, these do NOT use the `m` flag: the `^` is expressed as
  *     `(?:^|(?<=\n))` (start-of-string OR immediately after a `\n`), and
  *     `re.IGNORECASE` maps to the `i` flag. The remaining regexes
  *     (`_PW_UI_FIXTURE_RE`, `_PACKAGE_SCRIPT_PATTERNS`) contain no `^`/`$`
@@ -28,7 +28,7 @@
  *     manifest hash), so the sort must merely be internally consistent; sorting
  *     by relative-posix-path string matches Python's Path ordering for the flat /
  *     shallow ASCII skill trees in play.
- *   - Human-facing markdown keeps the exact glyphs the oracle emits (checkmark
+ *   - Human-facing markdown keeps the exact glyphs Python emitted (checkmark
  *     U+2705, warning sign U+26A0, em-dash U+2014); they are written as `\u{...}`
  *     escapes so this source stays ASCII while the emitted bytes are identical.
  *   - `Path.home()` (the `~/.canary/skills` overlay tier) is an injectable
@@ -137,7 +137,7 @@ type ManifestDoc = { skills: Manifest; workflows: WorkflowManifest };
 
 /**
  * A stable sha256 of every file under *skillDir* (component-sorted rel-path +
- * bytes). Exported so a test can pin it byte-for-byte to the Python oracle:
+ * bytes). Exported so a test can pin it byte-for-byte to Python output:
  * this hash is compared against Python-written .deploy-manifest.json files on
  * the upgrade path, so any drift misclassifies untouched skills.
  */
@@ -570,7 +570,7 @@ function skillsDocsOverlayReason(
   // none pass the isinstance(dict) check, so `names` ends up empty and the
   // result is unchanged from []. Casting a non-array to `unknown[]` and using
   // for-of would instead THROW (not iterable), crashing detect()/migrate() on a
-  // malformed config the oracle tolerates. Only a real array yields entries.
+  // malformed config Python tolerated. Only a real array yields entries.
   const layers = Array.isArray(layersRaw) ? layersRaw : [];
   const names = new Set<string>();
   for (const layer of layers) {

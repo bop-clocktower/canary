@@ -61,7 +61,7 @@ export class HealResult {
 // NOTE on anchors: Python's `re.MULTILINE` treats ONLY `\n` as a line
 // boundary, but JS caret/dollar under /m also break on lone CR and
 // U+2028/U+2029. Under /g that would let these rules fire on lone-CR /
-// where the oracle matches nothing — and since `apply()` rewrites the file,
+// where Python matched nothing — and since `apply()` rewrites the file,
 // that silently changes content. So we anchor on `\n` explicitly —
 // `(?:^|(?<=\n))` for line start, `(?=\n|$)` for line end — and drop `/m`.
 
@@ -99,9 +99,9 @@ function rstripNewlines(s: string): string {
 /**
  * Python `str[:n]` slices by code point; JS `slice` slices by UTF-16 unit, so
  * an astral char (e.g. an emoji) counts as 2 and truncates early. Slice by code
- * point to match the oracle.
+ * point to match Python slicing.
  */
-function pySlice(s: string, n: number): string {
+function takeCodePoints(s: string, n: number): string {
   return Array.from(s).slice(0, n).join('');
 }
 
@@ -162,7 +162,7 @@ function fixMissingAwait(code: string, changes: HealChange[]): string {
           'HEAL-003',
           before,
           after,
-          `Added missing \`await\` before \`${pySlice(call, 40)}\`.`,
+          `Added missing \`await\` before \`${takeCodePoints(call, 40)}\`.`,
         ),
       );
       return after;
