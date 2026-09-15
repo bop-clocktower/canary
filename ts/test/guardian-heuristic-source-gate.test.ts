@@ -69,10 +69,21 @@ describe('isSourcePath (#413)', () => {
     'lib/thing.go',
     'cmd/main.rs',
     'app/models/user.rb',
-    'scripts/deploy.sh',
     'src/App.vue',
   ])('treats %s as source', (path) => {
     expect(isSourcePath(path)).toBe(true);
+  });
+
+  // #933 reversed #413's "`.sh` is source": ops and seed scripts produced
+  // "no test file references" findings that no repo would ever satisfy.
+  it.each([
+    'scripts/seed.sh',
+    'scripts/setup.bash',
+    'tools/env.zsh',
+    'ops/Deploy.ps1',
+    'ops/Helpers.psm1',
+  ])('treats shell script %s as non-source (#933: unsatisfiable)', (path) => {
+    expect(isSourcePath(path)).toBe(false);
   });
 
   it.each([
@@ -115,6 +126,23 @@ describe('filterHeuristicNoise (#413)', () => {
 
     expect(kept.length).toBe(2);
     expect(dropped).toEqual([]);
+  });
+
+  it('KEEPS coverage- and graph-verified verdicts on a shell path (#933)', () => {
+    // #933 only moves shell out of the heuristic floor; real evidence on a
+    // `.sh` file is still a finding.
+    const results = [
+      result('scripts/seed.sh', Fidelity.CoverageVerified),
+      result('scripts/seed.sh', Fidelity.GraphVerified),
+      result('scripts/seed.sh', Fidelity.Heuristic),
+    ];
+    const [kept, dropped] = filterHeuristicNoise(results, []);
+
+    expect(kept.map((r) => r.fidelity)).toEqual([
+      Fidelity.CoverageVerified,
+      Fidelity.GraphVerified,
+    ]);
+    expect(dropped.map((r) => r.fidelity)).toEqual([Fidelity.Heuristic]);
   });
 
   it('keeps an uncovered heuristic verdict on a source path', () => {
@@ -258,6 +286,33 @@ describe('pr-check heuristic FP suppression (#413)', () => {
     );
     expect(paths).toContain('src/widget.ts');
     expect(paths).not.toContain('path/to/service.config');
+  });
+
+  it('drops a changed seed script from coverage units as a non-source skip (#933)', async () => {
+    mkdirSync(join(tmp, 'scripts'), { recursive: true });
+    writeFileSync(join(tmp, 'scripts', 'seed.sh'), 'echo seed\n', 'utf-8');
+    const diff = `diff --git a/scripts/seed.sh b/scripts/seed.sh
+index 5555555..6666666 100644
+--- a/scripts/seed.sh
++++ b/scripts/seed.sh
+@@ -0,0 +1,1 @@
++echo seed
+`;
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--format', 'json'],
+      { input: diff, cwd: tmp },
+    );
+
+    // Pre-#933 this was a scorable unit with a "no test file references"
+    // finding. Now the one SOURCE_EXTENSIONS set drops it at BOTH floors: no
+    // heuristic finding, and #936's coverage-unit floor skips it as non-source.
+    expect(res.code).toBe(ABSTAINED);
+    expect(res.stdout).not.toContain('no test file references');
+    const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    expect(data.findings).toEqual([]);
+    expect(data.skipped).toEqual([
+      { name: 'scripts/seed.sh', reason: 'non-source' },
+    ]);
   });
 
   it('a config-only diff is skipped below the source floor, never verified (#928)', async () => {
