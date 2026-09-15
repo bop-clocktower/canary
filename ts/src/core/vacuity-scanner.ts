@@ -786,6 +786,29 @@ const TRIVIAL_PRESENCE_PY =
   /^assert\s+([A-Za-z_][\w.]*?)(?:\s+is\s+not\s+None)?\s*(?:,|$)/;
 const SUBJECT_ROOT = /^([A-Za-z_$][\w$]*)(?:\.[A-Za-z_$][\w$]*)*$/;
 
+/**
+ * An assertion line that proves only an absence or a trivial presence.
+ *
+ * Exported for the test inventory's depth tier (#957), so "weak" means the same
+ * thing there as it does to VAC-003 and the bystander rule.
+ */
+export function isWeakAssertion(line: string, python: boolean): boolean {
+  const t = line.trim();
+  if (python)
+    return PY_ABSENCE_ASSERTION.test(t) || TRIVIAL_PRESENCE_PY.test(t);
+  return ABSENCE_ASSERTION.test(t) || TRIVIAL_PRESENCE_JS.test(t);
+}
+
+/** Any recognised assertion, in the vocabulary the linter uses. */
+export function isAssertion(line: string, python: boolean): boolean {
+  return (python ? PY_ASSERTION : JS_ASSERTION).test(line);
+}
+
+/** True for a Python module root the target inference treats as stdlib. */
+export function isPythonStdlibModule(moduleRoot: string): boolean {
+  return PY_STDLIB.has(moduleRoot);
+}
+
 function subjectRoot(expr: string | null | undefined): string | null {
   return expr ? (SUBJECT_ROOT.exec(normalize(expr))?.[1] ?? null) : null;
 }

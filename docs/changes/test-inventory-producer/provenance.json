@@ -1,0 +1,27 @@
+{
+  "issues": [957],
+  "fleet": "roadmap-fleet",
+  "route": "feature",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "tdd",
+    "verification",
+    "review"
+  ],
+  "pipelineProvenance": "degraded: harness:brainstorming and harness:autopilot were invoked via the Skill tool, but brainstorming ran autonomously (the fleet's settled fork plus recommended defaults D1-D7 recorded in the spec stood in for the interactive question and sign-off rounds), and autopilot's plan -> TDD execute -> verify -> review states ran inline in the fleet worker session rather than as separate persona subagents, following the #884 lane's precedent",
+  "spec": "docs/changes/test-inventory-producer/proposal.md",
+  "planArtifact": "docs/changes/test-inventory-producer/plans/2026-09-15-test-inventory-producer-plan.md",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "The command is named `canary inventory`, not `canary coverage`: it emits an inventory, not line coverage, and the ci-ready skip reason now names it.",
+    "Depth is a static assertion tier read from source (0 no recognised assertion, 1 only absence or trivial-presence assertions, 2 at least one shaped assertion), reusing the linter's and vacuity scanner's vocabulary. It is not runtime endpoint coverage, and the schema doc says so.",
+    "A test maps to source through its first-party imports (JS relative import/require/import(); Python `from x.y import`, stdlib excluded), resolved to root-relative, extension-stripped paths and matched to critical-area paths by path suffix.",
+    "Zero tests found means no inventory is written and `canary inventory` exits 3; ci-ready independently treats an inventory listing zero tests as an abstention for all three checks.",
+    "Without critical-areas.json, coverage-depth and assertion-quality score suite-wide (every import target / every test) and say so; critical-paths skips.",
+    "critical-paths uses the top 5 areas by risk_score: pass when all have depth >= 1, warn at exactly one uncovered, fail at two or more, matching the canary-ci-ready skill text.",
+    "Suite-runtime and flakiness are untouched; they belong to the concurrent #956 lane."
+  ],
+  "ci": "degraded: CI is single-OS (ubuntu-latest only, #892); all-OS verification not applicable"
+}

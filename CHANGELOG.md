@@ -16,6 +16,18 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary inventory`: ci-ready's coverage, assertion and critical-path checks
+  now score** (#957). The new command writes `.canary/test-inventory.json` in a
+  documented, versioned schema (`docs/guides/test-inventory.md`). Each test gets
+  a static assertion depth: 0 (no assertion), 1 (only absence or
+  trivial-presence assertions), or 2 (a shaped assertion). Each file gets its
+  first-party import targets. It reuses `review-test`'s and `vacuity-check`'s
+  enumeration rather than a second traversal. When zero tests are found it exits
+  3 and writes nothing. `canary ci-ready` now scores coverage-depth,
+  assertion-quality and critical-paths against the inventory, instead of
+  skipping them with a message about a `canary coverage` command that never
+  existed. A missing, invalid or zero-test inventory still skips, with the
+  reason named.
 - `canary history record` accepts a Playwright `json` reporter file, detected by
   shape. Playwright `flaky` (and failed-then-passed retries) are recorded as
   `flaky`, and each test and run carries `duration_ms`. JUnit XML is still

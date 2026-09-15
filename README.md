@@ -268,6 +268,7 @@ Use, process, escalation) lives in
 | `canary review-test <path>`               | CLI, deterministic — static lint only, no LLM.                                   |
 | `canary vacuity-check <path>`             | CLI, deterministic — tests that pass without proving anything; advisory.         |
 | `canary ci-ready`                         | CLI, deterministic — five CI-readiness checks; missing inputs skip, never pass.  |
+| `canary inventory [testDir]`              | CLI, deterministic — writes `.canary/test-inventory.json` for `ci-ready`.        |
 | `canary scaling-curve [points]`           | CLI, deterministic — growth exponent of cost vs input size (`--run` drives k6).  |
 | `canary permission-matrix <model>`        | CLI, deterministic — role × tenant × endpoint authz tests from a declared grid.  |
 | `canary promote-check <file>`             | CLI, deterministic — may this generated test enter the committed suite?          |

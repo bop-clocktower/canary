@@ -8,13 +8,14 @@
  *   - 0: nothing failed. That covers both `ready` and `incomplete`; the text
  *     output says loudly which one it is.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
 
 import { CliExitError } from './cli-common.js';
 import { EXIT_ABSTAINED } from './core/gate-result.js';
 import { scoreCiReady, type CiReadyReport } from './core/ci-ready.js';
+import { parseCriticalAreas, parseInventory } from './core/inventory-checks.js';
 import { NdjsonHistoryStore } from './history/ndjson-store.js';
 import type { RunRecord } from './history/record.js';
 import type { MainDeps } from './main-deps.js';
@@ -25,6 +26,12 @@ const HISTORY_FILE = join('test-results', 'reports', 'history-v2.jsonl');
 function readRuns(root: string): RunRecord[] | null {
   const path = join(root, HISTORY_FILE);
   return existsSync(path) ? new NdjsonHistoryStore(path).readAll() : null;
+}
+
+/** The file's text, or null when it does not exist. */
+function readOptional(root: string, name: string): string | null {
+  const path = join(root, '.canary', name);
+  return existsSync(path) ? readFileSync(path, 'utf-8') : null;
 }
 
 function renderText(report: CiReadyReport): string[] {
@@ -66,9 +73,9 @@ export function buildCiReadyCommand(deps: MainDeps): Command {
       const report = scoreCiReady({
         runs: readRuns(root),
         historyPath: HISTORY_FILE,
-        hasInventory: existsSync(join(root, '.canary', 'test-inventory.json')),
-        hasCriticalAreas: existsSync(
-          join(root, '.canary', 'critical-areas.json'),
+        inventory: parseInventory(readOptional(root, 'test-inventory.json')),
+        criticalAreas: parseCriticalAreas(
+          readOptional(root, 'critical-areas.json'),
         ),
       });
       if (opts.json === true) {
