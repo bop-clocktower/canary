@@ -1,0 +1,6 @@
+{
+  "id": "katana-last-coverage-deletion",
+  "target": "canary-katana",
+  "plantedDefect": "a removed test that was the only cover of a high-risk area",
+  "expect": { "findingKind": "last-coverage-removed" }
+}

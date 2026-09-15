@@ -1,0 +1,33 @@
+{
+  "$comment": "REHEARSAL FIXTURE (#834, ADR 0018). Synthetic. Twelve tracked tests recorded at 400ms; one planted slow test observed at 12000ms. The ratchet must name it.",
+  "baseline": {
+    "tests": {
+      "rehearsal::widget 01": 400,
+      "rehearsal::widget 02": 400,
+      "rehearsal::widget 03": 400,
+      "rehearsal::widget 04": 400,
+      "rehearsal::widget 05": 400,
+      "rehearsal::widget 06": 400,
+      "rehearsal::widget 07": 400,
+      "rehearsal::widget 08": 400,
+      "rehearsal::widget 09": 400,
+      "rehearsal::widget 10": 400,
+      "rehearsal::widget 11": 400,
+      "rehearsal::planted slow widget": 400
+    }
+  },
+  "observedMs": {
+    "rehearsal::widget 01": 400,
+    "rehearsal::widget 02": 400,
+    "rehearsal::widget 03": 400,
+    "rehearsal::widget 04": 400,
+    "rehearsal::widget 05": 400,
+    "rehearsal::widget 06": 400,
+    "rehearsal::widget 07": 400,
+    "rehearsal::widget 08": 400,
+    "rehearsal::widget 09": 400,
+    "rehearsal::widget 10": 400,
+    "rehearsal::widget 11": 400,
+    "rehearsal::planted slow widget": 12000
+  }
+}

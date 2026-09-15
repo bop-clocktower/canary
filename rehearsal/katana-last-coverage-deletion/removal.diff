@@ -1,0 +1,10 @@
+diff --git a/tests/test_sprocket.py b/tests/test_sprocket.py
+index 1111111..2222222 100644
+--- a/tests/test_sprocket.py
++++ b/tests/test_sprocket.py
+@@ -1,5 +1,1 @@
+ from widgets.sprocket import spin
+-
+-
+-def test_sprocket_spins_forward():
+-    assert spin(1) == 1

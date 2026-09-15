@@ -215,7 +215,8 @@
       "ts/src/mcp-server.ts",
       "ts/test/batwoman-testkit.ts",
       "ts/test/doc-links-testkit.ts",
-      "ts/vitest.config.ts"
+      "ts/vitest.config.ts",
+      "scripts/rehearse.mjs"
     ],
     "drift": {
       "checkApiSignatures": false,
@@ -299,7 +300,8 @@
       "ts/src/mcp-server.ts",
       "ts/test/batwoman-testkit.ts",
       "ts/test/doc-links-testkit.ts",
-      "ts/vitest.config.ts"
+      "ts/vitest.config.ts",
+      "scripts/rehearse.mjs"
     ]
   },
   "knowledge": {

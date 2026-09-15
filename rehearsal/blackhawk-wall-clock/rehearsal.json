@@ -1,0 +1,6 @@
+{
+  "id": "blackhawk-wall-clock",
+  "target": "canary-blackhawk",
+  "plantedDefect": "a test that reads the real wall clock",
+  "expect": { "ruleId": "BH001-wall-clock" }
+}
