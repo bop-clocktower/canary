@@ -133,7 +133,10 @@ function scoreCriticalPaths(
   };
 }
 
-/** Same 30-run window as flakiness; thresholds from the SKILL's fallback. */
+/**
+ * 30 runs, but counted among runs that CARRY a duration, so the window can
+ * reach further back than flakiness's. Thresholds from the SKILL's fallback.
+ */
 const RUNTIME_WINDOW_RUNS = 30;
 const RUNTIME_WARN_MS = 5 * 60_000;
 const RUNTIME_FAIL_MS = 10 * 60_000;

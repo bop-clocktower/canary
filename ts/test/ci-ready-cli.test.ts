@@ -191,6 +191,18 @@ describe('canary ci-ready', () => {
       expect(code).toBe(1);
     });
 
+    it('warns at exactly 5 and 10 minutes, and fails 1ms past 10', async () => {
+      for (const [ms, verdict] of [
+        [5 * MIN, 'warn'],
+        [10 * MIN, 'warn'],
+        [10 * MIN + 1, 'fail'],
+      ] as const) {
+        writeHistory(root, 3, [], Array(3).fill(ms));
+        const { report } = await runJson(root);
+        expect(check(report, 'suite-runtime').verdict).toBe(verdict);
+      }
+    });
+
     it('scores only the last 30 runs that carry a duration', async () => {
       const durations = [...Array(10).fill(20 * MIN), ...Array(30).fill(MIN)];
       writeHistory(root, 40, [], durations);

@@ -40,10 +40,11 @@ all five checks produce.
 
 Keep "time to first trustworthy gate" as a STRATEGY.md key metric, and disclose
 in STRATEGY.md, in the same form as the escaped-defect ratio, that it is only
-partially produced: `canary ci-ready` scores 1 of 5 checks (flakiness), the
-other four report `skip` with a named missing input, and the metric is tracked
-manually until they produce. The disclosure names the missing producers (test
-inventory, run durations) so the gap is visible where the metric is read.
+partially produced: `canary ci-ready` scores 1 of 5 checks (flakiness; now 2 of
+5, see the #956 update), the other four report `skip` with a named missing
+input, and the metric is tracked manually until they produce. The disclosure
+names the missing producers (test inventory, run durations) so the gap is
+visible where the metric is read.
 
 The wording lands in the same change as this ADR. The metric's derivation is not
 changed here; option B stays available if the ci-ready checks never fill in.

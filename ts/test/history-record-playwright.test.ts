@@ -167,6 +167,14 @@ describe('Playwright report reader', () => {
     );
   });
 
+  it('treats a zero stats.duration as missing and sums the tests instead', () => {
+    const r = report([spec('a', [pwTest('expected', [PASS(100)])])], {
+      duration: 0,
+    });
+    const built = buildRunFromReport('playwright', r, CTX);
+    expect(built.run.duration_ms).toBe(100);
+  });
+
   it('suffixes the project name and appends a distinct test title', () => {
     const r = report([
       spec('adds item', [

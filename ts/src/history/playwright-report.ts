@@ -190,7 +190,10 @@ function startedMs(report: PwReport, nowMs: number): number {
 
 function runDuration(report: PwReport, results: TestResultInput[]): number {
   const raw = report.stats?.duration;
-  if (typeof raw === 'number' && Number.isFinite(raw)) return Math.round(raw);
+  // A non-positive wall clock on a report with tests is not a measurement.
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+    return Math.round(raw);
+  }
   return results.reduce((n, r) => n + (r.duration_ms ?? 0), 0);
 }
 
