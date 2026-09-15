@@ -67,7 +67,7 @@ const JS_TEST_FILE_RE = new RegExp(
   `\\.(test|spec)\\.(${JS_TEST_EXTENSIONS.map((e) => e.slice(1)).join('|')})$`,
 );
 
-/** Recursive test-file glob matching Python's `rglob` union, sorted by path. */
+/** Recursive test-file glob (union of the test patterns), sorted by path. */
 export function collectTestFiles(dir: string): string[] {
   return walkFiles(dir)
     .filter((p) => {

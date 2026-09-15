@@ -1,8 +1,7 @@
 /**
  * Discovers Canary skills: bundled defaults and local project overlays.
  *
- * Faithful TypeScript port of `agent/core/skill_registry.py`. Implements the
- * discovery convention defined in docs/specs/skill-discovery.md.
+ * Implements the discovery convention defined in docs/specs/skill-discovery.md.
  *
  * Skills are SKILL.md files with YAML-style frontmatter. The optional `cli:` and
  * `entry:` frontmatter fields let a skill ship executable code alongside its
@@ -65,7 +64,7 @@ function pyTruthy(value: unknown): boolean {
 }
 
 /**
- * Order two strings by Unicode code point, matching Python `sorted()`. JS's
+ * Order two strings by Unicode code point (a locale-free order). JS's
  * default string comparison is by UTF-16 code unit, which mis-orders names
  * containing astral characters (a lead surrogate 0xD800-0xDBFF sorts before
  * BMP chars like U+E000, where Python orders by the true code point). Skill
@@ -462,9 +461,7 @@ export class SkillRegistry {
     });
   }
 
-  // Public (Python `_parse_nested` is underscore-private but used cross-module):
-  // the migrator port parses overlay SKILL.md files directly through this, as
-  // `agent/core/migrator.py::_collect_overlay_skills` does with `reg._parse_nested`.
+  // Public: the migrator parses overlay SKILL.md files directly through this.
   parseNested(path: string, dirName: string, source: string): SkillInfo | null {
     let text: string;
     try {

@@ -56,8 +56,8 @@ function coberturaBody(text: string): string | null {
   // any fixed window, so a windowed check is bypassable.
   if (text.includes('<!DOCTYPE') && text.includes('<!ENTITY')) return null;
 
-  // Reject malformed XML up front, matching Python's `ET.fromstring` raising
-  // `ParseError` → the caller falls through to a lower-fidelity tier. Without
+  // Reject malformed XML up front, so the caller falls through to a
+  // lower-fidelity tier. Without
   // this, a lenient scanner would happily extract coverage from a broken
   // document, flipping both the fidelity tier AND the covered/uncovered verdict
   // relative to the oracle.

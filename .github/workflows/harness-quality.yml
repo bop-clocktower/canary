@@ -298,9 +298,8 @@ jobs:
           fi
 
   ts-validate:
-    # Pilot of the Python→TS strangler migration (docs/plans/2026-07-22-ts-
-    # migration-pilot-analysis-plan.md). Independent of the Python `validate`
-    # job — the two run in parallel and the Python engine is unaffected.
+    # The TS engine's gates (typecheck, format, test + coverage). The name
+    # keeps "pilot" because it is a required check context.
     name: TS engine (pilot)
     runs-on: ubuntu-latest
     steps:
@@ -365,11 +364,9 @@ jobs:
         run: npm test
 
   skills-validate:
-    # First JS skill (canary-savant) and the template test harness for skills
-    # migrating off Python (canary mirrors harness, which is TS/Node). Runs in
-    # parallel; the Python `validate` job is unaffected. Python + pytest are
-    # installed because savant's Tier-2 integration test spawns a real pytest
-    # baseline to exercise the JUnit parse.
+    # Test harness for the JS skills (canary-savant first). Python + pytest are
+    # installed on purpose: savant's Tier-2 integration test spawns a real
+    # pytest baseline to exercise the JUnit parse.
     name: Skills (JS)
     runs-on: ubuntu-latest
     steps:

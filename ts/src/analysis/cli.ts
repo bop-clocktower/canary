@@ -1,15 +1,14 @@
 /**
- * CLI subcommands for `canary analyze` -- faithful port of
- * `agent/analysis/cli.py` (the `analyze_app` Typer sub-app), wired to the
- * already-ported analysis engine + report builders (`engine.ts`, `reports.ts`,
- * `rows.ts`) and the local NDJSON history store.
+ * CLI subcommands for `canary analyze`, wired to the analysis engine + report
+ * builders (`engine.ts`, `reports.ts`, `rows.ts`) and the local NDJSON history
+ * store.
  *
  * Follows the guardian CLI conventions (see `../cli-common.ts`): a
  * {@link createAnalyzeCommand} factory wired to an injectable {@link AnalyzeDeps},
  * and `normalizeUsageExit` on every command so usage errors exit 2. The
- * history-backed subcommands raise no business exit and return 0 (matching
- * Python). `gh-flaky` (#884) has no Python original and follows the CLI-wide
- * gate contract: 1 for candidates, 3 when abstained or unverifiable.
+ * history-backed subcommands raise no business exit and return 0. `gh-flaky`
+ * (#884) follows the CLI-wide gate contract: 1 for candidates, 3 when
+ * abstained or unverifiable.
  *
  * Python->TS fidelity notes:
  *   - `json.dumps(x, indent=2)` -> {@link jsonIndent2} (byte-exact + ensure_ascii).
@@ -22,8 +21,8 @@
  *     walking raw run records, which only the local backend exposes; against a
  *     remote backend each names itself as unverifiable instead of rendering an
  *     empty report. No Python analyze test exercised a remote store.
- *   - `area-health` accepts `--json` but ignores it -- faithful to the Python
- *     command, which never branches on `output_json`.
+ *   - `area-health` accepts `--json` but ignores it: the command never
+ *     branches on `--json`.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -422,8 +421,8 @@ interface AreaHealthOptions {
 
 function areaHealthCmd(opts: AreaHealthOptions, deps: AnalyzeDeps): void {
   // #508 Wave 4a: this command builds its report from a HARDCODED empty row
-  // set (faithful to the Python original, which did the same and never branched
-  // on --json). Its denominator is therefore UNCONDITIONALLY zero -- with a
+  // set and never branches on --json. Its denominator is therefore
+  // UNCONDITIONALLY zero -- with a
   // thousand runs recorded it still renders "no area health data", which reads
   // as a measured all-clear and is not one. So it always abstains, whatever the
   // store holds. Wiring a real row set is a separate scope call: it changes the

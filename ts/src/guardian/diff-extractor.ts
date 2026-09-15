@@ -1,15 +1,14 @@
 /**
  * OpenAPI spec diff extractor.
  *
- * Faithful TypeScript port of `agent/guardian/diff_extractor.py`. Compares two
- * OpenAPI specs (before/after a commit) and produces a structured list of
- * added, removed, and changed endpoints.
+ * Compares two OpenAPI specs (before/after a commit) and produces a structured
+ * list of added, removed, and changed endpoints.
  *
  * Input: parsed objects (from JSON.parse or a YAML loader).
  * Output: an `ApiDiff` with three lists of `EndpointChange`.
  */
 
-/** Python: `ChangeType(str, Enum)`. */
+/** How an endpoint differs between the two specs. */
 export enum ChangeType {
   ADDED = 'added',
   REMOVED = 'removed',
@@ -17,16 +16,16 @@ export enum ChangeType {
 }
 
 /**
- * Python: `EndpointChange` dataclass. A class (rather than a bare interface) so
- * the constructor supplies the same field defaults the dataclass does
+ * One endpoint's change. A class (rather than a bare interface) so the
+ * constructor supplies the field defaults
  * (`operation_id`/`summary` -> "", `before`/`after` -> {}).
  */
 export class EndpointChange {
   path: string;
   method: string;
   change_type: ChangeType;
-  // `string | null`: mirrors Python `dict.get("operationId", "")` — a MISSING
-  // key defaults to "", but a present-null value passes through as `null`.
+  // `string | null`: a MISSING `operationId` key defaults to "", but a
+  // present-null value passes through as `null`.
   operation_id: string | null;
   summary: string | null;
   before: Record<string, unknown>;
@@ -53,7 +52,7 @@ export class EndpointChange {
   }
 }
 
-/** Python: `ApiDiff` dataclass. */
+/** The full diff: added, removed, and changed endpoints. */
 export class ApiDiff {
   constructor(
     public added: EndpointChange[],
@@ -61,7 +60,7 @@ export class ApiDiff {
     public changed: EndpointChange[],
   ) {}
 
-  /** Python: `is_empty` property. */
+  /** True when no endpoint was added, removed, or changed. */
   get isEmpty(): boolean {
     return !(this.added.length || this.removed.length || this.changed.length);
   }
@@ -87,16 +86,16 @@ export const VALID_CHANGES = [
   'status-codes',
 ] as const;
 
-/** Collision-free composite key for a (path, method) pair (Python tuple key). */
+/** Collision-free composite key for a (path, method) pair. */
 function opKey(path: string, method: string): string {
   return JSON.stringify([path, method]);
 }
 
 /**
- * Python-truthiness for JSON-shaped values: `None`/`undefined`, `false`, `0`,
- * `""`, empty array, and empty object are all falsy (mirrors `if op:`).
+ * False for `null`/`undefined`, `false`, `0`, `""`, and an empty array or
+ * object; true for every other value.
  */
-function pyTruthy(value: unknown): boolean {
+function isTruthy(value: unknown): boolean {
   if (value === null || value === undefined || value === false) return false;
   if (value === 0 || value === '') return false;
   if (Array.isArray(value)) return value.length > 0;
@@ -104,13 +103,13 @@ function pyTruthy(value: unknown): boolean {
   return Boolean(value);
 }
 
-/** Python `a or b`: the fallback wins only when `a` is falsy. */
-function pyOr<T>(value: unknown, fallback: T): unknown {
-  return pyTruthy(value) ? value : fallback;
+/** `value` when {@link isTruthy}, else `fallback`. */
+function orDefault<T>(value: unknown, fallback: T): unknown {
+  return isTruthy(value) ? value : fallback;
 }
 
-/** Python `dict.get(key, default)`: default only on a missing key. */
-function pyGet(
+/** `obj[key]` when the key is present (even if falsy), else `fallback`. */
+function getOrDefault(
   obj: Record<string, unknown>,
   key: string,
   fallback: unknown,
@@ -123,33 +122,36 @@ function pyGet(
  * undefined interchangeable. A boolean never equals a number (#922): a spec's
  * true -> 1 rewrite changes the type consumers see, so it is a change.
  */
-function pyEqual(a: unknown, b: unknown): boolean {
+function specValueEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
-  if (isNone(a) || isNone(b)) return isNone(a) && isNone(b);
-  if (Array.isArray(a) || Array.isArray(b)) return pyListEqual(a, b);
-  return pyDictEqual(a, b);
+  if (isAbsent(a) || isAbsent(b)) return isAbsent(a) && isAbsent(b);
+  if (Array.isArray(a) || Array.isArray(b)) return arrayEqual(a, b);
+  return objectEqual(a, b);
 }
 
-/** Python `None`: JSON `null` or a missing key read as `undefined`. */
-function isNone(value: unknown): boolean {
+/** JSON `null`, or a missing key read as `undefined`. */
+function isAbsent(value: unknown): boolean {
   return value === null || value === undefined;
 }
 
-/** Python `list == list`: same length, element-wise equal in order. */
-function pyListEqual(a: unknown, b: unknown): boolean {
+/** Both arrays, same length, element-wise {@link specValueEqual} in order. */
+function arrayEqual(a: unknown, b: unknown): boolean {
   if (!Array.isArray(a) || !Array.isArray(b)) return false;
   if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (!pyEqual(a[i], b[i])) return false;
+  for (let i = 0; i < a.length; i++)
+    if (!specValueEqual(a[i], b[i])) return false;
   return true;
 }
 
-/** Python `dict == dict`: same key set in any order, values equal. */
-function pyDictEqual(a: unknown, b: unknown): boolean {
+/** Both objects, same key set in any order, values {@link specValueEqual}. */
+function objectEqual(a: unknown, b: unknown): boolean {
   if (typeof a !== 'object' || typeof b !== 'object') return false;
   const [ao, bo] = [a, b] as Record<string, unknown>[];
   const keys = Object.keys(ao!);
   if (keys.length !== Object.keys(bo!).length) return false;
-  return keys.every((k) => Object.hasOwn(bo!, k) && pyEqual(ao![k], bo![k]));
+  return keys.every(
+    (k) => Object.hasOwn(bo!, k) && specValueEqual(ao![k], bo![k]),
+  );
 }
 
 function setEqual(a: Set<string>, b: Set<string>): boolean {
@@ -161,35 +163,39 @@ function setEqual(a: Set<string>, b: Set<string>): boolean {
 }
 
 /**
- * Python: `classify_changes`. Classify a changed OpenAPI operation into the
- * frozen change vocabulary. Returns every applicable category ordered by
- * `VALID_CHANGES`; a change confined to non-contract fields returns [].
+ * Classify a changed OpenAPI operation into the frozen change vocabulary.
+ * Returns every applicable category ordered by `VALID_CHANGES`; a change
+ * confined to non-contract fields returns [].
  */
 export function classifyChanges(
   before: Record<string, unknown>,
   after: Record<string, unknown>,
 ): string[] {
   const found = new Set<string>();
+  const params = (op: Record<string, unknown>) =>
+    orDefault(op['parameters'], []);
 
-  if (!pyEqual(pyOr(before['parameters'], []), pyOr(after['parameters'], []))) {
+  if (!specValueEqual(params(before), params(after))) {
     found.add('params');
   }
-  if (!pyEqual(before['requestBody'], after['requestBody'])) {
+  if (!specValueEqual(before['requestBody'], after['requestBody'])) {
     found.add('request-body');
   }
-  if (!pyEqual(before['security'], after['security'])) {
+  if (!specValueEqual(before['security'], after['security'])) {
     found.add('auth');
   }
 
-  const beforeResp = pyOr(before['responses'], {}) as Record<string, unknown>;
-  const afterResp = pyOr(after['responses'], {}) as Record<string, unknown>;
+  type Responses = Record<string, unknown>;
+  const beforeResp = orDefault(before['responses'], {}) as Responses;
+  const afterResp = orDefault(after['responses'], {}) as Responses;
   const beforeKeys = new Set(Object.keys(beforeResp));
   const afterKeys = new Set(Object.keys(afterResp));
   if (!setEqual(beforeKeys, afterKeys)) {
     found.add('status-codes');
   }
   for (const code of beforeKeys) {
-    if (afterKeys.has(code) && !pyEqual(beforeResp[code], afterResp[code])) {
+    if (!afterKeys.has(code)) continue;
+    if (!specValueEqual(beforeResp[code], afterResp[code])) {
       found.add('response');
       break;
     }
@@ -204,18 +210,15 @@ interface Operation {
   op: Record<string, unknown>;
 }
 
-/**
- * Python: `_iter_operations`. Insertion-ordered to match Python's dict
- * iteration order.
- */
+/** Operations keyed by (path, method), in spec insertion order. */
 function iterOperations(spec: Record<string, unknown>): Map<string, Operation> {
   const result = new Map<string, Operation>();
-  const paths = pyOr(spec['paths'], {}) as Record<string, unknown>;
+  const paths = orDefault(spec['paths'], {}) as Record<string, unknown>;
   for (const [path, pathItemRaw] of Object.entries(paths)) {
     const pathItem = pathItemRaw as Record<string, unknown>;
     for (const method of HTTP_METHODS) {
       const op = pathItem[method];
-      if (pyTruthy(op)) {
+      if (isTruthy(op)) {
         result.set(opKey(path, method), {
           path,
           method,
@@ -227,10 +230,7 @@ function iterOperations(spec: Record<string, unknown>): Map<string, Operation> {
   return result;
 }
 
-/**
- * Python: `extract_api_diff`. Compare two OpenAPI spec objects and return the
- * diff.
- */
+/** Compare two OpenAPI spec objects and return the diff. */
 export function extractApiDiff(
   before: Record<string, unknown>,
   after: Record<string, unknown>,
@@ -241,6 +241,7 @@ export function extractApiDiff(
   const added: EndpointChange[] = [];
   const removed: EndpointChange[] = [];
   const changed: EndpointChange[] = [];
+  type Str = string | null;
 
   for (const [key, { path, method, op }] of afterOps) {
     if (!beforeOps.has(key)) {
@@ -249,25 +250,22 @@ export function extractApiDiff(
           path,
           method,
           change_type: ChangeType.ADDED,
-          operation_id: pyGet(op, 'operationId', '') as string | null,
-          summary: pyGet(op, 'summary', '') as string | null,
+          operation_id: getOrDefault(op, 'operationId', '') as Str,
+          summary: getOrDefault(op, 'summary', '') as Str,
           after: op,
         }),
       );
     } else {
       const beforeOp = beforeOps.get(key)!.op;
-      if (!pyEqual(op, beforeOp)) {
+      if (!specValueEqual(op, beforeOp)) {
+        const priorId = getOrDefault(beforeOp, 'operationId', '');
         changed.push(
           new EndpointChange({
             path,
             method,
             change_type: ChangeType.CHANGED,
-            operation_id: pyGet(
-              op,
-              'operationId',
-              pyGet(beforeOp, 'operationId', ''),
-            ) as string | null,
-            summary: pyGet(op, 'summary', '') as string | null,
+            operation_id: getOrDefault(op, 'operationId', priorId) as Str,
+            summary: getOrDefault(op, 'summary', '') as Str,
             before: beforeOp,
             after: op,
           }),
@@ -283,8 +281,8 @@ export function extractApiDiff(
           path,
           method,
           change_type: ChangeType.REMOVED,
-          operation_id: pyGet(op, 'operationId', '') as string | null,
-          summary: pyGet(op, 'summary', '') as string | null,
+          operation_id: getOrDefault(op, 'operationId', '') as Str,
+          summary: getOrDefault(op, 'summary', '') as Str,
           before: op,
         }),
       );
