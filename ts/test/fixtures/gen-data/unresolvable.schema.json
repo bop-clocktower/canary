@@ -1,0 +1,8 @@
+{
+  "title": "Unresolvable",
+  "type": "object",
+  "properties": {
+    "blob": {},
+    "link": { "$ref": "#/$defs/L" }
+  }
+}

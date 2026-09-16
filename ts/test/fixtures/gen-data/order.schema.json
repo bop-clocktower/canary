@@ -1,0 +1,22 @@
+{
+  "title": "Order",
+  "type": "object",
+  "required": ["id", "total", "lines"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "total": { "type": "number", "minimum": 0 },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sku", "qty"],
+        "properties": {
+          "sku": { "type": "string" },
+          "qty": { "type": "integer", "minimum": 1, "maximum": 99 }
+        }
+      }
+    },
+    "coupon": { "type": "string" },
+    "placedAt": { "type": "string", "format": "date-time" }
+  }
+}
