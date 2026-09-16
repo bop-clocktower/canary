@@ -902,3 +902,144 @@ describe('SkillInfo', () => {
     expect(basename(info.dir)).toBe('b');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Coverage sweep: injected bundled dir, degenerate trees, parser edges
+// ---------------------------------------------------------------------------
+
+describe('bundled tier with an injected agents/skills dir', () => {
+  function emptyRoot(): string {
+    return makeGitRoot();
+  }
+
+  it('reads flat *.md slash skills, skipping README.md and non-file entries', () => {
+    const agents = mkTmp('canary-skreg-agents-');
+    writeFileSync(
+      join(agents, 'alpha.md'),
+      '---\ndescription: flat one\n---\n',
+      'utf-8',
+    );
+    writeFileSync(join(agents, 'README.md'), '---\nname: readme\n---\n');
+    mkdirSync(join(agents, 'dir.md')); // a directory that merely looks like a skill
+    const reg = new SkillRegistry(mkTmp('canary-skreg-home-'), agents);
+    const found = reg.discover(emptyRoot());
+    expect(found.map((s) => s.name)).toEqual(['alpha']);
+    expect(found[0]!.source).toBe('bundled');
+    expect(found[0]!.description).toBe('flat one');
+  });
+
+  it('a flat slash skill wins over a nested harness skill of the same name', () => {
+    const agents = mkTmp('canary-skreg-agents-');
+    writeFileSync(join(agents, 'dup.md'), '---\ndescription: flat\n---\n');
+    writeSkill(join(agents, 'claude-code'), 'dup', { description: 'nested' });
+    mkdirSync(join(agents, 'claude-code', 'no-skill-md'));
+    const reg = new SkillRegistry(mkTmp('canary-skreg-home-'), agents);
+    const found = reg.discover(emptyRoot());
+    expect(found.map((s) => [s.name, s.description])).toEqual([
+      ['dup', 'flat'],
+    ]);
+  });
+
+  it('a missing agents dir contributes nothing and reports exists: false', () => {
+    const missing = join(mkTmp('canary-skreg-agents-'), 'nope');
+    const root = emptyRoot();
+    const reg = new SkillRegistry(mkTmp('canary-skreg-home-'), missing);
+    expect(reg.discover(root)).toEqual([]);
+    const tiers = reg.searchRoots(root);
+    expect(tiers.map((t) => [t.tier, t.exists])).toEqual([
+      ['bundled', false],
+      ['overlay', false],
+      ['global', false],
+      ['local', false],
+    ]);
+    expect(tiers[3]!.path).toBe(join(root, '.canary', 'skills'));
+  });
+
+  it('find returns null for a name no tier provides', () => {
+    const reg = new SkillRegistry(
+      mkTmp('canary-skreg-home-'),
+      mkTmp('canary-skreg-agents-'),
+    );
+    expect(reg.find('does-not-exist', emptyRoot())).toBeNull();
+  });
+
+  it('orders a name before its own extension (prefix sorts first)', () => {
+    const home = mkTmp('canary-skreg-home-');
+    writeGlobalSkill(home, 'ab');
+    writeGlobalSkill(home, 'a');
+    const reg = new SkillRegistry(home, mkTmp('canary-skreg-agents-'));
+    expect(reg.discover(emptyRoot()).map((s) => s.name)).toEqual(['a', 'ab']);
+  });
+});
+
+describe('degenerate skill trees are skipped, not fatal', () => {
+  it('skips a SKILL.md that cannot be read as a file', () => {
+    const home = mkTmp('canary-skreg-home-');
+    mkdirSync(join(home, '.canary', 'skills', 'broken', 'SKILL.md'), {
+      recursive: true,
+    });
+    writeGlobalSkill(home, 'ok');
+    const reg = new SkillRegistry(home, mkTmp('canary-skreg-agents-'));
+    expect(reg.discover(makeGitRoot()).map((s) => s.name)).toEqual(['ok']);
+  });
+
+  it('skips an overlay without a .canary/skills dir and orders equal-precedence overlays by name', () => {
+    const home = mkTmp('canary-skreg-home-');
+    mkdirSync(join(home, '.canary', 'overlays', 'empty-overlay'), {
+      recursive: true,
+    });
+    writeOverlaySkill(home, 'zeta', 'shared', 'from zeta');
+    writeOverlaySkill(home, 'alpha', 'shared', 'from alpha');
+    const reg = new SkillRegistry(home, mkTmp('canary-skreg-agents-'));
+    const found = reg.discover(makeGitRoot());
+    // No registry file: both precedence 0, name order, later overlay wins.
+    expect(found.map((s) => [s.name, s.description])).toEqual([
+      ['shared', 'from zeta'],
+    ]);
+  });
+
+  it('parseNested returns null for an unreadable path', () => {
+    const reg = new SkillRegistry(mkTmp('canary-skreg-home-'));
+    expect(
+      reg.parseNested(join(mkTmp('canary-skreg-x-'), 'nope.md'), 'x', 'local'),
+    ).toBeNull();
+  });
+
+  it('parseNested falls back to the dir name when name is an empty flow list', () => {
+    const dir = mkTmp('canary-skreg-x-');
+    const p = join(dir, 'SKILL.md');
+    writeFileSync(p, '---\nname: []\ndescription: d\n---\n', 'utf-8');
+    const reg = new SkillRegistry(mkTmp('canary-skreg-home-'));
+    expect(reg.parseNested(p, 'fallback', 'local')!.name).toBe('fallback');
+  });
+});
+
+describe('frontmatter block lists and str-list normalization', () => {
+  it('folds a dash-less line into the item above and drops bare dashes', () => {
+    const { frontmatter, errors } =
+      SkillRegistry.parseFrontmatterWithDiagnostics(
+        '---\nrequires:\n  - node>=20\n    and more\n  -\n  - python\n---\n',
+      );
+    expect(errors).toEqual([]);
+    expect(frontmatter['requires']).toEqual(['node>=20 and more', 'python']);
+  });
+
+  it('a block list with no parseable items is a diagnostic', () => {
+    const { frontmatter, errors } =
+      SkillRegistry.parseFrontmatterWithDiagnostics(
+        '---\nrequires:\n  -\n  -\n---\n',
+      );
+    expect(frontmatter['requires']).toEqual([]);
+    expect(errors).toEqual(['`requires`: block list has no parseable items']);
+  });
+
+  it('parseStrList wraps a scalar, trims list items, and ignores other shapes', () => {
+    expect(SkillRegistry.parseStrList({ r: ' node ' }, 'r')).toEqual(['node']);
+    expect(SkillRegistry.parseStrList({ r: [' a ', '', 'b'] }, 'r')).toEqual([
+      'a',
+      'b',
+    ]);
+    expect(SkillRegistry.parseStrList({ r: '' }, 'r')).toEqual([]);
+    expect(SkillRegistry.parseStrList({}, 'r')).toEqual([]);
+  });
+});
