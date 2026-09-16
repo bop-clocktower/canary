@@ -777,3 +777,26 @@ describe('findReexportOnly', () => {
     expect(findReexportOnly(diff)).toEqual(new Set());
   });
 });
+
+describe('reason-less allow-untested pragma', () => {
+  it('does not suppress, so the hard gate still fails', () => {
+    const root = mkdtempSync(join(tmpdir(), 'guardian-blank-reason-'));
+    try {
+      writeFileSync(
+        join(root, 'a.ts'),
+        'export const x = 1; // canary:allow-untested   \n',
+      );
+      const finding = new GuardianFinding({
+        path: 'a.ts',
+        unit: 'a.ts',
+        severity: Severity.HIGH,
+        added_ranges: [[1, 1]],
+      });
+      applySuppressions([finding], root);
+      expect(finding.suppressed).toBe(false);
+      expect(computeExitCode([finding], 'hard')).toBe(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
