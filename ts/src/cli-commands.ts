@@ -1217,13 +1217,7 @@ export async function ticketUpdateCmd(
       // array parses fine and then gets indexed: `null` threw a raw TypeError
       // out of the handler, and an array silently defaulted every field. Both
       // belong on the same "could not read result file" path as a parse error.
-      if (
-        parsed === null ||
-        typeof parsed !== 'object' ||
-        Array.isArray(parsed)
-      )
-        throw new Error('expected a JSON object at the top level');
-      reportData = parsed as Record<string, unknown>;
+      reportData = asReportObject(parsed);
     } catch (exc) {
       deps.out(
         pc.red(
@@ -1296,6 +1290,25 @@ export async function ticketUpdateCmd(
   if (updateResult.transition.reason.startsWith(WARN)) {
     throw new CliExitError(1);
   }
+}
+
+/**
+ * Narrow a parsed result file to a report object, or throw onto the caller's
+ * "could not read result file" path. Valid JSON is not necessarily a report: a
+ * bare `null` or a top-level array used to be indexed directly (#895), and a
+ * non-array `passed_names` / `failed_names` reached `.map` and escaped the
+ * handler as a raw TypeError.
+ */
+function asReportObject(parsed: unknown): Record<string, unknown> {
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
+    throw new Error('expected a JSON object at the top level');
+  const report = parsed as Record<string, unknown>;
+  for (const key of ['passed_names', 'failed_names']) {
+    const v = report[key];
+    if (v !== undefined && v !== null && !Array.isArray(v))
+      throw new Error(`expected '${key}' to be an array`);
+  }
+  return report;
 }
 
 /** Python string `<`/`>` comparison (stable code-unit order). */
