@@ -167,6 +167,30 @@ function run(id: string, timestamp: string, passed: number, failed: number) {
   };
 }
 
+describe('canary history run-count flags', () => {
+  // A window of 0 / a non-number used to read EVERY run (`slice(-0)`,
+  // `slice(NaN)`) -- the widest window, reported under the narrowest flag.
+  it.each([
+    [['history', 'flaky', '--window', '0', '--json']],
+    [['history', 'flaky', '--window', 'seven', '--json']],
+    [['history', 'summary', 'api', '--runs', '0', '--json']],
+    [['history', 'summary', 'api', '--runs', 'seven', '--json']],
+  ])('rejects a run count below 1: %j', async (args) => {
+    const tmp = mkTmp();
+    try {
+      writeRuns(tmp, [
+        run('r1', '2026-01-01T00:00:00Z', 1, 0),
+        run('r2', '2026-01-02T00:00:00Z', 1, 0),
+        run('r3', '2026-01-03T00:00:00Z', 1, 0),
+      ]);
+      const res = await invokeCanary(args, { cwd: tmp });
+      expect(res.code).not.toBe(0);
+    } finally {
+      rmTmp(tmp);
+    }
+  });
+});
+
 describe('canary history summary ordering', () => {
   // A backfilled (older) run appended last must not count as the most recent.
   it('summary --runs 1 picks the newest run by timestamp, not append order', async () => {

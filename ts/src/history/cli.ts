@@ -29,7 +29,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 
-import { Command, Option } from 'commander';
+import { Command, InvalidArgumentError, Option } from 'commander';
 import pc from 'picocolors';
 
 import { isWellFormedXml } from '../util/xml.js';
@@ -65,6 +65,24 @@ const EM_DASH = '\u{2014}';
 const MDASH_CELL = '\u{2014}'; // rich `r.get("area") or <em-dash>`
 
 const DEFAULT_HISTORY_FILE = 'test-results/reports/history-v2.jsonl';
+
+/**
+ * A whole count of runs, >= 1 (same rule `canary analyze` adopted in #673).
+ *
+ * The bare `Number.parseInt` this replaces let `--window 0` and `--window
+ * seven` through; the store then sliced with `-0` / `NaN`, which reads EVERY
+ * run -- the widest window, reported under the narrowest flag.
+ */
+function parseRunCount(flag: string): (raw: string) => number {
+  return (raw) => {
+    if (!/^\d+$/.test(raw.trim()) || Number.parseInt(raw, 10) < 1) {
+      throw new InvalidArgumentError(
+        `${flag} takes a whole number of RUNS, at least 1; got "${raw}".`,
+      );
+    }
+    return Number.parseInt(raw, 10);
+  };
+}
 
 /**
  * The denominator guard for the history reports (#508 Wave 4a).
@@ -789,7 +807,7 @@ export function createHistoryCommand(
     .addOption(
       new Option('-w, --window <n>', 'Rolling window (number of runs).')
         .default(30)
-        .argParser((v) => Number.parseInt(v, 10)),
+        .argParser(parseRunCount('--window')),
     )
     .option('-s, --suite <suite>', 'Filter to a specific suite.')
     .addOption(
@@ -820,7 +838,7 @@ export function createHistoryCommand(
     .addOption(
       new Option('-n, --runs <n>', 'Number of most recent runs to summarize.')
         .default(10)
-        .argParser((v) => Number.parseInt(v, 10)),
+        .argParser(parseRunCount('--runs')),
     )
     .addOption(new Option('--db-url <url>').env('CANARY_HISTORY_DB_URL'))
     .option('--json')
