@@ -1,16 +1,27 @@
 {
   "issues": [765],
-  "route": "spec-only",
-  "stages": ["harness-brainstorming"],
+  "route": "spec-ready",
+  "stages": [
+    "autopilot",
+    "harness-planner",
+    "harness-task-executor",
+    "harness-code-reviewer"
+  ],
   "specArtifact": "docs/changes/765-synthetic-test-data/proposal.md",
-  "closingKeyword": "Refs",
-  "decisionsForHuman": 8,
+  "plan": "docs/changes/765-synthetic-test-data/plans/2026-09-16-gen-data-v1-slice-plan.md",
   "assumptions": [
-    "A1: TypeScript compiler API resolves project interfaces in well under 5s per target (spike checks)",
-    "A2: pytest path requires python3 on PATH at generation time, else abstains",
-    "A3: literal values in emitted code with a 50-case cap per target are acceptable for v1",
-    "A4: tests/generated/fixtures/ is the output root",
-    "A5: the six-category edge-case model is stable enough to key strategies on",
-    "A6: brainstorming ran autonomously with recommended defaults; no human consulted"
-  ]
+    "Slice = spec implementation steps 2+3, schema-first per 'D2 revisited': JSON Schema source, ShapeNode, seeded generator, vitest emitter, canary gen-data CLI",
+    "Only a JSON Schema subset resolves; $ref, type arrays, allOf, conditionals, tuple items and null become unresolved with a reason",
+    "Fields counted at leaves; array items once (paths like lines[].sku)",
+    "Fixture name from schema title, else file name",
+    "Only top-level unresolved keys get the overrides-required throw; nested ones are listed in the file header",
+    "C1: blackhawk/savant scanners unloadable -> exit 3, nothing written",
+    "C2: schema root not an object -> exit 2 (usage error)",
+    "pytest framework -> exit 2 'not yet supported in this slice'",
+    "Default seed 765, mulberry32 PRNG, 50-case cap",
+    "Arch module-size floor moved to measured 41825 with allowance file; no ceiling or maxFindings raised",
+    "Planner skeleton sign-off taken autonomously by the orchestrator (fleet lane, recommended defaults)"
+  ],
+  "closingKeyword": "Refs",
+  "reason": "Partial delivery: Python extractor + pytest emitter, edge-case --format json + case planner, compiler-API and zod sources, ADRs for D2/D7, and test-author guidance remain (spec steps 4-6)."
 }
