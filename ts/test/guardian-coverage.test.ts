@@ -1386,3 +1386,21 @@ describe('lcov SF paths with Windows separators', () => {
     expect(results![0]!.covered).toBe(true);
   });
 });
+
+describe('lcov records repeated for one file', () => {
+  it('keeps the highest hit count when a file appears in several records', () => {
+    // Sharded runs are commonly merged by concatenating lcov.info files, so
+    // the same SF appears once per shard. A line one shard hit is covered;
+    // a later shard's zero must not overwrite it (Cobertura already keeps
+    // the max for a line seen twice).
+    const report = write(
+      'lcov.info',
+      'SF:pkg/foo.py\nDA:12,3\nend_of_record\n' +
+        'SF:pkg/foo.py\nDA:12,0\nend_of_record\n',
+    );
+    const unit: ChangedUnit = { path: 'pkg/foo.py', added_ranges: [[12, 12]] };
+    const results = resolveFromReport([unit], report);
+    expect(results![0]!.covered).toBe(true);
+    expect(results![0]!.uncovered_lines).toEqual([]);
+  });
+});
