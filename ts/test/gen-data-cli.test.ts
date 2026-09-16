@@ -213,3 +213,50 @@ describe('canary gen-data usage errors (exit 2)', () => {
     );
   });
 });
+
+describe('canary gen-data determinism', () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkTmp();
+  });
+  afterEach(() => rmTmp(root));
+  const gen = async (seed: string, outDir: string) => {
+    const p = join(root, 'order.schema.json');
+    writeFileSync(
+      p,
+      JSON.stringify({
+        title: 'Order',
+        type: 'object',
+        properties: { id: { type: 'string' }, total: { type: 'number' } },
+      }),
+    );
+    const res = await invokeCanary(
+      [
+        'gen-data',
+        '--schema',
+        p,
+        '--framework',
+        'vitest',
+        '--seed',
+        seed,
+        '--out',
+        join(root, outDir),
+      ],
+      { cwd: root },
+    );
+    expect(res.code).toBe(0);
+    return readFileSync(join(root, outDir, 'order.fixtures.ts'), 'utf-8');
+  };
+
+  it('same seed twice -> byte-identical files (criterion 1)', async () => {
+    expect(await gen('765', 'a')).toBe(await gen('765', 'b'));
+  });
+  it('different seed -> a non-boundary literal changes (criterion 2)', async () => {
+    const a = await gen('765', 'a');
+    const b = await gen('766', 'b');
+    expect(a).not.toBe(b);
+    const defaultBlock = (t: string) =>
+      t.slice(t.indexOf('const base'), t.indexOf('return {'));
+    expect(defaultBlock(a)).not.toBe(defaultBlock(b));
+  });
+});
