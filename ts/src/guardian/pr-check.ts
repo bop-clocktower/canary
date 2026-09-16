@@ -253,7 +253,8 @@ export function walkDiff(
 // unsure, treat as NOT a barrel — a false skip is worse than a false flag.
 const REEXPORT_PATTERNS: RegExp[] = [
   // TS/JS.
-  /^\s*import\b/,
+  // `import(` (a dynamic call) and `import.meta` are expressions, not imports.
+  /^\s*import\b(?!\s*[(.])/,
   /^\s*export\s+\*\s+from\b/,
   /^\s*export\s+\{[^}]*\}\s+from\b/,
   /^\s*export\s+\{[^}]*\}\s*;?\s*$/, // local re-export
