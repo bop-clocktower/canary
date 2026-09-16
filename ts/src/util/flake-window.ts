@@ -78,6 +78,13 @@ export interface FlakyEnvelope<R = unknown> {
   runs_read: number | null;
   sufficient: boolean | null;
   flaky_measurable: FlakyMeasurable;
+  /**
+   * Whether the backend measured the CROSS-RUN flip axis at all (#604 Phase 2
+   * / G4). `false` means the rows' `flip_*` fields are absent because the
+   * backend cannot produce an ordered per-test sequence -- UNKNOWN, not zero,
+   * so no clean verdict over those rows is a pass.
+   */
+  flips_measured: boolean;
   rows: R[];
   disclosures: string[];
 }
@@ -103,6 +110,15 @@ export const NOT_MEASURABLE_NOTE =
 export const MEASURABILITY_UNKNOWN_NOTE =
   'retry-flake measurability unknown: no run in this window records the ' +
   'reporter format it came from';
+
+/**
+ * The flip axis on a count-only backend (#604 Phase 2, G4/D8). Kept separate
+ * from the window note so a reader learns WHICH measurement is missing, and
+ * never reads an absent flip count as a measured zero.
+ */
+const FLIPS_UNKNOWN_NOTE =
+  'cannot verify: cross-run flip counts are UNKNOWN for this backend (it ' +
+  'exposes flake counts only, not an ordered per-test sequence)';
 
 const WINDOW_UNKNOWN_NOTE =
   'cannot verify: runs_read is UNKNOWN for this backend (it does not expose ' +
@@ -141,7 +157,7 @@ export function assessFlakyWindow(
     return {
       clean: false,
       header: `read UNKNOWN runs (window ${windowRequested})`,
-      disclosures: [WINDOW_UNKNOWN_NOTE],
+      disclosures: [WINDOW_UNKNOWN_NOTE, FLIPS_UNKNOWN_NOTE],
     };
   }
   return {
@@ -176,6 +192,9 @@ export function buildFlakyEnvelope<R>(
     runs_read: win === null ? null : win.runs_read,
     sufficient: win === null ? null : assessment.clean,
     flaky_measurable: win === null ? 'unknown' : win.flaky_measurable,
+    // The same capability split as `runs_read`: a backend that cannot hand
+    // back raw records cannot order a per-test sequence either (#711, G4).
+    flips_measured: win !== null,
     rows,
     disclosures: assessment.disclosures,
   };

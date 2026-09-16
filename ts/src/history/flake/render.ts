@@ -17,9 +17,27 @@ import {
   assessFlakyWindow,
   type FlakyWindow,
 } from '../../util/flake-window.js';
+import { maxFlakeOrFlipRate } from '../../util/alternation.js';
 
 const GEQ = '\u{2265}';
 const MDASH_CELL = '\u{2014}'; // rich `r.get("area") or <em-dash>`
+/**
+ * An unmeasured cell (#604 Phase 2, G4). A count-only backend has no flip
+ * data, and rendering that as `0.0%` would be the exact false green Phase 1
+ * removed from the window line -- so it says so instead.
+ */
+const UNKNOWN_CELL = 'UNKNOWN';
+
+/** The flip cells: measured numbers, or UNKNOWN when the axis is absent. */
+function flipCells(r: FlakyQueryRow): [string, string] {
+  if (r.flip_rate_pct === undefined || r.flip_count === undefined) {
+    return [UNKNOWN_CELL, UNKNOWN_CELL];
+  }
+  return [
+    `${formatWithDecimalPoint(r.flip_rate_pct)}%`,
+    `${r.flip_count}/${r.observed ?? 0}`,
+  ];
+}
 
 /**
  * A minimal aligned text table — the documented `rich.Table` deviation (see
@@ -53,6 +71,7 @@ function flakyTableRow(r: FlakyQueryRow): string[] {
     // Python str(float), not `10%` (JS number has no int/float distinction).
     `${formatWithDecimalPoint(r.flake_rate_pct)}%`,
     `${r.flake_count}/${r.total_runs}`,
+    ...flipCells(r),
   ];
 }
 
@@ -88,9 +107,19 @@ export function renderFlakyReport(
   return lines.concat(
     renderTable(
       `Flaky Tests (window: ${window} runs, threshold: ${GEQ} ${formatWithDecimalPoint(minRate)}%)`,
-      ['Test', 'Suite', 'Area', 'Flake %', 'Flake/Total'],
-      rows.map(flakyTableRow),
-      [false, false, false, true, true],
+      [
+        'Test',
+        'Suite',
+        'Area',
+        'Flake %',
+        'Flake/Total',
+        'Flip %',
+        'Flips/Observed',
+      ],
+      [...rows]
+        .sort((a, b) => maxFlakeOrFlipRate(b) - maxFlakeOrFlipRate(a))
+        .map(flakyTableRow),
+      [false, false, false, true, true, true, true],
     ),
   );
 }
