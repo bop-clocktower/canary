@@ -44,7 +44,9 @@ function parseLcov(text: string): ReportIndex {
   let current: string | null = null;
   for (const line of splitLines(text)) {
     if (line.startsWith('SF:')) {
-      current = line.slice(3).trim();
+      // Normalize Windows separators so the POSIX-only path matcher can
+      // resolve them, mirroring the Cobertura reader.
+      current = line.slice(3).trim().replace(/\\/g, '/');
       if (!(current in byPath)) byPath[current] = {};
     } else if (line.startsWith('DA:') && current !== null) {
       recordDa(byPath[current]!, line.slice(3).trim());

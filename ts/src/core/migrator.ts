@@ -1847,6 +1847,11 @@ export class HarnessMigrator {
     const doc = readManifestDoc(targetSkillsDir);
     const workflowsDir = join(targetRoot, '.github', 'workflows');
     let manifestDirty = false;
+    // Destination filename -> the declaration that claimed it this run. Two
+    // templates sharing a basename land on ONE file; without this the dry run
+    // promised both installs while --apply wrote the first and misreported the
+    // second against the first's fresh manifest entry.
+    const claimed = new Map<string, string>();
 
     for (const [info, skillDir] of skills) {
       const { entries, version } = readWorkflowDeclaration(info.path);
@@ -1892,6 +1897,20 @@ export class HarnessMigrator {
         }
 
         const name = basename(src);
+        const claimant = claimed.get(name);
+        if (claimant !== undefined) {
+          results.push(
+            new WorkflowInstallResult(
+              name,
+              info.name,
+              'conflict',
+              `'${rel}' and ${claimant} both install .github/workflows/${name} ` +
+                `${EMDASH} only the first was considered; rename one template`,
+            ),
+          );
+          continue;
+        }
+        claimed.set(name, `'${rel}' (${info.name})`);
         const dest = join(workflowsDir, name);
         const templateBytes = readFileSync(src);
         const templateHash = sha256(templateBytes);
