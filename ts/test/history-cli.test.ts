@@ -142,3 +142,49 @@ describe('canary history', () => {
     }
   });
 });
+
+// bug-fleet (history): helpers for the window/ordering repros below.
+function writeRuns(tmp: string, runs: Record<string, unknown>[]): void {
+  const path = join(tmp, HISTORY_REL);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, runs.map((r) => JSON.stringify(r)).join('\n') + '\n');
+}
+
+function run(id: string, timestamp: string, passed: number, failed: number) {
+  return {
+    schema_version: 2,
+    run_id: id,
+    suite: 'api',
+    branch: 'main',
+    commit_sha: 'abc',
+    timestamp,
+    total: passed + failed,
+    passed,
+    failed,
+    flaky: 0,
+    skipped: 0,
+    tests: [{ test_name: 't', status: failed > 0 ? 'failed' : 'passed' }],
+  };
+}
+
+describe('canary history summary ordering', () => {
+  // A backfilled (older) run appended last must not count as the most recent.
+  it('summary --runs 1 picks the newest run by timestamp, not append order', async () => {
+    const tmp = mkTmp();
+    try {
+      writeRuns(tmp, [
+        run('newest', '2026-01-05T00:00:00Z', 1, 0),
+        run('backfilled', '2026-01-01T00:00:00Z', 0, 1),
+      ]);
+      const res = await invokeCanary(
+        ['history', 'summary', 'api', '--runs', '1', '--json'],
+        { cwd: tmp },
+      );
+      expect(res.code).toBe(0);
+      const obj = JSON.parse(res.stdout) as { runs: { run_id: string }[] };
+      expect(obj.runs.map((r) => r.run_id)).toEqual(['newest']);
+    } finally {
+      rmTmp(tmp);
+    }
+  });
+});
