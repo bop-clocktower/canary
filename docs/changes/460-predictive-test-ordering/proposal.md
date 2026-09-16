@@ -3,13 +3,11 @@
 **Keywords:** test-ordering, run-history, time-to-first-failure, cold-start,
 diff-proximity, sequencer, shiva, abstention
 
-> **Status: Spec only — not signed off.** No human has reviewed this proposal.
-> It contains no code, no scripts and no workflow changes. It was written by a
-> non-interactive lane using the harness brainstorming method: every point where
-> that method would ask a human is recorded as a fork (F1-F8) with a recommended
-> default. The decisions D1-D8 below assume those defaults. A build round must
-> not start until a human signs off and answers the forks. The blocking spike is
-> done; its findings are in [`spike.md`](spike.md).
+> **Status: signed off 2026-09-16.** A human reviewed this proposal and accepted
+> it as written, including the recommended default on every fork (F1-F8), so the
+> forks are answered and a build round may proceed. The document itself is still
+> spec only: it contains no code. The blocking spike findings are in
+> [`spike.md`](spike.md).
 
 ## Overview
 
