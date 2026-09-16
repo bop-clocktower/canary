@@ -22,9 +22,19 @@ import {
   type CriticalAreasInput,
   type InventoryInput,
 } from './inventory-checks.js';
+import {
+  MIN_WINDOW_RUNS,
+  NOT_MEASURABLE_NOTE,
+  MEASURABILITY_UNKNOWN_NOTE,
+  insufficientHistoryNote,
+  measurabilityOf,
+  type FlakyMeasurable,
+} from '../util/flake-window.js';
 
 interface ScoredRun {
   duration_ms?: number | null;
+  /** Which reader produced the run (#604); absent on legacy rows. */
+  reporter_format?: string | null;
   tests?: { test_name: string; status: string }[];
 }
 
@@ -77,6 +87,47 @@ function flakeRates(runs: ScoredRun[]): Map<string, number> {
   return rates;
 }
 
+/**
+ * The measurability suffix for a clean window (#604 G3/SC4).
+ *
+ * A zero from a vitest-only window is STRUCTURAL: the vitest reader never
+ * writes the `flaky` status, so no retry flake could have been observed
+ * whatever the suite did. An unstamped legacy window cannot rule the status
+ * out either way, so it says UNKNOWN rather than claiming a measured zero.
+ */
+function measurabilitySuffix(measurable: FlakyMeasurable): string {
+  if (measurable === 'no') return `; ${NOT_MEASURABLE_NOTE}`;
+  if (measurable === 'unknown') return `; ${MEASURABILITY_UNKNOWN_NOTE}`;
+  return '';
+}
+
+/**
+ * A window with no findings (#604 G2/SC1).
+ *
+ * Below {@link MIN_WINDOW_RUNS} this is an ABSTENTION, not a pass: "0 flaky
+ * across 2 run(s)" was the false green this check shipped for months. Warn
+ * rather than skip (Decision D6), so the check stays visible in the report.
+ */
+function scoreCleanWindow(window: ScoredRun[]): CiCheck {
+  const name = 'flakiness';
+  const runsRead = window.length;
+  const windowNote = `(window ${FLAKY_WINDOW_RUNS})`;
+  if (runsRead < MIN_WINDOW_RUNS) {
+    return {
+      name,
+      verdict: 'warn',
+      reason: `${insufficientHistoryNote(runsRead)} ${windowNote} \u{2014} no flake verdict`,
+    };
+  }
+  return {
+    name,
+    verdict: 'pass',
+    reason:
+      `0 flaky tests across ${runsRead} run(s) ${windowNote}` +
+      measurabilitySuffix(measurabilityOf(window)),
+  };
+}
+
 function scoreFlakiness(
   runs: ScoredRun[] | null,
   historyPath: string,
@@ -91,13 +142,7 @@ function scoreFlakiness(
   }
   const window = runs.slice(-FLAKY_WINDOW_RUNS);
   const rates = flakeRates(window);
-  if (rates.size === 0) {
-    return {
-      name,
-      verdict: 'pass',
-      reason: `0 flaky tests across ${window.length} run(s)`,
-    };
-  }
+  if (rates.size === 0) return scoreCleanWindow(window);
   let worst: [string, number] = ['', 0];
   for (const entry of rates) if (entry[1] > worst[1]) worst = entry;
   const pct = Math.round(worst[1] * 100);
@@ -105,7 +150,9 @@ function scoreFlakiness(
   return {
     name,
     verdict,
-    reason: `${rates.size} flaky test(s) across ${window.length} run(s); worst is ${worst[0]} at ${pct}%`,
+    reason:
+      `${rates.size} flaky test(s) across ${window.length} run(s) ` +
+      `(window ${FLAKY_WINDOW_RUNS}); worst is ${worst[0]} at ${pct}%`,
   };
 }
 

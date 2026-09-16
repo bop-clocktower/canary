@@ -74,6 +74,13 @@ export interface RunRecord {
    */
   duration_ms?: number | null;
   /**
+   * Which reader produced this run (#604). Read-time surfaces need it to tell
+   * a MEASURED zero retry-flakes from a STRUCTURAL one: only the Playwright
+   * and JUnit readers can emit the `flaky` status at all. Absent on legacy
+   * rows, which count as unknown capability -- never as measurable.
+   */
+  reporter_format?: string | null;
+  /**
    * Stamped by every writer since #701. Absent only on legacy rows, which
    * resolve to `LEGACY_UNVERSIONED_SCHEMA_VERSION`; any version this build does
    * not understand throws.

@@ -10,6 +10,14 @@ import {
   round1,
 } from './reports.js';
 import type { AreaHealthRow, FlakyRow, SpikeRow } from './rows.js';
+import type { FlakyWindow } from '../util/flake-window.js';
+
+/**
+ * A sufficient, measurable window (#604). Passed explicitly because a `null`
+ * window is UNKNOWN, and an UNKNOWN window deliberately forfeits the green
+ * all-clear line -- so these rate/table pins have to state the denominator.
+ */
+const WIN: FlakyWindow = { runs_read: 30, flaky_measurable: 'yes' };
 
 function flakyRow(
   testName: string,
@@ -94,8 +102,16 @@ describe('round1 (Python round-half-to-even parity)', () => {
 });
 
 describe('buildFlakyTestsReport', () => {
-  it('returns a no-issues message on empty rows', () => {
-    expect(buildFlakyTestsReport([], 30, 10.0)).toContain('No tests');
+  it('returns a no-issues message on empty rows over a sufficient window', () => {
+    expect(buildFlakyTestsReport([], 30, 10.0, WIN)).toContain('No tests');
+  });
+
+  // #604 G2: the green line is earned by a stated denominator. A caller that
+  // discloses no window gets the UNKNOWN disclosure instead.
+  it('withholds the all-clear when the window is UNKNOWN', () => {
+    const md = buildFlakyTestsReport([], 30, 10.0, null);
+    expect(md).not.toContain('No tests');
+    expect(md).toContain('UNKNOWN');
   });
 
   it('renders the table header', () => {
@@ -144,7 +160,7 @@ describe('buildFlakyTestsReport', () => {
     const rows = Array.from({ length: 25 }, (_, i) =>
       flakyRow(`t${i}`, 'api', 'a', i + 1),
     );
-    const md = buildFlakyTestsReport(rows, 30, 10.0, 20);
+    const md = buildFlakyTestsReport(rows, 30, 10.0, WIN, 20);
     expect(md.match(/\| t\d+ \|/g)?.length).toBe(20);
   });
 });
@@ -402,8 +418,9 @@ describe('unit semantics', () => {
   });
 
   it('states both units in the empty-rows message', () => {
-    expect(buildFlakyTestsReport([], 30, 10.0)).toBe(
-      'No tests above 10.0% flake rate in the last 30 runs.\n',
+    expect(buildFlakyTestsReport([], 30, 10.0, WIN)).toBe(
+      'read 30 runs (window 30)\n' +
+        'No tests above 10.0% flake rate in the last 30 runs.\n',
     );
   });
 

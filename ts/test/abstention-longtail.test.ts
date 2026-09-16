@@ -204,14 +204,24 @@ describe('analyze: zero RUNS abstains, zero ROWS does not (#508 Wave 4a)', () =>
     });
   }
 
-  it('--json keeps stdout a parseable array; the notice rides stderr', async () => {
+  // #604 H3: stdout stays machine-clean, but the payload is now the flake
+  // envelope -- the abstention is a FIELD a consumer can read, not a stderr
+  // line every JSON consumer drops.
+  it('--json keeps stdout a parseable envelope; the notice rides stderr', async () => {
     const base = mkTmp();
     try {
       const res = await invokeCanary(['analyze', 'flaky', '--json'], {
         cwd: base,
       });
       expect(res.code).toBe(0);
-      expect(JSON.parse(res.stdout)).toEqual([]);
+      const env = JSON.parse(res.stdout) as {
+        rows: unknown[];
+        runs_read: number;
+        sufficient: boolean;
+      };
+      expect(env.rows).toEqual([]);
+      expect(env.runs_read).toBe(0);
+      expect(env.sufficient).toBe(false);
       expect(res.stdout).not.toContain('Abstained');
       expect(res.stderr).toContain('Abstained');
     } finally {

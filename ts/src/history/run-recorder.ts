@@ -109,8 +109,21 @@ const READERS: Partial<
 /**
  * Convert a report of a known shape, then validate it before any append.
  * Callers refuse `unknown` first; passing it here is a programming error.
+ *
+ * Stamps `reporter_format` on the run (#604): only this function knows which
+ * reader ran, and without the stamp a read-time surface cannot tell a measured
+ * zero retry-flakes from vitest's structural one.
  */
 export function buildRunFromReport(
+  shape: ReportShape,
+  parsed: unknown,
+  ctx: RecordContext,
+): BuiltRun {
+  const built = buildUnstamped(shape, parsed, ctx);
+  return { ...built, run: { ...built.run, reporter_format: shape } };
+}
+
+function buildUnstamped(
   shape: ReportShape,
   parsed: unknown,
   ctx: RecordContext,

@@ -27,6 +27,12 @@ import type { RunInput, TestResultInput } from '../src/history/schema.js';
 
 interface FakeStoreConfig {
   countRuns?: number;
+  /**
+   * Raw run records (#711). #604 reads the flake WINDOW through this same
+   * optional capability, so a config without it is the remote-backend shape:
+   * an UNKNOWN denominator, which forfeits the clean verdict.
+   */
+  readAll?: { suite?: string; reporter_format?: string }[];
   flaky?: FlakyQueryRow[];
   timeline?: TimelineEntry[];
   summary?: SummaryResult;
@@ -54,6 +60,9 @@ function makeFakeStore(
   // "unknown denominator, never abstain" backend (see abstainOnEmptyHistory).
   if (cfg.countRuns !== undefined) {
     store.countRuns = async () => cfg.countRuns!;
+  }
+  if (cfg.readAll !== undefined) {
+    store.readAll = async () => cfg.readAll as never;
   }
   return store;
 }
@@ -166,8 +175,18 @@ describe('history flaky (populated store)', () => {
   });
 
   it('reports a clean result (not an abstention) over a populated store', async () => {
-    const res = await runHistory(['flaky'], { countRuns: 42, flaky: [] });
+    // #604 G2: the green line now needs a STATED, sufficient window, so the
+    // store must expose the runs it read -- countRuns alone is the store's
+    // total, not the query's denominator.
+    const res = await runHistory(['flaky'], {
+      countRuns: 42,
+      readAll: Array.from({ length: 42 }, () => ({
+        reporter_format: 'playwright',
+      })),
+      flaky: [],
+    });
     expect(res.code).toBe(0);
+    expect(res.stdout).toContain('read 30 runs (window 30)');
     expect(res.stdout).toContain('No tests above 10.0% flake rate');
     expect(res.stdout).not.toContain('runs recorded');
   });
@@ -177,26 +196,35 @@ describe('history flaky (populated store)', () => {
       countRuns: 10,
       flaky: [flakyRow()],
     });
-    const rows = JSON.parse(res.stdout) as FlakyQueryRow[];
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.test_name).toBe('checkout renders');
+    // #604 H3: an envelope, with the rows under `rows`.
+    const env = JSON.parse(res.stdout) as { rows: FlakyQueryRow[] };
+    expect(env.rows).toHaveLength(1);
+    expect(env.rows[0]!.test_name).toBe('checkout renders');
     expect(res.stderr).toBe('');
   });
 
-  it('--json abstains to stderr with an empty array on an empty store', async () => {
+  it('--json abstains to stderr with an empty envelope on an empty store', async () => {
     const res = await runHistory(['flaky', '--json'], {
       countRuns: 0,
       flaky: [],
     });
-    expect(JSON.parse(res.stdout)).toEqual([]);
+    const env = JSON.parse(res.stdout) as {
+      rows: FlakyQueryRow[];
+      runs_read: number;
+    };
+    expect(env.rows).toEqual([]);
+    expect(env.runs_read).toBe(0);
     expect(res.stderr).toContain('No runs recorded');
     expect(res.stderr).toContain('flake rate');
   });
 
   it('does not abstain when the backend cannot report a run count', async () => {
-    // countRuns absent == UNKNOWN denominator, which is not a zero one.
+    // countRuns absent == UNKNOWN denominator, which is not a zero one. #604
+    // adds the other half: with no window either, the result is UNKNOWN rather
+    // than clean, so the green line is withheld without claiming zero runs.
     const res = await runHistory(['flaky'], { flaky: [] });
-    expect(res.stdout).toContain('No tests above');
+    expect(res.stdout).toContain('UNKNOWN');
+    expect(res.stdout).not.toContain('No tests above');
     expect(res.stdout).not.toContain('No runs recorded');
   });
 });

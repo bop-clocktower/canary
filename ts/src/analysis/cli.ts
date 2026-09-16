@@ -47,6 +47,11 @@ import {
   renderGhFlaky,
   scanGhFlaky,
 } from './gh-flaky/gh-run-attempts.js';
+import { describeFlakyWindow } from '../history/flake/window.js';
+import {
+  buildFlakyEnvelope,
+  emptyStoreEnvelope,
+} from '../util/flake-window.js';
 import {
   buildCommonFailuresReport,
   buildFlakyTestsReport,
@@ -108,6 +113,7 @@ async function abstainOnEmptyHistory(
   deps: AnalyzeDeps,
   json: boolean,
   what: string,
+  emptyPayload: unknown = [],
 ): Promise<boolean> {
   // #711: `countRuns` is an OPTIONAL capability, and a backend that cannot
   // report its denominator has an UNKNOWN one, not a zero one (ADR 0013
@@ -122,7 +128,7 @@ async function abstainOnEmptyHistory(
     `(\`canary history push\`, or a reporter that writes ` +
     `${DEFAULT_HISTORY_PATH}), then re-run.`;
   if (json) {
-    deps.out(jsonIndent2([]));
+    deps.out(jsonIndent2(emptyPayload));
     deps.err(notice);
   } else {
     deps.out(notice);
@@ -337,20 +343,21 @@ interface FlakyOptions {
 
 async function flakyCmd(opts: FlakyOptions, deps: AnalyzeDeps): Promise<void> {
   const store = deps.makeStore(opts.dbUrl);
-  if (
-    await abstainOnEmptyHistory(store, deps, opts.json === true, 'flake rate')
-  ) {
+  const suite = opts.suite ?? null;
+  const json = opts.json === true;
+  const empty = emptyStoreEnvelope(opts.windowRuns);
+  if (await abstainOnEmptyHistory(store, deps, json, 'flake rate', empty)) {
     return;
   }
-  const rows = await store.queryFlaky(
-    opts.windowRuns,
-    opts.suite ?? null,
-    opts.minRatePct,
-  );
-  if (opts.json) {
-    deps.out(jsonIndent2(rows));
+  const rows = await store.queryFlaky(opts.windowRuns, suite, opts.minRatePct);
+  // #604: the denominator the rows were read over; `null` == UNKNOWN backend.
+  const win = await describeFlakyWindow(store, opts.windowRuns, suite);
+  if (json) {
+    deps.out(jsonIndent2(buildFlakyEnvelope(rows, opts.windowRuns, win)));
   } else {
-    deps.out(buildFlakyTestsReport(rows, opts.windowRuns, opts.minRatePct));
+    deps.out(
+      buildFlakyTestsReport(rows, opts.windowRuns, opts.minRatePct, win),
+    );
   }
 }
 

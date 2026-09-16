@@ -87,14 +87,33 @@ in `ts/src/analysis/cli.ts` / `ts/src/analysis/engine.ts` — it always reports
 working check; tell the user area-degradation tracking isn't implemented yet
 rather than silently omitting it.
 
+**Sample-size caveat (#604):** `analyze flaky` and `history flaky` now return a
+`--json` OBJECT rather than a bare row array, and every human flaky output opens
+with `read N runs (window W)`. Read three fields before believing a zero:
+
+| Field              | Meaning                                                           |
+| ------------------ | ----------------------------------------------------------------- |
+| `runs_read`        | Runs actually read in the window. `null` = the backend cannot say |
+| `sufficient`       | `false` below 10 runs, `null` when `runs_read` is UNKNOWN         |
+| `flaky_measurable` | `no` = a vitest-only window, where 0 retry flakes is STRUCTURAL   |
+
+`sufficient: false` or `null`, or `flaky_measurable` of `no` or `unknown`, means
+the zero is an abstention. Report it as "not measured" rather than "clean", and
+name the cause from `disclosures[]`. `canary ci-ready`'s flakiness check follows
+the same rule: it `warn`s with `insufficient history: N of 10 runs` below the
+minimum instead of passing.
+
 **Store-type caveat:** `flaky` queries the store directly and works with either
-backend. `spikes`, `common-failures`, and `regression-candidates` currently only
-populate fully when the backing store is the local NDJSON file (`AnalysisEngine`
-special-cases `LocalHistoryStore` for suite discovery and per-test aggregation)
-— with a Supabase-backed store (`CANARY_HISTORY_DB_URL` set), those three may
-come back empty even with real history. If the digest shows all-zero
-spikes/common-failures/ regressions _and_ `CANARY_HISTORY_DB_URL` is set, flag
-this as a likely store-support gap, not a clean bill of health.
+backend, but a Supabase-backed store cannot report the WINDOW those rows came
+from — `runs_read` and `sufficient` are `UNKNOWN`/`null` there, so no clean
+verdict over remote rows is a pass. `spikes`, `common-failures`, and
+`regression-candidates` currently only populate fully when the backing store is
+the local NDJSON file (`AnalysisEngine` special-cases `LocalHistoryStore` for
+suite discovery and per-test aggregation) — with a Supabase-backed store
+(`CANARY_HISTORY_DB_URL` set), those three may come back empty even with real
+history. If the digest shows all-zero spikes/common-failures/ regressions _and_
+`CANARY_HISTORY_DB_URL` is set, flag this as a likely store-support gap, not a
+clean bill of health.
 
 ### Phase 3: CONDENSE TO ONE SCREEN
 

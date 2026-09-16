@@ -116,8 +116,22 @@ describe('canary ci-ready', () => {
     expect(text.stdout).not.toMatch(/\bready\b(?!ness)/i);
   });
 
-  it('passes flakiness on clean history but reports incomplete, not ready', async () => {
+  // #604 G2: a 5-run window is too thin to pass. `0 flaky across 5 run(s)` was
+  // a false green -- zero out of five is an abstention. The minimum is 10 runs
+  // (Decision D5/H2), and below it the check WARNS so it stays visible.
+  it('warns, not passes, flakiness on a clean but thin window', async () => {
     writeHistory(root, 5);
+    const { code, report } = await runJson(root);
+    const f = check(report, 'flakiness');
+    expect(f.verdict).toBe('warn');
+    expect(f.reason).toContain('insufficient history: 5 of 10 runs');
+    expect(report.checked).toBe(1);
+    expect(report.verdict).toBe('incomplete');
+    expect(code).toBe(0);
+  });
+
+  it('passes flakiness on clean history but reports incomplete, not ready', async () => {
+    writeHistory(root, 10);
     const { code, report } = await runJson(root);
     expect(check(report, 'flakiness').verdict).toBe('pass');
     expect(report.checked).toBe(1);

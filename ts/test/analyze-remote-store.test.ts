@@ -106,16 +106,33 @@ describe('sections that ride the contract still work remotely', () => {
       remoteStore([flakyRow('test_pay')]),
     );
     expect(res.stdout).toContain('test_pay');
-    expect(res.stdout).not.toContain('cannot verify');
   });
 
-  it('flaky --json emits the rows, keeping stdout machine-clean', async () => {
+  // #604 G4/SC5: the ROWS ride the contract, but the DENOMINATOR does not.
+  // This backend cannot say which runs the query read, so the window is
+  // UNKNOWN and no clean verdict over these rows is a pass.
+  it('flaky discloses that the remote window is UNKNOWN', async () => {
+    const res = await run(
+      ['flaky', '--db-url', DB_URL],
+      remoteStore([flakyRow('test_pay')]),
+    );
+    expect(res.stdout).toContain('UNKNOWN');
+    expect(res.stdout).toContain('cannot verify');
+  });
+
+  it('flaky --json emits the rows in the envelope, stdout machine-clean', async () => {
     const res = await run(
       ['flaky', '--db-url', DB_URL, '--json'],
       remoteStore([flakyRow('test_pay')]),
     );
-    const rows = JSON.parse(res.stdout) as { test_name: string }[];
-    expect(rows.map((r) => r.test_name)).toEqual(['test_pay']);
+    const env = JSON.parse(res.stdout) as {
+      rows: { test_name: string }[];
+      runs_read: number | null;
+      sufficient: boolean | null;
+    };
+    expect(env.rows.map((r) => r.test_name)).toEqual(['test_pay']);
+    expect(env.runs_read).toBeNull();
+    expect(env.sufficient).toBeNull();
   });
 });
 

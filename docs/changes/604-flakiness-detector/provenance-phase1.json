@@ -1,0 +1,19 @@
+{
+  "issues": [604],
+  "phase": 1,
+  "route": "spec-ready",
+  "stages": [],
+  "specArtifact": "docs/changes/604-flakiness-detector/proposal.md",
+  "closingKeyword": "Refs",
+  "acceptanceCriteriaCovered": ["SC1", "SC2", "SC3", "SC4", "SC5", "SC11"],
+  "assumptions": [
+    "No harness skill was invoked, so `stages` is empty rather than padded. The route was spec-ready with a signed-off spec that already fixes the phase split, the decisions (H1-H7) and the acceptance criteria (SC1-SC5, SC11), so `harness:autopilot` had no planning or decision work left to chain; running it post-hoc over finished, green work would have produced a provenance record of a plan nobody followed. TDD was followed by hand (failing tests first, from the spec's acceptance criteria) rather than through `harness:tdd`.",
+    "MIN_WINDOW_RUNS = 10 and the 8-observation per-test floor come from Decision D5/H2 and are the spec's own stated assumptions, not derivations. Phase 1 uses only the 10-run window floor; the 8-observation floor is a Phase 2 (per-test alternation) input and is not implemented here.",
+    "G3 needed a run-level record of which reader produced a run, and no existing field carried it (checked `schema.ts` and `record.ts`). Per the spec's Technical design, an optional `reporter_format` was added to `RunInput` and stamped by `buildRunFromReport`. It is written ONLY into `serializeLocalRecord`, never `serializeRun`: the remote Supabase tables have no such column and adding it there would fail every upsert. No `SCHEMA_VERSION` bump was needed -- the field is additive and optional, and an unstamped legacy row reads as `unknown` capability, never as measurable.",
+    "The flake WINDOW is read through the existing OPTIONAL `readAll` capability rather than a new store-contract method, which is the same capability split #711 established (local NDJSON has it, remote Supabase does not) and is what makes the Supabase backend render UNKNOWN for free. The cost is one extra bounded pass over the local NDJSON file per flaky command.",
+    "SC5 says alternation columns must render UNKNOWN over Supabase. Phase 1 ships no alternation columns, so the implementable half is applied: over that backend `runs_read` and `sufficient` are `null`, the human output says `cannot verify`, and no clean verdict is a pass (Decision D8).",
+    "Per the spec's own verdict table, a sufficient window with no findings whose runs are all vitest still reports `pass` in `ci-ready` -- the disclosure names the cause rather than downgrading the verdict.",
+    "The empty-store abstention payload for the two flaky commands was moved inside the H3 envelope (`rows: []`, `runs_read: 0`, `sufficient: false`) so a JSON consumer reads the abstention as a field. The shared `abstainOnEmptyHistory` guard keeps its bare-array default, so the other `analyze` subcommands are untouched.",
+    "The Python parity goldens for `flaky.md` and `digest.md` were NOT rewritten. The window preamble is a deliberate divergence from the retired Python reference, so `parity.test.ts` strips the preamble before the byte comparison and pins the divergence in two separate assertions instead."
+  ]
+}

@@ -14,14 +14,24 @@ import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 const HISTORY_REL = join('test-results', 'reports', 'history-v2.jsonl');
 
 describe('canary history', () => {
-  it('flaky --json emits a JSON array on an empty store', async () => {
+  // #604 H3: `--json` is an envelope, not a bare array, so the denominator
+  // travels with the rows. An empty store abstains INSIDE the envelope.
+  it('flaky --json emits the envelope on an empty store', async () => {
     const tmp = mkTmp();
     try {
       const res = await invokeCanary(['history', 'flaky', '--json'], {
         cwd: tmp,
       });
       expect(res.code).toBe(0);
-      expect(Array.isArray(JSON.parse(res.stdout))).toBe(true);
+      const env = JSON.parse(res.stdout) as {
+        runs_read: number;
+        sufficient: boolean;
+        rows: unknown[];
+      };
+      expect(Array.isArray(env.rows)).toBe(true);
+      expect(env.rows).toEqual([]);
+      expect(env.runs_read).toBe(0);
+      expect(env.sufficient).toBe(false);
     } finally {
       rmTmp(tmp);
     }

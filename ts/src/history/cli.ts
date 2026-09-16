@@ -54,9 +54,14 @@ import {
 } from './run-recorder.js';
 import { def } from '../util/coalesce.js';
 import { formatWithDecimalPoint } from '../util/round.js';
+import { describeFlakyWindow } from './flake/window.js';
+import {
+  buildFlakyEnvelope,
+  emptyStoreEnvelope,
+} from '../util/flake-window.js';
+import { renderFlakyReport, renderTable } from './flake/render.js';
 
 const EM_DASH = '\u{2014}';
-const GEQ = '\u{2265}';
 const MDASH_CELL = '\u{2014}'; // rich `r.get("area") or <em-dash>`
 
 const DEFAULT_HISTORY_FILE = 'test-results/reports/history-v2.jsonl';
@@ -77,6 +82,7 @@ async function abstainOnEmptyHistory(
   deps: HistoryDeps,
   json: boolean,
   what: string,
+  emptyPayload: unknown = [],
 ): Promise<boolean> {
   if (store.countRuns === undefined) return false; // unknown, not zero
   if ((await store.countRuns()) > 0) return false;
@@ -85,7 +91,7 @@ async function abstainOnEmptyHistory(
     `${outcome.summaryLine} No runs recorded, so ${what} is unknown rather ` +
     `than clean. Record runs first (\`canary history push\`), then re-run.`;
   if (json) {
-    deps.out(jsonIndent2([]));
+    deps.out(jsonIndent2(emptyPayload));
     deps.err(notice);
   } else {
     deps.out(notice);
@@ -110,6 +116,9 @@ const RUN_FIELDS: readonly (keyof RunInput)[] = [
   'env',
   'base_url',
   'duration_ms',
+  // Not a Python field: #604's reader stamp, preserved so a pushed record keeps
+  // whatever measurability it arrived with.
+  'reporter_format',
 ];
 
 /** Every field of the Python `TestResult` dataclass. */
@@ -157,27 +166,6 @@ function defaultHistoryDeps(): HistoryDeps {
     env: process.env,
     makeStore: (dbUrl, ndjsonPath) => realMakeStore(dbUrl, ndjsonPath),
   };
-}
-
-// --- a minimal aligned text table (documented rich.Table deviation) ----------
-
-function renderTable(
-  title: string,
-  headers: string[],
-  rows: string[][],
-  rightAlign: boolean[],
-): string[] {
-  const widths = headers.map((h, i) =>
-    Math.max(h.length, ...rows.map((r) => r[i]!.length)),
-  );
-  const pad = (cell: string, i: number): string =>
-    rightAlign[i] ? cell.padStart(widths[i]!) : cell.padEnd(widths[i]!);
-  const fmt = (cells: string[]): string =>
-    cells.map((c, i) => pad(c, i)).join('  ');
-  const lines = [title, fmt(headers)];
-  lines.push(widths.map((w) => '-'.repeat(w)).join('  '));
-  for (const r of rows) lines.push(fmt(r));
-  return lines;
 }
 
 // --- push --------------------------------------------------------------------
@@ -524,47 +512,27 @@ interface FlakyOptions {
 
 async function flakyCmd(opts: FlakyOptions, deps: HistoryDeps): Promise<void> {
   const store = deps.makeStore(opts.dbUrl);
-  if (
-    await abstainOnEmptyHistory(store, deps, opts.json === true, 'flake rate')
-  ) {
+  const suite = opts.suite ?? null;
+  const json = opts.json === true;
+  const empty = emptyStoreEnvelope(opts.window);
+  if (await abstainOnEmptyHistory(store, deps, json, 'flake rate', empty)) {
     return;
   }
-  const results = await store.queryFlaky(
+  const results = await store.queryFlaky(opts.window, suite, opts.minRate);
+  const win = await describeFlakyWindow(store, opts.window, suite);
+
+  if (json) {
+    deps.out(jsonIndent2(buildFlakyEnvelope(results, opts.window, win)));
+    return;
+  }
+  for (const line of renderFlakyReport(
+    results,
     opts.window,
-    opts.suite ?? null,
     opts.minRate,
-  );
-
-  if (opts.json) {
-    deps.out(jsonIndent2(results));
-    return;
+    win,
+  )) {
+    deps.out(line);
   }
-
-  if (results.length === 0) {
-    deps.out(
-      pc.green(
-        `No tests above ${formatWithDecimalPoint(opts.minRate)}% flake rate in the last ${opts.window} runs.`,
-      ),
-    );
-    return;
-  }
-
-  const rows = results.map((r) => [
-    r.test_name,
-    r.suite ?? '',
-    r.area || MDASH_CELL,
-    // formatWithDecimalPoint so a whole-number rate renders `10.0%` like Python str(float),
-    // not `10%` (JS number has no int/float distinction).
-    `${formatWithDecimalPoint(r.flake_rate_pct)}%`,
-    `${r.flake_count}/${r.total_runs}`,
-  ]);
-  const lines = renderTable(
-    `Flaky Tests (window: ${opts.window} runs, threshold: ${GEQ} ${formatWithDecimalPoint(opts.minRate)}%)`,
-    ['Test', 'Suite', 'Area', 'Flake %', 'Flake/Total'],
-    rows,
-    [false, false, false, true, true],
-  );
-  for (const l of lines) deps.out(l);
 }
 
 // --- timeline ----------------------------------------------------------------

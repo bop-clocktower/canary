@@ -60,6 +60,40 @@ under the project's former name) are documented in the
   recorded run durations against absolute 5/10-minute thresholds, and still
   skips when no run carries a duration (#956).
 
+### Changed
+
+- **BREAKING: the flake surfaces disclose their window, and a thin one no longer
+  reads as healthy** (#604, Phase 1). `canary history flaky` and
+  `canary analyze flaky` used to print a green
+  `No tests above 10.0% flake rate in the last 30 runs.` over a store holding
+  two runs, and `canary ci-ready`'s flakiness check returned `pass` with
+  `0 flaky tests across 2 run(s)`. Zero findings out of two runs is an
+  abstention, not a clean suite (ADR 0009), so:
+
+  - **BREAKING `--json`**: both flaky commands now emit an OBJECT instead of a
+    bare row array — `window_requested`, `runs_read`, `sufficient`,
+    `flaky_measurable`, `rows` and `disclosures`. The rows themselves are
+    unchanged, under `rows`; consumers that indexed the top-level array must
+    read `.rows`.
+  - Every human flaky output opens with `read N runs (window W)`, and the green
+    all-clear line is printed only over a window of at least **10 runs**. Below
+    that it reports `insufficient history: N of 10 runs`.
+  - `canary ci-ready`'s flakiness check `warn`s (never passes) below 10 runs,
+    naming the run count. Zero runs still `skip`s, and a test at or above the
+    10% threshold still fails whatever the window size.
+  - A window whose every run came from the **vitest** reader now says
+    `retry flakes not measurable (vitest has no flaky status)` rather than
+    reporting `0` — the vitest reader never writes the `flaky` status, so that
+    zero is structural, not measured. `canary history record` stamps
+    `reporter_format` on each local run so read-time surfaces can tell the two
+    apart; legacy unstamped runs read as `unknown`, never as measurable.
+  - The **Supabase** backend cannot report which runs a flake query read, so
+    `runs_read` and `sufficient` are `null` there and no clean verdict over
+    remote rows is a pass.
+
+  Cross-run pass/fail alternation (the other half of #604) is not in this
+  change.
+
 ### Fixed
 
 - **`vacuity-check` no longer reports `import-inferred` VAC-002 on E2E specs**
