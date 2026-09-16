@@ -40,12 +40,22 @@ interface LeafPath {
   node: ShapeNode;
 }
 
+/** An own data property even for `__proto__`, which assignment would not make. */
+function setOwn(target: object, key: string | number, value: unknown): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
 function walkDefault(node: ShapeNode, field: string, rng: Rng): unknown {
   if (node.kind === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, f] of Object.entries(node.fields)) {
       const v = walkDefault(f.node, k, rng);
-      if (v !== undefined) out[k] = v;
+      if (v !== undefined) setOwn(out, k, v);
     }
     return out;
   }
@@ -86,7 +96,7 @@ function withPath(
     if (typeof next !== 'object' || next === null) return root;
     cursor = next as Record<string | number, unknown>;
   }
-  cursor[segments[segments.length - 1] as Segment] = value;
+  setOwn(cursor, segments[segments.length - 1] as Segment, value);
   return root;
 }
 

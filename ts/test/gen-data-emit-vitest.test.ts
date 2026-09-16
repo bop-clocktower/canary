@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { emitVitest } from '../src/core/gen-data/emit-vitest.js';
@@ -22,6 +23,77 @@ const text = () =>
     generateFixtureSet(shape, 'order', 765),
     'fixtures/order.schema.json',
   );
+
+describe('emitVitest with hostile schema text', () => {
+  const INJECT = 'line\nexport const pwned = 1;';
+  const BAD_FORMAT = 'x\nexport const pwned2 = 2;';
+  const hostile = extractJsonSchema(
+    JSON.parse(
+      JSON.stringify({
+        type: 'object',
+        properties: {
+          [INJECT]: {},
+          fmt: { type: 'string', format: BAD_FORMAT },
+          "it's\\back*/": { type: 'string' },
+          sep: { type: 'string', enum: ['a b', "q'\n"] },
+        },
+      }),
+    ).valueOf(),
+  );
+  // `__proto__` has to arrive the way JSON.parse delivers it: as an own key.
+  const withProto = extractJsonSchema(
+    JSON.parse(
+      '{"type":"object","properties":{"__proto__":{"type":"string"},"id":{"type":"string"}}}',
+    ),
+  );
+  const emit = (node: typeof hostile, name: string) =>
+    emitVitest(
+      node,
+      generateFixtureSet(node, name, 765),
+      'dir\n// evil source.json',
+    );
+  const load = (text: string) => {
+    const js = ts.transpileModule(text, {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }).outputText;
+    // Evaluate the generator's own output in an isolated context: the point is
+    // to prove what the emitted text DOES, not what it looks like.
+    const exports: Record<string, unknown> = {};
+    runInNewContext(js, { exports });
+    return exports as Record<string, (o?: object) => Record<string, unknown>>;
+  };
+
+  it('keeps schema text out of code position (comments, strings, keys)', () => {
+    const text = emit(hostile, 'hostile');
+    const lines = text.split('\n');
+    expect(lines.some((l) => /^export const pwned/.test(l))).toBe(false);
+    expect(lines.filter((l) => l.startsWith('//')).length).toBe(
+      text.split('\n').findIndex((l) => l === ''),
+    );
+    const out = ts.transpileModule(text, {
+      reportDiagnostics: true,
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    });
+    expect(out.diagnostics?.map((d) => d.messageText)).toEqual([]);
+    const mod = load(text);
+    expect(Object.keys(mod).sort()).toEqual(['buildHostile', 'hostileCases']);
+    expect(() => mod.buildHostile!()).toThrow(/is unresolved/);
+  });
+
+  it('a __proto__ field is an own property of the built value', () => {
+    const built = load(emit(withProto, 'proto')).buildProto!();
+    expect(Object.hasOwn(built, '__proto__')).toBe(true);
+    expect(
+      typeof Object.getOwnPropertyDescriptor(built, '__proto__')?.value,
+    ).toBe('string');
+  });
+});
 
 describe('emitVitest', () => {
   it('exports buildOrder, OrderFixture and orderCases', () => {

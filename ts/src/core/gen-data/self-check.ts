@@ -45,6 +45,31 @@ async function loadScan(
     : `${skill} scanner exports no scanText`;
 }
 
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** One detector's findings, or why it could not produce any. */
+async function runDetector(
+  skillsDir: string,
+  detector: string,
+  text: string,
+  file: string,
+): Promise<DetectorFinding[] | string> {
+  // A scanner that throws on import or mid-scan did not check anything, so
+  // the caller must hear "could not run", never a clean zero.
+  try {
+    const scan = await loadScan(skillsDir, detector);
+    if (typeof scan === 'string') return scan;
+    return scan(text, file).map((f) => ({
+      detector,
+      ruleId: f.ruleId,
+      line: f.line,
+      snippet: f.snippet,
+    }));
+  } catch (e) {
+    return `${detector} scanner failed: ${message(e)}`;
+  }
+}
+
 export async function selfCheck(
   text: string,
   file: string,
@@ -52,16 +77,10 @@ export async function selfCheck(
 ): Promise<SelfCheckResult> {
   const findings: DetectorFinding[] = [];
   for (const detector of DETECTORS) {
-    const scan = await loadScan(skillsDir, detector);
-    if (typeof scan === 'string')
-      return { status: 'unavailable', reason: scan };
-    for (const f of scan(text, file))
-      findings.push({
-        detector,
-        ruleId: f.ruleId,
-        line: f.line,
-        snippet: f.snippet,
-      });
+    const result = await runDetector(skillsDir, detector, text, file);
+    if (typeof result === 'string')
+      return { status: 'unavailable', reason: result };
+    findings.push(...result);
   }
   return { status: 'ran', detectors: [...DETECTORS], findings };
 }
