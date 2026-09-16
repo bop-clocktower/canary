@@ -1,0 +1,20 @@
+{
+  "issues": [604],
+  "route": "spec-only",
+  "stages": ["brainstorming"],
+  "specArtifact": "docs/changes/604-flakiness-detector/proposal.md",
+  "closingKeyword": "Refs",
+  "gapsFound": 5,
+  "decisionsForHuman": 7,
+  "pipelineProvenance": "degraded: harness-brainstorming run non-interactively per fleet brief; EVALUATE questions recorded as Decisions for the human; soundness-review, advise_skills, spec-craft and acceptance-eval not run",
+  "assumptions": [
+    "Route is extend existing flake surfaces, not a new skill or command.",
+    "Alternation metric and MIN_ALTERNATION_FLIPS=2 reused from WIP branch feat/604-cross-run-alternation (df06d3a).",
+    "Minimum sample is 10 runs per window and 8 definitive observations per test.",
+    "Below the minimum the verdict is warn with 'insufficient history', never pass.",
+    "ci-ready 10% threshold applies to max(flake_rate_pct, flip_rate_pct).",
+    "Supabase backend stays count-only in v1; alternation rendered UNKNOWN.",
+    "--json for the flaky commands becomes an envelope object (breaking).",
+    "classifyFlakeTrend wiring is out of scope."
+  ]
+}
