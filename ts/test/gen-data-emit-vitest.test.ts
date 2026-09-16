@@ -93,6 +93,20 @@ describe('emitVitest with hostile schema text', () => {
       typeof Object.getOwnPropertyDescriptor(built, '__proto__')?.value,
     ).toBe('string');
   });
+
+  it('renders a union type and guards an unresolved __proto__ by ownership', () => {
+    const node = extractJsonSchema(
+      JSON.parse(
+        '{"type":"object","properties":{"ref":{"anyOf":[{"type":"string"},{"type":"integer"}]},"__proto__":{}}}',
+      ),
+    );
+    const text = emit(node, 'mixed');
+    expect(text).toContain('  ref?: string | number;');
+    const build = load(text).buildMixed!;
+    expect(() => build()).toThrow(/mixed\.__proto__ is unresolved/);
+    const override = JSON.parse('{"__proto__":{"k":1}}') as object;
+    expect(Object.hasOwn(build(override), '__proto__')).toBe(true);
+  });
 });
 
 describe('emitVitest', () => {

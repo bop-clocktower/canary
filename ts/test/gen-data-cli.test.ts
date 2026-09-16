@@ -292,6 +292,19 @@ describe('canary gen-data edge exits (review fixes)', () => {
     expect(existsSync(join(root, 'out'))).toBe(false);
   });
 
+  it('human output names how many cases the 50-case cap dropped', async () => {
+    const wide = {
+      title: 'Wide',
+      type: 'object',
+      properties: Object.fromEntries(
+        Array.from({ length: 20 }, (_, i) => [`f${i}`, { type: 'number' }]),
+      ),
+    };
+    const res = await gen(write('wide.schema.json', wide));
+    expect(res.code).toBe(0);
+    expect(res.stdout).toMatch(/\d+ case\(s\) dropped at the 50-case cap\./);
+  });
+
   it('an unwritable --out exits 2 with a message, not a stack', async () => {
     const blocker = join(root, 'blocker');
     writeFileSync(blocker, 'a file, not a directory');

@@ -95,6 +95,14 @@ describe('extractJsonSchema abstains, never guesses', () => {
     [{ type: 'array' }, 'array has no items schema'],
     [{ type: 'null' }, 'type "null" has no ShapeNode kind'],
     [{ type: 'wat' }, 'unknown type "wat"'],
+    [
+      { type: 'string', not: { const: 'x' } },
+      'conditional schemas are not supported in this slice',
+    ],
+    [
+      { type: 'string', if: { minLength: 1 } },
+      'conditional schemas are not supported in this slice',
+    ],
   ])('%j -> unresolved (%s)', (schema, reason) => {
     expect(reasonOf(schema)).toBe(reason);
   });

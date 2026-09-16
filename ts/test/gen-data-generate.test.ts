@@ -93,6 +93,20 @@ describe('defaultValue', () => {
       if (node.integer) expect(Number.isInteger(v)).toBe(true);
     }
   });
+  it('a union defaults and plans cases from its first member', () => {
+    const union = {
+      kind: 'union',
+      members: [
+        { kind: 'number', integer: true, min: 1, max: 9 },
+        { kind: 'string' },
+      ],
+    } as const;
+    const v = defaultValue(union, 'ref', mulberry32(765));
+    expect(Number.isInteger(v)).toBe(true);
+    expect(leafCases(union, 'ref').map((c) => c.value)).toEqual(
+      leafCases(union.members[0], 'ref').map((c) => c.value),
+    );
+  });
   it('a date-only field defaults to YYYY-MM-DD and gets date-only cases', () => {
     const node = { kind: 'date', dateOnly: true } as const;
     expect(defaultValue(node, 'd', mulberry32(765))).toMatch(
