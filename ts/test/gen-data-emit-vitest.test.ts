@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { emitVitest } from '../src/core/gen-data/emit-vitest.js';
 import { generateFixtureSet } from '../src/core/gen-data/generate.js';
@@ -50,5 +54,62 @@ describe('emitVitest', () => {
   });
   it('is byte-identical across runs', () => {
     expect(text()).toBe(text());
+  });
+
+  it('the Order default type-checks against interface Order (criterion 3)', () => {
+    const order = extractJsonSchema({
+      type: 'object',
+      required: ['id', 'total', 'lines'],
+      properties: {
+        id: { type: 'string' },
+        total: { type: 'number' },
+        coupon: { type: 'string' },
+        lines: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['sku', 'qty'],
+            properties: { sku: { type: 'string' }, qty: { type: 'integer' } },
+          },
+        },
+      },
+    });
+    const dir = mkdtempSync(join(tmpdir(), 'gen-data-tsc-'));
+    try {
+      writeFileSync(
+        join(dir, 'order.fixtures.ts'),
+        emitVitest(
+          order,
+          generateFixtureSet(order, 'order', 765),
+          'order.schema.json',
+        ),
+      );
+      writeFileSync(
+        join(dir, 'check.ts'),
+        [
+          "import { buildOrder } from './order.fixtures.js';",
+          'interface OrderLine { sku: string; qty: number }',
+          'interface Order { id: string; total: number; lines: OrderLine[]; coupon?: string }',
+          'export const o: Order = buildOrder();',
+          "export const p: Order = buildOrder({ coupon: 'SYNTH10' });",
+        ].join('\n'),
+      );
+      const program = ts.createProgram([join(dir, 'check.ts')], {
+        strict: true,
+        exactOptionalPropertyTypes: true,
+        noEmit: true,
+        module: ts.ModuleKind.NodeNext,
+        moduleResolution: ts.ModuleResolutionKind.NodeNext,
+        target: ts.ScriptTarget.ES2022,
+        skipLibCheck: true,
+        types: [],
+      });
+      const diags = ts
+        .getPreEmitDiagnostics(program)
+        .map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'));
+      expect(diags).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
