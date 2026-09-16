@@ -1,0 +1,8 @@
+{
+  "reason": "canary briefing facts CLI, PR1 of the signed-off #593 spec (PR #985): module-size 39484->40097 (+613), measured with `harness check-arch --json` (CLI 12.7.0) on this branch, which is current with main 572ac22. newViolations is [] and the only regression is this aggregate. The growth is the feature: `ts/src/briefing/` (briefing-cli.ts, charter.ts, facts.ts, inputs.ts) plus its guide, implementing spec acceptance criteria 1-5, 7 and 8 — the deterministic facts half of the charter (diff scope, per-file coverage state, inventory import matches, and the abstention path), with the judgment sections left to PR2's skill rather than stubbed. Nothing was absorbed here to avoid a fix: the lane refactored away five perf findings rather than allowancing them (facts.ts split into facts.ts + inputs.ts, the facts.ts coupling ratio inverted so the module is runtime-dependency-free, briefing-cli.ts imports cut 18->14), and the two complexity violations its first draft introduced were removed in code. The measured value is 613 higher than the 568 the lane reported because main moved under it (PR #984, the spec sign-off banners) between its measurement and this one — re-measured here rather than carried over. Splitting further would not reduce the aggregate, which scores N files summing to 613 the same as one. Human-approved, 2026-09-15.",
+  "categories": {
+    "module-size": 40097
+  },
+  "violationIds": [],
+  "createdFrom": "572ac22"
+}
