@@ -34,6 +34,24 @@ function normalize(text: string): string {
     .replace(/\n+$/, '');
 }
 
+/**
+ * Drop the #604 flake-window preamble (`read N runs (window W)` plus any
+ * disclosure lines under it) so the rest of the section can still be compared
+ * byte-for-byte against the Python capture.
+ */
+function stripFlakeWindow(text: string): string {
+  return text
+    .split('\n')
+    .filter(
+      (line) =>
+        !/^read (\d+|UNKNOWN) runs \(window \d+\)$/.test(line) &&
+        !/^(insufficient history:|retry flakes not measurable|retry-flake measurability unknown|cannot verify: runs_read)/.test(
+          line,
+        ),
+    )
+    .join('\n');
+}
+
 function golden(name: string): string {
   return normalize(readFileSync(join(goldenDir, name), 'utf-8'));
 }
@@ -65,8 +83,21 @@ describe('TS↔Python analysis parity', () => {
 
   for (const [artifact, goldenFile] of CASES) {
     it(`${artifact} matches the Python golden output`, () => {
-      const actual = normalize(result.artifacts[artifact] ?? '');
+      const actual = normalize(
+        stripFlakeWindow(result.artifacts[artifact] ?? ''),
+      );
       expect(actual).toBe(golden(goldenFile));
+    });
+  }
+
+  // #604 G2: the flaky sections gained a window-disclosure preamble the Python
+  // reference never had. The goldens stay as captured (they are the Python
+  // provenance); the divergence is pinned HERE instead, so it is a stated
+  // change rather than a quietly rewritten capture.
+  for (const artifact of ['flaky.md', 'digest.md']) {
+    it(`${artifact} adds the #604 window disclosure the goldens predate`, () => {
+      expect(result.artifacts[artifact]).toContain('read ');
+      expect(result.artifacts[artifact]).toMatch(/\(window \d+\)/);
     });
   }
 

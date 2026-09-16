@@ -31,6 +31,8 @@ export interface RunInput {
   env?: string | null;
   base_url?: string | null;
   duration_ms?: number | null;
+  /** Which reader produced the run (#604); local-only, see `serializeLocalRecord`. */
+  reporter_format?: string | null;
 }
 
 /** Mirrors the Python `TestResult` dataclass. */
@@ -111,7 +113,9 @@ export function serializeTestResult(
  * "every row is self-describing" a property instead of a convention.
  *
  * Deliberately absent from `serializeRun`/`serializeTestResult`: those map to
- * the remote store's table columns, which have no such field.
+ * the remote store's table columns, which have no such field. `reporter_format`
+ * (#604) is stamped here for the same reason -- the remote tables have no such
+ * column, and adding it to `serializeRun` would make every upsert fail.
  */
 export function serializeLocalRecord(
   run: RunInput,
@@ -119,6 +123,12 @@ export function serializeLocalRecord(
 ): Record<string, unknown> {
   return {
     schema_version: SCHEMA_VERSION,
+    // Omitted rather than nulled when the writer did not know its reader: an
+    // absent stamp already means "unknown capability" to the read side, and
+    // writing `null` would change the on-disk shape of every `push`ed row.
+    ...(run.reporter_format === undefined || run.reporter_format === null
+      ? {}
+      : { reporter_format: run.reporter_format }),
     ...serializeRun(run),
     tests: results.map(serializeTestResult),
   };

@@ -16,6 +16,7 @@ import {
   buildRegressionCandidatesReport,
   buildFailureSpikesReport,
 } from './reports.js';
+import { describeFlakyWindow } from '../history/flake/window.js';
 import type {
   AreaHealthRow,
   CommonFailureRow,
@@ -121,6 +122,13 @@ export class AnalysisEngine {
       suite,
       minFlakeRatePct,
     )) as FlakyRow[];
+    // #604: the window the flaky rows were read over. `null` on a backend with
+    // no raw-record access, so the digest discloses UNKNOWN rather than clean.
+    const flakeWindow = await describeFlakyWindow(
+      this.store,
+      windowRuns,
+      suite,
+    );
 
     // Sections that need raw-record access are UNKNOWN, not empty, on a backend
     // that does not offer it (#711). `flaky` above and a suite-scoped `spikes`
@@ -170,10 +178,16 @@ export class AnalysisEngine {
       deltaPp,
       weeks,
       minSuites,
+      flakeWindow,
     });
 
     const artifacts: Record<string, string> = {
-      'flaky.md': buildFlakyTestsReport(flaky, windowRuns, minFlakeRatePct),
+      'flaky.md': buildFlakyTestsReport(
+        flaky,
+        windowRuns,
+        minFlakeRatePct,
+        flakeWindow,
+      ),
       'spikes.md': buildFailureSpikesReport(spikesRows, deltaPp),
       'area-health.md': buildAreaHealthReport(areaRows, weeks),
       'common-failures.md': buildCommonFailuresReport(commonRows, minSuites),

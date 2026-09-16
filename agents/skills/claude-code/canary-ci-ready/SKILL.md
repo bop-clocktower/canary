@@ -63,7 +63,15 @@ Read `test-results/quarantine-ledger.json` (or the path in
 No tool writes a quarantine ledger yet, so `canary ci-ready` scores flakiness
 from the run-history store instead: the last 30 runs in
 `test-results/reports/history-v2.jsonl`. Any test flaking in 10% or more of its
-runs fails the check, any lower flake rate warns, and no flakes passes.
+runs fails the check, and any lower flake rate warns.
+
+A clean result is only a `pass` when the window is big enough to mean something
+(#604). Below **10 runs** the check `warn`s with
+`insufficient history: N of 10 runs` — zero findings out of two runs is an
+abstention, not a clean suite. Zero runs still `skip`s. The reason line always
+states the window, and when every run in it came from the vitest reader (which
+has no `flaky` status) it adds `retry flakes not measurable` so a structural
+zero is never read as a measured one.
 
 A quarantined test is acceptable only when it has a linked open issue (Jira or
 GitHub). Check issue state:
