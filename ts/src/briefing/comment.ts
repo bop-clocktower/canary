@@ -14,7 +14,7 @@ import {
   upsertStickyComment,
 } from '../guardian/pr-comment.js';
 
-export const BRIEFING_MARKER = '<!-- canary-mission-briefing -->';
+const BRIEFING_MARKER = '<!-- canary-mission-briefing -->';
 
 /**
  * A client for the PR this run belongs to, or null outside a PR context.

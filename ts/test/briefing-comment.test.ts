@@ -5,11 +5,7 @@
  * guardian comment WOULD be overwritten, which keeps "untouched" non-vacuous.
  */
 import { describe, expect, it } from 'vitest';
-import {
-  BRIEFING_MARKER,
-  commentClientFor,
-  postCharter,
-} from '../src/briefing/comment.js';
+import { commentClientFor, postCharter } from '../src/briefing/comment.js';
 import {
   FakeGitHubClient,
   RestGitHubClient,
@@ -17,6 +13,8 @@ import {
 } from '../src/guardian/pr-comment.js';
 import { defaultMainDeps } from '../src/main-deps.js';
 
+/** The spec's literal marker (criterion 6), not an import of the constant. */
+const BRIEFING_MARKER = '<!-- canary-mission-briefing -->';
 const bot = { login: 'github-actions[bot]', type: 'Bot' };
 const guardianBody = `${STICKY_MARKER}\n## Guardian verdict`;
 

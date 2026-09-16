@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BriefingUnit } from '../src/briefing/facts.js';
-import {
-  type RawItem,
-  applyJudgment,
-  parseJudgment,
-} from '../src/briefing/judgment.js';
+import { applyJudgment, parseJudgment } from '../src/briefing/judgment.js';
 
 describe('parseJudgment', () => {
   it('accepts the skill contract shape', () => {
@@ -39,6 +35,8 @@ describe('parseJudgment', () => {
     expect(j).toEqual({ mission: 'm', verify: [], edge_cases: [] });
   });
 });
+
+type RawItem = { text?: unknown; cite?: unknown; category?: unknown };
 
 const units: BriefingUnit[] = [
   {

@@ -18,12 +18,12 @@ export const EDGE_CASE_CATEGORIES = [
   'Accessibility',
 ] as const;
 
-export interface RawItem {
+interface RawItem {
   text?: unknown;
   cite?: unknown;
   category?: unknown;
 }
-export interface Judgment {
+interface Judgment {
   mission: string;
   verify: RawItem[];
   edge_cases: RawItem[];

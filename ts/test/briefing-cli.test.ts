@@ -10,11 +10,13 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { BRIEFING_MARKER } from '../src/briefing/comment.js';
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { FakeGitHubClient, STICKY_MARKER } from '../src/guardian/pr-comment.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 import { invokeGuardian } from './guardian-cli-testkit.js';
+
+/** The spec's literal marker (criterion 6), not an import of the constant. */
+const BRIEFING_MARKER = '<!-- canary-mission-briefing -->';
 
 /** One added range (lines 1-3) in a source file, on the new side. */
 const DIFF = [
