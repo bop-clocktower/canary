@@ -45,8 +45,18 @@ import {
 } from '../guardian/pr-check.js';
 import type { MainDeps } from '../main-deps.js';
 import { renderCharter } from './charter.js';
-import { type BriefingSkip, type ScopedUnit, assembleFacts } from './facts.js';
+import {
+  type BriefingFacts,
+  type BriefingSkip,
+  type ScopedUnit,
+  assembleFacts,
+} from './facts.js';
 import { readInventoryIndex, readRankIndex } from './inputs.js';
+import {
+  type JudgmentResult,
+  applyJudgment,
+  parseJudgment,
+} from './judgment.js';
 
 interface BriefingOpts {
   diff?: string;
@@ -54,6 +64,7 @@ interface BriefingOpts {
   root?: string;
   config: string;
   json?: boolean;
+  judgment?: string;
 }
 
 /**
@@ -247,7 +258,36 @@ function runBriefing(opts: BriefingOpts, deps: MainDeps): void {
     );
   }
 
-  deps.out(opts.json === true ? jsonIndent2(facts) : renderCharter(facts));
+  const judgment = loadJudgment(opts.judgment, facts, deps);
+  deps.out(
+    opts.json === true
+      ? jsonIndent2(judgment === undefined ? facts : { ...facts, judgment })
+      : renderCharter(facts, judgment),
+  );
+}
+
+/** Read skill judgment; any problem degrades to a facts-only charter, never exit 1. */
+function loadJudgment(
+  path: string | undefined,
+  facts: BriefingFacts,
+  deps: MainDeps,
+): JudgmentResult | undefined {
+  if (path === undefined) return undefined;
+  let raw: string;
+  try {
+    raw = readFileSync(path, 'utf-8');
+  } catch (e) {
+    deps.err(
+      `WARNING: judgment ignored: '${path}' could not be read (${(e as Error).message})`,
+    );
+    return undefined;
+  }
+  const parsed = parseJudgment(raw);
+  if (typeof parsed === 'string') {
+    deps.err(`WARNING: judgment ignored: ${parsed}`);
+    return undefined;
+  }
+  return applyJudgment(parsed, facts.units);
 }
 
 export function buildBriefingCommand(deps: MainDeps): Command {
@@ -267,6 +307,10 @@ export function buildBriefingCommand(deps: MainDeps): Command {
       'harness.config.json',
     )
     .option('--json', 'Emit BriefingFacts JSON instead of Markdown.')
+    .option(
+      '--judgment <file>',
+      'Skill-written judgment JSON (mission, verify, edge_cases); items must cite path:line in the added ranges.',
+    )
     .action((opts: BriefingOpts) => {
       runBriefing(opts, deps);
     });

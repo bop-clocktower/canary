@@ -416,4 +416,81 @@ describe('canary briefing', () => {
     expect(res.code).toBe(EXIT_ABSTAINED);
     expect(res.stdout).toContain('Abstained:');
   });
+
+  const writeJudgment = (body: unknown): string => {
+    const p = join(root, 'judgment.json');
+    writeFileSync(
+      p,
+      typeof body === 'string' ? body : JSON.stringify(body),
+      'utf-8',
+    );
+    return p;
+  };
+  const JUDGMENT = {
+    mission: 'Explore the discount.',
+    verify: [
+      { text: 'Apply 10%', cite: 'src/discount.ts:2' },
+      { text: 'Off-diff', cite: 'src/discount.ts:9' },
+    ],
+    edge_cases: [
+      { category: 'Boundary values', text: '100%', cite: 'src/discount.ts:2' },
+      { category: 'Accessibility', text: 'uncited' },
+    ],
+  };
+
+  /** Criterion 9: only items citing an added line reach the charter. */
+  it('renders cited judgment and drops out-of-range items with a reason', async () => {
+    const res = await invokeCanary(
+      ['briefing', '--diff', diffPath, '--judgment', writeJudgment(JUDGMENT)],
+      { cwd: root },
+    );
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('**Mission:** Explore the discount.');
+    expect(res.stdout).toContain('- [ ] Apply 10% (`src/discount.ts:2`)');
+    expect(res.stdout).toContain('#### Boundary values');
+    expect(res.stdout).not.toContain('#### Accessibility');
+    const out = res.stdout.slice(res.stdout.indexOf('### Out of this charter'));
+    expect(out).toContain(
+      '"Off-diff" \u{2014} cites a line outside the added ranges',
+    );
+    expect(out).toContain('"uncited" \u{2014} no citation');
+  });
+
+  it('adds a judgment block to --json without bumping schema_version', async () => {
+    const res = await invokeCanary(
+      [
+        'briefing',
+        '--diff',
+        diffPath,
+        '--json',
+        '--judgment',
+        writeJudgment(JUDGMENT),
+      ],
+      { cwd: root },
+    );
+    const facts = JSON.parse(res.stdout);
+    expect(facts.schema_version).toBe(1);
+    expect(facts.judgment.verify).toHaveLength(1);
+    expect(facts.judgment.edge_cases).toHaveLength(1);
+    expect(facts.judgment.dropped).toHaveLength(2);
+  });
+
+  it.each([
+    ['invalid JSON', '{nope'],
+    ['a non-judgment object', '{"verify":[]}'],
+    ['a missing file', null],
+  ])(
+    'ignores %s judgment with a warning and still exits 0',
+    async (_label, body) => {
+      const p = body === null ? join(root, 'absent.json') : writeJudgment(body);
+      const res = await invokeCanary(
+        ['briefing', '--diff', diffPath, '--judgment', p],
+        { cwd: root },
+      );
+      expect(res.code).toBe(0);
+      expect(res.stderr).toContain('WARNING: judgment ignored:');
+      expect(res.stdout).toContain('### Existing tests');
+      expect(res.stdout).not.toContain('### Verify by hand');
+    },
+  );
 });
