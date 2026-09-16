@@ -1,0 +1,16 @@
+{
+  "issues": [765],
+  "route": "spec-only",
+  "stages": ["harness-brainstorming"],
+  "specArtifact": "docs/changes/765-synthetic-test-data/proposal.md",
+  "closingKeyword": "Refs",
+  "decisionsForHuman": 8,
+  "assumptions": [
+    "A1: TypeScript compiler API resolves project interfaces in well under 5s per target (spike checks)",
+    "A2: pytest path requires python3 on PATH at generation time, else abstains",
+    "A3: literal values in emitted code with a 50-case cap per target are acceptable for v1",
+    "A4: tests/generated/fixtures/ is the output root",
+    "A5: the six-category edge-case model is stable enough to key strategies on",
+    "A6: brainstorming ran autonomously with recommended defaults; no human consulted"
+  ]
+}
