@@ -19,16 +19,21 @@ const REFUSALS: ReadonlyArray<[(s: Schema) => boolean, string]> = [
   ],
 ];
 
+const isSchema = (v: unknown): v is Schema =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
 export function extractJsonSchema(schema: unknown): ShapeNode {
-  if (typeof schema !== 'object' || schema === null || Array.isArray(schema)) {
-    return unresolved('no type declared', schema);
-  }
-  const s = schema as Schema;
-  for (const [hit, reason] of REFUSALS)
-    if (hit(s)) return unresolved(reason, s);
-  const union = s.anyOf ?? s.oneOf;
+  if (!isSchema(schema)) return unresolved('no type declared', schema);
+  const refusal = REFUSALS.find(([hit]) => hit(schema));
+  if (refusal) return unresolved(refusal[1], schema);
+  const union = schema.anyOf ?? schema.oneOf;
   if (Array.isArray(union))
     return { kind: 'union', members: union.map(extractJsonSchema) };
+  return readTyped(schema);
+}
+
+/** Dispatch on a scalar `type` through the reader table. */
+function readTyped(s: Schema): ShapeNode {
   if (s.type === undefined) return unresolved('no type declared', s);
   const read = KIND_READERS[String(s.type)];
   return read ? read(s) : unresolved(typeReason(s.type), s);

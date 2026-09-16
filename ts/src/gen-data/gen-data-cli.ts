@@ -25,6 +25,7 @@ import {
 } from '../core/gen-data/generate.js';
 import { extractJsonSchema } from '../core/gen-data/json-schema.js';
 import { parseSeed } from '../core/gen-data/prng.js';
+import { selfCheck } from '../core/gen-data/self-check.js';
 import type { ShapeNode } from '../core/gen-data/shape.js';
 import { EXIT_ABSTAINED } from '../core/gate-result.js';
 import type { MainDeps } from '../main-deps.js';
@@ -93,7 +94,8 @@ async function checkEmitted(
   outFile: string,
   deps: MainDeps,
 ): Promise<string[]> {
-  const check = await deps.genDataSelfCheck(text, basename(outFile));
+  const run = deps.genDataSelfCheck ?? selfCheck;
+  const check = await run(text, basename(outFile));
   if (check.status === 'unavailable')
     abstain(deps, [
       `Abstained: self-check could not run (${check.reason}); no fixture written.`,
