@@ -1370,3 +1370,19 @@ describe('instrumented_lines (#657)', () => {
     expect(results![0]!.uncovered_lines).toEqual([11]);
   });
 });
+
+describe('lcov SF paths with Windows separators', () => {
+  it('matches a backslash SF path to the POSIX diff path, as Cobertura does', () => {
+    // Istanbul/c8 on Windows write `SF:src\\foo.ts`. The Cobertura reader
+    // already normalizes separators; the lcov reader must too, or the file
+    // silently falls through to a lower-fidelity tier.
+    const report = write(
+      'lcov.info',
+      'SF:pkg\\foo.py\nDA:12,3\nend_of_record\n',
+    );
+    const unit: ChangedUnit = { path: 'pkg/foo.py', added_ranges: [[12, 12]] };
+    const results = resolveFromReport([unit], report);
+    expect(results).toHaveLength(1);
+    expect(results![0]!.covered).toBe(true);
+  });
+});
