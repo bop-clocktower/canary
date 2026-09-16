@@ -16,7 +16,7 @@
     "Fixture name from schema title, else file name",
     "Only top-level unresolved keys get the overrides-required throw; nested ones are listed in the file header",
     "C1: blackhawk/savant scanners unloadable -> exit 3, nothing written",
-    "C2: schema root not an object -> exit 2 (usage error)",
+    "C2: resolved non-object root -> exit 2; unresolved or union root ($ref, allOf, anyOf) -> exit 3",
     "pytest framework -> exit 2 'not yet supported in this slice'",
     "Default seed 765, mulberry32 PRNG, 50-case cap",
     "Arch module-size floor moved to measured 41825 with allowance file; no ceiling or maxFindings raised",
