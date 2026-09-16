@@ -3,10 +3,13 @@
 **Keywords:** test-data, fixtures, factories, seeded-generation,
 shape-extraction, edge-case-coupling, abstention, determinism
 
-> **Status: spec only.** This proposal came out of a roadmap-fleet run where a
-> human said "spec only". Nobody has signed it off, and it contains no code, no
-> scripts and no workflow changes. The defaults marked _assumption_ were chosen
-> without asking anyone. The decisions at the end still need a human decision.
+> **Status: signed off 2026-09-15.** A human reviewed this proposal and accepted
+> its decisions D1-D8 as written, so the recommended defaults stand and a build
+> round may proceed from it (sign-off recorded on #765). The document itself is
+> still spec only: it contains no code, no scripts and no workflow changes, and
+> the defaults marked _assumption_ were chosen by the authoring lane rather than
+> asked. Implementation starts with the D2 spike on TypeScript compiler API
+> cost.
 
 ## Overview
 

@@ -3,10 +3,13 @@
 **Keywords:** exploratory-testing, test-charter, diff-scope, tier-0,
 diff-coverage, test-inventory, edge-cases, abstention, sticky-comment
 
-> **Status: spec only.** This proposal came out of a roadmap-fleet run where a
-> human said "spec only". Nobody has signed it off, and it contains no code, no
-> skill files and no CLI wiring. The defaults marked _assumption_ were chosen
-> without asking anyone. The decisions at the end still need a human.
+> **Status: signed off 2026-09-15.** A human reviewed this proposal and accepted
+> its decisions H1-H6 as written, so the recommended defaults stand and a build
+> round may proceed from it (sign-off recorded on #593). The document itself is
+> still spec only: it contains no code, no skill files and no CLI wiring, and
+> the defaults marked _assumption_ were chosen by the authoring lane rather than
+> asked. Implementation is three PRs: the facts CLI, then the skill, then the
+> opt-in PR comment. #593 stays open until all three land.
 
 ## Overview
 

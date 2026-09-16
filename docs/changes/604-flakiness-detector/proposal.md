@@ -3,11 +3,14 @@
 **Keywords:** flakiness, alternation, flip-rate, run-history, sample-size,
 abstention, canary-history, canary-analyze, ci-ready
 
-> **Status: spec only.** This proposal came out of a roadmap-fleet run where a
-> human said "spec only". Nobody has signed it off, and it contains no code, no
-> tests, no skill files and no CLI wiring. The defaults marked _assumption_ were
-> chosen without asking anyone (harness-brainstorming was run non-interactively;
-> its EVALUATE questions became the Decisions for the human at the end).
+> **Status: signed off 2026-09-15.** A human reviewed this proposal and accepted
+> its decisions H1-H7 as written, so the recommended defaults stand and a build
+> round may proceed from it (sign-off recorded on #604). The document itself is
+> still spec only: it contains no code, no tests, no skill files and no CLI
+> wiring, and the defaults marked _assumption_ were chosen by the authoring lane
+> (harness-brainstorming ran non-interactively; its EVALUATE questions became
+> the decisions at the end). Implementation is two PRs: the Phase 1 honesty
+> fixes, then flip detection. #604 stays open until both land.
 
 ## Overview
 
