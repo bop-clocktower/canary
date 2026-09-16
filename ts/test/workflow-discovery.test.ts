@@ -930,3 +930,149 @@ describe('default seams', () => {
     ).toThrow(CommandNotFoundError);
   });
 });
+
+// -- coverage sweep: default seams, malformed shapes, rethrow paths ----------
+
+describe('default seams', () => {
+  it('defaultHttpClient forwards method, headers and body to fetch', async () => {
+    const fetchMock = vi.fn(
+      async () => new Response('payload', { status: 418 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const res = await defaultHttpClient({
+        url: 'https://example.invalid/x',
+        method: 'POST',
+        headers: { A: '1' },
+        body: '{}',
+      });
+      expect(res).toEqual({ ok: false, status: 418, text: 'payload' });
+      expect(fetchMock).toHaveBeenCalledWith('https://example.invalid/x', {
+        method: 'POST',
+        headers: { A: '1' },
+        body: '{}',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('defaultHttpClient defaults to GET and omits absent headers/body', async () => {
+    const fetchMock = vi.fn(async () => new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const res = await defaultHttpClient({ url: 'https://example.invalid/' });
+      expect(res.ok).toBe(true);
+      expect(fetchMock).toHaveBeenCalledWith('https://example.invalid/', {
+        method: 'GET',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'defaultSubprocess returns exit code and output of a finished child',
+    () => {
+      const r = defaultSubprocess([
+        '/bin/sh',
+        '-c',
+        'echo out; echo err >&2; exit 7',
+      ]);
+      expect(r).toEqual({ returncode: 7, stdout: 'out\n', stderr: 'err\n' });
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'defaultSubprocess maps a timeout to SubprocessTimeoutError',
+    () => {
+      expect(() =>
+        defaultSubprocess(['/bin/sh', '-c', 'sleep 5'], { timeout: 0.1 }),
+      ).toThrow(SubprocessTimeoutError);
+    },
+  );
+});
+
+describe('WorkflowMapping.fromDict rejects malformed nested shapes', () => {
+  const base = { project_key: 'P', source: 'jira', discovered_at: 'x' };
+
+  it('throws on a transition missing id or name', () => {
+    expect(() =>
+      WorkflowMapping.fromDict({
+        ...base,
+        issue_types: [
+          { id: '1', name: 'Bug', statuses: [], transitions: [{ id: '9' }] },
+        ],
+      }),
+    ).toThrow('malformed transition');
+  });
+
+  it('throws on an issue type missing id', () => {
+    expect(() =>
+      WorkflowMapping.fromDict({
+        ...base,
+        issue_types: [{ name: 'Bug', statuses: [], transitions: [] }],
+      }),
+    ).toThrow('malformed issue type');
+  });
+});
+
+describe('fetchJira degenerate responses', () => {
+  it('a non-list issuetypes object without errorMessages yields no issue types', async () => {
+    setCreds();
+    const http = routedHttp([['issuetypes', { unexpected: true }]]);
+    const wd = new WorkflowDiscovery(tmp(), { http });
+    expect((await wd.fetchJira('PROJ')).issue_types).toEqual([]);
+  });
+
+  it('renders errorMessages Python-repr style in the refusal', async () => {
+    setCreds();
+    const cases: [string, unknown, string][] = [
+      ["O'K", null, `"O'K" not found or access denied: None`],
+      ['P', true, `'P' not found or access denied: True`],
+      ['P', false, `'P' not found or access denied: False`],
+      ['P', 42, `'P' not found or access denied: 42`],
+    ];
+    for (const [key, messages, expected] of cases) {
+      const http = routedHttp([['issuetypes', { errorMessages: messages }]]);
+      const wd = new WorkflowDiscovery(tmp(), { http });
+      await expect(wd.fetchJira(key)).rejects.toThrow(
+        `Jira project ${expected}`,
+      );
+    }
+  });
+
+  it('sampleTransitions returns [] when transitions is not an object', async () => {
+    for (const body of [null, ['t']]) {
+      const http = routedHttp([
+        ['search', { issues: [{ key: 'K-1' }] }],
+        ['K-1/transitions', body],
+      ]);
+      const wd = new WorkflowDiscovery(tmp(), { http });
+      expect(await wd.sampleTransitions('b', {}, 'P', 'Bug')).toEqual([]);
+    }
+  });
+});
+
+describe('fetchGithub rethrows unexpected subprocess errors', () => {
+  it('from the projects call', async () => {
+    const boom = new Error('EACCES');
+    const subprocess: SubprocessRun = () => {
+      throw boom;
+    };
+    const wd = new WorkflowDiscovery(tmp(), { subprocess });
+    await expect(wd.fetchGithub('o/r')).rejects.toBe(boom);
+  });
+
+  it('from the columns call', async () => {
+    const boom = new Error('EACCES');
+    const subprocess = fakeSub((cmd) => {
+      if (cmd.includes('repos/o/r/projects')) {
+        return { returncode: 0, stdout: 'https://cols', stderr: '' };
+      }
+      throw boom;
+    });
+    const wd = new WorkflowDiscovery(tmp(), { subprocess });
+    await expect(wd.fetchGithub('o/r')).rejects.toBe(boom);
+  });
+});

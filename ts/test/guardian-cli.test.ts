@@ -1021,6 +1021,21 @@ describe('mark-authored', () => {
 });
 
 describe('watch', () => {
+  it('a non-numeric --interval is a usage error, never a zero-delay poll loop', async () => {
+    const { WatchInterruptError } = await import('../src/guardian/cli.js');
+    const slept: number[] = [];
+    const res = await invokeGuardian(['watch', '--interval', 'abc'], {
+      deps: {
+        sleep: async (secs: number) => {
+          slept.push(secs);
+          throw new WatchInterruptError();
+        },
+      },
+    });
+    expect(slept).toEqual([]);
+    expect(res.code).toBe(2);
+  });
+
   it('prints startup + poll, then stops on interrupt', async () => {
     const { WatchInterruptError } = await import('../src/guardian/cli.js');
     let calls = 0;
