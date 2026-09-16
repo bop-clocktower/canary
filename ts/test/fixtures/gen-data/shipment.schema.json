@@ -1,0 +1,33 @@
+{
+  "title": "Shipment",
+  "type": "object",
+  "required": ["origin", "dest", "parcels"],
+  "properties": {
+    "origin": {
+      "type": "object",
+      "required": ["zone", "lat", "lon"],
+      "properties": {
+        "zone": { "type": "string" },
+        "lat": { "type": "number" },
+        "lon": { "type": "number" }
+      }
+    },
+    "dest": {
+      "type": "object",
+      "required": ["zone", "lat", "lon"],
+      "properties": {
+        "zone": { "type": "string" },
+        "lat": { "type": "number" },
+        "lon": { "type": "number" }
+      }
+    },
+    "parcels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["weightKg"],
+        "properties": { "weightKg": { "type": "number" } }
+      }
+    }
+  }
+}

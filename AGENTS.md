@@ -154,7 +154,7 @@ remote deletion is a human act. Worktree pruning waits for #889.
   `recommend`, `frameworks`, `feedback`, `run`, `init`, `migrate`, `setup`,
   `skills list`, `env-setup` (alias for `setup`), `version`, `review-test`,
   `flake-check`, `heal-test`, `vacuity-check`, `promote-check`, `ci-ready`,
-  `inventory`.
+  `inventory`, `gen-data`.
 
 ### Core Services (`ts/src/core/`)
 
@@ -238,6 +238,17 @@ remote deletion is a human act. Worktree pruning waits for #889.
   is a single-member union, so there is no field an LLM verdict could arrive in
   and acquire authority — `harness:test-craft` stays an optional human audit.
   Surfaced as `canary promote-check`.
+- **Synthetic test data:** [ts/src/core/gen-data/](ts/src/core/gen-data/) —
+  `canary gen-data --schema <path> --framework vitest` (#765). A JSON Schema
+  becomes a `ShapeNode` tree (anything unsupported is an `unresolved` node with
+  a reason, never a guess); a mulberry32 generator seeded with a fixed default
+  (765) produces boundary, locale-timezone and unexpected-shape cases (cap 50;
+  race, partial-network and accessibility are reported `notCovered`); the vitest
+  emitter writes literal-only `build<Name>()` and `<name>Cases` under
+  `tests/generated/fixtures/`, after running canary-blackhawk and canary-savant
+  over its own output. Exit 3 when zero fields resolve or the self-check could
+  not run; exit 1 on self-check findings. pytest and the TS compiler-API source
+  are later slices.
 - **Reporter:** [ts/src/core/reporter.ts](ts/src/core/reporter.ts) — Exports
   results to JSON or SARIF (Datadog, SonarQube, GitHub Code Scanning).
   **Vestigial as of v3.0:** it was invoked by the removed `canary generate` path

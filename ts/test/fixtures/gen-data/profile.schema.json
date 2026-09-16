@@ -1,0 +1,12 @@
+{
+  "title": "Profile",
+  "type": "object",
+  "required": ["handle", "tier", "active"],
+  "properties": {
+    "handle": { "type": "string", "minLength": 3, "maxLength": 20 },
+    "tier": { "type": "string", "enum": ["free", "pro"] },
+    "active": { "type": "boolean" },
+    "joinedOn": { "type": "string", "format": "date" },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  }
+}

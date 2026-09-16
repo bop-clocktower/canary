@@ -92,6 +92,12 @@ export interface MainDeps {
     repo: string,
     prNumber: number,
   ): import('./guardian/pr-comment.js').GitHubClient;
+  /**
+   * gen-data's blackhawk/savant self-check, injectable so its exit 1/3 paths
+   * are testable. Optional: `canary gen-data` falls back to the real
+   * `selfCheck`, so this module does not have to import gen-data at all.
+   */
+  genDataSelfCheck?: typeof import('./core/gen-data/self-check.js').selfCheck;
 }
 
 /** A stdin-backed prompt: reads piped lines once, returns `def` when exhausted. */
