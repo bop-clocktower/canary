@@ -1,0 +1,20 @@
+{
+  "issues": [593],
+  "phase": 1,
+  "route": "spec-ready",
+  "stages": ["tdd", "execution", "self-review"],
+  "specArtifact": "docs/changes/593-mission-briefing/proposal.md",
+  "closingKeyword": "Refs",
+  "acceptanceCriteriaCovered": [1, 2, 3, 4, 5, 7, 8],
+  "assumptions": [
+    "harness:autopilot was NOT run. Its own SKILL.md excludes this work: 'NOT for single-phase work (use harness-execution directly)' and 'NOT for CI/headless execution (conversational skill)'. This lane is PR1 of a three-PR spec (one phase) executing headless with no human present to answer its plain-text APPROVE_PLAN / PHASE_COMPLETE / DONE pauses, and its Iron Law would require re-delegating the whole item to persona subagents. The stages listed above are the ones that actually ran.",
+    "'Executed by' cannot name test files. Spec D7 sources it from Tier-0 coverage, but a coverage report records which LINES ran, never which test ran them. The column and the JSON field therefore carry the Tier-0 evidence sentence (field name `execution_evidence`), not a fabricated test list.",
+    "Only the COVERAGE-VERIFIED tier yields `covered`/`uncovered`. A unit judged at the graph or heuristic tier reads `unknown`, because inference is not execution (ADR 0010). Criterion 3 follows from this rather than being special-cased.",
+    "`imported_by` is `null` (not `[]`) when no inventory was readable, so criterion 4's 'must not read none found' holds structurally rather than by a rendering branch.",
+    "`.canary/critical-areas.json` has no committed schema, so the reader tolerates both a bare array and an `areas` key, keyed on `path` + `rank_score`. An unreadable file is a stated 'risk ranking unavailable' (D6), never an inline ranking.",
+    "Charter sections 2-4 (Mission, Verify by hand, Edge cases) are OMITTED entirely rather than emitted as empty placeholders. The spec's implementation order assigns them to PR2's skill, and an empty 'Verify by hand' heading would read as 'nothing to verify by hand'.",
+    "`DiffResolutionDeps` was added to ts/src/guardian/cli.ts as a narrow structural supertype of `GuardianDeps`, and six diff-resolution helpers were retyped to it (plus two exported). This is a type-only widening with no behavioural change to the gate; it exists so the #369 omitted-`--diff` resolution lives in exactly one place instead of being reimplemented.",
+    "A `briefing` architecture layer (`ts/src/briefing/**`, allowed to import guardian/core/util and the cli layer, never the reverse) was added to harness.config.json, per the spec's 'architecture layer assignment for the new module'. All four new modules were declared in both `entropy.entryPoints` and `performance.entryPoints`.",
+    "TWO ratchet items are left for a human and are NOT worked around: (a) the arch `module-size` metric regressed 39484 -> 40052 LOC, which any net-new feature does, and whose documented remedy in this repo is the `refresh-baseline` label on the regressing PR; (b) `ts/src/cli.ts` now has 16 imports against a threshold of 15, because the top-level registration module costs exactly one import per new command and sat at the threshold. Both were reported rather than silenced: no allowance, no baselines.json edit, no perf/entropy baseline edit."
+  ]
+}

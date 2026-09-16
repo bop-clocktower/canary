@@ -59,6 +59,16 @@ disambiguation matrix, the config-ownership map (`harness.config.json` vs
 **Best for:** Deciding which tool owns a setting or which skill to invoke when
 both are installed.
 
+### [Mission Briefing Guide](./mission-briefing.md)
+
+`canary briefing` — turns a diff into a test charter for a human tester. Covers
+the three-surface split (gate verdict vs test code vs charter), the facts the
+CLI derives from the guardian's Tier-0 scoping and coverage, the honesty rules
+(coverage unknown, abstention, no gate vocabulary), and the `BriefingFacts` JSON
+shape.
+
+**Best for:** Handing a reviewer or tester a diff-shaped plan to work through.
+
 ### [LLM Providers Guide](./llm-providers.md)
 
 **Removed in v3.0.** The `agent/llm/` provider layer was deleted — there are no
