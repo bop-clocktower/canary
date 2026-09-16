@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { generateFixtureSet } from '../src/core/gen-data/generate.js';
+import { extractJsonSchema } from '../src/core/gen-data/json-schema.js';
 import { mulberry32 } from '../src/core/gen-data/prng.js';
 import { defaultValue, leafCases } from '../src/core/gen-data/strategies.js';
 
@@ -75,5 +77,72 @@ describe('defaultValue', () => {
     expect(Number.isInteger(v)).toBe(true);
     expect(v as number).toBeGreaterThanOrEqual(1);
     expect(v as number).toBeLessThanOrEqual(99);
+  });
+});
+
+const ORDER = extractJsonSchema({
+  type: 'object',
+  required: ['id', 'total'],
+  properties: {
+    id: { type: 'string' },
+    total: { type: 'number' },
+    meta: {},
+  },
+});
+
+describe('generateFixtureSet', () => {
+  it('is a pure function of (shape, seed)', () => {
+    expect(generateFixtureSet(ORDER, 'order', 765)).toEqual(
+      generateFixtureSet(ORDER, 'order', 765),
+    );
+  });
+  it('omits unresolved fields from the default and discloses them', () => {
+    const set = generateFixtureSet(ORDER, 'order', 765);
+    expect(set.defaultValue).not.toHaveProperty('meta');
+    expect(set.unresolved).toEqual([
+      { path: 'order.meta', reason: 'no type declared' },
+    ]);
+    expect([set.fieldsResolved, set.fieldsTotal]).toEqual([2, 3]);
+  });
+  it('never plans a case against an unresolved path', () => {
+    const set = generateFixtureSet(ORDER, 'order', 765);
+    expect(
+      set.cases.some(
+        (c) => c.name.includes('meta') && c.category !== 'unexpected-shape',
+      ),
+    ).toBe(false);
+  });
+  it('adds missing-required and extra-field whole-object cases', () => {
+    const names = generateFixtureSet(ORDER, 'order', 765).cases.map(
+      (c) => c.name,
+    );
+    expect(names).toContain('unexpected-shape: missing required id');
+    expect(names).toContain('unexpected-shape: extra field');
+  });
+  it('reports race, partial-network and accessibility as notCovered', () => {
+    expect(generateFixtureSet(ORDER, 'order', 765).notCovered).toEqual([
+      { category: 'race', reason: 'not data-expressible' },
+      { category: 'partial-network', reason: 'not data-expressible' },
+      { category: 'accessibility', reason: 'not data-expressible' },
+    ]);
+  });
+  it('caps cases at 50 and reports the truncation', () => {
+    const wide = extractJsonSchema({
+      type: 'object',
+      properties: Object.fromEntries(
+        Array.from({ length: 20 }, (_, i) => [`f${i}`, { type: 'number' }]),
+      ),
+    });
+    const set = generateFixtureSet(wide, 'wide', 765);
+    expect(set.cases).toHaveLength(50);
+    expect(set.casesTruncated).toBeGreaterThan(0);
+  });
+  it('includes a fractional value for a non-integer number (criterion 9)', () => {
+    const vals = generateFixtureSet(ORDER, 'order', 765)
+      .cases.filter((c) => c.name.includes('total'))
+      .map((c) => (c.value as { total?: unknown }).total);
+    expect(
+      vals.some((v) => typeof v === 'number' && !Number.isInteger(v)),
+    ).toBe(true);
   });
 });
