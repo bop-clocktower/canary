@@ -1,0 +1,44 @@
+{
+  "npmVersion": "10.9.8",
+  "node": "v22.23.2",
+  "experiments": [
+    {
+      "name": "A+B optional peer, consumer without typescript",
+      "consumer": "consumer-bare",
+      "tsInstalled": false,
+      "guard": {
+        "resolved": false,
+        "tsVersion": null,
+        "failure": {
+          "name": "Error",
+          "code": "ERR_MODULE_NOT_FOUND",
+          "message": "Cannot find package 'typescript' imported from <TMP>/spike765-peer-MURNN9/consumer-bare/node_modules/spike765-lib/index.mjs"
+        }
+      },
+      "installTail": ["added 1 package in 198ms"]
+    },
+    {
+      "name": "C optional peer, consumer with typescript@5.4.5",
+      "consumer": "consumer-ts",
+      "tsInstalled": true,
+      "guard": {
+        "resolved": true,
+        "tsVersion": "5.4.5",
+        "failure": null
+      },
+      "installTail": ["added 2 packages in 682ms"]
+    },
+    {
+      "name": "Control: non-optional peer, consumer installs nothing extra",
+      "consumer": "consumer-hardpeer",
+      "tsInstalled": true,
+      "guard": {
+        "resolved": true,
+        "tsVersion": "7.0.2",
+        "failure": null
+      },
+      "installTail": ["added 3 packages in 1s"]
+    }
+  ],
+  "tempRoot": "(removed)"
+}

@@ -1,0 +1,8 @@
+{
+  "reason": "Recorded D2 spike for #765 (PR #986): module-size 40097->40528 (+431), measured with `harness check-arch --json` (CLI 12.7.0) on this branch rebased onto main 89deba1. newViolations is [] and the only regression is this aggregate. The +431 is the spike's own measurement harness — seven throwaway scripts under spike/765-shape-extraction (876 non-blank lines total; lib.mjs 239, version-probe.mjs 155, extract-shapes.mjs 139, peer-dep-probe.mjs 131, measure-cold.mjs 96, run-cold.mjs 69, hard-target.ts 47) that produced the numbers in SPIKE_REPORT.md. It is NOT engine code: nothing in ts/ imports it, it ships in no package, and it exists so the D2 measurements can be re-run rather than taken on faith — the same reason spike/schemathesis is kept (ADR 0012: deleting exploration history is not a cleanup). That spike is Python, which these analyzers do not read, so this is the first JavaScript spike in the repo and the first to meet these gates. Exclusion was tried first and does not work: adding spike/** to entropy.excludePatterns left both check-arch (+431) and check-perf (5 findings) unchanged, verified locally before falling back to an allowance. The alternative considered and rejected by the human was dropping the scripts and keeping only the report, which would have made the measurements unreproducible. Human-approved 2026-09-15. Prune this entry if the spike directory is ever removed.",
+  "categories": {
+    "module-size": 40528
+  },
+  "violationIds": [],
+  "createdFrom": "89deba1"
+}

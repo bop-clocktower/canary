@@ -37,6 +37,16 @@
       "rule": "coupling",
       "path": "agents/skills/claude-code/*/scripts/cli.mjs",
       "why": "The same shape one layer out (#591): a skill's cli.mjs imports its own pure modules plus the shared lib/parse-args.mjs and is imported by nothing but its test, which IS a coupling ratio of 1.00. The rule fires on the shape, not on a defect — canary-katana's cli.mjs already trips it and sits in the absolute backlog, so the family shape predates this entry. Taxing it would push a skill toward one fat cli.mjs, the opposite of the small-pure-modules layout these skills are built on, and that module would then trip the complexity rules instead. Scoped to the cli.mjs entry point only: every other file in a skill's scripts/ dir stays under the rule. The four non-structural findings canary-screech first introduced (two complexity, one function-length, one more complexity) were FIXED by splitting the functions, not allowanced."
+    },
+    {
+      "rule": "complexity",
+      "path": "spike/**",
+      "why": "A one-shot spike measurement harness under spike/765-shape-extraction, kept so the D2 numbers in SPIKE_REPORT.md can be re-run (ADR 0012 keeps recorded spikes). It is not engine code, nothing in ts/ imports it, and it ships in no package, so complexity there buys no maintenance risk. Scoped to spike/** only. Exclusion was tried first: spike/** in entropy.excludePatterns changes neither check-perf nor check-arch. Human-approved 2026-09-15; prune when the spike directory is removed."
+    },
+    {
+      "rule": "function-length",
+      "path": "spike/**",
+      "why": "Same reasoning as the complexity entry, for the function-length rule: shapeOf (106 lines) and probe (80 lines) are single-purpose measurement walkers in the spike harness, written to be read top to bottom rather than decomposed. Scoped to spike/** only. Human-approved 2026-09-15."
     }
   ]
 }

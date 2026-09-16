@@ -143,13 +143,13 @@ Example target: `function priceOrder(order: Order): Money` where
 
 ### Shape sources (v1)
 
-| Source                     | Mechanism                                                                                    | Status today                                                                    |
-| -------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| TS function params / types | TypeScript compiler API, resolving imported types within the project                         | **New.** `typescript` must move to a runtime (or optional peer) dependency — D2 |
-| Python signatures          | `python3 -c` with stdlib `ast` over annotations (dataclass, TypedDict, pydantic field names) | **New.** No Python analysis exists in `ts/src` since the TS port                |
-| Explicit schema            | JSON Schema file; zod schema module later                                                    | **New**, small                                                                  |
-| Symbol targeting           | Reuse `extractFileFunctions` names to validate `file#symbol` exists before the AST pass      | Exists (`ts/src/mcp-server.ts:387`)                                             |
-| Existing factories         | Reuse `FixtureScanner` to warn when a factory named `buildOrder` already exists              | Exists (`ts/src/core/fixture-scanner.ts:59`)                                    |
+| Source                     | Mechanism                                                                                    | Status today                                                                                                                     |
+| -------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| TS function params / types | TypeScript compiler API, resolving imported types within the project                         | **Opt-in second source** (D2 revisited): guarded dynamic import, version-gated to TS 5.x-6.x, abstains by name on 7.x or absence |
+| Python signatures          | `python3 -c` with stdlib `ast` over annotations (dataclass, TypedDict, pydantic field names) | **New.** No Python analysis exists in `ts/src` since the TS port                                                                 |
+| Explicit schema            | JSON Schema or zod schema module; `zod` is already a runtime dependency                      | **PRIMARY source in v1** (D2 revisited), small                                                                                   |
+| Symbol targeting           | Reuse `extractFileFunctions` names to validate `file#symbol` exists before the AST pass      | Exists (`ts/src/mcp-server.ts:387`)                                                                                              |
+| Existing factories         | Reuse `FixtureScanner` to warn when a factory named `buildOrder` already exists              | Exists (`ts/src/core/fixture-scanner.ts:59`)                                                                                     |
 
 Anything the extractor cannot resolve (`any`, `unknown`, generics without a
 concrete argument, conditional/mapped types, untyped Python params) becomes an
@@ -319,11 +319,65 @@ EARS-style; each is checkable by a later build lane and `outcome-eval`.
 11. **No company-specific content.** The emitted placeholders and fixtures
     corpus shall pass the repo's leak gate (no real names, emails or domains).
 
+## D2 revisited after the spike (2026-09-15)
+
+The D2 spike ran (`spike/765-shape-extraction/SPIKE_REPORT.md`, PR #986) and its
+result **changes the ordering in this spec**. A human accepted the spike's
+recommendation on 2026-09-15; the shape model, seeded generator, emitters,
+abstention doctrine and exit-code contract below are unchanged.
+
+What the spike measured:
+
+| Question                                | Result                                                                                                                                                                                                                                 |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cold cost, one file plus imports        | 306 ms / 183 MB median (5 runs, TS 5.9.3). ~145 ms of that is `import('typescript')` alone, scope-independent                                                                                                                          |
+| Cold cost, whole `ts/src`               | 553 ms / 273 MB                                                                                                                                                                                                                        |
+| Against the A1 budget (5 s)             | Met with 16x headroom — but 4.0x-7.2x the entire current CLI invocation (77-85 ms median)                                                                                                                                              |
+| Extraction feasibility                  | 0 of 4 real `ts/src/core` targets abstain with a full program; leaf-level abstention 10/70, only 1/70 a genuine compiler limit                                                                                                         |
+| Parse-only alternative                  | 153 ms, but resolves no imported interface — 3 of 4 targets abstain. Not a viable primary path                                                                                                                                         |
+| `noResolve`                             | Disqualified: silently rewrites unresolvable imports to `any`, indistinguishable from an author-written `any`                                                                                                                          |
+| Version coupling, 5.4.5 / 5.9.3 / 6.0.3 | Retired. All 43 probed entry points present, extracted shapes byte-identical                                                                                                                                                           |
+| **`typescript@7.0.2`**                  | **The compiler API is gone from the package main export.** `import('typescript')` yields only `{version, versionMajorMinor}`; `ts.createProgram` is not a function. The API moved to `typescript/unstable/sync` with a different shape |
+
+The broken premise is not cost. It is availability: D2 assumed "the consumer
+either has `typescript` or does not", and there is a third case — **the consumer
+has `typescript` and it has no compiler API**, which is what
+`npm install typescript@latest` now produces. A non-optional peer range of
+`>=5.0.0` was verified to install exactly that version.
+
+**Amended decision.** The primary shape source in v1 is the **explicit schema**
+(approach C in this spec; `zod` is already a runtime dependency, ~0 ms, zero
+version coupling). The compiler API becomes an **opt-in second source** behind a
+guarded dynamic `import()`, version-gated on `ts.versionMajorMinor` to the
+5.x-6.x classic API, abstaining with a named reason on 7.x and on absence. The
+guard is already verified: an optional peer is not installed by npm, and the
+failure is a clean `ERR_MODULE_NOT_FOUND`.
+
+**Consequences for the sections below.** "Shape sources (v1)" now reads
+schema-first, with the compiler-API row opt-in and version-gated. The
+"Registrations required" line about a `typescript` dependency change becomes a
+version **range that excludes 7.x**, not merely a change of dependency kind. The
+D2 ADR should record the availability finding, not just the cost question.
+
+**Not built on this evidence, per the spike:** a parse-only extractor as the
+primary path (75% target-level abstention is a capability in name only),
+anything using `noResolve`, an extractor against `typescript/unstable/*`, or
+`typescript` as a non-optional peer or hard runtime dependency.
+
+**Still unmeasured** (follow-ups if the compiler-API source is built): install
+and bundle-size impact, a port to `typescript/unstable/sync`, the Python `ast`
+path (A2, never checked), cost on a consumer repo rather than canary's own
+`ts/src`, and warm long-lived-process cost such as an MCP server holding a
+Program.
+
 ## Implementation order
 
-1. **Spike (throwaway).** Measure TypeScript compiler API cold-start and bundle
-   impact on a 50-file project; confirm Python `ast` via `python3` subprocess is
-   acceptable. Checks A1, A2.
+1. **Spike (throwaway) — DONE 2026-09-15** (PR #986,
+   spike/765-shape-extraction). Compiler API cost measured and affordable;
+   availability is the blocker, so the ordering below is amended by 'D2
+   revisited' above: the explicit schema comes first and the compiler API
+   becomes an opt-in, version-gated second source. Python `ast` via `python3`
+   (A2) remains unmeasured.
 2. **ShapeNode + TS extractor + seeded generator, TDD.** Pure modules with
    fixture tests; abstention rules first (criteria 4-6).
 3. **vitest emitter + `canary gen-data` CLI.** Exit codes, `--json`, self-check,
