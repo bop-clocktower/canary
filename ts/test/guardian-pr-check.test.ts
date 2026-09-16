@@ -777,3 +777,50 @@ describe('findReexportOnly', () => {
     expect(findReexportOnly(diff)).toEqual(new Set());
   });
 });
+
+describe('dynamic import is not a barrel', () => {
+  it('does not flag a file whose only added line calls import()', () => {
+    const diff = [
+      'diff --git a/src/boot.ts b/src/boot.ts',
+      '--- a/src/boot.ts',
+      '+++ b/src/boot.ts',
+      '@@ -0,0 +1,1 @@',
+      "+import('./app').then((m) => m.start());",
+    ].join('\n');
+    expect(findReexportOnly(diff)).toEqual(new Set());
+  });
+
+  it('does not flag a file whose only added line reads import.meta', () => {
+    const diff = [
+      'diff --git a/src/env.ts b/src/env.ts',
+      '--- a/src/env.ts',
+      '+++ b/src/env.ts',
+      '@@ -0,0 +1,1 @@',
+      '+import.meta.env.DEV && enableDebug();',
+    ].join('\n');
+    expect(findReexportOnly(diff)).toEqual(new Set());
+  });
+});
+
+describe('reason-less allow-untested pragma', () => {
+  it('does not suppress, so the hard gate still fails', () => {
+    const root = mkdtempSync(join(tmpdir(), 'guardian-blank-reason-'));
+    try {
+      writeFileSync(
+        join(root, 'a.ts'),
+        'export const x = 1; // canary:allow-untested   \n',
+      );
+      const finding = new GuardianFinding({
+        path: 'a.ts',
+        unit: 'a.ts',
+        severity: Severity.HIGH,
+        added_ranges: [[1, 1]],
+      });
+      applySuppressions([finding], root);
+      expect(finding.suppressed).toBe(false);
+      expect(computeExitCode([finding], 'hard')).toBe(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
