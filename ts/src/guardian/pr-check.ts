@@ -1373,7 +1373,12 @@ export function renderFindings(
   // `)` closes the link early, so a Next.js route group (`app/(marketing)/…`)
   // or any parenthesized directory would render as broken markup.
   const urlPath = (path: string): string =>
-    path.replace(/\(/g, '%28').replace(/\)/g, '%29');
+    path
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/')
+      .replace(/\(/g, '%28')
+      .replace(/\)/g, '%29');
   const fileLabel = (f: GuardianFinding): string => {
     const shown = `\`${f.path}\``;
     const linked = blobBase

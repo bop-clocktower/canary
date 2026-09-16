@@ -407,3 +407,18 @@ describe('richer cells stay within the comment budget', () => {
     expect(out.length).toBeLessThan(60_000);
   });
 });
+
+describe('permalink path encoding', () => {
+  it('percent-encodes a space so the markdown link is not broken', () => {
+    const base = 'https://github.com/o/r/blob/abc';
+    const out = renderFindings(
+      buildFindings([result({ unit: unit('src/my file.ts') })]),
+      'comment',
+      0,
+      null,
+      null,
+      base,
+    );
+    expect(out).toContain(`${base}/src/my%20file.ts#L44-L49`);
+  });
+});
