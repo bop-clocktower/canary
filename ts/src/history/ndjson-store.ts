@@ -14,25 +14,25 @@
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { maxFlakeOrFlipRate } from '../util/alternation.js';
 import { def } from '../util/coalesce.js';
 import { round1 } from '../util/round.js';
 import { SCHEMA_VERSION, resolveSchemaVersion } from './record.js';
 import type { RunRecord, TestResultRecord, TimelineEntry } from './record.js';
+import {
+  newFlakyCounter,
+  applyStatus,
+  toFlakyRow,
+  type FlakyCounter,
+  type FlakyQueryRow,
+} from './flake/rows.js';
 import { serializeLocalRecord } from './schema.js';
 import type { RunInput, TestResultInput } from './schema.js';
 
-export interface FlakyQueryRow {
-  test_name: string;
-  test_file: string;
-  suite: string;
-  area: string | null;
-  flake_count: number;
-  pass_count: number;
-  fail_count: number;
-  total_runs: number;
-  last_seen_run: string | null;
-  flake_rate_pct: number;
-}
+// The flaky row shape lives with its accumulator in `flake/rows.ts` (#604
+// Phase 2) so that module needs no import back here; re-exported so the many
+// existing `ndjson-store.js` importers are unaffected.
+export type { FlakyQueryRow } from './flake/rows.js';
 
 export interface SummaryRunRow {
   run_id: string;
@@ -126,9 +126,16 @@ export class NdjsonHistoryStore implements HistoryStore {
   ): FlakyQueryRow[] {
     let records = this.readAll();
     if (suite) records = records.filter((r) => r.suite === suite);
+    // #604 Phase 2: flips are only meaningful in TIME order, and the NDJSON
+    // file is in APPEND order -- a backfilled run would otherwise invent or
+    // hide transitions. Sort is stable and `cmp('', '')` is 0, so rows with no
+    // timestamp keep their append order rather than bunching at one end.
+    records = [...records].sort((a, b) =>
+      cmp(def(a.timestamp, ''), def(b.timestamp, '')),
+    );
     records = records.slice(-window);
 
-    const counts = new Map<string, Omit<FlakyQueryRow, 'flake_rate_pct'>>();
+    const counts = new Map<string, FlakyCounter>();
     for (const record of records) {
       for (const t of def(record.tests, [])) {
         let c = counts.get(t.test_name);
@@ -137,7 +144,9 @@ export class NdjsonHistoryStore implements HistoryStore {
           counts.set(t.test_name, c);
         }
         c.total_runs += 1;
-        applyStatus(c, def(t.status, ''));
+        const status = def(t.status, '');
+        applyStatus(c, status);
+        c.statuses.push(status);
         c.last_seen_run = record.run_id;
       }
     }
@@ -145,11 +154,21 @@ export class NdjsonHistoryStore implements HistoryStore {
     const results: FlakyQueryRow[] = [];
     for (const c of counts.values()) {
       if (c.total_runs === 0) continue;
-      const rate = round1((c.flake_count / c.total_runs) * 100);
-      if (rate >= minRate) results.push({ ...c, flake_rate_pct: rate });
+      const row = toFlakyRow(c, minRate);
+      // A row earns its place on EITHER axis: the flake rate it always did,
+      // or an alternation finding the flake rate is structurally blind to.
+      if (row.flake_rate_pct >= minRate || row.alternating === true) {
+        results.push(row);
+      }
     }
 
-    return results.sort((a, b) => b.flake_rate_pct - a.flake_rate_pct);
+    // Decision D4: rank on whichever axis is worse, so an alternator is not
+    // buried under a retry-flake. Ties keep the old flake-rate order.
+    return results.sort(
+      (a, b) =>
+        maxFlakeOrFlipRate(b) - maxFlakeOrFlipRate(a) ||
+        b.flake_rate_pct - a.flake_rate_pct,
+    );
   }
 
   queryTimeline(testName: string): TimelineEntry[] {
@@ -179,34 +198,9 @@ export class NdjsonHistoryStore implements HistoryStore {
 
 // ---------------------------------------------------------------------------
 // Row-mapping helpers — extracted so the query methods stay under the arch
-// complexity threshold. Each isolates one dense `??`-fallback cluster.
+// complexity threshold. Each isolates one dense `??`-fallback cluster. The
+// `flaky` row accumulator lives in `flake/rows.ts` (#604 Phase 2).
 // ---------------------------------------------------------------------------
-
-function newFlakyCounter(
-  record: RunRecord,
-  t: TestResultRecord,
-): Omit<FlakyQueryRow, 'flake_rate_pct'> {
-  return {
-    test_name: t.test_name,
-    test_file: def(t.test_file, ''),
-    suite: def(t.suite, def(record.suite, '')),
-    area: def(t.area, null),
-    flake_count: 0,
-    pass_count: 0,
-    fail_count: 0,
-    total_runs: 0,
-    last_seen_run: null,
-  };
-}
-
-function applyStatus(
-  c: Omit<FlakyQueryRow, 'flake_rate_pct'>,
-  status: string,
-): void {
-  if (status === 'flaky') c.flake_count += 1;
-  else if (status === 'passed') c.pass_count += 1;
-  else if (status === 'failed') c.fail_count += 1;
-}
 
 function toTimelineEntry(
   record: RunRecord,

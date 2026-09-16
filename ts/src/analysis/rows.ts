@@ -13,6 +13,11 @@ export interface FlakyRow {
   flake_rate_pct: number;
   flake_count: number;
   total_runs: number;
+  /** The cross-run flip axis (#604 Phase 2); absent on a count-only backend. */
+  flip_count?: number;
+  flip_rate_pct?: number;
+  observed?: number;
+  alternating?: boolean | null;
 }
 
 export interface SpikeRow {

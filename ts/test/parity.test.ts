@@ -52,6 +52,28 @@ function stripFlakeWindow(text: string): string {
     .join('\n');
 }
 
+/**
+ * Drop the #604 Phase 2 flip columns (`Flip %`, `Flips/Observed`) from a
+ * Markdown table row or header, so the columns the Python reference DID
+ * produce can still be compared byte-for-byte.
+ *
+ * Same reasoning as {@link stripFlakeWindow}: the goldens are the Python
+ * provenance and are left as captured, and the TS-only divergence is pinned in
+ * its own assertion below rather than by rewriting a capture Python never
+ * emitted.
+ */
+function stripFlipColumns(text: string): string {
+  let inFlaky = false;
+  return text
+    .split('\n')
+    .map((line) => {
+      if (line.startsWith('## ')) inFlaky = line.includes('Flaky Tests');
+      if (!inFlaky || !line.startsWith('|')) return line;
+      return line.split('|').slice(0, -3).join('|') + '|';
+    })
+    .join('\n');
+}
+
 function golden(name: string): string {
   return normalize(readFileSync(join(goldenDir, name), 'utf-8'));
 }
@@ -84,7 +106,7 @@ describe('TS↔Python analysis parity', () => {
   for (const [artifact, goldenFile] of CASES) {
     it(`${artifact} matches the Python golden output`, () => {
       const actual = normalize(
-        stripFlakeWindow(result.artifacts[artifact] ?? ''),
+        stripFlipColumns(stripFlakeWindow(result.artifacts[artifact] ?? '')),
       );
       expect(actual).toBe(golden(goldenFile));
     });
@@ -98,6 +120,15 @@ describe('TS↔Python analysis parity', () => {
     it(`${artifact} adds the #604 window disclosure the goldens predate`, () => {
       expect(result.artifacts[artifact]).toContain('read ');
       expect(result.artifacts[artifact]).toMatch(/\(window \d+\)/);
+    });
+  }
+
+  // #604 Phase 2 (G1): the flaky table gained the cross-run flip axis, which
+  // the Python reference never computed. Pinned here for the same reason.
+  for (const artifact of ['flaky.md', 'digest.md']) {
+    it(`${artifact} adds the #604 flip columns the goldens predate`, () => {
+      expect(result.artifacts[artifact]).toContain('Flip %');
+      expect(result.artifacts[artifact]).toContain('Flips/Observed');
     });
   }
 

@@ -22,6 +22,7 @@ import {
   type CriticalAreasInput,
   type InventoryInput,
 } from './inventory-checks.js';
+import { flakeSignals, type FlakeSignal } from './flake-signals.js';
 import {
   MIN_WINDOW_RUNS,
   NOT_MEASURABLE_NOTE,
@@ -69,24 +70,6 @@ export interface CiReadyInputs {
 const FLAKY_WINDOW_RUNS = 30;
 const FLAKY_FAIL_RATE = 0.1;
 
-/** Per-test flake rate across the window, for tests that appeared at all. */
-function flakeRates(runs: ScoredRun[]): Map<string, number> {
-  const seen = new Map<string, { present: number; flaky: number }>();
-  for (const run of runs) {
-    for (const t of run.tests ?? []) {
-      const s = seen.get(t.test_name) ?? { present: 0, flaky: 0 };
-      s.present += 1;
-      if (t.status === 'flaky') s.flaky += 1;
-      seen.set(t.test_name, s);
-    }
-  }
-  const rates = new Map<string, number>();
-  for (const [name, s] of seen) {
-    if (s.flaky > 0) rates.set(name, s.flaky / s.present);
-  }
-  return rates;
-}
-
 /**
  * The measurability suffix for a clean window (#604 G3/SC4).
  *
@@ -123,7 +106,7 @@ function scoreCleanWindow(window: ScoredRun[]): CiCheck {
     name,
     verdict: 'pass',
     reason:
-      `0 flaky tests across ${runsRead} run(s) ${windowNote}` +
+      `0 flaky or alternating tests across ${runsRead} run(s) ${windowNote}` +
       measurabilitySuffix(measurabilityOf(window)),
   };
 }
@@ -141,18 +124,25 @@ function scoreFlakiness(
     };
   }
   const window = runs.slice(-FLAKY_WINDOW_RUNS);
-  const rates = flakeRates(window);
-  if (rates.size === 0) return scoreCleanWindow(window);
-  let worst: [string, number] = ['', 0];
-  for (const entry of rates) if (entry[1] > worst[1]) worst = entry;
-  const pct = Math.round(worst[1] * 100);
-  const verdict: CheckVerdict = worst[1] >= FLAKY_FAIL_RATE ? 'fail' : 'warn';
+  const signals = flakeSignals(window);
+  if (signals.size === 0) return scoreCleanWindow(window);
+  let worstName = '';
+  let worst: FlakeSignal = { rate: 0, axis: 'retry-flake' };
+  for (const [nm, sig] of signals) {
+    if (sig.rate > worst.rate) {
+      worst = sig;
+      worstName = nm;
+    }
+  }
+  const pct = Math.round(worst.rate * 100);
+  const verdict: CheckVerdict = worst.rate >= FLAKY_FAIL_RATE ? 'fail' : 'warn';
   return {
     name,
     verdict,
     reason:
-      `${rates.size} flaky test(s) across ${window.length} run(s) ` +
-      `(window ${FLAKY_WINDOW_RUNS}); worst is ${worst[0]} at ${pct}%`,
+      `${signals.size} flaky or alternating test(s) across ${window.length} ` +
+      `run(s) (window ${FLAKY_WINDOW_RUNS}); worst is ${worstName} at ` +
+      `${pct}% on ${worst.axis}`,
   };
 }
 

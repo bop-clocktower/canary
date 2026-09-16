@@ -96,6 +96,18 @@ with `read N runs (window W)`. Read three fields before believing a zero:
 | `runs_read`        | Runs actually read in the window. `null` = the backend cannot say |
 | `sufficient`       | `false` below 10 runs, `null` when `runs_read` is UNKNOWN         |
 | `flaky_measurable` | `no` = a vitest-only window, where 0 retry flakes is STRUCTURAL   |
+| `flips_measured`   | `false` = the backend measures no cross-run flips at all          |
+
+**Two flake axes (#604 Phase 2):** each row carries a retry-flake rate
+(`flake_rate_pct`, the within-run `flaky` status) AND a cross-run flip rate
+(`flip_rate_pct`, how often consecutive `passed`/`failed` outcomes disagreed
+over `observed` observations). Rows are ranked on whichever is worse, so read
+both before describing a test. `alternating` is `true` (at least 2 flips over
+the threshold), `false` (measured clean), or **`null` = UNKNOWN** — fewer than 8
+definitive observations, too thin a sample to call. Report `null` as "not
+measured", never as clean. A `flip_rate_pct` of `UNKNOWN` in the table, or
+`flips_measured: false`, means the backend does not measure the axis at all (the
+Supabase store) — not that there are no flips.
 
 `sufficient: false` or `null`, or `flaky_measurable` of `no` or `unknown`, means
 the zero is an abstention. Report it as "not measured" rather than "clean", and

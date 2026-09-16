@@ -1,0 +1,19 @@
+{
+  "issues": [604],
+  "phase": 2,
+  "route": "spec-ready",
+  "stages": [],
+  "specArtifact": "docs/changes/604-flakiness-detector/proposal.md",
+  "closingKeyword": "Closes",
+  "acceptanceCriteriaCovered": ["SC6", "SC7", "SC8", "SC9", "SC10", "SC12"],
+  "wipCommitReused": "df06d3a",
+  "assumptions": [
+    "The ported alternation core lives in ts/src/util/alternation.ts rather than ts/src/history/detector.ts as the spec's 'Where it lives' says. Two reasons: core/ci-ready.ts must read the same computation (spec D9) and core -> history is a layer violation harness check-deps rejects, which is the same reason Phase 1 put flake-window.ts in util/; and ts/src/history's top-level module-size budget had no room for it.",
+    "The per-test 8-observation minimum (D5/H2) is rendered as a three-valued alternating field: true / false / null, where null is UNKNOWN. The spec named the minimum but not its representation; null reuses Phase 1's UNKNOWN-is-not-zero doctrine rather than inventing a second vocabulary.",
+    "The observation minimum gates the CLEAN verdict only. A test already observed changing and changing back is reported whatever its sample size, since withholding an observed finding would be its own false green.",
+    "A row is included when it crosses the threshold on EITHER axis. The spec requires SC6's alternator to be listed while its flake rate is 0, which cannot happen under a flake-rate-only filter.",
+    "queryFlaky now sorts records by timestamp before windowing, per the spec's 'Ordering by timestamp' accepted risk. Runs with no timestamp keep their append order (the sort is stable).",
+    "The Supabase flip disclosure is keyed off the same optional-readAll capability split Phase 1 used for runs_read, so flips_measured is false exactly where runs_read is null.",
+    "The TS-Python parity goldens are left as captured; the new Flip % / Flips/Observed columns are stripped from the flaky section before comparison and pinned in their own assertion, which is the precedent Phase 1 set for its window preamble."
+  ]
+}

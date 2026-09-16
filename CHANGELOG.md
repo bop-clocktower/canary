@@ -62,6 +62,39 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **BREAKING: cross-run pass/fail alternation is detected, and the flake
+  surfaces rank and judge on `max(flake_rate, flip_rate)`** (#604, Phase 2).
+  `flake_count` only ever increments on the within-run `flaky` status, which the
+  vitest reader never writes, so a test going passed, failed, passed, failed
+  ACROSS runs had `flake_count: 0` and appeared nowhere. That population is the
+  one #604 was filed for.
+
+  - `canary history flaky` and `canary analyze flaky` rows gain `flip_count`,
+    `flip_rate_pct`, `observed` (definitive `passed`/`failed` observations) and
+    `alternating`. A test is `alternating` only with at least **2 flips**
+    (changed and changed back) at or above the rate threshold — one flip is a
+    step change, which `analyze regression-candidates` already owns.
+  - **BREAKING `--json`**: the envelope gains `flips_measured`. A row now
+    appears if it crosses the threshold on EITHER axis, and both flaky surfaces
+    rank on `max(flake_rate_pct, flip_rate_pct)`, so an alternator at 60% flips
+    is no longer buried under a retry-flake at 20%.
+  - **BREAKING human output**: the flaky table gains `Flip %` and
+    `Flips/Observed` columns.
+  - `alternating` is three-valued: `true`, `false`, or `null` for UNKNOWN when
+    the test has fewer than **8** definitive observations — too thin a sample to
+    call clean. A positive finding needs no minimum.
+  - `canary ci-ready`'s flakiness check now judges its 10% threshold on
+    `max(flake, flip)` and names the axis in its reason
+    (`worst is <test> at 100% on cross-run flips`). Its clean-window reason
+    reads `0 flaky or alternating tests across N run(s)`.
+  - The **Supabase** backend measures no flips: `flips_measured` is `false`, the
+    row fields stay ABSENT rather than zero, and the flip cells render
+    `UNKNOWN`.
+  - `queryFlaky` now orders runs by `timestamp` before windowing (a flip is only
+    meaningful in time order; the NDJSON file is in append order, so a
+    backfilled run could previously invent or hide a transition). Runs with no
+    timestamp keep their append order.
+
 - **BREAKING: the flake surfaces disclose their window, and a thin one no longer
   reads as healthy** (#604, Phase 1). `canary history flaky` and
   `canary analyze flaky` used to print a green

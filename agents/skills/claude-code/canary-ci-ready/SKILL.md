@@ -65,6 +65,15 @@ from the run-history store instead: the last 30 runs in
 `test-results/reports/history-v2.jsonl`. Any test flaking in 10% or more of its
 runs fails the check, and any lower flake rate warns.
 
+Since #604 Phase 2 the threshold is applied to **`max(flake_rate, flip_rate)`**,
+not the flake rate alone. The flip rate is cross-run pass/fail alternation — the
+axis the flake rate is structurally blind to, because `flaky` is a within-run
+retry the vitest reader never writes. A test that goes passed, failed, passed,
+failed across runs has a flake rate of 0 and a flip rate of 100%, and now fails
+the check. The reason line names which axis produced the worst score. A single
+step change (one flip) is not alternation; that is
+`canary analyze regression-candidates`' subject.
+
 A clean result is only a `pass` when the window is big enough to mean something
 (#604). Below **10 runs** the check `warn`s with
 `insufficient history: N of 10 runs` — zero findings out of two runs is an

@@ -18,51 +18,15 @@ import type {
   SpikeRow,
 } from './rows.js';
 import { num1, formatWithDecimalPoint, round1 } from '../util/round.js';
-import { assessFlakyWindow, type FlakyWindow } from '../util/flake-window.js';
+// Re-exported so the many existing `reports.js` importers keep working; the
+// builder itself moved to `flake/report.ts` when #604 Phase 2 gave the flaky
+// table a second axis (module-size and coupling budgets, see that file).
+export { buildFlakyTestsReport } from './flake/report.js';
+import { buildFlakyTestsReport, type FlakyWindow } from './flake/report.js';
 import { def } from '../util/coalesce.js';
 
 // Re-exported so existing callers/tests importing round1 from here still work.
 export { round1 };
-
-// ---------------------------------------------------------------------------
-// Flaky report
-// ---------------------------------------------------------------------------
-
-/**
- * `win` is the window the rows were read over (#604); `null` is an UNKNOWN
- * window, which withholds the green all-clear rather than earning it.
- */
-export function buildFlakyTestsReport(
-  rows: FlakyRow[],
-  windowRuns: number,
-  minRatePct: number,
-  win: FlakyWindow | null = null,
-  limit = 20,
-): string {
-  const assessment = assessFlakyWindow(windowRuns, win);
-  const preamble =
-    [assessment.header, ...assessment.disclosures].join('\n') + '\n';
-  if (rows.length === 0) {
-    if (!assessment.clean) return preamble;
-    return `${preamble}No tests above ${formatWithDecimalPoint(minRatePct)}% flake rate in the last ${windowRuns} runs.\n`;
-  }
-
-  const sorted = [...rows]
-    .sort((a, b) => b.flake_rate_pct - a.flake_rate_pct)
-    .slice(0, limit);
-  const lines = [
-    `## Fleet-wide Flaky Tests (top ${limit}, window: ${windowRuns} runs, threshold: ≥ ${formatWithDecimalPoint(minRatePct)}%)\n`,
-    '| Test | Suite | Area | Flake % | Flake/Total |',
-    '|------|-------|------|---------|-------------|',
-  ];
-  for (const r of sorted) {
-    lines.push(
-      `| ${r.test_name} | ${r.suite ?? ''} | ${r.area || '—'} ` +
-        `| ${num1(r.flake_rate_pct)}% | ${r.flake_count}/${r.total_runs} |`,
-    );
-  }
-  return preamble + lines.join('\n') + '\n';
-}
 
 // ---------------------------------------------------------------------------
 // Spikes report
