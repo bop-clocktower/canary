@@ -321,6 +321,16 @@ describe('guardian precision (CLI, derived)', () => {
     expect(res.stdout).toContain('GITHUB_TOKEN');
   });
 
+  it('a non-numeric --days is a usage error (exit 2), not a RangeError crash', async () => {
+    const source = new FakeAdjudicationSource({ merged: [] });
+    await expect(
+      invokeGuardian(['precision', '--days', 'abc'], {
+        env,
+        deps: { buildAdjudicationSource: () => source },
+      }),
+    ).resolves.toMatchObject({ code: 2 });
+  });
+
   it('collect-adjudications is gone (ADR 0025)', async () => {
     const res = await invokeGuardian(['collect-adjudications']);
     expect(res.code).not.toBe(0);
