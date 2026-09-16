@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { generateFixtureSet } from '../src/core/gen-data/generate.js';
 import { extractJsonSchema } from '../src/core/gen-data/json-schema.js';
 import { mulberry32 } from '../src/core/gen-data/prng.js';
+import type { ShapeNode } from '../src/core/gen-data/shape.js';
 import { defaultValue, leafCases } from '../src/core/gen-data/strategies.js';
 
 describe('leafCases', () => {
@@ -94,17 +95,15 @@ describe('defaultValue', () => {
     }
   });
   it('a union defaults and plans cases from its first member', () => {
-    const union = {
+    const first: ShapeNode = { kind: 'number', integer: true, min: 1, max: 9 };
+    const union: ShapeNode = {
       kind: 'union',
-      members: [
-        { kind: 'number', integer: true, min: 1, max: 9 },
-        { kind: 'string' },
-      ],
-    } as const;
+      members: [first, { kind: 'string' }],
+    };
     const v = defaultValue(union, 'ref', mulberry32(765));
     expect(Number.isInteger(v)).toBe(true);
     expect(leafCases(union, 'ref').map((c) => c.value)).toEqual(
-      leafCases(union.members[0], 'ref').map((c) => c.value),
+      leafCases(first, 'ref').map((c) => c.value),
     );
   });
   it('a date-only field defaults to YYYY-MM-DD and gets date-only cases', () => {
