@@ -882,7 +882,10 @@ export function suppressionReason(line: string): string | null {
     const idx = reason.indexOf(closer);
     if (idx !== -1) reason = reason.slice(0, idx);
   }
-  return reason.trim();
+  // A pragma with no reason left after stripping (`// canary:allow-untested  `)
+  // is not a suppression: the reason is the contract that clears the gate.
+  const trimmed = reason.trim();
+  return trimmed ? trimmed : null;
 }
 
 /**
