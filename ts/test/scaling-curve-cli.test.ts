@@ -92,6 +92,164 @@ describe('canary scaling-curve', () => {
     });
   });
 
+  describe('--run with partial emission', () => {
+    it('overrides a fittable verdict to INSUFFICIENT_DATA when any run dropped the metric', async () => {
+      const out: string[] = [];
+      const deps = { ...defaultMainDeps(), out: (s: string) => out.push(s) };
+      let n = 0;
+      // Every size still gets 2 of 3 samples, so the fit alone would succeed.
+      const cmd = buildScalingCurveCommand(deps, (_s, size) =>
+        (n += 1) % 3 === 0 ? null : size,
+      );
+      cmd.exitOverride();
+      const err = await cmd
+        .parseAsync(
+          [
+            '--run',
+            'load.js',
+            '--sizes',
+            '1000,2000,4000,8000,16000',
+            '--json',
+          ],
+          {
+            from: 'user',
+          },
+        )
+        .then(
+          () => undefined,
+          (e: { code?: unknown }) => e,
+        );
+      expect(err?.code).toBe(EXIT_ABSTAINED);
+      const body = JSON.parse(out.join('\n'));
+      expect(body.verdict).toBe('INSUFFICIENT_DATA');
+      expect(body.reasons).toEqual([
+        'metric http_req_duration:p(95) was not emitted by 5 run(s)',
+      ]);
+      expect(body.points).toHaveLength(5);
+    });
+  });
+
+  describe('argument validation', () => {
+    // Direct handler call: commander reports option-parse errors through its own
+    // output hook and action errors by rejecting, so capture both.
+    async function reject(args: string[]): Promise<string> {
+      const deps = { ...defaultMainDeps(), out: () => undefined };
+      const cmd = buildScalingCurveCommand(deps, () => 1);
+      const errs: string[] = [];
+      cmd.exitOverride().configureOutput({ writeErr: (s) => errs.push(s) });
+      const e = await cmd.parseAsync(args, { from: 'user' }).then(
+        () => undefined,
+        (x: Error) => x,
+      );
+      expect(e).toBeInstanceOf(Error);
+      return `${e?.message}\n${errs.join('')}`;
+    }
+
+    it('rejects a non-positive --target', async () => {
+      expect(await reject(['points.csv', '--target', '0'])).toMatch(
+        /must be a positive number, got "0"/,
+      );
+    });
+
+    it('rejects a non-numeric entry in --sizes', async () => {
+      expect(await reject(['--run', 'load.js', '--sizes', '1000,abc'])).toMatch(
+        /must be a positive number, got "abc"/,
+      );
+    });
+
+    it('refuses to run with neither a points file nor --run', async () => {
+      expect(await reject([])).toMatch(
+        /give a points file, or --run with --sizes/,
+      );
+    });
+
+    it('refuses --run without --sizes', async () => {
+      expect(await reject(['--run', 'load.js'])).toMatch(/--run needs --sizes/);
+    });
+  });
+
+  describe.skipIf(process.platform === 'win32')('default k6 runner', () => {
+    const SIZES = ['--sizes', '1000,2000,4000,8000,16000', '--repeats', '1'];
+
+    it('abstains, not crashes, when k6 is not on PATH', async () => {
+      const empty = mkTmp();
+      try {
+        const res = await invokeCanary(
+          ['scaling-curve', '--run', 'load.js', ...SIZES],
+          { env: { PATH: empty } },
+        );
+        expect(res.code).toBe(EXIT_ABSTAINED);
+        expect(res.stdout).toMatch(/not emitted by 5 run\(s\)/);
+      } finally {
+        rmTmp(empty);
+      }
+    });
+
+    it('reads trend:stat from the summary export k6 writes, passing SIZE', async () => {
+      const bin = mkTmp();
+      try {
+        // Stand-in k6: value = SIZE^2 under the requested trend and stat.
+        writeFileSync(
+          join(bin, 'k6'),
+          [
+            '#!/bin/sh',
+            'while [ $# -gt 0 ]; do',
+            '  case "$1" in',
+            '    --summary-export) out="$2"; shift ;;',
+            '    -e) size="${2#SIZE=}"; shift ;;',
+            '  esac; shift',
+            'done',
+            'v=$((size * size / 10000))',
+            'printf \'{"metrics":{"iter":{"med":%s}}}\' "$v" > "$out"',
+          ].join('\n'),
+          { mode: 0o755 },
+        );
+        const res = await invokeCanary(
+          [
+            'scaling-curve',
+            '--run',
+            'load.js',
+            ...SIZES,
+            '--metric',
+            'iter:med',
+          ],
+          { env: { PATH: bin } },
+        );
+        expect(res.code).toBe(0);
+        expect(res.stdout).toMatch(/STRONGLY_SUPERLINEAR/);
+        expect(res.stdout).toMatch(/Scaling curve: iter:med vs size/);
+      } finally {
+        rmTmp(bin);
+      }
+    });
+
+    it('abstains when the export lacks the requested stat (default p(95))', async () => {
+      const bin = mkTmp();
+      try {
+        writeFileSync(
+          join(bin, 'k6'),
+          [
+            '#!/bin/sh',
+            'while [ $# -gt 0 ]; do',
+            '  [ "$1" = --summary-export ] && out="$2"',
+            '  shift',
+            'done',
+            'printf \'{"metrics":{"iter":{"med":1}}}\' > "$out"',
+          ].join('\n'),
+          { mode: 0o755 },
+        );
+        const res = await invokeCanary(
+          ['scaling-curve', '--run', 'load.js', ...SIZES, '--metric', 'iter'],
+          { env: { PATH: bin } },
+        );
+        expect(res.code).toBe(EXIT_ABSTAINED);
+        expect(res.stdout).toMatch(/metric iter was not emitted by 5 run\(s\)/);
+      } finally {
+        rmTmp(bin);
+      }
+    });
+  });
+
   it('keeps --json parseable when it abstains', async () => {
     const res = await run('1000,1', ['--json']);
     expect(res.code).toBe(EXIT_ABSTAINED);

@@ -54,7 +54,12 @@ import {
 } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 
-import { Command, CommanderError, Option } from 'commander';
+import {
+  Command,
+  CommanderError,
+  InvalidArgumentError,
+  Option,
+} from 'commander';
 import { load as loadYaml } from 'js-yaml';
 import pc from 'picocolors';
 
@@ -1760,6 +1765,23 @@ async function watchCmd(opts: WatchOptions, deps: GuardianDeps): Promise<void> {
 
 // --- assembly -----------------------------------------------------------------
 
+/**
+ * Parse a strictly positive integer option. A bare `Number.parseInt` lets
+ * `abc` through as `NaN` (and `0`/`-1` through as-is): `precision --days abc`
+ * then crashed with `RangeError: Invalid time value`, and `watch --interval
+ * abc` polled with a zero delay. Throwing `InvalidArgumentError` turns both
+ * into a commander usage error, which exits 2.
+ */
+function parsePositiveInt(value: string): number {
+  const n = Number(value.trim());
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new InvalidArgumentError(
+      `must be a positive integer, got "${value}"`,
+    );
+  }
+  return n;
+}
+
 /** Collect a repeatable option value into an array (commander pattern). */
 function collect(value: string, previous: string[]): string[] {
   return previous.concat([value]);
@@ -1855,7 +1877,7 @@ export function createGuardianCommand(
     .addOption(
       new Option('--days <n>', 'Merged-PR window in days.')
         .default(14)
-        .argParser((v) => Number.parseInt(v, 10)),
+        .argParser(parsePositiveInt),
     )
     .option('--json', 'Emit the report as JSON (precision null = unknown).')
     .action(async (opts: PrecisionOptions) => {
@@ -1944,7 +1966,7 @@ export function createGuardianCommand(
     .addOption(
       new Option('--interval <secs>', 'Polling interval in seconds.')
         .default(300)
-        .argParser((v) => Number.parseInt(v, 10)),
+        .argParser(parsePositiveInt),
     )
     // Python's `watch` declares `--suite` with NO `-s` short form (unlike
     // `analyze`); adding `-s` here would accept an invocation Python rejected.
