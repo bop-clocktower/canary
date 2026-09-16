@@ -127,6 +127,24 @@ describe('canary ticket-update', () => {
     }
   });
 
+  it('exits 1, not a raw TypeError, when failed_names is not an array', async () => {
+    const tmp = mkTmp();
+    try {
+      const bad = join(tmp, 'report.json');
+      writeFileSync(bad, '{"failed_names": "test_a"}', 'utf-8');
+      let res;
+      try {
+        res = await invokeCanary(['ticket-update', '--result', bad]);
+      } catch (e) {
+        res = { code: -1, stdout: String(e), stderr: '' };
+      }
+      expect(res.stdout).toContain('Could not read result file');
+      expect(res.code).toBe(1);
+    } finally {
+      rmTmp(tmp);
+    }
+  });
+
   it('exits 1 on a missing result file', async () => {
     const tmp = mkTmp();
     try {
