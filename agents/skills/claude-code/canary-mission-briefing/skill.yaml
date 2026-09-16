@@ -1,0 +1,16 @@
+name: canary-mission-briefing
+version: '1.0.0'
+description:
+  Turn a PR diff into an advisory test charter for a human tester, keeping only
+  verify items and edge cases that cite a changed line.
+stability: static
+triggers:
+  - manual
+platforms:
+  - claude-code
+type: rigid
+tools: []
+tier: 2
+depends_on:
+  - canary-edge-case-discovery
+  - canary-critical-areas
