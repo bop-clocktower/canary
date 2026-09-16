@@ -66,7 +66,9 @@ function recordDa(hits: LineHits, body: string): void {
   const lineno = parseStrictInt(parts[0]!);
   const count = parseStrictInt(parts[1]!);
   if (lineno === null || count === null) return;
-  hits[lineno] = count;
+  // A file can recur across concatenated (sharded) records; a line any record
+  // hit is covered, so keep the max rather than letting a later 0 overwrite it.
+  hits[lineno] = Math.max(hits[lineno] ?? 0, count);
 }
 
 /** Read a report file as UTF-8, returning `null` on any read/decode failure. */
