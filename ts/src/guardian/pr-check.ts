@@ -51,7 +51,7 @@ import {
 import { Severity, severitySortKey } from './impact-mapper.js';
 import { ensureAscii } from '../util/ensure-ascii.js';
 
-const HUNK_RE = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
+const HUNK_RE = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
 // Suppression annotation: `// canary:allow-untested <reason>` or the `#`
 // variant. A comment leader (`//` or `#`) is REQUIRED immediately before the
@@ -182,6 +182,11 @@ function isCQuoted(value: string): boolean {
   return value.length >= 2 && value.startsWith('"') && value.endsWith('"');
 }
 
+/** A hunk header's optional line count; omitted means one line. */
+function hunkCount(raw: string | undefined): number {
+  return raw === undefined ? 1 : Number.parseInt(raw, 10);
+}
+
 /** The new-side path a `+++ ` header names, or `null` for a deleted file. */
 function headerPath(line: string): string | null {
   // A quoted path is unquoted BEFORE the `b/` strip: the quotes wrap the
@@ -216,6 +221,11 @@ export function walkDiff(
   let path: string | null = null;
   let lineno = 0;
   let inHunk = false;
+  // Lines each side of the current hunk still owes. A hunk ends once both are
+  // spent, so the next `--- `/`+++ ` is read as a header even with no
+  // `diff --git` separator (plain `diff -u` output).
+  let oldLeft = 0;
+  let newLeft = 0;
 
   for (const line of splitLines(diffText)) {
     if (line.startsWith('diff --git')) {
@@ -233,13 +243,20 @@ export function walkDiff(
     if (!inHunk && line.startsWith('--- ')) continue;
     const hunk = HUNK_RE.exec(line);
     if (hunk) {
-      lineno = Number.parseInt(hunk[1]!, 10);
+      oldLeft = hunkCount(hunk[1]);
+      lineno = Number.parseInt(hunk[2]!, 10);
+      newLeft = hunkCount(hunk[3]);
       inHunk = true;
       continue;
     }
-    if (path === null) continue;
-    if (line.startsWith('-') || line.startsWith('\\')) continue;
-    emit({ path, lineno, text: line.slice(1), added: line.startsWith('+') });
+    if (path === null || line.startsWith('\\')) continue;
+    const added = line.startsWith('+');
+    const removed = line.startsWith('-');
+    if (!added) oldLeft -= 1;
+    if (!removed) newLeft -= 1;
+    if (oldLeft <= 0 && newLeft <= 0) inHunk = false;
+    if (removed) continue;
+    emit({ path, lineno, text: line.slice(1), added });
     lineno += 1;
   }
 }

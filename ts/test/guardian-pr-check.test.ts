@@ -777,3 +777,22 @@ describe('findReexportOnly', () => {
     expect(findReexportOnly(diff)).toEqual(new Set());
   });
 });
+
+describe('plain unified diff without diff --git separators', () => {
+  it('attributes each file its own added lines once a hunk is spent', () => {
+    const diff = [
+      '--- a/x.ts',
+      '+++ b/x.ts',
+      '@@ -1,0 +1,1 @@',
+      '+const a = 1;',
+      '--- a/y.ts',
+      '+++ b/y.ts',
+      '@@ -4,0 +5,1 @@',
+      '+const b = 2;',
+    ].join('\n');
+    expect(scopeDiff(diff)).toEqual([
+      { path: 'x.ts', added_ranges: [[1, 1]] },
+      { path: 'y.ts', added_ranges: [[5, 5]] },
+    ]);
+  });
+});
