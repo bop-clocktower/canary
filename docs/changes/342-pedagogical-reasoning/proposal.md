@@ -3,11 +3,10 @@
 **Keywords:** reasoning, explanation-depth, persona, recommender, classifier,
 decision-trace, audience, abstention
 
-> **Status: Spec only — not signed off.** No human has reviewed this proposal.
-> Every fork below (F1-F8) carries a recommended default chosen by the authoring
-> lane without asking; each is an open question until a human accepts or
-> overrides it. The document contains no code, no skill files and no CLI wiring.
-> The evidence is in [`survey.md`](survey.md).
+> **Status: signed off 2026-09-16.** A human reviewed this proposal and accepted
+> it as written, including the recommended default on every fork (F1-F8), so the
+> forks are answered and a build round may proceed. The document itself is still
+> spec only: it contains no code. The evidence is in [`survey.md`](survey.md).
 
 ## Overview
 
