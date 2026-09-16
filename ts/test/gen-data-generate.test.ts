@@ -78,6 +78,34 @@ describe('defaultValue', () => {
     expect(v as number).toBeGreaterThanOrEqual(1);
     expect(v as number).toBeLessThanOrEqual(99);
   });
+  it.each([
+    [{ kind: 'number', integer: true, min: 5000 }],
+    [{ kind: 'number', integer: false, min: 5000 }],
+    [{ kind: 'number', integer: true, max: -20 }],
+    [{ kind: 'number', integer: false, max: 0.5 }],
+    [{ kind: 'number', integer: false, min: 0.001, max: 0.002 }],
+    [{ kind: 'number', integer: true, min: 1.5, max: 3.5 }],
+  ] as const)('stays inside the bounds of %j across seeds', (node) => {
+    for (let seed = 0; seed < 50; seed++) {
+      const v = defaultValue(node, 'n', mulberry32(seed)) as number;
+      if ('min' in node) expect(v).toBeGreaterThanOrEqual(node.min);
+      if ('max' in node) expect(v).toBeLessThanOrEqual(node.max);
+      if (node.integer) expect(Number.isInteger(v)).toBe(true);
+    }
+  });
+  it('a date-only field defaults to YYYY-MM-DD and gets date-only cases', () => {
+    const node = { kind: 'date', dateOnly: true } as const;
+    expect(defaultValue(node, 'd', mulberry32(765))).toMatch(
+      /^\d{4}-\d{2}-\d{2}$/,
+    );
+    const dated = leafCases(node, 'd')
+      .map((c) => c.value)
+      .filter((v) => typeof v === 'string');
+    expect(dated.length).toBeGreaterThan(0);
+    expect(dated.every((v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v)))).toBe(
+      true,
+    );
+  });
 });
 
 const ORDER = extractJsonSchema({

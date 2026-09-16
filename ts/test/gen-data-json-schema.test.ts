@@ -6,6 +6,78 @@ const reasonOf = (s: unknown) => {
   return n.kind === 'unresolved' ? n.reason : `resolved:${n.kind}`;
 };
 
+describe('extractJsonSchema refuses constraints it would otherwise ignore', () => {
+  it.each([
+    [
+      { anyOf: [{ type: 'string' }, {}] },
+      'union member is not a resolved scalar',
+    ],
+    [
+      { oneOf: [{ type: 'string' }, { type: 'object' }] },
+      'union member is not a resolved scalar',
+    ],
+    [{ anyOf: [] }, 'union member is not a resolved scalar'],
+    [
+      { type: 'integer', enum: [1, 2] },
+      'enum is only supported on string types in this slice',
+    ],
+    [
+      { type: 'string', enum: ['a', 1] },
+      'enum is only supported on string types in this slice',
+    ],
+    [{ type: 'string', const: 'x' }, 'const is not supported in this slice'],
+    [
+      { type: 'string', pattern: '^a$' },
+      'pattern is not supported in this slice',
+    ],
+    [
+      { type: 'string', format: 'email' },
+      'format "email" is not supported in this slice',
+    ],
+    [
+      { type: 'number', exclusiveMinimum: 0 },
+      'exclusiveMinimum is not supported in this slice',
+    ],
+    [
+      { type: 'number', exclusiveMaximum: 9 },
+      'exclusiveMaximum is not supported in this slice',
+    ],
+    [
+      { type: 'number', multipleOf: 5 },
+      'multipleOf is not supported in this slice',
+    ],
+    [
+      { type: 'object', additionalProperties: { type: 'string' } },
+      'additionalProperties schemas are not supported in this slice',
+    ],
+    [
+      { type: 'object', patternProperties: { '^x': { type: 'string' } } },
+      'patternProperties is not supported in this slice',
+    ],
+  ])('%j -> unresolved (%s)', (schema, reason) => {
+    expect(reasonOf(schema)).toBe(reason);
+  });
+
+  it('still resolves a boolean additionalProperties and a date format', () => {
+    expect(reasonOf({ type: 'object', additionalProperties: false })).toBe(
+      'resolved:object',
+    );
+    expect(extractJsonSchema({ type: 'string', format: 'date' })).toEqual({
+      kind: 'date',
+      dateOnly: true,
+    });
+  });
+
+  it('keeps a __proto__ property as an own field', () => {
+    const n = extractJsonSchema(
+      JSON.parse(
+        '{"type":"object","properties":{"__proto__":{"type":"string"}}}',
+      ),
+    );
+    expect(n.kind === 'object' && Object.keys(n.fields)).toEqual(['__proto__']);
+  });
+});
+
 describe('extractJsonSchema abstains, never guesses', () => {
   it.each([
     [{}, 'no type declared'],

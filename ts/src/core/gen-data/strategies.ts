@@ -17,6 +17,7 @@ type Raw = [Category, unknown];
 
 const LABEL_MAX = 60;
 const DAY_MS = 86_400_000;
+const SPAN = 999; // width of the default range when only one bound is declared
 const BASE_DAY_MS = Date.UTC(2024, 0, 1); // fixed epoch, not a clock read
 const LOCALE_STRINGS = ['café über', 'שלום', '\u{1F426} canary'];
 const TZ_LITERALS = [
@@ -37,15 +38,27 @@ function defaultString(n: Of<'string'>, field: string, rng: Rng): string {
   return n.maxLength === undefined ? raw : raw.slice(0, n.maxLength);
 }
 
-function defaultNumber(n: Of<'number'>, _field: string, rng: Rng): number {
-  const lo = n.min ?? 1;
-  const hi = n.max ?? 1000;
-  if (n.integer) return lo + Math.floor(rng() * (hi - lo + 1));
-  return Math.round((lo + rng() * (hi - lo)) * 100) / 100;
+/** A default range that always sits inside whichever bounds are declared. */
+function numberRange(n: Of<'number'>): [number, number] {
+  const lo = n.min ?? Math.min(1, (n.max ?? 1000) - SPAN);
+  const hi = n.max ?? Math.max(1000, lo + SPAN);
+  return n.integer ? [Math.ceil(lo), Math.floor(hi)] : [lo, hi];
 }
 
-const defaultDate = (_n: Of<'date'>, _field: string, rng: Rng) =>
-  new Date(BASE_DAY_MS + Math.floor(rng() * 366) * DAY_MS).toISOString();
+function defaultNumber(n: Of<'number'>, _field: string, rng: Rng): number {
+  const [lo, hi] = numberRange(n);
+  if (n.integer) return lo + Math.floor(rng() * Math.max(0, hi - lo + 1));
+  // Rounding to cents can step past a fractional bound, so clamp after it.
+  const v = Math.round((lo + rng() * (hi - lo)) * 100) / 100;
+  return Math.min(hi, Math.max(lo, v));
+}
+
+function defaultDate(n: Of<'date'>, _field: string, rng: Rng): string {
+  const iso = new Date(
+    BASE_DAY_MS + Math.floor(rng() * 366) * DAY_MS,
+  ).toISOString();
+  return n.dateOnly ? iso.slice(0, 10) : iso;
+}
 
 const DEFAULTS: {
   [K in Leaf['kind']]: (n: Of<K>, field: string, rng: Rng) => unknown;
@@ -99,8 +112,11 @@ function stringCases(n: Of<'string'>): Raw[] {
   return [...raw, ['unexpected-shape', null], ['unexpected-shape', 0]];
 }
 
-const dateCases = (): Raw[] => [
-  ...TZ_LITERALS.map((s): Raw => ['locale-timezone', s]),
+const dateCases = (n: Of<'date'>): Raw[] => [
+  ...TZ_LITERALS.map((s): Raw => [
+    'locale-timezone',
+    n.dateOnly ? s.slice(0, 10) : s,
+  ]),
   ['unexpected-shape', null],
   ['unexpected-shape', 0],
 ];

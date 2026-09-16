@@ -12,7 +12,7 @@ export type ShapeNode =
     }
   | { kind: 'number'; integer: boolean; min?: number; max?: number }
   | { kind: 'boolean' }
-  | { kind: 'date' }
+  | { kind: 'date'; dateOnly?: true }
   | { kind: 'array'; item: ShapeNode }
   | {
       kind: 'object';
@@ -50,7 +50,22 @@ function walk(node: ShapeNode, path: string, t: FieldTally): void {
   }
   if (node.kind === 'array') return walk(node.item, `${path}[]`, t);
   t.fieldsTotal += 1;
-  if (node.kind === 'unresolved')
-    t.unresolved.push({ path, reason: node.reason });
-  else t.fieldsResolved += 1;
+  const reason = unresolvedReason(node);
+  if (reason === undefined) t.fieldsResolved += 1;
+  else t.unresolved.push({ path, reason });
+}
+
+export const UNION_REASON = 'union member is not a resolved scalar';
+const SCALAR_KINDS = new Set(['string', 'number', 'boolean', 'date']);
+
+/** A union resolves only when it is non-empty and every member is a scalar. */
+export function isResolvedUnion(members: ShapeNode[]): boolean {
+  return members.length > 0 && members.every((m) => SCALAR_KINDS.has(m.kind));
+}
+
+function unresolvedReason(node: ShapeNode): string | undefined {
+  if (node.kind === 'unresolved') return node.reason;
+  if (node.kind === 'union' && !isResolvedUnion(node.members))
+    return UNION_REASON;
+  return undefined;
 }

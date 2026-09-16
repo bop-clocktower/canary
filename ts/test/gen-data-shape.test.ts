@@ -44,4 +44,28 @@ describe('tallyFields', () => {
     });
     expect(tallyFields(root, 'x').fieldsResolved).toBe(0);
   });
+
+  it('counts a union resolved only when every member is a resolved scalar', () => {
+    const root = obj({
+      ok: {
+        kind: 'union',
+        members: [{ kind: 'string' }, { kind: 'number', integer: true }],
+      },
+      bad: {
+        kind: 'union',
+        members: [
+          { kind: 'string' },
+          { kind: 'unresolved', reason: 'no type declared', typeText: '{}' },
+        ],
+      },
+    });
+    const tally = tallyFields(root, 'u');
+    expect([tally.fieldsResolved, tally.fieldsTotal]).toEqual([1, 2]);
+    expect(tally.unresolved).toEqual([
+      {
+        path: 'u.bad',
+        reason: 'union member is not a resolved scalar',
+      },
+    ]);
+  });
 });
