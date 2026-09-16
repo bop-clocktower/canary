@@ -5,7 +5,11 @@
  * guardian comment WOULD be overwritten, which keeps "untouched" non-vacuous.
  */
 import { describe, expect, it } from 'vitest';
-import { BRIEFING_MARKER, postCharter } from '../src/briefing/comment.js';
+import {
+  BRIEFING_MARKER,
+  commentClientFor,
+  postCharter,
+} from '../src/briefing/comment.js';
 import {
   FakeGitHubClient,
   RestGitHubClient,
@@ -75,10 +79,25 @@ describe('postCharter (criteria 6, 10)', () => {
   });
 });
 
-describe('MainDeps.buildCommentClient', () => {
-  it('defaults the comment client to the REST client', () => {
-    expect(defaultMainDeps().buildCommentClient('o/r', 7)).toBeInstanceOf(
-      RestGitHubClient,
-    );
+describe('commentClientFor', () => {
+  const PR_ENV = { GITHUB_REPOSITORY: 'o/r', GITHUB_REF: 'refs/pull/7/merge' };
+  it('defaults the comment client to the REST client in a PR context', () => {
+    expect(commentClientFor(PR_ENV)).toBeInstanceOf(RestGitHubClient);
+  });
+  it('uses an injected builder with the PR repo and number', () => {
+    const fake = new FakeGitHubClient();
+    const seen: unknown[] = [];
+    const client = commentClientFor(PR_ENV, (repo, pr) => {
+      seen.push(repo, pr);
+      return fake;
+    });
+    expect(client).toBe(fake);
+    expect(seen).toEqual(['o/r', 7]);
+  });
+  it('returns null without a PR context', () => {
+    expect(commentClientFor({})).toBeNull();
+  });
+  it('leaves the MainDeps seam unset so production takes the default', () => {
+    expect(defaultMainDeps().buildCommentClient).toBeUndefined();
   });
 });

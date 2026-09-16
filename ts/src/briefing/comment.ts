@@ -6,13 +6,33 @@
  * write failure degrades: the charter is advisory, so a missing comment
  * must never turn into an exit 1.
  */
+import { prContextFromEnv } from '../guardian/cli.js';
 import {
   type GitHubClient,
   GitHubPermissionError,
+  RestGitHubClient,
   upsertStickyComment,
 } from '../guardian/pr-comment.js';
 
 export const BRIEFING_MARKER = '<!-- canary-mission-briefing -->';
+
+/**
+ * A client for the PR this run belongs to, or null outside a PR context.
+ * `build` is the test seam; unset, production gets GitHub REST authenticated
+ * by `GITHUB_TOKEN`.
+ */
+export function commentClientFor(
+  env: NodeJS.ProcessEnv,
+  build?: (repo: string, prNumber: number) => GitHubClient,
+): GitHubClient | null {
+  const ctx = prContextFromEnv(env);
+  if (ctx === null) return null;
+  const [repo, prNumber] = ctx;
+  return (
+    build?.(repo, prNumber) ??
+    new RestGitHubClient(repo, prNumber, env['GITHUB_TOKEN'] ?? '')
+  );
+}
 
 type PostResult =
   | { kind: 'posted'; action: string; commentId: number | null }

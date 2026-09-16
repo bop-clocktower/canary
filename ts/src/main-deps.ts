@@ -28,7 +28,6 @@ import { SkillRegistry } from './core/skill-registry.js';
 import { StaticLinter } from './core/static-linter.js';
 import { TicketUpdater } from './core/ticket-updater.js';
 import { WorkflowDiscovery } from './core/workflow-discovery.js';
-import { type GitHubClient, RestGitHubClient } from './guardian/pr-comment.js';
 
 // --- output glyphs (emitted verbatim; see module docstring) -------------------
 export const CHECK_MARK = '\u{2705}'; // white heavy check mark
@@ -84,8 +83,15 @@ export interface MainDeps {
   makeWorkflowDiscovery(): WorkflowDiscovery;
   makeTicketUpdater(): TicketUpdater;
   loadCompanyKnowledge(env: string | null): CompanyKnowledge;
-  /** PR comment client for `canary briefing --comment` (#593). */
-  buildCommentClient(repo: string, prNumber: number): GitHubClient;
+  /**
+   * PR comment client for `canary briefing --comment` (#593). Optional: unset,
+   * the briefing uses its REST default. The inline type keeps this composition
+   * module from taking a 16th import (perf import-count threshold is 15).
+   */
+  buildCommentClient?(
+    repo: string,
+    prNumber: number,
+  ): import('./guardian/pr-comment.js').GitHubClient;
 }
 
 /** A stdin-backed prompt: reads piped lines once, returns `def` when exhausted. */
@@ -147,7 +153,5 @@ export function defaultMainDeps(): MainDeps {
     makeWorkflowDiscovery: () => new WorkflowDiscovery(),
     makeTicketUpdater: () => new TicketUpdater(),
     loadCompanyKnowledge: (env) => CompanyKnowledge.load(undefined, env),
-    buildCommentClient: (repo, prNumber) =>
-      new RestGitHubClient(repo, prNumber, process.env['GITHUB_TOKEN'] ?? ''),
   };
 }

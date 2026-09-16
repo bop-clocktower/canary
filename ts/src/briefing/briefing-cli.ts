@@ -16,13 +16,12 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Command } from 'commander';
 
-import { CliExitError, jsonIndent2 } from '../cli-common.js';
+import { CliExitError } from '../cli-common.js';
 import { EXIT_ABSTAINED } from '../core/gate-result.js';
 import {
   type DiffResolutionDeps,
   type GitResult,
   detectMergeRef,
-  prContextFromEnv,
   readPrDiff,
   resolveHeadSha,
   warnIfEmptyCiDiff,
@@ -45,20 +44,9 @@ import {
   scopeDiff,
 } from '../guardian/pr-check.js';
 import type { MainDeps } from '../main-deps.js';
-import { renderCharter } from './charter.js';
-import { postCharter } from './comment.js';
-import {
-  type BriefingFacts,
-  type BriefingSkip,
-  type ScopedUnit,
-  assembleFacts,
-} from './facts.js';
+import { emitCharter } from './deliver.js';
+import { type BriefingSkip, type ScopedUnit, assembleFacts } from './facts.js';
 import { readInventoryIndex, readRankIndex } from './inputs.js';
-import {
-  type JudgmentResult,
-  applyJudgment,
-  parseJudgment,
-} from './judgment.js';
 
 interface BriefingOpts {
   diff?: string;
@@ -261,67 +249,7 @@ async function runBriefing(opts: BriefingOpts, deps: MainDeps): Promise<void> {
     );
   }
 
-  const judgment = loadJudgment(opts.judgment, facts, deps);
-  const output =
-    opts.json === true
-      ? jsonIndent2(judgment === undefined ? facts : { ...facts, judgment })
-      : renderCharter(facts, judgment);
-  if (opts.comment === true) {
-    // The comment is always the Markdown charter; `output` is the fallback.
-    await deliverComment(renderCharter(facts, judgment), output, deps);
-    return;
-  }
-  deps.out(output);
-}
-
-/** `--comment`: post, else print with a note or ::warning:: (never exit 1). */
-async function deliverComment(
-  charter: string,
-  fallback: string,
-  deps: MainDeps,
-): Promise<void> {
-  const ctx = prContextFromEnv(deps.env);
-  if (ctx === null) {
-    deps.err('canary briefing: no PR context; charter printed to stdout');
-    deps.out(fallback);
-    return;
-  }
-  const result = await postCharter(
-    deps.buildCommentClient(ctx[0], ctx[1]),
-    charter,
-  );
-  if (result.kind === 'posted') {
-    deps.out(
-      `Charter posted as a PR comment (${result.action}, id ${result.commentId}).`,
-    );
-    return;
-  }
-  deps.out(fallback);
-  deps.out(`::warning::${result.notice}`);
-}
-
-/** Read skill judgment; any problem degrades to a facts-only charter, never exit 1. */
-function loadJudgment(
-  path: string | undefined,
-  facts: BriefingFacts,
-  deps: MainDeps,
-): JudgmentResult | undefined {
-  if (path === undefined) return undefined;
-  let raw: string;
-  try {
-    raw = readFileSync(path, 'utf-8');
-  } catch (e) {
-    deps.err(
-      `WARNING: judgment ignored: '${path}' could not be read (${(e as Error).message})`,
-    );
-    return undefined;
-  }
-  const parsed = parseJudgment(raw);
-  if (typeof parsed === 'string') {
-    deps.err(`WARNING: judgment ignored: ${parsed}`);
-    return undefined;
-  }
-  return applyJudgment(parsed, facts.units);
+  await emitCharter(facts, opts, deps);
 }
 
 export function buildBriefingCommand(deps: MainDeps): Command {

@@ -1,0 +1,8 @@
+{
+  "reason": "canary briefing judgment + --comment, PR2+3 of the signed-off #593 spec: module-size 40944->41394 (+450), measured with `harness check-arch --json` (CLI 12.9.0) on this branch, based on main 9cf85c37. newViolations is [] and the only regression is this aggregate. The growth is the feature: `ts/src/briefing/judgment.ts` (parse skill judgment and drop every verify/edge-case item whose cite is not a path:line inside a scoped unit's added ranges, criterion 9), `judgment-sections.ts` (charter sections 2-4 and the dropped-item lines), `comment.ts` (the charter's own `<!-- canary-mission-briefing -->` sticky comment, never the guardian's, criterion 6; 403 and every other write failure degrade, criterion 10) and `deliver.ts` (judgment + JSON/Markdown + comment delivery, split out of briefing-cli.ts). Nothing was absorbed here to avoid a fix: the lane's first draft added three perf findings (briefing-cli.ts over 300 lines and 16 imports, main-deps.ts 16 imports) and a coupling finding on the extracted module, and all four were removed in code — delivery moved to deliver.ts behind a narrow structural sink, PR-context resolution moved into comment.ts, and the MainDeps comment seam became optional with an inline type — so check-perf's merge-base delta is 0 and entropy's is +0. Splitting further would not reduce the aggregate, which scores N files summing to 450 the same as one. Measured by the fleet lane under the orchestrator's standing instruction for this checkpoint (no human approval of this specific number).",
+  "categories": {
+    "module-size": 41394
+  },
+  "violationIds": [],
+  "createdFrom": "9cf85c37"
+}
