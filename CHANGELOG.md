@@ -16,6 +16,18 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary briefing` writes a test charter for a human tester** (#593, PR1 of
+  3). Turns a diff into the facts a tester works through: which files and lines
+  changed, what the guardian's Tier-0 coverage pass could actually say about
+  them, which test files statically import them (from
+  `.canary/test-inventory.json`), and what was filtered out. Reuses `scopeDiff`,
+  the guardian filter chain and the coverage ladder rather than re-deriving
+  them, so the charter and the gate comment cannot disagree on the same PR.
+  Advisory by construction — no pass/fail vocabulary, no status emoji, and the
+  literal "not a gate" in its heading. Missing coverage reads "coverage
+  unknown"; an empty, unparseable or fully-filtered diff abstains with exit 3
+  (ADR 0009) rather than printing an empty charter. Never exits 1. See
+  `docs/guides/mission-briefing.md`.
 - **`canary history record` reads JUnit XML** (#963). A report whose root is
   `<testsuites>` or `<testsuite>` is detected by shape, so pytest `--junitxml`,
   jest-junit, Maven surefire and Gradle runs feed the same history store that

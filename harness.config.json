@@ -19,6 +19,7 @@
       "name": "cli",
       "pattern": "ts/src/**/*cli*.ts",
       "allowedDependencies": [
+        "briefing",
         "composition",
         "guardian",
         "analysis",
@@ -43,6 +44,21 @@
     {
       "name": "entry",
       "pattern": "ts/src/*.ts",
+      "allowedDependencies": [
+        "briefing",
+        "cli",
+        "composition",
+        "guardian",
+        "analysis",
+        "history",
+        "core",
+        "ui",
+        "util"
+      ]
+    },
+    {
+      "name": "briefing",
+      "pattern": "ts/src/briefing/**",
       "allowedDependencies": [
         "cli",
         "composition",
@@ -197,6 +213,7 @@
       "scripts/lib/type-label-infer.mjs",
       "scripts/perf-ratchet.mjs",
       "scripts/refresh-arch-baseline.mjs",
+      "scripts/rehearse.mjs",
       "scripts/roadmap-denominator-check.mjs",
       "scripts/roadmap-groom.mjs",
       "scripts/roadmap-sync.mjs",
@@ -211,12 +228,15 @@
       "ts/src/analysis/batwoman/registry.ts",
       "ts/src/analysis/batwoman/render.ts",
       "ts/src/analysis/batwoman/verdict.ts",
+      "ts/src/briefing/briefing-cli.ts",
+      "ts/src/briefing/charter.ts",
+      "ts/src/briefing/facts.ts",
+      "ts/src/briefing/inputs.ts",
       "ts/src/cli.ts",
       "ts/src/mcp-server.ts",
       "ts/test/batwoman-testkit.ts",
       "ts/test/doc-links-testkit.ts",
-      "ts/vitest.config.ts",
-      "scripts/rehearse.mjs"
+      "ts/vitest.config.ts"
     ],
     "drift": {
       "checkApiSignatures": false,
@@ -282,6 +302,7 @@
       "scripts/lib/type-label-infer.mjs",
       "scripts/perf-ratchet.mjs",
       "scripts/refresh-arch-baseline.mjs",
+      "scripts/rehearse.mjs",
       "scripts/roadmap-denominator-check.mjs",
       "scripts/roadmap-groom.mjs",
       "scripts/roadmap-sync.mjs",
@@ -296,12 +317,15 @@
       "ts/src/analysis/batwoman/registry.ts",
       "ts/src/analysis/batwoman/render.ts",
       "ts/src/analysis/batwoman/verdict.ts",
+      "ts/src/briefing/briefing-cli.ts",
+      "ts/src/briefing/charter.ts",
+      "ts/src/briefing/facts.ts",
+      "ts/src/briefing/inputs.ts",
       "ts/src/cli.ts",
       "ts/src/mcp-server.ts",
       "ts/test/batwoman-testkit.ts",
       "ts/test/doc-links-testkit.ts",
-      "ts/vitest.config.ts",
-      "scripts/rehearse.mjs"
+      "ts/vitest.config.ts"
     ]
   },
   "knowledge": {
