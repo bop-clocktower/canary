@@ -193,6 +193,23 @@ export interface GhResult {
 }
 
 /**
+ * The subset of {@link GuardianDeps} that diff RESOLUTION alone needs (#593).
+ *
+ * Declared narrowly so a non-gate consumer (`canary briefing`) can reuse the
+ * one `--diff`-omitted resolution path — the #369 trap lives in exactly one
+ * place — without having to fake a comment client, an adjudication source or a
+ * branch-protection client it will never call. `GuardianDeps` satisfies it
+ * structurally, so every existing caller is unchanged.
+ */
+export interface DiffResolutionDeps {
+  out(s: string): void;
+  err(s: string): void;
+  readStdin(): string;
+  env: NodeJS.ProcessEnv;
+  runGit(args: string[], cwd?: string): GitResult | null;
+}
+
+/**
  * Everything the CLI reaches the outside world through -- injected so tests run
  * with capturing sinks, a fixed env, and fake clients (no network, no real git).
  */
@@ -484,7 +501,7 @@ function readDiff(source: string | null, deps: GuardianDeps): string {
 }
 
 /** `git diff`, falling back to `git diff --staged` on a clean worktree. */
-function readWorktreeDiff(deps: GuardianDeps): string {
+function readWorktreeDiff(deps: DiffResolutionDeps): string {
   const unstaged = deps.runGit(['diff'])?.stdout ?? '';
   if (unstaged.trim()) return unstaged;
   return deps.runGit(['diff', '--staged'])?.stdout ?? '';
@@ -534,7 +551,7 @@ function eventHeadSha(env: NodeJS.ProcessEnv): string | null {
 }
 
 /** Resolve `HEAD` to a full sha, or null when git cannot answer. */
-function resolveHeadSha(deps: GuardianDeps): string | null {
+export function resolveHeadSha(deps: DiffResolutionDeps): string | null {
   const res = deps.runGit(['rev-parse', 'HEAD']);
   if (res === null || res.code !== 0) return null;
   const sha = res.stdout.trim();
@@ -549,7 +566,7 @@ function resolveHeadSha(deps: GuardianDeps): string | null {
  */
 export function detectMergeRef(
   headSha: string | null,
-  deps: GuardianDeps,
+  deps: DiffResolutionDeps,
 ): boolean {
   if (deps.env['GITHUB_EVENT_NAME'] !== 'pull_request') return false;
   const declared = eventHeadSha(deps.env);
@@ -565,7 +582,7 @@ export function detectMergeRef(
  * was not fetched (a shallow checkout) — the caller then diffs to `HEAD` and
  * {@link detectMergeRef} still discloses the widening.
  */
-function resolvePrHead(deps: GuardianDeps): string | null {
+function resolvePrHead(deps: DiffResolutionDeps): string | null {
   if (deps.env['GITHUB_EVENT_NAME'] !== 'pull_request') return null;
   const sha = eventHeadSha(deps.env);
   if (!sha) return null;
@@ -634,7 +651,7 @@ function baseRefCandidates(env: NodeJS.ProcessEnv): string[] {
  * have the base commit, so every candidate fails `rev-parse` and we return
  * `null` — the caller then falls back to the worktree diff and warns.
  */
-function resolveBaseRev(deps: GuardianDeps): string | null {
+function resolveBaseRev(deps: DiffResolutionDeps): string | null {
   for (const candidate of baseRefCandidates(deps.env)) {
     const res = deps.runGit([
       'rev-parse',
@@ -654,7 +671,7 @@ function resolveBaseRev(deps: GuardianDeps): string | null {
  */
 export function readPrDiff(
   source: string | null,
-  deps: GuardianDeps,
+  deps: DiffResolutionDeps,
 ): ResolvedDiff {
   if (source === '-') {
     return { text: deps.readStdin(), origin: 'stdin', base: null };
@@ -699,10 +716,10 @@ const EMPTY_CI_DIFF_NOTICE =
  * stderr) rather than exiting non-zero, so adopting an engine upgrade never
  * flips a green build red — but a silent green no-op becomes impossible.
  */
-function warnIfEmptyCiDiff(
+export function warnIfEmptyCiDiff(
   resolved: ResolvedDiff,
   unitCount: number,
-  deps: GuardianDeps,
+  deps: DiffResolutionDeps,
 ): void {
   if (resolved.origin !== 'worktree') return;
   if (unitCount > 0) return;

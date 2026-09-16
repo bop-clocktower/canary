@@ -468,6 +468,9 @@ Then set `gate: hard` in config, confirm a few PRs behave, and you're promoted.
 
 ## Related
 
+- [Mission Briefing Guide](mission-briefing.md) — `canary briefing` writes an
+  advisory test charter from the same Tier-0 scoping. It is **not** guardian
+  output and never a gate; the guardian's sticky comment is the gate.
 - [Harness + Canary Integration Guide](harness-canary-integration.md) —
   disambiguation matrix (guardian vs `canary-test-pipeline` vs harness gates)
 - [ADR 0007](../knowledge/decisions/0007-guardian-agent-capability-boundary.md)

@@ -42,6 +42,7 @@ import {
   versionCmd,
 } from './cli-commands.js';
 import { buildBatwomanCommand } from './batwoman-cli.js';
+import { buildBriefingCommand } from './briefing/briefing-cli.js';
 import { buildCiReadyCommand } from './ci-ready-cli.js';
 import { buildInventoryCommand } from './inventory/inventory-cli.js';
 import { buildScalingCurveCommand } from './scaling-curve-cli.js';
@@ -380,6 +381,7 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
   program.addCommand(buildPermissionMatrixCommand(deps));
   program.addCommand(buildCiReadyCommand(deps));
   program.addCommand(buildInventoryCommand(deps));
+  program.addCommand(buildBriefingCommand(deps));
 
   // Propagate the usage-exit normalization to every top-level command (the
   // sub-apps also set it on their own subcommands internally).
