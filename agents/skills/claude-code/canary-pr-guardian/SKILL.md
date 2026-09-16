@@ -45,6 +45,9 @@ Do not carry them into other skills.
   next run. It is stamped with the current `HEAD` and expires by itself once the
   human's review commit moves `HEAD` — never delete it yourself.
 - **Authoring is opt-in.** No `preCommit.authorTests: true` ⇒ no writes, ever.
+- The `<!-- canary-mission-briefing -->` test charter comment is not guardian
+  output and never a verdict; guardian neither reads nor edits it (see
+  `canary-mission-briefing`).
 
 ## Phases
 

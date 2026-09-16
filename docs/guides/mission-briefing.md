@@ -20,12 +20,33 @@ and its first line disowns being a verdict.
 
 ## What ships today
 
-`canary briefing` is the **facts half** of a charter: what the diff touched,
-what coverage could actually say about it, which test files statically import
-it, and what was left out. The judgment half — what to explore by hand, and
-which edge cases this particular diff invites — comes from the
-`canary-mission-briefing` skill, which reads these same facts. Until that skill
-ships, the charter carries the facts sections only rather than empty headings.
+Both halves of a charter ship. `canary briefing` produces the **facts**: what
+the diff touched, what coverage could actually say about it, which test files
+statically import it, and what was left out. The **judgment** — the mission,
+what to verify by hand, and which edge cases this particular diff invites —
+comes from the `canary-mission-briefing` skill, which reads those facts and
+writes a judgment file. `canary briefing --judgment <file>` renders it, keeping
+only items that cite a changed line, and `--comment` posts the result as its own
+sticky PR comment.
+
+Without `--judgment`, the charter carries the facts sections only rather than
+empty headings.
+
+### Charter sections
+
+1. **Header** — the advisory disclaimer, diff provenance, and which inputs were
+   available.
+2. **Mission** — one sentence from the skill (judgment only).
+3. **Verify by hand** — a checklist, each item citing `path:line` (judgment
+   only).
+4. **Edge cases this diff invites** — grouped by the six
+   `canary-edge-case-discovery` categories, each citing `path:line` (judgment
+   only).
+5. **Existing tests** — measured execution and static imports, in separate
+   columns.
+6. **Nothing covers** — measured-unexecuted lines apart from unmeasured ones.
+7. **Out of this charter** — filtered files, unavailable inputs, and every
+   judgment item that was dropped, with its reason.
 
 ## Usage
 
@@ -42,13 +63,15 @@ canary briefing --diff change.diff --json
 
 ### Flags
 
-| Flag                | Meaning                                                                                                             |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `--diff <file>`     | Unified diff to read; `-` reads stdin. Omitted, it resolves the PR diff from the base ref in CI, else the worktree. |
-| `--coverage <file>` | Coverage report for the Tier-0 pass (lcov, Cobertura, or coverage JSON). Omitted, coverage reads "unknown".         |
-| `--root <dir>`      | Repository root, and where `.canary/` is looked for. Default: the current directory.                                |
-| `--config <file>`   | `harness.config.json` to read the guardian's `skip_globs` from. Default: `harness.config.json`.                     |
-| `--json`            | Emit `BriefingFacts` JSON instead of Markdown.                                                                      |
+| Flag                | Meaning                                                                                                                                                                                             |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--diff <file>`     | Unified diff to read; `-` reads stdin. Omitted, it resolves the PR diff from the base ref in CI, else the worktree.                                                                                 |
+| `--coverage <file>` | Coverage report for the Tier-0 pass (lcov, Cobertura, or coverage JSON). Omitted, coverage reads "unknown".                                                                                         |
+| `--root <dir>`      | Repository root, and where `.canary/` is looked for. Default: the current directory.                                                                                                                |
+| `--config <file>`   | `harness.config.json` to read the guardian's `skip_globs` from. Default: `harness.config.json`.                                                                                                     |
+| `--json`            | Emit `BriefingFacts` JSON instead of Markdown.                                                                                                                                                      |
+| `--judgment <file>` | Skill-written judgment JSON. Items not citing an added line go to "Out of this charter"; unreadable input warns and degrades to facts only.                                                         |
+| `--comment`         | Upsert a sticky PR comment under `<!-- canary-mission-briefing -->`; never edits the guardian comment. No PR context or a failed write (403 included, with `::warning::`) prints to stdout; exit 0. |
 
 ### Exit codes
 
@@ -96,7 +119,8 @@ changed or what is covered on the same PR:
 
 ## Honesty rules
 
-These are contract, each pinned by a test in `ts/test/briefing-cli.test.ts`:
+These are contract, each pinned by a test in `ts/test/briefing-cli.test.ts` or
+`ts/test/briefing-judgment*.test.ts`:
 
 1. **No coverage data means "coverage unknown"** — never an implication that
    something is covered, and never a bare absence of findings.
@@ -136,7 +160,39 @@ would be a guess dressed as evidence. `imported_by` is `null` — not `[]` — w
 no inventory was readable, because "read it and nothing imports this" and "could
 not read it" are different claims.
 
+## Judgment (`--judgment`)
+
+```json
+{
+  "mission": "Explore how the discount behaves at its edges.",
+  "verify": [
+    {
+      "text": "Apply a 10% discount to a cart",
+      "cite": "src/cart/discount.ts:14"
+    }
+  ],
+  "edge_cases": [
+    {
+      "category": "Boundary values",
+      "text": "0% and 100% discounts",
+      "cite": "src/cart/discount.ts:18"
+    }
+  ]
+}
+```
+
+A `cite` must be `path:line` naming a scoped unit and a line inside its
+`added_ranges`, and an edge case's `category` must be one of Boundary values,
+Race conditions, Locale and timezone, Partial network, Unexpected input shapes,
+or Accessibility. Anything else is dropped — never rendered as a checklist item
+— and listed under "Out of this charter" with its reason. With `--json`, the
+output gains an additive `judgment` block (`mission`, `verify`, `edge_cases`,
+`dropped`); `schema_version` stays 1.
+
 ## Related
+
+- [canary-mission-briefing skill](../../agents/skills/claude-code/canary-mission-briefing/SKILL.md)
+  — writes the judgment file.
 
 - [PR Guardian Guide](./pr-guardian.md) — the gate that shares this scoping.
 - [Test Inventory Guide](./test-inventory.md) — the `imported_by` input.

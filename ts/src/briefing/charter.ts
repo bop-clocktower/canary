@@ -11,6 +11,8 @@
  */
 
 import type { BriefingFacts, BriefingUnit } from './facts.js';
+import { droppedLines, judgmentLines } from './judgment-sections.js';
+import type { JudgmentResult } from './judgment.js';
 
 /** The charter's own heading — deliberately carries its own disclaimer. */
 export const CHARTER_HEADING = '## Test charter (advisory, not a gate)';
@@ -110,7 +112,10 @@ function nothingCoversLines(facts: BriefingFacts): string[] {
 }
 
 /** Section 7: the edges of the plan — what was deliberately left out. */
-function outOfCharterLines(facts: BriefingFacts): string[] {
+function outOfCharterLines(
+  facts: BriefingFacts,
+  judgment?: JudgmentResult,
+): string[] {
   const lines = ['### Out of this charter', ''];
   if (facts.skipped.length === 0) {
     lines.push('Nothing the diff touched was filtered out.', '');
@@ -131,6 +136,12 @@ function outOfCharterLines(facts: BriefingFacts): string[] {
         'by risk.',
     );
   }
+  // With judgment supplied, the skill has already spoken: list what it said
+  // that did not cite a changed line instead of pointing at the skill.
+  if (judgment !== undefined) {
+    lines.push(...droppedLines(judgment.dropped));
+    return lines;
+  }
   lines.push(
     '',
     'What to explore by hand and which edge cases this diff invites are not ' +
@@ -140,16 +151,21 @@ function outOfCharterLines(facts: BriefingFacts): string[] {
   return lines;
 }
 
-/** Render the whole facts charter as Markdown. */
-export function renderCharter(facts: BriefingFacts): string {
+/** Render the charter as Markdown; judgment adds sections 2-4 when supplied. */
+export function renderCharter(
+  facts: BriefingFacts,
+  judgment?: JudgmentResult,
+): string {
+  const judged = judgment === undefined ? [] : [...judgmentLines(judgment), ''];
   return [
     ...headerLines(facts),
     '',
+    ...judged,
     ...existingTestLines(facts),
     '',
     ...nothingCoversLines(facts),
     '',
-    ...outOfCharterLines(facts),
+    ...outOfCharterLines(facts, judgment),
     '',
   ].join('\n');
 }

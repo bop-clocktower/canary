@@ -13,7 +13,7 @@ it), see [Guides](../../docs/guides/index.md).
 
 ```text
 agents/skills/
-├── claude-code/                    # Claude Code skills (24)
+├── claude-code/                    # Claude Code skills (25)
 │   ├── canary-add-framework/
 │   ├── canary-batwoman/
 │   ├── canary-blackhawk/
@@ -28,6 +28,7 @@ agents/skills/
 │   ├── canary-generate-test/
 │   ├── canary-instrument/
 │   ├── canary-katana/
+│   ├── canary-mission-briefing/
 │   ├── canary-pr-guardian/
 │   ├── canary-promote-test/
 │   ├── canary-savant/
@@ -77,6 +78,10 @@ slash-command entry points.
   Trace the downstream blast radius of a test, function, or code path failing
   undetected; produces a severity label. Invoked by `/canary-failure-impact`;
   also Phase 3 of `canary-test-pipeline`.
+- [`canary-mission-briefing`](./claude-code/canary-mission-briefing/SKILL.md) —
+  Turns a PR diff into a test charter for a human tester (verify by hand, edge
+  cases cited to changed lines, existing tests, nothing covers). Advisory, never
+  a gate; `cli: canary briefing`.
 
 ### CI gate & reporting
 

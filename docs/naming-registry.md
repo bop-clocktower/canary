@@ -95,7 +95,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-katana`              | shipped  | —     | Quarantine ledger for deleted and newly-skipped tests                      |
 | `canary-manhunter`           | reserved | 611   | Release quality dossier                                                    |
 | `canary-misfit`              | reserved | 592   | E2E resilience injection                                                   |
-| `canary-mission-briefing`    | reserved | 593   | PR diff to human test charter                                              |
+| `canary-mission-briefing`    | shipped  | 593   | PR diff to human test charter                                              |
 | `canary-pr-guardian`         | shipped  | —     | Per-diff test-guardian orchestrator                                        |
 | `canary-promote-test`        | shipped  | 477   | Move a generated test into the committed suite                             |
 | `canary-question`            | reserved | 613   | Test-bug vs product-bug triage                                             |

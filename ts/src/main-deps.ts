@@ -84,6 +84,15 @@ export interface MainDeps {
   makeTicketUpdater(): TicketUpdater;
   loadCompanyKnowledge(env: string | null): CompanyKnowledge;
   /**
+   * PR comment client for `canary briefing --comment` (#593). Optional: unset,
+   * the briefing uses its REST default. The inline type keeps this composition
+   * module from taking a 16th import (perf import-count threshold is 15).
+   */
+  buildCommentClient?(
+    repo: string,
+    prNumber: number,
+  ): import('./guardian/pr-comment.js').GitHubClient;
+  /**
    * gen-data's blackhawk/savant self-check, injectable so its exit 1/3 paths
    * are testable. Optional: `canary gen-data` falls back to the real
    * `selfCheck`, so this module does not have to import gen-data at all.

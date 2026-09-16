@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Command } from 'commander';
 
-import { CliExitError, jsonIndent2 } from '../cli-common.js';
+import { CliExitError } from '../cli-common.js';
 import { EXIT_ABSTAINED } from '../core/gate-result.js';
 import {
   type DiffResolutionDeps,
@@ -44,7 +44,7 @@ import {
   scopeDiff,
 } from '../guardian/pr-check.js';
 import type { MainDeps } from '../main-deps.js';
-import { renderCharter } from './charter.js';
+import { emitCharter } from './deliver.js';
 import { type BriefingSkip, type ScopedUnit, assembleFacts } from './facts.js';
 import { readInventoryIndex, readRankIndex } from './inputs.js';
 
@@ -54,6 +54,8 @@ interface BriefingOpts {
   root?: string;
   config: string;
   json?: boolean;
+  comment?: boolean;
+  judgment?: string;
 }
 
 /**
@@ -219,7 +221,7 @@ function resolveBriefingDiff(
   };
 }
 
-function runBriefing(opts: BriefingOpts, deps: MainDeps): void {
+async function runBriefing(opts: BriefingOpts, deps: MainDeps): Promise<void> {
   const root = resolve(opts.root ?? deps.cwd());
   const [config, warning] = loadGuardianConfig(opts.config);
   if (warning !== null) deps.err(`WARNING: ${warning}`);
@@ -247,7 +249,7 @@ function runBriefing(opts: BriefingOpts, deps: MainDeps): void {
     );
   }
 
-  deps.out(opts.json === true ? jsonIndent2(facts) : renderCharter(facts));
+  await emitCharter(facts, opts, deps);
 }
 
 export function buildBriefingCommand(deps: MainDeps): Command {
@@ -267,7 +269,15 @@ export function buildBriefingCommand(deps: MainDeps): Command {
       'harness.config.json',
     )
     .option('--json', 'Emit BriefingFacts JSON instead of Markdown.')
-    .action((opts: BriefingOpts) => {
-      runBriefing(opts, deps);
+    .option(
+      '--judgment <file>',
+      'Skill-written judgment JSON (mission, verify, edge_cases); items must cite path:line in the added ranges.',
+    )
+    .option(
+      '--comment',
+      'Upsert the charter as its own sticky PR comment (advisory; never the guardian comment).',
+    )
+    .action(async (opts: BriefingOpts) => {
+      await runBriefing(opts, deps);
     });
 }
