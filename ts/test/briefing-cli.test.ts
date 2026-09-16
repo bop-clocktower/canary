@@ -10,7 +10,9 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { BRIEFING_MARKER } from '../src/briefing/comment.js';
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
+import { FakeGitHubClient, STICKY_MARKER } from '../src/guardian/pr-comment.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 import { invokeGuardian } from './guardian-cli-testkit.js';
 
@@ -493,4 +495,91 @@ describe('canary briefing', () => {
       expect(res.stdout).not.toContain('### Verify by hand');
     },
   );
+
+  const PR_ENV = { GITHUB_REPOSITORY: 'o/r', GITHUB_REF: 'refs/pull/7/merge' };
+  const bot = { login: 'github-actions[bot]', type: 'Bot' };
+
+  /** Criterion 6: own marker, guardian sticky (same bot author) untouched. */
+  it('posts the charter under its own marker and leaves the guardian comment alone', async () => {
+    const guardianBody = `${STICKY_MARKER}\nverdict`;
+    const fake = new FakeGitHubClient({
+      comments: [{ id: 1, body: guardianBody, user: bot }],
+    });
+    const run = () =>
+      invokeCanary(['briefing', '--diff', diffPath, '--comment'], {
+        cwd: root,
+        env: PR_ENV,
+        deps: { buildCommentClient: () => fake },
+      });
+    const first = await run();
+    expect(first.code).toBe(0);
+    expect(first.stdout).toMatch(
+      /^Charter posted as a PR comment \(created, id \d+\)\.\n?$/,
+    );
+    const second = await run();
+    expect(second.stdout).toMatch(/\(updated, id \d+\)/);
+    expect(fake.comments).toHaveLength(2);
+    expect(fake.comments[0]!.body).toBe(guardianBody);
+    expect(
+      fake.comments[1]!.body!.startsWith(`${BRIEFING_MARKER}\n## Test charter`),
+    ).toBe(true);
+  });
+
+  /** Criterion 10: a 403 prints the charter with ::warning:: and exits 0. */
+  it('prints the charter with a ::warning:: on 403 and exits 0', async () => {
+    const res = await invokeCanary(
+      ['briefing', '--diff', diffPath, '--comment'],
+      {
+        cwd: root,
+        env: PR_ENV,
+        deps: {
+          buildCommentClient: () => new FakeGitHubClient({ deny_writes: true }),
+        },
+      },
+    );
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('## Test charter (advisory, not a gate)');
+    expect(res.stdout).toContain(
+      '::warning::canary briefing: token lacks write permission on PR comments (HTTP 403) \u{2014} charter printed to stdout instead',
+    );
+  });
+
+  it('prints --json output on a non-403 comment failure and exits 0', async () => {
+    const broken = new FakeGitHubClient();
+    broken.listComments = async () => {
+      throw new Error('GitHub API 401');
+    };
+    const res = await invokeCanary(
+      ['briefing', '--diff', diffPath, '--comment', '--json'],
+      { cwd: root, env: PR_ENV, deps: { buildCommentClient: () => broken } },
+    );
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('"schema_version": 1');
+    expect(res.stdout).toContain('::warning::canary briefing: could not post');
+  });
+
+  it('prints the charter with a note when there is no PR context', async () => {
+    let built = false;
+    const res = await invokeCanary(
+      ['briefing', '--diff', diffPath, '--comment'],
+      {
+        cwd: root,
+        env: {
+          GITHUB_REPOSITORY: undefined,
+          GITHUB_REF: undefined,
+          GITHUB_EVENT_PATH: undefined,
+        },
+        deps: {
+          buildCommentClient: () => {
+            built = true;
+            return new FakeGitHubClient();
+          },
+        },
+      },
+    );
+    expect(res.code).toBe(0);
+    expect(built).toBe(false);
+    expect(res.stdout).toContain('## Test charter');
+    expect(res.stderr).toContain('no PR context; charter printed to stdout');
+  });
 });

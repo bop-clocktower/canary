@@ -22,6 +22,7 @@ import {
   type DiffResolutionDeps,
   type GitResult,
   detectMergeRef,
+  prContextFromEnv,
   readPrDiff,
   resolveHeadSha,
   warnIfEmptyCiDiff,
@@ -45,6 +46,7 @@ import {
 } from '../guardian/pr-check.js';
 import type { MainDeps } from '../main-deps.js';
 import { renderCharter } from './charter.js';
+import { postCharter } from './comment.js';
 import {
   type BriefingFacts,
   type BriefingSkip,
@@ -64,6 +66,7 @@ interface BriefingOpts {
   root?: string;
   config: string;
   json?: boolean;
+  comment?: boolean;
   judgment?: string;
 }
 
@@ -230,7 +233,7 @@ function resolveBriefingDiff(
   };
 }
 
-function runBriefing(opts: BriefingOpts, deps: MainDeps): void {
+async function runBriefing(opts: BriefingOpts, deps: MainDeps): Promise<void> {
   const root = resolve(opts.root ?? deps.cwd());
   const [config, warning] = loadGuardianConfig(opts.config);
   if (warning !== null) deps.err(`WARNING: ${warning}`);
@@ -259,11 +262,42 @@ function runBriefing(opts: BriefingOpts, deps: MainDeps): void {
   }
 
   const judgment = loadJudgment(opts.judgment, facts, deps);
-  deps.out(
+  const output =
     opts.json === true
       ? jsonIndent2(judgment === undefined ? facts : { ...facts, judgment })
-      : renderCharter(facts, judgment),
+      : renderCharter(facts, judgment);
+  if (opts.comment === true) {
+    // The comment is always the Markdown charter; `output` is the fallback.
+    await deliverComment(renderCharter(facts, judgment), output, deps);
+    return;
+  }
+  deps.out(output);
+}
+
+/** `--comment`: post, else print with a note or ::warning:: (never exit 1). */
+async function deliverComment(
+  charter: string,
+  fallback: string,
+  deps: MainDeps,
+): Promise<void> {
+  const ctx = prContextFromEnv(deps.env);
+  if (ctx === null) {
+    deps.err('canary briefing: no PR context; charter printed to stdout');
+    deps.out(fallback);
+    return;
+  }
+  const result = await postCharter(
+    deps.buildCommentClient(ctx[0], ctx[1]),
+    charter,
   );
+  if (result.kind === 'posted') {
+    deps.out(
+      `Charter posted as a PR comment (${result.action}, id ${result.commentId}).`,
+    );
+    return;
+  }
+  deps.out(fallback);
+  deps.out(`::warning::${result.notice}`);
 }
 
 /** Read skill judgment; any problem degrades to a facts-only charter, never exit 1. */
@@ -311,7 +345,11 @@ export function buildBriefingCommand(deps: MainDeps): Command {
       '--judgment <file>',
       'Skill-written judgment JSON (mission, verify, edge_cases); items must cite path:line in the added ranges.',
     )
-    .action((opts: BriefingOpts) => {
-      runBriefing(opts, deps);
+    .option(
+      '--comment',
+      'Upsert the charter as its own sticky PR comment (advisory; never the guardian comment).',
+    )
+    .action(async (opts: BriefingOpts) => {
+      await runBriefing(opts, deps);
     });
 }
