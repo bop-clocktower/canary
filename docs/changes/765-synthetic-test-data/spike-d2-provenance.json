@@ -1,0 +1,25 @@
+{
+  "issues": [765],
+  "phase": "spike-d2",
+  "route": "spike",
+  "stages": [],
+  "specArtifact": "docs/changes/765-synthetic-test-data/proposal.md",
+  "report": "spike/765-shape-extraction/SPIKE_REPORT.md",
+  "closingKeyword": "Refs",
+  "questionsAnswered": 6,
+  "questionsUnmeasured": [
+    "install/bundle size impact of adding typescript as a dependency (never added, by spike charter)",
+    "feasibility of an extractor against typescript@7's unstable/sync API (surface enumerated, no port attempted)",
+    "Python ast path via python3 subprocess (spec assumption A2, outside D2 scope)",
+    "cost on a consumer repo rather than canary's own ts/src",
+    "warm / long-lived-process cost (all numbers are deliberately cold, matching the per-invocation CLI in D1)"
+  ],
+  "assumptions": [
+    "A per-invocation CLI budget anchored on the measured 77 ms cold start of the existing canary CLI, not on a published SLO; the spec's own A1 (5 s) is met with 16x headroom and does not discriminate.",
+    "ts/src is a representative TypeScript target for cost; it is NOT representative for abstention, since ts/src/core contains zero mapped or conditional types at base commit 572ac22, making the measured abstain rate a floor.",
+    "process.resourceUsage().maxRSS is reported in kilobytes by libuv on macOS, and is the process peak rather than a heap sample.",
+    "One process per measurement yields genuinely cold numbers; an in-process repeat reuses a warm module graph and JIT and would flatter the result.",
+    "npm 10.9.8 peer-dependency resolution behaviour is representative of consumer installs; pnpm and yarn were not tested.",
+    "typescript@7.0.2's unstable/* subpaths are treated as unsupportable because the path name declares instability, not because a break was observed in them."
+  ]
+}

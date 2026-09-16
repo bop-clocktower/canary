@@ -1,0 +1,981 @@
+{
+  "tsVersion": "5.4.5",
+  "node": "v22.23.2",
+  "results": [
+    {
+      "config": "full",
+      "options": {
+        "skipLibCheck": false,
+        "noResolve": false,
+        "narrowed": false
+      },
+      "targets": [
+        {
+          "id": "T1",
+          "file": "ts/src/core/executor.ts",
+          "symbol": "shlexSplit",
+          "why": "primitive arg",
+          "params": [
+            {
+              "name": "input",
+              "typeText": "string",
+              "optional": false,
+              "shape": {
+                "kind": "string"
+              }
+            }
+          ],
+          "leavesTotal": 1,
+          "leavesUnresolved": 0,
+          "unresolved": []
+        },
+        {
+          "id": "T2",
+          "file": "ts/src/core/adoption.ts",
+          "symbol": "buildAdoptionReport",
+          "why": "local interface arg, nullable fields, imported type",
+          "params": [
+            {
+              "name": "input",
+              "typeText": "AdoptionInput",
+              "optional": false,
+              "shape": {
+                "kind": "object",
+                "fields": {
+                  "shapes": {
+                    "node": {
+                      "kind": "array",
+                      "item": {
+                        "kind": "string"
+                      }
+                    },
+                    "optional": false
+                  },
+                  "overlayPath": {
+                    "node": {
+                      "kind": "union",
+                      "members": [
+                        {
+                          "kind": "null"
+                        },
+                        {
+                          "kind": "string"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "freshness": {
+                    "node": {
+                      "kind": "union",
+                      "members": [
+                        {
+                          "kind": "null"
+                        },
+                        {
+                          "kind": "object",
+                          "fields": {
+                            "shape": {
+                              "node": {
+                                "kind": "string"
+                              },
+                              "optional": false
+                            },
+                            "overlay_path": {
+                              "node": {
+                                "kind": "union",
+                                "members": [
+                                  {
+                                    "kind": "null"
+                                  },
+                                  {
+                                    "kind": "string"
+                                  }
+                                ]
+                              },
+                              "optional": false
+                            },
+                            "results": {
+                              "node": {
+                                "kind": "array",
+                                "item": {
+                                  "kind": "object",
+                                  "fields": {
+                                    "skill_name": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "dir_name": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "status": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "detail": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    }
+                                  }
+                                }
+                              },
+                              "optional": false
+                            },
+                            "workflows": {
+                              "node": {
+                                "kind": "array",
+                                "item": {
+                                  "kind": "object",
+                                  "fields": {
+                                    "workflow": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "skill_name": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "status": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "detail": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "to_dict": {
+                                      "node": {
+                                        "kind": "unresolved",
+                                        "reason": "callable type (function-valued field)",
+                                        "typeText": "() => Record<string, unknown>"
+                                      },
+                                      "optional": false
+                                    }
+                                  }
+                                }
+                              },
+                              "optional": false
+                            },
+                            "shapes": {
+                              "node": {
+                                "kind": "array",
+                                "item": {
+                                  "kind": "string"
+                                }
+                              },
+                              "optional": false
+                            },
+                            "stale": {
+                              "node": {
+                                "kind": "array",
+                                "item": {
+                                  "kind": "object",
+                                  "fields": {
+                                    "skill_name": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "dir_name": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "status": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "detail": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    }
+                                  }
+                                }
+                              },
+                              "optional": false
+                            },
+                            "local_edits": {
+                              "node": {
+                                "kind": "array",
+                                "item": {
+                                  "kind": "object",
+                                  "fields": {
+                                    "skill_name": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "dir_name": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "status": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "detail": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    }
+                                  }
+                                }
+                              },
+                              "optional": false
+                            },
+                            "has_drift": {
+                              "node": {
+                                "kind": "boolean"
+                              },
+                              "optional": false
+                            },
+                            "has_local_edits": {
+                              "node": {
+                                "kind": "boolean"
+                              },
+                              "optional": false
+                            },
+                            "in_sync": {
+                              "node": {
+                                "kind": "boolean"
+                              },
+                              "optional": false
+                            },
+                            "gateResult": {
+                              "node": {
+                                "kind": "unresolved",
+                                "reason": "callable type (function-valued field)",
+                                "typeText": "() => GateResult<SkillFreshnessResult>"
+                              },
+                              "optional": false
+                            },
+                            "abstained": {
+                              "node": {
+                                "kind": "boolean"
+                              },
+                              "optional": false
+                            },
+                            "exit_code": {
+                              "node": {
+                                "kind": "unresolved",
+                                "reason": "callable type (function-valued field)",
+                                "typeText": "() => number"
+                              },
+                              "optional": false
+                            },
+                            "to_dict": {
+                              "node": {
+                                "kind": "unresolved",
+                                "reason": "callable type (function-valued field)",
+                                "typeText": "() => Record<string, unknown>"
+                              },
+                              "optional": false
+                            },
+                            "to_markdown": {
+                              "node": {
+                                "kind": "unresolved",
+                                "reason": "callable type (function-valued field)",
+                                "typeText": "() => string"
+                              },
+                              "optional": false
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "companyJsonPresent": {
+                    "node": {
+                      "kind": "boolean"
+                    },
+                    "optional": false
+                  },
+                  "manifestPresent": {
+                    "node": {
+                      "kind": "boolean"
+                    },
+                    "optional": false
+                  },
+                  "coverageReportPath": {
+                    "node": {
+                      "kind": "string"
+                    },
+                    "optional": false
+                  },
+                  "sutControllersPath": {
+                    "node": {
+                      "kind": "string"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            }
+          ],
+          "leavesTotal": 37,
+          "leavesUnresolved": 5,
+          "unresolved": [
+            {
+              "path": "input.freshness|1.workflows[].to_dict",
+              "reason": "callable type (function-valued field)",
+              "typeText": "() => Record<string, unknown>"
+            },
+            {
+              "path": "input.freshness|1.gateResult",
+              "reason": "callable type (function-valued field)",
+              "typeText": "() => GateResult<SkillFreshnessResult>"
+            },
+            {
+              "path": "input.freshness|1.exit_code",
+              "reason": "callable type (function-valued field)",
+              "typeText": "() => number"
+            },
+            {
+              "path": "input.freshness|1.to_dict",
+              "reason": "callable type (function-valued field)",
+              "typeText": "() => Record<string, unknown>"
+            },
+            {
+              "path": "input.freshness|1.to_markdown",
+              "reason": "callable type (function-valued field)",
+              "typeText": "() => string"
+            }
+          ]
+        },
+        {
+          "id": "T3",
+          "file": "ts/src/core/ci-ready.ts",
+          "symbol": "scoreCiReady",
+          "why": "interfaces imported across files, discriminated unions",
+          "params": [
+            {
+              "name": "inputs",
+              "typeText": "CiReadyInputs",
+              "optional": false,
+              "shape": {
+                "kind": "object",
+                "fields": {
+                  "runs": {
+                    "node": {
+                      "kind": "union",
+                      "members": [
+                        {
+                          "kind": "null"
+                        },
+                        {
+                          "kind": "array",
+                          "item": {
+                            "kind": "object",
+                            "fields": {
+                              "duration_ms": {
+                                "node": {
+                                  "kind": "union",
+                                  "members": [
+                                    {
+                                      "kind": "undefined"
+                                    },
+                                    {
+                                      "kind": "null"
+                                    },
+                                    {
+                                      "kind": "number",
+                                      "integer": false
+                                    }
+                                  ]
+                                },
+                                "optional": true
+                              },
+                              "tests": {
+                                "node": {
+                                  "kind": "union",
+                                  "members": [
+                                    {
+                                      "kind": "undefined"
+                                    },
+                                    {
+                                      "kind": "array",
+                                      "item": {
+                                        "kind": "object",
+                                        "fields": {
+                                          "test_name": {
+                                            "node": {
+                                              "kind": "unresolved",
+                                              "reason": "depth limit reached",
+                                              "typeText": "string"
+                                            },
+                                            "optional": false
+                                          },
+                                          "status": {
+                                            "node": {
+                                              "kind": "unresolved",
+                                              "reason": "depth limit reached",
+                                              "typeText": "string"
+                                            },
+                                            "optional": false
+                                          }
+                                        }
+                                      }
+                                    }
+                                  ]
+                                },
+                                "optional": true
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "historyPath": {
+                    "node": {
+                      "kind": "string"
+                    },
+                    "optional": false
+                  },
+                  "inventory": {
+                    "node": {
+                      "kind": "union",
+                      "members": [
+                        {
+                          "kind": "object",
+                          "fields": {
+                            "ok": {
+                              "node": {
+                                "kind": "boolean"
+                              },
+                              "optional": false
+                            },
+                            "inventory": {
+                              "node": {
+                                "kind": "object",
+                                "fields": {
+                                  "schema_version": {
+                                    "node": {
+                                      "kind": "number",
+                                      "integer": false
+                                    },
+                                    "optional": false
+                                  },
+                                  "generated": {
+                                    "node": {
+                                      "kind": "string"
+                                    },
+                                    "optional": false
+                                  },
+                                  "files": {
+                                    "node": {
+                                      "kind": "array",
+                                      "item": {
+                                        "kind": "object",
+                                        "fields": {
+                                          "path": {
+                                            "node": {
+                                              "kind": "string"
+                                            },
+                                            "optional": false
+                                          },
+                                          "framework": {
+                                            "node": {
+                                              "kind": "string"
+                                            },
+                                            "optional": false
+                                          },
+                                          "targets": {
+                                            "node": {
+                                              "kind": "array",
+                                              "item": {
+                                                "kind": "unresolved",
+                                                "reason": "depth limit reached",
+                                                "typeText": "string"
+                                              }
+                                            },
+                                            "optional": false
+                                          },
+                                          "tests": {
+                                            "node": {
+                                              "kind": "array",
+                                              "item": {
+                                                "kind": "unresolved",
+                                                "reason": "depth limit reached",
+                                                "typeText": "InventoryTest"
+                                              }
+                                            },
+                                            "optional": false
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "optional": false
+                                  },
+                                  "skipped": {
+                                    "node": {
+                                      "kind": "array",
+                                      "item": {
+                                        "kind": "object",
+                                        "fields": {
+                                          "name": {
+                                            "node": {
+                                              "kind": "string"
+                                            },
+                                            "optional": false
+                                          },
+                                          "reason": {
+                                            "node": {
+                                              "kind": "string"
+                                            },
+                                            "optional": false
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "optional": false
+                                  }
+                                }
+                              },
+                              "optional": false
+                            }
+                          }
+                        },
+                        {
+                          "kind": "object",
+                          "fields": {
+                            "ok": {
+                              "node": {
+                                "kind": "boolean"
+                              },
+                              "optional": false
+                            },
+                            "reason": {
+                              "node": {
+                                "kind": "string"
+                              },
+                              "optional": false
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "criticalAreas": {
+                    "node": {
+                      "kind": "union",
+                      "members": [
+                        {
+                          "kind": "object",
+                          "fields": {
+                            "ok": {
+                              "node": {
+                                "kind": "boolean"
+                              },
+                              "optional": false
+                            },
+                            "areas": {
+                              "node": {
+                                "kind": "array",
+                                "item": {
+                                  "kind": "object",
+                                  "fields": {
+                                    "path": {
+                                      "node": {
+                                        "kind": "string"
+                                      },
+                                      "optional": false
+                                    },
+                                    "risk_score": {
+                                      "node": {
+                                        "kind": "number",
+                                        "integer": false
+                                      },
+                                      "optional": false
+                                    }
+                                  }
+                                }
+                              },
+                              "optional": false
+                            }
+                          }
+                        },
+                        {
+                          "kind": "object",
+                          "fields": {
+                            "ok": {
+                              "node": {
+                                "kind": "boolean"
+                              },
+                              "optional": false
+                            },
+                            "reason": {
+                              "node": {
+                                "kind": "string"
+                              },
+                              "optional": false
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            }
+          ],
+          "leavesTotal": 24,
+          "leavesUnresolved": 4,
+          "unresolved": [
+            {
+              "path": "inputs.runs|1[].tests|1[].test_name",
+              "reason": "depth limit reached",
+              "typeText": "string"
+            },
+            {
+              "path": "inputs.runs|1[].tests|1[].status",
+              "reason": "depth limit reached",
+              "typeText": "string"
+            },
+            {
+              "path": "inputs.inventory|0.inventory.files[].targets[]",
+              "reason": "depth limit reached",
+              "typeText": "string"
+            },
+            {
+              "path": "inputs.inventory|0.inventory.files[].tests[]",
+              "reason": "depth limit reached",
+              "typeText": "InventoryTest"
+            }
+          ]
+        },
+        {
+          "id": "T4",
+          "file": "ts/src/core/gate-result.ts",
+          "symbol": "gateOutcome",
+          "why": "generic param, string-literal union, optional field",
+          "params": [
+            {
+              "name": "result",
+              "typeText": "GateResult<F>",
+              "optional": false,
+              "shape": {
+                "kind": "object",
+                "fields": {
+                  "checked": {
+                    "node": {
+                      "kind": "number",
+                      "integer": false
+                    },
+                    "optional": false
+                  },
+                  "findings": {
+                    "node": {
+                      "kind": "array",
+                      "item": {
+                        "kind": "unresolved",
+                        "reason": "unbound type parameter",
+                        "typeText": "F"
+                      }
+                    },
+                    "optional": false
+                  },
+                  "skipped": {
+                    "node": {
+                      "kind": "union",
+                      "members": [
+                        {
+                          "kind": "undefined"
+                        },
+                        {
+                          "kind": "array",
+                          "item": {
+                            "kind": "object",
+                            "fields": {
+                              "name": {
+                                "node": {
+                                  "kind": "string"
+                                },
+                                "optional": false
+                              },
+                              "reason": {
+                                "node": {
+                                  "kind": "string"
+                                },
+                                "optional": false
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "optional": true
+                  }
+                }
+              }
+            },
+            {
+              "name": "kind",
+              "typeText": "GateKind",
+              "optional": false,
+              "shape": {
+                "kind": "string",
+                "enum": ["gate", "advisory"]
+              }
+            },
+            {
+              "name": "opts",
+              "typeText": "GateOutcomeOptions",
+              "optional": true,
+              "shape": {
+                "kind": "object",
+                "fields": {
+                  "noun": {
+                    "node": {
+                      "kind": "union",
+                      "members": [
+                        {
+                          "kind": "undefined"
+                        },
+                        {
+                          "kind": "string"
+                        }
+                      ]
+                    },
+                    "optional": true
+                  }
+                }
+              }
+            }
+          ],
+          "leavesTotal": 8,
+          "leavesUnresolved": 1,
+          "unresolved": [
+            {
+              "path": "result.findings[]",
+              "reason": "unbound type parameter",
+              "typeText": "F"
+            }
+          ]
+        },
+        {
+          "id": "T5",
+          "file": "spike/765-shape-extraction/hard-target.ts",
+          "symbol": "hardMapped",
+          "why": "mapped type (synthetic: core has none)",
+          "params": [
+            {
+              "name": "flags",
+              "typeText": "Flags<Base>",
+              "optional": false,
+              "shape": {
+                "kind": "object",
+                "fields": {
+                  "id": {
+                    "node": {
+                      "kind": "boolean"
+                    },
+                    "optional": false
+                  },
+                  "count": {
+                    "node": {
+                      "kind": "boolean"
+                    },
+                    "optional": false
+                  },
+                  "tags": {
+                    "node": {
+                      "kind": "boolean"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            }
+          ],
+          "leavesTotal": 3,
+          "leavesUnresolved": 0,
+          "unresolved": []
+        },
+        {
+          "id": "T6",
+          "file": "spike/765-shape-extraction/hard-target.ts",
+          "symbol": "hardConditional",
+          "why": "conditional type (synthetic)",
+          "params": [
+            {
+              "name": "value",
+              "typeText": "string",
+              "optional": false,
+              "shape": {
+                "kind": "string"
+              }
+            }
+          ],
+          "leavesTotal": 1,
+          "leavesUnresolved": 0,
+          "unresolved": []
+        },
+        {
+          "id": "T7",
+          "file": "spike/765-shape-extraction/hard-target.ts",
+          "symbol": "hardIndexed",
+          "why": "index signature (synthetic)",
+          "params": [
+            {
+              "name": "bag",
+              "typeText": "Bag",
+              "optional": false,
+              "shape": {
+                "kind": "unresolved",
+                "reason": "index signature: field names are not statically known",
+                "typeText": "Bag"
+              }
+            }
+          ],
+          "leavesTotal": 1,
+          "leavesUnresolved": 1,
+          "unresolved": [
+            {
+              "path": "bag",
+              "reason": "index signature: field names are not statically known",
+              "typeText": "Bag"
+            }
+          ]
+        },
+        {
+          "id": "T8",
+          "file": "spike/765-shape-extraction/hard-target.ts",
+          "symbol": "hardTemplate",
+          "why": "template literal type (synthetic)",
+          "params": [
+            {
+              "name": "name",
+              "typeText": "\"onClick\" | \"onFocus\"",
+              "optional": false,
+              "shape": {
+                "kind": "string",
+                "enum": ["onClick", "onFocus"]
+              }
+            }
+          ],
+          "leavesTotal": 1,
+          "leavesUnresolved": 0,
+          "unresolved": []
+        },
+        {
+          "id": "T9",
+          "file": "spike/765-shape-extraction/hard-target.ts",
+          "symbol": "hardIntersection",
+          "why": "intersection type (synthetic)",
+          "params": [
+            {
+              "name": "m",
+              "typeText": "Merged",
+              "optional": false,
+              "shape": {
+                "kind": "unresolved",
+                "reason": "intersection type not modelled in v1",
+                "typeText": "Merged"
+              }
+            }
+          ],
+          "leavesTotal": 1,
+          "leavesUnresolved": 1,
+          "unresolved": [
+            {
+              "path": "m",
+              "reason": "intersection type not modelled in v1",
+              "typeText": "Merged"
+            }
+          ]
+        },
+        {
+          "id": "T10",
+          "file": "spike/765-shape-extraction/hard-target.ts",
+          "symbol": "hardAny",
+          "why": "any / unknown / callable (synthetic)",
+          "params": [
+            {
+              "name": "a",
+              "typeText": "any",
+              "optional": false,
+              "shape": {
+                "kind": "unresolved",
+                "reason": "type is any",
+                "typeText": "any"
+              }
+            },
+            {
+              "name": "u",
+              "typeText": "unknown",
+              "optional": false,
+              "shape": {
+                "kind": "unresolved",
+                "reason": "type is unknown",
+                "typeText": "unknown"
+              }
+            },
+            {
+              "name": "fn",
+              "typeText": "(x: number) => string",
+              "optional": false,
+              "shape": {
+                "kind": "unresolved",
+                "reason": "callable type (function-valued field)",
+                "typeText": "(x: number) => string"
+              }
+            }
+          ],
+          "leavesTotal": 3,
+          "leavesUnresolved": 3,
+          "unresolved": [
+            {
+              "path": "a",
+              "reason": "type is any",
+              "typeText": "any"
+            },
+            {
+              "path": "u",
+              "reason": "type is unknown",
+              "typeText": "unknown"
+            },
+            {
+              "path": "fn",
+              "reason": "callable type (function-valued field)",
+              "typeText": "(x: number) => string"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
