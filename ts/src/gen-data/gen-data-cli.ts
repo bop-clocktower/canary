@@ -8,10 +8,14 @@
  *   - 1: the emitted text failed its own blackhawk/savant self-check -- a
  *     generator bug; nothing is written.
  *   - 2: usage -- bad --seed, unknown/unsupported --framework, unreadable
- *     schema, or a schema root that is not `type: "object"`.
- *   - 3 (EXIT_ABSTAINED): zero fields resolved, or the self-check could not
- *     run. Writing a file whose detector-clean guarantee was never checked
- *     would be a silent pass, so nothing is written.
+ *     schema, a resolved schema root that is not an object, a schema that
+ *     yields no valid fixture identifier, or an output that cannot be written.
+ *   - 3 (EXIT_ABSTAINED): the root or every field is unresolved, or the
+ *     self-check could not run. Writing a file whose detector-clean guarantee
+ *     was never checked would be a silent pass, so nothing is written.
+ *
+ * With `--json`, every exit prints one JSON object: the report on success,
+ * `{ outcome, exitCode, message, ... }` otherwise.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, relative, resolve, sep } from 'node:path';
@@ -32,6 +36,7 @@ import type { MainDeps } from '../main-deps.js';
 
 const EXIT_USAGE = 2;
 const EXIT_GENERATOR_BUG = 1;
+const IDENT = /^[A-Za-z_$][\w$]*$/;
 
 interface GenDataOpts {
   schema: string;
@@ -40,6 +45,18 @@ interface GenDataOpts {
   out: string;
   json?: boolean;
 }
+interface Ctx {
+  opts: GenDataOpts;
+  deps: MainDeps;
+}
+interface Failure {
+  exitCode: number;
+  outcome: string;
+  message: string;
+  /** Human output; defaults to the message alone. */
+  lines?: string[];
+  extra?: Record<string, unknown>;
+}
 
 /** `null` = supported; a string = why this framework is refused. */
 const FRAMEWORKS: Record<string, string | null> = {
@@ -47,35 +64,69 @@ const FRAMEWORKS: Record<string, string | null> = {
   pytest: 'pytest is not yet supported in this slice (spec step 5)',
 };
 
-function usage(deps: MainDeps, message: string): never {
-  deps.out(message);
-  throw new CliExitError(EXIT_USAGE);
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+function fail(ctx: Ctx, f: Failure): never {
+  if (ctx.opts.json === true) {
+    const { exitCode, outcome, message } = f;
+    ctx.deps.out(jsonIndent2({ outcome, exitCode, message, ...f.extra }));
+  } else {
+    for (const line of f.lines ?? [f.message]) ctx.deps.out(line);
+  }
+  throw new CliExitError(f.exitCode);
 }
 
-function validateUsage(opts: GenDataOpts, deps: MainDeps): number {
-  const refusal = Object.hasOwn(FRAMEWORKS, opts.framework)
-    ? FRAMEWORKS[opts.framework]
-    : `unknown framework "${opts.framework}"; expected vitest`;
-  if (refusal) usage(deps, refusal);
-  const seed = parseSeed(opts.seed);
-  return seed.ok ? seed.seed : usage(deps, seed.reason);
+const usage = (ctx: Ctx, message: string): never =>
+  fail(ctx, { exitCode: EXIT_USAGE, outcome: 'usage-error', message });
+
+function validateUsage(ctx: Ctx): number {
+  const { framework } = ctx.opts;
+  const refusal = Object.hasOwn(FRAMEWORKS, framework)
+    ? FRAMEWORKS[framework]
+    : `unknown framework "${framework}"; expected vitest`;
+  if (refusal) usage(ctx, refusal);
+  const seed = parseSeed(ctx.opts.seed);
+  return seed.ok ? seed.seed : usage(ctx, seed.reason);
 }
 
-function readSchema(path: string, deps: MainDeps): unknown {
+function readSchema(ctx: Ctx, path: string): unknown {
   try {
     return JSON.parse(readFileSync(path, 'utf-8')) as unknown;
   } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    return usage(deps, `cannot read schema ${path}: ${why}`);
+    return usage(ctx, `cannot read schema ${path}: ${errorText(e)}`);
   }
 }
 
+/** An unresolved or union root is an abstention; any other scalar is usage. */
+function checkRoot(ctx: Ctx, shape: ShapeNode): void {
+  if (shape.kind === 'object') return;
+  if (shape.kind !== 'unresolved' && shape.kind !== 'union')
+    usage(ctx, 'schema root must be type "object" in this slice');
+  const reason =
+    shape.kind === 'unresolved'
+      ? shape.reason
+      : 'root is a union, not an object';
+  fail(ctx, {
+    exitCode: EXIT_ABSTAINED,
+    outcome: 'abstained',
+    message: `Abstained: schema root is unresolved (${reason}); no fixture written.`,
+  });
+}
+
 /** Schema `title` when identifier-ish, else the file basename. */
-function fixtureName(schema: unknown, path: string): string {
+function fixtureName(ctx: Ctx, schema: unknown, path: string): string {
   const title = (schema as { title?: unknown }).title;
-  if (typeof title === 'string' && /^[A-Za-z][\w -]*$/.test(title))
-    return fixtureNames(title).camel;
-  return fixtureNames(basename(path).replace(/(\.schema)?\.json$/, '')).camel;
+  const raw =
+    typeof title === 'string' && /^[A-Za-z][\w -]*$/.test(title)
+      ? title
+      : basename(path).replace(/(\.schema)?\.json$/, '');
+  const name = fixtureNames(raw).camel;
+  if (!IDENT.test(name))
+    usage(
+      ctx,
+      `cannot derive a valid fixture identifier from ${path} (got "${name}"); give the schema an identifier-like "title"`,
+    );
+  return name;
 }
 
 const posixRelative = (from: string, to: string) =>
@@ -84,40 +135,68 @@ const posixRelative = (from: string, to: string) =>
 const unresolvedLines = (set: FixtureSet) =>
   set.unresolved.map((u) => `  - ${u.path}: ${u.reason}`);
 
-function abstain(deps: MainDeps, lines: string[]): never {
-  for (const line of lines) deps.out(line);
-  throw new CliExitError(EXIT_ABSTAINED);
+function abstainOnZero(ctx: Ctx, set: FixtureSet): void {
+  if (set.fieldsResolved > 0) return;
+  const message = `Abstained: 0/${set.fieldsTotal} fields resolved in ${ctx.opts.schema}; no fixture written.`;
+  fail(ctx, {
+    exitCode: EXIT_ABSTAINED,
+    outcome: 'abstained',
+    message,
+    lines: [message, ...unresolvedLines(set)],
+    extra: {
+      fieldsTotal: set.fieldsTotal,
+      fieldsResolved: set.fieldsResolved,
+      unresolved: set.unresolved,
+    },
+  });
 }
 
 async function checkEmitted(
+  ctx: Ctx,
   text: string,
   outFile: string,
-  deps: MainDeps,
 ): Promise<string[]> {
-  const run = deps.genDataSelfCheck ?? selfCheck;
+  const run = ctx.deps.genDataSelfCheck ?? selfCheck;
   const check = await run(text, basename(outFile));
   if (check.status === 'unavailable')
-    abstain(deps, [
-      `Abstained: self-check could not run (${check.reason}); no fixture written.`,
-    ]);
-  if (check.findings.length > 0) {
-    for (const f of check.findings)
-      deps.out(`${f.detector} ${f.ruleId} line ${f.line}: ${f.snippet}`);
-    deps.out(
-      'generator bug: emitted fixtures failed self-check; nothing written.',
-    );
-    throw new CliExitError(EXIT_GENERATOR_BUG);
+    fail(ctx, {
+      exitCode: EXIT_ABSTAINED,
+      outcome: 'abstained',
+      message: `Abstained: self-check could not run (${check.reason}); no fixture written.`,
+    });
+  if (check.findings.length === 0) return check.detectors;
+  const message =
+    'generator bug: emitted fixtures failed self-check; nothing written.';
+  return fail(ctx, {
+    exitCode: EXIT_GENERATOR_BUG,
+    outcome: 'self-check-failed',
+    message,
+    lines: [
+      ...check.findings.map(
+        (f) => `${f.detector} ${f.ruleId} line ${f.line}: ${f.snippet}`,
+      ),
+      message,
+    ],
+    extra: { findings: check.findings },
+  });
+}
+
+function writeOutput(ctx: Ctx, output: string, text: string): void {
+  try {
+    mkdirSync(dirname(output), { recursive: true });
+    writeFileSync(output, text, 'utf-8');
+  } catch (e) {
+    usage(ctx, `cannot write fixture ${output}: ${errorText(e)}`);
   }
-  return check.detectors;
 }
 
 function report(
+  ctx: Ctx,
   set: FixtureSet,
   meta: { target: string; output: string; detectors: string[] },
-  opts: GenDataOpts,
-  deps: MainDeps,
 ): void {
-  if (opts.json === true) {
+  const { deps } = ctx;
+  if (ctx.opts.json === true) {
     deps.out(
       jsonIndent2({
         target: meta.target,
@@ -146,26 +225,22 @@ function report(
     deps.out(`${set.casesTruncated} case(s) dropped at the 50-case cap.`);
 }
 
-async function runGenData(opts: GenDataOpts, deps: MainDeps): Promise<void> {
-  const seed = validateUsage(opts, deps);
+async function runGenData(ctx: Ctx): Promise<void> {
+  const { opts, deps } = ctx;
+  const seed = validateUsage(ctx);
   const schemaPath = resolve(deps.cwd(), opts.schema);
-  const json = readSchema(schemaPath, deps);
-  const shape: ShapeNode = extractJsonSchema(json);
-  if (shape.kind !== 'object')
-    usage(deps, 'schema root must be type "object" in this slice');
-  const set = generateFixtureSet(shape, fixtureName(json, schemaPath), seed);
-  if (set.fieldsResolved === 0)
-    abstain(deps, [
-      `Abstained: 0/${set.fieldsTotal} fields resolved in ${opts.schema}; no fixture written.`,
-      ...unresolvedLines(set),
-    ]);
+  const json = readSchema(ctx, schemaPath);
+  const shape = extractJsonSchema(json);
+  checkRoot(ctx, shape);
+  const name = fixtureName(ctx, json, schemaPath);
+  const set = generateFixtureSet(shape, name, seed);
+  abstainOnZero(ctx, set);
   const target = posixRelative(deps.cwd(), schemaPath);
   const output = resolve(deps.cwd(), opts.out, `${set.name}.fixtures.ts`);
   const text = emitVitest(shape, set, target);
-  const detectors = await checkEmitted(text, output, deps);
-  mkdirSync(dirname(output), { recursive: true });
-  writeFileSync(output, text, 'utf-8');
-  report(set, { target, output, detectors }, opts, deps);
+  const detectors = await checkEmitted(ctx, text, output);
+  writeOutput(ctx, output, text);
+  report(ctx, set, { target, output, detectors });
 }
 
 export function buildGenDataCommand(deps: MainDeps): Command {
@@ -177,8 +252,8 @@ export function buildGenDataCommand(deps: MainDeps): Command {
     .requiredOption('--framework <name>', 'Target test framework (vitest).')
     .option('--seed <n>', 'Integer seed (default 765).')
     .option('--out <dir>', 'Output directory.', 'tests/generated/fixtures')
-    .option('--json', 'Print the generation report as JSON.')
+    .option('--json', 'Print the outcome as JSON, on every exit.')
     .action(async (opts: GenDataOpts) => {
-      await runGenData(opts, deps);
+      await runGenData({ opts, deps });
     });
 }

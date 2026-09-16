@@ -260,3 +260,129 @@ describe('canary gen-data determinism', () => {
     expect(defaultBlock(a)).not.toBe(defaultBlock(b));
   });
 });
+
+describe('canary gen-data edge exits (review fixes)', () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkTmp();
+  });
+  afterEach(() => rmTmp(root));
+  const write = (name: string, s: unknown) => {
+    const p = join(root, name);
+    writeFileSync(p, JSON.stringify(s));
+    return p;
+  };
+  const gen = (schema: string, ...extra: string[]) =>
+    invokeCanary([
+      'gen-data',
+      '--schema',
+      schema,
+      '--framework',
+      'vitest',
+      '--out',
+      join(root, 'out'),
+      ...extra,
+    ]);
+  const ID_ONLY = { type: 'object', properties: { id: { type: 'string' } } };
+
+  it('a fixture name that is not a valid identifier exits 2 and writes nothing', async () => {
+    const res = await gen(write('123.schema.json', ID_ONLY));
+    expect(res.code).toBe(2);
+    expect(res.stdout).toMatch(/fixture identifier/);
+    expect(existsSync(join(root, 'out'))).toBe(false);
+  });
+
+  it('an unwritable --out exits 2 with a message, not a stack', async () => {
+    const blocker = join(root, 'blocker');
+    writeFileSync(blocker, 'a file, not a directory');
+    const res = await invokeCanary([
+      'gen-data',
+      '--schema',
+      write('order.schema.json', ID_ONLY),
+      '--framework',
+      'vitest',
+      '--out',
+      join(blocker, 'nested'),
+    ]);
+    expect(res.code).toBe(2);
+    expect(res.stdout).toMatch(/cannot write fixture/);
+  });
+
+  it.each([
+    [{ $ref: '#/$defs/Order' }, /\$ref is not resolved/],
+    [{ allOf: [ID_ONLY] }, /allOf is not supported/],
+    [{ anyOf: [{ type: 'string' }, { type: 'number' }] }, /root/],
+  ])('an unresolvable root %j abstains with exit 3', async (schema, msg) => {
+    const res = await gen(write('root.schema.json', schema));
+    expect(res.code).toBe(3);
+    expect(res.stdout).toMatch(msg);
+    expect(existsSync(join(root, 'out'))).toBe(false);
+  });
+
+  it('--json reports usage errors as JSON', async () => {
+    const res = await gen(
+      write('order.schema.json', ID_ONLY),
+      '--json',
+      '--seed',
+      'x',
+    );
+    expect(res.code).toBe(2);
+    expect(JSON.parse(res.stdout)).toMatchObject({
+      outcome: 'usage-error',
+      exitCode: 2,
+      message: expect.stringMatching(/--seed/),
+    });
+  });
+
+  it('--json reports an abstention as JSON with the unresolved paths', async () => {
+    const res = await gen(
+      write('blob.schema.json', { type: 'object', properties: { a: {} } }),
+      '--json',
+    );
+    expect(res.code).toBe(3);
+    expect(JSON.parse(res.stdout)).toMatchObject({
+      outcome: 'abstained',
+      exitCode: 3,
+      fieldsTotal: 1,
+      fieldsResolved: 0,
+      unresolved: [{ path: 'blob.a', reason: 'no type declared' }],
+    });
+  });
+
+  it('--json reports self-check findings as JSON', async () => {
+    const res = await invokeCanary(
+      [
+        'gen-data',
+        '--schema',
+        write('order.schema.json', ID_ONLY),
+        '--framework',
+        'vitest',
+        '--out',
+        join(root, 'out'),
+        '--json',
+      ],
+      {
+        deps: {
+          genDataSelfCheck: async () => ({
+            status: 'ran',
+            detectors: ['canary-savant'],
+            findings: [
+              {
+                detector: 'canary-savant',
+                ruleId: 'SV001',
+                line: 2,
+                snippet: 'x',
+              },
+            ],
+          }),
+        },
+      },
+    );
+    expect(res.code).toBe(1);
+    expect(JSON.parse(res.stdout)).toMatchObject({
+      outcome: 'self-check-failed',
+      exitCode: 1,
+      findings: [{ ruleId: 'SV001' }],
+    });
+  });
+});
