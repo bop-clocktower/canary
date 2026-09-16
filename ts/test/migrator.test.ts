@@ -3475,3 +3475,47 @@ describe('workflow template symlink escape', () => {
     }
   });
 });
+
+// A dry run must predict what --apply does. Two declared templates sharing a
+// basename (a per-shape variant pair in a monorepo) land on the SAME
+// `.github/workflows/<name>`; the dry run announced two installs while the apply
+// wrote one and misreported the other as an untouched older version.
+describe('TestInstallWorkflowsBasenameCollision', () => {
+  it('dry run and apply agree when two variants share a workflow filename', () => {
+    const root = mkTmp();
+    try {
+      const overlay = join(root, 'overlay');
+      const make = (target: string) => mkdirSync(target, { recursive: true });
+      makeWorkflowSkill(overlay, 'canary-pr-guardian', {
+        install: [
+          'api:templates/api/guardian.yml',
+          'e2e_ui:templates/e2e/guardian.yml',
+        ],
+        templates: {
+          'templates/api/guardian.yml': 'name: api\n',
+          'templates/e2e/guardian.yml': 'name: e2e\n',
+        },
+      });
+      const dryTarget = join(root, 'dry');
+      const applyTarget = join(root, 'apply');
+      make(dryTarget);
+      make(applyTarget);
+      const shapes = ['api', 'e2e_ui'];
+      const dry = mig().installWorkflows(shapes, overlay, dryTarget, true);
+      const applied = mig().installWorkflows(
+        shapes,
+        overlay,
+        applyTarget,
+        false,
+      );
+      const predicted = dry.map((r) => r.status === 'dry_run');
+      const wrote = applied.map(
+        (r) => r.status === 'installed' || r.status === 'updated',
+      );
+      expect(wrote).toEqual(predicted);
+      expect(applied.map((r) => r.status)).not.toContain('outdated');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
