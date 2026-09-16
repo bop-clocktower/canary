@@ -45,6 +45,7 @@ import { buildBatwomanCommand } from './batwoman-cli.js';
 import { buildBriefingCommand } from './briefing/briefing-cli.js';
 import { buildCiReadyCommand } from './ci-ready-cli.js';
 import { buildInventoryCommand } from './inventory/inventory-cli.js';
+import { buildGenDataCommand } from './gen-data/gen-data-cli.js';
 import { buildScalingCurveCommand } from './scaling-curve-cli.js';
 import { buildPermissionMatrixCommand } from './permission-matrix-cli.js';
 import { buildCompanyKnowledgeCommand } from './company-knowledge-cli.js';
@@ -381,6 +382,7 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
   program.addCommand(buildPermissionMatrixCommand(deps));
   program.addCommand(buildCiReadyCommand(deps));
   program.addCommand(buildInventoryCommand(deps));
+  program.addCommand(buildGenDataCommand(deps));
   program.addCommand(buildBriefingCommand(deps));
 
   // Propagate the usage-exit normalization to every top-level command (the
