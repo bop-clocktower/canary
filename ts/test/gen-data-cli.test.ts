@@ -1,7 +1,150 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
+
+describe('canary gen-data outcomes', () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkTmp();
+  });
+  afterEach(() => rmTmp(root));
+  const write = (name: string, s: unknown) => {
+    const p = join(root, name);
+    writeFileSync(p, JSON.stringify(s));
+    return p;
+  };
+  const out = () => join(root, 'out');
+
+  it('abstains with exit 3, writes nothing, and names every unresolved path (criteria 4, 6)', async () => {
+    const p = write('blob.schema.json', {
+      type: 'object',
+      properties: { a: {}, b: { $ref: '#/x' } },
+    });
+    const res = await invokeCanary([
+      'gen-data',
+      '--schema',
+      p,
+      '--framework',
+      'vitest',
+      '--out',
+      out(),
+    ]);
+    expect(res.code).toBe(EXIT_ABSTAINED);
+    expect(existsSync(out())).toBe(false);
+    expect(res.stdout).toMatch(/blob\.a: no type declared/);
+    expect(res.stdout).toMatch(/blob\.b: \$ref is not resolved in this slice/);
+  });
+
+  it('partial resolution exits 0 and discloses N/M in human output (criterion 5)', async () => {
+    const p = write('order.schema.json', {
+      title: 'Order',
+      type: 'object',
+      properties: { id: { type: 'string' }, meta: {} },
+    });
+    const res = await invokeCanary([
+      'gen-data',
+      '--schema',
+      p,
+      '--framework',
+      'vitest',
+      '--out',
+      out(),
+    ]);
+    expect(res.code).toBe(0);
+    expect(res.stdout).toMatch(/1\/2 fields resolved/);
+    expect(res.stdout).toMatch(/order\.meta: no type declared/);
+    expect(readFileSync(join(out(), 'order.fixtures.ts'), 'utf-8')).toMatch(
+      /export function buildOrder/,
+    );
+  });
+
+  it('--json carries the spec report shape (criterion 5)', async () => {
+    const p = write('order.schema.json', {
+      title: 'Order',
+      type: 'object',
+      properties: { id: { type: 'string' }, meta: {} },
+    });
+    const res = await invokeCanary([
+      'gen-data',
+      '--schema',
+      p,
+      '--framework',
+      'vitest',
+      '--out',
+      out(),
+      '--json',
+      '--seed',
+      '7',
+    ]);
+    const report = JSON.parse(res.stdout);
+    expect(report).toMatchObject({
+      seed: 7,
+      fieldsTotal: 2,
+      fieldsResolved: 1,
+      unresolved: [{ path: 'order.meta', reason: 'no type declared' }],
+      categoriesCovered: expect.arrayContaining(['boundary']),
+      notCovered: expect.arrayContaining([
+        { category: 'race', reason: 'not data-expressible' },
+      ]),
+      selfCheck: { status: 'ran', findings: 0 },
+    });
+    expect(report.casesEmitted).toBeGreaterThan(0);
+    expect(report.output).toBe(join(out(), 'order.fixtures.ts'));
+  });
+
+  it('self-check findings exit 1 and write nothing', async () => {
+    const p = write('order.schema.json', {
+      title: 'Order',
+      type: 'object',
+      properties: { id: { type: 'string' } },
+    });
+    const res = await invokeCanary(
+      ['gen-data', '--schema', p, '--framework', 'vitest', '--out', out()],
+      {
+        deps: {
+          genDataSelfCheck: async () => ({
+            status: 'ran',
+            detectors: ['canary-blackhawk'],
+            findings: [
+              {
+                detector: 'canary-blackhawk',
+                ruleId: 'BH001',
+                line: 3,
+                snippet: 'Date.now()',
+              },
+            ],
+          }),
+        },
+      },
+    );
+    expect(res.code).toBe(1);
+    expect(existsSync(out())).toBe(false);
+    expect(res.stdout).toMatch(/BH001/);
+  });
+
+  it('self-check unavailable abstains (exit 3) and writes nothing (C1)', async () => {
+    const p = write('order.schema.json', {
+      title: 'Order',
+      type: 'object',
+      properties: { id: { type: 'string' } },
+    });
+    const res = await invokeCanary(
+      ['gen-data', '--schema', p, '--framework', 'vitest', '--out', out()],
+      {
+        deps: {
+          genDataSelfCheck: async () => ({
+            status: 'unavailable',
+            reason: 'canary-savant scanner not found',
+          }),
+        },
+      },
+    );
+    expect(res.code).toBe(3);
+    expect(existsSync(out())).toBe(false);
+  });
+});
 
 const ORDER = {
   title: 'Order',

@@ -18,6 +18,7 @@ import { homedir } from 'node:os';
 
 import { TestClassifier } from './core/classifier.js';
 import { CompanyKnowledge } from './core/company-knowledge.js';
+import { selfCheck } from './core/gen-data/self-check.js';
 import { CanaryTestExecutor } from './core/executor.js';
 import { FrameworkRegistry } from './core/framework-registry.js';
 import { HarnessMigrator } from './core/migrator.js';
@@ -83,6 +84,8 @@ export interface MainDeps {
   makeWorkflowDiscovery(): WorkflowDiscovery;
   makeTicketUpdater(): TicketUpdater;
   loadCompanyKnowledge(env: string | null): CompanyKnowledge;
+  /** gen-data's blackhawk/savant self-check; injectable so exit 1/3 are testable. */
+  genDataSelfCheck: typeof selfCheck;
 }
 
 /** A stdin-backed prompt: reads piped lines once, returns `def` when exhausted. */
@@ -144,5 +147,6 @@ export function defaultMainDeps(): MainDeps {
     makeWorkflowDiscovery: () => new WorkflowDiscovery(),
     makeTicketUpdater: () => new TicketUpdater(),
     loadCompanyKnowledge: (env) => CompanyKnowledge.load(undefined, env),
+    genDataSelfCheck: selfCheck,
   };
 }
