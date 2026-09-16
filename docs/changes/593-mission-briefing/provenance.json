@@ -1,17 +1,21 @@
 {
   "issues": [593],
-  "route": "spec-only",
-  "stages": ["brainstorming"],
+  "route": "spec-ready",
+  "stages": ["autopilot", "planning", "tdd", "execution", "self-review"],
+  "plan": "docs/changes/593-mission-briefing/plans/2026-09-16-skill-and-comment-plan.md",
   "specArtifact": "docs/changes/593-mission-briefing/proposal.md",
-  "closingKeyword": "Refs",
-  "decisionsForHuman": 6,
+  "closingKeyword": "Closes",
+  "acceptanceCriteriaCovered": [6, 9, 10],
   "assumptions": [
-    "harness-brainstorming run non-interactively per fleet brief; EVALUATE questions answered with recommended defaults; soundness-review, advise_skills and sign-off not run.",
-    "Coverage half reuses guardian Tier-0 scopeDiff, filters and CoverageInputState.",
-    "Output is stdout Markdown by default; sticky PR comment opt-in with its own marker.",
-    "Both a deterministic CLI subcommand (canary briefing) and a judgment skill.",
-    "Inventory import matches are reported separately from executed coverage.",
-    "Empty, unparseable or zero-unit diffs abstain with exit 3.",
-    "GitHub is the only comment host in v1."
+    "harness:autopilot was invoked; its PLAN state was delegated to harness-planner and EXECUTE to harness-task-executor. APPROVE_PLAN was auto-approved by the headless fleet lane although handoff concerns were non-empty (the human confirmed the spec-ready route); VERIFY/INTEGRATE/OUTCOME_EVAL were replaced by the four ts gates plus ratchet measurements.",
+    "Spec H4 planned three PRs; PR 2 (skill) and PR 3 (comment) ship together here, per the human's Closes #593 decision.",
+    "Criterion 9 is enforced mechanically: `canary briefing --judgment <file>` drops any skill item whose path:line is not inside the diff's added ranges (or has an unknown category) and lists it under 'Out of this charter'. No LLM eval.",
+    "An unreadable or invalid judgment file prints a WARNING and renders the facts-only charter, exit 0 (never exit 1).",
+    "--comment uses its own marker <!-- canary-mission-briefing --> through the guardian's upsertStickyComment; any write error (403, 401, network) prints the charter to stdout with ::warning:: and exits 0. No PR context prints the charter to stdout.",
+    "--json gains an additive `judgment` block; schema_version stays 1.",
+    "MainDeps.buildCommentClient is optional; commentClientFor() builds the REST client from GITHUB_TOKEN when unset.",
+    "Charter delivery was split into ts/src/briefing/deliver.ts to keep the perf ratchet flat (215 -> 215); entropy 144 -> 144. All four new modules are in both entryPoints arrays.",
+    "A slash command was added in the generated format because the skill has a skill.yaml. AGENTS.md has no skill list, so only agents/skills/README.md and docs/naming-registry.md were updated.",
+    "Arch module-size grows 40944 -> 41394 (+450), 0 new violations; an allowance file is committed. The baselines.json floor was NOT moved by this lane (the edit was refused as a CI bypass), so arch-baseline-freshness fails until a human refreshes the floor or applies the refresh-baseline label."
   ]
 }
