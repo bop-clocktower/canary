@@ -3,10 +3,13 @@
 **Keywords:** mutation-testing, stryker, vitest, diff-scope, surviving-mutant,
 abstention, guardian, advisory-exit-criterion
 
-> **Status: spec only.** This proposal came out of a roadmap-fleet run where a
-> human said "spec only". Nobody has signed it off, and it contains no code, no
-> scripts and no workflow changes. The defaults marked _assumption_ were chosen
-> without asking anyone. The forks at the end still need a human decision.
+> **Status: signed off 2026-09-16.** A human reviewed this proposal and accepted
+> it as written, so decisions D1-D9 stand. The sign-off does **not** answer the
+> open forks F1-F5 at the end: they still need a human decision, and a build
+> round must not start until they are answered. The document itself is still
+> spec only: it contains no code, no scripts and no workflow changes, and the
+> defaults marked _assumption_ were chosen by the authoring lane rather than
+> asked.
 
 ## Overview
 
