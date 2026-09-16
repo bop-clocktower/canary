@@ -182,7 +182,12 @@ export class NdjsonHistoryStore implements HistoryStore {
   }
 
   querySummary(suite: string, runs: number): SummaryResult {
-    const suiteRecords = this.readAll().filter((r) => r.suite === suite);
+    // "Most recent" means TIME order, not append order: a backfilled older run
+    // appended last must not stand in for the latest one (same rule
+    // `queryFlaky` applies, #604). Stable sort keeps untimestamped rows in place.
+    const suiteRecords = this.readAll()
+      .filter((r) => r.suite === suite)
+      .sort((a, b) => cmp(def(a.timestamp, ''), def(b.timestamp, '')));
     const recent = runs > 0 ? suiteRecords.slice(-runs) : suiteRecords;
     if (recent.length === 0) {
       return { suite, total_runs: 0, avg_pass_rate: 0.0 };

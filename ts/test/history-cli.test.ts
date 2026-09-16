@@ -190,3 +190,25 @@ describe('canary history run-count flags', () => {
     }
   });
 });
+
+describe('canary history summary ordering', () => {
+  // A backfilled (older) run appended last must not count as the most recent.
+  it('summary --runs 1 picks the newest run by timestamp, not append order', async () => {
+    const tmp = mkTmp();
+    try {
+      writeRuns(tmp, [
+        run('newest', '2026-01-05T00:00:00Z', 1, 0),
+        run('backfilled', '2026-01-01T00:00:00Z', 0, 1),
+      ]);
+      const res = await invokeCanary(
+        ['history', 'summary', 'api', '--runs', '1', '--json'],
+        { cwd: tmp },
+      );
+      expect(res.code).toBe(0);
+      const obj = JSON.parse(res.stdout) as { runs: { run_id: string }[] };
+      expect(obj.runs.map((r) => r.run_id)).toEqual(['newest']);
+    } finally {
+      rmTmp(tmp);
+    }
+  });
+});
