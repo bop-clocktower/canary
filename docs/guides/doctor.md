@@ -115,11 +115,11 @@ hand, with **both** of these commands, in this order:
 /plugin install canary@bop-clocktower
 ```
 
-Running only the first is the trap: it refreshes the marketplace clone, prints
-a success message, and leaves the cached plugin exactly where it was. Running
-only the second reinstalls whatever version the (possibly stale) clone already
-holds. `engine:plugin-version` compares the installed version against the clone
-and prints both commands on failure for this reason.
+Running only the first is the trap: it refreshes the marketplace clone, prints a
+success message, and leaves the cached plugin exactly where it was. Running only
+the second reinstalls whatever version the (possibly stale) clone already holds.
+`engine:plugin-version` compares the installed version against the clone and
+prints both commands on failure for this reason.
 
 ### Tier 2 — overlay checks (data-driven)
 
@@ -160,6 +160,24 @@ matched nothing. When no overlay defines any audiences at all, the hint says so
 and tells you to drop the flag.
 
 ---
+
+## Voice line and `--no-flavor`
+
+When a check fails, the human report ends with one line in Black Canary's voice
+under the summary:
+
+```text
+1 check(s) failed
+
+Voice: Black Canary (garnish only; CANARY_NO_FLAVOR=1 hides it)
+  "Something in your setup is broken. Fix it before you trust a run."
+```
+
+It is garnish
+([ADR 0031](../knowledge/decisions/0031-voice-never-touches-machine-output.md)):
+a passing or abstained run gets none, `--json` never contains it, and the exit
+code is the same with it on or off. `CANARY_NO_FLAVOR=1`, `NO_FLAVOR=1` or
+`--no-flavor` removes it.
 
 ## `--json`
 

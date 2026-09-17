@@ -21,12 +21,12 @@ Voice does **not** apply to:
 
 ## Engine and skill output surfaces
 
-Separate from agent prose, some shipped outputs append a short voiced line:
-today the `canary-test-reporter` Markdown footer. Those lines come from
-`voice/lines.json` (profile -> moment -> lines), not from the profile prose, and
-follow ADR 0031: never in JSON, exit codes or annotations, and removed by
-`CANARY_NO_FLAVOR=1`. The surface picks its voice; the project config below does
-not select it yet.
+Separate from agent prose, some shipped outputs append a short voiced line: the
+`canary-test-reporter` Markdown footer and the `canary doctor` summary. Those
+lines come from `voice/lines.json` (profile -> moment -> lines), not from the
+profile prose, and follow ADR 0031: never in JSON, exit codes or annotations,
+and removed by `CANARY_NO_FLAVOR=1`. The surface picks its voice; the project
+config below does not select it yet.
 
 ## Step 1 — Look for a project voice config
 

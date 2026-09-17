@@ -8,6 +8,10 @@
     "report.flaky": [
       "It passed on a retry. That is not the same as passing.",
       "A retry covered for this one. Next time it may not."
+    ],
+    "doctor.fail": [
+      "Something in your setup is broken. Fix it before you trust a run.",
+      "A failed check here fails every run after it. Start with the first one."
     ]
   }
 }

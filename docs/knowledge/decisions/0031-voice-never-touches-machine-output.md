@@ -57,6 +57,9 @@ Mechanics adopted with it:
 - Every new voiced surface must ship the invariant tests: JSON SHA equality and
   exit-code equality across flavor on and off, and no voiced text in
   annotations.
+- Surfaces that cannot share code carry their own selector and a conformance
+  test that both pick the same line for the same counts (the ESM reporter skill
+  and the CommonJS npm package behind `canary doctor`).
 - A profile's own rules still bind: Black Canary is the alarm voice and "never
   for green runs", so the test reporter's footer is silent on a passing run.
 - Voice resolution is per surface (F4a). Project-level selection through

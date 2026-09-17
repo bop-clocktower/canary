@@ -32,6 +32,7 @@ import {
   type UrlProbe,
 } from './doctor-manifest.js';
 import * as registry from './overlays-registry.js';
+import * as voice from './voice.js';
 import {
   EXIT_ABSTAINED,
   gateOutcome,
@@ -70,6 +71,10 @@ export interface DoctorDeps extends CommandDeps {
    * the abstention fixtures need a run whose denominator is exactly zero.
    */
   runEngineChecks?: (deps: EngineCheckDeps) => Promise<CheckResult[]>;
+  /** Environment for the flavor off-switch (#340); defaults to process.env. */
+  env?: Record<string, string | undefined>;
+  /** Voice lines file; defaults to the staged dist/voice/lines.json. */
+  voiceLinesPath?: string;
 }
 
 /** One printed section: a header and its check results. */
@@ -281,6 +286,34 @@ function abstentionRemedy(summary: DoctorSummary): string {
 }
 
 /**
+ * One Black Canary line under a failing summary (#340, ADR 0031). Written
+ * after the summary and never on the `--json` path, so the machine report and
+ * the exit code cannot see it. Green and abstained runs stay unvoiced.
+ */
+function voiceLine(
+  summary: DoctorSummary,
+  args: readonly string[],
+  deps: DoctorDeps,
+): string {
+  if (summary.failed === 0) return '';
+  if (!voice.flavorOn(deps.env ?? process.env, args.includes('--no-flavor'))) {
+    return '';
+  }
+  const lines = voice.loadLines(
+    deps.voiceLinesPath ?? voice.DEFAULT_VOICE_LINES,
+  );
+  const counts = {
+    total: summary.checked,
+    passed: summary.checked - summary.failed,
+    failed: summary.failed,
+    flaky: 0,
+  };
+  const line = voice.pickLine(lines, 'black-canary', 'doctor.fail', counts);
+  if (line === '') return '';
+  return `\nVoice: Black Canary (garnish only; CANARY_NO_FLAVOR=1 hides it)\n  "${line}"\n`;
+}
+
+/**
  * Run `canary doctor`. Returns a process exit code: 0 when at least one check
  * ran and none failed, 1 when any check failed, and `EXIT_ABSTAINED` (3) when
  * nothing was actually verified (#508). A malformed manifest for one overlay
@@ -372,6 +405,7 @@ export async function runDoctor(
     }
   }
   out.write(`\n${summary.summaryLine}\n`);
+  out.write(voiceLine(summary, args, deps));
   if (summary.abstained) {
     out.write(`  ${abstentionRemedy(summary)}\n`);
   }
