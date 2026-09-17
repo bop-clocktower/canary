@@ -13,7 +13,7 @@ it), see [Guides](../../docs/guides/index.md).
 
 ```text
 agents/skills/
-├── claude-code/                    # Claude Code skills (25)
+├── claude-code/                    # Claude Code skills (26)
 │   ├── canary-add-framework/
 │   ├── canary-batwoman/
 │   ├── canary-blackhawk/
@@ -31,6 +31,7 @@ agents/skills/
 │   ├── canary-mission-briefing/
 │   ├── canary-pr-guardian/
 │   ├── canary-promote-test/
+│   ├── canary-rewind/
 │   ├── canary-savant/
 │   ├── canary-screech/
 │   ├── canary-setup-harness/
@@ -113,6 +114,14 @@ slash-command entry points.
   fix merged. GitHub closes an issue on a keyword match, which checks neither
   that the fix works nor that it ever ran. Advisory, and the only skill here
   that requires the network (`gh`): deterministic, network, no agent.
+
+### Run replay
+
+- [`canary-rewind`](./claude-code/canary-rewind/SKILL.md) — Replays one failed
+  test from run history at its recorded commit in a scratch worktree, and bounds
+  the conclusion by a per-dimension fidelity table (restored / not-restored /
+  not-recorded). Hands intermittent results to the flakiness tools rather than
+  deciding them. Needs `git`; no network beyond one fetch.
 
 ### Test hygiene & reliability
 

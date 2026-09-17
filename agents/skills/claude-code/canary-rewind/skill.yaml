@@ -1,0 +1,16 @@
+name: canary-rewind
+version: '1.0.0'
+description:
+  Replay a failed test from run history at its recorded commit and interpret the
+  fidelity table, bounding every conclusion by what was restored.
+stability: static
+triggers:
+  - manual
+platforms:
+  - claude-code
+type: rigid
+tools: []
+tier: 2
+depends_on:
+  - canary-fleet-health
+  - canary-savant

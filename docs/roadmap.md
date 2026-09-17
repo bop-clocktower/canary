@@ -196,10 +196,10 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ### canary-rewind — time-travel run debugging
 
-- **Status:** backlog
-- **Spec:** —
+- **Status:** done
+- **Spec:** docs/changes/461-canary-rewind/proposal.md
 - **Summary:** Split from the Skill Forge umbrella (Issue #339, now closed) into Issue #461. Reconstruct a past run — env, seed, commit, order, traces — and replay a single failed test in that exact context, then diff against the nearest green run. The second of the two flagship bets that exploit the run-history asset. Accepted risk to handle in spec: "the exact context" is a claim the store must actually be able to honor; if seed and order were never recorded, replay reproduces a different run while presenting itself as the original, which is worse than not offering replay at all. The honest first deliverable may be a history-schema change. Note `rewind` is not a Birds of Prey name; if the roster convention is meant to hold, this row needs one.
-- **Blockers:** Issue #538 (no writer for the local history store)
+- **Blockers:** —
 - **Plan:** —
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#461
