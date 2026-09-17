@@ -387,9 +387,13 @@ Python from the plugin hooks and maintenance scripts. There is no longer a
   success line and `--json`), and records `HEAD` rather than
   `commit_sha: 'local'` inside a repo where HEAD resolves (#1021,
   [ADR 0029](docs/knowledge/decisions/0029-repo-relative-test-file-history-join-key.md)).
-  Rows written before that keep their old values. New history consumers take the
-  async `AsyncHistoryStore` from `makeStore()`, never `NdjsonHistoryStore`
-  directly; see
+  Rows written before that keep their old values. Canary's own store persists
+  between CI runs: the `fleet-health` job in `dogfood.yml` restores it from the
+  Actions cache (keyed per branch, falling back to `main`) before `record`,
+  saves it after, and annotates a warning while the store holds fewer runs than
+  the flake-verdict minimum. New history consumers take the async
+  `AsyncHistoryStore` from `makeStore()`, never `NdjsonHistoryStore` directly;
+  see
   [ADR 0013](docs/knowledge/decisions/0013-history-store-async-interface.md).
 - **Subprocess contract tests:** spawn through `runCapture()` in
   `ts/test/subprocess-testkit.ts`, never a hand-rolled `execFileSync` try/catch.
