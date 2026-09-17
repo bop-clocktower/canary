@@ -60,6 +60,45 @@ function isRecord(raw: Record<string, unknown>): boolean {
   );
 }
 
+/** One file's outcome: a record, or a named skip. */
+type FileOutcome =
+  { kind: 'record'; record: GuardianRecord } | { kind: 'skip'; reason: string };
+
+function readOne(dir: string, file: string): FileOutcome {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
+  } catch {
+    return { kind: 'skip', reason: 'unparseable JSON' };
+  }
+  // `JSON.parse('null')` and `JSON.parse('[]')` both parse fine and are not
+  // records: a truncated file from an interrupted job must be SKIPPED, never a
+  // crash — the command's contract is that it always exits 0.
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { kind: 'skip', reason: 'not a JSON object' };
+  }
+  const raw = parsed as Record<string, unknown>;
+  if (raw['source'] !== 'canary-pr-guardian') {
+    return { kind: 'skip', reason: 'not a canary-pr-guardian record' };
+  }
+  if (!isRecord(raw)) return { kind: 'skip', reason: 'malformed record' };
+  return {
+    kind: 'record',
+    record: {
+      ref: raw['ref'] as string,
+      gate: raw['gate'] as string,
+      tier: raw['tier'] as number,
+      abstained: raw['abstained'] === true,
+      degradedNotice:
+        typeof raw['degradedNotice'] === 'string'
+          ? raw['degradedNotice']
+          : null,
+      analyzedAt: raw['analyzedAt'] as string,
+      summary: raw['summary'] as GuardianRecord['summary'],
+    },
+  };
+}
+
 /** Load every `*.json` in `dir`, naming what it could not read. */
 export function loadRecords(dir: string): LoadedRecords {
   const records: GuardianRecord[] = [];
@@ -76,43 +115,9 @@ export function loadRecords(dir: string): LoadedRecords {
     };
   }
   for (const file of listing.files.filter((f) => f.endsWith('.json'))) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
-    } catch {
-      skipped.push({ file, reason: 'unparseable JSON' });
-      continue;
-    }
-    // `JSON.parse('null')` and `JSON.parse('[]')` both parse fine and are not
-    // records: a truncated file from an interrupted job must be SKIPPED, never
-    // a crash — the command's contract is that it always exits 0.
-    if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      Array.isArray(parsed)
-    ) {
-      skipped.push({ file, reason: 'not a JSON object' });
-      continue;
-    }
-    const raw = parsed as Record<string, unknown>;
-    if (raw['source'] !== 'canary-pr-guardian') {
-      skipped.push({ file, reason: 'not a canary-pr-guardian record' });
-    } else if (!isRecord(raw)) {
-      skipped.push({ file, reason: 'malformed record' });
-    } else {
-      records.push({
-        ref: raw['ref'] as string,
-        gate: raw['gate'] as string,
-        tier: raw['tier'] as number,
-        abstained: raw['abstained'] === true,
-        degradedNotice:
-          typeof raw['degradedNotice'] === 'string'
-            ? raw['degradedNotice']
-            : null,
-        analyzedAt: raw['analyzedAt'] as string,
-        summary: raw['summary'] as GuardianRecord['summary'],
-      });
-    }
+    const outcome = readOne(dir, file);
+    if (outcome.kind === 'record') records.push(outcome.record);
+    else skipped.push({ file, reason: outcome.reason });
   }
   return { records, skipped, dirProblem: null };
 }

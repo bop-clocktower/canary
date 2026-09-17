@@ -93,6 +93,19 @@ describe('computeSignals', () => {
     });
   });
 
+  it('carries a directory problem into every abstention reason', () => {
+    const s = computeSignals(
+      [],
+      new Map(),
+      null,
+      'the records directory does not exist',
+    );
+    expect(s.suppression).toMatchObject({
+      status: 'abstained',
+      reason: 'the records directory does not exist',
+    });
+  });
+
   it('reports NOT MEASURED over abstention even with no records at all', () => {
     const s = computeSignals([], new Map(), 'git log main failed (exit 128)');
     expect(s.mergedWithUnaddressed.status).toBe('not-measured');

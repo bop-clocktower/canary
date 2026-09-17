@@ -100,7 +100,7 @@ function buildReport(
           'disabled state lives in the GitHub Actions API, which this report never calls',
       },
     },
-    signals: computeSignals(records, merge.states, merge.problem),
+    signals: computeSignals(records, merge.states, merge.problem, dirProblem),
   };
 }
 

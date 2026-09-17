@@ -78,12 +78,11 @@ function instant(stamp: string): number {
   return Number.isNaN(ms) ? -Infinity : ms;
 }
 
-function tally(keys: string[], numeric = false): Record<string, number> {
+// Integer-like keys are enumerated numerically by the language, so the tier
+// tally needs no sort of its own; the sort here is for the non-numeric keys.
+function tally(keys: string[]): Record<string, number> {
   const out: Record<string, number> = {};
-  const sorted = numeric
-    ? [...keys].sort((a, b) => Number(a) - Number(b))
-    : [...keys].sort();
-  for (const k of sorted) out[k] = (out[k] ?? 0) + 1;
+  for (const k of [...keys].sort()) out[k] = (out[k] ?? 0) + 1;
   return out;
 }
 
@@ -132,11 +131,12 @@ function mergeSignal(
 
 function suppressionSignal(
   records: GuardianRecord[],
+  noRecordsReason: string,
 ): RecordSignals['suppression'] {
   const findings = records.reduce((n, r) => n + r.summary.total, 0);
   if (findings === 0) {
     return abstain(
-      records.length === 0 ? NO_RECORDS : 'records carry zero findings',
+      records.length === 0 ? noRecordsReason : 'records carry zero findings',
     );
   }
   return {
@@ -173,17 +173,22 @@ export function computeSignals(
   records: GuardianRecord[],
   merge: ReadonlyMap<string, MergeState>,
   gitProblem: string | null = null,
+  // Why there were no records, when that is known (a missing or unreadable
+  // directory). Carried into every abstention reason so a per-signal line is
+  // never less informative than the header.
+  dirProblem: string | null = null,
 ): RecordSignals {
   if (records.length === 0) {
+    const reason = dirProblem ?? NO_RECORDS;
     return {
       mergedWithUnaddressed:
         gitProblem === null
-          ? abstain(NO_RECORDS)
+          ? abstain(reason)
           : { status: 'not-measured', reason: gitProblem },
-      suppression: abstain(NO_RECORDS),
-      gate: abstain(NO_RECORDS),
-      degradation: abstain(NO_RECORDS),
-      findingsPerPr: abstain(NO_RECORDS),
+      suppression: abstain(reason),
+      gate: abstain(reason),
+      degradation: abstain(reason),
+      findingsPerPr: abstain(reason),
     };
   }
   // Compared as instants, not strings: two records written at the same moment
@@ -193,7 +198,7 @@ export function computeSignals(
   )[0] as GuardianRecord;
   return {
     mergedWithUnaddressed: mergeSignal(records, merge, gitProblem),
-    suppression: suppressionSignal(records),
+    suppression: suppressionSignal(records, NO_RECORDS),
     gate: {
       status: 'measured',
       denominator: records.length,
@@ -205,10 +210,7 @@ export function computeSignals(
       value: {
         degraded: records.filter((r) => r.degradedNotice !== null).length,
         abstained: records.filter((r) => r.abstained).length,
-        byTier: tally(
-          records.map((r) => String(r.tier)),
-          true,
-        ),
+        byTier: tally(records.map((r) => String(r.tier))),
       },
     },
     findingsPerPr: findingsSignal(records),

@@ -1,0 +1,8 @@
+{
+  "reason": "Passive adoption signals report (#491, docs/changes/491-adoption-signals/proposal.md): module-size 44098->45119 (+1021), measured with `harness check-arch --json` (CLI 12.9.0) on this branch, whose merge base is main 7f33d1cb (origin/main at measurement). newViolations is [] and the only regression is this aggregate. The growth is the feature itself: four new modules under ts/src/adoption/ (the pure signal computation with its abstention machinery, the record/workflow loader that names every file and directory it could not read, the local-git merge-state resolver, and the CLI with its text renderer), plus their two test files. Nothing was moved or duplicated: the feature reads records the guardian already emits and adds no instrumentation. Two violations that a first draft raised were fixed in code, not allowed: renderText was 53 lines (split into headerLines/workflowLines/signalLines) and loadRecords was 55 (the per-file parse moved into readOne). Perf ratchet: the new CLI registers through the existing readiness domain registry, so no module's import count grew past the threshold. Entropy: the new modules are reachable from ts/src/cli.ts, so no entryPoints entry was needed and maxFindings was not touched.",
+  "categories": {
+    "module-size": 45119
+  },
+  "violationIds": [],
+  "createdFrom": "7f33d1cb"
+}
