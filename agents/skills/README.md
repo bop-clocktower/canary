@@ -27,6 +27,7 @@ agents/skills/
 │   ├── canary-fleet-health/
 │   ├── canary-generate-test/
 │   ├── canary-instrument/
+│   ├── canary-misfit/
 │   ├── canary-katana/
 │   ├── canary-mission-briefing/
 │   ├── canary-pr-guardian/
@@ -178,6 +179,11 @@ slash-command entry points.
   new testing framework to Canary's registry end-to-end. Enforces the
   classifier↔registry contract, authors the registry entry, validates the
   execution command, and updates docs + state.
+- [`canary-misfit`](./claude-code/canary-misfit/SKILL.md) — Bundled executable
+  skill (`scripts/cli.mjs`). Injects seeded route-layer faults (latency, 5xx
+  bursts, aborted responses, named slow-network envelopes) into a Playwright run
+  and reports a per-flow verdict — graceful, degraded, or shattered. Advisory,
+  never a gate; composes optionally with `canary-instrument`.
 - [`canary-instrument`](./claude-code/canary-instrument/SKILL.md) — Bundled
   executable skill (`scripts/cli.py`). Instruments a Playwright run with
   OpenTelemetry and emits a `run.json` artifact correlating every test to the
@@ -245,9 +251,9 @@ Use the canary-generate-test skill to write a load test for /v1/search.
 Most skills here are documentation, not executable artifacts — they describe
 _how an agent should behave_, not a function to call. Several are bundled
 executable skills with their own CLI entry point (`cli:` in frontmatter).
-`canary-fail-fast`, `canary-katana`, `canary-screech`, and `canary-blackhawk`
-ship a Node entry (`scripts/cli.mjs`); `canary-instrument` and
-`canary-test-reporter` ship a Python entry (`scripts/cli.py`). Run those
+`canary-fail-fast`, `canary-katana`, `canary-screech`, `canary-misfit`, and
+`canary-blackhawk` ship a Node entry (`scripts/cli.mjs`); `canary-instrument`
+and `canary-test-reporter` ship a Python entry (`scripts/cli.py`). Run those
 directly, e.g.:
 
 ```bash

@@ -1,0 +1,28 @@
+{
+  "issues": [592],
+  "route": "feature",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "tdd",
+    "execution",
+    "self-review"
+  ],
+  "plan": "docs/changes/592-canary-misfit/plans/2026-09-17-canary-misfit-plan.md",
+  "specArtifact": "docs/changes/592-canary-misfit/proposal.md",
+  "closingKeyword": "Closes",
+  "closingRationale": "The issue's goal is the v1 skill and both of its open questions were answered by the human before the build: Playwright-only for v1, and standalone with canary-instrument composition documented as optional. All four fault kinds, the seeded reproduction requirement, and the per-flow advisory verdict ship here.",
+  "assumptions": [
+    "Forks answered by the human (CONFIRM, not assumed): Playwright-only for v1; standalone from canary-instrument with composition documented as optional; a seeded reproducible degradation-profile definition shaped so #858's load composer reuses the same vocabulary; output is an advisory per-flow verdict, not a gate.",
+    "harness:brainstorming ran in autonomous mode (recommended defaults, no waiting) and produced the proposal; harness:autopilot's PLAN/EXECUTE stages ran as planning + TDD here, and VERIFY/INTEGRATE were replaced by the agents/skills gates (test/typecheck/format:check), the ts/ four gates, and the four CI ratchets measured locally against origin/main.",
+    "D5 (lane assumption): the injection decision is keyed by request IDENTITY (seed | fault id | METHOD url#ordinal-within-flow), never by arrival order, so a parallel run is reproducible. Consequence, stated in SKILL.md: changing how many times a flow calls a URL changes its decisions at the same seed.",
+    "D6 (lane assumption): a skill only, no ts/ CLI subcommand and no domain-registry entry — nothing here needs the engine, matching canary-screech/fail-fast/katana.",
+    "D8 (lane assumption): a passing flow is `degraded` when it retried or exceeded budget_ms; absent a stated budget, twice the injected delay; absent both, an unstated budget is never breached.",
+    "The shipped Playwright route fixture is NOT executed by this repo's CI — Playwright is not a canary dependency and no browser is installed. It is verified through its pure decision engine and a fake route/request double, and excluded from the coverage gate exactly as canary-instrument's OTel bootstrap is. This is the one place the spike could not confirm a live browser run.",
+    "Spike finding (T0): the complexity analyzer's brace counter is blinded by a literal open-brace inside a string literal — `text.indexOf('{')` made a 20-line function measure as '90 lines, complexity 21' and failed the unwaivable perf delta rule. Worked around with a String.fromCharCode(123) constant and a comment; canary-fail-fast's parse.mjs has the same shape and is grandfathered into the absolute baseline (not fixed here — out of scope).",
+    "Ratchets measured locally against origin/main with harness CLI 12.9.0: entropy 144 -> 144 (delta 0); perf 219 -> 220, the one new finding allowed by the existing `coupling agents/skills/claude-code/*/scripts/cli.mjs` allowance, 0 blocking, baseline 233; docs 30/278 -> 30/284, no link lost; check-deps and validate pass.",
+    "PRE-EXISTING, not introduced here: `harness check-arch` reports a BASELINE TRIP (0 new violations, 12 pre-existing) IDENTICALLY on origin/main measured in a clean worktree, so .harness/arch/baselines.json is stale relative to main. This lane did not refresh the baseline or write an allowance for someone else's drift.",
+    "All five new .mjs modules are declared in BOTH harness.config.json entryPoints arrays; agents/skills/package.json format glob and vitest coverage include were extended (top-level scripts only, so the route fixture stays out of the coverage gate)."
+  ]
+}

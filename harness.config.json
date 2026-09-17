@@ -168,6 +168,12 @@
     ],
     "entryPoints": [
       "agents/skills/claude-code/canary-blackhawk/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-misfit/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-misfit/scripts/profiles.mjs",
+      "agents/skills/claude-code/canary-misfit/scripts/flows.mjs",
+      "agents/skills/claude-code/canary-misfit/scripts/verdict.mjs",
+      "agents/skills/claude-code/canary-misfit/scripts/report.mjs",
+      "agents/skills/claude-code/canary-misfit/scripts/route_fixture/playwright-fixture.mjs",
       "agents/skills/claude-code/canary-cassandra/scripts/cli.mjs",
       "agents/skills/claude-code/canary-cassandra/scripts/engine.mjs",
       "agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs",
@@ -291,6 +297,12 @@
   "performance": {
     "entryPoints": [
       "agents/skills/claude-code/canary-blackhawk/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-misfit/scripts/cli.mjs",
+      "agents/skills/claude-code/canary-misfit/scripts/profiles.mjs",
+      "agents/skills/claude-code/canary-misfit/scripts/flows.mjs",
+      "agents/skills/claude-code/canary-misfit/scripts/verdict.mjs",
+      "agents/skills/claude-code/canary-misfit/scripts/report.mjs",
+      "agents/skills/claude-code/canary-misfit/scripts/route_fixture/playwright-fixture.mjs",
       "agents/skills/claude-code/canary-cassandra/scripts/cli.mjs",
       "agents/skills/claude-code/canary-cassandra/scripts/engine.mjs",
       "agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs",

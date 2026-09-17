@@ -320,6 +320,7 @@ Use, process, escalation) lives in
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `canary-add-framework` skill | Add a framework to Canary's own classifier↔registry, end-to-end.                                           |
 | `canary-instrument` skill    | Instrument a Playwright run with OpenTelemetry; emits `run.json` correlating tests to outbound HTTP calls. |
+| `canary-misfit` skill        | Inject seeded route-layer faults into a Playwright run; reports a per-flow resilience verdict (advisory).  |
 
 ### Ticket, workflow, and company-knowledge integration
 
