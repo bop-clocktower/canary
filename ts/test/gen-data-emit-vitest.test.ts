@@ -107,6 +107,16 @@ describe('emitVitest with hostile schema text', () => {
     const override = JSON.parse('{"__proto__":{"k":1}}') as object;
     expect(Object.hasOwn(build(override), '__proto__')).toBe(true);
   });
+
+  it('an explicit undefined override keeps the required default (#1014)', () => {
+    const node = extractJsonSchema({
+      type: 'object',
+      required: ['id'],
+      properties: { id: { type: 'string' } },
+    });
+    const built = load(emit(node, 'keep')).buildKeep!({ id: undefined });
+    expect(typeof built.id).toBe('string');
+  });
 });
 
 describe('emitVitest', () => {

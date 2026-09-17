@@ -145,7 +145,10 @@ function renderBuilder(
     `  overrides: Partial<${pascal}Fixture> = {},`,
     `): ${pascal}Fixture {`,
     `${guards}  const base: Omit<${pascal}Fixture, ${omitted}> = ${renderLiteral(set.defaultValue, 1)};`,
-    `  return { ...base, ...overrides } as ${pascal}Fixture;`,
+    // An explicit `undefined` override is treated as absent, so it cannot wipe
+    // a required default (#1014).
+    '  const given = Object.entries(overrides).filter(([, v]) => v !== undefined);',
+    `  return { ...base, ...Object.fromEntries(given) } as ${pascal}Fixture;`,
     '}',
   ].join('\n');
 }

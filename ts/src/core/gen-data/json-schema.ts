@@ -22,6 +22,17 @@ const UNSUPPORTED_KEYWORDS = [
   'exclusiveMaximum',
   'multipleOf',
   'patternProperties',
+  // Array/object cardinality and key constraints: the generator always emits
+  // one array item and only the declared properties, so honoring none of
+  // these would yield a default that violates the schema (#1014).
+  'minItems',
+  'maxItems',
+  'uniqueItems',
+  'contains',
+  'minProperties',
+  'maxProperties',
+  'propertyNames',
+  'dependentRequired',
 ];
 
 /**
@@ -35,6 +46,10 @@ const REFUSALS: ReadonlyArray<[(s: Schema) => boolean, (s: Schema) => string]> =
     [
       (s) => Array.isArray(s.type),
       () => 'type arrays are not supported in this slice',
+    ],
+    [
+      (s) => 'anyOf' in s && 'oneOf' in s,
+      () => 'anyOf combined with oneOf is not supported in this slice',
     ],
     [(s) => 'allOf' in s, () => 'allOf is not supported in this slice'],
     [
@@ -108,6 +123,14 @@ function readString(s: Schema): ShapeNode {
 function readNumber(s: Schema, integer: boolean): ShapeNode {
   const min = num(s.minimum);
   const max = num(s.maximum);
+  // A fractional range with no integer inside has no valid default to emit.
+  if (
+    integer &&
+    min !== undefined &&
+    max !== undefined &&
+    Math.ceil(min) > Math.floor(max)
+  )
+    return unresolved(`integer range [${min}, ${max}] contains no integer`, s);
   return {
     kind: 'number',
     integer,
