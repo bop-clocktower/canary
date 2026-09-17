@@ -54,6 +54,56 @@ describe('extractJsonSchema refuses constraints it would otherwise ignore', () =
       { type: 'object', patternProperties: { '^x': { type: 'string' } } },
       'patternProperties is not supported in this slice',
     ],
+    // #1014: array/object constraints the generator would silently violate.
+    [
+      { type: 'array', items: { type: 'string' }, minItems: 2 },
+      'minItems is not supported in this slice',
+    ],
+    [
+      { type: 'array', items: { type: 'string' }, maxItems: 0 },
+      'maxItems is not supported in this slice',
+    ],
+    [
+      { type: 'array', items: { type: 'string' }, uniqueItems: true },
+      'uniqueItems is not supported in this slice',
+    ],
+    [
+      {
+        type: 'array',
+        items: { type: 'string' },
+        contains: { type: 'string' },
+      },
+      'contains is not supported in this slice',
+    ],
+    [
+      { type: 'object', minProperties: 1 },
+      'minProperties is not supported in this slice',
+    ],
+    [
+      {
+        type: 'object',
+        maxProperties: 0,
+        properties: { a: { type: 'string' } },
+        required: ['a'],
+      },
+      'maxProperties is not supported in this slice',
+    ],
+    [
+      { type: 'object', propertyNames: { maxLength: 1 } },
+      'propertyNames is not supported in this slice',
+    ],
+    [
+      { type: 'object', dependentRequired: { a: ['b'] } },
+      'dependentRequired is not supported in this slice',
+    ],
+    [
+      { anyOf: [{ type: 'string' }], oneOf: [{ type: 'number' }] },
+      'anyOf combined with oneOf is not supported in this slice',
+    ],
+    [
+      { type: 'integer', minimum: 1.2, maximum: 1.8 },
+      'integer range [1.2, 1.8] contains no integer',
+    ],
   ])('%j -> unresolved (%s)', (schema, reason) => {
     expect(reasonOf(schema)).toBe(reason);
   });

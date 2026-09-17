@@ -1,0 +1,14 @@
+{
+  "issues": [1014],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/gen-data-json-schema.test.ts",
+  "closingKeyword": "Refs",
+  "assumptions": [
+    "The refusal doctrine (unhandled constraint -> unresolved with a reason) is the one stated in json-schema.ts's REFUSALS comment and the #1014 issue body, cited there as spec D7 of #765.",
+    "An integer range is refused only when both bounds are declared and no integer lies between them; a single fractional bound still has a valid integer default.",
+    "A schema declaring both anyOf and oneOf is refused outright rather than intersecting the two.",
+    "An explicit undefined override is treated as absent (keeps the default), matching how the unresolved-field guards already treat undefined as missing.",
+    "PARKED: union leaf cases still come from members[0] only. Choosing which cases a union should emit (drop cases valid for another member, or per-member cases) is a design decision not covered by D7, so it is left for a follow-up and the keyword is Refs."
+  ]
+}

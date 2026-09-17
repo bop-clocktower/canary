@@ -51,15 +51,27 @@ describe('canary run', () => {
     expect(res.stdout).toContain('Success');
   });
 
-  it('reports a failure with stderr, without crashing', async () => {
+  // #1007: a failed test run must be visible at the CLI boundary, so
+  // `canary run ... && deploy` cannot proceed past a red test.
+  it('reports a failure with stderr and exits 1', async () => {
     const res = await invokeCanary(['run', 'some_test.py', 'pytest'], {
       deps: {
         makeExecutor: () => fake({ execute: () => [1, '', 'boom traceback'] }),
       },
     });
-    expect(res.code).toBe(0);
+    expect(res.code).toBe(1);
     expect(res.stdout).toContain('Failure');
     expect(res.stdout).toContain('boom traceback');
+  });
+
+  it('exits 1 (not the runner code) for any non-zero runner exit', async () => {
+    const res = await invokeCanary(['run', 'some_test.py', 'pytest'], {
+      deps: {
+        makeExecutor: () => fake({ execute: () => [5, '', ''] }),
+      },
+    });
+    expect(res.code).toBe(1);
+    expect(res.stdout).toContain('Exit 5');
   });
 });
 
