@@ -1,0 +1,8 @@
+{
+  "reason": "Repo-relative test_file and honest commit_sha in `canary history record` (#1021, proposal 460 phase 1a + 1b, ADR 0029): module-size 42019->42575 (+556), measured with `harness check-arch --json` (CLI 12.9.0) on this branch, whose merge base is main 022f2a4d (origin/main at measurement). newViolations is [] and the only regression is this aggregate. The growth is the feature: ts/src/history/keys/test-file-key.ts (the path-keying functions, the Playwright testDir lookup, the git probe and the HEAD-for-local refusal), the unjoinableTestFiles line and --json field in history/cli.ts, and the tests that prove criterion 1 against a real git repository. The keying module sits in a history/ subdirectory, like formats/ and flake/, because the top-level ts/src/history module count is near its 1800-line threshold: placed at the top level it measured 1914 and raised a new violation. A first draft also raised a complexity violation in toRepoRelative (11 against 10); it was split in code, not allowed. Perf ratchet: delta OK (216 against 216 at the merge base) after cli.ts's import count was held at 15 by merging two schema.js imports and moving the git probe into the new module. Entropy: 144 against 144 at the merge base (+0); the new module is declared in both entryPoints arrays and maxFindings was not touched.",
+  "categories": {
+    "module-size": 42575
+  },
+  "violationIds": [],
+  "createdFrom": "022f2a4d"
+}

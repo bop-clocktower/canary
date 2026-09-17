@@ -62,6 +62,15 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **`canary history record` stores a repo-relative `test_file` and an honest
+  `commit_sha`** (#1021, ADR 0029). `test_file` is now the path relative to the
+  git top-level with `/` separators, the form `git diff --name-only` prints, for
+  vitest, Playwright (resolved against the report config's `testDir`) and JUnit
+  reports. A path that cannot be made so is kept as written and counted: the
+  success line prints `unjoinableTestFiles: n of m` and `--json` carries
+  `unjoinableTestFiles`. Inside a git repository where `HEAD` resolves, `record`
+  refuses `commit_sha: 'local'` and records `HEAD`, with a note on stderr. No
+  schema version change; rows written earlier keep their old values.
 - **BREAKING: cross-run pass/fail alternation is detected, and the flake
   surfaces rank and judge on `max(flake_rate, flip_rate)`** (#604, Phase 2).
   `flake_count` only ever increments on the within-run `flaky` status, which the

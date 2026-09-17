@@ -40,8 +40,7 @@ import {
   normalizeUsageExit,
 } from '../cli-common.js';
 import { gateOutcome } from '../core/gate-result.js';
-import type { RunInput, TestResultInput } from './schema.js';
-import { makeRunId } from './schema.js';
+import { makeRunId, type RunInput, type TestResultInput } from './schema.js';
 import { makeStore as realMakeStore, type AsyncHistoryStore } from './store.js';
 import {
   buildRunFromReport,
@@ -60,6 +59,12 @@ import {
   emptyStoreEnvelope,
 } from '../util/flake-window.js';
 import { renderFlakyReport, renderTable } from './flake/render.js';
+import {
+  honestCommit,
+  keyTestFiles,
+  runGit,
+  type KeyedRun,
+} from './keys/test-file-key.js';
 
 const EM_DASH = '\u{2014}';
 const MDASH_CELL = '\u{2014}'; // rich `r.get("area") or <em-dash>`
@@ -174,6 +179,9 @@ export interface HistoryDeps {
   err(s: string): void;
   env: NodeJS.ProcessEnv;
   makeStore(dbUrl?: string, ndjsonPath?: string): AsyncHistoryStore;
+  /** Run git in the working directory; stdout trimmed, or null on failure. */
+  git(args: string[]): string | null;
+  cwd(): string;
 }
 
 /** Process-backed defaults for production. */
@@ -183,6 +191,8 @@ function defaultHistoryDeps(): HistoryDeps {
     err: (s) => process.stderr.write(`${s}\n`),
     env: process.env,
     makeStore: (dbUrl, ndjsonPath) => realMakeStore(dbUrl, ndjsonPath),
+    git: runGit,
+    cwd: () => process.cwd(),
   };
 }
 
@@ -311,7 +321,11 @@ function recordContext(opts: RecordOptions, deps: HistoryDeps): RecordContext {
     suite: opts.suite,
     repo: resolveRepo(opts, deps),
     branch: def(opts.branch, def(deps.env['GITHUB_REF_NAME'], 'local')),
-    commitSha: def(opts.commit, def(deps.env['GITHUB_SHA'], 'local')),
+    commitSha: honestCommit(
+      def(opts.commit, def(deps.env['GITHUB_SHA'], 'local')),
+      deps,
+      deps.err,
+    ),
     // `exactOptionalPropertyTypes`: an absent --run-id omits the key rather
     // than setting it to undefined.
     ...(runId === undefined ? {} : { runId }),
@@ -350,7 +364,12 @@ async function recordCmd(
     return;
   }
 
-  const built = buildOrRefuse(shape, parsed, recordContext(opts, deps), deps);
+  const built = keyTestFiles(
+    buildOrRefuse(shape, parsed, recordContext(opts, deps), deps),
+    shape,
+    parsed,
+    deps,
+  );
 
   const remote = opts.dbUrl ?? deps.env['CANARY_HISTORY_DB_URL'];
   const storePath = opts.path ?? DEFAULT_HISTORY_FILE;
@@ -415,6 +434,13 @@ function buildOrRefuse(
   }
 }
 
+/** The join denominator, printed on every success so a 0 is a measurement. */
+function printUnjoinable(built: KeyedRun, deps: HistoryDeps): void {
+  deps.out(
+    `unjoinableTestFiles: ${built.unjoinable} of ${built.results.length}`,
+  );
+}
+
 /** vitest cannot report a flake; Playwright can, so its `flaky` is real. */
 function printFlakyNote(shape: ReportShape, deps: HistoryDeps): void {
   if (shape === 'vitest') deps.out(FLAKY_VOCABULARY_NOTE);
@@ -452,7 +478,7 @@ function abstainOnEmptyReport(
 
 /** The success payload/line. Shared shape so `--json` cannot drift from it. */
 function recordPayload(
-  built: BuiltRun,
+  built: KeyedRun,
   target: string,
   extra: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -467,6 +493,7 @@ function recordPayload(
     failed: run.failed,
     flaky: run.flaky,
     skipped: run.skipped,
+    unjoinableTestFiles: built.unjoinable,
     abstained: false,
     ...extra,
   };
@@ -481,7 +508,7 @@ function countsLine(built: BuiltRun): string {
 }
 
 function reportDryRun(
-  built: BuiltRun,
+  built: KeyedRun,
   target: string,
   opts: RecordOptions,
   deps: HistoryDeps,
@@ -499,11 +526,12 @@ function reportDryRun(
     `${pc.cyan('dry-run:')} would record ${countsLine(built)} as ` +
       `${pc.bold(built.run.run_id)} \u{2192} ${target}`,
   );
+  printUnjoinable(built, deps);
   printFlakyNote(shape, deps);
 }
 
 function reportRecorded(
-  built: BuiltRun,
+  built: KeyedRun,
   target: string,
   opts: RecordOptions,
   deps: HistoryDeps,
@@ -515,6 +543,7 @@ function reportRecorded(
   }
   deps.out(`${pc.green('Recorded')} ${countsLine(built)} \u{2192} ${target}`);
   deps.out(`run_id: ${built.run.run_id}`);
+  printUnjoinable(built, deps);
   printFlakyNote(shape, deps);
 }
 
