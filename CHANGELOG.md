@@ -16,6 +16,17 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary rewind` replays a failed test from run history** (#461, PR 2 of 3).
+  `canary rewind <run_id> --test <name>` checks the recorded commit out in a
+  scratch worktree (fetching it once if missing, never substituting an
+  ancestor), installs from the old lockfile, reruns the test's file `--repeat`
+  times, and prints one row per dimension (commit, seed, order, environment,
+  network, database, wall-clock) as `restored`, `not-restored` or
+  `not-recorded`. The outcome is `reproduced`, `not-reproduced`, `intermittent`
+  (with a hand-off to the flakiness tools) or `not-run`, alongside the nearest
+  green run by first-parent commit distance. Vitest and Playwright only. Exits 0
+  or 3 (abstained, with the reason), never 1; your checkout is never touched.
+  See `docs/guides/rewind.md`.
 - **`canary history record` captures replay context** (#461, PR 1 of 3). The
   history schema moves to v3, additively: each run gets a `replay` block (seed
   from the new `--seed` flag, never inferred; runner and version; Node, OS,

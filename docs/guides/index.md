@@ -69,6 +69,16 @@ shape.
 
 **Best for:** Handing a reviewer or tester a diff-shaped plan to work through.
 
+### [Rewind Guide](./rewind.md)
+
+`canary rewind` — reruns one failed test from run history at its recorded
+commit, in a scratch worktree. Covers the per-dimension fidelity table (restored
+/ not-restored / not-recorded), repeat classification, nearest green, and every
+abstention reason.
+
+**Best for:** Asking "does this old failure still reproduce, and how faithfully
+was it replayed?"
+
 ### [LLM Providers Guide](./llm-providers.md)
 
 **Removed in v3.0.** The `agent/llm/` provider layer was deleted — there are no
