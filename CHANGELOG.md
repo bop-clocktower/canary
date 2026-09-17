@@ -16,6 +16,13 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary doctor` voice line** (#340, slice 2). When a check fails, the human
+  report ends with one Black Canary line under the summary, from
+  `voice/lines.json` (`doctor.fail`), which the npm build now stages into
+  `dist/voice/`. Passing and abstained runs stay unvoiced; `--json` and the exit
+  code are identical with flavor on or off; `--no-flavor`, `CANARY_NO_FLAVOR=1`
+  and `NO_FLAVOR=1` remove it. A conformance test keeps its selector in step
+  with the test reporter's.
 - **Voice reaches a real output: the `canary-test-reporter` Markdown footer**
   (#340, slice 1). A run with failures or flakes ends with one Black Canary line
   from the new `voice/lines.json`, chosen from the run's own counts so the same
