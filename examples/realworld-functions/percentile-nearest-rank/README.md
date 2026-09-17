@@ -85,7 +85,7 @@ Then, in Claude Code, generate the test:
 
 Canary will:
 
-1. Classify the request as `vitest_unit` (pure numeric function, TS signature)
+1. Classify the request as `frontend_unit` (pure numeric function, TS signature)
 2. Pick `vitest` from the framework registry
 3. Write a `percentile.test.ts` file under `tests/generated/`
 4. Print the file path + feedback hint

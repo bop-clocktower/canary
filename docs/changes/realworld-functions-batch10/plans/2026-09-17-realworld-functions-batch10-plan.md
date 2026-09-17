@@ -53,7 +53,7 @@ records it rather than assuming it.
   illustrative, not verified by any test. This plan uses `api` for
   `topological-task-order` (structured `dict`-shaped input, matching the
   `lego-tracker-reconcile-collection` / `fifo-lot-consumer` precedent) and
-  `vitest_unit` for `percentile-nearest-rank` (pure scalar-returning function,
+  `frontend_unit` for `percentile-nearest-rank` (pure scalar-returning function,
   matching the `bytes-humanizer` / `money-allocator` precedent). Cosmetic if
   off.
 - [ASSUMPTION] Exact generated test file names Canary would pick

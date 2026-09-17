@@ -41,7 +41,7 @@
     {
       "stage": "code-review",
       "ran": true,
-      "detail": "harness-code-reviewer subagent over the diff, tasked primarily with hand-verifying the arithmetic/logic of all 16 numbered cases, prompt.txt-vs-README verbatim equality, the S4 pin, template-shape conformance, and a leak scan"
+      "detail": "harness-code-reviewer subagent over the diff, tasked primarily with hand-verifying the arithmetic/logic of all 16 numbered cases, prompt.txt-vs-README verbatim equality, the S4 pin, template-shape conformance, and a leak scan. Result: 16/16 cases correct, prompt blocks byte-identical to their READMEs (2/2), S4 satisfied on both parameters, template order identical to batch 9, 8/8 relative links resolve, leak scan clean. No MUST-FIX. One SHOULD-FIX (the coined `vitest_unit` classification tag) was verified against classifier.ts and fixed before the PR opened. Two NITs accepted as-is and recorded below."
     },
     {
       "stage": "four-gates",
@@ -69,6 +69,13 @@
     }
   ],
   "catalogMixAfter": { "pytest": 10, "vitest": 11, "total": 21 },
+  "acceptedNits": [
+    "topological-task-order/prompt.txt states a self-loop clause and a purity rule that no numbered case exercises. The case budget is fixed at 8 by the locked template and every case earns its place; both rules remain stated so a generated suite may still cover them. Accepted, not fixed.",
+    "percentile-nearest-rank/README.md frames the shared p=30 / p=40 answer as the 'exact-multiple discontinuity'. Strictly, p=30 shares the answer because ceil(1.5) rounds up into the same rank rather than because of the exact multiple itself. The prompt's own 'Note the consequence of ceil' rule states it precisely, and the quoted arithmetic is right either way. Accepted, not fixed."
+  ],
+  "followUps": [
+    "Pre-existing, out of scope for this PR: the classification tags in order-state-machine, business-hours-deadline, tax-bracket-calculator and dense-rank-leaderboard say `python_unit` / `backend_unit`, which ts/src/core/classifier.ts never emits (pytest maps to `api`). That is a catalog-wide inconsistency predating batch 10, surfaced by this review and filed rather than silently fixed inside an unrelated PR."
+  ],
   "assumptions": [
     {
       "id": "A1",
@@ -91,8 +98,8 @@
     {
       "id": "A4",
       "assumption": "Canary's request-classification tag in each README's 'What Canary should produce' section is illustrative and verified by no test.",
-      "rationale": "Matches the same assumption recorded in the batch-9 plan.",
-      "default": "`api` for topological-task-order (structured dict input, per the lego-tracker / fifo-lot-consumer precedent) and `vitest_unit` for percentile-nearest-rank (pure scalar-returning function, per the bytes-humanizer / money-allocator precedent). Cosmetic if off."
+      "rationale": "Matches the same assumption recorded in the batch-9 plan. The tag is nonetheless a factual claim, so code review checked it against the source of truth rather than leaving it to the 'cosmetic' escape hatch: ts/src/core/classifier.ts FRAMEWORK_HINTS maps vitest -> frontend_unit and pytest -> api. A first draft coined `vitest_unit`, which appeared nowhere else in examples/ (frontend_unit x10, api x6, python_unit x3, backend_unit x1); it was corrected to frontend_unit before the PR opened.",
+      "default": "`api` for topological-task-order (structured dict input, per the lego-tracker / fifo-lot-consumer precedent) and `frontend_unit` for percentile-nearest-rank (pure scalar-returning function, per the bytes-humanizer / money-allocator precedent). Cosmetic if off."
     },
     {
       "id": "A5",
