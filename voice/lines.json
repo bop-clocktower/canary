@@ -1,0 +1,13 @@
+{
+  "black-canary": {
+    "report.fail": [
+      "The gate broke. Read the first failure before anything else.",
+      "Red means stop. Find the line, fix the line.",
+      "One break is enough to hold the release. Start at the top."
+    ],
+    "report.flaky": [
+      "It passed on a retry. That is not the same as passing.",
+      "A retry covered for this one. Next time it may not."
+    ]
+  }
+}

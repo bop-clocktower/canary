@@ -19,6 +19,15 @@ Voice does **not** apply to:
 - Files the project marks out-of-scope.
 - Files outside the project's declared in-scope paths.
 
+## Engine and skill output surfaces
+
+Separate from agent prose, some shipped outputs append a short voiced line:
+today the `canary-test-reporter` Markdown footer. Those lines come from
+`voice/lines.json` (profile -> moment -> lines), not from the profile prose, and
+follow ADR 0031: never in JSON, exit codes or annotations, and removed by
+`CANARY_NO_FLAVOR=1`. The surface picks its voice; the project config below does
+not select it yet.
+
 ## Step 1 — Look for a project voice config
 
 Check these paths in order; use the first that exists:
@@ -49,8 +58,7 @@ overrides: # optional: extra vocabulary / house aphorisms
   - '...'
 ```
 
-Resolve `profile:` against the shipped profiles in
-`voice/profiles/<name>.md`.
+Resolve `profile:` against the shipped profiles in `voice/profiles/<name>.md`.
 
 - **Profile found** → apply its rules (tone, vocabulary, palette, opener/closer,
   anti-patterns) plus any project `overrides`, but only to files matching

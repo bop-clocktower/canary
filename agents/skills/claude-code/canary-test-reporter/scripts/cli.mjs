@@ -6,6 +6,8 @@
 //   --markdown-out <path>   write Markdown report to file (stdout if neither
 //                           --markdown-out nor --json-out is given)
 //   --json-out <path>       write JSON report to file
+//   --no-flavor             omit the voiced Markdown footer (also
+//                           CANARY_NO_FLAVOR=1 / NO_FLAVOR=1)
 //
 // Exit code: 1 when any test failed, else 0.
 //
@@ -21,12 +23,13 @@ import {
 import { parseResults } from './parse.mjs';
 import { renderMarkdown } from './render.mjs';
 import { renderJson } from './json_report.mjs';
+import { DEFAULT_LINES_PATH, voiceFooter } from './voice.mjs';
 
 const PREFIX = 'canary-test-reporter:';
 
 const USAGE =
   'usage: canary-test-reporter [-h] --results PATH [--markdown-out PATH]\n' +
-  '                            [--json-out PATH]\n' +
+  '                            [--json-out PATH] [--no-flavor]\n' +
   '\n' +
   'Playwright JSON results -> Markdown + JSON test report.';
 
@@ -37,6 +40,7 @@ const USAGE =
  */
 export const CLI_SPEC = {
   prog: 'canary-test-reporter',
+  booleans: { '--no-flavor': 'noFlavor' },
   values: {
     '--results': { key: 'results' },
     '--markdown-out': { key: 'markdownOut' },
@@ -72,7 +76,15 @@ export function main(argv = []) {
     return 1;
   }
 
-  const markdown = renderMarkdown(data);
+  // Voice is appended to the Markdown only, after every machine output input
+  // is fixed: the JSON and the exit code below never see it (#340 invariant).
+  const markdown =
+    renderMarkdown(data) +
+    voiceFooter(data, {
+      env: process.env,
+      noFlavor: args.noFlavor,
+      linesPath: process.env.CANARY_VOICE_LINES || DEFAULT_LINES_PATH,
+    });
 
   if (args.markdownOut) {
     fs.writeFileSync(args.markdownOut, markdown, 'utf8');
