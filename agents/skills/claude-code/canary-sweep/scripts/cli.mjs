@@ -29,12 +29,8 @@ import {
 } from '../../../lib/parse-args.mjs';
 import { ingest } from './ingest.mjs';
 import { DEFAULT_ATTRS } from './component.mjs';
-import {
-  buildReport,
-  renderMarkdown,
-  renderJson,
-  abstentionLine,
-} from './report.mjs';
+import { buildReport } from './report.mjs';
+import { renderMarkdown, renderJson, abstentionLine } from './render.mjs';
 
 const PREFIX = 'canary-sweep:';
 
@@ -83,6 +79,24 @@ function writeOut(target, contents) {
   }
 }
 
+/**
+ * Write whichever artifacts were asked for, falling back to stdout when
+ * neither was. Extracted so `main` stays under the complexity the perf gate
+ * allows.
+ *
+ * @returns {string|null} the first failure message, or null on success
+ */
+function emit(report, args) {
+  const markdown = renderMarkdown(report);
+  const failures = [];
+
+  if (args.markdownOut) failures.push(writeOut(args.markdownOut, markdown));
+  if (args.jsonOut) failures.push(writeOut(args.jsonOut, renderJson(report)));
+  if (!args.markdownOut && !args.jsonOut) process.stdout.write(markdown);
+
+  return failures.find(Boolean) ?? null;
+}
+
 /** The --strict exit contract. Advisory callers never reach this. */
 function strictExitFor(summary) {
   if (summary.abstained) return EXIT_ABSTAINED;
@@ -119,13 +133,8 @@ export function main(argv = []) {
     console.error(`${PREFIX} ${abstentionLine(report)}`);
   }
 
-  const markdown = renderMarkdown(report);
-  const failures = [];
-  if (args.markdownOut) failures.push(writeOut(args.markdownOut, markdown));
-  if (args.jsonOut) failures.push(writeOut(args.jsonOut, renderJson(report)));
-  if (!args.markdownOut && !args.jsonOut) process.stdout.write(markdown);
-
-  for (const failure of failures.filter(Boolean)) {
+  const failure = emit(report, args);
+  if (failure) {
     console.error(`${PREFIX} ${failure}`);
     return 1;
   }

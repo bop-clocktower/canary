@@ -46,7 +46,7 @@ export function mapWcag(tags) {
  * Curated fixes for the rules that dominate real axe output. Flat data, so the
  * module's complexity stays at 1 however long the table grows.
  */
-export const SNIPPETS = {
+const SNIPPETS = {
   'image-alt':
     'Give the image a text alternative: `<img src="..." alt="What the image conveys">`. Decorative? `alt=""` plus `role="presentation"`.',
   'input-image-alt':

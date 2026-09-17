@@ -5,6 +5,7 @@
 // and nobody reads it, because one bad button in a shared header arrives forty
 // times.
 //
+// Rendering lives in render.mjs; this module decides WHAT the findings are.
 // Two honesty rules are enforced here rather than left to the renderer, so a
 // machine consumer reading the JSON gets the same treatment as a human reading
 // the Markdown:
@@ -83,51 +84,72 @@ function abstentionReason({ documents, ruleEvaluations }) {
   return null;
 }
 
+/**
+ * Flatten the documents into one (route, rule, node) stream.
+ *
+ * Extracted so the folding below is a single loop over a flat sequence rather
+ * than a triple-nested one: the nested form measured cyclomatic complexity 19
+ * and nesting depth 5, both over the perf gate's thresholds.
+ */
+function* violationNodesIn(documents) {
+  for (const doc of documents) {
+    const route = routeOf(doc.url) ?? '(no url)';
+    for (const rule of doc.violations) {
+      for (const node of Array.isArray(rule.nodes) ? rule.nodes : []) {
+        yield { route, rule, node };
+      }
+    }
+  }
+}
+
+/** A fresh, empty bucket for one component x rule pair. */
+function newGroup(rule, component, source) {
+  return {
+    component,
+    attribution: source,
+    rule: rule.id,
+    impact: rule.impact ?? null,
+    wcag: mapWcag(rule.tags),
+    occurrences: 0,
+    pages: [],
+    sample_targets: [],
+    fix: fixFor(rule.id, rule.help, rule.helpUrl),
+  };
+}
+
+/** Carry up to SAMPLE_LIMIT distinct example selectors per finding. */
+function recordSample(group, node) {
+  const target = []
+    .concat(node.target ?? [])
+    .flat(Infinity)
+    .join(' ');
+  const room = group.sample_targets.length < SAMPLE_LIMIT;
+  if (target && room && !group.sample_targets.includes(target)) {
+    group.sample_targets.push(target);
+  }
+}
+
 /** Fold every violation node into its component x rule bucket. */
 function groupNodes(documents, attrs) {
   const groups = new Map();
   let violationNodes = 0;
   let unattributed = 0;
 
-  for (const doc of documents) {
-    const route = routeOf(doc.url) ?? '(no url)';
-    for (const rule of doc.violations) {
-      for (const node of Array.isArray(rule.nodes) ? rule.nodes : []) {
-        violationNodes += 1;
-        const { component, source } = attributeNode(node, attrs);
-        if (!component) unattributed += 1;
+  for (const { route, rule, node } of violationNodesIn(documents)) {
+    violationNodes += 1;
+    const { component, source } = attributeNode(node, attrs);
+    if (!component) unattributed += 1;
 
-        // The sentinel cannot collide with a real marker value: an HTML
-        // attribute value containing a newline would not survive axe's own
-        // serialisation into a one-line `html` string.
-        const key = `${component ?? UNATTRIBUTED_KEY}::${rule.id}`;
-        if (!groups.has(key)) {
-          groups.set(key, {
-            component,
-            attribution: source,
-            rule: rule.id,
-            impact: rule.impact ?? null,
-            wcag: mapWcag(rule.tags),
-            occurrences: 0,
-            pages: [],
-            sample_targets: [],
-            fix: fixFor(rule.id, rule.help, rule.helpUrl),
-          });
-        }
-        const group = groups.get(key);
-        group.occurrences += 1;
-        if (!group.pages.includes(route)) group.pages.push(route);
-        const target = []
-          .concat(node.target ?? [])
-          .flat(Infinity)
-          .join(' ');
-        if (target && group.sample_targets.length < SAMPLE_LIMIT) {
-          if (!group.sample_targets.includes(target)) {
-            group.sample_targets.push(target);
-          }
-        }
-      }
-    }
+    // The sentinel cannot collide with a real marker value: an HTML attribute
+    // value containing a newline would not survive axe's own serialisation
+    // into a one-line `html` string.
+    const key = `${component ?? UNATTRIBUTED_KEY}::${rule.id}`;
+    if (!groups.has(key)) groups.set(key, newGroup(rule, component, source));
+
+    const group = groups.get(key);
+    group.occurrences += 1;
+    if (!group.pages.includes(route)) group.pages.push(route);
+    recordSample(group, node);
   }
 
   return { groups: [...groups.values()], violationNodes, unattributed };
@@ -174,117 +196,4 @@ export function buildReport(ingested, options) {
     coverage: coverageFor(options.routesPath, documents),
     findings,
   };
-}
-
-/** The abstention banner, worded so `gateOutcome`'s convention is honoured. */
-export function abstentionLine(report) {
-  return `canary-sweep ABSTAINED -- ${report.summary.abstention_reason}.`;
-}
-
-function renderWcag(wcag) {
-  if (!wcag.labelled) return 'no WCAG criterion (best-practice rule)';
-  const level = wcag.level ? ` (level ${wcag.level})` : '';
-  return `WCAG ${wcag.criteria.join(', ')}${level}`;
-}
-
-function renderFinding(finding) {
-  const name = finding.component
-    ? `${finding.component} — \`${finding.rule}\``
-    : `Unattributed — \`${finding.rule}\``;
-  const attribution = finding.component
-    ? `attributed via \`${finding.attribution}\``
-    : 'no component marker on the failing element';
-  const lines = [
-    `### ${name}`,
-    '',
-    `**${finding.occurrences} occurrence(s)** across ${finding.pages.length} page(s) · ` +
-      `impact: ${finding.impact ?? 'unknown'} · ${renderWcag(finding.wcag)}`,
-    '',
-    `Pages: ${finding.pages.join(', ')}`,
-    '',
-    `Attribution: ${attribution}`,
-    '',
-  ];
-  if (finding.sample_targets.length) {
-    lines.push(
-      `Example selector(s): ${finding.sample_targets.map((t) => `\`${t}\``).join(', ')}`,
-      '',
-    );
-  }
-  lines.push(`Fix: ${finding.fix}`, '');
-  return lines.join('\n');
-}
-
-function renderCoverage(coverage) {
-  if (!coverage) return [];
-  const lines = [
-    '## Route coverage',
-    '',
-    `${coverage.routes_scanned} of ${coverage.routes_expected} listed route(s) had an axe result.`,
-    '',
-  ];
-  if (coverage.routes_unscanned.length) {
-    lines.push(
-      `**${coverage.routes_unscanned.length} unscanned route(s)** — listed, but no axe ` +
-        'document was supplied for them. This skill does not scan; it can only report the gap:',
-      '',
-      ...coverage.routes_unscanned.map((route) => `- ${route}`),
-      '',
-    );
-  }
-  return lines;
-}
-
-export function renderMarkdown(report) {
-  const { summary } = report;
-  const lines = ['# Accessibility sweep', ''];
-
-  if (summary.abstained) {
-    lines.push(
-      `> **${abstentionLine(report)}**`,
-      '',
-      `Denominator: ${summary.pages} page(s), ${summary.rule_evaluations} rule evaluation(s).`,
-      '',
-      'This run verified NOTHING about accessibility. It is not a clean result.',
-      '',
-    );
-    return lines.join('\n');
-  }
-
-  lines.push(
-    `**${summary.findings} finding(s)** from ${summary.violation_nodes} violation node(s) · ` +
-      `${summary.components} component(s) · ${summary.unattributed_nodes} unattributed node(s) · ` +
-      `${summary.pages} page(s) · ${summary.rule_evaluations} rule evaluation(s)`,
-    '',
-  );
-
-  if (summary.violation_nodes === 0) {
-    lines.push(
-      `0 violations across ${summary.pages} page(s) and ${summary.rule_evaluations} rule evaluation(s).`,
-      '',
-      'The denominator is stated because a zero without one is indistinguishable from a scan that never ran.',
-      '',
-    );
-  } else {
-    lines.push(
-      `Deduped by component: ${summary.violation_nodes} node(s) collapsed into ${summary.findings} finding(s).`,
-      '',
-    );
-    if (summary.unattributed_nodes > 0) {
-      lines.push(
-        `**${summary.unattributed_nodes} node(s) could not be attributed to a component** and are ` +
-          'grouped under "Unattributed" below — they are counted, never folded into a named ' +
-          'component. Add a `data-component` marker to attribute them.',
-        '',
-      );
-    }
-    lines.push('## Findings', '', ...report.findings.map(renderFinding));
-  }
-
-  lines.push(...renderCoverage(report.coverage));
-  return lines.join('\n');
-}
-
-export function renderJson(report) {
-  return `${JSON.stringify(report, null, 2)}\n`;
 }
