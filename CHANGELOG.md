@@ -123,6 +123,15 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **BREAKING: `canary run` and `canary init` exit non-zero on failure** (#1007).
+  `canary run <file> <framework>` now exits **1** when the test it ran failed
+  (any non-zero runner exit; the runner's own code is still printed as
+  `Exit N`). `canary init <unknown-framework>` now exits **2** (usage error) and
+  writes the error and the supported-framework list to **stderr** instead of
+  stdout. Both previously exited 0, so `canary run ... && deploy` went ahead
+  after a red test. Scripts that relied on exit 0 from a failing run must now
+  tolerate the non-zero code explicitly. The next release is a major (v9).
+
 - **`canary history record` stores a repo-relative `test_file` and an honest
   `commit_sha`** (#1021, ADR 0029). `test_file` is now the path relative to the
   git top-level with `/` separators, the form `git diff --name-only` prints, for

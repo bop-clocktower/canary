@@ -268,6 +268,9 @@ export function runCmd(
 
   if (stderr) deps.out(`\n${pc.red('Error:')}\n${stderr}`);
   if (stdout) deps.out(`\n${pc.dim('Output:')}\n${stdout}`);
+  // #1007: a failed run must fail the process, so `canary run ... && deploy`
+  // cannot read a red test as green. Normalized to 1 (not the runner's code).
+  if (exitCode !== 0) throw new CliExitError(1);
 }
 
 // --- init / setup ------------------------------------------------------------
@@ -353,12 +356,13 @@ export function initCmd(framework: string | undefined, deps: MainDeps): void {
       );
     }
   } catch (e) {
-    // Python catches ValueError (unknown framework); the TS scaffolder throws a
-    // plain Error for the same case.
-    deps.out(
+    // The scaffolder throws a plain Error for an unknown framework. #1007: that
+    // is a usage error -- report it on stderr and exit 2, never exit 0.
+    deps.err(
       `\n${pc.bold(pc.red(`${REDX} Error: ${e instanceof Error ? e.message : String(e)}`))}`,
     );
-    deps.out(pc.yellow('Supported frameworks: playwright, vitest, pytest, k6'));
+    deps.err(pc.yellow('Supported frameworks: playwright, vitest, pytest, k6'));
+    throw new CliExitError(2);
   }
 }
 
