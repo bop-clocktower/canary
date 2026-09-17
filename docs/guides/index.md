@@ -36,6 +36,14 @@ project-local → env override), interactive scaffolding, MCP validation, and th
 
 **Best for:** Setting up or debugging `.canary/company.json` in a project.
 
+### [Adoption Signals Guide](./adoption-signals.md)
+
+A local, read-only report of passive adoption signals (merges over unaddressed
+findings, suppressions, gate, degradation, findings per PR) computed from
+guardian analysis records. Sends nothing anywhere.
+
+**Best for:** Seeing whether a repo is acting on guardian findings.
+
 ### [Tracked Overlays Guide](./tracked-overlays.md)
 
 The `canary overlay add/update/list/remove` command group for tracking a
