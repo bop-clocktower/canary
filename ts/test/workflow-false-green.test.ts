@@ -1139,4 +1139,98 @@ describe('workflow false-green invariants', () => {
       },
     );
   });
+
+  /**
+   * #1021 — `fleet-health` keeps its history between runs.
+   *
+   * The job used to start every run from an empty store, so `analyze flaky`
+   * read exactly 1 run on every `main` push and could never reach a verdict:
+   * a check whose denominator is pinned at 1 is permanently abstaining while
+   * looking wired. The store now round-trips through the Actions cache, keyed
+   * per branch with `main` as the fallback (proposal 460, D3). These pin the
+   * three ways that round-trip goes quietly wrong: restoring after the writer
+   * (the new run is overwritten), saving a different path or key than was
+   * restored, and a thin window that nobody is told about.
+   */
+  describe('#1021 — fleet-health keeps its history between runs', () => {
+    const STORE = 'test-results/reports/history-v2.jsonl';
+    const dogfood = allWorkflows().find(([name]) => name === 'dogfood.yml');
+    const steps = dogfood?.[1].jobs?.['fleet-health']?.steps ?? [];
+    const indexOf = (pred: (s: Step) => boolean): number =>
+      steps.findIndex(pred);
+    const restoreAt = indexOf((s) =>
+      /^actions\/cache\/restore@/.test(s.uses ?? ''),
+    );
+    const saveAt = indexOf((s) => /^actions\/cache\/save@/.test(s.uses ?? ''));
+    const recordAt = indexOf((s) => /history record\b/.test(s.run ?? ''));
+    const restore = steps[restoreAt];
+    const save = steps[saveAt];
+
+    it('finds the fleet-health steps (zero denominator is an abstention)', () => {
+      expect(steps.length).toBeGreaterThan(0);
+      expect(recordAt, 'no step runs `history record`').toBeGreaterThanOrEqual(
+        0,
+      );
+    });
+
+    it('restores the store before recording and saves it after', () => {
+      expect(restoreAt, 'no actions/cache/restore step').toBeGreaterThanOrEqual(
+        0,
+      );
+      expect(saveAt, 'no actions/cache/save step').toBeGreaterThan(recordAt);
+      expect(restoreAt).toBeLessThan(recordAt);
+      expect(restore?.with?.['path']).toBe(STORE);
+      expect(save?.with?.['path']).toBe(STORE);
+    });
+
+    it('keys the cache per branch and falls back to main', () => {
+      const key = String(restore?.with?.['key'] ?? '');
+      expect(key).toMatch(/github\.head_ref \|\| github\.ref_name/);
+      // Cache entries are immutable: a key that does not change per run is
+      // saved once and then never again, which freezes the history.
+      expect(key).toContain('github.run_id');
+      // A re-run keeps its run_id; without the attempt its save collides with
+      // the first attempt's entry and the re-run's record is dropped.
+      expect(key).toContain('github.run_attempt');
+      expect(String(restore?.with?.['restore-keys'] ?? '')).toMatch(
+        /fleet-history-main-/,
+      );
+      expect(save?.with?.['key']).toBe(key);
+    });
+
+    it('saves only a store the record step actually wrote to', () => {
+      expect(recordAt >= 0 && steps[recordAt]?.id).toBeTruthy();
+      expect(save?.if ?? '').toContain(
+        `steps.${steps[recordAt]?.id}.outcome == 'success'`,
+      );
+    });
+
+    it('states loudly when the window is below the flake-verdict minimum', () => {
+      const scripts = steps.map((s) => s.run ?? '').join('\n');
+      const executable = logicalLines(scripts).filter(
+        (line) => !line.startsWith('#'),
+      );
+      expect(
+        executable.filter(
+          (l) =>
+            l.includes('::warning') && l.includes('below its history minimum'),
+        ),
+        'a thin history window must annotate, not just log',
+      ).not.toEqual([]);
+      expect(
+        executable.filter(
+          (l) => l.includes('::warning') && l.includes('no history restored'),
+        ),
+        'a cache miss starts from an empty store and must say so',
+      ).not.toEqual([]);
+    });
+
+    it('holds the same minimum the flake verdict uses', async () => {
+      const { MIN_WINDOW_RUNS } = await import('../src/util/flake-window.js');
+      const env = steps
+        .map((s) => (s as Step & { env?: Record<string, unknown> }).env)
+        .find((e) => e?.['HISTORY_MIN_RUNS'] !== undefined);
+      expect(Number(env?.['HISTORY_MIN_RUNS'])).toBe(MIN_WINDOW_RUNS);
+    });
+  });
 });

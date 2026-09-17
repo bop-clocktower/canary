@@ -359,10 +359,68 @@ jobs:
       # than repo-local glue. `record` exits 3 (abstained) when the report
       # carries zero results, which fails the step: a missing report and an
       # empty suite both mean the analyze step below would have nothing to read.
+      # History survives between runs (#1021, proposal 460 D3). Until this the
+      # store was rebuilt from empty on every job, so `analyze flaky` read 1 run
+      # on every `main` push and could never reach a verdict. Cache entries are
+      # immutable, so the key carries the run id and attempt, and each run (or
+      # re-run) saves a new entry. The restore-keys pick the newest entry for
+      # this branch, then `main`'s.
+      - name: Restore run history
+        id: history-restore
+        uses: actions/cache/restore@v6
+        with:
+          path: test-results/reports/history-v2.jsonl
+          key:
+            fleet-history-${{ github.head_ref || github.ref_name }}-${{
+            github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            fleet-history-${{ github.head_ref || github.ref_name }}-
+            fleet-history-main-
+
+      - name: Say what history was restored
+        env:
+          MATCHED: ${{ steps.history-restore.outputs.cache-matched-key }}
+        run: |
+          store=test-results/reports/history-v2.jsonl
+          if [ -z "$MATCHED" ] || [ ! -s "$store" ]; then
+            echo "::warning title=Fleet health: no history restored::no cached history-v2.jsonl for this branch or main; this run starts from an empty store."
+          else
+            echo "restored $(wc -l < "$store" | tr -d ' ') run(s) from cache key $MATCHED"
+          fi
+
       - name: Run the suite and record it
+        id: record
         run: |
           npm --prefix ts run test -- --reporter=json --outputFile=/tmp/vitest.json || true
           node ts/bin/canary.js history record /tmp/vitest.json --suite ts-engine
+
+      # Saved only when `record` appended a run. A failed record leaves the
+      # restored store unchanged, and saving it again would spend a cache entry
+      # on a copy. Saved before `analyze`, so an analyze failure (which is its
+      # own finding) does not throw away the run that was just recorded.
+      - name: Save run history
+        if: ${{ !cancelled() && steps.record.outcome == 'success' }}
+        uses: actions/cache/save@v6
+        with:
+          path: test-results/reports/history-v2.jsonl
+          key:
+            fleet-history-${{ github.head_ref || github.ref_name }}-${{
+            github.run_id }}-${{ github.run_attempt }}
+
+      # Loud, not just logged: below the flake-verdict minimum, `analyze flaky`
+      # abstains by design, and a job that is green over an abstention reads as
+      # a healthy fleet. HISTORY_MIN_RUNS mirrors MIN_WINDOW_RUNS in
+      # ts/src/util/flake-window.ts; ts/test/workflow-false-green.test.ts holds
+      # them equal.
+      - name: Check the history window
+        env:
+          HISTORY_MIN_RUNS: 10
+        run: |
+          runs=$(grep -c . test-results/reports/history-v2.jsonl)
+          echo "history window: $runs run(s) recorded, minimum $HISTORY_MIN_RUNS"
+          if [ "$runs" -lt "$HISTORY_MIN_RUNS" ]; then
+            echo "::warning title=Fleet health below its history minimum::$runs of $HISTORY_MIN_RUNS runs in the store; analyze flaky abstains until the window fills."
+          fi
 
       - name: analyze over the recorded run
         run: |
