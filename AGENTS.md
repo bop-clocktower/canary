@@ -400,6 +400,9 @@ Python from the plugin hooks and maintenance scripts. There is no longer a
   `AsyncHistoryStore` from `makeStore()`, never `NdjsonHistoryStore` directly;
   see
   [ADR 0013](docs/knowledge/decisions/0013-history-store-async-interface.md).
+  `canary rewind <run_id> --test <name>` replays one failed test from the store
+  at its recorded commit in a scratch worktree and reports per dimension what
+  was restored (#461, [guide](docs/guides/rewind.md)); it exits 0 or 3, never 1.
 - **Subprocess contract tests:** spawn through `runCapture()` in
   `ts/test/subprocess-testkit.ts`, never a hand-rolled `execFileSync` try/catch.
   `execFileSync` throws on a non-zero exit — which is the case under test for a

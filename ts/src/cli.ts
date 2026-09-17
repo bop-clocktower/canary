@@ -43,6 +43,7 @@ import {
 } from './cli-commands.js';
 import { buildBatwomanCommand } from './batwoman-cli.js';
 import { buildBriefingCommand } from './briefing/briefing-cli.js';
+import { buildRewindCommand } from './rewind/rewind-cli.js';
 import { buildCiReadyCommand } from './ci-ready-cli.js';
 import { buildInventoryCommand } from './inventory/inventory-cli.js';
 import { buildGenDataCommand } from './gen-data/gen-data-cli.js';
@@ -378,6 +379,7 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
   program.addCommand(buildWorkflowCommand(deps));
   program.addCommand(buildCompanyKnowledgeCommand(deps));
   program.addCommand(buildBatwomanCommand(deps));
+  program.addCommand(buildRewindCommand(deps));
   program.addCommand(buildScalingCurveCommand(deps));
   program.addCommand(buildPermissionMatrixCommand(deps));
   program.addCommand(buildCiReadyCommand(deps));

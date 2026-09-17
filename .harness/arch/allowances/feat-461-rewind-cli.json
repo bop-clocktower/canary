@@ -1,0 +1,8 @@
+{
+  "reason": "`canary rewind` replay CLI (#461 PR 2, proposal criteria 4-10): module-size 42575->43628 (+1053), measured with `harness check-arch --json` (CLI 12.9.0) on this branch, merge base main ddd7b889. newViolations is [] and the only regression is this aggregate. The growth is the feature: ts/src/analysis/rewind/ (plan.ts fidelity table, repeat classification and nearest green; runner.ts replay command and status read-back; workspace.ts git, reachability, install and predecessor files; render.ts text and --json) and ts/src/rewind/rewind-cli.ts (orchestration and commander wiring). Complexity, function-length and file-length findings raised by earlier drafts were fixed in code by splitting, not allowed; the CLI sits in a subfolder because a top-level ts/src file pushed that module to 13 files against 12. Perf ratchet: delta OK, the one new finding is the CLI coupling ratio covered by the existing ts/src/**/cli.ts allowance. Entropy 144 against 144 at the merge base; the new modules are declared in both entryPoints arrays and maxFindings was not touched.",
+  "categories": {
+    "module-size": 43628
+  },
+  "violationIds": [],
+  "createdFrom": "ddd7b889"
+}
