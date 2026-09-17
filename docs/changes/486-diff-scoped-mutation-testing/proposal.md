@@ -214,11 +214,32 @@ Each criterion is observable, so it can be checked from a PR or a local run.
 
 ## Assumptions
 
-- **A1:** StrykerJS's vitest runner works with `ts/vitest.config.ts` (v8
-  coverage, `src/**/*.test.ts` and `test/*.test.ts`) without changing the
-  config. Checked by implementation step 1.
-- **A2:** Line-range `mutate` entries cut the mutant count enough that a typical
-  PR stays under 150 mutants. Checked by step 1.
+- **A1: FALSIFIED by the 2026-09-17 spike.** StrykerJS's vitest runner does
+  _not_ work against `ts/vitest.config.ts`. `@stryker-mutator/vitest-runner`
+  10.0.0 builds vitest's `testNamePattern` by joining describe and test names
+  with a space, while vitest 5 matches on names joined with `' > '`. The pattern
+  therefore matches nothing, every mutant run executes **0 tests**, and every
+  covered mutant is reported `Survived`. Measured on
+  `src/guardian/pr-check.ts:894-905`: 10 of 10 mutants "survived", including
+  ones the `applySuppressions` tests demonstrably kill. Upstream:
+  [stryker-js#6210](https://github.com/stryker-mutator/stryker-js/issues/6210)
+  (open). Consequence: the Stryker execution stays behind an abstain guard until
+  a fixed runner ships — see fork **F6** below.
+- **A2: PARTLY FALSIFIED, and it costs precision.** Independently of #6210, the
+  vitest runner forces `pool: 'threads'`, and `process.chdir()` is unavailable
+  in a worker thread. **60 of the 237 test files** in `ts/` (every suite using
+  `guardian-cli-testkit`, `canary-cli-testkit`, or `process.chdir` directly)
+  fail Stryker's initial test run, and Stryker refuses to mutate anything after
+  a red dry run. The workaround is a mutation-only vitest config that excludes
+  those files. **Stated plainly: a mutant that only an excluded suite would kill
+  will read as `survived`.** That is a false survivor by construction, it lands
+  directly against F5's ≤ 10% false-survivor target, and it is why every report
+  must disclose the excluded files (`excludedTests`) and why the promotion
+  decision cannot be taken on the raw survivor count alone. The original A2
+  claim — that line-range `mutate` entries keep a typical PR under 150 mutants —
+  remains unchecked, because no full run has completed.
+- **A2b:** 10 mutants were generated from a 12-line range, which is consistent
+  with the 150-mutant cap being reachable on a large PR. Not yet a measurement.
 - **A3:** The budget numbers (10 min, 150 mutants) and the exit criterion (20
   PRs, ≤ 10% false survivors) are starting values, to be revised in ADR 0026
   once the spike has measured them.
@@ -236,3 +257,14 @@ Each criterion is observable, so it can be checked from a PR or a local run.
 | F3   | Include `agents/skills/**/scripts/*.mjs`?                       | (a) `ts/src` only; (b) include skill scripts now                                                                          | **(a)**. Those scripts are outside the vitest coverage `include: ['src/**']`, so `coverageAnalysis: perTest` could not attribute kills and every survivor would abstain as `no-coverage`. |
 | F4   | What happens when a PR goes over the mutant cap?                | (a) deterministic sample plus a "sampled" headline; (b) abstain entirely; (c) no cap, rely on the timeout                 | **(a)**. A partial result that honestly states its denominator is more useful than silence, and (c) makes the budget unpredictable.                                                       |
 | F5   | Exit-criterion thresholds                                       | (a) 20 PRs / ≤ 10% false survivors; (b) 50 PRs / ≤ 5%; (c) time-boxed to 30 days, whatever the count                      | **(a)**, revised after the spike. (c) brings back the permanent-advisory drift that #485 warns about.                                                                                     |
+
+## Answered forks
+
+F1-F5 were answered by the maintainer on 2026-09-16, all as option **(a)**.
+
+| Fork | Question                                                                      | Answer                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F6   | StrykerJS cannot kill mutants on vitest 5 (A1). How should the build proceed? | **(b)** Build the tool-independent parts now under TDD - scope derivation, the report mapper, abstention and suppression, `canary guardian mutation`, the advisory CI job - and keep the Stryker execution behind an abstain guard that reports `abstained` naming stryker-js#6210 until a fixed runner ships. Every report discloses the excluded thread-unsafe test files. Recorded at [#486 (comment)](https://github.com/bop-clocktower/canary/issues/486#issuecomment-5719036832). |
+
+Success criteria 1, 3 and 7 cannot be evidenced under F6(b): each needs a runner
+that actually kills mutants, so they stay open after the build PR lands.

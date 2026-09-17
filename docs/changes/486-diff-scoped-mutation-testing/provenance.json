@@ -1,22 +1,39 @@
 {
   "issues": [486],
   "fleet": "roadmap-fleet",
-  "route": "feature",
-  "branch": "docs/486-diff-scoped-mutation-spec",
+  "route": "spec-ready",
+  "branch": "feat/486-diff-scoped-mutation-testing",
   "spec": "docs/changes/486-diff-scoped-mutation-testing/proposal.md",
-  "stages": ["brainstorming"],
-  "specOnly": true,
-  "pipelineProvenance": "degraded: harness-brainstorming run non-interactively per human fleet brief (no questions); EVALUATE answers replaced by recorded assumptions, sign-off pending; soundness-review and advise_skills not run",
-  "assumptions": [
-    "Tool is StrykerJS with the vitest runner and perTest coverage analysis.",
-    "Scope is added-line ranges from guardian scopeDiff under ts/src only; skill scripts deferred.",
-    "Placement is a guardian subcommand plus a non-required guardian.yml job, not a skill.",
-    "Advisory first; promotion after 20 mutant-producing PRs with false-survivor rate <= 10% and p90 within budget.",
-    "Zero generated mutants, all no-coverage, crash, or timeout is abstained (exit 3), never a pass.",
-    "Budget is a 10-minute job cap and 150 mutants per PR, deterministically sampled when over.",
-    "StringLiteral and ObjectLiteral mutators disabled in v1.",
-    "Survivor obligation: kill it with a test or suppress with // canary:allow-mutant <reason>.",
-    "Runs on ubuntu-latest only."
+  "plan": "docs/changes/486-diff-scoped-mutation-testing/plans/2026-09-17-diff-scoped-mutation-testing-plan.md",
+  "stages": ["brainstorming", "spike", "planning", "execution"],
+  "specOnly": false,
+  "pipelineProvenance": "Spec phase (2026-09-16) ran harness-brainstorming non-interactively; sign-off and forks F1-F5 answered by the maintainer. Build phase (2026-09-17) ran harness-planning (SCOPE stopped on a blocking uncertainty the first time, resumed after F6 was answered) then execution under TDD: every module landed test-first, red observed before green. Not run: soundness-review, advise_skills, outcome-eval.",
+  "forks": {
+    "F1": "(a) guardian subcommand plus CI job",
+    "F2": "(a) report only",
+    "F3": "(a) ts/src only",
+    "F4": "(a) deterministic sample plus a 'sampled' headline",
+    "F5": "(a) 20 PRs / <=10% false survivors, revisited after the spike",
+    "F6": "(b) build the tool-independent parts now, keep the Stryker run behind an abstain guard — https://github.com/bop-clocktower/canary/issues/486#issuecomment-5719036832"
+  },
+  "spikeFindings": [
+    "A1 FALSIFIED: @stryker-mutator/vitest-runner 10.0.0 joins describe/test names with a space while vitest 5 matches on ' > ', so every mutant run executes 0 tests and every covered mutant reports Survived (10/10 on ts/src/guardian/pr-check.ts:894-905). Upstream stryker-js#6210, open.",
+    "A2 PARTLY FALSIFIED: the runner forces pool:'threads' and process.chdir() is unavailable there, so 60 of 237 test files fail the initial run. Excluding them makes a mutant only those suites would kill read as survived, which works against F5's <=10% false-survivor target."
   ],
-  "closingKeyword": "Refs"
+  "assumptions": [
+    "F6=(b): the shipped slice is scope derivation, the Stryker-report mapper, abstention and suppression rules, `canary guardian mutation` (exit 0/1/3) and the advisory guardian.yml job. The Stryker execution is NOT shipped.",
+    "The abstain guard's predicate is vitest-runner > 10.0.0 or vitest major < 5, held in one exported constant (BROKEN_RUNNER_MAX) with its own test.",
+    "No StrykerJS devDependency is pinned in this slice: the shipped code never executes it, so pinning would add ~2.4k lockfile lines and 2 moderate qs advisories (via typed-rest-client) for no behavior. The pins land with the follow-up that turns the runner on.",
+    "ts/vitest.mutation.config.ts (the thread-unsafe exclusion config Stryker consumes) is deferred to that same follow-up; this slice ships the excluded-file list and its disclosure only.",
+    "The mutation job posts its findings through its own CI surface rather than a section inside pr-check's sticky comment: they are separate jobs and cannot share one comment body without overwriting each other.",
+    "A run whose only mutant was suppressed abstains rather than reporting all-killed — nothing was killed, so nothing was proved.",
+    "Runs on ubuntu-latest only (spec A4); mutants capped at 150, deterministically sampled, with the denominator always stated (D7/F4)."
+  ],
+  "ratchets": {
+    "entropy": "144 here against 144 at merge base 7f33d1cb (+0); both new modules declared in BOTH entryPoints arrays; maxFindings untouched.",
+    "perf": "delta OK, 219 against 219 at the merge base. A single 525-line module was a NEW finding, fixed by splitting into mutation.ts and mutation-report.ts rather than by an allowance.",
+    "arch": "newViolations []; module-size 44098 -> 45194 recorded in .harness/arch/allowances/feat-486-diff-scoped-mutation.json and the aggregate floor moved to match, violationIds untouched. Three first-draft violations (two complexity, one parameterCount) were fixed in code."
+  },
+  "closingKeyword": "Refs",
+  "closingKeywordWhy": "Refs, not Closes. Spec success criteria 1 (the #484 regression case), 3 (p90 runtime across 20 PRs) and 7 (the exit-criterion evidence window) all require a runner that actually kills mutants, which stryker-js#6210 prevents. Closing #486 here would mark the issue done on a check that can currently only abstain."
 }

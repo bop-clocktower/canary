@@ -145,6 +145,11 @@
 
   "advisory": [
     {
+      "check": "mutation",
+      "workflow": "guardian.yml",
+      "reason": "Advisory by design until the #486 exit criterion is met on measured evidence: 20 consecutive mutant-producing PRs at a false-survivor rate <= 10% with p90 runtime inside the 10-minute budget (spec D5). Today it can only abstain, and does so loudly: @stryker-mutator/vitest-runner 10.0.0 runs zero tests per mutant on vitest 5 (stryker-js#6210), so a run under it would report every covered mutant as survived. Note the job exits 0 on survivors BUT the command itself exits 1, and an abstention exits 3 rather than passing -- what is advisory is the blocking, never the denominator."
+    },
+    {
       "check": "Branch prune (dry-run)",
       "workflow": "dogfood.yml",
       "reason": "Reports only (#836, ADR 0022): it prints the remote branch deletion set and deletes nothing, so there is nothing to block on. It depends on the GitHub API for PR state, and an API flake must not read as a code failure. It still fails loudly when it abstains (exit 3), because that means the checkout had no remote refs to classify."
