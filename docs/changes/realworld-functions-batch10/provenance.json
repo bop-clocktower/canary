@@ -1,0 +1,129 @@
+{
+  "issues": [602],
+  "slug": "realworld-functions-batch10",
+  "route": "feature",
+  "branch": "feat/602-realworld-functions-batch10",
+  "base": "origin/main @ 7f33d1cb",
+  "date": "2026-09-17",
+  "fleet": "roadmap-fleet",
+  "stages": ["harness:ideate", "harness:autopilot"],
+  "planArtifact": "docs/changes/realworld-functions-batch10/plans/2026-09-17-realworld-functions-batch10-plan.md",
+  "specArtifact": "docs/changes/realworld-functions-batch10/proposal.md",
+  "ideationArtifact": "docs/ideation/realworld-function-batch10-2026-09-17.md",
+  "closingKeyword": "Refs",
+  "closingKeywordRationale": "#602 is an ongoing issue by design — it tracks a continuous series of example batches, and batches 1-10 have all landed against it while it stayed open. A closing keyword would end the standing series on merge, so the PR body says `Refs #602` and no close/fix/resolve keyword appears anywhere near the number.",
+  "pipelineStages": [
+    {
+      "stage": "intake",
+      "ran": true,
+      "detail": "gh issue view 602 --comments; read the shipped precedent in docs/changes/realworld-functions-batch{4,8,9}/ and docs/ideation/realworld-function-batch*.md"
+    },
+    {
+      "stage": "ideation",
+      "ran": true,
+      "detail": "harness:ideate, autonomous. STRATEGY.md v2 present and valid, so grounding was ENABLED (batch 6 ran without it). 10 fresh candidates generated, scored (impact x confidence) / effort, bounded alignment tiebreaker applied in the two |delta| <= 0.05 windows. Artifact: docs/ideation/realworld-function-batch10-2026-09-17.md"
+    },
+    {
+      "stage": "planning",
+      "ran": true,
+      "detail": "proposal.md (decisions, rejected-candidate table with a reason per cut) then the 5-task plan"
+    },
+    {
+      "stage": "tdd-red",
+      "ran": true,
+      "detail": "ts/test/examples-catalog.test.ts run after creating the two example dirs and BEFORE adding catalog rows: 1 failed | 9 passed (10), failing on 'each example is linked in the catalog'"
+    },
+    {
+      "stage": "tdd-green",
+      "ran": true,
+      "detail": "catalog rows added to both READMEs; the same guard returns to green within the full suite"
+    },
+    {
+      "stage": "code-review",
+      "ran": true,
+      "detail": "harness-code-reviewer subagent over the diff, tasked primarily with hand-verifying the arithmetic/logic of all 16 numbered cases, prompt.txt-vs-README verbatim equality, the S4 pin, template-shape conformance, and a leak scan. Result: 16/16 cases correct, prompt blocks byte-identical to their READMEs (2/2), S4 satisfied on both parameters, template order identical to batch 9, 8/8 relative links resolve, leak scan clean. No MUST-FIX. One SHOULD-FIX (the coined `vitest_unit` classification tag) was verified against classifier.ts and fixed before the PR opened. Two NITs accepted as-is and recorded below."
+    },
+    {
+      "stage": "four-gates",
+      "ran": true,
+      "detail": "run from ts/: build 0, typecheck 0, format:check 0, test 0 (237 test files, 4828 passed / 2 skipped)"
+    },
+    {
+      "stage": "ratchets",
+      "ran": true,
+      "detail": "No ratchet surface added. git status confirms every changed path is under examples/ or docs/ — no ts/src module, no .test.ts file, no scripts/lib/*.mjs — so entropy entryPoints (both arrays), dead exports, perf complexity and the architecture allowance/module-size floor are all untouched. Measured in this clean worktree off origin/main, not in the main working dir."
+    }
+  ],
+  "selectedCandidates": [
+    {
+      "name": "topological-task-order",
+      "framework": "pytest",
+      "score": 9.0,
+      "teaches": "graph/partial-order resolution with a pinned deterministic tiebreak, plus cycle and unknown-prerequisite rejection"
+    },
+    {
+      "name": "percentile-nearest-rank",
+      "framework": "vitest",
+      "score": 6.0,
+      "teaches": "a pinned statistical estimator whose rank arithmetic is exact integer arithmetic, and the exact-multiple discontinuity that follows from ceil"
+    }
+  ],
+  "catalogMixAfter": { "pytest": 10, "vitest": 11, "total": 21 },
+  "acceptedNits": [
+    "topological-task-order/prompt.txt states a self-loop clause and a purity rule that no numbered case exercises. The case budget is fixed at 8 by the locked template and every case earns its place; both rules remain stated so a generated suite may still cover them. Accepted, not fixed.",
+    "percentile-nearest-rank/README.md frames the shared p=30 / p=40 answer as the 'exact-multiple discontinuity'. Strictly, p=30 shares the answer because ceil(1.5) rounds up into the same rank rather than because of the exact multiple itself. The prompt's own 'Note the consequence of ceil' rule states it precisely, and the quoted arithmetic is right either way. Accepted, not fixed."
+  ],
+  "followUps": [
+    "Pre-existing, out of scope for this PR: the classification tags in order-state-machine, business-hours-deadline, tax-bracket-calculator and dense-rank-leaderboard say `python_unit` / `backend_unit`, which ts/src/core/classifier.ts never emits (pytest maps to `api`). That is a catalog-wide inconsistency predating batch 10, surfaced by this review and filed rather than silently fixed inside an unrelated PR."
+  ],
+  "assumptions": [
+    {
+      "id": "A1",
+      "assumption": "Batch 10 required FRESH ideation rather than a draw from batch 6's below-the-cut pool.",
+      "rationale": "Stated in issue #602 itself and re-verified against docs/ideation/realworld-function-batch6-2026-06-27.md: the pool's only two survivors are truncate-grapheme (framework-parity risk) and cron-next-fire (unbounded parsing surface), both of which the standing hard filters reject. Their risks have not changed.",
+      "default": "Ran harness:ideate for 10 new candidates; the two survivors are recorded as carried-forward hard rejects and were deliberately NOT re-scored."
+    },
+    {
+      "id": "A2",
+      "assumption": "The S4 numeric pin applies to percentile-nearest-rank only; topological-task-order takes no numeric input at all.",
+      "rationale": "S4 concerns integer/fractional input contracts. order(tasks: dict[str, list[str]]) has no numeric parameter, so there is nothing to pin.",
+      "default": "percentile pins BOTH parameters explicitly (values = non-empty array of integers; p = integer in [0,100]; anything else throws, never coerces). The absence of a pin in the topological example is recorded in proposal.md as deliberate so a reviewer does not read it as an omission."
+    },
+    {
+      "id": "A3",
+      "assumption": "The nearest-rank formula is written as rank = ceil((p * N) / 100) with the multiply performed BEFORE the divide.",
+      "rationale": "p * N is an exact integer, so the single division never introduces float drift and the pytest and vitest ports agree to the digit. Writing it as ceil(p/100 * N) would reintroduce exactly the drift the pin exists to remove.",
+      "default": "The ordering is stated as an explicit rule in prompt.txt, not left implicit in the formula."
+    },
+    {
+      "id": "A4",
+      "assumption": "Canary's request-classification tag in each README's 'What Canary should produce' section is illustrative and verified by no test.",
+      "rationale": "Matches the same assumption recorded in the batch-9 plan. The tag is nonetheless a factual claim, so code review checked it against the source of truth rather than leaving it to the 'cosmetic' escape hatch: ts/src/core/classifier.ts FRAMEWORK_HINTS maps vitest -> frontend_unit and pytest -> api. A first draft coined `vitest_unit`, which appeared nowhere else in examples/ (frontend_unit x10, api x6, python_unit x3, backend_unit x1); it was corrected to frontend_unit before the PR opened.",
+      "default": "`api` for topological-task-order (structured dict input, per the lego-tracker / fifo-lot-consumer precedent) and `frontend_unit` for percentile-nearest-rank (pure scalar-returning function, per the bytes-humanizer / money-allocator precedent). Cosmetic if off."
+    },
+    {
+      "id": "A5",
+      "assumption": "Generated test file names shown in the READMEs (test_order.py, percentile.test.ts) are illustrative only.",
+      "rationale": "No test asserts them; same assumption as batch 9.",
+      "default": "Left as written; cosmetic if off."
+    },
+    {
+      "id": "A6",
+      "assumption": "The batch-9 plan's verification commands are stale and were not inherited.",
+      "rationale": "That plan ran `uv run pytest tests/unit/test_examples_catalog.py` and `npx markdownlint-cli`. The Python tree was removed at v6.0.0; the catalog guard now lives at ts/test/examples-catalog.test.ts, and ts/ has no `lint` script.",
+      "default": "Verified with the current four gates run from ts/ (build, typecheck, format:check, test), confirmed against the worktree rather than copied from the batch-9 plan."
+    },
+    {
+      "id": "A7",
+      "assumption": "docs/roadmap.md is not touched by this change.",
+      "rationale": "The roadmap row for this item already links to #602 via External-ID and no field changes. Prettier must never be run over that file — it wraps rows and breaks the one-line field contract test.",
+      "default": "No roadmap edit; prettier was run only over the six markdown files this change actually touches."
+    },
+    {
+      "id": "A8",
+      "assumption": "The worktree lives at /Users/bs/Github/canary-fleet-602, outside any .claude/ path.",
+      "rationale": "A worktree under .claude/ breaks the pre-push check-docs gate, which self-excludes that path and then scans zero files — a zero denominator reporting as a pass.",
+      "default": "Sibling worktree of the main checkout; the main working tree at /Users/bs/Github/canary was never modified."
+    }
+  ]
+}
