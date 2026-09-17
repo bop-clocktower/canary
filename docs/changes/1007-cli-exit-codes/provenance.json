@@ -1,0 +1,15 @@
+{
+  "issues": [1007],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/canary-cli.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "canary run normalizes every non-zero runner exit to 1 rather than propagating the runner's own code (human-answered fork: exit 1 on failure); the runner code stays visible in the 'Exit N' line.",
+    "canary run keeps its runner stdout/stderr echo on stdout; only the process exit code changes.",
+    "canary init with a known-but-unscaffoldable framework (status 'unsupported') still exits 0 -- out of scope, listed as a follow-up.",
+    "No workflow, script, skill or wrapper in the repo invokes canary run/init and depends on exit 0 (grep of .github, npm/scripts, skills, agents, docs found none).",
+    "The fix lives in ts/src/cli-commands.ts; ts/src/cli.ts is untouched to avoid colliding with #988's import refactor.",
+    "Second reproducing test: ts/test/canary-cli-coverage.test.ts ('exits 2 with the error on stderr for an unknown framework')."
+  ]
+}
