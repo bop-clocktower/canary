@@ -1,0 +1,14 @@
+{
+  "issues": [1013],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/refresh-arch-baseline.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "No regression AND no stale floor still exits 1 (workflow stays red, label kept) so an unnecessary opt-in stays visible; unchanged from #634 semantics.",
+    "staleFloors applies to every metric in baselines.json with a matching allowance, not only module-size; it only ever raises a floor. On main today complexity (88 vs allowance 89) is also stale by this rule, so a label run would lift it too. The freshness test still asserts module-size only.",
+    "Staleness is judged after any regression refresh, so a floor is never moved down.",
+    "--allowances defaults to allowances/ beside the baseline and --config to ./harness.config.json; a missing dir means no allowances, a missing config means the CLI default 0.01; an unreadable allowance or config abstains (exit 3).",
+    "The rule is shared by exporting staleFloors from scripts/refresh-arch-baseline.mjs (already an entropy entryPoint in both arrays) rather than a new scripts/lib module."
+  ]
+}
