@@ -59,6 +59,12 @@ jobs:
       # the same report. It moves `metrics[<category>].value` and leaves
       # `violationIds` untouched, so no violation is banked — the half of a
       # wholesale refresh #689 was right to refuse.
+      #
+      # It also raises a STALE floor (#1013): one more than a tolerance-width
+      # below the highest accepted allowance, which `check-arch` passes but
+      # `ts/test/arch-baseline-freshness.test.ts` fails. That is the case the
+      # label is usually applied to, and the old regression-only refresh
+      # answered it with "nothing to refresh".
       - name: Measure
         run: harness check-arch --json > arch-report.json || true
 
@@ -104,8 +110,8 @@ jobs:
           # new rather than modified still counts.
           if [ -z "$(git status --porcelain -- .harness/arch/baselines.json)" ]; then
             echo "::error::baselines.json is unchanged, so no refresh happened." \
-              "The refresh step exits 1 when no metric regressed (the label was" \
-              "not needed) and 3 when it could not read the report or refused to" \
+              "The refresh step exits 1 when no metric regressed and no floor is" \
+              "stale (the label was not needed) and 3 when it could not read the report or refused to" \
               "write — read the step above for which. The refresh-baseline label" \
               "is left in place."
             exit 1

@@ -762,9 +762,15 @@ soon as the gap outgrows the tolerance, so this cannot silently recur.
   It moves `metrics["<metric>"].value` and **leaves `violationIds` untouched** —
   that keeps the aggregate ceiling moving without banking a single violation,
   which is the half of a refresh #689 rightly objected to. Verified: 1 new / 69
-  pre-existing, identical before and after. It exits **1** when no metric
-  regressed (so the label was not needed) and **3** when it cannot read the
-  report or would have to invent a value; only **0** means something was
+  pre-existing, identical before and after. It also repairs a **stale floor**
+  (#1013) — the case `ts/test/arch-baseline-freshness.test.ts` fails on while
+  `check-arch` itself passes: any metric whose floor sits more than one
+  `regressionTolerance`-width below the highest accepted allowance is raised to
+  that allowance, same narrow shape. The staleness rule (`staleFloors`) lives in
+  the script and the freshness test imports it, so the two cannot disagree. It
+  exits **1** when no metric regressed and no floor is stale (so the label was
+  not needed) and **3** when it cannot read the report, an allowance, or the
+  config, or would have to invent a value; only **0** means something was
   written.
 
 **`baselines.json` is the FLOOR; the highest allowance is the effective CEILING

@@ -208,6 +208,14 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **The `refresh-baseline` label now fixes a stale arch floor** (#1013).
+  `scripts/refresh-arch-baseline.mjs` previously acted only on a `check-arch`
+  regression, so on a PR where only `arch-baseline-freshness` was red it said
+  "nothing to refresh", exited 1 and pushed nothing. It now also raises any
+  floor more than one tolerance-width below the highest accepted allowance to
+  that allowance, leaving `violationIds` untouched. The freshness test imports
+  the same `staleFloors` rule.
+
 - **`vacuity-check` no longer reports `import-inferred` VAC-002 on E2E specs**
   (#971). A Playwright or WebDriver spec drives `page`/`browser`/`driver`, so
   its target is the application and it references none of its first-party

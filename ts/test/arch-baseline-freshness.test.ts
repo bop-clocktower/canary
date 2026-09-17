@@ -29,16 +29,35 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BASELINE_PATH = join(REPO_ROOT, '.harness', 'arch', 'baselines.json');
 const ALLOWANCE_DIR = join(REPO_ROOT, '.harness', 'arch', 'allowances');
 const CONFIG_PATH = join(REPO_ROOT, 'harness.config.json');
+/**
+ * The staleness rule is owned by the refresh script (#1013), so the check that
+ * fails here and the `refresh-baseline` bot that repairs it share one
+ * definition and cannot drift apart.
+ */
+const REFRESH_SCRIPT = join(REPO_ROOT, 'scripts', 'refresh-arch-baseline.mjs');
 
-/** The CLI's own default when `architecture.regressionTolerance` is unset. */
-const DEFAULT_REGRESSION_TOLERANCE = 0.01;
+type Stale = {
+  category: string;
+  floor: number;
+  ceiling: number;
+  absorber: number;
+};
+const refresh = (await import(pathToFileURL(REFRESH_SCRIPT).href)) as {
+  DEFAULT_REGRESSION_TOLERANCE: number;
+  staleFloors: (
+    baseline: unknown,
+    allowances: unknown[],
+    tolerance: number,
+  ) => Stale[];
+};
+const DEFAULT_REGRESSION_TOLERANCE = refresh.DEFAULT_REGRESSION_TOLERANCE;
 
 /** The metric this repo actually accumulates growth in. */
 const METRIC = 'module-size';
@@ -94,26 +113,32 @@ describe('arch baseline floor tracks the accepted ceiling (#736)', () => {
   it('keeps the floor within one tolerance-width of the highest allowance', () => {
     const floor = baselineValue();
     const [ceiling] = allowanceValues();
-    // An empty allowance list would make `gap` NaN and the assertion below
-    // vacuously true, so it is asserted here rather than assumed from the
-    // sibling denominator test above.
+    // An empty allowance list would make the rule vacuously pass, so it is
+    // asserted here rather than assumed from the sibling denominator test.
     expect(ceiling).toBeDefined();
     const absorber = floor * regressionTolerance();
 
-    // Below the floor is fine and needs no refresh — that is the ratchet
-    // working. Only a ceiling that has climbed AWAY from the floor is drift.
-    const gap = Math.max(0, ceiling! - floor);
+    const stale = refresh
+      .staleFloors(
+        readJson(BASELINE_PATH),
+        readdirSync(ALLOWANCE_DIR)
+          .filter((f) => f.endsWith('.json'))
+          .map((f) => readJson(join(ALLOWANCE_DIR, f))),
+        regressionTolerance(),
+      )
+      .find((s) => s.category === METRIC);
+    const gap = stale === undefined ? 0 : stale.ceiling - stale.floor;
 
     expect(
-      gap,
+      stale,
       `The arch baseline floor (${floor}) is ${gap} below the highest accepted ` +
         `allowance (${ceiling}), but regressionTolerance only absorbs ` +
         `${absorber.toFixed(1)}. Every ordinary PR must therefore hand-write an ` +
         `allowance. Refresh the floor: set metrics["${METRIC}"].value in ` +
         `.harness/arch/baselines.json to ${ceiling} and leave violationIds ` +
-        `untouched, so the aggregate ceiling moves without banking any ` +
+        `untouched (the \`refresh-baseline\` label does exactly this), so the aggregate ceiling moves without banking any ` +
         `violation. Note the value only takes effect once it is on the base ` +
         `branch — check-arch resolves the baseline from git, not the worktree.`,
-    ).toBeLessThanOrEqual(absorber);
+    ).toBeUndefined();
   });
 });
