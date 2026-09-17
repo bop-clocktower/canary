@@ -69,6 +69,15 @@ shape.
 
 **Best for:** Handing a reviewer or tester a diff-shaped plan to work through.
 
+### [Order Guide](./order.md)
+
+`canary order` — orders a suite's test files so the likeliest to fail run first,
+from run history and the diff. Covers the additive score and its reason strings,
+the three modes and cold start, and the permutation guarantee.
+
+**Best for:** Surfacing a failure in minute one of a long suite instead of hour
+three.
+
 ### [Rewind Guide](./rewind.md)
 
 `canary rewind` — reruns one failed test from run history at its recorded

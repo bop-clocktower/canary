@@ -16,6 +16,14 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary order` ranks test files likeliest-to-fail first** (#460, phase 2).
+  Scores each file from failures in the last 20 recorded runs (decayed by age),
+  whether it changed since `--base`, and whether it imports a changed file (from
+  `.canary/test-inventory.json`), and prints every term as a reason. Below 5
+  recorded runs it falls back to diff-only or declaration order and says so. The
+  plan is always a permutation of the input, checked before it is emitted. Exits
+  0 with a plan, 2 on bad input, 3 when given no files. Advisory until the
+  runner adapter lands. See `docs/guides/order.md`.
 - **`canary-rewind` skill** (#461, PR 3 of 3). The interpretation layer over
   `canary rewind`: reads the fidelity table before the outcome, bounds every
   conclusion by what was restored (a `not-reproduced` result under a differing
