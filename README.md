@@ -224,7 +224,7 @@ Use, process, escalation) lives in
 | `canary-generate-test` skill       | Classify → recommend → generate pipeline; writes to `tests/generated/` and optionally runs it. |
 | `canary recommend "<requirement>"` | CLI, deterministic — framework + reasoning, no key.                                            |
 | `canary init <framework>`          | CLI — scaffold a suite (`playwright`, `vitest`, `pytest`, `k6`).                               |
-| `canary run <file> <framework>`    | CLI — execute a generated or existing test file.                                               |
+| `canary run <file> <framework>`    | CLI — execute a generated or existing test file. Exits 1 if the test failed.                   |
 | `canary-promote-test` skill        | Once validated, move a test out of `tests/generated/` into the committed suite.                |
 
 ### I want to pick a framework
@@ -304,15 +304,15 @@ Use, process, escalation) lives in
 
 ### I want to set up or migrate a project
 
-| Tool                                         | What it does                                                                                                               |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `canary setup`                               | CLI — **first step in a new repo**: interactive `.canary/company.json` wizard (alias for `canary company-knowledge init`). |
-| `canary init <framework>`                    | CLI — scaffold a new suite with Gold Standard config. Run bare `canary init` for a setup-vs-scaffold signpost.             |
-| `canary migrate [--apply]`                   | CLI — adopt a harness-scaffolded project; dry-run by default.                                                              |
-| `canary-setup-harness` skill                 | Wire up Harness Engineering guardrails + CI workflows in a new project or fork.                                            |
-| `canary doctor`                              | CLI — diagnose your Canary setup (npm install required).                                                                   |
-| `canary upgrade`                             | CLI — upgrade Canary to the latest published version.                                                                      |
-| `canary overlay {add\|list\|update\|remove}` | CLI — manage tracked overlay skill sources (npm install required).                                                         |
+| Tool                                         | What it does                                                                                                                                       |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canary setup`                               | CLI — **first step in a new repo**: interactive `.canary/company.json` wizard (alias for `canary company-knowledge init`).                         |
+| `canary init <framework>`                    | CLI — scaffold a new suite with Gold Standard config. Run bare `canary init` for a setup-vs-scaffold signpost. Unknown framework exits 2 (stderr). |
+| `canary migrate [--apply]`                   | CLI — adopt a harness-scaffolded project; dry-run by default.                                                                                      |
+| `canary-setup-harness` skill                 | Wire up Harness Engineering guardrails + CI workflows in a new project or fork.                                                                    |
+| `canary doctor`                              | CLI — diagnose your Canary setup (npm install required).                                                                                           |
+| `canary upgrade`                             | CLI — upgrade Canary to the latest published version.                                                                                              |
+| `canary overlay {add\|list\|update\|remove}` | CLI — manage tracked overlay skill sources (npm install required).                                                                                 |
 
 ### I want to add a framework, or trace test-to-request calls
 

@@ -149,13 +149,15 @@ describe('init (live scaffolder)', () => {
     }
   });
 
-  it('reports an error for an unknown framework', async () => {
+  // #1007: an unknown framework is a usage error -- exit 2, message on stderr.
+  it('exits 2 with the error on stderr for an unknown framework', async () => {
     const tmp = mkTmp();
     try {
       const res = await invokeCanary(['init', 'nope-fw'], { cwd: tmp });
-      expect(res.code).toBe(0); // handler catches and reports
-      expect(res.stdout).toContain('Error');
-      expect(res.stdout).toContain('Supported frameworks');
+      expect(res.code).toBe(2);
+      expect(res.stderr).toContain('Error');
+      expect(res.stderr).toContain('Supported frameworks');
+      expect(res.stdout).not.toContain('Supported frameworks');
     } finally {
       rmTmp(tmp);
     }
