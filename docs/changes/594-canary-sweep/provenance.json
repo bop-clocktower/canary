@@ -1,0 +1,116 @@
+{
+  "issues": [594],
+  "slug": "594-canary-sweep",
+  "route": "feature",
+  "fleet": "roadmap-fleet",
+  "branch": "feat/594-canary-sweep",
+  "base": "origin/main @ 7f33d1cb",
+  "date": "2026-09-17",
+  "worktree": "/Users/bs/Github/canary-fleet-594",
+  "stages": [
+    {
+      "stage": "intake",
+      "ran": true,
+      "detail": "gh issue view 594 --comments; the 'Answering the scope question' comment is the source of the rescope"
+    },
+    {
+      "stage": "harness:brainstorming",
+      "ran": true,
+      "mode": "autonomous (recommended defaults, no waiting)",
+      "artifact": "docs/changes/594-canary-sweep/proposal.md"
+    },
+    {
+      "stage": "harness:autopilot / planning",
+      "ran": true,
+      "artifact": "docs/changes/594-canary-sweep/plans/2026-09-17-canary-sweep-plan.md"
+    },
+    {
+      "stage": "tdd-red",
+      "ran": true,
+      "detail": "agents/skills/test/canary-sweep.test.ts written first; the suite failed to import a module that did not exist yet"
+    },
+    {
+      "stage": "tdd-green",
+      "ran": true,
+      "detail": "ingest.mjs, component.mjs, wcag.mjs, report.mjs, cli.mjs; 36 cases green, then the whole skills suite at 1090 passed"
+    },
+    {
+      "stage": "gate-conformance registration",
+      "ran": true,
+      "detail": "canary-sweep row added to agents/skills/test/gate-conformance.test.ts (#508 skill-layer registry)"
+    },
+    {
+      "stage": "doc-drift-check",
+      "ran": true,
+      "detail": "agents/skills/README.md tree + bullet + executable-skill sentence; docs/naming-registry.md flipped reserved -> shipped with the corrected description"
+    },
+    {
+      "stage": "four-gates",
+      "ran": true,
+      "detail": "agents/skills: typecheck, format:check, test+coverage. ts/: build, typecheck, format:check, test"
+    },
+    {
+      "stage": "ratchets",
+      "ran": true,
+      "detail": "entropy 145/145, perf 225/233, check-deps clean, harness validate clean, docs-ratchet report-only (no local merge base), markdownlint and the doc fence/link scripts clean"
+    }
+  ],
+  "closingKeyword": "Closes",
+  "closingKeywordRationale": "The rescoped goal — a component-level dedup post-processor over axe JSON with a WCAG-mapped report and fix snippets — is fully delivered, and the two open questions on the issue are answered in the proposal. The dropped crawler is recorded as out of scope rather than as remaining work, so nothing on the issue is left outstanding.",
+  "assumptions": [
+    {
+      "id": "A1",
+      "assumption": "THE RESCOPE. canary-sweep drops the crawler entirely and ships as a thin post-processor over axe-core JSON.",
+      "source": "HUMAN-CONFIRMED at the fleet CONFIRM step, binding. Grounded in the issue's own third comment: harness ships eleven a11y skills and a11y-testing-automation already wires @axe-core/playwright and jest-axe into CI.",
+      "consequence": "Route discovery is explicitly NOT ours. Explicit route lists only, and even those are a coverage denominator rather than a work list. Component-level dedup is the load-bearing idea and the only part nothing upstream does.",
+      "recordedIn": "docs/changes/594-canary-sweep/proposal.md, as the resolution of the issue's second open question"
+    },
+    {
+      "id": "A2",
+      "assumption": "Component attribution reads explicit data-* markers only; a node with none is UNATTRIBUTED with a count.",
+      "rationale": "A key synthesised from tag plus class list would produce a component for every node and make the report look complete, while merging two different buttons that share a utility class and splitting one whose classes vary by state. The unattributed count is how a reader knows how much of the dedup actually happened.",
+      "default": "Priority data-component, data-testid, data-test, data-qa; overridable with --component-attr. Ancestor markers are read only where axe serialised them as an attribute selector in the target path — no DOM reconstruction."
+    },
+    {
+      "id": "A3",
+      "assumption": "Zero violations is an ABSTENTION unless the denominator proves axe evaluated something.",
+      "rationale": "An axe document with violations: [] means 'clean' or 'axe never ran here', and a post-processor that prints the same thing for both is the false-green shape.",
+      "default": "Two-level denominator: zero documents read abstains; documents read whose violations, passes, incomplete and inapplicable are ALL empty abstain with the document count. A clean result always prints as '0 violations across N page(s) and M rule evaluation(s)'."
+    },
+    {
+      "id": "A4",
+      "assumption": "WCAG criteria and fix snippets are derived or curated, never generated.",
+      "rationale": "A rule mapped to a plausible-looking criterion, or a snippet generated from failing HTML, is wrong in a way that gets pasted.",
+      "default": "Criteria parsed from axe's wcagNNN tags; an untagged rule is labelled 'no WCAG criterion (best-practice rule)'. ~20 curated snippets; any other rule falls back to axe's own help text and helpUrl and says there is no canary snippet."
+    },
+    {
+      "id": "A5",
+      "assumption": "No ts/src CLI surface was added; canary-sweep is a self-contained skill CLI.",
+      "rationale": "The work is finding triage over an artifact, which is what every sibling skill (canary-blackhawk, canary-screech, canary-strix) does. A new engine subcommand would also have required a perf-complexity paydown that buys nothing here.",
+      "default": "agents/skills/claude-code/canary-sweep/, routed through the shared parser in agents/skills/lib/parse-args.mjs so skill-cli-conformance discovers it automatically."
+    },
+    {
+      "id": "A6",
+      "assumption": "Advisory by default, --strict carries the exit contract (0 clean, 1 violations, 3 abstained, 2 usage).",
+      "rationale": "#508 D3/D4; matching the family rather than inventing a second convention.",
+      "default": "SKILL.md recommends adding --strict only once the report has been triaged."
+    },
+    {
+      "id": "A7",
+      "assumption": "Every fixture is hand-authored and synthetic (SiteHeader, Footer, Chip, example.invalid).",
+      "rationale": "#942 — workers copying real diffs into fixtures leaked a consumer name. No real axe output from any real site was copied in.",
+      "verification": "INCOMPLETE LOCALLY, and reported rather than skipped: canary-strix abstained with 'no terms configured' because CANARY_PROPRIETARY_DENYLIST is a CI secret not present in this worktree. The leak gate runs for real in CI."
+    },
+    {
+      "id": "A8",
+      "assumption": "Both entropy entryPoints arrays were extended; maxFindings was NOT raised.",
+      "rationale": "The analyser cannot follow a new skill CLI without a declared entry point, and raising the ceiling instead of declaring the entry is how a ratchet stops ratcheting.",
+      "default": "agents/skills/claude-code/canary-sweep/scripts/cli.mjs added to entropy.entryPoints and performance.entryPoints. Measured after: entropy 145 against a baseline of 145, perf 225 against 233. No baseline and no architecture allowance was moved by this change."
+    },
+    {
+      "id": "A9",
+      "assumption": "agents/skills/README.md's claim that canary-instrument and canary-test-reporter 'ship a Python entry (scripts/cli.py)' is stale and was left alone.",
+      "rationale": "Both ship scripts/cli.mjs today. It is pre-existing drift adjacent to the line this change edits, and fixing it is out of scope for #594 — flagged in the PR body rather than silently corrected."
+    }
+  ]
+}
