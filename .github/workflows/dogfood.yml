@@ -362,8 +362,9 @@ jobs:
       # History survives between runs (#1021, proposal 460 D3). Until this the
       # store was rebuilt from empty on every job, so `analyze flaky` read 1 run
       # on every `main` push and could never reach a verdict. Cache entries are
-      # immutable, so the key carries the run id and each run saves a new entry;
-      # the restore-keys pick the newest entry for this branch, then `main`'s.
+      # immutable, so the key carries the run id and attempt, and each run (or
+      # re-run) saves a new entry. The restore-keys pick the newest entry for
+      # this branch, then `main`'s.
       - name: Restore run history
         id: history-restore
         uses: actions/cache/restore@v6
@@ -371,7 +372,7 @@ jobs:
           path: test-results/reports/history-v2.jsonl
           key:
             fleet-history-${{ github.head_ref || github.ref_name }}-${{
-            github.run_id }}
+            github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             fleet-history-${{ github.head_ref || github.ref_name }}-
             fleet-history-main-
@@ -404,7 +405,7 @@ jobs:
           path: test-results/reports/history-v2.jsonl
           key:
             fleet-history-${{ github.head_ref || github.ref_name }}-${{
-            github.run_id }}
+            github.run_id }}-${{ github.run_attempt }}
 
       # Loud, not just logged: below the flake-verdict minimum, `analyze flaky`
       # abstains by design, and a job that is green over an abstention reads as

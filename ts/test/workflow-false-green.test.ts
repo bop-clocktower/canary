@@ -1189,6 +1189,9 @@ describe('workflow false-green invariants', () => {
       // Cache entries are immutable: a key that does not change per run is
       // saved once and then never again, which freezes the history.
       expect(key).toContain('github.run_id');
+      // A re-run keeps its run_id; without the attempt its save collides with
+      // the first attempt's entry and the re-run's record is dropped.
+      expect(key).toContain('github.run_attempt');
       expect(String(restore?.with?.['restore-keys'] ?? '')).toMatch(
         /fleet-history-main-/,
       );
