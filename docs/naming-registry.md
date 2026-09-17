@@ -99,7 +99,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-pr-guardian`         | shipped  | —     | Per-diff test-guardian orchestrator                                        |
 | `canary-promote-test`        | shipped  | 477   | Move a generated test into the committed suite                             |
 | `canary-question`            | reserved | 613   | Test-bug vs product-bug triage                                             |
-| `canary-rewind`              | reserved | 461   | Time-travel run debugging                                                  |
+| `canary-rewind`              | shipped  | 461   | Time-travel run debugging                                                  |
 | `canary-savant`              | shipped  | —     | Order-dependence and isolation detector                                    |
 | `canary-screech`             | shipped  | 591   | Broken-main siren (cross-run, branch-level)                                |
 | `canary-setup-harness`       | shipped  | —     | Configure the Harness Engineering guardrails in a project                  |

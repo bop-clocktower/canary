@@ -16,6 +16,12 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary-rewind` skill** (#461, PR 3 of 3). The interpretation layer over
+  `canary rewind`: reads the fidelity table before the outcome, bounds every
+  conclusion by what was restored (a `not-reproduced` result under a differing
+  environment never becomes "it was flaky"), relays abstentions verbatim, and
+  hands intermittent results to `canary history flaky` and canary-flake-hunter
+  and order-dependent ones to canary-savant. Completes #461.
 - **`canary rewind` replays a failed test from run history** (#461, PR 2 of 3).
   `canary rewind <run_id> --test <name>` checks the recorded commit out in a
   scratch worktree (fetching it once if missing, never substituting an
