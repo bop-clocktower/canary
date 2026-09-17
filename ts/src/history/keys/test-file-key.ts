@@ -1,6 +1,7 @@
 /**
- * The history join keys `record` writes (#1021, ADR 0029): a test file's
- * repo-relative path, and the commit the run is recorded against.
+ * The history join key `record` writes (#1021, ADR 0029): a test file's
+ * repo-relative path. The commit half moved to `replay-context.ts` (#461),
+ * which also records where the commit came from.
  *
  * `record` stores `test_file` relative to the git top-level with `/`
  * separators, so a stored row equals a `git diff --name-only` path. Before
@@ -135,23 +136,4 @@ export function keyTestFiles(
     shape === 'playwright' ? playwrightBaseDir(parsed) : probe.cwd();
   const keyed = normalizeTestFiles(built.results, { topLevel, baseDir });
   return { run: built.run, ...keyed };
-}
-
-/**
- * `'local'` joins to nothing, so it is refused wherever HEAD resolves. Outside
- * a repo, or before the first commit, there is no truer value and it stays.
- */
-export function honestCommit(
-  commit: string,
-  probe: Pick<RepoProbe, 'git'>,
-  note: (line: string) => void,
-): string {
-  if (commit !== 'local') return commit;
-  const head = probe.git(['rev-parse', '--verify', '-q', 'HEAD']);
-  if (!head) return commit;
-  note(
-    `note: refused commit_sha 'local' inside a git repository; recorded ` +
-      `HEAD ${head} instead.`,
-  );
-  return head;
 }

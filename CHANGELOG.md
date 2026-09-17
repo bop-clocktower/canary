@@ -16,6 +16,14 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **`canary history record` captures replay context** (#461, PR 1 of 3). The
+  history schema moves to v3, additively: each run gets a `replay` block (seed
+  from the new `--seed` flag, never inferred; runner and version; Node, OS,
+  arch; CI; and whether the commit came from `--commit`, `GITHUB_SHA` or
+  `HEAD`), and each test gets its file's `start_index` when the vitest or
+  Playwright report has start times. Unknown values are `null`, not defaults.
+  The reader accepts v2 and v3 rows, so existing stores need no migration; older
+  canary builds refuse v3 rows. See ADR 0030.
 - **`canary briefing` writes a test charter for a human tester** (#593, PR1 of
   3). Turns a diff into the facts a tester works through: which files and lines
   changed, what the guardian's Tier-0 coverage pass could actually say about

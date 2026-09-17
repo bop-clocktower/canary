@@ -13,8 +13,13 @@
  * `resolveSchemaVersion` for why the difference is load-bearing.
  */
 
-/** The schema version this reader understands, and every writer stamps. */
-export const SCHEMA_VERSION = 2;
+import type { ReplayContext } from './keys/replay-record.js';
+
+/** The schema version every writer stamps. */
+export const SCHEMA_VERSION = 3;
+
+/** Accepted versions: v3 only ADDED optional fields, so v2 reads unchanged (ADR 0030). */
+export const SUPPORTED_SCHEMA_VERSIONS: readonly number[] = [2, 3];
 
 /**
  * The version an unstamped row was actually written at.
@@ -37,8 +42,7 @@ export const LEGACY_UNVERSIONED_SCHEMA_VERSION = 2;
  * written at, so the next `SCHEMA_VERSION` bump makes the reader **refuse**
  * legacy rows loudly rather than reinterpret them under new semantics. That
  * bump therefore has to ship a migration (rewrite the file with a stamp, or add
- * an explicit upgrade path) — which is the point. Today the two constants are
- * equal, so this changes nothing observable; it only decides what happens next.
+ * an explicit upgrade path) — which is the point.
  */
 export function resolveSchemaVersion(record: RunRecord): number {
   return record.schema_version ?? LEGACY_UNVERSIONED_SCHEMA_VERSION;
@@ -55,6 +59,7 @@ export interface TestResultRecord {
   retry_count?: number;
   /** Absent on rows written before `history record` (#538/#956) wrote it. */
   duration_ms?: number | null;
+  start_index?: number; // v3 (#461): file start rank, absent = not recorded
 }
 
 export interface RunRecord {
@@ -86,6 +91,7 @@ export interface RunRecord {
    * not understand throws.
    */
   schema_version?: number;
+  replay?: ReplayContext; // v3 (#461): absent on older rows
   tests?: TestResultRecord[];
 }
 
