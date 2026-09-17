@@ -56,7 +56,7 @@
     }
   ],
   "closingKeyword": "Closes",
-  "closingKeywordRationale": "The rescoped goal — a component-level dedup post-processor over axe JSON with a WCAG-mapped report and fix snippets — is fully delivered, and the two open questions on the issue are answered in the proposal. The dropped crawler is recorded as out of scope rather than as remaining work, so nothing on the issue is left outstanding.",
+  "closingKeywordRationale": "The rescoped goal \u2014 a component-level dedup post-processor over axe JSON with a WCAG-mapped report and fix snippets \u2014 is fully delivered, and the two open questions on the issue are answered in the proposal. The dropped crawler is recorded as out of scope rather than as remaining work, so nothing on the issue is left outstanding.",
   "assumptions": [
     {
       "id": "A1",
@@ -69,7 +69,7 @@
       "id": "A2",
       "assumption": "Component attribution reads explicit data-* markers only; a node with none is UNATTRIBUTED with a count.",
       "rationale": "A key synthesised from tag plus class list would produce a component for every node and make the report look complete, while merging two different buttons that share a utility class and splitting one whose classes vary by state. The unattributed count is how a reader knows how much of the dedup actually happened.",
-      "default": "Priority data-component, data-testid, data-test, data-qa; overridable with --component-attr. Ancestor markers are read only where axe serialised them as an attribute selector in the target path — no DOM reconstruction."
+      "default": "Priority data-component, data-testid, data-test, data-qa; overridable with --component-attr. Ancestor markers are read only where axe serialised them as an attribute selector in the target path \u2014 no DOM reconstruction."
     },
     {
       "id": "A3",
@@ -98,19 +98,26 @@
     {
       "id": "A7",
       "assumption": "Every fixture is hand-authored and synthetic (SiteHeader, Footer, Chip, example.invalid).",
-      "rationale": "#942 — workers copying real diffs into fixtures leaked a consumer name. No real axe output from any real site was copied in.",
+      "rationale": "#942 \u2014 workers copying real diffs into fixtures leaked a consumer name. No real axe output from any real site was copied in.",
       "verification": "INCOMPLETE LOCALLY, and reported rather than skipped: canary-strix abstained with 'no terms configured' because CANARY_PROPRIETARY_DENYLIST is a CI secret not present in this worktree. The leak gate runs for real in CI."
     },
     {
       "id": "A8",
       "assumption": "Both entropy entryPoints arrays were extended; maxFindings was NOT raised.",
       "rationale": "The analyser cannot follow a new skill CLI without a declared entry point, and raising the ceiling instead of declaring the entry is how a ratchet stops ratcheting.",
-      "default": "agents/skills/claude-code/canary-sweep/scripts/cli.mjs added to entropy.entryPoints and performance.entryPoints. Measured after: entropy 145 against a baseline of 145, perf 225 against 233. No baseline and no architecture allowance was moved by this change."
+      "default": "agents/skills/claude-code/canary-sweep/scripts/cli.mjs added to entropy.entryPoints and performance.entryPoints. Deltas measured against the merge base under one consistent CLI: entropy 144 here vs 144 at the base (+0); perf 221 vs 220 (+1, and that one is the pre-existing structural coupling allowance for */scripts/cli.mjs). The first push did add 1 dead export and 5 perf violations; all six were FIXED, not allowanced (commit e5d48bbf). No baseline and no architecture allowance was moved."
     },
     {
       "id": "A9",
       "assumption": "agents/skills/README.md's claim that canary-instrument and canary-test-reporter 'ship a Python entry (scripts/cli.py)' is stale and was left alone.",
-      "rationale": "Both ship scripts/cli.mjs today. It is pre-existing drift adjacent to the line this change edits, and fixing it is out of scope for #594 — flagged in the PR body rather than silently corrected."
+      "rationale": "Both ship scripts/cli.mjs today. It is pre-existing drift adjacent to the line this change edits, and fixing it is out of scope for #594 \u2014 flagged in the PR body rather than silently corrected."
+    },
+    {
+      "id": "A10",
+      "assumption": "The ratchet baselines are stamped for harness CLI 12.9.0 while CI's floating @12 pin now resolves 12.10.0, so both ratchets abstain. This was NOT recalibrated in this PR.",
+      "rationale": "Verified not caused by this branch: origin/main @ 324304cd measured alone in a clean detached worktree under 12.10.0 produces the identical abstention, so every open PR is blocked by it. Recalibrating a shared required gate is a repo-wide change every in-flight lane needs, and two lanes editing .harness/*-baseline.json in parallel would conflict.",
+      "status": "PARKED for a human decision; raised on the PR with the evidence rather than absorbed silently.",
+      "recommendedDefault": "Land a stamp-only recalibration PR (entropy measuredCount 144, perf 221, harnessCli 12.10.0, ceilings untouched \u2014 re-measured in a clean worktree, never the main working dir per #700), merge it first, then rebase this branch onto it."
     }
   ]
 }
