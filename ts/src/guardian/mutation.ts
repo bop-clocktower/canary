@@ -57,8 +57,6 @@ const THREAD_UNSAFE_MARKERS = [
   'canary-cli-testkit',
 ];
 
-const SUPPRESS_MUTANT_RE = /(?:\/\/|#)\s*canary:allow-mutant\s+(.+)/;
-
 /** How a mutant ended up, in guardian's vocabulary rather than Stryker's. */
 export type MutationStatus = 'killed' | 'survived' | 'no-coverage' | 'timeout';
 
@@ -187,19 +185,22 @@ export function sampleMutants<
   return { sampled: ordered.slice(0, cap), generated: mutants.length };
 }
 
-/** Parse a leading `major.minor.patch`; `null` when it is not one. */
-function parseVersion(version: string): [number, number, number] | null {
-  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version.trim());
-  if (match === null) return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
+/** A parsed version: its major, and a rank that orders two versions. */
+interface Version {
+  major: number;
+  rank: number;
 }
 
-/** `a > b` over parsed semver triples. */
-function isNewer(a: [number, number, number], b: [number, number, number]) {
-  for (let i = 0; i < 3; i++) {
-    if (a[i]! !== b[i]!) return a[i]! > b[i]!;
-  }
-  return false;
+/** Parse a leading `major.minor.patch`; `null` when it is not one. */
+function parseVersion(version: string): Version | null {
+  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version.trim());
+  if (match === null) return null;
+  const [major, minor, patch] = [
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3]),
+  ];
+  return { major, rank: major * 1_000_000 + minor * 1_000 + patch };
 }
 
 /**
@@ -232,8 +233,8 @@ export function runnerCompatibility(
         `(runner ${runnerVersion}, vitest ${vitestVersion ?? 'unknown'})`,
     };
   }
-  if (vitest[0] < FIRST_AFFECTED_VITEST_MAJOR) return { compatible: true };
-  if (isNewer(runner, parseVersion(BROKEN_RUNNER_MAX)!)) {
+  if (vitest.major < FIRST_AFFECTED_VITEST_MAJOR) return { compatible: true };
+  if (runner.rank > parseVersion(BROKEN_RUNNER_MAX)!.rank) {
     return { compatible: true };
   }
   return {
@@ -246,237 +247,6 @@ export function runnerCompatibility(
 }
 
 /** An abstention: a reason, a zero denominator, and no findings. Ever. */
-export function abstainedReport(
-  reason: string,
-  excludedTests: string[],
-): MutationReport {
-  return {
-    verdict: 'abstained',
-    abstainReason: reason,
-    generated: 0,
-    sampled: 0,
-    killed: 0,
-    survived: 0,
-    noCoverage: 0,
-    timeout: 0,
-    findings: [],
-    suppressed: [],
-    excludedTests,
-  };
-}
-
-/** Stryker's status vocabulary, mapped onto guardian's. */
-function toStatus(strykerStatus: string, coveredBy: string[]): MutationStatus {
-  switch (strykerStatus) {
-    case 'Killed':
-      return 'killed';
-    case 'Timeout':
-      return 'timeout';
-    case 'Survived':
-      // SC-2: a survivor with nothing covering it is a coverage gap, which
-      // guardian's coverage tier already reports. Calling it a weak assertion
-      // would double-count it and dilute the false-survivor rate (D5).
-      return coveredBy.length > 0 ? 'survived' : 'no-coverage';
-    default:
-      return 'no-coverage';
-  }
-}
-
-/** Derive the verdict and abstention reason from the counted statuses. */
-function verdictFor(
-  report: Omit<MutationReport, 'verdict' | 'abstainReason'>,
-): Pick<MutationReport, 'verdict' | 'abstainReason'> {
-  if (report.sampled === 0) {
-    return {
-      verdict: 'abstained',
-      abstainReason: 'the run produced zero mutants, which is not a pass',
-    };
-  }
-  if (report.killed === 0 && report.survived === 0 && report.timeout === 0) {
-    return {
-      verdict: 'abstained',
-      abstainReason:
-        'no mutant was covered by any test, so nothing could be killed',
-    };
-  }
-  return { verdict: report.survived > 0 ? 'survivors' : 'all-killed' };
-}
-
-/** Recount a report's tallies from its findings and suppressions. */
-function recount(report: MutationReport): MutationReport {
-  const counts = { killed: 0, survived: 0, noCoverage: 0, timeout: 0 };
-  for (const finding of report.findings) {
-    if (finding.status === 'killed') counts.killed += 1;
-    else if (finding.status === 'survived') counts.survived += 1;
-    else if (finding.status === 'timeout') counts.timeout += 1;
-    else counts.noCoverage += 1;
-  }
-  const next = { ...report, ...counts };
-  return { ...next, ...verdictFor(next) };
-}
-
-/**
- * Map a Stryker JSON report onto {@link MutationReport}.
- *
- * `coveredBy` arrives as test ids; they are resolved to test names through the
- * report's `testFiles`, because "the tests that ran and did not fail" is the
- * actionable half of a survivor (Goal 2).
- */
-export function mapStrykerReport(
-  strykerReport: StrykerReport,
-  options: MapOptions,
-): MutationReport {
-  const names = new Map<string, string>();
-  for (const file of Object.values(strykerReport.testFiles ?? {})) {
-    for (const test of file.tests) names.set(test.id, test.name);
-  }
-
-  const findings: MutantFinding[] = [];
-  for (const [path, file] of Object.entries(strykerReport.files)) {
-    for (const mutant of file.mutants) {
-      const coveredBy = (mutant.coveredBy ?? []).map(
-        (id) => names.get(id) ?? id,
-      );
-      findings.push({
-        path,
-        line: mutant.location.start.line,
-        mutator: mutant.mutatorName,
-        replacement: mutant.replacement ?? '',
-        status: toStatus(mutant.status, coveredBy),
-        coveredBy,
-      });
-    }
-  }
-
-  return recount({
-    verdict: 'abstained',
-    generated: options.generated ?? findings.length,
-    sampled: findings.length,
-    killed: 0,
-    survived: 0,
-    noCoverage: 0,
-    timeout: 0,
-    findings,
-    suppressed: [],
-    excludedTests: options.excludedTests,
-  });
-}
-
-/**
- * Read a `// canary:allow-mutant <reason>` suppression off a source line.
- *
- * A bare marker with no reason returns `null`: the reason IS the artifact a
- * reviewer reads, so an unexplained suppression is not one. Mirrors
- * `suppressionReason` for `canary:allow-untested` (D9).
- */
-export function mutantSuppressionReason(line: string): string | null {
-  const match = SUPPRESS_MUTANT_RE.exec(line);
-  if (match === null) return null;
-  let reason = match[1]!.trim();
-  for (const closer of ['*/', '-->']) {
-    if (reason.endsWith(closer))
-      reason = reason.slice(0, -closer.length).trim();
-  }
-  return reason.length > 0 ? reason : null;
-}
-
-/**
- * Move survivors whose line carries an explained suppression out of the count.
- *
- * `sources` maps a mutated path to its lines (1-based by index+1). A path the
- * caller could not read simply suppresses nothing -- an unreadable file must
- * never silently clear a survivor.
- */
-export function applyMutantSuppressions(
-  report: MutationReport,
-  sources: Record<string, string[]>,
-): MutationReport {
-  const kept: MutantFinding[] = [];
-  const suppressed: SuppressedMutant[] = [...report.suppressed];
-  for (const finding of report.findings) {
-    const line = sources[finding.path]?.[finding.line - 1];
-    const reason =
-      finding.status === 'survived' && line !== undefined
-        ? mutantSuppressionReason(line)
-        : null;
-    if (reason === null) kept.push(finding);
-    else suppressed.push({ finding, reason });
-  }
-  return recount({ ...report, findings: kept, suppressed });
-}
-
-/** ADR 0009 exit contract: 0 all-killed, 1 survivors, 3 abstained. */
-export function mutationExitCode(report: MutationReport): number {
-  if (report.verdict === 'abstained') return 3;
-  return report.verdict === 'survivors' ? 1 : 0;
-}
-
-/** Survivors the author accepted in writing, listed with their reasons. */
-function suppressionLines(report: MutationReport): string[] {
-  return report.suppressed.map(
-    (entry) =>
-      `- suppressed \`${entry.finding.path}:${entry.finding.line}\`: ` +
-      `${entry.reason}`,
-  );
-}
-
-/** The disclosure line every report carries, abstentions included. */
-function excludedLine(report: MutationReport): string {
-  if (report.excludedTests.length === 0) {
-    return 'No test files were excluded from the mutation run.';
-  }
-  return (
-    `${report.excludedTests.length} test file(s) excluded from the mutation ` +
-    `run (they cannot run in Stryker's worker-thread pool), so a mutant only ` +
-    `these would kill reads as survived: ${report.excludedTests.join(', ')}`
-  );
-}
-
-/** Render the report as the `### Mutation` comment/summary section (D-Output). */
-export function renderMutationReport(report: MutationReport): string {
-  const lines = ['### Mutation'];
-  if (report.verdict === 'abstained') {
-    lines.push(
-      `Abstained ${'\u{2014}'} ${report.abstainReason ?? 'no reason given'}. ` +
-        'This is not a pass.',
-    );
-    // Suppressions are listed even on an abstention: they are the reason the
-    // denominator collapsed in the ONE case where it collapsed by choice.
-    lines.push(...suppressionLines(report));
-    lines.push('', excludedLine(report));
-    return lines.join('\n');
-  }
-
-  const scope =
-    report.sampled < report.generated
-      ? ` (sampled ${report.sampled} of ${report.generated})`
-      : '';
-  lines.push(`${report.killed}/${report.sampled} mutants killed${scope}.`);
-  if (report.survived > 0) {
-    lines.push('', `${report.survived} survived:`);
-    for (const finding of report.findings.filter(
-      (f) => f.status === 'survived',
-    )) {
-      const covering =
-        finding.coveredBy.length > 0
-          ? finding.coveredBy.join('; ')
-          : 'no covering test';
-      lines.push(
-        `- \`${finding.path}:${finding.line}\` ${finding.mutator} ` +
-          `${'\u{2192}'} \`${finding.replacement}\` ${'\u{2014}'} ran but did ` +
-          `not fail: ${covering}`,
-      );
-    }
-  }
-  if (report.noCoverage > 0) {
-    lines.push('', `${report.noCoverage} mutant(s) had no covering test.`);
-  }
-  lines.push(...suppressionLines(report));
-  lines.push('', excludedLine(report));
-  return lines.join('\n');
-}
-
-/** Recursively list `*.test.ts` files under `dir`. */
 function listTests(dir: string): string[] {
   let entries;
   try {

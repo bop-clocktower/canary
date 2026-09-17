@@ -135,14 +135,16 @@ import { isRecord } from './diff-coverage/types.js';
 import {
   MutationReport,
   StrykerReport,
+  runnerCompatibility,
+  threadUnsafeTests,
+} from './mutation.js';
+import {
   abstainedReport,
   applyMutantSuppressions,
   mapStrykerReport,
   mutationExitCode,
   renderMutationReport,
-  runnerCompatibility,
-  threadUnsafeTests,
-} from './mutation.js';
+} from './mutation-report.js';
 import { buildWeakTestFindings } from './weak-test.js';
 import {
   GitHubClient,
@@ -1367,62 +1369,98 @@ function installedVersion(repoRoot: string, pkg: string): string | null {
  *     runner is installed, the reason says the run is not wired yet. Neither is
  *     a pass, and neither can print a survivor.
  */
-function mutationCmd(opts: MutationOptions, deps: GuardianDeps): void {
-  const repoRoot = opts.repoRoot;
-  const excluded = threadUnsafeTests(join(repoRoot, 'ts'));
+/** Map a Stryker report file, or abstain with the reason it could not be. */
+function mappedStrykerReport(
+  path: string,
+  repoRoot: string,
+  excluded: string[],
+): MutationReport {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf-8'));
+  } catch (error) {
+    return abstainedReport(
+      `the stryker report at ${path} could not be read: ` +
+        `${(error as Error).message}`,
+      excluded,
+    );
+  }
+  if (!isRecord(parsed) || !isRecord(parsed['files'])) {
+    return abstainedReport(
+      `the stryker report at ${path} has no "files" map`,
+      excluded,
+    );
+  }
+  const mapped = mapStrykerReport(parsed as unknown as StrykerReport, {
+    excludedTests: excluded,
+  });
+  return applyMutantSuppressions(mapped, mutatedSources(mapped, repoRoot));
+}
 
-  const report = ((): MutationReport => {
-    if (opts.report === undefined) {
-      const runner =
-        opts.runnerVersion ??
-        installedVersion(repoRoot, '@stryker-mutator/vitest-runner');
-      const vitest = opts.vitestVersion ?? installedVersion(repoRoot, 'vitest');
-      const verdict = runnerCompatibility(runner, vitest);
-      // A compatible runner still abstains: this slice ships the scope, the
-      // mapping and the exit contract, not the run (fork F6 on #486).
-      return abstainedReport(
-        verdict.compatible
-          ? 'no --report given and the mutation run is not wired yet (#486)'
-          : verdict.reason!,
-        excluded,
-      );
-    }
-    let parsed: unknown;
+/**
+ * Read the mutated files so suppressions can be resolved (D9).
+ *
+ * A file that cannot be read contributes nothing: an unreadable source must
+ * never clear a survivor by default.
+ */
+function mutatedSources(
+  report: MutationReport,
+  repoRoot: string,
+): Record<string, string[]> {
+  const sources: Record<string, string[]> = {};
+  for (const finding of report.findings) {
+    if (finding.path in sources) continue;
     try {
-      parsed = JSON.parse(readFileSync(opts.report, 'utf-8'));
-    } catch (error) {
-      return abstainedReport(
-        `the stryker report at ${opts.report} could not be read ` +
-          `(${(error as Error).message})`,
-        excluded,
-      );
+      sources[finding.path] = readFileSync(
+        join(repoRoot, finding.path),
+        'utf-8',
+      ).split(/\r\n|\r|\n/);
+    } catch {
+      // Deliberately empty -- see the doc comment.
     }
-    if (!isRecord(parsed) || !isRecord(parsed['files'])) {
-      return abstainedReport(
-        `the stryker report at ${opts.report} has no "files" map`,
-        excluded,
-      );
-    }
-    const mapped = mapStrykerReport(parsed as unknown as StrykerReport, {
-      excludedTests: excluded,
-    });
-    // Suppressions are read from the working tree: a survivor the author
-    // accepted in writing is not a finding (D9).
-    const sources: Record<string, string[]> = {};
-    for (const finding of mapped.findings) {
-      if (finding.path in sources) continue;
-      try {
-        sources[finding.path] = readFileSync(
-          join(repoRoot, finding.path),
-          'utf-8',
-        ).split(/\r\n|\r|\n/);
-      } catch {
-        // Unreadable source suppresses nothing -- never clear a survivor by
-        // failing to look at it.
-      }
-    }
-    return applyMutantSuppressions(mapped, sources);
-  })();
+  }
+  return sources;
+}
+
+/**
+ * Abstain, saying which of the two reasons applies.
+ *
+ * While `@stryker-mutator/vitest-runner` cannot kill a mutant on vitest 5
+ * (stryker-js#6210) the reason names that issue; with a runner that could, the
+ * reason is that this slice ships the scope, the mapping and the exit contract
+ * but not the run itself (fork F6 on #486). Neither is a pass.
+ */
+function guardAbstention(
+  opts: MutationOptions,
+  excluded: string[],
+): MutationReport {
+  const runner =
+    opts.runnerVersion ??
+    installedVersion(opts.repoRoot, '@stryker-mutator/vitest-runner');
+  const vitest =
+    opts.vitestVersion ?? installedVersion(opts.repoRoot, 'vitest');
+  const verdict = runnerCompatibility(runner, vitest);
+  return abstainedReport(
+    verdict.compatible
+      ? 'no --report given and the mutation run is not wired yet (#486)'
+      : verdict.reason!,
+    excluded,
+  );
+}
+
+/**
+ * Emit the diff-scoped mutation report (#486).
+ *
+ * Exit codes follow ADR 0009: 0 all-killed, 1 survivors, 3 abstained. Every
+ * path through here ends in a report that states its denominator and discloses
+ * the suites a mutation run has to exclude.
+ */
+function mutationCmd(opts: MutationOptions, deps: GuardianDeps): void {
+  const excluded = threadUnsafeTests(join(opts.repoRoot, 'ts'));
+  const report =
+    opts.report === undefined
+      ? guardAbstention(opts, excluded)
+      : mappedStrykerReport(opts.report, opts.repoRoot, excluded);
 
   if (opts.reportOut !== undefined) {
     mkdirSync(dirname(opts.reportOut), { recursive: true });
@@ -1440,7 +1478,6 @@ function mutationCmd(opts: MutationOptions, deps: GuardianDeps): void {
   );
   throw new CliExitError(mutationExitCode(report));
 }
-
 interface PrCheckOptions {
   diff?: string;
   heuristicExclude?: string[];

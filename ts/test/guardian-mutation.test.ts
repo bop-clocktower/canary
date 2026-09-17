@@ -13,17 +13,19 @@ import { describe, expect, it } from 'vitest';
 import {
   MUTANT_CAP,
   RUNNER_ISSUE,
-  applyMutantSuppressions,
-  abstainedReport,
-  mapStrykerReport,
-  mutantSuppressionReason,
   mutateEntries,
-  mutationExitCode,
-  renderMutationReport,
   runnerCompatibility,
   sampleMutants,
   threadUnsafeTests,
 } from '../src/guardian/mutation.js';
+import {
+  abstainedReport,
+  applyMutantSuppressions,
+  mapStrykerReport,
+  mutantSuppressionReason,
+  mutationExitCode,
+  renderMutationReport,
+} from '../src/guardian/mutation-report.js';
 import type { StrykerReport } from '../src/guardian/mutation.js';
 
 /** A Stryker JSON report with one mutant per (line, status) tuple. */
