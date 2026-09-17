@@ -1,0 +1,43 @@
+Generate pytest unit tests for an order function.
+
+Signature:
+    def order(tasks: dict[str, list[str]]) -> list[str]:
+
+The function returns a dependency-respecting execution order for a task
+graph. Each key is a task name; its value is the list of task names that must
+appear before it.
+
+Rules:
+  - A task may be emitted only once every one of its prerequisites has
+    already been emitted.
+  - Among all currently-eligible tasks, the lexicographically smallest name
+    is emitted next. This tiebreak is not cosmetic: a valid dependency graph
+    has many valid topological orders, and pinning the tiebreak is what makes
+    the output a single assertable list rather than "any valid order".
+  - A prerequisite naming a task that is not a key in `tasks` raises a
+    ValueError — an unknown prerequisite is rejected, never silently skipped.
+  - A cycle raises a ValueError. A task listing itself as its own
+    prerequisite is a cycle.
+  - An empty mapping returns an empty list.
+  - The function is pure — it never mutates the input dict or its lists.
+  - Invariant: every task appears exactly once in the result, and always
+    after all of its prerequisites.
+
+Cover these cases:
+  1. Linear chain —
+     order({"c": ["b"], "b": ["a"], "a": []}) -> ["a", "b", "c"]
+  2. All tasks independent, emitted in lexicographic order —
+     order({"b": [], "c": [], "a": []}) -> ["a", "b", "c"]
+  3. Diamond — one root, two middles, one join —
+     order({"d": ["b", "c"], "b": ["a"], "c": ["a"], "a": []}) ->
+     ["a", "b", "c", "d"]
+  4. Dependency order beats lexicographic order —
+     order({"b": [], "a": ["b"]}) -> ["b", "a"]
+  5. Two independent chains (a -> c and b -> d), interleaved by the
+     tiebreak rather than run one-after-the-other —
+     order({"a": [], "c": ["a"], "b": [], "d": ["b"]}) ->
+     ["a", "b", "c", "d"]   (NOT ["a", "c", "b", "d"])
+  6. Empty mapping — order({}) -> []
+  7. Two-node cycle — order({"a": ["b"], "b": ["a"]}) -> raises ValueError
+  8. Prerequisite naming an unknown task —
+     order({"a": ["ghost"]}) -> raises ValueError
