@@ -4,10 +4,9 @@ Order a suite's test files so the ones likeliest to fail run first, from run
 history and the diff. Ordering is an optimization, never a filter: every file
 you pass in comes back exactly once.
 
-This is phase 2 of #460
-([proposal](../changes/460-predictive-test-ordering/proposal.md)). A runner
-adapter that applies the plan comes next; until then the plan is advisory
-output.
+This is #460 ([proposal](../changes/460-predictive-test-ordering/proposal.md)).
+Vitest applies a plan through the sequencer below; for other runners the plan is
+advisory output.
 
 ## Usage
 
@@ -25,6 +24,34 @@ canary order --suite ts-engine --files-from files.txt --json --out plan.json
 - `--base` diffs `<base>...HEAD`. Without it there is no diff term.
 - `--path` / `--db-url` pick the history store. A backend that cannot return
   whole runs is noted and its history is not used.
+
+## Applying a plan in vitest
+
+```ts
+// vitest.config.ts
+import CanaryOrderSequencer from 'canary-test-cli/vitest-sequencer';
+
+export default defineConfig({
+  test: { sequence: { sequencer: CanaryOrderSequencer } },
+});
+```
+
+```bash
+canary order --suite unit --files-from files.txt --base origin/main --out plan.json
+CANARY_ORDER_PLAN=plan.json npx vitest run
+```
+
+- Without `CANARY_ORDER_PLAN`, or with a plan it cannot read, the sequencer uses
+  vitest's own order (and says so on stderr for an unreadable plan).
+- Files the plan does not name run last. No file is ever dropped: on canary's
+  own suite an ordered and an unordered run both reported 4793 tests in 234
+  files.
+- Vitest runs files in parallel, so the plan orders scheduling, not strict
+  execution. On that same run the six ranked files started at positions 0-28 of
+  234, against 8-192 unordered.
+- `canary-test-cli` must be installed in the project (vitest is resolved from
+  there), and vitest 5 or later is required. pytest and Playwright have no
+  adapter yet.
 
 ## How files are scored
 
@@ -72,3 +99,7 @@ the run count, for example `2 of 5 runs needed for history`.
 - [rank.ts](../../ts/src/analysis/order/rank.ts): scoring, modes and the
   permutation check.
 - [order-cli.ts](../../ts/src/order/order-cli.ts): inputs and the command.
+- [apply.ts](../../ts/src/analysis/order/apply.ts): applying a plan to a file
+  list.
+- [vitest-sequencer.ts](../../ts/src/analysis/order/vitest-sequencer.ts): the vitest
+  adapter.

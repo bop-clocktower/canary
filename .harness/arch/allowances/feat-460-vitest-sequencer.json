@@ -1,0 +1,8 @@
+{
+  "reason": "Vitest sequencer for `canary order` (#460 phase 3): module-size 43628->44098 (+470), measured with `harness check-arch --json` (CLI 12.9.0) on this branch, merge base main d4c81711 (main itself reports no regression). newViolations is []. The growth is the feature: ts/src/analysis/order/apply.ts (applying a plan to a runner file list, and parsing a plan from disk) and ts/src/analysis/order/vitest-sequencer.ts (the BaseSequencer subclass exported as canary-test-cli/vitest-sequencer; under analysis/ so it belongs to a layer), plus the dogfood hook in ts/vitest.config.ts. Measured after deleting npm/dist and npm/agents: a local npm build stages every skill script there and a scan over the working tree then reports ~200 phantom entropy and 62 phantom perf findings. Perf ratchet: delta OK (218 against 218). Entropy: 144 against 144; both new modules are declared in both entryPoints arrays and maxFindings was not touched.",
+  "categories": {
+    "module-size": 44098
+  },
+  "violationIds": [],
+  "createdFrom": "d4c81711"
+}

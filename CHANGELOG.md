@@ -16,6 +16,12 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **Vitest sequencer for `canary order`** (#460, phase 3). Import
+  `canary-test-cli/vitest-sequencer` as `sequence.sequencer` and set
+  `CANARY_ORDER_PLAN=<plan.json>` to schedule files in plan order. Unknown files
+  run last and nothing is dropped; with no or an unreadable plan vitest's own
+  order is used. vitest is an optional peer dependency (>=5). Canary's own suite
+  uses it when the variable is set.
 - **`canary order` ranks test files likeliest-to-fail first** (#460, phase 2).
   Scores each file from failures in the last 20 recorded runs (decayed by age),
   whether it changed since `--base`, and whether it imports a changed file (from
