@@ -13,7 +13,7 @@
  * `resolveSchemaVersion` for why the difference is load-bearing.
  */
 
-import type { ReplayContext } from './keys/replay-record.js';
+import type { OrderOutcome, ReplayContext } from './keys/replay-record.js';
 
 /** The schema version every writer stamps. */
 export const SCHEMA_VERSION = 3;
@@ -92,6 +92,7 @@ export interface RunRecord {
    */
   schema_version?: number;
   replay?: ReplayContext; // v3 (#461): absent on older rows
+  order?: OrderOutcome; // #460: runs recorded with --order-plan
   tests?: TestResultRecord[];
 }
 

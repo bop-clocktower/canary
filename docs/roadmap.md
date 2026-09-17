@@ -186,10 +186,11 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ### canary-shiva — predictive test ordering
 
-- **Status:** backlog
-- **Spec:** —
+- **Status:** in-progress
+- **Assignee:** <brianna.stevenski@example.com>
+- **Spec:** docs/changes/460-predictive-test-ordering/proposal.md
 - **Summary:** Split from the Skill Forge umbrella (Issue #339, now closed) into Issue #460, and renamed from `canary-cassandra` on 2026-08-07 after the name collided with the vacuous-test-detection row above. Lady Shiva reads a fighter and anticipates the next move, which is the feature: mine the run-history NDJSON plus the PR diff to run likeliest-to-fail tests first, so on a multi-hour suite the failure surfaces in minute one rather than hour three. Accepted risk to handle in spec: ordering is an OPTIMIZATION, NEVER A FILTER — every test still runs, because a predictive ordering that silently drops tests is a correctness bug wearing a performance costume. Needs a defined cold-start fallback (diff-proximity, then declaration order; never fail) and an explicit did-it-help metric (time-to-first-failure vs the unordered baseline) or there is no way to know the model earns its complexity. Next: the blocking data spike in #460 — per-test pass/fail history, commit keying, retention, and whether any supported runner will accept an order.
-- **Blockers:** Issue #538 (nothing writes the local history store, so the volume/retention question may already have a known answer)
+- **Blockers:** criterion 7 evidence (20 recorded `main` runs with a failure); pytest adapter split to #1030
 - **Plan:** —
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#460

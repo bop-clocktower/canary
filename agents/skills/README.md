@@ -13,7 +13,7 @@ it), see [Guides](../../docs/guides/index.md).
 
 ```text
 agents/skills/
-├── claude-code/                    # Claude Code skills (26)
+├── claude-code/                    # Claude Code skills (27)
 │   ├── canary-add-framework/
 │   ├── canary-batwoman/
 │   ├── canary-blackhawk/
@@ -34,6 +34,7 @@ agents/skills/
 │   ├── canary-rewind/
 │   ├── canary-savant/
 │   ├── canary-screech/
+│   ├── canary-shiva/
 │   ├── canary-setup-harness/
 │   ├── canary-shadow/
 │   ├── canary-ship/
@@ -122,6 +123,14 @@ slash-command entry points.
   the conclusion by a per-dimension fidelity table (restored / not-restored /
   not-recorded). Hands intermittent results to the flakiness tools rather than
   deciding them. Needs `git`; no network beyond one fetch.
+
+### Test ordering
+
+- [`canary-shiva`](./claude-code/canary-shiva/SKILL.md) — Predictive test
+  ordering. `canary order` ranks test files likeliest-to-fail first from run
+  history and the diff, the vitest sequencer applies the plan, and
+  `canary order --report` says whether time to first failure actually dropped
+  (advisory, `insufficient` until 20 failing runs). Never drops a test.
 
 ### Test hygiene & reliability
 

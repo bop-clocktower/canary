@@ -36,6 +36,8 @@ export interface OrderPlan {
   entries: RankedEntry[];
   /** Files with no signal, in declaration order (they carry no reasons). */
   unranked: string[];
+  /** The input order, kept so a recorded run can estimate the baseline TTFF. */
+  declared: string[];
 }
 
 export interface OrderInput {
@@ -83,6 +85,7 @@ export function buildOrderPlan(input: OrderInput): OrderPlan {
     changedFiles: input.changed === null ? null : input.changed.length,
     entries: [...ranked, ...unranked],
     unranked: unranked.map((e) => e.test_file),
+    declared: input.files,
   };
 }
 

@@ -25,3 +25,13 @@ export interface ReplayContext {
   /** `null` for a `local` commit, which makes the run non-replayable. */
   commit_source: 'flag' | 'GITHUB_SHA' | 'HEAD' | null;
 }
+
+/**
+ * `record --order-plan` estimates (#460 D7), local-only. Serial sums of
+ * recorded durations; null when the run had no failure (not measurable).
+ */
+export interface OrderOutcome {
+  mode: string | null;
+  ttff_ordered_ms_estimate: number | null;
+  ttff_baseline_ms_estimate: number | null;
+}

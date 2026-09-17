@@ -1,0 +1,16 @@
+name: canary-shiva
+version: '1.0.0'
+description:
+  Order test files likeliest-to-fail first from run history and the diff, set up
+  the vitest adapter, and read the did-it-help TTFF report honestly.
+stability: static
+triggers:
+  - manual
+platforms:
+  - claude-code
+type: rigid
+tools: []
+tier: 2
+depends_on:
+  - canary-fleet-health
+  - canary-savant

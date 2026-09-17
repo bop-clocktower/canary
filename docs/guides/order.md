@@ -53,6 +53,30 @@ CANARY_ORDER_PLAN=plan.json npx vitest run
   there), and vitest 5 or later is required. pytest and Playwright have no
   adapter yet.
 
+## Did it help?
+
+Record runs with the plan, then ask:
+
+```bash
+canary history record vitest.json --suite unit --order-plan plan.json
+canary order --report --suite unit        # add --json for the machine shape
+```
+
+`record --order-plan` stores the plan's `mode` and two time-to-first-failure
+estimates on the run: in plan order and in the declaration order the plan was
+built from. Both are recorded per-test durations summed serially up to the first
+failing test, so they compare two orders of one run rather than measure wall
+clock. A run with no failure stores `null` for both.
+
+The report takes the first 20 runs that had a failure, compares the median
+ordered estimate with the median baseline, and prints the full denominator: runs
+recorded with a plan, measurable, not measurable. The verdict is `insufficient`
+until 20 measurable runs exist, then `lower` or `not-lower`. It is advisory and
+always exits 0.
+
+Canary's own `fleet-health` job runs its suite in plan order and prints this
+report on every run.
+
 ## How files are scored
 
 The score is additive and each term is printed as a reason next to the file:
@@ -101,5 +125,10 @@ the run count, for example `2 of 5 runs needed for history`.
 - [order-cli.ts](../../ts/src/order/order-cli.ts): inputs and the command.
 - [apply.ts](../../ts/src/analysis/order/apply.ts): applying a plan to a file
   list.
-- [vitest-sequencer.ts](../../ts/src/analysis/order/vitest-sequencer.ts): the vitest
-  adapter.
+- [vitest-sequencer.ts](../../ts/src/analysis/order/vitest-sequencer.ts): the
+  vitest adapter.
+- [order-ttff.ts](../../ts/src/history/keys/order-ttff.ts): the TTFF estimates
+  `record --order-plan` stores.
+- [ttff-report.ts](../../ts/src/analysis/order/ttff-report.ts): the did-it-help
+  report.
+- Skill: [canary-shiva](../../agents/skills/claude-code/canary-shiva/SKILL.md)

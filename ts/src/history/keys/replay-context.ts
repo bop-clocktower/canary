@@ -10,7 +10,8 @@
  * out of log text would be a guess stored as a fact.
  */
 
-import type { ReplayContext } from './replay-record.js';
+import type { OrderOutcome, ReplayContext } from './replay-record.js';
+import { orderOutcome, readOrderPlanFile } from './order-ttff.js';
 import type { BuiltRun, ReportShape } from '../run-recorder.js';
 import type { TestResultInput } from '../schema.js';
 import {
@@ -181,8 +182,12 @@ export function attachStartIndex<
 export function prepareRecordedRun(
   built: BuiltRun,
   report: { shape: ReportShape; parsed: unknown },
-  probe: RepoProbe & { env: Env },
-  capture: { seed?: string | undefined; commitSource: CommitSource },
+  probe: RepoProbe & { env: Env; err?: (line: string) => void },
+  capture: {
+    seed?: string | undefined;
+    commitSource: CommitSource;
+    orderPlan?: string | undefined;
+  },
 ): KeyedRun {
   const { shape, parsed } = report;
   const ordered = {
@@ -190,9 +195,32 @@ export function prepareRecordedRun(
     results: attachStartIndex(built.results, shape, parsed),
   };
   const keyed = keyTestFiles(ordered, shape, parsed, probe);
+  const { orderPlan, ...rest } = capture;
   const replay = captureReplayContext(
-    { ...capture, shape, parsed, env: probe.env },
+    { ...rest, shape, parsed, env: probe.env },
     { node: process.version, os: process.platform, arch: process.arch },
   );
-  return { ...keyed, run: { ...keyed.run, replay } };
+  const order = orderFor(orderPlan, keyed.results, probe);
+  return { ...keyed, run: { ...keyed.run, replay, ...order } };
+}
+
+/**
+ * `record --order-plan` (#460): the plan's mode and TTFF estimates, computed
+ * on repo-relative keys. An unreadable plan is noted and nothing is stored,
+ * so it can never block a record.
+ */
+function orderFor(
+  path: string | undefined,
+  results: TestResultInput[],
+  probe: { err?: (line: string) => void },
+): { order?: OrderOutcome } {
+  if (path === undefined) return {};
+  const plan = readOrderPlanFile(path);
+  if (plan === null) {
+    probe.err?.(
+      `note: --order-plan ${path} is not a readable order plan; no TTFF recorded.`,
+    );
+    return {};
+  }
+  return { order: orderOutcome(plan, results) };
 }

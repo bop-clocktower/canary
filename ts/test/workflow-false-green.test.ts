@@ -1233,4 +1233,49 @@ describe('workflow false-green invariants', () => {
       expect(Number(env?.['HISTORY_MIN_RUNS'])).toBe(MIN_WINDOW_RUNS);
     });
   });
+  /**
+   * #460 — fleet-health dogfoods `canary order`. The ways this goes quietly
+   * wrong: the plan is built after the suite ran, a failed plan is swallowed
+   * so the run silently loses its ordering, the diff base is interpolated
+   * into the shell, and the TTFF report never runs.
+   */
+  describe('#460 — fleet-health runs in canary order', () => {
+    const dogfood = allWorkflows().find(([name]) => name === 'dogfood.yml');
+    const job = dogfood?.[1].jobs?.['fleet-health'];
+    const steps = job?.steps ?? [];
+    const at = (re: RegExp): number =>
+      steps.findIndex((s) => re.test(s.run ?? ''));
+    const planAt = at(/canary\.js order --suite/);
+    const recordAt = at(/history record\b/);
+    const plan = steps[planAt];
+
+    it('plans the order before the suite runs and records with the plan', () => {
+      expect(planAt, 'no step runs `canary order`').toBeGreaterThanOrEqual(0);
+      expect(planAt).toBeLessThan(recordAt);
+      const record = steps[recordAt]?.run ?? '';
+      expect(record).toContain('CANARY_ORDER_PLAN');
+      expect(record).toContain('--order-plan');
+    });
+
+    it('turns a failed plan into a warning, never a swallowed exit', () => {
+      const run = plan?.run ?? '';
+      expect(run).not.toMatch(/canary\.js order[^\n]*\|\|\s*true/);
+      expect(run).toMatch(/rc=\$\?/);
+      expect(run).toMatch(/::warning title=canary order failed::/);
+      expect(plan?.['continue-on-error']).toBeUndefined();
+    });
+
+    it('passes the diff base through env, and fetches the history it needs', () => {
+      expect(plan?.run ?? '').not.toContain('${{');
+      expect(JSON.stringify(plan)).toContain('BASE_SHA');
+      const checkout = steps.find((s) =>
+        /^actions\/checkout@/.test(s.uses ?? ''),
+      );
+      expect(checkout?.with?.['fetch-depth']).toBe(0);
+    });
+
+    it('prints the TTFF report', () => {
+      expect(at(/order --report --suite ts-engine/)).toBeGreaterThan(recordAt);
+    });
+  });
 });
