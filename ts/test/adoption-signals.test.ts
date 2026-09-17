@@ -71,14 +71,48 @@ describe('computeSignals', () => {
       ['pr-1', 'merged' as const],
       ['pr-2', 'merged' as const],
       ['pr-3', 'unresolved' as const],
-      ['abc1234', 'unresolved' as const],
+      ['abc1234', 'not-a-pr' as const],
     ]);
     const s = computeSignals(records, merge);
     expect(s.mergedWithUnaddressed).toEqual({
       status: 'measured',
       denominator: 2,
-      value: { merged: 2, withUnaddressed: 1, unresolved: 2 },
+      value: { merged: 2, withUnaddressed: 1, unresolved: 1, notAPr: 1 },
     });
+  });
+
+  it('reports the merge signal as NOT MEASURED when git could not be asked', () => {
+    const s = computeSignals(
+      [rec()],
+      new Map([['pr-1', 'unknown' as const]]),
+      'git log main failed (fatal: bad revision)',
+    );
+    expect(s.mergedWithUnaddressed).toEqual({
+      status: 'not-measured',
+      reason: 'git log main failed (fatal: bad revision)',
+    });
+  });
+
+  it('reports NOT MEASURED over abstention even with no records at all', () => {
+    const s = computeSignals([], new Map(), 'git log main failed (exit 128)');
+    expect(s.mergedWithUnaddressed.status).toBe('not-measured');
+    expect(s.suppression.status).toBe('abstained');
+  });
+
+  it('orders the latest record by instant, not by string collation', () => {
+    const s = computeSignals(
+      [
+        rec({ gate: 'hard', analyzedAt: '2026-09-03T02:00:00+02:00' }),
+        rec({
+          ref: 'pr-2',
+          gate: 'soft',
+          analyzedAt: '2026-09-03T01:00:00+00:00',
+        }),
+      ],
+      new Map(),
+    );
+    // 02:00+02:00 is 00:00Z, an hour BEFORE 01:00Z: the soft run is latest.
+    expect(s.gate).toMatchObject({ value: { latest: 'soft' } });
   });
 
   it('abstains on merge signal when no record resolves as merged', () => {
@@ -181,11 +215,29 @@ describe('loadRecords / scanWorkflows', () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('returns no records and no skips for a missing directory', () => {
+  it('names a missing directory rather than passing it off as empty', () => {
     expect(loadRecords(join(dir, 'nope'))).toEqual({
       records: [],
       skipped: [],
+      dirProblem: 'the records directory does not exist',
     });
+  });
+
+  it('reports an existing but empty directory as no problem', () => {
+    expect(loadRecords(dir)).toEqual({
+      records: [],
+      skipped: [],
+      dirProblem: null,
+    });
+  });
+
+  it('skips a JSON file that is not an object instead of crashing', () => {
+    writeFileSync(join(dir, 'null.json'), 'null');
+    writeFileSync(join(dir, 'arr.json'), '[]');
+    expect(loadRecords(dir).skipped).toEqual([
+      { file: 'arr.json', reason: 'not a JSON object' },
+      { file: 'null.json', reason: 'not a JSON object' },
+    ]);
   });
 
   it('reads guardian records and names every file it skipped', () => {
@@ -217,6 +269,13 @@ describe('loadRecords / scanWorkflows', () => {
     ]);
   });
 
+  it('says it could not look when there is no workflows directory', () => {
+    expect(scanWorkflows(dir)).toEqual({
+      kind: 'unknown',
+      reason: 'no .github/workflows directory here',
+    });
+  });
+
   it('finds a workflow that runs guardian pr-check', () => {
     const wf = join(dir, '.github', 'workflows');
     mkdirSync(wf, { recursive: true });
@@ -225,11 +284,18 @@ describe('loadRecords / scanWorkflows', () => {
       join(wf, 'g.yaml'),
       'run: npx canary guardian pr-check --emit-analysis\n',
     );
-    expect(scanWorkflows(dir)).toEqual({ present: true, files: ['g.yaml'] });
+    expect(scanWorkflows(dir)).toEqual({
+      kind: 'scanned',
+      value: { present: true, files: ['g.yaml'] },
+    });
   });
 
-  it('reports absent when no workflow runs the guardian', () => {
-    expect(scanWorkflows(dir)).toEqual({ present: false, files: [] });
+  it('reports absent only when the workflows directory really was read', () => {
+    mkdirSync(join(dir, '.github', 'workflows'), { recursive: true });
+    expect(scanWorkflows(dir)).toEqual({
+      kind: 'scanned',
+      value: { present: false, files: [] },
+    });
   });
 });
 
@@ -252,25 +318,36 @@ describe('resolveMergeState', () => {
       'main',
       run,
     );
-    expect(Object.fromEntries(m)).toEqual({
+    expect(m.problem).toBeNull();
+    expect(Object.fromEntries(m.states)).toEqual({
       'pr-12': 'merged',
       'pr-40': 'merged',
       'pr-1': 'unresolved',
       'pr-23': 'unresolved',
       'pr-883': 'unresolved',
-      abc1234: 'unresolved',
+      abc1234: 'not-a-pr',
     });
     expect(calls).toHaveLength(1);
     expect(calls[0]).toContain('main');
   });
 
-  it('leaves everything unresolved when git fails', () => {
-    const m = resolveMergeState(['pr-12'], 'main', () => ({
+  it('reports a git failure as UNKNOWN with a problem, never as unmerged', () => {
+    const m = resolveMergeState(['pr-12'], 'nope', () => ({
       status: 128,
       stdout: '',
-      stderr: 'fatal',
+      stderr: 'fatal: bad revision',
     }));
-    expect(m.get('pr-12')).toBe('unresolved');
+    expect(m.states.get('pr-12')).toBe('unknown');
+    expect(m.problem).toBe('git log nope failed (fatal: bad revision)');
+  });
+
+  it('passes -- so a branch name that matches a path is unambiguous', () => {
+    const seen: string[][] = [];
+    resolveMergeState(['pr-1'], 'main', (args) => {
+      seen.push(args);
+      return { status: 0, stdout: '', stderr: '' };
+    });
+    expect(seen[0]?.at(-1)).toBe('--');
   });
 });
 

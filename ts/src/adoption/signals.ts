@@ -22,7 +22,13 @@ export interface GuardianRecord {
   summary: { total: number; unaddressed: number; suppressed: number };
 }
 
-export type MergeState = 'merged' | 'unresolved';
+/**
+ * `unresolved` is a PR whose merge marker is absent (open, or rebase-merged);
+ * `unknown` is a PR git could not be asked about; `not-a-pr` is a ref that
+ * could never carry a merge state (a short SHA, `local`). They are kept apart
+ * so a reader is never invited to read one as the other.
+ */
+export type MergeState = 'merged' | 'unresolved' | 'unknown' | 'not-a-pr';
 
 export type Measured<T> =
   | { status: 'measured'; denominator: number; value: T }
@@ -34,6 +40,7 @@ export interface RecordSignals {
     merged: number;
     withUnaddressed: number;
     unresolved: number;
+    notAPr: number;
   }>;
   suppression: Measured<{
     findings: number;
@@ -65,9 +72,18 @@ function abstain(reason: string): {
   return { status: 'abstained', denominator: 0, reason };
 }
 
-function tally(keys: string[]): Record<string, number> {
+/** `analyzedAt` as an epoch ms; an unparseable stamp sorts oldest. */
+function instant(stamp: string): number {
+  const ms = Date.parse(stamp);
+  return Number.isNaN(ms) ? -Infinity : ms;
+}
+
+function tally(keys: string[], numeric = false): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const k of [...keys].sort()) out[k] = (out[k] ?? 0) + 1;
+  const sorted = numeric
+    ? [...keys].sort((a, b) => Number(a) - Number(b))
+    : [...keys].sort();
+  for (const k of sorted) out[k] = (out[k] ?? 0) + 1;
   return out;
 }
 
@@ -76,10 +92,24 @@ function rank(sorted: number[], p: number): number {
   return sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)] ?? 0;
 }
 
+function countState(
+  records: GuardianRecord[],
+  merge: ReadonlyMap<string, MergeState>,
+  state: MergeState,
+): number {
+  return records.filter((r) => merge.get(r.ref) === state).length;
+}
+
 function mergeSignal(
   records: GuardianRecord[],
   merge: ReadonlyMap<string, MergeState>,
+  gitProblem: string | null,
 ): RecordSignals['mergedWithUnaddressed'] {
+  if (gitProblem !== null) {
+    // Could not look. That is a finding, not an abstention with a reason about
+    // the branch that was never established.
+    return { status: 'not-measured', reason: gitProblem };
+  }
   const merged = records.filter((r) => merge.get(r.ref) === 'merged');
   if (merged.length === 0) {
     return abstain(
@@ -94,7 +124,8 @@ function mergeSignal(
     value: {
       merged: merged.length,
       withUnaddressed: merged.filter((r) => r.summary.unaddressed > 0).length,
-      unresolved: records.length - merged.length,
+      unresolved: countState(records, merge, 'unresolved'),
+      notAPr: countState(records, merge, 'not-a-pr'),
     },
   };
 }
@@ -141,21 +172,27 @@ function findingsSignal(
 export function computeSignals(
   records: GuardianRecord[],
   merge: ReadonlyMap<string, MergeState>,
+  gitProblem: string | null = null,
 ): RecordSignals {
   if (records.length === 0) {
     return {
-      mergedWithUnaddressed: abstain(NO_RECORDS),
+      mergedWithUnaddressed:
+        gitProblem === null
+          ? abstain(NO_RECORDS)
+          : { status: 'not-measured', reason: gitProblem },
       suppression: abstain(NO_RECORDS),
       gate: abstain(NO_RECORDS),
       degradation: abstain(NO_RECORDS),
       findingsPerPr: abstain(NO_RECORDS),
     };
   }
-  const latest = [...records].sort((a, b) =>
-    b.analyzedAt.localeCompare(a.analyzedAt),
+  // Compared as instants, not strings: two records written at the same moment
+  // with different UTC offsets would order wrongly under string collation.
+  const latest = [...records].sort(
+    (a, b) => instant(b.analyzedAt) - instant(a.analyzedAt),
   )[0] as GuardianRecord;
   return {
-    mergedWithUnaddressed: mergeSignal(records, merge),
+    mergedWithUnaddressed: mergeSignal(records, merge, gitProblem),
     suppression: suppressionSignal(records),
     gate: {
       status: 'measured',
@@ -168,7 +205,10 @@ export function computeSignals(
       value: {
         degraded: records.filter((r) => r.degradedNotice !== null).length,
         abstained: records.filter((r) => r.abstained).length,
-        byTier: tally(records.map((r) => String(r.tier))),
+        byTier: tally(
+          records.map((r) => String(r.tier)),
+          true,
+        ),
       },
     },
     findingsPerPr: findingsSignal(records),

@@ -66,6 +66,7 @@ describe('canary adoption', () => {
     expect(text).toContain('0 guardian records');
     expect(text.match(/abstained/g)?.length).toBe(5);
     expect(text).toMatch(/disabled.*not measured/i);
+    expect(text).toMatch(/Guardian workflow: not measured/);
     expect(text).toMatch(/nothing was sent/i);
   });
 
@@ -84,6 +85,7 @@ describe('canary adoption', () => {
 
   it('--json carries egress none and no health aggregate', async () => {
     writeRecord('pr-5', 4, 4);
+    mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
     const { deps, out } = harness(root, 'feat: a (#5)');
     await run(deps, ['--json']);
     const parsed = JSON.parse(out.join('')) as Record<string, unknown>;
@@ -91,7 +93,10 @@ describe('canary adoption', () => {
     expect(parsed['schemaVersion']).toBe('1.0');
     expect(parsed).not.toHaveProperty('healthy');
     expect(parsed).not.toHaveProperty('score');
-    expect(parsed['workflow']).toMatchObject({ status: 'measured' });
+    expect(parsed['workflow']).toMatchObject({
+      presence: { status: 'measured' },
+      disabled: { status: 'not-measured' },
+    });
     expect(
       (parsed['signals'] as Record<string, { status: string }>)[
         'mergedWithUnaddressed'
@@ -99,14 +104,61 @@ describe('canary adoption', () => {
     ).toBe('measured');
   });
 
-  it('honours --dir and --branch', async () => {
-    const calls: string[][] = [];
-    const { deps } = harness(root, '');
-    deps.runSubprocess = (_c, args) => {
-      calls.push(args);
-      return { status: 0, stdout: '', stderr: '' };
-    };
+  it('reads records from a cwd-relative --dir, not the repo-root default', async () => {
+    // The two bases differ on purpose: the default dir is repo-root-relative,
+    // a user-typed relative --dir is cwd-relative.
+    const sub = join(root, 'sub');
+    const custom = join(sub, 'elsewhere');
+    mkdirSync(custom, { recursive: true });
+    writeFileSync(
+      join(custom, 'canary-pr-guardian-pr-9.json'),
+      JSON.stringify({
+        source: 'canary-pr-guardian',
+        ref: 'pr-9',
+        gate: 'soft',
+        tier: 1,
+        abstained: false,
+        degradedNotice: null,
+        analyzedAt: '2026-09-01T00:00:00+00:00',
+        summary: { total: 2, unaddressed: 2, suppressed: 0 },
+      }),
+    );
+    const { deps, out } = harness(root, 'feat: a (#9)');
+    deps.cwd = () => sub;
+    deps.runSubprocess = (_c, args) =>
+      args[0] === 'rev-parse'
+        ? { status: 0, stdout: `${root}\n`, stderr: '' }
+        : { status: 0, stdout: 'feat: a (#9)', stderr: '' };
     await run(deps, ['--dir', 'elsewhere', '--branch', 'trunk']);
-    expect(calls.some((a) => a.includes('trunk'))).toBe(true);
+    const text = out.join('\n');
+    expect(text).toContain('1 guardian records');
+    expect(text).toContain('merge state from trunk');
+    expect(text).toContain(
+      '1 of 1 merged PRs merged with unaddressed findings',
+    );
+  });
+
+  it('says it could not determine merge state when git fails, and still exits 0', async () => {
+    writeRecord('pr-5', 4, 4);
+    const { deps, out } = harness(root, '');
+    deps.runSubprocess = (_c, args) =>
+      args[0] === 'rev-parse'
+        ? { status: 0, stdout: `${root}\n`, stderr: '' }
+        : { status: 128, stdout: '', stderr: 'fatal: bad revision' };
+    await run(deps, ['--branch', 'nope']);
+    const text = out.join('\n');
+    expect(text).toMatch(/Merged over findings: not measured .*bad revision/);
+    expect(text).not.toContain('0 of 0 merged PRs');
+  });
+
+  it('survives a record file that is not a JSON object', async () => {
+    const dir = join(root, '.harness', 'analyses');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'canary-pr-guardian-pr-4.json'), 'null');
+    const { deps, out } = harness(root, '');
+    await run(deps, []);
+    expect(out.join('\n')).toContain(
+      'skipped canary-pr-guardian-pr-4.json: not a JSON object',
+    );
   });
 });

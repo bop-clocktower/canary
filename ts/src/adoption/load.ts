@@ -20,13 +20,28 @@ interface SkippedFile {
 interface LoadedRecords {
   records: GuardianRecord[];
   skipped: SkippedFile[];
+  /**
+   * Why the directory yielded nothing, when that was not "it was empty".
+   * A directory that could not be read is a FINDING, not a zero: the report
+   * must be able to say "I could not look" rather than "I looked and found
+   * nothing".
+   */
+  dirProblem: string | null;
 }
 
-function listDir(dir: string): string[] {
+/** `missing` is ENOENT; `unreadable` is anything else (permissions, a file). */
+type DirRead =
+  | { kind: 'read'; files: string[] }
+  | { kind: 'missing' }
+  | { kind: 'unreadable'; error: string };
+
+function listDir(dir: string): DirRead {
   try {
-    return readdirSync(dir).sort();
-  } catch {
-    return [];
+    return { kind: 'read', files: readdirSync(dir).sort() };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return { kind: 'missing' };
+    return { kind: 'unreadable', error: code ?? String(err) };
   }
 }
 
@@ -45,21 +60,41 @@ function isRecord(raw: Record<string, unknown>): boolean {
   );
 }
 
-/** Load every `*.json` in `dir`; a missing directory is zero records. */
+/** Load every `*.json` in `dir`, naming what it could not read. */
 export function loadRecords(dir: string): LoadedRecords {
   const records: GuardianRecord[] = [];
   const skipped: SkippedFile[] = [];
-  for (const file of listDir(dir).filter((f) => f.endsWith('.json'))) {
-    let raw: Record<string, unknown>;
+  const listing = listDir(dir);
+  if (listing.kind !== 'read') {
+    return {
+      records,
+      skipped,
+      dirProblem:
+        listing.kind === 'missing'
+          ? 'the records directory does not exist'
+          : `the records directory could not be read (${listing.error})`,
+    };
+  }
+  for (const file of listing.files.filter((f) => f.endsWith('.json'))) {
+    let parsed: unknown;
     try {
-      raw = JSON.parse(readFileSync(join(dir, file), 'utf-8')) as Record<
-        string,
-        unknown
-      >;
+      parsed = JSON.parse(readFileSync(join(dir, file), 'utf-8'));
     } catch {
       skipped.push({ file, reason: 'unparseable JSON' });
       continue;
     }
+    // `JSON.parse('null')` and `JSON.parse('[]')` both parse fine and are not
+    // records: a truncated file from an interrupted job must be SKIPPED, never
+    // a crash — the command's contract is that it always exits 0.
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      skipped.push({ file, reason: 'not a JSON object' });
+      continue;
+    }
+    const raw = parsed as Record<string, unknown>;
     if (raw['source'] !== 'canary-pr-guardian') {
       skipped.push({ file, reason: 'not a canary-pr-guardian record' });
     } else if (!isRecord(raw)) {
@@ -79,7 +114,7 @@ export function loadRecords(dir: string): LoadedRecords {
       });
     }
   }
-  return { records, skipped };
+  return { records, skipped, dirProblem: null };
 }
 
 export interface WorkflowPresence {
@@ -87,14 +122,30 @@ export interface WorkflowPresence {
   files: string[];
 }
 
+export type WorkflowScan =
+  | { kind: 'scanned'; value: WorkflowPresence }
+  | { kind: 'unknown'; reason: string };
+
 /**
  * Which `.github/workflows/*.y{a,}ml` files under `root` run `guardian pr-check`.
  * Presence only: whether a present workflow is DISABLED lives in the Actions
  * API, which this report never calls.
  */
-export function scanWorkflows(root: string): WorkflowPresence {
+export function scanWorkflows(root: string): WorkflowScan {
   const dir = join(root, '.github', 'workflows');
-  const files = listDir(dir).filter((f) => {
+  const listing = listDir(dir);
+  if (listing.kind !== 'read') {
+    // Claiming "absent from .github/workflows" about a directory that does not
+    // exist would be a positive claim from a failed look.
+    return {
+      kind: 'unknown',
+      reason:
+        listing.kind === 'missing'
+          ? 'no .github/workflows directory here'
+          : `.github/workflows could not be read (${listing.error})`,
+    };
+  }
+  const files = listing.files.filter((f) => {
     if (!/\.ya?ml$/.test(f)) return false;
     try {
       return /guardian\s+pr-check/.test(readFileSync(join(dir, f), 'utf-8'));
@@ -102,5 +153,5 @@ export function scanWorkflows(root: string): WorkflowPresence {
       return false;
     }
   });
-  return { present: files.length > 0, files };
+  return { kind: 'scanned', value: { present: files.length > 0, files } };
 }

@@ -31,18 +31,41 @@ function mergedNumbers(log: string): Set<string> {
   return out;
 }
 
+export interface MergeResolution {
+  states: Map<string, MergeState>;
+  /**
+   * Why git could not be consulted, when it could not. A failed `git log` is
+   * NOT "nothing merged": a bad branch name or an unfetched remote would
+   * otherwise render as a confident zero, which is the false green this
+   * report exists to avoid.
+   */
+  problem: string | null;
+}
+
 export function resolveMergeState(
   refs: string[],
   branch: string,
   run: GitRunner,
-): Map<string, MergeState> {
-  const result = new Map<string, MergeState>();
-  const res = run(['log', '--first-parent', '--format=%s', branch]);
-  const merged =
-    res.status === 0 ? mergedNumbers(res.stdout) : new Set<string>();
+): MergeResolution {
+  const states = new Map<string, MergeState>();
+  // `--` disambiguates a branch name that also matches a path.
+  const res = run(['log', '--first-parent', '--format=%s', branch, '--']);
+  const failed = res.status !== 0;
+  const merged = failed ? new Set<string>() : mergedNumbers(res.stdout);
   for (const ref of refs) {
     const n = PR_REF.exec(ref)?.[1];
-    result.set(ref, n !== undefined && merged.has(n) ? 'merged' : 'unresolved');
+    if (n === undefined) {
+      states.set(ref, 'not-a-pr');
+    } else if (failed) {
+      states.set(ref, 'unknown');
+    } else {
+      states.set(ref, merged.has(n) ? 'merged' : 'unresolved');
+    }
   }
-  return result;
+  return {
+    states,
+    problem: failed
+      ? `git log ${branch} failed (${res.stderr.trim() || `exit ${String(res.status)}`})`
+      : null,
+  };
 }

@@ -45,7 +45,7 @@ Every signal prints its denominator. A signal with nothing to count prints
 
 | Signal               | Source                                                                           | Denominator                |
 | -------------------- | -------------------------------------------------------------------------------- | -------------------------- |
-| Guardian workflow    | `.github/workflows/*.y{a,}ml` that run `guardian pr-check`                       | presence only              |
+| Guardian workflow    | `.github/workflows/*.y{a,}ml` whose text mentions `guardian pr-check`            | presence only              |
 | Workflow disabled    | **not measured**: that state is in the Actions API, which the report never calls | n/a                        |
 | Merged over findings | records with `summary.unaddressed > 0` whose PR is merged on the branch          | records resolved as merged |
 | Suppressions         | `summary.suppressed` (`canary:allow-untested`) over `summary.total`              | findings                   |
@@ -55,8 +55,17 @@ Every signal prints its denominator. A signal with nothing to count prints
 
 Things to know when you read the numbers:
 
+- The workflow scan is a text match, so a commented-out or `if: false` guardian
+  step still counts as present. It answers "is the invocation still in the
+  repo", not "did it run".
+
 - Records are one file per ref, overwritten on each run. Each per-PR number
   comes from the **latest run** for that PR.
+- **A failed look is never a zero.** If `git log` fails (a bad `--branch`, an
+  unfetched remote, not a git repo), the merge signal prints `not measured` with
+  git's own error rather than an abstention that asserts something about the
+  branch. A missing records directory and a missing `.github/workflows` are both
+  named as such, never reported as "empty" or "absent".
 - **Merge state comes from local git.** A `pr-<n>` record counts as merged when
   a first-parent subject on the branch ends in `(#<n>)` (squash merge) or starts
   `Merge pull request #<n>`. A rebase-merged PR leaves no marker, so it is

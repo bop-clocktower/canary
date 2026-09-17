@@ -31,8 +31,15 @@ interface AdoptionReport {
   egress: 'none';
   recordsDir: string;
   branch: string;
-  records: { read: number; skipped: { file: string; reason: string }[] };
-  workflow: Measured<WorkflowPresence> & { disabled: Measured<never> };
+  records: {
+    read: number;
+    skipped: { file: string; reason: string }[];
+    problem: string | null;
+  };
+  workflow: {
+    presence: Measured<WorkflowPresence>;
+    disabled: Measured<never>;
+  };
   signals: RecordSignals;
 }
 
@@ -69,29 +76,31 @@ function buildReport(
   const base = opts.dir === undefined ? root : deps.cwd();
   const dir = isAbsolute(dirArg) ? dirArg : join(base, dirArg);
   const branch = opts.branch ?? defaultBranch(deps, root);
-  const { records, skipped } = loadRecords(dir);
+  const { records, skipped, dirProblem } = loadRecords(dir);
   const merge = resolveMergeState(
     records.map((r) => r.ref),
     branch,
     (args) => deps.runSubprocess('git', args, { cwd: root }),
   );
+  const scan = scanWorkflows(root);
   return {
     schemaVersion: SCHEMA_VERSION,
     egress: 'none',
-    recordsDir: dirArg,
+    recordsDir: dir,
     branch,
-    records: { read: records.length, skipped },
+    records: { read: records.length, skipped, problem: dirProblem },
     workflow: {
-      status: 'measured',
-      denominator: 1,
-      value: scanWorkflows(root),
+      presence:
+        scan.kind === 'scanned'
+          ? { status: 'measured', denominator: 1, value: scan.value }
+          : { status: 'not-measured', reason: scan.reason },
       disabled: {
         status: 'not-measured',
         reason:
           'disabled state lives in the GitHub Actions API, which this report never calls',
       },
     },
-    signals: computeSignals(records, merge),
+    signals: computeSignals(records, merge.states, merge.problem),
   };
 }
 
@@ -106,23 +115,33 @@ function line<T>(
   return `  ${label}: not measured (${m.reason})`;
 }
 
-function renderText(r: AdoptionReport): string {
-  const s = r.signals;
-  const out = [
+function headerLines(r: AdoptionReport): string[] {
+  return [
     `canary adoption ${'\u{2014}'} ${r.records.read} guardian records in ${r.recordsDir} (latest run per PR), merge state from ${r.branch}`,
+    ...(r.records.problem === null ? [] : [`  ${r.records.problem}`]),
     ...r.records.skipped.map((f) => `  skipped ${f.file}: ${f.reason}`),
     '',
-    line('Guardian workflow', r.workflow, (v) =>
+  ];
+}
+
+function workflowLines(r: AdoptionReport): string[] {
+  return [
+    line('Guardian workflow', r.workflow.presence, (v) =>
       v.present
         ? `present (${v.files.join(', ')})`
         : 'absent from .github/workflows',
     ),
     line('Workflow disabled', r.workflow.disabled, () => ''),
+  ];
+}
+
+function signalLines(s: RecordSignals): string[] {
+  return [
     line(
       'Merged over findings',
       s.mergedWithUnaddressed,
       (v, d) =>
-        `${v.withUnaddressed} of ${d} merged PRs merged with unaddressed findings (${v.unresolved} records unresolved)`,
+        `${v.withUnaddressed} of ${d} merged PRs merged with unaddressed findings (${v.unresolved} PRs unresolved, ${v.notAPr} records not a PR)`,
     ),
     line(
       'Suppressions',
@@ -154,10 +173,17 @@ function renderText(r: AdoptionReport): string {
       (v, d) =>
         `over ${d} PRs min ${v.min}, median ${v.median}, p90 ${v.p90}, max ${v.max}; ${v.over100} over 100`,
     ),
+  ];
+}
+
+function renderText(r: AdoptionReport): string {
+  return [
+    ...headerLines(r),
+    ...workflowLines(r),
+    ...signalLines(r.signals),
     '',
     'Computed locally. Nothing was sent anywhere.',
-  ];
-  return out.join('\n');
+  ].join('\n');
 }
 
 /** Build the `adoption` subcommand. */
