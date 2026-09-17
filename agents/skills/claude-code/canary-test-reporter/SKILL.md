@@ -45,6 +45,22 @@ canary skills run canary-test-reporter -- --help
 **Exit code:** `1` when any test failed; `0` otherwise. Flaky tests and skipped
 tests never affect the exit code.
 
+**Voice footer (#340).** When a run has failures or flakes, the Markdown ends
+with one voiced line in Black Canary's voice, under an attribution line:
+
+```text
+---
+
+_Voice: Black Canary · garnish only; CANARY_NO_FLAVOR=1 hides it_
+> Red means stop. Find the line, fix the line.
+```
+
+It is garnish: the JSON report and the exit code are byte-for-byte the same with
+it on or off, no annotation carries it, and a passing run gets none. Turn it off
+with `CANARY_NO_FLAVOR=1` (or `NO_FLAVOR=1`) or `--no-flavor`. Lines come from
+`voice-lines.json` in this skill, a copy of the repo's `voice/lines.json` (see
+ADR 0031).
+
 ## Output formats
 
 ### Markdown

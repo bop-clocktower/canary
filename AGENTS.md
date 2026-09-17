@@ -298,7 +298,9 @@ remote deletion is a human act. Worktree pruning waits for #889.
   is no longer inferable through `analyze_file` (a manual artefact was its only
   unopposed signal there), so it is reached by `CANARY_PERSONA=manual`. The
   fallback is explanatory, so that failure is safe. Three further boundaries are
-  decisions, not omissions: **voice is not a persona field**
+  decisions, not omissions: **voice is not a persona field** (and voice is
+  presentation only: it never alters JSON, exit codes or annotations,
+  [ADR 0031](docs/knowledge/decisions/0031-voice-never-touches-machine-output.md))
   (`voice/discovery.md` already owns that axis, and collapsing the two would
   make "terse in a given voice" inexpressible); the **fallback is explanatory
   rather than terse**, because most users never configure this and

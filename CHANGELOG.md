@@ -16,6 +16,13 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **Voice reaches a real output: the `canary-test-reporter` Markdown footer**
+  (#340, slice 1). A run with failures or flakes ends with one Black Canary line
+  from the new `voice/lines.json`, chosen from the run's own counts so the same
+  results give the same line; green runs stay unvoiced, per her profile.
+  `CANARY_NO_FLAVOR=1`, `NO_FLAVOR=1` or `--no-flavor` removes it. The JSON
+  report and exit code are byte-identical either way, and a missing lines file
+  just means no footer (ADR 0031).
 - **Did test ordering help? `record --order-plan` and `canary order --report`,
   plus the `canary-shiva` skill** (#460). A run recorded with a plan stores the
   plan's mode and time-to-first-failure estimates for the plan order and the
