@@ -207,11 +207,11 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ### canary-misfit — E2E resilience injection
 
-- **Status:** backlog
-- **Spec:** —
+- **Status:** done
+- **Spec:** docs/changes/592-canary-misfit/proposal.md
 - **Summary:** Split from the Skill Forge umbrella (Issue #339, now closed) into Issue #592. Wave 2. Wrap a Playwright run with route-level latency, 5xx bursts, aborted responses, and slow-network profiles, then report which flows degrade gracefully and which shatter. Injection sits at the Playwright route layer so it needs no application changes — the same property that makes canary-instrument additive-safe. Accepted risk to handle in spec: the output is a per-flow verdict, not a gate; a flow that shatters under a 5xx burst may be an accepted risk, and the deliverable is that someone decided. Needs a deterministic seed or a reported failure cannot be reproduced.
 - **Blockers:** —
-- **Plan:** —
+- **Plan:** docs/changes/592-canary-misfit/plans/2026-09-17-canary-misfit-plan.md
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#592
 
