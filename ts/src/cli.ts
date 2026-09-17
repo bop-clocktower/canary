@@ -15,12 +15,14 @@
  * instances via their `createXCommand()` factories (functionally identical to
  * the `guardianCommand`/`historyCommand`/`analyzeCommand` singletons but safe to
  * mount into multiple `createCanaryCommand()` calls, e.g. across tests).
+ *
+ * Sub-app builders come from the `commands/cli.ts` registry array (#988): a new
+ * subcommand joins a per-domain registry under `commands/`, never an import here.
  */
 
 import { Command, Option } from 'commander';
 
 import { CliExitError, normalizeUsageExit } from './cli-common.js';
-import { createAnalyzeCommand } from './analysis/cli.js';
 import {
   doctorCmd,
   feedbackCmd,
@@ -41,20 +43,7 @@ import {
   vacuityCheckCmd,
   versionCmd,
 } from './cli-commands.js';
-import { buildBatwomanCommand } from './batwoman-cli.js';
-import { buildBriefingCommand } from './briefing/briefing-cli.js';
-import { buildOrderCommand } from './order/order-cli.js';
-import { buildRewindCommand } from './rewind/rewind-cli.js';
-import { buildCiReadyCommand } from './ci-ready-cli.js';
-import { buildInventoryCommand } from './inventory/inventory-cli.js';
-import { buildGenDataCommand } from './gen-data/gen-data-cli.js';
-import { buildScalingCurveCommand } from './scaling-curve-cli.js';
-import { buildPermissionMatrixCommand } from './permission-matrix-cli.js';
-import { buildCompanyKnowledgeCommand } from './company-knowledge-cli.js';
-import { createGuardianCommand } from './guardian/cli.js';
-import { createHistoryCommand } from './history/cli.js';
-import { buildSkillsCommand } from './skills-cli.js';
-import { buildWorkflowCommand } from './workflow-cli.js';
+import { COMMANDS } from './commands/cli.js';
 import { defaultMainDeps, type MainDeps } from './main-deps.js';
 
 /** Build a fresh `canary` command wired to `depsInit` (defaults fill any gap). */
@@ -368,26 +357,11 @@ export function createCanaryCommand(depsInit: Partial<MainDeps> = {}): Command {
       await ticketUpdateCmd(opts, deps);
     });
 
-  // Sub-apps (fresh instances -- see module docstring). The already-ported
-  // guardian/history/analyze factories carry their own deps; we forward the main
-  // out/err sinks so their output flows through the same channel (captured in
-  // tests, process.stdout in production).
-  const sinks = { out: deps.out, err: deps.err };
-  program.addCommand(createHistoryCommand(sinks));
-  program.addCommand(createAnalyzeCommand(sinks));
-  program.addCommand(createGuardianCommand(sinks));
-  program.addCommand(buildSkillsCommand(deps));
-  program.addCommand(buildWorkflowCommand(deps));
-  program.addCommand(buildCompanyKnowledgeCommand(deps));
-  program.addCommand(buildBatwomanCommand(deps));
-  program.addCommand(buildRewindCommand(deps));
-  program.addCommand(buildOrderCommand(deps));
-  program.addCommand(buildScalingCurveCommand(deps));
-  program.addCommand(buildPermissionMatrixCommand(deps));
-  program.addCommand(buildCiReadyCommand(deps));
-  program.addCommand(buildInventoryCommand(deps));
-  program.addCommand(buildGenDataCommand(deps));
-  program.addCommand(buildBriefingCommand(deps));
+  // Sub-apps (fresh instances -- see module docstring), from the per-domain
+  // registries; the engine registry forwards the main out/err sinks.
+  for (const build of COMMANDS) {
+    program.addCommand(build(deps));
+  }
 
   // Propagate the usage-exit normalization to every top-level command (the
   // sub-apps also set it on their own subcommands internally).
