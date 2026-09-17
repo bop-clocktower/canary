@@ -131,6 +131,18 @@ import {
   renderFindings,
   scopeDiff,
 } from './pr-check.js';
+import { isRecord } from './diff-coverage/types.js';
+import {
+  MutationReport,
+  StrykerReport,
+  abstainedReport,
+  applyMutantSuppressions,
+  mapStrykerReport,
+  mutationExitCode,
+  renderMutationReport,
+  runnerCompatibility,
+  threadUnsafeTests,
+} from './mutation.js';
 import { buildWeakTestFindings } from './weak-test.js';
 import {
   GitHubClient,
@@ -1316,6 +1328,119 @@ function resolveAnalysesDir(
   return override ?? join(gitToplevel(deps), '.harness', 'analyses');
 }
 
+// --- mutation (#486) ----------------------------------------------------------
+
+interface MutationOptions {
+  report?: string;
+  reportOut?: string;
+  repoRoot: string;
+  runnerVersion?: string;
+  vitestVersion?: string;
+  json?: boolean;
+}
+
+/** Read an installed package's version from `node_modules`; `null` if absent. */
+function installedVersion(repoRoot: string, pkg: string): string | null {
+  try {
+    const manifest = readFileSync(
+      join(repoRoot, 'ts', 'node_modules', pkg, 'package.json'),
+      'utf-8',
+    );
+    const parsed: unknown = JSON.parse(manifest);
+    if (!isRecord(parsed)) return null;
+    const version = parsed['version'];
+    return typeof version === 'string' ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Emit the diff-scoped mutation report (#486).
+ *
+ * Two paths, and BOTH can only end in a report that states its denominator:
+ *
+ *   - `--report <stryker.json>`: map a run somebody else performed.
+ *   - no `--report`: there is nothing to map, so the command abstains and says
+ *     why. While `@stryker-mutator/vitest-runner` cannot kill a mutant on
+ *     vitest 5 (stryker-js#6210), the reason names that issue; once a fixed
+ *     runner is installed, the reason says the run is not wired yet. Neither is
+ *     a pass, and neither can print a survivor.
+ */
+function mutationCmd(opts: MutationOptions, deps: GuardianDeps): void {
+  const repoRoot = opts.repoRoot;
+  const excluded = threadUnsafeTests(join(repoRoot, 'ts'));
+
+  const report = ((): MutationReport => {
+    if (opts.report === undefined) {
+      const runner =
+        opts.runnerVersion ??
+        installedVersion(repoRoot, '@stryker-mutator/vitest-runner');
+      const vitest = opts.vitestVersion ?? installedVersion(repoRoot, 'vitest');
+      const verdict = runnerCompatibility(runner, vitest);
+      // A compatible runner still abstains: this slice ships the scope, the
+      // mapping and the exit contract, not the run (fork F6 on #486).
+      return abstainedReport(
+        verdict.compatible
+          ? 'no --report given and the mutation run is not wired yet (#486)'
+          : verdict.reason!,
+        excluded,
+      );
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(opts.report, 'utf-8'));
+    } catch (error) {
+      return abstainedReport(
+        `the stryker report at ${opts.report} could not be read ` +
+          `(${(error as Error).message})`,
+        excluded,
+      );
+    }
+    if (!isRecord(parsed) || !isRecord(parsed['files'])) {
+      return abstainedReport(
+        `the stryker report at ${opts.report} has no "files" map`,
+        excluded,
+      );
+    }
+    const mapped = mapStrykerReport(parsed as unknown as StrykerReport, {
+      excludedTests: excluded,
+    });
+    // Suppressions are read from the working tree: a survivor the author
+    // accepted in writing is not a finding (D9).
+    const sources: Record<string, string[]> = {};
+    for (const finding of mapped.findings) {
+      if (finding.path in sources) continue;
+      try {
+        sources[finding.path] = readFileSync(
+          join(repoRoot, finding.path),
+          'utf-8',
+        ).split(/\r\n|\r|\n/);
+      } catch {
+        // Unreadable source suppresses nothing -- never clear a survivor by
+        // failing to look at it.
+      }
+    }
+    return applyMutantSuppressions(mapped, sources);
+  })();
+
+  if (opts.reportOut !== undefined) {
+    mkdirSync(dirname(opts.reportOut), { recursive: true });
+    writeFileSync(
+      opts.reportOut,
+      ensureAscii(JSON.stringify(report, null, 2)),
+      'utf-8',
+    );
+  }
+
+  deps.out(
+    opts.json
+      ? ensureAscii(JSON.stringify(report, null, 2))
+      : renderMutationReport(report),
+  );
+  throw new CliExitError(mutationExitCode(report));
+}
+
 interface PrCheckOptions {
   diff?: string;
   heuristicExclude?: string[];
@@ -1929,6 +2054,40 @@ export function createGuardianCommand(
     )
     .action(async (opts: PrCheckOptions) => {
       await prCheckCmd(opts, deps);
+    });
+
+  program
+    .command('mutation')
+    .description(
+      'Advisory diff-scoped mutation report: which added lines a test covers ' +
+        'but would not fail on. Exit 0 all-killed, 1 survivors, 3 abstained.',
+    )
+    .option(
+      '--report <path>',
+      'A StrykerJS JSON report to map. Without it the command reports what it ' +
+        'WOULD run and abstains, because the mutation run itself is not wired ' +
+        'yet (see --runner-version).',
+    )
+    .option(
+      '--report-out <path>',
+      'Write the guardian mutation report as JSON (the CI artifact).',
+    )
+    .addOption(new Option('--repo-root <dir>', 'Repository root.').default('.'))
+    .addOption(
+      new Option(
+        '--runner-version <version>',
+        'Installed @stryker-mutator/vitest-runner version (tests/CI probe).',
+      ).hideHelp(),
+    )
+    .addOption(
+      new Option(
+        '--vitest-version <version>',
+        'Installed vitest version (tests/CI probe).',
+      ).hideHelp(),
+    )
+    .option('--json', 'Emit the mutation report as JSON.')
+    .action((opts: MutationOptions) => {
+      mutationCmd(opts, deps);
     });
 
   program

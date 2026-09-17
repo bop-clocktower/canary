@@ -411,6 +411,15 @@ export function mutationExitCode(report: MutationReport): number {
   return report.verdict === 'survivors' ? 1 : 0;
 }
 
+/** Survivors the author accepted in writing, listed with their reasons. */
+function suppressionLines(report: MutationReport): string[] {
+  return report.suppressed.map(
+    (entry) =>
+      `- suppressed \`${entry.finding.path}:${entry.finding.line}\`: ` +
+      `${entry.reason}`,
+  );
+}
+
 /** The disclosure line every report carries, abstentions included. */
 function excludedLine(report: MutationReport): string {
   if (report.excludedTests.length === 0) {
@@ -431,6 +440,9 @@ export function renderMutationReport(report: MutationReport): string {
       `Abstained ${'\u{2014}'} ${report.abstainReason ?? 'no reason given'}. ` +
         'This is not a pass.',
     );
+    // Suppressions are listed even on an abstention: they are the reason the
+    // denominator collapsed in the ONE case where it collapsed by choice.
+    lines.push(...suppressionLines(report));
     lines.push('', excludedLine(report));
     return lines.join('\n');
   }
@@ -459,12 +471,7 @@ export function renderMutationReport(report: MutationReport): string {
   if (report.noCoverage > 0) {
     lines.push('', `${report.noCoverage} mutant(s) had no covering test.`);
   }
-  for (const entry of report.suppressed) {
-    lines.push(
-      `- suppressed \`${entry.finding.path}:${entry.finding.line}\`: ` +
-        `${entry.reason}`,
-    );
-  }
+  lines.push(...suppressionLines(report));
   lines.push('', excludedLine(report));
   return lines.join('\n');
 }

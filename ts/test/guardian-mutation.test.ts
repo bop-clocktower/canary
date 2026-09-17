@@ -49,7 +49,7 @@ function report(
           replacement: m.replacement ?? 'false',
           status: m.status,
           location: { start: { line: m.line, column: 1 } },
-          coveredBy: m.coveredBy,
+          ...(m.coveredBy === undefined ? {} : { coveredBy: m.coveredBy }),
         })),
       },
     },
