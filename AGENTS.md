@@ -387,6 +387,11 @@ Python from the plugin hooks and maintenance scripts. There is no longer a
   success line and `--json`), and records `HEAD` rather than
   `commit_sha: 'local'` inside a repo where HEAD resolves (#1021,
   [ADR 0029](docs/knowledge/decisions/0029-repo-relative-test-file-history-join-key.md)).
+  Since #461 (schema v3,
+  [ADR 0030](docs/knowledge/decisions/0030-history-schema-v3-replay-context.md))
+  each run also carries a `replay` block (seed from `--seed` only, runner, Node,
+  OS, arch, CI, and where the commit came from) and each test a file
+  `start_index` where the report has start times; the reader accepts v2 and v3.
   Rows written before that keep their old values. Canary's own store persists
   between CI runs: the `fleet-health` job in `dogfood.yml` restores it from the
   Actions cache (keyed per branch, falling back to `main`) before `record`,

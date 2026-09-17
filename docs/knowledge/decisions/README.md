@@ -86,3 +86,4 @@ Not every PR needs an ADR. Day-to-day refactors and bug fixes don't.
 | [0027](0027-brand-registry-codegen-stamping.md)             | Brand registry with codegen stamping and a drift gate                     | accepted |
 | [0028](0028-flair-scope-cascade-provenance.md)              | Six-scope flair cascade with per-value provenance                         | accepted |
 | [0029](0029-repo-relative-test-file-history-join-key.md)    | Repo-relative test_file is the history join key                           | accepted |
+| [0030](0030-history-schema-v3-replay-context.md)            | History schema v3 records replay context additively                       | accepted |

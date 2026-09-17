@@ -13,6 +13,7 @@
 
 import { def } from '../util/coalesce.js';
 import { SCHEMA_VERSION } from './record.js';
+import type { ReplayContext } from './keys/replay-record.js';
 
 /** Mirrors the Python `RunRecord` dataclass. */
 export interface RunInput {
@@ -33,6 +34,7 @@ export interface RunInput {
   duration_ms?: number | null;
   /** Which reader produced the run (#604); local-only, see `serializeLocalRecord`. */
   reporter_format?: string | null;
+  replay?: ReplayContext; // #461, local-only like reporter_format
 }
 
 /** Mirrors the Python `TestResult` dataclass. */
@@ -49,6 +51,7 @@ export interface TestResultInput {
   retry_count?: number;
   duration_ms?: number | null;
   tags?: string[];
+  start_index?: number; // #461, local-only (no remote column)
 }
 
 /** `{suite}-{commit[:8]}-{epoch}` — identical to Python `make_run_id`. */
@@ -101,6 +104,12 @@ export function serializeTestResult(
   };
 }
 
+function serializeLocalTest(t: TestResultInput): Record<string, unknown> {
+  const { start_index } = t;
+  const row = serializeTestResult(t);
+  return start_index === undefined ? row : { ...row, start_index };
+}
+
 /**
  * The nested NDJSON line shape written by the local store: a serialized run
  * with its `tests` embedded.
@@ -130,6 +139,7 @@ export function serializeLocalRecord(
       ? {}
       : { reporter_format: run.reporter_format }),
     ...serializeRun(run),
-    tests: results.map(serializeTestResult),
+    ...(run.replay === undefined ? {} : { replay: run.replay }),
+    tests: results.map(serializeLocalTest),
   };
 }

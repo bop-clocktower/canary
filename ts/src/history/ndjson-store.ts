@@ -17,7 +17,7 @@ import { dirname } from 'node:path';
 import { maxFlakeOrFlipRate } from '../util/alternation.js';
 import { def } from '../util/coalesce.js';
 import { round1 } from '../util/round.js';
-import { SCHEMA_VERSION, resolveSchemaVersion } from './record.js';
+import { SUPPORTED_SCHEMA_VERSIONS, resolveSchemaVersion } from './record.js';
 import type { RunRecord, TestResultRecord, TimelineEntry } from './record.js';
 import {
   newFlakyCounter,
@@ -90,9 +90,9 @@ export class NdjsonHistoryStore implements HistoryStore {
       if (!line) continue;
       const record = JSON.parse(line) as RunRecord;
       const version = resolveSchemaVersion(record);
-      if (version !== SCHEMA_VERSION) {
+      if (!SUPPORTED_SCHEMA_VERSIONS.includes(version)) {
         throw new Error(
-          `Unsupported history schema_version ${version} (expected ${SCHEMA_VERSION})`,
+          `Unsupported history schema_version ${version} (expected one of ${SUPPORTED_SCHEMA_VERSIONS.join(', ')})`,
         );
       }
       records.push(record);

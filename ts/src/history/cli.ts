@@ -32,7 +32,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { Command, InvalidArgumentError, Option } from 'commander';
 import pc from 'picocolors';
 
-import { isWellFormedXml } from '../util/xml.js';
+import { ReportReadError, readReport } from './formats/report-file.js';
 
 import {
   CliExitError,
@@ -60,11 +60,11 @@ import {
 } from '../util/flake-window.js';
 import { renderFlakyReport, renderTable } from './flake/render.js';
 import {
-  honestCommit,
-  keyTestFiles,
+  prepareRecordedRun,
+  resolveCommit,
   runGit,
   type KeyedRun,
-} from './keys/test-file-key.js';
+} from './keys/replay-context.js';
 
 const EM_DASH = '\u{2014}';
 const MDASH_CELL = '\u{2014}'; // rich `r.get("area") or <em-dash>`
@@ -253,6 +253,7 @@ interface RecordOptions {
   repo?: string;
   branch?: string;
   commit?: string;
+  seed?: string;
   path?: string;
   runId?: string;
   dbUrl?: string;
@@ -264,35 +265,6 @@ interface RecordOptions {
 const FLAKY_VOCABULARY_NOTE =
   'note: flaky=0 \u{2014} vitest reports no flaky status, so a test that was ' +
   'retried and then passed is recorded as passed.';
-
-/**
- * XML (JUnit, #963) stays text for the reader; everything else is JSON. A
- * malformed XML document throws, so it is refused exactly like bad JSON.
- */
-function parseReportText(text: string): unknown {
-  if (!text.trimStart().startsWith('<')) return JSON.parse(text);
-  if (!isWellFormedXml(text)) throw new Error('XML is not well formed');
-  return text;
-}
-
-/** Read + parse the results file, or exit 1 having said which and why. */
-function readReport(resultsFile: string, deps: HistoryDeps): unknown {
-  if (!existsSync(resultsFile)) {
-    deps.out(`${pc.red('Not found:')} ${resultsFile}`);
-    throw new CliExitError(1);
-  }
-  try {
-    return parseReportText(readFileSync(resultsFile, 'utf-8'));
-  } catch (err) {
-    // Loud, not silent: an unreadable report means this run recorded NOTHING,
-    // and a later `analyze` would abstain without ever saying why.
-    deps.out(
-      `${pc.red('Could not be read:')} ${resultsFile} ` +
-        `(${(err as Error).message}) \u{2014} nothing was recorded.`,
-    );
-    throw new CliExitError(1);
-  }
-}
 
 /** The repo slug, or exit 2 -- never a hardcoded default (see #538). */
 function resolveRepo(opts: RecordOptions, deps: HistoryDeps): string {
@@ -321,11 +293,7 @@ function recordContext(opts: RecordOptions, deps: HistoryDeps): RecordContext {
     suite: opts.suite,
     repo: resolveRepo(opts, deps),
     branch: def(opts.branch, def(deps.env['GITHUB_REF_NAME'], 'local')),
-    commitSha: honestCommit(
-      def(opts.commit, def(deps.env['GITHUB_SHA'], 'local')),
-      deps,
-      deps.err,
-    ),
+    commitSha: def(opts.commit, 'local'),
     // `exactOptionalPropertyTypes`: an absent --run-id omits the key rather
     // than setting it to undefined.
     ...(runId === undefined ? {} : { runId }),
@@ -343,7 +311,14 @@ async function recordCmd(
   opts: RecordOptions,
   deps: HistoryDeps,
 ): Promise<void> {
-  const parsed = readReport(resultsFile, deps);
+  let parsed: unknown;
+  try {
+    parsed = readReport(resultsFile);
+  } catch (err) {
+    if (!(err instanceof ReportReadError)) throw err;
+    deps.out(`${pc.red(err.label)} ${err.detail}`);
+    throw new CliExitError(1);
+  }
   const shape = detectReportShape(parsed);
   if (shape === 'unknown') {
     deps.out(
@@ -364,11 +339,17 @@ async function recordCmd(
     return;
   }
 
-  const built = keyTestFiles(
-    buildOrRefuse(shape, parsed, recordContext(opts, deps), deps),
-    shape,
-    parsed,
+  const commit = resolveCommit(opts.commit, deps.env, deps, deps.err);
+  const built = prepareRecordedRun(
+    buildOrRefuse(
+      shape,
+      parsed,
+      recordContext({ ...opts, commit: commit.sha }, deps),
+      deps,
+    ),
+    { shape, parsed },
     deps,
+    { seed: opts.seed, commitSource: commit.source },
   );
 
   const remote = opts.dbUrl ?? deps.env['CANARY_HISTORY_DB_URL'];
@@ -812,6 +793,7 @@ export function createHistoryCommand(
     .option('--repo <repo>', 'GitHub repo slug (default: $GITHUB_REPOSITORY).')
     .option('--branch <branch>', 'Branch name (default: $GITHUB_REF_NAME).')
     .option('--commit <sha>', 'Commit SHA (default: $GITHUB_SHA).')
+    .option('--seed <seed>', 'Runner seed, recorded for replay.')
     // No commander default: an explicitly-passed --path has to stay
     // distinguishable from the fallback, so a db-url + --path combination can
     // say that --path is unused instead of silently dropping it.
