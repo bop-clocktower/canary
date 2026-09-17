@@ -13,7 +13,7 @@
 
 import { def } from '../util/coalesce.js';
 import { SCHEMA_VERSION } from './record.js';
-import type { ReplayContext } from './keys/replay-record.js';
+import type { OrderOutcome, ReplayContext } from './keys/replay-record.js';
 
 /** Mirrors the Python `RunRecord` dataclass. */
 export interface RunInput {
@@ -35,6 +35,7 @@ export interface RunInput {
   /** Which reader produced the run (#604); local-only, see `serializeLocalRecord`. */
   reporter_format?: string | null;
   replay?: ReplayContext; // #461, local-only like reporter_format
+  order?: OrderOutcome; // #460, local-only
 }
 
 /** Mirrors the Python `TestResult` dataclass. */
@@ -140,6 +141,7 @@ export function serializeLocalRecord(
       : { reporter_format: run.reporter_format }),
     ...serializeRun(run),
     ...(run.replay === undefined ? {} : { replay: run.replay }),
+    ...(run.order === undefined ? {} : { order: run.order }),
     tests: results.map(serializeLocalTest),
   };
 }

@@ -16,6 +16,14 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **Did test ordering help? `record --order-plan` and `canary order --report`,
+  plus the `canary-shiva` skill** (#460). A run recorded with a plan stores the
+  plan's mode and time-to-first-failure estimates for the plan order and the
+  declaration order (null when nothing failed). The report compares medians over
+  the first 20 runs that had a failure, prints how many runs were not
+  measurable, and stays `insufficient` until then. Canary's own `fleet-health`
+  job now runs its suite in plan order and prints the report. The pytest adapter
+  is split to #1030.
 - **Vitest sequencer for `canary order`** (#460, phase 3). Import
   `canary-test-cli/vitest-sequencer` as `sequence.sequencer` and set
   `CANARY_ORDER_PLAN=<plan.json>` to schedule files in plan order. Unknown files

@@ -339,6 +339,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # `canary order --base` diffs base...HEAD, which needs the merge base.
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
@@ -388,11 +391,44 @@ jobs:
             echo "restored $(wc -l < "$store" | tr -d ' ') run(s) from cache key $MATCHED"
           fi
 
+      # #460: dogfood `canary order`. Plans the file order from the restored
+      # history and this change's diff; the suite below runs in that order
+      # through canary's own vitest sequencer, and `record --order-plan` stores
+      # the TTFF estimates that `canary order --report` judges (criterion 7).
+      # A failed plan is a loud warning and an unordered run, never a skipped
+      # suite: ordering is an optimization and must not cost the history.
+      - name: Plan the run order
+        env:
+          BASE_SHA:
+            ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          git ls-files 'ts/src/*.test.ts' 'ts/test/*.test.ts' > /tmp/test-files.txt
+          echo "planning $(wc -l < /tmp/test-files.txt | tr -d ' ') test file(s)"
+          base_flag=()
+          if [ -n "$BASE_SHA" ] && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            base_flag=(--base "$BASE_SHA")
+          else
+            echo "::warning title=canary order: no diff base::base commit '${BASE_SHA}' is not available; ordering without a diff term."
+          fi
+          set +e
+          node ts/bin/canary.js order --suite ts-engine --files-from /tmp/test-files.txt "${base_flag[@]}" --out /tmp/order-plan.json
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            rm -f /tmp/order-plan.json
+            echo "::warning title=canary order failed::exit $rc; this run is unordered and records no TTFF."
+          fi
+
       - name: Run the suite and record it
         id: record
         run: |
+          plan_flag=()
+          if [ -s /tmp/order-plan.json ]; then
+            export CANARY_ORDER_PLAN=/tmp/order-plan.json
+            plan_flag=(--order-plan /tmp/order-plan.json)
+          fi
           npm --prefix ts run test -- --reporter=json --outputFile=/tmp/vitest.json || true
-          node ts/bin/canary.js history record /tmp/vitest.json --suite ts-engine
+          node ts/bin/canary.js history record /tmp/vitest.json --suite ts-engine "${plan_flag[@]}"
 
       # Saved only when `record` appended a run. A failed record leaves the
       # restored store unchanged, and saving it again would spend a cache entry
@@ -439,6 +475,10 @@ jobs:
 
       - name: history summary reports a real pass rate
         run: node ts/bin/canary.js history summary ts-engine
+
+      # Advisory (#460 F8): "insufficient" until 20 recorded runs had a failure.
+      - name: did ordering help (TTFF report)
+        run: node ts/bin/canary.js order --report --suite ts-engine
 
   # --- D: deleted-test guard ------------------------------------------------
   katana:

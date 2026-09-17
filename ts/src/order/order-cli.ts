@@ -20,6 +20,7 @@ import {
   buildOrderPlan,
   type OrderPlan,
 } from '../analysis/order/rank.js';
+import { ttffReport, type TtffReport } from '../analysis/order/ttff-report.js';
 import { readInventoryIndex } from '../briefing/inputs.js';
 import { CliExitError } from '../cli-common.js';
 import { makeStore } from '../history/store.js';
@@ -33,6 +34,7 @@ interface OrderCliOptions {
   dbUrl?: string;
   out?: string;
   json?: boolean;
+  report?: boolean;
 }
 
 function git(cwd: string, args: string[]): string | null {
@@ -112,11 +114,32 @@ function renderText(plan: OrderPlan): string {
   return lines.join('\n');
 }
 
+function renderReport(r: TtffReport): string {
+  const ms = (v: number | null): string => (v === null ? 'n/a' : `${v}ms`);
+  return [
+    `did ordering help? suite ${r.suite} (advisory)`,
+    `runs recorded with a plan: ${r.ordered} · measurable (had a failure): ${r.measurable} · not measurable: ${r.notMeasurable}`,
+    `window: first ${r.window} measurable run(s) · median TTFF ordered ${ms(r.medianOrderedMs)} vs baseline ${ms(r.medianBaselineMs)} (estimates)`,
+    `verdict: ${r.verdict}`,
+  ].join('\n');
+}
+
+/** `--report`: criterion 7 over the store. Always exits 0; it is advisory. */
+async function reportCmd(opts: OrderCliOptions, deps: MainDeps): Promise<void> {
+  const store = makeStore(opts.dbUrl, opts.path);
+  const runs = store.readAll ? await store.readAll() : [];
+  const report = ttffReport(runs, opts.suite);
+  deps.out(
+    opts.json === true ? JSON.stringify(report, null, 2) : renderReport(report),
+  );
+}
+
 async function orderCmd(
   args: string[],
   opts: OrderCliOptions,
   deps: MainDeps,
 ): Promise<void> {
+  if (opts.report === true) return reportCmd(opts, deps);
   const cwd = deps.cwd();
   const top = git(cwd, ['rev-parse', '--show-toplevel']) ?? cwd;
   const files = inputFiles(args, opts, cwd, top, deps);
@@ -173,6 +196,10 @@ export function buildOrderCommand(deps: MainDeps): Command {
     .option(
       '--out <file>',
       'Also write the plan JSON here (for a runner adapter).',
+    )
+    .option(
+      '--report',
+      'Print the did-it-help TTFF report for --suite instead.',
     )
     .option('--json')
     .action(async (files: string[], opts: OrderCliOptions) => {

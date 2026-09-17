@@ -104,7 +104,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-screech`             | shipped  | 591   | Broken-main siren (cross-run, branch-level)                                |
 | `canary-setup-harness`       | shipped  | —     | Configure the Harness Engineering guardrails in a project                  |
 | `canary-shadow`              | shipped  | —     | Differential parity testing between a baseline and a candidate             |
-| `canary-shiva`               | reserved | 460   | Predictive test ordering                                                   |
+| `canary-shiva`               | shipped  | 460   | Predictive test ordering                                                   |
 | `canary-ship`                | shipped  | —     | The ship gate: adversarial review, commit, PR, merge                       |
 | `canary-signal`              | reserved | 609   | QA impact digest                                                           |
 | `canary-strix`               | shipped  | 799   | Company/consumer identifier leak scan (files + commit authorship)          |

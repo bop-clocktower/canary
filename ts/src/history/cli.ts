@@ -254,6 +254,7 @@ interface RecordOptions {
   branch?: string;
   commit?: string;
   seed?: string;
+  orderPlan?: string;
   path?: string;
   runId?: string;
   dbUrl?: string;
@@ -349,7 +350,7 @@ async function recordCmd(
     ),
     { shape, parsed },
     deps,
-    { seed: opts.seed, commitSource: commit.source },
+    { seed: opts.seed, commitSource: commit.source, orderPlan: opts.orderPlan },
   );
 
   const remote = opts.dbUrl ?? deps.env['CANARY_HISTORY_DB_URL'];
@@ -794,6 +795,7 @@ export function createHistoryCommand(
     .option('--branch <branch>', 'Branch name (default: $GITHUB_REF_NAME).')
     .option('--commit <sha>', 'Commit SHA (default: $GITHUB_SHA).')
     .option('--seed <seed>', 'Runner seed, recorded for replay.')
+    .option('--order-plan <file>', 'canary order plan; records TTFF estimates.')
     // No commander default: an explicitly-passed --path has to stay
     // distinguishable from the fallback, so a db-url + --path combination can
     // say that --path is unused instead of silently dropping it.
