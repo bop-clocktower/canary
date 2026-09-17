@@ -1,31 +1,30 @@
 /**
- * The sub-app registration barrel for `canary` (#988).
+ * The sub-app registry array for `canary` (#988).
  *
- * `ts/src/cli.ts` used to import every sub-app builder directly, so each new
- * subcommand added one import and the file crossed the perf gate's
- * import-count threshold on the shape rather than on a defect. It now imports
- * this one module instead: add a new sub-app builder HERE, and register it with
- * `program.addCommand(...)` in `cli.ts`.
+ * `ts/src/cli.ts` loops over {@link COMMANDS}; it never imports a sub-app
+ * builder. Builders live in per-domain registries (`engine`, `project`,
+ * `audit`, `readiness`), so a new subcommand adds one import to ONE domain
+ * registry, and this file gains an import only when a new domain opens. That
+ * keeps every module structurally under the perf gate's 15-import threshold:
+ * ts/test/cli-command-registry.test.ts caps each registry module at 12.
  *
- * The path is deliberate. `commands/cli.ts` sits in the `cli` arch layer
+ * Files are named `cli.ts` on purpose: they sit in the `cli` arch layer
  * (`ts/src/**\/*cli*.ts`) and under the reviewed `coupling` /
- * `ts/src/**\/cli.ts` perf allowance: a barrel is a coupling ratio of 1.00 by
- * definition, and a name outside that glob would trade the import-count
- * finding for a new coupling one.
+ * `ts/src/**\/cli.ts` allowance, since a registry is coupling-ratio 1.00 by
+ * definition. Order of the concatenation is help/registration order.
  */
 
-export { createAnalyzeCommand } from '../analysis/cli.js';
-export { buildBatwomanCommand } from '../batwoman-cli.js';
-export { buildBriefingCommand } from '../briefing/briefing-cli.js';
-export { buildOrderCommand } from '../order/order-cli.js';
-export { buildRewindCommand } from '../rewind/rewind-cli.js';
-export { buildCiReadyCommand } from '../ci-ready-cli.js';
-export { buildInventoryCommand } from '../inventory/inventory-cli.js';
-export { buildGenDataCommand } from '../gen-data/gen-data-cli.js';
-export { buildScalingCurveCommand } from '../scaling-curve-cli.js';
-export { buildPermissionMatrixCommand } from '../permission-matrix-cli.js';
-export { buildCompanyKnowledgeCommand } from '../company-knowledge-cli.js';
-export { createGuardianCommand } from '../guardian/cli.js';
-export { createHistoryCommand } from '../history/cli.js';
-export { buildSkillsCommand } from '../skills-cli.js';
-export { buildWorkflowCommand } from '../workflow-cli.js';
+import type { Command } from 'commander';
+
+import { AUDIT_COMMANDS } from './audit/cli.js';
+import { ENGINE_COMMANDS } from './engine/cli.js';
+import { PROJECT_COMMANDS } from './project/cli.js';
+import { READINESS_COMMANDS } from './readiness/cli.js';
+import type { MainDeps } from '../main-deps.js';
+
+export const COMMANDS: ReadonlyArray<(deps: MainDeps) => Command> = [
+  ...ENGINE_COMMANDS,
+  ...PROJECT_COMMANDS,
+  ...AUDIT_COMMANDS,
+  ...READINESS_COMMANDS,
+];

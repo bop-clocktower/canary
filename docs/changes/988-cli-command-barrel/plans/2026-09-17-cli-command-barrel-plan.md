@@ -33,3 +33,26 @@
 - `harness check-perf` before/after: no import-count finding for
   `ts/src/cli.ts`, no new identity outside existing allowances;
   `harness check-deps` passes.
+
+## Rework (human review of PR #1038): registry array
+
+The barrel sat at exactly 15 imports; the human chose the registry array.
+
+### Task 5: Cap test first
+
+- Extend `ts/test/cli-command-registry.test.ts`: every `.ts` under
+  `ts/src/commands/` has at most 12 imports, with a denominator guard of at
+  least 5 files. Red against the single 15-import barrel.
+
+### Task 6: Domain registries + loop
+
+- Create `commands/{engine,project,audit,readiness}/cli.ts` registries as
+  contiguous runs of the existing registration order; `commands/cli.ts` exports
+  `COMMANDS`; `cli.ts` loops over it. Engine entries forward `{ out, err }`
+  sinks exactly as before.
+- Declare the four new modules in both entryPoints arrays.
+
+### Task 7: Verify
+
+- Gates from `ts/`; `harness check-deps`; `harness check-perf` shows no
+  import-count finding under `ts/src/commands/` or for `ts/src/cli.ts`.

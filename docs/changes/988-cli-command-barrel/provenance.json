@@ -7,15 +7,18 @@
     "planning",
     "tdd",
     "verify",
-    "review"
+    "review",
+    "rework"
   ],
   "planArtifact": "docs/changes/988-cli-command-barrel/plans/2026-09-17-cli-command-barrel-plan.md",
   "closingKeyword": "Closes",
   "assumptions": [
-    "Barrel placed at ts/src/commands/cli.ts (not commands/index.ts) so it sits in the cli arch layer and under the existing reviewed coupling ts/src/**/cli.ts allowance; no new allowance added.",
-    "The barrel holds all 15 sub-app builders, exactly at the 15-import threshold (16 is flagged). The next sub-app module will trip import-count on the barrel; not pre-solved (YAGNI), flagged in the PR.",
     "Autopilot run at fast rigor inline (single phase, 4 tasks) rather than dispatching separate planner/executor/verifier subagents.",
     "cli-commands.ts left untouched to avoid conflicting with open PR #1036.",
-    "cli.ts file-length finding (403 -> 408 lines, advisory growth warning from the header comment and multi-line import) is out of scope."
+    "cli.ts file-length finding (403 -> 408 lines, advisory growth warning from the header comment and multi-line import) is out of scope.",
+    "Rework: the human reviewed PR #1038 and rejected the single barrel (15 imports, at threshold); decision is the REGISTRY ARRAY option. cli.ts loops over COMMANDS.",
+    "Registries are split by domain (engine, project, audit, readiness) as contiguous runs of the existing registration order so help order is preserved without a sort key; each file is named cli.ts to stay in the cli arch layer and under the existing coupling ts/src/**/cli.ts allowance.",
+    "Headroom is guarded by a test capping every module under ts/src/commands/ at 12 imports (max today: 8, readiness); a full registry means a new domain folder, never a raised cap.",
+    "cli.ts file-length finding (still > 300, now 377 lines) remains out of scope."
   ]
 }
