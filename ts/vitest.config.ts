@@ -1,10 +1,15 @@
 import { defineConfig } from 'vitest/config';
 
+import CanaryOrderSequencer from './src/analysis/order/vitest-sequencer.js';
+
 export default defineConfig({
   test: {
     // Fixture files under test/fixtures/** are inputs, not suites — keep the
     // test/ glob shallow so a fixture named *.test.ts is never collected.
     include: ['src/**/*.test.ts', 'test/*.test.ts'],
+    // #460: dogfood `canary order`. Inert unless CANARY_ORDER_PLAN names a plan;
+    // an unreadable plan falls back to vitest's own order.
+    sequence: { sequencer: CanaryOrderSequencer },
     // #760. A large share of this suite shells out -- `git` in a fixture repo,
     // a skill CLI as a node subprocess -- and vitest's 5s default is a budget
     // for an in-process unit test, not for a case that spawns half a dozen

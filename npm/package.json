@@ -17,13 +17,21 @@
       "require": "./dist/reporters/testtracker.js",
       "default": "./dist/reporters/testtracker.js"
     },
+    "./vitest-sequencer": {
+      "import": "./dist/engine/analysis/order/vitest-sequencer.js",
+      "default": "./dist/engine/analysis/order/vitest-sequencer.js"
+    },
     "./package.json": "./package.json"
   },
   "peerDependencies": {
-    "@playwright/test": ">=1.42.0"
+    "@playwright/test": ">=1.42.0",
+    "vitest": ">=5.0.0"
   },
   "peerDependenciesMeta": {
     "@playwright/test": {
+      "optional": true
+    },
+    "vitest": {
       "optional": true
     }
   },
