@@ -15,12 +15,14 @@
  * instances via their `createXCommand()` factories (functionally identical to
  * the `guardianCommand`/`historyCommand`/`analyzeCommand` singletons but safe to
  * mount into multiple `createCanaryCommand()` calls, e.g. across tests).
+ *
+ * Sub-app builders come through the `commands/cli.ts` barrel (#988), so a new
+ * subcommand adds an export there rather than an import here.
  */
 
 import { Command, Option } from 'commander';
 
 import { CliExitError, normalizeUsageExit } from './cli-common.js';
-import { createAnalyzeCommand } from './analysis/cli.js';
 import {
   doctorCmd,
   feedbackCmd,
@@ -41,20 +43,23 @@ import {
   vacuityCheckCmd,
   versionCmd,
 } from './cli-commands.js';
-import { buildBatwomanCommand } from './batwoman-cli.js';
-import { buildBriefingCommand } from './briefing/briefing-cli.js';
-import { buildOrderCommand } from './order/order-cli.js';
-import { buildRewindCommand } from './rewind/rewind-cli.js';
-import { buildCiReadyCommand } from './ci-ready-cli.js';
-import { buildInventoryCommand } from './inventory/inventory-cli.js';
-import { buildGenDataCommand } from './gen-data/gen-data-cli.js';
-import { buildScalingCurveCommand } from './scaling-curve-cli.js';
-import { buildPermissionMatrixCommand } from './permission-matrix-cli.js';
-import { buildCompanyKnowledgeCommand } from './company-knowledge-cli.js';
-import { createGuardianCommand } from './guardian/cli.js';
-import { createHistoryCommand } from './history/cli.js';
-import { buildSkillsCommand } from './skills-cli.js';
-import { buildWorkflowCommand } from './workflow-cli.js';
+import {
+  createAnalyzeCommand,
+  buildBatwomanCommand,
+  buildBriefingCommand,
+  buildOrderCommand,
+  buildRewindCommand,
+  buildCiReadyCommand,
+  buildInventoryCommand,
+  buildGenDataCommand,
+  buildScalingCurveCommand,
+  buildPermissionMatrixCommand,
+  buildCompanyKnowledgeCommand,
+  createGuardianCommand,
+  createHistoryCommand,
+  buildSkillsCommand,
+  buildWorkflowCommand,
+} from './commands/cli.js';
 import { defaultMainDeps, type MainDeps } from './main-deps.js';
 
 /** Build a fresh `canary` command wired to `depsInit` (defaults fill any gap). */
