@@ -34,9 +34,23 @@
 // as a side effect of a label meant to accept growth, so this abstains and says
 // so rather than guessing which case it is looking at.
 //
+// ## Stale floors, not just regressions (#1013)
+//
+// A floor can be stale while `check-arch` passes: the per-PR allowances absorb
+// the growth, so the report carries no regression, yet the floor sits more than
+// one `regressionTolerance`-width below the highest accepted allowance. That is
+// exactly what `ts/test/arch-baseline-freshness.test.ts` fails on, and it is the
+// case the label is most often applied to. So the refresh also raises any such
+// floor to the highest allowance recorded for its metric — same narrow shape,
+// `violationIds` untouched. The staleness rule lives HERE (`staleFloors`) and
+// the freshness test imports it, so the test and the bot cannot disagree about
+// what "stale" means.
+//
 // Exit codes follow the repo's gate convention (#508):
 //   0 = refreshed and written
-//   1 = nothing to refresh — the report was read and no metric regressed
+//   1 = nothing to refresh — the report was read, no metric regressed, and no
+//       floor is stale (the label was not needed; the workflow stays red so the
+//       unnecessary opt-in is visible rather than silently spent)
 //   2 = usage error
 //   3 = ABSTENTION — the report is missing, malformed, lacks the fields this
 //       needs, or asks for something that cannot be done safely. Nothing is
@@ -45,31 +59,50 @@
 //       that never ran reports success.
 //
 //   node scripts/refresh-arch-baseline.mjs <arch-report.json> [--baseline <path>]
+//     [--allowances <dir>] [--config <harness.config.json>]
+//
+// `--allowances` defaults to `allowances/` beside the baseline, `--config` to
+// `harness.config.json` in the working directory. A missing allowance directory
+// means no allowances; a missing config means the CLI's default tolerance.
 //
 // Produce the input with:  harness check-arch --json > arch-report.json
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const DEFAULT_BASELINE = '.harness/arch/baselines.json';
 
+/** The CLI's own default when `architecture.regressionTolerance` is unset. */
+export const DEFAULT_REGRESSION_TOLERANCE = 0.01;
+
 const USAGE =
-  'usage: refresh-arch-baseline.mjs <arch-report.json> [--baseline <path>]\n';
+  'usage: refresh-arch-baseline.mjs <arch-report.json> [--baseline <path>] ' +
+  '[--allowances <dir>] [--config <path>]\n';
+
+const FLAGS = new Set(['--baseline', '--allowances', '--config']);
 
 /** Parsed argv, or `undefined` when the invocation is unusable. */
 function parseArgs(argv) {
   const positional = [];
-  let baseline = DEFAULT_BASELINE;
+  const flags = {};
   for (let i = 0; i < argv.length; i += 1) {
-    if (argv[i] === '--baseline') {
-      baseline = argv[i + 1];
-      if (baseline === undefined) return undefined;
+    if (FLAGS.has(argv[i])) {
+      const value = argv[i + 1];
+      if (value === undefined) return undefined;
+      flags[argv[i].slice(2)] = value;
       i += 1;
     } else {
       positional.push(argv[i]);
     }
   }
   if (positional.length !== 1) return undefined;
-  return { report: positional[0], baseline };
+  const baseline = flags.baseline ?? DEFAULT_BASELINE;
+  return {
+    report: positional[0],
+    baseline,
+    allowances: flags.allowances ?? join(dirname(baseline), 'allowances'),
+    config: flags.config ?? 'harness.config.json',
+  };
 }
 
 /** Reads and parses JSON, returning a tagged result rather than throwing. */
@@ -79,6 +112,60 @@ function loadJson(path) {
   } catch (err) {
     return { ok: false, reason: `${path}: ${err.message}` };
   }
+}
+
+/**
+ * Floors that have drifted more than one tolerance-width below the highest
+ * accepted allowance for their metric (#736, #1013).
+ *
+ * `allowances` is a list of allowance objects (`{categories: {metric: n}}`).
+ * An allowance without a metric is normal and is skipped, never read as zero.
+ * Below-the-floor allowances are the ratchet working, so only a ceiling that
+ * climbed AWAY from the floor counts. Returns `[{category, floor, ceiling,
+ * absorber}]` for every stale metric the baseline records.
+ */
+export function staleFloors(baseline, allowances, tolerance) {
+  const metrics = baseline?.metrics ?? {};
+  const stale = [];
+  for (const [category, recorded] of Object.entries(metrics)) {
+    const floor = recorded?.value;
+    if (typeof floor !== 'number') continue;
+    const values = allowances
+      .map((a) => a?.categories?.[category])
+      .filter((v) => typeof v === 'number' && Number.isFinite(v));
+    if (values.length === 0) continue;
+    const ceiling = Math.max(...values);
+    const absorber = floor * tolerance;
+    if (Math.max(0, ceiling - floor) > absorber) {
+      stale.push({ category, floor, ceiling, absorber });
+    }
+  }
+  return stale;
+}
+
+/** Every `*.json` allowance under `dir`; a missing directory is none. */
+function loadAllowances(dir) {
+  if (!existsSync(dir)) return { ok: true, value: [] };
+  const out = [];
+  for (const f of readdirSync(dir).filter((n) => n.endsWith('.json'))) {
+    const loaded = loadJson(join(dir, f));
+    if (!loaded.ok) return loaded;
+    out.push(loaded.value);
+  }
+  return { ok: true, value: out };
+}
+
+/** `architecture.regressionTolerance`, or the default when unset/absent. */
+function loadTolerance(path) {
+  if (!existsSync(path))
+    return { ok: true, value: DEFAULT_REGRESSION_TOLERANCE };
+  const loaded = loadJson(path);
+  if (!loaded.ok) return loaded;
+  const t = loaded.value?.architecture?.regressionTolerance;
+  return {
+    ok: true,
+    value: typeof t === 'number' ? t : DEFAULT_REGRESSION_TOLERANCE,
+  };
 }
 
 /**
@@ -105,7 +192,10 @@ function planRefresh(report, baseline) {
 
   const metrics = baseline?.metrics;
   if (metrics === undefined || metrics === null) {
-    return { status: 'abstain', reason: 'the baseline has no `metrics` object' };
+    return {
+      status: 'abstain',
+      reason: 'the baseline has no `metrics` object',
+    };
   }
 
   const updates = [];
@@ -163,7 +253,9 @@ function main(argv) {
 
   const report = loadJson(args.report);
   if (!report.ok) {
-    process.stderr.write(`abstain: cannot read the report — ${report.reason}\n`);
+    process.stderr.write(
+      `abstain: cannot read the report — ${report.reason}\n`,
+    );
     return 3;
   }
   const baseline = loadJson(args.baseline);
@@ -174,27 +266,61 @@ function main(argv) {
     return 3;
   }
 
+  const allowances = loadAllowances(args.allowances);
+  const tolerance = loadTolerance(args.config);
+  for (const loaded of [allowances, tolerance]) {
+    if (!loaded.ok) {
+      process.stderr.write(`abstain: cannot read ${loaded.reason}\n`);
+      return 3;
+    }
+  }
+
   const plan = planRefresh(report.value, baseline.value);
   if (plan.status === 'abstain') {
     process.stderr.write(`abstain: ${plan.reason}. Nothing written.\n`);
     return 3;
   }
-  if (plan.status === 'nothing') {
+  const updates = plan.status === 'refresh' ? plan.updates : [];
+
+  // Staleness is judged against the floor AFTER any regression refresh, so a
+  // regression that already lifted the floor past the ceiling is not moved
+  // back down, and a floor is only ever raised.
+  const projected = structuredClone(baseline.value);
+  applyRefresh(projected, updates);
+  for (const s of staleFloors(projected, allowances.value, tolerance.value)) {
     process.stdout.write(
-      'no metric regressed in this report, so there is nothing to refresh. ' +
-        'The label was applied to a PR the arch ratchet is not failing.\n',
+      `stale floor ${s.category}: ${s.floor} is ${s.ceiling - s.floor} below ` +
+        `the highest accepted allowance ${s.ceiling} (tolerance absorbs ` +
+        `${s.absorber.toFixed(1)})\n`,
+    );
+    const existing = updates.find((u) => u.category === s.category);
+    if (existing) existing.to = s.ceiling;
+    else
+      updates.push({
+        category: s.category,
+        from: baseline.value.metrics[s.category].value,
+        to: s.ceiling,
+      });
+  }
+
+  if (updates.length === 0) {
+    process.stdout.write(
+      'no metric regressed in this report and no floor is stale against the ' +
+        'accepted allowances, so there is nothing to refresh. The label was ' +
+        'applied to a PR neither the arch ratchet nor the freshness test is ' +
+        'failing.\n',
     );
     return 1;
   }
 
   const stamp = process.env.REFRESH_COMMIT;
-  applyRefresh(baseline.value, plan.updates, {
+  applyRefresh(baseline.value, updates, {
     at: new Date().toISOString(),
     from: stamp === undefined || stamp === '' ? undefined : stamp,
   });
   writeFileSync(args.baseline, JSON.stringify(baseline.value, null, 2) + '\n');
 
-  for (const { category, from, to } of plan.updates) {
+  for (const { category, from, to } of updates) {
     process.stdout.write(`refreshed ${category}: ${from} -> ${to}\n`);
   }
   process.stdout.write(

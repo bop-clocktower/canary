@@ -22,7 +22,13 @@
  * refresh that never ran reports success.
  */
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -228,6 +234,80 @@ describe('refresh-arch-baseline', () => {
       ),
     );
     expect(run([reportPath, '--baseline', baselinePath]).code).toBe(3);
+  });
+
+  describe('stale floor caught by arch-baseline-freshness (#1013)', () => {
+    let allowanceDir: string;
+    let configPath: string;
+
+    function writeAllowance(name: string, categories: Record<string, number>) {
+      writeFileSync(
+        join(allowanceDir, name),
+        JSON.stringify({ categories, reason: 'fixture' }),
+      );
+    }
+
+    function runStale() {
+      return run([
+        reportPath,
+        '--baseline',
+        baselinePath,
+        '--allowances',
+        allowanceDir,
+        '--config',
+        configPath,
+      ]);
+    }
+
+    beforeEach(() => {
+      allowanceDir = join(dir, 'allowances');
+      mkdirSync(allowanceDir);
+      configPath = join(dir, 'harness.config.json');
+      writeFileSync(configPath, JSON.stringify({ architecture: {} }));
+      writeFileSync(reportPath, JSON.stringify(reportFixture([])));
+    });
+
+    it('raises a stale floor to the highest accepted allowance even with no regression', () => {
+      // The PR #1011 shape: check-arch passes (allowances absorb the growth),
+      // but the floor sits far below the highest allowance, so the freshness
+      // test is red. The bot used to say "nothing to refresh" and exit 1.
+      writeAllowance('a.json', { 'module-size': 30000 });
+      writeAllowance('b.json', { 'module-size': 32960 });
+      writeAllowance('c.json', { complexity: 99 });
+
+      const { code, out } = runStale();
+
+      expect(code, out).toBe(0);
+      const m = readBaseline().metrics;
+      expect(m['module-size']).toEqual({
+        value: 32960,
+        violationIds: ['a', 'b'],
+      });
+      expect(out).toMatch(/stale/i);
+    });
+
+    it('leaves a floor within one tolerance-width alone and exits 1', () => {
+      // 26965 * 0.01 = 269.65, so a 200 gap is absorbed — not stale.
+      writeAllowance('a.json', { 'module-size': 27165 });
+      const before = readFileSync(baselinePath, 'utf-8');
+
+      const { code, out } = runStale();
+
+      expect(code).toBe(1);
+      expect(out).toMatch(/nothing to refresh/i);
+      expect(readFileSync(baselinePath, 'utf-8')).toBe(before);
+    });
+
+    it('honours architecture.regressionTolerance from the config', () => {
+      // A 25% tolerance absorbs a 5995 gap on a 26965 floor.
+      writeFileSync(
+        configPath,
+        JSON.stringify({ architecture: { regressionTolerance: 0.25 } }),
+      );
+      writeAllowance('a.json', { 'module-size': 32960 });
+
+      expect(runStale().code).toBe(1);
+    });
   });
 
   it('exits 2 on usage error', () => {
