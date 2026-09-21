@@ -157,7 +157,31 @@ export function hashSkillDir(skillDir: string): string {
 
 const NUL = Buffer.from([0]);
 
-/** Relative (posix-joined) paths of every file under *dir*, recursively. */
+/**
+ * Directories that appear inside a deployed skill at runtime but are not part
+ * of what the overlay authored.
+ *
+ * `node_modules` is the one that bites. A skill that declares a runtime
+ * dependency instructs the user to `npm install` in its scripts/ dir when the
+ * dependency is missing — and doing so changed the skill's hash, so migrate
+ * reported it as locally edited and refused to ever update it again. Using a skill and passing the freshness gate were mutually exclusive,
+ * and the resulting staleness was silent: `canary overlay update` reports
+ * success because deployment is this separate step, which then refuses.
+ *
+ * The others are the same class — generated or VCS state, never authored skill
+ * content. Only `node_modules` has been observed in the wild.
+ */
+const HASH_IGNORED_DIRS = new Set([
+  'node_modules',
+  '.git',
+  '__pycache__',
+  '.venv',
+]);
+
+/**
+ * Relative (posix-joined) paths of every file under *dir*, recursively,
+ * excluding HASH_IGNORED_DIRS.
+ */
 function collectRelFiles(dir: string): string[] {
   const out: string[] = [];
   const walk = (d: string, prefix: string): void => {
@@ -169,8 +193,10 @@ function collectRelFiles(dir: string): string[] {
     }
     for (const e of entries) {
       const rel = prefix ? `${prefix}/${e.name}` : e.name;
-      if (e.isDirectory()) walk(join(d, e.name), rel);
-      else if (e.isFile()) out.push(rel);
+      if (e.isDirectory()) {
+        if (HASH_IGNORED_DIRS.has(e.name)) continue;
+        walk(join(d, e.name), rel);
+      } else if (e.isFile()) out.push(rel);
     }
   };
   walk(dir, '');
