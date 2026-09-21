@@ -1,0 +1,21 @@
+{
+  "issues": [1057],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/zero-denominator-gates.test.ts",
+  "assumptions": [
+    "docs/wiki keeps at least one mermaid chart. The repo has exactly one (docs/wiki/Architecture-Deep-Dive.md), verified by executing the real run block against the checkout with a stubbed npx: exit 0. If a restructure legitimately removes the last chart, the honest fix is to delete the job, not to let it pass on zero.",
+    "The zero-denominator branch of the mermaid step can be exercised offline: with an empty docs/wiki the loop body never runs, so npx @mermaid-js/mermaid-cli is never invoked. The test therefore runs the real shell verbatim with no network and no Chromium.",
+    "The tool-gated-skip invariant is scoped to the `const X = <cond> ? it : it.skip` form rather than every `it.skip` in ts/test. Five other files use a bare it.skip for reasons that are not tool-presence gates; sweeping them in would be scope creep.",
+    "ts/test/*.test.ts is covered by entropy.excludePatterns (`**/*.test.ts`), so the new test file needs no entryPoints declaration in either array."
+  ],
+  "closingKeyword": "Refs #1057",
+  "partialSlice": true,
+  "remainingFindings": [
+    "harness.config.json:173 — `tests/generated/**` in entropy.excludePatterns matches 0 paths (no root-level tests/ directory). Still unfixed.",
+    "ts/src/history/supabase-store.ts:69-105 — SUPABASE_ANON_KEY defaults to '' with no missing-credential path, and queryFlaky/queryTimeline destructure away the Supabase `error` field and return def(data, []), so an auth failure is indistinguishable from 'no flaky tests'. Still unfixed.",
+    "Issue finding #2 (ts/test/workflow-false-green.test.ts path-filtered denominator) is NOT a defect — the guard `expect(cases.length).toBeGreaterThan(0)` has existed since PR #551 (929e1d73). Verified empirically by stripping the paths: key from wiki-sync.yml: the suite went red with 'expected 0 to be greater than 0'. The issue's claim that it silently stops enforcing is incorrect.",
+    "Issue finding #5 (entropy.entryPoints vs performance.entryPoints parity) is ALREADY covered — ts/test/entropy-entrypoints.test.ts has 'keeps entropy and performance in lockstep, in the same order'. Both arrays are 114 entries and byte-identical today.",
+    "Already landed by PR #1063 (merged): the CLI hidden-failure and lockfile-denominator work for #1040/#1059. PR #1063 touched none of the six findings listed in #1057."
+  ]
+}

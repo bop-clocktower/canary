@@ -81,8 +81,18 @@ jobs:
             fi
             echo "::endgroup::"
           done < <(find docs/wiki -name '*.md' -type f -print0)
+          # A zero denominator is an abstention, not a pass -- the same rule the
+          # removed-symbols job states 12 lines below: a gate matching zero
+          # patterns has verified nothing and cannot report a pass (#1057).
+          # There is exactly one mermaid chart in the tree, so this required
+          # check is one deletion away from a permanent green that renders
+          # nothing. If a restructure legitimately removes the last chart, the
+          # honest fix is to drop this job, not to let it pass on zero.
           if [ "$found" -eq 0 ]; then
-            echo "No Mermaid charts in docs/wiki -- nothing to validate."
+            echo "::error::No Mermaid charts found in docs/wiki -- this gate" \
+              "rendered ZERO charts, so it verified nothing. That is an" \
+              "abstention, not a pass."
+            status=1
           fi
           exit $status
 
