@@ -15,6 +15,17 @@
  *
  * Scope note: README / brand-kit shields.io badges are *display* artifacts, not
  * canonical declarations, so they are intentionally out of scope here.
+ *
+ * Denominator note (#1059): `npm/package-lock.json` sat outside SOURCES, so a
+ * lockfile stale by two releases survived green — the gate passed because it
+ * never looked. The lockfile declares the version twice (root and
+ * `packages[""]`) and both are now in the denominator, alongside a check that
+ * the lock's root entry still mirrors the manifest's dependency declarations.
+ *
+ * `ts/package-lock.json` is deliberately NOT here: `ts/package.json` is the
+ * private workspace, pinned at 0.0.0 and never published, so it has no release
+ * version to agree with. That is an explicit exemption, not an oversight —
+ * asserted below so the omission cannot be mistaken for coverage.
  */
 
 import { readFileSync } from 'node:fs';
@@ -38,6 +49,21 @@ function pluginVersion(): string {
   return readJson('.claude-plugin/plugin.json').version as string;
 }
 
+/** The lockfile declares the version twice; both must agree with the manifest. */
+function npmLockRootVersion(): string {
+  return readJson('npm/package-lock.json').version as string;
+}
+
+function npmLockPackageVersion(): string {
+  const packages = readJson('npm/package-lock.json').packages as Record<
+    string,
+    { version?: string }
+  >;
+  const root = packages[''];
+  if (!root) throw new Error('npm/package-lock.json has no root ("") package');
+  return root.version as string;
+}
+
 function marketplaceVersion(): string {
   const data = readJson('.claude-plugin/marketplace.json') as {
     plugins: Array<{ name: string; version: string }>;
@@ -52,6 +78,8 @@ const SOURCES: Array<[string, () => string]> = [
   ['npm/package.json', npmVersion],
   ['.claude-plugin/plugin.json', pluginVersion],
   ['.claude-plugin/marketplace.json', marketplaceVersion],
+  ['npm/package-lock.json (root)', npmLockRootVersion],
+  ['npm/package-lock.json (packages[""])', npmLockPackageVersion],
 ];
 
 describe('version consistency', () => {
@@ -96,5 +124,82 @@ describe('version consistency', () => {
           `(see chore(release) workflow).`,
       ).toBe(npm);
     }
+  });
+
+  it('npm/package-lock.json agrees with npm/package.json', () => {
+    const npm = npmVersion();
+    for (const [label, accessor] of [
+      ['npm/package-lock.json (root)', npmLockRootVersion],
+      ['npm/package-lock.json (packages[""])', npmLockPackageVersion],
+    ] as Array<[string, () => string]>) {
+      expect(
+        accessor(),
+        `${label} version '${accessor()}' != npm/package.json version ` +
+          `'${npm}' — regenerate the lockfile as part of the release bump ` +
+          `(scripts/bump-version.mjs stamps it).`,
+      ).toBe(npm);
+    }
+  });
+
+  it("lockfile root entry mirrors the manifest's dependency declarations", () => {
+    // The #1059 drift was two-headed: a stale version AND a peerDependency
+    // present in the manifest but absent from the lock. Version parity alone
+    // would not have caught the second, so the declarations are compared too.
+    const manifest = readJson('npm/package.json');
+    const packages = readJson('npm/package-lock.json').packages as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const lockRoot = packages[''];
+    if (!lockRoot) throw new Error('npm/package-lock.json has no root package');
+
+    const MIRRORED = [
+      'dependencies',
+      'devDependencies',
+      'peerDependencies',
+      'peerDependenciesMeta',
+      'engines',
+    ] as const;
+    // `bin` is deliberately absent: npm normalises './bin/x' to 'bin/x' when
+    // it writes the lock, so the two disagree by design and comparing them
+    // would be a permanent false positive.
+
+    for (const field of MIRRORED) {
+      expect(
+        lockRoot[field] ?? null,
+        `npm/package-lock.json packages[""].${field} does not match ` +
+          `npm/package.json ${field} — run ` +
+          '`npm install --package-lock-only` in npm/.',
+      ).toEqual(manifest[field] ?? null);
+    }
+  });
+
+  it('the denominator is non-empty and names every gated manifest', () => {
+    // A zero denominator is an abstention, not a pass. Pin the expected set so
+    // dropping a source from SOURCES fails loudly instead of silently
+    // shrinking what "all versions match" means.
+    expect(SOURCES.map(([label]) => label)).toEqual([
+      'npm/package.json',
+      '.claude-plugin/plugin.json',
+      '.claude-plugin/marketplace.json',
+      'npm/package-lock.json (root)',
+      'npm/package-lock.json (packages[""])',
+    ]);
+  });
+
+  it('ts/package-lock.json is exempt because ts/ is never published', () => {
+    // Recorded rather than assumed: the exemption holds only while ts/ is a
+    // private, unpublished workspace pinned at 0.0.0. If that ever changes,
+    // this fails and the lockfile has to join the denominator above.
+    const tsPkg = readJson('ts/package.json');
+    expect(
+      tsPkg.private,
+      'ts/package.json is no longer private — it now needs version gating.',
+    ).toBe(true);
+    expect(
+      tsPkg.version,
+      'ts/package.json is no longer pinned at 0.0.0 — it now needs version ' +
+        'gating alongside npm/package.json.',
+    ).toBe('0.0.0');
   });
 });

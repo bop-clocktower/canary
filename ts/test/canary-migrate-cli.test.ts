@@ -155,9 +155,9 @@ describe('canary migrate -- overlay resolution', () => {
       addOverlay(home, 'beta-overlay');
       const res = await run(project, home);
       expect(res.code).not.toBe(0);
-      expect(res.stdout).toContain('alpha-overlay');
-      expect(res.stdout).toContain('beta-overlay');
-      expect(res.stdout).toContain('--from');
+      expect(res.stderr).toContain('alpha-overlay');
+      expect(res.stderr).toContain('beta-overlay');
+      expect(res.stderr).toContain('--from');
     } finally {
       rmTmp(base);
     }
@@ -213,8 +213,8 @@ describe('canary migrate -- overlay resolution', () => {
       addOverlay(home, 'real-overlay');
       const res = await run(project, home, '--from', 'typo-overlay');
       expect(res.code).not.toBe(0);
-      expect(res.stdout).toContain('typo-overlay');
-      expect(res.stdout).toContain('real-overlay');
+      expect(res.stderr).toContain('typo-overlay');
+      expect(res.stderr).toContain('real-overlay');
     } finally {
       rmTmp(base);
     }
@@ -234,8 +234,8 @@ describe('canary migrate -- overlay resolution', () => {
       mkdirSync(join(project, '.harness'));
       const res = await run(project, home);
       expect(res.code).not.toBe(0);
-      expect(res.stdout.toLowerCase()).toContain('overlay');
-      expect(res.stdout).not.toContain('No harness project detected');
+      expect(res.stderr.toLowerCase()).toContain('overlay');
+      expect(res.stderr).not.toContain('No harness project detected');
     } finally {
       rmTmp(base);
     }

@@ -123,6 +123,20 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **BREAKING: the rest of the CLI's hidden failures — `init` on an unsupported
+  framework, and errors on stdout** (#1040, follow-up to #1007).
+  `canary init <known-framework-with-no-template>` (scaffolder status
+  `unsupported`) now exits **2** with its guidance on **stderr**; it previously
+  exited **0**, so a script saw success when nothing had been scaffolded.
+  `migrate`, `heal-test` and `ticket-update` already exited 1 on failure but
+  printed the error on **stdout**, mixing it into captured data while a caller
+  watching stderr saw nothing — their failure reports now go to stderr.
+  `canary run` now passes the test runner's **stderr through to stderr** instead
+  of echoing it on stdout, so runner diagnostics can be separated from output;
+  canary's own `Result: Failure (Exit N)` line stays on stdout. Informational
+  and success-path output on these commands is unchanged. Scripts that parsed
+  any of these error messages out of stdout must read stderr instead.
+
 - **BREAKING: `canary run` and `canary init` exit non-zero on failure** (#1007).
   `canary run <file> <framework>` now exits **1** when the test it ran failed
   (any non-zero runner exit; the runner's own code is still printed as

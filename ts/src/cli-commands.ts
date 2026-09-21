@@ -273,7 +273,9 @@ export function runCmd(
     ),
   );
 
-  if (stderr) deps.out(`\n${pc.red('Error:')}\n${stderr}`);
+  // #1040: the runner's stderr is a diagnostic, not output. Echoing it on
+  // stdout made it impossible for a caller to separate the two.
+  if (stderr) deps.err(`\n${pc.red('Error:')}\n${stderr}`);
   if (stdout) deps.out(`\n${pc.dim('Output:')}\n${stdout}`);
   // #1007: a failed run must fail the process, so `canary run ... && deploy`
   // cannot read a red test as green. Normalized to 1 (not the runner's code).
@@ -327,8 +329,11 @@ export function initCmd(framework: string | undefined, deps: MainDeps): void {
     };
 
     if (result.status === 'unsupported') {
-      deps.out(pc.bold(pc.yellow(`${WARN} ${result.guidance}`)));
-      return;
+      // #1040: nothing was scaffolded, so exiting 0 told a script the opposite.
+      // Exit 2 matches the unknown-framework case below -- both mean the
+      // invocation has to change, not that the command half-worked.
+      deps.err(pc.bold(pc.yellow(`${WARN} ${result.guidance}`)));
+      throw new CliExitError(2);
     }
 
     deps.out(`${pc.bold(pc.green(`${CHECK_MARK} Scaffolding Complete`))}\n`);
@@ -412,7 +417,8 @@ function resolveMigrateOverlay(
       return resolveOverlay(fromOverlay, deps.home());
     } catch (e) {
       if (e instanceof OverlayNotFound) {
-        deps.out(`\n${pc.bold(pc.red(CROSS))} ${e.message}`);
+        // #1040: a failure report belongs on stderr.
+        deps.err(`\n${pc.bold(pc.red(CROSS))} ${e.message}`);
         throw new CliExitError(1);
       }
       throw e;
@@ -439,7 +445,7 @@ function resolveMigrateOverlay(
   }
   if (tracked.length > 1) {
     const names = tracked.join(', ');
-    deps.out(
+    deps.err(
       `\n${pc.bold(pc.red(CROSS))} ${tracked.length} tracked overlays registered (${names}).\nChoose one with ${pc.bold('--from <name>')}.`,
     );
     throw new CliExitError(1);
@@ -465,7 +471,7 @@ function migrateAdoption(
   try {
     report = gatherAdoptionReport(migrator, root, overlayPath, deps.home());
   } catch (e) {
-    deps.out(
+    deps.err(
       `\n${pc.bold(pc.red(CROSS))} ${e instanceof Error ? e.message : String(e)}`,
     );
     throw new CliExitError(1);
@@ -492,7 +498,7 @@ function migrateCheck(
   try {
     report = migrator.checkFreshness(root, { overlayPath });
   } catch (e) {
-    deps.out(
+    deps.err(
       `\n${pc.bold(pc.red(CROSS))} ${e instanceof Error ? e.message : String(e)}`,
     );
     throw new CliExitError(1);
@@ -542,7 +548,7 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
   try {
     ctx = migrator.detect(root);
   } catch (e) {
-    deps.out(
+    deps.err(
       `\n${pc.bold(pc.red('Detection error:'))} ${e instanceof Error ? e.message : String(e)}`,
     );
     throw new CliExitError(1);
@@ -550,9 +556,9 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
 
   if (!ctx.is_harness_project) {
     if (ctx.not_test_project_reason) {
-      deps.out(`\n${pc.bold(pc.red(CROSS))} ${ctx.not_test_project_reason}`);
+      deps.err(`\n${pc.bold(pc.red(CROSS))} ${ctx.not_test_project_reason}`);
     } else {
-      deps.out(
+      deps.err(
         `\n${pc.bold(pc.red(CROSS))} No harness project detected at ${pc.bold(root)}.\nExpected ${pc.dim('harness.config.json')} and ${pc.dim('.harness/')} directory.`,
       );
     }
@@ -574,7 +580,7 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
       force: opts.force ?? false,
     });
   } catch (e) {
-    deps.out(
+    deps.err(
       `\n${pc.bold(pc.red('Error:'))} ${e instanceof Error ? e.message : String(e)}`,
     );
     throw new CliExitError(1);
@@ -1062,7 +1068,8 @@ export function healTestCmd(
   deps: MainDeps,
 ): void {
   if (!isFile(path)) {
-    deps.out(pc.red(`Error: ${path} is not a file.`));
+    // #1040: an error report belongs on stderr.
+    deps.err(pc.red(`Error: ${path} is not a file.`));
     throw new CliExitError(1);
   }
 
@@ -1234,7 +1241,8 @@ export async function ticketUpdateCmd(
       // belong on the same "could not read result file" path as a parse error.
       reportData = asReportObject(parsed);
     } catch (exc) {
-      deps.out(
+      // #1040: an error report belongs on stderr.
+      deps.err(
         pc.red(
           `Could not read result file '${opts.result}': ${exc instanceof Error ? exc.message : String(exc)}`,
         ),

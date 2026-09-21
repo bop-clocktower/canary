@@ -61,7 +61,7 @@ describe('canary run', () => {
     });
     expect(res.code).toBe(1);
     expect(res.stdout).toContain('Failure');
-    expect(res.stdout).toContain('boom traceback');
+    expect(res.stderr).toContain('boom traceback');
   });
 
   it('exits 1 (not the runner code) for any non-zero runner exit', async () => {
@@ -133,7 +133,7 @@ describe('canary ticket-update', () => {
       writeFileSync(bad, '{not valid json', 'utf-8');
       const res = await invokeCanary(['ticket-update', '--result', bad]);
       expect(res.code).toBe(1);
-      expect(res.stdout).toContain('Could not read result file');
+      expect(res.stderr).toContain('Could not read result file');
     } finally {
       rmTmp(tmp);
     }
@@ -150,7 +150,7 @@ describe('canary ticket-update', () => {
       } catch (e) {
         res = { code: -1, stdout: String(e), stderr: '' };
       }
-      expect(res.stdout).toContain('Could not read result file');
+      expect(res.stderr).toContain('Could not read result file');
       expect(res.code).toBe(1);
     } finally {
       rmTmp(tmp);
@@ -163,7 +163,7 @@ describe('canary ticket-update', () => {
       const missing = join(tmp, 'nope.json');
       const res = await invokeCanary(['ticket-update', '--result', missing]);
       expect(res.code).toBe(1);
-      expect(res.stdout).toContain('Could not read result file');
+      expect(res.stderr).toContain('Could not read result file');
     } finally {
       rmTmp(tmp);
     }
