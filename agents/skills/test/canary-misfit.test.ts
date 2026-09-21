@@ -408,7 +408,12 @@ describe('seeded injection decision', () => {
     const act = (url: string) =>
       decide(profile, { method: 'GET', url, ordinal: 0 })!.action;
     expect(act('/l')).toEqual({ type: 'delay', delay_ms: 120 });
-    expect(act('/e')).toEqual({ type: 'fulfill', status: 503, burst: 3 });
+    expect(act('/e')).toEqual({
+      type: 'fulfill',
+      status: 503,
+      burst: 3,
+      burst_index: 0,
+    });
     expect(act('/n')).toEqual({
       type: 'delay',
       delay_ms:
@@ -428,6 +433,80 @@ describe('seeded injection decision', () => {
       ],
     });
     expect((decide(profile, request) as any).fault.id).toBe('first');
+  });
+
+  // Seed 16 at rate 0.2 fires for ordinal 0 of this identity and for no
+  // ordinal after it, which is what makes the burst the only thing that can
+  // explain a second or third injection below.
+  const BURSTY = {
+    schema_version: 1,
+    seed: 16,
+    faults: [
+      {
+        id: 'orders-5xx',
+        kind: 'error',
+        match: '**',
+        rate: 0.2,
+        status: 503,
+      },
+    ],
+  };
+  const ordersAt = (profile: any, ordinal: number) =>
+    decide(profile, {
+      method: 'GET',
+      url: 'https://app.test/api/orders',
+      ordinal,
+    });
+
+  it('fires a declared burst for that many consecutive ordinals', () => {
+    const single = ok(BURSTY);
+    const bursty = ok({
+      ...BURSTY,
+      faults: [{ ...BURSTY.faults[0], burst: 3 }],
+    });
+    const fired = (profile: any) =>
+      Array.from({ length: 6 }, (_, o) => Boolean(ordersAt(profile, o)));
+
+    // Without a burst the roll that came up is the only injection.
+    expect(fired(single)).toEqual([true, false, false, false, false, false]);
+    // burst: 3 means THREE responses in total, the fired one plus two more.
+    expect(fired(bursty)).toEqual([true, true, true, false, false, false]);
+    expect(
+      Array.from(
+        { length: 3 },
+        (_, o) => (ordersAt(bursty, o) as any).action.burst_index,
+      ),
+    ).toEqual([0, 1, 2]);
+  });
+
+  it('resolves a burst without depending on arrival order', () => {
+    const bursty = ok({
+      ...BURSTY,
+      faults: [{ ...BURSTY.faults[0], burst: 3 }],
+    });
+    const ordinals = [0, 1, 2, 3, 4, 5];
+    const forwards = ordinals.map((o) => Boolean(ordersAt(bursty, o)));
+    const backwards = [...ordinals]
+      .reverse()
+      .map((o) => Boolean(ordersAt(bursty, o)))
+      .reverse();
+    expect(backwards).toEqual(forwards);
+    // ...and the same seed reproduces it on a second pass.
+    expect(ordinals.map((o) => Boolean(ordersAt(bursty, o)))).toEqual(forwards);
+  });
+
+  it('never fires a burst off a rate-0 fault', () => {
+    const never = ok({
+      schema_version: 1,
+      seed: 16,
+      faults: [{ id: 'n', kind: 'error', rate: 0, status: 503, burst: 5 }],
+    });
+    expect([0, 1, 2, 3].map((o) => ordersAt(never, o))).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ]);
   });
 });
 
@@ -792,6 +871,78 @@ describe('route fixture', () => {
     await handler(route, fakeRequest('https://app.test/a'));
     await handler(route, fakeRequest('https://app.test/a'));
     expect(readLedger(ledgerPath).map((r: any) => r.ordinal)).toEqual([0, 1]);
+  });
+
+  // The bug this guards (review of PR #1042): `burst` was validated,
+  // normalized, carried into the action and documented in four places, and
+  // nothing ever read it. A profile asking for three 5xx got one, the flow
+  // survived, and the report printed `graceful` -- a resilience verdict earned
+  // against a fault that was mostly never applied. So this asserts the
+  // RESPONSES the caller observes, not that the field reached the action.
+  const burstProfile = (over: Record<string, unknown> = {}) => ({
+    schema_version: 1,
+    seed: 16,
+    faults: [
+      {
+        id: 'orders-5xx',
+        kind: 'error',
+        match: '**',
+        rate: 0.2,
+        status: 503,
+        ...over,
+      },
+    ],
+  });
+
+  const replay = async (raw: unknown, times: number) => {
+    const ledgerPath = path.join(mkTmp(), 'ledger.jsonl');
+    const handler = createRouteHandler({
+      profile: ok(raw),
+      ledgerPath,
+      flow: { id: 'f', title: 't', file: 'x.spec.ts' },
+    });
+    const route = fakeRoute();
+    for (let i = 0; i < times; i += 1) {
+      await handler(route, fakeRequest('https://app.test/api/orders'));
+    }
+    return { calls: route.calls, rows: readLedger(ledgerPath) as any[] };
+  };
+
+  it('serves a declared burst as that many consecutive fulfilled responses', async () => {
+    const bursty = await replay(burstProfile({ burst: 3 }), 6);
+    expect(bursty.calls.map((c) => c.kind)).toEqual([
+      'fulfill',
+      'fulfill',
+      'fulfill',
+      'continue',
+      'continue',
+      'continue',
+    ]);
+    for (const call of bursty.calls.slice(0, 3)) {
+      expect((call.arg as any).status).toBe(503);
+    }
+    expect(bursty.rows.map((r) => r.burst_index)).toEqual([0, 1, 2]);
+    expect(bursty.rows.map((r) => r.ordinal)).toEqual([0, 1, 2]);
+  });
+
+  it('serves exactly one response when no burst is declared', async () => {
+    // Same seed, same rate, same identities: the ONLY difference from the case
+    // above is the declared burst, so the burst is the only thing that can
+    // explain the extra two fulfils there.
+    const single = await replay(burstProfile(), 6);
+    expect(single.calls.map((c) => c.kind)).toEqual([
+      'fulfill',
+      'continue',
+      'continue',
+      'continue',
+      'continue',
+      'continue',
+    ]);
+    expect(single.rows.map((r) => r.burst_index)).toEqual([0]);
+    const explicitOne = await replay(burstProfile({ burst: 1 }), 6);
+    expect(explicitOne.calls.map((c) => c.kind)).toEqual(
+      single.calls.map((c) => c.kind),
+    );
   });
 
   it('never fails the run because the ledger could not be written', () => {

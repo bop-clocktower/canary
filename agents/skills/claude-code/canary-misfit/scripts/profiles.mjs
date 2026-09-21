@@ -247,6 +247,44 @@ export function decisionKey(seed, faultId, request) {
   return `${seed}|${faultId}|${request.method} ${request.url}#${request.ordinal ?? 0}`;
 }
 
+/** Does one request's own roll come up for this fault? */
+function rolls(seed, fault, request) {
+  return draw(fnv1a(decisionKey(seed, fault.id, request))) < fault.rate;
+}
+
+/**
+ * Where this request sits inside a burst, or null if the fault does not fire
+ * for it at all.
+ *
+ * `burst: N` means N CONSECUTIVE responses in total -- the request whose own
+ * roll came up, plus the N-1 requests of the same identity that follow it.
+ * That is the reading the docs already state ("`burst` for consecutive", and a
+ * worked `"burst": 3` example in the proposal): N is the size of the burst,
+ * not a count of extras after the first. `burst` defaults to 1, so an
+ * undeclared burst is exactly the single-response behaviour.
+ *
+ * It is resolved by looking BACKWARDS over the ordinal window rather than by
+ * counting forwards in mutable state, and that is the whole design: a counter
+ * would make the decision depend on arrival order, which is precisely what
+ * `decisionKey` exists to avoid. Every roll here is still a pure function of
+ * (seed, fault id, request identity), so the same seed reproduces the same
+ * burst whatever order the requests arrive in, and across processes.
+ *
+ * `burst` is documented for `error`; the window is kind-agnostic because a
+ * default of 1 makes it a no-op everywhere it was not asked for.
+ *
+ * @returns {number|null} 0-based position in the burst, or null
+ */
+function burstIndex(seed, fault, request) {
+  const ordinal = request.ordinal ?? 0;
+  const window = Math.min(fault.burst, ordinal + 1);
+  for (let back = 0; back < window; back += 1) {
+    if (rolls(seed, fault, { ...request, ordinal: ordinal - back }))
+      return back;
+  }
+  return null;
+}
+
 /**
  * Decide what, if anything, to do to one request under one profile.
  *
@@ -258,19 +296,24 @@ export function decisionKey(seed, faultId, request) {
 export function decide(profile, request) {
   for (const fault of profile.faults) {
     if (!matchesGlob(fault.match, request.url)) continue;
-    const roll = draw(fnv1a(decisionKey(profile.seed, fault.id, request)));
-    if (roll >= fault.rate) continue;
-    return { fault, action: actionFor(fault) };
+    const index = burstIndex(profile.seed, fault, request);
+    if (index === null) continue;
+    return { fault, action: actionFor(fault, index) };
   }
   return null;
 }
 
 /** What the injector should actually do for a fired fault. */
-function actionFor(fault) {
+function actionFor(fault, burstPosition = 0) {
   if (fault.kind === 'latency')
     return { type: 'delay', delay_ms: fault.delay_ms };
   if (fault.kind === 'error') {
-    return { type: 'fulfill', status: fault.status, burst: fault.burst };
+    return {
+      type: 'fulfill',
+      status: fault.status,
+      burst: fault.burst,
+      burst_index: burstPosition,
+    };
   }
   if (fault.kind === 'abort') return { type: 'abort', reason: fault.reason };
   // network: an envelope becomes a delay at this layer. The jitter allowance is

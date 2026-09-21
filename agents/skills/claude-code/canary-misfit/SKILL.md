@@ -1,11 +1,11 @@
 ---
 name: canary-misfit
 description:
-  E2E resilience injection — wrap a Playwright run in seeded adversarial
-  network conditions (route-level latency, 5xx bursts, aborted responses,
-  slow-network profiles) and report a per-flow verdict of graceful, degraded, or
-  shattered. Advisory, never a gate. Reproducible from a seed. Self-contained
-  (bundles its own profile engine, route fixture and verdict classifier).
+  E2E resilience injection — wrap a Playwright run in seeded adversarial network
+  conditions (route-level latency, 5xx bursts, aborted responses, slow-network
+  profiles) and report a per-flow verdict of graceful, degraded, or shattered.
+  Advisory, never a gate. Reproducible from a seed. Self-contained (bundles its
+  own profile engine, route fixture and verdict classifier).
 cli: scripts/cli.mjs
 requires: [node>=20]
 ---
@@ -84,7 +84,15 @@ each resolve to `latency_ms` / `jitter_ms` / `loss_rate` / `bandwidth_kbps`.
 the same envelopes at the protocol/load layer. One definition, two layers.
 
 Faults are evaluated in declaration order; the first that matches and fires
-wins. `rate` defaults to 1 (always), `match` defaults to `**`.
+wins. `rate` defaults to 1 (always), `match` defaults to `**`, and `burst`
+defaults to 1.
+
+`burst: N` on an `error` fault means **N consecutive responses in total** — the
+request whose roll came up, plus the next N-1 requests of the same identity
+(`METHOD url`). It is what lets a profile ask "does the retry survive three
+failures in a row", which a per-request `rate` cannot express. The burst is
+resolved from the ordinal, not from a running counter, so it stays reproducible
+and independent of arrival order like every other decision here.
 
 ## Wiring (one step, once per suite)
 
@@ -158,6 +166,13 @@ request identity (`METHOD url#ordinal`, where the ordinal counts repeats of that
 method+url **within one flow**). It does **not** depend on arrival order, which
 is what makes a parallel run reproducible. The consequence: a change to how many
 times a flow calls a URL changes that flow's decisions, even at the same seed.
+
+**The verdict layer is not equally reproducible, and deliberately so.** Only the
+_injection_ is seeded; `degraded` is decided by comparing the flow's measured
+`duration_ms` against `budget_ms`, so the same seed on a slower machine — or a
+busier CI runner — can move a flow from `graceful` to `degraded` with identical
+faults injected. Reproduce a reported verdict on comparable hardware, and read
+`graceful`/`degraded` as a timing observation rather than a seeded fact.
 
 ## Related skills
 

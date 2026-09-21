@@ -86,6 +86,9 @@ export function createRouteHandler({
       action: action.type,
       delay_ms: action.type === 'delay' ? action.delay_ms : 0,
       status: action.status ?? null,
+      // Which response of a declared burst this is (0-based), so a ledger
+      // reader can tell three injected 5xx from one.
+      burst_index: action.burst_index ?? null,
     });
 
     if (action.type === 'abort') return route.abort(action.reason);

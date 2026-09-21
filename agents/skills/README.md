@@ -27,8 +27,8 @@ agents/skills/
 │   ├── canary-fleet-health/
 │   ├── canary-generate-test/
 │   ├── canary-instrument/
-│   ├── canary-misfit/
 │   ├── canary-katana/
+│   ├── canary-misfit/
 │   ├── canary-mission-briefing/
 │   ├── canary-pr-guardian/
 │   ├── canary-promote-test/
