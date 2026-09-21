@@ -170,6 +170,63 @@ describe('component attribution (D1/D2)', () => {
     expect(hit).toEqual({ component: null, source: null });
   });
 
+  it('ignores a marker that belongs to a DESCENDANT, not the failing element', () => {
+    // axe's `html` is the failing element's OUTER HTML, so it contains the
+    // children too. A shared icon's marker inside an unmarked button is NOT
+    // that button's identity: attributing it would merge two structurally
+    // different buttons into one finding with one fix line, and the reader
+    // would remediate one site and believe the other was covered.
+    const hit = attributeNode(
+      {
+        html: '<button class="btn"><span data-testid="icon-chevron">v</span></button>',
+        target: ['div > button.btn'],
+      },
+      DEFAULT_ATTRS,
+    );
+    expect(hit).toEqual({ component: null, source: null });
+  });
+
+  it('prefers the failing element own marker over a descendant marker', () => {
+    const hit = attributeNode(
+      {
+        html: '<button data-component="PrimaryCta"><span data-component="Icon">v</span></button>',
+        target: ['button'],
+      },
+      DEFAULT_ATTRS,
+    );
+    expect(hit).toEqual({ component: 'PrimaryCta', source: 'data-component' });
+  });
+
+  it('reads the opening tag even when an earlier attribute value contains >', () => {
+    const hit = attributeNode(
+      {
+        html: '<button title="a > b" data-testid="Chip">Go</button>',
+        target: ['button'],
+      },
+      DEFAULT_ATTRS,
+    );
+    expect(hit).toEqual({ component: 'Chip', source: 'data-testid' });
+  });
+
+  it('reads the opening tag when an attribute value contains a quote of the other kind', () => {
+    const hit = attributeNode(
+      {
+        html: `<button title='say "hi" > now' data-qa="Q">Go</button>`,
+        target: ['button'],
+      },
+      DEFAULT_ATTRS,
+    );
+    expect(hit).toEqual({ component: 'Q', source: 'data-qa' });
+  });
+
+  it('still resolves a self-closing element marker', () => {
+    const hit = attributeNode(
+      { html: '<img data-testid="Avatar" alt=""/>', target: ['img'] },
+      DEFAULT_ATTRS,
+    );
+    expect(hit.component).toBe('Avatar');
+  });
+
   it('flattens a nested (iframe) target path', () => {
     const hit = attributeNode(
       {
@@ -319,6 +376,32 @@ describe('unattributed nodes are counted, never bucketed', () => {
     );
     expect(named).toHaveLength(1);
     expect(named[0].occurrences).toBe(1);
+  });
+
+  it('counts a node whose only marker is on a DESCENDANT as unattributed', () => {
+    // The counter that tells a reader how much of the report to trust must not
+    // be deflated by the nodes whose attribution is least trustworthy.
+    const dir = fixtureDir(
+      page('/', [
+        violation('color-contrast', [
+          {
+            html: '<button class="btn"><span data-testid="icon-chevron">v</span></button>',
+            target: ['div > button.btn'],
+          },
+          {
+            html: '<button class="cta"><span data-testid="icon-chevron">v</span></button>',
+            target: ['main > button.cta'],
+          },
+        ]),
+      ]),
+    );
+    const report = buildReport(ingest(dir), { attrs: DEFAULT_ATTRS });
+
+    expect(report.summary.unattributed_nodes).toBe(2);
+    expect(report.summary.components).toBe(0);
+    expect(
+      report.findings.filter((f: { component: string | null }) => f.component),
+    ).toHaveLength(0);
   });
 
   it('surfaces the unattributed count in the Markdown', () => {

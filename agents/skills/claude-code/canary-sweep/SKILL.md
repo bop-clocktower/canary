@@ -70,7 +70,11 @@ priority order: `data-component`, `data-testid`, `data-test`, `data-qa`
 (override with `--component-attr`). If the failing element carries none, the
 skill also reads an attribute selector out of axe's `target` path, which is the
 only way an ancestor's marker is reachable — axe serialises the failing
-element's HTML only, so there is no DOM to walk.
+element's HTML only, so there is no DOM to walk. Only the failing element's own
+opening tag is read for a marker, never its descendants — axe's `html` is outer
+HTML, so a shared child's marker (an icon `<span data-testid="...">` inside an
+unmarked button) would otherwise be borrowed as the button's identity and merge
+two structurally different buttons into one finding.
 
 If neither yields a marker, the node is **unattributed**. It is reported under
 its own group with an exact count, and it is never folded into a named
