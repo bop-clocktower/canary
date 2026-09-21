@@ -154,3 +154,57 @@ jobs:
       # id, both kept stable) as a REQUIRED status check in branch protection,
       # alongside harness/validate/enforce. Repo-admin action — full guide in
       # Phase 6.
+
+  # Advisory mutation report (#486, spec D4). DELIBERATELY NOT a required
+  # check: it is listed under `advisory` in .github/required-checks.json, never
+  # under the required contexts, and stays there until the D5 exit criterion is
+  # met (20 mutant-producing PRs at <=10% false survivors). It never fails the
+  # PR on survivors.
+  #
+  # It is not narrowed to the diff: the report covers whatever the Stryker run
+  # it maps covered.
+  #
+  # Today it can only ABSTAIN, and that is the honest state rather than a gap:
+  # @stryker-mutator/vitest-runner 10.0.0 runs zero tests per mutant on
+  # vitest 5 (stryker-js#6210), so a run under it would report every covered
+  # mutant as "survived". The subcommand refuses to print that. When a fixed
+  # runner is pinned, the Stryker invocation lands here and the same exit-code
+  # contract carries it: 0 all-killed, 1 survivors (still advisory), 3
+  # abstained.
+  mutation:
+    runs-on: ubuntu-latest # A4: mutation results do not vary by OS.
+    timeout-minutes: 10 # D7: the wall-clock half of the budget.
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Build the TypeScript engine
+        run: |
+          npm --prefix ts ci
+          npm --prefix ts run build
+      - name: Mutation report
+        run: |
+          set +e
+          node ts/bin/canary.js guardian mutation \
+            --repo-root . --report-out mutation-report.json
+          rc=$?
+          set -e
+          if [ "$rc" -eq 3 ]; then
+            echo "::warning title=Mutation abstained::The mutation check verified nothing and says why in the report above. Not a failure, and not a pass."
+            exit 0
+          fi
+          if [ "$rc" -eq 1 ]; then
+            echo "::warning title=Surviving mutants::Tests covered these added lines but would not fail on them. Kill each one with an assertion, or record a reason with // canary:allow-mutant <reason>."
+            exit 0
+          fi
+          exit "$rc"
+      - name: Upload the mutation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report-${{ github.event.pull_request.number }}
+          path: mutation-report.json
+          if-no-files-found: warn
