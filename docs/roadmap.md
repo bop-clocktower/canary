@@ -35,7 +35,7 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 - **Status:** backlog
 - **Spec:** —
-- **Summary:** Ongoing curated batches of real-world function examples with multi-framework test parity, used to exercise and demo canary's generation/analysis. Batches 1–9 shipped (latest: fifo-lot-consumer, luhn-card-validator — PR #279); further-batch ideation drafts live in docs/ideation/ (batch6's below-the-cut pool has two remaining, deliberately deferred as weaker candidates: truncate-grapheme [framework-parity risk], cron-next-fire [parsing-surface scope-creep risk] — next batch likely needs fresh ideation rather than this pool). Continue adding batches; numeric examples must pin integer/fractional input contracts (soundness S4) to stay sound. (refs: docs/ideation/realworld-function-batch*.md; docs/changes/realworld-functions-batch9/)
+- **Summary:** Ongoing curated batches of real-world function examples with multi-framework test parity, used to exercise and demo canary's generation/analysis. Batches 1–10 shipped (latest: topological-task-order, percentile-nearest-rank — batch 10, catalog now 21 examples: 10 pytest / 11 vitest); batch 6's below-the-cut pool is EXHAUSTED — its last two (truncate-grapheme [framework-parity risk], cron-next-fire [unbounded parsing surface]) are standing hard rejects, so every further batch needs fresh ideation, as batch 10 did. Continue adding batches; numeric examples must pin integer/fractional input contracts (soundness S4) to stay sound. (refs: docs/ideation/realworld-function-batch*.md; docs/changes/realworld-functions-batch10/)
 - **Blockers:** —
 - **Plan:** —
 - **Priority:** P3
