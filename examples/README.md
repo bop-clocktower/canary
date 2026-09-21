@@ -12,48 +12,50 @@ pick, and the next steps after generation. No generated test files are committed
 
 ## Catalog
 
-| Example                                           | Type | Framework  | What it demonstrates                               |
-| ------------------------------------------------- | ---- | ---------- | -------------------------------------------------- |
-| [playwright-e2e-login](playwright-e2e-login/)     | E2E  | Playwright | Browser-level test of a login form                 |
-| [pytest-api-checkout](pytest-api-checkout/)       | API  | Pytest     | HTTP-level test of a checkout endpoint             |
-| [vitest-unit-validation](vitest-unit-validation/) | Unit | Vitest     | Pure unit test of a validation helper              |
-| [k6-perf-checkout](k6-perf-checkout/)             | Perf | k6         | Load test holding 50 RPS for 30s                   |
+| Example                                           | Type | Framework  | What it demonstrates                   |
+| ------------------------------------------------- | ---- | ---------- | -------------------------------------- |
+| [playwright-e2e-login](playwright-e2e-login/)     | E2E  | Playwright | Browser-level test of a login form     |
+| [pytest-api-checkout](pytest-api-checkout/)       | API  | Pytest     | HTTP-level test of a checkout endpoint |
+| [vitest-unit-validation](vitest-unit-validation/) | Unit | Vitest     | Pure unit test of a validation helper  |
+| [k6-perf-checkout](k6-perf-checkout/)             | Perf | k6         | Load test holding 50 RPS for 30s       |
 
 ## Real-world function examples
 
-Domain-logic scenarios where you start from a function signature and let
-Canary design the test coverage — not from a URL or framework mechanic.
+Domain-logic scenarios where you start from a function signature and let Canary
+design the test coverage — not from a URL or framework mechanic.
 
-| Example | Type | Framework | What it demonstrates |
-| ------- | ---- | --------- | -------------------- |
-| [lego-tracker-reconcile-collection](realworld-functions/lego-tracker-reconcile-collection/) | Unit | Pytest | Reconcile two LEGO set lists into matched / local-only / api-only |
-| [price-normalizer](realworld-functions/price-normalizer/) | Unit | Vitest | Parse mixed-format price strings (US, EU, bare) into a canonical struct |
-| [subscription-expiry-checker](realworld-functions/subscription-expiry-checker/) | Unit | Pytest | Bucket subscriptions into expired / expiring-soon / active by date |
-| [access-policy-evaluator](realworld-functions/access-policy-evaluator/) | Unit | Pytest | RBAC check — roles × actions with wildcard grants and role ordering |
-| [interval-merger](realworld-functions/interval-merger/) | Unit | Vitest | Merge overlapping / adjacent ranges into a sorted non-overlapping set |
-| [semver-compare](realworld-functions/semver-compare/) | Unit | Vitest | Order semver strings — prerelease, identifier, and build-metadata rules |
-| [tax-bracket-calculator](realworld-functions/tax-bracket-calculator/) | Unit | Pytest | Marginal tax across progressive brackets with boundary and reject cases |
-| [money-allocator](realworld-functions/money-allocator/) | Unit | Vitest | Split cents by ratio so parts sum exactly to total (largest-remainder) |
-| [order-state-machine](realworld-functions/order-state-machine/) | Unit | Pytest | Advance a state machine — terminal absorption, illegal-transition rejection |
-| [retry-backoff-schedule](realworld-functions/retry-backoff-schedule/) | Unit | Vitest | Exponential backoff with full jitter via an injected rng (deterministic) |
-| [discount-stacking](realworld-functions/discount-stacking/) | Unit | Vitest | Stack ordered % and fixed discounts — order-dependence, clamp, total cap |
-| [feature-flag-bucketing](realworld-functions/feature-flag-bucketing/) | Unit | Vitest | Deterministic % rollout via FNV-1a hash — monotonic enrollment, `<` boundary |
-| [dense-rank-leaderboard](realworld-functions/dense-rank-leaderboard/) | Unit | Pytest | Competition ranking — tied scores share a rank, next score skips the gap |
-| [bytes-humanizer](realworld-functions/bytes-humanizer/) | Unit | Vitest | Format bytes (1.5 KiB) — unit-crossing round, binary vs decimal base |
-| [pagination-cursor-codec](realworld-functions/pagination-cursor-codec/) | Unit | Vitest | Tamper-evident pagination cursor — checksum round-trip, integer-only state |
-| [business-hours-deadline](realworld-functions/business-hours-deadline/) | Unit | Pytest | Add business hours across nights/weekends/holidays, round-up-first rounding |
-| [token-bucket-rate-limiter](realworld-functions/token-bucket-rate-limiter/) | Unit | Vitest | Continuous token-bucket refill — injected clock, capacity cap, clock-skew reject |
-| [fifo-lot-consumer](realworld-functions/fifo-lot-consumer/) | Unit | Pytest | FIFO inventory consumption — partial/exact draining, order-preserving remainder, conservation invariant |
-| [luhn-card-validator](realworld-functions/luhn-card-validator/) | Unit | Pytest | Luhn checksum validation — doubling-reduction, malformed-input reject, minimal 2-digit edge case |
+| Example                                                                                     | Type | Framework | What it demonstrates                                                                                    |
+| ------------------------------------------------------------------------------------------- | ---- | --------- | ------------------------------------------------------------------------------------------------------- |
+| [lego-tracker-reconcile-collection](realworld-functions/lego-tracker-reconcile-collection/) | Unit | Pytest    | Reconcile two LEGO set lists into matched / local-only / api-only                                       |
+| [price-normalizer](realworld-functions/price-normalizer/)                                   | Unit | Vitest    | Parse mixed-format price strings (US, EU, bare) into a canonical struct                                 |
+| [subscription-expiry-checker](realworld-functions/subscription-expiry-checker/)             | Unit | Pytest    | Bucket subscriptions into expired / expiring-soon / active by date                                      |
+| [access-policy-evaluator](realworld-functions/access-policy-evaluator/)                     | Unit | Pytest    | RBAC check — roles × actions with wildcard grants and role ordering                                     |
+| [interval-merger](realworld-functions/interval-merger/)                                     | Unit | Vitest    | Merge overlapping / adjacent ranges into a sorted non-overlapping set                                   |
+| [semver-compare](realworld-functions/semver-compare/)                                       | Unit | Vitest    | Order semver strings — prerelease, identifier, and build-metadata rules                                 |
+| [tax-bracket-calculator](realworld-functions/tax-bracket-calculator/)                       | Unit | Pytest    | Marginal tax across progressive brackets with boundary and reject cases                                 |
+| [money-allocator](realworld-functions/money-allocator/)                                     | Unit | Vitest    | Split cents by ratio so parts sum exactly to total (largest-remainder)                                  |
+| [order-state-machine](realworld-functions/order-state-machine/)                             | Unit | Pytest    | Advance a state machine — terminal absorption, illegal-transition rejection                             |
+| [retry-backoff-schedule](realworld-functions/retry-backoff-schedule/)                       | Unit | Vitest    | Exponential backoff with full jitter via an injected rng (deterministic)                                |
+| [discount-stacking](realworld-functions/discount-stacking/)                                 | Unit | Vitest    | Stack ordered % and fixed discounts — order-dependence, clamp, total cap                                |
+| [feature-flag-bucketing](realworld-functions/feature-flag-bucketing/)                       | Unit | Vitest    | Deterministic % rollout via FNV-1a hash — monotonic enrollment, `<` boundary                            |
+| [dense-rank-leaderboard](realworld-functions/dense-rank-leaderboard/)                       | Unit | Pytest    | Competition ranking — tied scores share a rank, next score skips the gap                                |
+| [bytes-humanizer](realworld-functions/bytes-humanizer/)                                     | Unit | Vitest    | Format bytes (1.5 KiB) — unit-crossing round, binary vs decimal base                                    |
+| [pagination-cursor-codec](realworld-functions/pagination-cursor-codec/)                     | Unit | Vitest    | Tamper-evident pagination cursor — checksum round-trip, integer-only state                              |
+| [business-hours-deadline](realworld-functions/business-hours-deadline/)                     | Unit | Pytest    | Add business hours across nights/weekends/holidays, round-up-first rounding                             |
+| [token-bucket-rate-limiter](realworld-functions/token-bucket-rate-limiter/)                 | Unit | Vitest    | Continuous token-bucket refill — injected clock, capacity cap, clock-skew reject                        |
+| [fifo-lot-consumer](realworld-functions/fifo-lot-consumer/)                                 | Unit | Pytest    | FIFO inventory consumption — partial/exact draining, order-preserving remainder, conservation invariant |
+| [luhn-card-validator](realworld-functions/luhn-card-validator/)                             | Unit | Pytest    | Luhn checksum validation — doubling-reduction, malformed-input reject, minimal 2-digit edge case        |
+| [topological-task-order](realworld-functions/topological-task-order/)                       | Unit | Pytest    | Dependency ordering with a pinned lexicographic tiebreak — cycle and unknown-prerequisite rejection     |
+| [percentile-nearest-rank](realworld-functions/percentile-nearest-rank/)                     | Unit | Vitest    | Nearest-rank percentile — pinned estimator, exact integer rank arithmetic, exact-multiple discontinuity |
 
 See [realworld-functions/README.md](realworld-functions/README.md) for the
 rationale and how to add more.
 
 ## Prerequisites
 
-Before running any example, install Canary as a Claude Code plugin.
-See [Getting Started](../docs/wiki/Getting-Started.md). No API key is
-required — generation runs through your Claude Code session.
+Before running any example, install Canary as a Claude Code plugin. See
+[Getting Started](../docs/wiki/Getting-Started.md). No API key is required —
+generation runs through your Claude Code session.
 
 ## Running an example
 

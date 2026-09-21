@@ -338,38 +338,73 @@ describe('upgrade', () => {
     expect(res.stdout).toContain('Dry run');
   });
 
-  it('pipx success reports up-to-date', async () => {
+  it('upgrades through npm, the channel Canary actually ships on', async () => {
+    const calls: Array<[string, string[]]> = [];
     const res = await invokeCanary(['upgrade'], {
       deps: {
-        runSubprocess: () => ({ status: 0, stdout: '', stderr: '' }),
-      },
-    });
-    expect(res.code).toBe(0);
-    expect(res.stdout).toContain('Already up to date');
-  });
-
-  it('falls back to pip when pipx is unavailable', async () => {
-    let calls = 0;
-    const res = await invokeCanary(['upgrade'], {
-      deps: {
-        runSubprocess: () => {
-          calls += 1;
-          return { status: calls === 1 ? 1 : 0, stdout: '', stderr: '' };
+        runSubprocess: (cmd, args) => {
+          calls.push([cmd, args]);
+          return { status: 0, stdout: '', stderr: '' };
         },
       },
     });
     expect(res.code).toBe(0);
-    expect(res.stdout).toContain('trying pip');
+    expect(calls).toEqual([
+      ['npm', ['install', '-g', 'canary-test-cli@latest']],
+    ]);
   });
 
-  it('reports failure when both fail (exit 1)', async () => {
+  it('does not touch the discontinued pipx/pip Python channel', async () => {
+    const calls: Array<[string, string[]]> = [];
     const res = await invokeCanary(['upgrade'], {
       deps: {
-        runSubprocess: () => ({ status: 1, stdout: '', stderr: 'nope' }),
+        runSubprocess: (cmd, args) => {
+          calls.push([cmd, args]);
+          return { status: 0, stdout: '', stderr: '' };
+        },
+      },
+    });
+    expect(res.code).toBe(0);
+    const flat = calls
+      .map(([cmd, args]) => [cmd, ...args].join(' '))
+      .join('\n');
+    expect(flat).not.toContain('pipx');
+    expect(flat).not.toContain('pip install');
+    expect(flat).not.toContain('canary-test-ai');
+  });
+
+  // Regression: a nonzero exit means the tool RAN and FAILED. Reporting it as
+  // "not found" and swallowing its stderr hid the real cause (e.g. uv's
+  // "does not appear to be a Python project") behind a bogus one.
+  it('surfaces the real stderr when the upgrade tool runs and fails', async () => {
+    const res = await invokeCanary(['upgrade'], {
+      deps: {
+        runSubprocess: () => ({
+          status: 1,
+          stdout: '',
+          stderr:
+            'EACCES: permission denied, mkdir /usr/local/lib/node_modules',
+        }),
       },
     });
     expect(res.code).toBe(1);
-    expect(res.stdout).toContain('Upgrade failed');
+    expect(res.stderr).toContain('Upgrade failed');
+    expect(res.stderr).toContain('EACCES: permission denied');
+    expect(res.stderr).not.toContain('not found');
+  });
+
+  // Regression: `status: null` is the ONLY signal that the binary is missing
+  // (main-deps maps a spawn error to null). Conflating it with a nonzero exit
+  // is what produced the false "pipx not found".
+  it('reports a genuinely missing binary distinctly from a failed run', async () => {
+    const res = await invokeCanary(['upgrade'], {
+      deps: {
+        runSubprocess: () => ({ status: null, stdout: '', stderr: '' }),
+      },
+    });
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain('npm');
+    expect(res.stderr).toContain('not found');
   });
 });
 
