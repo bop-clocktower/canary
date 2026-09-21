@@ -72,6 +72,9 @@ export default defineConfig({
         // live OTel SDK and stays out of the coverage gate (see the note
         // above about not dragging the gate down with untested JS).
         'claude-code/canary-instrument/scripts/*.mjs',
+        // Top-level only, for the same reason as canary-instrument above: the
+        // route fixture needs a live Playwright run and stays out of the gate.
+        'claude-code/canary-misfit/scripts/*.mjs',
         'claude-code/canary-fail-fast/scripts/**/*.mjs',
         'claude-code/canary-test-reporter/scripts/**/*.mjs',
         'claude-code/canary-shadow/scripts/*.mjs',
