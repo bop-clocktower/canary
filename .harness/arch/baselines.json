@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-16T20:02:58.094Z",
-  "updatedFrom": "c9d67777b3ed48da03d72117e79b95355e6966dc",
+  "updatedAt": "2026-09-21T19:13:00.065Z",
+  "updatedFrom": "d2d3f3f08f9245f08b7d0d04722c9b4c671c38e8",
   "metrics": {
     "circular-deps": {
       "value": 0,
@@ -12,7 +12,7 @@
       "violationIds": []
     },
     "complexity": {
-      "value": 88,
+      "value": 89,
       "violationIds": [
         "a8c866338c33ad099dc7a21d71583da769c4e39a9b63c1fd60dc1805843166f1",
         "e7f37935c52f7b1ab501e5dab30595fc3e8ad85b5ab02863cd6c3af41d8e2eb0",
