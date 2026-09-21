@@ -437,21 +437,29 @@ The composite action (`action.yml`) was removed in v3.0 — it called
 (`/canary-write-test`) instead; generation runs in the developer's own
 authenticated session with no API key required.
 
-### Diff-scoped mutation testing (advisory, #486)
+### Mutation testing (advisory, #486)
 
-`canary guardian mutation` reports which lines a PR ADDS that a test covers but
-would not fail on. A mutant nothing notices is a _surviving mutant_, and it is
+`canary guardian mutation` reports which mutated lines a test covers but would
+not fail on. A mutant nothing notices is a _surviving mutant_, and it is
 concrete evidence of a weak assertion, which is what coverage cannot see.
 
+The report covers whatever the Stryker run it maps covered; `--report` is not
+narrowed to the diff, so it is not described as diff-scoped.
+
 - **Advisory, on purpose.** The `mutation` job in `guardian.yml` never fails a
-  PR on survivors, and it is deliberately absent from
-  `.github/required-checks.json`. It is promoted to a gate only when the exit
-  criterion in the spec (D5) is met on measured evidence.
+  PR on survivors, and it is listed under `advisory` in
+  `.github/required-checks.json`, never under the required contexts. It is
+  promoted to a gate only when the exit criterion in the spec (D5) is met on
+  measured evidence.
 - **Exit codes** follow ADR 0009: `0` every sampled mutant was killed, `1`
   survivors, `3` abstained.
 - **Abstention is not a pass.** Zero mutants, no mutant covered by any test, an
   unreadable report, or a runner that cannot kill reports `abstained` with the
   reason. It never renders "0 survived".
+- **A timeout is not a kill.** Timeouts are excluded from the killed numerator,
+  so a run that killed nothing and only timed out abstains rather than reporting
+  `all-killed`; every non-abstained report renders its timeout count, zero
+  included.
 - **Author obligation.** For each survivor, either strengthen a test until it
   kills the mutant, or record why not on the line:
   `// canary:allow-mutant <reason>`. A bare marker with no reason is ignored,

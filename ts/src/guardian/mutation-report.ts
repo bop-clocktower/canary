@@ -7,11 +7,11 @@
  * lives there, the reading of a run lives here.
  *
  * Every function in this file obeys one rule: a report that verified nothing
- * says so. There is no code path that renders "0 survived".
+ * says so. There is no code path that renders "0 survived", and a run whose
+ * mutants only timed out abstains rather than reporting `all-killed` -- a
+ * timeout is excluded from the killed numerator, so it cannot count as a kill
+ * in the verdict either. Every non-abstained report renders its timeout count.
  */
-
-/** The `// canary:allow-mutant <reason>` marker, mirroring allow-untested. */
-const SUPPRESS_MUTANT_RE = /(?:\/\/|#)\s*canary:allow-mutant\s+(.+)/;
 
 import {
   MutantFinding,
@@ -21,6 +21,9 @@ import {
   StrykerReport,
   SuppressedMutant,
 } from './mutation.js';
+
+/** The `// canary:allow-mutant <reason>` marker, mirroring allow-untested. */
+const SUPPRESS_MUTANT_RE = /(?:\/\/|#)\s*canary:allow-mutant\s+(.+)/;
 
 export function abstainedReport(
   reason: string,
@@ -68,11 +71,19 @@ function verdictFor(
       abstainReason: 'the run produced zero mutants, which is not a pass',
     };
   }
-  if (report.killed === 0 && report.survived === 0 && report.timeout === 0) {
+  // A timeout is NOT a kill here. Stryker's own vocabulary counts one as a
+  // kill (an infinite loop is a detected change), but this module excludes it
+  // from the killed numerator, so treating it as a non-survivor too would let
+  // a run that killed nothing report `all-killed` off a `0/N` headline --
+  // wrong in both directions at once. Nothing killed is an abstention.
+  if (report.killed === 0 && report.survived === 0) {
     return {
       verdict: 'abstained',
       abstainReason:
-        'no mutant was covered by any test, so nothing could be killed',
+        report.timeout > 0
+          ? `no mutant was killed and ${report.timeout} timed out, so the ` +
+            'run verified nothing'
+          : 'no mutant was covered by any test, so nothing could be killed',
     };
   }
   return { verdict: report.survived > 0 ? 'survivors' : 'all-killed' };
@@ -228,6 +239,10 @@ export function renderMutationReport(report: MutationReport): string {
       ? ` (sampled ${report.sampled} of ${report.generated})`
       : '';
   lines.push(`${report.killed}/${report.sampled} mutants killed${scope}.`);
+  // Rendered unconditionally, zero included: a timeout is a mutant this run
+  // did not verify, and it is absent from the numerator above. Printing it
+  // only when non-zero would let a reader assume a clean run had none.
+  lines.push(`${report.timeout} mutant(s) timed out (not counted as killed).`);
   if (report.survived > 0) {
     lines.push('', `${report.survived} survived:`);
     for (const finding of report.findings.filter(
@@ -251,5 +266,3 @@ export function renderMutationReport(report: MutationReport): string {
   lines.push('', excludedLine(report));
   return lines.join('\n');
 }
-
-/** Recursively list `*.test.ts` files under `dir`. */

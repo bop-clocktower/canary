@@ -2,9 +2,15 @@
  * Diff-scoped mutation testing (#486), tool-independent core.
  *
  * Coverage proves a test RAN. A mutation proves a test would FAIL if the code
- * were wrong. This module turns guardian's existing diff scope into Stryker
- * `mutate` entries, and turns Stryker's JSON report back into a guardian-shaped
- * verdict with abstention and suppression rules.
+ * were wrong. This module holds the model and the runner guard; the mapping of
+ * a Stryker JSON report onto a guardian-shaped verdict, with its abstention and
+ * suppression rules, lives in `mutation-report.ts`.
+ *
+ * Scope-building (turning a diff into Stryker `mutate` entries) and the D7
+ * mutant cap are deliberately NOT here. They were written ahead of a runner
+ * that is still not wired, so nothing called them; speculative scaffolding that
+ * a real runner will redesign anyway is carrying cost for no verification.
+ * Re-add them against an actual `mutate` entry format when the run lands.
  *
  * WHY THE RUN ITSELF IS NOT HERE. The 2026-09-17 spike found that
  * `@stryker-mutator/vitest-runner` 10.0.0 cannot kill mutants on vitest 5: it
@@ -25,17 +31,6 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
-
-import type { ChangedUnit } from './diff-coverage/types.js';
-
-/** Only paths vitest's coverage `include: ['src/**']` can attribute (F3). */
-const MUTATE_PREFIX = 'ts/src/';
-
-/** Test paths are never mutated: a test does not itself need a test. */
-const TEST_PATH_RE = /\.(test|spec)\.[cm]?[jt]sx?$/;
-
-/** D7: the per-PR mutant budget. Over it, the run samples and says so. */
-export const MUTANT_CAP = 150;
 
 /** The upstream bug that makes a vitest-5 mutation run untrustworthy. */
 export const RUNNER_ISSUE = 'stryker-js#6210';
@@ -139,52 +134,6 @@ export interface MapOptions {
   generated?: number;
 }
 
-/**
- * Turn guardian's filtered diff scope into Stryker `mutate` entries.
- *
- * The caller passes the units guardian already kept -- skip globs, test files,
- * test support and type-only modules filtered out -- so there is exactly one
- * definition of "what this PR changed" (D2). The prefix and test-path guards
- * here are a floor, not a substitute for those filters.
- */
-export function mutateEntries(units: ChangedUnit[]): string[] {
-  const entries: string[] = [];
-  for (const unit of units) {
-    if (!unit.path.startsWith(MUTATE_PREFIX)) continue;
-    if (TEST_PATH_RE.test(unit.path)) continue;
-    for (const [start, end] of unit.added_ranges) {
-      entries.push(`${unit.path}:${start}-${end}`);
-    }
-  }
-  return entries;
-}
-
-/** The outcome of applying the D7 cap. */
-export interface SampleResult<T> {
-  sampled: T[];
-  generated: number;
-}
-
-/**
- * Cap a mutant list deterministically, by (path, line, mutator).
- *
- * F4: a partial result that states its denominator beats silence, so the caller
- * reports `sampled N of M` rather than pretending it ran everything. The sort
- * makes two runs over the same diff pick the same mutants, which is what lets a
- * survivor be re-checked after a fix.
- */
-export function sampleMutants<
-  T extends { path: string; line: number; mutator: string },
->(mutants: T[], cap: number = MUTANT_CAP): SampleResult<T> {
-  const ordered = [...mutants].sort(
-    (a, b) =>
-      a.path.localeCompare(b.path) ||
-      a.line - b.line ||
-      a.mutator.localeCompare(b.mutator),
-  );
-  return { sampled: ordered.slice(0, cap), generated: mutants.length };
-}
-
 /** A parsed version: its major, and a rank that orders two versions. */
 interface Version {
   major: number;
@@ -246,7 +195,7 @@ export function runnerCompatibility(
   };
 }
 
-/** An abstention: a reason, a zero denominator, and no findings. Ever. */
+/** Recursively list `*.test.ts` files under `dir`; unreadable dirs yield none. */
 function listTests(dir: string): string[] {
   let entries;
   try {

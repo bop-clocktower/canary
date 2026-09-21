@@ -155,10 +155,14 @@ jobs:
       # alongside harness/validate/enforce. Repo-admin action — full guide in
       # Phase 6.
 
-  # Advisory diff-scoped mutation report (#486, spec D4). DELIBERATELY NOT a
-  # required check: it is absent from .github/required-checks.json and must
-  # stay absent until the D5 exit criterion is met (20 mutant-producing PRs at
-  # <=10% false survivors). It never fails the PR on survivors.
+  # Advisory mutation report (#486, spec D4). DELIBERATELY NOT a required
+  # check: it is listed under `advisory` in .github/required-checks.json, never
+  # under the required contexts, and stays there until the D5 exit criterion is
+  # met (20 mutant-producing PRs at <=10% false survivors). It never fails the
+  # PR on survivors.
+  #
+  # It is not narrowed to the diff: the report covers whatever the Stryker run
+  # it maps covered.
   #
   # Today it can only ABSTAIN, and that is the honest state rather than a gap:
   # @stryker-mutator/vitest-runner 10.0.0 runs zero tests per mutant on
@@ -181,7 +185,7 @@ jobs:
         run: |
           npm --prefix ts ci
           npm --prefix ts run build
-      - name: Diff-scoped mutation report
+      - name: Mutation report
         run: |
           set +e
           node ts/bin/canary.js guardian mutation \

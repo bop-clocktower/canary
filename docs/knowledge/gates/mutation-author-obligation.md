@@ -32,7 +32,12 @@ mutation run had to exclude.
 ## What the check owes you
 
 - A denominator on every headline (`12/12 mutants killed`,
-  `sampled 150 of 400`).
+  `sampled 150 of 400`), and the timeout count beside it on every non-abstained
+  report, zero included -- a timeout is excluded from the killed numerator, so
+  it has to be visible rather than inferred.
+- An abstention when nothing was killed. A timeout is not a kill: a run whose
+  mutants only timed out verified nothing and abstains (exit 3) rather than
+  reporting `all-killed` off a `0/N` headline.
 - The names of the tests that covered a survivor and did not fail -- the
   actionable half of the finding.
 - An `abstained` verdict, with its reason, whenever it verified nothing. Zero

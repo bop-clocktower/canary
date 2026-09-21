@@ -11,11 +11,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
-  MUTANT_CAP,
   RUNNER_ISSUE,
-  mutateEntries,
   runnerCompatibility,
-  sampleMutants,
   threadUnsafeTests,
 } from '../src/guardian/mutation.js';
 import {
@@ -67,60 +64,6 @@ function report(
 }
 
 const NO_EXCLUSIONS: string[] = [];
-
-describe('mutateEntries', () => {
-  it('emits one path:start-end entry per added range', () => {
-    expect(
-      mutateEntries([
-        { path: 'ts/src/a.ts', added_ranges: [[3, 5]] },
-        { path: 'ts/src/b.ts', added_ranges: [[9, 9]] },
-      ]),
-    ).toEqual(['ts/src/a.ts:3-5', 'ts/src/b.ts:9-9']);
-  });
-
-  it('drops paths outside ts/src (F3: only what vitest coverage maps)', () => {
-    expect(
-      mutateEntries([
-        {
-          path: 'agents/skills/claude-code/x/scripts/cli.mjs',
-          added_ranges: [[1, 2]],
-        },
-        { path: 'ts/test/a.test.ts', added_ranges: [[1, 2]] },
-        { path: 'ts/src/keep.ts', added_ranges: [[1, 2]] },
-      ]),
-    ).toEqual(['ts/src/keep.ts:1-2']);
-  });
-
-  it('emits nothing for an empty scope, so the caller abstains', () => {
-    expect(mutateEntries([])).toEqual([]);
-  });
-});
-
-describe('sampleMutants (D7/F4: a cap that states its denominator)', () => {
-  const many = Array.from({ length: MUTANT_CAP + 5 }, (_, i) => ({
-    path: 'ts/src/a.ts',
-    line: MUTANT_CAP + 5 - i,
-    mutator: 'ConditionalExpression',
-    replacement: 'false',
-    status: 'survived' as const,
-    coveredBy: ['t'],
-  }));
-
-  it('keeps the cap, deterministically ordered by path then line', () => {
-    const first = sampleMutants(many, MUTANT_CAP);
-    expect(first.sampled).toHaveLength(MUTANT_CAP);
-    expect(first.generated).toBe(MUTANT_CAP + 5);
-    expect(first.sampled[0]!.line).toBe(1);
-    expect(sampleMutants(many, MUTANT_CAP).sampled).toEqual(first.sampled);
-  });
-
-  it('is identity at or under the cap', () => {
-    const few = many.slice(0, 3);
-    const result = sampleMutants(few, MUTANT_CAP);
-    expect(result.sampled).toHaveLength(3);
-    expect(result.generated).toBe(3);
-  });
-});
 
 describe('runnerCompatibility (the abstain guard, F6)', () => {
   it('refuses the runner that runs zero tests per mutant on vitest 5', () => {
@@ -229,6 +172,21 @@ describe('abstention (D6, ADR 0009 — a zero denominator is not a pass)', () =>
     );
     expect(mapped.verdict).toBe('abstained');
     expect(mapped.survived).toBe(0);
+  });
+
+  it('abstains when every mutant timed out, because a timeout verified nothing', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 10, status: 'Timeout', coveredBy: ['t1'] },
+        { line: 11, status: 'Timeout', coveredBy: ['t1'] },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    expect(mapped.killed).toBe(0);
+    expect(mapped.timeout).toBe(2);
+    expect(mapped.verdict).toBe('abstained');
+    expect(mapped.abstainReason).toContain('timed out');
+    expect(mutationExitCode(mapped)).toBe(3);
   });
 
   it('never carries a survived finding on an abstention', () => {
@@ -347,6 +305,32 @@ describe('renderMutationReport', () => {
       ),
     );
     expect(text).toContain('2/2 mutants killed');
+  });
+
+  it('names the timeouts, which the killed numerator excludes', () => {
+    const mapped = mapStrykerReport(
+      report([
+        { line: 10, status: 'Killed', coveredBy: ['t1'] },
+        { line: 11, status: 'Timeout', coveredBy: ['t1'] },
+        { line: 12, status: 'Timeout', coveredBy: ['t1'] },
+        { line: 13, status: 'Timeout', coveredBy: ['t1'] },
+        { line: 14, status: 'Timeout', coveredBy: ['t1'] },
+      ]),
+      { excludedTests: NO_EXCLUSIONS },
+    );
+    const text = renderMutationReport(mapped);
+    expect(text).toContain('1/5 mutants killed');
+    expect(text).toContain('4 mutant(s) timed out');
+  });
+
+  it('renders the timeout count even when it is zero', () => {
+    const text = renderMutationReport(
+      mapStrykerReport(
+        report([{ line: 10, status: 'Killed', coveredBy: ['t1'] }]),
+        { excludedTests: NO_EXCLUSIONS },
+      ),
+    );
+    expect(text).toContain('0 mutant(s) timed out');
   });
 
   it('says so when the cap truncated the run', () => {

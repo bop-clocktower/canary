@@ -1358,18 +1358,12 @@ function installedVersion(repoRoot: string, pkg: string): string | null {
 }
 
 /**
- * Emit the diff-scoped mutation report (#486).
+ * Map a Stryker report file, or abstain with the reason it could not be.
  *
- * Two paths, and BOTH can only end in a report that states its denominator:
- *
- *   - `--report <stryker.json>`: map a run somebody else performed.
- *   - no `--report`: there is nothing to map, so the command abstains and says
- *     why. While `@stryker-mutator/vitest-runner` cannot kill a mutant on
- *     vitest 5 (stryker-js#6210), the reason names that issue; once a fixed
- *     runner is installed, the reason says the run is not wired yet. Neither is
- *     a pass, and neither can print a survivor.
+ * NOT diff-scoped: every mutant the supplied report contains is mapped, so a
+ * repo-wide Stryker run maps to a repo-wide result. The command's description
+ * says so rather than implying a scope this path does not apply.
  */
-/** Map a Stryker report file, or abstain with the reason it could not be. */
 function mappedStrykerReport(
   path: string,
   repoRoot: string,
@@ -1449,11 +1443,14 @@ function guardAbstention(
 }
 
 /**
- * Emit the diff-scoped mutation report (#486).
+ * Emit the mutation report (#486).
  *
  * Exit codes follow ADR 0009: 0 all-killed, 1 survivors, 3 abstained. Every
  * path through here ends in a report that states its denominator and discloses
  * the suites a mutation run has to exclude.
+ *
+ * The report covers whatever the supplied Stryker run covered; it is not
+ * narrowed to the diff. Calling it diff-scoped would overstate it.
  */
 function mutationCmd(opts: MutationOptions, deps: GuardianDeps): void {
   const excluded = threadUnsafeTests(join(opts.repoRoot, 'ts'));
@@ -2096,8 +2093,9 @@ export function createGuardianCommand(
   program
     .command('mutation')
     .description(
-      'Advisory diff-scoped mutation report: which added lines a test covers ' +
-        'but would not fail on. Exit 0 all-killed, 1 survivors, 3 abstained.',
+      'Advisory mutation report: which mutated lines a test covers but would ' +
+        'not fail on, over whatever the supplied Stryker run covered. ' +
+        'Exit 0 all-killed, 1 survivors, 3 abstained.',
     )
     .option(
       '--report <path>',
