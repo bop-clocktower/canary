@@ -8,6 +8,11 @@
 // this script writes them all from one argument. The consistency test stays as
 // the safety net; this makes drift impossible in normal use.
 //
+// #1059: npm/package-lock.json declares the version twice and was NOT stamped
+// here, so it sat two releases stale while the consistency test — which did
+// not cover it either — stayed green. Both halves are fixed: the lockfile is
+// stamped below, and it is now inside that test's denominator.
+//
 // Usage: node scripts/bump-version.mjs <version>   e.g. 6.1.0 or 6.1.0-rc.1
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -41,6 +46,23 @@ changed.push([
   editJson('npm/package.json', (d) => {
     const b = d.version;
     d.version = version;
+    return b;
+  }),
+]);
+
+// The lockfile carries the version in two places (root and the root package
+// entry). `npm install --package-lock-only` would also do this, but it needs a
+// registry round-trip; stamping both fields directly keeps the bump offline
+// and deterministic.
+changed.push([
+  'npm/package-lock.json',
+  editJson('npm/package-lock.json', (d) => {
+    const b = d.version;
+    d.version = version;
+    if (!d.packages?.['']) {
+      throw new Error('npm/package-lock.json has no root ("") package entry');
+    }
+    d.packages[''].version = version;
     return b;
   }),
 ]);

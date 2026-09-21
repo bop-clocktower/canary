@@ -250,7 +250,7 @@ describe('ticket-update: a non-object report JSON', () => {
       }
       expect(thrown).toBeUndefined();
       expect(res?.code).toBe(1);
-      expect(res?.stdout).toContain('report.json');
+      expect(res?.stderr).toContain('report.json');
     } finally {
       rmTmp(tmp);
     }

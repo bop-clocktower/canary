@@ -262,7 +262,7 @@ describe('heal-test (injected healer)', () => {
   it('missing file exits 1', async () => {
     const res = await invokeCanary(['heal-test', '/no/such/file.py']);
     expect(res.code).toBe(1);
-    expect(res.stdout).toContain('is not a file');
+    expect(res.stderr).toContain('is not a file');
   });
 
   it('no changes reports skipped', async () => {

@@ -359,7 +359,7 @@ describe('migrate apply / json / no-harness', () => {
         deps: { home: () => mkTmp() },
       });
       expect(res.code).toBe(1);
-      expect(res.stdout).toContain('No harness project detected');
+      expect(res.stderr).toContain('No harness project detected');
     } finally {
       rmTmp(tmp);
     }
