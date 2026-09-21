@@ -30,6 +30,7 @@ import { main as savantMain } from '../claude-code/canary-savant/scripts/cli.mjs
 import { main as katanaMain } from '../claude-code/canary-katana/scripts/cli.mjs';
 import { main as cassandraMain } from '../claude-code/canary-cassandra/scripts/cli.mjs';
 import { main as screechMain } from '../claude-code/canary-screech/scripts/cli.mjs';
+import { main as misfitMain } from '../claude-code/canary-misfit/scripts/cli.mjs';
 import { main as sweepMain } from '../claude-code/canary-sweep/scripts/cli.mjs';
 
 /** Exit code reserved CLI-wide for "abstained" (D4, mirrors gate-result.ts). */
@@ -120,6 +121,16 @@ const ROWS: SkillGateRow[] = [
       run(screechMain, ['--history', emptyStore(base), '--strict']),
   },
   {
+    // Results parse and hold real flows; the ledger is simply empty, so no
+    // fault was ever injected. "0 flows shattered" over zero exercised flows is
+    // the reassuring shape -- the denominator, not the numerator, is what
+    // collapsed.
+    command: 'canary-misfit (no fault injected into any flow)',
+    forbid: ['graceful'],
+    run: (base) => run(misfitMain, misfitArgv(base)),
+    strict: (base) => run(misfitMain, [...misfitArgv(base), '--strict']),
+  },
+  {
     // A directory with no axe JSON in it. The tempting read is "no findings,
     // so the site is accessible"; in fact nothing was post-processed at all.
     command: 'canary-sweep (no axe result document read)',
@@ -128,6 +139,25 @@ const ROWS: SkillGateRow[] = [
     strict: (base) => run(sweepMain, ['--results', base, '--strict']),
   },
 ];
+
+/** A valid profile plus a results file whose flows no fault ever touched. */
+function misfitArgv(base: string): string[] {
+  const profile = path.join(base, 'profile.json');
+  const faults = [{ id: 'a', kind: 'abort' }];
+  fs.writeFileSync(
+    profile,
+    JSON.stringify({ schema_version: 1, seed: 1, faults }),
+    'utf-8',
+  );
+
+  const results = path.join(base, 'results.json');
+  const attempt = { status: 'passed', duration: 5 };
+  const spec = { id: 's0', title: 'a flow', tests: [{ results: [attempt] }] };
+  const suite = { file: 'a.spec.ts', specs: [spec] };
+  fs.writeFileSync(results, JSON.stringify({ suites: [suite] }), 'utf-8');
+
+  return ['--profile', profile, '--results', results];
+}
 
 /** A parseable history store holding no run for the default branch. */
 function emptyStore(base: string): string {
