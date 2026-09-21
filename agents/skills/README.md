@@ -39,6 +39,7 @@ agents/skills/
 │   ├── canary-shadow/
 │   ├── canary-ship/
 │   ├── canary-strix/
+│   ├── canary-sweep/
 │   ├── canary-test-pipeline/
 │   └── canary-test-reporter/
 └── README.md                       # this file
@@ -107,6 +108,13 @@ slash-command entry points.
   recommendation, chat-ready block) as a markdown artifact plus a `::error`
   annotation. The cross-run complement to the two above — neither of them can
   tell that the branch itself went red.
+- [`canary-sweep`](./claude-code/canary-sweep/SKILL.md) — Bundled executable
+  skill (`scripts/cli.mjs`). Component-level dedup for axe-core accessibility
+  findings: ingests axe JSON from any producer, collapses findings by component
+  rather than by page, and emits a WCAG-mapped report with fix snippets. A
+  post-processor — it never crawls, discovers routes, or runs a browser. Nodes
+  it cannot attribute are counted as unattributed, and a results set in which no
+  rule was evaluated abstains instead of reading as clean.
 
 ### Closure auditing
 
@@ -245,9 +253,9 @@ Use the canary-generate-test skill to write a load test for /v1/search.
 Most skills here are documentation, not executable artifacts — they describe
 _how an agent should behave_, not a function to call. Several are bundled
 executable skills with their own CLI entry point (`cli:` in frontmatter).
-`canary-fail-fast`, `canary-katana`, `canary-screech`, and `canary-blackhawk`
-ship a Node entry (`scripts/cli.mjs`); `canary-instrument` and
-`canary-test-reporter` ship a Python entry (`scripts/cli.py`). Run those
+`canary-fail-fast`, `canary-katana`, `canary-screech`, `canary-sweep`, and
+`canary-blackhawk` ship a Node entry (`scripts/cli.mjs`); `canary-instrument`
+and `canary-test-reporter` ship a Python entry (`scripts/cli.py`). Run those
 directly, e.g.:
 
 ```bash
