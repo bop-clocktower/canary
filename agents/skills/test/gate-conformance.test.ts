@@ -31,6 +31,7 @@ import { main as katanaMain } from '../claude-code/canary-katana/scripts/cli.mjs
 import { main as cassandraMain } from '../claude-code/canary-cassandra/scripts/cli.mjs';
 import { main as screechMain } from '../claude-code/canary-screech/scripts/cli.mjs';
 import { main as misfitMain } from '../claude-code/canary-misfit/scripts/cli.mjs';
+import { main as sweepMain } from '../claude-code/canary-sweep/scripts/cli.mjs';
 
 /** Exit code reserved CLI-wide for "abstained" (D4, mirrors gate-result.ts). */
 const EXIT_ABSTAINED = 3;
@@ -128,6 +129,14 @@ const ROWS: SkillGateRow[] = [
     forbid: ['graceful'],
     run: (base) => run(misfitMain, misfitArgv(base)),
     strict: (base) => run(misfitMain, [...misfitArgv(base), '--strict']),
+  },
+  {
+    // A directory with no axe JSON in it. The tempting read is "no findings,
+    // so the site is accessible"; in fact nothing was post-processed at all.
+    command: 'canary-sweep (no axe result document read)',
+    forbid: ['0 violations across'],
+    run: (base) => run(sweepMain, ['--results', base]),
+    strict: (base) => run(sweepMain, ['--results', base, '--strict']),
   },
 ];
 
