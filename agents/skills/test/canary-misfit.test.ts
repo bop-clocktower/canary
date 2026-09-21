@@ -16,12 +16,14 @@ import { fileURLToPath } from 'node:url';
 import {
   validateProfile,
   networkEnvelope,
-  matchesGlob,
-  decide,
-  decisionKey,
   NETWORK_ENVELOPES,
   FAULT_KINDS,
 } from '../claude-code/canary-misfit/scripts/profiles.mjs';
+import {
+  matchesGlob,
+  decide,
+  decisionKey,
+} from '../claude-code/canary-misfit/scripts/decision.mjs';
 import { readFlows } from '../claude-code/canary-misfit/scripts/flows.mjs';
 import {
   readLedger,

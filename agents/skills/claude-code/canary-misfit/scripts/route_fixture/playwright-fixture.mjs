@@ -2,7 +2,7 @@
 //
 // withMisfit(base, options) wraps a Playwright `test` object with an `auto`
 // fixture that installs one `page.route('**/*')` handler per test. Every
-// request is offered to the seeded decision engine in `../profiles.mjs`; a
+// request is offered to the seeded decision engine in `../decision.mjs`; a
 // fault that fires is applied (delay, 5xx fulfil, abort) and appended to a
 // JSONL ledger, and everything else continues untouched.
 //
@@ -20,12 +20,13 @@
 // Shipped, not executed by canary's own CI: Playwright is not a dependency of
 // this repo, so this file is excluded from the coverage gate exactly as
 // canary-instrument's OTel bootstrap is. Its decision-making lives in
-// ../profiles.mjs, which IS covered.
+// ../decision.mjs, which IS covered.
 
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { validateProfile, decide } from '../profiles.mjs';
+import { validateProfile } from '../profiles.mjs';
+import { decide } from '../decision.mjs';
 
 /** Load + validate a profile file, throwing with every error at once. */
 export function loadProfileFile(profilePath) {
