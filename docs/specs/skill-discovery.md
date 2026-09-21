@@ -443,13 +443,14 @@ as a Python package for contributors:
 # Native binary — recommended for end users
 npm install -g canary-test-cli      # self-contained binary; no Python needed
 
-# Python package — for contributors / pipx users
-pipx install canary-test-ai         # installs from PyPI (pending) or
-# pipx install git+https://github.com/bop-clocktower/canary@v5.3.0
 ```
 
-The `canary-mcp` console script is registered by `pyproject.toml` and is
-available on `PATH` after the Python install.
+> The Python distribution (`canary-test-ai`, installed via `pipx`) was
+> discontinued at v6.0.0 when `agent/` was removed. `npm` is the only supported
+> install path.
+
+The `canary-mcp` console script ships with the npm package and is available on
+`PATH` after install.
 
 ## Out of Scope
 

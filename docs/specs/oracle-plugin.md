@@ -12,6 +12,13 @@
 > `/canary:generate` was removed with the keyed path; test generation
 > is now handled directly by the host LLM session without a dedicated
 > slash command.
+>
+> **Status (v6.0.0):** the Python distribution described below is
+> discontinued — `agent/` was removed and `canary-test-ai` is no longer
+> published. The only supported install is
+> `npm install -g canary-test-cli`. The Python mechanics below are kept
+> as the historical record of how the plugin was built, not as
+> instructions.
 
 Canary is a Claude Code plugin: an MCP server exposing analysis and
 execution tools, skills (`canary:init`, `canary:migrate`), and thin
@@ -41,7 +48,7 @@ session — no API key required for plugin users.
 ## Success Criteria
 
 1. **MCP server starts:** the `canary-mcp` console script (registered by
-   `pyproject.toml`, available after `pipx install canary-test-ai`) starts
+   `pyproject.toml` at the time; see the v6.0.0 status note above) starts
    without error and exposes exactly six tools to Claude Code.
 2. **Tool delegation:** `oracle__analyze_file` calls `MetadataScanner`,
    `PatternMatcher`, and `DomainScanner` from `agent/core/` and returns a dict
@@ -93,7 +100,8 @@ session — no API key required for plugin users.
 - The plugin MCP server runs as a subprocess spawned by Claude Code via the
   `canary-mcp` console script (registered in `pyproject.toml` as a `[project.scripts]`
   entry pointing at `agent.mcp_server:main`). The console script must be on
-  `PATH` — `pipx install canary-test-ai` puts it there.
+  `PATH` — the Python install put it there. Since v6.0.0 the console
+  script ships with `npm install -g canary-test-cli` instead.
 - `CLAUDE_PLUGIN_ROOT` is set by Claude Code when the plugin is active; the
   MCP server reads it from the environment when needed (not as `cwd`, which
   would otherwise leave the bundled Python package unimportable).

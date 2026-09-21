@@ -98,7 +98,7 @@ slash-command entry points.
   knobs and prints a loud, categorized CI failure digest with GitHub `::error`
   annotations, failing the step so a real failure can't be missed.
 - [`canary-test-reporter`](./claude-code/canary-test-reporter/SKILL.md) —
-  Bundled executable skill (`scripts/cli.py`). Turns Playwright JSON results
+  Bundled executable skill (`scripts/cli.mjs`). Turns Playwright JSON results
   into a Markdown and/or JSON report with pass/fail/flaky/skipped counts.
   Complements `canary-fail-fast` (which aborts early) by summarising the full
   run at the end.
@@ -193,7 +193,7 @@ slash-command entry points.
   and reports a per-flow verdict — graceful, degraded, or shattered. Advisory,
   never a gate; composes optionally with `canary-instrument`.
 - [`canary-instrument`](./claude-code/canary-instrument/SKILL.md) — Bundled
-  executable skill (`scripts/cli.py`). Instruments a Playwright run with
+  executable skill (`scripts/cli.mjs`). Instruments a Playwright run with
   OpenTelemetry and emits a `run.json` artifact correlating every test to the
   outbound HTTP requests it made, with zero manual bookkeeping in test code.
 
@@ -259,11 +259,10 @@ Use the canary-generate-test skill to write a load test for /v1/search.
 Most skills here are documentation, not executable artifacts — they describe
 _how an agent should behave_, not a function to call. Several are bundled
 executable skills with their own CLI entry point (`cli:` in frontmatter).
-`canary-fail-fast`, `canary-katana`, `canary-screech`, `canary-misfit`,
-`canary-sweep`, and
-`canary-blackhawk` ship a Node entry (`scripts/cli.mjs`); `canary-instrument`
-and `canary-test-reporter` ship a Python entry (`scripts/cli.py`). Run those
-directly, e.g.:
+`canary-blackhawk`, `canary-cassandra`, `canary-fail-fast`, `canary-instrument`,
+`canary-katana`, `canary-misfit`, `canary-savant`, `canary-screech`,
+`canary-shadow`, `canary-strix`, `canary-sweep`, and `canary-test-reporter` all
+ship a Node entry (`scripts/cli.mjs`). Run those directly, e.g.:
 
 ```bash
 node agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs --help
