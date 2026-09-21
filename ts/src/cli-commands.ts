@@ -56,6 +56,13 @@ import {
   type MainDeps,
 } from './main-deps.js';
 
+/**
+ * The npm package Canary ships as. The former pipx/PyPI distribution
+ * (`canary-test-ai`) was discontinued when the engine moved to TypeScript —
+ * upgrading through it cannot succeed, so `upgrade` targets npm only.
+ */
+const NPM_PACKAGE = 'canary-test-cli';
+
 function resolveVersion(deps: MainDeps): string {
   try {
     return deps.pkgVersion();
@@ -1143,35 +1150,39 @@ export function upgradeCmd(opts: UpgradeOptions, deps: MainDeps): void {
     return;
   }
 
-  const report = (): void => {
-    const updated = resolveVersion(deps);
-    if (updated !== current) {
-      deps.out(pc.green(`${CHECK} ${current} ${ARROW} ${updated}`));
-    } else {
-      deps.out(pc.dim(`Already up to date (${current})`));
-    }
-  };
-
-  const pipx = deps.runSubprocess('pipx', ['upgrade', 'canary-test-ai']);
-  if (pipx.status === 0) {
-    report();
-    return;
-  }
-
-  deps.out(pc.yellow(`pipx not found ${EM_DASH} trying pip...`));
-  const pip = deps.runSubprocess(deps.pythonExe(), [
-    '-m',
-    'pip',
+  const res = deps.runSubprocess('npm', [
     'install',
-    '--upgrade',
-    'canary-test-ai',
+    '-g',
+    `${NPM_PACKAGE}@latest`,
   ]);
-  if (pip.status === 0) {
-    report();
-  } else {
-    deps.out(`${pc.red('Upgrade failed.')}\n${pip.stderr.trim()}`);
+
+  // `status === null` is the ONLY signal that the binary is missing — main-deps
+  // maps a spawn error to null (see SubprocessResult). Any number means npm ran,
+  // so npm's own stderr is the real diagnosis and must not be swallowed.
+  if (res.status === null) {
+    deps.err(
+      `${pc.red('Upgrade failed.')} npm was not found on PATH.\n` +
+        `Canary ships on npm ${EM_DASH} install Node.js, then run:  ` +
+        pc.bold(`npm install -g ${NPM_PACKAGE}@latest`),
+    );
     throw new CliExitError(1);
   }
+
+  if (res.status !== 0) {
+    const detail =
+      res.stderr.trim() || res.stdout.trim() || `npm exited ${res.status}.`;
+    deps.err(`${pc.red('Upgrade failed.')}\n${detail}`);
+    throw new CliExitError(1);
+  }
+
+  // This process holds the version it booted with, so it cannot observe the
+  // version npm just installed. Report what is actually known rather than a
+  // comparison that would always claim "already up to date".
+  deps.out(
+    pc.green(
+      `${CHECK} Upgraded ${NPM_PACKAGE}. Run \`canary --version\` to confirm.`,
+    ),
+  );
 }
 
 // --- overlay / doctor / uninstall (npm-shim pointers) ------------------------
