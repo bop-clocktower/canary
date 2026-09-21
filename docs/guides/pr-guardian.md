@@ -468,6 +468,8 @@ Then set `gate: hard` in config, confirm a few PRs behave, and you're promoted.
 
 ## Related
 
+- [Adoption Signals Guide](adoption-signals.md) — `canary adoption` reads the
+  `--emit-analysis` records locally to show whether findings are acted on.
 - [Mission Briefing Guide](mission-briefing.md) — `canary briefing` writes an
   advisory test charter from the same Tier-0 scoping. It is **not** guardian
   output and never a gate; the guardian's sticky comment is the gate.

@@ -1,0 +1,18 @@
+{
+  "issues": [491],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot", "planning", "tdd", "verify", "review"],
+  "planArtifact": "docs/changes/491-adoption-signals/plans/2026-09-17-adoption-signals-plan.md",
+  "closingKeyword": "Closes",
+  "closingReason": "All four acceptance checkboxes are met: metrics come from existing .harness/analyses/ records (no new instrumentation), the report is local-first and prints without sending anything, there is no egress at all in v1 (and the guide states the opt-in consent rule any future egress must follow), and docs/guides/adoption-signals.md documents what is measured, where it goes, and how to turn it off.",
+  "assumptions": [
+    "Autopilot run at fast rigor inline (single phase, 5 tasks) rather than dispatching separate planner/executor subagents, following the #988 precedent; code review is delegated to harness-code-reviewer.",
+    "Fork answered by the human before the lane started: v1 is a local-first `canary adoption` report (text + --json) over existing guardian records plus PR merge state, no network egress, advisory, exits 0.",
+    "Merge state is read from LOCAL git history (trailing `(#n)` squash subject or `Merge pull request #n`) rather than the GitHub API, so the no-egress stance holds for reads too. A rebase-merged PR leaves no marker and is counted as `unresolved`, never guessed.",
+    "Signal 1 (workflow deleted or disabled) is only partially supportable: workflow PRESENCE is scanned locally; the DISABLED state lives in the Actions API and is reported as `not measured` with that reason rather than estimated.",
+    "Signal 4 (`stuck on soft indefinitely`) is reported as the gate distribution plus the latest record's gate; the records carry no promotion history, so `indefinitely` is not asserted.",
+    "Records are one file per ref and overwritten per run, so every per-PR number is the latest run for that PR; stated in the output and the guide.",
+    "A CI runner's `.harness/analyses/` is ephemeral and guardian.yml does not upload it; persisting records is left to the consumer (`--dir` points anywhere). Adding an artifact-upload step was scoped out of v1.",
+    "`core/adoption.ts` already holds the #459 overlay adoption report, so this feature lives in `ts/src/adoption/` and registers through the readiness domain registry (#1038)."
+  ]
+}
