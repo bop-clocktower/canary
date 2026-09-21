@@ -115,9 +115,9 @@
     },
     {
       "id": "A7",
-      "assumption": "docs/roadmap.md is not touched by this change.",
-      "rationale": "The roadmap row for this item already links to #602 via External-ID and no field changes. Prettier must never be run over that file — it wraps rows and breaks the one-line field contract test.",
-      "default": "No roadmap edit; prettier was run only over the six markdown files this change actually touches."
+      "assumption": "docs/roadmap.md is touched by this change, but never by prettier.",
+      "rationale": "The roadmap row for this item already links to #602 via External-ID, so the link needs no change — but the row's Summary field is stale once batch 10 ships, so it is updated by hand (+1/-1). Prettier must never be run over that file — it wraps rows and breaks the one-line field contract test.",
+      "default": "docs/roadmap.md edited by hand: a single-line Summary update on the #602 series row recording batch 10 (catalog now 21 examples, 10 pytest / 11 vitest) and batch 6's exhausted pool. Prettier was run only over the markdown files this change touches, excluding docs/roadmap.md."
     },
     {
       "id": "A8",

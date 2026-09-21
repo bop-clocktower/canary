@@ -173,8 +173,11 @@ npx prettier --write examples/realworld-functions/topological-task-order/README.
 cd ts && npm run build && npm run typecheck && npm run format:check && npm test
 ```
 
-NOTE: `docs/roadmap.md` is NOT touched by this change and must never be passed
-to prettier — it wraps rows and breaks the one-line field contract test.
+NOTE: `docs/roadmap.md` IS touched by this change — a one-line edit to the
+series row's `Summary` field (+1/-1) recording that batch 10 shipped. It is
+deliberately absent from the prettier command above and must never be passed to
+prettier — it wraps rows and breaks the one-line field contract test. Edit that
+row by hand only.
 
 - [ ] **Step 3:** Confirm the framework mix: count `Vitest` vs `Pytest` rows in
       `examples/realworld-functions/README.md` — expect 11 vitest / 10 pytest

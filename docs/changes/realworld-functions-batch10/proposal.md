@@ -26,16 +26,16 @@ each was cut.
 
 ## Decisions made
 
-| Decision                                       | Choice                                                                                                                                               | Rationale                                                                                                                                                                                                                                 |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Batch size                                     | 2 (topological-task-order, percentile-nearest-rank)                                                                                                  | Matches batch 9's size; the ideation doc's recommended cut                                                                                                                                                                                |
-| Framework split                                | 1 pytest + 1 vitest                                                                                                                                  | Takes the catalog to 10 pytest / 11 vitest (21 total) — closer to parity than batch 9 left it (9/10)                                                                                                                                      |
-| topological-task-order: tiebreak               | Among all tasks whose prerequisites are already emitted, take the **lexicographically smallest**                                                     | A valid dependency graph has many valid orders, so an untied contract is untestable by equality. Pinning the tiebreak collapses the output to exactly one assertable list — the same move `dense-rank-leaderboard` makes with tie schemes |
-| topological-task-order: unknown prerequisite   | Raises `ValueError`, is not silently skipped                                                                                                         | Silently skipping an unknown prerequisite is the failure mode that makes a broken task graph _look_ healthy — precisely the "passes without proving anything" shape STRATEGY.md names                                                     |
-| topological-task-order: numeric contract       | None — the function takes no numeric input                                                                                                           | S4 does not apply. Recorded explicitly so a reviewer does not read the absence as an omission                                                                                                                                             |
-| percentile-nearest-rank: estimator             | Nearest-rank, with `rank = ceil((p × N) ÷ 100)` clamped to `[1, N]`, multiply performed **before** the divide                                        | Percentile has many published definitions; pinning one to the digit is what keeps the pytest and vitest ports in agreement. Multiplying first keeps the arithmetic exact — `p=40, N=5` gives `200 ÷ 100 = 2`, never `2.0000000000000004`  |
-| percentile-nearest-rank: numeric contract (S4) | `values` must be a non-empty array of **integers**; `p` must be an **integer** in `[0, 100]`. Fractional or out-of-range input raises, never coerces | The soundness-required pin. No fractional value ever enters the function, which is exactly what makes the exact integer rank arithmetic sound                                                                                             |
-| percentile-nearest-rank: purity                | Sorts a **copy**; never mutates the caller's array                                                                                                   | Case 6 (unsorted input) is the case that catches an in-place `sort()`                                                                                                                                                                     |
+| Decision                                       | Choice                                                                                                                                               | Rationale                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Batch size                                     | 2 (topological-task-order, percentile-nearest-rank)                                                                                                  | Matches batch 9's size; the ideation doc's recommended cut                                                                                                                                                                                                                                                        |
+| Framework split                                | 1 pytest + 1 vitest                                                                                                                                  | Takes the catalog to 10 pytest / 11 vitest (21 total) — closer to parity than batch 9 left it (9/10)                                                                                                                                                                                                              |
+| topological-task-order: tiebreak               | Among all tasks whose prerequisites are already emitted, take the **lexicographically smallest**                                                     | A valid dependency graph has many valid orders, so an untied contract is untestable by equality. Pinning the tiebreak collapses the output to exactly one assertable list — the same move `dense-rank-leaderboard` makes with tie schemes                                                                         |
+| topological-task-order: unknown prerequisite   | Raises `ValueError`, is not silently skipped                                                                                                         | Silently skipping an unknown prerequisite is the failure mode that makes a broken task graph _look_ healthy — precisely the "passes without proving anything" shape STRATEGY.md names                                                                                                                             |
+| topological-task-order: numeric contract       | None — the function takes no numeric input                                                                                                           | S4 does not apply. Recorded explicitly so a reviewer does not read the absence as an omission                                                                                                                                                                                                                     |
+| percentile-nearest-rank: estimator             | Nearest-rank, with `rank = ceil((p × N) ÷ 100)` clamped to `[1, N]`, multiply performed **before** the divide                                        | Percentile has many published definitions; pinning one to the digit is what keeps the pytest and vitest ports in agreement. Multiplying first keeps the arithmetic exact — at `p=7, N=100`, `(7 × 100) ÷ 100` is exactly `7`, while dividing first gives `7.000000000000001`, which `ceil`s to the wrong rank `8` |
+| percentile-nearest-rank: numeric contract (S4) | `values` must be a non-empty array of **integers**; `p` must be an **integer** in `[0, 100]`. Fractional or out-of-range input raises, never coerces | The soundness-required pin. No fractional value ever enters the function, which is exactly what makes the exact integer rank arithmetic sound                                                                                                                                                                     |
+| percentile-nearest-rank: purity                | Sorts a **copy**; never mutates the caller's array                                                                                                   | Case 6 (unsorted input) is the case that catches an in-place `sort()`                                                                                                                                                                                                                                             |
 
 ## Candidates rejected
 
@@ -91,19 +91,21 @@ any valid topological order.
 integer sample under the nearest-rank method.
 
 Rules: `values` must be a non-empty array of integers; `p` must be an integer in
-`[0, 100]`; anything else throws. Sort a **copy** ascending, then
-`rank = ceil((p × N) ÷ 100)` — multiply before dividing — clamped to `[1, N]`;
-return the element at that 1-based rank.
+`[0, 100]`; anything else throws. Sort a **copy** ascending **numerically**
+(`(a, b) => a - b`, never a bare `.sort()`), then `rank = ceil((p × N) ÷ 100)` —
+multiply before dividing — clamped to `[1, N]`; return the element at that
+1-based rank.
 
-Cases (hand-verified; sample `[15, 20, 35, 40, 50]`, `N = 5`): (1) `p=50` →
-`250÷100 = 2.5`, `ceil = 3` → `35`; (2) `p=40` → `200÷100 = 2` exactly,
+Cases (hand-verified; sample `[9, 20, 35, 40, 100]`, `N = 5` — the digit widths
+are mixed on purpose so lexicographic order differs from numeric order): (1)
+`p=50` → `250÷100 = 2.5`, `ceil = 3` → `35`; (2) `p=40` → `200÷100 = 2` exactly,
 `ceil = 2` → `20` (the exact-multiple case that does **not** round up); (3)
-`p=100` → `500÷100 = 5` → `50`; (4) `p=0` → rank `0`, clamped to `1` → `15`; (5)
-single element `[7]`, `p=37` → `37÷100 = 0.37`, `ceil = 1` → `7` (the clamp is
-the only thing preventing an out-of-range index); (6) unsorted
-`[50, 15, 40, 20, 35]`, `p=50` → `35`, and the caller's array is unchanged; (7)
-empty array → error; (8) invalid `p` — `101` (out of range) and `50.5`
-(fractional) → error.
+`p=100` → `500÷100 = 5` → `100` (a bare `.sort()` returns `9`); (4) `p=0` → rank
+`0`, clamped to `1` → `9` (a bare `.sort()` returns `100`); (5) single element
+`[7]`, `p=37` → `37÷100 = 0.37`, `ceil = 1` → `7` (the clamp is the only thing
+preventing an out-of-range index); (6) unsorted `[100, 9, 40, 20, 35]`, `p=50` →
+`35`, and the caller's array is unchanged; (7) empty array → error; (8) invalid
+`p` — `101` (out of range) and `50.5` (fractional) → error.
 
 Headline invariant: at an exact multiple the rank does **not** advance, so
 `p=30` and `p=40` return the same element on this sample while `p=50` moves on —
