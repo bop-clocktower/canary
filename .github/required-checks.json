@@ -245,6 +245,137 @@
     ]
   },
 
+  "rulesetRules": {
+    "$comment": [
+      "#1056. This file opens by calling itself the source of truth a human can",
+      "read. It accounted for 2 of the 6 rules ruleset 16189198 carries — the",
+      "`required_status_checks` rule (the lists above) and the `strict` flag",
+      "inside it. The other four gate merges to `main` while emitting no status",
+      "context at all, which is why no test could have noticed them missing.",
+      "",
+      "Every entry below is an OBSERVATION, not a declaration: it is not applied",
+      "from this file, so on a disagreement the ruleset wins and this section is",
+      "the wrong one. Same direction of authority as `strict`, and the same",
+      "failure mode — observations go stale silently.",
+      "",
+      "`blocking` means: can this rule alone stop a merge to `main`?",
+      "",
+      "Re-read live with:",
+      "  gh api repos/bop-clocktower/canary/rulesets/16189198 --jq '.rules'",
+      "Last reconciled 2026-09-22. No offline test can discover a rule nobody",
+      "wrote down; that line is the step that can."
+    ],
+    "rules": [
+      {
+        "rule": "deletion",
+        "blocking": true,
+        "parameters": {},
+        "reason": [
+          "Blocks deletion of `main` itself. No parameters — the rule is its own",
+          "verdict. Blocking because the branch is the thing every other rule in",
+          "this ruleset protects; deleting it would take the ruleset with it.",
+          "Never exercised in the normal flow, which is precisely why it was",
+          "unrecorded: a rule that never fires looks like a rule that is absent."
+        ]
+      },
+      {
+        "rule": "non_fast_forward",
+        "blocking": true,
+        "parameters": {},
+        "reason": [
+          "Blocks force-pushes to `main`, so history cannot be rewritten out",
+          "from under a merged commit. Blocking because every status this repo",
+          "records — the post-merge detection in `mergePolicy`, the ratchet",
+          "baselines, the `External-ID` roadmap links — is keyed to commits that",
+          "are assumed to stay put. This is the rule that makes that assumption",
+          "true."
+        ]
+      },
+      {
+        "rule": "pull_request",
+        "blocking": true,
+        "parameters": {
+          "required_approving_review_count": 0,
+          "require_extra_approval_for_unattributed_changes": true,
+          "dismiss_stale_reviews_on_push": false,
+          "require_last_push_approval": false,
+          "require_code_owner_review": false,
+          "required_review_thread_resolution": false,
+          "allowed_merge_methods": ["merge", "squash", "rebase"]
+        },
+        "reason": [
+          "Requires a pull request for any change to `main` — including",
+          "documentation-only commits — so a direct push is rejected regardless",
+          "of actor. Blocking, and the reason `CLAUDE.md` tells every agent to",
+          "branch before editing.",
+          "",
+          "The review parameters are the subtle half and are the reason this",
+          "rule being unrecorded mattered: a count of 0 read alongside",
+          "`require_extra_approval_for_unattributed_changes: true` is NOT a",
+          "policy of no review. See the `reviews` section below for the",
+          "effective requirement.",
+          "",
+          "`dismiss_stale_reviews_on_push` and `require_last_push_approval` are",
+          "both false, so an approval survives a subsequent push. With `strict`",
+          "true, every PR is force-updated against a moving `main`, and each of",
+          "those updates is a push — turning either flag on would invalidate",
+          "approvals for a reason unrelated to the diff under review."
+        ]
+      },
+      {
+        "rule": "code_quality",
+        "blocking": true,
+        "parameters": { "severity": "errors" },
+        "reason": [
+          "GitHub's built-in code-quality rule, set to block at `errors`",
+          "severity only. Blocking, and it is the one rule in this ruleset that",
+          "canary does not produce, configure, or test — it is GitHub's",
+          "judgement applied to this repo's diffs, which makes it the rule most",
+          "likely to surprise. Recorded here so a merge refused by it has a",
+          "written explanation in the repo rather than only on the PR page.",
+          "Warnings do not block; only errors do."
+        ]
+      },
+      {
+        "rule": "copilot_code_review",
+        "blocking": false,
+        "parameters": {
+          "review_draft_pull_requests": false,
+          "review_on_push": true
+        },
+        "reason": [
+          "Requests an automated review on every non-draft push. NOT blocking:",
+          "it produces review comments, not a merge verdict, and",
+          "`required_approving_review_count` does not count it. Recorded because",
+          "a reviewer seeing an automated review on a PR could reasonably",
+          "assume it satisfies something — it does not, and the distinction",
+          "between a review that is posted and a review that is required is",
+          "exactly the kind of fact this file exists to state.",
+          "`review_draft_pull_requests: false` keeps drafts quiet."
+        ]
+      },
+      {
+        "rule": "required_status_checks",
+        "blocking": true,
+        "parameters": {
+          "strict_required_status_checks_policy": true,
+          "contexts": 13
+        },
+        "reason": [
+          "The `required` list above IS this rule's context set, and unlike",
+          "every other entry in this section the manifest is PRIMARY for it",
+          "(ADR 0011) — it is declared here and applied to the ruleset with the",
+          "`gh api -X PUT` line in the header. `strict` is recorded and",
+          "explained in `mergePolicy` above; it is an observation, not a",
+          "declaration, which is how it drifted for three weeks.",
+          "",
+          "`contexts` is a COUNT, not a list, so that the 13 strings live in",
+          "exactly one place in this file and cannot disagree with themselves."
+        ]
+      }
+    ]
+  },
+
   "reviews": {
     "required_approving_review_count": 0,
     "reason": "Deliberate, not a default (#542 step 4). Single-maintainer repo: raising this to 1 would mean self-approving every PR, which trains the reflex the gate exists to prevent. Revisit when a second maintainer joins."
