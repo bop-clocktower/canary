@@ -74,6 +74,54 @@ describe('leafCases', () => {
     // null is rejected by both members, so it survives the filter.
     expect(values).toContain(null);
   });
+  it.each([
+    [[{ kind: 'string' }, { kind: 'number', integer: true }]],
+    [[{ kind: 'number', integer: true, min: 1, max: 9 }, { kind: 'string' }]],
+    [[{ kind: 'date' }, { kind: 'string' }]],
+    [[{ kind: 'boolean' }, { kind: 'number', integer: false }]],
+  ] as unknown as Array<[ShapeNode[]]>)(
+    'a union of %j emits only member-0 cases, minus sibling-accepted ones',
+    (members) => {
+      const first = members[0] as ShapeNode;
+      const ownValues = leafCases(first, 'ref').map((c) => c.value);
+      const unionValues = leafCases({ kind: 'union', members }, 'ref').map(
+        (c) => c.value,
+      );
+      // Subset: the filter only ever removes.
+      for (const v of unionValues) expect(ownValues).toContainEqual(v);
+      // Any dropped value must be one a sibling can hold: it appears as a
+      // legitimate value of some other member's own kind.
+      const dropped = ownValues.filter((v) => !unionValues.includes(v));
+      // Non-vacuity: every row above is chosen so member 0 contributes at
+      // least one case the sibling accepts. Without this the two assertions
+      // hold trivially when nothing is filtered -- a zero denominator, which
+      // is an abstention rather than a pass.
+      expect(dropped.length).toBeGreaterThan(0);
+      for (const v of dropped)
+        expect(
+          members
+            .slice(1)
+            .some((m) =>
+              typeof v === (m as { kind: string }).kind
+                ? true
+                : (m as { kind: string }).kind === 'date' &&
+                  typeof v === 'string',
+            ),
+        ).toBe(true);
+    },
+  );
+  it('keeps every case when all members share the same constraints', () => {
+    const member: ShapeNode = {
+      kind: 'number',
+      integer: true,
+      min: 1,
+      max: 9,
+    };
+    const union: ShapeNode = { kind: 'union', members: [member, member] };
+    expect(leafCases(union, 'ref').map((c) => c.value)).toEqual(
+      leafCases(member, 'ref').map((c) => c.value),
+    );
+  });
 });
 
 describe('defaultValue', () => {
