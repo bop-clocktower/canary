@@ -1,0 +1,17 @@
+{
+  "issue": [1074],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "plan_artifact": "docs/changes/1074-history-module-headroom/plans/phase-1-split.md",
+  "assumptions": [
+    "The design fork was decided by the human before this lane started: split along a seam, never raise the 1800-LOC ceiling, refresh a baseline, or add a deltaAllowances entry. The perf delta rule is unwaivable here (--admin cannot bypass a red required check), so paydown was the only legal route.",
+    "The seam chosen is the subcommand family (record / publish / reporting, alongside the pre-existing retention), not persistence. Persistence was rejected as the seam because it is not what grows and has ~20 external import sites: moving it would lower a number without separating a concern.",
+    "Module LOC was measured by planting a known-size probe file and reading the reported total back; the metric is not otherwise printed. Confirmed empirically: subdirectories are their own arch modules, .test.ts files are excluded entirely, comments are counted.",
+    "All measurements are against this branch's own base, 76d3f19b. Two peer PRs that land before this one are NOT in it: #1078 (#1057) removes ~35 LOC of non-test source from ts/src/history, and #1083 (#990) deletes classifyFlakeTrend / FlakeTrend / TREND_THRESHOLD (44 deletions across 2 source files). The post-merge absolute will be lower than the 1093 recorded here; the ~700 LOC of headroom this change contributes is the delta to hold it to, and it is independent of those two.",
+    "Every family module is named cli.ts because two separate constraints require it: layer binding is by filename (ts/src/**/*cli*.ts binds the cli layer, first match wins) and the perf baseline's standing coupling allowance is globbed at ts/src/**/cli.ts. A differently-named helper module trips coupling as a brand-new finding.",
+    "No entropy.entryPoints / performance.entryPoints declaration was added. The new modules are reachable from ts/src/main.ts through ordinary imports, the same reason retention/ needed none in #1073; the entropy ratchet measured +0 findings against the merge base, which confirms it.",
+    "CI green is NOT claimed. The four gates and all four CI-only ratchets (perf identity delta, entropy, docs, arch-verdict) were reproduced locally against a detached worktree at 76d3f19b and were green there; CI is verified independently."
+  ],
+  "closing_keyword": "Closes #1074",
+  "keyword_rationale": "Both acceptance bullets are met and demonstrated rather than asserted. (1) Adding a new history subcommand no longer trips either wall: a plausible 147-line subcommand was planted and measured at +2 LOC against 707 of module headroom, 7 imports against a 15 threshold, 147 lines against a 300 file threshold, and a coupling finding covered by the standing ts/src/**/cli.ts allowance -- then removed. (2) The headroom is deliberate and recorded: the seam, the rejected alternative, and the before/after numbers with their base SHA are in the proposal; the rule 'a new history subcommand opens its own <family>/cli.ts, it does not grow the root' is in the command root's header and enforced by ts/test/history-seam.test.ts, which fails at the desk because all three ratchets that would otherwise catch it are CI-only."
+}

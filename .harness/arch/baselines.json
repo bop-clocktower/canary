@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-21T19:13:00.065Z",
-  "updatedFrom": "d2d3f3f08f9245f08b7d0d04722c9b4c671c38e8",
+  "updatedAt": "2026-09-22T17:26:51.725Z",
+  "updatedFrom": "929fc6d2e64986008ea4aa82d82e6bb1a2f0bdb7",
   "metrics": {
     "circular-deps": {
       "value": 0,
@@ -103,7 +103,7 @@
       "violationIds": []
     },
     "module-size": {
-      "value": 45778,
+      "value": 46291,
       "violationIds": [
         "0ce917cfa1195435f48f1a62370fee6d7161d2c77ce70c2ef30109ac3fda89de",
         "9d97cc82b1f999dff3ab991a7e5684bfc82b57d778639978efc29cca6a17b287",
