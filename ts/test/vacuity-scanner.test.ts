@@ -133,6 +133,43 @@ describe('VAC-001 — tautological assertion', () => {
     expect(rules(r.findings)).toContain('VAC-001');
   });
 
+  // #1076 — the expected side used to be extracted with a paren-excluding
+  // character class, so ANY parenthesised expected value made the match fail and
+  // the line was silently passed over. The call form is the common shape in API
+  // and integration suites (`res.status()`, `page.url()`), so the rule was
+  // weakest exactly where it was needed most.
+  it.each([
+    `expect(res.status()).toBe(res.status());`,
+    `expect(res.body.code).toBe(res.body.code);`,
+    `expect(save(load(1))).toBe(save(load(1)));`,
+    `expect(load(1)).toEqual(load(1));`,
+  ])('flags the parenthesised self-comparison %s', (line) => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('proves nothing', () => {\n  const res = save(1);\n  ${line}\n});\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-001');
+  });
+
+  // The other direction: widening the extractor must not start flagging
+  // comparisons whose two sides differ, nor negated ones — `expect(v).not.toBe(v)`
+  // can only ever FAIL, so calling it "no implementation can fail it" would
+  // invert the rule's own claim.
+  it.each([
+    `expect(x).toBe(save(1));`,
+    `expect(save(1)).toBe(save(2));`,
+    `expect(save(1)).not.toBe(save(1));`,
+    `expect(res.status()).toBe(res.code());`,
+  ])('does not flag %s', (line) => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('checks', () => {\n  const x = save(1);\n  const res = load(1);\n  ${line}\n});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-001');
+  });
+
   it.each(['assert True', 'assert 1 == 1', 'assert value == value'])(
     'flags the pytest form %s',
     (line) => {

@@ -539,18 +539,33 @@ function isComment(line: string): boolean {
 }
 
 /** The text inside a balanced `expect(...)`, or null. */
-function expectArgument(line: string): string | null {
-  const open = line.indexOf('expect(');
-  if (open < 0) return null;
+/**
+ * The index of the `)` balancing the `(` at `open`, or -1.
+ *
+ * Shared so that BOTH sides of a comparison are extracted by the same strategy.
+ * They were not: the expected side used a paren-excluding character class, so
+ * `expect(res.status()).toBe(res.status())` -- textually self-comparing and
+ * incapable of failing -- was passed over while `expect(code).toBe(code)` was
+ * flagged (#1076). The call form is the common shape in API and integration
+ * suites, so the rule was weakest exactly where it mattered most.
+ */
+function closingParen(line: string, open: number): number {
   let depth = 0;
-  for (let i = open + 'expect'.length; i < line.length; i += 1) {
+  for (let i = open; i < line.length; i += 1) {
     if (line[i] === '(') depth += 1;
     else if (line[i] === ')') {
       depth -= 1;
-      if (depth === 0) return line.slice(open + 'expect('.length, i);
+      if (depth === 0) return i;
     }
   }
-  return null;
+  return -1;
+}
+
+function expectArgument(line: string): string | null {
+  const open = line.indexOf('expect(');
+  if (open < 0) return null;
+  const close = closingParen(line, open + 'expect'.length);
+  return close < 0 ? null : line.slice(open + 'expect('.length, close);
 }
 
 /**
@@ -562,12 +577,27 @@ function expectArgument(line: string): string | null {
  * only ever FAIL. Inverting the rule's own claim is worse than missing the case,
  * and it was a `critical` finding that BLOCKS promotion. `pyTautology` already
  * guarded the analogous `assert False`; the JS path had no equivalent.
+ *
+ * The search starts AFTER the balanced close of `expect(...)`, so a call inside
+ * the actual side (`expect(x.toString()).toBe(y)`) cannot be mistaken for the
+ * matcher now that the argument is no longer restricted to paren-free text.
  */
 function matcherOf(
   line: string,
 ): { argument: string; negated: boolean } | null {
-  const m = /\.\s*(not\s*\.\s*)?to\w+\s*\(([^()]*)\)/.exec(line);
-  return m ? { argument: m[2]!, negated: m[1] !== undefined } : null;
+  const expectOpen = line.indexOf('expect(');
+  let after = 0;
+  if (expectOpen >= 0) {
+    const expectClose = closingParen(line, expectOpen + 'expect'.length);
+    if (expectClose < 0) return null;
+    after = expectClose + 1;
+  }
+  const m = /\.\s*(not\s*\.\s*)?to\w+\s*\(/.exec(line.slice(after));
+  if (!m) return null;
+  const open = after + m.index + m[0].length - 1;
+  const close = closingParen(line, open);
+  if (close < 0) return null;
+  return { argument: line.slice(open + 1, close), negated: m[1] !== undefined };
 }
 
 function normalize(expr: string): string {
