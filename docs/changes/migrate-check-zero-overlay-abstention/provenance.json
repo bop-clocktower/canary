@@ -1,0 +1,14 @@
+{
+  "issues": [1065],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/canary-migrate-cli.test.ts",
+  "reproducingTestName": "#1065 migrate --check: no overlay is an abstention, not a pass",
+  "assumptions": [
+    "Exit code 3 was taken from ADR 0009 (docs/knowledge/decisions/0009-exit-3-reserved-for-abstained.md), which reserves 3 CLI-wide for 'abstained -- verified zero items' and names `migrate --check` as a gate. The issue framed the code as an open decision; the ADR already settles it, so no new decision was invented. 2 was rejected because this surface already uses 2 for 'local edits'.",
+    "The notice moves from stdout to stderr, applying #1040's rule that a non-success diagnostic must not land in the stream a --json caller parses. PR #1063 kept it on stdout explicitly because it exited 0; that premise is what this change inverts.",
+    "Under --json the no-overlay path emits nothing on stdout rather than a JSON abstention envelope. No FreshnessReport exists to serialize, and the exit code plus stderr carry the outcome; inventing a payload shape would be a new contract beyond this issue.",
+    "`migrateAdoption`'s null-overlay path was left at exit 0. It is an advisory report, not a gate, and ADR 0009 keeps advisory commands at 0. Noted in the debug session as deferred, not silently skipped."
+  ],
+  "closingKeyword": "Closes #1065"
+}

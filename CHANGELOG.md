@@ -123,6 +123,21 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **BREAKING: `migrate --check` with no overlay exits 3, not 0** (#1065, same
+  class as #1057). When no overlay could be resolved, the gate printed
+  `No overlay to check against.` on **stdout** and exited **0** — nothing had
+  been checked, but the exit code was indistinguishable from "checked and
+  clean", so a caller running `canary migrate --check && ...` proceeded as
+  though freshness had been verified. With no overlay there is no comparison
+  basis, so the denominator is zero and the run has **abstained**: it now exits
+  **3** per ADR 0009, which reserves 3 CLI-wide for that and already covers the
+  sibling case of a resolved overlay matching zero skills. The notice moves to
+  **stderr**, since it is a diagnostic rather than the report a `--json` caller
+  parses off stdout (#1040's rule); under `--json`, stdout is now empty for this
+  path. A script treating any non-zero as failure will now fail on a repo with
+  no tracked overlay — that is the doctrine working, and the fix is to track one
+  (`canary overlay add`) or pass `--from <overlay>`.
+
 - **BREAKING: the rest of the CLI's hidden failures — `init` on an unsupported
   framework, and errors on stdout** (#1040, follow-up to #1007).
   `canary init <known-framework-with-no-template>` (scaffolder status
