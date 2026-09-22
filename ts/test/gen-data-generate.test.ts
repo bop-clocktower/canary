@@ -77,7 +77,7 @@ describe('leafCases', () => {
   it.each([
     [[{ kind: 'string' }, { kind: 'number', integer: true }]],
     [[{ kind: 'number', integer: true, min: 1, max: 9 }, { kind: 'string' }]],
-    [[{ kind: 'date' }, { kind: 'string' }]],
+    [[{ kind: 'date' }, { kind: 'number', integer: false }]],
     [[{ kind: 'boolean' }, { kind: 'number', integer: false }]],
   ] as unknown as Array<[ShapeNode[]]>)(
     'a union of %j emits only member-0 cases, minus sibling-accepted ones',
