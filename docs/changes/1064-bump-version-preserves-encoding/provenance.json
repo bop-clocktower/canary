@@ -1,0 +1,14 @@
+{
+  "issues": [1064],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/version-consistency.test.ts",
+  "assumptions": [
+    "Only npm/package.json carries a \\uXXXX escape today; .claude-plugin/plugin.json and .claude-plugin/marketplace.json store their non-ASCII literally, so a blanket ASCII-escaping serializer would have moved the diff noise onto them rather than removing it.",
+    "The fix preserves whichever escape style the SOURCE file used, per UTF-16 code unit, so it stays correct if a future manifest adopts either style.",
+    "A given code unit is written one way throughout a file. If a file ever mixed literal and escaped forms of the same character, the escaped form would win for all occurrences - still a value-identical JSON document.",
+    "The escape scan is textual, so a literal backslash followed by uXXXX inside a string value would be read as an escape. No manifest contains one, and the worst case is escaping a character that is semantically identical either way.",
+    "The reproducing test mirrors the stamped files plus the script into a temp sandbox, so it exercises the real script without writing to the working tree."
+  ],
+  "closingKeyword": "Closes #1064"
+}

@@ -22,16 +22,29 @@
  * `packages[""]`) and both are now in the denominator, alongside a check that
  * the lock's root entry still mirrors the manifest's dependency declarations.
  *
+ * Encoding note (#1064): parity between version FIELDS says nothing about the
+ * rest of the bytes the bump rewrites. A byte-level fixed-point check on a
+ * no-op bump is added below, because the JSON round-trip was silently
+ * re-encoding `npm/package.json`'s escaped em dash on every release.
+ *
  * `ts/package-lock.json` is deliberately NOT here: `ts/package.json` is the
  * private workspace, pinned at 0.0.0 and never published, so it has no release
  * version to agree with. That is an explicit exemption, not an oversight —
  * asserted below so the omission cannot be mistaken for coverage.
  */
 
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -39,6 +52,18 @@ const SEMVER = /^\d+\.\d+\.\d+([.-].+)?$/;
 
 function readJson(rel: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(REPO_ROOT, rel), 'utf-8'));
+}
+
+/** The first line that differs between two files, for a readable failure. */
+function firstDiffLine(before: Buffer, after: Buffer): string {
+  const a = before.toString('utf-8').split('\n');
+  const b = after.toString('utf-8').split('\n');
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (a[i] !== b[i]) {
+      return `line ${i + 1}\n  before: ${a[i] ?? '(absent)'}\n  after:  ${b[i] ?? '(absent)'}`;
+    }
+  }
+  return '(no line differs — trailing bytes only)';
 }
 
 function npmVersion(): string {
@@ -185,6 +210,52 @@ describe('version consistency', () => {
       'npm/package-lock.json (root)',
       'npm/package-lock.json (packages[""])',
     ]);
+  });
+
+  // #1064: version parity says nothing about what ELSE the bump writes.
+  // `npm/package.json` stores its description with an escaped `—`, and
+  // the bump's JSON.parse/JSON.stringify round-trip wrote it back as a literal
+  // em dash — so every release commit carried an unrelated one-line encoding
+  // change. The invariant is byte-level: a bump to the version already in the
+  // tree must leave every stamped file untouched.
+  describe('a no-op bump is byte-for-byte a fixed point (#1064)', () => {
+    const STAMPED = [
+      'npm/package.json',
+      'npm/package-lock.json',
+      '.claude-plugin/plugin.json',
+      '.claude-plugin/marketplace.json',
+      'README.md',
+    ];
+
+    // The script derives its repo root from its own location, so the whole
+    // surface is mirrored into a sandbox — the real tree is never written to.
+    const sandbox = mkdtempSync(join(tmpdir(), 'canary-bump-'));
+    afterAll(() => rmSync(sandbox, { recursive: true, force: true }));
+
+    for (const rel of [...STAMPED, 'scripts/bump-version.mjs']) {
+      mkdirSync(join(sandbox, dirname(rel)), { recursive: true });
+      copyFileSync(join(REPO_ROOT, rel), join(sandbox, rel));
+    }
+
+    const before = new Map(
+      STAMPED.map((rel) => [rel, readFileSync(join(sandbox, rel))]),
+    );
+
+    execFileSync(
+      process.execPath,
+      [join(sandbox, 'scripts/bump-version.mjs'), npmVersion()],
+      { stdio: 'pipe' },
+    );
+
+    it.each(STAMPED)('%s is unchanged', (rel) => {
+      const after = readFileSync(join(sandbox, rel));
+      expect(
+        after.equals(before.get(rel)!),
+        `${rel} changed during a no-op bump — scripts/bump-version.mjs is ` +
+          `re-encoding it (see #1064). Diff of the first mismatch:\n` +
+          `${firstDiffLine(before.get(rel)!, after)}`,
+      ).toBe(true);
+    });
   });
 
   it('ts/package-lock.json is exempt because ts/ is never published', () => {
