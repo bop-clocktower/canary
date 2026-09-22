@@ -410,6 +410,98 @@ describe('workflow false-green invariants', () => {
   });
 
   /**
+   * #1056 — a ruleset rule that produces no status context is invisible here.
+   *
+   * This suite enumerates PR checks by parsing workflow YAML, so it can only
+   * ever see the one ruleset rule that happens to be made of check contexts
+   * (`required_status_checks`). The other five rules on ruleset 16189198 —
+   * `deletion`, `non_fast_forward`, `pull_request`, `code_quality`,
+   * `copilot_code_review` — gate merges to `main` without emitting anything a
+   * workflow file mentions. That is the same structural blind spot #769
+   * documented for app-produced statuses, and the reason this gap could not
+   * have been caught by the existing tests: the manifest opens by calling
+   * itself "the source of truth a human can read" while accounting for 2 of 6
+   * rules, and nothing disagreed.
+   *
+   * The fix is again a denominator the suite cannot compute for itself: an
+   * explicit `rulesetRules` list, one entry per live rule, each with a boolean
+   * verdict and a stated reason. These tests keep that list honest and pin the
+   * observed rule-type set, so recording a new rule without a verdict — or
+   * quietly deleting a recorded one — fails here. What they cannot do is
+   * discover a rule nobody wrote down; that still needs the `gh api` line in
+   * the section header, exactly as it does for `strict`.
+   */
+  describe('#1056 — every live ruleset rule has a recorded verdict', () => {
+    interface RulesetRule {
+      rule: string;
+      blocking: boolean;
+      parameters?: Record<string, unknown>;
+      reason: string[];
+    }
+    const manifest = JSON.parse(
+      readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
+    ) as {
+      rulesetRules?: { rules?: RulesetRule[] };
+      reviews?: Record<string, unknown>;
+    };
+    const rules = manifest.rulesetRules?.rules ?? [];
+
+    // Pinned from `gh api repos/bop-clocktower/canary/rulesets/16189198
+    // --jq '.rules[].type'` on 2026-09-22. Recording a new rule without a
+    // verdict, or deleting a recorded one, fails here.
+    const OBSERVED_RULE_TYPES = [
+      'code_quality',
+      'copilot_code_review',
+      'deletion',
+      'non_fast_forward',
+      'pull_request',
+      'required_status_checks',
+    ];
+
+    it('records at least one (a zero denominator is an abstention)', () => {
+      expect(rules.length).toBeGreaterThan(0);
+    });
+
+    it('pins the observed rule-type set', () => {
+      expect(rules.map((r) => r.rule).sort()).toEqual(OBSERVED_RULE_TYPES);
+    });
+
+    it.each(rules.map((r) => [r.rule]))(
+      '%s carries a boolean verdict and a non-empty reason',
+      (rule) => {
+        const entry = rules.find((r) => r.rule === rule)!;
+        expect(typeof entry.blocking).toBe('boolean');
+        expect(entry.reason.join('').trim()).not.toBe('');
+      },
+    );
+
+    it('states the effective review requirement, not just the count', () => {
+      const reviews = manifest.reviews as {
+        required_approving_review_count?: number;
+        require_extra_approval_for_unattributed_changes?: boolean;
+        reason?: string | string[];
+      };
+      expect(reviews.required_approving_review_count).toBe(0);
+      expect(reviews.require_extra_approval_for_unattributed_changes).toBe(
+        true,
+      );
+      const prose = ([] as string[]).concat(reviews.reason ?? []).join(' ');
+      expect(prose).toMatch(/unattributed/i);
+    });
+
+    it('records access posture as aggregate counts, never accounts', () => {
+      const reviews = manifest.reviews as {
+        accessPosture?: Record<string, number>;
+      };
+      const posture = reviews.accessPosture ?? {};
+      expect(Object.keys(posture).length).toBeGreaterThan(0);
+      for (const count of Object.values(posture)) {
+        expect(typeof count).toBe('number');
+      }
+    });
+  });
+
+  /**
    * #678 — a PR-time green is a verdict about a tree that may never merge.
    *
    * `harness check-arch` reported pass on #660's PR and failed on the identical
