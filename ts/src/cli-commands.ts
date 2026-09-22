@@ -488,10 +488,22 @@ function migrateCheck(
   deps: MainDeps,
 ): void {
   if (overlayPath === null) {
-    deps.out(
+    // #1065: no overlay means no comparison basis, so zero skills were
+    // checked -- a strictly larger abstention than the zero-denominator run
+    // `FreshnessReport.exit_code()` already reports as 3. Exiting 0 here made
+    // it indistinguishable from "checked and clean", so a caller running
+    // `canary migrate --check && ...` proceeded as though freshness had been
+    // verified. ADR 0009 reserves 3 CLI-wide for exactly this and names
+    // `migrate --check` a gate.
+    //
+    // The notice goes to stderr because it is now a diagnostic rather than
+    // the report a `--json` caller parses off stdout (#1040's rule). PR #1063
+    // kept this line on stdout on the strength of its exit 0; that is the
+    // premise this changes.
+    deps.err(
       `\n${pc.yellow('No overlay to check against.')} Track one with ${pc.bold('canary overlay add')} or pass ${pc.bold('--from <overlay>')}.`,
     );
-    throw new CliExitError(0);
+    throw new CliExitError(EXIT_ABSTAINED);
   }
 
   let report;

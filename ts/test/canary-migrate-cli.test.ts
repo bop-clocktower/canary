@@ -21,6 +21,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { HarnessMigrator } from '../src/core/migrator.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 
@@ -785,6 +786,61 @@ describe('canary migrate --adoption-report', () => {
       expect(res.stdout).toContain('# Canary Adoption');
       expect(res.stdout).toContain('fix: ');
       expect(res.stdout).toContain('canary overlay add');
+    } finally {
+      rmTmp(base);
+    }
+  });
+});
+
+/**
+ * #1065 — the zero-overlay branch of `migrate --check` was an abstention
+ * wearing a pass.
+ *
+ * With an overlay that resolves, a run verifying zero skills already exits 3
+ * via `FreshnessReport.exit_code()` (ADR 0009: exit 3 means "abstained --
+ * verified zero items", CLI-wide, and names `migrate --check` as a gate).
+ * With NO overlay at all — a strictly larger abstention, since not even the
+ * comparison basis exists — the CLI short-circuited before building a
+ * `GateResult` and returned a literal 0. A caller running
+ * `canary migrate --check && ...` proceeded as though freshness had been
+ * verified.
+ *
+ * The stream half matters for the same reason it did in #1040: this is a
+ * diagnostic, not the report a `--json` caller parses off stdout. PR #1063
+ * deliberately left this line on stdout *because* it exited 0; that premise
+ * is what changes here.
+ */
+describe('#1065 migrate --check: no overlay is an abstention, not a pass', () => {
+  it('exits 3 with the notice on stderr, not stdout', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+
+      const res = await run(project, home, '--check');
+      expect(res.code).toBe(EXIT_ABSTAINED);
+      expect(res.stderr).toContain('No overlay to check against');
+      expect(res.stdout).not.toContain('No overlay to check against');
+    } finally {
+      rmTmp(base);
+    }
+  });
+
+  it('keeps stdout empty under --json so a parser sees no report', async () => {
+    const base = mkTmp();
+    try {
+      const project = join(base, 'proj');
+      const home = join(base, 'home');
+      mkdirSync(project);
+      mkdirSync(home);
+      fakeHarnessProject(project, '{"language": "python"}');
+
+      const res = await run(project, home, '--check', '--json');
+      expect(res.code).toBe(EXIT_ABSTAINED);
+      expect(res.stdout.trim()).toBe('');
     } finally {
       rmTmp(base);
     }

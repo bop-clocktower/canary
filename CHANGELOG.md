@@ -123,6 +123,21 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **BREAKING: `migrate --check` with no overlay exits 3, not 0** (#1065, same
+  class as #1057). When no overlay could be resolved, the gate printed
+  `No overlay to check against.` on **stdout** and exited **0** — nothing had
+  been checked, but the exit code was indistinguishable from "checked and
+  clean", so a caller running `canary migrate --check && ...` proceeded as
+  though freshness had been verified. With no overlay there is no comparison
+  basis, so the denominator is zero and the run has **abstained**: it now exits
+  **3** per ADR 0009, which reserves 3 CLI-wide for that and already covers the
+  sibling case of a resolved overlay matching zero skills. The notice moves to
+  **stderr**, since it is a diagnostic rather than the report a `--json` caller
+  parses off stdout (#1040's rule); under `--json`, stdout is now empty for this
+  path. A script treating any non-zero as failure will now fail on a repo with
+  no tracked overlay — that is the doctrine working, and the fix is to track one
+  (`canary overlay add`) or pass `--from <overlay>`.
+
 - **BREAKING: the rest of the CLI's hidden failures — `init` on an unsupported
   framework, and errors on stdout** (#1040, follow-up to #1007).
   `canary init <known-framework-with-no-template>` (scaffolder status
@@ -221,6 +236,22 @@ under the project's former name) are documented in the
   change.
 
 ### Fixed
+
+- **Installing a skill's dependencies no longer freezes it** (#1066).
+  `hashSkillDir` walked the whole deployed-skill tree, so `node_modules` counted
+  toward the hash: running `npm install` in a skill's `scripts/` dir — which a
+  skill declaring a runtime dependency instructs you to do when it is missing —
+  made `canary migrate` report that skill as locally edited
+  and refuse every later update. Using a skill and keeping it updatable were
+  mutually exclusive, and the staleness was silent: `canary overlay update`
+  reports success because deploying is the separate `migrate` step that then
+  refuses. One consuming repo had all 7 skills frozen this way for months,
+  missing dependency bumps and a correctness fix. `node_modules`, `.git`,
+  `__pycache__` and `.venv` are now excluded from the hash; genuine edits to
+  authored files are still detected, and a _file_ named `node_modules` still
+  counts. This diverges from the Python oracle for trees containing those
+  directories — deliberately, since the oracle has the same bug; the parity
+  golden (a clean tree) is unchanged.
 
 - **The `refresh-baseline` label now fixes a stale arch floor** (#1013).
   `scripts/refresh-arch-baseline.mjs` previously acted only on a `check-arch`

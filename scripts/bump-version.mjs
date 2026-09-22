@@ -30,12 +30,47 @@ if (!version || !SEMVER.test(version)) {
   process.exit(2);
 }
 
+// #1064: `JSON.stringify` always emits non-ASCII literally, so a file that
+// stored a character as a `\uXXXX` escape came back re-encoded and every
+// release commit carried an unrelated one-line diff. The two `.claude-plugin/`
+// manifests store their non-ASCII literally, so a blanket ASCII-escaping
+// serializer would just move the noise to them. Instead the writer preserves
+// whichever style the SOURCE used, per code unit, which makes a no-op bump a
+// fixed point for every manifest.
+//
+// Assumption: a code unit is written one way throughout a given file. If a
+// file ever mixes both styles for the same character, the escaped form wins
+// for all of its occurrences — still a valid, value-identical JSON document.
+
+/** UTF-16 code units the source text wrote as `\uXXXX` escapes. */
+function escapedCodeUnits(text) {
+  const units = new Set();
+  for (const m of text.matchAll(/\\u([0-9a-fA-F]{4})/g)) {
+    units.add(Number.parseInt(m[1], 16));
+  }
+  return units;
+}
+
+/** Re-escape the code units the source had escaped; leave the rest literal. */
+function restoreEscapes(json, units) {
+  if (units.size === 0) return json;
+  // No `u` flag on purpose: matching per UTF-16 code unit means an astral
+  // character round-trips as the escaped surrogate pair a source would have
+  // stored, rather than falling through as one unmatched code point.
+  return json.replace(/[^\x00-\x7f]/g, (ch) => {
+    const unit = ch.charCodeAt(0);
+    return units.has(unit) ? `\\u${unit.toString(16).padStart(4, '0')}` : ch;
+  });
+}
+
 /** Read a JSON file, mutate it, write it back as prettier-clean 2-space JSON. */
 function editJson(relPath, mutate) {
   const abs = resolve(REPO, relPath);
-  const data = JSON.parse(readFileSync(abs, 'utf-8'));
+  const text = readFileSync(abs, 'utf-8');
+  const data = JSON.parse(text);
   const before = mutate(data);
-  writeFileSync(abs, JSON.stringify(data, null, 2) + '\n');
+  const serialized = JSON.stringify(data, null, 2);
+  writeFileSync(abs, restoreEscapes(serialized, escapedCodeUnits(text)) + '\n');
   return before;
 }
 
