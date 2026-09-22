@@ -247,4 +247,62 @@ describe('canary vacuity-check', () => {
       expect(boundedTitle('short')).toBe('short');
     });
   });
+
+  // #1084: the exit-code half of the abstention doctrine was already in place,
+  // but the FILE denominator never reached the reader. `checked` counts tests,
+  // so a run whose glob resolved one file holding no runnable test printed a
+  // bare "verified zero items" with nothing saying how many files it had
+  // resolved -- and a clean pass named only the test count. Both numbers now
+  // travel with every verdict, which is what makes a collapsed denominator
+  // locatable rather than merely loud.
+  describe('#1084 the file denominator travels with every verdict', () => {
+    it('names files resolved and tests scanned on a clean pass', async () => {
+      const home = mkTmp();
+      try {
+        const dir = join(home, 'tests');
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'a.test.ts'), SOUND, 'utf-8');
+        const res = await invokeCanary(['vacuity-check', dir]);
+        expect(res.code).toBe(0);
+        expect(res.stdout).toContain('1 file(s) resolved');
+        expect(res.stdout).toContain('1 test(s) scanned');
+      } finally {
+        rmTmp(home);
+      }
+    });
+
+    it('abstains and names the resolved files when they hold no test', async () => {
+      const home = mkTmp();
+      try {
+        const dir = join(home, 'tests');
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'a.test.ts'), 'export const x = 1;\n', 'utf-8');
+        const res = await invokeCanary(['vacuity-check', dir]);
+        expect(res.code).toBe(EXIT_ABSTAINED);
+        expect(res.stdout + res.stderr).toContain('1 file(s) resolved');
+        expect(res.stdout + res.stderr).toContain('0 test(s) scanned');
+      } finally {
+        rmTmp(home);
+      }
+    });
+
+    it('carries the file denominator in --json', async () => {
+      const home = mkTmp();
+      try {
+        const dir = join(home, 'tests');
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'a.test.ts'), SOUND, 'utf-8');
+        const res = await invokeCanary(['vacuity-check', dir, '--json']);
+        expect(res.code).toBe(0);
+        const payload = JSON.parse(res.stdout) as {
+          files: number;
+          checked: number;
+        };
+        expect(payload.files).toBe(1);
+        expect(payload.checked).toBe(1);
+      } finally {
+        rmTmp(home);
+      }
+    });
+  });
 });
