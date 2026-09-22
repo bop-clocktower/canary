@@ -1,0 +1,40 @@
+{
+  "issue": [1057],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducing_test": "ts/src/history/supabase-store.test.ts",
+  "supporting_tests": ["ts/test/entropy-exclude-patterns.test.ts"],
+  "findings_in_scope": [4, 6],
+  "findings": {
+    "4": {
+      "verdict": "not-a-defect",
+      "claim": "harness.config.json entropy.excludePatterns 'tests/generated/**' matches 0 paths and is residue from the pre-v6.0.0 Python layout.",
+      "refutation": "tests/generated/ is a live output path written by this repo's own generate-test pipeline (ts/src/cli-commands.ts, agents/skills/claude-code/canary-generate-test), gitignored at .gitignore:3, and excluded deliberately by #727 because the entropy analyzer has no .gitignore awareness and walks with dot:true. Deleting the entry fails the pre-existing guard ts/test/entropy-exclude-patterns.test.ts 'declares the local-only artifact roots it is meant to cover', and would reintroduce #700 (a developer working directory measuring the ratchet ~64 findings high while CI measures it correctly). Because the directory is gitignored, CI can never see it, so matching zero tracked files is its correct and only possible steady state. An anchored exclusion that DID match a tracked file is the dangerous direction, which the same suite already refuses.",
+      "action": "No config change. The genuinely silent thing was that suite's own denominator: its three repo-rooted rules iterate repoRootedExcludes, so an empty list passes all three over nothing. That guard now routes through reportAbstention/reportVerified, with the refutation recorded inline where the next auditor will look."
+    },
+    "6": {
+      "verdict": "confirmed-defect",
+      "claim": "ts/src/history/supabase-store.ts coalesces a Supabase error into a clean empty result, and SUPABASE_ANON_KEY defaults to the empty string.",
+      "action": "Added unwrap(), which throws on a non-null error, applied to pushRun, queryFlaky, queryTimeline and querySummary. The constructor throws when SUPABASE_ANON_KEY is missing or blank and no client was injected. Neither path echoes the credential.",
+      "before": "8 failed | 11 passed (19)",
+      "after": "19 passed (19)"
+    }
+  },
+  "assumptions": [
+    "Finding 4 is treated as resolved by disproof plus an audible-denominator fix, the same disposition PR #1070 applied to findings 2 and 5 of this issue. If the maintainer wants a defect-or-nothing reading of 'resolved', finding 4 is instead a won't-do and the keyword should be downgraded to Refs.",
+    "supabase-js resolves query failures to { data: null, error } rather than throwing, so surfacing error is sufficient to make a failure distinguishable from an empty table. Verified against the SDK contract and the repo's own fake client, not against a live Supabase project.",
+    "Throwing on a missing SUPABASE_ANON_KEY is a behavior change for any caller that constructed SupabaseHistoryStore without a key and relied on the resulting empty results. No such caller exists in-repo: makeStore() only constructs it when CANARY_HISTORY_DB_URL is set, and both existing test call sites already set the key.",
+    "The entropy and perf ratchets are unaffected: no new module, no new entryPoint, and no change to harness.config.json.",
+    "The arch module-LOC ceiling on ts/src/history is a CI-only ratchet the four local gates cannot see. ts/src/history sat at exactly 1800/1800 on main (#1074), so the new supabase-store.test.ts + fix took it to 1859. Paid down by relocating the three Supabase plumbing concerns (result unwrapping, project-url parsing, anon-key resolution) into ts/src/util/supabase-result.ts, which history is already permitted to depend on. No baseline refresh, no deltaAllowance, no --no-verify. Measured after: 0 new violations, 12 pre-existing (#1045)."
+  ],
+  "closing_keyword": "Closes",
+  "keyword_rationale": "Findings 4 and 6 were the last two open items of #1057. Finding 6 is fixed with a reproducing test that fails before and passes after. Finding 4 is resolved as not-a-defect on empirical evidence and its real (different) abstention gap is closed, which is exactly how PR #1070 disposed of findings 2 and 5. With 1 and 3 fixed by #1070, 2, 4 and 5 documented as not defects, and 6 fixed here, no finding remains open, so the issue closes. The judgment call is recorded in Assumptions made because finding 4 closes by refutation rather than by repair.",
+  "measurements": {
+    "arch_module_loc_ts_src_history": {
+      "main": 1800,
+      "first_push": 1859,
+      "after_paydown": "under 1800 \u2014 harness check-arch reports 0 new violations",
+      "note": "Measured, not estimated. Relocating the test file alone was tried first and moved the number by 0: .test.ts files are excluded from module LOC, comments are not (stripping comments from supabase-store.ts moved 1859 -> 1817). Only non-test source counts."
+    }
+  }
+}

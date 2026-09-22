@@ -1,0 +1,16 @@
+{
+  "issue": [1061],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "plan_artifact": "docs/changes/1061-scan-config-unwired/plans/2026-09-22-scan-config-unwired-plan.md",
+  "assumptions": [
+    "Amending ADR 0014 satisfies the issue's 'record in docs/' requirement: the ADR already exists at docs/knowledge/decisions/0014-harness-check-wiring-register.md and its stated purpose is 'every harness check is wired or its decline is recorded'. A second document would leave the stale row in place for any reader who finds the register first, which is the exact drift the issue objects to.",
+    "This repo has no docs/adr/ directory; the ADR convention is docs/knowledge/decisions/NNNN-slug.md. Verified by directory listing, so the known-stale ADR README index (stale past 0015) was neither consulted as authoritative nor modified — no new ADR number is allocated.",
+    "The premise was verified rather than inherited: `grep -rn scan-config .github/` returns no matches, and `harness scan-config --json` at CLI 12.10.0 on origin/main 76d3f19b reproduces #1060 exactly (INJ-SUS-001 low x30, INJ-SUS-002 low x7, SEC-PTH-001 medium x1).",
+    "The 1 SEC-PTH-001 (medium) is recorded as UNTRIAGED, not as accepted or known-benign — nobody has looked at it. Triaging it is #1060's second checkbox and is deliberately out of scope.",
+    "The four gates (build/typecheck/format:check/test) are green but have a zero denominator for this change: the diff touches no ts/ source file. The load-bearing evidence is the plan's grep assertions, including the negative assertion that 'Tracked in #719' no longer appears.",
+    "Both of #1061's checkboxes are completed by this change, so the PR closes the issue. The upstream half (#1060's filing, blocked on work-account push access) is untouched and remains open."
+  ],
+  "closing_keyword": "Closes #1061",
+  "keyword_rationale": "The issue has exactly two checkboxes and both are in scope and both are done: (1) the record now states in docs/ that scan-config is deliberately unwired, with the reason and a link to #1060 as the live upstream false-positive tracker, replacing the closed #719; (2) the Revisit column states a falsifiable condition a reader can test by re-running `harness scan-config --json` against the recorded 37 INJ-SUS-* + 1 SEC-PTH-001 baseline, with two named disjuncts that flip the decision. Nothing in #1061 is left partial, so `Refs` would strand the row forever."
+}

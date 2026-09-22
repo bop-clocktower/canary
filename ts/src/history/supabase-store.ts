@@ -10,6 +10,11 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import { def } from '../util/coalesce.js';
+import {
+  parseProjectUrl,
+  requireAnonKey,
+  unwrap,
+} from '../util/supabase-result.js';
 import { round1 } from '../util/round.js';
 import type { TimelineEntry } from './record.js';
 import type { FlakyQueryRow, SummaryResult } from './ndjson-store.js';
@@ -21,23 +26,9 @@ import {
   type TestResultInput,
 } from './schema.js';
 
-const ERROR_TEXT_MAX = 2000;
+export { parseProjectUrl } from '../util/supabase-result.js';
 
-/**
- * Resolve the Supabase project URL. A plain `https://…` url passes through; a
- * `postgresql+asyncpg://user:pass@host/db` url yields `https://<host>`. Never
- * returns the raw connection string (it embeds credentials). Pure + exported
- * for direct parity testing against Python `_parse_project_url`.
- */
-export function parseProjectUrl(dbUrl: string): string {
-  if (dbUrl.startsWith('https://')) return dbUrl;
-  try {
-    const host = new URL(dbUrl).hostname;
-    return `https://${host}`;
-  } catch {
-    return '<redacted-unparseable-url>';
-  }
-}
+const ERROR_TEXT_MAX = 2000;
 
 function toResultRow(t: TestResultInput): Record<string, unknown> {
   const row = serializeTestResult(t);
@@ -70,21 +61,22 @@ function flattenTimelineRow(row: Record<string, unknown>): TimelineEntry {
 export class SupabaseHistoryStore implements AsyncHistoryStore {
   private readonly client: SupabaseClient;
 
+  /** Injecting a client bypasses credential resolution; see `requireAnonKey`. */
   constructor(dbUrl: string, client?: SupabaseClient) {
     this.client =
-      client ??
-      createClient(
-        parseProjectUrl(dbUrl),
-        def(process.env.SUPABASE_ANON_KEY, ''),
-      );
+      client ?? createClient(parseProjectUrl(dbUrl), requireAnonKey());
   }
 
   async pushRun(run: RunInput, results: TestResultInput[]): Promise<void> {
-    await this.client.from('canary_runs').upsert(serializeRun(run));
+    const runs = await this.client
+      .from('canary_runs')
+      .upsert(serializeRun(run));
+    unwrap('canary_runs', runs);
     if (results.length > 0) {
-      await this.client
+      const rows = await this.client
         .from('canary_test_results')
         .upsert(results.map(toResultRow));
+      unwrap('canary_test_results', rows);
     }
   }
 
@@ -99,12 +91,12 @@ export class SupabaseHistoryStore implements AsyncHistoryStore {
       .gte('flake_rate_pct', minRate)
       .order('flake_rate_pct', { ascending: false });
     if (suite) query = query.eq('suite', suite);
-    const { data } = await query;
+    const data = unwrap('canary_flake_summary', await query);
     return def(data, []) as FlakyQueryRow[];
   }
 
   async queryTimeline(testName: string): Promise<TimelineEntry[]> {
-    const { data } = await this.client
+    const res = await this.client
       .from('canary_test_results')
       .select(
         'run_id, suite, status, failure_category, error_text, retry_count, ' +
@@ -112,18 +104,20 @@ export class SupabaseHistoryStore implements AsyncHistoryStore {
       )
       .eq('test_name', testName)
       .order('canary_runs(timestamp)');
+    const data = unwrap('canary_test_results', res);
     return def(data as Record<string, unknown>[] | null, []).map(
       flattenTimelineRow,
     );
   }
 
   async querySummary(suite: string, runs: number): Promise<SummaryResult> {
-    const { data } = await this.client
+    const res = await this.client
       .from('canary_runs')
       .select('run_id, branch, timestamp, passed, failed, flaky, total')
       .eq('suite', suite)
       .order('timestamp', { ascending: false })
       .limit(runs);
+    const data = unwrap('canary_runs', res);
     const recent = [...def(data, [])].reverse();
     if (recent.length === 0) {
       return { suite, total_runs: 0, avg_pass_rate: 0.0 };

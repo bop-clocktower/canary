@@ -71,6 +71,20 @@ Three parts:
    manifest so it stops reading as an unconfigured default. Revisit when a
    second maintainer joins.
 
+   > **Amended by #1056.** The decision stands — the count is still 0, still
+   > deliberate — but the framing above is incomplete, and the sentence "raising
+   > it to 1 would mean self-approving every PR" now reads as if 0 were the
+   > whole policy. The ruleset also carries
+   > `require_extra_approval_for_unattributed_changes: true`, which was
+   > unrecorded when this ADR was written. GitHub's "unattributed" means a
+   > commit whose author or committer is not linked to a GitHub account; it is
+   > not a synonym for agent- or bot-authored. Measured 2026-09-22, that flag
+   > has not bound in practice: 24 of the 25 most recently merged PRs merged
+   > with zero approvals, with `bypass_actors` empty, so it is a latent
+   > protection rather than the everyday requirement. The effective policy and
+   > its denominator live in `.github/required-checks.json` under `reviews`,
+   > which is the record to read; this item is the historical decision.
+
 ### What stays advisory, and why
 
 The five `dogfood.yml` jobs run canary against canary and report against a
