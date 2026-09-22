@@ -1,0 +1,14 @@
+{
+  "issue": [1076],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducing_test": "ts/test/vacuity-scanner.test.ts",
+  "assumptions": [
+    "The `.not` guard must stay intact: `expect(v).not.toBe(v)` can only ever FAIL, so a widened extractor must keep it excluded. Covered by a negative case.",
+    "The matcher search must start after the balanced close of `expect(...)`, so a call inside the actual side (`expect(x.toString()).toBe(y)`) is not mistaken for the matcher once the argument is no longer restricted to paren-free text.",
+    "Only VAC-001's JS/TS path is in scope. The pytest path (`pyTautology`) has no paren-based extractor and is unaffected.",
+    "The issue's 'Not in scope here, but adjacent' note — the zero-finding human summary hiding its checked/skipped denominator — is deliberately NOT addressed here; the issue itself offers to split it, and it is a separate output-formatting concern from the VAC-001 detector gap."
+  ],
+  "closing_keyword": "Closes #1076",
+  "keyword_rationale": "The issue is single-finding: the VAC-001 expected-side extractor gap is fully fixed, and all four of its suggested regression cases (call expression flagged, differing texts not flagged, negated not flagged, nested call flagged) are covered by tests that fail before the fix and pass after. The adjacent zero-denominator note is explicitly offered by the reporter as a separate issue, so it does not hold this row open. Defaulting to `Refs` on a fully-resolving PR would strand the row forever."
+}
