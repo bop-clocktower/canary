@@ -26,6 +26,12 @@ export function formatFinding(f: LintFinding): string {
 // Flakiness
 const SLEEP = /time\.sleep\s*\(|page\.waitForTimeout\s*\(/;
 const SETTIMEOUT = /(?<!\w)setTimeout\s*\(/;
+// Playwright's per-test time BUDGET. It is not a timer, so no waitFor could
+// ever "correspond" to it -- flagging it was a critical-severity false positive
+// on correct code (#1088). Excluded by RECEIVER rather than by widening the
+// lookbehind to `[\w.]`: `window.setTimeout(f, 1)` is a genuine sleep and must
+// keep firing, and a blanket dot-exclusion would silence it too.
+const TEST_TIMEOUT_BUDGET = /(?<![\w.])test\s*\.\s*setTimeout\s*\(/;
 const RANDOM =
   /Math\.random\s*\(|random\.random\s*\(|random\.choice\s*\(|random\.randint\s*\(/;
 const TIMESTAMP = /Date\.now\s*\(|datetime\.now\s*\(|datetime\.utcnow\s*\(/;
@@ -211,7 +217,8 @@ const FLAKINESS_RULES: FlakeRule[] = [
     message: 'setTimeout used without a corresponding waitFor.',
     suggestion:
       'Wrap in page.waitForFunction() or replace with an awaitable assertion.',
-    guard: (line) => !line.includes('waitFor'),
+    guard: (line) =>
+      !line.includes('waitFor') && !TEST_TIMEOUT_BUDGET.test(line),
   },
   {
     re: RANDOM,
