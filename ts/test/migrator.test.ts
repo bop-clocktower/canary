@@ -3562,41 +3562,103 @@ describe('workflow template symlink escape', () => {
 // `.github/workflows/<name>`; the dry run announced two installs while the apply
 // wrote one and misreported the other as an untouched older version.
 describe('TestInstallWorkflowsBasenameCollision', () => {
-  it('dry run and apply agree when two variants share a workflow filename', () => {
+  const SHAPES = ['api', 'e2e_ui'];
+
+  function run<T>(fn: (s: { target: string; overlay: string }) => T): T {
     const root = mkTmp();
     try {
+      const target = join(root, 'target');
       const overlay = join(root, 'overlay');
-      const make = (target: string) => mkdirSync(target, { recursive: true });
-      makeWorkflowSkill(overlay, 'canary-pr-guardian', {
-        install: [
-          'api:templates/api/guardian.yml',
-          'e2e_ui:templates/e2e/guardian.yml',
-        ],
-        templates: {
-          'templates/api/guardian.yml': 'name: api\n',
-          'templates/e2e/guardian.yml': 'name: e2e\n',
-        },
-      });
-      const dryTarget = join(root, 'dry');
-      const applyTarget = join(root, 'apply');
-      make(dryTarget);
-      make(applyTarget);
-      const shapes = ['api', 'e2e_ui'];
-      const dry = mig().installWorkflows(shapes, overlay, dryTarget, true);
-      const applied = mig().installWorkflows(
-        shapes,
-        overlay,
-        applyTarget,
-        false,
-      );
-      const predicted = dry.map((r) => r.status === 'dry_run');
-      const wrote = applied.map(
-        (r) => r.status === 'installed' || r.status === 'updated',
-      );
-      expect(wrote).toEqual(predicted);
-      expect(applied.map((r) => r.status)).not.toContain('outdated');
+      mkdirSync(target, { recursive: true });
+      mkdirSync(overlay, { recursive: true });
+      return fn({ target, overlay });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }
+
+  /** Two DIFFERENT templates that both resolve to `guardian.yml`. */
+  const collidingSkill = (overlay: string) =>
+    makeWorkflowSkill(overlay, 'canary-pr-guardian', {
+      install: [
+        'api:templates/api/guardian.yml',
+        'e2e_ui:templates/e2e/guardian.yml',
+      ],
+      templates: {
+        'templates/api/guardian.yml': 'name: api\n',
+        'templates/e2e/guardian.yml': 'name: e2e\n',
+      },
+    });
+
+  /** ONE template declared under two shapes -- not a collision. */
+  const sharedSkill = (overlay: string) =>
+    makeWorkflowSkill(overlay, 'canary-pr-guardian', {
+      install: ['api:templates/guardian.yml', 'e2e_ui:templates/guardian.yml'],
+      templates: { 'templates/guardian.yml': 'name: shared\n' },
+    });
+
+  it('two different sources sharing a basename abort and name both paths', () =>
+    run(({ target, overlay }) => {
+      collidingSkill(overlay);
+      let message = '';
+      expect(() => {
+        try {
+          mig().installWorkflows(SHAPES, overlay, target, false);
+        } catch (e) {
+          message = (e as Error).message;
+          throw e;
+        }
+      }).toThrow();
+      // Both declarations must be named: a message that cites only one leaves
+      // the consumer guessing which template to rename.
+      expect(message).toContain('templates/api/guardian.yml');
+      expect(message).toContain('templates/e2e/guardian.yml');
+      expect(message).toContain('guardian.yml');
+      // `--force` overwrites the first variant; it never resolves a filename
+      // collision, so suggesting it here would be actively harmful.
+      expect(message).not.toContain('--force');
+    }));
+
+  it('the same source declared under two shapes installs once, silently', () =>
+    run(({ target, overlay }) => {
+      sharedSkill(overlay);
+      const results = mig().installWorkflows(SHAPES, overlay, target, false);
+      expect(results.length).toBe(1);
+      expect(results[0]!.status).toBe('installed');
+      expect(results.map((r) => r.status)).not.toContain('conflict');
+      expect(readFileSync(workflowPath(target, 'guardian.yml'), 'utf-8')).toBe(
+        'name: shared\n',
+      );
+    }));
+
+  it('dry run and apply agree for a collision -- both abort', () =>
+    run(({ target, overlay }) => {
+      collidingSkill(overlay);
+      expect(() =>
+        mig().installWorkflows(SHAPES, overlay, target, true),
+      ).toThrow();
+      expect(() =>
+        mig().installWorkflows(SHAPES, overlay, target, false),
+      ).toThrow();
+    }));
+
+  it('dry run and apply agree for an identical-source declaration', () =>
+    run(({ target, overlay }) => {
+      sharedSkill(overlay);
+      const dry = mig().installWorkflows(SHAPES, overlay, target, true);
+      expect(dry.map((r) => r.status)).toEqual(['dry_run']);
+      const applied = mig().installWorkflows(SHAPES, overlay, target, false);
+      expect(applied.map((r) => r.status)).toEqual(['installed']);
+    }));
+
+  it('an aborted migration writes nothing into .github/workflows', () =>
+    run(({ target, overlay }) => {
+      collidingSkill(overlay);
+      expect(() =>
+        mig().installWorkflows(SHAPES, overlay, target, false),
+      ).toThrow();
+      // The abort is a pre-pass: a partially installed CI directory would be
+      // worse than the bug, because the consumer cannot see which half landed.
+      expect(existsSync(join(target, '.github'))).toBe(false);
+    }));
 });

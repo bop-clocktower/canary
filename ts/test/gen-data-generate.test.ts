@@ -60,6 +60,68 @@ describe('leafCases', () => {
     );
     expect(cats.map((c) => c.value)).toEqual(expect.arrayContaining([null, 0]));
   });
+  it('a union drops a member-0 case another member accepts (#1039)', () => {
+    const first: ShapeNode = { kind: 'string' };
+    const union: ShapeNode = {
+      kind: 'union',
+      members: [first, { kind: 'number', integer: false }],
+    };
+    const values = leafCases(union, 'ref').map((c) => c.value);
+    // The string member contributes `0` as unexpected-shape, but the number
+    // member accepts it -- asserting a rejection the schema would allow.
+    expect(leafCases(first, 'ref').map((c) => c.value)).toContain(0);
+    expect(values).not.toContain(0);
+    // null is rejected by both members, so it survives the filter.
+    expect(values).toContain(null);
+  });
+  it.each([
+    [[{ kind: 'string' }, { kind: 'number', integer: true }]],
+    [[{ kind: 'number', integer: true, min: 1, max: 9 }, { kind: 'string' }]],
+    [[{ kind: 'date' }, { kind: 'number', integer: false }]],
+    [[{ kind: 'boolean' }, { kind: 'number', integer: false }]],
+  ] as unknown as Array<[ShapeNode[]]>)(
+    'a union of %j emits only member-0 cases, minus sibling-accepted ones',
+    (members) => {
+      const first = members[0] as ShapeNode;
+      const ownValues = leafCases(first, 'ref').map((c) => c.value);
+      const unionValues = leafCases({ kind: 'union', members }, 'ref').map(
+        (c) => c.value,
+      );
+      // Subset: the filter only ever removes.
+      for (const v of unionValues) expect(ownValues).toContainEqual(v);
+      // Any dropped value must be one a sibling can hold: it appears as a
+      // legitimate value of some other member's own kind.
+      const dropped = ownValues.filter((v) => !unionValues.includes(v));
+      // Non-vacuity: every row above is chosen so member 0 contributes at
+      // least one case the sibling accepts. Without this the two assertions
+      // hold trivially when nothing is filtered -- a zero denominator, which
+      // is an abstention rather than a pass.
+      expect(dropped.length).toBeGreaterThan(0);
+      for (const v of dropped)
+        expect(
+          members
+            .slice(1)
+            .some((m) =>
+              typeof v === (m as { kind: string }).kind
+                ? true
+                : (m as { kind: string }).kind === 'date' &&
+                  typeof v === 'string',
+            ),
+        ).toBe(true);
+    },
+  );
+  it('keeps every case when all members share the same constraints', () => {
+    const member: ShapeNode = {
+      kind: 'number',
+      integer: true,
+      min: 1,
+      max: 9,
+    };
+    const union: ShapeNode = { kind: 'union', members: [member, member] };
+    expect(leafCases(union, 'ref').map((c) => c.value)).toEqual(
+      leafCases(member, 'ref').map((c) => c.value),
+    );
+  });
 });
 
 describe('defaultValue', () => {
@@ -94,7 +156,7 @@ describe('defaultValue', () => {
       if (node.integer) expect(Number.isInteger(v)).toBe(true);
     }
   });
-  it('a union defaults and plans cases from its first member', () => {
+  it('a union defaults from member 0 and plans its filtered cases', () => {
     const first: ShapeNode = { kind: 'number', integer: true, min: 1, max: 9 };
     const union: ShapeNode = {
       kind: 'union',
@@ -102,8 +164,13 @@ describe('defaultValue', () => {
     };
     const v = defaultValue(union, 'ref', mulberry32(765));
     expect(Number.isInteger(v)).toBe(true);
+    // Member 0's `'0'` unexpected-shape case is a valid string, so the string
+    // member accepts it and it is filtered out (#1039). Everything else --
+    // out-of-range numbers and null -- is rejected by both members and stays.
     expect(leafCases(union, 'ref').map((c) => c.value)).toEqual(
-      leafCases(first, 'ref').map((c) => c.value),
+      leafCases(first, 'ref')
+        .map((c) => c.value)
+        .filter((x) => x !== '0'),
     );
   });
   it('a date-only field defaults to YYYY-MM-DD and gets date-only cases', () => {

@@ -1,0 +1,17 @@
+{
+  "issue": [1039],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "planArtifact": "docs/changes/1039-gen-data-union-case-filter/plans/2026-09-22-union-case-filter-plan.md",
+  "assumptions": [
+    "union strategy = Filter (option 1), decided by human at fleet CONFIRM",
+    "\"Invalid\" means \"not accepted by member 0\": the filter only drops a case member 0 itself rejects, so a case member 0 accepts (a legitimate valid-input or boundary case) is never removed even if a sibling also accepts it.",
+    "Acceptance is a local scalar predicate mirroring the constraints the case generators already honour (enum, min/maxLength, integer, min/max, dateOnly) rather than a JSON-Schema validator dependency; the canary shape model is narrower than JSON Schema.",
+    "A date member accepts a value when it matches the ISO form dateCases emits: YYYY-MM-DD when dateOnly, otherwise a full ISO-8601 timestamp. No other date constraint exists in the shape model today.",
+    "A union nested inside a union (expressible in the type, not producible by isResolvedUnion) accepts a value when any of its members does; defensive only.",
+    "accepts() is module-private in strategies.ts rather than a new module, to avoid adding an entropy entry point for ~45 lines.",
+    "Tests were added to the existing ts/test/gen-data-generate.test.ts; a new test file was deliberately avoided because it would trip the entropy ratchet.",
+    "The pre-existing test 'a union defaults and plans cases from its first member' encoded the #1039 bug as an expectation and was amended (not deleted) to state the filtered contract.",
+    "Regenerated gen-data fixtures for union fields will now carry fewer negative cases; nothing in this repo asserts a fixture case count, but downstream committed fixtures would shift on regeneration."
+  ]
+}

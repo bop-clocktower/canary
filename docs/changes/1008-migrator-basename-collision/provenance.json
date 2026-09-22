@@ -1,0 +1,14 @@
+{
+  "issue": [1008],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "planArtifact": "docs/changes/1008-migrator-basename-collision/plans/2026-09-22-source-path-collision-abort-plan.md",
+  "assumptions": [
+    "collision key = source path; resolution = fail loudly naming both sources; no filename renames; decided by human at fleet CONFIRM",
+    "Identical sources declared under two shapes dedupe silently: no result row and no warning, because a legal declaration must not raise a finding on every scheduled freshness check.",
+    "The abort is a pre-pass that runs before any file is written, so --apply never leaves a partially installed .github/workflows/ and dry run and apply reach the same verdict.",
+    "The abort is a plain Error rather than a new exported error class: an export consumed only inside its own module trips the dead-export ratchet and no caller needs to discriminate it.",
+    "checkFreshness calls installWorkflows in dry-run mode, so a colliding overlay now aborts the freshness check too. That is the intended fail-loudly behaviour for a malformed overlay.",
+    "PR #1000 is already MERGED (not parked as the issue text says); this change amends the basename-keyed map it landed rather than replacing an open PR."
+  ]
+}

@@ -121,6 +121,57 @@ const dateCases = (n: Of<'date'>): Raw[] => [
   ['unexpected-shape', 0],
 ];
 
+const ISO_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATE_TIME =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Would this scalar node accept `value`? Mirrors the constraints the case
+ * generators above honour -- the shape model is canary's own and narrower
+ * than JSON Schema, so no validator dependency is warranted (#1039).
+ */
+const ACCEPTS: {
+  [K in Leaf['kind']]: (n: Of<K>, v: unknown) => boolean;
+} = {
+  string: (n, v) =>
+    typeof v === 'string' &&
+    (n.enum === undefined || n.enum.includes(v)) &&
+    v.length >= (n.minLength ?? 0) &&
+    v.length <= (n.maxLength ?? Infinity),
+  number: (n, v) =>
+    typeof v === 'number' &&
+    Number.isFinite(v) &&
+    (!n.integer || Number.isInteger(v)) &&
+    v >= (n.min ?? -Infinity) &&
+    v <= (n.max ?? Infinity),
+  boolean: (_n, v) => typeof v === 'boolean',
+  date: (n, v) =>
+    typeof v === 'string' &&
+    (n.dateOnly ? ISO_DATE_ONLY : ISO_DATE_TIME).test(v),
+  union: (n, v) => n.members.some((m) => accepts(m, v)),
+};
+
+/** Non-scalar and missing nodes accept nothing, so the filter keeps the case. */
+function accepts(node: ShapeNode | undefined, value: unknown): boolean {
+  if (node === undefined || !(node.kind in ACCEPTS)) return false;
+  const fn = ACCEPTS[node.kind as Leaf['kind']] as (
+    n: Leaf,
+    v: unknown,
+  ) => boolean;
+  return fn(node as Leaf, value);
+}
+
+/**
+ * Member 0's cases, minus any case member 0 rejects that a sibling accepts --
+ * such a case would assert a rejection the union would actually allow (#1039).
+ */
+function unionCases(n: Of<'union'>): Raw[] {
+  const [first, ...rest] = n.members;
+  return rawCases(first).filter(
+    ([, v]) => accepts(first, v) || !rest.some((m) => accepts(m, v)),
+  );
+}
+
 const CASES: { [K in Leaf['kind']]: (n: Of<K>) => Raw[] } = {
   string: stringCases,
   number: numberCases,
@@ -129,7 +180,7 @@ const CASES: { [K in Leaf['kind']]: (n: Of<K>) => Raw[] } = {
     ['unexpected-shape', 0],
   ],
   date: dateCases,
-  union: (n) => rawCases(n.members[0]),
+  union: unionCases,
 };
 
 function rawCases(node: ShapeNode | undefined): Raw[] {
