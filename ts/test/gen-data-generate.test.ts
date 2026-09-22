@@ -156,7 +156,7 @@ describe('defaultValue', () => {
       if (node.integer) expect(Number.isInteger(v)).toBe(true);
     }
   });
-  it('a union defaults and plans cases from its first member', () => {
+  it('a union defaults from member 0 and plans its filtered cases', () => {
     const first: ShapeNode = { kind: 'number', integer: true, min: 1, max: 9 };
     const union: ShapeNode = {
       kind: 'union',
@@ -164,8 +164,13 @@ describe('defaultValue', () => {
     };
     const v = defaultValue(union, 'ref', mulberry32(765));
     expect(Number.isInteger(v)).toBe(true);
+    // Member 0's `'0'` unexpected-shape case is a valid string, so the string
+    // member accepts it and it is filtered out (#1039). Everything else --
+    // out-of-range numbers and null -- is rejected by both members and stays.
     expect(leafCases(union, 'ref').map((c) => c.value)).toEqual(
-      leafCases(first, 'ref').map((c) => c.value),
+      leafCases(first, 'ref')
+        .map((c) => c.value)
+        .filter((x) => x !== '0'),
     );
   });
   it('a date-only field defaults to YYYY-MM-DD and gets date-only cases', () => {
