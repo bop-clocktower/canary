@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { reportAbstention } from './abstention-testkit.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const HOOKS = join(REPO, 'hooks');
@@ -35,7 +36,18 @@ function have(cmd: string): boolean {
   const r = spawnSync(cmd, ['--version'], { encoding: 'utf-8' });
   return !r.error && r.status === 0;
 }
-const itRuff = have('ruff') ? it : it.skip;
+const HAVE_RUFF = have('ruff');
+const itRuff = HAVE_RUFF ? it : it.skip;
+
+// See the matching note in js-hooks-behavior.test.ts: no CI job installs ruff,
+// so this skip has been invisible on every run (#650, #1057).
+if (!HAVE_RUFF) {
+  reportAbstention(
+    'plugin-hooks ruff',
+    'ruff is not installed — quality-gate.mjs was not exercised against a ' +
+      'real .py edit on this run.',
+  );
+}
 
 function runHook(hook: string, payload: unknown, cwd: string) {
   const r = spawnSync('node', [join(HOOKS, hook)], {
