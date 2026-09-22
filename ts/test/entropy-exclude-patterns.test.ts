@@ -46,6 +46,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { reportAbstention, reportVerified } from './abstention-testkit.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -181,7 +182,41 @@ function isGitIgnored(path: string): boolean {
 describe('entropy.excludePatterns repo-rooted entries', () => {
   // Guard the guard: an empty list satisfies every "for each" rule below
   // without checking anything.
+  //
+  // #1057 finding 4 proposed deleting `tests/generated/**` on the grounds that
+  // it "matches 0 paths -- residue from the pre-v6.0.0 Python layout". That
+  // premise is false, and the zero match is the *evidence* that the entry is
+  // working rather than that it is dead. `tests/generated/` is a live output
+  // path written by this repo's own generate-test pipeline
+  // (`ts/src/cli-commands.ts`, `agents/skills/claude-code/canary-generate-test`),
+  // gitignored at `.gitignore:3`, and excluded deliberately by #727 because
+  // the analyzer has no `.gitignore` awareness and walks with `dot: true`.
+  // Without the entry a developer's working directory measures the ratchet
+  // ~64 findings high (#700) while CI measures it correctly -- and CI is
+  // where the ratchet is authoritative, so CI can never see the directory at
+  // all. An anchored exclusion that DID match a tracked file is the dangerous
+  // direction, which is what the third rule below refuses.
+  //
+  // So "matches zero tracked files" must not be read as an abstention here.
+  // What genuinely was silent is the denominator itself: if this list empties,
+  // the three rules below all pass over nothing. Said out loud rather than
+  // left to the digit in a skip count.
   it('declares the local-only artifact roots it is meant to cover', () => {
+    if (repoRootedExcludes.length === 0) {
+      reportAbstention(
+        'entropy.excludePatterns',
+        'no repo-rooted exclusions are declared, so the glob-form, ' +
+          'gitignored-in-CI and no-tracked-file rules below each checked 0 ' +
+          'entries. Nothing about local-artifact exclusion was proven.',
+      );
+    } else {
+      reportVerified(
+        'entropy.excludePatterns',
+        `${repoRootedExcludes.length} repo-rooted exclusion(s) checked ` +
+          `(${repoRootedExcludes.join(', ')}); each is expected to match ` +
+          `zero TRACKED files by design -- see the note above`,
+      );
+    }
     expect(repoRootedExcludes).toContain('tests/generated/**');
   });
 
