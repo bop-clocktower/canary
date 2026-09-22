@@ -378,6 +378,32 @@
 
   "reviews": {
     "required_approving_review_count": 0,
-    "reason": "Deliberate, not a default (#542 step 4). Single-maintainer repo: raising this to 1 would mean self-approving every PR, which trains the reflex the gate exists to prevent. Revisit when a second maintainer joins."
+    "require_extra_approval_for_unattributed_changes": true,
+    "accessPosture": { "admin": 1, "maintain": 1, "write": 4 },
+    "reason": [
+      "EFFECTIVE policy, which the previous one-line version got wrong: 1",
+      "approval is required for UNATTRIBUTED (agent- or bot-authored) changes,",
+      "0 otherwise. A large share of what lands here is unattributed, so the",
+      "effective requirement for this repo's most common class of change is 1,",
+      "not 0. The old sentence described the count and stopped there, which",
+      "read as `no review is ever required` — the opposite of what the ruleset",
+      "does for most PRs.",
+      "",
+      "The `0` is still deliberate, not a default (#542 step 4).",
+      "Single-maintainer repo: a flat requirement of 1 would mean",
+      "self-approving every PR, which trains the reflex the gate exists to",
+      "prevent. Dropping the unattributed flag to make the old sentence true",
+      "would have removed a protection to fix a record; the record was wrong,",
+      "not the ruleset. Revisit when a second maintainer joins.",
+      "",
+      "Access posture (#1056) is recorded here rather than in a SECURITY.md",
+      "because a reader who finds a review count of 0 needs the collaborator",
+      "shape in the same breath, not one file away. Aggregate role counts",
+      "only — no account is ever enumerated in this file, and the counts say",
+      "nothing about which seats are humans and which are apps. Read live",
+      "with:",
+      "  gh api repos/bop-clocktower/canary/collaborators --jq '[.[].role_name] | group_by(.) | map({role: .[0], count: length})'",
+      "Observed 2026-09-22. This is an OBSERVATION; the repo settings win."
+    ]
   }
 }
