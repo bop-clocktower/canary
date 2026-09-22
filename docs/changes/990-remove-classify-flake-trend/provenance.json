@@ -1,0 +1,17 @@
+{
+  "issue": [990],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "plan_artifact": "docs/changes/990-remove-classify-flake-trend/plans/2026-09-22-remove-classify-flake-trend-plan.md",
+  "assumptions": [
+    "The human chose option 2 (delete) from issue #990's three options — wire / delete / keep-with-a-comment. This was decided, not defaulted; the build lane did not re-litigate it and did not wire the function.",
+    "The dead-export claim was re-confirmed independently rather than taken from the issue: `git grep -n classifyFlakeTrend` and `git grep -rn FlakeTrend` across ts/src, ts/test, agents/, npm/, scripts/, .github/ and all *.mjs/*.md returned the definition, its own test, and historical docs only — no CLI command, skill, script, JSON schema field or doc example consumes it.",
+    "FlakeTrend and TREND_THRESHOLD existed solely to serve classifyFlakeTrend and were deleted with it, so the change leaves no residue.",
+    "The dead-export ratchet is unaffected: .harness/entropy-baseline.json, .harness/perf-baseline.json and .harness/arch/baselines.json contain zero occurrences of classifyFlakeTrend, FlakeTrend or ts/src/history/detector, and neither harness.config.json entryPoints array names the module. No baseline change was needed, as the issue predicted — verified rather than assumed.",
+    "Historical documents that mention the symbol (docs/changes/604-flakiness-detector/proposal.md, docs/plans/2026-07-22-ts-migration-history-plan.md, docs/ideation/*, docs/roadmap.md) were deliberately left unedited: they record past reasoning, not a promise of a live capability. No doc or SKILL.md advertises trend classification as current behaviour.",
+    "Green gates are weak evidence for a deletion by construction — passing after removing code mostly re-proves what the grep already showed. The zero-caller grep is the load-bearing evidence; the gates only rule out a mechanical or formatting regression. Gates were run from ts/ (build, typecheck, format:check, test — there is no lint script) with a non-zero denominator: 246 test files, 4955 tests passed.",
+    "The rest of the Phase 1/2 flaky envelope (flake_rate_pct, flip_rate_pct, sufficiency and disclosure fields) and detectRegressions with its tests are untouched."
+  ],
+  "closing_keyword": "Closes #990",
+  "keyword_rationale": "The issue's acceptance is satisfied either way it goes ('either classifyFlakeTrend has a production caller ... or it and its test are gone'). This PR takes the delete branch, which fully resolves the issue, so the row must close rather than linger. Defaulting to Refs on a fully-resolving PR would strand the row forever."
+}

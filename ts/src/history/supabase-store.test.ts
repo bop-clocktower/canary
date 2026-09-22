@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { parseProjectUrl, SupabaseHistoryStore } from './supabase-store.js';
 import type { RunInput, TestResultInput } from './schema.js';
@@ -9,9 +9,13 @@ import type { RunInput, TestResultInput } from './schema.js';
  * returns the builder; awaiting it (thenable) resolves to `{ data, error }`
  * keyed by table. `upsert` resolves immediately and records the payload.
  */
-function fakeClient(responses: Record<string, unknown[]>) {
+function fakeClient(
+  responses: Record<string, unknown[]>,
+  errors: Record<string, { message: string; code?: string }> = {},
+) {
   const upserts: Array<{ table: string; rows: unknown }> = [];
   const makeBuilder = (table: string) => {
+    const failed = errors[table] ?? null;
     const builder = {
       select: () => builder,
       gte: () => builder,
@@ -20,10 +24,16 @@ function fakeClient(responses: Record<string, unknown[]>) {
       limit: () => builder,
       upsert: (rows: unknown) => {
         upserts.push({ table, rows });
-        return Promise.resolve({ data: null, error: null });
+        return Promise.resolve({ data: null, error: failed });
       },
-      then: (resolve: (v: { data: unknown[]; error: null }) => void) =>
-        resolve({ data: responses[table] ?? [], error: null }),
+      then: (
+        resolve: (v: { data: unknown[] | null; error: unknown }) => void,
+      ) =>
+        resolve(
+          failed
+            ? { data: null, error: failed }
+            : { data: responses[table] ?? [], error: null },
+        ),
     };
     return builder;
   };
@@ -169,5 +179,110 @@ describe('SupabaseHistoryStore', () => {
       total_runs: 0,
       avg_pass_rate: 0.0,
     });
+  });
+});
+
+/**
+ * #1057 finding 6 — a failed request must not read as a clean, empty result.
+ *
+ * supabase-js never throws on a query failure: it returns `{ data, error }` and
+ * leaves the verdict to the caller. Every method here used to destructure only
+ * `data`, so a 401 from a bad anon key, a dropped connection and a genuinely
+ * empty table all produced the same reassuring answer — "no flaky tests",
+ * "clean history", "run recorded". The error half carried the only evidence
+ * that nothing had actually been measured, and it was discarded.
+ *
+ * Each test below asserts the error reaches the caller. `queryFlaky` is the
+ * one with the sharpest consequence: `[]` is exactly what a healthy suite
+ * returns, so an auth failure reported that way is indistinguishable from good
+ * news.
+ */
+describe('SupabaseHistoryStore surfaces request failures (#1057)', () => {
+  const authFailure = { message: 'JWT expired', code: 'PGRST301' };
+
+  it('queryFlaky throws instead of reporting zero flaky tests', async () => {
+    const { client } = fakeClient({}, { canary_flake_summary: authFailure });
+    const store = new SupabaseHistoryStore('https://x.supabase.co', client);
+    await expect(store.queryFlaky(30, null, 10)).rejects.toThrow(/JWT expired/);
+  });
+
+  it('queryTimeline throws instead of reporting an empty timeline', async () => {
+    const { client } = fakeClient({}, { canary_test_results: authFailure });
+    const store = new SupabaseHistoryStore('https://x.supabase.co', client);
+    await expect(store.queryTimeline('t')).rejects.toThrow(/JWT expired/);
+  });
+
+  it('querySummary throws instead of reporting total_runs: 0', async () => {
+    const { client } = fakeClient({}, { canary_runs: authFailure });
+    const store = new SupabaseHistoryStore('https://x.supabase.co', client);
+    await expect(store.querySummary('api', 5)).rejects.toThrow(/JWT expired/);
+  });
+
+  it('pushRun throws instead of reporting a successful write', async () => {
+    const { client } = fakeClient({}, { canary_runs: authFailure });
+    const store = new SupabaseHistoryStore('https://x.supabase.co', client);
+    await expect(store.pushRun(run, [])).rejects.toThrow(/JWT expired/);
+  });
+
+  it('names the table so the failure is actionable', async () => {
+    const { client } = fakeClient({}, { canary_flake_summary: authFailure });
+    const store = new SupabaseHistoryStore('https://x.supabase.co', client);
+    await expect(store.queryFlaky(30, null, 10)).rejects.toThrow(
+      /canary_flake_summary/,
+    );
+  });
+});
+
+/**
+ * #1057 finding 6, the other half — an absent `SUPABASE_ANON_KEY` used to
+ * default to `''`, which `createClient` accepts. The store constructed fine and
+ * every request then failed auth at the server, where (before the tests above)
+ * it was coalesced back into an empty result. Failing at construction makes the
+ * missing credential the reported problem rather than a silent one.
+ */
+describe('SupabaseHistoryStore requires a credential (#1057)', () => {
+  const KEY = 'SUPABASE_ANON_KEY';
+  let prior: string | undefined;
+
+  beforeEach(() => {
+    prior = process.env[KEY];
+  });
+  afterEach(() => {
+    if (prior === undefined) delete process.env[KEY];
+    else process.env[KEY] = prior;
+  });
+
+  it('throws when the anon key is unset', () => {
+    delete process.env[KEY];
+    expect(() => new SupabaseHistoryStore('https://x.supabase.co')).toThrow(
+      /SUPABASE_ANON_KEY/,
+    );
+  });
+
+  it('throws when the anon key is empty', () => {
+    process.env[KEY] = '';
+    expect(() => new SupabaseHistoryStore('https://x.supabase.co')).toThrow(
+      /SUPABASE_ANON_KEY/,
+    );
+  });
+
+  it('rejects a whitespace-only key without echoing it', () => {
+    process.env[KEY] = '   \t  ';
+    let message = '';
+    try {
+      new SupabaseHistoryStore('https://x.supabase.co');
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toMatch(/SUPABASE_ANON_KEY/);
+    expect(message).not.toMatch(/\t/);
+  });
+
+  it('does not require the key when a client is injected', () => {
+    delete process.env[KEY];
+    const { client } = fakeClient({});
+    expect(
+      () => new SupabaseHistoryStore('https://x.supabase.co', client),
+    ).not.toThrow();
   });
 });

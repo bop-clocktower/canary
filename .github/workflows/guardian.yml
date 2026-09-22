@@ -149,11 +149,13 @@ jobs:
           fi
           exit "$rc"
       # Required-check (#311, "one gate not two"): under `canary.guardian.pr.gate:
-      # hard` this job exits non-zero on unaddressed critical/high findings. A repo
-      # admin registers the check "PR Guardian / guardian" (workflow `name:` + job
-      # id, both kept stable) as a REQUIRED status check in branch protection,
-      # alongside harness/validate/enforce. Repo-admin action — full guide in
-      # Phase 6.
+      # hard` this job exits non-zero on unaddressed critical/high findings. The
+      # registered context is the bare job id `guardian` (this job sets no
+      # `name:`), and it is already a required context in ruleset 16189198 — see
+      # `.github/required-checks.json`. The old note here named a
+      # "<workflow> / <job>" composite and a job that #698 renamed to
+      # `deps-and-validate`; neither string is live, and registering either
+      # would block every PR forever (#1056).
 
   # Advisory mutation report (#486, spec D4). DELIBERATELY NOT a required
   # check: it is listed under `advisory` in .github/required-checks.json, never

@@ -7,9 +7,9 @@ This is a **Python unit** example. State machines are deceptively simple to
 implement and easy to get wrong at the edges that matter most: a **terminal
 state must reject every event** (a delivered order can't be cancelled), an
 **unknown event must be rejected rather than silently ignored**, and a
-**self-loop is only legal when the map explicitly allows it**. The prompt encodes
-those edges so the generated suite exercises the contract, not just the happy
-path down the lifecycle.
+**self-loop is only legal when the map explicitly allows it**. The prompt
+encodes those edges so the generated suite exercises the contract, not just the
+happy path down the lifecycle.
 
 ## Prompt
 
@@ -76,7 +76,7 @@ Then, in Claude Code, generate the test:
 
 Canary will:
 
-1. Classify the request as `python_unit` (pytest hint, pure lookup function)
+1. Classify the request as `api` (pytest hint)
 2. Pick `pytest` from the framework registry
 3. Write a `test_apply.py` file under `tests/generated/`
 4. Print the file path + feedback hint
@@ -110,8 +110,9 @@ pytest tests/generated/test_apply.py -v
 - **Parametrized matrix:** ask Canary for a `@pytest.mark.parametrize` table of
   (state, event, expected) plus a second table of (state, event) pairs that must
   raise — the transition table is exactly the shape parametrization fits
-- **Guarded transitions:** extend the map value to `{event: {"to": str, "guard":
-  str}}` and ask for tests where a guard blocks an otherwise-legal transition
+- **Guarded transitions:** extend the map value to
+  `{event: {"to": str, "guard": str}}` and ask for tests where a guard blocks an
+  otherwise-legal transition
 - **Transition trace:** change the return to the full path
   `apply_sequence(state, events) -> list[str]` and assert the visited states
 

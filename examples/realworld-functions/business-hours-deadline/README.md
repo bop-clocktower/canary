@@ -1,14 +1,13 @@
 # Example: Business Hours Deadline
 
-Tests an `add_business_hours` function that adds a budget of business hours
-to a start time, skipping nights, weekends, and holidays.
+Tests an `add_business_hours` function that adds a budget of business hours to a
+start time, skipping nights, weekends, and holidays.
 
-This is a **Python unit** example. Two edges trip up naive implementations:
-a start time **outside** the business window must round up before any hours
-are consumed, and `hours=0` must still perform that rounding — it isn't
-simply a no-op (case 6 asserts both branches). Fixing the window to
-09:00-17:00 UTC, Monday-Friday keeps the DST/timezone rabbit hole out of
-scope entirely.
+This is a **Python unit** example. Two edges trip up naive implementations: a
+start time **outside** the business window must round up before any hours are
+consumed, and `hours=0` must still perform that rounding — it isn't simply a
+no-op (case 6 asserts both branches). Fixing the window to 09:00-17:00 UTC,
+Monday-Friday keeps the DST/timezone rabbit hole out of scope entirely.
 
 ## Prompt
 
@@ -67,7 +66,7 @@ Then, in Claude Code, generate the test:
 
 Canary will:
 
-1. Classify the request as `python_unit` (pytest hint, pure datetime function)
+1. Classify the request as `api` (pytest hint)
 2. Pick `pytest` from the framework registry
 3. Write a `test_add_business_hours.py` file under `tests/generated/`
 4. Print the file path + feedback hint
@@ -99,12 +98,11 @@ pytest tests/generated/test_add_business_hours.py -v
 
 ## Variations to try
 
-- **Half-day holidays:** extend `holidays` to a dict of partial closures
-  (e.g., 09:00-13:00 only) and ask Canary for tests that consume a reduced
-  daily budget
+- **Half-day holidays:** extend `holidays` to a dict of partial closures (e.g.,
+  09:00-13:00 only) and ask Canary for tests that consume a reduced daily budget
 - **Timezone-aware input:** accept a timezone-aware `start`, convert to UTC
-  before applying the window, and ask for a test asserting a non-UTC input
-  still lands on the right UTC hour
+  before applying the window, and ask for a test asserting a non-UTC input still
+  lands on the right UTC hour
 - **Business-days-only variant:** ask for a sibling `add_business_days` that
   skips the hour math entirely and just counts whole days
 

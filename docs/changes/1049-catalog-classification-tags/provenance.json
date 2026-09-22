@@ -1,0 +1,16 @@
+{
+  "issue": [1049],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducing_test": "ts/test/example-catalog-classification-tags.test.ts",
+  "assumptions": [
+    "The emittable test_type set is derived from ts/src/core/classifier.ts itself (FRAMEWORK_HINTS, CATEGORY_KEYWORDS, TRAILING_RULES, and the bare result('x') literals), not hard-coded in the test, so the test cannot drift from the classifier the way the catalog did.",
+    "Measured distribution before the fix was frontend_unit x11, api x7, python_unit x3, backend_unit x1, e2e_ui x1, performance x1, unit x1 (25 tags across 25 READMEs). The issue body said frontend_unit x10 and omitted e2e_ui, performance, and `unit`; corrected here.",
+    "pytest maps to `api` in the classifier, so all four flagged examples correct to `api`. This is NOT a guess: four already-shipped pure-function pytest examples (luhn-card-validator, topological-task-order, fifo-lot-consumer, access-policy-evaluator) already document `api`, so `api` is the established catalog convention for a pytest-hinted pure function and correcting to it changes no example's meaning. No tag was parked as ambiguous.",
+    "A fifth drifted tag the issue did not name was found by re-derivation: examples/vitest-unit-validation/README.md documented `unit`, which the classifier never emits. Corrected to `frontend_unit` (the vitest hint), in scope because the issue's second half is a catalog-wide assertion that would otherwise fail on it.",
+    "The parenthetical rationales on three of the four ('pure lookup function', 'pure datetime function', 'pure numeric function') were the justification for the coined tag, so they were reduced to '(pytest hint)' to match the sibling examples' phrasing.",
+    "Adjacent bug found and filed, not fixed here (out of scope): classifying examples/vitest-unit-validation/prompt.txt returns `visual`, not `frontend_unit`, because the prompt's negated phrase 'No snapshot testing' matches the `visual` CATEGORY_KEYWORDS entry 'snapshot test' by substring. The test therefore asserts that every catalog tag is EMITTABLE, deliberately not that re-classifying each prompt reproduces its documented tag."
+  ],
+  "closing_keyword": "Closes #1049",
+  "keyword_rationale": "Both halves of the decided fork ship in this PR: every drifted tag is corrected (five, not four) and a test now fails on any catalog tag the classifier cannot emit. Nothing about #1049 is left open, so Refs would strand the row."
+}
