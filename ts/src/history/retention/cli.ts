@@ -1,9 +1,15 @@
 /**
  * The `canary history trim` subcommand (#1024).
  *
- * Registered from `../cli.ts`, but defined here so the retention verb's
- * argument parsing, refusal rules and output live with the operation they
- * describe rather than growing the history CLI module.
+ * Mounted from `../../commands/engine/cli.ts` (the #988 domain registry), not
+ * from `../cli.ts`: that module sits exactly on the arch module-size ceiling
+ * for `ts/src/history` and on the 15-import perf threshold, and the registry is
+ * the seam added so a new subcommand does not have to tax it.
+ *
+ * Named `cli.ts` on purpose. Layer binding is by filename (`ts/src/**\/*cli*.ts`
+ * is the `cli` layer, first match wins), and this module imports `cli-common`;
+ * as `command.ts` it bound to the `history` layer and `check-deps` correctly
+ * called that a history -> cli violation.
  */
 
 import { Command, InvalidArgumentError, Option } from 'commander';

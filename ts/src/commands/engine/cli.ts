@@ -10,7 +10,7 @@
 import type { Command } from 'commander';
 
 import { createHistoryCommand } from '../../history/cli.js';
-import { registerTrimCommand } from '../../history/retention/command.js';
+import { registerTrimCommand } from '../../history/retention/cli.js';
 import { createAnalyzeCommand } from '../../analysis/cli.js';
 import { createGuardianCommand } from '../../guardian/cli.js';
 import type { MainDeps } from '../../main-deps.js';
