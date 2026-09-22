@@ -430,6 +430,29 @@ jobs:
           npm --prefix ts run test -- --reporter=json --outputFile=/tmp/vitest.json || true
           node ts/bin/canary.js history record /tmp/vitest.json --suite ts-engine "${plan_flag[@]}"
 
+      # #1024: bound the store BEFORE it is cached. Cache entries are immutable
+      # and each run saves a fresh one holding the whole store, so an
+      # append-only store meant an entry that grew with every run (~0.125 MB
+      # gzipped per recorded run of this suite). LRU eviction would eventually
+      # take it, and an evicted `main` entry silently restarts the chain.
+      #
+      # 50 is deliberately above BOTH read-side windows -- the flake-verdict
+      # minimum of 10 and the 30-run analyze window -- so the trim can never
+      # starve a reader into an abstention that still exits 0.
+      # `ts/test/workflow-false-green.test.ts` (#1024) holds that ordering.
+      #
+      # Retention is a separate verb, not something `record` does: the write
+      # contract stays append-only and unbounded (proposal 460), so nothing a
+      # CONSUMER records is dropped behind their back. Only this job's cached
+      # copy is bounded, and only because this job is what caches it.
+      #
+      # Deliberately NOT `|| true`: a failed trim means the store is not
+      # bounded, and swallowing that would save the unbounded entry anyway.
+      - name: Trim run history
+        if: ${{ !cancelled() && steps.record.outcome == 'success' }}
+        run: |
+          node ts/bin/canary.js history trim --keep 50
+
       # Saved only when `record` appended a run. A failed record leaves the
       # restored store unchanged, and saving it again would spend a cache entry
       # on a copy. Saved before `analyze`, so an analyze failure (which is its

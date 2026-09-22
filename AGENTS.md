@@ -398,9 +398,19 @@ Python from the plugin hooks and maintenance scripts. There is no longer a
   between CI runs: the `fleet-health` job in `dogfood.yml` restores it from the
   Actions cache (keyed per branch, falling back to `main`) before `record`,
   saves it after, and annotates a warning while the store holds fewer runs than
-  the flake-verdict minimum. New history consumers take the async
-  `AsyncHistoryStore` from `makeStore()`, never `NdjsonHistoryStore` directly;
-  see
+  the flake-verdict minimum. **Retention (#1024):** `record` stays append-only
+  and unbounded on write, so nothing a consumer records is dropped behind their
+  back; retention is a separate, explicit verb, `canary history trim --keep <n>`
+  (local NDJSON stores only — it refuses rather than no-ops when a db-url is
+  configured). `fleet-health` runs it with `--keep 50` between `record` and the
+  cache save, because cache entries are immutable and each run saves a fresh one
+  holding the whole store (~0.125 MB gzipped per recorded run), so an unbounded
+  store meant an unbounded entry. 50 sits above both read-side windows — the
+  flake minimum of 10 and the 30-run analyze window — so a trim can never starve
+  a reader into an abstention; `ts/test/workflow-false-green.test.ts` and
+  `ts/test/history-trim-windows.test.ts` hold that ordering. New history
+  consumers take the async `AsyncHistoryStore` from `makeStore()`, never
+  `NdjsonHistoryStore` directly; see
   [ADR 0013](docs/knowledge/decisions/0013-history-store-async-interface.md).
   `canary rewind <run_id> --test <name>` replays one failed test from the store
   at its recorded commit in a scratch worktree and reports per dimension what
