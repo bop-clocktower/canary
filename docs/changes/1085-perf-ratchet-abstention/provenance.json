@@ -1,0 +1,26 @@
+{
+  "issue": [1085],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/perf-ratchet.test.ts",
+  "closingKeyword": "Closes #1085",
+  "closingRationale": "The canary-owned acceptance clause is the disclosure one: the ratchet must never pass over nothing, and when it abstains it must say so and why. It now fails loudly (exit 3, blocking in harness-quality.yml) and names the rejected invocation verbatim instead of misattributing it to a missing performance.entryPoints. The other half of the acceptance — making check-perf --findings-json emit a consumable report — belongs to @harness-engineering/cli and is explicitly out of canary's scope; the issue itself files this row as 'the consequence here, where the required ratchet lives'.",
+  "assumptions": [
+    "Measured against harness CLI 12.10.0. `harness check-perf --findings-json` does not merely emit an unparseable report — the flag does not exist on check-perf at all, and the invocation is rejected with commander's `error: unknown option '--findings-json'`. `--findings-json` is `harness cleanup`'s flag, and the entropy ratchet consumes it correctly.",
+    "CORRECTION to the issue's premise, recorded rather than buried: the abstention was never silent at the exit-code level. `.github/workflows/harness-quality.yml` runs the ratchet as a plain `run:` with no `|| true` and no `continue-on-error`, so exit 3 already failed the required job, and `scripts/rehearse.mjs` only probes a planted defect's exit code. The defect was the REASON given — one hardcoded 'why' sent the reader to `performance.entryPoints` and ADR 0012, so the operator audits a healthy harness.config.json and concludes the gate is broken rather than the invocation. A disclosure that names the wrong cause is read as noise.",
+    "Fix placed in `scripts/lib/perf-report.mjs` rather than `perf-ratchet.mjs`, because `readViolations` is the single funnel both the head and merge-base sides pass through, so both disclose identically and each names its own side.",
+    "The invocation-error detector is module-private, not exported: an export consumed only inside its own module trips the dead-export ratchet in CI. The behaviour is tested end to end through the script instead.",
+    "`.github/workflows/harness-quality.yml` deliberately NOT changed. Both wired scans already call a bare `harness check-perf` with no narrowing and no format flag, which `ts/test/workflow-false-green.test.ts` asserts. Adding workflow changes would have been out-of-scope churn.",
+    "A thrown stack (`^[A-Za-z]*Error: `) is treated as the same class as a rejected flag: the check produced no count either way, so the report is not a measurement. Covered by its own test case.",
+    "The pre-existing #544 diagnosis is kept intact for reports where the check DID start and went quiet; a regression test pins that it still names entryPoints."
+  ],
+  "gates": {
+    "measuredIn": "fresh worktree .claude/worktrees/agent-a11510251f95d9dcc",
+    "build": "pass",
+    "typecheck": "pass",
+    "formatCheck": "pass",
+    "test": "249 files, 5020 passed, 2 skipped",
+    "perfRatchet": "226 violations against a 233 ceiling; neither touched file carries any check-perf finding, so the merge-base delta rule cannot fire from this change",
+    "entropyRatchet": "144 findings, baseline 145"
+  }
+}

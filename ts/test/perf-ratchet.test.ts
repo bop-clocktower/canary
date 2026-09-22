@@ -319,6 +319,85 @@ describe('perf-ratchet', () => {
     });
   });
 
+  /**
+   * The rejected invocation (#1085).
+   *
+   * `harness check-perf` has no `--findings-json` — `cleanup` does — so
+   * reaching for the flag that LOOKS like the machine-readable form a script
+   * should prefer gets commander's `error: unknown option` and nothing else.
+   * Captured through the gate's own redirection (`> report.txt 2>&1 || true`)
+   * that one line IS the report.
+   *
+   * Abstaining is the right verdict; the bug was the reason given. The single
+   * hardcoded "why" sent the reader to `performance.entryPoints` and ADR 0012,
+   * so the operator audits a healthy `harness.config.json`, finds nothing, and
+   * concludes the ratchet is broken rather than the invocation. A disclosure
+   * that names the wrong cause is read as noise, which is the same place a
+   * silent abstention ends up.
+   */
+  describe('abstention — the invocation was rejected (#1085)', () => {
+    /** Verbatim from CLI 12.10.0: `harness check-perf --findings-json`. */
+    const UNKNOWN_OPTION = "error: unknown option '--findings-json'";
+
+    it('ABSTAINS and quotes the rejected invocation, not entryPoints', () => {
+      writeBaseline(237);
+      writeFileSync(report, `${UNKNOWN_OPTION}\n`);
+      const { status, out } = run();
+      expect(status).toBe(3);
+      expect(out).toMatch(/ABSTAIN/i);
+      // The evidence line itself, so the reader sees what the CLI rejected.
+      expect(out).toContain('--findings-json');
+      // And NOT the #544 config diagnosis, which is a different failure.
+      expect(out).not.toMatch(/entryPoints/);
+    });
+
+    it('names the input contract the ratchet actually consumes', () => {
+      writeBaseline(237);
+      writeFileSync(report, `${UNKNOWN_OPTION}\n`);
+      expect(run().out).toMatch(/bare `harness check-perf`/);
+    });
+
+    // The merge-base half has to disclose the same way, and has to name WHICH
+    // side was rejected — a delta gate where either report can go dark with
+    // nobody able to tell which half is the #812 hazard all over again.
+    it('ABSTAINS the same way when the merge-base scan was rejected', () => {
+      writeBaseline(237);
+      writeFileSync(report, failureHeader(237) + SAMPLE_BODY);
+      const baseReport = join(dir, 'base-report.txt');
+      writeFileSync(baseReport, `${UNKNOWN_OPTION}\n`);
+      const { status, out } = run(['--base-report', baseReport]);
+      expect(status).toBe(3);
+      expect(out).toContain('--findings-json');
+      expect(out).toMatch(/merge-base/);
+    });
+
+    // A crash leaves a stack, not a usage line, and it is the same class of
+    // event: the check never produced a count, so the report is not a
+    // measurement to reason about.
+    it('ABSTAINS and quotes a thrown error rather than blaming config', () => {
+      writeBaseline(237);
+      writeFileSync(
+        report,
+        'TypeError: Cannot read properties of undefined\n' +
+          '    at analyze (/cli/dist/perf.js:12:5)\n',
+      );
+      const { status, out } = run();
+      expect(status).toBe(3);
+      expect(out).toContain('TypeError: Cannot read properties of undefined');
+      expect(out).not.toMatch(/entryPoints/);
+    });
+
+    // The #544 shape must keep its own diagnosis: this fix adds a branch, it
+    // does not replace the message that names the real config failure.
+    it('still names entryPoints when the check started and went quiet', () => {
+      writeBaseline(237);
+      writeFileSync(report, 'perf: warn — Could not resolve entry points\n');
+      const { status, out } = run();
+      expect(status).toBe(3);
+      expect(out).toMatch(/entryPoints/);
+    });
+  });
+
   describe('abstention — the implausible zero', () => {
     // The `--coupling` trap. A narrowed run prints the same PASS_LINE a clean
     // tree does, so the only signal available is the size of the cliff.
