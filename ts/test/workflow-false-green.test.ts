@@ -410,6 +410,158 @@ describe('workflow false-green invariants', () => {
   });
 
   /**
+   * #1056 — a ruleset rule that produces no status context is invisible here.
+   *
+   * This suite enumerates PR checks by parsing workflow YAML, so it can only
+   * ever see the one ruleset rule that happens to be made of check contexts
+   * (`required_status_checks`). The other five rules on ruleset 16189198 —
+   * `deletion`, `non_fast_forward`, `pull_request`, `code_quality`,
+   * `copilot_code_review` — gate merges to `main` without emitting anything a
+   * workflow file mentions. That is the same structural blind spot #769
+   * documented for app-produced statuses, and the reason this gap could not
+   * have been caught by the existing tests: the manifest opens by calling
+   * itself "the source of truth a human can read" while accounting for 2 of 6
+   * rules, and nothing disagreed.
+   *
+   * The fix is again a denominator the suite cannot compute for itself: an
+   * explicit `rulesetRules` list, one entry per live rule, each with a boolean
+   * verdict and a stated reason. These tests keep that list honest and pin the
+   * observed rule-type set, so recording a new rule without a verdict — or
+   * quietly deleting a recorded one — fails here. What they cannot do is
+   * discover a rule nobody wrote down; that still needs the `gh api` line in
+   * the section header, exactly as it does for `strict`.
+   */
+  describe('#1056 — every live ruleset rule has a recorded verdict', () => {
+    interface RulesetRule {
+      rule: string;
+      blocking: boolean;
+      parameters?: Record<string, unknown>;
+      reason: string[];
+    }
+    const manifest = JSON.parse(
+      readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
+    ) as {
+      rulesetRules?: { rules?: RulesetRule[] };
+      reviews?: Record<string, unknown>;
+      required: { check: string; workflow: string }[];
+    };
+    const rules = manifest.rulesetRules?.rules ?? [];
+
+    // Pinned from `gh api repos/bop-clocktower/canary/rulesets/16189198
+    // --jq '.rules[].type'` on 2026-09-22. Recording a new rule without a
+    // verdict, or deleting a recorded one, fails here.
+    const OBSERVED_RULE_TYPES = [
+      'code_quality',
+      'copilot_code_review',
+      'deletion',
+      'non_fast_forward',
+      'pull_request',
+      'required_status_checks',
+    ];
+
+    // The verdict per rule type, pinned from the same live read. Asserting
+    // only `typeof blocking === 'boolean'` would pass if every verdict
+    // flipped to false, which is the one direction that matters: it would
+    // silently turn this record into "nothing here gates a merge". Five rules
+    // block; `copilot_code_review` does not, because it produces review
+    // comments rather than a merge verdict and
+    // `required_approving_review_count` does not count it.
+    const EXPECTED_BLOCKING: Record<string, boolean> = {
+      code_quality: true,
+      copilot_code_review: false,
+      deletion: true,
+      non_fast_forward: true,
+      pull_request: true,
+      required_status_checks: true,
+    };
+
+    it('records at least one (a zero denominator is an abstention)', () => {
+      expect(rules.length).toBeGreaterThan(0);
+    });
+
+    it('pins the observed rule-type set', () => {
+      expect(rules.map((r) => r.rule).sort()).toEqual(OBSERVED_RULE_TYPES);
+    });
+
+    // The zero-denominator guard for this it.each is deliberate and lives in
+    // the sibling 'records at least one' test above — do not simplify it away.
+    it.each(rules.map((r) => [r.rule]))(
+      '%s carries its expected verdict and a non-empty reason',
+      (rule) => {
+        const entry = rules.find((r) => r.rule === rule)!;
+        expect(entry.blocking).toBe(EXPECTED_BLOCKING[rule as string]);
+        expect(entry.reason.join('').trim()).not.toBe('');
+      },
+    );
+
+    // The parameters are the most mechanically falsifiable content in the
+    // section — they are copied from the live ruleset and can be re-read in
+    // one command — so leaving them unasserted would be the easiest place for
+    // this record to drift without anything noticing.
+    it('pins the code_quality severity', () => {
+      const entry = rules.find((r) => r.rule === 'code_quality')!;
+      expect(entry.parameters).toEqual({ severity: 'errors' });
+    });
+
+    it('pins the pull_request review flags', () => {
+      const entry = rules.find((r) => r.rule === 'pull_request')!;
+      expect(entry.parameters).toMatchObject({
+        required_approving_review_count: 0,
+        require_extra_approval_for_unattributed_changes: true,
+        dismiss_stale_reviews_on_push: false,
+        require_last_push_approval: false,
+        require_code_owner_review: false,
+        required_review_thread_resolution: false,
+      });
+    });
+
+    // #1056 review finding 3: `contexts` is a second copy of a fact the
+    // manifest already holds in full. Adding a 14th required check must not
+    // be able to leave the count silently stale.
+    it('keeps the recorded context count equal to the required list', () => {
+      const entry = rules.find((r) => r.rule === 'required_status_checks')!;
+      const params = entry.parameters as {
+        contexts?: number;
+        strict_required_status_checks_policy?: boolean;
+      };
+      expect(params.contexts).toBe(manifest.required.length);
+      expect(params.strict_required_status_checks_policy).toBe(true);
+    });
+
+    it('states the effective review requirement, not just the count', () => {
+      const reviews = manifest.reviews as {
+        required_approving_review_count?: number;
+        require_extra_approval_for_unattributed_changes?: boolean;
+        reason?: string | string[];
+      };
+      expect(reviews.required_approving_review_count).toBe(0);
+      expect(reviews.require_extra_approval_for_unattributed_changes).toBe(
+        true,
+      );
+      const prose = ([] as string[]).concat(reviews.reason ?? []).join(' ');
+      expect(prose).toMatch(/unattributed/i);
+    });
+
+    it('records access posture as aggregate counts, never accounts', () => {
+      const reviews = manifest.reviews as {
+        accessPosture?: Record<string, number>;
+      };
+      const posture = reviews.accessPosture ?? {};
+      expect(Object.keys(posture).length).toBeGreaterThan(0);
+      // Checking only that the VALUES are numbers leaves the keys
+      // uninspected, so `{"some-login": 1}` would pass — an enumerated
+      // account in a public repo, which is the exact thing this record
+      // promises never to carry. Assert the key set against GitHub's role
+      // vocabulary instead: a login can never be a member of it.
+      const ROLES = ['admin', 'maintain', 'write', 'triage', 'read'];
+      for (const [role, count] of Object.entries(posture)) {
+        expect(ROLES).toContain(role);
+        expect(typeof count).toBe('number');
+      }
+    });
+  });
+
+  /**
    * #678 — a PR-time green is a verdict about a tree that may never merge.
    *
    * `harness check-arch` reported pass on #660's PR and failed on the identical

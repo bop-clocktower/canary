@@ -1,0 +1,17 @@
+{
+  "issue": [1056],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "plan_artifact": "docs/changes/1056-merge-policy-record/plans/2026-09-22-merge-policy-record-plan.md",
+  "assumptions": [
+    "Access posture is recorded inside .github/required-checks.json rather than in a new SECURITY.md. The issue named SECURITY.md as the conventional home, but this repo has none, and adding one creates a public-facing vulnerability-reporting contract that is a scope decision of its own. The posture also belongs next to the review count it qualifies.",
+    "The collaborator shape is recorded as aggregate role counts only (admin 1, maintain 1, write 4). No account is enumerated, and the record explicitly declines to claim which seats are humans and which are apps — that composition was never verified.",
+    "The falsifiability requirement is met offline. ts/test/workflow-false-green.test.ts makes no network calls by deliberate design (see its own #678 block), so the new #1056 block pins the observed rule-type set rather than querying the live ruleset; reconciliation stays a documented `gh api` one-liner in the section header, exactly as it already is for `strict`. A legitimate future ruleset change is meant to fail that pin — updating the pin is the intended response, not loosening the assertion.",
+    "require_extra_approval_for_unattributed_changes is KEPT and the prose corrected, rather than the flag being dropped to make the old sentence true. The record was wrong; the ruleset was not.",
+    "The issue's own framing of that flag is empirically wrong and is NOT reproduced in the record. #1056 states the flag 'raises it to 1 anyway for unattributed (agent/bot-authored) commits, which is a large share of what lands here'. Measured 2026-09-22: 24 of the 25 most recent merged PRs merged with ZERO approvals, with bypass_actors empty and current_user_can_bypass 'never', so those were not bypasses. GitHub's 'unattributed' means a commit whose author/committer is not linked to a GitHub account, which agent commits here are; the flag is a latent protection that has not bound in practice, not the everyday requirement. The record states the measured outcome with its denominator and an as-of date rather than a share estimate.",
+    "The guardian.yml replacement comment paraphrases the two dead strings instead of quoting them, so that the acceptance criterion 'those strings shall not appear' is literally satisfied.",
+    "The [checkpoint:human-verify] in the plan was self-verified rather than escalated, per this lane's autonomous mandate; what was verified is recorded in the session handoff."
+  ],
+  "closing_keyword": "Closes #1056",
+  "keyword_rationale": "All five issue actions are addressed. All three unrecorded rule types (code_quality, copilot_code_review, and the pull_request specifics including require_extra_approval_for_unattributed_changes) are recorded with blocking verdicts and reasons; the stated-vs-effective review requirement is corrected; the record is made falsifiable by a test that was proven to fail when an entry is removed; the stale guardian.yml check-context comment is fixed; and the access posture is recorded durably in-repo. The only deviation from the issue's literal text is the home of the access posture (manifest rather than SECURITY.md), which is a placement choice within the same action rather than an unaddressed slice."
+}
