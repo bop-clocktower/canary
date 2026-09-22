@@ -114,7 +114,7 @@ entropy ratchet.
    it.each([
      [[{ kind: 'string' }, { kind: 'number', integer: true }]],
      [[{ kind: 'number', integer: true, min: 1, max: 9 }, { kind: 'string' }]],
-     [[{ kind: 'date' }, { kind: 'string' }]],
+     [[{ kind: 'date' }, { kind: 'number', integer: false }]],
      [[{ kind: 'boolean' }, { kind: 'number', integer: false }]],
    ] as unknown as Array<[ShapeNode[]]>)(
      'a union of %j emits only member-0 cases, minus sibling-accepted ones',
@@ -167,11 +167,18 @@ entropy ratchet.
    string/number row still carries `0`); the preservation test passes both
    before and after, which is intended — it is a regression guard, not a red
    test. The Task 1 test remains red.
-5. **Denominator check:** if an `it.each` row passes in the red phase, that row
+5. **As executed (two amendments, both under step 6's own rule):** the rows need
+   an explicit `expect(dropped.length).toBeGreaterThan(0)` — without it both
+   assertions hold trivially before the fix, so all four rows went green while
+   the bug was live (a zero denominator). And the original `[date, string]` row
+   can never drop anything (date's own values are ISO literals the date member
+   keeps; its unexpected-shape values `null`/`0` are rejected by a string
+   sibling), so it is `[date, number]` above.
+6. **Denominator check:** if an `it.each` row passes in the red phase, that row
    is not exercising the bug. Replace its member list with one where member 0's
    `unexpected-shape` value is a valid value of a sibling. A vacuous green in
    the red phase is an abstention, not a pass.
-6. Commit: `test(gen-data): assert the union case-filter invariant generically`
+7. Commit: `test(gen-data): assert the union case-filter invariant generically`
 
 ### Task 3: Amend the test that encodes the old union contract
 
