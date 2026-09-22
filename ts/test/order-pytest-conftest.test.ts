@@ -99,13 +99,27 @@ describe.runIf(hasPython)('the snippet as Python source', () => {
   });
 });
 
-/** `n` from pytest's own `collected n items` line — the real denominator. */
+/** `n` from pytest's own `collected n items` line. */
 function collectedCount(output: string): number {
   const m = /collected (\d+) items?/.exec(output);
   if (m === null) {
     throw new Error(`pytest reported no collected count:\n${output}`);
   }
   return Number(m[1]);
+}
+
+/**
+ * How many tests pytest actually REPORTED A RESULT FOR — the real denominator
+ * for "no test lost".
+ *
+ * `collected n items` is printed BEFORE `pytest_collection_modifyitems` runs,
+ * so it cannot see a hook that drops an item: a snippet doing `del items[-1]`
+ * still prints `collected 4 items` and then passes 3. Counting the per-test
+ * result lines is what actually catches a dropped test.
+ */
+function reportedCount(output: string): number {
+  return [...output.matchAll(/^test_[a-z]+\.py::\S+ (?:PASSED|FAILED)/gm)]
+    .length;
 }
 
 describe.runIf(hasPytest)('applying a plan in a real pytest run', () => {
@@ -117,6 +131,7 @@ describe.runIf(hasPytest)('applying a plan in a real pytest run', () => {
     out: string;
     order: string[];
     collected: number;
+    reported: number;
   } {
     const env = { ...process.env };
     if (planPath === undefined) delete env['CANARY_ORDER_PLAN'];
@@ -138,6 +153,7 @@ describe.runIf(hasPytest)('applying a plan in a real pytest run', () => {
       out,
       order: [...new Set(order)],
       collected: collectedCount(out),
+      reported: reportedCount(out),
     };
   }
 
@@ -166,6 +182,11 @@ describe.runIf(hasPytest)('applying a plan in a real pytest run', () => {
     const ordered = run(join(dir, 'plan.json'));
     expect(unordered.collected).toBe(4);
     expect(ordered.collected).toBe(unordered.collected);
+    // The assertion that actually bites: every collected test still REPORTED a
+    // result after the hook ran. `collected` alone is printed pre-hook and
+    // cannot see a dropped item.
+    expect(unordered.reported).toBe(4);
+    expect(ordered.reported).toBe(unordered.reported);
     expect(ordered.status).toBe(0);
     expect(unordered.status).toBe(0);
   });
@@ -184,6 +205,7 @@ describe.runIf(hasPytest)('applying a plan in a real pytest run', () => {
     const garbage = run(join(dir, 'garbage.json'));
     expect(garbage.status).toBe(0);
     expect(garbage.collected).toBe(unordered.collected);
+    expect(garbage.reported).toBe(unordered.reported);
     expect(garbage.order).toEqual(unordered.order);
     expect(garbage.out).toMatch(/canary order/);
 
