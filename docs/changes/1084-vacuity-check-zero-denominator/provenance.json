@@ -1,0 +1,14 @@
+{
+  "issue": [1084],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/vacuity-cli.test.ts",
+  "assumptions": [
+    "The exit-code half of the issue was already satisfied on the base commit: vacuity-check already routes a zero denominator through gateOutcome and exits EXIT_ABSTAINED (3). Verified by running the built CLI against an empty directory, a file holding no tests, and a nonexistent path -- all three exited 3 before any change. The fix is therefore scoped to the disclosure half, not to the exit code, and no exit-code contract changes.",
+    "Denominator wording is `[N file(s) resolved, M test(s) scanned]`, appended to every verdict line (pass, findings, abstention) ahead of the existing skipped suffix, rather than only on abstentions -- the issue's first acceptance bullet is about the zero-FINDING run, which is a pass.",
+    "The JSON envelope gains `files` alongside the existing `checked` rather than renaming or nesting anything: the dogfood workflow and skills-verify consumers read the existing keys, so the change is additive.",
+    "`files` counts paths resolved for scanning (directory walk result, or 1 for an explicit file argument), including ones later skipped as unreadable -- resolution and successful scanning are the two numbers the issue asks to be distinguishable.",
+    "No new abstention vocabulary was coined: the issue asked for reuse of reportAbstention/reportVerified, and the existing gateOutcome/EXIT_ABSTAINED path already provides it, so nothing in ts/test/abstention-testkit.ts needed extending."
+  ],
+  "closingKeyword": "Closes #1084"
+}

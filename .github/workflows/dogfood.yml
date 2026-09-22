@@ -95,8 +95,8 @@ jobs:
               fi
               # Two --json shapes are in play. `review-test` and `flake-check`
               # emit a bare array; `vacuity-check` emits an envelope
-              # {checked, abstained, findings, skipped} that carries its own
-              # denominator. Reading `.length` off the envelope yields
+              # {files, checked, abstained, findings, skipped} that carries its
+              # own denominators (#1084: files resolved AND tests scanned). Reading `.length` off the envelope yields
               # `undefined`, which shell arithmetic then quietly treats as 0 --
               # the check would have run, reported nothing, and looked clean.
               # An unreadable count now trips `broke` instead of counting zero,
