@@ -5,7 +5,7 @@ schedule — each slice of income is taxed at its own band's rate, not the whole
 amount at the top rate.
 
 This is a **Python unit** example. Marginal tax is the textbook case where the
-*boundaries* are the whole point: income sitting exactly on a bracket edge, the
+_boundaries_ are the whole point: income sitting exactly on a bracket edge, the
 first band, the open-ended top band, and rejection of nonsense inputs. The
 prompt fixes a concrete schedule so the eight cases assert real arithmetic
 rather than hand-waving at "it adds up the brackets."
@@ -67,7 +67,7 @@ Then, in Claude Code, generate the test:
 
 Canary will:
 
-1. Classify the request as `python_unit` (pytest hint, pure numeric function)
+1. Classify the request as `api` (pytest hint)
 2. Pick `pytest` from the framework registry
 3. Write a `test_compute_tax.py` file under `tests/generated/`
 4. Print the file path + feedback hint
@@ -100,12 +100,13 @@ pytest tests/generated/test_compute_tax.py -v
 
 ## Variations to try
 
-- **Rounding edge:** swap in a rate like `0.0825` and an income such as
-  `12_345` to force a genuine two-decimal rounding assertion
-- **Effective rate:** change the return to `{ "tax": float, "effective_rate":
-  float }` and assert the blended rate alongside the dollar figure
-- **Parametrized:** ask for a `@pytest.mark.parametrize` table driven by the
-  six numeric rows above instead of separate functions
+- **Rounding edge:** swap in a rate like `0.0825` and an income such as `12_345`
+  to force a genuine two-decimal rounding assertion
+- **Effective rate:** change the return to
+  `{ "tax": float, "effective_rate": float }` and assert the blended rate
+  alongside the dollar figure
+- **Parametrized:** ask for a `@pytest.mark.parametrize` table driven by the six
+  numeric rows above instead of separate functions
 
 ## See also
 

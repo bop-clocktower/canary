@@ -41,7 +41,7 @@ Then, in Claude Code, generate the test from the scenario:
 /canary-write-test  <paste the contents of prompt.txt>
 ```
 
-Canary classifies as `unit`, picks `vitest`, writes a `*.test.ts` file.
+Canary classifies as `frontend_unit`, picks `vitest`, writes a `*.test.ts` file.
 
 ## Running the generated test
 
