@@ -142,6 +142,87 @@ describe('hashSkillDir Python parity (component-wise path sort)', () => {
     }));
 });
 
+// Installing a skill's declared dependencies must not read as authorship.
+//
+// A skill that declares a runtime dependency instructs the user to
+// `npm install` in its scripts/ dir when it is missing. Doing so changed the
+// skill's hash, so migrate classified it as locally edited and refused every
+// subsequent update — using a skill and keeping it updatable were mutually
+// exclusive. In one consuming repo this left 7 of 7 skills frozen, silently,
+// for months.
+describe('hashSkillDir ignores runtime artifacts', () => {
+  const authored = (dir: string): void => {
+    write(join(dir, 'SKILL.md'), '---\nname: hashtest\n---\n\n# hashtest\n');
+    mkdirSync(join(dir, 'scripts'), { recursive: true });
+    write(join(dir, 'scripts', 'run.sh'), 'echo hi\n');
+  };
+
+  it('is unchanged by an installed node_modules', () =>
+    withTmp((dir) => {
+      authored(dir);
+      const before = hashSkillDir(dir);
+
+      mkdirSync(join(dir, 'scripts', 'node_modules', 'exceljs'), {
+        recursive: true,
+      });
+      write(
+        join(dir, 'scripts', 'node_modules', 'exceljs', 'index.js'),
+        'module.exports = {};\n',
+      );
+      write(join(dir, 'scripts', 'node_modules', '.package-lock.json'), '{}\n');
+
+      expect(hashSkillDir(dir)).toBe(before);
+    }));
+
+  it('is unchanged by .git, __pycache__ and .venv', () =>
+    withTmp((dir) => {
+      authored(dir);
+      const before = hashSkillDir(dir);
+
+      for (const d of ['.git', '__pycache__', '.venv']) {
+        mkdirSync(join(dir, d), { recursive: true });
+        write(join(dir, d, 'junk'), 'transient\n');
+      }
+
+      expect(hashSkillDir(dir)).toBe(before);
+    }));
+
+  it('still notices a real edit to an authored file', () =>
+    withTmp((dir) => {
+      authored(dir);
+      const before = hashSkillDir(dir);
+
+      // The guard must not swallow genuine local edits — that is the whole
+      // point of one-way ownership.
+      write(join(dir, 'scripts', 'run.sh'), 'echo changed\n');
+
+      expect(hashSkillDir(dir)).not.toBe(before);
+    }));
+
+  it('still notices a new authored file next to an ignored dir', () =>
+    withTmp((dir) => {
+      authored(dir);
+      mkdirSync(join(dir, 'scripts', 'node_modules'), { recursive: true });
+      write(join(dir, 'scripts', 'node_modules', 'dep.js'), 'x\n');
+      const before = hashSkillDir(dir);
+
+      write(join(dir, 'scripts', 'extra.mjs'), 'export const x = 1;\n');
+
+      expect(hashSkillDir(dir)).not.toBe(before);
+    }));
+
+  it('ignores the directory name only as a directory, not as a file', () =>
+    withTmp((dir) => {
+      authored(dir);
+      const before = hashSkillDir(dir);
+
+      // A FILE called node_modules is authored content, however odd.
+      write(join(dir, 'node_modules'), 'this is a file, not a directory\n');
+
+      expect(hashSkillDir(dir)).not.toBe(before);
+    }));
+});
+
 describe('TestDetectHarnessMarkers', () => {
   it('detects harness project with both markers', () =>
     withTmp((root) => {

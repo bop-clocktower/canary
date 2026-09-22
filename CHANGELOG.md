@@ -237,6 +237,22 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Installing a skill's dependencies no longer freezes it** (#1066).
+  `hashSkillDir` walked the whole deployed-skill tree, so `node_modules` counted
+  toward the hash: running `npm install` in a skill's `scripts/` dir — which a
+  skill declaring a runtime dependency instructs you to do when it is missing —
+  made `canary migrate` report that skill as locally edited
+  and refuse every later update. Using a skill and keeping it updatable were
+  mutually exclusive, and the staleness was silent: `canary overlay update`
+  reports success because deploying is the separate `migrate` step that then
+  refuses. One consuming repo had all 7 skills frozen this way for months,
+  missing dependency bumps and a correctness fix. `node_modules`, `.git`,
+  `__pycache__` and `.venv` are now excluded from the hash; genuine edits to
+  authored files are still detected, and a _file_ named `node_modules` still
+  counts. This diverges from the Python oracle for trees containing those
+  directories — deliberately, since the oracle has the same bug; the parity
+  golden (a clean tree) is unchanged.
+
 - **The `refresh-baseline` label now fixes a stale arch floor** (#1013).
   `scripts/refresh-arch-baseline.mjs` previously acted only on a `check-arch`
   regression, so on a PR where only `arch-baseline-freshness` was red it said
