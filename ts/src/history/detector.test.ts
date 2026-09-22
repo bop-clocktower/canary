@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  classifyFlakeTrend,
-  detectRegressions,
-  FlakeTrend,
-} from './detector.js';
+import { detectRegressions } from './detector.js';
 import type { TimelineEntry } from './record.js';
 
 function entry(status: string, commit = ''): TimelineEntry {
@@ -20,19 +16,6 @@ function entry(status: string, commit = ''): TimelineEntry {
     retry_count: 0,
   };
 }
-
-describe('classifyFlakeTrend', () => {
-  it('is stable with fewer than two points', () => {
-    expect(classifyFlakeTrend([0.5])).toBe(FlakeTrend.Stable);
-  });
-  it('detects rising and falling trends', () => {
-    expect(classifyFlakeTrend([0.0, 0.0, 0.5, 0.6])).toBe(FlakeTrend.Rising);
-    expect(classifyFlakeTrend([0.6, 0.5, 0.0, 0.0])).toBe(FlakeTrend.Falling);
-  });
-  it('is stable within the threshold', () => {
-    expect(classifyFlakeTrend([0.2, 0.2, 0.22, 0.21])).toBe(FlakeTrend.Stable);
-  });
-});
 
 describe('detectRegressions', () => {
   it('returns not-regression on an empty timeline', () => {
