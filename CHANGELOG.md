@@ -123,6 +123,16 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **`vacuity-check` discloses both denominators on every verdict** (#1084).
+  Every summary line — clean pass, findings, or abstention — now carries
+  `[N file(s) resolved, M test(s) scanned]`, and `--json` gained a `files` field
+  alongside `checked`. `checked` counts tests, so on its own it could not
+  distinguish "the glob resolved nothing" from "the files it resolved held no
+  runnable test": both printed zero, and a clean sweep named only its test
+  count. The exit-code half was already correct (a zero denominator has always
+  exited 3 here, per ADR 0009); what was missing was the number that makes a
+  collapsed denominator locatable rather than merely loud. Additive — the JSON
+  envelope keeps every existing field, and exit codes are unchanged.
 - **BREAKING: `migrate --check` with no overlay exits 3, not 0** (#1065, same
   class as #1057). When no overlay could be resolved, the gate printed
   `No overlay to check against.` on **stdout** and exited **0** — nothing had
@@ -241,17 +251,16 @@ under the project's former name) are documented in the
   `hashSkillDir` walked the whole deployed-skill tree, so `node_modules` counted
   toward the hash: running `npm install` in a skill's `scripts/` dir — which a
   skill declaring a runtime dependency instructs you to do when it is missing —
-  made `canary migrate` report that skill as locally edited
-  and refuse every later update. Using a skill and keeping it updatable were
-  mutually exclusive, and the staleness was silent: `canary overlay update`
-  reports success because deploying is the separate `migrate` step that then
-  refuses. One consuming repo had all 7 skills frozen this way for months,
-  missing dependency bumps and a correctness fix. `node_modules`, `.git`,
-  `__pycache__` and `.venv` are now excluded from the hash; genuine edits to
-  authored files are still detected, and a _file_ named `node_modules` still
-  counts. This diverges from the Python oracle for trees containing those
-  directories — deliberately, since the oracle has the same bug; the parity
-  golden (a clean tree) is unchanged.
+  made `canary migrate` report that skill as locally edited and refuse every
+  later update. Using a skill and keeping it updatable were mutually exclusive,
+  and the staleness was silent: `canary overlay update` reports success because
+  deploying is the separate `migrate` step that then refuses. One consuming repo
+  had all 7 skills frozen this way for months, missing dependency bumps and a
+  correctness fix. `node_modules`, `.git`, `__pycache__` and `.venv` are now
+  excluded from the hash; genuine edits to authored files are still detected,
+  and a _file_ named `node_modules` still counts. This diverges from the Python
+  oracle for trees containing those directories — deliberately, since the oracle
+  has the same bug; the parity golden (a clean tree) is unchanged.
 
 - **The `refresh-baseline` label now fixes a stale arch floor** (#1013).
   `scripts/refresh-arch-baseline.mjs` previously acted only on a `check-arch`

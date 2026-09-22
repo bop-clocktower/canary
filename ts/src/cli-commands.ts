@@ -931,6 +931,10 @@ export function flakeCheckCmd(
  * find. Two distinct zeros are guarded: no file matched, and files matched but
  * held no tests -- a scanner that only checked the first prints a clean tick on
  * the second.
+ *
+ * Both denominators (files resolved, tests scanned) render on EVERY verdict,
+ * not only on an abstention (#1084): a reader who cannot see how many files the
+ * path resolved cannot tell a genuinely clean sweep from a stale glob.
  */
 export function vacuityCheckCmd(
   path: string,
@@ -973,10 +977,16 @@ export function vacuityCheckCmd(
   const outcome = gateOutcome({ checked, findings }, 'advisory', {
     noun: 'test(s)',
   });
+  // #1084: `checked` counts TESTS, so it cannot distinguish "the glob resolved
+  // nothing" from "the files it resolved held no runnable test" -- both print
+  // zero. Both denominators therefore travel on every verdict, pass or
+  // abstention: a collapsed one has to be locatable, not merely loud.
+  const denominator = `[${files.length} file(s) resolved, ${checked} test(s) scanned]`;
+  const verdictLine = `${outcome.summaryLine} ${denominator}`;
   const summaryLine =
     skipped.length === 0
-      ? outcome.summaryLine
-      : `${outcome.summaryLine} (${skipped.length} skipped: ${groups})` +
+      ? verdictLine
+      : `${verdictLine} (${skipped.length} skipped: ${groups})` +
         (verbose ? '' : ` ${pc.dim('(--verbose to list skipped tests)')}`);
   // `advisory` keeps findings at exit 0; the abstention still has to be loud, so
   // the exit code for a zero denominator is taken from the gate contract.
@@ -985,6 +995,7 @@ export function vacuityCheckCmd(
   if (json) {
     deps.out(
       jsonIndent2({
+        files: files.length,
         checked,
         abstained: outcome.abstained,
         findings,

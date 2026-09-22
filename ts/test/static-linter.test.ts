@@ -86,6 +86,37 @@ describe('StaticLinter', () => {
     expect(rules(findings)).not.toContain('FLAKE-002');
   });
 
+  // #1088: `test.setTimeout(ms)` is Playwright's per-test time BUDGET, not a
+  // timer that could have a corresponding waitFor. FLAKE-002 is `critical` on a
+  // commonly-blocking gate, so the false positive failed builds on correct code
+  // and its suggestion ("wrap in page.waitForFunction()") is incoherent advice
+  // for a budget. The exclusion is receiver-specific on purpose: a genuine
+  // `window.setTimeout(...)` sleep MUST still fire.
+  describe('FLAKE-002 distinguishes a timeout budget from a timer', () => {
+    const budgets = [
+      'test.setTimeout(120000);',
+      '    test.setTimeout(120_000);',
+      'test . setTimeout(5000);',
+    ];
+    for (const line of budgets) {
+      it(`does not flag ${line.trim()}`, () => {
+        expect(rules(lint('budget.spec.ts', line))).not.toContain('FLAKE-002');
+      });
+    }
+
+    const timers = [
+      'setTimeout(fn, 100);',
+      'window.setTimeout(fn, 100);',
+      'globalThis.setTimeout(fn, 100);',
+      'ctx.setTimeout(fn, 100);',
+    ];
+    for (const line of timers) {
+      it(`still flags ${line.trim()}`, () => {
+        expect(rules(lint('timer.spec.ts', line))).toContain('FLAKE-002');
+      });
+    }
+  });
+
   it('flags brittle selectors (class, id, xpath) on locator calls', () => {
     expect(rules(lint('c.spec.ts', "page.locator('.btn').click();"))).toContain(
       'LINT-001',

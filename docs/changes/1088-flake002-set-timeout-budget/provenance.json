@@ -1,0 +1,13 @@
+{
+  "issue": [1088],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/static-linter.test.ts",
+  "assumptions": [
+    "Took the issue's recommended fix shape: exclude the Playwright receiver in the existing FLAKE-002 `guard` hook rather than widening the SETTIMEOUT lookbehind, so `window.setTimeout(...)` and other member-expression sleeps still fire.",
+    "Scoped the exclusion to `test.setTimeout(` only (allowing whitespace around the dot, and rejecting a longer receiver such as `mytest.setTimeout`). Other budget-setting forms (`testInfo.setTimeout`, an aliased `test` import) were left flagged rather than guessed at, keeping the fix narrowest-correct.",
+    "Left `test.slow()` alone: the issue notes it matches no rule today, so touching it would broaden scope beyond the reported bug.",
+    "Kept the guard line-based, matching the existing `waitFor` guard. A single line carrying BOTH `test.setTimeout(...)` and a real bare `setTimeout(...)` is therefore not flagged - the same pre-existing limitation the `waitFor` guard already has."
+  ],
+  "closingKeyword": "Closes #1088"
+}
