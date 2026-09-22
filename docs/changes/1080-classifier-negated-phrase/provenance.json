@@ -1,0 +1,15 @@
+{
+  "issue": [1080],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/classifier-negated-keyword.test.ts",
+  "changed": ["ts/src/core/classifier.ts"],
+  "assumptions": [
+    "Negation cue list limited to no / not / without / avoid / never / don't / dont - the forms the issue names plus the apostrophe variant; no general negation parsing.",
+    "The cue must fall within the 3 words immediately before the match, so 'never use a snapshot test' is caught without reaching back into an unrelated clause.",
+    "A cue is confined to its own clause: the lookback is cut at . ! ? ; or newline, so 'No. We decided to add a snapshot test' still classifies as visual.",
+    "The guard applies to every keyword table matched via matchesAny (PERFORMANCE_KEYWORDS, CATEGORY_KEYWORDS, TRAILING_RULES), not only the visual entry, since all three share the substring-matching failure mode.",
+    "Scope kept to the classifier: the catalog-wide prompt-vs-documented-tag test the issue contemplates is a separate, larger claim and was not added here."
+  ],
+  "closingKeyword": "Closes #1080"
+}

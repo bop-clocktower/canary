@@ -172,8 +172,54 @@ function result(testType: string, confidence: number): ClassificationResult {
   return { intent: 'generate_tests', test_type: testType, confidence };
 }
 
+// Words that turn a following phrase into an exclusion ("no snapshot test").
+// Deliberately a short, closed list of the forms that actually appear in test
+// prompts — this is a guard against one substring-matching failure mode, not
+// general negation parsing.
+const NEGATION_CUES: ReadonlySet<string> = new Set([
+  'no',
+  'not',
+  'without',
+  'avoid',
+  'never',
+  "don't",
+  'dont',
+]);
+
+// How many words before a match may carry the negation. Three covers
+// "never use a snapshot test" without reaching back into an unrelated clause.
+const NEGATION_WINDOW = 3;
+
+/**
+ * Is the occurrence at `index` preceded by a negation cue?
+ *
+ * Only the current clause is considered — a cue on the far side of sentence
+ * punctuation ("No. We decided to add a snapshot test") does not negate.
+ */
+function isNegatedAt(haystack: string, index: number): boolean {
+  const clause =
+    haystack
+      .slice(0, index)
+      .split(/[.!?;\n]/)
+      .pop() ?? '';
+  const words = clause.match(/[a-z']+/g) ?? [];
+  return words.slice(-NEGATION_WINDOW).some((word) => NEGATION_CUES.has(word));
+}
+
+/** True when `needle` occurs in `haystack` at least once un-negated. */
+function includesUnnegated(haystack: string, needle: string): boolean {
+  for (
+    let i = haystack.indexOf(needle);
+    i !== -1;
+    i = haystack.indexOf(needle, i + 1)
+  ) {
+    if (!isNegatedAt(haystack, i)) return true;
+  }
+  return false;
+}
+
 function matchesAny(haystack: string, needles: readonly string[]): boolean {
-  return needles.some((n) => haystack.includes(n));
+  return needles.some((n) => includesUnnegated(haystack, n));
 }
 
 const PERFORMANCE_KEYWORDS = ['performance', 'load test', 'stress test'];
