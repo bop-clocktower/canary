@@ -309,6 +309,18 @@ jobs:
           # Node 22+ required: @supabase/supabase-js's realtime client needs a
           # native global WebSocket (absent in Node 20).
           node-version-file: .nvmrc
+      # Python + pytest are installed on purpose, the same as the Skills (JS)
+      # job below: `ts/test/order-pytest-conftest.test.ts` (#1030) EXECUTES the
+      # conftest snippet documented in docs/guides/order.md against a real
+      # throwaway pytest suite. Without a python3 here those assertions would
+      # skip, and a skipped gate reporting green is the zero denominator this
+      # repo keeps fixing everywhere else.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install pytest (the #1030 conftest snippet is executed, not just documented)
+        run: pip install pytest
 
       - name: Install TS pilot deps
         working-directory: ts
@@ -324,6 +336,10 @@ jobs:
 
       - name: Test + coverage gate (vitest)
         working-directory: ts
+        # HARD-FAIL rather than skip if pytest went missing from this job: the
+        # #1030 assertions are only evidence when they actually ran.
+        env:
+          CANARY_REQUIRE_PYTEST: '1'
         run: npm test
 
       # #930: the base report for guardian's coverage-delta tier (#881). PR

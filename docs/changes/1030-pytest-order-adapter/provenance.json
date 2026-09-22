@@ -1,0 +1,16 @@
+{
+  "issue": [1030],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "planArtifact": "docs/changes/1030-pytest-order-adapter/plans/2026-09-22-pytest-conftest-order-adapter-plan.md",
+  "assumptions": [
+    "delivery = documented conftest snippet, no Python package, no policy exception; decided by human at fleet CONFIRM",
+    "EXECUTED (not just written): the conftest snippet is extracted from docs/guides/order.md by ts/test/order-pytest-conftest.test.ts, written with a throwaway 4-test suite into an OS temp dir, and run under real pytest 9.1.1. Verified locally with CANARY_REQUIRE_PYTEST=1: 5/5 assertions pass. Equal-test-count, plan-order, unknown-files-last, and unreadable-plan-degrades are all executed assertions.",
+    "EXECUTED: a planted-positive probe (adding `del items[-1]` to the doc's snippet) was run and made the suite go red, so the assertions are not vacuous. That probe exposed a real false-green: pytest prints `collected N items` BEFORE pytest_collection_modifyitems runs, so the collected count alone could not see a dropped test. The test now also counts per-test PASSED/FAILED result lines, and the planted drop then fails the no-test-lost assertion directly.",
+    "EXECUTED: four gates from ts/ on the final tree — build, typecheck, format:check, and `CANARY_REQUIRE_PYTEST=1 npm test` (250 files, 5020 passed, 0 failed). Docs pass prettier, markdownlint-cli2, and scripts/check_doc_fences.mjs.",
+    "SCOPE BEYOND THE SNIPPET: .github/workflows/harness-quality.yml ts-validate now installs python 3.11 + pytest and sets CANARY_REQUIRE_PYTEST=1. Without it those assertions would silently skip in CI — a zero denominator reported as green. With CANARY_REQUIRE_PYTEST=1 a failed or missing pytest install makes the job FAIL loudly rather than skip. The sibling skills-js job in the same file already installs pytest for the same reason, so this adds no new class of CI dependency; canary still ships no Python and has no pytest suite of its own.",
+    "NOT VERIFIED, out of scope: that canary's ranker produces a USEFUL pytest order. No pytest suite in or around canary records history, so any pytest consumer runs cold-start (declaration/diff-only). This change proves a plan is APPLIED faithfully, never that the plan is good — that is #460 criterion 7's open question.",
+    "NOT COVERED: test-granularity ordering (entries[].test_name). `canary order` emits file-granularity entries only, so ordering is by test_file.",
+    "entropy.entryPoints deliberately NOT changed: `**/*.test.ts` is in entropy's exclude list, so a new test file is not scanned and an entry would be dead config. Verified against harness.config.json rather than assumed from the standing rule."
+  ]
+}

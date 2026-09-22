@@ -50,8 +50,96 @@ CANARY_ORDER_PLAN=plan.json npx vitest run
   execution. On that same run the six ranked files started at positions 0-28 of
   234, against 8-192 unordered.
 - `canary-test-cli` must be installed in the project (vitest is resolved from
-  there), and vitest 5 or later is required. pytest and Playwright have no
-  adapter yet.
+  there), and vitest 5 or later is required. pytest applies a plan through the
+  `conftest.py` snippet below; Playwright has no adapter yet.
+
+## Applying a plan in pytest
+
+Canary ships no Python package (it dropped pytest at v6.0.0), so the pytest
+adapter is a snippet you copy into your own repo's `conftest.py`. It is standard
+library only and imports nothing from canary.
+
+```python
+# conftest.py - apply a `canary order` plan (canary #1030).
+# Standard library only; nothing is imported from canary.
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+
+def _plan_rank(plan_path):
+    """{test_file: plan index} from an order plan, or None if unusable."""
+    try:
+        with open(plan_path, "r", encoding="utf-8") as handle:
+            entries = json.load(handle)["entries"]
+        if not isinstance(entries, list):
+            raise ValueError("entries is not a list")
+        ranks = {}
+        for index, entry in enumerate(entries):
+            test_file = entry["test_file"]
+            if not isinstance(test_file, str):
+                raise ValueError("test_file is not a string")
+            ranks.setdefault(test_file, index)
+        return ranks
+    except Exception as exc:  # an unusable plan must never block a run
+        sys.stderr.write(
+            "canary order: %s is not a readable order plan (%s); "
+            "using pytest's order.\n" % (plan_path, exc)
+        )
+        return None
+
+
+def _repo_root(config):
+    """Plan paths are repo-relative with `/` separators (ADR 0029)."""
+    try:
+        done = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return pathlib.Path(done.stdout.strip()).resolve()
+    except Exception:
+        return pathlib.Path(str(config.rootpath)).resolve()
+
+
+def pytest_collection_modifyitems(config, items):
+    plan_path = os.environ.get("CANARY_ORDER_PLAN")
+    if not plan_path:
+        return
+    ranks = _plan_rank(plan_path)
+    if ranks is None:
+        return
+    root = _repo_root(config)
+
+    def rank(item):
+        path = pathlib.Path(str(getattr(item, "path", item.fspath))).resolve()
+        try:
+            key = path.relative_to(root).as_posix()
+        except ValueError:
+            key = path.as_posix()
+        return ranks.get(key, float("inf"))
+
+    # `list.sort` is stable and sorts in place: ties keep their collection
+    # order, and the collected set is a permutation of itself, so no test can
+    # be added or dropped here.
+    items.sort(key=rank)
+```
+
+```bash
+canary order --suite unit --files-from files.txt --base origin/main --out plan.json
+CANARY_ORDER_PLAN=plan.json python3 -m pytest
+```
+
+- Without `CANARY_ORDER_PLAN`, or with a plan it cannot read, the hook leaves
+  pytest's own order alone (and says so on stderr for an unreadable plan).
+- Files the plan does not name run last, in their original collection order. No
+  test is ever dropped: the hook sorts the collected list in place.
+- The snippet lives in this guide and `ts/test/order-pytest-conftest.test.ts`
+  extracts it from here and runs a real pytest suite against it, so the copy you
+  paste is the copy that is tested.
 
 ## Did it help?
 
