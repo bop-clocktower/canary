@@ -59,7 +59,7 @@ Then, in Claude Code, generate the test:
 
 Canary will:
 
-1. Classify the request as `backend_unit` (pytest hint)
+1. Classify the request as `api` (pytest hint)
 2. Pick `pytest` from the framework registry
 3. Write a `test_rank.py` file under `tests/generated/`
 4. Print the file path + feedback hint
@@ -93,17 +93,17 @@ import at your module before running.
 ## Variations to try
 
 - **Dense vs standard contrast:** ask Canary to add a second function
-  `dense_rank` where ties do *not* skip the gap (`[100, 90, 90, 80] ->
-  [1, 2, 2, 3]`) and a test that contrasts the two — makes the "skipped gap"
-  the explicit subject under test
+  `dense_rank` where ties do _not_ skip the gap
+  (`[100, 90, 90, 80] -> [1, 2, 2, 3]`) and a test that contrasts the two —
+  makes the "skipped gap" the explicit subject under test
 - **Property check:** ask for a Hypothesis case asserting that for any list, the
   rank of the maximum is always `1` and the number of distinct ranks equals the
   number of distinct scores
 - **Ascending option:** add a `descending: bool = True` parameter so the lowest
   score can rank 1 (golf scoring), and assert both directions
 - **Stable tie payload:** change the input to `list[tuple[str, int]]` of
-  `(player, score)` and return `list[tuple[str, int]]` of `(player, rank)` so the
-  example reads like a real standings table
+  `(player, score)` and return `list[tuple[str, int]]` of `(player, rank)` so
+  the example reads like a real standings table
 
 ## See also
 
