@@ -344,6 +344,67 @@ function resolveTemplatePath(skillDir: string, rel: string): string | null {
 }
 
 /**
+ * Refuse an overlay whose declarations cannot all be installed (#1008).
+ *
+ * `basename(src)` names the installed file, so two templates sharing a
+ * basename target ONE `.github/workflows/<name>.yml`. The collision key is the
+ * resolved SOURCE PATH, not the basename: the same template declared under two
+ * shape prefixes is a legal, idempotent no-op, while two *different* sources
+ * landing on one filename have no correct answer -- there is no file that is
+ * both of them, and silently picking one is a coin flip the consumer cannot
+ * see.
+ *
+ * This runs as a pre-pass, ahead of any write, for two reasons: a dry run and
+ * an `--apply` must reach the same verdict, and an abort halfway through the
+ * loop would leave a partially installed CI directory.
+ *
+ * `--force` is deliberately not offered. It overwrites the first variant
+ * rather than resolving the ambiguity, so pointing a consumer at it would talk
+ * them into clobbering a workflow. Renaming one template is the only fix.
+ */
+function assertNoWorkflowCollisions(
+  skills: Array<[SkillInfo, string]>,
+  shapes: string[],
+): void {
+  const claimed = new Map<string, { src: string; label: string }>();
+  for (const [info, skillDir] of skills) {
+    for (const entry of readWorkflowDeclaration(info.path).entries) {
+      const [wantShape, rel] = parseWorkflowEntry(entry);
+      if (!workflowEntryApplies(wantShape, shapes)) continue;
+      const src = resolveTemplatePath(skillDir, rel);
+      // An unresolvable or unshipped template installs nothing, so it cannot
+      // collide. The install loop still reports it as `invalid`/`missing`.
+      if (src === null || !isFile(src)) continue;
+      const name = basename(src);
+      const label = `'${rel}' (${info.name})`;
+      const claimant = claimed.get(name);
+      if (claimant === undefined) {
+        claimed.set(name, { src, label });
+        continue;
+      }
+      if (claimant.src === src) continue; // same template, declared twice
+      throw new Error(
+        `two different workflow templates both install ` +
+          `.github/workflows/${name}:\n` +
+          `  ${claimant.label}\n` +
+          `  ${label}\n` +
+          `Rename one of them so the installed filenames differ; ` +
+          `an installed workflow filename cannot be shared.`,
+      );
+    }
+  }
+}
+
+/** True when a `[<shape>:]<path>` entry applies to the resolved *shapes*. */
+function workflowEntryApplies(
+  wantShape: string | null,
+  shapes: string[],
+): boolean {
+  if (wantShape === null || wantShape === 'all') return true;
+  return shapes.includes(wantShape);
+}
+
+/**
  * *path* with symlinks resolved, or *path* itself when it does not exist --
  * `realpathSync` throws on a missing path, and a declared-but-unshipped
  * template must still reach the `missing` report rather than `invalid`.
@@ -1873,11 +1934,14 @@ export class HarnessMigrator {
     const doc = readManifestDoc(targetSkillsDir);
     const workflowsDir = join(targetRoot, '.github', 'workflows');
     let manifestDirty = false;
-    // Destination filename -> the declaration that claimed it this run. Two
-    // templates sharing a basename land on ONE file; without this the dry run
-    // promised both installs while --apply wrote the first and misreported the
-    // second against the first's fresh manifest entry.
-    const claimed = new Map<string, string>();
+    // #1008: refuse a colliding overlay before anything is written, so a dry
+    // run and an --apply reach the same verdict and no half-installed
+    // `.github/workflows/` is left behind.
+    assertNoWorkflowCollisions(skills, shapes);
+    // Every basename that survived the pre-pass is backed by exactly one
+    // source, so a repeat here is the SAME template declared under a second
+    // shape: install it once and say nothing.
+    const installed = new Set<string>();
 
     for (const [info, skillDir] of skills) {
       const { entries, version } = readWorkflowDeclaration(info.path);
@@ -1889,13 +1953,7 @@ export class HarnessMigrator {
         this.skillWasSkipped(skillDir, targetSkillsDir, doc.skills);
       for (const entry of entries) {
         const [wantShape, rel] = parseWorkflowEntry(entry);
-        if (
-          wantShape !== null &&
-          !shapes.includes(wantShape) &&
-          wantShape !== 'all'
-        ) {
-          continue;
-        }
+        if (!workflowEntryApplies(wantShape, shapes)) continue;
 
         const src = resolveTemplatePath(skillDir, rel);
         if (src === null) {
@@ -1923,20 +1981,8 @@ export class HarnessMigrator {
         }
 
         const name = basename(src);
-        const claimant = claimed.get(name);
-        if (claimant !== undefined) {
-          results.push(
-            new WorkflowInstallResult(
-              name,
-              info.name,
-              'conflict',
-              `'${rel}' and ${claimant} both install .github/workflows/${name} ` +
-                `${EMDASH} only the first was considered; rename one template`,
-            ),
-          );
-          continue;
-        }
-        claimed.set(name, `'${rel}' (${info.name})`);
+        if (installed.has(name)) continue;
+        installed.add(name);
         const dest = join(workflowsDir, name);
         const templateBytes = readFileSync(src);
         const templateHash = sha256(templateBytes);
