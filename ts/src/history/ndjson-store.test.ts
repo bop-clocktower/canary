@@ -244,3 +244,127 @@ describe('NdjsonHistoryStore.queryTimeline / querySummary', () => {
     expect(s.avg_pass_rate).toBe(0.0);
   });
 });
+
+// #1024: retention. `pushRun` stays append-only and unbounded -- the trim is a
+// separate, caller-invoked operation, so nothing a consumer records is dropped
+// behind their back. These tests pin the boundary (a store at exactly `keep` is
+// untouched) because an off-by-one here silently deletes a run a reader wanted.
+describe('NdjsonHistoryStore.trimToNewest', () => {
+  function runsAt(count: number, from = 1): object[] {
+    return Array.from({ length: count }, (_, i) => ({
+      run_id: `r${from + i}`,
+      suite: 'api',
+      schema_version: SCHEMA_VERSION,
+      timestamp: `2026-09-${String(from + i).padStart(2, '0')}T00:00:00Z`,
+    }));
+  }
+
+  it('is a no-op on a missing file rather than throwing', () => {
+    const store = new NdjsonHistoryStore(join(dir, 'missing.jsonl'));
+    expect(store.trimToNewest(50)).toEqual({
+      before: 0,
+      after: 0,
+      removed: 0,
+    });
+  });
+
+  it('leaves a store BELOW the keep count byte-identical', () => {
+    const path = writeHistory(runsAt(3));
+    const before = readFileSync(path, 'utf-8');
+    const store = new NdjsonHistoryStore(path);
+
+    expect(store.trimToNewest(50)).toEqual({
+      before: 3,
+      after: 3,
+      removed: 0,
+    });
+    expect(readFileSync(path, 'utf-8')).toBe(before);
+  });
+
+  // The boundary. `slice(-keep)` on a store of exactly `keep` must remove
+  // nothing, AND must not rewrite the file at all -- the failure mode being
+  // guarded is a `<` that should be `<=`.
+  //
+  // The bytes here are deliberately NOT what a rewrite would produce (a blank
+  // line, and no trailing newline). A canonical fixture would survive the
+  // off-by-one unchanged and the test would pass over the bug -- probed by
+  // mutating `<=` to `<`, which this catches and a canonical fixture did not.
+  it('leaves a store at EXACTLY the keep count byte-identical', () => {
+    const noisy =
+      runsAt(10)
+        .map((l) => JSON.stringify(l))
+        .join('\n\n') + '\n\n';
+    const path = writeHistory([], noisy);
+    const store = new NdjsonHistoryStore(path);
+
+    expect(store.trimToNewest(10)).toEqual({
+      before: 10,
+      after: 10,
+      removed: 0,
+    });
+    expect(readFileSync(path, 'utf-8')).toBe(noisy);
+  });
+
+  it('keeps the newest `keep` runs when the store is ABOVE the count', () => {
+    const path = writeHistory(runsAt(14));
+    const store = new NdjsonHistoryStore(path);
+
+    expect(store.trimToNewest(10)).toEqual({
+      before: 14,
+      after: 10,
+      removed: 4,
+    });
+    expect(store.readAll().map((r) => r.run_id)).toEqual([
+      'r5',
+      'r6',
+      'r7',
+      'r8',
+      'r9',
+      'r10',
+      'r11',
+      'r12',
+      'r13',
+      'r14',
+    ]);
+  });
+
+  // Same rule `queryFlaky` and `querySummary` already apply (#604): "newest"
+  // means TIME order, not append order. A backfilled older run appended last
+  // must not survive a trim that drops a genuinely newer one.
+  it('ranks by timestamp, not by position in the file', () => {
+    const path = writeHistory([
+      { run_id: 'newest', suite: 'api', timestamp: '2026-09-30T00:00:00Z' },
+      { run_id: 'oldest', suite: 'api', timestamp: '2026-09-01T00:00:00Z' },
+      { run_id: 'middle', suite: 'api', timestamp: '2026-09-15T00:00:00Z' },
+    ]);
+    const store = new NdjsonHistoryStore(path);
+
+    expect(store.trimToNewest(2).removed).toBe(1);
+    expect(new Set(store.readAll().map((r) => r.run_id))).toEqual(
+      new Set(['middle', 'newest']),
+    );
+  });
+
+  // Rewriting from the PARSED record would drop any field this version does not
+  // model -- a silent data loss on a store written by a newer canary. The
+  // surviving lines must be the original bytes.
+  it('preserves each surviving row as its original bytes', () => {
+    const path = writeHistory(
+      [],
+      '{"run_id":"a","timestamp":"2026-09-01T00:00:00Z"}\n' +
+        '{"run_id":"b","timestamp":"2026-09-02T00:00:00Z","a_field_we_do_not_model":42}\n',
+    );
+    const store = new NdjsonHistoryStore(path);
+
+    store.trimToNewest(1);
+    expect(readFileSync(path, 'utf-8')).toBe(
+      '{"run_id":"b","timestamp":"2026-09-02T00:00:00Z","a_field_we_do_not_model":42}\n',
+    );
+  });
+
+  it('keeps countRuns() honest after a trim', () => {
+    const store = new NdjsonHistoryStore(writeHistory(runsAt(20)));
+    store.trimToNewest(12);
+    expect(store.countRuns()).toBe(12);
+  });
+});

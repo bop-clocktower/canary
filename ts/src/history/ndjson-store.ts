@@ -11,7 +11,12 @@
  * version it was written at rather than as "current".
  */
 
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname } from 'node:path';
 
 import { maxFlakeOrFlipRate } from '../util/alternation.js';
@@ -117,6 +122,88 @@ export class NdjsonHistoryStore implements HistoryStore {
     const record = serializeLocalRecord(run, results);
     mkdirSync(dirname(this.path), { recursive: true });
     appendFileSync(this.path, JSON.stringify(record) + '\n', 'utf-8');
+  }
+
+  /**
+   * Drop every run but the newest `keep`, by TIMESTAMP (#1024).
+   *
+   * Retention is deliberately NOT part of `pushRun`: the write contract stays
+   * append-only and unbounded (proposal 460), so nothing a consumer records is
+   * ever dropped behind their back. This is the separate, explicit operation a
+   * caller invokes when a bounded store is what they want -- canary's own CI
+   * calls it between `history record` and the Actions cache save, where an
+   * unbounded store means an unbounded cache entry.
+   *
+   * Two properties this holds on purpose:
+   *
+   *   - "Newest" is TIME order, not append order, the same rule `queryFlaky`
+   *     and `querySummary` apply (#604). A backfilled older run appended last
+   *     must not survive while a genuinely newer run is dropped.
+   *   - Surviving rows are written back as their ORIGINAL bytes, not
+   *     re-serialized from the parsed record. Re-serializing would silently
+   *     drop any field this version does not model, turning a retention
+   *     operation into data loss on a store written by a newer canary.
+   *
+   * A store at or below `keep` is not rewritten at all, so the file is left
+   * byte-identical and the no-op costs nothing.
+   */
+  trimToNewest(keep: number): {
+    before: number;
+    after: number;
+    removed: number;
+  } {
+    const lines = this.readRawLines();
+    if (lines.length <= keep) {
+      return { before: lines.length, after: lines.length, removed: 0 };
+    }
+    const kept = [...lines]
+      .sort((a, b) => cmp(a.timestamp, b.timestamp))
+      .slice(-keep);
+    // Restore the file's original order among the survivors: the store is an
+    // append log and readers that do not sort (e.g. `readAll`) should still see
+    // it in the order it was written.
+    const byPosition = new Set(kept.map((l) => l.index));
+    const survivors = lines.filter((l) => byPosition.has(l.index));
+    writeFileSync(
+      this.path,
+      survivors.map((l) => l.raw).join('\n') + '\n',
+      'utf-8',
+    );
+    return {
+      before: lines.length,
+      after: survivors.length,
+      removed: lines.length - survivors.length,
+    };
+  }
+
+  /**
+   * The raw NDJSON lines with just enough parsed out to order them. Kept
+   * separate from `readAll` because a trim must write back original bytes.
+   */
+  private readRawLines(): {
+    raw: string;
+    timestamp: string;
+    index: number;
+  }[] {
+    let text: string;
+    try {
+      text = readFileSync(this.path, 'utf-8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw err;
+    }
+    const lines: { raw: string; timestamp: string; index: number }[] = [];
+    for (const rawLine of text.split('\n')) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const record = JSON.parse(line) as RunRecord;
+      lines.push({
+        raw: line,
+        timestamp: def(record.timestamp, ''),
+        index: lines.length,
+      });
+    }
+    return lines;
   }
 
   queryFlaky(

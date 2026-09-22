@@ -41,6 +41,7 @@ import {
 } from '../cli-common.js';
 import { gateOutcome } from '../core/gate-result.js';
 import { makeRunId, type RunInput, type TestResultInput } from './schema.js';
+import { NdjsonHistoryStore } from './ndjson-store.js';
 import { makeStore as realMakeStore, type AsyncHistoryStore } from './store.js';
 import {
   buildRunFromReport,
@@ -670,6 +671,60 @@ async function summaryCmd(
   );
 }
 
+// --- trim --------------------------------------------------------------------
+
+interface TrimOptions {
+  keep: number;
+  path?: string;
+  dbUrl?: string;
+  json?: boolean;
+}
+
+/**
+ * Retention for a LOCAL store (#1024).
+ *
+ * `record` stays append-only and unbounded by contract (proposal 460), so
+ * retention needed a verb of its own rather than a flag that quietly deletes
+ * runs as a side effect of recording one. Canary's own `fleet-health` job calls
+ * this between `record` and the Actions cache save, where an unbounded store
+ * meant an unbounded, immutable cache entry per run.
+ *
+ * Refuses rather than no-ops when a remote store is configured: a caller who
+ * asked for a bounded store and got a silent exit 0 over an untouched remote
+ * would have a false green, not a trim.
+ */
+async function trimCmd(opts: TrimOptions, deps: HistoryDeps): Promise<void> {
+  const remote = opts.dbUrl ?? deps.env['CANARY_HISTORY_DB_URL'];
+  if (remote) {
+    deps.err(
+      `${pc.red('Refusing to trim:')} a db-url is configured, and \`trim\` ` +
+        `only bounds a local NDJSON store. Unset CANARY_HISTORY_DB_URL (or ` +
+        `drop --db-url) to trim the local store; remote retention is the ` +
+        `database's to manage.`,
+    );
+    throw new CliExitError(1);
+  }
+
+  const storePath = opts.path ?? DEFAULT_HISTORY_FILE;
+  const result = new NdjsonHistoryStore(storePath).trimToNewest(opts.keep);
+
+  if (opts.json) {
+    deps.out(jsonIndent2({ ...result, keep: opts.keep, path: storePath }));
+    return;
+  }
+  if (result.removed === 0) {
+    deps.out(
+      `${storePath}: ${result.before} run(s), within the ${opts.keep}-run ` +
+        `retention ${EM_DASH} nothing removed.`,
+    );
+    return;
+  }
+  deps.out(
+    `${storePath}: trimmed ${result.before} run(s) to ${result.after} ` +
+      `${EM_DASH} removed the ${result.removed} oldest.`,
+  );
+}
+
 // --- migrate -----------------------------------------------------------------
 
 interface MigrateOptions {
@@ -857,6 +912,26 @@ export function createHistoryCommand(
     .option('--json')
     .action(async (suite: string, opts: SummaryOptions) => {
       await summaryCmd(suite, opts, deps);
+    });
+
+  program
+    .command('trim')
+    .description(
+      'Drop all but the newest N runs from a local history store (retention).',
+    )
+    .addOption(
+      new Option('--keep <n>', 'How many of the newest runs to keep.')
+        .argParser(parseRunCount('--keep'))
+        .makeOptionMandatory(),
+    )
+    .option(
+      '--path <store>',
+      `Local NDJSON store to trim (default: ${DEFAULT_HISTORY_FILE}).`,
+    )
+    .addOption(new Option('--db-url <url>').env('CANARY_HISTORY_DB_URL'))
+    .option('--json')
+    .action(async (opts: TrimOptions) => {
+      await trimCmd(opts, deps);
     });
 
   program

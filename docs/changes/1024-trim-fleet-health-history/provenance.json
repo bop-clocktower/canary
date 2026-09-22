@@ -1,0 +1,16 @@
+{
+  "issues": [1024],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "planArtifact": "docs/changes/1024-trim-fleet-health-history/plans/2026-09-21-trim-fleet-health-history-plan.md",
+  "assumptions": [
+    "N=50 trim, chosen by the human at CONFIRM; save-on-main-only and leave-it were rejected",
+    "The trim is a separate verb (`canary history trim`), not a side effect of `history record` — proposal 460's append-only, unbounded write contract stays true for every consumer, and only the caller who asks for a bound gets one",
+    "50 sits above both read-side windows (flake minimum 10, analyze window 30), so a trimmed store can never starve a reader into an abstention that still exits 0",
+    "'Newest' means timestamp order, not append order — the same rule queryFlaky and querySummary already apply (#604)",
+    "Surviving rows are written back as their original bytes rather than re-serialized, so a field a newer canary wrote is not silently dropped by a retention operation",
+    "`trim` refuses when a db-url is configured rather than silently succeeding: an exit 0 over an untouched remote store would be a false green",
+    "Re-measured 2026-09-21 at 5f5d40af: one recorded run of canary's own suite is 1,824,467 bytes / 4,924 test rows / 130,719 gzipped — #1024's 2026-09-16 numbers were correct then and understate it now"
+  ],
+  "closingKeyword": "Closes #1024"
+}

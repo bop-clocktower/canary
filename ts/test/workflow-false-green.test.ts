@@ -1234,6 +1234,64 @@ describe('workflow false-green invariants', () => {
     });
   });
   /**
+   * #1024 — the cached store is bounded before it is saved.
+   *
+   * Cache entries are immutable and each run reserves a fresh one holding the
+   * WHOLE store, so an append-only store meant an entry that grew with every
+   * run (re-measured 2026-09-21: ~0.125 MB gzipped per recorded run of
+   * canary's own suite). LRU eviction would eventually take it, and an evicted
+   * `main` entry silently restarts the history chain.
+   *
+   * The ways the fix goes quietly wrong, pinned here: trimming AFTER the save
+   * (the entry is still unbounded), trimming BEFORE the record (this run's own
+   * row escapes the bound), and a `--keep` cut below a read-side window so the
+   * job caches a store no reader can reach a verdict from.
+   */
+  describe('#1024 — fleet-health bounds the store before caching it', () => {
+    const dogfood = allWorkflows().find(([name]) => name === 'dogfood.yml');
+    const steps = dogfood?.[1].jobs?.['fleet-health']?.steps ?? [];
+    const at = (pred: (s: Step) => boolean): number => steps.findIndex(pred);
+    const recordAt = at((s) => /history record\b/.test(s.run ?? ''));
+    const trimAt = at((s) => /history trim\b/.test(s.run ?? ''));
+    const saveAt = at((s) => /^actions\/cache\/save@/.test(s.uses ?? ''));
+    const keep = Number(
+      /history trim\b[^\n]*--keep\s+(\d+)/.exec(
+        steps.map((s) => s.run ?? '').join('\n'),
+      )?.[1],
+    );
+
+    it('trims the store between recording it and saving it', () => {
+      expect(trimAt, 'no step runs `history trim`').toBeGreaterThanOrEqual(0);
+      expect(
+        trimAt,
+        'trimming before the record lets this run escape the bound',
+      ).toBeGreaterThan(recordAt);
+      expect(
+        saveAt,
+        'trimming after the save leaves the cache entry unbounded',
+      ).toBeGreaterThan(trimAt);
+    });
+
+    it('passes an explicit --keep rather than relying on a default', () => {
+      expect(Number.isInteger(keep)).toBe(true);
+      expect(keep).toBeGreaterThan(0);
+    });
+
+    it('keeps more runs than every read-side window needs', async () => {
+      const { MIN_WINDOW_RUNS } = await import('../src/util/flake-window.js');
+      // The 30-run default window of `history flaky` / `canary analyze`. A
+      // `--keep` below either of these caches a store that can only abstain.
+      const ANALYZE_WINDOW = 30;
+      expect(keep).toBeGreaterThan(ANALYZE_WINDOW);
+      expect(keep).toBeGreaterThan(MIN_WINDOW_RUNS);
+    });
+
+    it('does not swallow a failed trim into an unbounded save', () => {
+      const trimScript = steps[trimAt]?.run ?? '';
+      expect(trimScript).not.toMatch(/history trim[^\n]*\|\|\s*(true|echo)/);
+    });
+  });
+  /**
    * #460 — fleet-health dogfoods `canary order`. The ways this goes quietly
    * wrong: the plan is built after the suite ran, a failed plan is swallowed
    * so the run silently loses its ordering, the diff base is interpolated
