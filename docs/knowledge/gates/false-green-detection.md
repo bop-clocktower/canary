@@ -184,6 +184,31 @@ it, so an overclaiming name survives indefinitely and is read as coverage of
 something no test observes. Two probes producing the same signal for different
 reasons is the condition to look for.
 
+## A commit range against a ref that does not exist
+
+An agent pruning stale worktrees checked each one for unpushed work with
+`git log --oneline "origin/$BRANCH..HEAD" | wc -l` and read `0` as "nothing
+unpushed, safe to delete". For a branch GitHub had already deleted on merge —
+the default — `origin/$BRANCH` does not resolve, the range names nothing, and
+the count is `0` because there was no measurement, not because the branch was
+clean. Recorded in #1087.
+
+The shape: **a range, glob or filter whose operand silently fails to resolve
+returns an empty result, and empty is spelled the same as verified-empty.** The
+fix is the same as everywhere else in this file — confirm the operand exists
+(`git ls-remote origin "refs/heads/$BRANCH"`) and report "upstream deleted —
+cannot measure" instead of `0`.
+
+Its companion is not a false green but a false _negative_, from the same habit
+of trusting a plausible-looking git number: this repo squash-merges, so a merged
+branch's tip is never an ancestor of `main`, and
+`git merge-base --is-ancestor HEAD origin/main` reported all six of a run's
+already-merged branches as unmerged. `git diff --stat origin/main HEAD` is no
+better — an old branch shows a thousand-line diff purely from divergence. The
+checks that answer the question are the PR state (`gh pr list --head`) and
+`git cherry origin/main HEAD`, where a `-` prefix means the patch is already
+upstream.
+
 ## Why these are worth writing down
 
 Each was diagnosed once, at cost, and each looked like an isolated bug. They are

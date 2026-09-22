@@ -1300,6 +1300,40 @@ Registry files, one per runtime layer:
 Skill CLIs are self-contained and cannot import the helper; they mirror its
 wording via a local `ABSTAINED_LINE` and are held to it by their registry.
 
+### Git measurement traps (merge status and commit ranges)
+
+Two git numbers look authoritative and are not. Both bit an agent pruning stale
+worktrees in #1087; the underlying shape is catalogued in
+[false-green detection](docs/knowledge/gates/false-green-detection.md).
+
+**Squash-merge makes ancestry the wrong question.** This repo squash-merges, so
+a merged branch's tip is never an ancestor of `main`.
+`git merge-base --is-ancestor HEAD origin/main` therefore reports **every**
+merged branch as unmerged — 6 of 6 in the run that found this.
+`git diff --stat origin/main HEAD` is no better: an old branch shows a
+thousand-line diff purely from divergence, which reads as unlanded work. Acting
+on either number means hoarding dead branches, or the dangerous reading, that
+landed work never merged.
+
+Ask instead:
+
+```bash
+gh pr list --head "$BRANCH" --state all --json number,state
+git cherry origin/main HEAD    # '-' = already upstream, '+' = not
+```
+
+**A range against a missing ref counts zero without measuring.**
+`git log --oneline "origin/$BRANCH..HEAD" | wc -l` returns `0` when
+`origin/$BRANCH` does not resolve — which is the normal state after GitHub
+deletes a branch on merge. Zero-because-nothing-resolved is spelled exactly like
+zero-because-verified-clean. This is the denominator rule above, in a check an
+agent writes for itself: confirm the ref first with
+`git ls-remote origin "refs/heads/$BRANCH"` and report "upstream deleted —
+cannot measure" rather than `0`.
+
+Before deleting any worktree or branch, the safe sequence is: working tree clean
+→ stash count → PR state → `git cherry`. Never a single number.
+
 ### Three test-design rules (the shape a user hits, not the shape you had in mind)
 
 Three rules, each drawn from a specific shipped bug. They share one theme: the
