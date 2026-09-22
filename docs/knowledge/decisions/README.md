@@ -24,7 +24,7 @@ the move is the local fix.
 - The `**Status:**` / `**Date:**` bold lines stay. A second parser matches on
   them, and they are what a human reads first.
 
-Each file also carries `<!-- markdownlint-disable-next-line MD025 -->` above its
+Each file also carries `<!-- markdownlint-disable-file MD025 -->` above its
 `# ADR NNNN` heading. markdownlint treats a frontmatter `title:` as a top-level
 heading, so without it the real heading is reported as a duplicate H1. The
 directive is per-file and per-rule deliberately — the repo's `protect-config.js`
