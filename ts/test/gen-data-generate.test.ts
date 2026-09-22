@@ -60,6 +60,20 @@ describe('leafCases', () => {
     );
     expect(cats.map((c) => c.value)).toEqual(expect.arrayContaining([null, 0]));
   });
+  it('a union drops a member-0 case another member accepts (#1039)', () => {
+    const first: ShapeNode = { kind: 'string' };
+    const union: ShapeNode = {
+      kind: 'union',
+      members: [first, { kind: 'number', integer: false }],
+    };
+    const values = leafCases(union, 'ref').map((c) => c.value);
+    // The string member contributes `0` as unexpected-shape, but the number
+    // member accepts it -- asserting a rejection the schema would allow.
+    expect(leafCases(first, 'ref').map((c) => c.value)).toContain(0);
+    expect(values).not.toContain(0);
+    // null is rejected by both members, so it survives the filter.
+    expect(values).toContain(null);
+  });
 });
 
 describe('defaultValue', () => {
