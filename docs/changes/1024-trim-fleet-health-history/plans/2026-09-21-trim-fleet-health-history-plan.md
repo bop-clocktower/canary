@@ -119,3 +119,35 @@ new caller-invoked verb was added next to it.
 - **A trim that drops a run a reader wanted** is the failure mode that matters.
   Guarded by task 3 (the window proof) and task 6 (the workflow's `--keep` can
   never fall below the analyze window without a red test).
+
+## 6. Amendment after the first CI run — where the code lives
+
+The first push was red on two ratchets the local gates cannot see, exactly the
+risk section 5 named. Both were real, and neither was about the trim's
+behaviour:
+
+| Ratchet            | Finding                                                                    | Cause                                                                                       |
+| ------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| arch (module size) | `ts/src/history` 1954 > 1800 LOC, NEW                                      | The module sits **exactly** on its 1800 ceiling. Any line added to it regresses.            |
+| perf (delta)       | `ts/src/history/cli.ts` 16 imports > 15; `ndjson-store.ts` 339 lines > 300 | Same ceiling problem one level down: that CLI module is exactly on the 15-import threshold. |
+| canary-savant      | SV004 order-coupled name in a doc comment                                  | A comment said "... before the cache save"; reworded.                                       |
+
+The resolution keeps the behaviour and the UX (`canary history trim`) and moves
+where the code is mounted:
+
+- The implementation lives in a **new module directory**,
+  `ts/src/history/retention/` (`trim.ts` + `command.ts`), mirroring the existing
+  `flake/`, `keys/` and `formats/` siblings. A subdirectory is its own arch
+  module, so `ts/src/history` and `ts/src/history/ndjson-store.ts` are left
+  **byte-identical to `main`**.
+- The subcommand is registered from `ts/src/commands/engine/cli.ts` — the
+  registry #988 added so "a new subcommand adds one import to ONE domain
+  registry" instead of taxing the module it belongs to. That registry is capped
+  at 12 imports and holds 5.
+
+This is paydown, not an allowance: no `deltaAllowances` entry was added and no
+baseline was refreshed. `harness check-arch` reports no new violation locally.
+
+Cost of the move, stated plainly: `registerTrimCommand` is mounted a layer away
+from the other `history` subcommands, so a reader of `history/cli.ts` will not
+see `trim` there. The registry comment names the reason.

@@ -10,12 +10,25 @@
 import type { Command } from 'commander';
 
 import { createHistoryCommand } from '../../history/cli.js';
+import { registerTrimCommand } from '../../history/retention/command.js';
 import { createAnalyzeCommand } from '../../analysis/cli.js';
 import { createGuardianCommand } from '../../guardian/cli.js';
 import type { MainDeps } from '../../main-deps.js';
 
 export const ENGINE_COMMANDS: ReadonlyArray<(deps: MainDeps) => Command> = [
-  (deps) => createHistoryCommand({ out: deps.out, err: deps.err }),
+  // `history trim` (#1024) is registered here rather than inside
+  // `history/cli.ts`: that module sits exactly on the arch module-size ceiling
+  // for `ts/src/history` and on the 15-import perf threshold, and this registry
+  // is the seam #988 added so a new subcommand does not have to tax it.
+  (deps) => {
+    const history = createHistoryCommand({ out: deps.out, err: deps.err });
+    registerTrimCommand(history, {
+      out: deps.out,
+      err: deps.err,
+      env: process.env,
+    });
+    return history;
+  },
   (deps) => createAnalyzeCommand({ out: deps.out, err: deps.err }),
   (deps) => createGuardianCommand({ out: deps.out, err: deps.err }),
 ];

@@ -1,10 +1,10 @@
 /**
  * #1024: the windows must survive the trim.
  *
- * `fleet-health` now trims its cached store to the newest 50 runs before the
- * Actions cache save, because an unbounded store means an unbounded cache
- * entry. The question that test suite has to answer is not "did it delete
- * rows" -- it is whether the readers can still reach a verdict afterwards.
+ * `fleet-health` now trims its cached store to the newest 50 runs, since an
+ * unbounded store means an unbounded cache entry. The question these tests
+ * answer is not "did it delete rows" -- it is whether the readers can still
+ * reach a verdict once it has.
  *
  * Two consuming windows exist, and a trim that starves either one would turn
  * every downstream report into a silent abstention that still exits 0:
@@ -24,6 +24,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { NdjsonHistoryStore } from '../src/history/ndjson-store.js';
+import { trimStoreToNewest } from '../src/history/retention/trim.js';
 import { SCHEMA_VERSION } from '../src/history/record.js';
 import { MIN_WINDOW_RUNS } from '../src/util/flake-window.js';
 
@@ -85,7 +86,7 @@ describe('#1024: a trimmed store still feeds every read-side window', () => {
     const store = seedStore(60);
     expect(store.countRuns()).toBe(60);
 
-    const result = store.trimToNewest(FLEET_HEALTH_KEEP);
+    const result = trimStoreToNewest(path, FLEET_HEALTH_KEEP);
     expect(result).toEqual({ before: 60, after: 50, removed: 10 });
 
     // The point of the whole exercise: the 30-run reader is not starved.
@@ -104,7 +105,7 @@ describe('#1024: a trimmed store still feeds every read-side window', () => {
 
   it('still reaches a flake verdict (denominator >= the minimum) after a trim', () => {
     const store = seedStore(60);
-    store.trimToNewest(FLEET_HEALTH_KEEP);
+    trimStoreToNewest(path, FLEET_HEALTH_KEEP);
 
     expect(store.countRuns()).toBeGreaterThanOrEqual(MIN_WINDOW_RUNS);
 
@@ -121,7 +122,7 @@ describe('#1024: a trimmed store still feeds every read-side window', () => {
     // The steady state in CI: every run appends one and trims back to N, so the
     // store parks at N rather than oscillating.
     const store = seedStore(50);
-    expect(store.trimToNewest(FLEET_HEALTH_KEEP).removed).toBe(0);
+    expect(trimStoreToNewest(path, FLEET_HEALTH_KEEP).removed).toBe(0);
     expect(store.countRuns()).toBe(FLEET_HEALTH_KEEP);
   });
 });
