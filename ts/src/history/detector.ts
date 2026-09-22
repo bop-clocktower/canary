@@ -1,36 +1,11 @@
 /**
- * Flakiness and regression detection on top of history query results.
+ * Regression detection on top of history query results.
  *
  * Pure functions — no I/O.
  * Input is the timeline output from the history store.
  */
 
 import type { TimelineEntry } from './record.js';
-
-export enum FlakeTrend {
-  Rising = 'rising',
-  Falling = 'falling',
-  Stable = 'stable',
-}
-
-const TREND_THRESHOLD = 0.1;
-
-/** Classify a time-ordered list of per-run flake rates (0.0–1.0). */
-export function classifyFlakeTrend(rates: number[]): FlakeTrend {
-  if (rates.length < 2) return FlakeTrend.Stable;
-
-  const mid = Math.floor(rates.length / 2);
-  const firstHalf = rates.slice(0, mid);
-  const secondHalf = rates.slice(mid);
-
-  const mean = (xs: number[]): number =>
-    xs.reduce((a, b) => a + b, 0) / xs.length;
-  const delta = mean(secondHalf) - mean(firstHalf);
-
-  if (delta >= TREND_THRESHOLD) return FlakeTrend.Rising;
-  if (delta <= -TREND_THRESHOLD) return FlakeTrend.Falling;
-  return FlakeTrend.Stable;
-}
 
 export interface RegressionResult {
   is_regression: boolean;
