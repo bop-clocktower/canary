@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, sep } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { reportAbstention } from './abstention-testkit.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const HOOKS = join(REPO, '.harness', 'hooks');
@@ -35,6 +36,19 @@ function have(cmd: string): boolean {
 
 const HAVE_RUFF = have('ruff');
 const itRuff = HAVE_RUFF ? it : it.skip;
+
+// No CI job installs ruff (`grep -rn ruff .github/` is empty), so these have
+// skipped on every run since they were written and the whole record of it was
+// a digit in `N skipped`. Announce the abstention on a channel the default
+// reporter actually prints (#650, #1057) — a skip nobody can see is the
+// zero-denominator false green in miniature.
+if (!HAVE_RUFF) {
+  reportAbstention(
+    'js-hooks ruff',
+    'ruff is not installed — the Python-lint arm of quality-warner.js and ' +
+      'format-check.js was not exercised on this run.',
+  );
+}
 
 interface Proc {
   status: number | null;
