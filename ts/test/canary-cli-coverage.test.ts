@@ -16,8 +16,14 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CompanyKnowledge } from '../src/core/company-knowledge.js';
+import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { HealChange, HealResult } from '../src/core/pattern-healer.js';
 import type { LintFinding } from '../src/core/static-linter.js';
+import {
+  type RunSummary,
+  TransitionResult,
+  UpdateResult,
+} from '../src/core/ticket-updater.js';
 import {
   IssueType,
   SemanticRole,
@@ -420,6 +426,17 @@ describe('overlay / doctor npm-shim pointers', () => {
     expect(res.code).toBe(1);
     expect(res.stdout).toContain('provided by the npm install');
   });
+
+  it('uninstall points at the npm install and exits 1', async () => {
+    // Trailing args are accepted and ignored: the shim never does the work.
+    const res = await invokeCanary(['uninstall', '--yes']);
+    expect(res.code).toBe(1);
+    expect(res.stdout).toContain(
+      '`canary uninstall` is provided by the npm install of Canary.',
+    );
+    expect(res.stdout).toContain('npm install -g canary-test-cli');
+    expect(res.stdout).toContain('does not include the uninstall command');
+  });
 });
 
 describe('skills sub-app', () => {
@@ -783,5 +800,440 @@ describe('history human-readable paths', () => {
     } finally {
       rmTmp(tmp);
     }
+  });
+});
+
+// --- cli-commands.ts gap pass (test-fleet) ------------------------------------
+
+describe('recommend / frameworks: sparse registry data', () => {
+  it('recommend --json nulls the run command when the registry has no entry', async () => {
+    const res = await invokeCanary(
+      ['recommend', 'write playwright e2e tests', '--json'],
+      { deps: { makeRegistry: () => fake({ executionInfo: () => null }) } },
+    );
+    expect(res.code).toBe(0);
+    const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(payload['execution_command']).toBeNull();
+    expect(payload['ci_flags']).toEqual([]);
+  });
+
+  it('frameworks falls back for a missing tier, category, and run command', async () => {
+    const summaries = [
+      {
+        name: 'acme-fw',
+        status: 'beta',
+        tier: '',
+        category: '',
+        execution_command: '',
+        ci_flags: [],
+      },
+      {
+        name: 'example-fw',
+        status: '',
+        tier: 'experimental',
+        category: 'unit',
+        execution_command: 'example run {file}',
+        ci_flags: ['--ci'],
+      },
+    ];
+    const res = await invokeCanary(['frameworks'], {
+      deps: { makeRegistry: () => fake({ summaries: () => summaries }) },
+    });
+    expect(res.code).toBe(0);
+    // An empty tier reads as `catalog`; an empty category reads as `n/a`.
+    expect(res.stdout).toContain('acme-fw catalog (beta) \u{2014} n/a');
+    expect(res.stdout).toContain('run: (no run command)');
+    // An unrecognised tier is still printed verbatim, not dropped.
+    expect(res.stdout).toContain('example-fw experimental \u{2014} unit');
+    expect(res.stdout).toContain('ci:  --ci');
+  });
+});
+
+describe('init: injected scaffolder results', () => {
+  it('lists skipped files and prints no install step for an unlisted framework', async () => {
+    const res = await invokeCanary(['init', 'acme'], {
+      deps: {
+        makeScaffolder: () =>
+          fake({
+            scaffold: () => ({ status: 'ok', skipped_files: ['acme.config'] }),
+          }),
+      },
+    });
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('Files Skipped (Already Exist):');
+    expect(res.stdout).toContain('  - acme.config');
+    expect(res.stdout).not.toContain('Directories Created:');
+    expect(res.stdout).not.toContain('1. Run:');
+  });
+
+  it('reports a non-Error throw from the scaffolder as a usage error (exit 2)', async () => {
+    const res = await invokeCanary(['init', 'acme'], {
+      deps: {
+        makeScaffolder: () =>
+          fake({
+            scaffold: () => {
+              throw 'scaffold exploded';
+            },
+          }),
+      },
+    });
+    expect(res.code).toBe(2);
+    expect(res.stderr).toContain('Error: scaffold exploded');
+  });
+});
+
+describe('migrate: injected migrator failures', () => {
+  // Each case pins an empty home so a host's tracked overlays never leak in.
+  function withTmp(fn: (dir: string) => Promise<void>): Promise<void> {
+    const dir = mkTmp();
+    return fn(dir).finally(() => rmTmp(dir));
+  }
+
+  it('--adoption-report exits 1 with the error on stderr when detection throws', () =>
+    withTmp(async (dir) => {
+      const res = await invokeCanary(
+        ['migrate', '--path', dir, '--adoption-report'],
+        {
+          deps: {
+            home: () => dir,
+            makeMigrator: () =>
+              fake({
+                detect: () => {
+                  throw new Error('adoption probe failed');
+                },
+              }),
+          },
+        },
+      );
+      expect(res.code).toBe(1);
+      expect(res.stderr).toContain('adoption probe failed');
+    }));
+
+  it('--check exits 1 with the error on stderr when the freshness check throws', () =>
+    withTmp(async (dir) => {
+      const overlay = join(dir, 'overlay');
+      mkdirSync(overlay);
+      const res = await invokeCanary(
+        ['migrate', '--path', dir, '--check', '--from', overlay],
+        {
+          deps: {
+            home: () => dir,
+            makeMigrator: () =>
+              fake({
+                checkFreshness: () => {
+                  throw new Error('freshness probe failed');
+                },
+              }),
+          },
+        },
+      );
+      expect(res.code).toBe(1);
+      expect(res.stderr).toContain('freshness probe failed');
+    }));
+
+  it('exits 1 with "Detection error" on stderr when detect throws', () =>
+    withTmp(async (dir) => {
+      const res = await invokeCanary(['migrate', '--path', dir], {
+        deps: {
+          home: () => dir,
+          makeMigrator: () =>
+            fake({
+              detect: () => {
+                throw new Error('unreadable tree');
+              },
+            }),
+        },
+      });
+      expect(res.code).toBe(1);
+      expect(res.stderr).toContain('Detection error: unreadable tree');
+    }));
+
+  it('exits 1 with the error on stderr when migrate itself throws', () =>
+    withTmp(async (dir) => {
+      const res = await invokeCanary(['migrate', '--path', dir], {
+        deps: {
+          home: () => dir,
+          makeMigrator: () =>
+            fake({
+              detect: () => ({ is_harness_project: true }),
+              migrate: () => {
+                throw new Error('write refused');
+              },
+            }),
+        },
+      });
+      expect(res.code).toBe(1);
+      expect(res.stderr).toContain('Error: write refused');
+    }));
+
+  it('a dry run with pending files tells the user to re-run with --apply', () =>
+    withTmp(async (dir) => {
+      const migrate = vi.fn(() => ({
+        would_create: ['tests/acme.test.ts'],
+        to_markdown: () => '## plan',
+      }));
+      const res = await invokeCanary(['migrate', '--path', dir], {
+        deps: {
+          home: () => dir,
+          makeMigrator: () =>
+            fake({ detect: () => ({ is_harness_project: true }), migrate }),
+        },
+      });
+      expect(res.code).toBe(0);
+      expect(res.stdout).toContain('## plan');
+      expect(res.stdout).toContain('Re-run with --apply to write these files.');
+      expect(migrate).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ dryRun: true }),
+      );
+    }));
+});
+
+describe('review-test / flake-check: remaining render branches', () => {
+  it('review-test sorts findings by file, then line, then severity', async () => {
+    const res = await invokeCanary(['review-test', 'x.test.ts'], {
+      deps: {
+        makeLinter: () =>
+          fake({
+            // Each key is the only difference between one adjacent pair:
+            // file (b vs a), line (3 vs 1), severity (info vs warning).
+            lint: () => [
+              finding({ file: 'b.py', line: 1, message: 'fourth' }),
+              finding({ file: 'a.py', severity: 'info', message: 'third' }),
+              finding({ file: 'a.py', line: 3, message: 'second' }),
+              finding({ file: 'a.py', line: 1, message: 'first' }),
+            ],
+          }),
+      },
+    });
+    expect(res.code).toBe(0);
+    const order = ['first', 'second', 'third', 'fourth'].map((m) =>
+      res.stdout.indexOf(`  ${m}\n`),
+    );
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((x, y) => x - y));
+  });
+
+  it('review-test with only info findings lists them and still exits 0', async () => {
+    const res = await invokeCanary(['review-test', 'x.test.ts'], {
+      deps: {
+        makeLinter: () =>
+          fake({ lint: () => [finding({ severity: 'info', message: 'nit' })] }),
+      },
+    });
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('[INFO] f.py:3');
+    expect(res.stdout).toContain('1 finding(s): 1 info');
+    expect(res.stdout).not.toContain('warning');
+  });
+
+  it('flake-check fails on a non-critical finding too (any flake is exit 1)', async () => {
+    const res = await invokeCanary(['flake-check', 'x.test.ts'], {
+      deps: {
+        makeLinter: () =>
+          fake({ flakeCheck: () => [finding({ message: 'sleeps 500ms' })] }),
+      },
+    });
+    expect(res.code).toBe(1);
+    expect(res.stdout).toContain('[WARNING] f.py:3 (R1)');
+    expect(res.stdout).toContain('  sleeps 500ms');
+    expect(res.stdout).toContain('1 flakiness pattern(s) found.');
+  });
+
+  it('review-test on an extensionless file abstains by naming the file', async () => {
+    const res = await invokeCanary(['review-test', 'Makefile']);
+    expect(res.code).toBe(EXIT_ABSTAINED);
+    expect(res.stdout).toContain('Cannot lint Makefile');
+  });
+
+  it('review-test --json keeps stdout parseable and reports an unreadable file on stderr', async () => {
+    const dir = mkTmp();
+    try {
+      writeFileSync(join(dir, 'a.test.ts'), '', 'utf-8');
+      writeFileSync(join(dir, 'b.test.ts'), '', 'utf-8');
+      const lint = (f: string): LintFinding[] => {
+        if (f.endsWith('b.test.ts'))
+          throw Object.assign(new Error('denied'), { code: 'EACCES' });
+        return [];
+      };
+      const res = await invokeCanary(['review-test', dir, '--json'], {
+        deps: { makeLinter: () => fake({ lint }) },
+      });
+      expect(res.code).toBe(0);
+      expect(JSON.parse(res.stdout)).toEqual([]);
+      expect(res.stderr).toContain('Not every collected file was read');
+      expect(res.stderr).toContain('EACCES');
+    } finally {
+      rmTmp(dir);
+    }
+  });
+
+  it('flake-check --json with no findings emits [] and exits 0', async () => {
+    const res = await invokeCanary(['flake-check', 'x.test.ts', '--json'], {
+      deps: { makeLinter: () => fake({ flakeCheck: () => [] }) },
+    });
+    expect(res.code).toBe(0);
+    expect(JSON.parse(res.stdout)).toEqual([]);
+  });
+});
+
+describe('vacuity-check / promote-check: remaining branches', () => {
+  const CLEAN = [
+    `import { it, expect } from 'vitest';`,
+    `import { save } from './store.js';`,
+    `it('saves the row', () => {`,
+    `  expect(save({ id: 7 })).toBe(7);`,
+    `});`,
+    '',
+  ].join('\n');
+
+  it('vacuity-check over a directory reports both denominators', async () => {
+    const dir = mkTmp();
+    try {
+      writeFileSync(join(dir, 'store.test.ts'), CLEAN, 'utf-8');
+      const res = await invokeCanary(['vacuity-check', dir]);
+      expect(res.code).toBe(0);
+      expect(res.stdout).toContain('[1 file(s) resolved, 1 test(s) scanned]');
+    } finally {
+      rmTmp(dir);
+    }
+  });
+
+  it('vacuity-check on a single file resolves exactly that file', async () => {
+    const dir = mkTmp();
+    try {
+      const path = join(dir, 'store.test.ts');
+      writeFileSync(path, CLEAN, 'utf-8');
+      const res = await invokeCanary(['vacuity-check', path]);
+      expect(res.code).toBe(0);
+      expect(res.stdout).toContain('[1 file(s) resolved, 1 test(s) scanned]');
+    } finally {
+      rmTmp(dir);
+    }
+  });
+
+  it('promote-check --json exits 0 with a promote decision for a clean draft', async () => {
+    const dir = mkTmp();
+    try {
+      const path = join(dir, 'gen.test.ts');
+      writeFileSync(path, CLEAN, 'utf-8');
+      const res = await invokeCanary(['promote-check', path, '--json']);
+      expect(res.code).toBe(0);
+      expect(JSON.parse(res.stdout).decision).toBe('promote');
+    } finally {
+      rmTmp(dir);
+    }
+  });
+});
+
+describe('heal-test: skipped items and json dry-run', () => {
+  function mixedResult(): HealResult {
+    const r = new HealResult('t.py');
+    r.patched_content = 'patched\n';
+    r.changes.push(new HealChange(2, 'HEAL-001', ' before ', ' after ', 'd'));
+    r.skipped.push('a brittle selector');
+    return r;
+  }
+
+  it('lists what it skipped alongside the fixes it applied', async () => {
+    const dir = mkTmp();
+    try {
+      const f = join(dir, 't.py');
+      writeFileSync(f, 'orig\n', 'utf-8');
+      const res = await invokeCanary(['heal-test', f], {
+        deps: { makeHealer: () => fake({ heal: () => mixedResult() }) },
+      });
+      expect(res.code).toBe(0);
+      expect(res.stdout).toContain('Skipped: a brittle selector');
+      expect(res.stdout).toContain('1 fix(es) applied');
+      expect(readFileSync(f, 'utf-8')).toBe('patched\n');
+    } finally {
+      rmTmp(dir);
+    }
+  });
+
+  it('--json --dry-run reports the change without rewriting the file', async () => {
+    const dir = mkTmp();
+    try {
+      const f = join(dir, 't.py');
+      writeFileSync(f, 'orig\n', 'utf-8');
+      const res = await invokeCanary(['heal-test', f, '--json', '--dry-run'], {
+        deps: { makeHealer: () => fake({ heal: () => mixedResult() }) },
+      });
+      expect(res.code).toBe(0);
+      expect(JSON.parse(res.stdout).changed).toBe(true);
+      expect(readFileSync(f, 'utf-8')).toBe('orig\n');
+    } finally {
+      rmTmp(dir);
+    }
+  });
+});
+
+describe('upgrade: failure detail fallbacks', () => {
+  it('falls back to npm stdout when stderr is empty', async () => {
+    const res = await invokeCanary(['upgrade'], {
+      deps: {
+        runSubprocess: () => ({ status: 1, stdout: 'ERR! 404', stderr: '' }),
+      },
+    });
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain('ERR! 404');
+  });
+
+  it('names the exit status when npm printed nothing', async () => {
+    const res = await invokeCanary(['upgrade'], {
+      deps: { runSubprocess: () => ({ status: 7, stdout: '', stderr: '' }) },
+    });
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain('npm exited 7.');
+  });
+});
+
+describe('ticket-update: result coercion and quiet outcomes', () => {
+  function quietResult(): UpdateResult {
+    return new UpdateResult({
+      ticket_key: 'PROJ-1',
+      project_key: 'PROJ',
+      linkage_source: 'branch',
+      comment_posted: false,
+      transition: new TransitionResult(false, false, null, null, 'skipped'),
+      dry_run: false,
+      messages: [],
+    });
+  }
+
+  it('coerces an unrecognised result value to FAIL', async () => {
+    const dir = mkTmp();
+    try {
+      const report = join(dir, 'report.json');
+      writeFileSync(report, JSON.stringify({ result: 'maybe' }), 'utf-8');
+      const seen: RunSummary[] = [];
+      const res = await invokeCanary(['ticket-update', '--result', report], {
+        deps: {
+          makeTicketUpdater: () =>
+            fake({
+              update: async (s: RunSummary) => {
+                seen.push(s);
+                return quietResult();
+              },
+            }),
+        },
+      });
+      expect(res.code).toBe(0);
+      expect(seen.map((s) => s.result)).toEqual(['FAIL']);
+    } finally {
+      rmTmp(dir);
+    }
+  });
+
+  it('prints nothing when nothing was posted or attempted', async () => {
+    const res = await invokeCanary(['ticket-update'], {
+      deps: {
+        makeTicketUpdater: () => fake({ update: async () => quietResult() }),
+      },
+    });
+    expect(res.code).toBe(0);
+    // Nothing happened and the updater said nothing, so the CLI adds nothing.
+    expect(res.stdout.trim()).toBe('');
   });
 });
