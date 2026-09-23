@@ -1,0 +1,32 @@
+{
+  "issue": [1100],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot", "tdd", "gates"],
+  "plan-artifact": "docs/changes/1100-catalog-account-existence/plans/phase-1-catalog-account-existence.md",
+  "spec-artifact": "docs/changes/1100-catalog-account-existence/proposal.md",
+  "interview-artifact": "docs/changes/1100-catalog-account-existence/interview.md",
+  "branch": "feat/1100-catalog-account-existence",
+  "base": "7995370b",
+  "assumptions": [
+    "The issue body's premise is wrong on one verified point: `user_catalog_skill` was in neither `_KNOWN_KEYS` nor `_SCALAR_FIELDS` in `ts/src/core/company-knowledge.ts`, so `CompanyKnowledge.load` warned about it as an unknown field and dropped it, and `canary-company-knowledge/SKILL.md` documented exactly that gap. Both consuming skills instructed an agent to read a key that never survived a load. Building the helper required promoting the key to a first-class validated scalar field first; that promotion is in scope rather than a separate issue because the helper cannot reach the config without it.",
+    "The helper is pure: it takes the configured accounts and the catalog's answer as data and returns a verdict, performing no I/O and never invoking a catalog itself. The skill makes the catalog call. Chosen so the logic is unit-testable and the catalog stays tool-neutral; not explicitly specified by the issue.",
+    "The verdict is a four-state enum (`all-present` / `some-missing` / `all-missing` / `cannot-verify`) rather than a boolean plus a flag, so an abstention cannot render as either real answer.",
+    "Abstention precedence is fixed as: no catalog skill configured -> catalog unreachable -> catalog empty -> zero configured accounts, so the most actionable reason is the one reported when several apply. The issue names the four shapes but not their order.",
+    "Account identifiers are compared trimmed, case-folded and de-duplicated, with the original spelling preserved in the reported lists. The issue does not specify matching semantics.",
+    "The existing 'check your user catalog if you have one' fallback is retained, but only for the `cannot-verify` case where it is honest; every other status reports the verdict headline instead.",
+    "`canary-company-knowledge/SKILL.md` was updated as doc drift: its 'Known Schema Gap' phase and its 'unknown field ... expected for user_catalog_skill' error row both become false once the loader knows the key. Adjacent to the issue's stated scope, but it is documentation this change makes wrong.",
+    "`company-knowledge init` still does not prompt for `user_catalog_skill`; the field is set by hand. Adding an interactive prompt was treated as out of scope."
+  ],
+  "verification": {
+    "gates": {
+      "build": "pass",
+      "typecheck": "pass",
+      "format:check": "pass",
+      "test": "250 files, 5068 passed, 2 skipped"
+    },
+    "check-deps": "pass, 212 modules across 11 layers",
+    "harness-validate": "pass",
+    "entropy-delta": "144 head vs 144 at merge base 7995370b, same CLI, base measured in a worktree outside the checkout",
+    "perf-delta": "226 head vs 226 at merge base 7995370b"
+  }
+}

@@ -106,20 +106,52 @@ Base score starts at 2 (Medium). Sum modifiers from step 3. Cap at 4 (Critical).
 | 2     | Medium   |
 | 0–1   | Low      |
 
-### Step 5 — User catalog investigation
+### Step 5 — user catalog investigation
 
 When a test failure in the target path involves an auth, permission, or
-configuration error:
+configuration error, ask the **existence** question before the substitution
+question. "Do the accounts this repo is configured with still exist?" is what
+actually resolves this failure mode; "which user could I try instead?" quietly
+implies the configured ones are fine, which is the opposite of what is true when
+accounts have been decommissioned upstream.
 
-1. Read `user_catalog_skill` from `.canary/company.json`
-2. If present: invoke `canary skills run <user_catalog_skill>` with the required
-   attributes from the error context
-3. If a matching user/config is found: surface it as a suggestion
-4. If absent or no match: present constructively —
+#### Step 5a — verify the configured accounts still exist
+
+1. Read `user_catalog_skill` from `.canary/company.json` (a first-class field of
+   `CompanyKnowledge`, so `canary company-knowledge show` reports it and the
+   `.canary/company.<env>.json` cascade applies).
+2. Resolve the accounts the repo is already configured with from the failure
+   context and the suite's fixtures or environment.
+3. If a catalog skill is declared, invoke
+   `canary skills run <user_catalog_skill>` to list the accounts the catalog
+   knows.
+4. Pass both lists plus the declared slug to `verifyConfiguredAccounts` from
+   `ts/src/core/company-knowledge.ts`, and report its `headline`:
+
+   | Status          | How to report it                                                                                                                                 |
+   | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+   | `all-missing`   | A near-certain diagnosis. State it as an account provisioning problem, not a test defect, and stop investigating the suite until it is resolved. |
+   | `some-missing`  | Name each missing account; tests depending on them fail for an account reason.                                                                   |
+   | `all-present`   | Accounts are not the cause. Continue to step 5b.                                                                                                 |
+   | `cannot-verify` | An abstention, never a pass. Report the verdict's `reason` verbatim.                                                                             |
+
+**Never report "accounts fine" from a check that did not run.** A
+`cannot-verify` verdict means zero accounts were compared, and zero checked is
+not a clean result.
+
+#### Step 5b — suggest an alternative user
+
+Only once step 5a returned `all-present` or `cannot-verify`:
+
+1. If a catalog skill is declared: invoke it with the required attributes from
+   the error context; surface any matching user as a suggestion.
+2. If absent, or no matching user found: present constructively —
 
    > "This failure may be a test user or test data configuration issue. Check
    > your user catalog if you have one, or set up the required test data before
    > re-running."
+
+Never reference a specific catalog skill by name in output.
 
 ## Output Format
 

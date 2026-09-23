@@ -106,26 +106,28 @@ If the user offers a value that looks like a credential (starts with `sk-`,
 environment variables, never in `company.json`. The CLI will reject the whole
 layer if one slips through — better to catch it before submitting.
 
-### Phase 3: WIRE THE USER-CATALOG SKILL (Known Schema Gap)
+### Phase 3: WIRE THE USER-CATALOG SKILL
 
-`canary-ci-ready` and `canary-failure-impact` both read a `user_catalog_skill`
-key directly from `.canary/company.json` to investigate auth/config failures.
-**This key is not part of the CLI's validated schema** — it isn't in
-`CompanyKnowledge`'s known fields, `company-knowledge init` never prompts for
-it, and `company-knowledge show` will list it under "ignored unknown field" if
-you inspect warnings. It still works for the two consuming skills because they
-read the raw JSON file directly rather than going through the Python loader —
-but be transparent with the user that this is an informal extension, not a
-first-class field, until the schema catches up.
+`canary-ci-ready` and `canary-failure-impact` both read `user_catalog_skill`
+from `.canary/company.json` to investigate auth/config failures — first to ask
+whether the repo's configured accounts still exist, then to suggest an
+alternative user.
+
+Since #1100 this is a **first-class, validated field**: `CompanyKnowledge` loads
+it, the `.canary/company.<env>.json` cascade applies, `company-knowledge show`
+prints it, and an invalid slug is warned about and dropped rather than silently
+stored. `company-knowledge init` still does not prompt for it, so it is set by
+hand.
 
 To wire it:
 
 1. Ask the user which project-overlay skill (if any) looks up test users — e.g.
    `team:user-lookup`. If they don't have one, skip this phase; the consuming
-   skills degrade gracefully to a generic prompt.
-2. If they gave a normal skill slug, prefer adding it to `claude_code_skills` (a
-   real, validated field) _and_ separately hand-edit `.canary/company.json` to
-   add the literal key:
+   skills report "cannot verify" with the reason, which is the honest answer —
+   never a clean bill of health for the configured accounts.
+2. If they gave a normal skill slug, add it to `.canary/company.json`. Listing
+   it in `claude_code_skills` as well is optional and only affects prompt
+   injection:
 
    ```json
    {
@@ -145,8 +147,9 @@ canary company-knowledge show
 ```
 
 - Confirm every field the user just set appears in the printed output.
-- Confirm no `⚠` warnings (unknown fields other than the intentional
-  `user_catalog_skill` extension, dropped invalid entries, secret detections).
+- Confirm no `⚠` warnings (unknown fields, dropped invalid entries, secret
+  detections). `user_catalog_skill` is a known field since #1100, so a warning
+  naming it now means the slug itself was rejected.
 - Confirm `.gitignore` now contains a `.canary/` line — `init` adds it
   automatically, but verify if the project already had a `.gitignore` with
   unusual formatting.
@@ -160,7 +163,7 @@ canary company-knowledge show
 | Secret-like value entered                           | That whole layer is dropped; `show` prints a red `✗` | Remove the value, use an env var, re-run                                                                                               |
 | Malformed JSON in an existing file                  | Layer skipped with a parse error                     | Fix the JSON by hand, then re-run `show` to confirm                                                                                    |
 | Invalid entry format (e.g. lowercase Jira key)      | Entry silently dropped, warning logged               | Re-enter in the correct case/format                                                                                                    |
-| Unknown field in the file                           | Warned, not fatal, field ignored by the loader       | Expected for `user_catalog_skill` today (Phase 3) — otherwise likely a typo                                                            |
+| Unknown field in the file                           | Warned, not fatal, field ignored by the loader       | Likely a typo — check it against the field list above                                                                                  |
 | User has no Confluence/Jira/MCP setup at all        | Every field is legitimately empty                    | Skip `init` entirely; `canary-ci-ready`/`canary-failure-impact` degrade to their generic prompts, which is correct behavior, not a bug |
 
 ## Examples
@@ -183,10 +186,9 @@ manually, but we have a skill for that."
 
 **Action:** Run `show` — confirm `.canary/company.json` already has
 `confluence_spaces`/`jira_projects` set from a prior run. Ask for the skill slug
-(`team:test-user-lookup`). Add it to both `claude_code_skills` and the raw
-`user_catalog_skill` key per Phase 3. Re-run `show` to confirm no new warnings,
-then re-run `canary-ci-ready` on a known failing auth test to confirm the lookup
-now fires.
+(`team:test-user-lookup`). Add `user_catalog_skill` per Phase 3. Re-run `show`
+to confirm no new warnings, then re-run `canary-ci-ready` on a known failing
+auth test to confirm the lookup now fires.
 
 ## Related Skills
 
