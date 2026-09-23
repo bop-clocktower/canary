@@ -17,12 +17,20 @@ import {
   InSessionAgentTier,
 } from '../src/guardian/agent-tier.js';
 import {
+  DiffResolutionDeps,
+  GitResult,
   GuardianDeps,
+  ResolvedDiff,
+  WatchInterruptError,
+  blobBaseFromEnv,
   defaultDeps,
   isForkContext,
   prContextFromEnv,
+  readPrDiff,
   resolveAnalysisRef,
+  warnIfEmptyCiDiff,
 } from '../src/guardian/cli.js';
+import { BranchProtection } from '../src/guardian/hard-gate.js';
 import { FakeGitHubClient, STICKY_MARKER } from '../src/guardian/pr-comment.js';
 import { invokeGuardian, mkTmp, rmTmp } from './guardian-cli-testkit.js';
 
@@ -1052,5 +1060,521 @@ describe('watch', () => {
     expect(res.stdout).toContain('Guardian watch mode');
     expect(res.stdout).toContain('Polling for new merges');
     expect(res.stdout).toContain('Watch stopped');
+  });
+
+  it('a sleep failure that is not an interrupt propagates instead of stopping quietly', async () => {
+    const boom = new Error('clock source unavailable');
+    await expect(
+      invokeGuardian(['watch', '--interval', '1'], {
+        deps: {
+          sleep: async () => {
+            throw boom;
+          },
+        },
+      }),
+    ).rejects.toBe(boom);
+  });
+});
+
+// --- GuardianDeps seam: remaining branches -------------------------------------
+//
+// Everything below reaches cli.ts only through the injected GuardianDeps (or
+// the exported helpers that take a DiffResolutionDeps). The process-glue
+// closures -- spawnGit, spawnGh, defaultDeps' bodies, installedVersion -- are
+// deliberately NOT exercised: covering them would mean spawning real git/gh.
+
+/** A `runGit` fake that answers by argv and records every call it received. */
+function fakeGit(answers: Record<string, GitResult | null>): {
+  runGit: (args: string[]) => GitResult | null;
+  calls: string[][];
+} {
+  const calls: string[][] = [];
+  return {
+    calls,
+    runGit: (args) => {
+      calls.push(args);
+      const key = args.join(' ');
+      return key in answers ? answers[key]! : null;
+    },
+  };
+}
+
+function diffDeps(
+  env: NodeJS.ProcessEnv,
+  runGit: (args: string[]) => GitResult | null,
+): DiffResolutionDeps & { outLines: string[]; errLines: string[] } {
+  const outLines: string[] = [];
+  const errLines: string[] = [];
+  return {
+    outLines,
+    errLines,
+    out: (s) => outLines.push(s),
+    err: (s) => errLines.push(s),
+    readStdin: () => '',
+    env,
+    runGit,
+  };
+}
+
+describe('prContextFromEnv degenerate env', () => {
+  it('no GITHUB_REF and no event path resolves no PR', () => {
+    expect(prContextFromEnv({ GITHUB_REPOSITORY: 'acme/widgets' })).toBeNull();
+  });
+
+  it('an event payload that is not an object resolves no PR', () => {
+    const event = join(tmp, 'event.json');
+    writeFileSync(event, '42', 'utf-8');
+    expect(
+      prContextFromEnv({
+        GITHUB_REPOSITORY: 'acme/widgets',
+        GITHUB_EVENT_PATH: event,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('blobBaseFromEnv falls back to GITHUB_SHA', () => {
+  function withEvent(payload: unknown): NodeJS.ProcessEnv {
+    const event = join(tmp, 'event.json');
+    writeFileSync(event, JSON.stringify(payload), 'utf-8');
+    return {
+      GITHUB_REPOSITORY: 'acme/widgets',
+      GITHUB_EVENT_PATH: event,
+      GITHUB_SHA: 'feedface',
+    };
+  }
+
+  it('when the event head sha is not a string', () => {
+    expect(
+      blobBaseFromEnv(withEvent({ pull_request: { head: { sha: 123 } } })),
+    ).toBe('https://github.com/acme/widgets/blob/feedface');
+  });
+
+  it('when the event head sha is empty', () => {
+    expect(
+      blobBaseFromEnv(withEvent({ pull_request: { head: { sha: '' } } })),
+    ).toBe('https://github.com/acme/widgets/blob/feedface');
+  });
+});
+
+describe('readPrDiff CI resolution edges', () => {
+  const OK = (stdout: string): GitResult => ({ code: 0, stdout });
+
+  it('a pull_request event with no head sha diffs the base to HEAD', () => {
+    const event = join(tmp, 'event.json');
+    writeFileSync(event, JSON.stringify({ pull_request: {} }), 'utf-8');
+    const git = fakeGit({
+      'rev-parse --verify --quiet origin/main^{commit}': OK('abc\n'),
+      'diff origin/main...HEAD': OK(DIFF_NEW_UNIT),
+    });
+    const resolved = readPrDiff(
+      null,
+      diffDeps(
+        {
+          CI: 'true',
+          GITHUB_BASE_REF: 'main',
+          GITHUB_EVENT_NAME: 'pull_request',
+          GITHUB_EVENT_PATH: event,
+        },
+        git.runGit,
+      ),
+    );
+    expect(resolved).toEqual({
+      text: DIFF_NEW_UNIT,
+      origin: 'ci-base',
+      base: 'origin/main',
+      head: null,
+    });
+  });
+
+  it('a malformed event file yields no base sha and falls back to the worktree', () => {
+    const event = join(tmp, 'event.json');
+    writeFileSync(event, '{ not json', 'utf-8');
+    const git = fakeGit({ diff: OK(DIFF_NEW_UNIT) });
+    const resolved = readPrDiff(
+      null,
+      diffDeps({ CI: 'true', GITHUB_EVENT_PATH: event }, git.runGit),
+    );
+    expect(resolved).toEqual({
+      text: DIFF_NEW_UNIT,
+      origin: 'worktree',
+      base: null,
+    });
+  });
+
+  it('a failing base...HEAD diff falls back to the worktree diff', () => {
+    const git = fakeGit({
+      'rev-parse --verify --quiet origin/main^{commit}': OK('abc\n'),
+      'diff origin/main...HEAD': { code: 128, stdout: '' },
+      diff: OK(DIFF_DOCS_ONLY),
+    });
+    const resolved = readPrDiff(
+      null,
+      diffDeps({ CI: 'true', GITHUB_BASE_REF: 'main' }, git.runGit),
+    );
+    expect(resolved.origin).toBe('worktree');
+    expect(resolved.text).toBe(DIFF_DOCS_ONLY);
+  });
+
+  it('a missing git binary resolves an empty worktree diff', () => {
+    const git = fakeGit({});
+    const resolved = readPrDiff(null, diffDeps({}, git.runGit));
+    expect(resolved).toEqual({ text: '', origin: 'worktree', base: null });
+  });
+});
+
+describe('warnIfEmptyCiDiff', () => {
+  it('stays silent for a non-worktree origin even when CI scoped zero units', () => {
+    const deps = diffDeps({ CI: 'true' }, () => null);
+    const resolved: ResolvedDiff = { text: '', origin: 'stdin', base: null };
+    warnIfEmptyCiDiff(resolved, 0, deps);
+    expect(deps.outLines).toEqual([]);
+    expect(deps.errLines).toEqual([]);
+  });
+
+  it('stays silent for a CI worktree diff that did scope units', () => {
+    const deps = diffDeps({ CI: 'true' }, () => null);
+    const resolved: ResolvedDiff = {
+      text: DIFF_NEW_UNIT,
+      origin: 'worktree',
+      base: null,
+    };
+    warnIfEmptyCiDiff(resolved, 1, deps);
+    expect(deps.outLines).toEqual([]);
+    expect(deps.errLines).toEqual([]);
+  });
+
+  it('warns on all channels for a CI worktree diff that scoped zero units', () => {
+    // The contrast case: same origin and env, zero units -- proves the two
+    // silent cases above are silent because of their guard, not by accident.
+    const deps = diffDeps({ CI: 'true' }, () => null);
+    const resolved: ResolvedDiff = { text: '', origin: 'worktree', base: null };
+    warnIfEmptyCiDiff(resolved, 0, deps);
+    expect(deps.outLines.join('\n')).toContain('::warning::');
+    expect(deps.errLines.join('\n')).toContain('0 changed paths');
+  });
+});
+
+describe('analyze spec loading', () => {
+  it('a missing spec file is a usage error naming the path', async () => {
+    const missing = join(tmp, 'nope.json');
+    const after = join(tmp, 'after.json');
+    writeFileSync(after, '{}', 'utf-8');
+    const res = await invokeGuardian([
+      'analyze',
+      'abc1234',
+      '--spec-before',
+      missing,
+      '--spec-after',
+      after,
+    ]);
+    expect(res.code).toBe(2);
+    expect(res.stderr).toContain(`Spec file not found: ${missing}`);
+  });
+
+  it('YAML specs parse, and a null YAML document reads as no endpoints', async () => {
+    // `~` is an explicit YAML null document. A ZERO-BYTE spec is deliberately
+    // not used here: js-yaml 5 throws on empty input (unlike Python's
+    // safe_load, which returned None), and that divergence is parked, not
+    // characterized.
+    const before = join(tmp, 'before.yaml');
+    const after = join(tmp, 'after.yaml');
+    writeFileSync(before, '~\n', 'utf-8');
+    writeFileSync(
+      after,
+      [
+        "openapi: '3.0.0'",
+        'paths:',
+        '  /members:',
+        '    get:',
+        '      operationId: list',
+        '',
+      ].join('\n'),
+      'utf-8',
+    );
+    const res = await invokeGuardian([
+      'analyze',
+      'abc1234',
+      '--spec-before',
+      before,
+      '--spec-after',
+      after,
+      '--json',
+    ]);
+    expect(res.code).toBe(0);
+    const payload = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    expect(payload).toMatchObject({ added: 1, removed: 0, checked: 1 });
+  });
+});
+
+describe('analyze PR comment posting', () => {
+  it('a gh failure to post is reported with its stderr', async () => {
+    const res = await invokeGuardian(
+      ['analyze', 'abc1234', '--pr', 'https://example.com/acme/pr/1'],
+      {
+        deps: {
+          runGh: () => ({
+            status: 1,
+            stdout: '',
+            stderr: 'HTTP 403: forbidden\n',
+            failed: false,
+          }),
+        },
+      },
+    );
+    expect(res.code).toBe(0); // advisory: a failed post never fails analyze
+    expect(res.stdout).toContain('Could not post PR comment:');
+    expect(res.stdout).toContain('HTTP 403: forbidden');
+  });
+
+  it('a gh binary that could not run is skipped silently', async () => {
+    const calls: string[][] = [];
+    const res = await invokeGuardian(
+      ['analyze', 'abc1234', '--pr', 'https://example.com/acme/pr/1'],
+      {
+        deps: {
+          runGh: (args) => {
+            calls.push(args);
+            return { status: null, stdout: '', stderr: '', failed: true };
+          },
+        },
+      },
+    );
+    expect(res.code).toBe(0);
+    expect(calls).toHaveLength(1); // the post WAS attempted...
+    expect(res.stdout).not.toContain('Posted impact summary');
+    expect(res.stdout).not.toContain('Could not post PR comment'); // ...quietly
+  });
+});
+
+describe('validate-coverage non-object document', () => {
+  it('a top-level JSON array has a zero denominator and is invalid', async () => {
+    const path = join(tmp, 'cov.json');
+    writeFileSync(path, '[]', 'utf-8');
+    const res = await invokeGuardian(['validate-coverage', path, '--json']);
+    expect(res.code).toBe(1);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.valid).toBe(false);
+    expect(payload.checked).toBe(0);
+  });
+});
+
+describe('harden-gate unexpected failures', () => {
+  it('a defect inside the gate propagates instead of masquerading as a verdict', async () => {
+    // A client that breaks its own contract (a non-list, non-null answer) is
+    // the only way to throw past applyHardGate's own error wrapping. The CLI
+    // must re-raise it -- reporting it as "blocked" (1) or "abstained" (3)
+    // would turn a crash into a believable gate result.
+    let writes = 0;
+    const broken: BranchProtection = {
+      requiredCheckContexts: async () => 42 as unknown as string[],
+      observedCheckContexts: async () => ['guardian'],
+      setRequiredChecks: async () => {
+        writes += 1;
+      },
+    };
+    await expect(
+      invokeGuardian(
+        ['harden-gate', '--repo', 'acme/widgets', '--apply', '--token', 'x'],
+        { deps: { buildBranchProtectionClient: () => broken } },
+      ),
+    ).rejects.toBeInstanceOf(Error);
+    expect(writes).toBe(0); // and nothing was written on the way down
+  });
+});
+
+describe('pr-check config-driven branches', () => {
+  const DIFF_WEAK_TEST_ONLY = `diff --git a/tests/test_widget.py b/tests/test_widget.py
+new file mode 100644
+--- /dev/null
++++ b/tests/test_widget.py
+@@ -0,0 +1,3 @@
++def test_widget():
++    w = make_widget()
++    print(w)
+`;
+
+  it('an assertion-free added test is reported as a weak-test finding by default', async () => {
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--format', 'json'],
+      { input: DIFF_WEAK_TEST_ONLY, cwd: tmp },
+    );
+    const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    expect(data.findings.map((f: { kind: string }) => f.kind)).toEqual([
+      'weak-test',
+    ]);
+  });
+
+  it('weakTests: false drops that finding, so the run abstains', async () => {
+    const cfg = writeConfig({ pr: { weakTests: false } });
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--config', cfg, '--format', 'json'],
+      { input: DIFF_WEAK_TEST_ONLY, cwd: tmp },
+    );
+    expect(res.code).toBe(ABSTAINED);
+    const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    expect(data).toMatchObject({ findings: [], abstained: true });
+  });
+
+  it('coverageExempt globs are applied to the coverage ladder', async () => {
+    mkdirSync(join(tmp, 'pkg'));
+    writeFileSync(
+      join(tmp, 'pkg', 'widget.py'),
+      'def widget():\n    return 42\n',
+      'utf-8',
+    );
+    const lcov = join(tmp, 'lcov.info');
+    writeFileSync(lcov, 'SF:other/x.py\nDA:1,1\nend_of_record\n', 'utf-8');
+    const cfg = writeConfig({ coverageExempt: ['pkg/**'] });
+    const res = await invokeGuardian(
+      [
+        'pr-check',
+        '--diff',
+        '-',
+        '--config',
+        cfg,
+        '--coverage',
+        lcov,
+        '--format',
+        'json',
+      ],
+      { input: DIFF_NEW_UNIT, cwd: tmp },
+    );
+    // ADR 0024: an exempt unit leaves the coverage denominator and is counted
+    // as exempt, with the configured glob echoed back so the exclusion is
+    // visible rather than silent.
+    const data = JSON.parse(res.stdout.slice(res.stdout.indexOf('{')));
+    expect(data.coverage).toMatchObject({
+      unitsExempt: 1,
+      unitsTotal: 0,
+      exemptGlobs: ['pkg/**'],
+    });
+  });
+
+  it('emit-analysis without --analyses-dir writes under the git toplevel', async () => {
+    mkdirSync(join(tmp, '.harness'));
+    const git = fakeGit({
+      'rev-parse --show-toplevel': { code: 0, stdout: `${tmp}\n` },
+    });
+    const res = await invokeGuardian(
+      ['pr-check', '--diff', '-', '--emit-analysis'],
+      { input: DIFF_NEW_UNIT, cwd: tmp, deps: { runGit: git.runGit } },
+    );
+    expect(res.code).toBe(ABSTAINED);
+    const record = JSON.parse(
+      readFileSync(
+        join(tmp, '.harness', 'analyses', 'canary-pr-guardian-local.json'),
+        'utf-8',
+      ),
+    );
+    expect(record.source).toBe('canary-pr-guardian');
+  });
+});
+
+describe('mutation report edges', () => {
+  function mutationRoot(source: string): string {
+    const root = join(tmp, 'repo');
+    mkdirSync(join(root, 'ts', 'src'), { recursive: true });
+    writeFileSync(join(root, 'ts', 'src', 'a.ts'), source, 'utf-8');
+    return root;
+  }
+
+  it('a report without a files map abstains, naming why', async () => {
+    const root = mutationRoot('const a = 1;\n');
+    const report = join(tmp, 'mutation.json');
+    writeFileSync(report, JSON.stringify({ schemaVersion: '1' }), 'utf-8');
+    const res = await invokeGuardian([
+      'mutation',
+      '--report',
+      report,
+      '--repo-root',
+      root,
+    ]);
+    expect(res.code).toBe(3);
+    expect(res.stdout).toContain('has no "files" map');
+  });
+
+  it('two survivors in one file each see that file for suppressions', async () => {
+    const root = mutationRoot(
+      'const a = 1;\nconst b = 2; // canary:allow-mutant equivalent mutant\n',
+    );
+    const report = join(tmp, 'mutation.json');
+    const mutant = (id: string, line: number): Record<string, unknown> => ({
+      id,
+      mutatorName: 'ConditionalExpression',
+      replacement: 'false',
+      status: 'Survived',
+      location: { start: { line, column: 1 } },
+      coveredBy: ['t1'],
+    });
+    writeFileSync(
+      report,
+      JSON.stringify({
+        schemaVersion: '1',
+        files: { 'ts/src/a.ts': { mutants: [mutant('0', 1), mutant('1', 2)] } },
+        testFiles: {
+          'ts/test/a.test.ts': { tests: [{ id: 't1', name: 'covering test' }] },
+        },
+      }),
+      'utf-8',
+    );
+    const res = await invokeGuardian([
+      'mutation',
+      '--report',
+      report,
+      '--repo-root',
+      root,
+      '--json',
+    ]);
+    // The file is read once but consulted for BOTH findings: the line-2
+    // survivor is suppressed, the line-1 survivor still fails the run.
+    expect(res.code).toBe(1);
+    const data = JSON.parse(res.stdout);
+    expect(data.findings.map((f: { line: number }) => f.line)).toEqual([1]);
+    expect(
+      data.suppressed.map((s: { finding: { line: number } }) => s.finding.line),
+    ).toEqual([2]);
+  });
+});
+
+describe('author-plan diff sources and config warning', () => {
+  it('a malformed config warns on stderr and still plans', async () => {
+    const cfg = join(tmp, 'harness.config.json');
+    writeFileSync(cfg, '{ not json', 'utf-8');
+    const res = await invokeGuardian(
+      ['author-plan', '--diff', '-', '--config', cfg],
+      { input: DIFF_NEW_UNIT, cwd: tmp },
+    );
+    expect(res.code).toBe(0);
+    expect(res.stderr).toContain('WARNING:');
+    expect(JSON.parse(res.stdout).checked).toBeGreaterThan(0);
+  });
+
+  it('--diff <file> reads the diff from that file', async () => {
+    const diffFile = join(tmp, 'change.diff');
+    writeFileSync(diffFile, DIFF_NEW_UNIT, 'utf-8');
+    const res = await invokeGuardian(['author-plan', '--diff', diffFile], {
+      cwd: tmp,
+    });
+    expect(res.code).toBe(0);
+    const data = JSON.parse(res.stdout);
+    expect(data.intents.map((i: { path: string }) => i.path)).toEqual([
+      'pkg/widget.py',
+    ]);
+  });
+
+  it('omitted --diff falls back to the staged diff on a clean worktree', async () => {
+    const git = fakeGit({
+      diff: { code: 0, stdout: '  \n' },
+      'diff --staged': { code: 0, stdout: DIFF_NEW_UNIT },
+    });
+    const res = await invokeGuardian(['author-plan'], {
+      cwd: tmp,
+      deps: { runGit: git.runGit },
+    });
+    expect(res.code).toBe(0);
+    expect(git.calls).toContainEqual(['diff', '--staged']);
+    const data = JSON.parse(res.stdout);
+    expect(data.checked).toBe(1);
   });
 });
