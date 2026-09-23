@@ -14,7 +14,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { Brand, CompanyKnowledge } from '../src/core/company-knowledge.js';
+import {
+  Brand,
+  CompanyKnowledge,
+  verifyConfiguredAccounts,
+} from '../src/core/company-knowledge.js';
 
 // Empty, isolated home so the `~/.canary/company.json` tier never contributes.
 const HOME = mkdtempSync(join(tmpdir(), 'canary-ck-home-'));
@@ -1013,5 +1017,207 @@ describe('EdgeCoverage', () => {
       brand: new Brand({ logo_path: abs }),
     }).reportBranding(false);
     expect(b['logo_path_resolved']).toBe(abs);
+  });
+});
+
+// -- user_catalog_skill field (#1100) -----------------------------------------
+
+describe('TestUserCatalogSkillField', () => {
+  it('loads a valid skill slug', () =>
+    expect(
+      loadData({ user_catalog_skill: 'team:user-lookup' }).user_catalog_skill,
+    ).toBe('team:user-lookup'));
+
+  it('lower-cases the slug', () =>
+    expect(
+      loadData({ user_catalog_skill: 'Team:User-Lookup' }).user_catalog_skill,
+    ).toBe('team:user-lookup'));
+
+  // The key used to be unknown to the loader, so it was warned about and
+  // dropped -- both consuming skills told an agent to read a field that never
+  // survived the load. Knowing it is the prerequisite for #1100's check.
+  it('is a known key, so it raises no unknown-field warning', () => {
+    const ck = loadData({ user_catalog_skill: 'team:user-lookup' });
+    expect(ck.warnings.join(' ')).not.toContain('user_catalog_skill');
+  });
+
+  it('warns and drops an invalid slug rather than storing it', () => {
+    const ck = loadData({ user_catalog_skill: 'Not A Slug!' });
+    expect(ck.user_catalog_skill).toBe('');
+    expect(ck.warnings.join(' ')).toContain('user_catalog_skill');
+  });
+
+  it('merges as a scalar: the highest-priority layer wins', () => {
+    const tmp = mkTmp();
+    try {
+      writeCompanyJson(tmp, { user_catalog_skill: 'base:lookup' });
+      writeCompanyJson(
+        tmp,
+        { user_catalog_skill: 'uat:lookup' },
+        'company.uat.json',
+      );
+      expect(load(tmp, 'uat').user_catalog_skill).toBe('uat:lookup');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('appears in toDict', () =>
+    expect(
+      loadData({ user_catalog_skill: 'team:user-lookup' }).toDict()[
+        'user_catalog_skill'
+      ],
+    ).toBe('team:user-lookup'));
+
+  // A pointer alone is not "company knowledge", matching dashboard_token_env.
+  it('a catalog skill alone does not make the config non-empty', () =>
+    expect(loadData({ user_catalog_skill: 'team:user-lookup' }).isEmpty).toBe(
+      true,
+    ));
+});
+
+// -- configured-account existence (#1100) -------------------------------------
+
+describe('TestVerifyConfiguredAccounts', () => {
+  const SKILL = 'team:user-lookup';
+
+  it('reports all-present when every configured account is known', () => {
+    const v = verifyConfiguredAccounts({
+      configured: ['qa-one', 'qa-two'],
+      catalogKnown: ['qa-one', 'qa-two', 'qa-three'],
+      catalogSkill: SKILL,
+    });
+    expect(v.status).toBe('all-present');
+    expect(v.checked).toBe(2);
+    expect(v.missing).toEqual([]);
+    expect(v.reason).toBe('');
+  });
+
+  it('reports some-missing and names each missing account', () => {
+    const v = verifyConfiguredAccounts({
+      configured: ['qa-one', 'qa-two', 'qa-three'],
+      catalogKnown: ['qa-two'],
+      catalogSkill: SKILL,
+    });
+    expect(v.status).toBe('some-missing');
+    expect(v.checked).toBe(3);
+    expect(v.missing).toEqual(['qa-one', 'qa-three']);
+    expect(v.present).toEqual(['qa-two']);
+    expect(v.headline).toContain('qa-one');
+    expect(v.headline).toContain('qa-three');
+  });
+
+  // The three-week red suite in #1100: seven configured accounts, all
+  // decommissioned. This must read as a diagnosis, not as a hint.
+  it('reports all-missing as an account problem, not a test defect', () => {
+    const v = verifyConfiguredAccounts({
+      configured: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
+      catalogKnown: ['someone-else'],
+      catalogSkill: SKILL,
+    });
+    expect(v.status).toBe('all-missing');
+    expect(v.checked).toBe(7);
+    expect(v.missing).toHaveLength(7);
+    expect(v.present).toEqual([]);
+    expect(v.headline.toLowerCase()).toContain('account');
+    expect(v.headline.toLowerCase()).not.toContain('test defect');
+  });
+
+  it('compares case-insensitively and ignores surrounding whitespace', () => {
+    const v = verifyConfiguredAccounts({
+      configured: ['  QA-One  '],
+      catalogKnown: ['qa-one'],
+      catalogSkill: SKILL,
+    });
+    expect(v.status).toBe('all-present');
+    expect(v.checked).toBe(1);
+  });
+
+  it('de-duplicates configured accounts so the denominator is distinct', () => {
+    const v = verifyConfiguredAccounts({
+      configured: ['qa-one', 'QA-ONE', 'qa-one'],
+      catalogKnown: ['qa-one'],
+      catalogSkill: SKILL,
+    });
+    expect(v.checked).toBe(1);
+    expect(v.present).toEqual(['qa-one']);
+  });
+
+  it('preserves the original spelling in missing', () => {
+    const v = verifyConfiguredAccounts({
+      configured: ['QA-One'],
+      catalogKnown: ['someone-else'],
+      catalogSkill: SKILL,
+    });
+    expect(v.missing).toEqual(['QA-One']);
+  });
+});
+
+describe('TestVerifyConfiguredAccountsAbstains', () => {
+  // Four zero-denominator shapes. Each is an abstention, never a pass -- a
+  // check that inspected nothing has not cleared the accounts.
+  const cases: Array<[string, Parameters<typeof verifyConfiguredAccounts>[0]]> =
+    [
+      [
+        'no user_catalog_skill is configured',
+        { configured: ['qa-one'], catalogKnown: ['qa-one'], catalogSkill: '' },
+      ],
+      [
+        'the catalog could not be reached',
+        {
+          configured: ['qa-one'],
+          catalogKnown: null,
+          catalogSkill: 'team:user-lookup',
+        },
+      ],
+      [
+        'the catalog holds zero accounts',
+        {
+          configured: ['qa-one'],
+          catalogKnown: [],
+          catalogSkill: 'team:user-lookup',
+        },
+      ],
+      [
+        'zero configured accounts were resolved',
+        {
+          configured: [],
+          catalogKnown: ['qa-one'],
+          catalogSkill: 'team:user-lookup',
+        },
+      ],
+    ];
+
+  for (const [label, query] of cases) {
+    it(`abstains when ${label}`, () => {
+      const v = verifyConfiguredAccounts(query);
+      expect(v.status).toBe('cannot-verify');
+      expect(v.checked).toBe(0);
+      expect(v.reason).not.toBe('');
+      expect(v.missing).toEqual([]);
+      expect(v.present).toEqual([]);
+    });
+  }
+
+  it('reports the most actionable reason first when several apply', () => {
+    const v = verifyConfiguredAccounts({
+      configured: [],
+      catalogKnown: null,
+      catalogSkill: '',
+    });
+    expect(v.reason).toContain('user_catalog_skill');
+  });
+
+  // A catalog implementation's name must never reach the output (the existing
+  // "never reference a specific catalog skill by name" rule).
+  it('never names the catalog implementation in its output', () => {
+    const v = verifyConfiguredAccounts({
+      configured: ['qa-one'],
+      catalogKnown: [],
+      catalogSkill: 'acme-internal:user-directory',
+    });
+    const rendered = [v.headline, v.reason, v.status].join(' ');
+    expect(rendered).not.toContain('acme-internal');
+    expect(rendered).not.toContain('user-directory');
   });
 });
