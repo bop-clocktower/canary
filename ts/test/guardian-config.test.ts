@@ -283,3 +283,136 @@ describe('effectiveGraphDepth', () => {
     expect(effectiveGraphDepth(config, 'soft')).toBe(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Branch coverage (test-fleet): coercion + warning text
+// ---------------------------------------------------------------------------
+
+describe('loadGuardianConfig coercion edge cases', () => {
+  it('boolean tier warns with a Python-style repr and defaults', () => {
+    const cfg = write({ canary: { guardian: { pr: { tier: true } } } });
+    const [config, warning] = loadGuardianConfig(cfg);
+    expect(config.pr_tier).toBe(0);
+    expect(warning).toBe(
+      'guardian pr.tier must be an integer, got True; using 0',
+    );
+  });
+
+  it('clean integer-string tier is accepted without a warning', () => {
+    const cfg = write({ canary: { guardian: { pr: { tier: ' 2 ' } } } });
+    const [config, warning] = loadGuardianConfig(cfg);
+    expect(config.pr_tier).toBe(2);
+    expect(warning).toBeNull();
+  });
+
+  it('boolean graphCoverageMaxDepth warns and stays unbounded', () => {
+    const cfg = write({
+      canary: { guardian: { graphCoverageMaxDepth: true } },
+    });
+    const [config, warning] = loadGuardianConfig(cfg);
+    expect(config.graph_coverage_max_depth).toBeNull();
+    expect(warning).toBe(
+      'guardian graphCoverageMaxDepth must be an integer, got True; ignoring',
+    );
+  });
+
+  it('null gate warns as None and defaults soft', () => {
+    const cfg = write({ canary: { guardian: { pr: { gate: null } } } });
+    const [config, warning] = loadGuardianConfig(cfg);
+    expect(config.pr_gate).toBe('soft');
+    expect(warning).toBe(
+      "guardian pr.gate must be 'soft' or 'hard', got None; using soft",
+    );
+  });
+
+  it('a non-glob coverageExempt entry warns as False and is dropped', () => {
+    const cfg = write({
+      canary: { guardian: { coverageExempt: [false, 'vendor/**'] } },
+    });
+    const [config, warning] = loadGuardianConfig(cfg);
+    expect(config.coverage_exempt).toEqual([
+      { glob: 'vendor/**', reason: null },
+    ]);
+    expect(warning).toBe(
+      'guardian coverageExempt entry needs a glob, got False; ignoring',
+    );
+  });
+
+  it('a non-string coverageExempt reason is recorded as null', () => {
+    const cfg = write({
+      canary: {
+        guardian: {
+          coverageExempt: [
+            { glob: 'legacy/**', reason: 7 },
+            { glob: 'vendor/**', reason: 'third-party' },
+          ],
+        },
+      },
+    });
+    const [config, warning] = loadGuardianConfig(cfg);
+    expect(warning).toBeNull();
+    expect(config.coverage_exempt).toEqual([
+      { glob: 'legacy/**', reason: null },
+      { glob: 'vendor/**', reason: 'third-party' },
+    ]);
+  });
+});
+
+describe('loadGuardianConfig Python truthiness for pr.enabled', () => {
+  // Python `bool(x)`: 0, "", [], {} are falsy; a non-empty list/dict is truthy.
+  // The default is `true`, so a falsy value is observable as a flip.
+  it.each([
+    ['0', 0],
+    ['empty string', ''],
+    ['empty list', []],
+    ['empty object', {}],
+  ])('%s disables the pr surface', (_label, enabled) => {
+    const cfg = write({ canary: { guardian: { pr: { enabled } } } });
+    const [config] = loadGuardianConfig(cfg);
+    expect(config.pr_enabled).toBe(false);
+  });
+
+  it.each([
+    ['non-empty list', [1]],
+    ['non-empty object', { on: 1 }],
+  ])('%s is truthy for preCommit.enabled and pr.enabled', (_label, enabled) => {
+    const cfg = write({
+      canary: { guardian: { pr: { enabled }, preCommit: { enabled } } },
+    });
+    const [config] = loadGuardianConfig(cfg);
+    expect(config.pr_enabled).toBe(true);
+    // preCommit defaults to false, so truthy is observable there as a flip.
+    expect(config.precommit_enabled).toBe(true);
+  });
+});
+
+describe('loadGuardianConfig non-object sections', () => {
+  it('a non-object `canary` value yields silent defaults', () => {
+    const cfg = write({ canary: 'enabled' });
+    const [config, warning] = loadGuardianConfig(cfg);
+    expect(warning).toBeNull();
+    expect(config).toEqual(new GuardianConfig());
+  });
+
+  it('a non-object `pr` section keeps pr defaults while other keys parse', () => {
+    const cfg = write({
+      canary: { guardian: { pr: 'hard', coveragePaths: ['cov.json'] } },
+    });
+    const [config, warning] = loadGuardianConfig(cfg);
+    expect(warning).toBeNull();
+    expect(config.pr_gate).toBe('soft');
+    expect(config.pr_enabled).toBe(true);
+    expect(config.coverage_paths).toEqual(['cov.json']);
+  });
+
+  it('a non-object `preCommit` section keeps preCommit defaults', () => {
+    const cfg = write({
+      canary: { guardian: { pr: { gate: 'hard' }, preCommit: ['hard'] } },
+    });
+    const [config, warning] = loadGuardianConfig(cfg);
+    expect(warning).toBeNull();
+    expect(config.pr_gate).toBe('hard');
+    expect(config.precommit_gate).toBe('soft');
+    expect(config.precommit_enabled).toBe(false);
+  });
+});

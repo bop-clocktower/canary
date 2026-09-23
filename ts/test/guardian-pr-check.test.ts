@@ -16,6 +16,7 @@ import {
   type CoverageResult,
   Fidelity,
 } from '../src/guardian/coverage.js';
+import { type CoverageInputState } from '../src/guardian/diff-coverage/orchestrator.js';
 import { Severity } from '../src/guardian/impact-mapper.js';
 import {
   DEFAULT_SKIP_GLOBS,
@@ -27,6 +28,7 @@ import {
   filterSkipped,
   filterTestUnits,
   findReexportOnly,
+  isCoverageAbstention,
   renderFindings,
   scopeDiff,
 } from '../src/guardian/pr-check.js';
@@ -841,5 +843,352 @@ describe('reason-less allow-untested pragma', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Branch coverage (test-fleet): git path quoting edge cases
+// ---------------------------------------------------------------------------
+
+/** A one-file diff whose `+++` header is exactly `header`. */
+function diffWithHeader(header: string): string {
+  return (
+    'diff --git a/x b/x\n' +
+    'index 1111111..2222222 100644\n' +
+    '--- a/x\n' +
+    `+++ ${header}\n` +
+    '@@ -1 +1,2 @@\n' +
+    ' a\n' +
+    '+b\n'
+  );
+}
+
+describe('scopeDiff path header decoding', () => {
+  it('decodes a single-character C escape (\\t) inside a quoted path', () => {
+    // git quotes a path holding a control byte and emits `\t` for a tab.
+    const paths = scopeDiff(diffWithHeader('"b/tab\\there.ts"')).map(
+      (u) => u.path,
+    );
+    expect(paths).toEqual(['tab\there.ts']);
+  });
+
+  it('leaves a quoted path with an unknown escape verbatim', () => {
+    // `\q` is not an escape git emits; the documented contract is "leave the
+    // value alone" rather than guess, so the quotes and prefix survive.
+    const paths = scopeDiff(diffWithHeader('"b/x\\qy.ts"')).map((u) => u.path);
+    expect(paths).toEqual(['"b/x\\qy.ts"']);
+  });
+
+  it('leaves a quoted path ending in a lone backslash verbatim', () => {
+    const paths = scopeDiff(diffWithHeader('"b/x\\"')).map((u) => u.path);
+    expect(paths).toEqual(['"b/x\\"']);
+  });
+
+  it('keeps an unprefixed (--no-prefix) path as written', () => {
+    const paths = scopeDiff(diffWithHeader('src/app.ts')).map((u) => u.path);
+    expect(paths).toEqual(['src/app.ts']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Branch coverage (test-fleet): barrel detection edge cases
+// ---------------------------------------------------------------------------
+
+describe('findReexportOnly edge cases', () => {
+  it('a call inside a multi-line __all__ list disqualifies the barrel', () => {
+    const diff = diffFor(
+      'pkg/__init__.py',
+      'from .x import Y\n__all__ = [\n    "Y",\n    make_name(),\n]\n',
+    );
+    expect(findReexportOnly(diff)).toEqual(new Set());
+  });
+
+  it('a comment inside a multi-line __all__ list stays neutral', () => {
+    const diff = diffFor(
+      'pkg/__init__.py',
+      'from .x import Y\n__all__ = [\n    # public API\n    "Y",\n]\n',
+    );
+    expect(findReexportOnly(diff)).toEqual(new Set(['pkg/__init__.py']));
+  });
+
+  it('a block-comment tail line without a leading `*` is not neutral', () => {
+    // Conservative contract: when unsure, NOT a barrel (a false flag beats a
+    // false skip). `for the package */` has no comment leader, so it counts
+    // as content and the file is flagged.
+    const diff = diffFor(
+      'pkg/index.ts',
+      "/* re-exports\n   for the package */\nexport * from './a';\n",
+    );
+    expect(findReexportOnly(diff)).toEqual(new Set());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Branch coverage (test-fleet): `?` glob
+// ---------------------------------------------------------------------------
+
+describe('filterSkipped `?` glob', () => {
+  it('matches exactly one non-slash character', () => {
+    const units: ChangedUnit[] = ['src/a.ts', 'src/ab.ts', 'src/x/a.ts'].map(
+      (path) => ({ path, added_ranges: [[1, 1]] }),
+    );
+    const [kept, skipped] = filterSkipped(units, ['src/?.ts']);
+    expect(skipped.map((u) => u.path)).toEqual(['src/a.ts']);
+    expect(kept.map((u) => u.path)).toEqual(['src/ab.ts', 'src/x/a.ts']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Branch coverage (test-fleet): buildFindings unit + suggestion shapes
+// ---------------------------------------------------------------------------
+
+describe('buildFindings suggestion and unit shapes', () => {
+  function heuristicSuggestion(path: string): string {
+    return buildFindings([result(false, Fidelity.Heuristic, path)])[0]!
+      .suggestion;
+  }
+
+  it('heuristic suggestion names the stem before the first dot', () => {
+    expect(heuristicSuggestion('src/widget.helper.ts')).toContain(
+      'no test file mentions `widget`',
+    );
+  });
+
+  it('heuristic suggestion keeps an extensionless basename whole', () => {
+    expect(heuristicSuggestion('tools/Makefile')).toContain(
+      'no test file mentions `Makefile`',
+    );
+  });
+
+  it('heuristic suggestion keeps a dotfile basename whole', () => {
+    expect(heuristicSuggestion('cfg/.eslintrc')).toContain(
+      'no test file mentions `.eslintrc`',
+    );
+  });
+
+  it('a unit symbol becomes the finding unit and the graph suggestion target', () => {
+    const [f] = buildFindings([
+      {
+        unit: {
+          path: 'pkg/parse.ts',
+          symbol: 'parseThing',
+          added_ranges: [[1, 2]],
+        },
+        covered: false,
+        fidelity: Fidelity.GraphVerified,
+        evidence: 'no caller reaches parseThing',
+        uncovered_lines: [],
+      },
+    ]);
+    expect(f!.unit).toBe('parseThing');
+    expect(f!.suggestion).toBe(
+      'add a test that calls `parseThing`, directly or through a caller.',
+    );
+  });
+
+  it('a coverage-verified record with no uncovered_lines field grades HIGH', () => {
+    // An absent line list means "the tier could not say", never "few lines
+    // unhit" (ADR 0010) — so it escalates rather than grading MEDIUM.
+    const record = {
+      ...result(false, Fidelity.CoverageVerified),
+      uncovered_lines: undefined,
+    } as unknown as CoverageResult;
+    const [f] = buildFindings([record]);
+    expect(f!.severity).toBe(Severity.HIGH);
+    expect(f!.uncovered_lines).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Branch coverage (test-fleet): suppression scan bounds
+// ---------------------------------------------------------------------------
+
+describe('applySuppressions range bounds', () => {
+  it('ignores added ranges that fall past the end of the file', () => {
+    const root = mkdtempSync(join(tmpdir(), 'guardian-oob-'));
+    try {
+      writeFileSync(
+        join(root, 'a.ts'),
+        'export const x = 1; // canary:allow-untested legacy\n',
+      );
+      const finding = new GuardianFinding({
+        path: 'a.ts',
+        unit: 'a.ts',
+        severity: Severity.HIGH,
+        // Line 1 carries the pragma but is outside the added range; lines 5-7
+        // do not exist, so nothing is scanned and nothing is suppressed.
+        added_ranges: [[5, 7]],
+      });
+      applySuppressions([finding], root);
+      expect(finding.suppressed).toBe(false);
+      expect(computeExitCode([finding], 'hard')).toBe(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Branch coverage (test-fleet): isCoverageAbstention guards
+// ---------------------------------------------------------------------------
+
+function coverageState(
+  overrides: Partial<CoverageInputState> = {},
+): CoverageInputState {
+  return {
+    requested: 'coverage/lcov.info',
+    found: true,
+    parsed: true,
+    filesInReport: 1,
+    unitsMatched: 1,
+    unitsTotal: 1,
+    ...overrides,
+  };
+}
+
+describe('isCoverageAbstention guards', () => {
+  const heuristicOnly = [finding({ fidelity: Fidelity.Heuristic })];
+  const blind = coverageState({
+    requested: null,
+    found: false,
+    parsed: false,
+    filesInReport: 0,
+    unitsMatched: 0,
+    unitsTotal: 2,
+  });
+
+  it('is an abstention when coverage is unavailable and every finding is heuristic', () => {
+    expect(isCoverageAbstention(blind, heuristicOnly)).toBe(true);
+  });
+
+  it('is not an abstention when no coverage state exists', () => {
+    expect(isCoverageAbstention(null, heuristicOnly)).toBe(false);
+  });
+
+  it('is not an abstention when the ladder judged zero units', () => {
+    expect(
+      isCoverageAbstention({ ...blind, unitsTotal: 0 }, heuristicOnly),
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Branch coverage (test-fleet): renderFindings surfaces
+// ---------------------------------------------------------------------------
+
+describe('renderFindings abstention, exemption and suppression surfaces', () => {
+  it('abstained comment with findings headlines the abstention, not a count', () => {
+    const out = renderFindings(
+      [finding({ fidelity: Fidelity.Heuristic })],
+      'comment',
+      0,
+      null,
+      { checked: 2, abstained: true },
+    );
+    expect(out).toContain(
+      'abstained: no coverage data (2 files judged heuristically)',
+    );
+    expect(out).toContain('nothing below is a coverage verdict');
+    expect(out).not.toContain('needs test coverage');
+  });
+
+  it('abstained comment with no active findings still headlines the abstention', () => {
+    const out = renderFindings([], 'comment', 0, null, {
+      checked: 1,
+      abstained: true,
+    });
+    expect(out).toContain(
+      'abstained: no coverage data (1 file judged heuristically)',
+    );
+    expect(out).not.toContain('no test-coverage gaps');
+  });
+
+  it('abstained text surface opens with the plain-text abstention line', () => {
+    const out = renderFindings([finding()], 'text', 0, null, {
+      checked: 3,
+      abstained: true,
+    });
+    expect(out.split('\n')[0]).toBe(
+      'Canary PR Guardian — abstained: no coverage data (3 files judged heuristically)',
+    );
+  });
+
+  it('discloses coverage-exempt units on the findings path', () => {
+    const out = renderFindings([finding()], 'comment', 0, null, {
+      checked: 1,
+      abstained: false,
+      coverage: coverageState({
+        unitsExempt: 2,
+        exemptGlobs: ['vendor/**', 'legacy/**'],
+      }),
+    });
+    expect(out).toContain(
+      '_2 files skipped as coverage-exempt (vendor/**, legacy/**); judged at graph/heuristic tier only._',
+    );
+  });
+
+  it('counts suppressed findings under the table when others are still active', () => {
+    const out = renderFindings(
+      [
+        finding({ path: 'a.py' }),
+        finding({ path: 'b.py', suppressed: true, suppression_reason: 'x' }),
+      ],
+      'comment',
+    );
+    expect(out).toContain('1 file needs test coverage');
+    expect(out).toContain(
+      '<sub>1 finding(s) suppressed as intentional and not counted above.</sub>',
+    );
+  });
+
+  it('text surface marks a suppressed finding inline', () => {
+    const out = renderFindings([finding({ suppressed: true })], 'text');
+    expect(out).toContain(
+      '[high] pkg/foo.py → foo — no test reaches foo (graph-verified) (suppressed)',
+    );
+  });
+
+  it('links to the bare file when a finding has no line ranges', () => {
+    const base = 'https://example.com/acme/repo/blob/abc123';
+    const out = renderFindings(
+      [finding({ unit: 'pkg/foo.py' })],
+      'comment',
+      0,
+      null,
+      null,
+      base,
+    );
+    expect(out).toContain(`[\`pkg/foo.py\`](${base}/pkg/foo.py)`);
+    expect(out).not.toContain(`${base}/pkg/foo.py#L`);
+  });
+
+  it('renders an empty instrumented-tree root as `.` in the scope-gap headline', () => {
+    const out = renderFindings([], 'comment', 0, null, {
+      checked: 2,
+      abstained: false,
+      coverage: coverageState({
+        unitsTotal: 2,
+        unitsEligible: 0,
+        instrumentedTrees: ['', 'pkg'],
+      }),
+    });
+    expect(out).toContain(
+      'not coverage-checked: 1 file outside instrumented trees (., pkg)',
+    );
+  });
+
+  it('a clean run over an unparsed report says coverage was unavailable', () => {
+    const out = renderFindings([], 'comment', 0, null, {
+      checked: 1,
+      abstained: false,
+      coverage: coverageState({
+        requested: null,
+        found: false,
+        parsed: false,
+        filesInReport: 0,
+        unitsMatched: 0,
+      }),
+    });
+    expect(out).toContain('no gaps found, but coverage was unavailable');
   });
 });
