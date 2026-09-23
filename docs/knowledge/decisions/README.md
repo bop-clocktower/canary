@@ -55,38 +55,39 @@ Not every PR needs an ADR. Day-to-day refactors and bug fixes don't.
 
 ## Index
 
-| #                                                           | Title                                                                     | Status   |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------- | -------- |
-| [0001](0001-host-llm-generation-for-agents.md)              | Host-LLM generation for agents (no API key path)                          | accepted |
-| [0002](0002-self-heal-as-slash-command.md)                  | Self-heal as a slash command (`/oracle-heal-test`)                        | accepted |
-| [0003](0003-deprecate-oracle-generate.md)                   | Deprecate `oracle generate` CLI + the GitHub Action                       | accepted |
-| [0004](0004-remove-keyed-paths-at-v3.md)                    | Remove the keyed CLI surface at v5.0.0                                    | accepted |
-| [0005](0005-remove-llm-abstraction-layer.md)                | Remove LLM abstraction layer — implementation record (v5.0.0)             | accepted |
-| [0006](0006-otel-test-side-tracing.md)                      | Test-side-only OTel tracing (Phase 1, SUT-side deferred)                  | accepted |
-| [0007](0007-guardian-agent-capability-boundary.md)          | Guardian agent capability boundary (agentless-in-CI, agent-at-desk)       | accepted |
-| [0008](0008-guardian-canary-owned.md)                       | Guardian ownership — a canary skill that harness leverages                | accepted |
-| [0009](0009-exit-3-reserved-for-abstained.md)               | Exit 3 is reserved CLI-wide for "abstained"                               | accepted |
-| [0010](0010-conformance-registry-as-gate-registry.md)       | The conformance registry is the canonical gate list                       | accepted |
-| [0011](0011-required-status-checks.md)                      | Required status checks are declared in the repository                     | accepted |
-| [0012](0012-entropy-ratchet.md)                             | The entropy scan is ratcheted against a triaged baseline                  | accepted |
-| [0013](0013-history-store-async-interface.md)               | The history store presents one async contract                             | accepted |
-| [0014](0014-harness-check-wiring-register.md)               | Every harness check is wired or its decline is recorded                   | accepted |
-| [0015](0015-skill-capability-vocabulary.md)                 | Skill capability is three axes, not a tier                                | accepted |
-| [0016](0016-two-meanings-of-persona.md)                     | "Persona" means two unrelated things, and batwoman uses both              | accepted |
-| [0017](0017-probe-registry-named-gaps.md)                   | A probe registry with named gaps                                          | accepted |
-| [0018](0018-rehearsal-fixtures-for-detectors.md)            | Every detector is rehearsed against a planted defect                      | accepted |
-| [0019](0019-typescript-7-migration-and-skills-typecheck.md) | TypeScript 7 migrates by workspace; /agents/skills gets a typecheck first | accepted |
-| [0020](0020-test-orchestrator-split-detect-execute.md)      | Canary detects, harness test-fleet executes                               | accepted |
-| [0021](0021-huntress-folds-into-cry.md)                     | Targeted pursuit is a canary-cry mode; canary-huntress stays reserved     | accepted |
-| [0022](0022-repo-hygiene-branches-now-worktrees-later.md)   | harness-repo-hygiene is the branch cleanup path; worktree pruning waits   | accepted |
-| [0023](0023-leak-gate-pull-request-target.md)               | Leak gate runs on pull_request_target and never executes head code        | accepted |
-| [0024](0024-guardian-coverage-scope-non-ts-trees.md)        | Guardian coverage scope for non-ts trees                                  | accepted |
-| [0025](0025-adjudication-without-reactions.md)              | Guardian adjudication without reactions                                   | accepted |
-| [0026](0026-trustworthy-gate-metric-disclosed-partial.md)   | Trustworthy-gate metric is kept and disclosed as partial                  | accepted |
-| [0027](0027-brand-registry-codegen-stamping.md)             | Brand registry with codegen stamping and a drift gate                     | accepted |
-| [0028](0028-flair-scope-cascade-provenance.md)              | Six-scope flair cascade with per-value provenance                         | accepted |
-| [0029](0029-repo-relative-test-file-history-join-key.md)    | Repo-relative test_file is the history join key                           | accepted |
-| [0030](0030-history-schema-v3-replay-context.md)            | History schema v3 records replay context additively                       | accepted |
-| [0031](0031-voice-never-touches-machine-output.md)          | Voice never touches machine-readable output                               | accepted |
-| [0032](0032-single-os-ci-accepted-deliberately.md)          | Single-OS CI is accepted deliberately, and must be disclosed              | accepted |
-| [0033](0033-waypoint-sink-abstention.md)                    | The waypoint sink stays unconfigured, and the abstention is recorded      | accepted |
+| #                                                                         | Title                                                                     | Status   |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------- | -------- |
+| [0001](0001-host-llm-generation-for-agents.md)                            | Host-LLM generation for agents (no API key path)                          | accepted |
+| [0002](0002-self-heal-as-slash-command.md)                                | Self-heal as a slash command (`/oracle-heal-test`)                        | accepted |
+| [0003](0003-deprecate-oracle-generate.md)                                 | Deprecate `oracle generate` CLI + the GitHub Action                       | accepted |
+| [0004](0004-remove-keyed-paths-at-v3.md)                                  | Remove the keyed CLI surface at v5.0.0                                    | accepted |
+| [0005](0005-remove-llm-abstraction-layer.md)                              | Remove LLM abstraction layer — implementation record (v5.0.0)             | accepted |
+| [0006](0006-otel-test-side-tracing.md)                                    | Test-side-only OTel tracing (Phase 1, SUT-side deferred)                  | accepted |
+| [0007](0007-guardian-agent-capability-boundary.md)                        | Guardian agent capability boundary (agentless-in-CI, agent-at-desk)       | accepted |
+| [0008](0008-guardian-canary-owned.md)                                     | Guardian ownership — a canary skill that harness leverages                | accepted |
+| [0009](0009-exit-3-reserved-for-abstained.md)                             | Exit 3 is reserved CLI-wide for "abstained"                               | accepted |
+| [0010](0010-conformance-registry-as-gate-registry.md)                     | The conformance registry is the canonical gate list                       | accepted |
+| [0011](0011-required-status-checks.md)                                    | Required status checks are declared in the repository                     | accepted |
+| [0012](0012-entropy-ratchet.md)                                           | The entropy scan is ratcheted against a triaged baseline                  | accepted |
+| [0013](0013-history-store-async-interface.md)                             | The history store presents one async contract                             | accepted |
+| [0014](0014-harness-check-wiring-register.md)                             | Every harness check is wired or its decline is recorded                   | accepted |
+| [0015](0015-skill-capability-vocabulary.md)                               | Skill capability is three axes, not a tier                                | accepted |
+| [0016](0016-two-meanings-of-persona.md)                                   | "Persona" means two unrelated things, and batwoman uses both              | accepted |
+| [0017](0017-probe-registry-named-gaps.md)                                 | A probe registry with named gaps                                          | accepted |
+| [0018](0018-rehearsal-fixtures-for-detectors.md)                          | Every detector is rehearsed against a planted defect                      | accepted |
+| [0019](0019-typescript-7-migration-and-skills-typecheck.md)               | TypeScript 7 migrates by workspace; /agents/skills gets a typecheck first | accepted |
+| [0020](0020-test-orchestrator-split-detect-execute.md)                    | Canary detects, harness test-fleet executes                               | accepted |
+| [0021](0021-huntress-folds-into-cry.md)                                   | Targeted pursuit is a canary-cry mode; canary-huntress stays reserved     | accepted |
+| [0022](0022-repo-hygiene-branches-now-worktrees-later.md)                 | harness-repo-hygiene is the branch cleanup path; worktree pruning waits   | accepted |
+| [0023](0023-leak-gate-pull-request-target.md)                             | Leak gate runs on pull_request_target and never executes head code        | accepted |
+| [0024](0024-guardian-coverage-scope-non-ts-trees.md)                      | Guardian coverage scope for non-ts trees                                  | accepted |
+| [0025](0025-adjudication-without-reactions.md)                            | Guardian adjudication without reactions                                   | accepted |
+| [0026](0026-trustworthy-gate-metric-disclosed-partial.md)                 | Trustworthy-gate metric is kept and disclosed as partial                  | accepted |
+| [0027](0027-brand-registry-codegen-stamping.md)                           | Brand registry with codegen stamping and a drift gate                     | accepted |
+| [0028](0028-flair-scope-cascade-provenance.md)                            | Six-scope flair cascade with per-value provenance                         | accepted |
+| [0029](0029-repo-relative-test-file-history-join-key.md)                  | Repo-relative test_file is the history join key                           | accepted |
+| [0030](0030-history-schema-v3-replay-context.md)                          | History schema v3 records replay context additively                       | accepted |
+| [0031](0031-voice-never-touches-machine-output.md)                        | Voice never touches machine-readable output                               | accepted |
+| [0032](0032-single-os-ci-accepted-deliberately.md)                        | Single-OS CI is accepted deliberately, and must be disclosed              | accepted |
+| [0033](0033-waypoint-sink-abstention.md)                                  | The waypoint sink stays unconfigured, and the abstention is recorded      | accepted |
+| [0034](0034-route-labels-are-canarys-half-of-the-issue-fleet-contract.md) | A route:* label family is canary's half of the issue-fleet contract       | accepted |

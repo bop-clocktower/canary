@@ -1042,6 +1042,26 @@ Two related facts worth not rediscovering:
   LINKED rows: the roadmap holds 17, and `canary-batwoman` carries no
   `External-ID`, so `--check-issues` abstains on it — and `Priority`, serialized
   in that same extended group, is populated on every one of them.
+- **The `route:*` label vocabulary is canary's half of the `issue-fleet`
+  contract (#1071, ADR 0034).** `issue-fleet` computes a route per triaged issue
+  and has nowhere to put it; the skill is vendored under
+  `~/.claude/plugins/marketplaces/harness/` and overwritten by every CLI
+  release, so the durable half lives here. 13 labels: one `route:<fleet>` per
+  destination (`adr`, `bug`, `cicd`, `cleanup`, `craft`, `docs`, `ideate`,
+  `perf`, `pr`, `roadmap`, `security`, `test` — the installed roster minus the
+  `fleet-command` conductor and the `issue-fleet` producer), plus
+  `route:unroutable`. **`route:unroutable` is a label, not an absence** — a
+  missing route label means "not yet triaged", and collapsing those two is the
+  silent drop. `node scripts/route-queue.mjs ensure-labels [--apply]` reconciles
+  the vocabulary (it only ever CREATES);
+  `node scripts/route-queue.mjs report [--json]` prints the denominator — routed
+  / unroutable / untriaged / conflicted, which sum to the examined count — and
+  exits **3** on a zero denominator. **The report never passes `--label` to
+  `gh issue list`**: that filter lags writes and under-reports (seen twice
+  during the #1071 triage run), so the denominator is read off each issue's own
+  labels. `ts/test/route-labels.test.ts` asserts the flag's absence from
+  recorded `gh` argv, not just that the count looked right. Two route labels on
+  one issue is reported as `conflicted` and never auto-resolved.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
   effectively blind gate that reported a real number nobody read. All 16 rows
