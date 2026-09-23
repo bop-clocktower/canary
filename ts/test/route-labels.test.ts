@@ -88,6 +88,44 @@ interface StubOptions {
   exitCode?: number;
 }
 
+/** Zero-branch defaults for the stub fixture. */
+const STUB_DEFAULTS = {
+  exitCode: 0,
+  labels: [] as { name: string }[],
+  filtered: [] as StubIssue[],
+  unfiltered: [] as StubIssue[],
+};
+
+/**
+ * The stub script. Fixed text: it reads every varying value from the fixture,
+ * so no per-case branching lands in the generating function.
+ */
+function stubSource(fixture: string): string {
+  return [
+    `import { appendFileSync, readFileSync } from 'node:fs';`,
+    `const f = JSON.parse(readFileSync(${JSON.stringify(fixture)}, 'utf8'));`,
+    `const argv = process.argv.slice(2);`,
+    `appendFileSync(f.calls, JSON.stringify(argv) + '\\n');`,
+    `if (f.exitCode !== 0) {`,
+    `  process.stderr.write('stub failure\\n');`,
+    `  process.exit(f.exitCode);`,
+    `}`,
+    `const is = (a, b) => argv[0] === a && argv[1] === b;`,
+    `const issues = argv.includes('--label') ? f.filtered : f.unfiltered;`,
+    `if (is('label', 'list')) process.stdout.write(JSON.stringify(f.labels));`,
+    `else if (is('issue', 'list')) process.stdout.write(JSON.stringify(issues));`,
+    `else process.stdout.write('');`,
+  ].join('\n');
+}
+
+/**
+ * The six destinations the vendored skill's comment already listed
+ * (`issue-fleet/SKILL.md:78`). Hoisted out of the `for` rather than inlined:
+ * the analyzer counts a six-element array literal in a for-of as
+ * `parameterCount=6`, which trips the arch ratchet's threshold of 5.
+ */
+const VENDORED_ENUM = ['adr', 'roadmap', 'pr', 'cicd', 'test', 'cleanup'];
+
 const lib = (await import(LIB)) as RouteLabelsModule;
 
 const issue = (n: number, ...labels: string[]): StubIssue => ({
@@ -108,7 +146,7 @@ describe('vocabulary', () => {
   it('covers the six destinations the vendored enum already had', () => {
     // `route, // downstream fleet: adr | roadmap | pr | cicd | test | cleanup`
     // — issue-fleet/SKILL.md:78. Regressing below this breaks existing routes.
-    for (const d of ['adr', 'roadmap', 'pr', 'cicd', 'test', 'cleanup']) {
+    for (const d of VENDORED_ENUM) {
       expect(lib.DESTINATIONS).toContain(d);
     }
   });
@@ -211,40 +249,20 @@ describe('route-queue.mjs', () => {
    * denominator rather than a plausible one.
    */
   function stubFor(opts: StubOptions): string {
-    // The stub SCRIPT is fixed; only this JSON fixture varies. Generating
-    // branching source per case put every `??` default inside one function and
-    // pushed it past the complexity threshold, which the arch ratchet caught.
+    // `??` per field pushed this one function past the complexity threshold
+    // and the arch ratchet caught it. A defaults object merged by spread costs
+    // no branches, and the stub SCRIPT is fixed — only this fixture varies.
+    const f = {
+      ...STUB_DEFAULTS,
+      ...opts,
+      labels: (opts.labels ?? []).map((name) => ({ name })),
+      calls,
+    };
     const fixture = join(dir, 'gh-fixture.json');
-    writeFileSync(
-      fixture,
-      JSON.stringify({
-        calls,
-        exitCode: opts.exitCode ?? 0,
-        labels: (opts.labels ?? []).map((name) => ({ name })),
-        filtered: opts.filtered ?? [],
-        unfiltered: opts.unfiltered ?? [],
-      }),
-    );
+    writeFileSync(fixture, JSON.stringify(f));
 
     const stub = join(dir, 'gh-stub.mjs');
-    writeFileSync(
-      stub,
-      [
-        `import { appendFileSync, readFileSync } from 'node:fs';`,
-        `const f = JSON.parse(readFileSync(${JSON.stringify(fixture)}, 'utf8'));`,
-        `const argv = process.argv.slice(2);`,
-        `appendFileSync(f.calls, JSON.stringify(argv) + '\\n');`,
-        `if (f.exitCode !== 0) {`,
-        `  process.stderr.write('stub failure\\n');`,
-        `  process.exit(f.exitCode);`,
-        `}`,
-        `const isList = (a, b) => argv[0] === a && argv[1] === b;`,
-        `const issues = argv.includes('--label') ? f.filtered : f.unfiltered;`,
-        `if (isList('label', 'list')) process.stdout.write(JSON.stringify(f.labels));`,
-        `else if (isList('issue', 'list')) process.stdout.write(JSON.stringify(issues));`,
-        `else process.stdout.write('');`,
-      ].join('\n'),
-    );
+    writeFileSync(stub, stubSource(fixture));
     return stub;
   }
 
