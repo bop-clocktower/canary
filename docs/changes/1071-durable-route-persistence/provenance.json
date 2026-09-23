@@ -1,0 +1,37 @@
+{
+  "issue": [1071],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot", "tdd", "verification"],
+  "plan-artifact": "docs/changes/1071-durable-route-persistence/plans/2026-09-22-durable-route-persistence-plan.md",
+  "spec-artifact": "docs/changes/1071-durable-route-persistence/proposal.md",
+  "adr": "docs/knowledge/decisions/0034-route-labels-are-canarys-half-of-the-issue-fleet-contract.md",
+  "branch": "feat/1071-durable-route-persistence",
+  "base": "7995370b",
+  "assumptions": [
+    "Destination enum derived from the installed fleet roster (14 *-fleet skills) minus `fleet-command` (a conductor over fleets, never a destination for an issue) and `issue-fleet` itself (the producer of the route; routing an issue to the router is a cycle), yielding 12 destinations. The brief required at minimum the six in the vendored enum plus docs/security/perf/craft; the roster additionally supplied `bug` and `ideate`.",
+    "`ideate` was INCLUDED as a destination although `ideate-fleet` files nothing and sits at the head of the spine rather than consuming a queue. Rationale: an open-ended 'we should explore X' issue has a plausible home there, and omitting a roster member silently is the failure mode this issue is about. A reviewer who disagrees should drop it from DESTINATIONS in scripts/lib/route-labels.mjs and update the count assertion in ts/test/route-labels.test.ts.",
+    "`route:unroutable` was added as a 13th label beyond the 12 destinations. The issue's third acceptance bullet requires an unroutable issue be reported as unroutable rather than silently dropped, and the absence of a route label cannot carry that meaning because it already means 'not yet triaged'.",
+    "Canary's side of the contract was built as `scripts/lib/*.mjs` + `scripts/*.mjs` rather than a new `canary` CLI subcommand, following the `backfill-type-labels.mjs` / `type-label-infer.mjs` precedent (#880). A new ts/src CLI surface would engage the dead-exports, perf-complexity, and arch-allowance ratchets for a repo-governance tool with no product-runtime consumer.",
+    "A multi-route issue is classified as `conflicted` and is never auto-resolved. The issue did not specify this case; resolving it silently would corrupt the downstream queue with an answer nobody chose.",
+    "Label colour BFD4F2 was chosen to match the existing `fleet:claimed` label, since the brief specified mirroring that pattern.",
+    "`ensure-labels` defaults to a dry run and only ever CREATES labels; no delete or edit path exists, so a mis-run cannot destroy triage state.",
+    "The 13 labels were created on the live tracker as part of this lane, per the brief's instruction to create them and list them auditably."
+  ],
+  "acceptance": {
+    "route-persists-beyond-session": "A route is recorded as a GitHub label on the issue itself, readable by any later session or tool.",
+    "denominator-report": "`node scripts/route-queue.mjs report [--json]` prints routed / unroutable / untriaged / conflicted over an examined count, and names every issue in each population.",
+    "degrades-honestly": "Zero examined exits 3 (ABSTENTION, never a pass); a gh failure exits 2 so an unreadable tracker is not reported as an empty one; the four populations sum to the denominator so an issue cannot be silently dropped."
+  },
+  "verification": {
+    "gates": [
+      "ts build: pass",
+      "ts typecheck: pass",
+      "ts format:check: pass",
+      "ts test: 5073 passed, 2 skipped, 251 files",
+      "check-deps (repo root): pass, 212 modules across 11 layers",
+      "entropy ratchet: OK — 144 findings, baseline 145",
+      "perf ratchet: OK — 226 violations, baseline 233"
+    ],
+    "planted-positive": "Rewiring `report` to pass `--label` to `gh issue list` turned 3 tests red, confirming the label-filter assertions are not vacuous."
+  }
+}
