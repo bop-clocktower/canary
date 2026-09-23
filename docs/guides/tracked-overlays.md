@@ -348,6 +348,7 @@ above. A consumer's `.github/workflows/` is their territory:
 | differs, edited locally / no provenance   | **reports** `conflict`                          |
 | any of the above with `--force`           | overwrites (`updated`) — the deliberate case    |
 | declaring skill skipped as locally edited | **withholds** the install (`withheld`)          |
+| two overlay templates claim one filename  | **aborts** — `--check` reports `collision`      |
 
 One rule does carry over from skill deployment: **a skill skipped as locally
 edited installs nothing.** If the deployed copy of a skill under
@@ -364,11 +365,26 @@ installs. Delete the workflow once, keep the local edit, and re-running
 `migrate --apply` will not put it back. `--force` remains the way to say you
 meant it.
 
-Nothing is ever overwritten without `--force`, and workflow status **never
-changes the `migrate --check` exit code**: `--check` reports what it would
+Nothing is ever overwritten without `--force`, and workflow status **almost
+never changes the `migrate --check` exit code**: `--check` reports what it would
 install (in the `workflows` array of `--json`), but does not fail your build
 over a workflow you tuned yourself. Clobbering hand-tuned CI, or nagging that it
 is "stale", would be a worse failure than the partial adoption this solves.
+
+**`collision` is the one exception** (#1102). That exclusion exists so canary
+never fails your build over a file _you_ own; a collision is the opposite — two
+templates in the **overlay** claim one `.github/workflows/` filename, which is
+canary's defect and unfixable from your side. Neither variant is installed,
+because choosing one would be a coin flip you cannot see.
+
+`migrate --dry-run` and `--apply` **abort** on a collision, so the preview still
+matches what apply does (#1008). `--check` is a read-only gate, so it reports
+instead: a `collision` row naming both sources, `in_sync: false`, and exit `1`.
+No new exit code — a collision is drift, it just lives in the overlay. It is
+also reported ahead of abstention: a gate holding a concrete finding must not
+announce that it checked nothing. Renaming one template is the only fix;
+`--force` overwrites one variant rather than resolving the ambiguity, so it is
+deliberately never suggested.
 
 ## Adoption report (`migrate --adoption-report`)
 

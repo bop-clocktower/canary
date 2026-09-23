@@ -361,12 +361,23 @@ function resolveTemplatePath(skillDir: string, rel: string): string | null {
  * `--force` is deliberately not offered. It overwrites the first variant
  * rather than resolving the ambiguity, so pointing a consumer at it would talk
  * them into clobbering a workflow. Renaming one template is the only fix.
+ *
+ * Returns the collisions rather than throwing so the caller chooses the
+ * response: `migrate` aborts, the `--check` freshness gate reports (#1102).
  */
-function assertNoWorkflowCollisions(
+interface WorkflowCollision {
+  /** The single `.github/workflows/` filename both templates target. */
+  name: string;
+  /** Both declarations, `'<rel>' (<skill>)`, in declaration order. */
+  labels: [string, string];
+}
+
+function findWorkflowCollisions(
   skills: Array<[SkillInfo, string]>,
   shapes: string[],
-): void {
+): WorkflowCollision[] {
   const claimed = new Map<string, { src: string; label: string }>();
+  const collisions: WorkflowCollision[] = [];
   for (const [info, skillDir] of skills) {
     for (const entry of readWorkflowDeclaration(info.path).entries) {
       const [wantShape, rel] = parseWorkflowEntry(entry);
@@ -383,16 +394,22 @@ function assertNoWorkflowCollisions(
         continue;
       }
       if (claimant.src === src) continue; // same template, declared twice
-      throw new Error(
-        `two different workflow templates both install ` +
-          `.github/workflows/${name}:\n` +
-          `  ${claimant.label}\n` +
-          `  ${label}\n` +
-          `Rename one of them so the installed filenames differ; ` +
-          `an installed workflow filename cannot be shared.`,
-      );
+      collisions.push({ name, labels: [claimant.label, label] });
     }
   }
+  return collisions;
+}
+
+/** The abort message for *collision*, naming both sources. */
+function collisionMessage(c: WorkflowCollision): string {
+  return (
+    `two different workflow templates both install ` +
+    `.github/workflows/${c.name}:\n` +
+    `  ${c.labels[0]}\n` +
+    `  ${c.labels[1]}\n` +
+    `Rename one of them so the installed filenames differ; ` +
+    `an installed workflow filename cannot be shared.`
+  );
 }
 
 /** True when a `[<shape>:]<path>` entry applies to the resolved *shapes*. */
@@ -783,8 +800,13 @@ export class SkillDeployResult {
  *   - `invalid`   -- the declared path escapes the skill directory (refused)
  *   - `withheld`  -- the declaring skill was skipped as locally edited, so its
  *                    templates were not installed either (#667)
+ *   - `collision` -- two different overlay templates claim this one filename,
+ *                    so neither is installed (#1008). Only `--check` produces
+ *                    it; `migrate` aborts instead (#1102)
  *
- * `outdated`, `conflict`, and `withheld` are REPORTS. None ever writes.
+ * `outdated`, `conflict`, `withheld`, and `collision` are REPORTS. None ever
+ * writes. `collision` is the only one that reaches the freshness verdict --
+ * see {@link FreshnessReport.collisions} for why.
  */
 export class WorkflowInstallResult {
   /** File name under `.github/workflows/`. */
@@ -891,8 +913,30 @@ export class FreshnessReport {
     return this.local_edits.length > 0;
   }
 
+  /**
+   * Workflow rows whose templates cannot all be installed (#1102).
+   *
+   * This is the ONE workflow status that reaches the verdict, and the
+   * exclusion documented on {@link workflows} does not cover it. That
+   * exclusion exists so canary never fails a consumer's build over a workflow
+   * the consumer owns and edited. A collision is the opposite: two overlay
+   * templates claim one filename, which is canary's own defect, and the
+   * consumer cannot fix it by editing anything of theirs.
+   *
+   * Reported rather than thrown, so `--check` stays a read-only gate that
+   * returns a verdict instead of an exception. `migrate --dry-run`/`--apply`
+   * still abort (#1008).
+   */
+  get collisions(): WorkflowInstallResult[] {
+    return this.workflows.filter((w) => w.status === 'collision');
+  }
+
+  get has_collisions(): boolean {
+    return this.collisions.length > 0;
+  }
+
   get in_sync(): boolean {
-    return !this.has_drift && !this.has_local_edits;
+    return !this.has_drift && !this.has_local_edits && !this.has_collisions;
   }
 
   /**
@@ -918,11 +962,18 @@ export class FreshnessReport {
   }
 
   /**
-   * 0 in sync, 1 drift, 2 local edits (safety refusal wins), 3 abstained.
-   * The abstention path comes from the shared helper; the 1/2 mapping is
-   * this surface's own contract (local edits outrank drift).
+   * 0 in sync, 1 drift or overlay collision, 2 local edits (safety refusal
+   * wins), 3 abstained. The abstention path comes from the shared helper; the
+   * 1/2 mapping is this surface's own contract (local edits outrank drift).
+   *
+   * A collision is checked BEFORE abstention on purpose (#1102). Abstention
+   * means the gate examined nothing, so "in sync" would be a false pass -- but
+   * a collision is a concrete finding, so reporting "abstained" while holding
+   * one would understate a defect the gate actually found. No new exit code:
+   * consumers already parse 0/1/2/3, and a collision is drift in the overlay.
    */
   exit_code(): number {
+    if (this.has_collisions) return 1;
     if (this.abstained) return EXIT_ABSTAINED;
     if (this.has_local_edits) return 2;
     if (this.has_drift) return 1;
@@ -1927,6 +1978,7 @@ export class HarnessMigrator {
     targetRoot: string,
     dryRun: boolean,
     force = false,
+    onCollision: 'throw' | 'report' = 'throw',
   ): WorkflowInstallResult[] {
     const results: WorkflowInstallResult[] = [];
     const skills = this.collectOverlaySkills(shapes, overlayPath);
@@ -1937,7 +1989,29 @@ export class HarnessMigrator {
     // #1008: refuse a colliding overlay before anything is written, so a dry
     // run and an --apply reach the same verdict and no half-installed
     // `.github/workflows/` is left behind.
-    assertNoWorkflowCollisions(skills, shapes);
+    //
+    // #1102: `--check` is a REPORTING gate, not a preview of apply, so it opts
+    // into `report`: a collision becomes a `collision` row instead of throwing
+    // an exception out of a read-only command. `migrate --dry-run` keeps
+    // `throw`, because it must faithfully preview what `--apply` does.
+    const collisions = findWorkflowCollisions(skills, shapes);
+    const collided = new Set<string>();
+    if (collisions.length > 0) {
+      if (onCollision === 'throw')
+        throw new Error(collisionMessage(collisions[0]!));
+      for (const c of collisions) {
+        collided.add(c.name);
+        results.push(
+          new WorkflowInstallResult(
+            c.name,
+            // Two skills may be implicated; the detail names both sources.
+            '(overlay)',
+            'collision',
+            collisionMessage(c),
+          ),
+        );
+      }
+    }
     // Every basename that survived the pre-pass is backed by exactly one
     // source, so a repeat here is the SAME template declared under a second
     // shape: install it once and say nothing.
@@ -1979,6 +2053,11 @@ export class HarnessMigrator {
           );
           continue;
         }
+        // Report mode only: a colliding filename has no correct content, so it
+        // is reported once above and never installed. Without this the loop
+        // would still pick the first variant -- the coin flip the collision
+        // check exists to prevent.
+        if (collided.has(basename(src))) continue;
 
         const name = basename(src);
         if (installed.has(name)) continue;
@@ -2172,8 +2251,16 @@ export class HarnessMigrator {
       overlayPath !== null ? String(overlayPath) : null,
       results,
       // dryRun = true: `--check` reports what an install WOULD do and never
-      // writes. Informational only -- see FreshnessReport.workflows.
-      this.installWorkflows(shapes, overlayPath, projectRoot, true, false),
+      // writes. Informational only -- see FreshnessReport.workflows, with the
+      // one exception of `collision`, which is an overlay defect (#1102).
+      this.installWorkflows(
+        shapes,
+        overlayPath,
+        projectRoot,
+        true,
+        false,
+        'report',
+      ),
       shapes,
     );
   }
