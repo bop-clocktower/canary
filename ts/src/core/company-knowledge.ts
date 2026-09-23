@@ -131,6 +131,12 @@ const _KNOWN_KEYS = new Set([
   // rather than stored verbatim.
   'coverage_report_path',
   'sut_controllers_path',
+  // #1100: the skill slug `canary-ci-ready` / `canary-failure-impact` invoke to
+  // ask whether the repo's configured test accounts still exist. It was an
+  // unknown key until #1100 -- warned about and dropped -- while both skills
+  // instructed an agent to read it, so the field driving their auth-failure
+  // investigation never survived a load.
+  'user_catalog_skill',
 ]);
 
 const _HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
@@ -524,6 +530,7 @@ interface Layer {
   otel_exporter_endpoint: string;
   coverage_report_path: string;
   sut_controllers_path: string;
+  user_catalog_skill: string;
   notes: string;
   brand: Brand;
   warnings: string[];
@@ -647,6 +654,29 @@ function parseLayer(data: Record<string, unknown>, source: string): Layer {
     );
   }
 
+  // #1100: a skill slug, validated exactly like `claude_code_skills` entries so
+  // a typo is warned about rather than silently invoked.
+  let user_catalog_skill = '';
+  if (Object.prototype.hasOwnProperty.call(data, 'user_catalog_skill')) {
+    const rawCatalog = data['user_catalog_skill'];
+    if (typeof rawCatalog !== 'string') {
+      warns.push(
+        `user_catalog_skill: expected string, got ${typeLabel(rawCatalog)} ${EMDASH} skipped`,
+      );
+    } else {
+      if (looksLikeSecret(rawCatalog))
+        throw new SecretDetected('user_catalog_skill', rawCatalog);
+      const slug = rawCatalog.toLowerCase();
+      if (_SKILL_RE.test(slug)) {
+        user_catalog_skill = slug;
+      } else {
+        warns.push(
+          `user_catalog_skill: dropped invalid skill slug ${quoteValue(rawCatalog)}`,
+        );
+      }
+    }
+  }
+
   let notes = '';
   if (Object.prototype.hasOwnProperty.call(data, 'notes')) {
     const rawNotes = data['notes'];
@@ -677,6 +707,7 @@ function parseLayer(data: Record<string, unknown>, source: string): Layer {
     otel_exporter_endpoint,
     coverage_report_path,
     sut_controllers_path,
+    user_catalog_skill,
     notes,
     brand,
     warnings: warns,
@@ -746,6 +777,7 @@ interface MergedFields {
   otel_exporter_endpoint: string;
   coverage_report_path: string;
   sut_controllers_path: string;
+  user_catalog_skill: string;
   notes: string;
   brand: Brand;
   warnings: string[];
@@ -805,6 +837,7 @@ const _SCALAR_FIELDS = [
   'otel_exporter_endpoint',
   'coverage_report_path',
   'sut_controllers_path',
+  'user_catalog_skill',
   'notes',
 ] as const satisfies readonly ScalarField[];
 
@@ -901,6 +934,7 @@ export interface CompanyKnowledgeInit {
   otel_exporter_endpoint?: string;
   coverage_report_path?: string;
   sut_controllers_path?: string;
+  user_catalog_skill?: string;
   notes?: string;
   brand?: Brand;
   warnings?: string[];
@@ -922,6 +956,11 @@ export class CompanyKnowledge {
   coverage_report_path: string;
   /** Repo-relative path to the SUT controllers dir analysis is scoped to. */
   sut_controllers_path: string;
+  /**
+   * Slug of the skill that answers user-catalog questions for this repo (#1100).
+   * Consumed as a declared capability -- never named in agent-facing output.
+   */
+  user_catalog_skill: string;
   notes: string;
   brand: Brand;
   warnings: string[];
@@ -940,6 +979,7 @@ export class CompanyKnowledge {
     this.otel_exporter_endpoint = init.otel_exporter_endpoint ?? '';
     this.coverage_report_path = init.coverage_report_path ?? '';
     this.sut_controllers_path = init.sut_controllers_path ?? '';
+    this.user_catalog_skill = init.user_catalog_skill ?? '';
     this.notes = init.notes ?? '';
     this.brand = init.brand ?? new Brand();
     this.warnings = init.warnings ?? [];
@@ -1096,6 +1136,7 @@ export class CompanyKnowledge {
       otel_exporter_endpoint: this.otel_exporter_endpoint,
       coverage_report_path: this.coverage_report_path,
       sut_controllers_path: this.sut_controllers_path,
+      user_catalog_skill: this.user_catalog_skill,
       notes: this.notes,
       brand: this.brand.toDict(),
       sources: this.sources,
@@ -1131,4 +1172,150 @@ export class CompanyKnowledge {
     out['flavor'] = on;
     return out;
   }
+}
+
+// ---------------------------------------------------------------------------
+// configured-account existence (#1100)
+// ---------------------------------------------------------------------------
+
+/**
+ * Outcome of comparing the accounts a repo is configured with against the
+ * accounts a user catalog says exist.
+ *
+ * `cannot-verify` is a first-class state rather than a `false`: a check that
+ * inspected nothing has not cleared the accounts, and collapsing an abstention
+ * into one of the two real answers is exactly the failure this exists to stop.
+ */
+export type AccountExistenceStatus =
+  'all-present' | 'some-missing' | 'all-missing' | 'cannot-verify';
+
+/** Inputs to {@link verifyConfiguredAccounts}. */
+export interface AccountExistenceQuery {
+  /** Accounts this repo is configured with, as the failure context resolved them. */
+  configured: string[];
+  /**
+   * Accounts the catalog reports as existing. `null` means the catalog could
+   * not be reached -- distinct from `[]`, which means it answered with none.
+   */
+  catalogKnown: string[] | null;
+  /** The repo's declared `user_catalog_skill`; `''` when none is configured. */
+  catalogSkill: string;
+}
+
+/** Verdict returned by {@link verifyConfiguredAccounts}. */
+export interface AccountExistenceVerdict {
+  status: AccountExistenceStatus;
+  /** The denominator: how many distinct configured accounts were compared. */
+  checked: number;
+  /** Configured accounts the catalog knows, in their original spelling. */
+  present: string[];
+  /** Configured accounts the catalog does not know, in their original spelling. */
+  missing: string[];
+  /** Why the check abstained. `''` for every non-abstaining status. */
+  reason: string;
+  /** One line for skill output. Never names a catalog implementation. */
+  headline: string;
+}
+
+/** Trim + case-fold for comparison; the original spelling is reported back. */
+function accountKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function abstain(reason: string): AccountExistenceVerdict {
+  return {
+    status: 'cannot-verify',
+    checked: 0,
+    present: [],
+    missing: [],
+    reason,
+    headline: `Cannot verify whether the configured test accounts still exist ${EMDASH} ${reason}.`,
+  };
+}
+
+/**
+ * Answer "do the accounts this repo is configured with still exist?".
+ *
+ * The inverse of "which user could I try instead?", and the question that
+ * actually resolves an auth failure caused by upstream decommissioning: a
+ * suggestion to try a different user quietly implies the configured ones are
+ * fine, which is the opposite of what is true in that failure mode (#1100).
+ *
+ * Pure by design -- the caller invokes the declared catalog capability and
+ * passes its answer in, so this module never reaches a catalog itself and the
+ * catalog stays tool-neutral.
+ *
+ * Abstains, rather than passing, on all four zero-denominator shapes: no
+ * catalog configured, the catalog unreachable, the catalog empty, or no
+ * configured accounts resolved. The first that applies is the reason given, so
+ * the most actionable one is the one reported.
+ */
+export function verifyConfiguredAccounts(
+  query: AccountExistenceQuery,
+): AccountExistenceVerdict {
+  if (!query.catalogSkill.trim()) {
+    return abstain(
+      'this repo declares no user_catalog_skill in .canary/company.json',
+    );
+  }
+  if (query.catalogKnown === null) {
+    return abstain('the user catalog could not be reached');
+  }
+  if (query.catalogKnown.length === 0) {
+    return abstain('the user catalog reported zero accounts');
+  }
+
+  const known = new Set(query.catalogKnown.map(accountKey));
+  const present: string[] = [];
+  const missing: string[] = [];
+  const seen = new Set<string>();
+  for (const account of query.configured) {
+    const key = accountKey(account);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    (known.has(key) ? present : missing).push(account.trim());
+  }
+
+  const checked = seen.size;
+  if (checked === 0) {
+    return abstain('no configured test accounts could be resolved');
+  }
+
+  if (missing.length === 0) {
+    return {
+      status: 'all-present',
+      checked,
+      present,
+      missing,
+      reason: '',
+      headline: `All ${checked} configured test account(s) still exist in the user catalog.`,
+    };
+  }
+
+  if (present.length === 0) {
+    return {
+      status: 'all-missing',
+      checked,
+      present,
+      missing,
+      reason: '',
+      headline:
+        `None of the ${checked} test account(s) this repo is configured with exist in the ` +
+        `user catalog: ${missing.join(', ')}. This is an account provisioning problem, ` +
+        `not a defect in the tests ${EMDASH} provision or reconfigure these accounts before ` +
+        'investigating the suite further.',
+    };
+  }
+
+  return {
+    status: 'some-missing',
+    checked,
+    present,
+    missing,
+    reason: '',
+    headline:
+      `${missing.length} of ${checked} configured test account(s) no longer exist in the ` +
+      `user catalog: ${missing.join(', ')}. Any test depending on them fails for an ` +
+      'account reason rather than a code reason.',
+  };
 }
