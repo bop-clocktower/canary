@@ -445,5 +445,50 @@ describe('check_doc_links', () => {
       expect(parsed.filesScanned).toBeGreaterThan(0);
       expect(parsed.findings).toEqual([]);
     }, 60_000);
+
+    /**
+     * The reported-not-gated count, pinned (#838).
+     *
+     * `harness generate-agent-definitions` stamps files under
+     * `agents/agents/claude-code/` that link to `references/confidence-rubric.md`
+     * and `references/risk-keywords.md` — files it links to but never emits. No
+     * commit here can repair them, so they are counted in a bucket the script
+     * prints and then exits 0 on. That separation is correct: it keeps the
+     * denominator honest instead of shrinking it by path exclusion, and the day
+     * one of those trees becomes hand-authored it re-enters the gate by itself.
+     *
+     * The cost of exiting 0 is that the count can GROW in silence. This pin is
+     * the only thing that would notice.
+     *
+     * Measured at `7995370b` (2026-09-22): 30 dead links across 38 stamped
+     * files. Note the issue body is stale on the file total (it says 36) and on
+     * the scanned total (it says 255, today 381) — 30 is the number that held.
+     */
+    const GENERATED_DEAD_LINKS = 30;
+
+    it('pins the generator-stamped dead-link count', () => {
+      const parsed = parseContract(exec(['--json']).out);
+
+      // Denominator first. Exact equality below would already fail on zero, but
+      // a bare `expected 30, got 0` reads as a count change when the real event
+      // is that nothing stamped was scanned at all — an abstention, not a pass.
+      expect(
+        parsed.generatedFiles,
+        'ABSTAINED — zero generator-stamped files scanned. Zero scanned is not ' +
+          'zero dead links; the generated trees are missing or the stamp changed.',
+      ).toBeGreaterThan(0);
+
+      // Exact, not a ceiling. Growth means the generator got worse and nothing
+      // else would catch it. A shrink is good news, not a regression: the
+      // upstream fix may have landed — re-measure with
+      // `node scripts/check_doc_links.mjs --json`, update this constant, and
+      // check whether #838 can close.
+      expect(
+        (parsed.generatedFindings as unknown[]).length,
+        `generator-stamped dead links moved off the pin of ${GENERATED_DEAD_LINKS} ` +
+          '(#838). Higher = the upstream generator regressed. Lower = it improved; ' +
+          're-measure, update the pin, and revisit the issue.',
+      ).toBe(GENERATED_DEAD_LINKS);
+    }, 60_000);
   });
 });

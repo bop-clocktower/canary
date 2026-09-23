@@ -1,0 +1,20 @@
+{
+  "issue": [838],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot", "execute", "verify", "review"],
+  "planArtifact": "docs/changes/838-pin-generated-dead-link-count/plans/2026-09-22-pin-generated-dead-link-count-plan.md",
+  "plan-artifact": "docs/changes/838-pin-generated-dead-link-count/plans/2026-09-22-pin-generated-dead-link-count-plan.md",
+  "closingKeyword": "Refs",
+  "closingKeywordRationale": "This PR is a PARTIAL SLICE of #838. The root fix is upstream in harness-engineering's generate-agent-definitions and is a human action outside this repo, so #838 must stay open. The PR body uses 'Refs #838' and carries no closing keyword anywhere near the number — this repo once closed #604 with a body that read 'Do not close #604'. This deliberately overrides harness-autopilot's DONE step, which instructs a bare 'Closes #<N>'.",
+  "assumptions": [
+    "Re-measured on this branch's base (origin/main @ 7995370b): 30 dead links across 38 generator-stamped files. The issue body is STALE on two numbers — it says 36 stamped files and 255 scanned; today it is 38 and 381. The dead-link count of 30 is unchanged and is what the pin is set from.",
+    "filesScanned is deliberately NOT pinned: it counts untracked-but-not-ignored Markdown, so a scratch file in the working tree moves it (382 in a checkout holding one untracked doc vs 381 in a clean worktree, same commit). Only generatedFiles and generatedFindings come solely from committed stamped trees.",
+    "The pin is EXACT equality (toBe(30)), not a ceiling. A ceiling only fails upward and would pass a zero denominator. A shrink is treated as a real event worth a red build, but the failure message names the direction explicitly so it reads as news ('the upstream fix may have landed — re-measure, update the pin, revisit #838'), not as a regression.",
+    "generatedFiles > 0 is asserted BEFORE the count, as a named denominator guard. Exact equality already fails on zero, but 'expected 30, got 0' reads as a count change when the real event is an abstention — nothing stamped was scanned at all.",
+    "No denominator was shrunk: scripts/check_doc_links.mjs is untouched. No path excluded, no ceiling raised, no file dropped from the scan. The reported-not-gated separation stays exactly as it was.",
+    "Added to the existing ts/test/doc-links.test.ts rather than a new module, so neither entropy.entryPoints array changes and maxFindings is untouched.",
+    "PLANTED POSITIVE (twice, both confirmed RED then reverted): (1) setting the constant to 31 failed with 'generator-stamped dead links moved off the pin of 31 (#838) … expected 30 to be 31'; (2) temporarily neutering GENERATED_RE in the script to a never-matching pattern failed on the denominator line first — 'ABSTAINED — zero generator-stamped files scanned … expected 0 to be greater than 0' — proving the false-green shape is caught by the right assertion.",
+    "Human sign-off gates inside harness-brainstorming (spec approval) and harness-autopilot (APPROVE_PLAN) were auto-approved by this autonomous fleet lane under the orchestrator's up-front batch CONFIRM; the lane is instructed not to ask the human. Complexity is low, one test case, no production code.",
+    "What remains UNFIXED: the upstream generate-agent-definitions defect itself. This change only makes the count's growth visible. #838 stays open."
+  ]
+}
