@@ -33,7 +33,10 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import {
   DEPLOY_MANIFEST_NAME,
+  FreshnessReport,
   HarnessMigrator,
+  SkillFreshnessResult,
+  WorkflowInstallResult,
   hashSkillDir,
 } from '../src/core/migrator.js';
 import { SkillRegistry } from '../src/core/skill-registry.js';
@@ -2117,6 +2120,75 @@ describe('FreshnessReport surface coverage', () => {
       expect(md.toLowerCase()).toContain('abstained');
       expect(md).toContain('canary_shape');
     }));
+
+  /**
+   * #1102. `workflows` is deliberately excluded from the verdict so canary
+   * never fails a build over a workflow the CONSUMER owns and edited. A
+   * collision is the opposite -- two overlay templates claim one filename,
+   * which is canary's own defect and unfixable from the consumer's side.
+   *
+   * Without these, "report instead of abort" would be a downgrade: the
+   * collision would land in an informational list that no exit code reads,
+   * and CI would go green on a broken overlay. That is a worse failure than
+   * the abort it replaced.
+   */
+  const collisionRow = () =>
+    new WorkflowInstallResult(
+      'guardian.yml',
+      '(overlay)',
+      'collision',
+      'two different workflow templates both install .github/workflows/guardian.yml',
+    );
+
+  it('a collision fails the gate rather than reading as in sync', () => {
+    const report = new FreshnessReport(
+      'api',
+      null,
+      [new SkillFreshnessResult('canary-pr-guardian', 'g', 'current')],
+      [collisionRow()],
+      ['api'],
+    );
+    expect(report.has_collisions).toBe(true);
+    expect(report.in_sync).toBe(false);
+    expect(report.exit_code()).toBe(1);
+  });
+
+  it('a collision outranks abstention, so a real finding is never reported as "checked nothing"', () => {
+    const report = new FreshnessReport(
+      'api',
+      null,
+      [],
+      [collisionRow()],
+      ['api'],
+    );
+    // results is empty, so the abstention helper would otherwise claim the
+    // gate examined nothing -- while it is holding a concrete defect.
+    expect(report.abstained).toBe(true);
+    expect(report.exit_code()).toBe(1);
+  });
+
+  it('non-collision workflow rows still stay out of the verdict', () => {
+    const report = new FreshnessReport(
+      'api',
+      null,
+      [new SkillFreshnessResult('canary-pr-guardian', 'g', 'current')],
+      [
+        new WorkflowInstallResult('ci.yml', 'canary-x', 'conflict', 'edited'),
+        new WorkflowInstallResult(
+          'rel.yml',
+          'canary-x',
+          'outdated',
+          'moved on',
+        ),
+      ],
+      ['api'],
+    );
+    // The documented exclusion is intact: only `collision` reaches the verdict.
+    expect(report.has_collisions).toBe(false);
+    expect(report.in_sync).toBe(true);
+    expect(report.exit_code()).toBe(0);
+  });
+
   it('to_dict and exit_code reflect status', () =>
     withTmp((base) => {
       const root = join(base, 'proj');
@@ -3660,5 +3732,134 @@ describe('TestInstallWorkflowsBasenameCollision', () => {
       // The abort is a pre-pass: a partially installed CI directory would be
       // worse than the bug, because the consumer cannot see which half landed.
       expect(existsSync(join(target, '.github'))).toBe(false);
+    }));
+
+  /**
+   * #1102: `--check` is a reporting gate, not a preview of apply, so it must
+   * return a verdict rather than throw an exception out of a read-only
+   * command. The collision still has to be LOUD -- reporting it into a list
+   * that no exit code reads would trade an abort for a silent false green,
+   * which is strictly worse than the abort it replaced.
+   */
+  it('report mode returns a collision row instead of throwing', () =>
+    run(({ target, overlay }) => {
+      collidingSkill(overlay);
+      const results = mig().installWorkflows(
+        SHAPES,
+        overlay,
+        target,
+        true,
+        false,
+        'report',
+      );
+      const collisions = results.filter((r) => r.status === 'collision');
+      expect(collisions).toHaveLength(1);
+      expect(collisions[0]!.workflow).toBe('guardian.yml');
+      // Both sources named, and --force still never suggested.
+      expect(collisions[0]!.detail).toContain('templates/api/guardian.yml');
+      expect(collisions[0]!.detail).toContain('templates/e2e/guardian.yml');
+      expect(collisions[0]!.detail).not.toContain('--force');
+    }));
+
+  it('report mode installs neither colliding variant', () =>
+    run(({ target, overlay }) => {
+      collidingSkill(overlay);
+      const results = mig().installWorkflows(
+        SHAPES,
+        overlay,
+        target,
+        false,
+        false,
+        'report',
+      );
+      // The whole point of the collision check is that picking one is a coin
+      // flip the consumer cannot see. Reporting must not quietly do it anyway.
+      expect(results.filter((r) => r.status === 'installed')).toHaveLength(0);
+      expect(existsSync(workflowPath(target, 'guardian.yml'))).toBe(false);
+    }));
+
+  it('report mode still installs non-colliding templates alongside', () =>
+    run(({ target, overlay }) => {
+      collidingSkill(overlay);
+      makeWorkflowSkill(overlay, 'canary-other', {
+        install: ['api:templates/other.yml'],
+        templates: { 'templates/other.yml': 'name: other\n' },
+      });
+      const results = mig().installWorkflows(
+        SHAPES,
+        overlay,
+        target,
+        false,
+        false,
+        'report',
+      );
+      expect(results.filter((r) => r.status === 'collision')).toHaveLength(1);
+      // One bad declaration must not sink the rest of the overlay.
+      expect(
+        results.filter(
+          (r) => r.status === 'installed' && r.workflow === 'other.yml',
+        ),
+      ).toHaveLength(1);
+    }));
+
+  it('the default stays throw, so migrate --dry-run still previews the abort', () =>
+    run(({ target, overlay }) => {
+      collidingSkill(overlay);
+      // #1008's invariant: a dry run and an --apply reach the same verdict.
+      // Only the read-only --check gate opts out, and it opts in explicitly.
+      expect(() =>
+        mig().installWorkflows(SHAPES, overlay, target, true),
+      ).toThrow();
+      expect(() =>
+        mig().installWorkflows(SHAPES, overlay, target, false),
+      ).toThrow();
+    }));
+
+  /**
+   * The regression this whole change exists to prevent (#1102): `--check` is
+   * read-only and must return a verdict, not throw. Asserting only
+   * `installWorkflows(..., 'report')` would leave `checkFreshness` free to keep
+   * passing the default 'throw' -- the bug would survive a green suite.
+   */
+  it('checkFreshness reports a collision instead of throwing', () =>
+    run(({ target, overlay }) => {
+      makeFreshnessProject(target);
+      // Unprefixed entries apply under every detected shape, so the collision
+      // does not depend on which shape this bare project resolves to.
+      makeWorkflowSkill(overlay, 'canary-pr-guardian', {
+        install: ['templates/api/guardian.yml', 'templates/e2e/guardian.yml'],
+        templates: {
+          'templates/api/guardian.yml': 'name: api\n',
+          'templates/e2e/guardian.yml': 'name: e2e\n',
+        },
+      });
+      const report = mig().checkFreshness(target, { overlayPath: overlay });
+      const collisions = report.workflows.filter(
+        (w) => w.status === 'collision',
+      );
+      expect(collisions).toHaveLength(1);
+      expect(collisions[0]!.detail).toContain('templates/api/guardian.yml');
+      expect(collisions[0]!.detail).toContain('templates/e2e/guardian.yml');
+      // Read-only: a reporting gate must never write.
+      expect(existsSync(join(target, '.github'))).toBe(false);
+      // Deliberately NOT asserting exit_code/in_sync here. The overlay skill
+      // is undeployed in this fixture, so it reports `missing` -> drift, and
+      // the verdict would be 1 whether or not the collision reached it --
+      // passing for the wrong reason. The verdict is pinned by the three
+      // FreshnessReport unit tests above, which hold nothing but a collision.
+    }));
+
+  it('a shared source produces no collision row in report mode', () =>
+    run(({ target, overlay }) => {
+      sharedSkill(overlay);
+      const results = mig().installWorkflows(
+        SHAPES,
+        overlay,
+        target,
+        false,
+        false,
+        'report',
+      );
+      expect(results.map((r) => r.status)).toEqual(['installed']);
     }));
 });
