@@ -71,6 +71,23 @@ interface StubIssue {
   labels: { name: string }[];
 }
 
+/**
+ * What the `gh` stub should serve. Named rather than inline on purpose: the
+ * analyzer counts each `?` marker in an INLINE type literal as a parameter,
+ * so the four-field literal read as `parameterCount=6` and tripped the arch
+ * ratchet. `subprocess-testkit.ts` documents the same behaviour for branches.
+ */
+interface StubOptions {
+  /** Issues a bare `issue list` returns — the honest denominator. */
+  unfiltered?: StubIssue[];
+  /** Issues an `issue list --label …` returns — deliberately fewer. */
+  filtered?: StubIssue[];
+  /** Labels `label list` reports as already existing. */
+  labels?: string[];
+  /** Non-zero makes every stub invocation fail, for the exit-2 case. */
+  exitCode?: number;
+}
+
 const lib = (await import(LIB)) as RouteLabelsModule;
 
 const issue = (n: number, ...labels: string[]): StubIssue => ({
@@ -193,30 +210,39 @@ describe('route-queue.mjs', () => {
    * how a report built on the lagging label filter becomes visible as a wrong
    * denominator rather than a plausible one.
    */
-  function stubFor(opts: {
-    unfiltered?: StubIssue[];
-    filtered?: StubIssue[];
-    labels?: string[];
-    exitCode?: number;
-  }): string {
+  function stubFor(opts: StubOptions): string {
+    // The stub SCRIPT is fixed; only this JSON fixture varies. Generating
+    // branching source per case put every `??` default inside one function and
+    // pushed it past the complexity threshold, which the arch ratchet caught.
+    const fixture = join(dir, 'gh-fixture.json');
+    writeFileSync(
+      fixture,
+      JSON.stringify({
+        calls,
+        exitCode: opts.exitCode ?? 0,
+        labels: (opts.labels ?? []).map((name) => ({ name })),
+        filtered: opts.filtered ?? [],
+        unfiltered: opts.unfiltered ?? [],
+      }),
+    );
+
     const stub = join(dir, 'gh-stub.mjs');
     writeFileSync(
       stub,
       [
-        `import { appendFileSync } from 'node:fs';`,
+        `import { appendFileSync, readFileSync } from 'node:fs';`,
+        `const f = JSON.parse(readFileSync(${JSON.stringify(fixture)}, 'utf8'));`,
         `const argv = process.argv.slice(2);`,
-        `appendFileSync(${JSON.stringify(calls)}, JSON.stringify(argv) + '\\n');`,
-        `if (${opts.exitCode ?? 0} !== 0) { process.stderr.write('stub failure\\n'); process.exit(${opts.exitCode ?? 0}); }`,
-        `if (argv[0] === 'label' && argv[1] === 'list') {`,
-        `  process.stdout.write(JSON.stringify(${JSON.stringify(
-          (opts.labels ?? []).map((name) => ({ name })),
-        )}));`,
-        `} else if (argv[0] === 'issue' && argv[1] === 'list') {`,
-        `  const filtered = argv.includes('--label');`,
-        `  process.stdout.write(JSON.stringify(filtered ? ${JSON.stringify(
-          opts.filtered ?? [],
-        )} : ${JSON.stringify(opts.unfiltered ?? [])}));`,
-        `} else { process.stdout.write(''); }`,
+        `appendFileSync(f.calls, JSON.stringify(argv) + '\\n');`,
+        `if (f.exitCode !== 0) {`,
+        `  process.stderr.write('stub failure\\n');`,
+        `  process.exit(f.exitCode);`,
+        `}`,
+        `const isList = (a, b) => argv[0] === a && argv[1] === b;`,
+        `const issues = argv.includes('--label') ? f.filtered : f.unfiltered;`,
+        `if (isList('label', 'list')) process.stdout.write(JSON.stringify(f.labels));`,
+        `else if (isList('issue', 'list')) process.stdout.write(JSON.stringify(issues));`,
+        `else process.stdout.write('');`,
       ].join('\n'),
     );
     return stub;
