@@ -16,6 +16,15 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **canary-savant reads PHP** (#1106). The static pass now scans PHPUnit
+  (`*Test.php`) and WordPress (`test-*.php`) files and skips `vendor/`. SV003
+  catches superglobal writes, `putenv`, `ini_set`, `date_default_timezone_set`,
+  `define` (never suppressed) and WordPress hooks and options, and recognises
+  their restores in `tearDown`/`tear_down` or `finally`, a matching
+  `remove_filter` anywhere in the file, and a `WP_UnitTestCase` base's own
+  hook/option restore. SV001 catches `static`/`global`/column-0 arrays mutated
+  in place, SV002 the class-scoped PHPUnit and WordPress setup pairs, and SV004
+  `function testFirst()`. `--confirm` still declines PHP.
 - **`canary doctor` voice line** (#340, slice 2). When a check fails, the human
   report ends with one Black Canary line under the summary, from
   `voice/lines.json` (`doctor.fail`), which the npm build now stages into
