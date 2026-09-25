@@ -65,3 +65,58 @@ describe('PHP test-file discovery (#1106 D11)', () => {
     });
   });
 });
+
+// Line 1 `<?php`, line 2 the class head, line 3 `{`, body from line 4.
+const inClass = (body: string[], head = 'class FooTest extends TestCase') => {
+  return php(head, '{', ...body, '}');
+};
+// `line:rule` pairs, e.g. ['4:SV003'], so every assertion pins the line.
+const hits = (text: string, name = 'FooTest.php') => {
+  return scanText(text, name).map((f) => `${f.line}:${f.ruleId.slice(0, 5)}`);
+};
+
+// --- SV002 (D6) ------------------------------------------------------------
+
+describe('SV002 PHP class-scoped pairs (#1106 D6)', () => {
+  it.each([
+    ['setUpBeforeClass', 'tearDownAfterClass'],
+    ['set_up_before_class', 'tear_down_after_class'],
+  ])('%s without %s fires; with it, silent', (setup, teardown) => {
+    const up = `    public static function ${setup}(): void {}`;
+    const down = `    public static function ${teardown}(): void {}`;
+    expect(hits(inClass([up]))).toEqual(['4:SV002']);
+    expect(hits(inClass([up, down]))).toEqual([]);
+  });
+
+  it.each(['setUp', 'set_up'])('per-test %s alone is silent', (setup) => {
+    expect(
+      hits(inClass([`    protected function ${setup}(): void {}`])),
+    ).toEqual([]);
+  });
+
+  // Amended at plan approval: WP's base tear_down_after_class deletes the
+  // factory data wpSetUpBeforeClass builds, so it needs no teardown of its own.
+  it('wpSetUpBeforeClass alone is silent (the WP base cleans up)', () => {
+    const up =
+      '    public static function wpSetUpBeforeClass(WP_UnitTest_Factory $f) {}';
+    expect(
+      hits(inClass([up], 'class Tests_Foo extends WP_UnitTestCase')),
+    ).toEqual([]);
+  });
+
+  it('a setup named only in a comment or a string does not fire', () => {
+    const body = [
+      '    // public static function setUpBeforeClass(): void {}',
+      "    private $doc = 'function setUpBeforeClass()';",
+    ];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  it('a teardown named only in a comment does not pair', () => {
+    const body = [
+      '    public static function setUpBeforeClass(): void {}',
+      '    // tearDownAfterClass() is inherited',
+    ];
+    expect(hits(inClass(body))).toEqual(['4:SV002']);
+  });
+});

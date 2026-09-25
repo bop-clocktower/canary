@@ -16,6 +16,7 @@ import {
   SV004_TEXT_PATTERN,
   PYTHON_SETUP_TEARDOWN,
   JS_SETUP_TEARDOWN,
+  PHP_SETUP_TEARDOWN,
   PY_MODULE_MUTABLE,
   JS_MODULE_MUTABLE,
   mutationPattern,
@@ -168,9 +169,35 @@ function codeOnly(line) {
   return out;
 }
 
+// Per-language rule inputs (#1106): one table instead of isPy/isPhp branches,
+// so scanTextFull's complexity does not grow with each language.
+const LANGS = {
+  py: {
+    pairs: PYTHON_SETUP_TEARDOWN,
+    setupHit: (code, setup) => code.includes(`def ${setup}`),
+    sv001: (lines, file, text) => sv001ModuleMutables(lines, file, true, text),
+  },
+  js: {
+    pairs: JS_SETUP_TEARDOWN,
+    setupHit: (code, setup) =>
+      code.startsWith(`${setup}(`) || code.includes(` ${setup}(`),
+    sv001: (lines, file, text) => sv001ModuleMutables(lines, file, false, text),
+  },
+  php: {
+    pairs: PHP_SETUP_TEARDOWN,
+    setupHit: (code, setup) => code.includes(`function ${setup}(`),
+    // Today's (JS-mode) SV001 until Task 9 adds the PHP pass.
+    sv001: (lines, file, text) => sv001ModuleMutables(lines, file, false, text),
+  },
+};
+const langOf = (file) => {
+  if (file.endsWith('.py')) return 'py';
+  return file.endsWith('.php') ? 'php' : 'js';
+};
+
 /** Setup markers whose matching teardown is absent from the file. */
-function sv002MissingTeardown(lines, file, isPy) {
-  const pairs = isPy ? PYTHON_SETUP_TEARDOWN : JS_SETUP_TEARDOWN;
+function sv002MissingTeardown(lines, file, lang) {
+  const { pairs, setupHit } = LANGS[lang];
   // #732: pair against code only. Both halves read the same projection, so
   // the rule can no longer be switched off by a comment or a fixture string.
   const codeLines = lines.map(codeOnly);
@@ -181,10 +208,7 @@ function sv002MissingTeardown(lines, file, isPy) {
     for (let i = 0; i < lines.length; i += 1) {
       const code = codeLines[i].trim();
       if (!code) continue;
-      const hit = isPy
-        ? code.includes(`def ${setup}`)
-        : code.startsWith(`${setup}(`) || code.includes(` ${setup}(`);
-      if (hit) {
+      if (setupHit(code, setup)) {
         const stripped = lines[i].trim();
         findings.push(
           makeFinding(file, i + 1, 'SV002-missing-teardown', stripped),
@@ -241,7 +265,7 @@ const tokenMatches = (ruleId, token) =>
  * @returns {{findings: Finding[], suppressed: Finding[]}}
  */
 export function scanTextFull(text, file = '<text>') {
-  const isPy = file.endsWith('.py');
+  const lang = langOf(file);
   const lines = splitLines(text);
   const findings = [];
   // #493 root cause 2: SV003's why asserts persistence, so a file that
@@ -249,8 +273,8 @@ export function scanTextFull(text, file = '<text>') {
   // be flagged. Computed once per file.
   const restoration = analyzeRestoration(text);
 
-  findings.push(...sv001ModuleMutables(lines, file, isPy, text));
-  findings.push(...sv002MissingTeardown(lines, file, isPy));
+  findings.push(...LANGS[lang].sv001(lines, file, text));
+  findings.push(...sv002MissingTeardown(lines, file, lang));
 
   lines.forEach((raw, i) => {
     const stripped = raw.trim();

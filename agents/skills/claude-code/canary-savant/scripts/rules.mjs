@@ -120,6 +120,13 @@ export const PYTHON_SETUP_TEARDOWN = [
   ['setUpClass', 'tearDownClass'],
 ];
 export const JS_SETUP_TEARDOWN = [['beforeAll', 'afterAll']];
+// PHPUnit, then WP_UnitTestCase's snake_case spelling (#1106 D6).
+// wpSetUpBeforeClass is deliberately absent: WP's base class deletes the
+// factory data it builds, so it never needs its own teardown.
+export const PHP_SETUP_TEARDOWN = [
+  ['setUpBeforeClass', 'tearDownAfterClass'],
+  ['set_up_before_class', 'tear_down_after_class'],
+];
 
 // SV001: mutable-literal declarations and the mutations that indict them.
 //   Python:  NAME = {} | [] | set() | dict() | list()   (optional trailing #comment)
