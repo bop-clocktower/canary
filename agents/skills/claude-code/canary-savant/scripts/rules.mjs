@@ -218,6 +218,15 @@ export const PY_MODULE_MUTABLE =
 //   JS: (let|var|const) NAME = {} | []
 export const JS_MODULE_MUTABLE =
   /^(?:let|var|const)\s+(\w+)\s*=\s*(?:\{[^}]*\}|\[[^\]]*\])/;
+// PHP (#1106), NAME captured without `$`; superglobals are SV003's (D5).
+//   column-0  $x = [ ...  |  $x = array( ...
+export const PHP_MODULE_MUTABLE =
+  /^\$(?!_[A-Z]|GLOBALS\b)(\w+)\s*=\s*(?:\[|array\s*\()/;
+//   static $x  |  public static ?array $x   (local or class property)
+export const PHP_STATIC_DECL =
+  /^\s*(?:(?:public|protected|private|final|readonly)\s+)*static\s+(?:\??[\w\\|]+\s+)?\$(\w+)/;
+//   global $a, $b;
+export const PHP_GLOBAL_DECL = /^\s*global\s+(\$\w+(?:\s*,\s*\$\w+)*)\s*;/;
 
 // Method calls that mutate a container in place (Python + JS array/object).
 const MUTATING_METHODS = [
@@ -254,5 +263,25 @@ export function mutationPattern(name) {
       `|\\b${n}\\s*\\.\\s*(?:${methods})\\s*\\(` +
       `|\\b${n}\\s*\\+=` +
       `|\\b${n}\\s*\\.\\w+\\s*=(?!=)`,
+  );
+}
+
+/**
+ * PHP (#1106): an in-place mutation of `$name` - `$x[..] =`, `$x[] =`,
+ * compound assignment, `++`/`--`, array_push/unshift/splice/pop/shift, or
+ * `$x->prop =`. A plain `$x = ...` is not one: it is also how a restore is
+ * written. `(?<![\w$])` and `\b` keep `$x` from matching `$xy`.
+ * @param {string} name the variable, without `$`
+ * @returns {RegExp}
+ */
+export function phpMutationPattern(name) {
+  const v = String.raw`(?<![\w$])\$${escapeRe(name)}\b`;
+  const index = String.raw`\s*\[[^\]]*\]`;
+  return new RegExp(
+    `${v}(?:${index})+${PHP_ASSIGN}` +
+      `|${v}\\s*${PHP_OP}=(?![=>])` +
+      `|${v}\\s*(?:\\+\\+|--)|(?:\\+\\+|--)\\s*${v}` +
+      `|\\barray_(?:push|unshift|splice|pop|shift)\\s*\\(\\s*${v}` +
+      `|${v}\\s*->\\s*\\w+(?:${index})*${PHP_ASSIGN}`,
   );
 }

@@ -455,3 +455,141 @@ describe('WP_UnitTestCase auto-restore (#1106 D9)', () => {
     expect(hits(text)).toEqual(['5:SV003']);
   });
 });
+
+// --- SV001 (D4) ------------------------------------------------------------
+
+describe('SV001 PHP declarations (#1106 D4)', () => {
+  it.each([
+    '$seen[] = 1;',
+    "$seen['k'] = 1;",
+    "$seen['a']['b'] = 1;",
+    "$seen .= 'x';",
+    '$seen += [1];',
+    '$seen ??= [];',
+    '$seen++;',
+    '++$seen;',
+    '$seen--;',
+    'array_push($seen, 1);',
+    'array_unshift($seen, 1);',
+    'array_splice($seen, 0, 1);',
+    'array_pop($seen);',
+    'array_shift($seen);',
+    "$seen->name = 'x';",
+  ])('a local static mutated by %s fires on its declaration', (stmt) => {
+    const body = [
+      '    public function test_a(): void',
+      '    {',
+      '        static $seen = [];',
+      `        ${stmt}`,
+      '    }',
+    ];
+    expect(hits(inClass(body))).toEqual(['6:SV001']);
+  });
+
+  it('a typed static property written through self:: fires', () => {
+    const body = [
+      '    protected static ?array $seen = null;',
+      '    public function test_a(): void { self::$seen[] = 1; }',
+    ];
+    expect(hits(inClass(body))).toEqual(['4:SV001']);
+  });
+
+  it('a read-only or plainly reassigned static is silent', () => {
+    const body = [
+      '    private static $fixture = null;',
+      '    public static function setUpBeforeClass(): void { self::$fixture = 1; }',
+      '    public static function tearDownAfterClass(): void { self::$fixture = null; }',
+      '    public function test_a(): void { $this->assertSame(1, self::$fixture); }',
+    ];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  it('a static method is not a static variable', () => {
+    const body = [
+      '    public static function build(): array { return []; }',
+      '    public function test_a(): void { $build[] = 1; }',
+    ];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  it('a global accumulator appended to fires on the global line', () => {
+    const text = php(
+      'function test_it() {',
+      '    global $log;',
+      "    $log[] = 'x';",
+      '}',
+    );
+    expect(hits(text, 'test-log.php')).toEqual(['3:SV001']);
+  });
+
+  it('global $wpdb used for a query is silent', () => {
+    const text = php(
+      'function test_it() {',
+      '    global $wpdb;',
+      "    $wpdb->query('SELECT 1');",
+      '}',
+    );
+    expect(hits(text, 'test-db.php')).toEqual([]);
+  });
+
+  it('a global line naming several mutated vars fires once', () => {
+    const text = php(
+      'function test_it() {',
+      '    global $wp_query, $post;',
+      "    $post->post_title = 'x';",
+      '    $wp_query->is_404 = true;',
+      '}',
+    );
+    expect(hits(text, 'test-query.php')).toEqual(['3:SV001']);
+  });
+
+  it.each([
+    ['$registry = [];', "    $registry['a'] = 1;"],
+    ['$registry = array();', '    array_push($registry, 1);'],
+  ])('a column-0 %s mutated in a function fires', (decl, mutate) => {
+    const text = php(decl, 'function test_it() {', mutate, '}');
+    expect(hits(text, 'test-registry.php')).toEqual(['2:SV001']);
+  });
+
+  it('a column-0 array that is only read is silent', () => {
+    const text = php(
+      "$map = ['a' => 1];",
+      'function test_it() {',
+      "    return $map['a'] === 1;",
+      '}',
+    );
+    expect(hits(text, 'test-map.php')).toEqual([]);
+  });
+
+  it('$x is not indicted by writes to $xy', () => {
+    const text = php(
+      '$x = [];',
+      'function test_it() {',
+      "    $xy['a'] = 1;",
+      '    ++$xy;',
+      '    array_push($xy, 1);',
+      '}',
+    );
+    expect(hits(text, 'test-x.php')).toEqual([]);
+  });
+
+  it('an indented array is local, not module scope', () => {
+    const text = php(
+      'function test_it() {',
+      '    $local = [];',
+      "    $local['a'] = 1;",
+      '}',
+    );
+    expect(hits(text, 'test-local.php')).toEqual([]);
+  });
+
+  it('a mutation only in a comment or a string does not indict', () => {
+    const text = php('$x = [];', "// $x['a'] = 1;", '$s = "$x[] = 1";');
+    expect(hits(text, 'test-x.php')).toEqual([]);
+  });
+
+  it('a superglobal at column 0 is SV003 only, never SV001', () => {
+    const text = php('$_GET = [];', "$_GET['a'] = 1;", "$GLOBALS['x'] = 1;");
+    expect(hits(text, 'test-g.php')).toEqual(['2:SV003', '3:SV003', '4:SV003']);
+  });
+});

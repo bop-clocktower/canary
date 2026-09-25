@@ -19,7 +19,11 @@ import {
   PHP_SETUP_TEARDOWN,
   PY_MODULE_MUTABLE,
   JS_MODULE_MUTABLE,
+  PHP_MODULE_MUTABLE,
+  PHP_STATIC_DECL,
+  PHP_GLOBAL_DECL,
   mutationPattern,
+  phpMutationPattern,
 } from './rules.mjs';
 import {
   analyzeRestoration,
@@ -134,6 +138,39 @@ function sv001ModuleMutables(lines, file, isPy, text) {
   return findings;
 }
 
+/** PHP variable names (no `$`) a code line declares as shared (#1106 D4). */
+function phpDeclaredNames(code) {
+  const names = [];
+  const moduleLevel = PHP_MODULE_MUTABLE.exec(code); // anchored at column 0
+  if (moduleLevel) names.push(moduleLevel[1]);
+  const stat = PHP_STATIC_DECL.exec(code);
+  if (stat) names.push(stat[1]);
+  const glob = PHP_GLOBAL_DECL.exec(code);
+  if (glob) names.push(...glob[1].split(',').map((v) => v.trim().slice(1)));
+  return names;
+}
+
+/**
+ * PHP SV001: a column-0 array, a `static $x` or a `global $x` import fires on
+ * its declaration line when the file mutates that variable in place. Both
+ * halves read the code-only projection, so comments and strings never count.
+ */
+function sv001PhpMutables(lines, file) {
+  const codeLines = lines.map(codeOnly);
+  const codeText = codeLines.join('\n');
+  const findings = [];
+  codeLines.forEach((code, i) => {
+    const names = phpDeclaredNames(code);
+    if (names.some((n) => phpMutationPattern(n).test(codeText))) {
+      const snippet = lines[i].trim();
+      findings.push(
+        makeFinding(file, i + 1, 'SV001-module-mutable-global', snippet),
+      );
+    }
+  });
+  return findings;
+}
+
 // Line comment openers, for the code-only projection below. A whole-line
 // comment is caught earlier by isComment (which also covers block-comment
 // continuations and Python docstring fences).
@@ -186,8 +223,7 @@ const LANGS = {
   php: {
     pairs: PHP_SETUP_TEARDOWN,
     setupHit: (code, setup) => code.includes(`function ${setup}(`),
-    // Today's (JS-mode) SV001 until Task 9 adds the PHP pass.
-    sv001: (lines, file, text) => sv001ModuleMutables(lines, file, false, text),
+    sv001: (lines, file) => sv001PhpMutables(lines, file),
   },
 };
 const langOf = (file) => {
