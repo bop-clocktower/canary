@@ -365,6 +365,16 @@ describe('SV003 PHP teardown regions (#1106 D8)', () => {
 });
 
 describe('SV003 PHP restore policy (#1106 D7/D8)', () => {
+  it('define fires even when a teardown redefines it (unrestorable)', () => {
+    const body = [
+      "    public function test_a() { define('FOO', 1); }",
+      '    protected function tearDown(): void {',
+      "        define('FOO', 2);",
+      '    }',
+    ];
+    expect(hits(inClass(body))).toEqual(['4:SV003', '6:SV003']);
+  });
+
   it.each([
     ["add_filter('the_title', 'x');", "remove_filter('the_title', 'x');"],
     ["add_action('init', 'boot');", "remove_action('init', 'boot');"],
@@ -405,5 +415,43 @@ describe('SV003 PHP restore policy (#1106 D7/D8)', () => {
       '    }',
     ];
     expect(hits(inClass(body))).toEqual(['5:SV003']);
+  });
+});
+
+describe('WP_UnitTestCase auto-restore (#1106 D9)', () => {
+  const wp = 'class Tests_Foo extends WP_UnitTestCase';
+
+  it('hooks and options are restored by the framework', () => {
+    const body = [
+      "        add_filter('the_title', 'x');",
+      "        update_option('blogname', 'x');",
+    ];
+    expect(hits(inClass(body, wp))).toEqual([]);
+  });
+
+  it('superglobals are NOT restored by the framework', () => {
+    expect(hits(inClass(["        $_GET['a'] = 1;"], wp))).toEqual(['4:SV003']);
+  });
+
+  it.each([
+    'class Tests_Foo extends \\WP_UnitTestCase',
+    'class Tests_Ajax extends WP_Ajax_UnitTestCase',
+    'class Tests_Base extends WP_UnitTestCase_Base',
+    'abstract class Tests_Base extends WP_UnitTestCase',
+  ])('%s counts as a WP base', (head) => {
+    expect(
+      hits(inClass(["        add_action('init', 'boot');"], head)),
+    ).toEqual([]);
+  });
+
+  it('a base named only in a comment does not count', () => {
+    const text = php(
+      '// class Old extends WP_UnitTestCase',
+      'class FooTest extends TestCase',
+      '{',
+      "    public function test_a() { add_filter('a', 'b'); }",
+      '}',
+    );
+    expect(hits(text)).toEqual(['5:SV003']);
   });
 });

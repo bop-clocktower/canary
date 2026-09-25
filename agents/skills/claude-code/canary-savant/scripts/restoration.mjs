@@ -44,6 +44,7 @@ import {
   familiesFor,
   PHP_TEARDOWN_FN,
   COMMENT_LINE,
+  WP_TESTCASE_BASE,
 } from './rules.mjs';
 import {
   stringLiteralRanges,
@@ -243,6 +244,14 @@ function recordRestores(lines, rangesByLine, region, isPhp, record) {
   });
 }
 
+/** A family-level verdict that overrides key evidence, else null (#1106). */
+function familyVerdict(familyId, wpAuto) {
+  const family = SINGLETON_FAMILIES.find((f) => f.id === familyId);
+  if (family?.unrestorable) return false;
+  if (wpAuto && family?.wpAutoRestored) return true;
+  return null;
+}
+
 /**
  * Analyze which globals the file restores in teardown.
  * @param {string} text file contents
@@ -272,9 +281,13 @@ export function analyzeRestoration(text, isPhp = false) {
   };
 
   recordRestores(lines, rangesByLine, region, isPhp, record);
+  // D9: a WP_UnitTestCase base restores hooks and rolls back the DB.
+  const wpAuto = isPhp && lines.some((l) => WP_TESTCASE_BASE.test(l));
 
   return {
     restores(familyId, key) {
+      const verdict = familyVerdict(familyId, wpAuto);
+      if (verdict !== null) return verdict;
       if (restoresAll.has(familyId)) return true;
       return key != null && (restoredKeys.get(familyId)?.has(key) ?? false);
     },

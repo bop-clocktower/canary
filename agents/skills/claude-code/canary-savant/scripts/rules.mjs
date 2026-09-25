@@ -169,6 +169,10 @@ export const PHP_TEARDOWN_FN =
   /\bfunction\s+(?:tear_?down\w*|wpTearDown\w*)\s*\((?![^{]*;\s*$)/i;
 // A whole-line comment: a remove_filter() there is prose, not a pairing.
 export const COMMENT_LINE = /^\s*(?:\/\/|#|\*|\/\*)/;
+// A class extending a WP_*UnitTestCase* base (D9): the framework restores
+// hooks and rolls the DB back per test. Class-anchored, so a comment can't.
+export const WP_TESTCASE_BASE =
+  /^\s*(?:(?:abstract|final|readonly)\s+)*class\s+\w+\s+extends\s+\\?WP_\w*UnitTestCase\w*\b/;
 
 // SV004: order-coupled name or comment (fires on code and comment lines).
 // Split in two (#493) because the alternatives anchor differently:
