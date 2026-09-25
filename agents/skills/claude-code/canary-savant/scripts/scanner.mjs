@@ -41,6 +41,7 @@ const SUPPORTED_SUFFIXES = [
   '.tsx',
   '.mjs',
   '.cjs',
+  '.php',
 ];
 
 const SKIP_DIRS = new Set([
@@ -54,6 +55,7 @@ const SKIP_DIRS = new Set([
   '.mypy_cache',
   '.pytest_cache',
   '.tox',
+  'vendor', // Composer's node_modules (#1106)
   // Fixture directories are test DATA: files here never RUN as tests, so a
   // temporal/order smell in one is a property of the data, not a defect (#493
   // one level up). Also keeps pragmas out of golden-pinned fixture files.
@@ -82,6 +84,8 @@ function isTestFile(filePath) {
   const stem = name.slice(0, name.length - suffix.length);
   if (name.includes('.test.') || name.includes('.spec.')) return true;
   if (stem.startsWith('test_') || stem.endsWith('_test')) return true;
+  // PHPUnit FooTest.php, WordPress test-foo.php (#1106 D11).
+  if (suffix === '.php' && /^test-|Test$/.test(stem)) return true;
   const dirs = partsOf(filePath).slice(0, -1);
   return dirs.some((part) => TEST_DIRS.has(part));
 }
