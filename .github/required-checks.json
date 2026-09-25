@@ -119,9 +119,9 @@
         "usual report) is UNVERIFIED here; check it on the first PR after 2a.",
         "They agree on a real leak unless the scanner or the secret differs",
         "between them (a scanner-editing PR, a fork PR). This entry stays on",
-        "docs-lint.yml because that is the",
-        "producer that reported on the 2a PR itself (pull_request_target runs",
-        "main's copy of leak-gate.yml, which still had the step-1 name).",
+        "docs-lint.yml because that is the producer that reported on the 2a PR",
+        "itself (pull_request_target runs main's copy of leak-gate.yml, which",
+        "still had the step-1 name).",
         "Step 2b points this entry at leak-gate.yml and deletes the docs-lint",
         "job. The context string never changes, so the ruleset needs no edit."
       ]
