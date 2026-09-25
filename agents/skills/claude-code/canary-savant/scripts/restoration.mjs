@@ -27,6 +27,8 @@
 // lines. Detection is language-agnostic like the rest of the scanner; a JS
 // generator `yield` could open a phantom region, but a same-family restore
 // idiom inside one is overwhelmingly teardown-intent anyway.
+// PHP (#1106): tearDown*/tear_down*/wpTearDown* bodies are regions too; see
+// rules.mjs for the unrestorable, pairAnywhere and wpAutoRestored families.
 //
 // Known non-suppressors, on purpose:
 // - vi.stubEnv/vi.unstubAllEnvs and monkeypatch only undo their OWN
@@ -37,7 +39,7 @@
 //   recognized; only idioms where the restore call is spelled out are. A
 //   missed restore is a false flag, the safe direction.
 
-import { SINGLETON_FAMILIES, familiesFor } from './rules.mjs';
+import { SINGLETON_FAMILIES, familiesFor, PHP_TEARDOWN_FN } from './rules.mjs';
 import {
   stringLiteralRanges,
   inStringLiteral,
@@ -215,15 +217,19 @@ function collectPyRegions(lines, rangesByLine, region) {
 /**
  * Analyze which globals the file restores in teardown.
  * @param {string} text file contents
+ * @param {boolean} [isPhp] enable the PHP families and regions (#1106)
  * @returns {{restores: (family: string, key: string|null) => boolean}}
  */
-export function analyzeRestoration(text) {
+export function analyzeRestoration(text, isPhp = false) {
   const lines = splitLines(text);
   const rangesByLine = lines.map((l) => stringLiteralRanges(l));
   const region = new Set();
   collectJsFinallyRegions(lines, rangesByLine, region, JS_TEARDOWN_TOKEN, '()');
   collectJsFinallyRegions(lines, rangesByLine, region);
   collectPyRegions(lines, rangesByLine, region);
+  if (isPhp) {
+    collectJsFinallyRegions(lines, rangesByLine, region, PHP_TEARDOWN_FN);
+  }
 
   const restoresAll = new Set();
   const restoredKeys = new Map(); // family id -> Set<key>
@@ -239,7 +245,7 @@ export function analyzeRestoration(text) {
   for (const i of region) {
     const line = lines[i];
     const ranges = rangesByLine[i];
-    for (const family of SINGLETON_FAMILIES) {
+    for (const family of familiesFor(isPhp)) {
       for (const pattern of [family.assign, ...family.deletes]) {
         for (const match of execAllOutsideStrings(pattern, line, ranges)) {
           record(family.id, keyOf(match, family));

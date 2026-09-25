@@ -164,6 +164,9 @@ export const SINGLETON_FAMILIES = [
 // SV003 restore context for PHP (#1106), read by restoration.mjs.
 export const familiesFor = (isPhp) =>
   SINGLETON_FAMILIES.filter((family) => isPhp || !family.php);
+// A teardown method; the lookahead skips a bodiless `...(): void;` declaration.
+export const PHP_TEARDOWN_FN =
+  /\bfunction\s+(?:tear_?down\w*|wpTearDown\w*)\s*\((?![^{]*;\s*$)/i;
 
 // SV004: order-coupled name or comment (fires on code and comment lines).
 // Split in two (#493) because the alternatives anchor differently:

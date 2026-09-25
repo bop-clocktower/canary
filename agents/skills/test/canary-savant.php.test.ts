@@ -267,3 +267,99 @@ describe('SV003 PHP in the scanner (#1106)', () => {
     expect(hits("os.putenv('A=1')", 'test_a.py')).toEqual([]);
   });
 });
+
+// --- SV003 restore evidence (D8) -------------------------------------------
+
+describe('SV003 PHP teardown regions (#1106 D8)', () => {
+  it('an unset in tearDown (Allman brace) restores the key', () => {
+    const body = [
+      "    public function test_a(): void { $_GET['q'] = 'x'; }",
+      '    protected function tearDown(): void',
+      '    {',
+      "        unset($_GET['q']);",
+      '    }',
+    ];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  it('a whole-family reassign in tear_down restores every key', () => {
+    const body = [
+      "    public function test_a() { $_COOKIE['c'] = 1; }",
+      '    public function tear_down() {',
+      '        $_COOKIE = [];',
+      '    }',
+    ];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  it('wpTearDownAfterClass is a teardown region', () => {
+    const body = [
+      "    public static function wpSetUpBeforeClass() { $GLOBALS['x'] = 1; }",
+      '    public static function wpTearDownAfterClass() {',
+      "        unset($GLOBALS['x']);",
+      '    }',
+    ];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  it('a restore of a different key leaves the write flagged', () => {
+    const body = [
+      "    public function test_a() { $_GET['a'] = 1; }",
+      '    protected function tearDown(): void {',
+      "        unset($_GET['b']);",
+      '    }',
+    ];
+    expect(hits(inClass(body))).toEqual(['4:SV003']);
+  });
+
+  it('the region ends at the method close brace', () => {
+    const body = [
+      '    protected function tearDown(): void {',
+      '        parent::tearDown();',
+      '    }',
+      "    public function test_a() { $_GET['a'] = 1; }",
+    ];
+    expect(hits(inClass(body))).toEqual(['7:SV003']);
+  });
+
+  it('a bodiless abstract teardown opens no region', () => {
+    const text = php(
+      'abstract class BaseTest extends TestCase',
+      '{',
+      '    abstract protected function tearDownFixture(): void;',
+      "    public function helper() { unset($_GET['a']); }",
+      "    public function test_a() { $_GET['a'] = 1; }",
+      '}',
+    );
+    expect(hits(text, 'BaseTest.php')).toEqual(['6:SV003']);
+  });
+
+  it('a teardown token inside a string opens no region', () => {
+    const body = [
+      "    private $doc = 'function tearDown() {';",
+      "    public function helper() { unset($_GET['a']); }",
+      "    public function test_a() { $_GET['a'] = 1; }",
+    ];
+    expect(hits(inClass(body))).toEqual(['6:SV003']);
+  });
+
+  it.each([
+    ["putenv('APP_ENV=test');", "putenv('APP_ENV');"],
+    ["ini_set('precision', '4');", "ini_restore('precision');"],
+    ["ini_set('precision', '4');", "ini_set('precision', $this->old);"],
+    [
+      "date_default_timezone_set('UTC');",
+      'date_default_timezone_set($this->tz);',
+    ],
+    ["update_option('blogname', 'x');", "delete_option('blogname');"],
+    ["$_SERVER['HTTPS'] = 'on';", '$_SERVER = $this->server;'],
+  ])('%s is restored by %s in tearDown', (write, restore) => {
+    const body = [
+      `    public function test_a() { ${write} }`,
+      '    protected function tearDown(): void {',
+      `        ${restore}`,
+      '    }',
+    ];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+});
