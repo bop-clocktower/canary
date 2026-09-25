@@ -181,9 +181,10 @@ export const WP_TESTCASE_BASE =
 // inside a string literal is fixture data and is rejected.
 //   def test_1_...            -> ordinal-indexed test
 //   def test_first / test_last(_more)  -> ordinal test name (not test_firstname)
+//   function test_1_... | function testFirst(  -> PHP spellings (#1106)
 //   it('... run first')       -> ordering inside an it() title (anchor: `it(`)
 export const SV004_CODE_PATTERN =
-  /\bdef\s+test_\d+_|\bdef\s+test_(?:first|second|third|fourth|fifth|sixth|seventh|last|initial|final)\s*[(:]|\bit\s*\(\s*['"][^'"]*\b(?:run|runs|running)\s+(?:first|last|before|after)\b/i;
+  /\b(?:def|function)\s+test_\d+_|\b(?:def|function)\s+test_?(?:first|second|third|fourth|fifth|sixth|seventh|last|initial|final)\s*[(:]|\bit\s*\(\s*['"][^'"]*\b(?:run|runs|running)\s+(?:first|last|before|after)\b/i;
 //
 // TEXT-anchored: the directive legitimately lives inside strings (test
 // titles, docstrings) and comments, so it is NOT string-literal filtered.

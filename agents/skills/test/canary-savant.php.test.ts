@@ -593,3 +593,34 @@ describe('SV001 PHP declarations (#1106 D4)', () => {
     expect(hits(text, 'test-g.php')).toEqual(['2:SV003', '3:SV003', '4:SV003']);
   });
 });
+
+// --- SV004 (D10) -----------------------------------------------------------
+
+describe('SV004 PHP ordinal test names (#1106 D10)', () => {
+  it.each(['testFirst', 'testLast', 'testFinal', 'test_first', 'test_1_boots'])(
+    'function %s fires',
+    (name) => {
+      const body = [`    public function ${name}(): void {}`];
+      expect(hits(inClass(body))).toEqual(['4:SV004']);
+    },
+  );
+
+  it.each([
+    'testFirstMatchWins',
+    'test_firstname',
+    'testLastModifiedHeader',
+    'test_10ms',
+  ])('function %s is silent', (name) => {
+    const body = [`    public function ${name}(): void {}`];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  it('an ordinal name inside a string is data', () => {
+    const body = ["    private $n = 'function testFirst()';"];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  it('a JS function testFirst fires too', () => {
+    expect(hits('function testFirst() {}', 'a.test.js')).toEqual(['1:SV004']);
+  });
+});
