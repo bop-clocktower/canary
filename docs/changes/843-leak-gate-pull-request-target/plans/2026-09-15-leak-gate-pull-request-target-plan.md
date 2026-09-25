@@ -53,3 +53,8 @@ it: **2a** renames the `leak-gate.yml` job only, and docs-lint.yml still reports
 on that PR. **2b**, after 2a is on `main`, deletes the docs-lint.yml job and
 moves the manifest entry. Between 2a and 2b both workflows report the context on
 each PR. Keep that window short.
+
+Step 2a is planned in
+`docs/changes/843-leak-gate-step-2a/plans/2026-09-25-leak-gate-step-2a-plan.md`.
+It also drops the transitional advisory entry, since no workflow produces that
+name after the rename.

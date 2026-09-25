@@ -14,9 +14,10 @@
  *   5. minimal permissions
  *
  * plus: no `${{ }}` inside a `run:` script (event values reach the shell only
- * through `env:`), and the transitional two-step naming (see below): the
- * required context keeps its docs-lint.yml producer until leak-gate.yml is on
- * main, because a required context with no producer blocks every PR forever.
+ * through `env:`), and the staged migration (see below): the required
+ * context keeps its docs-lint.yml producer until leak-gate.yml's renamed job
+ * is on main, because a required context with no producer blocks every PR
+ * forever.
  *
  * Offline: parses YAML and JSON. Never executes a workflow.
  */
@@ -31,7 +32,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
 const CHECK = 'No removed-symbol or proprietary leaks';
 const WORKFLOW = 'leak-gate.yml';
-/** leak-gate.yml's job name until step 2 renames it to CHECK (#843). */
+/** leak-gate.yml's step-1 job name, retired by step 2a (#843). */
 const TRANSITIONAL_CHECK = 'Leak gate (pull_request_target, transitional)';
 
 interface Step {
@@ -64,6 +65,12 @@ const triggers = (wf.true ?? wf.on ?? {}) as Record<string, unknown>;
 const jobs = Object.values(wf.jobs ?? {});
 const steps = jobs.flatMap((j) => j.steps ?? []);
 const gateJob = jobs[0];
+const manifest = JSON.parse(
+  readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
+) as {
+  required: Array<{ check: string; workflow: string }>;
+  advisory: Array<{ check: string; workflow: string }>;
+};
 
 describe('leak gate workflow is fork-reachable (#843)', () => {
   it('runs on pull_request_target, not pull_request', () => {
@@ -87,15 +94,19 @@ describe('leak gate workflow is fork-reachable (#843)', () => {
   });
 
   /*
-   * Two-step migration (#843). `pull_request_target` runs the workflow as it
-   * exists on the BASE branch, so on the PR that introduces leak-gate.yml it
-   * cannot report at all. Moving the required context in that same PR left it
-   * permanently missing and unmergeable (ruleset 16189198 has no bypass). So
-   * step 1 keeps docs-lint.yml as the required producer and adds leak-gate.yml
-   * under a DISTINCT name; step 2 (a follow-up PR, once this file is on main)
-   * renames the job to CHECK and removes the docs-lint.yml job.
+   * Staged migration (#843). `pull_request_target` runs the workflow as it
+   * exists on the BASE branch, so on the PR that changes leak-gate.yml the
+   * change cannot report. Moving the required context in one PR left it
+   * permanently missing and unmergeable (ruleset 16189198 has no bypass).
+   *
+   * Step 1 (#948) added leak-gate.yml under a distinct, advisory name.
+   * Step 2a (this state) renames that job to CHECK and leaves docs-lint.yml
+   * as the manifest's producer: on the 2a PR, main's leak-gate.yml still
+   * reports the old name, so docs-lint.yml is what reports CHECK there.
+   * Step 2b (once 2a is on main) removes the docs-lint.yml job and points the
+   * manifest at leak-gate.yml. Between 2a and 2b both workflows report CHECK.
    */
-  it('step 1: docs-lint.yml still produces the required context on pull_request', () => {
+  it('step 2a: docs-lint.yml still produces the required context on pull_request', () => {
     const docsLint = load('docs-lint.yml');
     const names = Object.values(docsLint.jobs ?? {}).map((j) => j.name);
     expect(names).toContain(CHECK);
@@ -104,18 +115,25 @@ describe('leak gate workflow is fork-reachable (#843)', () => {
       unknown
     >;
     expect(Object.keys(dlTriggers)).toContain('pull_request');
-    const manifest = JSON.parse(
-      readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
-    ) as { required: Array<{ check: string; workflow: string }> };
     const entry = manifest.required.find((r) => r.check === CHECK);
     expect(entry?.workflow).toBe('docs-lint.yml');
   });
 
-  it('step 1: leak-gate.yml has exactly one job, named distinctly from the required context', () => {
+  it('step 2a: leak-gate.yml has exactly one job, named the required context', () => {
     expect(jobs.length).toBe(1);
-    expect(gateJob?.name).toBe(TRANSITIONAL_CHECK);
+    expect(gateJob?.name).toBe(CHECK);
     expect(gateJob?.if).toBeUndefined();
-    expect(jobs.map((j) => j.name)).not.toContain(CHECK);
+  });
+
+  it('step 2a: the transitional name is retired from workflows and manifest', () => {
+    for (const file of [WORKFLOW, 'docs-lint.yml']) {
+      const names = Object.values(load(file).jobs ?? {}).map((j) => j.name);
+      expect(names, file).not.toContain(TRANSITIONAL_CHECK);
+    }
+    const listed = [...manifest.required, ...manifest.advisory].map(
+      (c) => c.check,
+    );
+    expect(listed).not.toContain(TRANSITIONAL_CHECK);
   });
 });
 
