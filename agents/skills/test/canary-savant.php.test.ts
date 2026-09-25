@@ -16,6 +16,7 @@ import {
   scanPaths,
 } from '../claude-code/canary-savant/scripts/scanner.mjs';
 import { classifyMutation } from '../claude-code/canary-savant/scripts/restoration.mjs';
+import { detectFramework } from '../claude-code/canary-savant/scripts/runner.mjs';
 import { stringLiteralRanges } from '../claude-code/canary-savant/scripts/string-literals.mjs';
 
 // Braced bodies on purpose (see canary-savant.restoration.test.ts, #495).
@@ -622,5 +623,12 @@ describe('SV004 PHP ordinal test names (#1106 D10)', () => {
 
   it('a JS function testFirst fires too', () => {
     expect(hits('function testFirst() {}', 'a.test.js')).toEqual(['1:SV004']);
+  });
+});
+
+describe('--confirm declines PHP (#1106, out of scope)', () => {
+  it('detectFramework returns null for a PHP-only target', () => {
+    const options = { readdir: () => ['FooTest.php'], exists: () => false };
+    expect(detectFramework(['tests/FooTest.php'], options)).toBeNull();
   });
 });
