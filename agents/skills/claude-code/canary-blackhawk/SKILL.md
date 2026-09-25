@@ -36,15 +36,15 @@ A `.php` file is matched against a separate PHP token set, and only that set —
 `date(2024, 1, 1)` is a Python constructor and `sleep(1)` a plausible JS helper,
 so the PHP tokens never fire on other languages (and JS/Python tokens never fire
 on PHP). PHP names are matched case-insensitively, and a method, static or
-variable call (`$clock->time()`, `Clock::date()`, `$date(`) is never read as the
-builtin.
+variable call (`$clock->time()`, `Clock::date()`, `$date(`) or a declaration
+(`function time()`) is never read as the builtin.
 
-| Rule    | Fires on (PHP)                                                                                                                                                                                                                                                                                                                                     |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BH001` | `time()`, `date(fmt)` / `gmdate(fmt)` with no timestamp, `mktime()`, `strtotime('now' / '+1 day' / 'tomorrow' / …)`, `microtime()`, `hrtime()`, `new DateTime` / `DateTimeImmutable` with no argument or `'now'`, `date_create()`, `Carbon::now()` / `today()`; WordPress `current_time()`, `current_datetime()`, `wp_date(fmt)`, `date_i18n(fmt)` |
-| `BH002` | `sleep(n)`, `usleep(n)`, `time_nanosleep(s, ns)` with a literal delay `> 0`                                                                                                                                                                                                                                                                        |
-| `BH003` | `date(…)` (the local-time twin of `gmdate`), `mktime(…)` with arguments, `strftime(…)`, `IntlDateFormatter`, `setlocale(…)`, `date_default_timezone_set(…)` / `_get()`, `new DateTimeZone(…)` with anything but a UTC literal                                                                                                                      |
-| `BH004` | a comparison against `new DateTime('2024-…')` or `strtotime(…)` with no `DateTimeZone` / `UTC` / `GMT` / `+00:00` / `Z` on the line; `DAY_` / `WEEK_` / `MONTH_` / `YEAR_IN_SECONDS` in `+` / `-` timestamp arithmetic (a calendar day is not always 86400 s)                                                                                      |
+| Rule    | Fires on (PHP)                                                                                                                                                                                                                                                                                                                                                            |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BH001` | `time()`, `date(fmt)` / `gmdate(fmt)` with no timestamp, `mktime()`, `strtotime('now' / '+1 day' / 'tomorrow' / …)` with no base timestamp, `microtime()`, `hrtime()`, `new DateTime` / `DateTimeImmutable` with no argument or `'now'`, `date_create()`, `Carbon::now()` / `today()`; WordPress `current_time()`, `current_datetime()`, `wp_date(fmt)`, `date_i18n(fmt)` |
+| `BH002` | `sleep(n)`, `usleep(n)`, `time_nanosleep(s, ns)` with a literal delay `> 0`                                                                                                                                                                                                                                                                                               |
+| `BH003` | `date(…)` (the local-time twin of `gmdate`), `mktime(…)` with arguments, `strftime(…)`, `new IntlDateFormatter` / `IntlDateFormatter::create()`, `setlocale(…)` to anything but `'C'` / `'POSIX'`, `date_default_timezone_set(…)` / `new DateTimeZone(…)` to anything but a UTC literal, `date_default_timezone_get()`                                                    |
+| `BH004` | a comparison against `new DateTime('2024-…')` or `strtotime(…)` with no `DateTimeZone` / `UTC` / `GMT` / `+00:00` / `Z` on the line; `DAY_` / `WEEK_` / `MONTH_` / `YEAR_IN_SECONDS` in `+` / `-` timestamp arithmetic (a calendar day is not always 86400 s)                                                                                                             |
 
 `checkdate()` is a pure validator, so it fires only through a clock read in its
 arguments: `checkdate(2, 29, (int) date('Y'))` is a `BH001`,
@@ -111,7 +111,8 @@ anywhere `node` does. The cost, stated plainly:
   or a docstring quote are skipped; a multi-line block comment whose inner lines
   do not start with `*` is still scanned. In a `.php` file a trailing `//`, `#`
   or `/*` comment after code is cut off too (`#[…]` is an attribute, not a
-  comment); other languages keep the whole line.
+  comment); other languages keep the whole line. The cut is at the first marker,
+  so code after an inline `/* … */` on the same line is not scanned.
 - **String-aware, one line deep.** A match that _starts_ inside a string literal
   on its own line is rejected as fixture data (`pyFile('time.sleep(1)')` does
   not fire), while an anchor whose pattern merely reaches into quotes
@@ -122,7 +123,12 @@ anywhere `node` does. The cost, stated plainly:
   a `Date`.
 - **Suppression is a substring match.** A mention of `freezegun` in a comment
   silences the file. That direction is intentional: a missed finding costs less
-  than a false one.
+  than a false one. The PHP markers are broad on purpose, and it costs coverage:
+  `getFunctionMock` silences the clock rules even when it mocks `rand()`, and
+  the WordPress `pre_option_*` filters (which pin the site timezone, not the
+  clock) are grouped with the frozen clocks as #1107 asks. A PHP call inside a
+  PHPUnit argument list (`assertGreaterThan(strtotime(…), $x)`) is not a
+  comparison, so it is not a `BH004`.
 
 ## Which files get scanned
 
@@ -202,9 +208,9 @@ signal is trusted — the same path every canary gate takes.
 
 ## Fixing what it finds
 
-| Finding | Fix                                                                                                                                                                       |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BH001` | Freeze the clock (`vi.useFakeTimers()` + `vi.setSystemTime(...)`, `@freeze_time("2024-01-01")`, `ClockMock`, `Carbon::setTestNow()`) or inject a clock the test controls. |
-| `BH002` | Advance a fake timer (`vi.advanceTimersByTime(500)`) or await the real condition instead of a duration.                                                                   |
-| `BH003` | Assert on a UTC representation (`toISOString()`, `strftime('%Y-%m-%dT%H:%M:%SZ')` on a UTC datetime), or pin the locale and timezone explicitly.                          |
-| `BH004` | Attach a timezone: `datetime(2024, 1, 1, tzinfo=timezone.utc)`.                                                                                                           |
+| Finding | Fix                                                                                                                                                                                             |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BH001` | Freeze the clock (`vi.useFakeTimers()` + `vi.setSystemTime(...)`, `@freeze_time("2024-01-01")`, `ClockMock`, `Carbon::setTestNow()`) or inject a clock the test controls.                       |
+| `BH002` | Advance a fake timer (`vi.advanceTimersByTime(500)`) or await the real condition instead of a duration.                                                                                         |
+| `BH003` | Assert on a UTC representation (`toISOString()`, `strftime('%Y-%m-%dT%H:%M:%SZ')` on a UTC datetime), or pin the locale and timezone explicitly.                                                |
+| `BH004` | Attach a timezone: `datetime(2024, 1, 1, tzinfo=timezone.utc)`, `new DateTime('2024-01-01', new DateTimeZone('UTC'))`; step whole days with `->modify('+1 day')` instead of `+ DAY_IN_SECONDS`. |

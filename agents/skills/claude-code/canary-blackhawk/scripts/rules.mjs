@@ -77,9 +77,11 @@ const NAIVE_COMPARE =
 //
 // Case-insensitive, because PHP function and class names are. Every call token
 // sits behind PHP_CALL so a method, static or variable call (`$clock->time()`,
-// `Clock::date()`, `$date(`) never reads as the builtin; a leading `\` (a
-// fully-qualified `\time()`) is still the builtin.
-const PHP_CALL = String.raw`(?<![\w$>:])`;
+// `$c?->time()`, `Clock::date()`, `$date(`) or a declaration (`function
+// time()`) never reads as the builtin; a leading `\` (a fully-qualified
+// `\time()`) is still the builtin, and so is one after an unspaced operator
+// (`'k'=>time()`, `$b ?:time()`).
+const PHP_CALL = String.raw`(?<![\w$]|->|::)(?<!\bfunction\s+&?)`;
 // One argument only (a format string, which may itself contain a comma).
 const ONE_ARG = String.raw`\s*\(\s*(?:'[^']*'|"[^"]*"|[^,()'"])*\)`;
 const php = (...alternatives) => new RegExp(alternatives.join('|'), 'i');
@@ -92,7 +94,9 @@ const PHP_WALL_CLOCK = php(
   String.raw`${PHP_CALL}time\s*\(\s*\)`,
   String.raw`${PHP_CALL}(?:gm)?date${ONE_ARG}`,
   String.raw`${PHP_CALL}mktime\s*\(\s*\)`,
-  String.raw`${PHP_CALL}strtotime\s*\(\s*['"]\s*(?:now|today|tomorrow|yesterday|midnight|noon|next\b|last\b|this\b|[+-])`,
+  // Relative to now only without a base timestamp (`strtotime('+1 day', $ts)`
+  // is pinned).
+  String.raw`${PHP_CALL}strtotime\s*\(\s*(?<rq>['"])\s*(?:now|today|tomorrow|yesterday|midnight|noon|next\b|last\b|this\b|[+-])[^'"]*\k<rq>\s*\)`,
   String.raw`${PHP_CALL}(?:microtime|hrtime)\s*\(`,
   String.raw`\bnew\s+\\?DateTime(?:Immutable)?\b\s*(?:\(\s*(?:(?<q>['"])now\k<q>\s*)?[,)]|[;)])`,
   String.raw`${PHP_CALL}date_create(?:_immutable)?\s*\(\s*\)`,
@@ -108,15 +112,20 @@ const PHP_REAL_DELAY = php(
 );
 
 // date( (any arity: gmdate is the UTC twin) | mktime( with arguments |
-// strftime( | IntlDateFormatter | setlocale( | date_default_timezone_set/get( |
-// new DateTimeZone( with anything but a UTC literal.
+// strftime( | new IntlDateFormatter / ::create( | setlocale( to anything but
+// 'C'/'POSIX' | date_default_timezone_set( to anything but a UTC literal |
+// date_default_timezone_get( | new DateTimeZone( with anything but a UTC
+// literal. Pinning to UTC / the C locale is the fix, so it never fires.
+const UTC_LITERAL = String.raw`(?!\s*['"](?:UTC|GMT|Etc/UTC|Z|\+00:?00)['"])`;
 const PHP_LOCAL_TZ = php(
   String.raw`${PHP_CALL}date\s*\(`,
   String.raw`${PHP_CALL}mktime\s*\(\s*[^)\s]`,
-  String.raw`${PHP_CALL}(?:strftime|setlocale)\s*\(`,
-  String.raw`\bIntlDateFormatter\b`,
-  String.raw`${PHP_CALL}date_default_timezone_(?:set|get)\s*\(`,
-  String.raw`\bnew\s+\\?DateTimeZone\s*\(\s*(?!['"](?:UTC|GMT|Etc/UTC|Z|\+00:?00)['"])`,
+  String.raw`${PHP_CALL}strftime\s*\(`,
+  String.raw`${PHP_CALL}setlocale\s*\([^,)]*,(?!\s*['"](?:C|POSIX)['"])`,
+  String.raw`\bnew\s+\\?IntlDateFormatter\b|\bIntlDateFormatter::create\s*\(`,
+  String.raw`${PHP_CALL}date_default_timezone_set\s*\(${UTC_LITERAL}`,
+  String.raw`${PHP_CALL}date_default_timezone_get\s*\(`,
+  String.raw`\bnew\s+\\?DateTimeZone\s*\(${UTC_LITERAL}`,
 );
 
 // A comparison against new DateTime('YYYY..') or strtotime(..) on either side

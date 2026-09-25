@@ -1,0 +1,23 @@
+{
+  "issues": [1107],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "spec": "docs/changes/1107-blackhawk-php/proposal.md",
+  "plan": "docs/changes/1107-blackhawk-php/plans/2026-09-25-blackhawk-php-plan.md",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Non-interactive fleet lane: brainstorming questions were answered with their recommended defaults (spec Decisions D1-D9); the human-confirmed fork was core PHP + WordPress idioms.",
+    "The issue's second ask (surface the abstention without --strict) already shipped in canary-blackhawk/scripts/cli.mjs (the default text prints the Abstained line) and is pinned by the existing test 'zero scanned files ABSTAINS, never a clean bill of health'; no new work or test was added for it.",
+    "D1: PHP tokens are gated to .php files via a per-rule php variant; a .php file is matched only against PHP variants and other files only against the base patterns, because date(2024, 1, 1) is a Python constructor.",
+    "D2: pinning to a neutral zone/locale is the fix, not the defect: new DateTimeZone(...) and date_default_timezone_set(...) with a UTC literal ('UTC','GMT','Etc/UTC','Z','+00:00'), and setlocale(..., 'C'|'POSIX'), do not fire; any other value, and date_default_timezone_get(), fires BH003 (narrows the issue's literal token list after review).",
+    "D3: the WordPress pre_option_gmt_offset / pre_option_timezone_string filters are frozen-clock markers as the issue groups them (suppress BH001/BH002/BH004); BH003 stays never-suppressed.",
+    "D4: in .php files only, a match inside a trailing //, # or /* comment outside a string literal is dropped; #[ is a PHP 8 attribute. string-literals.mjs (byte-identical with canary-savant's copy) is untouched.",
+    "D5: checkdate() is flagged only through a clock read in its arguments (the inner date()/time() fires BH001).",
+    "D6: DAY/WEEK/MONTH/YEAR_IN_SECONDS fire BH004 only in +/- timestamp arithmetic; a bare HOUR_IN_SECONDS TTL does not.",
+    "D7: PHP test files are *Test.php (PHPUnit) and test-*.php (WordPress) plus the existing test directories.",
+    "strtotime with a relative string fires BH001 only without a base timestamp; IntlDateFormatter fires only on construction (new / ::create), not on a `use` import; method declarations (function time()) and method/static calls are never the builtin.",
+    "D9: Carbon::now()/today(), date_create() and WP current_datetime() are BH001 tokens so the setTestNow marker has something to suppress; '@group time-sensitive' (which activates Symfony ClockMock) is a marker.",
+    "Autopilot ran at a single low-complexity phase with an auto-approved 4-task plan (no approval signal fired); planning and execution were done in-lane, review was dispatched to harness-code-reviewer.",
+    "harness-code-reviewer round 1 returned 3 important findings (unspaced operators missed, declarations flagged, BH003 flagging the UTC/C-locale fix) and 2 relevant suggestions (strtotime base timestamp, IntlDateFormatter import); all fixed with tests. Suggestion 6 (first match wins before keep, e.g. `usleep(0); sleep(2);`) is pre-existing engine behaviour and left as is; suggestion 7 (broad PHP markers) is documented in SKILL.md rather than narrowed, per the issue's grouping."
+  ]
+}

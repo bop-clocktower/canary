@@ -853,6 +853,9 @@ describe('PHP support (#1107)', () => {
     "$s = wp_date('Y-m-d');",
     "$s = date_i18n('F j, Y');",
     "$ok = checkdate(2, 29, (int) date('Y'));",
+    // Operators written without a space are still operators (review #1).
+    "$args = ['k'=>time()];",
+    '$t = $b ?:time();',
   ])('BH001 flags %s', (line) => {
     expect(php(line)).toContain(BH1);
   });
@@ -868,6 +871,10 @@ describe('PHP support (#1107)', () => {
     '$t = Clock::time();',
     '$d = $row->date();',
     "$s = wp_date('Y-m-d', 1704067200);",
+    // A declaration is not a call (review #2); a fixed base is not now (#4).
+    'private function time(): int',
+    'public function date($fmt) {',
+    "$ts = strtotime('+1 day', 1704067200);",
   ])('BH001 does not flag %s', (line) => {
     expect(php(line)).not.toContain(BH1);
   });
@@ -897,6 +904,7 @@ describe('PHP support (#1107)', () => {
     "date_default_timezone_set('America/New_York');",
     '$z = new DateTimeZone(date_default_timezone_get());',
     "$z = new DateTimeZone('Europe/Berlin');",
+    '$f = IntlDateFormatter::create($locale, 0, 0);',
   ])('BH003 flags %s', (line) => {
     expect(php(line)).toContain(BH3);
   });
@@ -906,6 +914,12 @@ describe('PHP support (#1107)', () => {
     "$z = new DateTimeZone('UTC');",
     "$z = new \\DateTimeZone('Etc/UTC');",
     "$s = $d->format('Y-m-d');",
+    // Pinning to a neutral zone/locale is the fix (review #3), an import is
+    // not a use (#5), and a declaration is not a call (#2).
+    "date_default_timezone_set('UTC');",
+    "setlocale(LC_ALL, 'C');",
+    'use IntlDateFormatter;',
+    'public function date($fmt) {',
   ])('BH003 does not flag %s', (line) => {
     expect(php(line)).not.toContain(BH3);
   });
@@ -925,6 +939,8 @@ describe('PHP support (#1107)', () => {
     '$expires = $start + DAY_IN_SECONDS;',
     '$later = $start + 2 * WEEK_IN_SECONDS;',
     '$earlier = YEAR_IN_SECONDS - $offset;',
+    "$this->assertTrue($x>strtotime('2024-01-01'));",
+    '$c = $a<=>strtotime($b);',
     // A UTC anchor does not fix a fixed-length day across DST/leap days.
     "$expires = strtotime('2024-01-01 UTC') + DAY_IN_SECONDS;",
   ])('BH004 flags %s', (line) => {
