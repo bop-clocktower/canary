@@ -7,7 +7,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { FROZEN_CLOCK_MARKERS, RULES } from './rules.mjs';
-import { stringLiteralRanges, execOutsideStrings } from './string-literals.mjs';
+import {
+  stringLiteralRanges,
+  execOutsideStrings,
+  inStringLiteral,
+} from './string-literals.mjs';
 
 export const SNIPPET_LIMIT = 120;
 
@@ -19,6 +23,7 @@ const SUPPORTED_SUFFIXES = [
   '.tsx',
   '.mjs',
   '.cjs',
+  '.php',
 ];
 
 const SKIP_DIRS = new Set([
@@ -68,6 +73,9 @@ function isTestFile(filePath) {
   const stem = name.slice(0, name.length - suffix.length);
   if (name.includes('.test.') || name.includes('.spec.')) return true;
   if (stem.startsWith('test_') || stem.endsWith('_test')) return true;
+  // PHPUnit's `FooTest.php` and WordPress's `test-foo.php` (#1107).
+  if (suffix === '.php' && (stem.endsWith('Test') || stem.startsWith('test-')))
+    return true;
   return partsOf(filePath)
     .slice(0, -1)
     .some((part) => TEST_DIRS.has(part));
@@ -119,6 +127,24 @@ function parsePragmas(lines) {
 const tokenMatches = (ruleId, token) =>
   ruleId === token || ruleId.split('-')[0] === token;
 
+const isPhp = (file) => path.extname(file) === '.php';
+
+/**
+ * Index where a trailing PHP comment (`//`, `#`, `/*`) starts on a code line,
+ * or the line length when there is none. Only a marker OUTSIDE a string
+ * literal counts, and `#[` is a PHP 8 attribute, not a comment. PHP-only on
+ * purpose: `#` is a private-field sigil in JS (#1107, spec D4).
+ */
+function phpCodeEnd(line, ranges) {
+  for (let i = 0; i < line.length; i += 1) {
+    if (inStringLiteral(ranges, i)) continue;
+    const pair = line.slice(i, i + 2);
+    if (pair === '//' || pair === '/*') return i;
+    if (line[i] === '#' && line[i + 1] !== '[') return i;
+  }
+  return line.length;
+}
+
 /**
  * @typedef {{file: string, line: number, ruleId: string, severity: string,
  *            snippet: string, why: string}} Finding
@@ -133,6 +159,7 @@ export function scanTextFull(text, file = '<text>') {
   const lines = splitLines(text);
   const frozen = frozenClockMarkers(text).length > 0;
   const pragmas = parsePragmas(lines);
+  const php = isPhp(file);
   const findings = [];
   const suppressed = [];
   lines.forEach((raw, i) => {
@@ -142,11 +169,17 @@ export function scanTextFull(text, file = '<text>') {
     // code. Computed once per line; every rule's anchor token is code, even
     // when the pattern's tail reaches into quotes (BH003's strftime('..%Z')).
     const ranges = stringLiteralRanges(stripped);
+    // A PHP file is matched against the PHP variants only, with any trailing
+    // comment cut off; every other file against the base patterns (#1107).
+    const code = php
+      ? stripped.slice(0, phpCodeEnd(stripped, ranges))
+      : stripped;
     for (const rule of RULES) {
       if (frozen && rule.clockDependent) continue;
-      const match = execOutsideStrings(rule.pattern, stripped, ranges);
+      const variant = php ? rule.php : rule;
+      const match = execOutsideStrings(variant.pattern, code, ranges);
       if (!match) continue;
-      if (rule.keep && !rule.keep(match)) continue;
+      if (variant.keep && !variant.keep(match)) continue;
       const finding = {
         file,
         line: i + 1,

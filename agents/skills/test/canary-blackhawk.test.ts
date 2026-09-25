@@ -816,3 +816,245 @@ describe('packaging', () => {
     }
   });
 });
+
+// --- PHP support (#1107) ----------------------------------------------------
+//
+// Synthetic PHPUnit / WordPress lines. PHP tokens are gated to `.php` files
+// (spec D1): `date(2024, 1, 1)` is a Python constructor, so a shared `date(`
+// token would false-positive on Python.
+
+describe('PHP support (#1107)', () => {
+  const php = (text: string, name = 'ClockTest.php') => ids(text, name);
+  const BH1 = 'BH001-wall-clock';
+  const BH2 = 'BH002-real-delay';
+  const BH3 = 'BH003-local-timezone';
+  const BH4 = 'BH004-naive-datetime-compare';
+
+  it.each([
+    '$now = time();',
+    '$now = \\time();',
+    "$day = date('Y-m-d');",
+    "$day = gmdate('Y-m-d');",
+    '$ts = mktime();',
+    "$ts = strtotime('now');",
+    "$ts = strtotime('+1 day');",
+    "$ts = strtotime('tomorrow');",
+    '$t = microtime(true);',
+    '$t = hrtime(true);',
+    '$d = new DateTime();',
+    '$d = new \\DateTimeImmutable;',
+    "$d = new DateTime('now');",
+    "$d = new DateTimeImmutable('now', $zone);",
+    '$d = date_create();',
+    '$d = Carbon::now();',
+    '$d = CarbonImmutable::today();',
+    "$ts = current_time('timestamp');",
+    '$d = current_datetime();',
+    "$s = wp_date('Y-m-d');",
+    "$s = date_i18n('F j, Y');",
+    "$ok = checkdate(2, 29, (int) date('Y'));",
+    // Operators written without a space are still operators (review #1).
+    "$args = ['k'=>time()];",
+    '$t = $b ?:time();',
+  ])('BH001 flags %s', (line) => {
+    expect(php(line)).toContain(BH1);
+  });
+
+  it.each([
+    "$day = gmdate('Y-m-d', 1704067200);",
+    '$ts = mktime(0, 0, 0, 1, 1, 2024);',
+    "$ts = strtotime('2024-01-01 00:00:00 UTC');",
+    "$d = new DateTime('2024-01-01T00:00:00Z');",
+    "$z = new DateTimeZone('UTC');",
+    '$ok = checkdate(2, 29, 2024);',
+    '$t = $clock->time();',
+    '$t = Clock::time();',
+    '$d = $row->date();',
+    "$s = wp_date('Y-m-d', 1704067200);",
+    // A declaration is not a call (review #2); a fixed base is not now (#4).
+    'private function time(): int',
+    'public function date($fmt) {',
+    "$ts = strtotime('+1 day', 1704067200);",
+  ])('BH001 does not flag %s', (line) => {
+    expect(php(line)).not.toContain(BH1);
+  });
+
+  it.each([
+    'sleep(1);',
+    'usleep(250000);',
+    'usleep(1_000);',
+    'time_nanosleep(0, 500000000);',
+  ])('BH002 flags %s', (line) => {
+    expect(php(line)).toContain(BH2);
+  });
+
+  it.each(['sleep(0);', 'usleep($delay);', 'time_nanosleep(0, 0);'])(
+    'BH002 does not flag %s',
+    (line) => {
+      expect(php(line)).not.toContain(BH2);
+    },
+  );
+
+  it.each([
+    "$s = date('Y-m-d H:i', $ts);",
+    '$ts = mktime(0, 0, 0, 1, 1, 2024);',
+    "$s = strftime('%B %d', $ts);",
+    '$f = new IntlDateFormatter($locale, 0, 0);',
+    "setlocale(LC_TIME, 'de_DE');",
+    "date_default_timezone_set('America/New_York');",
+    '$z = new DateTimeZone(date_default_timezone_get());',
+    "$z = new DateTimeZone('Europe/Berlin');",
+    '$f = IntlDateFormatter::create($locale, 0, 0);',
+  ])('BH003 flags %s', (line) => {
+    expect(php(line)).toContain(BH3);
+  });
+
+  it.each([
+    "$s = gmdate('Y-m-d H:i', $ts);",
+    "$z = new DateTimeZone('UTC');",
+    "$z = new \\DateTimeZone('Etc/UTC');",
+    "$s = $d->format('Y-m-d');",
+    // Pinning to a neutral zone/locale is the fix (review #3), an import is
+    // not a use (#5), and a declaration is not a call (#2).
+    "date_default_timezone_set('UTC');",
+    "setlocale(LC_ALL, 'C');",
+    'use IntlDateFormatter;',
+    'public function date($fmt) {',
+  ])('BH003 does not flag %s', (line) => {
+    expect(php(line)).not.toContain(BH3);
+  });
+
+  it('the gmdate -> date swap is exactly a BH003 finding (the issue repro)', () => {
+    expect(
+      php("$this->assertSame('2024-01-01', gmdate('Y-m-d', $ts));"),
+    ).toEqual(new Set());
+    expect(php("$this->assertSame('2024-01-01', date('Y-m-d', $ts));")).toEqual(
+      new Set([BH3]),
+    );
+  });
+
+  it.each([
+    "$this->assertTrue($d == new DateTime('2024-01-01'));",
+    "$this->assertTrue(strtotime('2024-03-10 02:30') < $ts);",
+    '$expires = $start + DAY_IN_SECONDS;',
+    '$later = $start + 2 * WEEK_IN_SECONDS;',
+    '$earlier = YEAR_IN_SECONDS - $offset;',
+    "$this->assertTrue($x>strtotime('2024-01-01'));",
+    '$c = $a<=>strtotime($b);',
+    // A UTC anchor does not fix a fixed-length day across DST/leap days.
+    "$expires = strtotime('2024-01-01 UTC') + DAY_IN_SECONDS;",
+  ])('BH004 flags %s', (line) => {
+    expect(php(line)).toContain(BH4);
+  });
+
+  it.each([
+    "$this->assertTrue($d == new DateTime('2024-01-01', new DateTimeZone('UTC')));",
+    "$this->assertTrue(strtotime('2024-03-10 02:30 UTC') < $ts);",
+    "$args = ['at' => strtotime('2024-01-01 UTC')];",
+    '$ttl = HOUR_IN_SECONDS;',
+    "$d = new DateTime('2024-01-01');",
+  ])('BH004 does not flag %s', (line) => {
+    expect(php(line)).not.toContain(BH4);
+  });
+
+  it.each([
+    'use Symfony\\Bridge\\PhpUnit\\ClockMock;',
+    ' * @group time-sensitive',
+    'use phpmock\\phpunit\\PHPMock;',
+    "$time = $this->getFunctionMock(__NAMESPACE__, 'time');",
+    'Carbon::setTestNow(Carbon::create(2024, 1, 1));',
+    "add_filter('pre_option_gmt_offset', fn () => 0);",
+    "add_filter('pre_option_timezone_string', fn () => 'UTC');",
+  ])('marker %s suppresses BH001/BH002/BH004 but not BH003', (marker) => {
+    const body = [
+      '$now = time();',
+      'sleep(1);',
+      '$expires = $start + DAY_IN_SECONDS;',
+      "$s = date('Y-m-d', $ts);",
+    ].join('\n');
+    expect(php(body)).toEqual(new Set([BH1, BH2, BH3, BH4])); // control
+    expect(php(`${marker}\n${body}`)).toEqual(new Set([BH3]));
+  });
+
+  it.each([
+    "$fixture = 'time() and sleep(1)';",
+    '$fixture = "date(\'Y\') is data";',
+    '// $now = time();',
+    '# sleep(1);',
+    ' * @see date()',
+    '/* usleep(5); */',
+    '$x = 1; // $now = time();',
+    '$x = 1; # sleep(1);',
+    "$x = 'a'; /* date('Y') */",
+  ])('does not fire on a token in a string or comment: %s', (line) => {
+    expect(php(line)).toEqual(new Set());
+  });
+
+  it('a # inside a string does not start a trailing comment', () => {
+    expect(php("$s = '#'; $now = time();")).toContain(BH1);
+  });
+
+  it('a PHP 8 attribute (#[...]) is code, not a trailing comment', () => {
+    expect(php('$f = #[Pure] fn () => time();')).toContain(BH1);
+  });
+
+  it.each([
+    ['d = date(2024, 1, 1)', 'test_a.py'],
+    ['sleep(1)', 'test_a.py'],
+    ['const t = time();', 'a.spec.ts'],
+    ['const s = strftime(fmt);', 'a.spec.ts'],
+  ])('PHP-only tokens do not fire outside .php: %s', (line, name) => {
+    expect(ids(line, name)).toEqual(new Set());
+  });
+
+  it('JS/Python tokens do not fire in a .php file', () => {
+    expect(php('$t = Date.now(); setTimeout($fn, 500);')).toEqual(new Set());
+  });
+
+  it('pragma suppression works in PHP', () => {
+    const r = scanTextFull(
+      '// blackhawk-ignore BH002 -- real socket timeout under test\nsleep(1);',
+      'ClockTest.php',
+    );
+    expect(r.findings).toEqual([]);
+    expect(r.suppressed.map((f) => f.ruleId)).toEqual([BH2]);
+  });
+
+  describe('path selection', () => {
+    const tmps: string[] = [];
+    afterEach(() => {
+      while (tmps.length)
+        fs.rmSync(tmps.pop()!, { recursive: true, force: true });
+    });
+    const phpTree = () => {
+      const root = mkTmp();
+      tmps.push(root);
+      const write = (rel: string) => {
+        const full = path.join(root, rel);
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, '<?php\n$now = time();\n');
+      };
+      write('tests/Unit/ClockTest.php');
+      write('plugin/test-clock.php');
+      write('plugin/ReportTest.php');
+      write('src/Clock.php');
+      return root;
+    };
+
+    it('a directory walk scans PHPUnit and WordPress test files only', () => {
+      const result = scanPaths([phpTree()]);
+      const files = new Set(result.findings.map((f) => path.basename(f.file)));
+      expect(files).toEqual(
+        new Set(['ClockTest.php', 'test-clock.php', 'ReportTest.php']),
+      );
+      expect(result.filesScanned).toBe(3);
+    });
+
+    it('scans an explicit .php file anyway', () => {
+      const root = phpTree();
+      const result = scanPaths([path.join(root, 'src', 'Clock.php')]);
+      expect(result.filesScanned).toBe(1);
+      expect(result.findings.map((f) => f.ruleId)).toEqual([BH1]);
+    });
+  });
+});
