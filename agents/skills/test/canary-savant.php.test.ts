@@ -363,3 +363,47 @@ describe('SV003 PHP teardown regions (#1106 D8)', () => {
     expect(hits(inClass(body))).toEqual([]);
   });
 });
+
+describe('SV003 PHP restore policy (#1106 D7/D8)', () => {
+  it.each([
+    ["add_filter('the_title', 'x');", "remove_filter('the_title', 'x');"],
+    ["add_action('init', 'boot');", "remove_action('init', 'boot');"],
+    ["add_filter('the_title', 'x');", "remove_all_filters('the_title');"],
+    ["add_action('init', 'boot');", "remove_all_actions('init');"],
+  ])('%s is paired by %s anywhere in the file', (add, remove) => {
+    const body = [
+      '    public function test_a(): void',
+      '    {',
+      `        ${add}`,
+      '        $this->assertTrue(true);',
+      `        ${remove}`,
+      '    }',
+    ];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  it('a remove for another hook leaves the add flagged', () => {
+    const body = [
+      "        add_action('init', 'boot');",
+      "        remove_action('wp_head', 'boot');",
+    ];
+    expect(hits(inClass(body))).toEqual(['4:SV003']);
+  });
+
+  it('a commented-out remove_filter does not pair', () => {
+    const body = [
+      "        add_filter('the_title', 'x');",
+      "        // remove_filter('the_title', 'x');",
+    ];
+    expect(hits(inClass(body))).toEqual(['4:SV003']);
+  });
+
+  it('an add_filter inside tearDown is not its own restore', () => {
+    const body = [
+      '    protected function tearDown(): void {',
+      "        add_filter('a', 'b');",
+      '    }',
+    ];
+    expect(hits(inClass(body))).toEqual(['5:SV003']);
+  });
+});

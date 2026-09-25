@@ -167,6 +167,8 @@ export const familiesFor = (isPhp) =>
 // A teardown method; the lookahead skips a bodiless `...(): void;` declaration.
 export const PHP_TEARDOWN_FN =
   /\bfunction\s+(?:tear_?down\w*|wpTearDown\w*)\s*\((?![^{]*;\s*$)/i;
+// A whole-line comment: a remove_filter() there is prose, not a pairing.
+export const COMMENT_LINE = /^\s*(?:\/\/|#|\*|\/\*)/;
 
 // SV004: order-coupled name or comment (fires on code and comment lines).
 // Split in two (#493) because the alternatives anchor differently:

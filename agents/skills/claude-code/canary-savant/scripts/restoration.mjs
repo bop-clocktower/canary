@@ -39,7 +39,12 @@
 //   recognized; only idioms where the restore call is spelled out are. A
 //   missed restore is a false flag, the safe direction.
 
-import { SINGLETON_FAMILIES, familiesFor, PHP_TEARDOWN_FN } from './rules.mjs';
+import {
+  SINGLETON_FAMILIES,
+  familiesFor,
+  PHP_TEARDOWN_FN,
+  COMMENT_LINE,
+} from './rules.mjs';
 import {
   stringLiteralRanges,
   inStringLiteral,
@@ -215,6 +220,30 @@ function collectPyRegions(lines, rangesByLine, region) {
 }
 
 /**
+ * Record restores (#493): a family's idioms inside a teardown region, plus
+ * (#1106) a pairAnywhere family's deletes on any code line of the file.
+ */
+function recordRestores(lines, rangesByLine, region, isPhp, record) {
+  const families = familiesFor(isPhp);
+  lines.forEach((line, i) => {
+    const inRegion = region.has(i);
+    const code = !COMMENT_LINE.test(line);
+    for (const family of families) {
+      const paired = family.pairAnywhere; // add_filter never restores itself
+      const patterns = [
+        ...(inRegion && !paired ? [family.assign, ...family.restoreAll] : []),
+        ...(inRegion || (code && paired) ? family.deletes : []),
+      ];
+      for (const pattern of patterns) {
+        for (const m of execAllOutsideStrings(pattern, line, rangesByLine[i])) {
+          record(family.id, keyOf(m, family)); // restoreAll: no group -> null
+        }
+      }
+    }
+  });
+}
+
+/**
  * Analyze which globals the file restores in teardown.
  * @param {string} text file contents
  * @param {boolean} [isPhp] enable the PHP families and regions (#1106)
@@ -242,20 +271,7 @@ export function analyzeRestoration(text, isPhp = false) {
     restoredKeys.get(familyId).add(key);
   };
 
-  for (const i of region) {
-    const line = lines[i];
-    const ranges = rangesByLine[i];
-    for (const family of familiesFor(isPhp)) {
-      for (const pattern of [family.assign, ...family.deletes]) {
-        for (const match of execAllOutsideStrings(pattern, line, ranges)) {
-          record(family.id, keyOf(match, family));
-        }
-      }
-      for (const pattern of family.restoreAll) {
-        if (execOutsideStrings(pattern, line, ranges)) record(family.id, null);
-      }
-    }
-  }
+  recordRestores(lines, rangesByLine, region, isPhp, record);
 
   return {
     restores(familyId, key) {
