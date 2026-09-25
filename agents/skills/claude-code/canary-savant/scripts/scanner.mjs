@@ -266,12 +266,13 @@ const tokenMatches = (ruleId, token) =>
  */
 export function scanTextFull(text, file = '<text>') {
   const lang = langOf(file);
+  const isPhp = lang === 'php';
   const lines = splitLines(text);
   const findings = [];
   // #493 root cause 2: SV003's why asserts persistence, so a file that
   // restores the global (teardown restore or snapshot write-back) must not
   // be flagged. Computed once per file.
-  const restoration = analyzeRestoration(text);
+  const restoration = analyzeRestoration(text, isPhp);
 
   findings.push(...LANGS[lang].sv001(lines, file, text));
   findings.push(...sv002MissingTeardown(lines, file, lang));
@@ -294,7 +295,7 @@ export function scanTextFull(text, file = '<text>') {
       );
     }
     if (isComment(stripped)) return;
-    const mutation = classifyMutation(stripped, ranges);
+    const mutation = classifyMutation(stripped, ranges, isPhp);
     if (mutation) {
       const restored =
         isSnapshotWriteBack(mutation, lines) ||

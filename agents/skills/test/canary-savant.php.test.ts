@@ -181,3 +181,89 @@ describe('classifyMutation: PHP families (#1106 D7)', () => {
     }
   });
 });
+
+describe('SV003 PHP in the scanner (#1106)', () => {
+  it('a superglobal write with no restore fires on its line', () => {
+    const body = [
+      '    public function test_a(): void',
+      '    {',
+      "        $_GET['q'] = 'x';",
+      '    }',
+    ];
+    expect(hits(inClass(body))).toEqual(['6:SV003']);
+  });
+
+  it.each([
+    "$_SERVER['X'] .= 'y';",
+    '$_SESSION[] = 1;',
+    '$_POST = [];',
+    "define('FOO', 1);",
+    "putenv('APP_ENV=test');",
+    "ini_set('precision', '4');",
+    "date_default_timezone_set('UTC');",
+    "add_filter('the_title', 'x');",
+    "update_option('blogname', 'x');",
+  ])('%s with no restore fires', (stmt) => {
+    expect(hits(inClass([`        ${stmt}`]))).toEqual(['4:SV003']);
+  });
+
+  it('a restore in a finally block is silent', () => {
+    const body = [
+      '    public function test_a(): void',
+      '    {',
+      '        try {',
+      "            $_GET['q'] = 'x';",
+      '        } finally {',
+      "            unset($_GET['q']);",
+      '        }',
+      '    }',
+    ];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  it('the snapshot write-back line itself is silent', () => {
+    const body = [
+      '    public function test_a(): void',
+      '    {',
+      '        $saved = $_SERVER;',
+      "        $_SERVER['HTTPS'] = 'on';",
+      '        $_SERVER = $saved;',
+      '    }',
+    ];
+    // Only the HTTPS write (line 7); the write-back on line 8 is the restore.
+    expect(hits(inClass(body))).toEqual(['7:SV003']);
+  });
+
+  it('reads and comparisons never fire', () => {
+    const body = [
+      "        $q = $_GET['q'];",
+      "        if ($_GET['q'] === 'x') {}",
+      "        if (!defined('X')) {}",
+    ];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  it('a token in a comment never fires', () => {
+    const body = [
+      "        // $_GET['q'] = 'x';",
+      "        # putenv('A=1');",
+      "        /* define('X', 1); */",
+      "         * add_filter('a', 'b');",
+    ];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  it('a token in a string never fires', () => {
+    const body = [
+      '        $s = "$_GET[\'q\'] = 1";',
+      '        $t = \'putenv("A=1")\';',
+    ];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  it('JS and Python files keep ignoring PHP tokens', () => {
+    expect(hits("define(['a'], function (a) {});", 'a.test.js')).toEqual([]);
+    expect(hits("$_GET['q'] = 1;", 'a.test.js')).toEqual([]);
+    expect(hits("os.putenv('A=1')", 'test_a.py')).toEqual([]);
+  });
+});
