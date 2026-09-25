@@ -2,8 +2,9 @@ name: Leak Gate
 
 # #843, ADR 0023 (docs/knowledge/decisions/0023-leak-gate-pull-request-target.md).
 #
-# This job is the future producer of the REQUIRED context
-# `No removed-symbol or proprietary leaks` (see the two-step note on the job),
+# This job carries the REQUIRED context name
+# `No removed-symbol or proprietary leaks` (manifest producer: docs-lint.yml
+# until #843 step 2b; see the note on the job),
 # which needs `secrets.CANARY_PROPRIETARY_DENYLIST`. GitHub withholds secrets from
 # fork-triggered `pull_request` runs, so under that trigger no fork PR could
 # ever pass. `pull_request_target` runs in BASE-repo context, where the secret
@@ -39,14 +40,17 @@ permissions:
 
 jobs:
   removed-symbols:
-    # TRANSITIONAL NAME (#843 step 1). pull_request_target runs the workflow
-    # as it exists on the base branch, so on the PR that adds this file it
-    # cannot report. The required context therefore stays on docs-lint.yml's
-    # pull_request job until this file is on main. Step 2 renames this job to
-    # `No removed-symbol or proprietary leaks` and deletes the docs-lint.yml
-    # job in the same PR. Until then a distinct name avoids two workflows
-    # reporting one context on the same PR.
-    name: Leak gate (pull_request_target, transitional)
+    # STEP 2a (#843). This job now carries the required context name. The
+    # manifest still names docs-lint.yml as its producer, because
+    # pull_request_target runs the workflow as it exists on the base branch:
+    # on the PR that made this rename, main's copy still reported the step-1
+    # name, so only docs-lint.yml's pull_request job could report the context
+    # there. Until step 2b deletes that job, BOTH workflows report this
+    # context on every same-repo PR and push to main. They agree on a real
+    # leak unless the scanner or the secret differs between them (a PR that
+    # edits the scanner, or a fork PR). Step 2b moves the manifest entry here
+    # and removes the docs-lint.yml job.
+    name: No removed-symbol or proprietary leaks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
