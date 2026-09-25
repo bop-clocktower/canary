@@ -53,6 +53,76 @@ export const SEVERITY = Object.fromEntries(
   RULES.map((r) => [r.ruleId, r.severity]),
 );
 
+// PHP families (#1106) carry `php: true` and apply to .php files only (a JS
+// `define(` is AMD, not a constant). Optional fields: `keyOf(match)` when the
+// key is not group 1; `unrestorable` (no restore launders it); `pairAnywhere`
+// (a delete ANYWHERE in the file restores: WP's inline add_filter ...
+// remove_filter); `wpAutoRestored` (a WP_UnitTestCase base restores it).
+// PHP_ASSIGN is plain or compound (.= += ??= ...), never `==`/`===`/`=>`.
+const PHP_OP = String.raw`(?:\.|\?\?|\*\*|<<|>>|[-+*/%&|^])`;
+const PHP_ASSIGN = String.raw`\s*${PHP_OP}?=(?![=>])`;
+// $_GET['k'] = | $_GET['k']['n'] .= | $_GET[] = | $_GET = ... (group 1: key)
+const superglobal = (name) => ({
+  id: `$${name}`,
+  token: String.raw`\$${name}`,
+  php: true,
+  assign: new RegExp(
+    String.raw`(?<![\w$])\$${name}\b\s*(?:\[([^\]]*)\](?:\s*\[[^\]]*\])*)?` +
+      PHP_ASSIGN,
+  ),
+  deletes: [new RegExp(String.raw`\bunset\s*\(\s*\$${name}\b\s*\[([^\]]*)\]`)],
+  restoreAll: [],
+});
+const phpCall = (id, assign, deletes, extra = {}) => ({
+  id,
+  token: id,
+  php: true,
+  assign,
+  deletes,
+  restoreAll: [],
+  ...extra,
+});
+const PHP_FAMILIES = [
+  ...[
+    '_GET',
+    '_POST',
+    '_COOKIE',
+    '_SERVER',
+    '_ENV',
+    '_SESSION',
+    '_REQUEST',
+    '_FILES',
+    'GLOBALS',
+  ].map(superglobal),
+  // putenv('NAME=v') sets; putenv('NAME') (no `=`) unsets, i.e. restores.
+  phpCall(
+    'putenv',
+    /\bputenv\s*\(\s*(['"])([^'"=]+)=/,
+    [/\bputenv\s*\(\s*(['"])([^'"=]+)\1\s*\)/],
+    { keyOf: (m) => m[2] },
+  ),
+  phpCall('ini_set', /\bini_set\s*\(\s*([^,)]+)/, [
+    /\bini_restore\s*\(\s*([^,)]+)/,
+  ]),
+  phpCall('date_default_timezone_set', /\bdate_default_timezone_set\s*\(/, []),
+  // A PHP constant can never be undefined. `defined(` does not match.
+  phpCall('define', /(?<![\w$>:])define\s*\(\s*([^,)]+)/, [], {
+    unrestorable: true,
+  }),
+  phpCall(
+    'wp.hooks',
+    /\badd_(?:filter|action)\s*\(\s*([^,)]+)/,
+    [/\bremove_(?:filter|action|all_filters|all_actions)\s*\(\s*([^,)]+)/],
+    { pairAnywhere: true, wpAutoRestored: true },
+  ),
+  phpCall(
+    'wp.options',
+    /\b(?:update|add)_option\s*\(\s*([^,)]+)/,
+    [/\bdelete_option\s*\(\s*([^,)]+)/],
+    { wpAutoRestored: true },
+  ),
+];
+
 // SV003: singleton / env mutation (assignment, never a read or comparison).
 // A trailing negative lookahead on `=` keeps `==` comparisons out. One entry
 // per process-global family (#493): `assign` detects the mutation (and, in a
@@ -89,7 +159,11 @@ export const SINGLETON_FAMILIES = [
     ],
     restoreAll: [/\bsys\.modules\.update\s*\(/],
   },
+  ...PHP_FAMILIES,
 ];
+// SV003 restore context for PHP (#1106), read by restoration.mjs.
+export const familiesFor = (isPhp) =>
+  SINGLETON_FAMILIES.filter((family) => isPhp || !family.php);
 
 // SV004: order-coupled name or comment (fires on code and comment lines).
 // Split in two (#493) because the alternatives anchor differently:

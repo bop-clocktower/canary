@@ -37,7 +37,7 @@
 //   recognized; only idioms where the restore call is spelled out are. A
 //   missed restore is a false flag, the safe direction.
 
-import { SINGLETON_FAMILIES } from './rules.mjs';
+import { SINGLETON_FAMILIES, familiesFor } from './rules.mjs';
 import {
   stringLiteralRanges,
   inStringLiteral,
@@ -73,7 +73,8 @@ function literalKey(expr) {
 }
 
 /** Key from an assign/delete match: dot-property group or bracket literal. */
-function keyOf(match) {
+function keyOf(match, family) {
+  if (family.keyOf) return family.keyOf(match); // putenv NAME= (#1106)
   // process.env has (dotKey, bracketExpr); the Python families have a single
   // bracket/arg group. A dot-property is always a literal key.
   if (match.length > 2) return match[1] ?? literalKey(match[2]);
@@ -84,15 +85,16 @@ function keyOf(match) {
  * Classify the singleton mutation on `line`, if any.
  * @param {string} line
  * @param {Array<[number, number]>} ranges string ranges for `line`
+ * @param {boolean} [isPhp] include the PHP families (#1106)
  * @returns {{family: string, key: string|null, rhs: string}|null}
  */
-export function classifyMutation(line, ranges) {
-  for (const family of SINGLETON_FAMILIES) {
+export function classifyMutation(line, ranges, isPhp = false) {
+  for (const family of familiesFor(isPhp)) {
     const match = execOutsideStrings(family.assign, line, ranges);
     if (!match) continue;
     return {
       family: family.id,
-      key: keyOf(match),
+      key: keyOf(match, family),
       rhs: line.slice(match.index + match[0].length),
     };
   }
@@ -240,7 +242,7 @@ export function analyzeRestoration(text) {
     for (const family of SINGLETON_FAMILIES) {
       for (const pattern of [family.assign, ...family.deletes]) {
         for (const match of execAllOutsideStrings(pattern, line, ranges)) {
-          record(family.id, keyOf(match));
+          record(family.id, keyOf(match, family));
         }
       }
       for (const pattern of family.restoreAll) {

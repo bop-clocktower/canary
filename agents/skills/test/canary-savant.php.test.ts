@@ -15,6 +15,8 @@ import {
   scanText,
   scanPaths,
 } from '../claude-code/canary-savant/scripts/scanner.mjs';
+import { classifyMutation } from '../claude-code/canary-savant/scripts/restoration.mjs';
+import { stringLiteralRanges } from '../claude-code/canary-savant/scripts/string-literals.mjs';
 
 // Braced bodies on purpose (see canary-savant.restoration.test.ts, #495).
 const php = (...lines: string[]) => {
@@ -118,5 +120,64 @@ describe('SV002 PHP class-scoped pairs (#1106 D6)', () => {
       '    // tearDownAfterClass() is inherited',
     ];
     expect(hits(inClass(body))).toEqual(['4:SV002']);
+  });
+});
+
+// --- SV003 families (D7) ---------------------------------------------------
+
+const classifyPhp = (line: string) => {
+  return classifyMutation(line, stringLiteralRanges(line), true);
+};
+
+describe('classifyMutation: PHP families (#1106 D7)', () => {
+  it.each([
+    ["$_GET['q'] = 'x';", '$_GET', 'q'],
+    ["$_SERVER['HTTP_HOST'] = 'example.org';", '$_SERVER', 'HTTP_HOST'],
+    ["$_SESSION['a']['b'] = 1;", '$_SESSION', 'a'],
+    ["$_COOKIE['c'] .= 'x';", '$_COOKIE', 'c'],
+    ["$_REQUEST['r'] ??= 1;", '$_REQUEST', 'r'],
+    ['$_FILES[] = $upload;', '$_FILES', null],
+    ['$_POST = [];', '$_POST', null],
+    ["$_ENV['APP_ENV'] = 'test';", '$_ENV', 'APP_ENV'],
+    ["$GLOBALS['wp_rewrite'] = null;", '$GLOBALS', 'wp_rewrite'],
+    ["putenv('APP_ENV=test');", 'putenv', 'APP_ENV'],
+    ["ini_set('precision', '4');", 'ini_set', 'precision'],
+    ["date_default_timezone_set('UTC');", 'date_default_timezone_set', null],
+    ["define('WP_DEBUG', true);", 'define', 'WP_DEBUG'],
+    [
+      "add_filter('the_title', '__return_empty_string');",
+      'wp.hooks',
+      'the_title',
+    ],
+    ["add_action( 'init', 'boot' );", 'wp.hooks', 'init'],
+    ["update_option('blogname', 'x');", 'wp.options', 'blogname'],
+    ["add_option('k', 1);", 'wp.options', 'k'],
+  ])('classifies %s as %s', (line, family, key) => {
+    expect(classifyPhp(line)).toMatchObject({ family, key });
+  });
+
+  it.each([
+    "if ($_GET['q'] == 'x') {}",
+    "$same = $_GET['q'] === 'x';",
+    "$q = $_GET['q'];",
+    "$pairs = [$_GET['q'] => 1];",
+    '$_GETX = 1;',
+    "if (!defined('WP_DEBUG')) {}",
+    "$this->define('X', 1);",
+    "Foo::define('X', 1);",
+    "$v = get_option('blogname');",
+  ])('returns null for the read or comparison %s', (line) => {
+    expect(classifyPhp(line)).toBeNull();
+  });
+
+  it('never applies a PHP family outside .php (a JS define( is AMD)', () => {
+    const lines = [
+      "define(['dep'], factory);",
+      "$_GET['q'] = 1;",
+      "add_filter('x', cb);",
+    ];
+    for (const line of lines) {
+      expect(classifyMutation(line, stringLiteralRanges(line))).toBeNull();
+    }
   });
 });
