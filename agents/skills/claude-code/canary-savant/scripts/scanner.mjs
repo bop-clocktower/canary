@@ -87,10 +87,11 @@ function isTestFile(filePath) {
   if (!SUPPORTED_SUFFIXES.includes(suffix)) return false;
   const name = path.basename(filePath);
   const stem = name.slice(0, name.length - suffix.length);
+  // PHPUnit FooTest.php, WordPress test-foo.php (#1106 D11) - by name only:
+  // tests/ also holds bootstrap.php and wp-tests-config.php, never tests.
+  if (suffix === '.php') return /^test-|Test$/.test(stem);
   if (name.includes('.test.') || name.includes('.spec.')) return true;
   if (stem.startsWith('test_') || stem.endsWith('_test')) return true;
-  // PHPUnit FooTest.php, WordPress test-foo.php (#1106 D11).
-  if (suffix === '.php' && /^test-|Test$/.test(stem)) return true;
   const dirs = partsOf(filePath).slice(0, -1);
   return dirs.some((part) => TEST_DIRS.has(part));
 }

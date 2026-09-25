@@ -41,16 +41,44 @@ function withTree(files: string[], fn: (root: string) => void) {
 }
 
 describe('PHP test-file discovery (#1106 D11)', () => {
-  it('walks FooTest.php, test-foo.php and .php under tests/, nothing else', () => {
+  it('walks FooTest.php and test-foo.php, nothing else', () => {
     const files = [
       'plugin/FooTest.php',
       'plugin/test-foo.php',
-      'tests/unit/Bar.php',
       'src/Foo.php',
       'plugin/helper.php',
     ];
     withTree(files, (root) => {
-      expect(scanPaths([root]).filesScanned).toBe(3);
+      expect(scanPaths([root]).filesScanned).toBe(2);
+    });
+  });
+
+  // Fix round: tests/ holds PHP bootstrap and config that never run as tests
+  // (and a bootstrap's define()s are the point), so the directory is not
+  // enough for .php - the NAME must say test.
+  it('walks tests/FooTest.php but not tests/ bootstrap or config', () => {
+    const files = [
+      'tests/FooTest.php',
+      'tests/bootstrap.php',
+      'tests/wp-tests-config.php',
+      'tests/unit/Bar.php',
+    ];
+    withTree(files, (root) => {
+      const { filesScanned } = scanPaths([root]);
+      expect(filesScanned).toBe(1);
+    });
+  });
+
+  it('still scans tests/bootstrap.php when named explicitly', () => {
+    withTree(['tests/bootstrap.php'], (root) => {
+      const file = path.join(root, 'tests', 'bootstrap.php');
+      expect(scanPaths([file]).filesScanned).toBe(1);
+    });
+  });
+
+  it('keeps walking JS and Python sources under tests/', () => {
+    withTree(['tests/helper.js', 'tests/helper.py'], (root) => {
+      expect(scanPaths([root]).filesScanned).toBe(2);
     });
   });
 
