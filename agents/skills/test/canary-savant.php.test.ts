@@ -171,6 +171,22 @@ describe('classifyMutation: PHP families (#1106 D7)', () => {
     expect(classifyPhp(line)).toBeNull();
   });
 
+  // Fix round: a method or static call that shares a global function's name
+  // is the object's business, not the process's.
+  it.each([
+    '$this->loader->add_action("init", [$this, "boot"]);',
+    '$this->add_filter("the_title", "x");',
+    '$c::update_option("k", 1);',
+    '$repo->add_option("k", 1);',
+    '$cfg->ini_set("precision", "4");',
+    'Env::putenv("A=1");',
+    '$clock?->date_default_timezone_set("UTC");',
+    'public function define($x) {}',
+    'function define($name, $value) {}',
+  ])('returns null for the method or declaration %s', (line) => {
+    expect(classifyPhp(line)).toBeNull();
+  });
+
   it('never applies a PHP family outside .php (a JS define( is AMD)', () => {
     const lines = [
       "define(['dep'], factory);",
@@ -397,6 +413,21 @@ describe('SV003 PHP restore policy (#1106 D7/D8)', () => {
     const body = [
       "        add_action('init', 'boot');",
       "        remove_action('wp_head', 'boot');",
+    ];
+    expect(hits(inClass(body))).toEqual(['4:SV003']);
+  });
+
+  it.each([
+    ["add_filter('a', 'b');", "$this->remove_filter('a', 'b');"],
+    ["update_option('k', 1);", "$c::delete_option('k');"],
+    ["ini_set('precision', '4');", "$cfg->ini_restore('precision');"],
+    ["putenv('A=1');", "$env->putenv('A');"],
+  ])('%s is not restored by the method call %s', (write, restore) => {
+    const body = [
+      `    public function test_a() { ${write} }`,
+      '    protected function tearDown(): void {',
+      `        ${restore}`,
+      '    }',
     ];
     expect(hits(inClass(body))).toEqual(['4:SV003']);
   });

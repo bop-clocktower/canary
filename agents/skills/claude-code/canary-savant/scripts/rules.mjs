@@ -82,43 +82,46 @@ const phpCall = (id, assign, deletes, extra = {}) => ({
   restoreAll: [],
   ...extra,
 });
+// A global function call: never a method (`->f(`, `?->f(`), a static call
+// (`::f(`) or a declaration (`function f(`), which share only the name.
+const fn = (src) =>
+  new RegExp(String.raw`(?<![\w$>:])(?<!\bfunction\s+)` + src);
+const SUPERGLOBALS = '_GET _POST _COOKIE _SERVER _ENV _SESSION _REQUEST _FILES';
 const PHP_FAMILIES = [
-  ...[
-    '_GET',
-    '_POST',
-    '_COOKIE',
-    '_SERVER',
-    '_ENV',
-    '_SESSION',
-    '_REQUEST',
-    '_FILES',
-    'GLOBALS',
-  ].map(superglobal),
+  ...[...SUPERGLOBALS.split(' '), 'GLOBALS'].map(superglobal),
   // putenv('NAME=v') sets; putenv('NAME') (no `=`) unsets, i.e. restores.
   phpCall(
     'putenv',
-    /\bputenv\s*\(\s*(['"])([^'"=]+)=/,
-    [/\bputenv\s*\(\s*(['"])([^'"=]+)\1\s*\)/],
+    fn(String.raw`putenv\s*\(\s*(['"])([^'"=]+)=`),
+    [fn(String.raw`putenv\s*\(\s*(['"])([^'"=]+)\1\s*\)`)],
     { keyOf: (m) => m[2] },
   ),
-  phpCall('ini_set', /\bini_set\s*\(\s*([^,)]+)/, [
-    /\bini_restore\s*\(\s*([^,)]+)/,
+  phpCall('ini_set', fn(String.raw`ini_set\s*\(\s*([^,)]+)`), [
+    fn(String.raw`ini_restore\s*\(\s*([^,)]+)`),
   ]),
-  phpCall('date_default_timezone_set', /\bdate_default_timezone_set\s*\(/, []),
+  phpCall(
+    'date_default_timezone_set',
+    fn(String.raw`date_default_timezone_set\s*\(`),
+    [],
+  ),
   // A PHP constant can never be undefined. `defined(` does not match.
-  phpCall('define', /(?<![\w$>:])define\s*\(\s*([^,)]+)/, [], {
+  phpCall('define', fn(String.raw`define\s*\(\s*([^,)]+)`), [], {
     unrestorable: true,
   }),
   phpCall(
     'wp.hooks',
-    /\badd_(?:filter|action)\s*\(\s*([^,)]+)/,
-    [/\bremove_(?:filter|action|all_filters|all_actions)\s*\(\s*([^,)]+)/],
+    fn(String.raw`add_(?:filter|action)\s*\(\s*([^,)]+)`),
+    [
+      fn(
+        String.raw`remove_(?:filter|action|all_filters|all_actions)\s*\(\s*([^,)]+)`,
+      ),
+    ],
     { pairAnywhere: true, wpAutoRestored: true },
   ),
   phpCall(
     'wp.options',
-    /\b(?:update|add)_option\s*\(\s*([^,)]+)/,
-    [/\bdelete_option\s*\(\s*([^,)]+)/],
+    fn(String.raw`(?:update|add)_option\s*\(\s*([^,)]+)`),
+    [fn(String.raw`delete_option\s*\(\s*([^,)]+)`)],
     { wpAutoRestored: true },
   ),
 ];
