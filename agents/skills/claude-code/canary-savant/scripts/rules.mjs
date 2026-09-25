@@ -223,9 +223,9 @@ export const JS_MODULE_MUTABLE =
 //   column-0  $x = [ ...  |  $x = array( ...
 export const PHP_MODULE_MUTABLE =
   /^\$(?!_[A-Z]|GLOBALS\b)(\w+)\s*=\s*(?:\[|array\s*\()/;
-//   static $x  |  public static ?array $x   (local or class property)
+//   static $x (local)  |  public static ?array $x (property: group 1 set)
 export const PHP_STATIC_DECL =
-  /^\s*(?:(?:public|protected|private|final|readonly)\s+)*static\s+(?:\??[\w\\|]+\s+)?\$(\w+)/;
+  /^\s*((?:(?:public|protected|private|final|readonly)\s+)*)static\s+(?:\??[\w\\|]+\s+)?\$(\w+)/;
 //   global $a, $b;
 export const PHP_GLOBAL_DECL = /^\s*global\s+(\$\w+(?:\s*,\s*\$\w+)*)\s*;/;
 
@@ -271,12 +271,15 @@ export function mutationPattern(name) {
  * PHP (#1106): an in-place mutation of `$name` - `$x[..] =`, `$x[] =`,
  * compound assignment, `++`/`--`, array_push/unshift/splice/pop/shift, or
  * `$x->prop =`. A plain `$x = ...` is not one: it is also how a restore is
- * written. `(?<![\w$])` and `\b` keep `$x` from matching `$xy`.
+ * written. `(?<![\w$])` and `\b` keep `$x` from matching `$xy`. A static
+ * property is only reachable qualified (`self::$x`, `Foo::$x`).
  * @param {string} name the variable, without `$`
+ * @param {boolean} [qualified] require a `Name::` prefix
  * @returns {RegExp}
  */
-export function phpMutationPattern(name) {
-  const v = String.raw`(?<![\w$])\$${escapeRe(name)}\b`;
+export function phpMutationPattern(name, qualified = false) {
+  const scope = qualified ? String.raw`\b\w+::` : String.raw`(?<![\w$])`;
+  const v = String.raw`${scope}\$${escapeRe(name)}\b`;
   const index = String.raw`\s*\[[^\]]*\]`;
   return new RegExp(
     `${v}(?:${index})+${PHP_ASSIGN}` +

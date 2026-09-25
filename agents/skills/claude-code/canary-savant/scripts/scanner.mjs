@@ -138,30 +138,50 @@ function sv001ModuleMutables(lines, file, isPy, text) {
   return findings;
 }
 
-/** PHP variable names (no `$`) a code line declares as shared (#1106 D4). */
+/**
+ * PHP shared declarations on a code line (#1106 D4), as [name, scope] with the
+ * name without `$`. Scope decides which mutations indict it: `bare` (local
+ * `static`, `global`) any `$x`; `qualified` (a class static property) only
+ * `Name::$x`; `module` (column 0) only file-scope code or a `global` import.
+ */
 function phpDeclaredNames(code) {
   const names = [];
   const moduleLevel = PHP_MODULE_MUTABLE.exec(code); // anchored at column 0
-  if (moduleLevel) names.push(moduleLevel[1]);
+  if (moduleLevel) names.push([moduleLevel[1], 'module']);
   const stat = PHP_STATIC_DECL.exec(code);
-  if (stat) names.push(stat[1]);
-  const glob = PHP_GLOBAL_DECL.exec(code);
-  if (glob) names.push(...glob[1].split(',').map((v) => v.trim().slice(1)));
+  if (stat) names.push([stat[2], stat[1] ? 'qualified' : 'bare']);
+  for (const n of phpGlobalNames(code)) names.push([n, 'bare']);
   return names;
 }
+
+const phpGlobalNames = (code) => {
+  const glob = PHP_GLOBAL_DECL.exec(code);
+  return glob ? glob[1].split(',').map((v) => v.trim().slice(1)) : [];
+};
 
 /**
  * PHP SV001: a column-0 array, a `static $x` or a `global $x` import fires on
  * its declaration line when the file mutates that variable in place. Both
  * halves read the code-only projection, so comments and strings never count.
+ * A column-0 array is judged against unindented lines, plus the whole file
+ * when ANY function imports it with `global` - an approximation: which
+ * function holds the import is not tracked.
  */
 function sv001PhpMutables(lines, file) {
   const codeLines = lines.map(codeOnly);
-  const codeText = codeLines.join('\n');
+  const text = {
+    all: codeLines.join('\n'),
+    top: codeLines.filter((c) => !/^\s/.test(c)).join('\n'),
+  };
+  const imported = new Set(codeLines.flatMap(phpGlobalNames));
+  const indicts = ([name, scope]) => {
+    const pattern = phpMutationPattern(name, scope === 'qualified');
+    const wide = scope !== 'module' || imported.has(name);
+    return pattern.test(wide ? text.all : text.top);
+  };
   const findings = [];
   codeLines.forEach((code, i) => {
-    const names = phpDeclaredNames(code);
-    if (names.some((n) => phpMutationPattern(n).test(codeText))) {
+    if (phpDeclaredNames(code).some(indicts)) {
       const snippet = lines[i].trim();
       findings.push(
         makeFinding(file, i + 1, 'SV001-module-mutable-global', snippet),

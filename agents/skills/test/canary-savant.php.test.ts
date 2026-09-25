@@ -544,12 +544,55 @@ describe('SV001 PHP declarations (#1106 D4)', () => {
     expect(hits(text, 'test-query.php')).toEqual(['3:SV001']);
   });
 
+  // Fix round: a class static PROPERTY is only reachable as Name::$x; a bare
+  // $x in a method is a different, local variable.
+  it.each(['self', 'static', 'FooTest'])(
+    'a static property written through %s:: fires',
+    (scope) => {
+      const body = [
+        '    private static $items = [];',
+        `    public function test_a(): void { ${scope}::$items[] = 1; }`,
+      ];
+      expect(hits(inClass(body))).toEqual(['4:SV001']);
+    },
+  );
+
+  it('a static property is not indicted by a same-named local', () => {
+    const body = [
+      '    private static $items = [];',
+      '    public function test_a(): void { $items[] = 1; }',
+      '    public function test_b(): void { array_push($items, 2); }',
+    ];
+    expect(hits(inClass(body))).toEqual([]);
+  });
+
+  // A column-0 array is only the same variable at file scope, or inside a
+  // function that imports it with `global` (file-wide approximation).
+  it.each([
+    ['$registry = [];', "$registry['a'] = 1;"],
+    ['$registry = array();', 'array_push($registry, 1);'],
+  ])('a column-0 %s mutated at column 0 fires', (decl, mutate) => {
+    const text = php(decl, mutate);
+    expect(hits(text, 'test-registry.php')).toEqual(['2:SV001']);
+  });
+
   it.each([
     ['$registry = [];', "    $registry['a'] = 1;"],
     ['$registry = array();', '    array_push($registry, 1);'],
-  ])('a column-0 %s mutated in a function fires', (decl, mutate) => {
+  ])('a column-0 %s mutated only in a function is silent', (decl, mutate) => {
     const text = php(decl, 'function test_it() {', mutate, '}');
-    expect(hits(text, 'test-registry.php')).toEqual(['2:SV001']);
+    expect(hits(text, 'test-registry.php')).toEqual([]);
+  });
+
+  it('a column-0 array mutated through a global import fires', () => {
+    const text = php(
+      '$registry = [];',
+      'function test_it() {',
+      '    global $registry;',
+      "    $registry['a'] = 1;",
+      '}',
+    );
+    expect(hits(text, 'test-registry.php')).toEqual(['2:SV001', '4:SV001']);
   });
 
   it('a column-0 array that is only read is silent', () => {
