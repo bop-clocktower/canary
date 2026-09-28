@@ -76,8 +76,8 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ### canary-clocktower — run-history gap analysis (NOT a greenfield build)
 
-- **Status:** backlog
-- **Spec:** —
+- **Status:** planned
+- **Spec:** docs/changes/610-canary-clocktower/proposal.md
 - **Summary:** Ideation rank 5 (score 5.25) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. CORRECTED 2026-07-21 - THE ORIGINAL PREMISE WAS FALSE. The ideation claimed run artifacts "are stateless and ephemeral today" and framed this as a greenfield substrate. In fact `agent/history/` shipped 2026-06-10 (commit 72e884b) with schema.py, store.py (abstract + factory), local_store.py, supabase_store.py, detector.py (flake-trend classification), a `canary history` CLI (push/flaky/timeline/summary/migrate), and four unit-test files. The ideation was generated from roadmap/doc text that had itself drifted, and the false claim propagated into this entry. Rescope to a GAP ANALYSIS: what does canary-test-reporter NOT yet push into history, and which consumers (canary-signal, the flakiness item) are not yet wired to query it. Accepted risk to handle in spec: do not rebuild what exists - the deliverable is wiring plus a documented gap list, not a second store. Effort unknown until the gap analysis runs. Next: gap analysis, then /harness:brainstorming. DISAMBIGUATION 2026-08-07: Issue #340 was titled "Clocktower voices" and is NOT this row — it is a product-wide voice/report-theming concern, not a skill. It has been retitled off the clocktower name and has its own row below. Note also that the gap analysis here depends on Issue #538: nothing currently writes the local history store, so part of the gap may already be known.
 - **Blockers:** —
 - **Plan:** —
