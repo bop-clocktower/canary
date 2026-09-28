@@ -17,6 +17,13 @@ import {
   loadRuns,
 } from '../claude-code/canary-signal/scripts/sources.mjs';
 import {
+  FLAKY_CAPABLE_FORMATS,
+  PRODUCTION_ESCAPES_DARK,
+  THIN_SAMPLE_RUNS,
+  measured,
+  tallyDigest,
+} from '../claude-code/canary-signal/scripts/tally.mjs';
+import {
   partitionByWindow,
   resolveWindow,
 } from '../claude-code/canary-signal/scripts/window.mjs';
@@ -170,5 +177,142 @@ describe('window', () => {
     const res = partitionByWindow(items, (i: { d?: string }) => i.d, w);
     expect(res.inside).toHaveLength(2);
     expect(res.undated).toBe(2);
+  });
+});
+
+const WINDOW = resolveWindow(7, UNTIL).window!;
+const NO_LEDGER = {
+  state: 'dark',
+  rows: [],
+  reason: 'no quarantine ledger at .canary/quarantine.json',
+};
+const tally = (runs: Run[], ledger: unknown = NO_LEDGER) =>
+  tallyDigest({ runs, ledger, branch: 'main', window: WINDOW });
+
+describe('tally', () => {
+  it('D4: a zero denominator abstains instead of measuring 0', () => {
+    expect(measured(0, 0, 'why')).toEqual({
+      abstained: true,
+      reason: 'why',
+    });
+    expect(measured(0, 4, 'why')).toEqual({ value: 0, denominator: 4 });
+  });
+  it('SC2: zero runs in the window abstains the whole digest', () => {
+    const old = rec({ timestamp: '2026-01-01T00:00:00Z' });
+    expect(tally([old]).state).toBe('abstained');
+  });
+  it('SC3: 1-2 runs is a thin sample; 3 is not', () => {
+    expect(THIN_SAMPLE_RUNS).toBe(3);
+    expect(tally([rec(), rec()]).state).toBe('thin');
+    expect(tally([rec(), rec(), rec()]).state).toBe('ok');
+  });
+  it('SC1: sample counts runs, suites and distinct UTC days', () => {
+    const res = tally([
+      rec({ suite: 'a', timestamp: '2026-09-26T01:00:00Z' }),
+      rec({ suite: 'b', timestamp: '2026-09-26T02:00:00Z' }),
+      rec({ suite: 'a', timestamp: '2026-09-27T01:00:00Z' }),
+    ]);
+    expect(res.sample).toEqual({ runs: 3, suites: 2, days: 2 });
+  });
+  it('counts undated runs instead of dropping them', () => {
+    expect(tally([rec(), rec({ timestamp: undefined })]).undatedRuns).toBe(1);
+  });
+  it('tests executed: tests.length, falling back to total', () => {
+    const res = tally([
+      rec({ tests: [t('a', 'passed'), t('b', 'failed')] }),
+      rec({ tests: undefined, total: 5 }),
+      rec({ tests: undefined }),
+    ]);
+    expect(res.tests).toEqual({ value: 7, denominator: 3 });
+  });
+  it('D7: failures split by branch, distinct by test name', () => {
+    const res = tally([
+      rec({ branch: 'feat/x', tests: [t('a', 'failed')] }),
+      rec({
+        branch: 'feat/y',
+        tests: [t('a', 'failed'), t('b', 'failed'), t('c', 'passed')],
+      }),
+      rec({ tests: [t('d', 'failed'), t('e', 'flaky')] }),
+    ]);
+    expect(res.preMerge).toEqual({ value: 2, denominator: 2 });
+    expect(res.reached).toEqual({ value: 1, denominator: 1 });
+  });
+  it('SC4: no non-default-branch runs => pre-merge abstains, never 0', () => {
+    const res = tally([rec(), rec(), rec()]);
+    expect(res.preMerge).toMatchObject({ abstained: true });
+    expect(res.preMerge).not.toHaveProperty('value');
+  });
+  it('reached abstains when no run is on the default branch', () => {
+    expect(tally([rec({ branch: 'feat/x' })]).reached).toMatchObject({
+      abstained: true,
+    });
+  });
+  it('counts runs with no branch in neither branch line', () => {
+    const res = tally([rec({ branch: undefined }), rec(), rec({ branch: '' })]);
+    expect(res.unbranched).toBe(2);
+    expect(res.reached).toEqual({ value: 0, denominator: 1 });
+  });
+  it('SC5: no flaky-capable reporter => the flaky line abstains', () => {
+    const res = tally([
+      rec({ tests: [t('a', 'flaky')] }),
+      rec({ reporter_format: undefined }),
+    ]);
+    expect(res.flaky).toMatchObject({ abstained: true });
+  });
+  it('D8: flaky counts only over flaky-capable runs', () => {
+    expect(FLAKY_CAPABLE_FORMATS).toEqual(['playwright', 'junit']);
+    const res = tally([
+      rec({
+        reporter_format: 'playwright',
+        tests: [t('a', 'flaky'), t('a', 'flaky')],
+      }),
+      rec({ reporter_format: 'junit' }),
+      rec({ tests: [t('z', 'flaky')] }),
+    ]);
+    expect(res.flaky).toEqual({ value: 1, denominator: 2 });
+  });
+  it('SC6: a dark ledger abstains and is named as a dark source', () => {
+    const res = tally([rec()]);
+    expect(res.quarantine).toMatchObject({ abstained: true });
+    expect(res.dark).toContain(
+      'quarantine ledger: no quarantine ledger at .canary/quarantine.json',
+    );
+  });
+  it('an empty ledger is a dark source too', () => {
+    const res = tally([rec()], { state: 'read', rows: [], reason: null });
+    expect(res.dark).toContain(
+      'quarantine ledger: the quarantine ledger holds no entries',
+    );
+  });
+  it('quarantine trail: rows dated in window, by kind and cause', () => {
+    const rows = [
+      { kind: 'skip', cause: 'flaky', date: '2026-09-25T10:00:00-05:00' },
+      { kind: 'constructor', cause: '', date: '2026-09-26T00:00:00Z' },
+      { kind: 'skip', cause: 'flaky', date: '2026-01-01T00:00:00Z' },
+      { kind: 'skip', date: '' },
+    ];
+    const res = tally([rec()], { state: 'read', rows, reason: null });
+    expect(res.quarantine).toEqual({
+      value: 2,
+      denominator: 4,
+      undated: 1,
+      byKind: [
+        ['constructor', 1],
+        ['skip', 1],
+      ],
+      byCause: [
+        ['flaky', 1],
+        ['unrecorded', 1],
+      ],
+    });
+    expect(
+      res.dark.some((d: string) => d.startsWith('quarantine ledger')),
+    ).toBe(false);
+  });
+  it('SC7: production escapes are always a dark source', () => {
+    expect(tally([rec(), rec(), rec()]).dark).toContain(
+      PRODUCTION_ESCAPES_DARK,
+    );
+    expect(tally([]).dark).toContain(PRODUCTION_ESCAPES_DARK);
   });
 });
