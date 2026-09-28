@@ -26,7 +26,11 @@ function playwrightReport(): unknown {
   const test = (status: string, attempts: string[]): unknown => ({
     status,
     projectName: 'chromium',
-    results: attempts.map((s) => ({ status: s, duration: 100 })),
+    results: attempts.map((s) => ({
+      status: s,
+      duration: 100,
+      ...(s === 'failed' ? { error: { message: 'expected 3, got 4' } } : {}),
+    })),
   });
   return {
     stats: { startTime: '2026-09-01T12:00:00.000Z', duration: 900 },
@@ -95,19 +99,49 @@ describe('history gaps over a store written by history record', () => {
   it('reproduces G1 and G2 on a store written by history record from a Playwright report', async () => {
     const { code, gaps } = await recordThenGaps();
     expect(code).toBe(1);
-    const area = find(gaps, 'area-health');
+    const area = find(gaps, 'flaky-area');
     expect(area.status).toBe('dark');
     expect(area.coverage[0]).toMatchObject({ carried: 0, applicable: 3 });
     const categories = find(gaps, 'failure-categories');
     expect(categories.status).toBe('dark');
-    // One failed test plus one flaky: the only rows a category means anything on.
-    expect(categories.coverage[0]).toMatchObject({ carried: 0, applicable: 2 });
+    // One failed test plus one flaky: the only rows a category means anything
+    // on. The reader keeps error text for the failure and drops it for the
+    // flake, so common-failures sees half its rows before the category gap.
+    expect(categories.coverage).toEqual([
+      { field: 'error_text', scope: 'failed-test', carried: 1, applicable: 2 },
+      {
+        field: 'failure_category',
+        scope: 'failed-test',
+        carried: 0,
+        applicable: 2,
+      },
+    ]);
   });
 
   it('reports the fields the writer does fill as fed', async () => {
     const { gaps } = await recordThenGaps();
     expect(find(gaps, 'flaky-retry').status).toBe('fed');
-    expect(find(gaps, 'screech').status).toBe('fed');
+    expect(find(gaps, 'screech-range').status).toBe('fed');
     expect(find(gaps, 'ci-ready-runtime').status).toBe('fed');
+    expect(find(gaps, 'order').status).toBe('fed');
+    expect(find(gaps, 'rewind').status).toBe('fed');
+  });
+
+  it('reports the screech owning-area and cluster half as dark (C1)', async () => {
+    const { gaps } = await recordThenGaps();
+    const cluster = find(gaps, 'screech-cluster');
+    expect(cluster.status).toBe('dark');
+    // Only the hard failure: screech's isFailure does not count a flake.
+    expect(cluster.coverage.map((c) => [c.field, c.carried, c.applicable])).toEqual([
+      ['area', 0, 1],
+      ['failure_category', 0, 1],
+    ]);
+  });
+
+  it('reports order-ttff dark on a store recorded without --order-plan', async () => {
+    const { gaps } = await recordThenGaps();
+    const ttff = find(gaps, 'order-ttff');
+    expect(ttff.status).toBe('dark');
+    expect(ttff.coverage[0]).toMatchObject({ carried: 0, applicable: 1 });
   });
 });

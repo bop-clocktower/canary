@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { CONSUMERS } from '../src/analysis/clocktower/consumers.js';
 import { ENGINE_COMMANDS } from '../src/commands/engine/cli.js';
 import type { MainDeps } from '../src/main-deps.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
@@ -38,6 +39,7 @@ function fedRun(i: number, testExtra: Row = {}): Row {
         status: 'failed',
         area: 'checkout',
         failure_category: 'assertion',
+        error_text: 'expected 200, got 500',
         test_file: 'tests/checkout.spec.ts',
         duration_ms: 50,
         start_index: 0,
@@ -84,7 +86,7 @@ describe('canary history gaps', () => {
     const res = await gaps();
     expect(res.code).toBe(3);
     expect(res.stdout).toContain(`store is empty: ${HISTORY_REL} (0 runs)`);
-    expect(res.stdout).toContain('dark by abstention: screech,');
+    expect(res.stdout).toContain('dark by abstention: screech-range,');
     expect(res.stdout).not.toContain('passed');
   });
 
@@ -93,23 +95,26 @@ describe('canary history gaps', () => {
     const res = await gaps();
     expect(res.code).toBe(0);
     expect(res.stdout).toContain('2 run(s), 2 test(s)');
-    expect(res.stdout).toContain('All 8 run consumer check(s) passed');
+    expect(res.stdout).toContain('All 9 run consumer check(s) passed');
   });
 
   it('exits 1 when any consumer is dark or partial', async () => {
     seed(tmp, [fedRun(1, { area: null }), fedRun(2, { area: null })]);
     const res = await gaps();
     expect(res.code).toBe(1);
-    expect(res.stdout).toContain('area-health: dark');
+    expect(res.stdout).toContain('flaky-area: dark');
     expect(res.stdout).toContain('area: 0/2 tests');
-    expect(res.stdout).toContain('1 finding(s) across 8 checked');
+    // The owning-area half of screech goes dark with it (C1).
+    expect(res.stdout).toContain('screech-cluster: dark');
+    expect(res.stdout).toContain('area: 0/2 failed tests');
+    expect(res.stdout).toContain('2 finding(s) across 9 checked');
   });
 
   it('reports partial coverage with its denominator', async () => {
     seed(tmp, [fedRun(1), fedRun(2, { area: '' })]);
     const res = await gaps();
     expect(res.code).toBe(1);
-    expect(res.stdout).toContain('area-health: partial');
+    expect(res.stdout).toContain('flaky-area: partial');
     expect(res.stdout).toContain('area: 1/2 tests');
   });
 
@@ -118,7 +123,8 @@ describe('canary history gaps', () => {
     const res = await gaps();
     expect(res.stdout).toContain('failure-categories: unmeasured');
     expect(res.stdout).toContain('failure-categories [no applicable rows]');
-    expect(res.stdout).toContain('All 7 run consumer check(s) passed');
+    expect(res.stdout).toContain('rewind [no applicable rows]');
+    expect(res.stdout).toContain('All 6 run consumer check(s) passed');
     expect(res.code).toBe(0);
   });
 
@@ -128,7 +134,36 @@ describe('canary history gaps', () => {
     expect(res.stdout).toContain('remote store [local NDJSON only]');
   });
 
-  it('--json emits path, abstained, runs, tests, consumers and exitCode', async () => {
+  it('skips, rather than fails on, an opt-in consumer nobody opted into', async () => {
+    const { order: _order, ...noPlan } = fedRun(1);
+    seed(tmp, [noPlan]);
+    const res = await gaps();
+    expect(res.stdout).toContain(
+      'order-ttff: dark (fed only by `history record --order-plan`)',
+    );
+    expect(res.stdout).toContain(
+      'order-ttff [opt-in: not recorded with history record --order-plan]',
+    );
+    expect(res.stdout).toContain('All 8 run consumer check(s) passed');
+    expect(res.code).toBe(0);
+  });
+
+  it('--json lists every skipped entry, including the remote store', async () => {
+    seed(tmp, [fedRun(1, { status: 'passed' })]);
+    const res = await gaps(['--json'], {
+      CANARY_HISTORY_DB_URL: 'postgres://x',
+    });
+    expect(res.code).toBe(0);
+    const body = JSON.parse(res.stdout) as { skipped: unknown[] };
+    expect(body.skipped).toEqual([
+      { name: 'screech-cluster', reason: 'no applicable rows' },
+      { name: 'failure-categories', reason: 'no applicable rows' },
+      { name: 'rewind', reason: 'no applicable rows' },
+      { name: 'remote store', reason: 'local NDJSON only' },
+    ]);
+  });
+
+  it('--json emits path, abstained, runs, tests, consumers, skipped and exitCode', async () => {
     seed(tmp, [fedRun(1, { area: null })]);
     const res = await gaps(['--json']);
     expect(res.code).toBe(1);
@@ -145,20 +180,25 @@ describe('canary history gaps', () => {
       abstained: false,
       runs: 1,
       tests: 1,
+      skipped: [],
       exitCode: 1,
     });
-    expect(body.consumers.find((c) => c.id === 'area-health')!.status).toBe(
+    expect(body.consumers.find((c) => c.id === 'flaky-area')!.status).toBe(
       'dark',
     );
   });
 
-  it('--json abstention carries the reason and exitCode 3', async () => {
-    const res = await gaps(['--json', '--path', 'gone.jsonl']);
+  it('--json abstention carries the reason, what went dark and exitCode 3', async () => {
+    const res = await gaps(['--json', '--path', 'gone.jsonl'], {
+      CANARY_HISTORY_DB_URL: 'postgres://x',
+    });
     expect(res.code).toBe(3);
     expect(JSON.parse(res.stdout)).toMatchObject({
       abstained: true,
       reason: 'store not found: gone.jsonl',
       runs: 0,
+      darkByAbstention: CONSUMERS.map((c) => c.id),
+      skipped: [{ name: 'remote store', reason: 'local NDJSON only' }],
       exitCode: 3,
     });
   });

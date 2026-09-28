@@ -102,6 +102,30 @@ describe('analyzeGaps', () => {
     expect(gap.status).toBe('partial');
   });
 
+  it('narrows a denominator to the rows a requirement says it reads', () => {
+    const failedOnly: Consumer = {
+      id: 'failed-only',
+      surface: 'x',
+      requirements: [
+        { ...CATEGORY.requirements[0]!, where: (t) => t.status === 'failed' },
+      ],
+    };
+    const gap = gapOf(
+      [
+        run({
+          tests: [
+            t('failed', { failure_category: 'timeout' }),
+            t('flaky'),
+            t('passed'),
+          ],
+        }),
+      ],
+      [failedOnly],
+    );
+    expect(gap.coverage[0]).toMatchObject({ carried: 1, applicable: 1 });
+    expect(gap.status).toBe('fed');
+  });
+
   it('reports unmeasured, never fed, when the store has no failed tests', () => {
     const report = analyzeGaps([run({ tests: [t('passed'), t('skipped')] })]);
     const gap = report.consumers.find((c) => c.id === 'failure-categories')!;
