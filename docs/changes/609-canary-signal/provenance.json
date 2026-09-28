@@ -1,0 +1,134 @@
+{
+  "issues": [609],
+  "slug": "609-canary-signal",
+  "route": "feature",
+  "fleet": "roadmap-fleet",
+  "branch": "feat/609-canary-signal",
+  "base": "origin/main @ 47745970",
+  "date": "2026-09-28",
+  "worktree": "/Users/bs/Github/canary-fleet-609-signal",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "tdd-red",
+    "tdd-green",
+    "mutation-probes",
+    "verify",
+    "code-review",
+    "review-fixes",
+    "ratchets",
+    "four-gates"
+  ],
+  "stageDetail": [
+    {
+      "stage": "brainstorming",
+      "artifact": "docs/changes/609-canary-signal/proposal.md",
+      "detail": "harness:brainstorming in autonomous mode; 3 approaches weighed (self-contained skill chosen over an engine subcommand and a shell-out to `canary history summary`)."
+    },
+    {
+      "stage": "autopilot / planning",
+      "artifact": "docs/changes/609-canary-signal/plans/2026-09-28-canary-signal-plan.md",
+      "detail": "harness:autopilot dispatched harness-planner (10 tasks, 1 phase, low complexity); plan auto-approved and recorded as assumption A9."
+    },
+    {
+      "stage": "tdd-red / tdd-green",
+      "detail": "Per task, agents/skills/test/canary-signal.test.ts cases were added first and run red on module-not-found, then each module was added to green (54 cases before review, 64 after)."
+    },
+    {
+      "stage": "mutation-probes",
+      "detail": "Planted positives, each reverted: measured() never abstaining (4 red), flaky filter removed (2 red), thin threshold lowered (1 red), abstained body removed (1 red), thin banner removed (1 red), --strict exit forced to 0 (1 red), --ledger explicit flag forced false (1 red), default --until pinned to epoch (1 red). The 10 review-driven tests were run against the pre-fix scripts: 10 red."
+    },
+    {
+      "stage": "code-review",
+      "detail": "harness-code-reviewer (read-only) returned Request Changes with 2 important findings (count-only runs printed a measured 0; malformed nested rows crashed) plus suggestions. All important findings and suggestions 3, 5, 6, 7 fixed in commit 'fix(signal): keep count-only runs out of per-test denominators and validate store rows'; suggestion 4 (--until date-only semantics) documented in SKILL.md. The reviewer's own mechanical checks did not run (host disk full, ENOSPC), so its review is static only; the gates below were re-run by the lane after freeing space."
+    },
+    {
+      "stage": "canary detectors",
+      "detail": "canary-cassandra, canary-blackhawk and canary-savant run on the new test file: 0 findings after the one blackhawk BH001 wall-clock finding was fixed by freezing the clock."
+    },
+    {
+      "stage": "ratchets",
+      "detail": "Measured vs merge base 47745970 in a detached worktree under the same harness CLI 12.10.1: entropy 141 vs 141 (+0); perf 211 vs 210 (+1, the pre-existing */scripts/cli.mjs coupling allowance, 0 blocking); arch identical to base (12 threshold violations, 0 new, 0 regressions); docs-ratchet 39/312 vs 34/307, no documented file lost its link; check-deps 212 modules; harness validate passed."
+    },
+    {
+      "stage": "four-gates",
+      "detail": "ts/: build, typecheck, format:check, test (251 files, 5188 passed, 2 skipped). agents/skills/: typecheck, format:check, test+coverage (24 files, 1515 passed; canary-signal scripts 99.5% lines, 97.5% branches)."
+    }
+  ],
+  "planArtifact": "docs/changes/609-canary-signal/plans/2026-09-28-canary-signal-plan.md",
+  "specArtifact": "docs/changes/609-canary-signal/proposal.md",
+  "closingKeyword": "Closes",
+  "closingKeywordRationale": "The issue asks for a digest of what testing caught that degrades honestly when history is thin, stating window size and sample count. That is fully delivered: sample line always first, THIN SAMPLE banner, whole-digest abstention on zero runs, per-metric denominators, named dark sources. The issue's Slack/Teams/PR-comment broadcasting was answered by a human fork as EMIT-ONLY (the chat-ready block is emitted, never posted), so it is a decided scope, not remaining work. 'Escapes avoided' is not measurable from any canary store; the digest names it as a dark source rather than implying zero, which is the honest completion of that clause.",
+  "assumptions": [
+    {
+      "id": "A1",
+      "assumption": "EMIT-ONLY: markdown artifact plus chat-ready block; no webhook, network or secrets.",
+      "source": "HUMAN-ANSWERED fork from the fleet orchestrator, binding."
+    },
+    {
+      "id": "A2",
+      "assumption": "Built as a self-contained skill CLI reading the JSONL store and katana ledger directly; no code added under ts/src/history.",
+      "rationale": "Sibling convention (canary-screech, canary-sweep) and ts/src/history is at its 1800-LOC arch ceiling (#1074)."
+    },
+    {
+      "id": "A3",
+      "assumption": "Sources are the run-history store (required) and the katana ledger (optional, default .canary/quarantine.json). Production escapes are always listed as a dark source.",
+      "rationale": "No canary store records production escapes, so 'escapes avoided' cannot be measured; naming it beats implying zero."
+    },
+    {
+      "id": "A4",
+      "assumption": "Zero runs in the window abstains the whole digest (exit 3 under --strict); 1-2 runs print a THIN SAMPLE banner. The threshold (3) is a constant, not a flag.",
+      "rationale": "The ideation's strongest objection ('1 run, 0 escapes' undersells QA); YAGNI on configurability."
+    },
+    {
+      "id": "A5",
+      "assumption": "'Caught' is reported factually as failures on branches other than the default branch, never as 'bugs prevented'.",
+      "rationale": "A failing test may be a test bug; a test pins that no copy path contains 'prevent'."
+    },
+    {
+      "id": "A6",
+      "assumption": "Per-test metrics count only runs with a per-test `tests` array; count-only runs are named as a sample note. Flaky counts only playwright/junit runs; unstamped runs are reported as unknown capability.",
+      "rationale": "A structural zero is not a measured zero (#604); raised by code review and fixed."
+    },
+    {
+      "id": "A7",
+      "assumption": "Runs with no branch count in neither branch line; undated runs/ledger rows are excluded but counted; the window is inclusive with distinct UTC days; distinct tests keyed by suite+file+name.",
+      "rationale": "Planner-recorded defaults; counting branchless runs as pre-merge would inflate the flattering number."
+    },
+    {
+      "id": "A8",
+      "assumption": "Store rows with schema_version outside {2,3} are refused (exit 1), mirroring SUPPORTED_SCHEMA_VERSIONS in ts/src/history/record.ts, duplicated rather than imported because skills are self-contained.",
+      "rationale": "Code review; reinterpreting an unknown version is the #701 failure."
+    },
+    {
+      "id": "A9",
+      "assumption": "Autonomous defaults at human gates: the spec sign-off, the plan skeleton approval, and the brainstorming one-question-at-a-time loop were resolved with recommended defaults rather than waiting.",
+      "rationale": "Roadmap-fleet lane instruction: take recommended-option defaults and record them."
+    },
+    {
+      "id": "A10",
+      "assumption": "Execution tasks were run by the lane directly rather than via a harness-task-executor subagent per task; planning and review were delegated to harness-planner and harness-code-reviewer.",
+      "rationale": "The lane already held the full context; the plan carried complete code per task, so a cold executor would re-derive it. Recorded as a deviation from autopilot's delegate-everything rule."
+    },
+    {
+      "id": "A11",
+      "assumption": "The docs/roadmap.md row was flipped to done in place (Spec and Plan linked), not moved to the archive, and manage_roadmap was not called.",
+      "rationale": "A row-count change reds the AGENTS.md tests; `roadmap sync --apply` is a known hazard; the misfit lane (#1042) set the precedent of an in-place edit."
+    },
+    {
+      "id": "A12",
+      "assumption": "cli.mjs has no markdown link from docs/ (the four pure modules do, via docs/knowledge/gates/denominator-carrying-metric.md).",
+      "rationale": "harness check-docs matches links by filename, so linking cli.mjs would mark every sibling skill's cli.mjs documented; the docs ratchet does not require new files to be linked."
+    },
+    {
+      "id": "A13",
+      "assumption": "OUTCOME_EVAL (outcome_eval MCP) was not invoked.",
+      "rationale": "No evidence the MCP provider is configured in this lane; the spec's nine success criteria are each pinned by named tests instead (see plan Traceability)."
+    }
+  ],
+  "environmentFindings": [
+    "The host disk filled to 0 bytes free mid-lane (ENOSPC on /private/tmp); ~1.0G of it is another project's session tmp, not this lane's. The lane freed only its own regenerable files (coverage dirs, the merge-base worktree) and re-ran every gate after. The code reviewer's mechanical checks were lost to it.",
+    "Locally, the cassandra gate-conformance rows fail until `npm --prefix ts run build` has produced ts/dist; pre-existing, environmental, green once built."
+  ]
+}
