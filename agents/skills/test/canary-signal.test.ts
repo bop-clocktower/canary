@@ -191,8 +191,15 @@ const NO_LEDGER = {
   rows: [],
   reason: 'no quarantine ledger at .canary/quarantine.json',
 };
+/** Fixtures hand the pure core loosely-typed rows, as a real JSONL store would. */
+type Ledger = Parameters<typeof tallyDigest>[0]['ledger'];
 const tally = (runs: Run[], ledger: unknown = NO_LEDGER) =>
-  tallyDigest({ runs, ledger, branch: 'main', window: WINDOW });
+  tallyDigest({
+    runs,
+    ledger: ledger as Ledger,
+    branch: 'main',
+    window: WINDOW,
+  });
 
 describe('tally', () => {
   it('D4: a zero denominator abstains instead of measuring 0', () => {

@@ -11,7 +11,7 @@ const DAY_MS = 86_400_000;
 /**
  * @param {number} days window length, >= 1
  * @param {string|null} until ISO-8601 end (inclusive); null = now
- * @returns {{window: {since: Date, until: Date}} | {error: string}}
+ * @returns {{window?: {since: Date, until: Date}, error?: string}} exactly one is set
  */
 export function resolveWindow(days, until) {
   if (!(days >= 1)) {
