@@ -77,7 +77,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-blackhawk`           | shipped  | —     | Temporal-dependency linter for test files                                  |
 | `canary-cassandra`           | shipped  | 612   | Vacuous-test detection                                                     |
 | `canary-ci-ready`            | shipped  | —     | Suite CI-readiness analysis                                                |
-| `canary-clocktower`          | reserved | 610   | Run-history gap analysis                                                   |
+| `canary-clocktower`          | shipped  | 610   | Run-history gap analysis                                                   |
 | `canary-company-knowledge`   | shipped  | —     | Scaffold the org-specific `.canary/company.json` pointer file              |
 | `canary-critical-areas`      | shipped  | —     | Risk-based test prioritisation                                             |
 | `canary-cry`                 | reserved | 608   | Pre-launch exploratory "try to break it" sweep                             |

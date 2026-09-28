@@ -13,12 +13,13 @@ it), see [Guides](../../docs/guides/index.md).
 
 ```text
 agents/skills/
-├── claude-code/                    # Claude Code skills (27)
+├── claude-code/                    # Claude Code skills (28)
 │   ├── canary-add-framework/
 │   ├── canary-batwoman/
 │   ├── canary-blackhawk/
 │   ├── canary-cassandra/
 │   ├── canary-ci-ready/
+│   ├── canary-clocktower/
 │   ├── canary-company-knowledge/
 │   ├── canary-critical-areas/
 │   ├── canary-edge-case-discovery/
@@ -131,6 +132,13 @@ slash-command entry points.
   fix merged. GitHub closes an issue on a keyword match, which checks neither
   that the fix works nor that it ever ran. Advisory, and the only skill here
   that requires the network (`gh`): deterministic, network, no agent.
+
+### Run-history gap analysis
+
+- [`canary-clocktower`](./claude-code/canary-clocktower/SKILL.md) — Reports
+  which run-history consumers the store on disk actually feeds, per required
+  field with denominators, and abstains loudly on a missing or empty store.
+  Deterministic, no network, no agent.
 
 ### Run replay
 
