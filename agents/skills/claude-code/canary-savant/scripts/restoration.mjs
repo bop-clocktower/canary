@@ -262,11 +262,14 @@ export function analyzeRestoration(text, isPhp = false) {
   const lines = splitLines(text);
   const rangesByLine = lines.map((l) => stringLiteralRanges(l));
   const region = new Set();
-  collectJsFinallyRegions(lines, rangesByLine, region, JS_TEARDOWN_TOKEN, '()');
-  collectJsFinallyRegions(lines, rangesByLine, region);
-  collectPyRegions(lines, rangesByLine, region);
-  if (isPhp) {
-    collectJsFinallyRegions(lines, rangesByLine, region, PHP_TEARDOWN_FN);
+  const collect = (token, pair) =>
+    collectJsFinallyRegions(lines, rangesByLine, region, token, pair);
+  collect();
+  // A PHP `yield` is a data provider, not fixture teardown: no Python regions.
+  if (isPhp) collect(PHP_TEARDOWN_FN);
+  else {
+    collect(JS_TEARDOWN_TOKEN, '()');
+    collectPyRegions(lines, rangesByLine, region);
   }
 
   const restoresAll = new Set();

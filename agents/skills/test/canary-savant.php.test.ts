@@ -409,6 +409,23 @@ describe('SV003 PHP teardown regions (#1106 D8)', () => {
   });
 });
 
+describe('SV003 PHP ignores Python/JS regions (#1106 review)', () => {
+  // A PHP data provider is a generator: the code after its `yield` is not a
+  // pytest fixture teardown, so it must not launder a test's write.
+  it('a $_GET reset after a provider yield does not restore a test write', () => {
+    const body = [
+      '    public static function provider() {',
+      "        yield ['a'];",
+      '        $_GET = [];',
+      '    }',
+      '    public function test_q() {',
+      "        $_GET['q'] = 1;",
+      '    }',
+    ];
+    expect(hits(inClass(body))).toEqual(['6:SV003', '9:SV003']);
+  });
+});
+
 describe('SV003 PHP restore policy (#1106 D7/D8)', () => {
   it('define fires even when a teardown redefines it (unrestorable)', () => {
     const body = [
