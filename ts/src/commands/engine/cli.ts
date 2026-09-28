@@ -11,6 +11,7 @@ import type { Command } from 'commander';
 
 import { createHistoryCommand } from '../../history/cli.js';
 import { registerTrimCommand } from '../../history/retention/cli.js';
+import { registerGapsCommand } from '../../analysis/clocktower/cli.js';
 import { createAnalyzeCommand } from '../../analysis/cli.js';
 import { createGuardianCommand } from '../../guardian/cli.js';
 import type { MainDeps } from '../../main-deps.js';
@@ -23,6 +24,13 @@ export const ENGINE_COMMANDS: ReadonlyArray<(deps: MainDeps) => Command> = [
   (deps) => {
     const history = createHistoryCommand({ out: deps.out, err: deps.err });
     registerTrimCommand(history, {
+      out: deps.out,
+      err: deps.err,
+      env: process.env,
+    });
+    // `history gaps` (#610): same seam, same reason. It lives in
+    // `analysis/clocktower/` because it only READS the store.
+    registerGapsCommand(history, {
       out: deps.out,
       err: deps.err,
       env: process.env,
