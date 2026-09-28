@@ -76,14 +76,14 @@ An opt-in consumer that is dark names the flag that feeds it — for example
 
 What `history gaps` reports on a store written by today's `history record`:
 
-| ID  | Gap                                                                              | Disposition            |
-| --- | -------------------------------------------------------------------------------- | ---------------------- |
-| G1  | `area` is declared and read, but no format reader writes it.                     | writer follow-up       |
-| G2  | `failure_category` is declared and read, but never written.                      | writer follow-up       |
-| G3  | `tags` is declared and pushed, but never written.                                | writer follow-up       |
-| G4  | canary-test-reporter did not say that `history record` persists the same report. | fixed in #610          |
-| G5  | canary-signal is not on `main`, so it cannot be wired yet.                       | add a consumer row     |
-| G6  | The Vitest reader cannot emit `flaky`, so `flaky-retry` is dark for Vitest-only. | known (#604), surfaced |
+| ID  | Gap                                                                              | Disposition                                                   |
+| --- | -------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| G1  | `area` is declared and read, but no format reader writes it.                     | [#1125](https://github.com/bop-clocktower/canary/issues/1125) |
+| G2  | `failure_category` is declared and read, but never written.                      | [#1125](https://github.com/bop-clocktower/canary/issues/1125) |
+| G3  | `tags` is declared and pushed, but never written.                                | [#1125](https://github.com/bop-clocktower/canary/issues/1125) |
+| G4  | canary-test-reporter did not say that `history record` persists the same report. | fixed in #610                                                 |
+| G5  | canary-signal is not on `main`, so it cannot be wired yet.                       | add a consumer row                                            |
+| G6  | The Vitest reader cannot emit `flaky`, so `flaky-retry` is dark for Vitest-only. | known (#604), surfaced                                        |
 
 The full analysis and its design decisions are in the
 [proposal](../changes/610-canary-clocktower/proposal.md).
