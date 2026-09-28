@@ -1,0 +1,32 @@
+{
+  "issues": [1106],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "spec": "docs/changes/1106-savant-php/proposal.md",
+  "plan": "docs/changes/1106-savant-php/plans/2026-09-25-savant-php-plan.md",
+  "closingKeyword": "Closes",
+  "review": {
+    "verifier": "PASS (F1: SV004 widening leaked into Python/JS, fixed)",
+    "codeReviewer": "Request Changes: 0 critical, 5 important, all 5 fixed plus the PHP yield-region suggestion; other suggestions listed as follow-ups in the PR"
+  },
+  "assumptions": [
+    "Scope fork answered by the human: core PHP plus WordPress idioms.",
+    "The issue's second ask (a visible abstention without --strict) already shipped: cli.mjs prints the Abstained line on zero scanned files, and agents/skills/test/gate-conformance.test.ts pins the advisory (exit 0, loud) and --strict (exit 3) runs. Not rebuilt; no new test needed.",
+    "PHP support extends scanner.mjs, rules.mjs and restoration.mjs in place. There is no new module, so the entropy entryPoints do not change.",
+    "string-literals.mjs is reused unchanged. It already handles PHP '...'/\"...\" strings, and the existing comment projection handles //, #, /* */ and docblock * lines. No PHP-specific stripper was built, and nothing is shared with canary-blackhawk.",
+    "PHP families are gated to .php files, so a JS AMD define([...]) or a Python/JS SV004 name behaves exactly as it does on main.",
+    "SV001 counts only in-place mutations (index/[] writes, compound assignment, ++/--, array_push-family calls, ->prop =). A plain reassign is not counted, because it is also how a restore is spelled.",
+    "SV001 scoping: a class static property is indicted only by self::/static::/Name:: mutations. A column-0 array is indicted by unindented mutations, or by any mutation when some function imports it with global (a file-wide approximation).",
+    "$GLOBALS[...] writes are SV003 only, not SV001, so one smell is not counted twice.",
+    "SV002 PHP pairs are class-scoped only: setUpBeforeClass/tearDownAfterClass and set_up_before_class/tear_down_after_class. Per-test setUp/set_up are excluded, matching the documented SV002 policy. The brief listed them, but the issue asks for SV002 to be 'the same', and SV003 covers per-test PHP leaks.",
+    "wpSetUpBeforeClass is not an SV002 setup marker: WP's base tear_down_after_class deletes the factory data it builds (amended at APPROVE_PLAN).",
+    "SV003 PHP restore evidence: the same key written or unset in a tearDown*/tear_down*/wpTearDown* body or a finally block, a whole-family reassign there, ini_restore, delete_option, putenv('K'), or a snapshot write-back. WordPress hooks pair with a matching remove_* anywhere in the file.",
+    "define() is never restored (PHP cannot undefine a constant). Only a savant-ignore pragma silences it.",
+    "A class extending a WP_*UnitTestCase* base counts WordPress hooks and options as restored (_backup_hooks/_restore_hooks and the per-test DB rollback). Superglobals are deliberately not assumed restored there.",
+    "Only a global function call counts for the PHP call families. $obj->add_action(...), Cls::update_option(...) and a declaration named define are ignored.",
+    "PHP files skip the Python post-yield and JS afterEach regions: a PHP yield is a data provider, not fixture teardown.",
+    "A directory walk visits .php files only by name (*Test.php, test-*.php). Being under tests/ is not enough, which keeps bootstrap.php and wp-tests-config.php out. vendor/ is skipped for every language.",
+    "--confirm stays out of scope for PHP. detectFramework now returns null for a PHP path or a PHP-only directory, even when a vitest/pytest config marker exists.",
+    "Line budgets: restoration.mjs and rules.mjs stay under 300 lines, so the perf ratchet gets no new file-length identity."
+  ]
+}
