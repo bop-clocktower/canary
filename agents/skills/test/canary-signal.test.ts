@@ -16,6 +16,10 @@ import {
   loadLedger,
   loadRuns,
 } from '../claude-code/canary-signal/scripts/sources.mjs';
+import {
+  partitionByWindow,
+  resolveWindow,
+} from '../claude-code/canary-signal/scripts/window.mjs';
 
 const SCRIPTS = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -132,5 +136,39 @@ describe('sources.loadLedger', () => {
   it('treats a document without entries as an empty ledger', () => {
     const file = writeRaw(tmp(), 'q.json', '{"schema_version":2}');
     expect(loadLedger(file, true).rows).toEqual([]);
+  });
+});
+
+describe('window', () => {
+  it('D6: spans --days ending at --until', () => {
+    const w = resolveWindow(7, UNTIL).window!;
+    expect(w.until.toISOString()).toBe(UNTIL);
+    expect(w.since.toISOString()).toBe('2026-09-21T00:00:00.000Z');
+  });
+  it('defaults --until to now', () => {
+    const before = Date.now();
+    expect(
+      resolveWindow(1, null).window!.until.getTime(),
+    ).toBeGreaterThanOrEqual(before);
+  });
+  it('rejects an unparseable --until', () => {
+    expect(resolveWindow(7, 'last tuesday').error).toMatch(/--until/);
+  });
+  it('rejects --days below 1', () => {
+    expect(resolveWindow(0, UNTIL).error).toMatch(/--days/);
+  });
+  it('keeps inclusive bounds, drops outside rows, COUNTS undated ones', () => {
+    const w = resolveWindow(7, UNTIL).window!;
+    const items = [
+      { d: '2026-09-21T00:00:00.000Z' },
+      { d: UNTIL },
+      { d: '2026-09-20T23:59:59Z' },
+      { d: '2026-09-29T00:00:00Z' },
+      { d: 'garbage' },
+      {},
+    ];
+    const res = partitionByWindow(items, (i: { d?: string }) => i.d, w);
+    expect(res.inside).toHaveLength(2);
+    expect(res.undated).toBe(2);
   });
 });
