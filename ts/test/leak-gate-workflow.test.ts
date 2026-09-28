@@ -14,15 +14,15 @@
  *   5. minimal permissions
  *
  * plus: no `${{ }}` inside a `run:` script (event values reach the shell only
- * through `env:`), and the staged migration (see below): the required
- * context keeps its docs-lint.yml producer until leak-gate.yml's renamed job
- * is on main, because a required context with no producer blocks every PR
- * forever.
+ * through `env:`), and the staged migration (see below), which ends with
+ * leak-gate.yml as the required context's only producer. A required context
+ * with no producer blocks every PR forever, and a second producer that cannot
+ * read the secret keeps every fork PR red.
  *
  * Offline: parses YAML and JSON. Never executes a workflow.
  */
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { load as loadYaml } from 'js-yaml';
@@ -100,23 +100,38 @@ describe('leak gate workflow is fork-reachable (#843)', () => {
    * permanently missing and unmergeable (ruleset 16189198 has no bypass).
    *
    * Step 1 (#948) added leak-gate.yml under a distinct, advisory name.
-   * Step 2a (this state) renames that job to CHECK and leaves docs-lint.yml
-   * as the manifest's producer: on the 2a PR, main's leak-gate.yml still
-   * reports the old name, so docs-lint.yml is what reports CHECK there.
-   * Step 2b (once 2a is on main) removes the docs-lint.yml job and points the
-   * manifest at leak-gate.yml. Between 2a and 2b both workflows report CHECK.
+   * Step 2a (#1115) renamed that job to CHECK while docs-lint.yml kept
+   * producing it, so both workflows reported CHECK for a window.
+   * Step 2b (this state) deletes the docs-lint.yml job and points the
+   * manifest at leak-gate.yml. On the 2b PR itself, main's leak-gate.yml
+   * already reports CHECK, so the context never loses its producer.
    */
-  it('step 2a: docs-lint.yml still produces the required context on pull_request', () => {
-    const docsLint = load('docs-lint.yml');
-    const names = Object.values(docsLint.jobs ?? {}).map((j) => j.name);
-    expect(names).toContain(CHECK);
-    const dlTriggers = (docsLint.true ?? docsLint.on ?? {}) as Record<
-      string,
-      unknown
-    >;
-    expect(Object.keys(dlTriggers)).toContain('pull_request');
+  it('step 2b: the manifest names leak-gate.yml as the producer', () => {
     const entry = manifest.required.find((r) => r.check === CHECK);
-    expect(entry?.workflow).toBe('docs-lint.yml');
+    expect(entry?.workflow).toBe(WORKFLOW);
+  });
+
+  it('step 2b: leak-gate.yml is the only workflow that produces the context', () => {
+    const producers = readdirSync(WORKFLOW_DIR)
+      .filter((f) => /\.ya?ml$/.test(f))
+      .filter((f) =>
+        Object.entries(load(f).jobs ?? {}).some(
+          ([id, j]) => (j.name ?? id) === CHECK,
+        ),
+      );
+    // Non-empty by construction: a zero-producer result would also fail here.
+    expect(producers).toEqual([WORKFLOW]);
+  });
+
+  it('step 2b: docs-lint.yml no longer runs the leak scanner', () => {
+    const docsLint = load('docs-lint.yml');
+    const docsLintJobs = Object.values(docsLint.jobs ?? {});
+    // Zero denominator guard: docs-lint.yml still has its other jobs.
+    expect(docsLintJobs.length).toBeGreaterThan(0);
+    const scans = docsLintJobs
+      .flatMap((j) => j.steps ?? [])
+      .filter((s) => s.run?.includes('check_removed_symbols.mjs'));
+    expect(scans).toEqual([]);
   });
 
   it('step 2a: leak-gate.yml has exactly one job, named the required context', () => {

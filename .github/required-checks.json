@@ -109,21 +109,17 @@
     { "check": "Wiki diagrams render", "workflow": "docs-lint.yml" },
     {
       "check": "No removed-symbol or proprietary leaks",
-      "workflow": "docs-lint.yml",
+      "workflow": "leak-gate.yml",
       "$comment": [
-        "#843 step 2a (ADR 0023). leak-gate.yml's pull_request_target job now",
-        "carries this name too, so between 2a and 2b TWO workflows report this",
-        "context on every same-repo PR and push to main. Both come from the",
-        "github-actions app and the ruleset entry has no integration_id. How",
-        "GitHub resolves two same-named runs on one SHA (latest-wins is the",
-        "usual report) is UNVERIFIED here; check it on the first PR after 2a.",
-        "They agree on a real leak unless the scanner or the secret differs",
-        "between them (a scanner-editing PR, a fork PR). This entry stays on",
-        "docs-lint.yml because that is the producer that reported on the 2a PR",
-        "itself (pull_request_target runs main's copy of leak-gate.yml, which",
-        "still had the step-1 name).",
-        "Step 2b points this entry at leak-gate.yml and deletes the docs-lint",
-        "job. The context string never changes, so the ruleset needs no edit."
+        "#843 (ADR 0023). Produced by leak-gate.yml on pull_request_target, so",
+        "it runs in base-repo context where secrets.CANARY_PROPRIETARY_DENYLIST",
+        "resolves on a fork PR too. It was docs-lint.yml's pull_request job,",
+        "which cannot read the secret on a fork PR and so abstained red there.",
+        "Steps 1 and 2a (#948, #1115) staged the move; step 2b deleted the",
+        "docs-lint.yml job, leaving one producer. The context string never",
+        "changed, so the ruleset needed no edit.",
+        "`pull_request_target` counts as a PR trigger for the checks in",
+        "ts/test/workflow-false-green.test.ts: it reports on the PR head SHA."
       ]
     },
     {
