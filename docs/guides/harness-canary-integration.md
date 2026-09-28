@@ -174,14 +174,15 @@ PR; everything else is advisory. In one breath: **`harness.yml`
 `harness-quality.yml` (docs coverage, entropy/drift cleanup, phase-gate),
 `harness-architecture.yml` (dependency layers + `validate`),
 `harness-security.yml` (security scan + deps + validate), `docs-lint.yml`
-(markdownlint + the removed-symbol guard), and `validate-plugin.yml`
-(manifest/version consistency) — those workflows must be green to merge.**
-Canary's own `canary-ci-ready` / `canary-test-pipeline` and the harness
-`review-ci` / `pre-merge-brief` layers are **not** wired as required checks:
-they run in the developer's Claude Code session (or as a reviewer persona) and
-**inform** the merge decision — the readiness score, the multi-persona verdict,
-and the senior-facing accountability brief — but do not block it. So: harness
-workflows **gate**, canary/review layers **advise**.
+(markdownlint, code fences, wiki diagrams), `leak-gate.yml` (the removed-symbol
+and proprietary-leak guard), and `validate-plugin.yml` (manifest/version
+consistency) — those workflows must be green to merge.** Canary's own
+`canary-ci-ready` / `canary-test-pipeline` and the harness `review-ci` /
+`pre-merge-brief` layers are **not** wired as required checks: they run in the
+developer's Claude Code session (or as a reviewer persona) and **inform** the
+merge decision — the readiness score, the multi-persona verdict, and the
+senior-facing accountability brief — but do not block it. So: harness workflows
+**gate**, canary/review layers **advise**.
 
 > Closed gap (#601): `harness ci check` now honours
 > `entropy.drift.checkApiSignatures: false` from `harness.config.json`, so

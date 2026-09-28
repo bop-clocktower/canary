@@ -1,0 +1,48 @@
+{
+  "issues": [843],
+  "route": "spec-ready",
+  "stages": [
+    "autopilot",
+    "planning",
+    "tdd",
+    "execution",
+    "verification",
+    "code-review",
+    "canary-detectors"
+  ],
+  "spec": "docs/changes/843-leak-gate-pull-request-target/proposal.md",
+  "adr": "docs/knowledge/decisions/0023-leak-gate-pull-request-target.md",
+  "previousPlan": "docs/changes/843-leak-gate-step-2a/plans/2026-09-25-leak-gate-step-2a-plan.md",
+  "planArtifact": "docs/changes/843-leak-gate-step-2b/plans/2026-09-28-leak-gate-step-2b-plan.md",
+  "closingKeyword": "Refs",
+  "closingKeywordReason": "Partial: step 2b's code half only. Real fork-PR verification (ADR 0023), retiring the CONTRIBUTING.md fork note and its test, and deleting the Dependabot copy of CANARY_PROPRIETARY_DENYLIST remain manual, so the issue must stay open.",
+  "tddEvidence": "The three new step-2b assertions in ts/test/leak-gate-workflow.test.ts were run against the 2a tree (47745970) first and failed for the right reasons: manifest producer 'docs-lint.yml' != 'leak-gate.yml'; producers ['docs-lint.yml','leak-gate.yml'] != ['leak-gate.yml']; docs-lint.yml still had one scan step.",
+  "canaryDetectors": {
+    "ran": 4,
+    "expected": 4,
+    "savant": "0 findings",
+    "blackhawk": "0 findings",
+    "katana": "1 deletion captured: the step-2a assertion that docs-lint.yml produces the context, deliberately inverted; critical-area data unavailable, recording only",
+    "cassandra": "VAC-001 ran on 18 tests with 0 findings; VAC-002/VAC-003 abstained on all (workflow-structure tests have no resolvable target)"
+  },
+  "assumptions": [
+    "Fork taken by the human (not re-asked): code half only, keep the CONTRIBUTING.md fork note.",
+    "Autopilot is single-phase here, so planning and execution were done in-lane rather than through separate planner/executor agents (the skill itself says single-phase work does not need the loop); the review stage used a dispatched harness-code-reviewer.",
+    "The required set stays at 13 contexts: only the producing workflow of one entry moves. No doc states 14, so there was no count drift to fix.",
+    "ADR 0023's context paragraph that names docs-lint.yml is left as is. It records the state at decision time, and ADRs are not rewritten for later steps.",
+    "contributing-fork-note.test.ts is not edited. With no secret-gated required check left on a fork-blind trigger, it takes its designed 'retired itself' branch while the note stays until the manual fork-PR check.",
+    "The integration guide's list of required workflows gained leak-gate.yml. Its omission of guardian.yml is pre-existing and left for a separate change (scope)."
+  ],
+  "codeReview": {
+    "agent": "harness-code-reviewer",
+    "verdict": "not blocking (approve)",
+    "critical": 0,
+    "important": 0,
+    "suggestions": [
+      "S1 nothing pinned pull_request_target types on the sole producer (fixed: test asserts opened/synchronize/reopened, red on a planted drop of synchronize)",
+      "S2 contributing-fork-note.test.ts guard comment now misleading (deferred to the fork-note retirement step, out of scope)",
+      "S3 scanner-absence check scoped to docs-lint.yml only (fixed: scans every workflow, red on the 2a docs-lint.yml)"
+    ],
+    "liveEvidence": "On PR #1120, leak-gate.yml (pull_request_target) posted the required context on the PR head SHA with success; ruleset 16189198 requires 13 contexts, matching the manifest."
+  }
+}

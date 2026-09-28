@@ -4,8 +4,8 @@
  *
  * The repo states the rule in its own source — `dogfood.yml:304-306`: *"the
  * half verified ZERO items, so it measured nothing. This is not a pass."* —
- * and `docs-lint.yml` states it again for the removed-symbols job: *"a gate
- * matching zero patterns has verified nothing and cannot report a pass."*
+ * and the leak gate states it again (`leak-gate.yml`, formerly a
+ * `docs-lint.yml` job): *"a gate matching zero patterns has verified nothing."*
  * These tests assert that rule where it was not yet applied.
  *
  * Both are INVARIANTS rather than instances, so the next gate to grow the
