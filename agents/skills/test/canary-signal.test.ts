@@ -16,6 +16,7 @@ import {
   loadLedger,
   loadRuns,
 } from '../claude-code/canary-signal/scripts/sources.mjs';
+import { CLI_SPEC, main } from '../claude-code/canary-signal/scripts/cli.mjs';
 import {
   CHAT_MAX_LINES,
   renderDigest,
@@ -410,5 +411,155 @@ describe('digest', () => {
     ).toContain(
       '0 ledger rows dated in the window of 1 (kind: none; cause: none)',
     );
+  });
+});
+
+function runCli(argv: string[]) {
+  const out: string[] = [];
+  const err: string[] = [];
+  vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+    out.push(a.join(' '));
+  });
+  vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+    err.push(a.join(' '));
+  });
+  const code = main(argv);
+  return { code, stdout: out.join('\n'), stderr: err.join('\n') };
+}
+function inDir<T>(dir: string, fn: () => T): T {
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    return fn();
+  } finally {
+    process.chdir(cwd);
+  }
+}
+const three = () => [rec({ branch: 'feat/x' }), rec(), rec()];
+
+describe('cli', () => {
+  it('SC1: three runs => a full digest, exit 0', () => {
+    const dir = tmp();
+    const ledger = writeLedger(dir, [
+      { kind: 'skip', cause: 'flaky', date: '2026-09-25T00:00:00Z' },
+    ]);
+    const argv = ['--history', writeStore(dir, three()), '--ledger', ledger];
+    const res = runCli([...argv, '--until', UNTIL]);
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('**Sample:** 3 runs');
+    expect(res.stdout).toContain('```text');
+  });
+  it('SC2: an empty store abstains; exit 0 advisory, 3 under --strict', () => {
+    const store = writeStore(tmp(), []);
+    const advisory = runCli(['--history', store]);
+    expect(advisory.code).toBe(0);
+    expect(advisory.stdout).toContain('ABSTAINED');
+    vi.restoreAllMocks();
+    expect(runCli(['--history', store, '--strict']).code).toBe(3);
+  });
+  it('D9: --strict exits 0 on thin and full samples', () => {
+    const dir = tmp();
+    const base = ['--until', UNTIL, '--strict'];
+    expect(runCli(['--history', writeStore(dir, three()), ...base]).code).toBe(
+      0,
+    );
+    vi.restoreAllMocks();
+    const thin = writeStore(tmp(), [rec()]);
+    expect(runCli(['--history', thin, ...base]).code).toBe(0);
+  });
+  it('SC6: an explicit missing --ledger exits 1', () => {
+    const dir = tmp();
+    const res = runCli([
+      '--history',
+      writeStore(dir, three()),
+      '--ledger',
+      path.join(dir, 'typo.json'),
+    ]);
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain('canary-signal: quarantine ledger not found');
+  });
+  it('SC6: the default ledger missing is a named dark source', () => {
+    const dir = tmp();
+    const store = writeStore(dir, three());
+    const res = inDir(dir, () =>
+      runCli(['--history', store, '--until', UNTIL]),
+    );
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain(
+      `quarantine ledger: no quarantine ledger at ${DEFAULT_LEDGER}`,
+    );
+  });
+  it('a missing --history store exits 1, never "nothing caught"', () => {
+    const res = runCli(['--history', path.join(tmp(), 'nope.jsonl')]);
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain('canary-signal: history store not found');
+  });
+  it('--days 0 and a bad --until are usage errors (exit 2)', () => {
+    const store = writeStore(tmp(), []);
+    const days = runCli(['--history', store, '--days', '0']);
+    expect(days.code).toBe(2);
+    expect(days.stderr).toContain('canary-signal: error: argument --days');
+    vi.restoreAllMocks();
+    expect(runCli(['--history', store, '--until', 'soon']).code).toBe(2);
+  });
+  it('--out writes the markdown, creating parent directories', () => {
+    const dir = tmp();
+    const out = path.join(dir, 'nested', 'signal.md');
+    const argv = ['--history', writeStore(dir, three()), '--until', UNTIL];
+    const res = runCli([...argv, '--out', out]);
+    expect(res.code).toBe(0);
+    expect(fs.readFileSync(out, 'utf8')).toBe(res.stdout);
+  });
+  it('an unwritable --out exits 1', () => {
+    const dir = tmp();
+    const blocker = writeRaw(dir, 'file', 'x');
+    const res = runCli([
+      '--history',
+      writeStore(dir, three()),
+      '--out',
+      path.join(blocker, 'signal.md'),
+    ]);
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain('cannot write artifact');
+  });
+  it('SC8: no network or process modules, and only cli.mjs writes', () => {
+    const allowed =
+      /^(node:fs|node:path|\.\.\/\.\.\/\.\.\/lib\/parse-args\.mjs|\.\/[a-z]+\.mjs)$/;
+    const writers: string[] = [];
+    for (const name of fs.readdirSync(SCRIPTS)) {
+      const src = fs.readFileSync(path.join(SCRIPTS, name), 'utf8');
+      for (const [, spec] of src.matchAll(/from '([^']+)'/g)) {
+        expect(spec, `${name} imports ${spec}`).toMatch(allowed);
+      }
+      expect(src).not.toMatch(/\bfetch\(|child_process|node:https?|node:net/);
+      if (/writeFileSync|appendFileSync|createWriteStream/.test(src)) {
+        writers.push(name);
+      }
+    }
+    expect(writers).toEqual(['cli.mjs']);
+  });
+  it('SC8: without --out, nothing on disk changes', () => {
+    const storeDir = tmp();
+    const store = writeStore(storeDir, three());
+    const cwd = tmp();
+    inDir(cwd, () => runCli(['--history', store]));
+    expect(fs.readdirSync(cwd)).toEqual([]);
+    expect(fs.readdirSync(storeDir)).toEqual(['history-v2.jsonl']);
+  });
+  it('SC9: --help exits 0, an unknown flag exits 2', () => {
+    const help = runCli(['--help']);
+    expect(help.code).toBe(0);
+    expect(help.stdout).toContain('usage: canary-signal');
+    vi.restoreAllMocks();
+    expect(runCli(['--history', 'x', '--bogus']).code).toBe(2);
+  });
+  it('exports CLI_SPEC and ships an executable entry', () => {
+    expect(CLI_SPEC.prog).toBe('canary-signal');
+    expect(CLI_SPEC.required).toEqual(['--history']);
+    const entry = path.join(SCRIPTS, 'cli.mjs');
+    expect(
+      fs.readFileSync(entry, 'utf8').startsWith('#!/usr/bin/env node\n'),
+    ).toBe(true);
+    expect(fs.statSync(entry).mode & 0o111).not.toBe(0);
   });
 });
