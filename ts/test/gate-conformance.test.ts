@@ -245,6 +245,30 @@ const ROWS: GateRow[] = [
     run: (base) =>
       invokeCanary(['history', 'timeline', 'some-test'], { cwd: base }),
   },
+  // #610: TWO rows for one command, on purpose. The reader returns [] for a
+  // missing file AND for an empty one, so only the command's own existence
+  // check keeps a typo'd path from reading as "the store is empty".
+  {
+    command: 'history gaps (store path does not exist)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['passed', 'store is empty'],
+    run: (base) =>
+      invokeCanary(['history', 'gaps', '--path', join(base, 'missing.jsonl')]),
+  },
+  {
+    command: 'history gaps (store exists with zero runs)',
+    layer: 'engine',
+    kind: 'gate',
+    expect: 'exit3',
+    forbid: ['passed', 'store not found'],
+    run: (base) => {
+      const path = join(base, 'empty.jsonl');
+      writeFileSync(path, '', 'utf-8');
+      return invokeCanary(['history', 'gaps', '--path', path]);
+    },
+  },
   {
     command: 'guardian author-plan (empty diff)',
     layer: 'engine',
