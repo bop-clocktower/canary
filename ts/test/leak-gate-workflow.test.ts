@@ -88,6 +88,17 @@ describe('leak gate workflow is fork-reachable (#843)', () => {
     expect(prt?.['branches']).toBeUndefined();
   });
 
+  it('reports on every PR push (the sole producer of a required context)', () => {
+    // Since step 2b nothing else reports CHECK, so dropping `synchronize`
+    // here would leave every PR's newest commit without the required check:
+    // a merge deadlock that the PR making the edit could not even see.
+    const prt = triggers['pull_request_target'] as { types?: string[] } | null;
+    if (prt?.types === undefined) return; // GitHub's defaults cover all three
+    expect(prt.types).toEqual(
+      expect.arrayContaining(['opened', 'synchronize', 'reopened']),
+    );
+  });
+
   it('still runs on push to main (post-merge detection)', () => {
     const push = triggers['push'] as { branches?: string[] } | null;
     expect(push?.branches).toContain('main');
@@ -123,15 +134,16 @@ describe('leak gate workflow is fork-reachable (#843)', () => {
     expect(producers).toEqual([WORKFLOW]);
   });
 
-  it('step 2b: docs-lint.yml no longer runs the leak scanner', () => {
-    const docsLint = load('docs-lint.yml');
-    const docsLintJobs = Object.values(docsLint.jobs ?? {});
-    // Zero denominator guard: docs-lint.yml still has its other jobs.
-    expect(docsLintJobs.length).toBeGreaterThan(0);
-    const scans = docsLintJobs
-      .flatMap((j) => j.steps ?? [])
-      .filter((s) => s.run?.includes('check_removed_symbols.mjs'));
-    expect(scans).toEqual([]);
+  it('step 2b: only leak-gate.yml runs the leak scanner', () => {
+    const scanners = readdirSync(WORKFLOW_DIR)
+      .filter((f) => /\.ya?ml$/.test(f))
+      .filter((f) =>
+        Object.values(load(f).jobs ?? {})
+          .flatMap((j) => j.steps ?? [])
+          .some((s) => s.run?.includes('check_removed_symbols.mjs')),
+      );
+    // Non-empty by construction: losing the scanner entirely also fails.
+    expect(scanners).toEqual([WORKFLOW]);
   });
 
   it('step 2a: leak-gate.yml has exactly one job, named the required context', () => {
