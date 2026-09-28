@@ -132,7 +132,9 @@ describe('history gaps over a store written by history record', () => {
     const cluster = find(gaps, 'screech-cluster');
     expect(cluster.status).toBe('dark');
     // Only the hard failure: screech's isFailure does not count a flake.
-    expect(cluster.coverage.map((c) => [c.field, c.carried, c.applicable])).toEqual([
+    expect(
+      cluster.coverage.map((c) => [c.field, c.carried, c.applicable]),
+    ).toEqual([
       ['area', 0, 1],
       ['failure_category', 0, 1],
     ]);

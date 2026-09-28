@@ -28,7 +28,7 @@ import { gateOutcome, type SkipEntry } from '../../core/gate-result.js';
 import { NdjsonHistoryStore } from '../../history/ndjson-store.js';
 import type { RunRecord } from '../../history/record.js';
 import { CONSUMERS } from './consumers.js';
-import { analyzeGaps, type GapReport } from './gaps.js';
+import { analyzeGaps, type ConsumerGap, type GapReport } from './gaps.js';
 import { renderAbstention, renderGapReport } from './render.js';
 
 const DEFAULT_HISTORY_FILE = 'test-results/reports/history-v2.jsonl';
@@ -76,10 +76,8 @@ function abstain(
   deps: GapsDeps,
 ): never {
   const ids = CONSUMERS.map((c) => c.id);
-  const outcome = gateOutcome(
-    { checked: 0, findings: [], skipped: remoteSkip(deps.env) },
-    'gate',
-  );
+  const skipped = remoteSkip(deps.env);
+  const outcome = gateOutcome({ checked: 0, findings: [], skipped }, 'gate');
   deps.out(
     opts.json
       ? jsonIndent2({
@@ -89,6 +87,8 @@ function abstain(
           runs: 0,
           tests: 0,
           consumers: [],
+          darkByAbstention: ids,
+          skipped,
           exitCode: outcome.exitCode,
         })
       : `${renderAbstention(reason, ids)}\n\n${outcome.summaryLine}`,
@@ -96,21 +96,34 @@ function abstain(
   throw new CliExitError(outcome.exitCode);
 }
 
-/** Measured consumers are the denominator; unmeasured ones render as skipped. */
+/**
+ * Why a consumer is left out of the denominator, or null when it counts.
+ *
+ * Unmeasured has no rows to judge. An opt-in consumer that is not fed was not
+ * asked for: its flag is a choice, not a writer defect, so it is named as
+ * skipped rather than failing every store that never used the flag (S4).
+ */
+function skipReason(gap: ConsumerGap): string | null {
+  if (gap.status === 'unmeasured') return 'no applicable rows';
+  if (gap.optIn !== undefined && gap.status !== 'fed') {
+    return `opt-in: not recorded with history record ${gap.optIn}`;
+  }
+  return null;
+}
+
+/** Measured consumers are the denominator; the rest render as skipped. */
 function outcomeOf(report: GapReport, env: NodeJS.ProcessEnv) {
-  const measured = report.consumers.filter((c) => c.status !== 'unmeasured');
-  const skipped: SkipEntry[] = [
-    ...report.consumers
-      .filter((c) => c.status === 'unmeasured')
-      .map((c) => ({ name: c.id, reason: 'no applicable rows' })),
-    ...remoteSkip(env),
-  ];
-  const findings = measured.filter((c) => c.status !== 'fed');
-  return gateOutcome(
-    { checked: measured.length, findings, skipped },
-    'gate',
-    NOUN,
-  );
+  const skipped: SkipEntry[] = [];
+  const counted: ConsumerGap[] = [];
+  for (const gap of report.consumers) {
+    const reason = skipReason(gap);
+    if (reason === null) counted.push(gap);
+    else skipped.push({ name: gap.id, reason });
+  }
+  skipped.push(...remoteSkip(env));
+  const findings = counted.filter((c) => c.status !== 'fed');
+  const result = { checked: counted.length, findings, skipped };
+  return { skipped, outcome: gateOutcome(result, 'gate', NOUN) };
 }
 
 function gapsCmd(opts: GapsOptions, deps: GapsDeps): void {
@@ -121,13 +134,14 @@ function gapsCmd(opts: GapsOptions, deps: GapsDeps): void {
     abstain(path, `store is empty: ${path} (0 runs)`, opts, deps);
   }
   const report = analyzeGaps(records);
-  const outcome = outcomeOf(report, deps.env);
+  const { skipped, outcome } = outcomeOf(report, deps.env);
   deps.out(
     opts.json
       ? jsonIndent2({
           path,
           abstained: outcome.abstained,
           ...report,
+          skipped,
           exitCode: outcome.exitCode,
         })
       : `${renderGapReport(report, { path })}\n\n${outcome.summaryLine}`,

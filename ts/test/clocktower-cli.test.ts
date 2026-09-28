@@ -122,8 +122,9 @@ describe('canary history gaps', () => {
     seed(tmp, [fedRun(1, { status: 'passed' })]);
     const res = await gaps();
     expect(res.stdout).toContain('failure-categories: unmeasured');
-    expect(res.stdout).toContain('failure-categories [no applicable rows]');
-    expect(res.stdout).toContain('rewind [no applicable rows]');
+    expect(res.stdout).toContain(
+      '3 skipped: screech-cluster, failure-categories, rewind [no applicable rows]',
+    );
     expect(res.stdout).toContain('All 6 run consumer check(s) passed');
     expect(res.code).toBe(0);
   });

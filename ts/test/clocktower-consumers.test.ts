@@ -75,7 +75,12 @@ describe('clocktower consumer table', () => {
     ['ci-ready-runtime', 'duration_ms', 'run', 'ts/src/core/ci-ready.ts:180'],
     ['flaky-retry', 'reporter_format', 'run', 'ts/src/util/flake-window.ts'],
     ['flaky-area', 'area', 'test', 'ts/src/history/flake/rows.ts:65'],
-    ['failure-categories', 'error_text', 'failed-test', 'analysis/engine.ts:49'],
+    [
+      'failure-categories',
+      'error_text',
+      'failed-test',
+      'analysis/engine.ts:49',
+    ],
     ['failure-categories', 'failure_category', 'failed-test', 'engine.ts:57'],
     ['order', 'test_file', 'test', 'ts/src/analysis/order/rank.ts:166'],
     ['order', 'duration_ms', 'test', 'ts/src/analysis/order/rank.ts:166'],

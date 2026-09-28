@@ -38,8 +38,9 @@ export interface GapReport {
 // failure predicate (`isFailureWithError`, analysis/engine.ts).
 const FAILED = new Set(['failed', 'flaky']);
 
-function applies(scope: Scope, test: TestResultRecord): boolean {
-  return scope === 'test' || FAILED.has(test.status);
+function applies(req: Requirement, test: TestResultRecord): boolean {
+  if (req.scope === 'failed-test' && !FAILED.has(test.status)) return false;
+  return req.where === undefined || req.where(test);
 }
 
 function measure(
@@ -55,7 +56,7 @@ function measure(
       continue;
     }
     for (const test of run.tests ?? []) {
-      if (!applies(req.scope, test)) continue;
+      if (!applies(req, test)) continue;
       applicable += 1;
       if (req.carried(run, test)) carried += 1;
     }
