@@ -2,8 +2,8 @@
 name: canary-clocktower
 description:
   Run-history gap analysis — reports, for the history store on disk, which of
-  its consumers (analyze area-health, spikes and common-failures, ci-ready
-  runtime, flaky retry detection, order, rewind, canary-screech) are fed,
+  its consumers (canary-screech range and clusters, analyze common-failures,
+  ci-ready runtime, flaky retry detection and area, order, rewind) are fed,
   partial, dark or unmeasured, per required field with denominators. Use when a
   history-backed report looks empty or one-bucket, after wiring `canary history
   record`, or when asking "what does our run history not carry". Read-only and
@@ -64,10 +64,15 @@ Each consumer lists its required fields as `carried/applicable`:
 
 - `fed` — every applicable row carries every field.
 - `partial` — some rows do.
-- `dark` — no row carries at least one field. An opt-in consumer names the
-  `history record` flag that feeds it instead of reading as a defect.
+- `dark` — no row carries at least one field.
 - `unmeasured` — a field has no applicable rows (for example, no failed tests to
   carry a `failure_category`). It is listed as skipped, never counted as fed.
+
+An opt-in consumer that is not fed names the `history record` flag that feeds it
+and is listed as skipped, not as a finding.
+
+`--json` lists every skipped entry under `skipped`. On an abstention it also
+lists the consumers that went dark with the store under `darkByAbstention`.
 
 A configured `CANARY_HISTORY_DB_URL` is named as a skipped remote store: the
 command reads the local store only, and says so.

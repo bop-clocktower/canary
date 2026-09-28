@@ -27,14 +27,17 @@ Verified against the tree at `47745970` before designing:
 The gap nobody had measured: **three test-level fields are declared in the
 schema, read by consumers, and written by no writer.**
 
-- `area` — declared `ts/src/history/schema.ts:49`, read by `analyze area-health`
-  (`ts/src/analysis/reports.ts:121`) and the flaky table's area column
-  (`ts/src/history/flake/render.ts:69`). No format reader in
-  `ts/src/history/formats/` sets it.
-- `failure_category` — declared `ts/src/history/schema.ts:50`, read by `analyze`
-  spikes/common-failures (`ts/src/analysis/engine.ts:57`,
-  `ts/src/analysis/reports.ts:196`), which default it to `'other'`. No writer
-  sets it, so every categorised report is one bucket.
+- `area` — declared `ts/src/history/schema.ts:49`, read by canary-screech's
+  owning-area and revert/quarantine recommendation
+  (`canary-screech/scripts/cluster.mjs:47`) and the flaky table's area column
+  (`ts/src/history/flake/rows.ts:65`). No format reader in
+  `ts/src/history/formats/` sets it. (`analyze area-health` renders an area
+  table too, but its engine never computes a row: see G7.)
+- `failure_category` — declared `ts/src/history/schema.ts:50`, read by
+  `analyze common-failures` (`ts/src/analysis/engine.ts:57`,
+  `ts/src/analysis/reports.ts:196`), which defaults it to `'other'`, and by
+  canary-screech's failure clusters (`cluster.mjs:29`). No writer sets it, so
+  every categorised report is one bucket.
 - `tags` — declared and pushed (`ts/src/history/publish/cli.ts:68`), never
   written.
 
@@ -123,6 +126,7 @@ type Scope = 'run' | 'test' | 'failed-test';
 interface Requirement {
   field: string; // display name, e.g. 'area'
   scope: Scope; // what the denominator counts
+  where?: (test: TestResultRecord) => boolean; // narrows a test scope
   carried(run: RunRecord, test?: TestResultRecord): boolean;
 }
 interface Consumer {
@@ -157,22 +161,34 @@ Status rule, per consumer: if any requirement has `applicable === 0` →
 `unmeasured`; else if every requirement has `carried === applicable` → `fed`;
 else if any requirement has `carried === 0` → `dark`; else `partial`.
 
-### Consumer table (initial rows)
+### Consumer table
 
-| id                   | surface                               | requirements (scope)                          |
-| -------------------- | ------------------------------------- | --------------------------------------------- |
-| `screech`            | canary-screech, `history timeline`    | `branch`, `commit_sha`, `timestamp` (run)     |
-| `ci-ready-runtime`   | `canary ci-ready` suite runtime       | `duration_ms` (run)                           |
-| `flaky-retry`        | `history flaky`, `analyze flaky`      | `reporter_format` ∈ {playwright, junit} (run) |
-| `area-health`        | `analyze area-health`, flaky area col | `area` (test)                                 |
-| `failure-categories` | `analyze spikes / common-failures`    | `failure_category` (failed-test)              |
-| `order`              | `canary order`                        | `test_file`, `duration_ms` (test)             |
-| `rewind`             | `canary rewind`                       | `replay` (run), `start_index` (test)          |
-| `order-ttff`         | `canary order --report` (TTFF)        | `order` (run) — `optIn: '--order-plan'`       |
+Revised after review (C1, I1, I2, I5, I6): each row mirrors the predicate its
+consumer applies, and where the consumer exports that predicate, the row calls
+it rather than copying it.
+
+| id                   | surface                                | requirements (scope)                                                                                            |
+| -------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `screech-range`      | canary-screech culprit range, timeline | `branch`, `commit_sha`, `timestamp` (run)                                                                       |
+| `screech-cluster`    | canary-screech owning area, clusters   | `area`, `failure_category` (failed-test, `where` status is `failed`: screech's `isFailure`)                     |
+| `ci-ready-runtime`   | `canary ci-ready` suite runtime        | `duration_ms` > 0 and finite (run), as `core/ci-ready.ts` filters                                               |
+| `flaky-retry`        | `history flaky`, `analyze flaky`       | `reporter_format` for which `util/flake-window.ts` `measurabilityOf` says `yes` (run)                           |
+| `flaky-area`         | `history flaky` area column            | `area` (test)                                                                                                   |
+| `failure-categories` | `analyze common-failures`              | `error_text`, `failure_category` (failed-test)                                                                  |
+| `order`              | `canary order`                         | `test_file`, `duration_ms` (test)                                                                               |
+| `rewind`             | `canary rewind`                        | `commit_sha` not `local`, `reporter_format` in `REPLAYABLE_RUNNERS` (run); `testFileProblem` null (failed-test) |
+| `order-ttff`         | `canary order --report` (TTFF)         | `order` (run) — `optIn: '--order-plan'`                                                                         |
+
+`rewind` requires only the fields whose absence makes it refuse
+(`analysis/rewind/plan.ts`); `replay` and `start_index` only degrade a replay's
+fidelity and are not requirements. `analyze area-health` has no row: its engine
+hard-codes an empty row set, so it is dark regardless of fields (G7).
+`analyze spikes` has no row: it reads failure rates, not categories.
 
 `optIn` rows render their status with the flag that feeds them, so a dark opt-in
-consumer reads "dark (fed only by `history record --order-plan`)" rather than as
-a defect.
+consumer reads "dark (fed only by `history record --order-plan`)". An opt-in
+consumer that is not fed is a skipped entry, not a finding (review S4): the flag
+is a choice, and counting it would fail every store that never used it.
 
 ### CLI — `canary history gaps [--path <store>] [--json]`
 
@@ -183,24 +199,29 @@ a defect.
 3. Otherwise `analyzeGaps(store.readAll())`.
 4. Pass `{ checked, findings, skipped }` to `gateOutcome(..., 'gate')`, where
    checked = consumers measured and findings = dark + partial. Skipped: each
-   `unmeasured` consumer (reason: "no applicable rows"), plus the remote store
-   when `CANARY_HISTORY_DB_URL` is set (reason: "local NDJSON only").
+   `unmeasured` consumer (reason: "no applicable rows"), each opt-in consumer
+   that is not fed (reason: "opt-in: not recorded with
+   `history record --order-plan`", naming its flag), plus the remote store when
+   `CANARY_HISTORY_DB_URL` is set (reason: "local NDJSON only").
 5. Exit: 0 all measured consumers fed · 1 any dark/partial · 3 abstained.
    Malformed or unsupported-version store → the reader's error, exit 1 (it is
    already loud; not an abstention).
 
-`--json` emits `{ path, abstained, reason?, runs, tests, consumers, exitCode }`.
+`--json` emits `{ path, abstained, runs, tests, consumers, skipped, exitCode }`;
+an abstention adds `reason` and `darkByAbstention` (every consumer id).
 
 ## Documented gap list
 
-| ID  | Gap                                                                                                 | Where                                     | Disposition                           |
-| --- | --------------------------------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------- |
-| G1  | `area` declared + read, never written                                                               | all readers in `ts/src/history/formats/`  | follow-up #1125 (writer change)       |
-| G2  | `failure_category` declared + read, never written; every categorised report is `'other'`            | same                                      | follow-up #1125 (writer change)       |
-| G3  | `tags` declared + pushed, never written                                                             | same                                      | follow-up #1125 (writer change)       |
-| G4  | canary-test-reporter never mentions that `history record` persists the same report                  | `canary-test-reporter/SKILL.md`           | **fixed here** (doc wiring)           |
-| G5  | canary-signal (#609) is not on `main`; it cannot be wired yet                                       | sibling lane                              | out of scope; table accepts a new row |
-| G6  | The Vitest reader cannot emit `flaky`, so `flaky-retry` is structurally dark for Vitest-only stores | `ts/src/history/formats/vitest-report.ts` | known (#604); surfaced by the command |
+| ID  | Gap                                                                                                 | Where                                         | Disposition                           |
+| --- | --------------------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------- |
+| G1  | `area` declared + read, never written                                                               | all readers in `ts/src/history/formats/`      | follow-up #1125 (writer change)       |
+| G2  | `failure_category` declared + read, never written; every categorised report is `'other'`            | same                                          | follow-up #1125 (writer change)       |
+| G3  | `tags` declared + pushed, never written                                                             | same                                          | follow-up #1125 (writer change)       |
+| G4  | canary-test-reporter never mentions that `history record` persists the same report                  | `canary-test-reporter/SKILL.md`               | **fixed here** (doc wiring)           |
+| G5  | canary-signal (#609) is not on `main`; it cannot be wired yet                                       | sibling lane                                  | out of scope; table accepts a new row |
+| G6  | The Vitest reader cannot emit `flaky`, so `flaky-retry` is structurally dark for Vitest-only stores | `ts/src/history/formats/vitest-report.ts`     | known (#604); surfaced by the command |
+| G7  | `analyze area-health` computes no rows whatever the store carries (engine hard-codes `[]`)          | `ts/src/analysis/engine.ts`                   | structural; documented, not a row     |
+| G8  | The Playwright reader keeps `error_text` for failures but drops it for flakes                       | `ts/src/history/formats/playwright-report.ts` | surfaced as partial `error_text`      |
 
 ## Integration points
 
@@ -250,8 +271,8 @@ denominator doctrine of #508.
 4. If a store has no failed tests, then `failure-categories` shall be
    `unmeasured` and rendered as skipped, never `fed`.
 5. Against a store written by today's `history record` from a Playwright report,
-   `area-health` and `failure-categories` shall be reported `dark` (G1, G2
-   reproduced end-to-end) and the command shall exit 1.
+   `flaky-area`, `screech-cluster` and `failure-categories` shall be reported
+   `dark` (G1, G2 reproduced end-to-end) and the command shall exit 1.
 6. When `CANARY_HISTORY_DB_URL` is set, the summary line shall name the remote
    store as skipped.
 7. `ts/src/history/**` has a zero-line diff.
@@ -277,6 +298,9 @@ denominator doctrine of #508.
 - A5: The store flag is `--path <store>` (planner finding): every engine command
   that reads or writes the store (`history trim`, `history record`, `order`,
   `rewind`) already uses it; only the canary-screech script says `--history`.
+- A6: Review fixes (C1, I1-I6, S1, S4) revised the consumer table in place; the
+  rationale is in the Consumer table section. S4 (opt-in consumers are skipped
+  entries, not findings) was the lane's call.
 - A4: The companion skill is warranted by the issue's `canary-clocktower` name
   and the naming registry's reservation, following batwoman's thin-skill shape
   (SKILL.md over a CLI, no bundled scripts).
