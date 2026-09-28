@@ -17,6 +17,10 @@ import {
   loadRuns,
 } from '../claude-code/canary-signal/scripts/sources.mjs';
 import {
+  CHAT_MAX_LINES,
+  renderDigest,
+} from '../claude-code/canary-signal/scripts/digest.mjs';
+import {
   FLAKY_CAPABLE_FORMATS,
   PRODUCTION_ESCAPES_DARK,
   THIN_SAMPLE_RUNS,
@@ -314,5 +318,97 @@ describe('tally', () => {
       PRODUCTION_ESCAPES_DARK,
     );
     expect(tally([]).dark).toContain(PRODUCTION_ESCAPES_DARK);
+  });
+});
+
+const digest = (runs: Run[], ledger?: unknown) =>
+  renderDigest(tally(runs, ledger));
+
+describe('digest', () => {
+  it('SC1: sample line, per-metric denominators, fenced chat block', () => {
+    const { markdown, chatBlock } = digest([
+      rec({ branch: 'feat/x', tests: [t('a', 'failed')] }),
+      rec(),
+      rec({ reporter_format: 'playwright' }),
+    ]);
+    expect(markdown).toContain(
+      '**Sample:** 3 runs across 1 suite on 1 day, 2026-09-21T00:00:00.000Z → 2026-09-28T00:00:00.000Z',
+    );
+    expect(markdown).toContain('## What testing caught');
+    expect(markdown).toContain('- Tests executed: 1 across 3 runs');
+    expect(markdown).toContain(
+      '- Failures caught on branches other than main: 1 distinct failing test across 1 run',
+    );
+    expect(markdown).toContain(
+      '- Flaky tests surfaced: 0 distinct tests across 1 flaky-capable run',
+    );
+    expect(markdown).toContain('```text\n' + chatBlock + '\n```');
+  });
+  it('SC1: chat block is <= 8 plain lines led by the sample line', () => {
+    const cases: Run[][] = [[], [rec()], [rec(), rec(), rec()]];
+    expect(CHAT_MAX_LINES).toBe(8);
+    for (const runs of cases) {
+      const lines = digest(runs).chatBlock.split('\n');
+      expect(lines.length).toBeLessThanOrEqual(CHAT_MAX_LINES);
+      expect(lines[0]).toMatch(/^canary-signal digest — \d+ runs? across/);
+      expect(lines.join('\n')).not.toMatch(/\*\*|^#|^- /m);
+    }
+  });
+  it('SC2: zero runs prints ABSTAINED and never the success copy', () => {
+    const { markdown } = digest([]);
+    expect(markdown).toContain('ABSTAINED: no runs recorded in the window');
+    expect(markdown).not.toContain('What testing caught');
+  });
+  it('SC3: 1-2 runs prints a THIN SAMPLE banner stating the count', () => {
+    expect(digest([rec(), rec()]).markdown).toContain(
+      '**THIN SAMPLE:** 2 runs in the window',
+    );
+    expect(digest([rec()]).chatBlock).toContain('THIN SAMPLE');
+    expect(digest([rec(), rec(), rec()]).markdown).not.toContain('THIN SAMPLE');
+  });
+  it('SC4/SC5: abstaining metrics print ABSTAINED and the reason', () => {
+    const { markdown } = digest([rec(), rec(), rec()]);
+    expect(markdown).toContain(
+      '- Failures caught on branches other than main: ABSTAINED — no runs on branches other than main in the window',
+    );
+    expect(markdown).toMatch(
+      /- Flaky tests surfaced: ABSTAINED — no run in the window came from a reporter that can emit flaky/,
+    );
+  });
+  it('SC6/SC7: Dark sources names the missing ledger and escapes', () => {
+    const dark = digest([rec()]).markdown.split('## Dark sources')[1];
+    expect(dark).toContain('quarantine ledger: no quarantine ledger at');
+    expect(dark).toContain('production escapes:');
+  });
+  it('D7: never claims a bug was prevented', () => {
+    const runs = [rec({ branch: 'feat/x', tests: [t('a', 'failed')] })];
+    expect(digest(runs).markdown).not.toMatch(/prevent/i);
+  });
+  it('renders the quarantine trail and the undated/unbranched notes', () => {
+    const rows = [
+      { kind: 'skip', cause: 'flaky', date: '2026-09-25T00:00:00Z' },
+      { kind: 'skip', date: '' },
+    ];
+    const { markdown } = digest(
+      [rec(), rec({ branch: undefined }), rec({ timestamp: 'nope' })],
+      { state: 'read', rows, reason: null },
+    );
+    expect(markdown).toContain(
+      '- Quarantine trail: 1 ledger row dated in the window of 2 (kind: skip 1; cause: flaky 1); 1 undated excluded',
+    );
+    expect(markdown).toContain(
+      '- 1 undated run excluded (no parseable timestamp).',
+    );
+    expect(markdown).toContain(
+      '- 1 run with no branch counted in neither branch line.',
+    );
+  });
+  it('an in-window-empty ledger prints kind/cause as none', () => {
+    const rows = [{ kind: 'skip', date: '2026-01-01T00:00:00Z' }];
+    expect(
+      digest([rec()], { state: 'read', rows, reason: null }).markdown,
+    ).toContain(
+      '0 ledger rows dated in the window of 1 (kind: none; cause: none)',
+    );
   });
 });
