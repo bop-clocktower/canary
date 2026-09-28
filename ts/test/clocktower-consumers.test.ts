@@ -78,7 +78,7 @@ describe('clocktower consumer table', () => {
 
   it('counts reporter_format only for playwright or junit (#604)', () => {
     const fmt = requirement('flaky-retry', 'reporter_format');
-    const run = (reporter_format?: string | null): RunRecord => ({
+    const run = (reporter_format: string | null): RunRecord => ({
       ...RUN,
       reporter_format,
     });
