@@ -40,6 +40,9 @@ canary skills run canary-signal -- \
 canary skills run canary-signal -- \
   --history test-results/reports/history-v2.jsonl \
   --until 2026-09-28T00:00:00Z --days 7 --out reports/signal.md
+
+# Usage and the full flag list (exits 0):
+canary skills run canary-signal -- --help
 ```
 
 | Flag        | Default                   | Meaning                                                  |

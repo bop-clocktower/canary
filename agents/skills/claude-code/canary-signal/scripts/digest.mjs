@@ -11,7 +11,7 @@
 
 import { THIN_SAMPLE_RUNS } from './tally.mjs';
 
-export const ABSTAINED_LINE =
+const ABSTAINED_LINE =
   'ABSTAINED: no runs recorded in the window — this digest measured nothing, which is not the same as a quiet week.';
 
 /** Pinned by test; chat clients fold anything longer. */
@@ -20,7 +20,7 @@ export const CHAT_MAX_LINES = 8;
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const day = (d) => d.toISOString().slice(0, 10);
 
-export function sampleLine(t) {
+function sampleLine(t) {
   const { runs, suites, days } = t.sample;
   const span = `${t.window.since.toISOString()} → ${t.window.until.toISOString()}`;
   return `${plural(runs, 'run')} across ${plural(suites, 'suite')} on ${plural(days, 'day')}, ${span}`;
