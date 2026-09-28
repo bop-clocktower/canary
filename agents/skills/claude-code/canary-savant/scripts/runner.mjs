@@ -113,10 +113,14 @@ export function detectFramework(paths, options = {}) {
   const isPy = (p) => p.endsWith('.py');
   const isJsTest = (p) => /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(p);
   const isJs = (p) => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(p);
+  // #1106: PHP is static-pass only. A PHP target declines outright, so a
+  // vitest/pytest marker in cwd can never route it to the wrong runner.
+  const isPhp = (p) => p.endsWith('.php');
 
   // 1) An explicitly named file's extension wins.
   if (paths.some(isPy)) return 'pytest';
   if (paths.some(isJs)) return 'vitest';
+  if (paths.some(isPhp)) return null;
 
   // 2) Otherwise scan the target's own contents (NOT cwd, which may hold an
   //    unrelated config in a monorepo/this test harness).
@@ -125,6 +129,7 @@ export function detectFramework(paths, options = {}) {
     const files = readdir(p);
     if (files.some(isPy)) return 'pytest';
     if (files.some(isJsTest)) return 'vitest';
+    if (files.some(isPhp)) return null;
   }
 
   // 3) Last resort: config-file markers.

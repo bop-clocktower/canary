@@ -13,6 +13,7 @@ import {
   SEVERITY,
   WHY,
   SV004_CODE_PATTERN,
+  PHP_SV004_CODE_PATTERN,
   SV004_TEXT_PATTERN,
   PYTHON_SETUP_TEARDOWN,
   JS_SETUP_TEARDOWN,
@@ -344,7 +345,11 @@ export function scanTextFull(text, file = '<text>') {
     const ranges = stringLiteralRanges(stripped);
     // SV004 is self-reported ordering: it fires on comments and code alike.
     if (
-      execOutsideStrings(SV004_CODE_PATTERN, stripped, ranges) ||
+      execOutsideStrings(
+        isPhp ? PHP_SV004_CODE_PATTERN : SV004_CODE_PATTERN,
+        stripped,
+        ranges,
+      ) ||
       SV004_TEXT_PATTERN.test(stripped)
     ) {
       findings.push(

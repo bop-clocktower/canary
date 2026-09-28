@@ -723,8 +723,20 @@ describe('SV004 PHP ordinal test names (#1106 D10)', () => {
     expect(hits(inClass(body))).toEqual([]);
   });
 
-  it('a JS function testFirst fires too', () => {
-    expect(hits('function testFirst() {}', 'a.test.js')).toEqual(['1:SV004']);
+  // Review fix: the PHP spellings are gated to .php, so Python and JS SV004
+  // behave exactly as they did before #1106.
+  it.each([
+    ['def testFirst(self):', 'test_a.py'],
+    ['def testlast(self):', 'test_a.py'],
+    ['function testFirst() {}', 'a.test.js'],
+    ['function test_1_x() {}', 'a.test.js'],
+  ])('%s in %s stays silent (PHP-only spelling)', (line, file) => {
+    expect(hits(line, file)).toEqual([]);
+  });
+
+  it('the pre-#1106 Python spellings still fire', () => {
+    expect(hits('def test_first():', 'test_a.py')).toEqual(['1:SV004']);
+    expect(hits('def test_1_boot():', 'test_a.py')).toEqual(['1:SV004']);
   });
 });
 
@@ -732,5 +744,26 @@ describe('--confirm declines PHP (#1106, out of scope)', () => {
   it('detectFramework returns null for a PHP-only target', () => {
     const options = { readdir: () => ['FooTest.php'], exists: () => false };
     expect(detectFramework(['tests/FooTest.php'], options)).toBeNull();
+  });
+
+  // Review fix: a vitest/pytest marker in cwd must not route PHP to them.
+  it.each(['vitest.config.ts', 'pytest.ini'])(
+    'declines a PHP path even when %s exists',
+    (marker) => {
+      const options = {
+        readdir: () => ['FooTest.php'],
+        exists: (f: string) => f === marker,
+      };
+      expect(detectFramework(['tests/FooTest.php'], options)).toBeNull();
+      expect(detectFramework(['tests'], options)).toBeNull();
+    },
+  );
+
+  it('a directory with no tests still falls back to the config marker', () => {
+    const options = {
+      readdir: () => [] as string[],
+      exists: (f: string) => f === 'vitest.config.ts',
+    };
+    expect(detectFramework(['tests'], options)).toBe('vitest');
   });
 });
