@@ -1,0 +1,32 @@
+{
+  "issues": [610],
+  "route": "feature",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "execution",
+    "verification",
+    "review"
+  ],
+  "specArtifact": "docs/changes/610-canary-clocktower/proposal.md",
+  "planArtifact": "docs/changes/610-canary-clocktower/plans/2026-09-28-clocktower-gaps-plan.md",
+  "closingKeyword": "Closes",
+  "closingKeywordWhy": "The issue's acceptance is a gap analysis delivered as 'wiring plus a documented gap list, not a second store'. This PR ships the re-runnable analysis (canary history gaps), the documented gap list G1-G6 (docs/guides/history-gaps.md), the reporter-to-history doc wiring (G4) and the /canary-clocktower skill. Filling G1-G3 changes the writers inside ts/src/history and is filed separately as #1125, not part of #610's acceptance.",
+  "followUps": [1125],
+  "assumptions": [
+    "Issue premise verified against 47745970 before building: the store and its writer exist (history record, #538 closed); the real gap is field-level -- area, failure_category and tags are declared and read but written by no writer.",
+    "Human-answered fork: new module reading history's existing exports (ts/src/analysis/clocktower/), zero lines under ts/src/history/**; mounted as `canary history gaps` from the #988 engine registry beside `history trim`.",
+    "Brainstorming ran in autonomous mode: the EVALUATE questions D2-D8 in the proposal were self-answered with the recommended option instead of a human round.",
+    "Runtime command plus document (D2) rather than a static gap document, so the gap list stays re-measurable per adopter store.",
+    "Gate exit contract (D4): 0 all measured consumers fed, 1 dark/partial or unreadable store, 3 abstained on a missing or empty store; missing and empty are distinct reasons (D7).",
+    "A requirement with no applicable rows is 'unmeasured', never 'fed', and renders as a skipped entry (D6); failed-test scope covers status failed and flaky, mirroring the analyze engine.",
+    "A configured CANARY_HISTORY_DB_URL is analysed-around, not refused: the local store is read and the remote is named as skipped (D8).",
+    "Store flag is --path <store> (not the spec draft's --history): every engine command that reads or writes the store already uses --path.",
+    "Guide placed at docs/guides/history-gaps.md beside rewind/order guides rather than docs/history-gaps.md; spec updated.",
+    "Companion skill is thin (SKILL.md over `cli: canary history gaps`), following canary-batwoman; no persona YAML, since no test requires one.",
+    "Autopilot delegated planning to harness-planner and review to harness-code-reviewer; execution and verification were done by the lane agent directly (TDD with planted positives per key test) rather than by harness-task-executor/harness-verifier subagents, to keep ratchet measurement in one context.",
+    "module-size grew 46291 -> 47091 with newViolations []; recorded as .harness/arch/allowances/feat-610-canary-clocktower.json and the floor raised by scripts/refresh-arch-baseline.mjs. A sibling lane touching baselines.json will conflict; resolve by re-measuring the merged tree.",
+    "Disk was near-full (~170-330 MiB free) throughout; agents/skills tests ran against a temporary symlink to ts/node_modules (removed afterwards) rather than a fresh install."
+  ]
+}
