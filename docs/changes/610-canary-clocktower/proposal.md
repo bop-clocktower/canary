@@ -174,7 +174,7 @@ else if any requirement has `carried === 0` → `dark`; else `partial`.
 consumer reads "dark (fed only by `history record --order-plan`)" rather than as
 a defect.
 
-### CLI — `canary history gaps [--history <path>] [--json]`
+### CLI — `canary history gaps [--path <store>] [--json]`
 
 1. Resolve the path (default `test-results/reports/history-v2.jsonl`).
 2. Missing file → abstain: `store not found: <path>`. Empty file → abstain:
@@ -274,6 +274,9 @@ denominator doctrine of #508.
 - A3: `Closes #610` — the issue's acceptance is "a documented gap list plus
   wiring"; filling G1–G3 changes writers inside `ts/src/history/**` and is filed
   as a separate follow-up.
+- A5: The store flag is `--path <store>` (planner finding): every engine command
+  that reads or writes the store (`history trim`, `history record`, `order`,
+  `rewind`) already uses it; only the canary-screech script says `--history`.
 - A4: The companion skill is warranted by the issue's `canary-clocktower` name
   and the naming registry's reservation, following batwoman's thin-skill shape
   (SKILL.md over a CLI, no bundled scripts).
