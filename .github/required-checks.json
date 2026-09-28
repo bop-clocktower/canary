@@ -109,7 +109,22 @@
     { "check": "Wiki diagrams render", "workflow": "docs-lint.yml" },
     {
       "check": "No removed-symbol or proprietary leaks",
-      "workflow": "docs-lint.yml"
+      "workflow": "docs-lint.yml",
+      "$comment": [
+        "#843 step 2a (ADR 0023). leak-gate.yml's pull_request_target job now",
+        "carries this name too, so between 2a and 2b TWO workflows report this",
+        "context on every same-repo PR and push to main. Both come from the",
+        "github-actions app and the ruleset entry has no integration_id. How",
+        "GitHub resolves two same-named runs on one SHA (latest-wins is the",
+        "usual report) is UNVERIFIED here; check it on the first PR after 2a.",
+        "They agree on a real leak unless the scanner or the secret differs",
+        "between them (a scanner-editing PR, a fork PR). This entry stays on",
+        "docs-lint.yml because that is the producer that reported on the 2a PR",
+        "itself (pull_request_target runs main's copy of leak-gate.yml, which",
+        "still had the step-1 name).",
+        "Step 2b points this entry at leak-gate.yml and deletes the docs-lint",
+        "job. The context string never changes, so the ruleset needs no edit."
+      ]
     },
     {
       "check": "deps-and-validate",
@@ -163,11 +178,6 @@
       "check": "Test quality (canary on canary)",
       "workflow": "dogfood.yml",
       "reason": "Precision not yet known (ADR 0010). The dogfood jobs run canary against canary and currently report a 409-finding baseline that #544 has not triaged. Promoting before the triage would block every PR on findings nobody has confirmed are real."
-    },
-    {
-      "check": "Leak gate (pull_request_target, transitional)",
-      "workflow": "leak-gate.yml",
-      "reason": "Step 1 of the two-step #843 migration (ADR 0023). pull_request_target runs the base branch's workflow, so this job cannot report on the PR that introduces it; the required context `No removed-symbol or proprietary leaks` stays on docs-lint.yml until step 2 renames this job to it and removes the docs-lint.yml job. Advisory only for that transition window."
     },
     {
       "check": "Doctor (from a packed install)",
