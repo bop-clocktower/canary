@@ -157,11 +157,16 @@ describe('window', () => {
     expect(w.until.toISOString()).toBe(UNTIL);
     expect(w.since.toISOString()).toBe('2026-09-21T00:00:00.000Z');
   });
-  it('defaults --until to now', () => {
-    const before = Date.now();
-    expect(
-      resolveWindow(1, null).window!.until.getTime(),
-    ).toBeGreaterThanOrEqual(before);
+  it('defaults --until to now (under a frozen clock)', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-03-01T00:00:00Z'));
+      const w = resolveWindow(1, null).window!;
+      expect(w.until.toISOString()).toBe('2026-03-01T00:00:00.000Z');
+      expect(w.since.toISOString()).toBe('2026-02-28T00:00:00.000Z');
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('rejects an unparseable --until', () => {
     expect(resolveWindow(7, 'last tuesday').error).toMatch(/--until/);
