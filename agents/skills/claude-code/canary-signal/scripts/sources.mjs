@@ -19,6 +19,29 @@ export const DEFAULT_LEDGER = '.canary/quarantine.json';
 const isPlainObject = (v) =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
 
+/**
+ * Store versions this reader understands. Mirrors SUPPORTED_SCHEMA_VERSIONS in
+ * ts/src/history/record.ts; an unstamped row is a legacy v2 row. A version we
+ * do not know is refused, not reinterpreted -- the same rule the engine keeps.
+ */
+const SUPPORTED_SCHEMA_VERSIONS = [2, 3];
+
+/** The shape problem with a parsed record, or null when it is usable. */
+function recordProblem(record) {
+  if (!isPlainObject(record)) return 'not an object';
+  const version = record.schema_version ?? 2;
+  if (!SUPPORTED_SCHEMA_VERSIONS.includes(version)) {
+    return `unsupported schema_version ${JSON.stringify(version)}`;
+  }
+  if (record.tests !== undefined && !Array.isArray(record.tests)) {
+    return 'tests is not an array';
+  }
+  if ((record.tests ?? []).some((t) => !isPlainObject(t))) {
+    return 'a tests entry is not an object';
+  }
+  return null;
+}
+
 function parseRecord(line, lineNo) {
   let record;
   try {
@@ -28,10 +51,9 @@ function parseRecord(line, lineNo) {
       `malformed history record at line ${lineNo}: ${exc.message}`,
     );
   }
-  if (!isPlainObject(record)) {
-    throw new Error(
-      `malformed history record at line ${lineNo}: not an object`,
-    );
+  const problem = recordProblem(record);
+  if (problem) {
+    throw new Error(`malformed history record at line ${lineNo}: ${problem}`);
   }
   return record;
 }
@@ -67,6 +89,12 @@ function parseLedger(file) {
   const rows = doc.entries ?? [];
   if (!Array.isArray(rows)) {
     throw new Error(`quarantine ledger entries must be an array: ${file}`);
+  }
+  const bad = rows.findIndex((row) => !isPlainObject(row));
+  if (bad !== -1) {
+    throw new Error(
+      `malformed quarantine ledger ${file}: entry ${bad} is not an object`,
+    );
   }
   return rows;
 }

@@ -66,8 +66,16 @@ canary skills run canary-signal -- --help
 | Quarantine trail             | ledger present and non-empty                           |
 | Production escapes           | never measured -- always a dark source                 |
 
-Runs with no parseable timestamp, and runs with no branch, are counted and
-named, never silently dropped.
+Runs with no parseable timestamp, runs with no branch, and count-only runs (no
+per-test `tests` array, so they cannot say which test failed) are counted and
+named as sample notes, never silently dropped. A count-only run stays out of
+every per-test denominator. Distinct tests are keyed by suite, file and name.
+Store rows with a `schema_version` other than 2 or 3 are refused (exit 1), as
+the engine refuses them.
+
+`--until` is inclusive. Give a full timestamp with an offset for a reproducible
+digest: a date-only value means 00:00 UTC that day, so `--until 2026-09-28` ends
+the window at the start of the 28th.
 
 ## Honest degradation
 
@@ -75,7 +83,8 @@ named, never silently dropped.
 - **1–2 runs**: a `THIN SAMPLE` banner stating the count.
 - **Dark sources**: every source that could not be read is named with the
   reason. Production escapes are always listed, because no canary store records
-  them.
+  them. The chat block names them too (`Not measured: …`), because the chat
+  block is the part that gets forwarded.
 
 ## Exit codes
 

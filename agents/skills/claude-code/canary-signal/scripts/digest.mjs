@@ -65,20 +65,25 @@ function caughtLines(t) {
   ];
 }
 
+// Records the digest could not use are counted and named, never dropped.
 function sampleNotes(t) {
-  const notes = [];
-  if (t.undatedRuns > 0) {
-    notes.push(
-      `- ${plural(t.undatedRuns, 'undated run')} excluded (no parseable timestamp).`,
-    );
-  }
-  if (t.unbranched > 0) {
-    notes.push(
-      `- ${plural(t.unbranched, 'run')} with no branch counted in neither branch line.`,
-    );
-  }
-  return notes;
+  const notes = [
+    [t.undatedRuns, 'undated run', 'excluded (no parseable timestamp).'],
+    [t.unbranched, 'run', 'with no branch counted in neither branch line.'],
+    [
+      t.unitemizedRuns,
+      'run',
+      'with no per-test results counted in no per-test line.',
+    ],
+  ];
+  return notes
+    .filter(([n]) => n > 0)
+    .map(([n, noun, text]) => `- ${plural(n, noun)} ${text}`);
 }
+
+/** The chat block names every dark source: it is the part people forward. */
+const darkLine = (t) =>
+  `Not measured: ${t.dark.map((d) => d.split(':')[0]).join(', ')}`;
 
 function bodyLines(t) {
   if (t.state === 'abstained') return [`**${ABSTAINED_LINE}**`];
@@ -94,15 +99,10 @@ function bodyLines(t) {
 
 function chatLines(t) {
   const head = `canary-signal digest — ${sampleLine(t)}`;
-  if (t.state === 'abstained') return [head, ABSTAINED_LINE];
+  if (t.state === 'abstained') return [head, ABSTAINED_LINE, darkLine(t)];
   const thin = t.state === 'thin' ? ['THIN SAMPLE — anecdote, not trend.'] : [];
   const body = caughtLines(t).map((line) => line.slice(2));
-  return [
-    head,
-    ...thin,
-    ...body,
-    `Dark sources: ${t.dark.length} (see the digest)`,
-  ];
+  return [head, ...thin, ...body, darkLine(t)];
 }
 
 /** @returns {{markdown: string, chatBlock: string}} */

@@ -25,6 +25,9 @@ same false-green shape as "0 tests failed" out of zero tests (#508).
   `{abstained, reason}`. There is no bare number.
 - A structural zero is not a measured zero. A reporter that cannot emit `flaky`
   does not contribute to the flaky denominator (#604).
+- A record that cannot answer the question stays out of the denominator. A
+  count-only run (no per-test rows) cannot say which test failed, so it is not
+  in the failure denominator; it is named as a sample note instead.
 - A source that could not be read is named as dark, with the reason, rather than
   contributing nothing silently. A source that does not exist at all (production
   escapes) is named too.

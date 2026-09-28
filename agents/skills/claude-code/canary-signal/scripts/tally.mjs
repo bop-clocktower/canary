@@ -22,16 +22,26 @@ export function measured(value, denominator, reason) {
     : { value, denominator };
 }
 
-const testsOf = (run) => (Array.isArray(run.tests) ? run.tests : []);
+// A run whose `tests` is not an array carries counts only (legacy or
+// count-only writers). It cannot say WHICH test failed, so it is kept out of
+// every per-test denominator -- counting it there would print a measured zero
+// over a run that never itemised anything. It is surfaced as a sample note.
+const itemized = (run) => Array.isArray(run.tests);
+
+/** One identity per test: equal names in different suites/files are distinct. */
+const testKey = (run, test) =>
+  [test.suite ?? run.suite ?? '', test.test_file ?? '', test.test_name].join(
+    '\u0000',
+  );
 
 function distinctWithStatus(runs, status) {
-  const names = new Set();
-  for (const run of runs) {
-    for (const test of testsOf(run)) {
-      if (test.status === status) names.add(test.test_name);
+  const keys = new Set();
+  for (const run of runs.filter(itemized)) {
+    for (const test of run.tests) {
+      if (test.status === status) keys.add(testKey(run, test));
     }
   }
-  return names.size;
+  return keys.size;
 }
 
 function sampleOf(runs) {
@@ -43,8 +53,20 @@ function sampleOf(runs) {
   };
 }
 
-function executedCount(run) {
-  return Array.isArray(run.tests) ? run.tests.length : Number(run.total ?? 0);
+/** Runs that report a test count at all: itemised, or a numeric `total`. */
+const counted = (run) => itemized(run) || Number.isFinite(run.total);
+
+function testsExecuted(runs) {
+  const withCount = runs.filter(counted);
+  const value = withCount.reduce(
+    (n, r) => n + (itemized(r) ? r.tests.length : r.total),
+    0,
+  );
+  return measured(
+    value,
+    withCount.length,
+    'no run in the window reports a test count',
+  );
 }
 
 // D7: "caught before <branch>" is a factual proxy (failures seen on other
@@ -53,16 +75,18 @@ function executedCount(run) {
 function branchMetrics(runs, branch) {
   const other = runs.filter((r) => Boolean(r.branch) && r.branch !== branch);
   const onBranch = runs.filter((r) => r.branch === branch);
+  const itemizedOther = other.filter(itemized);
+  const itemizedOn = onBranch.filter(itemized);
   return {
     preMerge: measured(
-      distinctWithStatus(other, 'failed'),
-      other.length,
-      `no runs on branches other than ${branch} in the window`,
+      distinctWithStatus(itemizedOther, 'failed'),
+      itemizedOther.length,
+      `no per-test results from branches other than ${branch} in the window`,
     ),
     reached: measured(
-      distinctWithStatus(onBranch, 'failed'),
-      onBranch.length,
-      `no runs on ${branch} in the window`,
+      distinctWithStatus(itemizedOn, 'failed'),
+      itemizedOn.length,
+      `no per-test results from ${branch} in the window`,
     ),
     unbranched: runs.length - other.length - onBranch.length,
   };
@@ -70,14 +94,24 @@ function branchMetrics(runs, branch) {
 
 // D8: a vitest run cannot emit `flaky`, so its zero is structural, not
 // measured. Only flaky-capable runs are in the denominator.
+// A run with no `reporter_format` stamp is UNKNOWN capability, not "cannot":
+// the reason says which, so a reader knows whether to fix the writer or the
+// reporter (flake-window.ts draws the same line).
+function flakyReason(runs) {
+  const stamped = runs.some((r) => typeof r.reporter_format === 'string');
+  return stamped
+    ? `no run in the window came from a reporter that can emit flaky (${FLAKY_CAPABLE_FORMATS.join(', ')})`
+    : 'no run in the window records its reporter_format, so whether flaky could be emitted is unknown';
+}
+
 function flakySurfaced(runs) {
-  const capable = runs.filter((r) =>
-    FLAKY_CAPABLE_FORMATS.includes(r.reporter_format),
+  const capable = runs.filter(
+    (r) => itemized(r) && FLAKY_CAPABLE_FORMATS.includes(r.reporter_format),
   );
   return measured(
     distinctWithStatus(capable, 'flaky'),
     capable.length,
-    `no run in the window came from a reporter that can emit flaky (${FLAKY_CAPABLE_FORMATS.join(', ')})`,
+    flakyReason(runs),
   );
 }
 
@@ -138,14 +172,14 @@ export function tallyDigest({ runs, ledger, branch, window }) {
     window,
   );
   const quarantine = quarantineTrail(ledger, window);
-  const executed = inside.reduce((n, r) => n + executedCount(r), 0);
   return {
     state: stateFor(inside.length),
     branch,
     window,
     sample: sampleOf(inside),
     undatedRuns: undated,
-    tests: measured(executed, inside.length, 'no runs in the window'),
+    unitemizedRuns: inside.filter((r) => !itemized(r)).length,
+    tests: testsExecuted(inside),
     ...branchMetrics(inside, branch),
     flaky: flakySurfaced(inside),
     quarantine,

@@ -112,6 +112,28 @@ describe('sources.loadRuns', () => {
       /line 1: not an object/,
     );
   });
+  it('refuses a schema_version it does not understand, like the engine', () => {
+    const body = `${JSON.stringify(rec({ schema_version: 9 }))}\n`;
+    expect(() => loadRuns(writeRaw(tmp(), 's.jsonl', body))).toThrow(
+      /line 1: unsupported schema_version 9/,
+    );
+  });
+  it('accepts unstamped (legacy v2) and v3 rows', () => {
+    const body = [rec(), rec({ schema_version: 3 })]
+      .map((r) => JSON.stringify(r))
+      .join('\n');
+    expect(loadRuns(writeRaw(tmp(), 's.jsonl', body))).toHaveLength(2);
+  });
+  it('names a record whose tests are malformed instead of crashing later', () => {
+    const notArray = `${JSON.stringify(rec({ tests: 'x' }))}\n`;
+    expect(() => loadRuns(writeRaw(tmp(), 'a.jsonl', notArray))).toThrow(
+      /line 1: tests is not an array/,
+    );
+    const nullEntry = `${JSON.stringify(rec({ tests: [null] }))}\n`;
+    expect(() => loadRuns(writeRaw(tmp(), 'b.jsonl', nullEntry))).toThrow(
+      /line 1: a tests entry is not an object/,
+    );
+  });
 });
 
 describe('sources.loadLedger', () => {
@@ -144,6 +166,10 @@ describe('sources.loadLedger', () => {
   it('throws when entries is not an array', () => {
     const file = writeLedger(tmp(), { a: 1 });
     expect(() => loadLedger(file, true)).toThrow(/must be an array/);
+  });
+  it('names a ledger entry that is not an object', () => {
+    const file = writeLedger(tmp(), [{ test: 'a' }, null]);
+    expect(() => loadLedger(file, true)).toThrow(/entry 1 is not an object/);
   });
   it('treats a document without entries as an empty ledger', () => {
     const file = writeRaw(tmp(), 'q.json', '{"schema_version":2}');
@@ -240,7 +266,33 @@ describe('tally', () => {
       rec({ tests: undefined, total: 5 }),
       rec({ tests: undefined }),
     ]);
-    expect(res.tests).toEqual({ value: 7, denominator: 3 });
+    // The third run reports no count at all, so it is out of the denominator
+    // rather than contributing a measured 0.
+    expect(res.tests).toEqual({ value: 7, denominator: 2 });
+  });
+  it('a count-only run never yields a measured zero failures', () => {
+    const res = tally([
+      rec({ branch: 'feat/x', tests: undefined, total: 9, failed: 5 }),
+      rec({ reporter_format: 'playwright', tests: undefined, failed: 1 }),
+    ]);
+    expect(res.preMerge).toMatchObject({ abstained: true });
+    expect(res.reached).toMatchObject({ abstained: true });
+    expect(res.flaky).toMatchObject({ abstained: true });
+    expect(res.unitemizedRuns).toBe(2);
+  });
+  it('distinct counts keep same-named tests in different suites apart', () => {
+    const res = tally([
+      rec({ branch: 'feat/x', suite: 'a', tests: [t('login', 'failed')] }),
+      rec({ branch: 'feat/x', suite: 'b', tests: [t('login', 'failed')] }),
+      rec({ branch: 'feat/x', suite: 'a', tests: [t('login', 'failed')] }),
+    ]);
+    expect(res.preMerge).toEqual({ value: 2, denominator: 3 });
+  });
+  it('an unstamped reporter is unknown capability, not "cannot"', () => {
+    const unknown = tally([rec({ reporter_format: undefined })]);
+    expect(unknown.flaky.reason).toMatch(/records its reporter_format/);
+    const cannot = tally([rec({ reporter_format: 'vitest' })]);
+    expect(cannot.flaky.reason).toMatch(/reporter that can emit flaky/);
   });
   it('D7: failures split by branch, distinct by test name', () => {
     const res = tally([
@@ -382,7 +434,7 @@ describe('digest', () => {
   it('SC4/SC5: abstaining metrics print ABSTAINED and the reason', () => {
     const { markdown } = digest([rec(), rec(), rec()]);
     expect(markdown).toContain(
-      '- Failures caught on branches other than main: ABSTAINED — no runs on branches other than main in the window',
+      '- Failures caught on branches other than main: ABSTAINED — no per-test results from branches other than main in the window',
     );
     expect(markdown).toMatch(
       /- Flaky tests surfaced: ABSTAINED — no run in the window came from a reporter that can emit flaky/,
@@ -393,9 +445,29 @@ describe('digest', () => {
     expect(dark).toContain('quarantine ledger: no quarantine ledger at');
     expect(dark).toContain('production escapes:');
   });
-  it('D7: never claims a bug was prevented', () => {
+  it('D7: never claims a bug was prevented, on any copy path', () => {
     const runs = [rec({ branch: 'feat/x', tests: [t('a', 'failed')] })];
     expect(digest(runs).markdown).not.toMatch(/prevent/i);
+    // The rendered fixture covers one path; the source text covers them all.
+    for (const name of ['digest.mjs', 'tally.mjs']) {
+      const src = fs.readFileSync(path.join(SCRIPTS, name), 'utf8');
+      const strings = src.match(/(['`])(?:(?!\1).)*\1/g) ?? [];
+      expect(strings.filter((q) => /prevent/i.test(q))).toEqual([]);
+    }
+  });
+  it('the chat block names every dark source, even when abstained', () => {
+    for (const runs of [[], [rec(), rec(), rec()]]) {
+      const { chatBlock } = digest(runs);
+      expect(chatBlock).toContain(
+        'Not measured: quarantine ledger, production escapes',
+      );
+    }
+  });
+  it('names count-only runs as a sample note', () => {
+    const { markdown } = digest([rec(), rec({ tests: undefined, total: 3 })]);
+    expect(markdown).toContain(
+      '- 1 run with no per-test results counted in no per-test line.',
+    );
   });
   it('renders the quarantine trail and the undated/unbranched notes', () => {
     const rows = [
@@ -468,6 +540,16 @@ describe('cli', () => {
     expect(advisory.stdout).toContain('ABSTAINED');
     vi.restoreAllMocks();
     expect(runCli(['--history', store, '--strict']).code).toBe(3);
+  });
+  it('SC2: a store whose runs are all out of window or undated abstains', () => {
+    const store = writeStore(tmp(), [
+      rec({ timestamp: '2026-01-01T00:00:00Z' }),
+      rec({ timestamp: 'not a time' }),
+    ]);
+    const res = runCli(['--history', store, '--until', UNTIL, '--strict']);
+    expect(res.code).toBe(3);
+    expect(res.stdout).toContain('ABSTAINED');
+    expect(res.stdout).toContain('1 undated run excluded');
   });
   it('D9: --strict exits 0 on thin and full samples', () => {
     const dir = tmp();
@@ -543,7 +625,9 @@ describe('cli', () => {
       for (const [, spec] of src.matchAll(/from '([^']+)'/g)) {
         expect(spec, `${name} imports ${spec}`).toMatch(allowed);
       }
-      expect(src).not.toMatch(/\bfetch\(|child_process|node:https?|node:net/);
+      expect(src).not.toMatch(
+        /\bfetch\(|\brequire\(|\bimport\(|child_process|node:(https?|http2|net|dgram|tls)/,
+      );
       if (/writeFileSync|appendFileSync|createWriteStream/.test(src)) {
         writers.push(name);
       }
