@@ -222,8 +222,8 @@ a defect.
 
 ### Documentation Updates
 
-- `docs/history-gaps.md` (new): the command, its exit codes, the consumer table,
-  and links to every new source file (docs-coverage floor).
+- `docs/guides/history-gaps.md` (new): the command, its exit codes, the consumer
+  table, and links to every new source file (docs-coverage floor).
 - `canary-test-reporter/SKILL.md`: a "Persisting runs" note (G4).
 - AGENTS.md only if a test enforces a skill count there.
 

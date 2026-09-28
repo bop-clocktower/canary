@@ -96,6 +96,15 @@ abstention reason.
 **Best for:** Asking "does this old failure still reproduce, and how faithfully
 was it replayed?"
 
+### [History Gaps Guide](./history-gaps.md)
+
+`canary history gaps` — reports which run-history consumers the store on disk
+actually feeds, per required field with denominators, and abstains loudly on a
+missing or empty store. Covers the status rule, the consumer table and the known
+gap list.
+
+**Best for:** Asking "why is this history-backed report empty or one bucket?"
+
 ### [LLM Providers Guide](./llm-providers.md)
 
 **Removed in v3.0.** The `agent/llm/` provider layer was deleted — there are no
