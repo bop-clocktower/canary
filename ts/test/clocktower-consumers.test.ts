@@ -127,6 +127,8 @@ describe('clocktower consumer table', () => {
     expect(onRun('flaky-retry', 'reporter_format', 'playwright')).toBe(true);
     expect(onRun('flaky-retry', 'reporter_format', 'junit')).toBe(true);
     expect(onRun('flaky-retry', 'reporter_format', 'vitest')).toBe(false);
+    // Unknown to flake-window is not capable: it may never emit `flaky`.
+    expect(onRun('flaky-retry', 'reporter_format', 'mocha')).toBe(false);
     expect(onRun('flaky-retry', 'reporter_format', null)).toBe(false);
     expect(requirement('flaky-retry', 'reporter_format').carried(RUN)).toBe(
       false,
