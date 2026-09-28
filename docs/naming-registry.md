@@ -106,7 +106,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-shadow`              | shipped  | —     | Differential parity testing between a baseline and a candidate             |
 | `canary-shiva`               | shipped  | 460   | Predictive test ordering                                                   |
 | `canary-ship`                | shipped  | —     | The ship gate: adversarial review, commit, PR, merge                       |
-| `canary-signal`              | reserved | 609   | QA impact digest                                                           |
+| `canary-signal`              | shipped  | 609   | QA impact digest (emit-only; every metric carries its denominator)         |
 | `canary-strix`               | shipped  | 799   | Company/consumer identifier leak scan (files + commit authorship)          |
 | `canary-sweep`               | shipped  | 594   | Component-level dedup for axe-core a11y findings (post-processor)          |
 | `canary-test-pipeline`       | shipped  | —     | Multi-phase test intelligence orchestrator                                 |
