@@ -39,6 +39,7 @@ agents/skills/
 │   ├── canary-setup-harness/
 │   ├── canary-shadow/
 │   ├── canary-ship/
+│   ├── canary-signal/
 │   ├── canary-strix/
 │   ├── canary-sweep/
 │   ├── canary-test-pipeline/
@@ -109,6 +110,12 @@ slash-command entry points.
   recommendation, chat-ready block) as a markdown artifact plus a `::error`
   annotation. The cross-run complement to the two above — neither of them can
   tell that the branch itself went red.
+- [`canary-signal`](./claude-code/canary-signal/SKILL.md) — Bundled executable
+  skill (`scripts/cli.mjs`). QA impact digest: reads the run-history store and
+  the katana quarantine ledger and emits a markdown digest plus a chat-ready
+  block of what testing caught in a window. Every number carries its
+  denominator; an empty window abstains and a one- or two-run window carries a
+  THIN SAMPLE banner. Emits only, never posts.
 - [`canary-sweep`](./claude-code/canary-sweep/SKILL.md) — Bundled executable
   skill (`scripts/cli.mjs`). Component-level dedup for axe-core accessibility
   findings: ingests axe JSON from any producer, collapses findings by component
@@ -261,8 +268,9 @@ _how an agent should behave_, not a function to call. Several are bundled
 executable skills with their own CLI entry point (`cli:` in frontmatter).
 `canary-blackhawk`, `canary-cassandra`, `canary-fail-fast`, `canary-instrument`,
 `canary-katana`, `canary-misfit`, `canary-savant`, `canary-screech`,
-`canary-shadow`, `canary-strix`, `canary-sweep`, and `canary-test-reporter` all
-ship a Node entry (`scripts/cli.mjs`). Run those directly, e.g.:
+`canary-shadow`, `canary-signal`, `canary-strix`, `canary-sweep`, and
+`canary-test-reporter` all ship a Node entry (`scripts/cli.mjs`). Run those
+directly, e.g.:
 
 ```bash
 node agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs --help
