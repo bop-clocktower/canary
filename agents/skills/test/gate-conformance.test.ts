@@ -32,6 +32,7 @@ import { main as cassandraMain } from '../claude-code/canary-cassandra/scripts/c
 import { main as screechMain } from '../claude-code/canary-screech/scripts/cli.mjs';
 import { main as misfitMain } from '../claude-code/canary-misfit/scripts/cli.mjs';
 import { main as sweepMain } from '../claude-code/canary-sweep/scripts/cli.mjs';
+import { main as signalMain } from '../claude-code/canary-signal/scripts/cli.mjs';
 
 /** Exit code reserved CLI-wide for "abstained" (D4, mirrors gate-result.ts). */
 const EXIT_ABSTAINED = 3;
@@ -137,6 +138,16 @@ const ROWS: SkillGateRow[] = [
     forbid: ['0 violations across'],
     run: (base) => run(sweepMain, ['--results', base]),
     strict: (base) => run(sweepMain, ['--results', base, '--strict']),
+  },
+  {
+    // An empty store: zero runs in the window. The tempting read is "a
+    // quiet week, nothing caught" -- which undersells QA. In fact the
+    // digest measured nothing at all (#609).
+    command: 'canary-signal (zero runs in the digest window)',
+    forbid: ['What testing caught'],
+    run: (base) => run(signalMain, ['--history', emptyStore(base)]),
+    strict: (base) =>
+      run(signalMain, ['--history', emptyStore(base), '--strict']),
   },
 ];
 
