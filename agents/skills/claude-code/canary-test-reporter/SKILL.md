@@ -148,6 +148,23 @@ The `version` field pins the contract for downstream tooling. `results` includes
     path: test-results/report.*
 ```
 
+## Persisting runs
+
+This skill renders a report; it writes nothing to run history. The same
+Playwright JSON is persisted by `canary history record`, which appends one run
+to `test-results/reports/history-v2.jsonl` for the cross-run consumers
+(`history flaky`, `analyze`, `ci-ready`, `order`, `rewind`, canary-screech):
+
+<!-- canary:illustrative -->
+
+```bash
+canary history record test-results/results.json --suite e2e
+```
+
+Run `canary history gaps` afterwards to see which of those consumers the
+recorded fields actually feed — see
+[canary-clocktower](../canary-clocktower/SKILL.md).
+
 ## Related skills
 
 - `canary-fail-fast` — aborts the run early and emits `::error` annotations; use
