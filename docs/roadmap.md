@@ -66,11 +66,11 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ### canary-signal — QA impact digest
 
-- **Status:** backlog
-- **Spec:** —
+- **Status:** done
+- **Spec:** docs/changes/609-canary-signal/proposal.md
 - **Summary:** Ideation rank 4 (score 6.75) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Broadcast a periodic digest of what testing actually caught - bugs prevented, sweeps run, escapes avoided - to Slack, Teams, or a PR comment, so the work of testing is visible to people who do not open the code. Serves STRATEGY.md track 5 (Quality made legible). CORRECTED 2026-07-21: the original entry blocked this on canary-clocktower on the belief that no run history is persisted. That belief was FALSE - `agent/history/` (shipped 2026-06-10, commit 72e884b) already provides a persisted store with `canary history push|flaky|timeline|summary`. This item is NOT blocked; it is a formatter/broadcaster over existing query output. Accepted risk to handle in spec: the digest must degrade honestly when history is thin - a digest reading "1 run, 0 escapes" UNDERSELLS QA and inverts the goal, so state the window size and sample count explicitly rather than implying a quiet week. Low effort / medium confidence. Next: /harness:brainstorming to spec.
 - **Blockers:** —
-- **Plan:** —
+- **Plan:** docs/changes/609-canary-signal/plans/2026-09-28-canary-signal-plan.md
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#609
 
