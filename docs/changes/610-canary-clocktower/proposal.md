@@ -195,9 +195,9 @@ a defect.
 
 | ID  | Gap                                                                                                 | Where                                     | Disposition                           |
 | --- | --------------------------------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------- |
-| G1  | `area` declared + read, never written                                                               | all readers in `ts/src/history/formats/`  | follow-up issue (writer change)       |
-| G2  | `failure_category` declared + read, never written; every categorised report is `'other'`            | same                                      | follow-up issue (writer change)       |
-| G3  | `tags` declared + pushed, never written                                                             | same                                      | follow-up issue (writer change)       |
+| G1  | `area` declared + read, never written                                                               | all readers in `ts/src/history/formats/`  | follow-up #1125 (writer change)       |
+| G2  | `failure_category` declared + read, never written; every categorised report is `'other'`            | same                                      | follow-up #1125 (writer change)       |
+| G3  | `tags` declared + pushed, never written                                                             | same                                      | follow-up #1125 (writer change)       |
 | G4  | canary-test-reporter never mentions that `history record` persists the same report                  | `canary-test-reporter/SKILL.md`           | **fixed here** (doc wiring)           |
 | G5  | canary-signal (#609) is not on `main`; it cannot be wired yet                                       | sibling lane                              | out of scope; table accepts a new row |
 | G6  | The Vitest reader cannot emit `flaky`, so `flaky-retry` is structurally dark for Vitest-only stores | `ts/src/history/formats/vitest-report.ts` | known (#604); surfaced by the command |
