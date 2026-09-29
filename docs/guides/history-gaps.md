@@ -68,15 +68,17 @@ test as failing only when it failed outright, so its `area` and
 `failure_category` denominators leave flaky tests out. `failure-categories` and
 `rewind` count failed and flaky tests.
 
-An opt-in consumer that is not fed names the flag that feeds it, for example
+An opt-in consumer that is dark names the flag that feeds it, for example
 `order-ttff: dark (fed only by history record --order-plan)`. It is listed as
 skipped, not as a finding: not using the flag is a choice, not a writer defect.
+A `partial` opt-in consumer is still a finding, because the flag was used on
+some runs and those runs did not carry what it should have written.
 
 ## Consumers
 
 | id                   | Surface                                | Requires (denominator)                                                                                            |
 | -------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `screech-range`      | canary-screech culprit range, timeline | `branch`, `commit_sha`, `timestamp` (runs)                                                                        |
+| `screech-range`      | canary-screech culprit range, timeline | `branch`, `commit_sha`, `timestamp`, numeric `failed` (runs)                                                      |
 | `screech-cluster`    | canary-screech owning area, clusters   | `area`, `failure_category` (failed tests, flakes excluded)                                                        |
 | `ci-ready-runtime`   | `canary ci-ready` suite runtime        | `duration_ms` greater than 0 (runs)                                                                               |
 | `flaky-retry`        | `history flaky`, `analyze flaky`       | `reporter_format` Playwright or JUnit (runs)                                                                      |
@@ -84,7 +86,7 @@ skipped, not as a finding: not using the flag is a choice, not a writer defect.
 | `failure-categories` | `analyze common-failures`              | `error_text`, `failure_category` (failed tests)                                                                   |
 | `order`              | `canary order`                         | `test_file`, `duration_ms` (tests)                                                                                |
 | `rewind`             | `canary rewind`                        | `commit_sha` not `local`, `reporter_format` Vitest or Playwright (runs); repo-relative `test_file` (failed tests) |
-| `order-ttff`         | `canary order --report`                | `order` (runs), opt-in `--order-plan`                                                                             |
+| `order-ttff`         | `canary order --report`                | `order` with both TTFF estimates (runs), opt-in `--order-plan`                                                    |
 
 The `rewind` row lists the fields whose absence makes rewind refuse to replay.
 `replay` and `start_index` only change how faithful a replay is: without them

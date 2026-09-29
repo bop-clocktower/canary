@@ -12,20 +12,20 @@ const REPORT: GapReport = {
   tests: 12,
   consumers: [
     {
-      id: 'screech',
-      surface: 'canary-screech, history timeline',
+      id: 'screech-range',
+      surface: 'canary-screech culprit range, history timeline',
       status: 'fed',
       coverage: [{ field: 'branch', scope: 'run', carried: 2, applicable: 2 }],
     },
     {
-      id: 'area-health',
-      surface: 'analyze area-health',
+      id: 'flaky-area',
+      surface: 'history flaky area column',
       status: 'dark',
       coverage: [{ field: 'area', scope: 'test', carried: 0, applicable: 12 }],
     },
     {
       id: 'failure-categories',
-      surface: 'analyze spikes',
+      surface: 'analyze common-failures',
       status: 'partial',
       coverage: [
         {
@@ -68,8 +68,10 @@ describe('renderGapReport', () => {
   });
 
   it('renders each consumer with its status and surface', () => {
-    expect(text).toMatch(/screech: fed .* canary-screech, history timeline/);
-    expect(text).toMatch(/area-health: dark .* analyze area-health/);
+    expect(text).toMatch(
+      /screech-range: fed .* canary-screech culprit range, history timeline/,
+    );
+    expect(text).toMatch(/flaky-area: dark .* history flaky area column/);
     expect(text).toMatch(/failure-categories: partial /);
   });
 

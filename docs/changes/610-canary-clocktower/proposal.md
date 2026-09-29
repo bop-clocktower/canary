@@ -79,7 +79,7 @@ the deliverable is a command that re-measures them, not only a document.
 | D2  | Doc-only gap list vs. runtime command?    | (A) document only (B) command + document                                                    | **B**                                         | A document is correct once. The gaps are a property of each adopter's store and of future writers; only a re-runnable measure stays true.                                                                                                                     |
 | D3  | CLI surface                               | (A) `canary history gaps` (B) `canary analyze clocktower` (C) top-level `canary clocktower` | **A** — mounted from the #988 engine registry | It answers a question _about the history store_, so it belongs in `history --help`. Mounting from `ts/src/commands/engine/cli.ts` (the `trim` precedent, #1073) adds zero lines to `history/cli.ts`. (C) would grow the top-level registry for a narrow read. |
 | D4  | Exit-code contract                        | (A) advisory, exit 0 (B) gate: 0 fed / 1 gaps / 3 abstained                                 | **B**                                         | CLI-wide contract (`ts/src/core/gate-result.ts`, D4): 3 is reserved for abstention. `analyze gh-flaky` (#884) is the precedent for 1-on-candidates. A CI step wanting advisory output ignores the exit code.                                                  |
-| D5  | Granularity of a finding                  | (A) per field (B) per consumer, with its fields                                             | **B**                                         | "area is 0% populated" is trivia; "`analyze area-health` is dark because no run carries `area`" is actionable. Fields render beneath each consumer.                                                                                                           |
+| D5  | Granularity of a finding                  | (A) per field (B) per consumer, with its fields                                             | **B**                                         | "area is 0% populated" is trivia; "canary-screech's clusters are dark because no failed test carries `area`" is actionable. Fields render beneath each consumer.                                                                                              |
 | D6  | Denominator for a conditional field       | (A) all tests (B) only applicable tests                                                     | **B**                                         | `failure_category` only means something on a failed test. A store with no failures has no denominator for it: that consumer is **unmeasured**, not fed.                                                                                                       |
 | D7  | Missing vs. empty store                   | (A) same abstention (B) distinct reasons                                                    | **B**                                         | `NdjsonHistoryStore.readAll()` returns `[]` for ENOENT, byte-identical to an empty file. A typo'd path must read as "not found", so the command checks existence first (the canary-screech rule, `canary-screech/scripts/history.mjs:8`).                     |
 | D8  | Remote store configured                   | (A) refuse (B) analyse local, name remote as skipped                                        | **B**                                         | Unlike `trim`, reading is harmless; but a remote the command did not look at must be visible, so it renders as a `SkipEntry` in the summary line.                                                                                                             |
@@ -169,7 +169,7 @@ it rather than copying it.
 
 | id                   | surface                                | requirements (scope)                                                                                            |
 | -------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `screech-range`      | canary-screech culprit range, timeline | `branch`, `commit_sha`, `timestamp` (run)                                                                       |
+| `screech-range`      | canary-screech culprit range, timeline | `branch`, `commit_sha`, `timestamp`, numeric `failed` (run: screech's `isRed`)                                  |
 | `screech-cluster`    | canary-screech owning area, clusters   | `area`, `failure_category` (failed-test, `where` status is `failed`: screech's `isFailure`)                     |
 | `ci-ready-runtime`   | `canary ci-ready` suite runtime        | `duration_ms` > 0 and finite (run), as `core/ci-ready.ts` filters                                               |
 | `flaky-retry`        | `history flaky`, `analyze flaky`       | `reporter_format` for which `util/flake-window.ts` `measurabilityOf` says `yes` (run)                           |
@@ -177,7 +177,7 @@ it rather than copying it.
 | `failure-categories` | `analyze common-failures`              | `error_text`, `failure_category` (failed-test)                                                                  |
 | `order`              | `canary order`                         | `test_file`, `duration_ms` (test)                                                                               |
 | `rewind`             | `canary rewind`                        | `commit_sha` not `local`, `reporter_format` in `REPLAYABLE_RUNNERS` (run); `testFileProblem` null (failed-test) |
-| `order-ttff`         | `canary order --report` (TTFF)         | `order` (run) — `optIn: '--order-plan'`                                                                         |
+| `order-ttff`         | `canary order --report` (TTFF)         | `order` with both TTFF estimates (run) — `optIn: '--order-plan'`                                                |
 
 `rewind` requires only the fields whose absence makes it refuse
 (`analysis/rewind/plan.ts`); `replay` and `start_index` only degrade a replay's
@@ -186,9 +186,11 @@ hard-codes an empty row set, so it is dark regardless of fields (G7).
 `analyze spikes` has no row: it reads failure rates, not categories.
 
 `optIn` rows render their status with the flag that feeds them, so a dark opt-in
-consumer reads "dark (fed only by `history record --order-plan`)". An opt-in
-consumer that is not fed is a skipped entry, not a finding (review S4): the flag
-is a choice, and counting it would fail every store that never used it.
+consumer reads "dark (fed only by `history record --order-plan`)". A dark opt-in
+consumer is a skipped entry, not a finding (review S4): the flag is a choice,
+and counting it would fail every store that never used it. A partial opt-in
+consumer stays a finding: the flag was used, and some of those runs lost what it
+writes.
 
 ### CLI — `canary history gaps [--path <store>] [--json]`
 
@@ -199,10 +201,10 @@ is a choice, and counting it would fail every store that never used it.
 3. Otherwise `analyzeGaps(store.readAll())`.
 4. Pass `{ checked, findings, skipped }` to `gateOutcome(..., 'gate')`, where
    checked = consumers measured and findings = dark + partial. Skipped: each
-   `unmeasured` consumer (reason: "no applicable rows"), each opt-in consumer
-   that is not fed (reason: "opt-in: not recorded with
-   `history record --order-plan`", naming its flag), plus the remote store when
-   `CANARY_HISTORY_DB_URL` is set (reason: "local NDJSON only").
+   `unmeasured` consumer (reason: "no applicable rows"), each dark opt-in
+   consumer (reason: "opt-in: not recorded with `history record --order-plan`",
+   naming its flag), plus the remote store when `CANARY_HISTORY_DB_URL` is set
+   (reason: "local NDJSON only").
 5. Exit: 0 all measured consumers fed · 1 any dark/partial · 3 abstained.
    Malformed or unsupported-version store → the reader's error, exit 1 (it is
    already loud; not an abstention).

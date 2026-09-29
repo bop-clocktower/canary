@@ -68,8 +68,8 @@ Each consumer lists its required fields as `carried/applicable`:
 - `unmeasured` — a field has no applicable rows (for example, no failed tests to
   carry a `failure_category`). It is listed as skipped, never counted as fed.
 
-An opt-in consumer that is not fed names the `history record` flag that feeds it
-and is listed as skipped, not as a finding.
+An opt-in consumer that is dark names the `history record` flag that feeds it
+and is listed as skipped, not as a finding. A partial one is still a finding.
 
 `--json` lists every skipped entry under `skipped`. On an abstention it also
 lists the consumers that went dark with the store under `darkByAbstention`.
