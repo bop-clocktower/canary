@@ -93,7 +93,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-ivy`                 | reserved | 615   | Suite overgrowth and pruning                                               |
 | `canary-judomaster`          | reserved | 614   | Incident to regression test                                                |
 | `canary-katana`              | shipped  | —     | Quarantine ledger for deleted and newly-skipped tests                      |
-| `canary-manhunter`           | reserved | 611   | Release quality dossier                                                    |
+| `canary-manhunter`           | shipped  | 611   | Release quality dossier                                                    |
 | `canary-misfit`              | shipped  | 592   | E2E resilience injection                                                   |
 | `canary-mission-briefing`    | shipped  | 593   | PR diff to human test charter                                              |
 | `canary-pr-guardian`         | shipped  | —     | Per-diff test-guardian orchestrator                                        |

@@ -1,0 +1,111 @@
+---
+name: canary-manhunter
+description: >
+  Release quality dossier. Assembles the evidence a release already has — run
+  history, guardian coverage tiers and findings, ci-ready, the katana quarantine
+  ledger, an accessibility sweep, and a hand-kept escape log — into one
+  markdown/JSON report with a Worth-your-eyes list and a sha256 content digest.
+  Every source that is missing, unreadable, self-abstained or measured nothing
+  is named DARK, and a dossier with a dark section can never read complete. Use
+  when asked "is this release OK to ship", "what should I look at before we
+  release", "build the release dossier", or for a release checklist. Emit-only:
+  no network, never posts. NOT a verdict on the product, NOT a test runner (it
+  runs no producer), NOT canary-signal (a periodic QA digest).
+cli: canary manhunter
+requires: [node>=20]
+---
+
+# Canary Manhunter
+
+A release sign-off is only as good as the evidence behind it, and the most
+common way that goes wrong is silence: a source nobody read renders like one
+that found nothing. `canary manhunter` reads the evidence canary's producers
+already wrote, gives each source a section that is `FED`, `DARK` (with the
+reason) or `EXCLUDED` (with a declared reason), and derives the short list of
+what a person should actually look at.
+
+The command does the assembly; this skill runs it, relays the answer, and
+refuses to soften a dark section.
+
+## When to Use
+
+- Someone asks whether a release is ready, or what to check before shipping.
+- A release checklist needs an evidence item that can fail.
+- Delivery or client-success staff need a record of what quality evidence
+  existed for a release, and proof later that it was not edited.
+
+## When NOT to Use
+
+- You want a periodic "what did testing catch" digest: use `canary-signal`.
+- You want a merge verdict for one PR: use `canary-pr-guardian`.
+- You want to know whether main is red right now: use `canary-screech`.
+- You want new evidence: run the producers (`canary history record`,
+  `canary guardian pr-check`, katana, sweep) first. Manhunter runs none of them.
+
+## Usage
+
+```bash
+canary manhunter --help
+```
+
+That needs no inputs and no network. A dossier reads, under `--root`:
+
+| Section           | Source (default)                                  |
+| ----------------- | ------------------------------------------------- |
+| Run history       | `test-results/reports/history-v2.jsonl`           |
+| Coverage tiers    | `.harness/analyses/canary-pr-guardian-*.json`     |
+| Guardian findings | same records                                      |
+| CI readiness      | the same inputs `canary ci-ready` reads           |
+| Quarantine        | `.canary/quarantine.json`                         |
+| Sweep             | `--sweep <report.json>` (no default)              |
+| Escape history    | `.canary/escapes.json` (hand-kept, see the guide) |
+
+Exit `0` complete, `1` one or more sections dark, `3` nothing read at all, `2`
+usage error. Worth-your-eyes items never change the exit code.
+
+## Workflow
+
+1. **Assemble.** Run the command below (add `--sweep <report.json>` when a sweep
+   report exists):
+
+   ```bash
+   canary manhunter --release <label> \
+     --out dossier.md --json-out dossier.json
+   ```
+
+2. **Exit 3 (abstained)?** Say that no evidence source was found and list the
+   default paths. Stop. Do not describe the release.
+3. **Exit 1 (incomplete)?** Relay every DARK section and its reason first. For
+   each, the honest next step is one of: produce the evidence, or — only if the
+   source genuinely does not apply — rerun with `--exclude <section>=<reason>`.
+   Never exclude a section to turn the exit green; the reason is printed in the
+   dossier for anyone to read.
+4. **Relay Worth your eyes** as the answer to "what should I look at", in the
+   order printed (dark sections first).
+5. **Report** in this shape:
+
+   ```text
+   Dossier: <release> · evidence COMPLETE|INCOMPLETE|ABSTAINED (n fed, n dark, n excluded)
+   Dark: <section>: <reason>          (one line each, or "none")
+   Worth your eyes: <count> — <top three>
+   Digest: <first 12 hex>  (verify: canary manhunter verify dossier.json)
+   ```
+
+## Rationalizations to reject
+
+| Rationalization                                    | Why it is wrong                                                             |
+| -------------------------------------------------- | --------------------------------------------------------------------------- |
+| "Guardian found nothing, so coverage is fine."     | Only if units were checked; zero checked units is DARK, not clean.          |
+| "No escapes file, so no escapes."                  | Canary holds no incident data; the section is dark until someone tracks it. |
+| "Exclude the sweep so the checklist passes."       | Exclude only a source that does not apply, with the true reason.            |
+| "The dossier is COMPLETE, so the release is good." | COMPLETE grades the evidence. Worth your eyes is what still needs a person. |
+| "The digest proves the release was approved."      | It proves the dossier was not edited. It is not a signature.                |
+
+## Related skills
+
+- `canary-signal` — periodic QA impact digest.
+- `canary-pr-guardian` — per-PR coverage verdict (feeds two sections).
+- `canary-katana` — the quarantine ledger (feeds one section).
+- `canary-sweep` — accessibility report (feeds one section).
+- `canary-ci-ready` — CI readiness scorer (feeds one section).
+- Guide: `docs/guides/release-dossier.md`

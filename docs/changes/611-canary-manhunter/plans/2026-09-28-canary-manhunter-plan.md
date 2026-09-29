@@ -43,11 +43,10 @@ prove the key assertion can fail.
 
 - **Files:** `ts/src/manhunter/manhunter-cli.ts`,
   `ts/src/commands/readiness/cli.ts`; `ts/test/manhunter-cli.test.ts`
-- **Tests first:** exit 0 / 1 / 3 matching the verdict; `--out` and
-  `--json-out` write files and print nothing else to stdout; an empty
-  `--exclude` reason or an unknown section id exits 2; `verify` exits 0 / 1 / 2;
-  the default input paths resolve under `--root`; `canary --help` lists
-  `manhunter`.
+- **Tests first:** exit 0 / 1 / 3 matching the verdict; `--out` and `--json-out`
+  write files and print nothing else to stdout; an empty `--exclude` reason or
+  an unknown section id exits 2; `verify` exits 0 / 1 / 2; the default input
+  paths resolve under `--root`; `canary --help` lists `manhunter`.
 
 ### Task 5: Skill, docs, registrations, ratchets
 

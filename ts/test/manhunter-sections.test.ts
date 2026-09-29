@@ -97,7 +97,7 @@ describe('run-history section', () => {
     const s = historySection(path, 30);
     expect(s.status).toBe('fed');
     expect(s.denominator).toBe('4 runs across 2 suites');
-    expect(s.sources[0].sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(s.sources[0]!.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(s.eyes).toContain(
       'suite api: latest run api-2 has 1 failed of 2 tests',
     );

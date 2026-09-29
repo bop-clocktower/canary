@@ -188,7 +188,7 @@ describe('digest', () => {
   it('changes when any nested field of the evidence changes', () => {
     const base = finalizeDossier(payload(), 'now').digest;
     const changed = payload();
-    changed.sections[3].facts.push('one more fact');
+    changed.sections[3]!.facts.push('one more fact');
     expect(finalizeDossier(changed, 'now').digest).not.toBe(base);
   });
 

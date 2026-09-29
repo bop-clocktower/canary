@@ -29,6 +29,7 @@ agents/skills/
 │   ├── canary-generate-test/
 │   ├── canary-instrument/
 │   ├── canary-katana/
+│   ├── canary-manhunter/
 │   ├── canary-misfit/
 │   ├── canary-mission-briefing/
 │   ├── canary-pr-guardian/
@@ -124,6 +125,12 @@ slash-command entry points.
   post-processor — it never crawls, discovers routes, or runs a browser. Nodes
   it cannot attribute are counted as unattributed, and a results set in which no
   rule was evaluated abstains instead of reading as clean.
+- [`canary-manhunter`](./claude-code/canary-manhunter/SKILL.md) — Release
+  quality dossier (`canary manhunter`). Assembles run history, guardian coverage
+  tiers and findings, ci-ready, the katana ledger, a sweep report and a
+  hand-kept escape log into one markdown/JSON report with a Worth-your-eyes list
+  and a sha256 content digest. Every dark source is named, and the exit code
+  says whether the evidence is complete. Emit-only, no network.
 
 ### Closure auditing
 
