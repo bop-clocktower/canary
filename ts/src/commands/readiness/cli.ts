@@ -17,6 +17,7 @@ import { buildGenDataCommand } from '../../gen-data/gen-data-cli.js';
 import { buildBriefingCommand } from '../../briefing/briefing-cli.js';
 import { buildAdoptionCommand } from '../../adoption/adoption-cli.js';
 import { buildManhunterCommand } from '../../manhunter/manhunter-cli.js';
+import { buildJudomasterCommand } from '../../judomaster/judomaster-cli.js';
 import type { MainDeps } from '../../main-deps.js';
 
 export const READINESS_COMMANDS: ReadonlyArray<(deps: MainDeps) => Command> = [
@@ -28,4 +29,5 @@ export const READINESS_COMMANDS: ReadonlyArray<(deps: MainDeps) => Command> = [
   (deps) => buildBriefingCommand(deps),
   (deps) => buildAdoptionCommand(deps),
   (deps) => buildManhunterCommand(deps),
+  (deps) => buildJudomasterCommand(deps),
 ];
