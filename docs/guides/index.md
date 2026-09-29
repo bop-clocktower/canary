@@ -91,8 +91,8 @@ three.
 `canary manhunter` — assembles run history, guardian coverage tiers and
 findings, ci-ready, the katana ledger, a sweep report and a hand-kept escape log
 into one release dossier. Every dark source is named, a Worth-your-eyes list
-says what to look at, and a sha256 content digest proves the dossier was not
-edited.
+says what to look at, and a sha256 content digest (checked with `verify`)
+detects later edits.
 
 **Best for:** Answering "is the evidence for this release complete, and what
 should I look at?" as a release checklist item.

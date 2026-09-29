@@ -32,7 +32,7 @@ refuses to soften a dark section.
 - Someone asks whether a release is ready, or what to check before shipping.
 - A release checklist needs an evidence item that can fail.
 - Delivery or client-success staff need a record of what quality evidence
-  existed for a release, and proof later that it was not edited.
+  existed for a release, with a digest that detects later edits.
 
 ## When NOT to Use
 
@@ -78,8 +78,9 @@ usage error. Worth-your-eyes items never change the exit code.
 3. **Exit 1 (incomplete)?** Relay every DARK section and its reason first. For
    each, the honest next step is one of: produce the evidence, or — only if the
    source genuinely does not apply — rerun with `--exclude <section>=<reason>`.
-   Never exclude a section to turn the exit green; the reason is printed in the
-   dossier for anyone to read.
+   Excluding a section whose source was read is refused (exit 2). Never exclude
+   a section to turn the exit green; the reason is printed in the dossier for
+   anyone to read.
 4. **Relay Worth your eyes** as the answer to "what should I look at", in the
    order printed (dark sections first).
 5. **Report** in this shape:
@@ -99,7 +100,7 @@ usage error. Worth-your-eyes items never change the exit code.
 | "No escapes file, so no escapes."                  | Canary holds no incident data; the section is dark until someone tracks it. |
 | "Exclude the sweep so the checklist passes."       | Exclude only a source that does not apply, with the true reason.            |
 | "The dossier is COMPLETE, so the release is good." | COMPLETE grades the evidence. Worth your eyes is what still needs a person. |
-| "The digest proves the release was approved."      | It proves the dossier was not edited. It is not a signature.                |
+| "The digest proves the release was approved."      | It detects edits; anyone can recompute it. It is not a signature.           |
 
 ## Related skills
 

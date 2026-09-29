@@ -35,19 +35,30 @@ Relative paths resolve against `--root`.
 
 ## Sections and when each goes dark
 
-| Section             | Fed when                                                       | Dark when                                                         |
-| ------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `run-history`       | the store holds at least one run                               | no store, a corrupt or future-version store, or 0 runs            |
-| `coverage-tiers`    | at least one guardian record did not abstain and checked units | no records, or every record abstained or checked 0 units          |
-| `guardian-findings` | same records as above                                          | same as above                                                     |
-| `ci-readiness`      | `ci-ready` scored at least one check                           | `ci-ready` abstained (no inputs)                                  |
-| `quarantine`        | the katana ledger exists and has an `entries` array            | no ledger: "nothing removed" and "katana not wired" look the same |
-| `sweep`             | the sweep report evaluated rules and did not abstain           | no `--sweep`, or the report abstained                             |
-| `escapes`           | the escape log has `tracked_since` and an `escapes` array      | no log, or no `tracked_since`                                     |
+| Section             | Fed when                                                         | Dark when                                                                     |
+| ------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `run-history`       | at least one stored run executed a test                          | no store, a corrupt or future-version store, or no run with tests             |
+| `coverage-tiers`    | at least one guardian record did not abstain and checked units   | no records, or every record abstained, checked 0 units or was malformed       |
+| `guardian-findings` | same records as above                                            | same as above                                                                 |
+| `ci-readiness`      | `ci-ready` scored at least one check                             | `ci-ready` abstained, or the default store is corrupt                         |
+| `quarantine`        | a katana v2 ledger exists (katana writes one on every scan)      | no ledger, or a file without `schema_version: 2` and `entries`                |
+| `sweep`             | a canary-sweep v1 report evaluated rules and did not abstain     | no `--sweep`, the report abstained, or its findings disagree with its summary |
+| `escapes`           | the escape log has a `tracked_since` date and an `escapes` array | no log, or no parseable `tracked_since`                                       |
+
+A guardian record counts only when it says `source: canary-pr-guardian`, carries
+a `schemaVersion`, and its `findings` array matches `summary.total`. A record
+that fails any of those is listed as malformed and never read as "no findings".
+Abstained records are listed too, not dropped.
+
+`--history` moves only the run-history section. The ci-readiness section always
+reads the default store under `--root`, as `canary ci-ready` does, so the two
+commands cannot score different runs.
 
 A section that does not apply is declared, not omitted:
 `--exclude sweep="<reason>"`. The reason is printed in the dossier. An empty
-reason or an unknown section id is a usage error.
+reason, an unknown section id, or excluding a section whose source WAS read is a
+usage error (exit 2): an exclusion declares a source out of scope, and applied
+to a read source it would hide what that source found.
 
 ## Exit codes: the checklist item
 
@@ -91,12 +102,16 @@ escapes recorded since 2026-07-01". Without it, the section is dark.
 The JSON dossier carries `digest`: sha256 over the canonical JSON (keys sorted
 at every depth) of every field except `generatedAt` and `digest`. Each source
 file's own sha256 is inside that payload, so the digest pins which bytes were
-read. The same evidence gives the same digest, and any edit to the dossier
-changes it. `canary manhunter verify dossier.json` exits 0 on a match, 1 on a
-mismatch, 2 on a file that is not a dossier. This is a fingerprint, not a
-signature: there is no key, and it proves the dossier is unedited, not who
-approved it. Ledger expiry is judged against the time of the run, so a row can
-expire between two runs and change the digest.
+read. Paths are stored relative to `--root`, so the same evidence gives the same
+digest in any checkout on any machine, and no home directory leaks into the
+file. `canary manhunter verify dossier.json` exits 0 on a match, 1 on a
+mismatch, 2 on a file that is not a v1 dossier. Verify also recomputes the
+section counts and the verdict from the sections, so flipping the verdict and
+re-hashing is still caught. This is a fingerprint, not a signature: there is no
+key, and anyone can recompute it. It detects an edit made without recomputing
+the digest; it cannot prove who produced the dossier. Ledger expiry is judged
+against the time of the run, so a row can expire between two runs and change the
+digest.
 
 ## Source layout
 

@@ -202,3 +202,28 @@ content digest.
 4. CLI wiring in the readiness registry; end-to-end CLI tests on synthetic
    fixtures.
 5. Skill, guide, roster/registry docs, ratchet declarations.
+
+## Amendments after review
+
+Recorded here rather than rewritten above, so the review trail survives.
+
+- **A1 (D2).** Excluding a section whose source was read is a usage error. An
+  exclusion declares a source out of scope. Applied to a read source, it would
+  hide that source's findings behind an exit 0.
+- **A2 (D5).** Source paths are stored relative to `--root`. Without this, the
+  digest depended on where the repository was checked out.
+- **A3 (D5).** `verify` also recomputes the counts and the verdict from the
+  sections. The digest detects edits made without re-hashing; anyone can
+  re-hash, so it is not proof of who produced the dossier.
+- **A4 (sections).** A guardian record or sweep report is counted only when its
+  shape matches its producer contract. For guardian that means the
+  `source`/`schemaVersion` fields and a `findings` array whose length equals
+  `summary.total`. For sweep it means `version: 1` and a `findings` array whose
+  length equals `summary.findings`. Before this, a malformed findings field was
+  coerced to "no findings".
+- **A5 (quarantine).** The denominator is "katana ran". katana writes a v2
+  ledger on every scan, including one that recorded nothing, so a zero-row
+  ledger is fed. A file without `schema_version: 2` is refused.
+- **A6 (ci-readiness).** This section always reads the default history store, as
+  `canary ci-ready` does. A store that ci-ready would fail on makes the section
+  DARK.
