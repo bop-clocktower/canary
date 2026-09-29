@@ -1,8 +1,8 @@
 {
-  "reason": "canary history gaps (#610, canary-clocktower): module-size 46291->47091 against the merge base 47745970 floor, measured with `harness check-arch --json` (CLI 12.10.1) on this branch. newViolations is [] and the only regression is this aggregate. Attribution is empirical: with ts/src/analysis/clocktower/ moved aside and ts/src/commands/engine/cli.ts restored to the merge base, check-arch reports no regression at all. The growth is a new read-only module (consumers.ts, gaps.ts, render.ts, cli.ts: 419 lines) plus 8 lines mounting it in the #988 engine registry. It deliberately lives outside ts/src/history, which sits exactly on its own 1800-LOC ceiling (#1074), so the growth is charged to ts/src/analysis rather than forcing a history paydown. The floor in baselines.json is raised to the same value by scripts/refresh-arch-baseline.mjs so ts/test/arch-baseline-freshness.test.ts stays green.",
+  "reason": "canary history gaps (#610, canary-clocktower): module-size 46291->47148 against the merge base de3f67f7 floor (first measured 47091 at 47745970; +57 from the review fixes: split screech row, rewind refusal predicates, opt-in skip), measured with `harness check-arch --json` (CLI 12.10.1) on this branch. newViolations is [] and the only regression is this aggregate. Attribution is empirical: with ts/src/analysis/clocktower/ moved aside and ts/src/commands/engine/cli.ts restored to the merge base, check-arch reports no regression at all. The growth is a new read-only module (consumers.ts, gaps.ts, render.ts, cli.ts) plus 8 lines mounting it in the #988 engine registry. It deliberately lives outside ts/src/history, which sits exactly on its own 1800-LOC ceiling (#1074), so the growth is charged to ts/src/analysis rather than forcing a history paydown. The floor in baselines.json is raised to the same value by scripts/refresh-arch-baseline.mjs so ts/test/arch-baseline-freshness.test.ts stays green.",
   "categories": {
-    "module-size": 47091
+    "module-size": 47148
   },
   "violationIds": [],
-  "createdFrom": "47745970"
+  "createdFrom": "de3f67f7"
 }
