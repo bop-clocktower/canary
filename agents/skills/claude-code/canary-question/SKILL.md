@@ -25,7 +25,9 @@ observation would help tell the hypotheses apart.
 - **Not a classifier.** It is built not to print a verdict, disposition, score,
   ranking or lean: a test asserts that a list of verdict phrases and keys is
   absent from the markdown and JSON output of the 14 fixtures. The three
-  hypotheses always appear in the same order, whatever the evidence says.
+  hypotheses always appear in the same order, whatever the evidence says. This
+  is a permanent contract, decided on #613, not a default a flag will later
+  relax.
 - **Not a gate.** There is no `--strict`. It exits 0 for every brief it
   produces, abstentions included.
 - **Not a detector runner.** It reads one detector's `--json` output if you give

@@ -32,8 +32,10 @@ rather than judgement. The MVP takes that route.
 ### Out of scope (non-goals / follow-ups)
 
 - **Any verdict, disposition, ranking, score or lean.** Whether the tool may
-  _ever_ print a lean toward one side is a product fork that changes what the
-  tool claims; it is **parked** for a human (follow-up F1), not guessed.
+  _ever_ print a lean toward one side was parked by the build lane as fork F1.
+  **Decided 2026-09-29 by the maintainer: no lean, ever.** This is the tool's
+  permanent contract, not an MVP default. D11's forbidden-language test enforces
+  it. Adding a lean needs a new decision, not a flag (recorded on #613).
 - Quarantining, retrying, editing, or skipping tests; failing a job. Advisory
   only — there is no `--strict`.
 - An LLM step. The MVP is fully deterministic. If one is added later it must be
