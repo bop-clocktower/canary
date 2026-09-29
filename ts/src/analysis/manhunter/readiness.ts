@@ -12,8 +12,6 @@
  * worth your eyes, because skipped checks are not passed checks.
  */
 
-import { basename } from 'node:path';
-
 import { scoreCiReady, type CiReadyReport } from '../../core/ci-ready.js';
 import {
   parseCriticalAreas,
@@ -44,7 +42,7 @@ function inputOf<T>(
   parse: (text: string | null) => T,
 ): T | { ok: false; reason: string } {
   if (read.kind === 'unreadable') {
-    const name = `.canary/${basename(read.path)}`;
+    const name = `.canary/${read.path.split(/[\\/]/).pop() ?? read.path}`;
     return { ok: false, reason: `${name} could not be read (${read.reason})` };
   }
   return parse(read.kind === 'ok' ? read.text : null);
