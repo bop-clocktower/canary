@@ -9,68 +9,30 @@
  * (`commands/engine/cli.ts`) fills: `ts/src/history` has no arch headroom
  * (#1074), and `history` stays usable without it.
  *
- * An areas file that is absent or unusable is an abstention, reported as a
- * note, never a silent empty (#508). A row with no error text gets no
- * category: `other` with no evidence would turn a real gap into a false `fed`
- * in `history gaps`.
+ * Generic over the row shape, so this module does not import the history
+ * schema: any row with these fields enriches, and extra fields pass through.
+ *
+ * A row with no error text gets no category: `other` with no evidence would
+ * turn a real gap into a false `fed` in `history gaps`.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import {
-  parseCriticalAreas,
-  type CriticalArea,
-} from '../../core/inventory-checks.js';
-import type { TestResultInput } from '../../history/schema.js';
-import { areaFor } from './area.js';
+import { areaFor, loadAreas } from './area.js';
 import { categorizeFailure } from './failure-category.js';
 
-const CRITICAL_AREAS_FILE = '.canary/critical-areas.json';
+/** The fields enrichment reads and writes on a recorded test row. */
+interface RecordedRow {
+  test_file: string;
+  status: string;
+  error_text?: string | null;
+  area?: string | null;
+  failure_category?: string | null;
+}
+
 const CATEGORISED = new Set(['failed', 'flaky']);
 
-interface AreasLoad {
-  areas: CriticalArea[];
-  note?: string;
-}
-
-function unusable(reason: string): AreasLoad {
-  return {
-    areas: [],
-    note:
-      `area not recorded: ${reason}. \`history record\` maps each test ` +
-      `file to an area listed in ${CRITICAL_AREAS_FILE}.`,
-  };
-}
-
-/** The file's text, `null` when it does not exist, or the read error code. */
-function readAreasText(
-  cwd: string,
-): { text: string | null } | { code: string } {
-  try {
-    return { text: readFileSync(join(cwd, CRITICAL_AREAS_FILE), 'utf-8') };
-  } catch (err) {
-    const code = String((err as NodeJS.ErrnoException).code);
-    return code === 'ENOENT' ? { text: null } : { code };
-  }
-}
-
-function loadAreas(cwd: string): AreasLoad {
-  const read = readAreasText(cwd);
-  if ('code' in read) {
-    return unusable(`${CRITICAL_AREAS_FILE} could not be read (${read.code})`);
-  }
-  const parsed = parseCriticalAreas(read.text);
-  if (!parsed.ok) return unusable(parsed.reason);
-  if (parsed.areas.length === 0) {
-    return unusable(`${CRITICAL_AREAS_FILE} lists no areas`);
-  }
-  return { areas: parsed.areas };
-}
-
-function enrichRow(
-  row: TestResultInput,
-  areas: readonly CriticalArea[],
-): TestResultInput {
+function enrichRow<T extends RecordedRow>(
+  row: T,
+  areas: Parameters<typeof areaFor>[1],
+): T {
   const area = areaFor(row.test_file, areas);
   const category =
     CATEGORISED.has(row.status) && row.error_text
@@ -84,10 +46,10 @@ function enrichRow(
 }
 
 /** Enrich recorded rows; `notes` holds one line per abstention. */
-export function enrichRecordedResults(
-  results: readonly TestResultInput[],
+export function enrichRecordedResults<T extends RecordedRow>(
+  results: readonly T[],
   cwd: string,
-): { results: TestResultInput[]; notes: string[] } {
+): { results: T[]; notes: string[] } {
   const loaded = loadAreas(cwd);
   return {
     results: results.map((r) => enrichRow(r, loaded.areas)),
