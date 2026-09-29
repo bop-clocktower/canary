@@ -148,8 +148,9 @@ thin). Always at least one item.
 ### Output
 
 Markdown (stdout, and `--out`): header naming the test, a banner "Evidence brief
-— not a verdict", fidelity + denominator line, one section per hypothesis (For /
-Against), Not checked, What would disambiguate. `--json`:
+— hypotheses and evidence, no call made", fidelity + denominator line, one
+section per hypothesis (For / Against), Not checked, What would disambiguate.
+`--json`:
 
 ```json
 {
