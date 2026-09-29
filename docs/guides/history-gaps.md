@@ -99,20 +99,44 @@ carries, and no field a writer fills can change that. `analyze spikes` is not in
 the table either: it counts failure rates, not categories, so no gap here
 affects it.
 
-## Known gaps (2026-09-28)
+## How `history record` fills `area` and `failure_category`
+
+Since #1125, `canary history record` fills both fields at record time through an
+enricher in `ts/src/analysis/enrich/`, which the engine registry injects into
+the recorder (`ts/src/history` has no arch headroom, #1074).
+
+- **`area`** is the `path` of the critical area in `.canary/critical-areas.json`
+  (the canary-critical-areas output, read from the working directory) whose file
+  stem matches the test file's, with any `.test` or `.spec` marker stripped.
+  When several areas match, the one sharing the most trailing directories with
+  the test file wins, then the higher `risk_score`. A test no area matches has
+  no `area`, and `flaky-area` reads `partial`.
+- **When the file is absent or unusable**, no test gets an `area` and `record`
+  prints `note: area not recorded: <reason>` on stderr. The exit code does not
+  change. `flaky-area` and `screech-cluster` then read `dark`, which is the
+  truth: no area was recorded.
+- **`failure_category`** is set on failed and flaky tests that carry error text,
+  using canary-fail-fast's vocabulary (`schema`, `auth`, `server`, `client`,
+  `timeout`, `network`, `other`). A failure with no error text gets no category:
+  writing `other` with no evidence would make `failure-categories` read `fed`
+  when it is not.
+- **`tags`** has no automatic writer. It stays in the schema for callers of the
+  store API, and nothing reads it yet.
+
+## Known gaps (2026-09-29)
 
 What `history gaps` reports on a store written by today's `history record`:
 
-| ID  | Gap                                                                              | Disposition                                                   |
-| --- | -------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| G1  | `area` is declared and read (screech, `history flaky`), but no reader writes it. | [#1125](https://github.com/bop-clocktower/canary/issues/1125) |
-| G2  | `failure_category` is declared and read, but never written.                      | [#1125](https://github.com/bop-clocktower/canary/issues/1125) |
-| G3  | `tags` is declared and pushed, but never written.                                | [#1125](https://github.com/bop-clocktower/canary/issues/1125) |
-| G4  | canary-test-reporter did not say that `history record` persists the same report. | fixed in #610                                                 |
-| G5  | canary-signal is not on `main`, so it cannot be wired yet.                       | add a consumer row                                            |
-| G6  | The Vitest reader cannot emit `flaky`, so `flaky-retry` is dark for Vitest-only. | known (#604), surfaced                                        |
-| G7  | `analyze area-health` computes no rows, whatever the store carries.              | structural, not a field gap                                   |
-| G8  | The Playwright reader keeps `error_text` for failures but not for flakes.        | surfaced as `failure-categories` partial `error_text`         |
+| ID  | Gap                                                                              | Disposition                                                                                                                                                                       |
+| --- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1  | `area` was declared and read (screech, `history flaky`), but no reader wrote it. | fixed in [#1125](https://github.com/bop-clocktower/canary/issues/1125): mapped from `.canary/critical-areas.json`; without the file `record` prints a `note:` and leaves it unset |
+| G2  | `failure_category` was declared and read, but never written.                     | fixed in [#1125](https://github.com/bop-clocktower/canary/issues/1125): categorised from the error text of failed and flaky tests                                                 |
+| G3  | `tags` is declared and pushed, but never written.                                | opt-in: no automatic writer, and nothing reads it ([#1125](https://github.com/bop-clocktower/canary/issues/1125))                                                                 |
+| G4  | canary-test-reporter did not say that `history record` persists the same report. | fixed in #610                                                                                                                                                                     |
+| G5  | canary-signal is not on `main`, so it cannot be wired yet.                       | add a consumer row                                                                                                                                                                |
+| G6  | The Vitest reader cannot emit `flaky`, so `flaky-retry` is dark for Vitest-only. | known (#604), surfaced                                                                                                                                                            |
+| G7  | `analyze area-health` computes no rows, whatever the store carries.              | structural, not a field gap                                                                                                                                                       |
+| G8  | The Playwright reader kept `error_text` for failures but not for flakes.         | fixed in [#1125](https://github.com/bop-clocktower/canary/issues/1125): a flake keeps its last failing attempt's error                                                            |
 
 The full analysis and its design decisions are in the
 [proposal](../changes/610-canary-clocktower/proposal.md).
@@ -126,3 +150,8 @@ The full analysis and its design decisions are in the
 - [render.ts](../../ts/src/analysis/clocktower/render.ts) — text output.
 - [cli.ts](../../ts/src/analysis/clocktower/cli.ts) — the command and its exit
   contract, mounted from the engine registry.
+- [enrich.ts](../../ts/src/analysis/enrich/enrich.ts) — the record-time enricher
+  `history record` calls (#1125), including the abstention note.
+- [area.ts](../../ts/src/analysis/enrich/area.ts) — test file to critical area.
+- [failure-category.ts](../../ts/src/analysis/enrich/failure-category.ts) — the
+  categoriser, ported from canary-fail-fast and pinned to it by a parity test.
