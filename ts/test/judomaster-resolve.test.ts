@@ -26,12 +26,12 @@ beforeAll(() => {
 
 afterAll(() => rmSync(base, { recursive: true, force: true }));
 
-const one = (file: string, line = 12) =>
-  resolveFrames([{ file, line }], root)[0]!;
-
 describe('resolveFrames', () => {
   it('resolves a foreign absolute path by its longest existing suffix', () => {
-    const f = one('/app/src/cart/total.ts');
+    const f = resolveFrames(
+      [{ file: '/app/src/cart/total.ts', line: 12 }],
+      root,
+    )[0]!;
     expect(f.status).toBe('resolved');
     expect(f.path).toBe('src/cart/total.ts');
     expect(f.excerpt).toEqual([
@@ -45,13 +45,19 @@ describe('resolveFrames', () => {
   });
 
   it('resolves a root-relative path as given', () => {
-    const f = one('src/cart/total.ts');
+    const f = resolveFrames(
+      [{ file: 'src/cart/total.ts', line: 12 }],
+      root,
+    )[0]!;
     expect(f.status).toBe('resolved');
     expect(f.path).toBe('src/cart/total.ts');
   });
 
   it('flags a line past the end of the file as stale', () => {
-    const f = one('/app/src/cart/total.ts', 99);
+    const f = resolveFrames(
+      [{ file: '/app/src/cart/total.ts', line: 99 }],
+      root,
+    )[0]!;
     expect(f.status).toBe('stale');
     expect(f.path).toBe('src/cart/total.ts');
   });
@@ -62,17 +68,27 @@ describe('resolveFrames', () => {
     'node:internal/modules/cjs/loader',
     '<anonymous>',
   ])('names %s as external', (file) => {
-    const f = one(file);
+    const f = resolveFrames([{ file: file, line: 12 }], root)[0]!;
     expect(f.status).toBe('external');
     expect(f.path).toBeUndefined();
   });
 
   it('names a path that exists nowhere under root as missing', () => {
-    expect(one('/app/src/gone.ts').status).toBe('missing');
+    expect(
+      resolveFrames([{ file: '/app/src/gone.ts', line: 12 }], root)[0]!.status,
+    ).toBe('missing');
   });
 
   it('never resolves a path that escapes root via ..', () => {
-    expect(one('../outside/secret.ts', 1).status).toBe('missing');
-    expect(one('src/../../outside/secret.ts', 1).status).toBe('missing');
+    expect(
+      resolveFrames([{ file: '../outside/secret.ts', line: 1 }], root)[0]!
+        .status,
+    ).toBe('missing');
+    expect(
+      resolveFrames(
+        [{ file: 'src/../../outside/secret.ts', line: 1 }],
+        root,
+      )[0]!.status,
+    ).toBe('missing');
   });
 });

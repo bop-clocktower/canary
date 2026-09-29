@@ -13,7 +13,7 @@ it), see [Guides](../../docs/guides/index.md).
 
 ```text
 agents/skills/
-├── claude-code/                    # Claude Code skills (33)
+├── claude-code/                    # Claude Code skills (34)
 │   ├── canary-add-framework/
 │   ├── canary-batwoman/
 │   ├── canary-blackhawk/
@@ -28,9 +28,9 @@ agents/skills/
 │   ├── canary-fleet-health/
 │   ├── canary-generate-test/
 │   ├── canary-instrument/
+│   ├── canary-judomaster/
 │   ├── canary-katana/
 │   ├── canary-manhunter/
-│   ├── canary-judomaster/
 │   ├── canary-misfit/
 │   ├── canary-mission-briefing/
 │   ├── canary-pr-guardian/
