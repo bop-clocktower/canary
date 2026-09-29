@@ -56,7 +56,7 @@ function parseRecord(line, lineNo) {
 
 /**
  * @param {string} file path to history-v2.jsonl
- * @returns {object[]} one record per non-blank line, in file order
+ * @returns {Array<Record<string, any>>} one record per non-blank line, in file order
  */
 export function loadRuns(file) {
   if (!fs.existsSync(file)) {
@@ -75,7 +75,7 @@ export function loadRuns(file) {
 /**
  * @param {string} file store path
  * @param {boolean} explicit true when the caller passed --history
- * @returns {{runs: object[], dark: string|null}}
+ * @returns {{runs: Array<Record<string, any>>, dark: string|null}}
  */
 export function readStore(file, explicit) {
   if (fs.existsSync(file) || explicit) {
@@ -135,7 +135,7 @@ const byTimestamp = (a, b) =>
  *
  * @param {object[]} runs
  * @param {{test: string, suite: string|null}} query
- * @returns {{observations: object[], skipped: number, suites: string[], runsInStore: number}}
+ * @returns {{observations: Array<Record<string, any>>, skipped: number, suites: string[], runsInStore: number}}
  */
 export function buildTimeline(runs, { test, suite = null }) {
   const observations = [];

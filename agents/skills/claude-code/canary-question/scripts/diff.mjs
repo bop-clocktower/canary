@@ -91,7 +91,7 @@ function rangeProblem(target, lastPass) {
   return null;
 }
 
-/** @returns {{read: boolean, rows: object[], notChecked: object[]}} */
+/** @returns {{read: boolean, rows: Array<Record<string, any>>, notChecked: Array<Record<string, any>>}} */
 export function diffEvidence({ repo, target, lastPass }) {
   const problem = rangeProblem(target, lastPass);
   if (problem) return notChecked(problem);
