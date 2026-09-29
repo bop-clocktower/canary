@@ -13,7 +13,7 @@ it), see [Guides](../../docs/guides/index.md).
 
 ```text
 agents/skills/
-├── claude-code/                    # Claude Code skills (29)
+├── claude-code/                    # Claude Code skills (34)
 │   ├── canary-add-framework/
 │   ├── canary-batwoman/
 │   ├── canary-blackhawk/
@@ -28,6 +28,7 @@ agents/skills/
 │   ├── canary-fleet-health/
 │   ├── canary-generate-test/
 │   ├── canary-instrument/
+│   ├── canary-judomaster/
 │   ├── canary-katana/
 │   ├── canary-manhunter/
 │   ├── canary-misfit/
@@ -139,6 +140,11 @@ slash-command entry points.
   hand-kept escape log into one markdown/JSON report with a Worth-your-eyes list
   and a sha256 content digest. Every dark source is named, and the exit code
   says whether the evidence is complete. Emit-only, no network.
+- [`canary-judomaster`](./claude-code/canary-judomaster/SKILL.md) — Incident to
+  regression test (`canary judomaster`). Turns a pasted V8 or CPython stack
+  trace into a regression brief for `/canary-write-test`, then grades the
+  generated test by running it: `reproduced` only when it fails with the
+  incident's error signature, and a first-run pass is flagged as vacuous.
 
 ### Closure auditing
 

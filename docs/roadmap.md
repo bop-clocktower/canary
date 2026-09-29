@@ -106,11 +106,11 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ### canary-judomaster — incident to regression test
 
-- **Status:** backlog
-- **Spec:** —
+- **Status:** planned
+- **Spec:** docs/changes/614-canary-judomaster/proposal.md
 - **Summary:** Ideation rank 9 (score 3.00) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Turn a production failure (stack trace, repro, incident record) into a failing regression test that pins the defect - using the failure's own force. Directly serves the STRATEGY.md headline metric (escaped-defect ratio) by converting escapes into permanent coverage. Accepted risk to handle in spec: it needs structured incident input most orgs lack in machine-readable form (in practice you get a Slack thread and a screenshot), so it demos well then sits unused - ship a degraded path that accepts a pasted stack trace alone. Medium effort / medium confidence. Next: /harness:brainstorming to spec.
 - **Blockers:** —
-- **Plan:** —
+- **Plan:** docs/changes/614-canary-judomaster/plans/2026-09-29-canary-judomaster-plan.md
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#614
 

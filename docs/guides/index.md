@@ -97,6 +97,16 @@ detects later edits.
 **Best for:** Answering "is the evidence for this release complete, and what
 should I look at?" as a release checklist item.
 
+### [Incident to Regression Test Guide](./incident-to-regression-test.md)
+
+`canary judomaster` — turns a pasted V8 or CPython stack trace into a regression
+brief for `/canary-write-test`, then grades the generated test by running it. A
+test counts as `reproduced` only when it fails with the incident's error
+signature; a first-run pass is flagged as vacuous.
+
+**Best for:** Converting an escaped defect into a regression test that was
+watched failing for the right reason.
+
 ### [Rewind Guide](./rewind.md)
 
 `canary rewind` — reruns one failed test from run history at its recorded

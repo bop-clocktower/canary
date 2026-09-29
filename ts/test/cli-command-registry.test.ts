@@ -64,6 +64,7 @@ const EXPECTED_COMMANDS = [
   'briefing',
   'adoption',
   'manhunter',
+  'judomaster',
 ];
 
 describe('canary command registry (#988)', () => {
