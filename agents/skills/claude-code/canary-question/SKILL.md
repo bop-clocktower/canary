@@ -6,7 +6,8 @@ description:
   envelope) and lists, for three hypotheses in a fixed order -- defect in the
   test, defect in the system under test, environment -- the evidence for and
   against each, how much evidence there was, what could not be read, and what
-  would tell them apart. It never picks one. Advisory; exit 0 for every brief.
+  would help tell them apart. It is built not to pick one. Advisory; exit 0 for
+  every brief.
 cli: scripts/cli.mjs
 requires: [node>=20]
 ---
@@ -17,13 +18,14 @@ Every red build asks: is this a defect in the test or in the product? A wrong
 answer is worse than none. "Just a flaky test" stamped on a real product defect
 is how defects escape. So `canary-question` does not answer. It lays out the
 evidence canary already has, labels how much there was, and says what
-observation would settle it.
+observation would help tell the hypotheses apart.
 
 ## What this is not
 
-- **Not a classifier.** No verdict, disposition, score, ranking or lean appears
-  in the markdown or the JSON, and a test asserts that over every fixture. The
-  three hypotheses always appear in the same order, whatever the evidence says.
+- **Not a classifier.** It is built not to print a verdict, disposition, score,
+  ranking or lean: a test asserts that a list of verdict phrases and keys is
+  absent from the markdown and JSON output of the 14 fixtures. The three
+  hypotheses always appear in the same order, whatever the evidence says.
 - **Not a gate.** There is no `--strict`. It exits 0 for every brief it
   produces, abstentions included.
 - **Not a detector runner.** It reads one detector's `--json` output if you give
@@ -69,17 +71,28 @@ it to the target's commit.
 | ------------------- | ----------------------------------------------------------- | -------------------- | ----------- |
 | `same-commit-mixed` | one commit has both a pass and a failure of the test        | all three            | —           |
 | `retry-pass`        | a `flaky` observation, or a pass that needed a retry        | all three            | —           |
-| `regression-shape`  | a pass, then ≥2 failures on distinct commits, no pass since | test, product        | environment |
-| `diff-test-only`    | the culprit range changed only test paths                   | test                 | product     |
-| `diff-sut-only`     | the culprit range changed only non-test paths               | product              | test        |
+| `regression-shape`  | a pass, then ≥2 `failed` on distinct commits, no pass since | test, product        | —           |
+| `diff-test-only`    | the culprit range changed only test paths                   | test                 | —           |
+| `diff-sut-only`     | the culprit range changed only non-test paths               | product              | —           |
 | `diff-both`         | both changed                                                | test, product        | —           |
 | `diff-none`         | the culprit range changed nothing                           | environment          | —           |
-| `category-env`      | failure category `timeout`, `network` or `auth`             | environment          | —           |
-| `category-server`   | failure category `server` (5xx)                             | product              | —           |
+| `category-env`      | failure category `timeout` or `auth`                        | environment, product | —           |
+| `category-env`      | failure category `network`                                  | environment          | —           |
+| `category-server`   | failure category `server` (5xx; 502/503 are infrastructure) | product, environment | —           |
 | `category-neutral`  | any other category -- recorded as not discriminating        | —                    | —           |
-| `co-failure`        | other failures in the target run share its area or category | product, environment | test        |
-| `isolated`          | the test was the only failure in its run                    | test                 | environment |
-| `detector-finding`  | a detector finding sits on the test's own file              | test                 | —           |
+| `co-failure`        | other failures in the target run share its area or category | product, environment | —           |
+| `isolated`          | the only failure in a run of ≥2 tests                       | test, product        | environment |
+| `detector-finding`  | findings on the test's own file, one row for all of them    | test                 | —           |
+
+Recorded as not discriminating (no side): `single-test-run` (the run held only
+this test, or its size is unrecorded, so isolation cannot be observed) and
+`unrelated-co-failures` (other failures in the run, none sharing its area or
+category).
+
+A one-sided signal is not listed **against** the other side when that side can
+produce it too: a changed test can expose a defect the product already had, an
+intended product change can leave a test's expectation stale, and a shared test
+helper or fixture fails many tests at once. The row's detail says so.
 
 Nondeterminism supports **all three** on purpose. A race in the product looks
 exactly like a flaky test from the outside.
@@ -96,7 +109,10 @@ exactly like a flaky test from the outside.
   would help.
 - **Not checked** lists every source that could not be read, with the reason: a
   missing default store, skipped observations, a target with no failure
-  category, a culprit range git could not diff, no findings file.
+  category, no culprit range (no prior pass, or pass and failure at one commit),
+  a last pass that is not an ancestor of the target, a range git could not diff
+  (10s timeout), no findings file. An abstained brief lists the diff and any
+  findings file as not read.
 
 ## Exit codes
 

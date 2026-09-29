@@ -117,9 +117,9 @@ slash-command entry points.
   executable skill (`scripts/cli.mjs`). Evidence brief for one failing test:
   reads the run-history store, optionally a git diff of the culprit range and
   one Tier-0 detector envelope, and lists the evidence for and against three
-  hypotheses (test defect, product defect, environment) in a fixed order. It
-  never picks one. Fidelity and denominator are always printed, thin samples are
-  bannered, and unreadable evidence is listed under Not checked.
+  hypotheses (test defect, product defect, environment) in a fixed order. It is
+  built not to pick one. Fidelity and denominator are always printed, thin
+  samples are bannered, and unreadable evidence is listed under Not checked.
 - [`canary-signal`](./claude-code/canary-signal/SKILL.md) — Bundled executable
   skill (`scripts/cli.mjs`). QA impact digest: reads the run-history store and
   the katana quarantine ledger and emits a markdown digest plus a chat-ready

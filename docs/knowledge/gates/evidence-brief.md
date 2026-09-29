@@ -12,8 +12,8 @@ related:
 Where a wrong answer is worse than no answer, canary prints an **evidence
 brief** instead of a classification: named hypotheses in a fixed order, the
 evidence for and against each, a derived fidelity label with its denominator,
-what could not be read, and what observation would tell the hypotheses apart. It
-never chooses.
+what could not be read, and what observation would help tell them apart. It is
+built not to choose.
 
 ## Why
 
@@ -28,11 +28,17 @@ right one. A brief's evidence can be checked.
   itself must not read as a ranking.
 - A signal that does not discriminate supports every hypothesis. It is never
   quietly assigned to one: nondeterminism is what a product race looks like too.
+- "Against" is used sparingly: a signal the other side can also produce is not
+  listed against it. A test-only diff is not against the product (a changed test
+  can expose a defect the product already had); failing alone is evidence for
+  both code hypotheses (a narrow product regression fails alone too).
 - Fidelity is derived from what was read (`abstained` / `thin` / `history` /
   `history+diff`), never asserted. Abstention prints no evidence at all.
 - Unreadable optional evidence is listed as Not checked, with the reason.
 - The absence of verdict language is a property of the output, so it is asserted
-  on the output, over every fixture.
+  on the output: a test asserts that a list of verdict phrases and keys is
+  absent from the output of the 14 fixtures. That bounds the copy it checks; it
+  is not a proof that no reader will see a lean.
 
 ## Where it is implemented
 

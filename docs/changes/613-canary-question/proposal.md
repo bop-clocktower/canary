@@ -20,8 +20,8 @@ So `canary-question` does not classify. For one failing test it assembles the
 evidence canary **already persists** into a brief that lists, for each
 hypothesis, the evidence for it and the evidence against it, labels how much
 evidence there was (fidelity + denominator), names the evidence it could not
-read, and says what observation would tell the hypotheses apart. It never prints
-a verdict, a disposition, a ranking, or a lean.
+read, and says what observation would help tell them apart. It never prints a
+verdict, a disposition, a ranking, or a lean.
 
 The issue thread (comment 1) positions it after harness-diagnostics: that skill
 classifies _what kind_ of error occurred; nothing upstream asks _whose defect_
@@ -59,10 +59,10 @@ default and is recorded as an assumption in `provenance.json`.
 | D5  | **Fidelity** is derived, never asserted: `abstained` (0 observations of the test, or no failing observation), `thin` (fewer than 3 observations), `history` (≥3 observations, no diff read), `history+diff` (a git diff between the last passing and first failing commit was read). The denominator (observations, failures, runs in store) is always printed.          | #508 no-silent-abstention. Three is the smallest sample where one run is not the whole story (same constant as canary-signal D5).                                                                                          |
 | D6  | Abstention is loud: an `ABSTAINED` banner with the denominator and the reason, and no hypothesis evidence at all. It still prints what would disambiguate.                                                                                                                                                                                                               | Evidence from zero observations is the false-green this repo keeps re-learning.                                                                                                                                            |
 | D7  | Signals are deterministic and each names its source: same-commit mixed outcomes; `flaky` status / retry passes; regression shape (passes then consecutive failures); git diff of the test file vs non-test files over the culprit range; failure category (stored, else categorised from `error_text`); co-failures in the same run; detector findings on the test file. | Deterministic-first. Every signal is data canary already has.                                                                                                                                                              |
-| D8  | A signal that does not discriminate says so: nondeterminism is listed as consistent with **all three** hypotheses (a product race produces it too), not as evidence for a flaky test.                                                                                                                                                                                    | "Flaky therefore test bug" is the inference the ideation objection names.                                                                                                                                                  |
+| D8  | A signal that does not discriminate says so: nondeterminism is listed as consistent with **all three** hypotheses (a product race produces it too), not as evidence for a flaky test. _Amended after review:_ the same principle now governs every row — a signal is not listed against a hypothesis that can also produce it (see the evidence-rows table).             | "Flaky therefore test bug" is the inference the ideation objection names.                                                                                                                                                  |
 | D9  | Unreadable optional evidence is listed under **Not checked** with the reason (no history, git unavailable, commits unreachable, no findings file). An explicitly-passed path that does not exist is an error (exit 1).                                                                                                                                                   | "Cannot verify" is a finding, not a skip. A typo'd path must look like a typo'd path (`canary-screech/scripts/history.mjs`).                                                                                               |
-| D10 | Exit codes: `0` always for a produced brief (including abstention), `1` unreadable named input, `2` usage. No `--strict`.                                                                                                                                                                                                                                                | Advisory only: the tool must never fail a job on its own reading of the evidence.                                                                                                                                          |
-| D11 | Output copy is guarded by a test that forbids verdict language (`verdict`, `root cause`, `is flaky`, `test bug`, `product bug`, `likely`, `probably`, `most likely`) and a `verdict`/`disposition`/`score` key in the JSON.                                                                                                                                              | The constraint is a property of the output, so it is asserted on the output.                                                                                                                                               |
+| D10 | Exit codes: `0` always for a produced brief (including abstention), `1` unreadable named input or an `--out` that cannot be written (_amended after review:_ the brief is still printed to stdout first), `2` usage. No `--strict`.                                                                                                                                      | Advisory only: the tool must never fail a job on its own reading of the evidence.                                                                                                                                          |
+| D11 | Output copy is guarded by a test that forbids verdict language (`verdict`, `root cause`, `is flaky`, `test bug`, `product bug`, `likely`, `probably`, `most likely`; _amended after review:_ also `suggest`, `points to`, `lean`, `rank`, `confiden`, `caused by`, `flaky test`, matched at a word start) and a `verdict`/`disposition`/`score` key in the JSON.         | The constraint is a property of the output, so it is asserted on the output.                                                                                                                                               |
 
 ### Approaches considered
 
@@ -100,10 +100,10 @@ agents/skills/test/canary-question.test.ts
 malformed lines throw). For `--test` (and `--suite` when given) it collects one
 observation per run containing the test (`run_id`, `suite`, `commit_sha`,
 `timestamp`, `branch`, `status`, `failure_category`, `error_text`,
-`retry_count`, `test_file`, `area`, `coFailures`), where `coFailures` are the
-other failing tests of that run. Sorted by `timestamp`. If the name occurs in
-several suites and no `--suite` was given, the brief abstains and lists the
-suites.
+`retry_count`, `test_file`, `area`, `coFailures`, `testsInRun`), where
+`coFailures` are the other failing tests of that run and `testsInRun` counts its
+tests. Sorted by `timestamp`. If the name occurs in several suites and no
+`--suite` was given, the brief abstains and lists the suites.
 
 The **target failure** is the most recent observation with status `failed` or
 `flaky`. If none exists the brief abstains ("no failing observation in N").
@@ -114,21 +114,44 @@ Each row: `{signal, source, detail, supports: [...], weighsAgainst: [...]}` with
 hypotheses `test-defect`, `product-defect`, `environment`. The renderer places a
 row under every hypothesis it names.
 
-| Signal              | Fires when                                                                            | Supports                              | Against        |
-| ------------------- | ------------------------------------------------------------------------------------- | ------------------------------------- | -------------- |
-| `same-commit-mixed` | one `commit_sha` has both a pass and a failure of this test                           | all three (states non-discrimination) | —              |
-| `retry-pass`        | status `flaky`, or `retry_count > 0` on a pass                                        | all three (states non-discrimination) | —              |
-| `regression-shape`  | ≥1 pass, then the last ≥2 observations all failing on distinct commits, no pass since | test-defect, product-defect           | environment    |
-| `diff-test-only`    | culprit range touched the test file and no non-test file                              | test-defect                           | product-defect |
-| `diff-sut-only`     | culprit range touched non-test files and not the test file                            | product-defect                        | test-defect    |
-| `diff-both`         | both touched                                                                          | test-defect, product-defect           | —              |
-| `diff-none`         | culprit range touched nothing (same tree)                                             | environment                           | —              |
-| `category-env`      | category `timeout`, `network`, or `auth`                                              | environment                           | —              |
-| `category-server`   | category `server` (5xx)                                                               | product-defect                        | —              |
-| `category-neutral`  | any other category — recorded as "does not discriminate"                              | —                                     | —              |
-| `co-failure`        | other tests failed in the target run with the same category or area                   | product-defect, environment           | test-defect    |
-| `isolated`          | the test was the only failure in the target run                                       | test-defect                           | environment    |
-| `detector-finding`  | a Tier-0 finding sits on the test's file (rule id + line quoted)                      | test-defect                           | —              |
+| Signal                  | Fires when                                                                                                        | Supports                              | Against     |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ----------- |
+| `same-commit-mixed`     | one `commit_sha` has both a pass and a failure of this test                                                       | all three (states non-discrimination) | —           |
+| `retry-pass`            | status `flaky`, or `retry_count > 0` on a pass                                                                    | all three (states non-discrimination) | —           |
+| `regression-shape`      | ≥1 pass, then the last ≥2 observations all `failed` on distinct commits, no pass since                            | test-defect, product-defect           | —           |
+| `diff-test-only`        | culprit range touched the test file and no non-test file                                                          | test-defect                           | —           |
+| `diff-sut-only`         | culprit range touched non-test files and not the test file                                                        | product-defect                        | —           |
+| `diff-both`             | both touched                                                                                                      | test-defect, product-defect           | —           |
+| `diff-none`             | culprit range touched nothing (same tree)                                                                         | environment                           | —           |
+| `category-env`          | category `timeout` or `auth`                                                                                      | environment, product-defect           | —           |
+| `category-env`          | category `network`                                                                                                | environment                           | —           |
+| `category-server`       | category `server` (5xx)                                                                                           | product-defect, environment           | —           |
+| `category-neutral`      | any other category — recorded as "does not discriminate"                                                          | —                                     | —           |
+| `co-failure`            | other tests failed in the target run with the same category or area                                               | product-defect, environment           | —           |
+| `unrelated-co-failures` | other tests failed in the target run, none sharing its category or area — "does not discriminate"                 | —                                     | —           |
+| `isolated`              | the only failure in a target run of ≥2 tests (the run size is in `detail`)                                        | test-defect, product-defect           | environment |
+| `single-test-run`       | the target run held only this test, or its size is unrecorded — isolation not observable, "does not discriminate" | —                                     | —           |
+| `detector-finding`      | Tier-0 findings on the test's file, ONE row listing up to five `RULE@line` and counting the rest                  | test-defect                           | —           |
+
+**Amended after review.** The first cut listed several one-sided signals
+_against_ a hypothesis that can produce them too, which is a lean by another
+name. Applying D8's principle to the whole table: `diff-test-only` and
+`diff-sut-only` no longer weigh against the other code side (a changed test can
+expose an existing product defect; an intended product change can leave a test's
+expectation stale — each detail says so); `co-failure` no longer weighs against
+test-defect (a shared test helper or fixture fails the same way);
+`regression-shape` no longer weighs against environment (a persistent
+environment change makes the same shape) and requires every streak observation
+to be `failed` (`flaky` passed on retry); `timeout` and `auth` also support
+product-defect, `server` also supports environment (502/503 are infrastructure);
+`isolated` supports both code hypotheses (a narrow product regression fails
+alone) and needs a run of ≥2 tests; detector findings collapse to one row so
+volume cannot read as weight. The culprit range is Not checked when the pass and
+the failure share a commit or the last pass is not an ancestor of the target
+(git `merge-base --is-ancestor`; git runs with a 10s timeout, a 16 MiB buffer
+and `--end-of-options`). An abstained brief lists the unread diff and findings
+under Not checked. A test record with no suite is labelled `(no suite)`, and
+`--suite '(no suite)'` selects it.
 
 Culprit range = last passing observation's `commit_sha` → target failure's
 `commit_sha`. A test file is recognised by `.test.`/`.spec.` infixes,
@@ -213,8 +236,8 @@ section per hypothesis (For / Against), Not checked, What would disambiguate.
 4. When one commit shows both a pass and a failure, `same-commit-mixed` appears
    under all three hypotheses.
 5. When the culprit range touched only the test file, `diff-test-only` is
-   evidence for test-defect and against product-defect; symmetric for
-   `diff-sut-only`; fidelity is `history+diff`.
+   evidence for test-defect (and, since the review amendment, not against
+   product-defect); symmetric for `diff-sut-only`; fidelity is `history+diff`.
 6. When git cannot resolve the range, the diff appears under Not checked with
    the reason and fidelity stays `history`/`thin`.
 7. A Tier-0 finding on the test file appears as test-defect evidence quoting the
