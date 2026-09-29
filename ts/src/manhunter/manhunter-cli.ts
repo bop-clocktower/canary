@@ -176,21 +176,9 @@ function buildVerifyCommand(deps: MainDeps): Command {
     .action((file: string) => runVerify(deps, file));
 }
 
-export function buildManhunterCommand(deps: MainDeps): Command {
-  const command = new Command('manhunter');
-  command
-    .description(
-      'Assemble a release quality dossier from existing evidence; a dark source is named, never read as clean.',
-    )
-    .option(
-      '--root <dir>',
-      'Repository root inputs resolve against (default: cwd).',
-    )
-    .option(
-      '--release <label>',
-      'Release label for the dossier title.',
-      'unlabelled release',
-    )
+/** Where each source is read from, relative to `--root`. */
+function addSourceOptions(command: Command): Command {
+  return command
     .option(
       '--history <path>',
       'Run-history store.',
@@ -211,7 +199,23 @@ export function buildManhunterCommand(deps: MainDeps): Command {
       'Hand-kept escaped-defect log.',
       '.canary/escapes.json',
     )
-    .option('--sweep <path>', 'canary-sweep JSON report (no default).')
+    .option('--sweep <path>', 'canary-sweep JSON report (no default).');
+}
+
+export function buildManhunterCommand(deps: MainDeps): Command {
+  const command = new Command('manhunter').description(
+    'Assemble a release quality dossier from existing evidence; a dark source is named, never read as clean.',
+  );
+  addSourceOptions(command)
+    .option(
+      '--root <dir>',
+      'Repository root inputs resolve against (default: cwd).',
+    )
+    .option(
+      '--release <label>',
+      'Release label for the dossier title.',
+      'unlabelled release',
+    )
     .option('--window <runs>', 'Run window for flaky tests.', '30')
     .option(
       '--exclude <id=reason>',

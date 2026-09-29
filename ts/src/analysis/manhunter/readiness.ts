@@ -13,7 +13,6 @@ import {
   parseInventory,
 } from '../../core/inventory-checks.js';
 import { NdjsonHistoryStore } from '../../history/ndjson-store.js';
-import type { RunRecord } from '../../history/record.js';
 import { readSource, sourceRef, type SourceRead } from './sources.js';
 import { darkSection, fedSection, type Section } from './types.js';
 
@@ -28,7 +27,10 @@ function textOf(read: SourceRead): string | null {
 }
 
 /** Stored runs, or null when absent or unreadable (the history section names why). */
-function runsOf(read: SourceRead, path: string): RunRecord[] | null {
+function runsOf(
+  read: SourceRead,
+  path: string,
+): ReturnType<NdjsonHistoryStore['readAll']> | null {
   if (read.kind !== 'ok') return null;
   try {
     return new NdjsonHistoryStore(path).readAll();

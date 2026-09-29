@@ -33,11 +33,15 @@ function latestPerSuite(runs: RunRecord[]): RunRecord[] {
 }
 
 function runFact(run: RunRecord): string {
-  const when = run.timestamp ?? 'no timestamp';
+  const [passed, failed, flaky, total] = [
+    run.passed,
+    run.failed,
+    run.flaky,
+    run.total,
+  ].map((v) => v ?? 0);
   return (
-    `suite ${run.suite}: latest run ${run.run_id} (${when}): ` +
-    `${run.passed ?? 0} passed, ${run.failed ?? 0} failed, ` +
-    `${run.flaky ?? 0} flaky of ${run.total ?? 0}`
+    `suite ${run.suite}: latest run ${run.run_id} (${run.timestamp ?? 'no timestamp'}): ` +
+    `${passed} passed, ${failed} failed, ${flaky} flaky of ${total}`
   );
 }
 

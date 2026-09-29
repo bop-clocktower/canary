@@ -60,7 +60,7 @@ export interface Section {
 }
 
 /** Per-section cap on Worth-your-eyes items, so the short list stays short. */
-export const EYES_CAP = 10;
+const EYES_CAP = 10;
 
 function capEyes(eyes: string[]): string[] {
   if (eyes.length <= EYES_CAP) return eyes;

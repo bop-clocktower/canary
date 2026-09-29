@@ -23,7 +23,7 @@ import {
   type SectionStatus,
 } from './types.js';
 
-export const DOSSIER_SCHEMA_VERSION = 1;
+const DOSSIER_SCHEMA_VERSION = 1;
 
 export type DossierVerdict = 'complete' | 'incomplete' | 'abstained';
 
