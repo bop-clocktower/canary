@@ -34,13 +34,23 @@ export function loadFindings(file) {
   return doc.findings.filter(isPlainObject);
 }
 
-function toRow(finding) {
+/** Findings quoted by name before the rest are only counted. */
+const LISTED = 5;
+
+function label(finding) {
   const rule = finding.rule_id ?? finding.kind ?? 'unnamed rule';
-  const where =
-    finding.line == null ? finding.file : `${finding.file}:${finding.line}`;
-  return row('detector-finding', SOURCE, `${rule} at ${where}`, [
-    'test-defect',
-  ]);
+  return finding.line == null ? rule : `${rule}@${finding.line}`;
+}
+
+// ONE row for every finding on the file: one row per finding would stack a
+// long list under test-defect and read as weight by volume (S2).
+function toRow(onFile, testFile) {
+  const listed = onFile.slice(0, LISTED).map(label);
+  if (onFile.length > LISTED) listed.push(`+${onFile.length - LISTED} more`);
+  const detail =
+    `${onFile.length} finding(s) on ${testFile}: ${listed.join(', ')}; ` +
+    'a static finding on the file does not by itself connect to this failure';
+  return row('detector-finding', SOURCE, detail, ['test-defect']);
 }
 
 function skipped(reason) {
@@ -61,5 +71,6 @@ export function findingsEvidence(findings, testFile) {
   const onFile = findings.filter(
     (f) => typeof f.file === 'string' && samePath(f.file, testFile),
   );
-  return { rows: onFile.map(toRow), notChecked: [] };
+  const rows = onFile.length ? [toRow(onFile, testFile)] : [];
+  return { rows, notChecked: [] };
 }

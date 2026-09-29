@@ -764,21 +764,45 @@ describe('findings: evidence on the test file (SC7)', () => {
     { line: 4, rule_id: 'no-file' },
   ];
 
-  it('quotes rule id and line for findings on the test file only', () => {
+  it('collapses the findings on the test file into one row', () => {
     const res = findingsEvidence(findings, TEST_FILE);
     expect(res.notChecked).toEqual([]);
-    expect(res.rows.map((r: Run) => r.detail)).toEqual([
-      `SV001-module-mutable-global at ./${TEST_FILE}:3`,
-      `last-coverage-removed at ${TEST_FILE}`,
-    ]);
+    expect(res.rows).toHaveLength(1);
+    expect(res.rows[0].detail).toBe(
+      `2 finding(s) on ${TEST_FILE}: SV001-module-mutable-global@3, ` +
+        'last-coverage-removed; a static finding on the file does not by ' +
+        'itself connect to this failure',
+    );
     expect(res.rows[0].signal).toBe('detector-finding');
     expect(res.rows[0].supports).toEqual(['test-defect']);
     expect(res.rows[0].weighsAgainst).toEqual([]);
   });
 
+  it('lists at most five findings, then counts the rest', () => {
+    const many = Array.from({ length: 7 }, (_, i) => ({
+      file: TEST_FILE,
+      line: i + 1,
+      rule_id: 'BH001',
+    }));
+    const [r] = findingsEvidence(many, TEST_FILE).rows;
+    expect(r.detail).toContain(
+      `7 finding(s) on ${TEST_FILE}: BH001@1, BH001@2, BH001@3, BH001@4, BH001@5, +2 more;`,
+    );
+  });
+
+  it('no row when no finding sits on the test file', () => {
+    const other = [{ file: 'test/other.test.js', line: 1, rule_id: 'X' }];
+    expect(findingsEvidence(other, TEST_FILE)).toEqual({
+      rows: [],
+      notChecked: [],
+    });
+  });
+
   it('falls back to "unnamed rule" when a finding names none', () => {
     const res = findingsEvidence([{ file: TEST_FILE, line: 1 }], TEST_FILE);
-    expect(res.rows[0].detail).toBe(`unnamed rule at ${TEST_FILE}:1`);
+    expect(res.rows[0].detail).toMatch(
+      new RegExp(`^1 finding\\(s\\) on ${TEST_FILE}: unnamed rule@1;`),
+    );
   });
 
   it('lists findings as Not checked when no file was given', () => {
@@ -982,9 +1006,10 @@ describe('brief: evidence placement', () => {
     const rows = forOf(brief, 'test-defect').filter(
       (r) => r.signal === 'detector-finding',
     );
-    expect(rows.map((r) => r.detail)).toEqual([
-      `SV001-module-mutable-global at ${TEST_FILE}:3`,
-    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].detail).toMatch(
+      /^1 finding\(s\) on test\/cart\.test\.js: SV001-module-mutable-global@3;/,
+    );
   });
 
   it('a non-discriminating category lands in neutral, not a hypothesis', () => {
