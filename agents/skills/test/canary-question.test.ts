@@ -317,6 +317,8 @@ describe('signals: history (D7, D8)', () => {
     ['one failure', ['passed', 'failed'], undefined],
     ['no prior pass', ['failed', 'failed'], undefined],
     ['a pass since', ['passed', 'failed', 'failed', 'passed'], undefined],
+    // A flaky observation passed on retry: the streak is not all failures.
+    ['a flaky in the streak', ['passed', 'flaky', 'failed'], undefined],
     [
       'one commit only',
       ['passed', 'failed', 'failed'],

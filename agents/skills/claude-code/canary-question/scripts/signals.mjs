@@ -63,6 +63,8 @@ function regressionShape(observations, target) {
   const passAt = observations.findLastIndex((o) => o.status === 'passed');
   if (passAt === -1) return [];
   const streak = observations.slice(passAt + 1);
+  // `flaky` passed on retry, so a streak containing one is not "no pass since".
+  if (!streak.every((o) => o.status === 'failed')) return [];
   const commits = new Set(streak.map((o) => o.commit_sha).filter(Boolean));
   if (streak.length < 2 || commits.size < 2) return [];
   const since = observations[passAt].commit_sha ?? 'an unrecorded commit';
