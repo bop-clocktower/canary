@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { createCanaryCommand } from '../src/cli.js';
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 
@@ -211,8 +212,12 @@ describe('canary manhunter', () => {
     expect(await digest('a.json')).toBe(await digest('b.json'));
   });
 
-  it('is listed in canary --help', async () => {
-    const r = await invokeCanary(['--help']);
-    expect(r.stdout).toContain('manhunter');
+  it('is mounted on the canary command tree with its verify subcommand', () => {
+    const manhunter = createCanaryCommand().commands.find(
+      (c) => c.name() === 'manhunter',
+    );
+    expect(manhunter).toBeDefined();
+    expect(manhunter!.commands.map((c) => c.name())).toEqual(['verify']);
+    expect(manhunter!.helpInformation()).toContain('--exclude <id=reason>');
   });
 });
