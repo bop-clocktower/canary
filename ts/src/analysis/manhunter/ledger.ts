@@ -7,7 +7,9 @@
  * deletions (canary-katana `scripts/cli.mjs`, `appendEntries` with an empty
  * batch still writes `{schema_version: 2, entries: []}`). So a present v2
  * ledger with zero rows is a real "katana looked and recorded nothing", and is
- * fed; a missing ledger is DARK, because "nothing was ever removed" and
+ * fed. "Ran" is all it proves: katana also writes after scanning a blank
+ * diff, so a zero-row ledger does not show a non-empty change was scanned.
+ * A missing ledger is DARK, because "nothing was ever removed" and
  * "katana is not wired" cannot be told apart. A file without katana's
  * `schema_version: 2` stamp is refused, not trusted as a ledger.
  */

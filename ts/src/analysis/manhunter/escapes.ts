@@ -23,6 +23,9 @@ function escapeLine(raw: unknown): string {
   return `${field('id', '(no id)')}: ${field('summary', '(no summary)')} (found ${field('found_at', 'date unknown')})`;
 }
 
+/** `YYYY-MM-DD`, optionally with a time: Date.parse alone accepts "1". */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:\d{2})?)?$/;
+
 export function escapesSection(path: string): Section {
   const read = readSource(path);
   const ref = sourceRef(read);
@@ -37,11 +40,11 @@ export function escapesSection(path: string): Section {
   if (!parsed.ok) return darkSection('escapes', [ref], parsed.reason);
   const log = isRecord(parsed.value) ? parsed.value : {};
   const since = typeof log.tracked_since === 'string' ? log.tracked_since : '';
-  if (Number.isNaN(Date.parse(since)) || !Array.isArray(log.escapes)) {
+  if (!ISO_DATE.test(since) || !Array.isArray(log.escapes)) {
     return darkSection(
       'escapes',
       [ref],
-      `${path} needs a tracked_since date and an escapes array; without them "none escaped" and "nobody counted" look the same`,
+      `${path} needs a tracked_since ISO date (YYYY-MM-DD) and an escapes array; without them "none escaped" and "nobody counted" look the same`,
     );
   }
   const n = log.escapes.length;

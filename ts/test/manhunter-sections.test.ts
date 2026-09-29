@@ -481,9 +481,10 @@ describe('escapes section', () => {
 
   it('is dark when tracked_since is not a date', () => {
     const s = escapesSection(
-      write('e.json', { schema_version: 1, tracked_since: 'x', escapes: [] }),
+      write('e.json', { schema_version: 1, tracked_since: '1', escapes: [] }),
     );
     expect(s.status).toBe('dark');
+    expect(s.reason).toContain('ISO date');
   });
 
   it('is fed by an empty list that states its tracking window', () => {
