@@ -40,6 +40,15 @@ it.
 - You want to prove the fix works: there is no fixed code yet. That first green
   run belongs to `canary-promote-test`.
 
+## Usage
+
+```bash
+canary judomaster --help
+```
+
+That needs no inputs and no network. `brief` reads a trace file (or stdin);
+`verify` runs one test under `tests/generated/`.
+
 ## Workflow
 
 1. **INTAKE.** Save the pasted trace (Slack `>` quotes, code fences and ANSI
