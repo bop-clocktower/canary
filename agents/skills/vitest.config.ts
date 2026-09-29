@@ -80,6 +80,7 @@ export default defineConfig({
         'claude-code/canary-shadow/scripts/*.mjs',
         'claude-code/canary-screech/scripts/**/*.mjs',
         'claude-code/canary-signal/scripts/**/*.mjs',
+        'claude-code/canary-question/scripts/**/*.mjs',
         'claude-code/canary-sweep/scripts/**/*.mjs',
       ],
       exclude: ['**/*.test.*'],

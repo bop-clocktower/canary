@@ -98,7 +98,7 @@ Status is one of `shipped` (a directory exists under
 | `canary-mission-briefing`    | shipped  | 593   | PR diff to human test charter                                              |
 | `canary-pr-guardian`         | shipped  | —     | Per-diff test-guardian orchestrator                                        |
 | `canary-promote-test`        | shipped  | 477   | Move a generated test into the committed suite                             |
-| `canary-question`            | reserved | 613   | Test-bug vs product-bug triage                                             |
+| `canary-question`            | shipped  | 613   | Test-defect vs product-defect evidence brief (never a verdict)             |
 | `canary-rewind`              | shipped  | 461   | Time-travel run debugging                                                  |
 | `canary-savant`              | shipped  | —     | Order-dependence and isolation detector                                    |
 | `canary-screech`             | shipped  | 591   | Broken-main siren (cross-run, branch-level)                                |

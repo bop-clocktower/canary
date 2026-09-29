@@ -34,6 +34,7 @@ agents/skills/
 │   ├── canary-mission-briefing/
 │   ├── canary-pr-guardian/
 │   ├── canary-promote-test/
+│   ├── canary-question/
 │   ├── canary-rewind/
 │   ├── canary-savant/
 │   ├── canary-screech/
@@ -112,6 +113,13 @@ slash-command entry points.
   recommendation, chat-ready block) as a markdown artifact plus a `::error`
   annotation. The cross-run complement to the two above — neither of them can
   tell that the branch itself went red.
+- [`canary-question`](./claude-code/canary-question/SKILL.md) — Bundled
+  executable skill (`scripts/cli.mjs`). Evidence brief for one failing test:
+  reads the run-history store, optionally a git diff of the culprit range and
+  one Tier-0 detector envelope, and lists the evidence for and against three
+  hypotheses (test defect, product defect, environment) in a fixed order. It is
+  built not to pick one. Fidelity and denominator are always printed, thin
+  samples are bannered, and unreadable evidence is listed under Not checked.
 - [`canary-signal`](./claude-code/canary-signal/SKILL.md) — Bundled executable
   skill (`scripts/cli.mjs`). QA impact digest: reads the run-history store and
   the katana quarantine ledger and emits a markdown digest plus a chat-ready
@@ -282,10 +290,10 @@ Most skills here are documentation, not executable artifacts — they describe
 _how an agent should behave_, not a function to call. Several are bundled
 executable skills with their own CLI entry point (`cli:` in frontmatter).
 `canary-blackhawk`, `canary-cassandra`, `canary-fail-fast`, `canary-instrument`,
-`canary-katana`, `canary-misfit`, `canary-savant`, `canary-screech`,
-`canary-shadow`, `canary-signal`, `canary-strix`, `canary-sweep`, and
-`canary-test-reporter` all ship a Node entry (`scripts/cli.mjs`). Run those
-directly, e.g.:
+`canary-katana`, `canary-misfit`, `canary-question`, `canary-savant`,
+`canary-screech`, `canary-shadow`, `canary-signal`, `canary-strix`,
+`canary-sweep`, and `canary-test-reporter` all ship a Node entry
+(`scripts/cli.mjs`). Run those directly, e.g.:
 
 ```bash
 node agents/skills/claude-code/canary-fail-fast/scripts/cli.mjs --help

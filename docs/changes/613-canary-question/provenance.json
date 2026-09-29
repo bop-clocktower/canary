@@ -1,0 +1,69 @@
+{
+  "issues": [613],
+  "slug": "613-canary-question",
+  "route": "feature",
+  "fleet": "roadmap-fleet",
+  "run": "roadmap-fleet-2026-09-29-1402",
+  "branch": "feat/613-canary-question",
+  "date": "2026-09-29",
+  "worktree": "/Users/bs/Github/canary-fleet-613-canary-question",
+  "closingKeyword": "Closes",
+  "planPath": "docs/changes/613-canary-question/plans/2026-09-29-canary-question-plan.md",
+  "specPath": "docs/changes/613-canary-question/proposal.md",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "tdd-red",
+    "tdd-green",
+    "ratchets",
+    "code-review",
+    "review-fixes",
+    "four-gates"
+  ],
+  "stageDetail": [
+    {
+      "stage": "brainstorming",
+      "artifact": "docs/changes/613-canary-question/proposal.md",
+      "detail": "harness:brainstorming in autonomous mode; 3 approaches weighed (self-contained skill chosen over a `canary question` engine subcommand and a prompt-only skill)."
+    },
+    {
+      "stage": "autopilot / planning",
+      "artifact": "docs/changes/613-canary-question/plans/2026-09-29-canary-question-plan.md",
+      "detail": "harness:autopilot dispatched harness-planner (12 tasks, 1 phase). Plan auto-approved in the unattended lane (assumption A7). Planner surfaced a spec self-contradiction (banner contained 'verdict'); banner reworded in spec + plan before execution."
+    },
+    {
+      "stage": "tdd-red / tdd-green",
+      "detail": "harness-task-executor ran all 12 tasks test-first (each task's tests run red before code). Deviations: JSDoc return types for typecheck, two dead exports un-exported, toObservation/assembleBrief split for the perf complexity rule."
+    },
+    {
+      "stage": "code-review",
+      "detail": "harness-code-reviewer: Request Changes, 1 critical (abstained brief claimed every source was read), 5 important (flaky counted in regression streak; same-commit diff attributed to environment; cross-branch two-point diff; isolated overclaim + silently dropped co-failures; doc overclaims), 6 suggestions. Tier-0 detectors on the new test file: blackhawk 0, savant 0, cassandra 1 (VAC-002 false positive)."
+    },
+    {
+      "stage": "review-fixes",
+      "detail": "All findings fixed test-first (each regression test confirmed red before the fix, except the 10s git timeout which has no behavioural test). Orchestrator amendments widened one-sided weights (diff-test-only/diff-sut-only/co-failure/regression-shape no longer weigh against a side; timeout/auth/server categories support two hypotheses). Renderers split into render.mjs under the perf file-length rule. Cassandra re-run: 0 findings."
+    },
+    {
+      "stage": "ratchets",
+      "detail": "Entropy 141 vs 141 at merge base (baseline 145). Perf 214 vs 213; the one new finding (cli.mjs coupling) is covered by the existing agents/skills/claude-code/*/scripts/cli.mjs allowance, 0 blocking (baseline 220)."
+    },
+    {
+      "stage": "four-gates",
+      "detail": "ts/: build, typecheck, format:check, test (264 files, 5359 passed, 2 skipped). agents/skills: test (25 files, 1665 passed; canary-question 136), typecheck, format:check."
+    }
+  ],
+  "assumptions": [
+    "A1: Autonomous lane - every brainstorming EVALUATE question answered with the recommended default.",
+    "A2: A third hypothesis, environment/infrastructure, sits beside test-defect and product-defect (conservative: a timeout forced into test-vs-product defaults to test-defect).",
+    "A3: The tool never prints a lean, ranking or score - the most conservative reading. Whether it may EVER print a lean is parked for a human as follow-up F1, not guessed.",
+    "A4: Fidelity thresholds: thin below 3 observations (same constant as canary-signal).",
+    "A5: No --strict and no gate-conformance.test.ts row: advisory-only means no mode that fails a job on the tool's own reading; loud abstention is asserted in canary-question.test.ts instead.",
+    "A6: --history defaults to test-results/reports/history-v2.jsonl; a missing DEFAULT store is a Not-checked source, a missing NAMED path exits 1; an --out write failure exits 1.",
+    "A7: Plan auto-approved (12 tasks, concerns present) in the unattended lane.",
+    "A8: Failure-category rules copied verbatim from canary-fail-fast (skills never import each other); the two copies must be kept in sync by hand.",
+    "A9: Review-driven weight amendments: one-sided signals no longer weigh against the other code side; timeout/auth also support product-defect, server (5xx) also supports environment.",
+    "A10: Closes #613: the skill is usable end-to-end; F1-F6 in the spec are enhancements, not missing MVP scope.",
+    "A11: Roadmap row set to done in the PR (canary-signal precedent)."
+  ]
+}
