@@ -199,7 +199,7 @@ export function assembleBrief(input) {
 
 // ---------------------------------------------------------------------------
 // Rendering. Copy is guarded by the SC9 test: no verdict language anywhere in
-// the output except this one disclaimer, which the spec mandates verbatim.
+// the output, the banner included -- there is no carve-out.
 
 export const BANNER = 'Evidence brief — hypotheses and evidence, no call made';
 

@@ -1103,8 +1103,13 @@ describe('brief: fixed order (SC8, D1)', () => {
         ],
       })),
     );
+    // The literal, not HYPOTHESES: a re-sorted constant must not pass.
     for (const brief of [favourTest, favourProduct, favourEnv]) {
-      expect(brief.hypotheses.map((h: Run) => h.id)).toEqual(HYPOTHESES);
+      expect(brief.hypotheses.map((h: Run) => h.id)).toEqual([
+        'test-defect',
+        'product-defect',
+        'environment',
+      ]);
     }
   });
 });
@@ -1195,13 +1200,24 @@ const FORBIDDEN_PHRASES = [
   'likely',
   'probably',
   'most likely',
+  'suggest',
+  'points to',
+  'lean',
+  'rank',
+  'confiden',
+  'caused by',
+  'flaky test',
 ];
 const FORBIDDEN_KEYS = ['verdict', 'disposition', 'score'];
 
-/** Phrases present in `text` once the one sanctioned disclaimer is removed. */
+/**
+ * Forbidden phrases present in `text`, matched at a word start: 'lean' must
+ * catch "leans" but not "clean", 'confiden' must catch "confidence". There is
+ * no carve-out; the banner is scanned like everything else.
+ */
 function forbiddenIn(text: string): string[] {
   const scanned = text.toLowerCase();
-  return FORBIDDEN_PHRASES.filter((p) => scanned.includes(p));
+  return FORBIDDEN_PHRASES.filter((p) => new RegExp(`\\b${p}`).test(scanned));
 }
 
 function keysOf(value: unknown, out: string[] = []): string[] {
@@ -1271,6 +1287,10 @@ describe('render: json', () => {
 describe('no verdict language, ever (SC9, D11)', () => {
   it('the guard catches a planted phrase (so it is not vacuous)', () => {
     expect(forbiddenIn('this probably breaks')).toEqual(['probably']);
+    expect(forbiddenIn('the evidence leans to the test')).toEqual(['lean']);
+    expect(forbiddenIn('Ranked by confidence')).toEqual(['rank', 'confiden']);
+    // Word-start matching: an innocent word that CONTAINS a phrase is not one.
+    expect(forbiddenIn('a clean run; a frank note')).toEqual([]);
     expect(forbiddenIn(BANNER)).toEqual([]);
     expect(keysOf({ a: [{ score: 1 }] })).toContain('score');
   });
@@ -1459,5 +1479,9 @@ describe('cli: exit codes (SC10, D10)', () => {
 
   it('ships executable (the skill runner execs it via its shebang)', () => {
     expect(fs.statSync(CLI).mode & 0o111).toBeTruthy();
+    // Exec the file itself, not `node file`: this is what the runner does.
+    const res = spawnSync(CLI, ['--help'], { encoding: 'utf8' });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/^usage: canary-question/);
   });
 });
