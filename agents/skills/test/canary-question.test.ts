@@ -198,6 +198,16 @@ describe('history: one test timeline', () => {
     expect(narrowed.suites).toEqual(['unit']);
   });
 
+  it('labels a missing suite "(no suite)" and --suite "(no suite)" picks it', () => {
+    const runs = series(['passed', 'failed'], (i) =>
+      i === 0 ? { suite: null } : {},
+    );
+    expect(timelineOf(runs).suites).toEqual(['(no suite)', 'unit']);
+    const narrowed = timelineOf(runs, '(no suite)');
+    expect(narrowed.observations.map((o: Run) => o.run_id)).toEqual(['r1']);
+    expect(narrowed.suites).toEqual(['(no suite)']);
+  });
+
   it('prefers the per-test suite over the run suite', () => {
     const runs = series(['failed'], () => ({
       tests: [entry('failed', { suite: 'api' })],

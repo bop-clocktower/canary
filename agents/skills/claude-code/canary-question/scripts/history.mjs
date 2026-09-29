@@ -86,13 +86,21 @@ export function readStore(file, explicit) {
 
 const testsOf = (run) => (Array.isArray(run.tests) ? run.tests : []);
 
+/**
+ * How a record with no suite is named in the suite list, and the value
+ * --suite takes to pick it: 'null' would read as a suite called null (S4).
+ */
+const NO_SUITE = '(no suite)';
+
+const suiteLabel = (suite) => suite ?? NO_SUITE;
+
 function entryFor(run, test, suite) {
   return (
     testsOf(run).find(
       (t) =>
         isPlainObject(t) &&
         t.test_name === test &&
-        (suite === null || (t.suite ?? run.suite) === suite),
+        (suite === null || suiteLabel(t.suite ?? run.suite) === suite),
     ) ?? null
   );
 }
@@ -154,7 +162,7 @@ export function buildTimeline(runs, { test, suite = null }) {
     else skipped += 1;
   }
   observations.sort(byTimestamp);
-  const suites = [...new Set(observations.map((o) => String(o.suite)))];
+  const suites = [...new Set(observations.map((o) => suiteLabel(o.suite)))];
   return {
     observations,
     skipped,
