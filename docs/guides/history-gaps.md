@@ -110,7 +110,8 @@ the recorder (`ts/src/history` has no arch headroom, #1074).
   stem matches the test file's, with any `.test` or `.spec` marker stripped.
   When several areas match, the one sharing the most trailing directories with
   the test file wins, then the higher `risk_score`. A test no area matches has
-  no `area`, and `flaky-area` reads `partial`.
+  no `area`, and `flaky-area` reads `partial`. When no test in the run matches
+  any area, `record` prints a `note:` as well.
 - **When the file is absent or unusable**, no test gets an `area` and `record`
   prints `note: area not recorded: <reason>` on stderr. The exit code does not
   change. `flaky-area` and `screech-cluster` then read `dark`, which is the
