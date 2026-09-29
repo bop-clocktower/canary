@@ -306,6 +306,49 @@ describe('ci-readiness section', () => {
       true,
     );
   });
+
+  // Follow-up to #1129: an input that exists but cannot be read must say so,
+  // not be reported as absent -- the same reason `canary ci-ready` gives.
+  const twoRuns = () =>
+    historyFile([
+      { suite: 'api', statuses: { a: 'passed' } },
+      { suite: 'api', statuses: { a: 'passed' } },
+    ]);
+
+  it('names an unreadable inventory as unreadable, not missing', () => {
+    twoRuns();
+    mkdirSync(paths().inventoryPath, { recursive: true });
+    const facts = readinessSection(paths()).facts.join('\n');
+    expect(facts).toContain(
+      '.canary/test-inventory.json could not be read (EISDIR)',
+    );
+    expect(facts).not.toContain('no .canary/test-inventory.json');
+  });
+
+  // critical-paths reports the inventory's reason first, so the areas file is
+  // only reachable behind a scorable inventory.
+  it('names unreadable critical areas as unreadable, not missing', () => {
+    twoRuns();
+    write('.canary/test-inventory.json', {
+      schema_version: 1,
+      generated: '2026-09-29T00:00:00Z',
+      files: [
+        {
+          path: 'tests/a.spec.ts',
+          framework: 'vitest',
+          targets: ['src/a'],
+          tests: [{ name: 'a', line: 1, depth: 2 }],
+        },
+      ],
+      skipped: [],
+    });
+    mkdirSync(paths().criticalAreasPath, { recursive: true });
+    const facts = readinessSection(paths()).facts.join('\n');
+    expect(facts).toContain(
+      '.canary/critical-areas.json could not be read (EISDIR)',
+    );
+    expect(facts).not.toContain('no .canary/critical-areas.json');
+  });
 });
 
 describe('quarantine section', () => {

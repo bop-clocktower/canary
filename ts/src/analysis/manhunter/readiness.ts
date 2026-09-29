@@ -12,6 +12,8 @@
  * worth your eyes, because skipped checks are not passed checks.
  */
 
+import { basename } from 'node:path';
+
 import { scoreCiReady, type CiReadyReport } from '../../core/ci-ready.js';
 import {
   parseCriticalAreas,
@@ -32,8 +34,20 @@ export interface ReadinessPaths {
   criticalAreasPath: string;
 }
 
-function textOf(read: SourceRead): string | null {
-  return read.kind === 'ok' ? read.text : null;
+/**
+ * A read through ci-ready's parser. Missing is the parser's own "no file"
+ * case; unreadable (EISDIR, EACCES, ...) is an unusable input in exactly the
+ * wording `canary ci-ready` uses, never reported as absent (#1129 follow-up).
+ */
+function inputOf<T>(
+  read: SourceRead,
+  parse: (text: string | null) => T,
+): T | { ok: false; reason: string } {
+  if (read.kind === 'unreadable') {
+    const name = `.canary/${basename(read.path)}`;
+    return { ok: false, reason: `${name} could not be read (${read.reason})` };
+  }
+  return parse(read.kind === 'ok' ? read.text : null);
 }
 
 type Runs = ReturnType<NdjsonHistoryStore['readAll']>;
@@ -86,8 +100,8 @@ export function readinessSection(paths: ReadinessPaths): Section {
   const report = scoreCiReady({
     runs,
     historyPath: paths.historyPath,
-    inventory: parseInventory(textOf(inventory)),
-    criticalAreas: parseCriticalAreas(textOf(critical)),
+    inventory: inputOf(inventory, parseInventory),
+    criticalAreas: inputOf(critical, parseCriticalAreas),
   });
   if (report.verdict === 'abstained') {
     return darkSection(
