@@ -136,34 +136,44 @@ function targetSummary(target, lastPass) {
   };
 }
 
+// The helpers below keep assembleBrief itself under the perf complexity rule.
+
+function findingsFor(input) {
+  if (input.abstained) return { rows: [], notChecked: [] };
+  return findingsEvidence(input.findings, input.target.test_file);
+}
+
+const briefSuite = (input) => input.suite ?? input.target?.suite ?? null;
+
+function denominatorOf(timeline) {
+  return {
+    observations: timeline.observations.length,
+    failures: timeline.observations.filter((o) => FAILING.has(o.status)).length,
+    runs_in_store: timeline.runsInStore,
+  };
+}
+
 /**
  * @param {object} input {test, suite, historyDark, timeline, target, lastPass,
  *   abstained, diff, findings} -- diff is null when abstained
  */
 export function assembleBrief(input) {
   const { timeline, target, abstained } = input;
-  const observations = timeline.observations.length;
+  const denominator = denominatorOf(timeline);
   const fidelity = fidelityOf(
     abstained,
-    observations,
+    denominator.observations,
     Boolean(input.diff?.read),
   );
-  const findingsEv = abstained
-    ? { rows: [], notChecked: [] }
-    : findingsEvidence(input.findings, target.test_file);
+  const findingsEv = findingsFor(input);
   const rows = abstained ? [] : evidenceRows(input, findingsEv);
   return {
     schema_version: 1,
     advisory: true,
     test: input.test,
-    suite: input.suite ?? target?.suite ?? null,
+    suite: briefSuite(input),
     fidelity,
-    denominator: {
-      observations,
-      failures: timeline.observations.filter((o) => FAILING.has(o.status))
-        .length,
-      runs_in_store: timeline.runsInStore,
-    },
+    denominator,
     // Abstained => no target shown, even when one exists (ambiguous suite, D6).
     target: targetSummary(abstained ? null : target, input.lastPass),
     hypotheses: placeRows(rows),
