@@ -9,7 +9,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { CliExitError } from '../src/cli-common.js';
-import { createHistoryCommand, type HistoryDeps } from '../src/history/cli.js';
+import { createHistoryCommand } from '../src/history/cli.js';
+// The seam under test is declared in cli-deps.ts (#1125).
+import type { HistoryDeps } from '../src/history/cli-deps.js';
 import type { RunInput, TestResultInput } from '../src/history/schema.js';
 import type { AsyncHistoryStore } from '../src/history/store.js';
 import { mkTmp, rmTmp } from './canary-cli-testkit.js';
