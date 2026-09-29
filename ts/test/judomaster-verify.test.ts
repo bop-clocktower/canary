@@ -111,7 +111,7 @@ describe('classifyRun', () => {
     expect(r.vacuity).toBe(false);
   });
 
-  it('checks could-not-run before the signature', () => {
+  it('lets a timeout outrank a signature in partial output', () => {
     const r = classifyRun([124, SIG.text, ''], SIG, 'vitest');
     expect(r.verdict).toBe('unverified');
   });

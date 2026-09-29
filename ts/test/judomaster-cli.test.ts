@@ -232,6 +232,15 @@ describe('canary judomaster verify', () => {
     expect(exec.spy).not.toHaveBeenCalled();
   });
 
+  it('exits 2 when --brief cannot be read as JSON', async () => {
+    const test = seedGenerated();
+    const exec = executorReturning([1, 'boom', '']);
+    const res = await verify(exec, test, '--brief', join(root, 'absent.json'));
+    expect(res.code).toBe(2);
+    expect(res.stderr).toContain('cannot read');
+    expect(exec.spy).not.toHaveBeenCalled();
+  });
+
   it('exits 2 when --brief is not a brief', async () => {
     const test = seedGenerated();
     const bogus = join(root, 'bogus.json');
