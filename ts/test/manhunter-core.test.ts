@@ -21,7 +21,9 @@ import {
 import {
   assembleDossier,
   canonicalJson,
+  excludedButFed,
   finalizeDossier,
+  relativizeSection,
   verifyDossier,
 } from '../src/analysis/manhunter/assemble.js';
 import { renderDossier } from '../src/analysis/manhunter/render.js';
@@ -162,6 +164,26 @@ describe('assembleDossier verdict', () => {
     expect(d.worthYourEyes).toEqual([]);
   });
 
+  it('never hides a fed section behind an exclusion, and names the attempt', () => {
+    const sections = allFed();
+    sections[2] = fedSection('guardian-findings', {
+      sources: [],
+      denominator: '1 record, 4 units checked',
+      facts: [],
+      eyes: ['pr-1: src/a.ts f (high, heuristic): open'],
+    });
+    const exclusions = { 'guardian-findings': 'not relevant' };
+    expect(excludedButFed(sections, exclusions)).toEqual(['guardian-findings']);
+    const d = assembleDossier({ release: 'v1', sections, exclusions });
+    expect(d.sections[2]!.status).toBe('fed');
+    expect(d.worthYourEyes).toEqual([
+      {
+        section: 'guardian-findings',
+        text: 'pr-1: src/a.ts f (high, heuristic): open',
+      },
+    ]);
+  });
+
   it('caps a section eyes list at ten with an overflow line', () => {
     const s = fedSection('escapes', {
       sources: [],
@@ -205,10 +227,50 @@ describe('digest', () => {
     expect(verifyDossier(JSON.stringify(retimed))).toBe('match');
   });
 
+  it('rejects a digest recomputed over a verdict that does not follow from the sections', () => {
+    const sections = allFed();
+    sections[0] = darkSection('run-history', [], 'absent');
+    const dossier = finalizeDossier(
+      assembleDossier({ release: 'v1', sections, exclusions: {} }),
+      'now',
+    );
+    const { digest: _d, generatedAt: _g, ...payload } = dossier;
+    const forged = { ...payload, verdict: 'complete' };
+    const text = JSON.stringify({
+      ...forged,
+      generatedAt: 'now',
+      digest: createHash('sha256').update(canonicalJson(forged)).digest('hex'),
+    });
+    expect(verifyDossier(text)).toBe('mismatch');
+  });
+
+  it('refuses a bare digest with no dossier around it', () => {
+    const empty = createHash('sha256').update('{}').digest('hex');
+    expect(verifyDossier(JSON.stringify({ digest: empty }))).toBe('malformed');
+  });
+
   it('calls a file with no digest malformed rather than mismatched', () => {
     expect(verifyDossier('{"verdict":"complete"}')).toBe('malformed');
     expect(verifyDossier('not json')).toBe('malformed');
     expect(verifyDossier('[1,2]')).toBe('malformed');
+  });
+});
+
+describe('relativizeSection', () => {
+  it('stores paths relative to the root, in sources and in prose', () => {
+    const root = join(tmp, 'repo');
+    const abs = join(root, '.canary', 'escapes.json');
+    const s = relativizeSection(
+      darkSection(
+        'escapes',
+        [{ path: abs, sha256: null }],
+        `no escape log at ${abs}`,
+      ),
+      root,
+    );
+    expect(s.sources[0]!.path).toBe('.canary/escapes.json');
+    expect(s.reason).toBe('no escape log at .canary/escapes.json');
+    expect(JSON.stringify(s)).not.toContain(root);
   });
 });
 

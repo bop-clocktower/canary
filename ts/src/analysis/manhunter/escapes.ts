@@ -37,11 +37,11 @@ export function escapesSection(path: string): Section {
   if (!parsed.ok) return darkSection('escapes', [ref], parsed.reason);
   const log = isRecord(parsed.value) ? parsed.value : {};
   const since = typeof log.tracked_since === 'string' ? log.tracked_since : '';
-  if (since === '' || !Array.isArray(log.escapes)) {
+  if (Number.isNaN(Date.parse(since)) || !Array.isArray(log.escapes)) {
     return darkSection(
       'escapes',
       [ref],
-      `${path} needs tracked_since and an escapes array; without them "none escaped" and "nobody counted" look the same`,
+      `${path} needs a tracked_since date and an escapes array; without them "none escaped" and "nobody counted" look the same`,
     );
   }
   const n = log.escapes.length;

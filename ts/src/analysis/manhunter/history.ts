@@ -68,11 +68,11 @@ export function historySection(path: string, windowRuns: number): Section {
       `${path} could not be read (${runs})`,
     );
   }
-  if (runs.length === 0) {
+  if (!runs.some((r) => (r.total ?? 0) > 0)) {
     return darkSection(
       'run-history',
       [ref],
-      `${path} holds 0 runs, so there is no run history to report`,
+      `${path} holds ${plural(runs.length, 'run')} and none executed a test, so there is no run history to report`,
     );
   }
   const latest = latestPerSuite(runs);

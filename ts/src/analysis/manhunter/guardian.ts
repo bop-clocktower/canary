@@ -67,8 +67,20 @@ function toFinding(raw: unknown): GuardianFinding {
   };
 }
 
-function toRecord(raw: Record<string, unknown>): GuardianRecord {
+/**
+ * A record is only counted when it is recognisably a guardian record AND its
+ * findings array agrees with its own summary. A `findings` that is not an array
+ * (or whose length disagrees with `summary.total`) is refused rather than read
+ * as `[]` -- that coercion would render a record with open findings as clean.
+ */
+function toRecord(raw: Record<string, unknown>): GuardianRecord | null {
   const summary = isRecord(raw.summary) ? raw.summary : {};
+  const recognised =
+    raw.source === 'canary-pr-guardian' &&
+    typeof raw.schemaVersion === 'string' &&
+    Array.isArray(raw.findings) &&
+    raw.findings.length === summary.total;
+  if (!recognised) return null;
   const coverage = isRecord(raw.coverage) ? raw.coverage : null;
   const byFidelity = isRecord(summary.byFidelity) ? summary.byFidelity : {};
   return {
@@ -79,7 +91,7 @@ function toRecord(raw: Record<string, unknown>): GuardianRecord {
     byFidelity: Object.fromEntries(
       Object.entries(byFidelity).map(([k, v]) => [k, num(v)]),
     ),
-    findings: Array.isArray(raw.findings) ? raw.findings.map(toFinding) : [],
+    findings: (raw.findings as unknown[]).map(toFinding),
   };
 }
 
@@ -99,11 +111,10 @@ function loadRecords(dir: string, names: string[]): Loaded {
     const read = readSource(join(dir, name));
     loaded.sources.push(sourceRef(read));
     const parsed = parseJsonSource(read);
-    if (parsed.ok && isRecord(parsed.value)) {
-      loaded.records.push(toRecord(parsed.value));
-    } else {
-      loaded.unreadable += 1;
-    }
+    const record =
+      parsed.ok && isRecord(parsed.value) ? toRecord(parsed.value) : null;
+    if (record === null) loaded.unreadable += 1;
+    else loaded.records.push(record);
   }
   return loaded;
 }
@@ -165,12 +176,29 @@ function darkBoth(sources: SourceRef[], reason: string): [Section, Section] {
 
 function darkReason(dir: string, loaded: Loaded): string {
   if (loaded.records.length === 0) {
-    return `${plural(loaded.unreadable, 'guardian record')} in ${dir}, none readable`;
+    return `${plural(loaded.unreadable, 'guardian record')} in ${dir}, none readable as a guardian record`;
   }
   return (
     `${plural(loaded.records.length, 'guardian record')} in ${dir}, but every one ` +
     'abstained or judged nothing (0 units checked)'
   );
+}
+
+/** Records read but left out of the denominator, stated rather than dropped. */
+function notCounted(loaded: Loaded, usable: number): string[] {
+  const lines: string[] = [];
+  if (loaded.unreadable > 0) {
+    lines.push(
+      `${loaded.unreadable} record(s) unreadable or malformed and not counted`,
+    );
+  }
+  const idle = loaded.records.length - usable;
+  if (idle > 0) {
+    lines.push(
+      `${idle} record(s) abstained or checked 0 units and not counted`,
+    );
+  }
+  return lines;
 }
 
 /** `[coverage-tiers, guardian-findings]`, sharing one read of the records. */
@@ -188,10 +216,7 @@ export function guardianSections(dir: string): [Section, Section] {
     return darkBoth(loaded.sources, darkReason(dir, loaded));
   const checked = usable.reduce((n, r) => n + r.checked, 0);
   const denominator = `${plural(usable.length, 'record')}, ${checked} units checked`;
-  const unreadable =
-    loaded.unreadable > 0
-      ? [`${loaded.unreadable} record(s) unreadable and not counted`]
-      : [];
+  const unreadable = notCounted(loaded, usable.length);
   const tiers = tiersBody(usable);
   const findings = findingsBody(usable);
   return [

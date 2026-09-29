@@ -6,7 +6,10 @@
  *
  *   - `fed`      the source was read AND had a non-zero denominator;
  *   - `dark`     it was missing, unreadable, malformed, self-abstained, or
- *                measured nothing -- the section says which, never reads clean;
+ *                measured nothing -- the section says which, never reads clean.
+ *                Each builder documents what its denominator is (runs, units
+ *                checked, rule evaluations, a tracking window, katana having
+ *                run at all);
  *   - `excluded` a person declared it out of scope, with a reason.
  *
  * A dark section and a clean one must never render alike: "no findings from a

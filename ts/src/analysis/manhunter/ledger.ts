@@ -2,10 +2,14 @@
  * Quarantine section (#611): the canary-katana ledger of deleted and skipped
  * tests (`.canary/quarantine.json`, schema v2).
  *
- * A missing ledger is DARK: katana writes it on its first capture, so "no
- * file" means either nothing was ever removed or katana is not wired, and the
- * dossier cannot tell which. A present ledger with zero rows is fed -- katana
- * ran and recorded nothing.
+ * The denominator here is "katana ran", not a row count. katana writes the
+ * ledger on EVERY scan that is not `--no-write`, including one that found no
+ * deletions (canary-katana `scripts/cli.mjs`, `appendEntries` with an empty
+ * batch still writes `{schema_version: 2, entries: []}`). So a present v2
+ * ledger with zero rows is a real "katana looked and recorded nothing", and is
+ * fed; a missing ledger is DARK, because "nothing was ever removed" and
+ * "katana is not wired" cannot be told apart. A file without katana's
+ * `schema_version: 2` stamp is refused, not trusted as a ledger.
  */
 
 import { parseJsonSource, readSource, sourceRef } from './sources.js';
@@ -77,10 +81,15 @@ export function ledgerSection(path: string, nowIso: string): Section {
   }
   const parsed = parseJsonSource(read);
   if (!parsed.ok) return darkSection('quarantine', [ref], parsed.reason);
-  const entries = isRecord(parsed.value) ? parsed.value.entries : undefined;
-  if (!Array.isArray(entries)) {
-    return darkSection('quarantine', [ref], `${path} has no entries array`);
+  const doc = isRecord(parsed.value) ? parsed.value : {};
+  if (doc.schema_version !== 2 || !Array.isArray(doc.entries)) {
+    return darkSection(
+      'quarantine',
+      [ref],
+      `${path} is not a katana v2 ledger (needs schema_version 2 and an entries array)`,
+    );
   }
+  const entries: unknown[] = doc.entries;
   const rows = entries.map(toRow);
   const nowMs = Date.parse(nowIso);
   const facts =

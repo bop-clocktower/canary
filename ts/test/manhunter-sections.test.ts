@@ -87,6 +87,12 @@ describe('run-history section', () => {
     expect(s.reason).toContain('could not be read');
   });
 
+  it('is dark when every stored run executed zero tests', () => {
+    const s = historySection(historyFile([{ suite: 'api', statuses: {} }]), 30);
+    expect(s.status).toBe('dark');
+    expect(s.reason).toContain('none executed a test');
+  });
+
   it('is fed with a run denominator, and flags a failing latest run and a flaky test', () => {
     const path = historyFile([
       { suite: 'api', statuses: { a: 'passed', b: 'flaky' } },
@@ -193,7 +199,48 @@ describe('guardian sections (coverage tiers + findings)', () => {
       'canary-pr-guardian-pr-4.json',
     ]);
     expect(tiers.facts.join('\n')).toContain(
-      '1 record(s) unreadable and not counted',
+      '1 record(s) unreadable or malformed and not counted',
+    );
+  });
+
+  it('refuse a record whose findings are not an array instead of reading it as clean', () => {
+    write(
+      '.harness/analyses/canary-pr-guardian-pr-7.json',
+      guardianRecord({ findings: {} }),
+    );
+    const [tiers, findings] = guardianSections(dir());
+    expect(tiers.status).toBe('dark');
+    expect(findings.status).toBe('dark');
+    expect(findings.reason).toContain('none readable as a guardian record');
+  });
+
+  it('refuse a record whose findings disagree with its own summary, or that is not a guardian record', () => {
+    write(
+      '.harness/analyses/canary-pr-guardian-pr-8.json',
+      guardianRecord({ findings: [] }),
+    );
+    write(
+      '.harness/analyses/canary-pr-guardian-pr-9.json',
+      guardianRecord({ source: 'something-else' }),
+    );
+    write('.harness/analyses/canary-pr-guardian-pr-10.json', guardianRecord());
+    const [, findings] = guardianSections(dir());
+    expect(findings.status).toBe('fed');
+    expect(findings.denominator).toBe('1 record, 40 units checked');
+    expect(findings.facts).toContain(
+      '2 record(s) unreadable or malformed and not counted',
+    );
+  });
+
+  it('state abstained records rather than silently dropping them', () => {
+    write(
+      '.harness/analyses/canary-pr-guardian-pr-11.json',
+      guardianRecord({ abstained: true }),
+    );
+    write('.harness/analyses/canary-pr-guardian-pr-12.json', guardianRecord());
+    const [tiers] = guardianSections(dir());
+    expect(tiers.facts).toContain(
+      '1 record(s) abstained or checked 0 units and not counted',
     );
   });
 
@@ -240,6 +287,13 @@ describe('ci-readiness section', () => {
     expect(s.reason).toContain('ci-ready abstained');
   });
 
+  it('is dark, not absent, when the store is corrupt (ci-ready would throw)', () => {
+    writeFileSync(paths().historyPath, '{broken\n');
+    const s = readinessSection(paths());
+    expect(s.status).toBe('dark');
+    expect(s.reason).toContain('ci-ready cannot read');
+  });
+
   it('is fed once any check scores, and flags the incomplete verdict', () => {
     historyFile([
       { suite: 'api', statuses: { a: 'passed' } },
@@ -266,7 +320,18 @@ describe('quarantine section', () => {
   it('is dark when the ledger has no entries array', () => {
     const s = ledgerSection(write('q.json', { schema_version: 2 }), now);
     expect(s.status).toBe('dark');
-    expect(s.reason).toContain('no entries array');
+    expect(s.reason).toContain('not a katana v2 ledger');
+  });
+
+  it('is fed by an empty v2 ledger, which katana writes on every scan', () => {
+    const s = ledgerSection(
+      write('q.json', { schema_version: 2, entries: [] }),
+      now,
+    );
+    expect(s.status).toBe('fed');
+    expect(s.facts).toEqual([
+      'katana has recorded no deleted or skipped tests',
+    ]);
   });
 
   it('is fed and flags untracked defects, expired rows and causeless removals', () => {
@@ -330,6 +395,29 @@ describe('sweep section', () => {
     expect(s.reason).toContain('no axe result document was read');
   });
 
+  it('refuses a report whose findings are not an array instead of reading it as clean', () => {
+    const s = sweepSection(
+      write('a11y.json', {
+        version: 1,
+        summary: { pages: 3, rule_evaluations: 50, findings: 4 },
+        findings: null,
+      }),
+    );
+    expect(s.status).toBe('dark');
+    expect(s.reason).toContain('disagrees with summary.findings');
+  });
+
+  it('refuses a report that is not canary-sweep v1', () => {
+    const s = sweepSection(
+      write('a11y.json', {
+        summary: { pages: 3, rule_evaluations: 50, findings: 0 },
+        findings: [],
+      }),
+    );
+    expect(s.status).toBe('dark');
+    expect(s.reason).toContain('not canary-sweep v1');
+  });
+
   it('is fed and flags serious findings and unattributed nodes', () => {
     const s = sweepSection(
       write('a11y.json', {
@@ -389,6 +477,13 @@ describe('escapes section', () => {
     );
     expect(s.status).toBe('dark');
     expect(s.reason).toContain('tracked_since');
+  });
+
+  it('is dark when tracked_since is not a date', () => {
+    const s = escapesSection(
+      write('e.json', { schema_version: 1, tracked_since: 'x', escapes: [] }),
+    );
+    expect(s.status).toBe('dark');
   });
 
   it('is fed by an empty list that states its tracking window', () => {

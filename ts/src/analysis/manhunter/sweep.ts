@@ -32,7 +32,16 @@ function toFinding(raw: unknown): SweepFinding {
 
 const count = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
-function abstention(summary: Record<string, unknown>): string | null {
+/**
+ * Why the report cannot feed the section, or null. A report whose shape is not
+ * canary-sweep v1 -- or whose findings array disagrees with its own summary --
+ * is refused, never coerced to "no findings".
+ */
+function unusable(
+  report: Record<string, unknown>,
+  summary: Record<string, unknown>,
+): string | null {
+  if (report.version !== 1) return 'the sweep report is not canary-sweep v1';
   if (summary.abstained === true) {
     const why =
       typeof summary.abstention_reason === 'string'
@@ -42,6 +51,12 @@ function abstention(summary: Record<string, unknown>): string | null {
   }
   if (count(summary.rule_evaluations) === 0) {
     return 'the sweep report evaluated 0 rules';
+  }
+  if (
+    !Array.isArray(report.findings) ||
+    report.findings.length !== summary.findings
+  ) {
+    return 'the sweep report findings array is missing or disagrees with summary.findings';
   }
   return null;
 }
@@ -60,11 +75,9 @@ export function sweepSection(path: string | null): Section {
   if (!parsed.ok) return darkSection('sweep', [ref], parsed.reason);
   const report = isRecord(parsed.value) ? parsed.value : {};
   const summary = isRecord(report.summary) ? report.summary : {};
-  const abstained = abstention(summary);
-  if (abstained !== null) return darkSection('sweep', [ref], abstained);
-  const findings = Array.isArray(report.findings)
-    ? report.findings.map(toFinding)
-    : [];
+  const refused = unusable(report, summary);
+  if (refused !== null) return darkSection('sweep', [ref], refused);
+  const findings = (report.findings as unknown[]).map(toFinding);
   const unattributed = count(summary.unattributed_nodes);
   const eyes = findings
     .filter((f) => SERIOUS_IMPACTS.includes(f.impact))

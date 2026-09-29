@@ -22,8 +22,8 @@ afterEach(() => {
   rmTmp(root);
 });
 
-function put(rel: string, body: unknown): void {
-  const path = join(root, rel);
+function put(rel: string, body: unknown, at: string = root): void {
+  const path = join(at, rel);
   mkdirSync(join(path, '..'), { recursive: true });
   writeFileSync(
     path,
@@ -31,7 +31,7 @@ function put(rel: string, body: unknown): void {
   );
 }
 
-function seedHistory(): void {
+function seedHistory(at: string = root): void {
   const line = (i: number) =>
     JSON.stringify({
       schema_version: 3,
@@ -52,37 +52,56 @@ function seedHistory(): void {
   put(
     'test-results/reports/history-v2.jsonl',
     [0, 1, 2].map(line).join('\n') + '\n',
+    at,
   );
 }
 
 /** Every conventional source present with a non-zero denominator. */
-function seedAll(): void {
-  seedHistory();
-  put('.harness/analyses/canary-pr-guardian-pr-1.json', {
-    schemaVersion: '1.3',
-    ref: 'pr-1',
-    checked: 10,
-    abstained: false,
-    coverage: { status: 'verified' },
-    summary: {
-      total: 0,
-      unaddressed: 0,
-      suppressed: 0,
-      byFidelity: {},
+function seedAll(at: string = root): void {
+  seedHistory(at);
+  put(
+    '.harness/analyses/canary-pr-guardian-pr-1.json',
+    {
+      schemaVersion: '1.3',
+      source: 'canary-pr-guardian',
+      ref: 'pr-1',
+      checked: 10,
+      abstained: false,
+      coverage: { status: 'verified' },
+      summary: {
+        total: 0,
+        unaddressed: 0,
+        suppressed: 0,
+        byFidelity: {},
+      },
+      findings: [],
     },
-    findings: [],
-  });
-  put('.canary/quarantine.json', { schema_version: 2, entries: [] });
-  put('.canary/escapes.json', {
-    schema_version: 1,
-    tracked_since: '2026-07-01',
-    escapes: [],
-  });
-  put('a11y/report.json', {
-    version: 1,
-    summary: { pages: 2, rule_evaluations: 50, abstained: false },
-    findings: [],
-  });
+    at,
+  );
+  put('.canary/quarantine.json', { schema_version: 2, entries: [] }, at);
+  put(
+    '.canary/escapes.json',
+    {
+      schema_version: 1,
+      tracked_since: '2026-07-01',
+      escapes: [],
+    },
+    at,
+  );
+  put(
+    'a11y/report.json',
+    {
+      version: 1,
+      summary: {
+        pages: 2,
+        rule_evaluations: 50,
+        findings: 0,
+        abstained: false,
+      },
+      findings: [],
+    },
+    at,
+  );
 }
 
 describe('canary manhunter', () => {
@@ -197,19 +216,54 @@ describe('canary manhunter', () => {
     expect(missing.code).toBe(2);
   });
 
-  it('produces the same digest on two runs over the same evidence', async () => {
+  it('produces the same digest for the same evidence in two different checkouts, with no absolute path in it', async () => {
+    const other = mkTmp();
+    try {
+      seedAll(root);
+      seedAll(other);
+      const digest = async (at: string) => {
+        const out = join(at, 'dossier.json');
+        await invokeCanary(['manhunter', '--root', at, '--json-out', out]);
+        const text = readFileSync(out, 'utf-8');
+        expect(text).not.toContain(at);
+        return JSON.parse(text).digest;
+      };
+      expect(await digest(root)).toBe(await digest(other));
+    } finally {
+      rmTmp(other);
+    }
+  });
+
+  it('refuses to exclude a section that was read (exit 2), so exclusion cannot hide findings', async () => {
     seedAll();
-    const digest = async (name: string) => {
-      await invokeCanary([
-        'manhunter',
-        '--root',
-        root,
-        '--json-out',
-        join(root, name),
-      ]);
-      return JSON.parse(readFileSync(join(root, name), 'utf-8')).digest;
+    const r = await invokeCanary([
+      'manhunter',
+      '--root',
+      root,
+      '--exclude',
+      'escapes=not tracked here',
+    ]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('would hide what it found');
+  });
+
+  it('scores ci-readiness exactly as canary ci-ready does on the same root', async () => {
+    seedAll();
+    const ci = await invokeCanary(['ci-ready', '--root', root, '--json']);
+    const report = JSON.parse(ci.stdout) as {
+      verdict: string;
+      checks: { name: string; verdict: string; reason: string }[];
     };
-    expect(await digest('a.json')).toBe(await digest('b.json'));
+    const out = join(root, 'dossier.json');
+    await invokeCanary(['manhunter', '--root', root, '--json-out', out]);
+    const dossier = JSON.parse(readFileSync(out, 'utf-8'));
+    const section = dossier.sections.find(
+      (s: { id: string }) => s.id === 'ci-readiness',
+    );
+    expect(section.facts).toEqual([
+      `ci-ready verdict: ${report.verdict}`,
+      ...report.checks.map((c) => `${c.verdict} ${c.name}: ${c.reason}`),
+    ]);
   });
 
   it('is mounted on the canary command tree with its verify subcommand', () => {

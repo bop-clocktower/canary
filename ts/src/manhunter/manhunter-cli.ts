@@ -30,7 +30,9 @@ import { CliExitError, normalizeUsageExit } from '../cli-common.js';
 import { EXIT_ABSTAINED } from '../core/gate-result.js';
 import {
   assembleDossier,
+  excludedButFed,
   finalizeDossier,
+  relativizeSection,
   verifyDossier,
   type Dossier,
   type Exclusions,
@@ -46,6 +48,8 @@ import { SECTION_IDS, type Section } from '../analysis/manhunter/types.js';
 import type { MainDeps } from '../main-deps.js';
 
 const EXIT_USAGE = 2;
+/** The store `canary history record` writes and `canary ci-ready` reads. */
+const DEFAULT_HISTORY = 'test-results/reports/history-v2.jsonl';
 
 interface DossierOpts {
   root?: string;
@@ -101,12 +105,12 @@ function gatherSections(
   windowRuns: number,
 ): Section[] {
   const at = (p: string) => resolve(root, p);
-  const historyPath = at(opts.history);
-  return [
-    historySection(historyPath, windowRuns),
+  const sections = [
+    historySection(at(opts.history), windowRuns),
     ...guardianSections(at(opts.analyses)),
+    // ci-ready reads the default store, never --history; so must its section.
     readinessSection({
-      historyPath,
+      historyPath: at(DEFAULT_HISTORY),
       inventoryPath: at('.canary/test-inventory.json'),
       criticalAreasPath: at('.canary/critical-areas.json'),
     }),
@@ -114,6 +118,7 @@ function gatherSections(
     sweepSection(opts.sweep === undefined ? null : at(opts.sweep)),
     escapesSection(at(opts.escapes)),
   ];
+  return sections.map((s) => relativizeSection(s, resolve(root)));
 }
 
 function exitCodeFor(dossier: Dossier): number {
@@ -135,9 +140,17 @@ function runDossier(deps: MainDeps, opts: DossierOpts): void {
   const windowRuns = parseWindow(deps, opts.window);
   const root = opts.root ?? deps.cwd();
   const now = new Date().toISOString();
+  const sections = gatherSections(opts, root, now, windowRuns);
+  const hidden = excludedButFed(sections, exclusions);
+  if (hidden.length > 0) {
+    usage(
+      deps,
+      `--exclude ${hidden.join(', ')}: the source was read, so excluding it would hide what it found`,
+    );
+  }
   const payload = assembleDossier({
     release: opts.release,
-    sections: gatherSections(opts, root, now, windowRuns),
+    sections,
     exclusions,
   });
   const dossier = finalizeDossier(payload, now);
@@ -181,8 +194,8 @@ function addSourceOptions(command: Command): Command {
   return command
     .option(
       '--history <path>',
-      'Run-history store.',
-      'test-results/reports/history-v2.jsonl',
+      'Run-history store for the run-history section (ci-readiness always reads the default, as ci-ready does).',
+      DEFAULT_HISTORY,
     )
     .option(
       '--analyses <dir>',
