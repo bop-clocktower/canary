@@ -1,0 +1,39 @@
+{
+  "issues": [1125],
+  "route": "feature",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "execution",
+    "verification",
+    "review",
+    "review-fixes",
+    "verification",
+    "outcome-eval"
+  ],
+  "specArtifact": "docs/changes/1125-history-writer-fields/proposal.md",
+  "planPath": "docs/changes/1125-history-writer-fields/plans/2026-09-29-history-writer-fields-plan.md",
+  "closingKeyword": "Closes",
+  "closingKeywordWhy": "Done-when met: on a store written by `canary history record` from a Playwright report with a matching .canary/critical-areas.json, `canary history gaps` reports flaky-area, screech-cluster and failure-categories as fed and exits 0 (G1, G2, and G8 which blocked failure-categories). G3 (tags) is a declared opt-in with no automatic writer, per F3. `analyze area-health` stays structurally dark (G7, #610) - no writer can light it.",
+  "assumptions": [
+    "Maintainer-answered forks F1-F4 applied as given: area from .canary/critical-areas.json with a reported abstention; existing category vocabulary; tags opt-in, no writer; enrichment outside ts/src/history via an injected optional HistoryDeps.enrichResults.",
+    "Brainstorming ran autonomously: remaining design points D5-D9 were self-answered with the recommended option and recorded in the spec's Decisions table.",
+    "D5: the analyze engine has no categoriser of its own (it only defaults a missing category to 'other'), so 'the existing vocabulary' is canary-fail-fast's categorizeFailure (schema, auth, server, client, timeout, network, other). Ported rule-for-rule to ts/src/analysis/enrich/failure-category.ts and pinned by a parity test against the skill's failures.mjs whose samples must produce all seven categories.",
+    "D6: failed/flaky rows without error text get no failure_category; writing 'other' without evidence would make failure-categories read fed falsely.",
+    "D7 (required by the done-when): the Playwright reader now keeps the last failing attempt's error text for flaky tests (G8). Without it failure-categories can never be fed on a Playwright store. A failed test whose last attempt has no message now falls back to an earlier attempt's message.",
+    "D8: test file -> area by file stem (.test/.spec marker and extension stripped), ranked by shared trailing directories, then finite risk_score, then path; Windows separators normalised; an empty stem never maps. The stored value is the area's path.",
+    "The issue's 'area-health' in the done-when is read as the area consumers history gaps measures (flaky-area, screech-cluster); analyze area-health itself is structurally dark (G7) and not a gaps row.",
+    "An areas file that is present but maps none of the run's tests also prints a note (review finding I1); a partial match stays quiet because history gaps reports it as partial.",
+    "F3 is delivered as documentation (docs/guides/history-gaps.md G3 row and the 'How history record fills' section), not a new consumer row: no reader consumes tags, and every consumer row is pinned to a reader.",
+    "The areas file is read from the working directory (the path every other reader uses); resolving from the git toplevel was left as a follow-up suggestion.",
+    "enrich.ts is generic over the row shape and the file reading lives in area.ts, to keep enrich.ts under check-perf's coupling rule (fan-in+fan-out > 5 with ratio > 0.7) - fixed in code, no deltaAllowance.",
+    "ts/src/history grew +23/-4 lines (cli-deps seam, record/cli enrich call, playwright G8); harness check-arch reports newViolations [] and regressions [] identical to the merge base, so no arch allowance or baseline bump was needed.",
+    "Ratchets measured against a detached worktree of merge base b6041715: perf 213/213, entropy 141/141, docs coverage 58/330 vs 55/327.",
+    "No roadmap row exists for #1125, and adding one risks the AGENTS.md row-count tests, so the roadmap was not touched.",
+    "Autopilot delegated planning to harness-planner and review to harness-code-reviewer; execution and verification were done by the lane agent (TDD, each new behaviour seen red first; parity test proved able to fail by a planted rule mutation) to keep ratchet measurement in one context.",
+    "harness-code-reviewer returned Request Changes (I1 silent zero-match abstention, I2 empty-stem mis-mapping) plus suggestions; I1, I2, S3 (Windows paths), S4 (NaN risk tie-break), S6 (fallback + flaky truncation tests), S7 (matcher shape tests), S8 (critical-areas SKILL.md) fixed test-first. Not taken: S5 (enrichment counts in --json would grow ts/src/history against F4) and S9 (read the areas file from the git toplevel; the note already fires).",
+    "Canary review detectors 4/4 ran: cassandra 0 vacuous, savant 0, blackhawk 0; katana captured 3 deliberate test replacements (the G1/G2 and C1 e2e repros and the G8 pin, inverted per the brief).",
+    "outcome_eval: SATISFIED, confidence medium, authority advisory."
+  ]
+}
