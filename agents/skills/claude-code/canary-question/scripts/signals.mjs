@@ -215,7 +215,7 @@ export function coFailureRows(target) {
 // ---------------------------------------------------------------------------
 // Paths: shared by diff.mjs and findings.mjs.
 
-export function normalizePath(p) {
+function normalizePath(p) {
   return String(p).replace(/\\/g, '/').replace(/^\.\//, '');
 }
 

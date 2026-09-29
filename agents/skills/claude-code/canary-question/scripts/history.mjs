@@ -18,7 +18,7 @@ export const DEFAULT_HISTORY = 'test-results/reports/history-v2.jsonl';
 const SUPPORTED_SCHEMA_VERSIONS = [2, 3];
 
 /** Statuses that count as a failing observation (a flaky pass failed first). */
-export const FAILING = new Set(['failed', 'flaky']);
+const FAILING = new Set(['failed', 'flaky']);
 
 /** Statuses that are evidence at all; anything else (skipped) is counted. */
 const OBSERVED = new Set(['passed', 'failed', 'flaky']);
