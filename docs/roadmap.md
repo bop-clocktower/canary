@@ -96,11 +96,11 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ### canary-question — test-bug vs product-bug triage
 
-- **Status:** planned
+- **Status:** done
 - **Spec:** docs/changes/613-canary-question/proposal.md
 - **Summary:** Ideation rank 8 (score 3.00) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Interrogate a failure and classify it as a false-fail (test defect) or a real SUT defect, showing its reasoning - the "is this a test bug or a real bug" question that currently costs triage time on every red build. Accepted risk to handle in spec: a wrong triage is WORSE than no triage - "it's just a flaky test" stamped on a genuine product bug is exactly how defects escape, and it would degrade the escaped-defect headline metric while appearing to help. Must never emit a confident verdict: fidelity-labeled hypothesis plus evidence, never a disposition. Medium effort / medium confidence. Next: /harness:brainstorming to spec.
 - **Blockers:** —
-- **Plan:** —
+- **Plan:** docs/changes/613-canary-question/plans/2026-09-29-canary-question-plan.md
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#613
 
