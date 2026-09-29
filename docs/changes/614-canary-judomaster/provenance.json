@@ -1,0 +1,33 @@
+{
+  "issues": [614],
+  "route": "feature",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "tdd",
+    "execution",
+    "review",
+    "ratchets"
+  ],
+  "specArtifact": "docs/changes/614-canary-judomaster/proposal.md",
+  "planPath": "docs/changes/614-canary-judomaster/plans/2026-09-29-canary-judomaster-plan.md",
+  "branch": "feat/614-canary-judomaster",
+  "base": "b7ac0857",
+  "closingKeyword": "Refs",
+  "closingKeywordWhy": "The PR ships the MVP the lane brief scoped: the stack-trace path (brief, compose authoring, verify) usable end to end. The issue also asks for harness postmortem-record intake where one exists, and a comment proposes SARIF/security-finding intake. Neither is built here, so this is Refs #614 with those named as follow-ups.",
+  "assumptions": [
+    "Brainstorming sign-off was taken autonomously (fleet lane default): approach A (deterministic brief + verify, authoring composed by the skill) and decisions D1-D10 were self-answered with the recommended option. No fork was parked; none changes what the tool claims.",
+    "D2: reproduced requires a non-zero exit AND the signature (first line of the error message, or the error type when the message is empty, labelled type-only) in the ANSI-stripped runner output.",
+    "Review amendment: a signature match does not count when the test file's own source contains the signature text, because a failing assertion prints its own source. That run is failed-other-reason (unverified), and the brief's requirement tells the author to assert correct behaviour and not quote the error.",
+    "D4: collection errors (vitest/playwright 'no tests', pytest exits 2-5), timeouts (124), 127, spawn errors, an executor throw, and an unknown framework are all 'unverified — could not reproduce', exit 3.",
+    "D6: verify only runs a file whose realpath is under <root>/tests/generated/ (exit 2 otherwise, nothing spawned). Containment is reimplemented in the engine because ts/src/mcp-server.ts (entry layer) is not importable from analysis.",
+    "D9: framework comes from --framework, then the extension (.py pytest, .spec/.e2e playwright, other JS/TS vitest), then the brief. Execution goes through deps.makeExecutor() (CanaryTestExecutor and the framework registry). Default --timeout is 60s.",
+    "A trace with frames but no error line abstains rather than inventing a signature. Java/Go/Ruby/.NET traces abstain and are named.",
+    "The skills README count was already stale at (29); it now reads the real directory count (33).",
+    "Execution was delegated to harness-planner and harness-task-executor, per autopilot. The review-driven amendment (source-echo guard and runner-output tail) and the ratchet task (12) were done by the lane itself.",
+    "Arch: module-size 48452 -> 49511 (+1059) against merge base b7ac0857, measured on both trees with harness check-arch --json (CLI 12.10.1). An allowance was added and the floor refreshed with scripts/refresh-arch-baseline.mjs; violationIds were untouched. Entropy 141 vs 141 and perf delta OK (214 vs 213, the one new finding covered by the ts/src/**/cli.ts coupling allowance), both run through the repo's ratchet scripts against a detached base worktree. No entryPoints were added and maxFindings was not touched.",
+    "Shared lists (READINESS_COMMANDS, EXPECTED_COMMANDS, skills README, guides index, CHANGELOG) got append-only edits, because lane D (#613 canary-question) edits the same lists concurrently.",
+    "The roadmap row stays 'planned' with its spec and plan linked, because the PR is Refs and does not close the issue."
+  ]
+}

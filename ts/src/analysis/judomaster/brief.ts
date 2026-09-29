@@ -66,7 +66,7 @@ function requirementFor(brief: Omit<RegressionBrief, 'requirement'>): string {
       : `${s.path}:${s.line}${s.fn ? ` (in ${s.fn})` : ''}`;
   return [
     `Write one ${brief.framework} regression test for the escaped defect at ${where}.`,
-    `It must reproduce ${brief.errorType}: ${brief.signature.text}`,
+    `It must reproduce ${brief.errorType}: ${brief.signature.text}.`,
     'The test must fail against the current code, and its failure output must',
     'contain that signature. Call the code and assert the correct behaviour;',
     'do not quote the error text in the test, because a match on text the test',
