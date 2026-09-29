@@ -17,6 +17,10 @@ import {
   readStore,
   selectTarget,
 } from '../claude-code/canary-question/scripts/history.mjs';
+import {
+  HYPOTHESES,
+  historySignals,
+} from '../claude-code/canary-question/scripts/signals.mjs';
 
 const tmps: string[] = [];
 function tmp(): string {
@@ -211,5 +215,90 @@ describe('history: target failure and last pass', () => {
     const { target, lastPass } = selectTarget(tl.observations);
     expect(target.run_id).toBe('r2');
     expect(lastPass).toBeNull();
+  });
+});
+
+function signalsFor(statuses: string[], over?: (i: number) => Run) {
+  const obs = timelineOf(series(statuses, over)).observations;
+  const { target } = selectTarget(obs);
+  return historySignals(obs, target);
+}
+const bySignal = (rows: Run[], name: string) =>
+  rows.find((r) => r.signal === name) as Run | undefined;
+
+describe('signals: history (D7, D8)', () => {
+  it('keeps the three hypotheses in one fixed order (D1)', () => {
+    expect(HYPOTHESES).toEqual([
+      'test-defect',
+      'product-defect',
+      'environment',
+    ]);
+  });
+
+  it('SC4: a pass and a failure at one commit support all three', () => {
+    const rows = signalsFor(['passed', 'failed'], () => ({
+      commit_sha: 'abc1230',
+    }));
+    const row = bySignal(rows, 'same-commit-mixed')!;
+    expect(row.supports).toEqual(HYPOTHESES);
+    expect(row.weighsAgainst).toEqual([]);
+    expect(row.detail).toContain('abc1230');
+    expect(row.source).toBe('run history');
+  });
+
+  it('no same-commit-mixed across distinct or missing commits', () => {
+    expect(
+      bySignal(signalsFor(['passed', 'failed']), 'same-commit-mixed'),
+    ).toBeUndefined();
+    const noSha = signalsFor(['passed', 'failed'], () => ({
+      commit_sha: null,
+    }));
+    expect(bySignal(noSha, 'same-commit-mixed')).toBeUndefined();
+  });
+
+  it('D8: a flaky target is listed under all three, not as a test defect', () => {
+    const row = bySignal(signalsFor(['passed', 'flaky']), 'retry-pass')!;
+    expect(row.supports).toEqual(HYPOTHESES);
+    expect(row.detail).toMatch(/1 observation\(s\) with status flaky/);
+  });
+
+  it('retry-pass fires for a pass that needed a retry', () => {
+    const rows = signalsFor(['passed', 'failed'], (i) =>
+      i === 0 ? { tests: [entry('passed', { retry_count: 2 })] } : {},
+    );
+    expect(bySignal(rows, 'retry-pass')!.detail).toMatch(
+      /1 pass\(es\) after a retry/,
+    );
+  });
+
+  it('no retry-pass without a flaky status or a retried pass', () => {
+    expect(
+      bySignal(signalsFor(['passed', 'failed']), 'retry-pass'),
+    ).toBeUndefined();
+  });
+
+  it('regression-shape: a pass, then >=2 failures on distinct commits', () => {
+    const row = bySignal(
+      signalsFor(['passed', 'failed', 'failed']),
+      'regression-shape',
+    )!;
+    expect(row.supports).toEqual(['test-defect', 'product-defect']);
+    expect(row.weighsAgainst).toEqual(['environment']);
+    expect(row.detail).toContain('abc10');
+  });
+
+  it.each([
+    ['one failure', ['passed', 'failed'], undefined],
+    ['no prior pass', ['failed', 'failed'], undefined],
+    ['a pass since', ['passed', 'failed', 'failed', 'passed'], undefined],
+    [
+      'one commit only',
+      ['passed', 'failed', 'failed'],
+      (i: number) => (i > 0 ? { commit_sha: 'abc9990' } : {}),
+    ],
+  ])('no regression-shape with %s', (_n, statuses, over) => {
+    expect(
+      bySignal(signalsFor(statuses as string[], over), 'regression-shape'),
+    ).toBeUndefined();
   });
 });
