@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { Command } from 'commander';
 
 import { CliExitError } from './cli-common.js';
-import { EXIT_ABSTAINED } from './core/gate-result.js';
+import { EXIT_ABSTAINED, errnoCode } from './core/gate-result.js';
 import { scoreCiReady, type CiReadyReport } from './core/ci-ready.js';
 import { parseCriticalAreas, parseInventory } from './core/inventory-checks.js';
 import { NdjsonHistoryStore } from './history/ndjson-store.js';
@@ -28,10 +28,29 @@ function readRuns(root: string): RunRecord[] | null {
   return existsSync(path) ? new NdjsonHistoryStore(path).readAll() : null;
 }
 
-/** The file's text, or null when it does not exist. */
-function readOptional(root: string, name: string): string | null {
-  const path = join(root, '.canary', name);
-  return existsSync(path) ? readFileSync(path, 'utf-8') : null;
+type Unusable = { ok: false; reason: string };
+
+/**
+ * Load one `.canary/` input through its parser. Absent (ENOENT) is the
+ * parser's own "missing" case; any other read error (EISDIR, EACCES, ...) is an
+ * unusable input naming the path and errno code (#1129) -- never a crash. The
+ * wording follows the dossier's `parseJsonSource` (#611).
+ */
+function loadInput<T>(
+  root: string,
+  name: string,
+  parse: (text: string | null) => T,
+): T | Unusable {
+  let text: string;
+  try {
+    text = readFileSync(join(root, '.canary', name), 'utf-8');
+  } catch (err) {
+    const code = errnoCode(err);
+    if (code === 'ENOENT') return parse(null);
+    const why = code ?? (err as Error).message;
+    return { ok: false, reason: `.canary/${name} could not be read (${why})` };
+  }
+  return parse(text);
 }
 
 function renderText(report: CiReadyReport): string[] {
@@ -73,9 +92,11 @@ export function buildCiReadyCommand(deps: MainDeps): Command {
       const report = scoreCiReady({
         runs: readRuns(root),
         historyPath: HISTORY_FILE,
-        inventory: parseInventory(readOptional(root, 'test-inventory.json')),
-        criticalAreas: parseCriticalAreas(
-          readOptional(root, 'critical-areas.json'),
+        inventory: loadInput(root, 'test-inventory.json', parseInventory),
+        criticalAreas: loadInput(
+          root,
+          'critical-areas.json',
+          parseCriticalAreas,
         ),
       });
       if (opts.json === true) {
