@@ -77,12 +77,25 @@ function ancestryProblem(repo, from, to) {
   }
 }
 
-/** [supports, weighsAgainst] per diff signal. */
+/**
+ * [supports, weighsAgainst, caveat] per diff signal. A one-sided range is not
+ * evidence AGAINST the other side: a changed test can expose a defect the
+ * product already had, and an intended product change can leave a test's
+ * expectation stale (amended after review).
+ */
 const WEIGHTS = {
-  'diff-none': [['environment'], []],
-  'diff-test-only': [['test-defect'], ['product-defect']],
-  'diff-sut-only': [['product-defect'], ['test-defect']],
-  'diff-both': [['test-defect', 'product-defect'], []],
+  'diff-none': [['environment'], [], ''],
+  'diff-test-only': [
+    ['test-defect'],
+    [],
+    '; a changed test may also be exposing an existing product defect',
+  ],
+  'diff-sut-only': [
+    ['product-defect'],
+    [],
+    "; an intentional product change can leave the test's expectation stale",
+  ],
+  'diff-both': [['test-defect', 'product-defect'], [], ''],
 };
 
 function diffKind(testCount, sutCount) {
@@ -107,8 +120,8 @@ export function diffRows(files, testFile) {
   const testCount = files.filter(onTestSide).length;
   const sutCount = files.length - testCount;
   const kind = diffKind(testCount, sutCount);
-  const detail = `${testCount} test path(s), ${sutCount} non-test path(s) changed; ${scopeNote(files, testFile)}`;
-  const [supports, against] = WEIGHTS[kind];
+  const [supports, against, caveat] = WEIGHTS[kind];
+  const detail = `${testCount} test path(s), ${sutCount} non-test path(s) changed; ${scopeNote(files, testFile)}${caveat}`;
   return [row(kind, SOURCE, detail, supports, against)];
 }
 

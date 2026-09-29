@@ -71,14 +71,10 @@ function regressionShape(observations, target) {
   const detail =
     `passed at ${since}, then failed on ${streak.length} consecutive ` +
     `observations across ${commits.size} commits with no pass since`;
+  // Not against environment: a persistent environment change (a rotated
+  // credential, a moved dependency) makes the same shape.
   return [
-    row(
-      'regression-shape',
-      HISTORY,
-      detail,
-      ['test-defect', 'product-defect'],
-      ['environment'],
-    ),
+    row('regression-shape', HISTORY, detail, ['test-defect', 'product-defect']),
   ];
 }
 
@@ -145,25 +141,27 @@ export function resolveCategory(obs) {
   return null;
 }
 
-const ENV_CATEGORIES = new Set(['timeout', 'network', 'auth']);
+// Categories that name a transport-level symptom, and every hypothesis each
+// symptom is consistent with. A slow or misconfigured product times out and
+// rejects credentials too; a 502/503 is as often a proxy as the product.
+const CATEGORY_WEIGHTS = {
+  timeout: ['category-env', ['environment', 'product-defect']],
+  auth: ['category-env', ['environment', 'product-defect']],
+  network: ['category-env', ['environment']],
+  server: ['category-server', ['product-defect', 'environment']],
+};
+
+const categoryDetail = (c) =>
+  c === 'server' ? 'failure category server (5xx)' : `failure category ${c}`;
 
 export function categoryRows(target) {
   const resolved = resolveCategory(target);
   if (!resolved) return [];
   const { category, source } = resolved;
-  if (ENV_CATEGORIES.has(category)) {
-    return [
-      row('category-env', source, `failure category ${category}`, [
-        'environment',
-      ]),
-    ];
-  }
-  if (category === 'server') {
-    return [
-      row('category-server', source, 'failure category server (5xx)', [
-        'product-defect',
-      ]),
-    ];
+  const weighted = CATEGORY_WEIGHTS[category];
+  if (weighted) {
+    const [signal, supports] = weighted;
+    return [row(signal, source, categoryDetail(category), supports)];
   }
   const detail = `failure category ${category} does not discriminate between the hypotheses`;
   return [row('category-neutral', source, detail)];
@@ -223,15 +221,12 @@ export function coFailureRows(target) {
     .slice(0, 5)
     .map((o) => o.test_name)
     .join(', ');
-  const detail = `${related.length} other failing test(s) in run ${target.run_id} share its category or area: ${names}`;
+  const detail =
+    `${related.length} other failing test(s) in run ${target.run_id} share ` +
+    `its category or area: ${names}; also seen when a shared test helper or ` +
+    'fixture fails the same way';
   return [
-    row(
-      'co-failure',
-      HISTORY,
-      detail,
-      ['product-defect', 'environment'],
-      ['test-defect'],
-    ),
+    row('co-failure', HISTORY, detail, ['product-defect', 'environment']),
   ];
 }
 

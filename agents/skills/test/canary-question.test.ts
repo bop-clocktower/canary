@@ -310,7 +310,8 @@ describe('signals: history (D7, D8)', () => {
       'regression-shape',
     )!;
     expect(row.supports).toEqual(['test-defect', 'product-defect']);
-    expect(row.weighsAgainst).toEqual(['environment']);
+    // A persistent environment change makes the same shape.
+    expect(row.weighsAgainst).toEqual([]);
     expect(row.detail).toContain('abc10');
   });
 
@@ -356,16 +357,23 @@ describe('signals: failure category (D2, D7)', () => {
     ).toBeNull();
   });
 
-  it.each(['timeout', 'network', 'auth'])('%s is environment evidence', (c) => {
+  it.each([
+    // A slow or misconfigured system under test times out and 401s too.
+    ['timeout', ['environment', 'product-defect']],
+    ['auth', ['environment', 'product-defect']],
+    ['network', ['environment']],
+  ])('%s is evidence for %j', (c, want) => {
     const [r] = categoryRows({ failure_category: c });
     expect(r.signal).toBe('category-env');
-    expect(r.supports).toEqual(['environment']);
+    expect(r.supports).toEqual(want);
+    expect(r.weighsAgainst).toEqual([]);
   });
 
-  it('server (5xx) is product-defect evidence', () => {
+  it('server (5xx) is product or environment evidence (502/503 are infrastructure)', () => {
     const [r] = categoryRows({ failure_category: 'server' });
     expect(r.signal).toBe('category-server');
-    expect(r.supports).toEqual(['product-defect']);
+    expect(r.supports).toEqual(['product-defect', 'environment']);
+    expect(r.weighsAgainst).toEqual([]);
   });
 
   it('any other category is recorded as not discriminating', () => {
@@ -423,8 +431,11 @@ describe('signals: co-failures in the target run', () => {
     );
     expect(r.signal).toBe('co-failure');
     expect(r.supports).toEqual(['product-defect', 'environment']);
-    expect(r.weighsAgainst).toEqual(['test-defect']);
+    expect(r.weighsAgainst).toEqual([]);
     expect(r.detail).toContain('b');
+    expect(r.detail).toMatch(
+      /shared test helper or fixture fails the same way/,
+    );
   });
 
   it('co-failure when another failure shares the category', () => {
@@ -551,20 +562,26 @@ describe('diff: reading the culprit range', () => {
 });
 
 describe('diff: classifying the range (SC5)', () => {
-  it('diff-test-only is for test-defect and against product-defect', () => {
+  it('diff-test-only is for test-defect and against nothing', () => {
     const [r] = diffRows([TEST_FILE], TEST_FILE);
     expect(r.signal).toBe('diff-test-only');
     expect(r.supports).toEqual(['test-defect']);
-    expect(r.weighsAgainst).toEqual(['product-defect']);
+    expect(r.weighsAgainst).toEqual([]);
     expect(r.detail).toContain(`test file ${TEST_FILE} changed`);
+    expect(r.detail).toContain(
+      'a changed test may also be exposing an existing product defect',
+    );
   });
 
   it('diff-sut-only is the mirror image', () => {
     const [r] = diffRows(['src/cart.js'], TEST_FILE);
     expect(r.signal).toBe('diff-sut-only');
     expect(r.supports).toEqual(['product-defect']);
-    expect(r.weighsAgainst).toEqual(['test-defect']);
+    expect(r.weighsAgainst).toEqual([]);
     expect(r.detail).toContain(`test file ${TEST_FILE} unchanged`);
+    expect(r.detail).toContain(
+      "an intentional product change can leave the test's expectation stale",
+    );
   });
 
   it('diff-both supports both code hypotheses', () => {
@@ -917,7 +934,9 @@ describe('brief: fidelity is derived, never asserted (D5)', () => {
     const brief = briefFor(series(['passed', 'passed', 'failed']), { diff });
     expect(brief.fidelity).toBe('history+diff');
     expect(signals(forOf(brief, 'test-defect'))).toContain('diff-test-only');
-    expect(signals(againstOf(brief, 'product-defect'))).toContain(
+    // Amended after review: a changed test can expose an existing product
+    // defect, so a test-only range is not evidence against the product.
+    expect(signals(againstOf(brief, 'product-defect'))).not.toContain(
       'diff-test-only',
     );
   });
@@ -930,7 +949,9 @@ describe('brief: fidelity is derived, never asserted (D5)', () => {
     };
     const brief = briefFor(series(['passed', 'passed', 'failed']), { diff });
     expect(signals(forOf(brief, 'product-defect'))).toContain('diff-sut-only');
-    expect(signals(againstOf(brief, 'test-defect'))).toContain('diff-sut-only');
+    expect(signals(againstOf(brief, 'test-defect'))).not.toContain(
+      'diff-sut-only',
+    );
   });
 
   it('a read diff on a thin timeline stays thin', () => {
