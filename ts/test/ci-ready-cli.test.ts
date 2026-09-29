@@ -14,7 +14,7 @@
  *   - incomplete (exit 0): nothing failed, but at least one check skipped.
  *   - ready      (exit 0): all five checks passed.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
@@ -276,6 +276,90 @@ describe('canary ci-ready', () => {
     expect(report.checked).toBe(3);
     expect(report.verdict).toBe('incomplete');
     expect(code).toBe(0);
+  });
+
+  // #1129: an input that EXISTS but cannot be read (a directory planted at the
+  // path, a 0-perm file) crashed the command with a raw EISDIR/EACCES stack.
+  // It is an unusable input like a missing or unparseable one: reported with
+  // its path and errno code, and the exit code follows the normal contract.
+  describe('an unreadable .canary input (#1129)', () => {
+    it('reports a directory at test-inventory.json as unusable, naming path and EISDIR', async () => {
+      mkdirSync(join(root, '.canary', 'test-inventory.json'), {
+        recursive: true,
+      });
+      const { code, report } = await runJson(root);
+      for (const name of [
+        'coverage-depth',
+        'assertion-quality',
+        'critical-paths',
+      ]) {
+        const c = check(report, name);
+        expect(c.verdict).toBe('skip');
+        expect(c.reason).toMatch(/\.canary\/test-inventory\.json/);
+        expect(c.reason).toMatch(/EISDIR/);
+      }
+      expect(report.verdict).toBe('abstained');
+      expect(code).toBe(EXIT_ABSTAINED);
+    });
+
+    it('reports a directory at critical-areas.json as unusable, naming path and EISDIR', async () => {
+      mkdirSync(join(root, 'tests'), { recursive: true });
+      writeFileSync(
+        join(root, 'tests', 'cart.test.ts'),
+        "import { add } from '../src/cart.js';\nit('adds', () => {\n  expect(add(1)).toBe(1);\n});\n",
+        'utf-8',
+      );
+      expect((await invokeCanary(['inventory', '--root', root])).code).toBe(0);
+      mkdirSync(join(root, '.canary', 'critical-areas.json'), {
+        recursive: true,
+      });
+
+      const { code, report } = await runJson(root);
+      const critical = check(report, 'critical-paths');
+      expect(critical.verdict).toBe('skip');
+      expect(critical.reason).toMatch(/\.canary\/critical-areas\.json/);
+      expect(critical.reason).toMatch(/EISDIR/);
+      // The inventory itself is readable, so its two checks still score.
+      expect(check(report, 'coverage-depth').verdict).not.toBe('skip');
+      expect(report.verdict).toBe('incomplete');
+      expect(code).toBe(0);
+    });
+
+    it('renders text output instead of a stack trace', async () => {
+      mkdirSync(join(root, '.canary', 'test-inventory.json'), {
+        recursive: true,
+      });
+      mkdirSync(join(root, '.canary', 'critical-areas.json'), {
+        recursive: true,
+      });
+      const res = await invokeCanary(['ci-ready', '--root', root]);
+      expect(res.code).toBe(EXIT_ABSTAINED);
+      expect(res.stdout).toMatch(/test-inventory\.json could not be read/);
+      expect(res.stdout).not.toMatch(/at readFileSync/);
+    });
+
+    // chmod cannot revoke read access on Windows, and root reads anything.
+    const canRevokeRead =
+      process.platform !== 'win32' && process.getuid?.() !== 0;
+    it.skipIf(!canRevokeRead)(
+      'reports a 0-perm test-inventory.json as unusable, naming EACCES',
+      async () => {
+        mkdirSync(join(root, '.canary'), { recursive: true });
+        const path = join(root, '.canary', 'test-inventory.json');
+        writeFileSync(path, '{}', 'utf-8');
+        chmodSync(path, 0o000);
+        try {
+          const { code, report } = await runJson(root);
+          const c = check(report, 'coverage-depth');
+          expect(c.verdict).toBe('skip');
+          expect(c.reason).toMatch(/\.canary\/test-inventory\.json/);
+          expect(c.reason).toMatch(/EACCES/);
+          expect(code).toBe(EXIT_ABSTAINED);
+        } finally {
+          chmodSync(path, 0o644);
+        }
+      },
+    );
   });
 
   it('abstains on an inventory that lists zero tests rather than passing it', async () => {
