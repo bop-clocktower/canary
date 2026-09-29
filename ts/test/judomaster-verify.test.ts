@@ -67,6 +67,7 @@ describe('classifyRun', () => {
     [[1, 'No test files found, exiting with code 1', ''], 'vitest'],
     [[5, '', ''], 'pytest'],
     [[1, 'Error: No tests found', ''], 'playwright'],
+    [[1, 'Error: No test suite found in file /app/x.test.ts', ''], 'vitest'],
     [[124, 'partial', 'Execution timed out after 60 seconds.'], 'vitest'],
     [[127, '', 'npx: command not found'], 'vitest'],
     [[1, '', 'spawnSync npx ENOENT'], 'vitest'],

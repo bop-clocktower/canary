@@ -32,7 +32,11 @@ export interface VerifyResult {
 const ANSI = /\x1b\[[0-9;]*m/g;
 const COULD_NOT_REPRODUCE = 'unverified — could not reproduce';
 /** Runner output that means nothing was collected. */
-const NOT_COLLECTED = [/No test files found/i, /No tests found/i];
+const NOT_COLLECTED = [
+  /No test files found/i,
+  /No test suite found/i,
+  /No tests found/i,
+];
 const SPAWN_FAILED = /ENOENT|EACCES|spawn/;
 /** pytest: 2 interrupted (incl. collection errors), 3 internal, 4 usage, 5 none collected. */
 const PYTEST_NOT_RUN = new Set([2, 3, 4, 5]);
