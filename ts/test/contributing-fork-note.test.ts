@@ -15,11 +15,13 @@
  * have passed, with nothing in the repo warning them.
  *
  * This test couples the warning to the condition that makes it true rather than
- * to a hardcoded expectation, so it RETIRES ITSELF: when #843 moves the gate to
- * a fork-safe trigger (`pull_request_target` / `workflow_run`, which run in
- * base-repo context where secrets resolve), `secretGatedOnForkBlindTrigger`
- * goes empty and the note is no longer demanded. A stale warning that outlives
- * its defect is its own kind of wrong documentation.
+ * to a hardcoded expectation, in both directions: while a secret-gated required
+ * check runs on a fork-blind trigger the note is demanded, and once #843 moves
+ * the gate to a fork-safe trigger (`pull_request_target` / `workflow_run`,
+ * which run in base-repo context where secrets resolve) the note is forbidden.
+ * A stale warning that outlives its defect is its own kind of wrong
+ * documentation. Step 2b made leak-gate.yml the only producer; a real fork PR
+ * (#1130) then went green on a clean scan and red on a planted symbol.
  *
  * Offline: reads workflow YAML and JSON. Never executes a workflow.
  */
@@ -142,6 +144,31 @@ describe('fork-PR limitation is disclosed while it exists', () => {
       return;
     }
     expect(blocked).toContain('No removed-symbol or proprietary leaks');
+  });
+
+  it('once no required check is fork-blind, CONTRIBUTING.md stops warning', () => {
+    if (secretGatedOnForkBlindTrigger().length > 0) return;
+    // Emptiness has to mean "the gate moved", not "detection broke": the leak
+    // check must still be produced by a secret-reading job, on a fork-safe
+    // trigger (verified from a real fork PR, #1130).
+    const required = requiredCheckNames();
+    const forkSafeProducers = workflowFiles().filter((file) => {
+      const wf = loadYaml(
+        readFileSync(join(WORKFLOW_DIR, file), 'utf-8'),
+      ) as Workflow;
+      return (
+        triggersOf(wf).some((t) => FORK_SAFE_TRIGGERS.includes(t)) &&
+        secretGatedRequiredChecks(wf, required).includes(
+          'No removed-symbol or proprietary leaks',
+        )
+      );
+    });
+    expect(forkSafeProducers).toEqual(['leak-gate.yml']);
+
+    // A warning that outlives its defect is its own kind of wrong documentation.
+    const text = readFileSync(CONTRIBUTING, 'utf-8');
+    expect(text).not.toMatch(/fork pull requests cannot be merged/i);
+    expect(text).not.toContain('[fork-issue]');
   });
 
   it('CONTRIBUTING.md exists and warns that fork PRs cannot pass', () => {
