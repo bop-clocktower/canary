@@ -61,15 +61,18 @@ export function loadAreas(cwd: string): AreasLoad {
   return { areas: parsed.areas };
 }
 
+/** Path segments; JUnit `file` attributes can carry Windows separators. */
+const segments = (path: string): string[] => path.split(/[\\/]/);
+
 function fileStem(path: string): string {
-  const base = path.split('/').pop() ?? path;
+  const base = segments(path).pop() ?? '';
   return base.replace(/\.[^.]+$/, '').replace(/\.(test|spec)$/, '');
 }
 
 /** How many trailing directory segments two paths have in common. */
 function sharedTrailingDirs(a: string, b: string): number {
-  const x = a.split('/').slice(0, -1).reverse();
-  const y = b.split('/').slice(0, -1).reverse();
+  const x = segments(a).slice(0, -1).reverse();
+  const y = segments(b).slice(0, -1).reverse();
   let n = 0;
   while (n < x.length && n < y.length && x[n] === y[n]) n++;
   return n;
@@ -82,9 +85,10 @@ interface Candidate {
 
 function byRank(p: Candidate, q: Candidate): number {
   if (p.shared !== q.shared) return q.shared - p.shared;
-  if (p.area.risk_score !== q.area.risk_score) {
-    return q.area.risk_score - p.area.risk_score;
-  }
+  // parseCriticalAreas turns a non-numeric score into NaN; rank it as 0.
+  const risk = (c: Candidate): number =>
+    Number.isFinite(c.area.risk_score) ? c.area.risk_score : 0;
+  if (risk(p) !== risk(q)) return risk(q) - risk(p);
   return p.area.path < q.area.path ? -1 : 1;
 }
 
@@ -94,6 +98,9 @@ export function areaFor(
   areas: readonly CriticalArea[],
 ): string | undefined {
   const stem = fileStem(testFile);
+  // An empty stem (JUnit with no `file`, a directory-style area) maps nothing:
+  // the store is append-only, so a wrong area is worse than none.
+  if (stem === '') return undefined;
   const ranked = areas
     .filter((a) => fileStem(a.path) === stem)
     .map((a) => ({ area: a, shared: sharedTrailingDirs(testFile, a.path) }))

@@ -49,4 +49,36 @@ describe('areaFor', () => {
       ]),
     ).toBe('a/checkout.ts');
   });
+
+  it('maps other test-file shapes: .spec.tsx, .test.js, absolute paths', () => {
+    expect(areaFor('ui/Cart.spec.tsx', [area('src/Cart.tsx')])).toBe(
+      'src/Cart.tsx',
+    );
+    expect(areaFor('cart.test.js', [area('src/cart.ts')])).toBe('src/cart.ts');
+    expect(
+      areaFor('/home/ci/repo/e2e/cart.spec.ts', [area('src/cart.ts')]),
+    ).toBe('src/cart.ts');
+  });
+
+  it('normalises Windows separators on both sides', () => {
+    expect(
+      areaFor('C:\\repo\\e2e\\billing\\checkout.spec.ts', [
+        area('src/cart/checkout.ts', 9),
+        area('src\\billing\\checkout.ts', 1),
+      ]),
+    ).toBe('src\\billing\\checkout.ts');
+  });
+
+  it('never maps an empty test file or an area with no file stem', () => {
+    expect(areaFor('', [area('src/payments/')])).toBe(undefined);
+    expect(areaFor('', [area('')])).toBe(undefined);
+    expect(areaFor('e2e/.spec.ts', [area('src/payments/')])).toBe(undefined);
+  });
+
+  it('ranks a non-numeric risk_score as 0, whatever the input order', () => {
+    const odd = area('b/x.ts', Number.NaN);
+    const low = area('a/x.ts', 0);
+    expect(areaFor('x.spec.ts', [odd, low])).toBe('a/x.ts');
+    expect(areaFor('x.spec.ts', [low, odd])).toBe('a/x.ts');
+  });
 });

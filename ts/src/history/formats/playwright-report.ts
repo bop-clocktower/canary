@@ -148,7 +148,7 @@ function testFile(entry: PwEntry): string {
 }
 
 function errorText(attempts: PwAttempt[]): string | undefined {
-  // The last attempt that carries one: a flake's is its last failure (G8).
+  // The last attempt carrying one (G8): a flake's last failure, not its pass.
   const message = attempts
     .map((a) => a.error?.message ?? a.errors?.[0]?.message)
     .filter((m) => m !== undefined)

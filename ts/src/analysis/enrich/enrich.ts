@@ -45,14 +45,29 @@ function enrichRow<T extends RecordedRow>(
   };
 }
 
+/**
+ * The abstention notes. A file that maps NONE of the run's tests is as dark as
+ * a missing one and must say so (#508); a partial match stays quiet, because
+ * `history gaps` already reports it as `partial`.
+ */
+function notesFor(
+  loaded: ReturnType<typeof loadAreas>,
+  rows: readonly RecordedRow[],
+): string[] {
+  if (loaded.note !== undefined) return [loaded.note];
+  if (rows.length === 0 || rows.some((r) => r.area)) return [];
+  return [
+    `area not recorded: no test file in this run matches an area in ` +
+      `.canary/critical-areas.json (0 of ${rows.length}).`,
+  ];
+}
+
 /** Enrich recorded rows; `notes` holds one line per abstention. */
 export function enrichRecordedResults<T extends RecordedRow>(
   results: readonly T[],
   cwd: string,
 ): { results: T[]; notes: string[] } {
   const loaded = loadAreas(cwd);
-  return {
-    results: results.map((r) => enrichRow(r, loaded.areas)),
-    notes: loaded.note === undefined ? [] : [loaded.note],
-  };
+  const enriched = results.map((r) => enrichRow(r, loaded.areas));
+  return { results: enriched, notes: notesFor(loaded, enriched) };
 }

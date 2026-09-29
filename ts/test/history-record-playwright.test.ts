@@ -143,6 +143,21 @@ describe('Playwright report reader', () => {
     expect(built.results[2]!.error_text ?? null).toBeNull();
   });
 
+  it('falls back to an earlier message when the last attempt has none, and truncates flakes too', () => {
+    const r = report([
+      spec('fails', [
+        pwTest('unexpected', [
+          FAIL(5, 'early'),
+          { status: 'failed', duration: 5 },
+        ]),
+      ]),
+      spec('flakes', [pwTest('flaky', [FAIL(5, 'y'.repeat(3000)), PASS()])]),
+    ]);
+    const built = buildRunFromReport('playwright', r, CTX);
+    expect(built.results[0]!.error_text).toBe('early');
+    expect(built.results[1]!.error_text).toHaveLength(2000);
+  });
+
   it('sums every attempt into the per-test duration', () => {
     const r = report([spec('flaky', [pwTest('flaky', [FAIL(120), PASS(80)])])]);
     const built = buildRunFromReport('playwright', r, CTX);

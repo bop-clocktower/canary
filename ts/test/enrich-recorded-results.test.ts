@@ -54,12 +54,24 @@ describe('enrichRecordedResults', () => {
     expect(notes).toEqual([]);
   });
 
-  it('leaves area unset on a test no area maps, without a note', () => {
+  it("says so when the areas file maps none of the run's tests", () => {
     writeAreas(
       JSON.stringify({ areas: [{ path: 'src/billing.ts', risk_score: 3 }] }),
     );
     const { results, notes } = enrichRecordedResults(ROWS, tmp);
     expect(results.some((r) => 'area' in r)).toBe(false);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain('area not recorded');
+    expect(notes[0]).toContain('0 of 4');
+  });
+
+  it('stays quiet when at least one test maps (a partial is visible in gaps)', () => {
+    writeAreas(
+      JSON.stringify({ areas: [{ path: 'src/checkout.ts', risk_score: 3 }] }),
+    );
+    const rows = [...ROWS, { ...ROWS[0]!, test_file: 'e2e/other.spec.ts' }];
+    const { results, notes } = enrichRecordedResults(rows, tmp);
+    expect(results.filter((r) => 'area' in r)).toHaveLength(4);
     expect(notes).toEqual([]);
   });
 
