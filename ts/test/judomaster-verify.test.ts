@@ -3,10 +3,22 @@
  * and a pass is never reported as success (D2-D5, D9).
  */
 
-import { describe, expect, it } from 'vitest';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   classifyRun,
+  containedInGenerated,
   inferFramework,
 } from '../src/analysis/judomaster/verify.js';
 
@@ -81,5 +93,48 @@ describe('inferFramework', () => {
     ['a.rb', null],
   ])('%s gives %s', (path, want) => {
     expect(inferFramework(path)).toBe(want);
+  });
+});
+
+describe('containedInGenerated', () => {
+  let base: string;
+  let root: string;
+
+  beforeAll(() => {
+    base = mkdtempSync(join(tmpdir(), 'judomaster-contain-'));
+    root = join(base, 'repo');
+    const regression = join(root, 'tests', 'generated', 'regression');
+    mkdirSync(regression, { recursive: true });
+    mkdirSync(join(root, 'src'));
+    writeFileSync(join(regression, 'total-typeerror.test.ts'), 'x');
+    writeFileSync(join(root, 'src', 'x.test.ts'), 'x');
+    writeFileSync(join(root, 'src', 'evil.test.ts'), 'x');
+    writeFileSync(join(base, 'outside.test.ts'), 'x');
+    symlinkSync(
+      join(root, 'src', 'evil.test.ts'),
+      join(regression, 'link.test.ts'),
+    );
+  });
+
+  afterAll(() => rmSync(base, { recursive: true, force: true }));
+
+  it('returns the realpath of a file under tests/generated', () => {
+    const rel = 'tests/generated/regression/total-typeerror.test.ts';
+    expect(containedInGenerated(root, rel)).toBe(realpathSync(join(root, rel)));
+  });
+
+  it.each([
+    'src/x.test.ts',
+    '../outside.test.ts',
+    'tests/generated/regression/missing.test.ts',
+    'tests/generated/regression/link.test.ts',
+  ])('refuses %s', (rel) => {
+    expect(containedInGenerated(root, rel)).toBeNull();
+  });
+
+  it('refuses an absolute path outside tests/generated', () => {
+    expect(
+      containedInGenerated(root, join(root, 'src', 'x.test.ts')),
+    ).toBeNull();
   });
 });

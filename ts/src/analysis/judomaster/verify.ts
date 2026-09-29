@@ -14,6 +14,9 @@
  * contain the signature can never read as a reproduction.
  */
 
+import { realpathSync, statSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
+
 import type { ExecuteResult } from '../../core/executor.js';
 import type { RegressionBrief, VerifyVerdict } from './types.js';
 
@@ -102,4 +105,26 @@ export function inferFramework(path: string): string | null {
   if (/\.(spec|e2e)\.[cm]?[jt]sx?$/.test(path)) return 'playwright';
   if (/\.[cm]?[jt]sx?$/.test(path)) return 'vitest';
   return null;
+}
+
+/**
+ * The realpath of `testPath` when it is a file under `<root>/tests/generated/`
+ * (D6), else null. `verify` spawns a runner, so an unconfined path would be
+ * arbitrary execution: both sides are realpath'd so neither `..` nor a symlink
+ * planted inside `tests/generated/` can point the runner elsewhere. Same
+ * argument as the MCP `run_tests` guard (`ts/src/mcp-server.ts`), restated
+ * here because the entry layer is not importable from the engine.
+ */
+export function containedInGenerated(
+  root: string,
+  testPath: string,
+): string | null {
+  try {
+    const base = realpathSync(join(root, 'tests', 'generated'));
+    const real = realpathSync(resolve(root, testPath));
+    if (!real.startsWith(base + sep)) return null;
+    return statSync(real).isFile() ? real : null;
+  } catch {
+    return null;
+  }
 }
