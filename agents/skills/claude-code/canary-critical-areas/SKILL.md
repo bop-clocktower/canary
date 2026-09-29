@@ -122,7 +122,8 @@ When `--save` flag is passed (or when invoked by `/canary-test-pipeline`), write
 ```
 
 This file is consumed as opt-in context by `/canary-edge-cases` and
-`/canary-failure-impact`.
+`/canary-failure-impact`, and by `canary history record`, which maps each
+recorded test file to an area in it (#1125).
 
 ## Flags
 

@@ -25,9 +25,10 @@ Clocktower asks the store which readers it can actually feed.
 
 Issue #610 began as "build a run-history store". That premise was false: the
 store and its writer already existed. The real gap was one level down. Three
-test fields are declared in the history schema, read by consumers, and written
+test fields were declared in the history schema, read by consumers, and written
 by no writer: `area`, `failure_category` and `tags`. Nothing measured that, so
-nothing reported it.
+nothing reported it. Since #1125, `history record` fills `area` (from
+`.canary/critical-areas.json`) and `failure_category`; `tags` stays opt-in.
 
 ## Usage
 

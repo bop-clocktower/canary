@@ -17,6 +17,7 @@
 
 import { makeStore as realMakeStore, type AsyncHistoryStore } from './store.js';
 import { runGit } from './keys/replay-context.js';
+import type { TestResultInput } from './schema.js';
 
 /** Injected outside-world seams (out/err sinks, env, store factory). */
 export interface HistoryDeps {
@@ -27,6 +28,11 @@ export interface HistoryDeps {
   /** Run git in the working directory; stdout trimmed, or null on failure. */
   git(args: string[]): string | null;
   cwd(): string;
+  /** #1125 record-time enricher, from the engine registry. Absent: as read. */
+  enrichResults?(
+    results: TestResultInput[],
+    cwd: string,
+  ): { results: TestResultInput[]; notes: string[] };
 }
 
 /** Process-backed defaults for production. */
