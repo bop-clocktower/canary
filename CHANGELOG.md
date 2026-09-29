@@ -16,6 +16,17 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **canary-question: evidence brief for one failing test** (#613).
+  `canary skills run canary-question -- --test NAME` reads the run-history
+  store, and optionally a git diff of the culprit range (`--repo`) and one
+  Tier-0 detector `--json` envelope (`--findings`). It lists the evidence for
+  and against three hypotheses in a fixed order: defect in the test, defect in
+  the system under test, environment. It never prints a verdict, ranking or
+  lean, and a test asserts that over every fixture. Fidelity (`abstained` /
+  `thin` / `history` / `history+diff`) and the denominator are always printed,
+  and unreadable evidence is listed under Not checked. Advisory: exit 0 for
+  every brief, 1 for a named input that cannot be read, 2 for usage. No
+  `--strict`.
 - **canary-manhunter: release quality dossier** (#611). `canary manhunter`
   assembles the evidence a release already has into one markdown (and
   `--json-out` JSON) report. It covers run history, guardian coverage tiers and
