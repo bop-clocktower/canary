@@ -140,10 +140,11 @@ function disambiguation(input, fidelity) {
 
 function targetSummary(target, lastPass) {
   if (!target) return {};
-  const { coFailures, error_text, ...rest } = target;
+  const { coFailures, testsInRun, error_text, ...rest } = target;
   return {
     ...rest,
     co_failures: coFailures.length,
+    tests_in_run: testsInRun,
     last_pass_commit_sha: lastPass?.commit_sha ?? null,
   };
 }

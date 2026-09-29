@@ -215,6 +215,7 @@ describe('history: one test timeline', () => {
     }));
     const [obs] = timelineOf(runs).observations;
     expect(obs.coFailures.map((c: Run) => c.test_name)).toEqual(['b']);
+    expect(obs.testsInRun).toBe(3);
     expect(obs.retry_count).toBe(0);
     expect(obs.test_file).toBe(TEST_FILE);
   });
@@ -388,14 +389,32 @@ describe('signals: co-failures in the target run', () => {
     failure_category: 'timeout',
     error_text: null,
     coFailures,
+    testsInRun: 5,
     ...over,
   });
 
-  it('isolated: the only failure supports test-defect, weighs against env', () => {
+  it('isolated: failing alone supports both code hypotheses, not the test alone', () => {
     const [r] = coFailureRows(target([]));
     expect(r.signal).toBe('isolated');
-    expect(r.supports).toEqual(['test-defect']);
+    // A narrow product regression also fails alone.
+    expect(r.supports).toEqual(['test-defect', 'product-defect']);
     expect(r.weighsAgainst).toEqual(['environment']);
+    expect(r.detail).toContain('5 tests in run');
+  });
+
+  it('a run of one test cannot show isolation: a neutral row, not isolated', () => {
+    const rows = coFailureRows(target([], { testsInRun: 1 }));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].signal).not.toBe('isolated');
+    expect(rows[0].supports).toEqual([]);
+    expect(rows[0].weighsAgainst).toEqual([]);
+    expect(rows[0].detail).toMatch(/run r9 contained only this test/);
+  });
+
+  it('an unrecorded run size cannot show isolation either', () => {
+    const rows = coFailureRows(target([], { testsInRun: undefined }));
+    expect(rows.map((r) => r.signal)).not.toContain('isolated');
+    expect(rows[0].supports).toEqual([]);
   });
 
   it('co-failure when another failure shares the area', () => {
@@ -415,6 +434,14 @@ describe('signals: co-failures in the target run', () => {
     expect(rows[0].signal).toBe('co-failure');
   });
 
+  const unrelatedRow = {
+    signal: 'unrelated-co-failures',
+    source: 'run history',
+    detail: '1 other failure(s) in run r9, none sharing area or category',
+    supports: [],
+    weighsAgainst: [],
+  };
+
   it('an uncategorised pair is not a shared cause', () => {
     const rows = coFailureRows(
       target([{ test_name: 'd', area: null, failure_category: 'other' }], {
@@ -422,14 +449,14 @@ describe('signals: co-failures in the target run', () => {
         failure_category: 'other',
       }),
     );
-    expect(rows).toEqual([]);
+    expect(rows).toEqual([unrelatedRow]);
   });
 
-  it('no row when other failures share neither area nor category', () => {
+  it('unrelated failures in the run are recorded as not discriminating', () => {
     const rows = coFailureRows(
       target([{ test_name: 'e', area: 'billing', failure_category: 'schema' }]),
     );
-    expect(rows).toEqual([]);
+    expect(rows).toEqual([unrelatedRow]);
   });
 });
 
@@ -945,7 +972,11 @@ describe('brief: evidence placement', () => {
         tests: [entry('failed', { failure_category: 'client' })],
       })),
     );
-    expect(signals(brief.neutral)).toEqual(['category-neutral']);
+    // One test per run in this fixture, so isolation is not observable either.
+    expect(signals(brief.neutral)).toEqual([
+      'category-neutral',
+      'single-test-run',
+    ]);
     for (const h of brief.hypotheses) {
       expect(signals([...h.for, ...h.against])).not.toContain(
         'category-neutral',
@@ -954,7 +985,7 @@ describe('brief: evidence placement', () => {
   });
 
   it('rows carry signal, source and detail only', () => {
-    const brief = briefFor(series(['passed', 'failed']));
+    const brief = briefFor(series(['passed', 'failed', 'failed']));
     expect(Object.keys(forOf(brief, 'test-defect')[0]).sort()).toEqual([
       'detail',
       'signal',

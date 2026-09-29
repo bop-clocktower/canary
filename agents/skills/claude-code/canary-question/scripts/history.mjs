@@ -126,6 +126,8 @@ function toObservation(run, entry) {
     test_file: orElse(entry.test_file),
     area: orElse(entry.area),
     coFailures: coFailuresOf(run, entry),
+    // "The only failure" means nothing in a run of one test (I4).
+    testsInRun: testsOf(run).filter(isPlainObject).length,
   };
 }
 

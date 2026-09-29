@@ -181,23 +181,44 @@ function sharesCategory(a, b) {
 
 const sharesArea = (a, b) => a.area != null && a.area === b.area;
 
+/**
+ * Failing alone. A narrow product regression fails alone too, so isolation is
+ * evidence for both code hypotheses, and only against a shared environment.
+ * A run of one test (or of an unrecorded size) cannot show isolation at all.
+ */
+function isolatedRows({ run_id: run, testsInRun: n }) {
+  if (typeof n !== 'number') {
+    const detail = `the number of tests in run ${run} is not recorded; isolation cannot be observed`;
+    return [row('single-test-run', HISTORY, detail)];
+  }
+  if (n < 2) {
+    const detail = `run ${run} contained only this test; isolation cannot be observed`;
+    return [row('single-test-run', HISTORY, detail)];
+  }
+  const detail = `the only failing test in run ${run} (${n} tests in run)`;
+  return [
+    row(
+      'isolated',
+      HISTORY,
+      detail,
+      ['test-defect', 'product-defect'],
+      ['environment'],
+    ),
+  ];
+}
+
+function unrelatedRow(target, others) {
+  const detail = `${others.length} other failure(s) in run ${target.run_id}, none sharing area or category`;
+  return [row('unrelated-co-failures', HISTORY, detail)];
+}
+
 export function coFailureRows(target) {
   const others = target.coFailures ?? [];
-  if (!others.length) {
-    return [
-      row(
-        'isolated',
-        HISTORY,
-        `the only failing test in run ${target.run_id}`,
-        ['test-defect'],
-        ['environment'],
-      ),
-    ];
-  }
+  if (!others.length) return isolatedRows(target);
   const related = others.filter(
     (o) => sharesArea(target, o) || sharesCategory(target, o),
   );
-  if (!related.length) return [];
+  if (!related.length) return unrelatedRow(target, others);
   const names = related
     .slice(0, 5)
     .map((o) => o.test_name)
