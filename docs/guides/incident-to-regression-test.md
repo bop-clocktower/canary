@@ -1,0 +1,113 @@
+# canary judomaster — incident to regression test
+
+Turn an escaped defect into one regression test, and only call it a regression
+test once it has been watched failing for the incident's reason.
+
+`canary judomaster` (#614) has two deterministic subcommands. `brief` turns a
+pasted stack trace into a regression brief. `verify` runs the generated test
+against the current code and grades it. Test authoring sits between them and
+reuses the existing path (`/canary-write-test`, the `canary-test-author` agent);
+judomaster writes no test code and calls no LLM. The spec is
+[docs/changes/614-canary-judomaster/proposal.md](../changes/614-canary-judomaster/proposal.md).
+
+## 1. Paste the trace
+
+A stack trace alone is enough. Slack `>` quote markers, code fences and ANSI
+colour are stripped before parsing. Two formats are recognised:
+
+- V8 / Node (JavaScript and TypeScript): `at fn (path:line:col)`,
+  `at path:line:col`, and `file://` URLs.
+- CPython: `File "path", line N, in fn`.
+
+Paths captured on another machine (`/app/src/...`, `/home/ci/work/repo/...`)
+resolve by the longest path suffix that exists under `--root`. Dependency and
+runtime frames (`node_modules`, `site-packages`, `node:` internals,
+`<anonymous>`) are listed as `external`; a line past the end of the file is
+listed as `stale` rather than dropped.
+
+## 2. Build the brief
+
+```bash
+canary judomaster brief trace.txt --json-out brief.json
+pbpaste | canary judomaster brief -
+```
+
+| Option              | Meaning                                         |
+| ------------------- | ----------------------------------------------- |
+| `[trace]`           | trace file; stdin when omitted or `-`           |
+| `--root <dir>`      | repository root frames resolve against (cwd)    |
+| `--json`            | print the brief as JSON instead of markdown     |
+| `--json-out <file>` | also write the JSON brief (what `verify` reads) |
+
+The brief names the suspect (the innermost frame that resolves in the
+repository), the error signature (the first line of the error message, or the
+error type when the message is empty, labelled `type-only`), the framework, the
+output path under `tests/generated/regression/`, and a requirement string for
+the author.
+
+Exit `0` brief emitted; `3` no V8/CPython trace recognised, or no frame resolves
+inside the root (the reason is printed); `2` the input could not be read.
+
+## 3. Author the test
+
+Hand the brief's `requirement` to `/canary-write-test` and have it write exactly
+one test to the brief's `outputPath`. The canary-judomaster skill does this hop
+for you.
+
+## 4. Verify it
+
+```bash
+canary judomaster verify tests/generated/regression/total-typeerror.test.ts \
+  --brief brief.json
+```
+
+| Option               | Meaning                                             |
+| -------------------- | --------------------------------------------------- |
+| `--brief <file>`     | brief JSON supplying the signature                  |
+| `--expect <text>`    | signature text to confirm against (overrides brief) |
+| `--framework <name>` | override the framework inferred from the extension  |
+| `--timeout <s>`      | run timeout in seconds (default 60)                 |
+| `--root <dir>`       | repository root (cwd)                               |
+| `--json`             | print the verify result as JSON                     |
+
+The framework comes from the extension: `.py` is pytest, `.spec.*` or `.e2e.*`
+is Playwright, and other `.ts/.js/.mts/.mjs` files are Vitest. The run goes
+through canary's framework registry and test executor.
+
+`verify` refuses any test whose real path is outside `<root>/tests/generated/`
+(exit 2) and runs nothing. It spawns a test runner, so an unconfined path would
+be arbitrary execution.
+
+## Verdicts
+
+| Verdict                            | Exit | When                                                           |
+| ---------------------------------- | ---- | -------------------------------------------------------------- |
+| `reproduced`                       | 0    | the test failed and its output carries the incident signature  |
+| `not-reproduced`                   | 1    | the test passed on its first run (vacuity red flag)            |
+| `failed-other-reason`              | 1    | the test failed, but not with the signature; unverified        |
+| `unverified — could not reproduce` | 3    | no tests collected, timeout, spawn error, or unknown framework |
+
+### The vacuity rule
+
+A regression test written for a defect that still exists must fail. If it passes
+on its first run it cannot tell the bug from the fix, so `verify` prints
+`VACUITY RED FLAG: the test passed against the code it was written to catch` and
+exits 1. Never report that as success.
+
+A red run is not enough either: a test can fail on an import error, a typo or a
+missing fixture. That is `failed-other-reason`. With neither `--brief` nor
+`--expect` there is no signature to confirm against, so a failing run can only
+ever be `failed-other-reason`, and the output says so.
+
+Only after `reproduced` is the test ready for `canary-promote-test`.
+
+## Non-goals
+
+- Other trace formats (Java, Go, Ruby, .NET) abstain with exit 3 and say so.
+- Screenshots and prose-only threads: with no frames there is nothing to
+  resolve.
+- Structured incident intake (postmortem records, SARIF findings) is a named
+  follow-up on the same engine.
+- Proving the fix works: there is no fixed code yet.
+- Automatic promotion, automatic commits, or more than one candidate test per
+  run.

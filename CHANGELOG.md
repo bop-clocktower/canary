@@ -29,6 +29,18 @@ under the project's former name) are documented in the
   and unread evidence is listed under Not checked. Advisory: exit 0 for every
   brief, 1 for a named input that cannot be read or an `--out` that cannot be
   written, 2 for usage. No `--strict`.
+- **canary-judomaster: incident to regression test** (Refs #614).
+  `canary judomaster brief` turns a pasted V8/Node or CPython stack trace (Slack
+  quotes, code fences and ANSI tolerated) into a regression brief: the suspect
+  frame resolved in the repository even from another machine's paths, the error
+  signature, and a requirement for `/canary-write-test`.
+  `canary judomaster verify` runs the generated test and grades it: `reproduced`
+  (exit 0) only when it fails with the signature; a first-run pass is
+  `not-reproduced` with a vacuity red flag and a wrong-reason failure is
+  `failed-other-reason` (exit 1); a run that could not collect or run is
+  `unverified — could not reproduce` (exit 3). `verify` runs only tests under
+  `tests/generated/`. No LLM, no network. Skill `canary-judomaster`; guide
+  `docs/guides/incident-to-regression-test.md`.
 - **canary-manhunter: release quality dossier** (#611). `canary manhunter`
   assembles the evidence a release already has into one markdown (and
   `--json-out` JSON) report. It covers run history, guardian coverage tiers and
