@@ -30,9 +30,10 @@ function fedRun(i: number, testExtra: Row = {}): Row {
     commit_sha: 'c'.repeat(40),
     timestamp: `2026-09-21T00:0${i}:00Z`,
     duration_ms: 1000,
+    failed: 1,
     reporter_format: 'playwright',
     replay: { seed: null },
-    order: { ttff_ordered_ms_estimate: 1 },
+    order: { ttff_ordered_ms_estimate: 1, ttff_baseline_ms_estimate: 2 },
     tests: [
       {
         test_name: 'checks out',
@@ -147,6 +148,15 @@ describe('canary history gaps', () => {
     );
     expect(res.stdout).toContain('All 8 run consumer check(s) passed');
     expect(res.code).toBe(0);
+  });
+
+  it('fails on an opt-in consumer fed on some runs but not others', async () => {
+    const { order: _order, ...noPlan } = fedRun(2);
+    seed(tmp, [fedRun(1), noPlan]);
+    const res = await gaps();
+    expect(res.stdout).toContain('order-ttff: partial');
+    expect(res.stdout).toContain('1 finding(s) across 9 checked');
+    expect(res.code).toBe(1);
   });
 
   it('--json lists every skipped entry, including the remote store', async () => {

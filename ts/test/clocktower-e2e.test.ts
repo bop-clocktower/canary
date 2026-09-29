@@ -121,6 +121,7 @@ describe('history gaps over a store written by history record', () => {
   it('reports the fields the writer does fill as fed', async () => {
     const { gaps } = await recordThenGaps();
     expect(find(gaps, 'flaky-retry').status).toBe('fed');
+    // The real writer always stamps the run's failed count (#610 review).
     expect(find(gaps, 'screech-range').status).toBe('fed');
     expect(find(gaps, 'ci-ready-runtime').status).toBe('fed');
     expect(find(gaps, 'order').status).toBe('fed');

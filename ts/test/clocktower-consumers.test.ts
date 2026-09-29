@@ -70,6 +70,7 @@ describe('clocktower consumer table', () => {
     ['screech-range', 'branch', 'run', 'canary-screech/scripts/history.mjs:68'],
     ['screech-range', 'commit_sha', 'run', 'screech/scripts/redness.mjs:46'],
     ['screech-range', 'timestamp', 'run', 'screech/scripts/history.mjs:71'],
+    ['screech-range', 'failed', 'run', 'screech/scripts/redness.mjs:16'],
     ['screech-cluster', 'area', 'failed-test', 'screech/cluster.mjs:47'],
     ['screech-cluster', 'failure_category', 'failed-test', 'cluster.mjs:29'],
     ['ci-ready-runtime', 'duration_ms', 'run', 'ts/src/core/ci-ready.ts:180'],
@@ -98,6 +99,13 @@ describe('clocktower consumer table', () => {
       expect(onRun('screech-range', field, '')).toBe(false);
       expect(onRun('screech-range', field, null)).toBe(false);
     }
+  });
+
+  it('screech-range needs a numeric failed count, as isRed reads it', () => {
+    expect(onRun('screech-range', 'failed', 0)).toBe(true);
+    expect(onRun('screech-range', 'failed', 3)).toBe(true);
+    expect(onRun('screech-range', 'failed', null)).toBe(false);
+    expect(requirement('screech-range', 'failed').carried(RUN)).toBe(false);
   });
 
   it('screech-cluster needs area and category on each failed test', () => {
@@ -182,10 +190,14 @@ describe('clocktower consumer table', () => {
     expect(onTest('rewind', 'test_file', '')).toBe(false);
   });
 
-  it('order-ttff needs an order object, not null or a scalar', () => {
-    expect(onRun('order-ttff', 'order', { ttff_ordered_ms_estimate: 1 })).toBe(
-      true,
-    );
+  it('order-ttff needs an order object carrying both TTFF estimates', () => {
+    const order = (ordered: unknown, baseline: unknown) => ({
+      ttff_ordered_ms_estimate: ordered,
+      ttff_baseline_ms_estimate: baseline,
+    });
+    expect(onRun('order-ttff', 'order', order(1, 2))).toBe(true);
+    expect(onRun('order-ttff', 'order', order(null, 2))).toBe(false);
+    expect(onRun('order-ttff', 'order', order(1, null))).toBe(false);
     expect(onRun('order-ttff', 'order', null)).toBe(false);
     expect(onRun('order-ttff', 'order', 'yes')).toBe(false);
   });
