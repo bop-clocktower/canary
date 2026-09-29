@@ -596,6 +596,75 @@ describe('diff: evidence or Not checked (SC6)', () => {
     expect(res.notChecked[0].reason).toMatch(/git could not diff abc1\.\.abc2/);
   });
 
+  it('a pass and a failure at one commit have no culprit range', () => {
+    const res = diffEvidence({
+      repo: '.',
+      target: obs('abc1230'),
+      lastPass: obs('abc1230'),
+    });
+    expect(res.read).toBe(false);
+    expect(res.notChecked).toEqual([
+      {
+        source: 'git diff',
+        reason: 'pass and failure at the same commit; no culprit range',
+      },
+    ]);
+    const brief = briefFor(
+      series(['passed', 'passed', 'failed'], () => ({ commit_sha: 'abc1230' })),
+      { diff: res },
+    );
+    expect(brief.fidelity).toBe('history');
+  });
+
+  it('a last pass on another branch is not a culprit range', () => {
+    const { repo, base } = repoWithBase();
+    git(repo, 'checkout', '-qb', 'side');
+    const side = commitTouching(repo, ['src/cart.js']);
+    git(repo, 'checkout', '-q', base);
+    const other = commitTouching(repo, [TEST_FILE]);
+    const res = diffEvidence({
+      repo,
+      target: obs(other),
+      lastPass: obs(side),
+    });
+    expect(res.read).toBe(false);
+    expect(res.notChecked).toEqual([
+      {
+        source: 'git diff',
+        reason:
+          'last pass is not an ancestor of the target; the range spans branches',
+      },
+    ]);
+  });
+
+  it('reads a changed-file list larger than the default 1 MiB buffer', () => {
+    // A stand-in `git` on PATH: merge-base succeeds, diff prints ~2 MB.
+    const bin = tmp();
+    const fake = path.join(bin, 'git');
+    fs.writeFileSync(
+      fake,
+      '#!/bin/sh\n' +
+        'case "$3" in\n' +
+        '  merge-base) exit 0 ;;\n' +
+        '  diff) awk \'BEGIN { for (i = 0; i < 20000; i++) printf "src/%096d.js\\n", i }\' ;;\n' +
+        'esac\n',
+    );
+    fs.chmodSync(fake, 0o755);
+    vi.stubEnv('PATH', `${bin}${path.delimiter}${process.env.PATH}`);
+    try {
+      const res = diffEvidence({
+        repo: '.',
+        target: obs('abc2'),
+        lastPass: obs('abc1'),
+      });
+      expect(res.notChecked).toEqual([]);
+      expect(res.read).toBe(true);
+      expect(res.rows[0].detail).toMatch(/^0 test path\(s\), 20000 non-test/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('reads the range and classifies it', () => {
     const { repo, base } = repoWithBase();
     const head = commitTouching(repo, ['src/cart.js']);

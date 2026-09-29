@@ -2,7 +2,9 @@
 //
 // Culprit range = last passing observation's commit -> target failure's commit.
 // Any reason the range cannot be read (no prior pass, a sha that is not an
-// object id, git missing, commits unreachable) is a "Not checked" entry, never
+// object id, pass and failure at one commit, a last pass that is not an
+// ancestor of the target, git missing or timed out, commits unreachable) is a
+// "Not checked" entry, never
 // a silent gap and never an error: the diff is optional evidence (D9).
 //
 // Shas come from the store, so they are validated as hex before they reach git:
@@ -21,21 +23,57 @@ function firstLine(text) {
     .split('\n')[0];
 }
 
+// A hung git (credential prompt, network filesystem) must not hang the brief,
+// and a large range must not overflow the 1 MiB default buffer into a false
+// "could not diff" (S5).
+const GIT_OPTIONS = {
+  encoding: 'utf8',
+  stdio: ['ignore', 'pipe', 'pipe'],
+  timeout: 10_000,
+  maxBuffer: 16 * 1024 * 1024,
+};
+
+/** `--end-of-options` (git >= 2.24) is a second guard behind the hex check. */
+function git(repo, args, revs) {
+  return execFileSync(
+    'git',
+    ['-C', repo, ...args, '--end-of-options', ...revs],
+    GIT_OPTIONS,
+  );
+}
+
+const gitError = (exc) => firstLine(exc.stderr) || exc.message;
+
 /** @returns {{files: string[]|null, error: string|null}} */
 export function readCulpritDiff(repo, from, to) {
   try {
-    const out = execFileSync(
-      'git',
-      ['-C', repo, 'diff', '--name-only', from, to],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    );
+    const out = git(repo, ['diff', '--name-only'], [from, to]);
     const files = out
       .split('\n')
       .map((s) => s.trim())
       .filter(Boolean);
     return { files, error: null };
   } catch (exc) {
-    return { files: null, error: firstLine(exc.stderr) || exc.message };
+    return { files: null, error: gitError(exc) };
+  }
+}
+
+/**
+ * A last pass on another branch makes `from..to` a diff across branches, not
+ * the changes that arrived before the failure (I3). Exit 1 = not an ancestor;
+ * any other failure is git being unable to answer.
+ *
+ * @returns {string|null} why the range is not a culprit range, or null
+ */
+function ancestryProblem(repo, from, to) {
+  try {
+    git(repo, ['merge-base', '--is-ancestor'], [from, to]);
+    return null;
+  } catch (exc) {
+    if (exc.status === 1) {
+      return 'last pass is not an ancestor of the target; the range spans branches';
+    }
+    return `git could not diff ${from}..${to}: ${gitError(exc)}`;
   }
 }
 
@@ -88,6 +126,9 @@ function rangeProblem(target, lastPass) {
   ) {
     return 'a commit sha in the culprit range is missing or not a hex object id';
   }
+  if (lastPass.commit_sha === target.commit_sha) {
+    return 'pass and failure at the same commit; no culprit range';
+  }
   return null;
 }
 
@@ -97,6 +138,8 @@ export function diffEvidence({ repo, target, lastPass }) {
   if (problem) return notChecked(problem);
   const from = lastPass.commit_sha;
   const to = target.commit_sha;
+  const unrelated = ancestryProblem(repo, from, to);
+  if (unrelated) return notChecked(unrelated);
   const { files, error } = readCulpritDiff(repo, from, to);
   if (error) return notChecked(`git could not diff ${from}..${to}: ${error}`);
   return {
