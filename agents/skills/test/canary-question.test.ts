@@ -4,6 +4,7 @@
  * docs/changes/613-canary-question/proposal.md). Fixtures are synthetic and
  * de-identified; nothing here is copied from a real store.
  */
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,6 +28,11 @@ import {
   resolveCategory,
   samePath,
 } from '../claude-code/canary-question/scripts/signals.mjs';
+import {
+  diffEvidence,
+  diffRows,
+  readCulpritDiff,
+} from '../claude-code/canary-question/scripts/diff.mjs';
 
 const tmps: string[] = [];
 function tmp(): string {
@@ -431,5 +437,159 @@ describe('signals: test paths', () => {
     expect(samePath('./test/a.test.js', 'repo/test/a.test.js')).toBe(true);
     expect(samePath('test\\a.test.js', 'test/a.test.js')).toBe(true);
     expect(samePath('test/a.test.js', 'test/ba.test.js')).toBe(false);
+  });
+});
+
+/** Run git in `repo` with an identity and no signing, whatever the host has. */
+function git(repo: string, ...args: string[]): string {
+  return execFileSync(
+    'git',
+    [
+      '-C',
+      repo,
+      '-c',
+      'user.email=question@example.invalid',
+      '-c',
+      'user.name=question',
+      '-c',
+      'commit.gpgsign=false',
+      ...args,
+    ],
+    { encoding: 'utf8' },
+  ).trim();
+}
+
+function touch(repo: string, file: string): void {
+  const full = path.join(repo, file);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.appendFileSync(full, `// ${Math.random()}\n`);
+}
+
+/** A repo with a SUT file and a test file; returns the base sha. */
+function repoWithBase(): { repo: string; base: string } {
+  const repo = tmp();
+  git(repo, 'init', '-q');
+  touch(repo, 'src/cart.js');
+  touch(repo, TEST_FILE);
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-qm', 'base');
+  return { repo, base: git(repo, 'rev-parse', 'HEAD') };
+}
+
+function commitTouching(repo: string, files: string[]): string {
+  for (const f of files) touch(repo, f);
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-qm', 'change');
+  return git(repo, 'rev-parse', 'HEAD');
+}
+
+describe('diff: reading the culprit range', () => {
+  it('lists the files changed between two commits', () => {
+    const { repo, base } = repoWithBase();
+    const head = commitTouching(repo, [TEST_FILE]);
+    expect(readCulpritDiff(repo, base, head)).toEqual({
+      files: [TEST_FILE],
+      error: null,
+    });
+  });
+
+  it('reports, never throws, when a commit is unreachable', () => {
+    const { repo, base } = repoWithBase();
+    const res = readCulpritDiff(repo, base, 'deadbeefdeadbeef');
+    expect(res.files).toBeNull();
+    expect(res.error).toBeTruthy();
+  });
+
+  it('reports, never throws, outside a git repository', () => {
+    const res = readCulpritDiff(tmp(), 'abc1', 'abc2');
+    expect(res.files).toBeNull();
+    expect(res.error).toBeTruthy();
+  });
+});
+
+describe('diff: classifying the range (SC5)', () => {
+  it('diff-test-only is for test-defect and against product-defect', () => {
+    const [r] = diffRows([TEST_FILE], TEST_FILE);
+    expect(r.signal).toBe('diff-test-only');
+    expect(r.supports).toEqual(['test-defect']);
+    expect(r.weighsAgainst).toEqual(['product-defect']);
+    expect(r.detail).toContain(`test file ${TEST_FILE} changed`);
+  });
+
+  it('diff-sut-only is the mirror image', () => {
+    const [r] = diffRows(['src/cart.js'], TEST_FILE);
+    expect(r.signal).toBe('diff-sut-only');
+    expect(r.supports).toEqual(['product-defect']);
+    expect(r.weighsAgainst).toEqual(['test-defect']);
+    expect(r.detail).toContain(`test file ${TEST_FILE} unchanged`);
+  });
+
+  it('diff-both supports both code hypotheses', () => {
+    const [r] = diffRows(['src/cart.js', TEST_FILE], TEST_FILE);
+    expect(r.signal).toBe('diff-both');
+    expect(r.supports).toEqual(['test-defect', 'product-defect']);
+  });
+
+  it('diff-none (same tree) supports environment', () => {
+    const [r] = diffRows([], TEST_FILE);
+    expect(r.signal).toBe('diff-none');
+    expect(r.supports).toEqual(['environment']);
+  });
+
+  it('says so when test_file was not recorded', () => {
+    const [r] = diffRows(['tests/x.py'], null);
+    expect(r.signal).toBe('diff-test-only');
+    expect(r.detail).toMatch(/test_file not recorded/);
+  });
+});
+
+describe('diff: evidence or Not checked (SC6)', () => {
+  const obs = (sha: string | null, testFile: string | null = TEST_FILE) => ({
+    commit_sha: sha,
+    test_file: testFile,
+  });
+
+  it('no culprit range without a prior pass', () => {
+    const res = diffEvidence({
+      repo: '.',
+      target: obs('abc1'),
+      lastPass: null,
+    });
+    expect(res.read).toBe(false);
+    expect(res.notChecked[0].source).toBe('git diff');
+    expect(res.notChecked[0].reason).toMatch(/no passing observation/);
+  });
+
+  it('refuses a sha that is not a hex object id (never reaches git)', () => {
+    const res = diffEvidence({
+      repo: '.',
+      target: obs('--output=/tmp/x'),
+      lastPass: obs('abc1'),
+    });
+    expect(res.read).toBe(false);
+    expect(res.notChecked[0].reason).toMatch(/not a hex object id/);
+  });
+
+  it('names the git error when the range cannot be read', () => {
+    const res = diffEvidence({
+      repo: tmp(),
+      target: obs('abc2'),
+      lastPass: obs('abc1'),
+    });
+    expect(res.read).toBe(false);
+    expect(res.notChecked[0].reason).toMatch(/git could not diff abc1\.\.abc2/);
+  });
+
+  it('reads the range and classifies it', () => {
+    const { repo, base } = repoWithBase();
+    const head = commitTouching(repo, ['src/cart.js']);
+    const res = diffEvidence({
+      repo,
+      target: obs(head),
+      lastPass: obs(base),
+    });
+    expect(res.read).toBe(true);
+    expect(res.notChecked).toEqual([]);
+    expect(res.rows[0].signal).toBe('diff-sut-only');
   });
 });
