@@ -3,8 +3,8 @@
  *
  * A store written by `canary history record` from a Playwright report carries
  * no `area` and no `failure_category` on any test (G1, G2): the format readers
- * never set them, while `analyze area-health` and the failure-category reports
- * read them. This test records a run through the production writer and asks
+ * never set them, while canary-screech, the `history flaky` area column and
+ * `analyze common-failures` read them. This test records a run through the production writer and asks
  * `history gaps` about it, so it goes red the day a writer starts filling
  * either field -- which is the day the documented gap list must change.
  */

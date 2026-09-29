@@ -99,13 +99,14 @@ function abstain(
 /**
  * Why a consumer is left out of the denominator, or null when it counts.
  *
- * Unmeasured has no rows to judge. An opt-in consumer that is not fed was not
+ * Unmeasured has no rows to judge. An opt-in consumer that is dark was not
  * asked for: its flag is a choice, not a writer defect, so it is named as
- * skipped rather than failing every store that never used the flag (S4).
+ * skipped rather than failing every store that never used the flag (S4). A
+ * partial one was asked for on some runs, so its gaps stay findings.
  */
 function skipReason(gap: ConsumerGap): string | null {
   if (gap.status === 'unmeasured') return 'no applicable rows';
-  if (gap.optIn !== undefined && gap.status !== 'fed') {
+  if (gap.optIn !== undefined && gap.status === 'dark') {
     return `opt-in: not recorded with history record ${gap.optIn}`;
   }
   return null;

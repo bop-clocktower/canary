@@ -45,6 +45,12 @@ const num = (v: unknown): boolean =>
   typeof v === 'number' && Number.isFinite(v);
 const obj = (v: unknown): boolean => typeof v === 'object' && v !== null;
 
+// ttff-report.ts drops a run whose order block lacks either estimate.
+const ttffEstimates = (v: unknown): boolean =>
+  obj(v) &&
+  num((v as Record<string, unknown>)['ttff_ordered_ms_estimate']) &&
+  num((v as Record<string, unknown>)['ttff_baseline_ms_estimate']);
+
 // ci-ready's runtime check drops zero and negative durations (core/ci-ready.ts).
 const positive = (v: unknown): boolean => num(v) && (v as number) > 0;
 
@@ -101,6 +107,8 @@ export const CONSUMERS: readonly Consumer[] = [
       onRun('branch', text),
       onRun('commit_sha', text),
       onRun('timestamp', text),
+      // redness.mjs isRed: `Number(run.failed ?? 0) > 0` -- absent reads green.
+      onRun('failed', num),
     ],
   },
   {
@@ -151,7 +159,7 @@ export const CONSUMERS: readonly Consumer[] = [
   {
     id: 'order-ttff',
     surface: 'canary order --report (TTFF)',
-    requirements: [onRun('order', obj)],
+    requirements: [onRun('order', ttffEstimates)],
     optIn: '--order-plan',
   },
 ];
