@@ -39,7 +39,7 @@ under the project's former name) are documented in the
   `not-reproduced` with a vacuity red flag and a wrong-reason failure is
   `failed-other-reason` (exit 1); a run that could not collect or run is
   `unverified — could not reproduce` (exit 3). `verify` runs only tests under
-  `tests/generated/`. No LLM, no network. Skill `canary-judomaster`; guide
+  `tests/generated/`. No LLM. Skill `canary-judomaster`; guide
   `docs/guides/incident-to-regression-test.md`.
 - **canary-manhunter: release quality dossier** (#611). `canary manhunter`
   assembles the evidence a release already has into one markdown (and

@@ -5,15 +5,24 @@
  * Two deterministic subcommands with test authoring composed between them by
  * the canary-judomaster skill (D1): `brief` turns a pasted V8/CPython trace
  * into a regression brief, and `verify` grades the generated test by running
- * it. A pass is never reported as success. No LLM call, no network.
+ * it. A pass is never reported as success. No LLM call. `verify` runs the
+ * framework's registry command from the current directory (for vitest and
+ * playwright that is `npx --yes ...`, which can fetch the runner), so run it
+ * from the repository root, where the runner finds the project's config.
  *
  * Lives in its own folder, not beside the engine, for the reason
  * `manhunter/manhunter-cli.ts` does (D8): filename binds the `cli` layer, and a
  * top-level `ts/src` file would grow that module's file count.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { Command } from 'commander';
 
 import { CliExitError, normalizeUsageExit } from '../cli-common.js';
@@ -131,13 +140,25 @@ function readBrief(deps: MainDeps, file: string): RegressionBrief {
   return parsed as RegressionBrief;
 }
 
+/** Shortest `--expect` accepted: with no error type to anchor it, a short
+ * string matches nearly any output. */
+const MIN_EXPECT = 8;
+
 /** `--expect` wins over the brief's signature; neither gives null (D5). */
 function loadSignature(
+  deps: MainDeps,
   opts: VerifyOpts,
   brief: RegressionBrief | null,
 ): Signature | null {
-  if (opts.expect !== undefined) return { text: opts.expect, kind: 'message' };
-  return brief?.signature ?? null;
+  if (opts.expect === undefined) return brief?.signature ?? null;
+  const text = opts.expect.trim();
+  if (text.length < MIN_EXPECT) {
+    usage(
+      deps,
+      `--expect needs at least ${MIN_EXPECT} characters of the error message; use --brief for a short, type-anchored signature`,
+    );
+  }
+  return { text, kind: 'message' };
 }
 
 function pickFramework(
@@ -145,7 +166,9 @@ function pickFramework(
   test: string,
   brief: RegressionBrief | null,
 ): string | null {
-  return opts.framework ?? inferFramework(test) ?? brief?.framework ?? null;
+  // The brief knows the trace's runtime; an extension such as `.spec.ts` is
+  // ambiguous (vitest and playwright both use it), so it comes last.
+  return opts.framework ?? brief?.framework ?? inferFramework(test);
 }
 
 function parseTimeout(deps: MainDeps, raw: string): number {
@@ -195,6 +218,25 @@ function containedTest(deps: MainDeps, root: string, test: string): string {
   return real;
 }
 
+/** Largest sibling file read when looking for a quoted signature. */
+const MAX_SOURCE_BYTES = 256 * 1024;
+
+/**
+ * The test plus the other files beside it under `tests/generated/`: a helper
+ * or fixture the test imports can quote the incident error just as well as
+ * the test itself can.
+ */
+function generatedSources(test: string): string {
+  const dir = dirname(test);
+  const siblings = readdirSync(dir)
+    .map((name) => join(dir, name))
+    .filter((path) => {
+      const st = statSync(path);
+      return st.isFile() && st.size <= MAX_SOURCE_BYTES;
+    });
+  return siblings.map((path) => readFileSync(path, 'utf-8')).join('\n');
+}
+
 function gradeRun(
   deps: MainDeps,
   real: string,
@@ -209,7 +251,7 @@ function gradeRun(
   }
   const exec = execSafely(deps, real, framework, timeout);
   if (typeof exec === 'string') return couldNotReproduce(exec);
-  return classifyRun(exec, signature, framework, readFileSync(real, 'utf-8'));
+  return classifyRun(exec, signature, framework, generatedSources(real));
 }
 
 function runVerify(deps: MainDeps, test: string, opts: VerifyOpts): void {
@@ -218,7 +260,7 @@ function runVerify(deps: MainDeps, test: string, opts: VerifyOpts): void {
   const brief = opts.brief === undefined ? null : readBrief(deps, opts.brief);
   const real = containedTest(deps, root, resolve(deps.cwd(), test));
   const framework = pickFramework(opts, real, brief);
-  const signature = loadSignature(opts, brief);
+  const signature = loadSignature(deps, opts, brief);
   const result = gradeRun(deps, real, framework, timeout, signature);
   const payload = {
     schema: 'canary-judomaster-verify/1',

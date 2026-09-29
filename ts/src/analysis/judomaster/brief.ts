@@ -31,8 +31,9 @@ function pickSuspect(frames: ResolvedFrame[]): ResolvedFrame | null {
 
 function signatureOf(trace: ParsedTrace): RegressionBrief['signature'] {
   const first = trace.message.split(/\r?\n/)[0]!.trim();
-  if (first === '') return { text: trace.errorType, kind: 'type-only' };
-  return { text: first, kind: 'message' };
+  const type = trace.errorType;
+  if (first === '') return { text: type, kind: 'type-only', type };
+  return { text: first, kind: 'message', type };
 }
 
 function slug(text: string, joiner: string): string {

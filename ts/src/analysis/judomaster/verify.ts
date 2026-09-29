@@ -41,16 +41,31 @@ const NOT_COLLECTED = [
   /No tests found/i,
 ];
 const SPAWN_FAILED = /ENOENT|EACCES|spawn/;
-/** pytest: 2 interrupted (incl. collection errors), 3 internal, 4 usage, 5 none collected. */
-const PYTEST_NOT_RUN = new Set([2, 3, 4, 5]);
+/** pytest: 3 internal error, 4 usage error, 5 no tests collected. */
+const PYTEST_NOT_RUN = new Set([3, 4, 5]);
+
+function pytestNotRun(code: number): string | null {
+  // Exit 2 is an interrupted session, usually a collection error -- which
+  // can be the defect itself firing at import time. It still proves nothing
+  // about the test, so it is unverified, but the reason says where to look.
+  if (code === 2) {
+    return 'pytest exited 2 (interrupted, usually a collection error; if the defect fires at import time, read the output tail)';
+  }
+  if (PYTEST_NOT_RUN.has(code)) {
+    return `pytest exited ${code}: nothing was collected or run`;
+  }
+  return null;
+}
 
 function couldNotRun(exec: ExecuteResult, framework: string): string | null {
   const [code, stdout, stderr] = exec;
   if (code === 124) return 'the run timed out';
   if (code === 127) return 'the runner command was not found';
-  if (framework === 'pytest' && PYTEST_NOT_RUN.has(code)) {
-    return `pytest exited ${code}: nothing was collected or run`;
-  }
+  // The executor reports a signal death (OOM kill, segfault) as a negative
+  // code; whatever partial output it left cannot confirm anything.
+  if (code < 0) return `the runner was killed by a signal (${-code})`;
+  const pytest = framework === 'pytest' ? pytestNotRun(code) : null;
+  if (pytest !== null) return pytest;
   const output = `${stdout}\n${stderr}`;
   if (NOT_COLLECTED.some((re) => re.test(output))) {
     return 'the runner collected no tests';
@@ -69,31 +84,82 @@ function result(
   return { verdict, label, vacuity: verdict === 'not-reproduced', reason };
 }
 
+/** Types too common to confirm anything on their own. */
+const GENERIC_TYPES = new Set(['Error', 'Exception', 'BaseException']);
+
+const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The error line a signature must appear on: the type (any namespace prefix,
+ * an optional `Uncaught ` and Node ` [ERR_CODE]`), then `: message`, or for a
+ * type-only signature `:` or end of line. A bare substring anywhere in the
+ * output is not enough -- a code frame, console output or a diff can carry
+ * the text while the run actually failed on something else.
+ */
+function errorLinePattern(type: string, text: string | null): RegExp {
+  const short = type.split('.').pop()!;
+  const head = `(?:^|[\\s>|-])(?:Uncaught\\s+)?(?:[\\w$]+\\.)*${escapeRe(short)}(?:\\s*\\[[A-Z0-9_]+\\])?`;
+  const tail = text === null ? '(?::|\\s*$)' : `:\\s*${escapeRe(text)}`;
+  return new RegExp(head + tail, 'm');
+}
+
+/** The pattern a signature confirms against, or why it cannot confirm. */
+function signaturePattern(signature: Signature): RegExp | string {
+  if (signature.kind === 'type-only') {
+    const type = signature.type ?? signature.text;
+    if (GENERIC_TYPES.has(type.split('.').pop()!)) {
+      return `the type-only signature ${type} is too generic to confirm a reproduction; pass --expect with the error message`;
+    }
+    return errorLinePattern(type, null);
+  }
+  if (signature.type === undefined) return new RegExp(escapeRe(signature.text));
+  return errorLinePattern(signature.type, signature.text);
+}
+
+/** Undo the string escapes a test would use to quote the error text. */
+const unescape = (source: string) => source.replace(/\\(['"`\\])/g, '$1');
+
+/**
+ * A failing assertion prints its own source, so a test that quotes the
+ * incident's error text "matches" whatever actually made it fail.
+ */
+function quotedBySource(
+  signature: Signature,
+  pattern: RegExp,
+  testSource: string,
+): boolean {
+  const source = unescape(testSource);
+  if (signature.kind === 'type-only') return pattern.test(source);
+  return source.includes(signature.text);
+}
+
 function signatureVerdict(
   output: string,
   signature: Signature,
   testSource: string,
 ): VerifyResult {
-  if (!output.includes(signature.text)) {
-    return result(
-      'failed-other-reason',
-      'unverified',
-      'the test failed, but its output does not carry the incident signature',
-    );
+  const pattern = signaturePattern(signature);
+  if (typeof pattern === 'string') {
+    return result('unverified', COULD_NOT_REPRODUCE, pattern);
   }
-  // A failing assertion prints its own source, so a test that quotes the
-  // incident's error text "matches" whatever actually made it fail.
-  if (testSource.includes(signature.text)) {
+  if (quotedBySource(signature, pattern, testSource)) {
     return result(
       'failed-other-reason',
       'unverified',
       "the signature text appears in the test's own source, so finding it in the output does not show the defect fired; assert the correct behaviour instead of quoting the error",
     );
   }
+  if (!pattern.test(output)) {
+    return result(
+      'failed-other-reason',
+      'unverified',
+      'the test failed, but no error line in its output carries the incident signature',
+    );
+  }
   return result(
     'reproduced',
     'reproduced',
-    `the failure output carries the ${signature.kind} signature`,
+    `an error line in the failure output carries the ${signature.kind} signature`,
   );
 }
 

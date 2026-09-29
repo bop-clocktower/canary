@@ -91,6 +91,30 @@ optional agent tier, reached by composition.
   construct inputs that trigger a specific defect, so the test would be vacuous
   by construction. It would also fork the authoring pipeline. Rejected under G4.
 
+### Amendments after review
+
+The harness-code-review pass found that a bare substring match could call the
+wrong run `reproduced`. The shipped behaviour tightens D2, D4, D7 and D9:
+
+- **A1 (D2).** The brief's signature carries the error type. A message signature
+  must appear on an error line (type, with any namespace, `Uncaught` prefix or
+  Node `[ERR_CODE]`, then `: message`). A type-only signature must be a specific
+  type on its own error line. A bare `Error` or `Exception` is too generic and
+  is `unverified` until `--expect` gives the message. `--expect` has no type, so
+  it needs at least 8 characters.
+- **A2 (D2).** If the test or a sibling file under `tests/generated/` quotes the
+  signature text (escaped quotes included), the run is `failed-other-reason`,
+  because a failing assertion prints its own source.
+- **A3 (D4).** A signal death (negative exit code) is `unverified`. Pytest exit
+  2 stays `unverified`, and its reason says it may be an import-time defect.
+  Every non-reproduced report ends with the runner's output tail.
+- **A4 (parse, D7).** The signature is the error line that owns the frames:
+  nearest above the first V8 frame, or first after the last CPython frame.
+  `dist-packages` and `lib/pythonX` frames are external. A suffix match keeps at
+  least two path segments.
+- **A5 (D9).** The framework comes from `--framework`, then the brief, then the
+  extension, because `.spec.ts` is ambiguous.
+
 ## Technical design
 
 ### Types (`analysis/judomaster/types.ts`)

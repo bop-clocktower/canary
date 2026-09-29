@@ -143,7 +143,7 @@ describe('canary judomaster verify', () => {
     const exec = executorReturning([1, `FAIL\nTypeError: ${SIG}`, '']);
     const res = await verify(exec, test, '--brief', await writeBrief());
     expect(res.code).toBe(0);
-    expect(res.stdout).toContain('reproduced');
+    expect(res.stdout).toContain('# Verdict: reproduced');
   });
 
   it('refuses a match on text the test itself quotes (exit 1)', async () => {
@@ -177,7 +177,7 @@ describe('canary judomaster verify', () => {
   it('is unverified (exit 3) when pytest collects nothing', async () => {
     const test = seedGenerated('tests/generated/regression/test_total.py');
     const exec = executorReturning([5, '', '']);
-    const res = await verify(exec, test, '--expect', 'bad qty');
+    const res = await verify(exec, test, '--expect', 'bad qty value');
     expect(res.code).toBe(3);
     expect(res.stdout).toContain('unverified \u2014 could not reproduce');
   });
@@ -205,7 +205,7 @@ describe('canary judomaster verify', () => {
     const exec = executorReturning([1, `x ${SIG} y`, '']);
     const res = await verify(exec, test, '--expect', SIG);
     expect(res.code).toBe(0);
-    expect(res.stdout).toContain('reproduced');
+    expect(res.stdout).toContain('# Verdict: reproduced');
   });
 
   it('says there is no signature when given neither flag', async () => {
@@ -240,6 +240,35 @@ describe('canary judomaster verify', () => {
     const res = await verify(exec, test, '--brief', bogus);
     expect(res.code).toBe(2);
     expect(exec.spy).not.toHaveBeenCalled();
+  });
+
+  it('exits 2 on an --expect too short to confirm anything', async () => {
+    const test = seedGenerated();
+    const exec = executorReturning([1, 'boom', '']);
+    const res = await verify(exec, test, '--expect', 'id');
+    expect(res.code).toBe(2);
+    expect(exec.spy).not.toHaveBeenCalled();
+  });
+
+  it("prefers the brief's framework over the file extension", async () => {
+    const test = seedGenerated(
+      'tests/generated/regression/total-typeerror.spec.ts',
+    );
+    const exec = executorReturning([1, `TypeError: ${SIG}`, '']);
+    await verify(exec, test, '--brief', await writeBrief());
+    expect(exec.spy).toHaveBeenCalledWith(expect.any(String), 'vitest', 60);
+  });
+
+  it('refuses a signature quoted by a sibling helper in tests/generated', async () => {
+    const test = seedGenerated();
+    seedGenerated(
+      'tests/generated/regression/helpers.ts',
+      `export const boom = () => { throw new TypeError("${SIG}"); };\n`,
+    );
+    const exec = executorReturning([1, `TypeError: ${SIG}`, '']);
+    const res = await verify(exec, test, '--brief', await writeBrief());
+    expect(res.code).toBe(1);
+    expect(res.stdout).toContain("test's own source");
   });
 
   it('exits 2 on a non-positive --timeout', async () => {

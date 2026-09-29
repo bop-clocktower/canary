@@ -18,14 +18,17 @@ const QUOTE = /^>\s?/;
 const FENCE = /^\s*```/;
 const V8_FRAME = /^\s*at (?:(.+?) \()?(?:file:\/\/)?(.+?):(\d+):(\d+)\)?$/;
 const PY_FRAME = /^\s*File "(.+)", line (\d+)(?:, in (.+))?$/;
-// Widened from `\w[\w.]*Error` so a bare `Error:` (no prefix) also matches.
-const ERROR_LINE = /^((?:[\w$]+\.)*\w*(?:Error|Exception)\w*):\s?(.*)$/;
+// `Uncaught ` prefix, a Node ` [ERR_CODE]` suffix and a bare type with no
+// message (how both runtimes print an empty message) are all accepted; the
+// type must END in Error/Exception, so `ErrorBoundary:` is not an error line.
+const ERROR_LINE =
+  /^(?:Uncaught\s+)?((?:[\w$]+\.)*[\w$]*(?:Error|Exception))(?:\s*\[[A-Z0-9_]+\])?(?::\s?(.*))?$/;
 
 function normalizeTrace(text: string): string[] {
   return text
     .replace(ANSI, '')
     .split(/\r?\n/)
-    .map((line) => line.replace(QUOTE, ''))
+    .map((line) => line.replace(QUOTE, '').trimEnd())
     .filter((line) => !FENCE.test(line));
 }
 
@@ -49,18 +52,24 @@ function pyFrame(line: string): RawFrame | null {
   return frame;
 }
 
-function errorLines(lines: string[]): RegExpExecArray[] {
-  return lines
-    .map((line) => ERROR_LINE.exec(line.trim()))
-    .filter((m): m is RegExpExecArray => m !== null);
+interface Located<T> {
+  at: number;
+  value: T;
 }
 
-function framesOf(
+function locate<T>(
   lines: string[],
-  read: (line: string) => RawFrame | null,
-): RawFrame[] {
-  return lines.map(read).filter((f): f is RawFrame => f !== null);
+  read: (line: string) => T | null,
+): Located<T>[] {
+  const out: Located<T>[] = [];
+  lines.forEach((line, at) => {
+    const value = read(line);
+    if (value !== null) out.push({ at, value });
+  });
+  return out;
 }
+
+const errorLine = (line: string) => ERROR_LINE.exec(line.trim());
 
 function assemble(
   format: TraceFormat,
@@ -71,20 +80,37 @@ function assemble(
   return {
     format,
     errorType: error[1]!,
-    message: error[2]!.trim(),
+    message: (error[2] ?? '').trim(),
     frames,
   };
 }
 
+/**
+ * The error that owns the frames, not merely the first or last error-like
+ * line in the paste: a log line such as `ConnectionError: retrying` above the
+ * trace, or `RuntimeError: worker exited` after it, would otherwise become
+ * the signature. V8 prints the error just above its first frame.
+ */
 function parseV8(lines: string[]): ParsedTrace | null {
-  return assemble('v8', errorLines(lines)[0], framesOf(lines, v8Frame));
+  const frames = locate(lines, v8Frame);
+  const first = frames[0]?.at ?? -1;
+  const above = locate(lines, errorLine).filter((e) => e.at < first);
+  const error = above[above.length - 1]?.value;
+  return assemble(
+    'v8',
+    error,
+    frames.map((f) => f.value),
+  );
 }
 
+/** CPython prints the error just after its last (innermost) frame. */
 function parsePython(lines: string[]): ParsedTrace | null {
-  const errors = errorLines(lines);
+  const frames = locate(lines, pyFrame);
+  const last = frames[frames.length - 1]?.at ?? lines.length;
+  const error = locate(lines, errorLine).find((e) => e.at > last)?.value;
   // CPython prints outermost first; the model is innermost first.
-  const frames = framesOf(lines, pyFrame).reverse();
-  return assemble('python', errors[errors.length - 1], frames);
+  const inner = frames.map((f) => f.value).reverse();
+  return assemble('python', error, inner);
 }
 
 /** Parse a pasted V8 or CPython trace; null when neither is recognised. */

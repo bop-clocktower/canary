@@ -46,8 +46,8 @@ it.
 canary judomaster --help
 ```
 
-That needs no inputs and no network. `brief` reads a trace file (or stdin);
-`verify` runs one test under `tests/generated/`.
+That needs no inputs. `brief` reads a trace file (or stdin); `verify` runs one
+test under `tests/generated/`.
 
 ## Workflow
 

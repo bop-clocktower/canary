@@ -34,7 +34,12 @@ export interface RegressionBrief {
   format: TraceFormat;
   errorType: string;
   message: string;
-  signature: { text: string; kind: 'message' | 'type-only' };
+  signature: {
+    text: string;
+    kind: 'message' | 'type-only';
+    /** Error type the signature must sit on; absent for a bare `--expect`. */
+    type?: string;
+  };
   suspect: ResolvedFrame | null; // innermost resolved/stale frame
   frames: ResolvedFrame[];
   framework: string;

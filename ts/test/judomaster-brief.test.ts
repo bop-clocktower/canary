@@ -60,12 +60,17 @@ describe('buildBrief', () => {
     expect(b.signature).toEqual({
       text: "Cannot read properties of undefined (reading 'qty')",
       kind: 'message',
+      type: 'TypeError',
     });
   });
 
   it('falls back to the error type when the message is empty', () => {
     const b = buildBrief({ ...V8, message: '' }, [suspect]);
-    expect(b.signature).toEqual({ text: 'TypeError', kind: 'type-only' });
+    expect(b.signature).toEqual({
+      text: 'TypeError',
+      kind: 'type-only',
+      type: 'TypeError',
+    });
   });
 
   it('targets vitest under tests/generated/regression for a V8 trace', () => {

@@ -18,7 +18,11 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 import type { FrameStatus, RawFrame, ResolvedFrame } from './types.js';
 
-const EXTERNAL = [/(^|[\\/])node_modules[\\/]/, /[\\/]site-packages[\\/]/];
+const EXTERNAL = [
+  /(^|[\\/])node_modules[\\/]/,
+  /[\\/](site|dist)-packages[\\/]/,
+  /[\\/]lib[\\/]python\d[\d.]*[\\/]/,
+];
 
 function isExternal(file: string): boolean {
   if (file.startsWith('node:') || file.startsWith('<')) return true;
@@ -38,7 +42,9 @@ function inside(rootReal: string, candidate: string): string | null {
 function candidates(file: string, root: string): string[] {
   const out = isAbsolute(file) ? [file] : [resolve(root, file)];
   const parts = file.split(/[\\/]/).filter((p) => p !== '');
-  for (let i = 1; i < parts.length; i++) {
+  // Suffixes keep at least two segments: a bare basename would resolve
+  // another service's `index.ts` to whatever `index.ts` sits at the root.
+  for (let i = 1; i < parts.length - 1; i++) {
     out.push(resolve(root, parts.slice(i).join('/')));
   }
   return out;
