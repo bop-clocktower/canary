@@ -76,16 +76,19 @@ New module `ts/src/analysis/enrich/`:
 - `failure-category.ts`: `FAILURE_CATEGORIES` and `categorizeFailure(text)`,
   ported rule for rule from
   `agents/skills/claude-code/canary-fail-fast/scripts/failures.mjs`.
-- `area.ts`: `areaFor(testFile, areas)` implementing D8 over `CriticalArea[]`
-  from `core/inventory-checks.ts`.
+- `area.ts`: `loadAreas(cwd)` reads and parses the critical-areas file once and
+  returns the note when it is missing or unusable; `areaFor(testFile, areas)`
+  implements D8 over `CriticalArea[]` from `core/inventory-checks.ts`.
 - `enrich.ts`: `enrichRecordedResults(results, cwd)` returns
-  `{ results, notes }`. It reads and parses the critical-areas file once, sets
-  `area` where it maps, sets `failure_category` on failed/flaky rows with error
-  text, and returns a note when the areas file is missing or unusable.
+  `{ results, notes }`. It sets `area` where it maps and `failure_category` on
+  failed/flaky rows with error text. It is generic over the row shape, so it
+  does not import the history schema; that also keeps it under `check-perf`'s
+  coupling rule (fan-in plus fan-out over 5 with a ratio over 0.7), which is why
+  the file reading lives in `area.ts` rather than here.
 
 Seam inside `ts/src/history` (the only growth there):
 
-- `cli-deps.ts`: `HistoryDeps.enrichResults?: ResultEnricher` (optional, no
+- `cli-deps.ts`: `HistoryDeps.enrichResults?(results, cwd)` (optional, no
   default: `history` stays usable without analysis).
 - `record/cli.ts`: after `prepareRecordedRun`, when `deps.enrichResults` is set,
   replace `built.results` with the enriched rows and print each note via
