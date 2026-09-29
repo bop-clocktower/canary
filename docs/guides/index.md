@@ -86,6 +86,17 @@ the three modes and cold start, and the permutation guarantee.
 **Best for:** Surfacing a failure in minute one of a long suite instead of hour
 three.
 
+### [Release Dossier Guide](./release-dossier.md)
+
+`canary manhunter` — assembles run history, guardian coverage tiers and
+findings, ci-ready, the katana ledger, a sweep report and a hand-kept escape log
+into one release dossier. Every dark source is named, a Worth-your-eyes list
+says what to look at, and a sha256 content digest (checked with `verify`)
+detects later edits.
+
+**Best for:** Answering "is the evidence for this release complete, and what
+should I look at?" as a release checklist item.
+
 ### [Rewind Guide](./rewind.md)
 
 `canary rewind` — reruns one failed test from run history at its recorded

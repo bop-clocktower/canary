@@ -86,11 +86,11 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 ### canary-manhunter — release quality dossier
 
-- **Status:** backlog
-- **Spec:** —
+- **Status:** done
+- **Spec:** docs/changes/611-canary-manhunter/proposal.md
 - **Summary:** Ideation rank 6 (score 5.25) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Assemble the full evidentiary case for a release - coverage tiers, guardian findings, sweep results, escape history - into one signed report aimed at client-success and delivery staff. Serves STRATEGY.md track 5 (Quality made legible). Accepted risk to handle in spec: reporting with no decision attached is theater and becomes a PDF nobody opens, the most common way quality tooling dies - the dossier must gate something real (a release checklist item) or answer a question someone is already asking under time pressure, or it should not be built. Medium effort / high confidence. Next: /harness:brainstorming to spec.
 - **Blockers:** —
-- **Plan:** —
+- **Plan:** docs/changes/611-canary-manhunter/plans/2026-09-28-canary-manhunter-plan.md
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#611
 

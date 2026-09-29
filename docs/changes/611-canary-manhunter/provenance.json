@@ -1,0 +1,74 @@
+{
+  "issues": [611],
+  "route": "feature",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "tdd",
+    "execution",
+    "verification",
+    "review",
+    "ratchets"
+  ],
+  "specArtifact": "docs/changes/611-canary-manhunter/proposal.md",
+  "planArtifact": "docs/changes/611-canary-manhunter/plans/2026-09-28-canary-manhunter-plan.md",
+  "branch": "feat/611-canary-manhunter",
+  "base": "d245d2c2",
+  "closingKeyword": {
+    "keyword": "Closes #611",
+    "why": "The PR delivers everything the issue asks for: one dossier that assembles coverage tiers, guardian findings, sweep results and escape history. The 'signed report' is a content-hash digest, as the human answered, and verify recomputes it. The PR also answers the ideation objection by gating a real checklist item through the exit code (0 complete / 1 incomplete / 3 abstained) and by deriving a Worth-your-eyes list, and every section names what was dark. Batwoman closure audits were never in the issue's list; they are a follow-up, not a deferred acceptance item."
+  },
+  "assumptions": [
+    "Brainstorming sign-off was taken autonomously (fleet lane default). The spec's approaches and decisions D1-D9 were self-answered with the recommended option; the human answered only the digest fork beforehand.",
+    "D1: the exit code grades evidence completeness (0 complete, 1 any undeclared dark section, 3 nothing read). Worth-your-eyes items never move it, because the dossier grades the evidence and not the product.",
+    "D2: a section that does not apply is declared with --exclude id=reason and printed. Amendment A1 after review: excluding a section whose source WAS read is a usage error, so exclusion cannot hide findings.",
+    "D3: inputs are read from the paths the producers already write (history-v2.jsonl, .harness/analyses/canary-pr-guardian-*.json, .canary/quarantine.json). The sweep has no convention, so it requires --sweep.",
+    "D4: canary holds no incident data (STRATEGY.md Key metrics), so escape history comes from a hand-kept .canary/escapes.json. It is DARK without a parseable tracked_since date, the denominator that separates 'none escaped' from 'nobody counted'.",
+    "D5: digest = sha256 over canonical JSON (keys sorted at every depth), excluding generatedAt and the digest itself. Source paths are stored root-relative so a digest reproduces across checkouts (A2), and verify also recomputes counts and verdict (A3). The docs say it detects edits and is not proof of authorship.",
+    "D6/D7: the CLI is mounted through the readiness domain registry. The engine is in ts/src/analysis/manhunter/ with no guardian import: guardian records are parsed as a file contract. The CLI is in ts/src/manhunter/manhunter-cli.ts, following the rewind precedent. Nothing under ts/src/history/** changed (#1074).",
+    "D8: coverage tiers and guardian findings are two sections sharing one loader, mirroring the issue's wording.",
+    "canary-signal (#609, now merged) readers were NOT reused. They are self-contained .mjs skill runtime and cannot be imported from the TS engine. The TS engine reads the history store through NdjsonHistoryStore, the canonical reader, and the katana ledger with a small local parser that mirrors CAUSES_REQUIRING_ISSUE. Nothing was shared with #610 canary-clocktower.",
+    "Quarantine denominator is 'katana ran': katana writes a schema_version 2 ledger on every non --no-write scan, including an empty one (canary-katana scripts/cli.mjs), so a zero-row v2 ledger is fed (A5).",
+    "ci-readiness always reads the default history store, as canary ci-ready does, never --history. A store ci-ready would fail on makes that section DARK (A6).",
+    "Arch: module-size grew by the feature (46291 -> 47996 against de3f67f7; re-measured after rebasing onto d245d2c2 as 47156 -> 48452). An allowance file was added, and the floor in baselines.json was refreshed with scripts/refresh-arch-baseline.mjs, because ts/test/arch-baseline-freshness.test.ts requires the floor to track the highest allowance. violationIds were untouched.",
+    "The worktree was relocated from canary-fleet-611-manhunter to canary-fleet-611-manhunter-2 after the human deleted the original directory to free disk space. The stale worktree entry was left alone as instructed.",
+    "Rebased onto d245d2c2 after #1127 (canary-clocktower) merged. The doc conflicts kept both sides' entries, and the skill-count header was set to 29. For baselines.json neither side was taken: the merged tree was re-measured and the floor refreshed with scripts/refresh-arch-baseline.mjs."
+  ],
+  "acceptance": {
+    "one-dossier": "canary manhunter emits one markdown (and --json-out JSON) dossier covering run history, coverage tiers, guardian findings, ci-readiness, quarantine, sweep and escape history.",
+    "abstains-loudly": "Every section is FED only on a real read with a non-zero denominator. Missing, unreadable, malformed, self-abstained and zero-denominator sources are DARK with the reason, and dark sections head Worth your eyes. A dossier with a dark section never exits 0.",
+    "gates-something": "The exit code is the release-checklist item 'quality evidence is complete' (0/1/3; 2 usage).",
+    "signed": "A sha256 content digest over the canonical payload; canary manhunter verify recomputes it and checks verdict consistency.",
+    "emit-only": "No network, no posting; writes stdout or the --out/--json-out paths only."
+  },
+  "verification": {
+    "gates": [
+      "ts build: pass",
+      "ts typecheck: pass",
+      "ts format:check: pass",
+      "ts test: 5324 passed, 2 skipped, 259 files (rebased onto d245d2c2)",
+      "agents/skills test: 1515 passed, typecheck + format:check pass",
+      "check-deps (repo root): pass",
+      "entropy ratchet: delta +0 (141 vs 141 at merge base d245d2c2)",
+      "perf ratchet: delta OK, 213 vs 212 at merge base d245d2c2; the 1 new finding is the CLI coupling ratio under the existing ts/src/**/cli.ts allowance",
+      "check-arch: newViolations [], module-size 47156 (main d245d2c2) -> 48452 (allowance feat-611-canary-manhunter + floor refresh, re-measured after rebase)",
+      "check-docs --min-coverage 3: valid, 17% (14% at merge base)"
+    ],
+    "planted-positives": [
+      "Verdict ignoring dark sections turned 4 tests red.",
+      "Digest including generatedAt turned 4 tests red.",
+      "Zero-run store treated as fed turned 1 test red.",
+      "Abstained guardian records counted turned 1 test red.",
+      "An escapes log without tracked_since treated as fed turned 1 test red.",
+      "Ignoring sweep abstention turned 1 test red.",
+      "Coercing a non-array guardian findings field to [] turned 2 tests red.",
+      "Dropping root-relative paths turned 2 tests red.",
+      "Applying an exclusion to a fed section turned 1 test red.",
+      "Verify skipping the verdict-consistency check turned 1 test red.",
+      "Ignoring a corrupt store in ci-readiness turned 1 test red.",
+      "Dropping the ISO tracked_since check turned 2 tests red."
+    ],
+    "review": "harness-code-reviewer pass 1: request changes (2 critical false greens: malformed guardian/sweep findings coerced to [] and read as clean; 4 important: exclusion could hide a fed section, ci-readiness could diverge from ci-ready, digest docs overclaimed and paths were absolute, quarantine denominator). All fixed with tests and recorded as spec amendments A1-A6. Pass 2: approve, no blocking issue. Its non-blocking notes: tracked_since accepted '1' via Date.parse, now fixed with an ISO check; an empty ledger only proves katana ran, now documented; an unreadable .canary input path (e.g. a directory) makes ci-ready crash while manhunter scores that check as skipped, left as a follow-up."
+  }
+}
