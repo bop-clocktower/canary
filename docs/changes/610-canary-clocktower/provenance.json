@@ -7,7 +7,10 @@
     "planning",
     "execution",
     "verification",
-    "review"
+    "review",
+    "review-fixes",
+    "verification",
+    "review-2"
   ],
   "specArtifact": "docs/changes/610-canary-clocktower/proposal.md",
   "planArtifact": "docs/changes/610-canary-clocktower/plans/2026-09-28-clocktower-gaps-plan.md",
@@ -26,7 +29,15 @@
     "Guide placed at docs/guides/history-gaps.md beside rewind/order guides rather than docs/history-gaps.md; spec updated.",
     "Companion skill is thin (SKILL.md over `cli: canary history gaps`), following canary-batwoman; no persona YAML, since no test requires one.",
     "Autopilot delegated planning to harness-planner and review to harness-code-reviewer; execution and verification were done by the lane agent directly (TDD with planted positives per key test) rather than by harness-task-executor/harness-verifier subagents, to keep ratchet measurement in one context.",
-    "module-size grew 46291 -> 47091 with newViolations []; recorded as .harness/arch/allowances/feat-610-canary-clocktower.json and the floor raised by scripts/refresh-arch-baseline.mjs. A sibling lane touching baselines.json will conflict; resolve by re-measuring the merged tree.",
-    "Disk was near-full (~170-330 MiB free) throughout; agents/skills tests ran against a temporary symlink to ts/node_modules (removed afterwards) rather than a fresh install."
+    "First harness-code-reviewer pass returned Request Changes (C1, I1-I4 blocking). All fixed with TDD, plus I5, I6 and S1; every new predicate test was proved able to fail by a planted mutation (14 plants; the one that stayed green exposed a missing unknown-reporter case, which was added).",
+    "C1: screech split into screech-range (branch, commit_sha, timestamp per run) and screech-cluster (area, failure_category on hard failures only, mirroring screech's isFailure, which excludes flakes). Implemented as an optional per-requirement `where` filter.",
+    "I1: the area row is flaky-area (history flaky area column). `analyze area-health` is not a row: its engine hard-codes an empty row set, so it is documented as structurally dark (G7), not measured.",
+    "I5: rewind requires only its refusal fields (commit_sha not 'local', reporter_format in REPLAYABLE_RUNNERS, repo-relative test_file), imported from analysis/rewind/plan.ts. replay and start_index only degrade replay fidelity and were dropped as requirements.",
+    "I6: failure-categories (analyze common-failures) also requires error_text over failed and flaky tests; its failure_category denominator is not narrowed by error_text, so a store with no error text reads dark rather than unmeasured. `analyze spikes` left the surface: it reads rates, not categories. The Playwright reader drops error_text for flakes (G8), surfaced as partial.",
+    "S4 (lane's call): an opt-in consumer that is not fed (order-ttff without --order-plan) is a skipped entry with reason 'opt-in: not recorded with history record --order-plan', not a finding, so a store that never used the flag does not fail the gate.",
+    "Precedence unchanged: an unmeasured requirement still makes the whole consumer unmeasured even if another requirement is dark (existing tested rule, D6).",
+    "module-size grew 46291 -> 47148 (47091 before review fixes) with newViolations []; recorded in .harness/arch/allowances/feat-610-canary-clocktower.json against merge base de3f67f7 and the floor raised by scripts/refresh-arch-baseline.mjs.",
+    "Rebased twice onto a moving main (47745970 -> 32d80d07 -> de3f67f7), both clean. Ratchets measured in fresh detached worktrees of de3f67f7 and the head, removed afterwards.",
+    "The original lane worktree /Users/bs/Github/canary-fleet-610-clocktower was deleted mid-lane by a human disk cleanup (not by this lane); work resumed in /Users/bs/Github/canary-610-clocktower-resume from the intact branch ref."
   ]
 }
