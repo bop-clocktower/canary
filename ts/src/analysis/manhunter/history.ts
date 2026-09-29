@@ -45,12 +45,25 @@ function runFact(run: RunRecord): string {
   );
 }
 
-function readRuns(store: NdjsonHistoryStore): RunRecord[] | string {
+/** The stored runs, or why the store cannot feed the section. */
+function unusableStore(
+  path: string,
+  store: NdjsonHistoryStore,
+): string | RunRecord[] {
+  let runs: RunRecord[];
   try {
-    return store.readAll();
+    runs = store.readAll();
   } catch (err) {
-    return (err as Error).message;
+    return `${path} could not be read (${(err as Error).message})`;
   }
+  if (!runs.some((r) => (r.total ?? 0) > 0)) {
+    return `${path} holds ${plural(runs.length, 'run')} and none executed a test, so there is no run history to report`;
+  }
+  return runs;
+}
+
+function failingEye(r: RunRecord): string {
+  return `suite ${r.suite}: latest run ${r.run_id} has ${r.failed ?? 0} failed of ${plural(r.total ?? 0, 'test')}`;
 }
 
 export function historySection(path: string, windowRuns: number): Section {
@@ -60,24 +73,10 @@ export function historySection(path: string, windowRuns: number): Section {
     return darkSection('run-history', [ref], `no run-history store at ${path}`);
   }
   const store = new NdjsonHistoryStore(path);
-  const runs = readRuns(store);
-  if (typeof runs === 'string') {
-    return darkSection(
-      'run-history',
-      [ref],
-      `${path} could not be read (${runs})`,
-    );
-  }
-  if (!runs.some((r) => (r.total ?? 0) > 0)) {
-    return darkSection(
-      'run-history',
-      [ref],
-      `${path} holds ${plural(runs.length, 'run')} and none executed a test, so there is no run history to report`,
-    );
-  }
+  const runs = unusableStore(path, store);
+  if (typeof runs === 'string') return darkSection('run-history', [ref], runs);
   const latest = latestPerSuite(runs);
   const flaky = store.queryFlaky(windowRuns, null, FLAKY_MIN_RATE_PCT);
-  const failing = latest.filter((r) => (r.failed ?? 0) > 0);
   return fedSection('run-history', {
     sources: [ref],
     denominator: `${plural(runs.length, 'run')} across ${plural(latest.length, 'suite')}`,
@@ -86,10 +85,7 @@ export function historySection(path: string, windowRuns: number): Section {
       `${plural(flaky.length, 'flaky or alternating test')} over the last ${windowRuns} runs`,
     ],
     eyes: [
-      ...failing.map(
-        (r) =>
-          `suite ${r.suite}: latest run ${r.run_id} has ${r.failed ?? 0} failed of ${plural(r.total ?? 0, 'test')}`,
-      ),
+      ...latest.filter((r) => (r.failed ?? 0) > 0).map(failingEye),
       ...flaky.map(
         (f) =>
           `flaky: ${f.test_name} (${f.suite}) ${f.flake_rate_pct}% over ${plural(f.total_runs, 'run')}`,
