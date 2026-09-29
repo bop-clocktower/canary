@@ -4,10 +4,11 @@
  * docs/changes/613-canary-question/proposal.md). Fixtures are synthetic and
  * de-identified; nothing here is copied from a real store.
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -45,6 +46,7 @@ import {
   renderJson,
   renderMarkdown,
 } from '../claude-code/canary-question/scripts/brief.mjs';
+import { CLI_SPEC, main } from '../claude-code/canary-question/scripts/cli.mjs';
 
 const tmps: string[] = [];
 function tmp(): string {
@@ -1106,5 +1108,176 @@ describe('no verdict language, ever (SC9, D11)', () => {
 
   it('covers at least 10 fixtures (a shrunken list would pass vacuously)', () => {
     expect(Object.keys(SCENARIOS).length).toBeGreaterThanOrEqual(10);
+  });
+});
+
+const CLI = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'claude-code',
+  'canary-question',
+  'scripts',
+  'cli.mjs',
+);
+
+function runMain(argv: string[]) {
+  const out: string[] = [];
+  const err: string[] = [];
+  vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+    out.push(a.join(' '));
+  });
+  vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+    err.push(a.join(' '));
+  });
+  const code = main(argv);
+  return { code, stdout: out.join('\n'), stderr: err.join('\n') };
+}
+
+describe('cli: exit codes (SC10, D10)', () => {
+  it('declares its flags through the shared parser, with no --strict', () => {
+    expect(CLI_SPEC.prog).toBe('canary-question');
+    expect(CLI_SPEC.required).toEqual(['--test']);
+    expect(Object.keys(CLI_SPEC.booleans)).toEqual(['--json']);
+    expect(CLI_SPEC.values['--history']).toEqual({ key: 'history' });
+  });
+
+  it('--help exits 0 with usage on stdout', () => {
+    const r = runMain(['--help']);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/^usage: canary-question/);
+  });
+
+  it('a missing --test is a usage error (2)', () => {
+    const r = runMain([]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toMatch(/^canary-question: error: .*--test/);
+  });
+
+  it('a named --history that does not exist exits 1', () => {
+    const r = runMain(['--test', T, '--history', path.join(tmp(), 'nope')]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toMatch(/^canary-question: history store not found/);
+  });
+
+  it('a named --findings that does not exist or is malformed exits 1', () => {
+    const history = writeStore(tmp(), series(['passed', 'failed']));
+    const missing = runMain([
+      '--test',
+      T,
+      '--history',
+      history,
+      '--findings',
+      path.join(tmp(), 'nope'),
+    ]);
+    expect(missing.code).toBe(1);
+    const bad = path.join(tmp(), 'bad.json');
+    fs.writeFileSync(bad, '{');
+    expect(
+      runMain(['--test', T, '--history', history, '--findings', bad]).code,
+    ).toBe(1);
+  });
+
+  it('SC1: an abstained brief still exits 0', () => {
+    const history = writeStore(tmp(), []);
+    const r = runMain(['--test', T, '--history', history]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('ABSTAINED');
+    expect(r.stdout).toContain('observations: 0');
+  });
+
+  it('--json prints the brief object and --out writes the same text', () => {
+    const dir = tmp();
+    const history = writeStore(dir, series(['passed', 'failed']));
+    const out = path.join(dir, 'nested', 'brief.json');
+    const r = runMain([
+      '--test',
+      T,
+      '--history',
+      history,
+      '--repo',
+      dir,
+      '--json',
+      '--out',
+      out,
+    ]);
+    expect(r.code).toBe(0);
+    const brief = JSON.parse(r.stdout);
+    expect(brief.fidelity).toBe('thin');
+    expect(fs.readFileSync(out, 'utf8')).toBe(r.stdout);
+  });
+
+  it('an unwritable --out exits 1', () => {
+    const dir = tmp();
+    const history = writeStore(dir, series(['passed', 'failed']));
+    const blocker = path.join(dir, 'file');
+    fs.writeFileSync(blocker, '');
+    const r = runMain([
+      '--test',
+      T,
+      '--history',
+      history,
+      '--out',
+      path.join(blocker, 'x.md'),
+    ]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toMatch(/cannot write artifact/);
+  });
+
+  it('SC6: --repo that is not a git repo leaves the diff Not checked', () => {
+    const dir = tmp();
+    const history = writeStore(dir, series(['passed', 'passed', 'failed']));
+    const r = runMain([
+      '--test',
+      T,
+      '--history',
+      history,
+      '--repo',
+      dir,
+      '--json',
+    ]);
+    const brief = JSON.parse(r.stdout);
+    expect(brief.fidelity).toBe('history');
+    expect(
+      brief.not_checked.find((n: Run) => n.source === 'git diff').reason,
+    ).toMatch(/git could not diff/);
+  });
+
+  it('SC5 end to end: a real test-only range reads as history+diff', () => {
+    const { repo, base } = repoWithBase();
+    const head = commitTouching(repo, [TEST_FILE]);
+    const shas = [base, base, head];
+    const history = writeStore(
+      tmp(),
+      series(['passed', 'passed', 'failed'], (i) => ({ commit_sha: shas[i] })),
+    );
+    const r = runMain([
+      '--test',
+      T,
+      '--history',
+      history,
+      '--repo',
+      repo,
+      '--json',
+    ]);
+    const brief = JSON.parse(r.stdout);
+    expect(r.code).toBe(0);
+    expect(brief.fidelity).toBe('history+diff');
+    expect(brief.hypotheses[0].for.map((x: Run) => x.signal)).toContain(
+      'diff-test-only',
+    );
+  });
+
+  it('a missing DEFAULT store is a dark source, exit 0 (spawned in an empty dir)', () => {
+    const res = spawnSync(process.execPath, [CLI, '--test', T], {
+      cwd: tmp(),
+      encoding: 'utf8',
+    });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('ABSTAINED');
+    expect(res.stdout).toMatch(/run history: no history store at test-results/);
+  });
+
+  it('ships executable (the skill runner execs it via its shebang)', () => {
+    expect(fs.statSync(CLI).mode & 0o111).toBeTruthy();
   });
 });
