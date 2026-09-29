@@ -1,0 +1,17 @@
+name: canary-judomaster
+version: '1.0.0'
+description:
+  Turn a pasted stack trace into a regression brief, have the existing authoring
+  path write one test, then grade that test by running it; only a failure
+  carrying the incident's signature counts as reproduced.
+stability: static
+triggers:
+  - manual
+platforms:
+  - claude-code
+type: rigid
+tools: []
+tier: 2
+depends_on:
+  - canary-generate-test
+  - canary-promote-test
