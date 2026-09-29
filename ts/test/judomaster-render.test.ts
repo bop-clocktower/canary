@@ -105,6 +105,29 @@ describe('renderVerify', () => {
     expect(md).not.toContain('VACUITY');
   });
 
+  it('shows the runner output tail when the run was not a reproduction', () => {
+    const md = renderVerify({
+      verdict: 'failed-other-reason',
+      label: 'unverified',
+      vacuity: false,
+      reason: 'no signature',
+      tail: ['Error: Cannot find module ./total'],
+    });
+    expect(md).toContain('Runner output (last 1 lines)');
+    expect(md).toContain('Error: Cannot find module ./total');
+  });
+
+  it('omits the runner output on a reproduction', () => {
+    const md = renderVerify({
+      verdict: 'reproduced',
+      label: 'reproduced',
+      vacuity: false,
+      reason: 'signature',
+      tail: ['TypeError: boom'],
+    });
+    expect(md).not.toContain('Runner output');
+  });
+
   it('labels a failed-other-reason run unverified', () => {
     const md = renderVerify({
       verdict: 'failed-other-reason',

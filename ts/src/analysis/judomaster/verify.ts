@@ -27,10 +27,13 @@ export interface VerifyResult {
   label: string;
   vacuity: boolean;
   reason: string;
+  /** Last lines of runner output (ANSI stripped), so a red run shows why. */
+  tail?: string[];
 }
 
 const ANSI = /\x1b\[[0-9;]*m/g;
 const COULD_NOT_REPRODUCE = 'unverified — could not reproduce';
+const TAIL_LINES = 15;
 /** Runner output that means nothing was collected. */
 const NOT_COLLECTED = [
   /No test files found/i,
@@ -66,14 +69,40 @@ function result(
   return { verdict, label, vacuity: verdict === 'not-reproduced', reason };
 }
 
-/** Classify one run of a generated test against the incident's signature. */
-export function classifyRun(
-  exec: ExecuteResult,
-  signature: Signature | null,
-  framework: string,
+function signatureVerdict(
+  output: string,
+  signature: Signature,
+  testSource: string,
 ): VerifyResult {
-  const notRun = couldNotRun(exec, framework);
-  if (notRun !== null) return result('unverified', COULD_NOT_REPRODUCE, notRun);
+  if (!output.includes(signature.text)) {
+    return result(
+      'failed-other-reason',
+      'unverified',
+      'the test failed, but its output does not carry the incident signature',
+    );
+  }
+  // A failing assertion prints its own source, so a test that quotes the
+  // incident's error text "matches" whatever actually made it fail.
+  if (testSource.includes(signature.text)) {
+    return result(
+      'failed-other-reason',
+      'unverified',
+      "the signature text appears in the test's own source, so finding it in the output does not show the defect fired; assert the correct behaviour instead of quoting the error",
+    );
+  }
+  return result(
+    'reproduced',
+    'reproduced',
+    `the failure output carries the ${signature.kind} signature`,
+  );
+}
+
+function verdictFor(
+  exec: ExecuteResult,
+  output: string,
+  signature: Signature | null,
+  testSource: string,
+): VerifyResult {
   if (exec[0] === 0) {
     return result(
       'not-reproduced',
@@ -88,19 +117,27 @@ export function classifyRun(
       'the test failed, but there is no signature to confirm against',
     );
   }
+  return signatureVerdict(output, signature, testSource);
+}
+
+/**
+ * Classify one run of a generated test against the incident's signature.
+ * `testSource` is the test file's text; a signature it quotes cannot confirm.
+ */
+export function classifyRun(
+  exec: ExecuteResult,
+  signature: Signature | null,
+  framework: string,
+  testSource = '',
+): VerifyResult {
   const output = `${exec[1]}\n${exec[2]}`.replace(ANSI, '');
-  if (output.includes(signature.text)) {
-    return result(
-      'reproduced',
-      'reproduced',
-      `the failure output carries the ${signature.kind} signature`,
-    );
-  }
-  return result(
-    'failed-other-reason',
-    'unverified',
-    'the test failed, but its output does not carry the incident signature',
-  );
+  const tail = output.trimEnd().split('\n').slice(-TAIL_LINES);
+  const notRun = couldNotRun(exec, framework);
+  const verdict =
+    notRun !== null
+      ? result('unverified', COULD_NOT_REPRODUCE, notRun)
+      : verdictFor(exec, output, signature, testSource);
+  return { ...verdict, tail };
 }
 
 /** Framework from the test file extension (D9); null when unknown. */

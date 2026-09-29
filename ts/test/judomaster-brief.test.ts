@@ -93,6 +93,8 @@ describe('buildBrief', () => {
       "Cannot read properties of undefined (reading 'qty')",
     );
     expect(b.requirement).toContain('must fail against the current code');
+    expect(b.requirement).toContain('assert the correct behaviour');
+    expect(b.requirement).toContain('do not quote the error text');
     expect(b.requirement).toContain(b.outputPath);
   });
 

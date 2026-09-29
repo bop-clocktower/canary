@@ -65,7 +65,9 @@ That needs no inputs and no network. `brief` reads a trace file (or stdin);
 2. **AUTHOR.** Hand the brief's `requirement` to `/canary-write-test` (the
    `canary-test-author` agent), and tell it to write exactly one test to the
    brief's `outputPath` under `tests/generated/regression/`. Judomaster writes
-   no test code of its own.
+   no test code of its own. The test must call the code and assert the correct
+   behaviour; it must not quote the error text, because `verify` will not accept
+   a signature match on text the test prints itself.
 
 3. **VERIFY.** Run the generated test against the current code:
 
@@ -90,13 +92,14 @@ That needs no inputs and no network. `brief` reads a trace file (or stdin);
 
 ## Rationalizations to reject
 
-| Rationalization                             | Why it is wrong                                                         |
-| ------------------------------------------- | ----------------------------------------------------------------------- |
-| "It passed, so the regression is covered."  | A first-run pass means the test never touched the defect.               |
-| "It went red, so it caught the bug."        | Red for an import error or a typo is `failed-other-reason`, unverified. |
-| "The runner timed out, call it reproduced." | A run that did not finish proves nothing; it is `unverified`.           |
-| "Drop `--brief` so any failure counts."     | With no signature, a failure can only ever be `failed-other-reason`.    |
-| "Promote it now and check it later."        | Promotion comes after `reproduced`, never before.                       |
+| Rationalization                              | Why it is wrong                                                             |
+| -------------------------------------------- | --------------------------------------------------------------------------- |
+| "It passed, so the regression is covered."   | A first-run pass means the test never touched the defect.                   |
+| "It went red, so it caught the bug."         | Red for an import error or a typo is `failed-other-reason`, unverified.     |
+| "The runner timed out, call it reproduced."  | A run that did not finish proves nothing; it is `unverified`.               |
+| "Drop `--brief` so any failure counts."      | With no signature, a failure can only ever be `failed-other-reason`.        |
+| "Quote the error in the test so it matches." | A match on the test's own text proves nothing; it is `failed-other-reason`. |
+| "Promote it now and check it later."         | Promotion comes after `reproduced`, never before.                           |
 
 ## Related skills
 

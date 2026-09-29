@@ -29,6 +29,39 @@ const SIG = {
 const COULD_NOT = 'unverified — could not reproduce';
 
 describe('classifyRun', () => {
+  it('refuses a signature match the test could have printed itself', () => {
+    // A failing assertion prints its own source; a test that quotes the
+    // incident's error text would "match" whatever made it fail.
+    const source = `expect(msg).toBe("${SIG.text}")`;
+    const r = classifyRun(
+      [1, `AssertionError\n> ${source}`, ''],
+      SIG,
+      'vitest',
+      source,
+    );
+    expect(r.verdict).toBe('failed-other-reason');
+    expect(r.label).toBe('unverified');
+    expect(r.reason).toContain("test's own source");
+  });
+
+  it('still reproduces when the test source does not quote the signature', () => {
+    const r = classifyRun(
+      [1, `TypeError: ${SIG.text}`, ''],
+      SIG,
+      'vitest',
+      'expect(cartTotal([{ price: 2 }])).toBe(0)',
+    );
+    expect(r.verdict).toBe('reproduced');
+  });
+
+  it('keeps the last lines of runner output, ANSI stripped', () => {
+    const out = Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\n');
+    const r = classifyRun([1, `\x1b[31m${out}\x1b[0m`, ''], SIG, 'vitest');
+    expect(r.tail).toHaveLength(15);
+    expect(r.tail?.at(-1)).toBe('line 29');
+    expect(r.tail?.join('\n')).not.toContain('\x1b');
+  });
+
   it('flags a first-run pass as not-reproduced with vacuity', () => {
     const r = classifyRun([0, '1 passed', ''], SIG, 'vitest');
     expect(r.verdict).toBe('not-reproduced');

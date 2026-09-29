@@ -99,6 +99,14 @@ missing fixture. That is `failed-other-reason`. With neither `--brief` nor
 `--expect` there is no signature to confirm against, so a failing run can only
 ever be `failed-other-reason`, and the output says so.
 
+The signature has to come from the code under test, not from the test. A failing
+assertion prints its own source, so a test that quotes the incident's error text
+would match whatever actually made it fail. When the test file contains the
+signature text, `verify` reports `failed-other-reason` and asks for an assertion
+on the correct behaviour instead. For every verdict except `reproduced`, the
+report ends with the last lines of runner output so you can see what the runner
+said.
+
 Only after `reproduced` is the test ready for `canary-promote-test`.
 
 ## Non-goals

@@ -56,6 +56,20 @@ export function renderBrief(brief: RegressionBrief): string {
   ].join('\n');
 }
 
+/** Runner output for a run that was not a reproduction, so a red run shows why. */
+function tailBlock(result: VerifyResult): string[] {
+  const tail = result.tail ?? [];
+  if (result.verdict === 'reproduced' || tail.length === 0) return [];
+  return [
+    `## Runner output (last ${tail.length} lines)`,
+    '',
+    '```text',
+    ...tail,
+    '```',
+    '',
+  ];
+}
+
 /** Render a verify result as markdown, verdict first. */
 export function renderVerify(result: VerifyResult): string {
   const { verdict, label } = result;
@@ -66,5 +80,6 @@ export function renderVerify(result: VerifyResult): string {
     ...(result.vacuity ? [VACUITY, ''] : []),
     `Reason: ${result.reason}`,
     '',
+    ...tailBlock(result),
   ].join('\n');
 }

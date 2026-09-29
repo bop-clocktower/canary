@@ -209,7 +209,7 @@ function gradeRun(
   }
   const exec = execSafely(deps, real, framework, timeout);
   if (typeof exec === 'string') return couldNotReproduce(exec);
-  return classifyRun(exec, signature, framework);
+  return classifyRun(exec, signature, framework, readFileSync(real, 'utf-8'));
 }
 
 function runVerify(deps: MainDeps, test: string, opts: VerifyOpts): void {

@@ -107,10 +107,13 @@ describe('canary judomaster brief', () => {
 const SIG = "Cannot read properties of undefined (reading 'qty')";
 const TEST_REL = 'tests/generated/regression/total-typeerror.test.ts';
 
-function seedGenerated(rel = TEST_REL): string {
+function seedGenerated(
+  rel = TEST_REL,
+  body = '// generated regression test\n',
+): string {
   const p = join(root, rel);
   mkdirSync(join(p, '..'), { recursive: true });
-  writeFileSync(p, '// generated regression test\n');
+  writeFileSync(p, body);
   return p;
 }
 
@@ -141,6 +144,16 @@ describe('canary judomaster verify', () => {
     const res = await verify(exec, test, '--brief', await writeBrief());
     expect(res.code).toBe(0);
     expect(res.stdout).toContain('reproduced');
+  });
+
+  it('refuses a match on text the test itself quotes (exit 1)', async () => {
+    const body = `expect(err.message).toBe("${SIG}");\n`;
+    const test = seedGenerated(TEST_REL, body);
+    const exec = executorReturning([1, `AssertionError\n> ${body}`, '']);
+    const res = await verify(exec, test, '--brief', await writeBrief());
+    expect(res.code).toBe(1);
+    expect(res.stdout).toContain('failed-other-reason');
+    expect(res.stdout).toContain("test's own source");
   });
 
   it('flags a first-run pass as not-reproduced with vacuity (exit 1)', async () => {
