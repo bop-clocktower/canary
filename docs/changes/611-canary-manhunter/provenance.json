@@ -14,7 +14,7 @@
   "specArtifact": "docs/changes/611-canary-manhunter/proposal.md",
   "planArtifact": "docs/changes/611-canary-manhunter/plans/2026-09-28-canary-manhunter-plan.md",
   "branch": "feat/611-canary-manhunter",
-  "base": "de3f67f7",
+  "base": "d245d2c2",
   "closingKeyword": {
     "keyword": "Closes #611",
     "why": "The PR delivers everything the issue asks for: one dossier that assembles coverage tiers, guardian findings, sweep results and escape history. The 'signed report' is a content-hash digest, as the human answered, and verify recomputes it. The PR also answers the ideation objection by gating a real checklist item through the exit code (0 complete / 1 incomplete / 3 abstained) and by deriving a Worth-your-eyes list, and every section names what was dark. Batwoman closure audits were never in the issue's list; they are a follow-up, not a deferred acceptance item."
@@ -31,8 +31,9 @@
     "canary-signal (#609, now merged) readers were NOT reused. They are self-contained .mjs skill runtime and cannot be imported from the TS engine. The TS engine reads the history store through NdjsonHistoryStore, the canonical reader, and the katana ledger with a small local parser that mirrors CAUSES_REQUIRING_ISSUE. Nothing was shared with #610 canary-clocktower.",
     "Quarantine denominator is 'katana ran': katana writes a schema_version 2 ledger on every non --no-write scan, including an empty one (canary-katana scripts/cli.mjs), so a zero-row v2 ledger is fed (A5).",
     "ci-readiness always reads the default history store, as canary ci-ready does, never --history. A store ci-ready would fail on makes that section DARK (A6).",
-    "Arch: module-size grew by the feature (46291 -> 47996). An allowance file was added, and the floor in baselines.json was refreshed with scripts/refresh-arch-baseline.mjs, because ts/test/arch-baseline-freshness.test.ts requires the floor to track the highest allowance. violationIds were untouched.",
-    "The worktree was relocated from canary-fleet-611-manhunter to canary-fleet-611-manhunter-2 after the human deleted the original directory to free disk space. The stale worktree entry was left alone as instructed."
+    "Arch: module-size grew by the feature (46291 -> 47996 against de3f67f7; re-measured after rebasing onto d245d2c2 as 47156 -> 48452). An allowance file was added, and the floor in baselines.json was refreshed with scripts/refresh-arch-baseline.mjs, because ts/test/arch-baseline-freshness.test.ts requires the floor to track the highest allowance. violationIds were untouched.",
+    "The worktree was relocated from canary-fleet-611-manhunter to canary-fleet-611-manhunter-2 after the human deleted the original directory to free disk space. The stale worktree entry was left alone as instructed.",
+    "Rebased onto d245d2c2 after #1127 (canary-clocktower) merged. The doc conflicts kept both sides' entries, and the skill-count header was set to 29. For baselines.json neither side was taken: the merged tree was re-measured and the floor refreshed with scripts/refresh-arch-baseline.mjs."
   ],
   "acceptance": {
     "one-dossier": "canary manhunter emits one markdown (and --json-out JSON) dossier covering run history, coverage tiers, guardian findings, ci-readiness, quarantine, sweep and escape history.",
@@ -46,13 +47,13 @@
       "ts build: pass",
       "ts typecheck: pass",
       "ts format:check: pass",
-      "ts test: 5251 passed, 2 skipped, 254 files",
+      "ts test: 5324 passed, 2 skipped, 259 files (rebased onto d245d2c2)",
       "agents/skills test: 1515 passed, typecheck + format:check pass",
-      "check-deps (repo root): pass, 224 modules across 11 layers",
-      "entropy ratchet: delta +0 (141 vs 141 at merge base de3f67f7)",
-      "perf ratchet: delta OK, 212 vs 211 at merge base; the 1 new finding is the CLI coupling ratio under the existing ts/src/**/cli.ts allowance",
-      "check-arch: newViolations [], module-size 47996 (allowance feat-611-canary-manhunter + floor refresh)",
-      "check-docs --min-coverage 3: valid, 16% (13% at merge base)"
+      "check-deps (repo root): pass",
+      "entropy ratchet: delta +0 (141 vs 141 at merge base d245d2c2)",
+      "perf ratchet: delta OK, 213 vs 212 at merge base d245d2c2; the 1 new finding is the CLI coupling ratio under the existing ts/src/**/cli.ts allowance",
+      "check-arch: newViolations [], module-size 47156 (main d245d2c2) -> 48452 (allowance feat-611-canary-manhunter + floor refresh, re-measured after rebase)",
+      "check-docs --min-coverage 3: valid, 17% (14% at merge base)"
     ],
     "planted-positives": [
       "Verdict ignoring dark sections turned 4 tests red.",

@@ -13,7 +13,7 @@ it), see [Guides](../../docs/guides/index.md).
 
 ```text
 agents/skills/
-├── claude-code/                    # Claude Code skills (28)
+├── claude-code/                    # Claude Code skills (29)
 │   ├── canary-add-framework/
 │   ├── canary-batwoman/
 │   ├── canary-blackhawk/
