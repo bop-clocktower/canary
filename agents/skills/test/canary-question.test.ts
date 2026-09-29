@@ -38,9 +38,12 @@ import {
   loadFindings,
 } from '../claude-code/canary-question/scripts/findings.mjs';
 import {
+  BANNER,
   THIN_OBSERVATIONS,
   abstentionFor,
   assembleBrief,
+  renderJson,
+  renderMarkdown,
 } from '../claude-code/canary-question/scripts/brief.mjs';
 
 const tmps: string[] = [];
@@ -937,5 +940,171 @@ describe('brief: disambiguation is always offered', () => {
     const steps = briefFor(series(['failed', 'failed', 'failed'])).disambiguate;
     expect(steps.join('\n')).not.toMatch(/Check out/);
     expect(steps.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+type Brief = ReturnType<typeof assembleBrief>;
+
+/** Every fixture the guard runs over: one per shape the brief can take. */
+const SCENARIOS: Record<string, () => Brief> = {
+  'no observation': () => briefFor([]),
+  'no failure': () => briefFor(series(['passed', 'passed', 'passed'])),
+  'ambiguous suite': () =>
+    briefFor(
+      series(['failed', 'failed'], (i) => (i === 0 ? { suite: 'e2e' } : {})),
+    ),
+  'dark default store': () =>
+    briefFor([], { historyDark: 'no history store at x' }),
+  thin: () => briefFor(series(['passed', 'failed'])),
+  'same commit mixed': () =>
+    briefFor(series(['passed', 'flaky'], () => ({ commit_sha: 'abc1230' }))),
+  'regression, test-only diff': () =>
+    briefFor(series(['passed', 'failed', 'failed']), {
+      diff: {
+        read: true,
+        rows: diffRows([TEST_FILE], TEST_FILE),
+        notChecked: [],
+      },
+    }),
+  'server error, sut-only diff': () =>
+    briefFor(
+      series(['passed', 'passed', 'failed'], () => ({
+        tests: [entry('failed', { failure_category: 'server' })],
+      })),
+      {
+        diff: {
+          read: true,
+          rows: diffRows(['src/cart.js'], TEST_FILE),
+          notChecked: [],
+        },
+      },
+    ),
+  'environment, co-failures, no diff': () =>
+    briefFor(
+      series(['passed', 'passed', 'failed'], () => ({
+        tests: [
+          entry('failed', { error_text: 'connect ECONNREFUSED' }),
+          { test_name: 'b', status: 'failed', area: 'cart' },
+        ],
+      })),
+      { diff: { read: true, rows: diffRows([], null), notChecked: [] } },
+    ),
+  'neutral category, findings': () =>
+    briefFor(
+      series(['passed', 'passed', 'failed'], () => ({
+        tests: [
+          entry('failed', { failure_category: 'client', test_file: null }),
+        ],
+      })),
+      { findings: [{ file: TEST_FILE, line: 1, rule_id: 'SV001' }] },
+    ),
+  'finding on the test file': () =>
+    briefFor(series(['skipped', 'passed', 'failed']), {
+      findings: [{ file: TEST_FILE, line: 2, rule_id: 'BH001-wall-clock' }],
+    }),
+};
+
+const FORBIDDEN_PHRASES = [
+  'verdict',
+  'root cause',
+  'is flaky',
+  'test bug',
+  'product bug',
+  'likely',
+  'probably',
+  'most likely',
+];
+const FORBIDDEN_KEYS = ['verdict', 'disposition', 'score'];
+
+/** Phrases present in `text` once the one sanctioned disclaimer is removed. */
+function forbiddenIn(text: string): string[] {
+  const scanned = text.toLowerCase();
+  return FORBIDDEN_PHRASES.filter((p) => scanned.includes(p));
+}
+
+function keysOf(value: unknown, out: string[] = []): string[] {
+  if (Array.isArray(value)) value.forEach((v) => keysOf(v, out));
+  else if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) {
+      out.push(k);
+      keysOf(v, out);
+    }
+  }
+  return out;
+}
+
+describe('render: markdown', () => {
+  it('prints the banner, fidelity, denominator and every section in order', () => {
+    const md = renderMarkdown(briefFor(series(['passed', 'passed', 'failed'])));
+    expect(md).toContain(`# canary-question: ${T}`);
+    expect(md).toContain(BANNER);
+    expect(md).toContain('**Fidelity:** history');
+    expect(md).toContain('observations: 3 · failures: 1 · runs in store: 3');
+    const order = [
+      '## Defect in the test',
+      '## Defect in the system under test',
+      '## Environment or infrastructure',
+      '## Not checked',
+      '## What would disambiguate',
+    ].map((h) => md.indexOf(h));
+    expect(order.every((i) => i > -1)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('SC1: an abstained brief says ABSTAINED and shows no hypothesis evidence', () => {
+    const md = renderMarkdown(briefFor([]));
+    expect(md).toContain('ABSTAINED');
+    expect(md).toContain('observations: 0');
+    expect(md).not.toContain('## Defect in the test');
+    expect(md).toContain('## What would disambiguate');
+  });
+
+  it('SC3: a thin brief carries a THIN EVIDENCE banner', () => {
+    expect(renderMarkdown(briefFor(series(['passed', 'failed'])))).toMatch(
+      /THIN EVIDENCE.*2 of 3 observations/,
+    );
+  });
+
+  it('says "none recorded" for an empty side, and renders neutral rows', () => {
+    const md = renderMarkdown(SCENARIOS['neutral category, findings']());
+    expect(md).toContain('- none recorded');
+    expect(md).toContain('## Recorded, does not discriminate');
+    expect(md).toContain('`category-neutral`');
+  });
+
+  it('says so when every source was read', () => {
+    const brief = SCENARIOS['regression, test-only diff']();
+    brief.not_checked = [];
+    expect(renderMarkdown(brief)).toContain('- nothing; every source was read');
+  });
+});
+
+describe('render: json', () => {
+  it('round-trips the brief object', () => {
+    const brief = briefFor(series(['passed', 'failed']));
+    expect(JSON.parse(renderJson(brief))).toEqual(brief);
+  });
+});
+
+describe('no verdict language, ever (SC9, D11)', () => {
+  it('the guard catches a planted phrase (so it is not vacuous)', () => {
+    expect(forbiddenIn('this probably breaks')).toEqual(['probably']);
+    expect(forbiddenIn(BANNER)).toEqual([]);
+    expect(keysOf({ a: [{ score: 1 }] })).toContain('score');
+  });
+
+  for (const [name, build] of Object.entries(SCENARIOS)) {
+    it(`${name}: markdown and JSON are clean`, () => {
+      const brief = build();
+      expect(forbiddenIn(renderMarkdown(brief))).toEqual([]);
+      expect(forbiddenIn(renderJson(brief))).toEqual([]);
+      const keys = keysOf(brief);
+      expect(keys.filter((k) => FORBIDDEN_KEYS.includes(k))).toEqual([]);
+      expect(brief.hypotheses.map((h: Run) => h.id)).toEqual(HYPOTHESES);
+    });
+  }
+
+  it('covers at least 10 fixtures (a shrunken list would pass vacuously)', () => {
+    expect(Object.keys(SCENARIOS).length).toBeGreaterThanOrEqual(10);
   });
 });
