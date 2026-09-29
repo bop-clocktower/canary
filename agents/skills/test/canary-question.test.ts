@@ -1189,6 +1189,33 @@ const SCENARIOS: Record<string, () => Brief> = {
     briefFor(series(['skipped', 'passed', 'failed']), {
       findings: [{ file: TEST_FILE, line: 2, rule_id: 'BH001-wall-clock' }],
     }),
+  'isolated in a larger run, many findings': () =>
+    briefFor(
+      series(['passed', 'passed', 'failed'], () => ({
+        tests: [entry('failed'), { test_name: 'b', status: 'passed' }],
+      })),
+      {
+        findings: Array.from({ length: 7 }, (_, i) => ({
+          file: TEST_FILE,
+          line: i + 1,
+          rule_id: 'BH001',
+        })),
+      },
+    ),
+  'unrelated co-failure, no suite': () =>
+    briefFor(
+      series(['passed', 'passed', 'failed'], () => ({
+        suite: null,
+        tests: [
+          entry('failed', { failure_category: 'timeout' }),
+          { test_name: 'b', status: 'failed', area: 'billing' },
+        ],
+      })),
+    ),
+  'abstained with findings given': () =>
+    briefFor(series(['passed', 'passed']), {
+      findings: [{ file: TEST_FILE, line: 1, rule_id: 'SV001' }],
+    }),
 };
 
 const FORBIDDEN_PHRASES = [
