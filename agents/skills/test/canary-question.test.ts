@@ -19,7 +19,13 @@ import {
 } from '../claude-code/canary-question/scripts/history.mjs';
 import {
   HYPOTHESES,
+  categorizeFailure,
+  categoryRows,
+  coFailureRows,
   historySignals,
+  isTestPath,
+  resolveCategory,
+  samePath,
 } from '../claude-code/canary-question/scripts/signals.mjs';
 
 const tmps: string[] = [];
@@ -300,5 +306,130 @@ describe('signals: history (D7, D8)', () => {
     expect(
       bySignal(signalsFor(statuses as string[], over), 'regression-shape'),
     ).toBeUndefined();
+  });
+});
+
+describe('signals: failure category (D2, D7)', () => {
+  it('categorises exactly like canary-fail-fast', () => {
+    expect(categorizeFailure('connect ECONNREFUSED 127.0.0.1')).toBe('network');
+    expect(categorizeFailure('Timed out after 5000ms')).toBe('timeout');
+    expect(categorizeFailure('503 Service Unavailable')).toBe('server');
+    expect(categorizeFailure('ZodError: invalid_type')).toBe('schema');
+    expect(categorizeFailure('401 Unauthorized')).toBe('auth');
+    expect(categorizeFailure('404 not found')).toBe('client');
+    expect(categorizeFailure('expected 2 to equal 3')).toBe('other');
+    expect(categorizeFailure(null)).toBe('other');
+  });
+
+  it('prefers the stored category and names where it came from', () => {
+    expect(
+      resolveCategory({ failure_category: 'server', error_text: 'timeout' }),
+    ).toEqual({ category: 'server', source: 'stored failure_category' });
+    expect(
+      resolveCategory({ failure_category: null, error_text: 'ETIMEDOUT' }),
+    ).toEqual({ category: 'timeout', source: 'categorised from error_text' });
+    expect(
+      resolveCategory({ failure_category: null, error_text: null }),
+    ).toBeNull();
+  });
+
+  it.each(['timeout', 'network', 'auth'])('%s is environment evidence', (c) => {
+    const [r] = categoryRows({ failure_category: c });
+    expect(r.signal).toBe('category-env');
+    expect(r.supports).toEqual(['environment']);
+  });
+
+  it('server (5xx) is product-defect evidence', () => {
+    const [r] = categoryRows({ failure_category: 'server' });
+    expect(r.signal).toBe('category-server');
+    expect(r.supports).toEqual(['product-defect']);
+  });
+
+  it('any other category is recorded as not discriminating', () => {
+    const [r] = categoryRows({ failure_category: 'client' });
+    expect(r.signal).toBe('category-neutral');
+    expect(r.supports).toEqual([]);
+    expect(r.weighsAgainst).toEqual([]);
+  });
+
+  it('no category row when there is nothing to categorise', () => {
+    expect(categoryRows({ failure_category: null, error_text: null })).toEqual(
+      [],
+    );
+  });
+});
+
+describe('signals: co-failures in the target run', () => {
+  const target = (coFailures: Run[], over: Run = {}) => ({
+    run_id: 'r9',
+    area: 'cart',
+    failure_category: 'timeout',
+    error_text: null,
+    coFailures,
+    ...over,
+  });
+
+  it('isolated: the only failure supports test-defect, weighs against env', () => {
+    const [r] = coFailureRows(target([]));
+    expect(r.signal).toBe('isolated');
+    expect(r.supports).toEqual(['test-defect']);
+    expect(r.weighsAgainst).toEqual(['environment']);
+  });
+
+  it('co-failure when another failure shares the area', () => {
+    const [r] = coFailureRows(
+      target([{ test_name: 'b', area: 'cart', failure_category: 'schema' }]),
+    );
+    expect(r.signal).toBe('co-failure');
+    expect(r.supports).toEqual(['product-defect', 'environment']);
+    expect(r.weighsAgainst).toEqual(['test-defect']);
+    expect(r.detail).toContain('b');
+  });
+
+  it('co-failure when another failure shares the category', () => {
+    const rows = coFailureRows(
+      target([{ test_name: 'c', area: 'billing', error_text: 'ETIMEDOUT' }]),
+    );
+    expect(rows[0].signal).toBe('co-failure');
+  });
+
+  it('an uncategorised pair is not a shared cause', () => {
+    const rows = coFailureRows(
+      target([{ test_name: 'd', area: null, failure_category: 'other' }], {
+        area: null,
+        failure_category: 'other',
+      }),
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it('no row when other failures share neither area nor category', () => {
+    const rows = coFailureRows(
+      target([{ test_name: 'e', area: 'billing', failure_category: 'schema' }]),
+    );
+    expect(rows).toEqual([]);
+  });
+});
+
+describe('signals: test paths', () => {
+  it.each([
+    ['src/cart.test.ts', true],
+    ['web/cart.spec.js', true],
+    ['pkg/test_cart.py', true],
+    ['pkg/cart_test.py', true],
+    ['svc/cart_test.go', true],
+    ['test/helpers.js', true],
+    ['a/tests/fixture.json', true],
+    ['a/__tests__/x.js', true],
+    ['src/cart.ts', false],
+    ['src/testing/cart.ts', false],
+  ])('isTestPath(%s) is %s', (p, want) => {
+    expect(isTestPath(p)).toBe(want);
+  });
+
+  it('matches paths on a segment boundary, ignoring ./ and backslashes', () => {
+    expect(samePath('./test/a.test.js', 'repo/test/a.test.js')).toBe(true);
+    expect(samePath('test\\a.test.js', 'test/a.test.js')).toBe(true);
+    expect(samePath('test/a.test.js', 'test/ba.test.js')).toBe(false);
   });
 });

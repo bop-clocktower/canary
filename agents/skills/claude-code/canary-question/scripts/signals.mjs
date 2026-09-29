@@ -88,3 +88,148 @@ export function historySignals(observations, target) {
     ...regressionShape(observations, target),
   ];
 }
+
+// ---------------------------------------------------------------------------
+// Failure category. RULES + categorizeFailure are COPIED from
+// canary-fail-fast/scripts/failures.mjs (behaviour-for-behaviour): skills are
+// self-contained and never import each other. Keep the two in sync by hand.
+const RULES = [
+  [
+    'schema',
+    /ZodError|invalid[_ ]type|unrecognized key|expected .+ received|at path "|\bzod\b/i,
+  ],
+  [
+    'auth',
+    /\b401\b|unauthorized|\b403\b|forbidden|invalid(?: auth)? token|token expired/i,
+  ],
+  ['timeout', /timeout|timed out|etimedout|deadline exceeded/i],
+  [
+    'network',
+    /econnrefused|enotfound|econnreset|socket hang up|getaddrinfo|network request failed/i,
+  ],
+  [
+    'server',
+    /\b5\d{2}\b|internal server error|bad gateway|service unavailable|gateway timeout/i,
+  ],
+  [
+    'client',
+    /\b4(?:0[045-9]|1\d|2\d)\b|bad request|not found|unprocessable|conflict/i,
+  ],
+];
+
+/** Return the category of a failure error message ('other' when unknown). */
+export function categorizeFailure(error) {
+  if (!error) return 'other';
+  for (const [category, pattern] of RULES) {
+    if (pattern.test(error)) return category;
+  }
+  return 'other';
+}
+
+/** The stored category, else one derived from error_text, else null. */
+export function resolveCategory(obs) {
+  if (obs.failure_category) {
+    return {
+      category: obs.failure_category,
+      source: 'stored failure_category',
+    };
+  }
+  if (obs.error_text) {
+    return {
+      category: categorizeFailure(obs.error_text),
+      source: 'categorised from error_text',
+    };
+  }
+  return null;
+}
+
+const ENV_CATEGORIES = new Set(['timeout', 'network', 'auth']);
+
+export function categoryRows(target) {
+  const resolved = resolveCategory(target);
+  if (!resolved) return [];
+  const { category, source } = resolved;
+  if (ENV_CATEGORIES.has(category)) {
+    return [
+      row('category-env', source, `failure category ${category}`, [
+        'environment',
+      ]),
+    ];
+  }
+  if (category === 'server') {
+    return [
+      row('category-server', source, 'failure category server (5xx)', [
+        'product-defect',
+      ]),
+    ];
+  }
+  const detail = `failure category ${category} does not discriminate between the hypotheses`;
+  return [row('category-neutral', source, detail)];
+}
+
+// ---------------------------------------------------------------------------
+// Co-failures: other tests that failed in the target run.
+
+/** A category shared only as "other" is not a shared cause. */
+function sharesCategory(a, b) {
+  const ca = resolveCategory(a)?.category ?? null;
+  const cb = resolveCategory(b)?.category ?? null;
+  return ca !== null && ca !== 'other' && ca === cb;
+}
+
+const sharesArea = (a, b) => a.area != null && a.area === b.area;
+
+export function coFailureRows(target) {
+  const others = target.coFailures ?? [];
+  if (!others.length) {
+    return [
+      row(
+        'isolated',
+        HISTORY,
+        `the only failing test in run ${target.run_id}`,
+        ['test-defect'],
+        ['environment'],
+      ),
+    ];
+  }
+  const related = others.filter(
+    (o) => sharesArea(target, o) || sharesCategory(target, o),
+  );
+  if (!related.length) return [];
+  const names = related
+    .slice(0, 5)
+    .map((o) => o.test_name)
+    .join(', ');
+  const detail = `${related.length} other failing test(s) in run ${target.run_id} share its category or area: ${names}`;
+  return [
+    row(
+      'co-failure',
+      HISTORY,
+      detail,
+      ['product-defect', 'environment'],
+      ['test-defect'],
+    ),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Paths: shared by diff.mjs and findings.mjs.
+
+export function normalizePath(p) {
+  return String(p).replace(/\\/g, '/').replace(/^\.\//, '');
+}
+
+/** Equal, or one is the other with a leading directory prefix. */
+export function samePath(a, b) {
+  const x = normalizePath(a);
+  const y = normalizePath(b);
+  return x === y || x.endsWith(`/${y}`) || y.endsWith(`/${x}`);
+}
+
+const TEST_NAME = /\.(test|spec)\.|(^|\/)test_[^/]*\.py$|_test\.(py|go)$/;
+const TEST_DIR = /(^|\/)(test|tests|__tests__)\//;
+
+export function isTestPath(p) {
+  const n = normalizePath(p);
+  return TEST_NAME.test(n) || TEST_DIR.test(n);
+}
