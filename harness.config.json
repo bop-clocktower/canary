@@ -292,6 +292,7 @@
       "ts/src/mcp-server.ts",
       "ts/test/batwoman-testkit.ts",
       "ts/test/doc-links-testkit.ts",
+      "ts/test/required-checks-testkit.ts",
       "ts/vitest.config.ts"
     ],
     "drift": {
@@ -431,6 +432,7 @@
       "ts/src/mcp-server.ts",
       "ts/test/batwoman-testkit.ts",
       "ts/test/doc-links-testkit.ts",
+      "ts/test/required-checks-testkit.ts",
       "ts/vitest.config.ts"
     ]
   },

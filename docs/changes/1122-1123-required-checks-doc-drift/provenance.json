@@ -1,0 +1,15 @@
+{
+  "issues": [1122, 1123],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproTestPath": "ts/test/required-workflows-docs.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Combined into one lane/PR by maintainer decision; both are prose drifting from the `required` set in .github/required-checks.json with no test binding them.",
+    "No shared reader of the manifest's required set existed in ts/test (workflow-false-green, leak-gate-workflow, contributing-fork-note each parse it inline), so a new ts/test/required-checks-testkit.ts was added and declared in both entropy.entryPoints arrays. Migrating the three existing inline readers to it is left as a follow-up to keep this diff scoped.",
+    "The guide test binds exactly the 'In one breath' merge-gate sentence (from 'In one breath' to 'must be green to merge'); set equality, so an extra non-required workflow reddens it too.",
+    "The skill test judges each numbered step: a YAML fence with `paths:` or a sentence naming a `paths` filter without a negation word counts as a recommendation. A planted positive and a planted prohibition pin the detector both ways.",
+    "setup-harness SKILL step 2 ('five required CI workflows' for a fresh harness setup) lists a different set by intent — the harness-generated workflows, not canary's ruleset — and is not asserted here; filed as a PR follow-up.",
+    "SKILL.md was never prettier-formatted (it is outside the format:check gate); the edit is kept surgical at the file's existing ~60-col wrap instead of reflowing the whole file."
+  ]
+}

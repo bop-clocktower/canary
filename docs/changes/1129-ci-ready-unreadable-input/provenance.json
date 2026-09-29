@@ -1,0 +1,19 @@
+{
+  "issues": [1129],
+  "route": "bug",
+  "stages": [
+    "harness:debugging/investigate",
+    "harness:debugging/analyze",
+    "harness:debugging/hypothesize",
+    "harness:debugging/fix"
+  ],
+  "assumptions": [
+    "The loaders named in the issue live in ts/src/ci-ready-cli.ts (readOptional), not ts/src/core/ci-ready.ts, which is pure and reads no files; the fix is in the CLI loader.",
+    "Exit code follows the existing ci-ready contract (3 when every check skips, 0 when incomplete), not a flat 0 as the issue comment suggested.",
+    "Any non-ENOENT read error (incl. ENOTDIR when .canary is a file) is reported as unusable with its errno code; previously ENOTDIR read as 'missing'. This matches the dossier's readSource classification.",
+    "The run-history store (not a .canary input) has the same crash shape and is out of scope; filed as #1132.",
+    "Release dossier (#611) left unchanged: verdict, checked count and per-check scores now agree with ci-ready on this tree; only the skip reason text differs (dossier says 'no .canary/<file>'). Aligning it is parked as a fork."
+  ],
+  "closingKeyword": "Closes",
+  "reproTestPath": "ts/test/ci-ready-cli.test.ts"
+}
