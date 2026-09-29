@@ -121,12 +121,17 @@ description: >
    script and commit if changed. Without this, the security
    ledger goes stale and the Quality gate fails.
 
-4. **Confirm `docs-lint.yml` covers all doc paths.** The
-   workflow's `paths` filter should include:
-
-   - `docs/**`
-   - `agents/**`
-   - `AGENTS.md`
+4. **Run `docs-lint.yml` on every pull request, unfiltered.**
+   Its checks are required, so the workflow must never carry
+   a trigger-level `paths:` filter. A required check behind a
+   path filter never reports on a PR that touches none of
+   those paths, and GitHub then waits on it forever, so the
+   PR can never merge. The same holds for every workflow
+   that `.github/required-checks.json` lists as `required`.
+   Scope which files are linted inside the job instead, with
+   the linter's own globs (for example
+   `markdownlint-cli "**/*.md" --ignore node_modules`), so
+   `docs/**`, `agents/**` and `AGENTS.md` are all covered.
 
 5. **Set required permissions.** Workflows that commit
    back to the repository need `contents: write`:

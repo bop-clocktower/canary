@@ -173,7 +173,8 @@ PR; everything else is advisory. In one breath: **`harness.yml`
 (`harness ci check`) is the umbrella mechanical gate, backed by
 `harness-quality.yml` (docs coverage, entropy/drift cleanup, phase-gate),
 `harness-architecture.yml` (dependency layers + `validate`),
-`harness-security.yml` (security scan + deps + validate), `docs-lint.yml`
+`harness-security.yml` (security scan + deps + validate), `guardian.yml` (the PR
+test-guardian: diff coverage and test-quality audit), `docs-lint.yml`
 (markdownlint, code fences, wiki diagrams), `leak-gate.yml` (the removed-symbol
 and proprietary-leak guard), and `validate-plugin.yml` (manifest/version
 consistency) — those workflows must be green to merge.** Canary's own
