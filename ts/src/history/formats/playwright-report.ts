@@ -148,8 +148,11 @@ function testFile(entry: PwEntry): string {
 }
 
 function errorText(attempts: PwAttempt[]): string | undefined {
-  const last = attempts[attempts.length - 1];
-  const message = last?.error?.message ?? last?.errors?.[0]?.message;
+  // The last attempt that carries one: a flake's is its last failure (G8).
+  const message = attempts
+    .map((a) => a.error?.message ?? a.errors?.[0]?.message)
+    .filter((m) => m !== undefined)
+    .pop();
   return message === undefined
     ? undefined
     : String(message).slice(0, ERROR_TEXT_LIMIT);
@@ -169,7 +172,8 @@ function toResultRow(
 ): TestResultInput {
   const attempts = entry.test.results ?? [];
   const status = classify(entry.test.status, attempts);
-  const error = status === 'failed' ? errorText(attempts) : undefined;
+  const failing = status === 'failed' || status === 'flaky';
+  const error = failing ? errorText(attempts) : undefined;
   return {
     run_id: ids.runId,
     suite: ids.suite,

@@ -128,14 +128,19 @@ describe('Playwright report reader', () => {
     });
   });
 
-  it('keeps the failure message only for a failed test', () => {
+  it('keeps the last failing message for failed and flaky tests (G8, #1125)', () => {
     const r = report([
       spec('fails', [pwTest('unexpected', [FAIL(5, 'x'.repeat(3000))])]),
-      spec('flakes', [pwTest('flaky', [FAIL(5, 'first'), PASS()])]),
+      spec('flakes', [
+        pwTest('flaky', [FAIL(5, 'first'), FAIL(5, 'second'), PASS()]),
+      ]),
+      spec('passes', [pwTest('expected', [PASS()])]),
     ]);
     const built = buildRunFromReport('playwright', r, CTX);
     expect(built.results[0]!.error_text).toHaveLength(2000);
-    expect(built.results[1]!.error_text ?? null).toBeNull();
+    // A flake's passing retry has no error; the evidence is its last failure.
+    expect(built.results[1]!.error_text).toBe('second');
+    expect(built.results[2]!.error_text ?? null).toBeNull();
   });
 
   it('sums every attempt into the per-test duration', () => {
