@@ -33,6 +33,10 @@ import {
   diffRows,
   readCulpritDiff,
 } from '../claude-code/canary-question/scripts/diff.mjs';
+import {
+  findingsEvidence,
+  loadFindings,
+} from '../claude-code/canary-question/scripts/findings.mjs';
 
 const tmps: string[] = [];
 function tmp(): string {
@@ -591,5 +595,78 @@ describe('diff: evidence or Not checked (SC6)', () => {
     expect(res.read).toBe(true);
     expect(res.notChecked).toEqual([]);
     expect(res.rows[0].signal).toBe('diff-sut-only');
+  });
+});
+
+/** A Tier-0 detector `--json` envelope (canary-savant/SKILL.md shape). */
+function writeFindings(dir: string, findings: unknown): string {
+  const file = path.join(dir, 'findings.json');
+  fs.writeFileSync(
+    file,
+    JSON.stringify({ schema_version: 1, findings, summary: {} }),
+    'utf8',
+  );
+  return file;
+}
+
+describe('findings: reading the envelope (D9)', () => {
+  it('refuses a named file that does not exist', () => {
+    expect(() => loadFindings(path.join(tmp(), 'nope.json'))).toThrow(
+      /findings file not found/,
+    );
+  });
+
+  it('refuses malformed JSON and an envelope with no findings array', () => {
+    const a = path.join(tmp(), 'a.json');
+    fs.writeFileSync(a, '{no');
+    expect(() => loadFindings(a)).toThrow(/malformed findings file/);
+    const b = path.join(tmp(), 'b.json');
+    fs.writeFileSync(b, '{"schema_version":1}');
+    expect(() => loadFindings(b)).toThrow(/no findings array/);
+  });
+
+  it('reads the findings, ignoring non-object entries', () => {
+    const file = writeFindings(tmp(), [{ file: 'x', line: 1 }, 7, null]);
+    expect(loadFindings(file)).toEqual([{ file: 'x', line: 1 }]);
+  });
+});
+
+describe('findings: evidence on the test file (SC7)', () => {
+  const findings = [
+    { file: `./${TEST_FILE}`, line: 3, rule_id: 'SV001-module-mutable-global' },
+    { file: 'test/other.test.js', line: 9, rule_id: 'BH001-wall-clock' },
+    { file: TEST_FILE, kind: 'last-coverage-removed' },
+    { line: 4, rule_id: 'no-file' },
+  ];
+
+  it('quotes rule id and line for findings on the test file only', () => {
+    const res = findingsEvidence(findings, TEST_FILE);
+    expect(res.notChecked).toEqual([]);
+    expect(res.rows.map((r: Run) => r.detail)).toEqual([
+      `SV001-module-mutable-global at ./${TEST_FILE}:3`,
+      `last-coverage-removed at ${TEST_FILE}`,
+    ]);
+    expect(res.rows[0].signal).toBe('detector-finding');
+    expect(res.rows[0].supports).toEqual(['test-defect']);
+    expect(res.rows[0].weighsAgainst).toEqual([]);
+  });
+
+  it('falls back to "unnamed rule" when a finding names none', () => {
+    const res = findingsEvidence([{ file: TEST_FILE, line: 1 }], TEST_FILE);
+    expect(res.rows[0].detail).toBe(`unnamed rule at ${TEST_FILE}:1`);
+  });
+
+  it('lists findings as Not checked when no file was given', () => {
+    const res = findingsEvidence(null, TEST_FILE);
+    expect(res.rows).toEqual([]);
+    expect(res.notChecked).toEqual([
+      { source: 'detector findings', reason: 'no --findings file given' },
+    ]);
+  });
+
+  it('lists findings as Not checked when the test file is unknown', () => {
+    const res = findingsEvidence(findings, null);
+    expect(res.rows).toEqual([]);
+    expect(res.notChecked[0].reason).toMatch(/no test_file/);
   });
 });
