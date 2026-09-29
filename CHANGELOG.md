@@ -16,6 +16,16 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **canary-manhunter: release quality dossier** (#611). `canary manhunter`
+  assembles the evidence a release already has into one markdown (and
+  `--json-out` JSON) report. It covers run history, guardian coverage tiers and
+  open findings, ci-ready, the katana quarantine ledger, a canary-sweep report,
+  and a hand-kept `.canary/escapes.json`. Every section is FED, DARK (missing,
+  unreadable, self-abstained or zero-denominator, with the reason) or EXCLUDED
+  (`--exclude id=reason`). A derived Worth-your-eyes list puts dark sections
+  first. Exit 0 complete, 1 any section dark, 3 nothing read. A sha256 content
+  digest over the canonical payload is checked with `canary manhunter verify`.
+  Emit-only: no network, never posts. Guide: `docs/guides/release-dossier.md`.
 - **canary-savant reads PHP** (#1106). The static pass now scans PHPUnit
   (`*Test.php`) and WordPress (`test-*.php`) files. SV003 catches superglobal
   writes, `putenv`, `ini_set`, `date_default_timezone_set`, `define` (never

@@ -1,0 +1,17 @@
+name: canary-manhunter
+version: '1.0.0'
+description:
+  Assemble a release quality dossier from existing canary evidence, naming every
+  dark source, with a Worth-your-eyes list and a sha256 content digest.
+stability: static
+triggers:
+  - manual
+platforms:
+  - claude-code
+type: rigid
+tools: []
+tier: 2
+depends_on:
+  - canary-pr-guardian
+  - canary-ci-ready
+  - canary-katana
