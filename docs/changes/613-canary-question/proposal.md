@@ -90,7 +90,8 @@ agents/skills/claude-code/canary-question/
   scripts/signals.mjs    # pure: timeline (+ run context) -> evidence rows
   scripts/diff.mjs       # git diff --name-only over the culprit range
   scripts/findings.mjs   # Tier-0 envelope -> findings on the test file
-  scripts/brief.mjs      # pure: evidence -> brief object; render md + json
+  scripts/brief.mjs      # pure: evidence -> brief object
+  scripts/render.mjs     # pure: brief object -> markdown / json
 agents/skills/test/canary-question.test.ts
 ```
 

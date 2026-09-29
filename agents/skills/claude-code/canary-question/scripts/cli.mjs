@@ -30,12 +30,8 @@ import {
 } from './history.mjs';
 import { diffEvidence } from './diff.mjs';
 import { loadFindings } from './findings.mjs';
-import {
-  abstentionFor,
-  assembleBrief,
-  renderJson,
-  renderMarkdown,
-} from './brief.mjs';
+import { abstentionFor, assembleBrief } from './brief.mjs';
+import { renderJson, renderMarkdown } from './render.mjs';
 
 const PREFIX = 'canary-question:';
 

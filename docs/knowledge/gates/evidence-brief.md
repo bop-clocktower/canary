@@ -43,7 +43,9 @@ right one. A brief's evidence can be checked.
 ## Where it is implemented
 
 - [`brief.mjs`](../../../agents/skills/claude-code/canary-question/scripts/brief.mjs)
-  — assembly, fidelity, fixed order, renderers.
+  — assembly, fidelity, fixed order.
+- [`render.mjs`](../../../agents/skills/claude-code/canary-question/scripts/render.mjs)
+  — the markdown and JSON renderers.
 - [`signals.mjs`](../../../agents/skills/claude-code/canary-question/scripts/signals.mjs)
   — every signal and which hypotheses it bears on.
 - [`canary-question.test.ts`](../../../agents/skills/test/canary-question.test.ts)

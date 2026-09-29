@@ -39,13 +39,15 @@ import {
   loadFindings,
 } from '../claude-code/canary-question/scripts/findings.mjs';
 import {
-  BANNER,
   THIN_OBSERVATIONS,
   abstentionFor,
   assembleBrief,
+} from '../claude-code/canary-question/scripts/brief.mjs';
+import {
+  BANNER,
   renderJson,
   renderMarkdown,
-} from '../claude-code/canary-question/scripts/brief.mjs';
+} from '../claude-code/canary-question/scripts/render.mjs';
 import { CLI_SPEC, main } from '../claude-code/canary-question/scripts/cli.mjs';
 
 const tmps: string[] = [];
