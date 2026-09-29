@@ -13,6 +13,7 @@ import { createHistoryCommand } from '../../history/cli.js';
 import { registerTrimCommand } from '../../history/retention/cli.js';
 import { registerGapsCommand } from '../../analysis/clocktower/cli.js';
 import { createAnalyzeCommand } from '../../analysis/cli.js';
+import { enrichRecordedResults } from '../../analysis/enrich/enrich.js';
 import { createGuardianCommand } from '../../guardian/cli.js';
 import type { MainDeps } from '../../main-deps.js';
 
@@ -22,7 +23,13 @@ export const ENGINE_COMMANDS: ReadonlyArray<(deps: MainDeps) => Command> = [
   // for `ts/src/history` and on the 15-import perf threshold, and this registry
   // is the seam #988 added so a new subcommand does not have to tax it.
   (deps) => {
-    const history = createHistoryCommand({ out: deps.out, err: deps.err });
+    // #1125: `area` / `failure_category` are filled at record time by an
+    // analysis-side enricher; `history` only exposes the seam.
+    const history = createHistoryCommand({
+      out: deps.out,
+      err: deps.err,
+      enrichResults: enrichRecordedResults,
+    });
     registerTrimCommand(history, {
       out: deps.out,
       err: deps.err,

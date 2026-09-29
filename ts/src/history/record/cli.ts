@@ -140,7 +140,7 @@ async function recordCmd(
   }
 
   const commit = resolveCommit(opts.commit, deps.env, deps, deps.err);
-  const built = prepareRecordedRun(
+  const prepared = prepareRecordedRun(
     buildOrRefuse(
       shape,
       parsed,
@@ -151,6 +151,7 @@ async function recordCmd(
     deps,
     { seed: opts.seed, commitSource: commit.source, orderPlan: opts.orderPlan },
   );
+  const built = enrich(prepared, deps);
 
   const remote = opts.dbUrl ?? deps.env['CANARY_HISTORY_DB_URL'];
   const storePath = opts.path ?? DEFAULT_HISTORY_FILE;
@@ -213,6 +214,14 @@ function buildOrRefuse(
     );
     throw new CliExitError(1);
   }
+}
+
+/** Apply the injected enricher (#1125); `history` knows no areas itself. */
+function enrich(run: KeyedRun, deps: HistoryDeps): KeyedRun {
+  if (!deps.enrichResults) return run;
+  const { results, notes } = deps.enrichResults(run.results, deps.cwd());
+  for (const note of notes) deps.err(`note: ${note}`);
+  return { ...run, results };
 }
 
 // --- registration ------------------------------------------------------------
