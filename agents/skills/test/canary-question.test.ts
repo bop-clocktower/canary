@@ -37,6 +37,11 @@ import {
   findingsEvidence,
   loadFindings,
 } from '../claude-code/canary-question/scripts/findings.mjs';
+import {
+  THIN_OBSERVATIONS,
+  abstentionFor,
+  assembleBrief,
+} from '../claude-code/canary-question/scripts/brief.mjs';
 
 const tmps: string[] = [];
 function tmp(): string {
@@ -668,5 +673,269 @@ describe('findings: evidence on the test file (SC7)', () => {
     const res = findingsEvidence(findings, null);
     expect(res.rows).toEqual([]);
     expect(res.notChecked[0].reason).toMatch(/no test_file/);
+  });
+});
+
+const NOT_READ = {
+  read: false,
+  rows: [],
+  notChecked: [{ source: 'git diff', reason: 'not exercised in this case' }],
+};
+
+/** Build the pure assembleBrief input the CLI would, from runs. */
+function inputFor(
+  runs: Run[],
+  opts: {
+    suite?: string | null;
+    diff?: unknown;
+    findings?: Run[] | null;
+    historyDark?: string | null;
+  } = {},
+) {
+  const suite = opts.suite ?? null;
+  const timeline = timelineOf(runs, suite);
+  const { target, lastPass } = selectTarget(timeline.observations);
+  const abstained = abstentionFor(timeline, target, suite);
+  return {
+    test: T,
+    suite,
+    historyDark: opts.historyDark ?? null,
+    timeline,
+    target,
+    lastPass,
+    abstained,
+    diff: abstained ? null : (opts.diff ?? NOT_READ),
+    findings: opts.findings ?? null,
+  };
+}
+const briefFor = (runs: Run[], opts?: Parameters<typeof inputFor>[1]) =>
+  assembleBrief(inputFor(runs, opts));
+const forOf = (brief: Run, id: string) =>
+  (brief.hypotheses as Run[]).find((h) => h.id === id)!.for as Run[];
+const againstOf = (brief: Run, id: string) =>
+  (brief.hypotheses as Run[]).find((h) => h.id === id)!.against as Run[];
+const signals = (rows: Run[]) => rows.map((r) => r.signal);
+
+describe('brief: abstention is loud (D5, D6)', () => {
+  it('SC1: no observation of the test abstains with observations: 0', () => {
+    const brief = briefFor(series(['passed'], () => ({ tests: [] })));
+    expect(brief.fidelity).toBe('abstained');
+    expect(brief.denominator).toEqual({
+      observations: 0,
+      failures: 0,
+      runs_in_store: 1,
+    });
+    expect(brief.abstained.reason).toMatch(/no observation of this test in 1/);
+    expect(brief.hypotheses.map((h: Run) => [h.for, h.against])).toEqual([
+      [[], []],
+      [[], []],
+      [[], []],
+    ]);
+    expect(brief.target).toEqual({});
+    expect(brief.disambiguate).toHaveLength(1);
+  });
+
+  it('SC2: observations but no failure abstains with the count', () => {
+    const brief = briefFor(series(['passed', 'passed', 'passed']));
+    expect(brief.fidelity).toBe('abstained');
+    expect(brief.abstained.reason).toBe(
+      'no failing observation in 3 observation(s)',
+    );
+    expect(brief.denominator.observations).toBe(3);
+  });
+
+  it('a name in several suites abstains and lists them until --suite', () => {
+    const runs = series(['failed', 'failed'], (i) =>
+      i === 0 ? { suite: 'e2e' } : {},
+    );
+    const brief = briefFor(runs);
+    expect(brief.abstained.suites).toEqual(['e2e', 'unit']);
+    expect(brief.disambiguate[0]).toContain('--suite');
+    expect(briefFor(runs, { suite: 'unit' }).abstained).toBeNull();
+  });
+
+  it('names a dark default store under Not checked', () => {
+    const brief = briefFor([], { historyDark: 'no history store at x' });
+    expect(brief.not_checked).toContainEqual({
+      source: 'run history',
+      reason: 'no history store at x',
+    });
+  });
+});
+
+describe('brief: fidelity is derived, never asserted (D5)', () => {
+  it('SC3: fewer than 3 observations is thin', () => {
+    expect(THIN_OBSERVATIONS).toBe(3);
+    const brief = briefFor(series(['passed', 'failed']));
+    expect(brief.fidelity).toBe('thin');
+    expect(brief.disambiguate.join('\n')).toMatch(/Record more runs/);
+  });
+
+  it('3+ observations without a diff is history', () => {
+    expect(briefFor(series(['passed', 'passed', 'failed'])).fidelity).toBe(
+      'history',
+    );
+  });
+
+  it('SC6: an unread diff is Not checked and fidelity stays history', () => {
+    const brief = briefFor(series(['passed', 'passed', 'failed']));
+    expect(brief.fidelity).toBe('history');
+    expect(brief.not_checked.map((n: Run) => n.source)).toContain('git diff');
+  });
+
+  it('SC5: a read diff is history+diff and places test-only evidence', () => {
+    const diff = {
+      read: true,
+      rows: diffRows([TEST_FILE], TEST_FILE),
+      notChecked: [],
+    };
+    const brief = briefFor(series(['passed', 'passed', 'failed']), { diff });
+    expect(brief.fidelity).toBe('history+diff');
+    expect(signals(forOf(brief, 'test-defect'))).toContain('diff-test-only');
+    expect(signals(againstOf(brief, 'product-defect'))).toContain(
+      'diff-test-only',
+    );
+  });
+
+  it('SC5: sut-only is symmetric', () => {
+    const diff = {
+      read: true,
+      rows: diffRows(['src/cart.js'], TEST_FILE),
+      notChecked: [],
+    };
+    const brief = briefFor(series(['passed', 'passed', 'failed']), { diff });
+    expect(signals(forOf(brief, 'product-defect'))).toContain('diff-sut-only');
+    expect(signals(againstOf(brief, 'test-defect'))).toContain('diff-sut-only');
+  });
+
+  it('a read diff on a thin timeline stays thin', () => {
+    const diff = { read: true, rows: diffRows([], TEST_FILE), notChecked: [] };
+    expect(briefFor(series(['passed', 'failed']), { diff }).fidelity).toBe(
+      'thin',
+    );
+  });
+});
+
+describe('brief: evidence placement', () => {
+  it('SC4: same-commit-mixed appears under all three hypotheses', () => {
+    const brief = briefFor(
+      series(['passed', 'failed'], () => ({ commit_sha: 'abc1230' })),
+    );
+    for (const id of HYPOTHESES) {
+      expect(signals(forOf(brief, id))).toContain('same-commit-mixed');
+    }
+  });
+
+  it('SC7: a finding on the test file is test-defect evidence', () => {
+    const brief = briefFor(series(['passed', 'failed']), {
+      findings: [
+        { file: TEST_FILE, line: 3, rule_id: 'SV001-module-mutable-global' },
+        { file: 'test/other.test.js', line: 1, rule_id: 'BH001-wall-clock' },
+      ],
+    });
+    const rows = forOf(brief, 'test-defect').filter(
+      (r) => r.signal === 'detector-finding',
+    );
+    expect(rows.map((r) => r.detail)).toEqual([
+      `SV001-module-mutable-global at ${TEST_FILE}:3`,
+    ]);
+  });
+
+  it('a non-discriminating category lands in neutral, not a hypothesis', () => {
+    const brief = briefFor(
+      series(['passed', 'failed'], () => ({
+        tests: [entry('failed', { failure_category: 'client' })],
+      })),
+    );
+    expect(signals(brief.neutral)).toEqual(['category-neutral']);
+    for (const h of brief.hypotheses) {
+      expect(signals([...h.for, ...h.against])).not.toContain(
+        'category-neutral',
+      );
+    }
+  });
+
+  it('rows carry signal, source and detail only', () => {
+    const brief = briefFor(series(['passed', 'failed']));
+    expect(Object.keys(forOf(brief, 'test-defect')[0]).sort()).toEqual([
+      'detail',
+      'signal',
+      'source',
+    ]);
+  });
+
+  it('names a missing category, skipped observations and unread findings', () => {
+    const brief = briefFor(series(['skipped', 'passed', 'failed']));
+    const sources = brief.not_checked.map((n: Run) => n.source);
+    expect(sources).toEqual([
+      'skipped observations',
+      'failure category',
+      'git diff',
+      'detector findings',
+    ]);
+  });
+
+  it('records the target and the last pass', () => {
+    const brief = briefFor(series(['passed', 'failed']));
+    expect(brief.target).toMatchObject({
+      run_id: 'r2',
+      commit_sha: 'abc20',
+      status: 'failed',
+      last_pass_commit_sha: 'abc10',
+    });
+    expect(brief.schema_version).toBe(1);
+    expect(brief.advisory).toBe(true);
+    expect(brief.suite).toBe('unit');
+  });
+});
+
+describe('brief: fixed order (SC8, D1)', () => {
+  it('orders hypotheses identically whichever side the evidence favours', () => {
+    const favourTest = briefFor(series(['passed', 'passed', 'failed']), {
+      diff: {
+        read: true,
+        rows: diffRows([TEST_FILE], TEST_FILE),
+        notChecked: [],
+      },
+    });
+    const favourProduct = briefFor(
+      series(['passed', 'passed', 'failed'], () => ({
+        tests: [entry('failed', { failure_category: 'server' })],
+      })),
+      {
+        diff: {
+          read: true,
+          rows: diffRows(['src/cart.js'], TEST_FILE),
+          notChecked: [],
+        },
+      },
+    );
+    const favourEnv = briefFor(
+      series(['passed', 'passed', 'failed'], () => ({
+        tests: [
+          entry('failed', { error_text: 'connect ECONNREFUSED' }),
+          { test_name: 'b', status: 'failed', area: 'cart' },
+        ],
+      })),
+    );
+    for (const brief of [favourTest, favourProduct, favourEnv]) {
+      expect(brief.hypotheses.map((h: Run) => h.id)).toEqual(HYPOTHESES);
+    }
+  });
+});
+
+describe('brief: disambiguation is always offered', () => {
+  it('names the commits that would isolate a test or product change', () => {
+    const steps = briefFor(series(['passed', 'passed', 'failed'])).disambiguate;
+    expect(steps[0]).toMatch(/^Re-run .* several times at abc30/);
+    expect(steps.join('\n')).toMatch(/canary-savant --confirm on test\/cart/);
+    expect(steps.join('\n')).toMatch(/Check out abc20/);
+    expect(steps.join('\n')).toMatch(/system under test at abc20/);
+  });
+
+  it('omits the range steps when there is no prior pass', () => {
+    const steps = briefFor(series(['failed', 'failed', 'failed'])).disambiguate;
+    expect(steps.join('\n')).not.toMatch(/Check out/);
+    expect(steps.length).toBeGreaterThanOrEqual(1);
   });
 });
