@@ -759,6 +759,28 @@ describe('brief: abstention is loud (D5, D6)', () => {
     expect(briefFor(runs, { suite: 'unit' }).abstained).toBeNull();
   });
 
+  it('an abstained brief never claims every source was read', () => {
+    const brief = briefFor(series(['passed', 'passed']), {
+      findings: [{ file: TEST_FILE, line: 1, rule_id: 'SV001' }],
+    });
+    expect(brief.not_checked).toEqual([
+      { source: 'git diff', reason: 'not read: brief abstained' },
+      { source: 'detector findings', reason: 'not read: brief abstained' },
+    ]);
+    const md = renderMarkdown(brief);
+    expect(md).not.toContain('every source was read');
+    expect(md).toContain('- git diff: not read: brief abstained');
+  });
+
+  it('an abstained brief without --findings still names the unread diff', () => {
+    const brief = briefFor(series(['passed', 'passed']));
+    expect(brief.not_checked).toEqual([
+      { source: 'git diff', reason: 'not read: brief abstained' },
+    ]);
+    const emptied = { ...brief, not_checked: [] };
+    expect(renderMarkdown(emptied)).not.toContain('every source was read');
+  });
+
   it('names a dark default store under Not checked', () => {
     const brief = briefFor([], { historyDark: 'no history store at x' });
     expect(brief.not_checked).toContainEqual({

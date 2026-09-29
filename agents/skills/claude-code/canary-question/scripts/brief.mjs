@@ -67,6 +67,18 @@ function evidenceRows(input, findingsEv) {
   ];
 }
 
+// An abstained brief reads neither the diff nor the findings. Saying so keeps
+// "Not checked" from ever reading as "every source was read" (C1).
+const ABSTAINED_UNREAD = 'not read: brief abstained';
+
+function abstainedUnread(input) {
+  const out = [{ source: 'git diff', reason: ABSTAINED_UNREAD }];
+  if (input.findings !== null && input.findings !== undefined) {
+    out.push({ source: 'detector findings', reason: ABSTAINED_UNREAD });
+  }
+  return out;
+}
+
 function notCheckedFor(input, findingsEv) {
   const out = [];
   if (input.historyDark) {
@@ -78,7 +90,7 @@ function notCheckedFor(input, findingsEv) {
       reason: `${input.timeline.skipped} skipped observation(s) carry no pass/fail evidence`,
     });
   }
-  if (input.abstained) return out;
+  if (input.abstained) return [...out, ...abstainedUnread(input)];
   if (!resolveCategory(input.target)) {
     out.push({
       source: 'failure category',
@@ -254,10 +266,17 @@ function neutralLines({ neutral }) {
   return ['', '## Recorded, does not discriminate', '', ...neutral.map(bullet)];
 }
 
-function notCheckedLines({ not_checked: rows }) {
+function emptyNotChecked(brief) {
+  return brief.abstained
+    ? '- nothing read: brief abstained'
+    : '- nothing; every source was read';
+}
+
+function notCheckedLines(brief) {
+  const rows = brief.not_checked;
   const body = rows.length
     ? rows.map((n) => `- ${n.source}: ${n.reason}`)
-    : ['- nothing; every source was read'];
+    : [emptyNotChecked(brief)];
   return ['', '## Not checked', '', ...body];
 }
 
