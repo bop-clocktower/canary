@@ -906,3 +906,53 @@ last_manual_edit: 2026-06-30T01:18:39.592Z
 - **Plan:** —
 - **Priority:** P3
 - **External-ID:** github:bop-clocktower/canary#342
+
+### canary-signal — QA impact digest
+
+- **Status:** done
+- **Spec:** docs/changes/609-canary-signal/proposal.md
+- **Summary:** Ideation rank 4 (score 6.75) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Broadcast a periodic digest of what testing actually caught - bugs prevented, sweeps run, escapes avoided - to Slack, Teams, or a PR comment, so the work of testing is visible to people who do not open the code. Serves STRATEGY.md track 5 (Quality made legible). CORRECTED 2026-07-21: the original entry blocked this on canary-clocktower on the belief that no run history is persisted. That belief was FALSE - `agent/history/` (shipped 2026-06-10, commit 72e884b) already provides a persisted store with `canary history push|flaky|timeline|summary`. This item is NOT blocked; it is a formatter/broadcaster over existing query output. Accepted risk to handle in spec: the digest must degrade honestly when history is thin - a digest reading "1 run, 0 escapes" UNDERSELLS QA and inverts the goal, so state the window size and sample count explicitly rather than implying a quiet week. Low effort / medium confidence. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** docs/changes/609-canary-signal/plans/2026-09-28-canary-signal-plan.md
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#609
+
+### canary-clocktower — run-history gap analysis (NOT a greenfield build)
+
+- **Status:** done
+- **Spec:** docs/changes/610-canary-clocktower/proposal.md
+- **Summary:** Ideation rank 5 (score 5.25) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. CORRECTED 2026-07-21 - THE ORIGINAL PREMISE WAS FALSE. The ideation claimed run artifacts "are stateless and ephemeral today" and framed this as a greenfield substrate. In fact `agent/history/` shipped 2026-06-10 (commit 72e884b) with schema.py, store.py (abstract + factory), local_store.py, supabase_store.py, detector.py (flake-trend classification), a `canary history` CLI (push/flaky/timeline/summary/migrate), and four unit-test files. The ideation was generated from roadmap/doc text that had itself drifted, and the false claim propagated into this entry. Rescope to a GAP ANALYSIS: what does canary-test-reporter NOT yet push into history, and which consumers (canary-signal, the flakiness item) are not yet wired to query it. Accepted risk to handle in spec: do not rebuild what exists - the deliverable is wiring plus a documented gap list, not a second store. Effort unknown until the gap analysis runs. Next: gap analysis, then /harness:brainstorming. DISAMBIGUATION 2026-08-07: Issue #340 was titled "Clocktower voices" and is NOT this row — it is a product-wide voice/report-theming concern, not a skill. It has been retitled off the clocktower name and has its own row below. Note also that the gap analysis here depends on Issue #538: nothing currently writes the local history store, so part of the gap may already be known.
+- **Blockers:** —
+- **Plan:** docs/changes/610-canary-clocktower/plans/2026-09-28-clocktower-gaps-plan.md
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#610
+
+### canary-manhunter — release quality dossier
+
+- **Status:** done
+- **Spec:** docs/changes/611-canary-manhunter/proposal.md
+- **Summary:** Ideation rank 6 (score 5.25) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Assemble the full evidentiary case for a release - coverage tiers, guardian findings, sweep results, escape history - into one signed report aimed at client-success and delivery staff. Serves STRATEGY.md track 5 (Quality made legible). Accepted risk to handle in spec: reporting with no decision attached is theater and becomes a PDF nobody opens, the most common way quality tooling dies - the dossier must gate something real (a release checklist item) or answer a question someone is already asking under time pressure, or it should not be built. Medium effort / high confidence. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** docs/changes/611-canary-manhunter/plans/2026-09-28-canary-manhunter-plan.md
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#611
+
+### canary-question — test-bug vs product-bug triage
+
+- **Status:** done
+- **Spec:** docs/changes/613-canary-question/proposal.md
+- **Summary:** Ideation rank 8 (score 3.00) from docs/ideation/bop-themed-canary-skills-2026-07-21.md. Interrogate a failure and classify it as a false-fail (test defect) or a real SUT defect, showing its reasoning - the "is this a test bug or a real bug" question that currently costs triage time on every red build. Accepted risk to handle in spec: a wrong triage is WORSE than no triage - "it's just a flaky test" stamped on a genuine product bug is exactly how defects escape, and it would degrade the escaped-defect headline metric while appearing to help. Must never emit a confident verdict: fidelity-labeled hypothesis plus evidence, never a disposition. Medium effort / medium confidence. Next: /harness:brainstorming to spec.
+- **Blockers:** —
+- **Plan:** docs/changes/613-canary-question/plans/2026-09-29-canary-question-plan.md
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#613
+
+### canary-batwoman — post-merge closure verification
+
+- **Status:** done
+- **Spec:** docs/changes/canary-batwoman/proposal.md
+- **Summary:** Audits closed issues and reports, per file the closing PR changed, whether that artifact has actually EXECUTED since the merge. GitHub closes an issue on a `Closes #N` string match — a claim of completion with no denominator. Founding case is #749: fix merged, issue auto-closed, and the label-triggered workflow it repaired has not run since 2026-08-10, i.e. never with the fix in place. Deterministic, network-requiring (GitHub Actions run history), agent-free; advisory only — never blocks a job, never reopens an issue. Ships a probe registry so unassessable artifact types become countable NO PROBE rows rather than silence, and a summary line carrying one column per status so an abstention can never be folded into a pass. NAMING 2026-08-23: originally scoped as `canary-manhunter`; renamed because #611 already reserved that name for the release quality dossier and has the stronger claim on it (a prosecutor assembling a case file is what a dossier is). Same roadmap-vs-tracker minting collision recorded on the canary-cassandra row on 2026-08-07 — third occurrence, see #753's sibling discussion.
+- **Blockers:** —
+- **Plan:** docs/changes/canary-batwoman/plans/2026-08-23-canary-batwoman-phase1-core-plan.md
+- **Priority:** P3
+- **External-ID:** github:bop-clocktower/canary#749
