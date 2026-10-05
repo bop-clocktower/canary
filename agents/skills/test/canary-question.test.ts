@@ -412,30 +412,65 @@ describe('signals: failure category (D2, D7)', () => {
 // copy to the source by behaviour. Only the categorisation is pinned; the
 // category-to-hypothesis mapping is canary-question's own.
 describe('signals: categoriser parity with canary-fail-fast (#1140)', () => {
-  // Shared with ts/test/enrich-failure-category.test.ts. Chosen so every
-  // category is produced and the precedence rules are exercised: schema
-  // outranks server, auth outranks timeout.
+  // Built for this copy, not shared with ts/test/enrich-failure-category.test.ts:
+  // editing one list does not update the other.
   const SAMPLES = [
-    'ZodError: invalid_type at path "user.id"',
+    // One sample per alternative of each rule, each hitting that alternative
+    // alone, so dropping or narrowing any one alternative changes a result.
+    'ZodError thrown',
+    'invalid_type',
+    'unrecognized key(s) in object',
     'expected string, received number',
-    'schema check failed with 500 and ZodError',
-    'Request failed with status 401',
-    '403 Forbidden',
+    'error at path "a.b"',
+    'zod parse failed',
+    'status 401',
+    'Unauthorized',
+    'status 403',
+    'Forbidden',
+    'invalid token',
+    'invalid auth token',
     'token expired',
-    'timed out waiting for 401',
     'Timeout 30000ms exceeded',
-    'connect ECONNREFUSED 127.0.0.1:5432',
-    'getaddrinfo ENOTFOUND api.example',
+    'request timed out',
+    'ETIMEDOUT',
+    'deadline exceeded',
+    'connect ECONNREFUSED',
+    'ENOTFOUND',
     'read ECONNRESET',
     'socket hang up',
-    'deadline exceeded',
-    '500 Internal Server Error',
-    '502 Bad Gateway',
-    '503 Service Unavailable',
-    '404 Not Found',
-    '400 Bad Request',
-    '422 Unprocessable Entity',
-    'response 409 conflict',
+    'getaddrinfo failed',
+    'network request failed',
+    'status 500',
+    'internal server error',
+    'bad gateway',
+    'service unavailable',
+    'status 400',
+    'status 404',
+    'status 410',
+    'status 429',
+    'bad request',
+    'not found',
+    'unprocessable',
+    'conflict',
+    // One sample per pair of rules, matching both, so swapping the precedence of
+    // any two rules changes a result. (`gateway timeout` is the only alternative
+    // no sample can isolate: `timeout` always claims it first.)
+    'ZodError 401',
+    'ZodError timeout',
+    'ZodError ECONNRESET',
+    'ZodError 500',
+    'ZodError 404',
+    'timed out waiting for 401',
+    '401 ECONNRESET',
+    '401 500',
+    '401 404',
+    'timeout ECONNREFUSED',
+    'gateway timeout',
+    'timeout 404',
+    'ECONNRESET 502',
+    'ENOTFOUND 404',
+    '500 then 404',
+    // No rule matches.
     'expected 3, got 4',
     '',
   ];
@@ -533,7 +568,7 @@ describe('signals: ids never name a hypothesis they do not own (#1142)', () => {
 
   it('reads the whole documented signal table', () => {
     const rows = documentedSignals();
-    expect(rows.length).toBeGreaterThanOrEqual(14);
+    expect(rows.length).toBe(15);
     for (const [, supports] of rows) {
       for (const h of supports) expect(HYPOTHESES).toContain(h);
     }
@@ -556,6 +591,12 @@ describe('signals: ids never name a hypothesis they do not own (#1142)', () => {
     expect(oneSidedIds(emitted)).toEqual([]);
     for (const [id, supports] of emitted) {
       expect(documented).toContainEqual([id, supports]);
+    }
+    // And the reverse: no stale category-* row (a re-added category-env, say)
+    // survives in the docs once the code stops emitting it.
+    const emittedIds = new Set(emitted.map(([id]) => id));
+    for (const [id] of documented.filter(([i]) => i.startsWith('category-'))) {
+      expect(emittedIds).toContain(id);
     }
   });
 });

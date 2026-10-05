@@ -91,8 +91,10 @@ export function historySignals(observations, target) {
 // Failure category. RULES + categorizeFailure are COPIED from
 // canary-fail-fast/scripts/failures.mjs (behaviour-for-behaviour): skills are
 // self-contained and never import each other. The copy is pinned to the source
-// by the parity test in agents/skills/test/canary-question.test.ts (#1140);
-// change a rule there and here together, or that test goes red.
+// by the parity test in agents/skills/test/canary-question.test.ts (#1140):
+// its samples hit every alternative alone and every pair of rules, so dropping,
+// narrowing or reordering a rule in one copy only turns it red. A NEW
+// alternative is caught only once a sample exercises it -- add one with it.
 const RULES = [
   [
     'schema',
