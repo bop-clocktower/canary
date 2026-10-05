@@ -80,6 +80,23 @@ describe('renderBrief', () => {
 });
 
 describe('renderVerify', () => {
+  it('prints each warning after the vacuity line, verdict unchanged', () => {
+    const md = renderVerify({
+      verdict: 'not-reproduced',
+      label: 'not-reproduced',
+      vacuity: true,
+      reason: 'the test passed against the code it was written to catch',
+      warnings: ['the test mocks the suspect module src/cart/total.ts (x)'],
+    });
+    const lines = md.split('\n');
+    const vac = lines.findIndex((l) => l.startsWith('VACUITY RED FLAG'));
+    const warn = lines.indexOf(
+      'WARNING: the test mocks the suspect module src/cart/total.ts (x)',
+    );
+    expect(warn).toBeGreaterThan(vac);
+    expect(warn).toBeLessThan(lines.findIndex((l) => l.startsWith('Reason:')));
+  });
+
   it('puts the verdict first and flags vacuity', () => {
     const md = renderVerify({
       verdict: 'not-reproduced',

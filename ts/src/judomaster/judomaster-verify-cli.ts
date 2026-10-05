@@ -11,13 +11,14 @@
  */
 
 import { readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { Command } from 'commander';
 
 import { CliExitError, normalizeUsageExit } from '../cli-common.js';
 import { EXIT_ABSTAINED } from '../core/gate-result.js';
 import type { ExecuteResult } from '../core/executor.js';
 import { renderVerify } from '../analysis/judomaster/render.js';
+import { mockedSuspectWarnings } from '../analysis/judomaster/resolve.js';
 import type { RegressionBrief } from '../analysis/judomaster/types.js';
 import {
   classifyRun,
@@ -181,6 +182,24 @@ function gradeRun(
   return classifyRun(exec, signature, framework, generatedSources(real));
 }
 
+/**
+ * C6 (#1138): a warning, never a verdict change. Reads the test's own
+ * source only; needs the brief's suspect, so without --brief it is skipped.
+ */
+function withMockWarnings(
+  result: VerifyResult,
+  brief: RegressionBrief | null,
+  real: string,
+  rootReal: string,
+): VerifyResult {
+  const suspect = brief?.suspect?.path;
+  if (suspect === undefined) return result;
+  const dir = relative(rootReal, dirname(real)).split(sep).join('/');
+  const source = readFileSync(real, 'utf-8');
+  const warnings = mockedSuspectWarnings(source, dir, suspect);
+  return warnings.length === 0 ? result : { ...result, warnings };
+}
+
 function runVerify(deps: MainDeps, test: string, opts: VerifyOpts): void {
   const root = opts.root ?? deps.cwd();
   const timeout = parseTimeout(deps, opts.timeout);
@@ -189,7 +208,12 @@ function runVerify(deps: MainDeps, test: string, opts: VerifyOpts): void {
   const rootReal = realpathSync(root);
   const framework = pickFramework(opts, real, brief);
   const signature = loadSignature(deps, opts, brief);
-  const result = gradeRun(deps, real, framework, timeout, signature, rootReal);
+  const result = withMockWarnings(
+    gradeRun(deps, real, framework, timeout, signature, rootReal),
+    brief,
+    real,
+    rootReal,
+  );
   const payload = {
     schema: 'canary-judomaster-verify/1',
     ...result,

@@ -78,6 +78,7 @@ export function renderVerify(result: VerifyResult): string {
     `# Verdict: ${heading}`,
     '',
     ...(result.vacuity ? [VACUITY, ''] : []),
+    ...(result.warnings ?? []).flatMap((w) => [`WARNING: ${w}`, '']),
     `Reason: ${result.reason}`,
     '',
     ...tailBlock(result),
