@@ -52,7 +52,12 @@ Abstained records are listed too, not dropped.
 
 `--history` moves only the run-history section. The ci-readiness section always
 reads the default store under `--root`, as `canary ci-ready` does, so the two
-commands cannot score different runs.
+commands cannot score different runs. A default store that exists but cannot be
+read (a directory at the path, a 0-perm file) is not dark on its own: it is
+ci-ready's skip on flakiness and suite runtime,
+`<path> could not be read (EISDIR)`, shown in the section's facts the same way
+`canary ci-ready` reports it (#1132). It only goes dark if nothing else scored,
+and then the dark reason names it.
 
 A section that does not apply is declared, not omitted:
 `--exclude sweep="<reason>"`. The reason is printed in the dossier. An empty

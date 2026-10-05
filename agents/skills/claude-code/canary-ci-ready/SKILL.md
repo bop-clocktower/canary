@@ -16,12 +16,16 @@ this before promoting a suite to CI, or as the convergence gate in
 
 **Deterministic scorer:** run `canary ci-ready [--root <dir>] [--json]` first.
 It scores every check that has a real input and reports `skip`, naming the
-missing input, for every check that does not. A skip is never a pass. Run
-`canary inventory` first so coverage depth, assertion quality and critical paths
-have their input; flakiness and suite runtime read the run-history store that
-`canary history record` writes. The verdict is `ready` (all five passed),
-`incomplete` (nothing failed, something skipped), `not-ready` (exit 1) or
-`abstained` (nothing scored, exit 3).
+missing input, for every check that does not. An input that exists but cannot be
+read (a directory at the path, a 0-perm file) is a `skip` naming the path and
+errno code, such as
+`test-results/reports/history-v2.jsonl could not be read (EISDIR)`; it is never
+read as absent. A skip is never a pass. Run `canary inventory` first so coverage
+depth, assertion quality and critical paths have their input; flakiness and
+suite runtime read the run-history store that `canary history record` writes.
+The verdict is `ready` (all five passed), `incomplete` (nothing failed,
+something skipped), `not-ready` (exit 1) or `abstained` (nothing scored, exit
+3).
 
 ## When to Use
 

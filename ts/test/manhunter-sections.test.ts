@@ -294,6 +294,42 @@ describe('ci-readiness section', () => {
     expect(s.reason).toContain('ci-ready cannot read');
   });
 
+  // #1132: an unreadable store is ci-ready's skip with a reason, consumed here
+  // as-is -- never scored as "no runs recorded", which reads as absent.
+  it('names an unreadable store as unreadable, not absent, beside a scored input', () => {
+    mkdirSync(paths().historyPath, { recursive: true });
+    write('.canary/test-inventory.json', {
+      schema_version: 1,
+      generated: '2026-09-29T00:00:00Z',
+      files: [
+        {
+          path: 'tests/a.spec.ts',
+          framework: 'vitest',
+          targets: ['src/a'],
+          tests: [{ name: 'a', line: 1, depth: 2 }],
+        },
+      ],
+      skipped: [],
+    });
+    const s = readinessSection(paths());
+    expect(s.status).toBe('fed');
+    const facts = s.facts.join('\n');
+    const reason = `${paths().historyPath} could not be read (EISDIR)`;
+    expect(facts).toContain(`skip flakiness: ${reason}`);
+    expect(facts).toContain(`skip suite-runtime: ${reason}`);
+    expect(facts).not.toContain('no runs recorded');
+  });
+
+  it('is dark naming the unreadable store when nothing else scores', () => {
+    mkdirSync(paths().historyPath, { recursive: true });
+    const s = readinessSection(paths());
+    expect(s.status).toBe('dark');
+    expect(s.reason).toContain('ci-ready abstained');
+    expect(s.reason).toContain(
+      `${paths().historyPath} could not be read (EISDIR)`,
+    );
+  });
+
   it('is fed once any check scores, and flags the incomplete verdict', () => {
     historyFile([
       { suite: 'api', statuses: { a: 'passed' } },

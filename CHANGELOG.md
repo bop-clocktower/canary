@@ -294,6 +294,15 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary ci-ready` no longer crashes on an unreadable run-history store**
+  (#1132). A directory or 0-perm file at `test-results/reports/history-v2.jsonl`
+  threw a raw EISDIR/EACCES stack, the shape #1129 fixed for the `.canary`
+  inputs. Flakiness and suite runtime now `skip` with
+  `<path> could not be read (<code>)` and the exit code follows the normal
+  contract. The release dossier (`canary manhunter`) had scored the same store
+  as absent ("no runs recorded"); it now shows ci-ready's reason, and an
+  abstained ci-readiness section names every skip reason. A corrupt or
+  unsupported-schema store still throws, unchanged.
 - **Installing a skill's dependencies no longer freezes it** (#1066).
   `hashSkillDir` walked the whole deployed-skill tree, so `node_modules` counted
   toward the hash: running `npm install` in a skill's `scripts/` dir — which a
