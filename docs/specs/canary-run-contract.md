@@ -148,6 +148,10 @@ Every field is **required**. "Nullable" means the key must be present and may be
 - **Rule `totals-sum`.**
   `passed + failed + flaky + skipped + timed_out + interrupted` equals
   `totals.total`.
+- **Rule `counts-safe`.** Every `totals` count, `results[].duration_ms` and
+  `results[].retries` is at most `2^53 - 1` (9007199254740991). A larger JSON
+  integer is not the number the producer wrote once parsed, so `totals-sum`
+  could not check it honestly.
 - **`file` is repo-relative** (ADR 0029). `title` plus `file` is the join key
   between `results[]`, `collected[]` and other canary records.
 

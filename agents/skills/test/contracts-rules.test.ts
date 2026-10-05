@@ -52,6 +52,45 @@ describe('run rules', () => {
     ]);
   });
 
+  it('refuses a count above 2^53 - 1 instead of summing it lossily (S1)', () => {
+    // 2^53 + 1 is not representable, so this sum "matched" before the rule.
+    const big = 2 ** 53;
+    const run = {
+      totals: totals({ passed: big, failed: 1, total: big + 1 }),
+      results: [{ duration_ms: 2 ** 60, retries: 0 }],
+    };
+    expect(crossFieldErrors('run', run)).toEqual([
+      {
+        path: 'totals.passed',
+        message: `must be a safe integer (at most ${Number.MAX_SAFE_INTEGER})`,
+      },
+      {
+        path: 'totals.total',
+        message: `must be a safe integer (at most ${Number.MAX_SAFE_INTEGER})`,
+      },
+      {
+        path: 'results[0].duration_ms',
+        message: `must be a safe integer (at most ${Number.MAX_SAFE_INTEGER})`,
+      },
+    ]);
+  });
+
+  it('prefixes an unsafe count nested in a site feed (S1)', () => {
+    const site = { runs: [{ totals: totals({ skipped: 2 ** 53 }) }] };
+    expect(paths(crossFieldErrors('site', site))).toEqual([
+      'runs[0].totals.skipped',
+    ]);
+  });
+
+  it('accepts Number.MAX_SAFE_INTEGER, the largest safe count (control)', () => {
+    const max = Number.MAX_SAFE_INTEGER;
+    const run = {
+      totals: totals({ passed: max - 1, failed: 1, total: max }),
+      results: null,
+    };
+    expect(crossFieldErrors('run', run)).toEqual([]);
+  });
+
   it('leaves a non-object totals to the schema', () => {
     expect(crossFieldErrors('run', { totals: 'x', results: [] })).toEqual([]);
   });

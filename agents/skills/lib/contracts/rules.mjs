@@ -17,6 +17,7 @@ const COUNT_KEYS = [
   'timed_out',
   'interrupted',
 ];
+const RESULT_COUNT_KEYS = ['duration_ms', 'retries'];
 const ASSESSED = ['healthy', 'degraded', 'critical', 'observed'];
 const AUTHOR_KEYS = ['who', 'author'];
 
@@ -28,10 +29,37 @@ function isAbsent(v) {
   return v === null || v === undefined;
 }
 
+/**
+ * Rule `counts-safe`: every `count` is a safe integer. Above 2^53 - 1 a JSON number is not
+ * the integer the producer wrote, and the totals sum compares lossily (the
+ * keyword subset has no `maximum`, deliberately). The arithmetic rules below
+ * skip unsafe counts so this is the one error reported for them.
+ */
+function unsafeCounts(record, keys, prefix) {
+  if (!isPlainObject(record)) return [];
+  return keys
+    .filter((k) => Number.isInteger(record[k]))
+    .filter((k) => !Number.isSafeInteger(record[k]))
+    .map((k) => ({
+      path: at(prefix, k),
+      message: `must be a safe integer (at most ${Number.MAX_SAFE_INTEGER})`,
+    }));
+}
+
+function countsSafe(run, prefix) {
+  const results = Array.isArray(run.results) ? run.results : [];
+  return [
+    ...unsafeCounts(run.totals, [...COUNT_KEYS, 'total'], at(prefix, 'totals')),
+    ...results.flatMap((r, i) =>
+      unsafeCounts(r, RESULT_COUNT_KEYS, at(prefix, `results[${i}]`)),
+    ),
+  ];
+}
+
 /** Criterion 4: totals.total === results.length, when results are carried. */
 function totalsMatchResults(run, prefix) {
   const total = isPlainObject(run.totals) ? run.totals.total : undefined;
-  if (!Array.isArray(run.results) || !Number.isInteger(total)) return [];
+  if (!Array.isArray(run.results) || !Number.isSafeInteger(total)) return [];
   if (total === run.results.length) return [];
   const n = run.results.length;
   return [
@@ -45,9 +73,9 @@ function totalsMatchResults(run, prefix) {
 /** Fork K: the per-status counts add up to totals.total. */
 function totalsSum(run, prefix) {
   const t = run.totals;
-  if (!isPlainObject(t) || !Number.isInteger(t.total)) return [];
+  if (!isPlainObject(t) || !Number.isSafeInteger(t.total)) return [];
   const counts = COUNT_KEYS.map((k) => t[k]);
-  if (!counts.every(Number.isInteger)) return [];
+  if (!counts.every(Number.isSafeInteger)) return [];
   const sum = counts.reduce((a, b) => a + b, 0);
   if (sum === t.total) return [];
   return [
@@ -141,7 +169,7 @@ function authorExcluded(row, prefix) {
   }));
 }
 
-const RUN_RULES = [totalsMatchResults, totalsSum];
+const RUN_RULES = [countsSafe, totalsMatchResults, totalsSum];
 const ASSESSMENT_RULES = [verifiedSupplied, verificationPair, statusShape];
 const REGISTER_RULES = [authorExcluded];
 
