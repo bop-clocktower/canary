@@ -110,8 +110,8 @@ node agents/skills/lib/contracts/validate.mjs --layer assessment assessment.json
 
 Exit codes, error shape and `--json` output are the same as for
 [canary.run/1](canary-run-contract.md#validating): `0` valid, `1` refused
-(including unparseable input), `2` usage error or unreadable file. Each error is
-`{path, message}` with the document root as `$`.
+(including unparseable input), `2` usage error or unreadable file or stdin. Each
+error is `{path, message}` with the document root as `$`.
 
 ## Consumers
 

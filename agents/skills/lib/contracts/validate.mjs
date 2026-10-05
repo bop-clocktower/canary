@@ -9,7 +9,7 @@
 // rules.mjs. Errors are {path, message}; the document root is `$`.
 //
 // Exit codes (CLI): 0 valid, 1 refused (invalid OR unparseable; a parse
-// failure is never a pass), 2 usage or unreadable file. There is no exit 3:
+// failure is never a pass), 2 usage or unreadable input. There is no exit 3:
 // a parsed document always has a denominator of at least 1 (fork N).
 
 import { readFileSync } from 'node:fs';
@@ -145,7 +145,7 @@ const HELP = `usage: ${PROG} [-h] [--layer {run,assessment,site}] [--json] [file
 Validate one canary QA contract document (canary.run/1, canary.assessment/1,
 canary.site/1). Reads stdin when file is omitted or '-'.
 
-exit codes: 0 valid · 1 refused (invalid or unparseable) · 2 usage or unreadable file`;
+exit codes: 0 valid · 1 refused (invalid or unparseable) · 2 usage or unreadable file/stdin`;
 
 const parse = createParser({
   prog: PROG,
@@ -166,12 +166,14 @@ function argsProblem(parsed) {
   return null;
 }
 
+/** An unreadable input (a file, or stdin redirected from a directory) is exit 2. */
 function readInput(file, readStdin) {
-  if (file === undefined || file === '-') return { text: readStdin() };
+  const fromStdin = file === undefined || file === '-';
   try {
-    return { text: readFileSync(file, 'utf8') };
+    return { text: fromStdin ? readStdin() : readFileSync(file, 'utf8') };
   } catch (err) {
-    return { error: `cannot read ${file}: ${err.code ?? err.message}` };
+    const what = fromStdin ? 'stdin' : file;
+    return { error: `cannot read ${what}: ${err.code ?? err.message}` };
   }
 }
 

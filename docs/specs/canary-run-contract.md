@@ -195,11 +195,11 @@ nothing installed. Omit the file, or pass `-`, to read stdin. Without `--layer`,
 the layer is read from the document's own `contract` field; with it, a document
 of any other layer is refused.
 
-| Exit | Meaning                                                                  |
-| ---- | ------------------------------------------------------------------------ |
-| `0`  | Valid.                                                                   |
-| `1`  | Refused: the document is invalid, or the input is not parseable JSON.    |
-| `2`  | Usage error (unknown flag, bad `--layer`, two files) or unreadable file. |
+| Exit | Meaning                                                                           |
+| ---- | --------------------------------------------------------------------------------- |
+| `0`  | Valid.                                                                            |
+| `1`  | Refused: the document is invalid, or the input is not parseable JSON.             |
+| `2`  | Usage error (unknown flag, bad `--layer`, two files) or unreadable file or stdin. |
 
 Unparseable or empty input is a refusal (exit 1), never a pass. Each error is
 `{path, message}`. `path` is dotted with bracketed indexes (`scope.env`,

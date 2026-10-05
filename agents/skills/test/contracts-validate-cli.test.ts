@@ -90,6 +90,23 @@ describe('validate.mjs CLI (in-process)', () => {
     );
   });
 
+  it('exits 2, not a crash, when stdin cannot be read (fork M)', () => {
+    const err: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation(
+      (...a: unknown[]) => void err.push(a.join(' ')),
+    );
+    const unreadable = () => {
+      throw Object.assign(new Error('illegal operation on a directory'), {
+        code: 'EISDIR',
+      });
+    };
+    expect(main(['-'], { readStdin: unreadable })).toBe(2);
+    expect(main([], { readStdin: unreadable })).toBe(2);
+    expect(err[0]).toBe(
+      'canary-contracts-validate: error: cannot read stdin: EISDIR',
+    );
+  });
+
   it('--help exits 0 and documents the exit codes', () => {
     const r = call(['--help']);
     expect(r.code).toBe(0);
