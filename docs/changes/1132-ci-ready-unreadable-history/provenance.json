@@ -1,0 +1,24 @@
+{
+  "fleet": "roadmap-fleet",
+  "run": "rf-2026-10-05",
+  "issues": [1132],
+  "route": "bug",
+  "stages": [
+    "harness:debugging/investigate",
+    "harness:debugging/analyze",
+    "harness:debugging/hypothesize",
+    "harness:debugging/fix"
+  ],
+  "reproducingTest": "ts/test/ci-ready-cli.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Human-answered fork: an unreadable run-history store is a skip with a reason on flakiness and suite-runtime, '<path> could not be read (<code>)', mirroring #1129/#1133; not a hard error and not 'no history'.",
+    "Only errno-bearing read errors become the skip. A corrupt or unsupported-schema store still throws in ci-ready (unchanged) and stays DARK in the dossier; that content-error case was outside the decided fork and is filed as #1156.",
+    "The core scorer's runs input gains a third shape, { ok: false, reason }, matching the InventoryInput/CriticalAreasInput shape, rather than a separate field.",
+    "Investigation found the dossier did NOT go dark on a read error as the issue described: readinessSection.runsOf returned null for an unreadable store, so it was scored as absent ('no runs recorded'). It now passes ci-ready's reason through; the DARK-on-throw path remains only for content errors.",
+    "The dossier's abstained dark reason now lists every distinct check skip reason in parentheses, so an unreadable store is named even when nothing else scored. Existing tests match on the 'ci-ready abstained' prefix and are unaffected.",
+    "The dossier's skip reason uses its absolute historyPath, as its existing 'no runs recorded in <path>' reason already did; ci-ready uses the root-relative path.",
+    "EACCES coverage is skipped on win32 and when running as root (chmod cannot revoke read there), same guard as #1133.",
+    "The gemini-cli canary-ci-ready.toml copy was already stale before this change and is not regenerated here."
+  ]
+}
