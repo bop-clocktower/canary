@@ -29,6 +29,28 @@ const SIG = {
 const COULD_NOT = 'unverified — could not reproduce';
 
 describe('classifyRun', () => {
+  const NPX_CANCEL =
+    'npm error npx canceled due to missing packages and no YES option: ["vitest@5.0.3"]\nnpm error A complete log of this run can be found in: /x.log';
+
+  it('names the runner when npx refuses to fetch it', () => {
+    const r = classifyRun([1, '', NPX_CANCEL], SIG, 'vitest');
+    expect(r.verdict).toBe('unverified');
+    expect(r.label).toBe(COULD_NOT);
+    expect(r.reason).toBe(
+      'the runner vitest is not installed under the root; verify does not fetch runners (install it, e.g. npm i -D vitest)',
+    );
+  });
+
+  it('falls back to the framework name when npx lists no package', () => {
+    const r = classifyRun(
+      [1, '', 'npm error npx canceled due to missing packages'],
+      SIG,
+      'playwright',
+    );
+    expect(r.label).toBe(COULD_NOT);
+    expect(r.reason).toContain('the runner playwright is not installed');
+  });
+
   it('refuses a signature match the test could have printed itself', () => {
     // A failing assertion prints its own source; a test that quotes the
     // incident's error text would "match" whatever made it fail.
