@@ -3,7 +3,7 @@
  * (#843).
  *
  * `No removed-symbol or proprietary leaks` is required
- * (`.github/required-checks.json`) and hard-fails on a zero denominator, which
+ * (`.github/required-checks.json`, read through `required-checks-testkit.ts`) and hard-fails on a zero denominator, which
  * is correct. Its denylist comes only from `secrets.CANARY_PROPRIETARY_DENYLIST`
  * — `.proprietary-denylist` is gitignored, so there is no in-repo fallback — and
  * GitHub does not pass secrets to fork-triggered `pull_request` runs. On a
@@ -27,15 +27,18 @@
  */
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { load as loadYaml } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
+import {
+  REPO_ROOT,
+  advisoryEntries,
+  requiredCheckNames,
+  requiredEntries,
+} from './required-checks-testkit.js';
 
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
 const CONTRIBUTING = join(REPO_ROOT, 'CONTRIBUTING.md');
-const REQUIRED_CHECKS = join(REPO_ROOT, '.github', 'required-checks.json');
 
 /** Triggers that run in BASE-repo context, where secrets resolve for forks. */
 const FORK_SAFE_TRIGGERS = ['pull_request_target', 'workflow_run'];
@@ -60,22 +63,6 @@ function triggersOf(wf: Workflow): string[] {
   if (Array.isArray(on)) return on.map(String);
   if (on && typeof on === 'object') return Object.keys(on as object);
   return [];
-}
-
-/** Every check name `.github/required-checks.json` marks as required. */
-function requiredCheckNames(): Set<string> {
-  const raw = JSON.parse(readFileSync(REQUIRED_CHECKS, 'utf-8')) as Record<
-    string,
-    unknown
-  >;
-  const rows = Object.values(raw).filter(Array.isArray).flat() as Array<{
-    check?: unknown;
-  }>;
-  return new Set(
-    rows
-      .map((r) => r.check)
-      .filter((c): c is string => typeof c === 'string' && c.length > 0),
-  );
 }
 
 /** Every workflow file under `.github/workflows`. */
@@ -131,6 +118,25 @@ function secretGatedOnForkBlindTrigger(): string[] {
   }
   return [...new Set(blocked)].sort();
 }
+
+describe("this test's required set is the manifest's `required` section (#1144)", () => {
+  it('equals `required` exactly and contains no advisory check', () => {
+    // The reader once flattened every top-level array, so the 9 advisory
+    // rows counted as required. Today no secret-reading job carries an
+    // advisory name, so no outcome changed; an advisory dogfood job that
+    // started reading a secret on a fork-blind trigger would have made the
+    // tests below demand a fork warning for a check that blocks nothing.
+    const names = requiredCheckNames();
+    expect([...names].sort()).toEqual(
+      requiredEntries()
+        .map((e) => e.check)
+        .sort(),
+    );
+    for (const a of advisoryEntries()) {
+      expect(names.has(a.check), `${a.check} is advisory`).toBe(false);
+    }
+  });
+});
 
 describe('fork-PR limitation is disclosed while it exists', () => {
   it('names at least one secret-gated required check, or has retired itself', () => {
