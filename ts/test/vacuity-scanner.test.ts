@@ -884,6 +884,35 @@ describe('VAC-002 — the target reached through a same-file helper (#1170)', ()
     expect(vac002(r).map((f) => f.test)).toEqual(['through the helper']);
   });
 
+  it('continues an initializer onto a line that starts with `.`', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `const parse = (...argv: string[]) => base\n` +
+        `  .with(parseArgv(argv));\n\n` +
+        TEST,
+    );
+    expect(vac002(r)).toEqual([]);
+  });
+
+  // The two degenerate function shapes: an unterminated body runs to the end
+  // of the file, and a bodyless signature owns nothing that names the target.
+  it('runs an unterminated function body to the end of the file', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD + TEST + `function parse(...argv: string[]) {\n  parseArgv(argv);\n`,
+    );
+    expect(vac002(r)).toEqual([]);
+  });
+
+  it('gives a bodyless function signature nothing that reaches the target', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD + TEST + `function parse(...argv: string[]): Args;\n`,
+    );
+    expect(vac002(r)).toHaveLength(1);
+  });
+
   // Measured on canary's own `perf-ratchet.test.ts`: a helper with an object
   // RETURN TYPE had that type's `{` taken for its body, so `run` was cut off
   // before it named the target and 56 correct tests read as vacuous.
