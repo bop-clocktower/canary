@@ -362,6 +362,74 @@ describe('canary ci-ready', () => {
     );
   });
 
+  // #1132: the run-history store had the same crash shape. A store that EXISTS
+  // but cannot be read is a skip with a reason on both history checks -- never
+  // a stack, and never "no runs recorded", which would read as absent.
+  describe('an unreadable run-history store (#1132)', () => {
+    const HISTORY_CHECKS = ['flakiness', 'suite-runtime'];
+
+    it('skips flakiness and suite-runtime naming the store and EISDIR when it is a directory', async () => {
+      mkdirSync(join(root, HISTORY), { recursive: true });
+      const { code, report } = await runJson(root);
+      for (const name of HISTORY_CHECKS) {
+        const c = check(report, name);
+        expect(c.verdict).toBe('skip');
+        expect(c.reason).toBe(`${HISTORY} could not be read (EISDIR)`);
+      }
+      expect(report.verdict).toBe('abstained');
+      expect(code).toBe(EXIT_ABSTAINED);
+    });
+
+    it('still scores a readable inventory beside the unreadable store', async () => {
+      mkdirSync(join(root, 'tests'), { recursive: true });
+      writeFileSync(
+        join(root, 'tests', 'cart.test.ts'),
+        "import { add } from '../src/cart.js';\nit('adds', () => {\n  expect(add(1)).toBe(1);\n});\n",
+        'utf-8',
+      );
+      expect((await invokeCanary(['inventory', '--root', root])).code).toBe(0);
+      mkdirSync(join(root, HISTORY), { recursive: true });
+
+      const { code, report } = await runJson(root);
+      expect(check(report, 'flakiness').reason).toMatch(/EISDIR/);
+      expect(check(report, 'coverage-depth').verdict).not.toBe('skip');
+      expect(report.verdict).toBe('incomplete');
+      expect(code).toBe(0);
+    });
+
+    it('renders text output instead of a stack trace', async () => {
+      mkdirSync(join(root, HISTORY), { recursive: true });
+      const res = await invokeCanary(['ci-ready', '--root', root]);
+      expect(res.code).toBe(EXIT_ABSTAINED);
+      expect(res.stdout).toMatch(/history-v2\.jsonl could not be read/);
+      expect(res.stdout).not.toMatch(/no runs recorded/);
+      expect(res.stdout).not.toMatch(/at readFileSync/);
+    });
+
+    // chmod cannot revoke read access on Windows, and root reads anything.
+    const canRevokeRead =
+      process.platform !== 'win32' && process.getuid?.() !== 0;
+    it.skipIf(!canRevokeRead)(
+      'skips both history checks naming EACCES for a 0-perm store',
+      async () => {
+        writeHistory(root, 3, [], [1000, 1000, 1000]);
+        const path = join(root, HISTORY);
+        chmodSync(path, 0o000);
+        try {
+          const { code, report } = await runJson(root);
+          for (const name of HISTORY_CHECKS) {
+            const c = check(report, name);
+            expect(c.verdict).toBe('skip');
+            expect(c.reason).toBe(`${HISTORY} could not be read (EACCES)`);
+          }
+          expect(code).toBe(EXIT_ABSTAINED);
+        } finally {
+          chmodSync(path, 0o644);
+        }
+      },
+    );
+  });
+
   it('abstains on an inventory that lists zero tests rather than passing it', async () => {
     mkdirSync(join(root, '.canary'), { recursive: true });
     writeFileSync(
