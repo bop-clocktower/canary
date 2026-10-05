@@ -352,10 +352,15 @@ host Claude Code session via `/canary-write-test` — no API key required.
   Static definitions for framework capabilities and templates.
 - **Harness Config:** [harness.config.json](harness.config.json) — Defines
   architectural layers, dependency constraints, and project metadata. The layers
-  describe `ts/src` by role; every pattern is required to match at least one
-  git-tracked file and every tracked source file to belong to a layer
-  (`ts/test/harness-config-denominator.test.ts`), because a rule that matches
-  nothing still reports as configured (#543).
+  describe `ts/src` by role, plus two for the skills tree: `skills`
+  (`agents/skills/claude-code/**`) may import `skills-lib`
+  (`agents/skills/lib/**`), never the reverse (#1155). Every pattern is required
+  to match at least one git-tracked file and every tracked source file under
+  each source root (`ts/src`, `agents/skills/lib`) to belong to a layer
+  (`ts/test/harness-config-denominator.test.ts`, which prints the per-root
+  module count), because a rule that matches nothing still reports as configured
+  (#543), and a root no layer matches is never parsed by `harness check-deps` at
+  all (#1155).
 
 ### Generated Artifacts
 
@@ -490,8 +495,9 @@ Canary integrates with the **Harness Engineering Ecosystem** by:
    generation outputs
 2. **Layered Architecture:** A role-based layering of the TypeScript engine —
    entry and CLI on top, then feature modules (`guardian`, `analysis`,
-   `history`), then `core`, over the `ui` and `util` leaves — enforced by
-   `harness.config.json` and gated by `harness check-deps` in CI
+   `history`), then `core`, over the `ui` and `util` leaves — plus a `skills` →
+   `skills-lib` direction for the skill scripts and their shared library —
+   enforced by `harness.config.json` and gated by `harness check-deps` in CI
 3. **Mechanical Verification:** Supporting dry-runs via `--recommend-only` for
    early validation by other harness agents (like `harness-planner`)
 
@@ -544,9 +550,14 @@ cleanly decoupled and depends on none of this. The consumed subcommands are:
 | `check-security`   | `harness-security.yml`                             |
 | `check-docs`       | `harness-quality.yml`                              |
 | `cleanup`          | `harness-quality.yml`                              |
-| `check-phase-gate` | `harness-quality.yml`                              |
 | `check-arch`       | `refresh-arch-baseline.yml`, `harness.yml`         |
 | `snapshot capture` | `arch-snapshot.yml`                                |
+
+`check-phase-gate` is deliberately **not** consumed (#1155): with no phase-gate
+configuration it prints "not enabled" and exits 0 over zero items, so it is
+neither run directly nor left inside `ci check` (`--skip phase-gate`).
+`ts/test/harness-gate-list.test.ts` binds this table to the workflows: every row
+must be run by each workflow it names, and an abstaining gate may not reappear.
 
 **Pinning (#318 A).** Every gate installs the CLI at a **pinned major** via one
 workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@12'` — rather
@@ -1034,15 +1045,16 @@ Two related facts worth not rediscovering:
   _optional extended field_ serialized beside
   `Assignee`/`Priority`/`Updated-At`. It is not one of the five documented
   fields (`Status`, `Spec`, `Summary`, `Blockers`, `Plan`), so it is easy to
-  conclude no link field exists. All 12 rows carry one — 47 as of #628, plus the
+  conclude no link field exists. All 13 rows carry one — 47 as of #628, plus the
   three added for #626/#590/#629, then #481/#544/#590 archived and
   #633/#634/#638 filed in their place, then 27 shipped rows archived by the
   2026-09-14 `roadmap-groom --check-issues` reconciliation, then 11 more
   archived and #550 removed as `NOT_PLANNED` on 2026-09-22, then
-  `canary-batwoman` linked to #749 and 5 shipped rows archived on 2026-09-29.
-  The count is of LINKED rows, and every row in the roadmap is linked, so
-  `--check-issues` abstains on none of them — and `Priority`, serialized in that
-  same extended group, is populated on every one of them.
+  `canary-batwoman` linked to #749 and 5 shipped rows archived on 2026-09-29,
+  then the canary QA site row linked to #1151 on 2026-10-05. The count is of
+  LINKED rows, and every row in the roadmap is linked, so `--check-issues`
+  abstains on none of them — and `Priority`, serialized in that same extended
+  group, is populated on every one of them.
 - **The `route:*` label vocabulary is canary's half of the `issue-fleet`
   contract (#1071, ADR 0034).** `issue-fleet` computes a route per triaged issue
   and has nowhere to put it; the skill is vendored under
@@ -1065,7 +1077,7 @@ Two related facts worth not rediscovering:
   one issue is reported as `conflicted` and never auto-resolved.
 - `tracker.labels` in `harness.config.json` filters sync to `harness-managed`.
   Before the linked issues were labelled it examined **2 of 30** — an
-  effectively blind gate that reported a real number nobody read. All 12 rows
+  effectively blind gate that reported a real number nobody read. All 13 rows
   now carry an `External-ID` (#596, #601–#619, #628, #626/#590/#629) and sync
   reports `would create 0`. `scripts/roadmap-denominator-check.mjs` now keeps it
   that way: the wrapper runs it before every sync, and it exits 3 unless

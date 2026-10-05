@@ -35,15 +35,15 @@ Relative paths resolve against `--root`.
 
 ## Sections and when each goes dark
 
-| Section             | Fed when                                                         | Dark when                                                                     |
-| ------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `run-history`       | at least one stored run executed a test                          | no store, a corrupt or future-version store, or no run with tests             |
-| `coverage-tiers`    | at least one guardian record did not abstain and checked units   | no records, or every record abstained, checked 0 units or was malformed       |
-| `guardian-findings` | same records as above                                            | same as above                                                                 |
-| `ci-readiness`      | `ci-ready` scored at least one check                             | `ci-ready` abstained, or the default store is corrupt                         |
-| `quarantine`        | a katana v2 ledger exists (katana writes one on every scan)      | no ledger, or a file without `schema_version: 2` and `entries`                |
-| `sweep`             | a canary-sweep v1 report evaluated rules and did not abstain     | no `--sweep`, the report abstained, or its findings disagree with its summary |
-| `escapes`           | the escape log has a `tracked_since` date and an `escapes` array | no log, or no parseable `tracked_since`                                       |
+| Section             | Fed when                                                         | Dark when                                                                        |
+| ------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `run-history`       | at least one stored run executed a test                          | no store, a corrupt or future-version store, or no run with tests                |
+| `coverage-tiers`    | at least one guardian record did not abstain and checked units   | no records, or every record abstained, checked 0 units or was malformed          |
+| `guardian-findings` | same records as above                                            | same as above                                                                    |
+| `ci-readiness`      | `ci-ready` scored at least one check                             | `ci-ready` abstained, or reading the store hit an unexpected (non-content) error |
+| `quarantine`        | a katana v2 ledger exists (katana writes one on every scan)      | no ledger, or a file without `schema_version: 2` and `entries`                   |
+| `sweep`             | a canary-sweep v1 report evaluated rules and did not abstain     | no `--sweep`, the report abstained, or its findings disagree with its summary    |
+| `escapes`           | the escape log has a `tracked_since` date and an `escapes` array | no log, or no parseable `tracked_since`                                          |
 
 A guardian record counts only when it says `source: canary-pr-guardian`, carries
 a `schemaVersion`, and its `findings` array matches `summary.total`. A record
@@ -52,7 +52,17 @@ Abstained records are listed too, not dropped.
 
 `--history` moves only the run-history section. The ci-readiness section always
 reads the default store under `--root`, as `canary ci-ready` does, so the two
-commands cannot score different runs.
+commands cannot score different runs. A default store that exists but cannot be
+read (a directory at the path, a 0-perm file) is not dark on its own: it is
+ci-ready's skip on flakiness and suite runtime,
+`<path> could not be read (EISDIR)`, shown in the section's facts the same way
+`canary ci-ready` reports it (#1132). A corrupt or unsupported-schema default
+store is the same pass-through skip, naming the line:
+`<path> could not be parsed (line N: invalid JSON)` or
+`<path> has unsupported schema <v> (line N; supported: 2, 3)` (#1156). Either
+only goes dark if nothing else scored, and then the dark reason names it. An
+error that is not a content problem (a bug in the reader, not a property of the
+store) still darkens the section as `ci-ready cannot read <path> (...)`.
 
 A section that does not apply is declared, not omitted:
 `--exclude sweep="<reason>"`. The reason is printed in the dossier. An empty

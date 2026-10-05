@@ -136,4 +136,140 @@ describe('required-check prose agrees with .github/required-checks.json', () => 
       expect(filteredRequiredWorkflows(skill, required)).toEqual([]);
     });
   });
+
+  describe('#1143 — the setup-harness baseline is a classified subset of the manifest', () => {
+    const skill = readFileSync(SETUP_SKILL, 'utf-8');
+    const lists = baselineLists(skill);
+
+    it('the parsers fire on a planted list and count (not vacuous)', () => {
+      const planted = [
+        '2. **Baseline workflows.** Each should exist:',
+        '',
+        '   - `harness.yml` — core',
+        '   - `guardian.yml` — the guardian',
+        '',
+        '   **Conditional add-ons.**',
+        '',
+        '   - `leak-gate.yml` — only when the repo is public',
+        '',
+        '3. **Next step.** `docs-lint.yml` is not a list entry here.',
+      ].join('\n');
+      expect(baselineLists(planted)).toEqual({
+        baseline: ['harness.yml', 'guardian.yml'],
+        conditional: [['leak-gate.yml', 'only when the repo is public']],
+      });
+      expect(
+        workflowCounts(
+          'wires up the five required CI workflows; all six gates pass; copy 5 harness workflows',
+        ),
+      ).toEqual(['five', 'six', 'five']);
+    });
+
+    it('keeps guardian.yml in the baseline (the decision #1143 recorded)', () => {
+      // Option 2: guardian is canary's own product, so it is baseline, not an
+      // add-on. Moving it would otherwise pass every structural check below.
+      expect(lists.baseline).toContain('guardian.yml');
+    });
+
+    it('the Phase 5 checklist names every baseline workflow', () => {
+      const start = skill.indexOf('### Phase 5');
+      const end = skill.indexOf('\n## ', start);
+      expect(start).toBeGreaterThanOrEqual(0);
+      const phase5 = skill.slice(start, end < 0 ? undefined : end);
+      expect(lists.baseline.filter((wf) => !phase5.includes(wf))).toEqual([]);
+    });
+
+    it('finds a non-empty baseline (zero denominator is an abstention)', () => {
+      expect(lists.baseline.length).toBeGreaterThan(0);
+    });
+
+    it('every baseline workflow is required by the manifest', () => {
+      expect(lists.baseline.filter((wf) => !required.has(wf))).toEqual([]);
+    });
+
+    it('every conditional add-on is required here, not in the baseline, and states its condition', () => {
+      expect(lists.conditional.length).toBeGreaterThan(0);
+      for (const [wf, text] of lists.conditional) {
+        expect(required.has(wf), wf).toBe(true);
+        expect(lists.baseline.includes(wf), wf).toBe(false);
+        expect(text, wf).toMatch(CONDITION);
+      }
+    });
+
+    it('classifies every manifest-required workflow as baseline or conditional', () => {
+      const classified = new Set([
+        ...lists.baseline,
+        ...lists.conditional.map(([wf]) => wf),
+      ]);
+      expect([...required].filter((wf) => !classified.has(wf))).toEqual([]);
+    });
+
+    it('every spelled-out workflow count equals the baseline length', () => {
+      const counts = workflowCounts(skill);
+      // Frontmatter, Success Criteria and the fresh-fork example all state it.
+      expect(counts.length).toBeGreaterThanOrEqual(3);
+      const expected = NUMBER_WORDS[lists.baseline.length];
+      expect(counts.map((c) => c.toLowerCase())).toEqual(
+        counts.map(() => expected),
+      );
+    });
+  });
 });
+
+const NUMBER_WORDS = [
+  'zero',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+  'ten',
+  'eleven',
+  'twelve',
+];
+const COUNT = new RegExp(
+  `\\b(${NUMBER_WORDS.join('|')}|\\d+)\\s+(?:(?:baseline|required|harness)\\s+)?(?:CI\\s+)?(?:workflows?|workflow files|gates)\\b`,
+  'gi',
+);
+const CONDITION = /\b(when|only|if|unless)\b/i;
+const LIST_ENTRY = /^\s*- `([\w.-]+\.ya?ml)`\s+—\s+(.+)$/;
+
+/** Every number (word or digits, as a word) that counts workflows or gates in `text`. */
+function workflowCounts(text: string): string[] {
+  return [...text.matchAll(COUNT)].map((m) => {
+    const n = (m[1] ?? '').toLowerCase();
+    return /^\d+$/.test(n) ? (NUMBER_WORDS[Number(n)] ?? n) : n;
+  });
+}
+
+/**
+ * The setup skill's Phase 3 step 2: the baseline bullet list, then the
+ * workflows under its "Conditional add-ons" heading with their stated text.
+ */
+function baselineLists(markdown: string): {
+  baseline: string[];
+  conditional: Array<[string, string]>;
+} {
+  const start = markdown.search(/^\d+\.\s+\*\*Baseline workflows/m);
+  if (start < 0) return { baseline: [], conditional: [] };
+  const rest = markdown.slice(start);
+  const next = rest.slice(1).search(/\n\d+\.\s/);
+  const step = next < 0 ? rest : rest.slice(0, next + 1);
+  const split = step.indexOf('Conditional add-ons');
+  const entries = (part: string): Array<[string, string]> =>
+    part
+      .split('\n')
+      .map((line) => LIST_ENTRY.exec(line))
+      .filter((m): m is RegExpExecArray => m !== null)
+      .map((m) => [m[1] ?? '', m[2] ?? '']);
+  return {
+    baseline: entries(split < 0 ? step : step.slice(0, split)).map(
+      ([wf]) => wf,
+    ),
+    conditional: split < 0 ? [] : entries(step.slice(split)),
+  };
+}

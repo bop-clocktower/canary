@@ -170,6 +170,23 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **canary-question: neutral category signal ids** (#1142). **Breaking for
+  `--json` readers:** the evidence-row signal `category-env` is replaced by
+  `category-timeout`, `category-auth` and `category-network`, and each keeps its
+  support list. `timeout` and `auth` also support a defect in the system under
+  test, so an id that named only the environment read as a lean, and
+  canary-question never prints one. There is no deprecated alias. The old id was
+  never in a published release: canary-question landed on 2026-09-29 (#1137),
+  after v8.0.0 (2026-09-15). A test now asserts that no signal id in the
+  SKILL.md table names a hypothesis it does not exclusively support.
+- **canary-question's failure categoriser is pinned to canary-fail-fast**
+  (#1140). The skill's copy of the categorisation rules is now checked by
+  behaviour against canary-fail-fast's `categorizeFailure`, over shared samples
+  that produce all seven categories. The samples hit every alternative of every
+  rule on its own, and every pair of rules together. So if one copy drops,
+  narrows or reorders a rule and the other does not, a test fails. A new
+  alternative is caught once a sample exercises it. Before this, the only
+  safeguard was a comment asking for the two copies to be kept in sync by hand.
 - **`vacuity-check` discloses both denominators on every verdict** (#1084).
   Every summary line — clean pass, findings, or abstention — now carries
   `[N file(s) resolved, M test(s) scanned]`, and `--json` gained a `files` field
@@ -294,6 +311,27 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary ci-ready` no longer crashes on an unreadable run-history store**
+  (#1132). A directory or 0-perm file at `test-results/reports/history-v2.jsonl`
+  threw a raw EISDIR/EACCES stack, the shape #1129 fixed for the `.canary`
+  inputs. Flakiness and suite runtime now `skip` with
+  `<path> could not be read (<code>)` and the exit code follows the normal
+  contract. The release dossier (`canary manhunter`) had scored the same store
+  as absent ("no runs recorded"); it now shows ci-ready's reason, and an
+  abstained ci-readiness section names every skip reason. A corrupt or
+  unsupported-schema store still threw at this point; see #1156 below.
+- **`canary ci-ready` no longer crashes on a corrupt or unsupported-schema
+  run-history store** (#1156). Invalid JSON, a line that is not a JSON object,
+  or an unsupported `schema_version` in `history-v2.jsonl` threw a raw stack.
+  Flakiness and suite runtime now `skip` with
+  `<path> could not be parsed (line N: invalid JSON)` or
+  `<path> has unsupported schema <v> (line N; supported: 2, 3)`, and the exit
+  code follows the normal all-skip / incomplete contract. One bad line skips the
+  whole store; the readable lines are never scored without it. The release
+  dossier passes the same reason through instead of going dark. Only an error
+  that is not a content problem still darkens it. `NdjsonHistoryStore.readAll`
+  now throws a typed `HistoryContentError` that names the line, and a `null`,
+  number or array line is refused as corrupt instead of read as a legacy row.
 - **Installing a skill's dependencies no longer freezes it** (#1066).
   `hashSkillDir` walked the whole deployed-skill tree, so `node_modules` counted
   toward the hash: running `npm install` in a skill's `scripts/` dir — which a

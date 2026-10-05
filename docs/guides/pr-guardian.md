@@ -175,10 +175,33 @@ the reason vocabulary.
 
 ### PR check
 
-Set `canary.guardian.pr.enabled` to `true`. The stock workflow
-(`.github/workflows/guardian.yml`) installs canary and runs
-`canary guardian pr-check --post-comment` (Tier 0). Docs/config-only diffs
-(matching `skipGlobs`) are skipped with a "nothing to verify" notice.
+Set `canary.guardian.pr.enabled` to `true` and run
+`canary guardian pr-check --post-comment` (Tier 0) on `pull_request`.
+Docs/config-only diffs (matching `skipGlobs`) are skipped with a "nothing to
+verify" notice.
+
+Canary's own `.github/workflows/guardian.yml` is the self-hosted version, not a
+drop-in template. It builds canary from `ts/` (`npm --prefix ts ci` and
+`run build`), runs canary's own test suite to produce `ts/coverage/lcov.info`,
+looks up base coverage in a `ts-coverage-lcov-<sha>` artifact that only canary's
+`harness-quality.yml` uploads, and calls
+`node ts/bin/canary.js guardian pr-check`. Copied into another repo, it fails at
+the build step. A fork of canary keeps `ts/` and can copy it as is. Any other
+project adapts the copy:
+
+- install the published CLI (`npm i -g canary-test-cli`) instead of building
+  `ts/`, and call `canary guardian pr-check --post-comment`
+- point `--coverage` at the project's own lcov report, produced by its own test
+  step; without a report the guardian falls back to the heuristic tier
+- drop the `ts-coverage-lcov` lookup, or replace it with an artifact your own
+  pushes to the default branch upload and pass it as `--base-coverage`; without
+  one the coverage delta reports head-only
+- drop the advisory `mutation` job, which also builds `ts/`
+
+Keep the job id `guardian` if the check is required, since that is the check
+name a required-checks ruleset matches. The
+[canary-setup-harness skill](../../agents/skills/claude-code/canary-setup-harness/SKILL.md)
+gives the same adaptation as its "Wire up `guardian.yml`" step.
 
 ### At-desk check and authoring (the `preCommit` surface)
 
