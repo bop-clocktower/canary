@@ -44,24 +44,24 @@ the document above is the executable fixture
 Every field is **required**. "Nullable" means the key must be present and may be
 `null`; it never means the key may be omitted.
 
-| Field                  | Type              | Nullable | Notes                                                                                                    |
-| ---------------------- | ----------------- | -------- | -------------------------------------------------------------------------------------------------------- |
-| `contract`             | string            | no       | Exactly `canary.assessment/1`.                                                                           |
-| `scope`                | object            | no       | `{id, env}`; explicit, never inferred (D2).                                                              |
-| `scope.id`             | string            | no       | Non-empty.                                                                                               |
-| `scope.env`            | string            | no       | Non-empty and opaque.                                                                                    |
-| `source`               | string            | no       | Non-empty. What produced the assessment, e.g. `canary.ci-ready`.                                         |
-| `metric`               | string            | no       | Non-empty metric name.                                                                                   |
-| `status`               | enum              | no       | One of the five statuses below.                                                                          |
-| `value`                | number or boolean | yes      | A finite number, or a boolean for a pass/fail check. No strings. `null` only for `not-assessed`.         |
-| `unit`                 | string            | yes      | Non-empty when set, e.g. `ratio` or `ms`; `null` = unitless.                                             |
-| `reason`               | string            | yes      | Required, and non-blank, only for `not-assessed`; `null` for every other status.                         |
-| `evidence.tier`        | enum              | yes      | `coverage-verified`, `graph-verified` or `heuristic`; `null` = no evidence tier applies.                 |
-| `evidence.denominator` | integer           | yes      | `>= 0`. How many items the assessment measured; `null` = not applicable.                                 |
-| `observed_at`          | string            | no       | ISO 8601 date-time with an offset. When the check ran, not when it was stored.                           |
-| `sources`              | string[]          | no       | Each non-empty. The inputs the assessment read; `[]` = none recorded.                                    |
-| `verified_by`          | string            | yes      | Non-empty when set. Who verified the record; set together with `verified_at` (rule `verification-pair`). |
-| `verified_at`          | string            | yes      | ISO 8601 date-time with an offset; set together with `verified_by`.                                      |
+| Field                  | Type              | Nullable | Notes                                                                                                                                                                                |
+| ---------------------- | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `contract`             | string            | no       | Exactly `canary.assessment/1`.                                                                                                                                                       |
+| `scope`                | object            | no       | `{id, env}`; explicit, never inferred (D2).                                                                                                                                          |
+| `scope.id`             | string            | no       | Non-empty.                                                                                                                                                                           |
+| `scope.env`            | string            | no       | Non-empty and opaque.                                                                                                                                                                |
+| `source`               | string            | no       | Non-empty. What produced the assessment, e.g. `canary.ci-ready`.                                                                                                                     |
+| `metric`               | string            | no       | Non-empty metric name.                                                                                                                                                               |
+| `status`               | enum              | no       | One of the five statuses below.                                                                                                                                                      |
+| `value`                | number or boolean | yes      | A finite number, or a boolean for a pass/fail check. No strings. `null` only for `not-assessed`.                                                                                     |
+| `unit`                 | string            | yes      | Non-empty when set, e.g. `ratio` or `ms`; `null` = unitless.                                                                                                                         |
+| `reason`               | string            | yes      | Required, and non-blank, only for `not-assessed`; `null` for every other status.                                                                                                     |
+| `evidence.tier`        | enum              | yes      | `coverage-verified`, `graph-verified` or `heuristic`; `null` = no evidence tier applies.                                                                                             |
+| `evidence.denominator` | integer           | yes      | `>= 0`. How many items the assessment measured; `null` = not applicable.                                                                                                             |
+| `observed_at`          | string            | no       | ISO 8601 date-time with an offset. When the check ran, not when it was stored.                                                                                                       |
+| `sources`              | string[]          | no       | Each non-empty. The inputs the assessment read; `[]` = none recorded.                                                                                                                |
+| `verified_by`          | string            | yes      | Non-empty when set. A role or handle that verified the record; do not put an email address in a feed that may be public. Set together with `verified_at` (rule `verification-pair`). |
+| `verified_at`          | string            | yes      | ISO 8601 date-time with an offset; set together with `verified_by`.                                                                                                                  |
 
 There is **no `verified` field**. Whether a record is verified is derived from
 `verified_by` and `verified_at`, and a producer that supplies `verified` is

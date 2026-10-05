@@ -195,13 +195,15 @@ empty string. "Age" is not stored: a page derives it from `recorded_at`.
 | `issue`       | `issue`        | Non-empty or `null`.                                        |
 | `author`      | not carried    | Refused if supplied (rule `register-no-author`).            |
 
-**Author identity is deliberately excluded from a public feed.** The ledger
-records who made each change; the feed does not, so names and email addresses
-never reach a published page. Because unknown fields are otherwise tolerated
-(D3), rule **`register-no-author`** refuses a `who` or `author` key on any
-register row, even with a `null` value, so a producer cannot leak it through
-that tolerance. The ledger's `marker` and `expiry` columns are not carried in
-v1.
+**A register row carries no author field.** The ledger records who made each
+change; the register row defines no field for it. Because unknown fields are
+otherwise tolerated (D3), rule **`register-no-author`** refuses a `who` or
+`author` key on any register row, even with a `null` value. That is the whole of
+the enforcement: the validator does not inspect free-text values, so a producer
+remains responsible for keeping personal identity out of every other field (a
+commit subject in `reason`, a `verified_by` on a nested assessment, which should
+name a role or handle, never an email address). The ledger's `marker` and
+`expiry` columns are not carried in v1.
 
 ## Conventions (frozen)
 

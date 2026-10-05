@@ -49,11 +49,14 @@ resolved a handoff to the wrong tenant.
    `validate.mjs` interprets a declared JSON Schema keyword subset and refuses,
    at load, any keyword it does not enforce. Relations between fields are named
    rules in `rules.mjs`. Exit 0 valid, 1 refused (including unparseable input),
-   2 usage.
-7. **No author identity in a public feed.** A site-feed register row carries no
-   `who` or `author` field, and one supplied is refused, even `null`: unknown
-   fields are otherwise tolerated (D3), and that tolerance must not become a way
-   to publish names or email addresses.
+   2 usage or unreadable input.
+7. **No author field on a register row.** A site-feed register row defines no
+   author field, and a `who` or `author` key is refused, even `null`: unknown
+   fields are otherwise tolerated (D3), and that tolerance must not become an
+   author column by the back door. Nothing else is enforced: the validator does
+   not inspect free-text values, so producers remain responsible for keeping
+   personal identity out of other fields (`verified_by` names a role or handle,
+   never an email address).
 
 ## Consequences
 
