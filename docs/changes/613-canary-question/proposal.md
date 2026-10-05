@@ -126,8 +126,9 @@ row under every hypothesis it names.
 | `diff-sut-only`         | culprit range touched non-test files and not the test file                                                        | product-defect                        | —           |
 | `diff-both`             | both touched                                                                                                      | test-defect, product-defect           | —           |
 | `diff-none`             | culprit range touched nothing (same tree)                                                                         | environment                           | —           |
-| `category-env`          | category `timeout` or `auth`                                                                                      | environment, product-defect           | —           |
-| `category-env`          | category `network`                                                                                                | environment                           | —           |
+| `category-timeout`      | category `timeout`                                                                                                | environment, product-defect           | —           |
+| `category-auth`         | category `auth`                                                                                                   | environment, product-defect           | —           |
+| `category-network`      | category `network`                                                                                                | environment                           | —           |
 | `category-server`       | category `server` (5xx)                                                                                           | product-defect, environment           | —           |
 | `category-neutral`      | any other category — recorded as "does not discriminate"                                                          | —                                     | —           |
 | `co-failure`            | other tests failed in the target run with the same category or area                                               | product-defect, environment           | —           |
@@ -155,6 +156,16 @@ the failure share a commit or the last pass is not an ancestor of the target
 and `--end-of-options`). An abstained brief lists the unread diff and findings
 under Not checked. A test record with no suite is labelled `(no suite)`, and
 `--suite '(no suite)'` selects it.
+
+**Amended 2026-10-05 (#1142).** The signal `category-env` was split into
+`category-timeout`, `category-auth` and `category-network`, each with the
+support list above. Once `timeout` and `auth` also supported product-defect, an
+id that named only the environment read as a lean. A test now asserts that no
+signal id names a hypothesis it does not exclusively support. There is no
+deprecated alias, because the old id was never in a published release. The
+failure-category rules copied from canary-fail-fast are pinned to the source by
+a behavioural parity test (#1140), which replaces the "sync by hand" comment.
+The 2026-09-29 plan is left as written, as a historical record.
 
 Culprit range = last passing observation's `commit_sha` → target failure's
 `commit_sha`. A test file is recognised by `.test.`/`.spec.` infixes,

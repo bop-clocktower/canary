@@ -78,8 +78,9 @@ it to the target's commit.
 | `diff-sut-only`     | the culprit range changed only non-test paths               | product              | —           |
 | `diff-both`         | both changed                                                | test, product        | —           |
 | `diff-none`         | the culprit range changed nothing                           | environment          | —           |
-| `category-env`      | failure category `timeout` or `auth`                        | environment, product | —           |
-| `category-env`      | failure category `network`                                  | environment          | —           |
+| `category-timeout`  | failure category `timeout`                                  | environment, product | —           |
+| `category-auth`     | failure category `auth`                                     | environment, product | —           |
+| `category-network`  | failure category `network`                                  | environment          | —           |
 | `category-server`   | failure category `server` (5xx; 502/503 are infrastructure) | product, environment | —           |
 | `category-neutral`  | any other category -- recorded as not discriminating        | —                    | —           |
 | `co-failure`        | other failures in the target run share its area or category | product, environment | —           |
