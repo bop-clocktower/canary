@@ -156,3 +156,50 @@ describe('renderVerify', () => {
     expect(md).toContain('unverified');
   });
 });
+
+describe('renderBrief: exception chain', () => {
+  const chained: RegressionBrief = {
+    ...BRIEF,
+    errorType: 'Error',
+    message: 'checkout failed',
+    chain: [
+      {
+        errorType: 'RangeError',
+        message: 'mid',
+        relation: 'context',
+        start: 1,
+        suspect: null,
+      },
+      {
+        errorType: 'TypeError',
+        message: 'qty',
+        relation: 'cause',
+        start: 2,
+        suspect: BRIEF.frames[1]!,
+      },
+    ],
+  };
+
+  it('lists the chain reported first with the root cause marked', () => {
+    const md = renderBrief(chained);
+    expect(md).toContain('## Exception chain (reported first)');
+    expect(md).toContain('1. Error: checkout failed (reported)');
+    expect(md).toContain('2. while handling RangeError: mid');
+    expect(md).toContain(
+      '3. caused by TypeError: qty at `src/cart/total.ts:12` (root cause)',
+    );
+  });
+
+  it('marks each boundary in the frame list before the link start frame', () => {
+    const lines = renderBrief(chained).split('\n');
+    const at = lines.indexOf('- --- while handling RangeError: mid ---');
+    expect(at).toBeGreaterThan(lines.indexOf('## Frames (innermost first)'));
+    expect(lines[at + 1]).toContain('src/cart/total.ts:12');
+  });
+
+  it('leaves an unchained brief unchanged', () => {
+    const md = renderBrief(BRIEF);
+    expect(md).not.toContain('Exception chain');
+    expect(md).not.toContain('- ---');
+  });
+});

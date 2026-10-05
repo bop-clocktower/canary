@@ -112,3 +112,45 @@ describe('buildBrief', () => {
     expect(buildBrief(V8, [external, missing]).suspect).toBeNull();
   });
 });
+
+describe('buildBrief: exception chain', () => {
+  const QTY = "Cannot read properties of undefined (reading 'qty')";
+  const trace: ParsedTrace = {
+    format: 'v8',
+    errorType: 'Error',
+    message: 'checkout failed',
+    frames: [
+      { file: '/app/src/cart/checkout.ts', line: 30 },
+      { file: '/app/src/cart/total.ts', line: 12 },
+    ],
+    chain: [
+      { errorType: 'TypeError', message: QTY, relation: 'cause', start: 1 },
+    ],
+  };
+  const frames: ResolvedFrame[] = [
+    {
+      ...trace.frames[0]!,
+      status: 'resolved',
+      path: 'src/cart/checkout.ts',
+    },
+    { ...trace.frames[1]!, status: 'resolved', path: 'src/cart/total.ts' },
+  ];
+
+  it('keeps the reported suspect and signature, and gives each link its own suspect', () => {
+    const b = buildBrief(trace, frames);
+    expect(b.suspect!.path).toBe('src/cart/checkout.ts');
+    expect(b.signature.text).toBe('checkout failed');
+    expect(b.chain![0]!.suspect!.path).toBe('src/cart/total.ts');
+  });
+
+  it('names the root cause and where it was raised in the requirement', () => {
+    expect(buildBrief(trace, frames).requirement).toContain(
+      `The reported Error wraps a root cause, TypeError: ${QTY} at src/cart/total.ts:12; exercise the code path that raises it.`,
+    );
+  });
+
+  it('adds no chain key for an unchained trace', () => {
+    const { chain: _drop, ...flat } = trace;
+    expect(buildBrief(flat, frames)).not.toHaveProperty('chain');
+  });
+});

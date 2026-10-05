@@ -29,6 +29,28 @@ function pickSuspect(frames: ResolvedFrame[]): ResolvedFrame | null {
   return hit ?? null;
 }
 
+type BriefChain = NonNullable<RegressionBrief['chain']>;
+
+/** Each link's own first in-repo frame, within its slice of `frames`. */
+function chainOf(
+  trace: ParsedTrace,
+  frames: ResolvedFrame[],
+): BriefChain | undefined {
+  const chain = trace.chain;
+  if (chain === undefined || chain.length === 0) return undefined;
+  return chain.map((link, i) => {
+    const end = chain[i + 1]?.start ?? frames.length;
+    return { ...link, suspect: pickSuspect(frames.slice(link.start, end)) };
+  });
+}
+
+function rootCauseSentence(errorType: string, chain: BriefChain): string {
+  const root = chain[chain.length - 1]!;
+  const s = root.suspect;
+  const at = s === null ? '' : ` at ${s.path}:${s.line}`;
+  return `The reported ${errorType} wraps a root cause, ${root.errorType}: ${root.message}${at}; exercise the code path that raises it.`;
+}
+
 function signatureOf(trace: ParsedTrace): RegressionBrief['signature'] {
   const first = trace.message.split(/\r?\n/)[0]!.trim();
   const type = trace.errorType;
@@ -65,14 +87,18 @@ function requirementFor(brief: Omit<RegressionBrief, 'requirement'>): string {
     s === null
       ? 'the incident'
       : `${s.path}:${s.line}${s.fn ? ` (in ${s.fn})` : ''}`;
-  return [
+  const parts = [
     `Write one ${brief.framework} regression test for the escaped defect at ${where}.`,
     `It must reproduce ${brief.errorType}: ${brief.signature.text}.`,
     'The test must fail against the current code, and its failure output must',
     'contain that signature. Call the code and assert the correct behaviour;',
     'do not quote the error text in the test, because a match on text the test',
     `prints itself proves nothing. Write it to ${brief.outputPath}.`,
-  ].join(' ');
+  ];
+  if (brief.chain !== undefined) {
+    parts.push(rootCauseSentence(brief.errorType, brief.chain));
+  }
+  return parts.join(' ');
 }
 
 /** Build the regression brief from a parsed trace and its resolved frames. */
@@ -81,6 +107,7 @@ export function buildBrief(
   frames: ResolvedFrame[],
 ): RegressionBrief {
   const suspect = pickSuspect(frames);
+  const chain = chainOf(trace, frames);
   const partial = {
     schema: 'canary-judomaster-brief/1' as const,
     format: trace.format,
@@ -89,6 +116,7 @@ export function buildBrief(
     signature: signatureOf(trace),
     suspect,
     frames,
+    ...(chain === undefined ? {} : { chain }),
     framework: trace.format === 'python' ? 'pytest' : 'vitest',
     outputPath: outputPathFor(trace.format, suspect, trace.errorType),
   };

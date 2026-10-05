@@ -27,10 +27,34 @@ function excerptBlock(brief: RegressionBrief): string[] {
   return ['', '## Excerpt', '', '```text', ...lines, '```'];
 }
 
-function frameLines(frames: ResolvedFrame[]): string[] {
-  return frames.map((f) => {
+type Link = NonNullable<RegressionBrief['chain']>[number];
+const relationWord = (l: Link) =>
+  l.relation === 'cause' ? 'caused by' : 'while handling';
+
+function chainBlock(brief: RegressionBrief): string[] {
+  const chain = brief.chain;
+  if (chain === undefined) return [];
+  const links = chain.map((l, i) => {
+    const at = l.suspect === null ? '' : ` at \`${where(l.suspect)}\``;
+    const root = i === chain.length - 1 ? ' (root cause)' : '';
+    return `${i + 2}. ${relationWord(l)} ${l.errorType}: ${l.message}${at}${root}`;
+  });
+  return [
+    '',
+    '## Exception chain (reported first)',
+    '',
+    `1. ${brief.errorType}: ${brief.message} (reported)`,
+    ...links,
+  ];
+}
+
+function frameLines(brief: RegressionBrief): string[] {
+  return brief.frames.flatMap((f, i) => {
+    const marks = (brief.chain ?? [])
+      .filter((l) => l.start === i)
+      .map((l) => `- --- ${relationWord(l)} ${l.errorType}: ${l.message} ---`);
     const fn = f.fn === undefined ? '' : ` in \`${f.fn}\``;
-    return `- \`${where(f)}\`${fn}: ${f.status}`;
+    return [...marks, `- \`${where(f)}\`${fn}: ${f.status}`];
   });
 }
 
@@ -48,10 +72,11 @@ export function renderBrief(brief: RegressionBrief): string {
     '',
     brief.requirement,
     ...excerptBlock(brief),
+    ...chainBlock(brief),
     '',
     '## Frames (innermost first)',
     '',
-    ...frameLines(brief.frames),
+    ...frameLines(brief),
     '',
   ].join('\n');
 }
