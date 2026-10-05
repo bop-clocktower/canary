@@ -3,12 +3,14 @@
  * grade it (D2-D6, D9). Split from `judomaster-cli.ts` to keep each file under
  * the perf file-length threshold; the filename binds the `cli` layer.
  *
- * The runner is the framework's registry command, run from the current
- * directory (for vitest and playwright that is `npx --yes ...`, which can
- * fetch the runner), so run it from the repository root.
+ * The runner is the framework's registry command, spawned with cwd set to
+ * the realpath of `--root` (default: the current directory) so it finds
+ * the project's config, and with `npx --no` in place of `npx --yes`: a
+ * runner the root does not have installed is reported as unverified,
+ * never downloaded (#1138).
  */
 
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { Command } from 'commander';
 
@@ -106,9 +108,12 @@ function execSafely(
   test: string,
   framework: string,
   timeout: number,
+  cwd: string,
 ): ExecuteResult | string {
   try {
-    return deps.makeExecutor().execute(test, framework, timeout);
+    return deps
+      .makeExecutor()
+      .execute(test, framework, timeout, { cwd, fetch: false });
   } catch (e) {
     return e instanceof Error ? e.message : String(e);
   }
@@ -164,13 +169,14 @@ function gradeRun(
   framework: string | null,
   timeout: number,
   signature: Signature | null,
+  rootReal: string,
 ): VerifyResult {
   if (framework === null) {
     return couldNotReproduce(
       `no framework known for ${real}; pass --framework`,
     );
   }
-  const exec = execSafely(deps, real, framework, timeout);
+  const exec = execSafely(deps, real, framework, timeout, rootReal);
   if (typeof exec === 'string') return couldNotReproduce(exec);
   return classifyRun(exec, signature, framework, generatedSources(real));
 }
@@ -180,9 +186,10 @@ function runVerify(deps: MainDeps, test: string, opts: VerifyOpts): void {
   const timeout = parseTimeout(deps, opts.timeout);
   const brief = opts.brief === undefined ? null : readBrief(deps, opts.brief);
   const real = containedTest(deps, root, resolve(deps.cwd(), test));
+  const rootReal = realpathSync(root);
   const framework = pickFramework(opts, real, brief);
   const signature = loadSignature(deps, opts, brief);
-  const result = gradeRun(deps, real, framework, timeout, signature);
+  const result = gradeRun(deps, real, framework, timeout, signature, rootReal);
   const payload = {
     schema: 'canary-judomaster-verify/1',
     ...result,
