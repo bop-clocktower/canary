@@ -125,3 +125,51 @@ describe('$id only at a schema file root, naming that file (I1)', () => {
     expect(problemsOf({ $id: ID, type: 'object' })).toEqual([]);
   });
 });
+
+describe('keyword values are shape-checked at load (I2)', () => {
+  // Each of these used to load cleanly and then misbehave: enum "abc" did
+  // substring matching, required "ab" iterated characters, minimum "5"
+  // coerced, properties [] walked nothing.
+  it.each([
+    ['enum', 'abc', 'a non-empty array'],
+    ['enum', [], 'a non-empty array'],
+    ['required', 'ab', 'an array of strings'],
+    ['required', ['a', 1], 'an array of strings'],
+    ['minimum', '5', 'a finite number'],
+    ['minimum', null, 'a finite number'],
+    ['minLength', 'x', 'a non-negative integer'],
+    ['minLength', -1, 'a non-negative integer'],
+    ['minLength', 1.5, 'a non-negative integer'],
+    ['properties', [], 'an object'],
+    ['$defs', [], 'an object'],
+    ['type', [], 'a type name or a non-empty array of type names'],
+    ['type', 5, 'a type name or a non-empty array of type names'],
+    ['pattern', 5, 'a string'],
+    ['$ref', 5, 'a string'],
+  ])('refuses %s: %j', (keyword, arg, shape) => {
+    expect(problemsOf({ [keyword]: arg })).toEqual([
+      `${ID}#/${keyword}: must be ${shape}`,
+    ]);
+  });
+
+  it('refuses a non-object items (tuple form is not supported)', () => {
+    expect(problemsOf({ items: [{ type: 'string' }] })).toEqual([
+      `${ID}#/items: a schema must be an object`,
+    ]);
+  });
+
+  it('accepts every keyword with a well-shaped value (control)', () => {
+    expect(
+      problemsOf({
+        type: ['object', 'null'],
+        required: ['a'],
+        properties: {
+          a: { type: 'string', minLength: 0, pattern: '^a', enum: ['a'] },
+          b: { type: 'number', minimum: -1.5, const: { any: ['thing'] } },
+          c: { type: 'array', items: { $ref: '#/$defs/t' } },
+        },
+        $defs: { t: { const: null } },
+      }),
+    ).toEqual([]);
+  });
+});

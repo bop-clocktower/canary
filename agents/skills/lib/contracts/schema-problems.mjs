@@ -2,10 +2,10 @@
 //
 // schema-check.mjs enforces a declared keyword SUBSET. This module finds
 // every way a schema could load cleanly yet enforce less than it reads as
-// enforcing: an unsupported keyword, an unknown type name, an invalid
-// pattern, a misplaced `$id`, or a `$ref` that resolves to nothing, to
-// something that is not a schema, or round in a loop. validate.mjs refuses
-// to run at all while this reports anything.
+// enforcing: an unsupported keyword, a keyword value of the wrong shape, an
+// unknown type name, an invalid pattern, a misplaced `$id`, or a `$ref` that
+// resolves to nothing, to something that is not a schema, or round in a
+// loop. validate.mjs refuses to run at all while this reports anything.
 
 import {
   isPlainObject,
@@ -67,19 +67,55 @@ const WALKERS = {
   $ref: (ref, where, ctx) => ctx.refs.push({ ref, where, ...ctx.at }),
 };
 
+const isStringList = (v) =>
+  Array.isArray(v) && v.every((s) => typeof s === 'string');
+
+/**
+ * The value each asserting keyword must hold. schema-check.mjs trusts these
+ * shapes: `enum: "abc"` would match substrings, `required: "ab"` iterate
+ * characters, `minimum: "5"` coerce. `items` is shape-checked by
+ * walkSchema; `const` takes any value.
+ */
+const ARG_SHAPES = {
+  enum: [(v) => Array.isArray(v) && v.length > 0, 'a non-empty array'],
+  required: [isStringList, 'an array of strings'],
+  minimum: [Number.isFinite, 'a finite number'],
+  minLength: [
+    (v) => Number.isSafeInteger(v) && v >= 0,
+    'a non-negative integer',
+  ],
+  properties: [isPlainObject, 'an object'],
+  $defs: [isPlainObject, 'an object'],
+  type: [
+    (v) => typeof v === 'string' || (isStringList(v) && v.length > 0),
+    'a type name or a non-empty array of type names',
+  ],
+  pattern: [(v) => typeof v === 'string', 'a string'],
+  $ref: [(v) => typeof v === 'string', 'a string'],
+};
+
+function walkKeyword(keyword, arg, where, ctx) {
+  if (!SUPPORTED_KEYWORDS.includes(keyword)) {
+    ctx.problems.push(`${where}: unsupported keyword`);
+    return;
+  }
+  const shape = Object.hasOwn(ARG_SHAPES, keyword) ? ARG_SHAPES[keyword] : null;
+  if (shape && !shape[0](arg)) {
+    ctx.problems.push(`${where}: must be ${shape[1]}`);
+    return;
+  }
+  if (Object.hasOwn(WALKERS, keyword)) WALKERS[keyword](arg, where, ctx);
+}
+
 function walkSchema(node, at, ctx) {
   if (!isPlainObject(node)) {
     ctx.problems.push(`${at}: a schema must be an object`);
     return;
   }
   ctx.nodes.add(node);
+  const here = { ...ctx, at: { node, base: ctx.base } };
   for (const [keyword, arg] of Object.entries(node)) {
-    const where = `${at}/${keyword}`;
-    if (!SUPPORTED_KEYWORDS.includes(keyword)) {
-      ctx.problems.push(`${where}: unsupported keyword`);
-    } else if (Object.hasOwn(WALKERS, keyword)) {
-      WALKERS[keyword](arg, where, { ...ctx, at: { node, base: ctx.base } });
-    }
+    walkKeyword(keyword, arg, `${at}/${keyword}`, here);
   }
 }
 
