@@ -73,24 +73,24 @@ helper returns "—".
 
 ## Decisions
 
-| #   | Decision                                                                                                                                                                                      | Rationale                                                                                                                                                                                                                                                                                                           |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Two-layer contract (run + assessment) that **aligns with existing envelopes** rather than defining a new superset.                                                                            | Three envelopes already exist; a fourth unaligned one is the drift problem the ideation's top objection named. Alignment makes adoption a field mapping, not a redesign.                                                                                                                                            |
-| D2  | Every record carries an explicit `scope: { id, env }`. Scope is never inferred from a session, token, or "last active" state. `env` is an opaque string.                                      | A consumer integration resolved a handoff to whichever tenant was last open because scope was implicit. Environment vocabularies differ between teams (`demo`/`prod` vs `prod`/`uat`); the contract must not decide whether they are equal.                                                                         |
-| D3  | One version convention: a top-level `"contract": "canary.<layer>/<major>"`. Readers refuse an unknown major; a minor change only adds optional fields.                                        | canary's own outputs mix `schema_version` (int) and `schemaVersion` (int or string) (`ts/src/history/record.ts:19`, `ts/src/analysis/manhunter/assemble.ts:42`, `ts/src/analysis/manhunter/guardian.ts:80`). `ts/src/history/ndjson-store.ts:93-95` already refuses unknown versions — the same rule, made uniform. |
-| D4  | Abstention is a first-class value: `null` ≠ `0`; `collected` absent ≠ `[]` ≠ a list; a `not-assessed` assessment requires a `reason` and forbids a `value`.                                   | Independently converged on in canary (`EXIT_ABSTAINED = 3`, `ts/src/core/gate-result.ts`; ADR 0009), in the audited dashboard's canonical pass-rate helper, and in the consumer health-signal work. The contract encodes the one rule all three agree on.                                                           |
-| D5  | `verified` is derived from `verified_by` + `verified_at` (both set or both null) and is **refused** if a producer supplies it.                                                                | A producer asserting its own verification is unauditable; STRATEGY.md names auditable provenance as the precondition for gating.                                                                                                                                                                                    |
-| D6  | No composite health score. A `<canary-pillars>` panel shows each factor side by side; a factor with no data abstains with its reason.                                                         | The audited dashboard's weighted 0–10 score was its best-explained output, but the consumer health-signal work rules "pillars, never a composite" and canary's approach is evidence over verdicts. The abstaining-factor behavior is kept; the weighted sum is not. ADR B.                                          |
-| D7  | The site kit is framework-free custom elements with zero runtime dependencies, reading a static `site.json`.                                                                                  | Embeds in any host stack (including React), works under a strict CSP, and needs no server — so none of the audited dashboard's tenancy or connection-pool problems are rebuilt.                                                                                                                                     |
-| D8  | Build as skills, not engine subcommands.                                                                                                                                                      | Precedent: `docs/changes/594-canary-sweep/provenance.json:89`. `ts/src/history` is at its 1800-LOC ceiling (#1074) and the perf delta rule is unwaivable.                                                                                                                                                           |
-| D9  | The dogfood site is **generated by the skill in CI** and deployed from GitHub Actions with `vercel deploy --prebuilt`; the Vercel Git integration stays off.                                  | Canary's run history exists only inside `dogfood.yml` (`.github/workflows/dogfood.yml:430-431`), so a Git-integration build cannot see the feed; re-enabling it would also restore the always-red PR status #769/#787 removed. Generating in CI proves the skill end to end.                                        |
-| D10 | Skill family: `canary-starling` (feed), `canary-barda` (standalone site), `canary-vixen` (embed into an existing site).                                                                       | Names are unclaimed in `docs/naming-registry.md` and `docs/roadmap.md`. "Gypsy" was skipped from the roster as a widely recognized slur.                                                                                                                                                                            |
-| D11 | The second layer is named **assessment** (`canary.assessment/1`), not "signal".                                                                                                               | A shipped skill is already named `canary-signal` (the QA impact digest), so "signal layer" would collide in conversation and search. `canary-starling` reuses that skill's history and katana-ledger readers instead of copying them.                                                                               |
-| D12 | "Never reported" requires a **declared** list of expected suites (`suites[]`, from `canary-site.config.json`). With no declaration, the panel says so instead of guessing.                    | A suite that has never run has no record to appear in; inferring absence from absence is the false-green shape canary exists to catch. Declaring the denominator is the honest fix.                                                                                                                                 |
-| D13 | Distinct flaky tests are computed by `canary-starling` over the history window and shipped as a `flaky[]` section, reusing the `canary history flaky --json` window logic.                    | The feed keeps per-test results only on each suite's latest run, so a panel cannot count distinct flakes across runs; the producer has the history, the page does not.                                                                                                                                              |
-| D14 | `site-deploy.yml` runs on `workflow_run` after `dogfood.yml` succeeds on `main`, and **refuses to deploy** a feed with zero runs (the job fails loudly; production keeps the last good site). | Both workflows would otherwise start on the same push, and the deploy would restore the cache before dogfood saved it. A cache miss would publish an all-abstaining site over a good one.                                                                                                                           |
-| D15 | Values: `DARK_AFTER_DAYS = 7`; `N = 30` runs per suite; flaky window = the `canary history flaky` default.                                                                                    | 7 days matches the convention both the audited dashboard and the consumer work use; 30 runs keeps `site.json` small enough to load in one fetch.                                                                                                                                                                    |
-| D16 | Tests: `happy-dom` (dev dependency of `agents/skills`) for DOM criteria; real Playwright for the strict-CSP criterion.                                                                        | `agents/skills` has no DOM environment today, and happy-dom does not enforce CSP, so criterion 12 needs a real browser.                                                                                                                                                                                             |
+| #   | Decision                                                                                                                                                                                                                                                                                       | Rationale                                                                                                                                                                                                                                                                                                           |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Two-layer contract (run + assessment) that **aligns with existing envelopes** rather than defining a new superset.                                                                                                                                                                             | Three envelopes already exist; a fourth unaligned one is the drift problem the ideation's top objection named. Alignment makes adoption a field mapping, not a redesign.                                                                                                                                            |
+| D2  | Every record carries an explicit `scope: { id, env }`. Scope is never inferred from a session, token, or "last active" state. `env` is an opaque string.                                                                                                                                       | A consumer integration resolved a handoff to whichever tenant was last open because scope was implicit. Environment vocabularies differ between teams (`demo`/`prod` vs `prod`/`uat`); the contract must not decide whether they are equal.                                                                         |
+| D3  | One version convention: a top-level `"contract": "canary.<layer>/<major>"`. Readers refuse an unknown major; a minor change only adds optional fields, so readers tolerate unknown fields — except a producer-supplied `verified` key (D5) and a record of the wrong layer, which are refused. | canary's own outputs mix `schema_version` (int) and `schemaVersion` (int or string) (`ts/src/history/record.ts:19`, `ts/src/analysis/manhunter/assemble.ts:42`, `ts/src/analysis/manhunter/guardian.ts:80`). `ts/src/history/ndjson-store.ts:92-96` already refuses unknown versions — the same rule, made uniform. |
+| D4  | Abstention is a first-class value: `null` ≠ `0`; `collected` absent ≠ `[]` ≠ a list; a `not-assessed` assessment requires a `reason` and forbids a `value`.                                                                                                                                    | Independently converged on in canary (`EXIT_ABSTAINED = 3`, `ts/src/core/gate-result.ts`; ADR 0009), in the audited dashboard's canonical pass-rate helper, and in the consumer health-signal work. The contract encodes the one rule all three agree on.                                                           |
+| D5  | `verified` is derived from `verified_by` + `verified_at` (both set or both null) and is **refused** if a producer supplies it.                                                                                                                                                                 | A producer asserting its own verification is unauditable; STRATEGY.md names auditable provenance as the precondition for gating.                                                                                                                                                                                    |
+| D6  | No composite health score. A `<canary-pillars>` panel shows each factor side by side; a factor with no data abstains with its reason.                                                                                                                                                          | The audited dashboard's weighted 0–10 score was its best-explained output, but the consumer health-signal work rules "pillars, never a composite" and canary's approach is evidence over verdicts. The abstaining-factor behavior is kept; the weighted sum is not. ADR B.                                          |
+| D7  | The site kit is framework-free custom elements with zero runtime dependencies, reading a static `site.json`.                                                                                                                                                                                   | Embeds in any host stack (including React), works under a strict CSP, and needs no server — so none of the audited dashboard's tenancy or connection-pool problems are rebuilt.                                                                                                                                     |
+| D8  | Build as skills, not engine subcommands.                                                                                                                                                                                                                                                       | Precedent: `docs/changes/594-canary-sweep/provenance.json:89`. `ts/src/history` is at its 1800-LOC ceiling (#1074) and the perf delta rule is unwaivable.                                                                                                                                                           |
+| D9  | The dogfood site is **generated by the skill in CI** and deployed from GitHub Actions with `vercel deploy --prebuilt`; the Vercel Git integration stays off.                                                                                                                                   | Canary's run history exists only inside `dogfood.yml` (`.github/workflows/dogfood.yml:430-431`), so a Git-integration build cannot see the feed; re-enabling it would also restore the always-red PR status #769/#787 removed. Generating in CI proves the skill end to end.                                        |
+| D10 | Skill family: `canary-starling` (feed), `canary-barda` (standalone site), `canary-vixen` (embed into an existing site).                                                                                                                                                                        | Names are unclaimed in `docs/naming-registry.md` and `docs/roadmap.md`. "Gypsy" was skipped from the roster as a widely recognized slur.                                                                                                                                                                            |
+| D11 | The second layer is named **assessment** (`canary.assessment/1`), not "signal".                                                                                                                                                                                                                | A shipped skill is already named `canary-signal` (the QA impact digest), so "signal layer" would collide in conversation and search. `canary-starling` reuses that skill's history and katana-ledger readers instead of copying them.                                                                               |
+| D12 | "Never reported" requires a **declared** list of expected suites (`suites[]`, from `canary-site.config.json`). With no declaration, the panel says so instead of guessing.                                                                                                                     | A suite that has never run has no record to appear in; inferring absence from absence is the false-green shape canary exists to catch. Declaring the denominator is the honest fix.                                                                                                                                 |
+| D13 | Distinct flaky tests are computed by `canary-starling` over the history window and shipped as a `flaky[]` section, reusing the `canary history flaky --json` window logic.                                                                                                                     | The feed keeps per-test results only on each suite's latest run, so a panel cannot count distinct flakes across runs; the producer has the history, the page does not.                                                                                                                                              |
+| D14 | `site-deploy.yml` runs on `workflow_run` after `dogfood.yml` succeeds on `main`, and **refuses to deploy** a feed with zero runs (the job fails loudly; production keeps the last good site).                                                                                                  | Both workflows would otherwise start on the same push, and the deploy would restore the cache before dogfood saved it. A cache miss would publish an all-abstaining site over a good one.                                                                                                                           |
+| D15 | Values: `DARK_AFTER_DAYS = 7`; `N = 30` runs per suite; flaky window = the `canary history flaky` default.                                                                                                                                                                                     | 7 days matches the convention both the audited dashboard and the consumer work use; 30 runs keeps `site.json` small enough to load in one fetch.                                                                                                                                                                    |
+| D16 | Tests: `happy-dom` (dev dependency of `agents/skills`) for DOM criteria; real Playwright for the strict-CSP criterion.                                                                                                                                                                         | `agents/skills` has no DOM environment today, and happy-dom does not enforce CSP, so criterion 12 needs a real browser.                                                                                                                                                                                             |
 
 ## Technical Design
 
@@ -101,7 +101,7 @@ One record per run, or per shard.
 ```jsonc
 {
   "contract": "canary.run/1",
-  "scope": { "id": "acme-web", "env": "staging" },
+  "scope": { "id": "example-web", "env": "staging" },
   "producer": {
     "name": "canary-test-cli/reporter",
     "version": "8.1.0",
@@ -144,8 +144,14 @@ One record per run, or per shard.
 ```
 
 - `file` is repo-relative (ADR 0029's join key).
-- `totals.total` must equal `results.length`; a mismatch is a validation error,
-  not a warning.
+- `results` is a list or `null`: `null` = per-test results not carried in this
+  record, `[]` = zero tests. When `results` is a list, `totals.total` must equal
+  `results.length`; a mismatch is a validation error, not a warning.
+- `run.status` has no `flaky` value, although the ingest reporter sends one
+  today. A run whose only non-passes are recovered flakes is `passed`, with its
+  flakiness carried in `totals.flaky`; a run that did not complete
+  (`interrupted`, `timedout`) is `cancelled`. The existing ingest payload is
+  unchanged.
 
 ### Assessment layer — `canary.assessment/1`
 
@@ -182,10 +188,13 @@ read "latest per key".
   "contract": "canary.site/1",
   "generated_at": "…",
   "scopes": [{ "id": "canary", "env": "ci" }],
-  "suites": [{ "scope": "canary", "suite": "ts-engine" }], // declared expected suites (D12); null = none declared
+  "suites": [
+    { "scope": { "id": "canary", "env": "ci" }, "suite": "ts-engine" },
+  ], // declared expected suites (D12); null = none declared
   "runs": [], // last 30 canary.run/1 per suite; per-test results only on each suite's latest run
   "flaky": [
     {
+      "scope": { "id": "canary", "env": "ci" },
       "suite": "ts-engine",
       "title": "…",
       "file": "…",
@@ -194,9 +203,15 @@ read "latest per key".
     },
   ], // distinct tests (D13)
   "assessments": [], // latest canary.assessment/1 per identity key
-  "register": [], // skipped/removed tests from the canary-katana ledger: reason, age, who
+  "register": [], // skipped/removed tests from the canary-katana ledger: reason, age (no author)
 }
 ```
+
+Every `scope` in the feed, including on `suites[]`, `flaky[]` and `register[]`,
+is the full `{ id, env }` object (D2); a bare string is refused. A `register[]`
+row carries `scope`, `title`, `file`, `kind`, `reason`, `recorded_at`, `commit`,
+`cause` and `issue`. Author identity is deliberately excluded from a public
+feed: a `who` or `author` key on a register row is refused.
 
 ### Panels (v1)
 
@@ -207,7 +222,7 @@ read "latest per key".
 | `<canary-failures-by-area>` | Failures by area; not-run and quarantined separated                                      | latest results   |
 | `<canary-flaky>`            | Distinct flaky tests (not occurrences), with flaky runs / window runs                    | `flaky`          |
 | `<canary-pillars>`          | ci-ready checks with evidence tier; abstaining pillars state their reason                | `assessments`    |
-| `<canary-register>`         | Skipped/deleted tests as visible debt: reason, age, who                                  | `register`       |
+| `<canary-register>`         | Skipped/deleted tests as visible debt: reason, age                                       | `register`       |
 
 Every abstention renders as text **and** is announced through a live region.
 `DARK_AFTER_DAYS` is defined once and imported by every panel that needs it.
@@ -311,12 +326,13 @@ The feed is built from canary's own suites only.
 1. When a record has no `contract` field or an unknown major version, the
    validator shall refuse it with an error naming the field.
 2. If a assessment is `not-assessed`, then the validator shall refuse it when it
-   carries a `value` or lacks a `reason`; if a assessment is `observed`, then it
-   shall refuse it when `value` is null.
+   carries a `value` or lacks a `reason`; if a assessment is `healthy`,
+   `degraded`, `critical` or `observed`, then it shall refuse it when `value` is
+   null.
 3. If a producer supplies `verified`, then the validator shall refuse the
    record.
-4. When `totals.total` differs from `results.length`, the validator shall refuse
-   the run record.
+4. When `results` is a list and `totals.total` differs from `results.length`,
+   the validator shall refuse the run record.
 5. When two shards of one workflow run push the same suite, the reporter shall
    emit distinct `run.id` values (#1148).
 6. When Playwright reports `timedOut` or `interrupted`, the reporter shall emit
