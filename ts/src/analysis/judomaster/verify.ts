@@ -15,9 +15,10 @@
  */
 
 import { realpathSync, statSync } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import type { ExecuteResult } from '../../core/executor.js';
+import { isWithin } from './resolve.js';
 import type { RegressionBrief, VerifyVerdict } from './types.js';
 
 type Signature = RegressionBrief['signature'];
@@ -229,7 +230,7 @@ export function containedInGenerated(
   try {
     const base = realpathSync(join(root, 'tests', 'generated'));
     const real = realpathSync(resolve(root, testPath));
-    if (!real.startsWith(base + sep)) return null;
+    if (!isWithin(base, real)) return null;
     return statSync(real).isFile() ? real : null;
   } catch {
     return null;

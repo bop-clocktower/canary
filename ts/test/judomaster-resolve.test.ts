@@ -3,13 +3,19 @@
  * machine resolve to files under a synthetic repository root.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { resolveFrames } from '../src/analysis/judomaster/resolve.js';
+import { isWithin, resolveFrames } from '../src/analysis/judomaster/resolve.js';
 
 let base: string;
 let root: string;
@@ -90,5 +96,35 @@ describe('resolveFrames', () => {
         root,
       )[0]!.status,
     ).toBe('missing');
+  });
+});
+
+describe('isWithin', () => {
+  it('is true for a path strictly inside the base, including root /', () => {
+    expect(isWithin('/', '/a/b')).toBe(true);
+    expect(isWithin('/repo', '/repo/..foo')).toBe(true);
+  });
+
+  it('is false for a sibling with a shared prefix, the base itself, or a parent', () => {
+    expect(isWithin('/repo', '/repo-other/x')).toBe(false);
+    expect(isWithin('/repo', '/repo')).toBe(false);
+    expect(isWithin('/repo', '/')).toBe(false);
+  });
+});
+
+describe('resolveFrames containment', () => {
+  it('resolves an absolute in-repo frame when the root is /', () => {
+    const real = realpathSync(join(root, 'src', 'cart', 'total.ts'));
+    const f = resolveFrames([{ file: real, line: 3 }], '/')[0]!;
+    expect(f.status).toBe('resolved');
+    expect(f.path).toBe(real.slice(1));
+  });
+
+  it('never resolves a frame under a sibling repo-other directory', () => {
+    mkdirSync(join(base, 'repo-other', 'src'), { recursive: true });
+    const other = join(base, 'repo-other', 'src', 'a.ts');
+    writeFileSync(other, 'a\n');
+    const f = resolveFrames([{ file: other, line: 1 }], root)[0]!;
+    expect(f.status).toBe('missing');
   });
 });

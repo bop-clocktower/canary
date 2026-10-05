@@ -29,10 +29,25 @@ function isExternal(file: string): boolean {
   return EXTERNAL.some((re) => re.test(file));
 }
 
+/**
+ * True when `candidate` lies strictly inside `base`. Built on relative()
+ * rather than a string prefix: `base + sep` is `//` for root `/` and
+ * `/repo` is a prefix of `/repo-other`.
+ */
+export function isWithin(base: string, candidate: string): boolean {
+  const rel = relative(base, candidate);
+  return (
+    rel !== '' &&
+    rel !== '..' &&
+    !rel.startsWith(`..${sep}`) &&
+    !isAbsolute(rel)
+  );
+}
+
 function inside(rootReal: string, candidate: string): string | null {
   try {
     const real = realpathSync(candidate);
-    if (!real.startsWith(rootReal + sep)) return null;
+    if (!isWithin(rootReal, real)) return null;
     return statSync(real).isFile() ? real : null;
   } catch {
     return null;
