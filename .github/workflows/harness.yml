@@ -53,8 +53,13 @@ jobs:
       # report lands. On PR #584 the cut fell after check four of nine and the
       # log read pass/pass/warn/warn with zero errors — on a job that failed for
       # `arch: fail`, five checks past the cut.
+      #
+      # `--skip phase-gate` (#1155): with no phase-gate configuration in this
+      # repo that check checks zero items and reports `pass`. Skipped, it shows
+      # as `skip` in the summary, which is what it is. Bound by
+      # ts/test/harness-gate-list.test.ts.
       - name: Run harness checks
-        run: harness ci check --json > harness-report.json
+        run: harness ci check --json --skip phase-gate > harness-report.json
 
       # The `arch` entry in the report above is `{name, status, issues: [],
       # durationMs}` — zero error-severity issues whether the check failed on a

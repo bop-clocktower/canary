@@ -282,8 +282,12 @@ jobs:
       # this change removes — a check that reports but cannot fail — while
       # looking like a win. See ADR 0014 "Declined".
 
-      - name: Harness Phase Gate
-        run: npx --yes -p "$HARNESS_CLI" harness check-phase-gate
+      # `check-phase-gate` is deliberately NOT run here (#1155). This repo has
+      # no phase-gate configuration, so it printed "Phase gates not enabled,
+      # skipping." and exited 0 — a step that checked zero items and showed
+      # green. Re-adding it needs real phase-gate config first, and a change to
+      # ABSTAINING_GATES in ts/test/harness-gate-list.test.ts, which fails on
+      # any workflow that invokes it while it is listed there.
 
       - name: Security Ledger Freshness
         run: |

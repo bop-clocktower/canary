@@ -105,6 +105,16 @@
       "name": "util",
       "pattern": "ts/src/util/**",
       "allowedDependencies": []
+    },
+    {
+      "name": "skills",
+      "pattern": "agents/skills/claude-code/**",
+      "allowedDependencies": ["skills-lib"]
+    },
+    {
+      "name": "skills-lib",
+      "pattern": "agents/skills/lib/**",
+      "allowedDependencies": []
     }
   ],
   "forbiddenImports": [

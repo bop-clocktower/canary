@@ -105,7 +105,7 @@ description: >
 2. **Baseline workflows for a canary setup.** Each should
    exist as a `.yml` file in `.github/workflows/`:
 
-   - `harness.yml` — core phase-gate checks
+   - `harness.yml` — core checks (`harness ci check`)
    - `harness-architecture.yml` — layer dependency validation
    - `harness-quality.yml` — quality and integrity checks
    - `harness-security.yml` — security scan + ledger refresh
