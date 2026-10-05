@@ -6,8 +6,9 @@
 // with nothing installed. Why interpret the schemas at all instead of
 // hand-coding checks: the .schema.json files are what other teams' producers
 // read, so the validator must enforce exactly those files. A keyword this
-// file does not implement is REFUSED at load by schemaProblems(); otherwise a
-// schema edit using it would read as enforced and enforce nothing.
+// file does not implement is REFUSED at load by schemaProblems() in
+// schema-problems.mjs; otherwise a schema edit using it would read as
+// enforced and enforce nothing.
 //
 // Unknown FIELDS in a document are tolerated (D3: a minor version adds
 // optional fields), which is why `additionalProperties` is not supported.
@@ -26,7 +27,7 @@ export function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
-const TYPE_TESTS = {
+export const TYPE_TESTS = {
   null: (v) => v === null,
   boolean: (v) => typeof v === 'boolean',
   integer: (v) => Number.isInteger(v),
@@ -114,25 +115,42 @@ function checkMinLength(min, value, path, ctx) {
   report(ctx, path, `must be at least ${min} character(s)`);
 }
 
-/** `file#/pointer`, `#/pointer` or `file`; base is the schema we are in. */
-function resolveRef(ref, base, registry) {
+/** RFC 6901: `~1` is `/` and `~0` is `~`, decoded in that order. */
+function decodeSegment(seg) {
+  return seg.replaceAll('~1', '/').replaceAll('~0', '~');
+}
+
+/** Own properties only: `#/constructor` must not reach Object.prototype. */
+function ownChild(node, key) {
+  return isPlainObject(node) && Object.hasOwn(node, key)
+    ? node[key]
+    : undefined;
+}
+
+/**
+ * `file#/pointer`, `#/pointer` or `file`; base is the schema we are in.
+ * `target.schema` is whatever the pointer reaches (undefined if nothing);
+ * whether that is a schema is the caller's question.
+ */
+export function resolveRef(ref, base, registry) {
   const hash = ref.indexOf('#');
   const file = hash === -1 ? ref : ref.slice(0, hash);
   const pointer = hash === -1 ? '' : ref.slice(hash + 1);
-  const target = { base: file || base };
+  const target = { base: file || base, schema: undefined };
+  if (pointer !== '' && !pointer.startsWith('/')) return target;
   target.schema = pointer
     .split('/')
-    .filter(Boolean)
+    .slice(1)
     .reduce(
-      (node, seg) => (isPlainObject(node) ? node[seg] : undefined),
-      registry[target.base],
+      (node, seg) => ownChild(node, decodeSegment(seg)),
+      ownChild(registry, target.base),
     );
   return target;
 }
 
 function checkRef(ref, value, path, ctx) {
   const target = resolveRef(ref, ctx.base, ctx.registry);
-  if (target.schema === undefined) {
+  if (!isPlainObject(target.schema)) {
     throw new Error(`schema-check: unresolvable $ref '${ref}'`);
   }
   checkValue(target.schema, value, path, { ...ctx, base: target.base });
@@ -151,7 +169,7 @@ const CHECKS = {
   $ref: checkRef,
 };
 
-const SUPPORTED_KEYWORDS = Object.freeze([
+export const SUPPORTED_KEYWORDS = Object.freeze([
   ...ANNOTATIONS,
   ...Object.keys(CHECKS),
 ]);
@@ -167,71 +185,4 @@ export function checkValue(schema, value, path, ctx) {
       CHECKS[keyword](arg, value, path, ctx);
     }
   }
-}
-
-function patternProblem(source) {
-  try {
-    new RegExp(source, 'u');
-    return false;
-  } catch {
-    return true;
-  }
-}
-
-function walkChildren(arg, where, ctx) {
-  for (const [name, sub] of Object.entries(arg)) {
-    walkSchema(sub, `${where}/${name}`, ctx);
-  }
-}
-
-function typeProblems(arg, where, ctx) {
-  for (const t of asList(arg)) {
-    if (!Object.hasOwn(TYPE_TESTS, t)) {
-      ctx.problems.push(`${where}: unknown type '${t}'`);
-    }
-  }
-}
-
-function walkKeyword(keyword, arg, where, ctx) {
-  if (keyword === 'properties' || keyword === '$defs') {
-    walkChildren(arg, where, ctx);
-  } else if (keyword === 'items') {
-    walkSchema(arg, where, ctx);
-  } else if (keyword === 'type') {
-    typeProblems(arg, where, ctx);
-  } else if (keyword === 'pattern' && patternProblem(arg)) {
-    ctx.problems.push(`${where}: invalid pattern`);
-  } else if (keyword === '$ref') {
-    if (resolveRef(arg, ctx.base, ctx.registry).schema === undefined) {
-      ctx.problems.push(`${where}: unresolvable $ref '${arg}'`);
-    }
-  }
-}
-
-function walkSchema(node, at, ctx) {
-  if (!isPlainObject(node)) {
-    ctx.problems.push(`${at}: a schema must be an object`);
-    return;
-  }
-  for (const [keyword, arg] of Object.entries(node)) {
-    const where = `${at}/${keyword}`;
-    if (SUPPORTED_KEYWORDS.includes(keyword)) {
-      walkKeyword(keyword, arg, where, ctx);
-    } else {
-      ctx.problems.push(`${where}: unsupported keyword`);
-    }
-  }
-}
-
-/**
- * Everything in a schema registry that would make a schema read as enforced
- * while enforcing less: unsupported keywords, unknown type names, invalid
- * patterns, unresolvable `$ref`s. Empty = every keyword is enforced.
- */
-export function schemaProblems(registry) {
-  const problems = [];
-  for (const [id, schema] of Object.entries(registry)) {
-    walkSchema(schema, `${id}#`, { problems, registry, base: id });
-  }
-  return problems;
 }

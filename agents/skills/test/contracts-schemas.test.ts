@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, it, expect } from 'vitest';
 
-import { checkValue, schemaProblems } from '../lib/contracts/schema-check.mjs';
+import { checkValue } from '../lib/contracts/schema-check.mjs';
+import { schemaProblems } from '../lib/contracts/schema-problems.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CONTRACTS = path.join(HERE, '..', 'lib', 'contracts');

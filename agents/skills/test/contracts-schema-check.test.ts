@@ -6,7 +6,8 @@
  */
 import { describe, it, expect } from 'vitest';
 
-import { checkValue, schemaProblems } from '../lib/contracts/schema-check.mjs';
+import { checkValue } from '../lib/contracts/schema-check.mjs';
+import { schemaProblems } from '../lib/contracts/schema-problems.mjs';
 
 type Err = { path: string; message: string };
 

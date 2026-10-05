@@ -16,7 +16,8 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 import { createParser, EXIT_USAGE, formatUsageError } from '../parse-args.mjs';
-import { checkValue, isPlainObject, schemaProblems } from './schema-check.mjs';
+import { checkValue, isPlainObject } from './schema-check.mjs';
+import { schemaProblems } from './schema-problems.mjs';
 import { crossFieldErrors } from './rules.mjs';
 
 const LAYERS = ['run', 'assessment', 'site'];
