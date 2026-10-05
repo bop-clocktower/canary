@@ -15,7 +15,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CONTRACTS = path.join(HERE, '..', 'lib', 'contracts');
 const FIXTURES = path.join(HERE, 'fixtures', 'contracts');
 // Grows by one layer in Tasks 3 and 4.
-const LAYERS = ['run'];
+const LAYERS = ['run', 'assessment'];
 
 type Doc = Record<string, any>;
 const readJson = (p: string): Doc => JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -79,5 +79,25 @@ describe('contract schemas', () => {
     expect(errorsFor('run', doc).map((e) => e.path)).toEqual([
       'results[0].file',
     ]);
+  });
+
+  it('assessment: scope and text defs are identical to run (one D2 scope)', () => {
+    const run = REGISTRY['run.v1.schema.json'].$defs;
+    const assessment = REGISTRY['assessment.v1.schema.json'].$defs;
+    expect(assessment.scope).toEqual(run.scope);
+    expect(assessment.text).toEqual(run.text);
+    expect(assessment.timestamp).toEqual(run.timestamp);
+  });
+
+  it('assessment: refuses a value of type string (fork D: no "N/A")', () => {
+    const doc = fixture('assessment');
+    doc.value = 'N/A';
+    expect(errorsFor('assessment', doc).map((e) => e.path)).toEqual(['value']);
+  });
+
+  it('assessment: refuses an unknown status (planted)', () => {
+    const doc = fixture('assessment');
+    doc.status = 'green';
+    expect(errorsFor('assessment', doc).map((e) => e.path)).toEqual(['status']);
   });
 });

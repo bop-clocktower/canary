@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "assessment.v1.schema.json",
+  "title": "canary.assessment/1",
+  "description": "One assessed metric. Append-only; identity key scope.id + scope.env + source + metric; readers take the latest per key. Spec: docs/specs/canary-assessment-contract.md. Status/value/reason and verification rules live in rules.mjs. `verified` is derived and refused if supplied (D5).",
+  "type": "object",
+  "required": [
+    "contract",
+    "scope",
+    "source",
+    "metric",
+    "status",
+    "value",
+    "unit",
+    "reason",
+    "evidence",
+    "observed_at",
+    "sources",
+    "verified_by",
+    "verified_at"
+  ],
+  "properties": {
+    "contract": { "const": "canary.assessment/1" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "source": { "$ref": "#/$defs/text" },
+    "metric": { "$ref": "#/$defs/text" },
+    "status": {
+      "enum": ["healthy", "degraded", "critical", "not-assessed", "observed"]
+    },
+    "value": {
+      "$comment": "null iff not-assessed (D4, fork D).",
+      "type": ["number", "boolean", "null"]
+    },
+    "unit": { "type": ["string", "null"], "minLength": 1 },
+    "reason": {
+      "$comment": "required iff not-assessed (D4).",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["tier", "denominator"],
+      "properties": {
+        "tier": {
+          "enum": ["coverage-verified", "graph-verified", "heuristic", null]
+        },
+        "denominator": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "observed_at": {
+      "$comment": "When the check ran, not when it was stored.",
+      "$ref": "#/$defs/timestamp"
+    },
+    "sources": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+    "verified_by": { "type": ["string", "null"], "minLength": 1 },
+    "verified_at": {
+      "type": ["string", "null"],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1 },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "scope": {
+      "$comment": "D2: explicit, never inferred. env is opaque.",
+      "type": "object",
+      "required": ["id", "env"],
+      "properties": {
+        "id": { "$ref": "#/$defs/text" },
+        "env": { "$ref": "#/$defs/text" }
+      }
+    }
+  }
+}
