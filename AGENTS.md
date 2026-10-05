@@ -938,6 +938,18 @@ issue #678. Issue #698 renamed both, to **Dependency & project validation** and
 `scripts/arch-verdict.mjs` classifies). Do not put "architecture" back in that
 job's name unless it actually runs `check-arch`.
 
+**The arch ratchet is not the layer or cycle gate (#1164).** In harness 12.10.1
+three of its seven metrics are 0 by construction: `circular-deps` parses no file
+(stub parser, zero edges), and `layer-violations` and `forbidden-imports` run
+with `layers: []` (Intense-Visions/harness-engineering#2235). Their `0` in
+`baselines.json` and `timeline.json` is an abstention, and a planted cycle and a
+planted wrong-layer import both left `newViolations` empty. Layer direction,
+forbidden imports and cycles are enforced by `harness check-deps` only, in the
+`deps-and-validate` job above and the `deps` step of `harness ci check`.
+`scripts/arch-verdict.mjs` says so under every verdict (`NOT MEASURED: …`), from
+the `UNMEASURED_ARCH_METRICS` constant. Revisit that constant when canary picks
+up the harness release that fixes #2235.
+
 **A metric that silently improves is a finding (#688).** The arch analyzer skips
 55 directory names outright (`coverage`, `dist`, `build`, `bin`, `out`,
 `target`, `deps`, `obj`, `vendor`, …) plus every dot-directory, so a source
@@ -1226,6 +1238,9 @@ preservation, filed upstream.
 `harness snapshot capture` weekly and appends `.harness/arch/timeline.json` —
 the architecture time-series that feeds `harness snapshot trends`, alongside the
 `.harness/security/timeline.json` ledger refreshed by `harness-security.yml`.
+Its `circular-deps`, `layer-violations` and `forbidden-imports` series are flat
+zeros under harness 12.10.1 because nothing is measured (#1164); read them as
+missing data, not as a clean trend.
 
 **Ledger updates land on a standing branch, never on `main` directly (#548).**
 Both workflows above commit to a fixed branch (`chore/arch-timeline`,

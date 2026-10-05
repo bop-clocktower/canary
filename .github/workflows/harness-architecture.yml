@@ -16,6 +16,12 @@
 # alternative in #698 (21 pre-existing threshold violations would block every
 # merge).
 #
+# The reverse holds too (#1164): `check-deps` HERE is the layer, forbidden-import
+# and cycle gate. Under harness 12.10.1 the arch ratchet's `layer-violations`,
+# `forbidden-imports` and `circular-deps` metrics are 0 by construction
+# (Intense-Visions/harness-engineering#2235), so `check-arch` cannot stand in
+# for this job.
+#
 # The FILE keeps its name. `harness-architecture.yml` is referenced from
 # AGENTS.md, ADR 0011, two guides, `.github/required-checks.json` and two test
 # suites, and a file rename also discards the workflow's run history. The
