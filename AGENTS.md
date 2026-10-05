@@ -356,6 +356,11 @@ host Claude Code session via `/canary-write-test` — no API key required.
   git-tracked file and every tracked source file to belong to a layer
   (`ts/test/harness-config-denominator.test.ts`), because a rule that matches
   nothing still reports as configured (#543).
+- **QA data contract:** `agents/skills/lib/contracts/` — `canary.run/1`,
+  `canary.assessment/1` and `canary.site/1` as JSON Schemas plus a
+  zero-dependency validator, `validate.mjs <file> [--layer L] [--json]` (exit 0
+  valid, 1 refused, 2 usage). Specs in `docs/specs/canary-*-contract.md`; [ADR
+  0035][adr-0035].
 
 ### Generated Artifacts
 
@@ -1582,3 +1587,5 @@ nothing. Ignore any root manifest, or delete it. The invariants are pinned by
 [recommender]: ts/src/core/recommender.ts
 [fw-registry]: ts/src/core/framework-registry.ts
 [fw-json]: ts/src/data/frameworks/registry.json
+[adr-0035]:
+  docs/knowledge/decisions/0035-versioned-two-layer-qa-data-contract.md

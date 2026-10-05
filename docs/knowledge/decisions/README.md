@@ -91,3 +91,4 @@ Not every PR needs an ADR. Day-to-day refactors and bug fixes don't.
 | [0032](0032-single-os-ci-accepted-deliberately.md)                        | Single-OS CI is accepted deliberately, and must be disclosed              | accepted |
 | [0033](0033-waypoint-sink-abstention.md)                                  | The waypoint sink stays unconfigured, and the abstention is recorded      | accepted |
 | [0034](0034-route-labels-are-canarys-half-of-the-issue-fleet-contract.md) | A route:* label family is canary's half of the issue-fleet contract       | accepted |
+| [0035](0035-versioned-two-layer-qa-data-contract.md)                      | QA results travel in a versioned two-layer contract                       | accepted |
