@@ -212,10 +212,10 @@ name a role or handle, never an email address). The ledger's `marker` and
 - **Abstention is a value (D4).** `suites: null` (none declared) is not
   `suites: []` (declared, and empty); `results: null` on an older run is not
   `results: []`.
-- **Nested rules apply in place.** The run rules (`totals-match-results`,
-  `totals-sum`) and the assessment rules (`status-shape`, `verified-derived`,
-  `verification-pair`) apply to every nested record, with the record's position
-  as the path prefix.
+- **Nested rules apply in place.** The run rules (`counts-safe`,
+  `totals-match-results`, `totals-sum`) and the assessment rules
+  (`status-shape`, `verified-derived`, `verification-pair`) apply to every
+  nested record, with the record's position as the path prefix.
 - **Rule `register-no-author`.** A register row carrying a `who` or `author` key
   is refused, whatever its value.
 
