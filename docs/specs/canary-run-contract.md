@@ -211,7 +211,9 @@ records validated: 1 for a run document, and 0 when the input did not parse.
 ## Consumers
 
 None yet. Phase 2 adds the reporter's `canary.run/1` emission and the
-`canary-starling` producer; the `canary.site/1` feed embeds run records.
+`canary-starling` producer; the site feed
+([canary-site-feed-contract.md](canary-site-feed-contract.md)) embeds run
+records.
 
 The format is generic: it names suites, test titles, repo-relative files and
 counts, with no project-, employer- or client-specific content.
