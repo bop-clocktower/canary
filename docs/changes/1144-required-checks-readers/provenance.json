@@ -1,0 +1,15 @@
+{
+  "fleet": "roadmap-fleet",
+  "run": "rf-2026-10-05",
+  "issues": [1144],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/required-checks-testkit.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "An empty `advisory` section is legitimate (every check promoted) and is allowed; only a missing or non-array `advisory` throws. An empty `required` throws, as the issue asks.",
+    "Single-reader enforcement is a grep-style test (no other file under ts/test contains the manifest file name as a quoted string literal), following the repo's precedent of executable guards over comments.",
+    "Callers needing other sections (externalStatuses, rulesetRules, reviews, mergePolicy) read them via readRequiredChecksManifest<T>(), but required/advisory always go through requiredEntries()/advisoryEntries() so the zero-denominator guard applies to every caller.",
+    "Testkit row validation also throws when a required/advisory row has no non-empty `check` string; this goes slightly beyond the issue but is the same zero-denominator class."
+  ]
+}

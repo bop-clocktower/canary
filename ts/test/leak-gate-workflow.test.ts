@@ -27,6 +27,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { load as loadYaml } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
+import { advisoryEntries, requiredEntries } from './required-checks-testkit.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
@@ -65,12 +66,8 @@ const triggers = (wf.true ?? wf.on ?? {}) as Record<string, unknown>;
 const jobs = Object.values(wf.jobs ?? {});
 const steps = jobs.flatMap((j) => j.steps ?? []);
 const gateJob = jobs[0];
-const manifest = JSON.parse(
-  readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
-) as {
-  required: Array<{ check: string; workflow: string }>;
-  advisory: Array<{ check: string; workflow: string }>;
-};
+// Through the testkit (#1144): one reader, and an empty `required` throws.
+const manifest = { required: requiredEntries(), advisory: advisoryEntries() };
 
 describe('leak gate workflow is fork-reachable (#843)', () => {
   it('runs on pull_request_target, not pull_request', () => {
