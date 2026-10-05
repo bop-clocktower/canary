@@ -158,10 +158,15 @@ ranking_formula:
 - Strategy alignment: +0.5 track:Quality made legible (also serves Adoption and
   onboarding) — applied (tie window) — final score 3.50
 - Origin: proposed by the user during critique as the replacement for idea 2's
-  approach. Dogfood instance: the canary site the user deployed on Netlify (URL
-  not recorded in this artifact). Its deployment workflow exists but currently
-  fails because nothing behind it is set up yet — standing up that pipeline is
-  the first concrete step of this idea.
+  approach. Dogfood instance: the canary site the user deployed (described as
+  Netlify; URL not recorded in this artifact). Related existing surface: this
+  repo's GitHub `Production` environment is fed by the Vercel GitHub App
+  (`canary` project). All 12 of its deployments failed on 2026-09-03 because the
+  repo had no web surface, and #787 (#769) suppressed it with `vercel.json`
+  `git.deploymentEnabled: false`. Deploying a real site from this repo means
+  reversing that suppression and its `externalStatuses` entry in
+  `.github/required-checks.json` — standing up that pipeline is the first
+  concrete step of this idea.
 - Strongest objection: If the skills generate _sites_ rather than consume a
   _contract_, every consumer ends up with a slightly different fork — idea 2's
   drift problem multiplied across N consumers. Separately, _internal_ test
