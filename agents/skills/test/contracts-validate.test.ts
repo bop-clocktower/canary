@@ -284,7 +284,7 @@ describe('criterion 18: unparseable input is refused', () => {
 
 describe('fork C (amended): no author identity in a public feed', () => {
   it.each(['who', 'author'])(
-    'refuses a register row carrying %s, even null, naming register[0].%s',
+    'refuses a register row carrying %s, even null, naming that key',
     (key) => {
       const doc = valid('site');
       doc.register[0][key] = null;
