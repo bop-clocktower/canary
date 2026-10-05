@@ -16,8 +16,9 @@
  */
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
+import { NdjsonHistoryStore } from '../src/history/ndjson-store.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 
 interface Check {
@@ -428,6 +429,91 @@ describe('canary ci-ready', () => {
         }
       },
     );
+  });
+
+  // #1156: a corrupt or unsupported-schema store is a skip with a reason, the
+  // same contract #1132 set for an unreadable one -- never a raw stack, and
+  // never the readable lines scored with the bad one dropped.
+  describe('a corrupt or unsupported-schema run-history store (#1156)', () => {
+    const HISTORY_CHECKS = ['flakiness', 'suite-runtime'];
+
+    function corruptLine(line: string): void {
+      // Three good runs first: none of them may be scored around the bad line.
+      writeHistory(root, 3, [], [1000, 1000, 1000]);
+      writeFileSync(join(root, HISTORY), `${line}\n`, { flag: 'a' });
+    }
+
+    it('skips both history checks naming the store and the line of invalid JSON', async () => {
+      corruptLine('{broken');
+      const { code, report } = await runJson(root);
+      for (const name of HISTORY_CHECKS) {
+        const c = check(report, name);
+        expect(c.verdict).toBe('skip');
+        expect(c.reason).toBe(
+          `${HISTORY} could not be parsed (line 4: invalid JSON)`,
+        );
+      }
+      expect(report.verdict).toBe('abstained');
+      expect(code).toBe(EXIT_ABSTAINED);
+    });
+
+    it('skips both history checks naming an unsupported schema version', async () => {
+      corruptLine(
+        JSON.stringify({ run_id: 'x', suite: 'api', schema_version: 9 }),
+      );
+      const { code, report } = await runJson(root);
+      for (const name of HISTORY_CHECKS) {
+        expect(check(report, name).reason).toBe(
+          `${HISTORY} has unsupported schema 9 (line 4; supported: 2, 3)`,
+        );
+      }
+      expect(code).toBe(EXIT_ABSTAINED);
+    });
+
+    it('still scores a readable inventory beside the corrupt store', async () => {
+      mkdirSync(join(root, 'tests'), { recursive: true });
+      writeFileSync(
+        join(root, 'tests', 'cart.test.ts'),
+        "import { add } from '../src/cart.js';\nit('adds', () => {\n  expect(add(1)).toBe(1);\n});\n",
+        'utf-8',
+      );
+      expect((await invokeCanary(['inventory', '--root', root])).code).toBe(0);
+      corruptLine('null');
+
+      const { code, report } = await runJson(root);
+      expect(check(report, 'flakiness').reason).toBe(
+        `${HISTORY} could not be parsed (line 4: not a JSON object)`,
+      );
+      expect(check(report, 'coverage-depth').verdict).not.toBe('skip');
+      expect(report.verdict).toBe('incomplete');
+      expect(code).toBe(0);
+    });
+
+    it('renders text output instead of a stack trace', async () => {
+      corruptLine('{broken');
+      const res = await invokeCanary(['ci-ready', '--root', root]);
+      expect(res.code).toBe(EXIT_ABSTAINED);
+      expect(res.stdout).toMatch(/history-v2\.jsonl could not be parsed/);
+      expect(res.stdout).not.toMatch(
+        /no runs recorded|SyntaxError|at JSON\.parse/,
+      );
+    });
+
+    it('still surfaces an error that is not a content problem', async () => {
+      corruptLine('{"run_id":"x","suite":"api"}');
+      const spy = vi
+        .spyOn(NdjsonHistoryStore.prototype, 'readAll')
+        .mockImplementation(() => {
+          throw new TypeError('a programming error');
+        });
+      try {
+        await expect(
+          invokeCanary(['ci-ready', '--root', root]),
+        ).rejects.toThrow('a programming error');
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 
   it('abstains on an inventory that lists zero tests rather than passing it', async () => {

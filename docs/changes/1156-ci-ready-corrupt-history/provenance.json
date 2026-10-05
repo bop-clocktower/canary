@@ -1,0 +1,23 @@
+{
+  "fleet": "roadmap-fleet",
+  "run": "rf-2026-10-05",
+  "issues": [1156],
+  "route": "bug",
+  "stages": [
+    "harness:debugging/investigate",
+    "harness:debugging/analyze",
+    "harness:debugging/hypothesize",
+    "harness:debugging/fix"
+  ],
+  "reproducingTest": "ts/test/ci-ready-cli.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Human-answered fork: a corrupt or unsupported-schema run-history store is a skip with a reason on flakiness and suite-runtime, using the { ok: false, reason } RunsInput shape from #1158; the exit code follows the normal all-skip (3) / incomplete (0) contract.",
+    "Content vs unexpected is decided by error TYPE: NdjsonHistoryStore.readAll now throws a typed HistoryContentError (line + problem) for invalid JSON, a non-object line and an unsupported schema_version. ci-ready and the dossier turn only that type into the skip; any other error still throws in ci-ready and stays DARK in the dossier.",
+    "No partial read: one bad line still fails the whole read, so the readable lines are never scored without it. Both history checks skip with the reason.",
+    "Reason wording: '<path> could not be parsed (line N: invalid JSON | not a JSON object)' and '<path> has unsupported schema <v> (line N; supported: 2, 3)'. N is the 1-based physical line, blank lines counted.",
+    "A line that is valid JSON but not an object (null, a number, an array, a string) is treated as corrupt. Before, null crashed resolveSchemaVersion with a TypeError and a number or array was silently read as a legacy v2 row.",
+    "The thrown message keeps 'Unsupported history schema_version <v> (expected one of ...)' so existing callers and tests matching it are unaffected; the raw SyntaxError detail is no longer appended for invalid JSON (the line number replaces it). This keeps ndjson-store.ts under the 300-line perf threshold, which would otherwise be a new blocking perf-ratchet identity.",
+    "Other readAll callers (analysis, order, rewind, clocktower, manhunter run-history section) get the typed error with the same fail-loudly behaviour; their handling is unchanged and out of scope."
+  ]
+}

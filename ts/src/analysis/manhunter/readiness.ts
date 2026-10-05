@@ -6,8 +6,9 @@
  * `canary ci-ready` reads -- never `--history`, so the two cannot score
  * different runs. A store that exists but cannot be read (EISDIR, EACCES, ...)
  * is ci-ready's own skip with a reason on both history checks (#1132), consumed
- * here as-is -- never scored as absent. A store ci-ready would still throw on
- * (corrupt JSON, unsupported schema) is DARK here, not scored as absent.
+ * here as-is -- never scored as absent. A corrupt or unsupported-schema store
+ * is the same pass-through skip, naming the line (#1156). Only an error that is
+ * neither (a bug, not a property of the store) is DARK here.
  *
  * DARK when ci-ready itself abstains (no check had an input); the reason
  * carries every distinct skip reason, so an unreadable input is named. An
@@ -24,7 +25,10 @@ import {
   parseCriticalAreas,
   parseInventory,
 } from '../../core/inventory-checks.js';
-import { NdjsonHistoryStore } from '../../history/ndjson-store.js';
+import {
+  HistoryContentError,
+  NdjsonHistoryStore,
+} from '../../history/ndjson-store.js';
 import { readSource, sourceRef, type SourceRead } from './sources.js';
 import {
   darkSection,
@@ -56,8 +60,9 @@ function inputOf<T>(
 }
 
 /**
- * ci-ready's runs input: stored runs, null when absent, the unreadable reason
- * in ci-ready's wording (#1132), or the error ci-ready itself would throw.
+ * ci-ready's runs input: stored runs, null when absent, the unreadable
+ * (#1132) or corrupt (#1156) reason in ci-ready's wording, or the unexpected
+ * error ci-ready itself would throw.
  */
 function runsOf(read: SourceRead, path: string): RunsInput | Error {
   if (read.kind === 'missing') return null;
@@ -67,6 +72,9 @@ function runsOf(read: SourceRead, path: string): RunsInput | Error {
   try {
     return new NdjsonHistoryStore(path).readAll();
   } catch (err) {
+    if (err instanceof HistoryContentError) {
+      return { ok: false, reason: err.reasonFor(path) };
+    }
     return err as Error;
   }
 }

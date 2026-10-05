@@ -319,7 +319,19 @@ under the project's former name) are documented in the
   contract. The release dossier (`canary manhunter`) had scored the same store
   as absent ("no runs recorded"); it now shows ci-ready's reason, and an
   abstained ci-readiness section names every skip reason. A corrupt or
-  unsupported-schema store still throws, unchanged.
+  unsupported-schema store still threw at this point; see #1156 below.
+- **`canary ci-ready` no longer crashes on a corrupt or unsupported-schema
+  run-history store** (#1156). Invalid JSON, a line that is not a JSON object,
+  or an unsupported `schema_version` in `history-v2.jsonl` threw a raw stack.
+  Flakiness and suite runtime now `skip` with
+  `<path> could not be parsed (line N: invalid JSON)` or
+  `<path> has unsupported schema <v> (line N; supported: 2, 3)`, and the exit
+  code follows the normal all-skip / incomplete contract. One bad line skips the
+  whole store; the readable lines are never scored without it. The release
+  dossier passes the same reason through instead of going dark. Only an error
+  that is not a content problem still darkens it. `NdjsonHistoryStore.readAll`
+  now throws a typed `HistoryContentError` that names the line, and a `null`,
+  number or array line is refused as corrupt instead of read as a legacy row.
 - **Installing a skill's dependencies no longer freezes it** (#1066).
   `hashSkillDir` walked the whole deployed-skill tree, so `node_modules` counted
   toward the hash: running `npm install` in a skill's `scripts/` dir — which a
