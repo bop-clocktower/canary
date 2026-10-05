@@ -89,6 +89,17 @@ describe('contract schemas', () => {
     expect(assessment.timestamp).toEqual(run.timestamp);
   });
 
+  it('assessment: verified_at uses the run timestamp pattern verbatim', () => {
+    // Not a $ref: verified_at is nullable and $defs/timestamp is type
+    // "string", so a ref would refuse null. This pins the hand copy instead.
+    const verifiedAt =
+      REGISTRY['assessment.v1.schema.json'].properties.verified_at;
+    expect(verifiedAt.type).toEqual(['string', 'null']);
+    expect(verifiedAt.pattern).toBe(
+      REGISTRY['run.v1.schema.json'].$defs.timestamp.pattern,
+    );
+  });
+
   it('assessment: refuses a value of type string (fork D: no "N/A")', () => {
     const doc = fixture('assessment');
     doc.value = 'N/A';
