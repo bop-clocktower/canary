@@ -6,7 +6,10 @@
 import { describe, it, expect } from 'vitest';
 
 import { checkValue } from '../lib/contracts/schema-check.mjs';
-import { schemaProblems } from '../lib/contracts/schema-problems.mjs';
+import {
+  auditedValidator,
+  schemaProblems,
+} from '../lib/contracts/schema-problems.mjs';
 
 const ID = 'p.schema.json';
 const problemsOf = (schema: object, others: Record<string, object> = {}) =>
@@ -16,6 +19,24 @@ const withRef = (ref: string, extra: object = {}) => ({
   $defs: { t: { type: 'string' } },
   required: ['a'],
   ...extra,
+});
+
+describe('auditedValidator: no validator over an unenforceable registry', () => {
+  it('throws, listing every problem, instead of returning a validator', () => {
+    expect(() =>
+      auditedValidator({ [ID]: { enum: 'abc', $ref: '#/enum' } }),
+    ).toThrow(
+      `canary contracts: unenforceable schema: ${ID}#/enum: must be a non-empty array; ${ID}#/$ref: $ref '#/enum' does not point at a schema`,
+    );
+  });
+
+  it('validates against a clean registry by schema id (control)', () => {
+    const check = auditedValidator({ [ID]: withRef('#/$defs/t') });
+    expect(check(ID, { a: 'x' })).toEqual([]);
+    expect(check(ID, {})).toEqual([
+      { path: 'a', message: 'missing required field' },
+    ]);
+  });
 });
 
 describe('$ref resolution: own properties only, schema targets only (I1)', () => {

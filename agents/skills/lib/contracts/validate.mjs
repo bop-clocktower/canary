@@ -16,8 +16,7 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 import { createParser, EXIT_USAGE, formatUsageError } from '../parse-args.mjs';
-import { checkValue, isPlainObject } from './schema-check.mjs';
-import { schemaProblems } from './schema-problems.mjs';
+import { auditedValidator } from './schema-problems.mjs';
 import { crossFieldErrors } from './rules.mjs';
 
 const LAYERS = ['run', 'assessment', 'site'];
@@ -35,15 +34,15 @@ function loadRegistry() {
   return registry;
 }
 
-const REGISTRY = loadRegistry();
+// Throws at import over any schema that would enforce less than it reads as
+// enforcing, so the CLI and the API both refuse to run at all.
+const checkSchema = auditedValidator(loadRegistry());
 
-// Refuse to run at all over a schema that uses a keyword nothing enforces:
-// a validator that silently skips part of its contract is a false green.
-const PROBLEMS = schemaProblems(REGISTRY);
-if (PROBLEMS.length > 0) {
-  throw new Error(
-    `canary contracts: unenforceable schema: ${PROBLEMS.join('; ')}`,
-  );
+/** null for a JSON object; otherwise what the document is instead. */
+function notAnObject(doc) {
+  if (doc === null) return 'null';
+  if (Array.isArray(doc)) return 'array';
+  return typeof doc === 'object' ? null : typeof doc;
 }
 
 const contractError = (message) => ({
@@ -98,9 +97,8 @@ function verdict(layer, errors, checked) {
  * @returns {{valid: boolean, contract: string|null, checked: number, errors: {path: string, message: string}[]}}
  */
 export function validateDocument(doc, opts = {}) {
-  if (!isPlainObject(doc)) {
-    const got =
-      doc === null ? 'null' : Array.isArray(doc) ? 'array' : typeof doc;
+  const got = notAnObject(doc);
+  if (got !== null) {
     return verdict(
       null,
       [{ path: '$', message: `expected a JSON object, got ${got}` }],
@@ -109,13 +107,10 @@ export function validateDocument(doc, opts = {}) {
   }
   const claim = readContract(doc, opts.layer ?? null);
   if (claim.error) return verdict(null, [claim.error], 1);
-  const ctx = {
-    registry: REGISTRY,
-    base: schemaId(claim.layer),
-    errors: [],
-  };
-  checkValue(REGISTRY[ctx.base], doc, '$', ctx);
-  const errors = [...ctx.errors, ...crossFieldErrors(claim.layer, doc)];
+  const errors = [
+    ...checkSchema(schemaId(claim.layer), doc),
+    ...crossFieldErrors(claim.layer, doc),
+  ];
   return verdict(claim.layer, errors, countRecords(claim.layer, doc));
 }
 

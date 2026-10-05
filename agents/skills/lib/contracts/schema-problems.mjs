@@ -5,9 +5,11 @@
 // enforcing: an unsupported keyword, a keyword value of the wrong shape, an
 // unknown type name, an invalid pattern, a misplaced `$id`, or a `$ref` that
 // resolves to nothing, to something that is not a schema, or round in a
-// loop. validate.mjs refuses to run at all while this reports anything.
+// loop. auditedValidator() is the only way validate.mjs gets a validator,
+// so it refuses to run at all while this reports anything.
 
 import {
+  checkValue,
   isPlainObject,
   resolveRef,
   SUPPORTED_KEYWORDS,
@@ -163,4 +165,25 @@ export function schemaProblems(registry) {
   }
   refProblems(ctx.refs, ctx.nodes, registry, ctx.problems);
   return ctx.problems;
+}
+
+/**
+ * A validator over `registry` that exists only once the registry passes
+ * schemaProblems(): a validator that silently skips part of its contract is
+ * a false green, so an unenforceable schema throws here, at load.
+ * @param {Record<string, object>} registry
+ * @returns {(id: string, value: unknown) => {path: string, message: string}[]}
+ */
+export function auditedValidator(registry) {
+  const problems = schemaProblems(registry);
+  if (problems.length > 0) {
+    throw new Error(
+      `canary contracts: unenforceable schema: ${problems.join('; ')}`,
+    );
+  }
+  return (id, value) => {
+    const ctx = { registry, base: id, errors: [] };
+    checkValue(registry[id], value, '$', ctx);
+    return ctx.errors;
+  };
 }
