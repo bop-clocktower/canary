@@ -39,9 +39,9 @@ resolved a handoff to the wrong tenant.
 3. **One version convention (D3).** `"contract": "canary.<layer>/<major>"`.
    Readers refuse an unknown major; a minor only adds optional fields, so
    readers tolerate unknown fields.
-4. **Abstention is a value (D4).** `null` ≠ `0`; absent ≠ `[]` ≠ a list;
-   `not-assessed` requires a `reason` and forbids a `value`, and every other
-   status requires a value.
+4. **Abstention is a value (D4).** `null` ≠ `0`; `null` (not reported) ≠ `[]` ≠
+   a list; `not-assessed` requires a `reason` and forbids a `value`, and every
+   other status requires a value.
 5. **Verification is derived (D5).** `verified_by` + `verified_at` are both set
    or both null; a producer-supplied `verified` key is refused, even `null`.
 6. **Enforcement is schema-driven and zero-dependency.** The three
