@@ -52,29 +52,39 @@ const ABSTAINING_GATES = [
   },
 ] as const;
 
+/** Every `run:` script in a workflow. */
+function runScripts(wf: Workflow): string[] {
+  return Object.values(wf.jobs ?? {})
+    .flatMap((job) => job.steps ?? [])
+    .map((step) => step.run)
+    .filter((run): run is string => typeof run === 'string');
+}
+
+/**
+ * Non-comment logical lines of a script, continuations joined. Comments are
+ * excluded so a workflow that explains why a gate is NOT run does not count
+ * as running it.
+ */
+function commandLines(script: string): string[] {
+  return script
+    .replace(/\\\r?\n\s*/g, ' ')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'));
+}
+
 /** Executable lines of every workflow, as `[workflow, line]`. */
 function executableLines(): Array<[string, string]> {
-  const out: Array<[string, string]> = [];
-  for (const file of readdirSync(WORKFLOW_DIR).filter((f) =>
-    /\.ya?ml$/.test(f),
-  )) {
-    const wf = loadYaml(
-      readFileSync(join(WORKFLOW_DIR, file), 'utf-8'),
-    ) as Workflow;
-    for (const job of Object.values(wf.jobs ?? {})) {
-      for (const step of job.steps ?? []) {
-        if (typeof step.run !== 'string') continue;
-        for (const line of step.run
-          .replace(/\\\r?\n\s*/g, ' ')
-          .split('\n')
-          .map((l) => l.trim())
-          .filter((l) => l && !l.startsWith('#'))) {
-          out.push([file, line]);
-        }
-      }
-    }
-  }
-  return out;
+  return readdirSync(WORKFLOW_DIR)
+    .filter((f) => /\.ya?ml$/.test(f))
+    .flatMap((file) => {
+      const wf = loadYaml(
+        readFileSync(join(WORKFLOW_DIR, file), 'utf-8'),
+      ) as Workflow;
+      return runScripts(wf)
+        .flatMap(commandLines)
+        .map((line) => [file, line] as [string, string]);
+    });
 }
 
 /** Rows of the AGENTS.md "Harness dependency surface" table. */
