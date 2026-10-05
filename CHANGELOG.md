@@ -170,6 +170,23 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **canary-question: neutral category signal ids** (#1142). **Breaking for
+  `--json` readers:** the evidence-row signal `category-env` is replaced by
+  `category-timeout`, `category-auth` and `category-network`, and each keeps its
+  support list. `timeout` and `auth` also support a defect in the system under
+  test, so an id that named only the environment read as a lean, and
+  canary-question never prints one. There is no deprecated alias. The old id was
+  never in a published release: canary-question landed on 2026-09-29 (#1137),
+  after v8.0.0 (2026-09-15). A test now asserts that no signal id in the
+  SKILL.md table names a hypothesis it does not exclusively support.
+- **canary-question's failure categoriser is pinned to canary-fail-fast**
+  (#1140). The skill's copy of the categorisation rules is now checked by
+  behaviour against canary-fail-fast's `categorizeFailure`, over shared samples
+  that produce all seven categories. The samples hit every alternative of every
+  rule on its own, and every pair of rules together. So if one copy drops,
+  narrows or reorders a rule and the other does not, a test fails. A new
+  alternative is caught once a sample exercises it. Before this, the only
+  safeguard was a comment asking for the two copies to be kept in sync by hand.
 - **`vacuity-check` discloses both denominators on every verdict** (#1084).
   Every summary line — clean pass, findings, or abstention — now carries
   `[N file(s) resolved, M test(s) scanned]`, and `--json` gained a `files` field
