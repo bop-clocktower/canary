@@ -161,6 +161,10 @@ description: >
      pr-check --post-comment`
    - point `--coverage` at the project's own lcov report,
      produced by its own test step
+   - drop the base-coverage lookup of the
+     `ts-coverage-lcov-<sha>` artifact, which only canary's
+     `harness-quality.yml` uploads, or replace it with the
+     project's own (passed as `--base-coverage`)
    - drop the advisory `mutation` job, which also builds
      `ts/`
 
