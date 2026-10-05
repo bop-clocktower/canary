@@ -1,0 +1,61 @@
+{
+  "contract": "canary.run/1",
+  "scope": { "id": "example-web", "env": "staging" },
+  "producer": {
+    "name": "canary-test-cli/reporter",
+    "version": "8.1.0",
+    "channel": "ci"
+  },
+  "run": {
+    "id": "123456-1-s2of4",
+    "suite": "web-e2e",
+    "branch": "main",
+    "commit_sha": "0ba2dd6818ee23df211f799ce714cb92983f65b1",
+    "started_at": "2026-10-05T14:00:00Z",
+    "finished_at": "2026-10-05T14:06:30Z",
+    "ci_url": null,
+    "status": "passed",
+    "shard": { "index": 2, "total": 4 }
+  },
+  "totals": {
+    "passed": 1,
+    "failed": 0,
+    "flaky": 1,
+    "skipped": 0,
+    "timed_out": 0,
+    "interrupted": 0,
+    "total": 2
+  },
+  "results": [
+    {
+      "title": "checkout > pays with a saved card",
+      "file": "tests/checkout.spec.ts",
+      "status": "passed",
+      "duration_ms": 1840,
+      "retries": 0,
+      "area": "checkout",
+      "tags": ["@smoke"],
+      "error": null
+    },
+    {
+      "title": "search > filters by price",
+      "file": "tests/search.spec.ts",
+      "status": "flaky",
+      "duration_ms": 2210,
+      "retries": 1,
+      "area": null,
+      "tags": [],
+      "error": {
+        "message": "expect(locator).toBeVisible() failed",
+        "stack": null
+      }
+    }
+  ],
+  "collected": [
+    {
+      "title": "checkout > pays with a saved card",
+      "file": "tests/checkout.spec.ts"
+    },
+    { "title": "search > filters by price", "file": "tests/search.spec.ts" }
+  ]
+}

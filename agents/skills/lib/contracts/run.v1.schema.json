@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "run.v1.schema.json",
+  "title": "canary.run/1",
+  "description": "One test run, or one shard of one, with its per-test results. Spec: docs/specs/canary-run-contract.md. Unknown fields are tolerated (D3). Cross-field rules (totals vs results) live in rules.mjs.",
+  "type": "object",
+  "required": [
+    "contract",
+    "scope",
+    "producer",
+    "run",
+    "totals",
+    "results",
+    "collected"
+  ],
+  "properties": {
+    "contract": { "const": "canary.run/1" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "producer": {
+      "type": "object",
+      "required": ["name", "version", "channel"],
+      "properties": {
+        "name": { "$ref": "#/$defs/text" },
+        "version": { "$ref": "#/$defs/text" },
+        "channel": { "$ref": "#/$defs/text" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "required": [
+        "id",
+        "suite",
+        "branch",
+        "commit_sha",
+        "started_at",
+        "finished_at",
+        "ci_url",
+        "status",
+        "shard"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/text" },
+        "suite": { "$ref": "#/$defs/text" },
+        "branch": { "type": ["string", "null"], "minLength": 1 },
+        "commit_sha": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{7,64}$"
+        },
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "finished_at": { "$ref": "#/$defs/timestamp" },
+        "ci_url": { "type": ["string", "null"], "pattern": "^https?://" },
+        "status": { "enum": ["passed", "failed", "cancelled"] },
+        "shard": {
+          "type": ["object", "null"],
+          "required": ["index", "total"],
+          "properties": {
+            "index": { "type": "integer", "minimum": 1 },
+            "total": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "required": [
+        "passed",
+        "failed",
+        "flaky",
+        "skipped",
+        "timed_out",
+        "interrupted",
+        "total"
+      ],
+      "properties": {
+        "passed": { "$ref": "#/$defs/count" },
+        "failed": { "$ref": "#/$defs/count" },
+        "flaky": { "$ref": "#/$defs/count" },
+        "skipped": { "$ref": "#/$defs/count" },
+        "timed_out": { "$ref": "#/$defs/count" },
+        "interrupted": { "$ref": "#/$defs/count" },
+        "total": { "$ref": "#/$defs/count" }
+      }
+    },
+    "results": {
+      "$comment": "null = per-test results not carried in this record (fork A); [] = zero tests.",
+      "type": ["array", "null"],
+      "items": { "$ref": "#/$defs/result" }
+    },
+    "collected": {
+      "$comment": "null = not reported; [] = none collected; a list = the full collected set (#1150, fork I).",
+      "type": ["array", "null"],
+      "items": { "$ref": "#/$defs/testRef" }
+    }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1 },
+    "count": { "type": "integer", "minimum": 0 },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "repoPath": {
+      "$comment": "Repo-relative (ADR 0029): never absolute, never a drive letter.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/|[A-Za-z]:[\\\\/])"
+    },
+    "scope": {
+      "$comment": "D2: explicit, never inferred. env is opaque.",
+      "type": "object",
+      "required": ["id", "env"],
+      "properties": {
+        "id": { "$ref": "#/$defs/text" },
+        "env": { "$ref": "#/$defs/text" }
+      }
+    },
+    "testRef": {
+      "type": "object",
+      "required": ["title", "file"],
+      "properties": {
+        "title": { "$ref": "#/$defs/text" },
+        "file": { "$ref": "#/$defs/repoPath" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": [
+        "title",
+        "file",
+        "status",
+        "duration_ms",
+        "retries",
+        "area",
+        "tags",
+        "error"
+      ],
+      "properties": {
+        "title": { "$ref": "#/$defs/text" },
+        "file": { "$ref": "#/$defs/repoPath" },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "flaky",
+            "skipped",
+            "timed_out",
+            "interrupted"
+          ]
+        },
+        "duration_ms": { "$ref": "#/$defs/count" },
+        "retries": { "$ref": "#/$defs/count" },
+        "area": { "type": ["string", "null"], "minLength": 1 },
+        "tags": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+        "error": {
+          "type": ["object", "null"],
+          "required": ["message", "stack"],
+          "properties": {
+            "message": { "type": "string" },
+            "stack": { "type": ["string", "null"] }
+          }
+        }
+      }
+    }
+  }
+}
