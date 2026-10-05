@@ -60,7 +60,9 @@ test under `tests/generated/`.
 
    Exit `3` means no V8/CPython trace was recognised, or no frame resolves
    inside the repository. Relay the printed reason and stop; do not guess a
-   suspect. Exit `2` means the input could not be read.
+   suspect. Exit `2` means the input could not be read. For a chained exception
+   the brief lists the chain with the root cause marked; the signature stays on
+   the reported error.
 
 2. **AUTHOR.** Hand the brief's `requirement` to `/canary-write-test` (the
    `canary-test-author` agent), and tell it to write exactly one test to the
@@ -76,7 +78,10 @@ test under `tests/generated/`.
    ```
 
    `verify` refuses any path outside `tests/generated/` (exit 2) without running
-   anything.
+   anything. `verify` runs the runner from `--root` and never downloads it
+   (`npx --no`); a missing runner is `unverified — could not reproduce`. A
+   `WARNING:` line means the test mocks the suspect module: rewrite it to call
+   the real code, even if the verdict is `reproduced`.
 
 4. **REPORT.** Relay the verdict verbatim:
 
@@ -92,14 +97,15 @@ test under `tests/generated/`.
 
 ## Rationalizations to reject
 
-| Rationalization                              | Why it is wrong                                                             |
-| -------------------------------------------- | --------------------------------------------------------------------------- |
-| "It passed, so the regression is covered."   | A first-run pass means the test never touched the defect.                   |
-| "It went red, so it caught the bug."         | Red for an import error or a typo is `failed-other-reason`, unverified.     |
-| "The runner timed out, call it reproduced."  | A run that did not finish proves nothing; it is `unverified`.               |
-| "Drop `--brief` so any failure counts."      | With no signature, a failure can only ever be `failed-other-reason`.        |
-| "Quote the error in the test so it matches." | A match on the test's own text proves nothing; it is `failed-other-reason`. |
-| "Promote it now and check it later."         | Promotion comes after `reproduced`, never before.                           |
+| Rationalization                                  | Why it is wrong                                                                          |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| "It passed, so the regression is covered."       | A first-run pass means the test never touched the defect.                                |
+| "It went red, so it caught the bug."             | Red for an import error or a typo is `failed-other-reason`, unverified.                  |
+| "The runner timed out, call it reproduced."      | A run that did not finish proves nothing; it is `unverified`.                            |
+| "Drop `--brief` so any failure counts."          | With no signature, a failure can only ever be `failed-other-reason`.                     |
+| "Quote the error in the test so it matches."     | A match on the test's own text proves nothing; it is `failed-other-reason`.              |
+| "Promote it now and check it later."             | Promotion comes after `reproduced`, never before.                                        |
+| "Mock the suspect so the test is deterministic." | A test that mocks the code it should exercise cannot reproduce the defect; verify warns. |
 
 ## Related skills
 

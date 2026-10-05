@@ -170,6 +170,16 @@ under the project's former name) are documented in the
 
 ### Changed
 
+- **canary-judomaster: exception chains, runner cwd, no runner fetch, mock
+  warning** (Refs #1138). `canary judomaster brief` lists a chained exception
+  (V8 `[cause]:`, CPython `raise ... from` and "During handling") with the root
+  cause marked and named in the requirement; the signature and suspect stay on
+  the reported error, and an unchained brief is unchanged. `verify` runs the
+  runner from `--root` and with `npx --no` instead of `npx --yes`, so a runner
+  the project lacks is `unverified — could not reproduce` (exit 3) naming it,
+  never downloaded. With `--brief`, a test that mocks the suspect module prints
+  a `WARNING:` (verdict unchanged). Frame and `tests/generated` containment use
+  `path.relative`, so `--root /` resolves frames.
 - **canary-question: neutral category signal ids** (#1142). **Breaking for
   `--json` readers:** the evidence-row signal `category-env` is replaced by
   `category-timeout`, `category-auth` and `category-network`, and each keeps its

@@ -45,6 +45,13 @@ error type when the message is empty, labelled `type-only`), the framework, the
 output path under `tests/generated/regression/`, and a requirement string for
 the author.
 
+A chained exception (V8 `[cause]:`, CPython "The above exception was the direct
+cause..." or "During handling of the above exception...") keeps the reported,
+outermost error as the signature and suspect. The brief adds an
+`Exception chain (reported first)` section with the root cause marked, boundary
+lines in the frame list, and a requirement sentence naming the root cause and
+where it was raised (`chain` in the JSON).
+
 Exit `0` brief emitted; `3` no V8/CPython trace recognised, or no frame resolves
 inside the root (the reason is printed); `2` the input could not be read.
 
@@ -73,10 +80,11 @@ canary judomaster verify tests/generated/regression/total-typeerror.test.ts \
 The framework comes from `--framework`, then the brief, then the extension:
 `.py` is pytest, `.spec.*` or `.e2e.*` is Playwright, and other
 `.ts/.js/.mts/.mjs` files are Vitest. The run goes through canary's framework
-registry and test executor from the current directory, so run `verify` from the
-repository root where the runner finds the project's config. For Vitest and
-Playwright the registry command is `npx --yes ...`, which can download the
-runner if the project does not have it installed.
+registry and test executor with its working directory set to `--root` (default:
+the current directory), so the runner finds the project's config there. `verify`
+never downloads a runner: the registry's `npx --yes ...` runs as `npx --no ...`,
+and when the runner is not installed under the root the verdict is
+`unverified — could not reproduce` (exit 3), naming the runner to install.
 
 The runner's own config still decides what it collects. If the project's Vitest
 `include` does not cover `tests/generated/`, the run collects no tests and the
@@ -123,6 +131,13 @@ signature text (escaped quotes included), or a helper beside it under
 assertion on the correct behaviour instead. For every verdict except
 `reproduced`, the report ends with the last lines of runner output so you can
 see what the runner said.
+
+A test that mocks the suspect module (`vi.mock`/`jest.mock` of its path, or
+`patch`/`mock.patch`/`mocker.patch`/`monkeypatch` of a target inside it) cannot
+exercise the defect. With `--brief`, `verify` prints a `WARNING:` line naming
+the mock and the suspect (and `warnings` in `--json`). The verdict and exit code
+do not change. Run `verify` with the same `--root` the brief was built against,
+since the suspect path is relative to it.
 
 Only after `reproduced` is the test ready for `canary-promote-test`.
 
