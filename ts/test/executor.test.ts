@@ -66,6 +66,33 @@ afterEach(() => {
 });
 
 describe('CanaryTestExecutor', () => {
+  it('keeps npx --yes and sets no cwd by default', () => {
+    mockSpawn({ status: 0 });
+    executor.execute('/t/a.test.ts', 'vitest');
+    expect(lastArgv().slice(0, 2)).toEqual(['npx', '--yes']);
+    expect(vi.mocked(spawnSync).mock.calls[0]![2]).not.toHaveProperty('cwd');
+  });
+
+  it('runs with npx --no and the given cwd when fetch is false', () => {
+    mockSpawn({ status: 0 });
+    executor.execute('/t/a.test.ts', 'vitest', 30, {
+      cwd: '/repo',
+      fetch: false,
+    });
+    const argv = lastArgv();
+    expect(argv.slice(0, 2)).toEqual(['npx', '--no']);
+    expect(argv).not.toContain('--yes');
+    expect(argv).toContain('/t/a.test.ts');
+    const opts = vi.mocked(spawnSync).mock.calls[0]![2] as { cwd?: string };
+    expect(opts.cwd).toBe('/repo');
+  });
+
+  it('leaves a non-npx command alone when fetch is false', () => {
+    mockSpawn({ status: 0 });
+    executor.execute('/t/test_a.py', 'pytest', 30, { fetch: false });
+    expect(lastArgv()).toEqual(['pytest', '/t/test_a.py']);
+  });
+
   it('execute success', () => {
     mockSpawn({ status: 0, stdout: 'Test Passed', stderr: '' });
     const [exitCode, stdout] = executor.execute('test.spec.ts', 'playwright');
