@@ -14,8 +14,7 @@ import { checkValue, schemaProblems } from '../lib/contracts/schema-check.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CONTRACTS = path.join(HERE, '..', 'lib', 'contracts');
 const FIXTURES = path.join(HERE, 'fixtures', 'contracts');
-// Grows by one layer in Tasks 3 and 4.
-const LAYERS = ['run', 'assessment'];
+const LAYERS = ['run', 'assessment', 'site'];
 
 type Doc = Record<string, any>;
 const readJson = (p: string): Doc => JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -99,5 +98,38 @@ describe('contract schemas', () => {
     const doc = fixture('assessment');
     doc.status = 'green';
     expect(errorsFor('assessment', doc).map((e) => e.path)).toEqual(['status']);
+  });
+
+  it('site: refuses a bare-string scope on suites[] (fork B, D2)', () => {
+    const doc = fixture('site');
+    doc.suites[0].scope = 'canary';
+    expect(errorsFor('site', doc)).toEqual([
+      { path: 'suites[0].scope', message: 'expected object, got string' },
+    ]);
+  });
+
+  it('site: validates nested runs against canary.run/1 (cross-file $ref)', () => {
+    const doc = fixture('site');
+    delete doc.runs[1].scope.env;
+    expect(errorsFor('site', doc).map((e) => e.path)).toEqual([
+      'runs[1].scope.env',
+    ]);
+  });
+
+  it('site: refuses a register row without its commit (fork C, amended)', () => {
+    const doc = fixture('site');
+    delete doc.register[0].commit;
+    expect(errorsFor('site', doc).map((e) => e.path)).toEqual([
+      'register[0].commit',
+    ]);
+  });
+
+  it('site: suites may be null (no declaration, D12) but not absent', () => {
+    const declaredNone = fixture('site');
+    declaredNone.suites = null;
+    expect(errorsFor('site', declaredNone)).toEqual([]);
+    const absent = fixture('site');
+    delete absent.suites;
+    expect(errorsFor('site', absent).map((e) => e.path)).toEqual(['suites']);
   });
 });

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "site.v1.schema.json",
+  "title": "canary.site/1",
+  "description": "The single static feed a QA site page loads. Spec: docs/specs/canary-site-feed-contract.md. Every scope is {id, env} (D2, fork B). runs[] are canary.run/1 records; per-test results are carried only on each suite's latest run (results: null elsewhere, fork A).",
+  "type": "object",
+  "required": [
+    "contract",
+    "generated_at",
+    "scopes",
+    "suites",
+    "runs",
+    "flaky",
+    "assessments",
+    "register"
+  ],
+  "properties": {
+    "contract": { "const": "canary.site/1" },
+    "generated_at": { "$ref": "run.v1.schema.json#/$defs/timestamp" },
+    "scopes": {
+      "type": "array",
+      "items": { "$ref": "run.v1.schema.json#/$defs/scope" }
+    },
+    "suites": {
+      "$comment": "Declared expected suites (D12). null = none declared, which is not the same as [].",
+      "type": ["array", "null"],
+      "items": { "$ref": "#/$defs/suite" }
+    },
+    "runs": { "type": "array", "items": { "$ref": "run.v1.schema.json" } },
+    "flaky": { "type": "array", "items": { "$ref": "#/$defs/flaky" } },
+    "assessments": {
+      "type": "array",
+      "items": { "$ref": "assessment.v1.schema.json" }
+    },
+    "register": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/registerEntry" }
+    }
+  },
+  "$defs": {
+    "suite": {
+      "type": "object",
+      "required": ["scope", "suite"],
+      "properties": {
+        "scope": { "$ref": "run.v1.schema.json#/$defs/scope" },
+        "suite": { "$ref": "run.v1.schema.json#/$defs/text" }
+      }
+    },
+    "flaky": {
+      "$comment": "One row per DISTINCT flaky test over the window (D13).",
+      "type": "object",
+      "required": [
+        "scope",
+        "suite",
+        "title",
+        "file",
+        "flaky_runs",
+        "window_runs"
+      ],
+      "properties": {
+        "scope": { "$ref": "run.v1.schema.json#/$defs/scope" },
+        "suite": { "$ref": "run.v1.schema.json#/$defs/text" },
+        "title": { "$ref": "run.v1.schema.json#/$defs/text" },
+        "file": { "$ref": "run.v1.schema.json#/$defs/repoPath" },
+        "flaky_runs": { "type": "integer", "minimum": 1 },
+        "window_runs": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "registerEntry": {
+      "$comment": "A skipped or removed test as visible debt; mirrors the canary-katana ledger row (fork C). Age is derived from recorded_at. Author identity is deliberately excluded from a public feed: a who/author key is refused by rules.mjs.",
+      "type": "object",
+      "required": [
+        "scope",
+        "title",
+        "file",
+        "kind",
+        "reason",
+        "recorded_at",
+        "commit",
+        "cause",
+        "issue"
+      ],
+      "properties": {
+        "scope": { "$ref": "run.v1.schema.json#/$defs/scope" },
+        "title": { "$ref": "run.v1.schema.json#/$defs/text" },
+        "file": { "$ref": "run.v1.schema.json#/$defs/repoPath" },
+        "kind": { "$ref": "run.v1.schema.json#/$defs/text" },
+        "reason": { "$ref": "run.v1.schema.json#/$defs/text" },
+        "recorded_at": { "$ref": "run.v1.schema.json#/$defs/timestamp" },
+        "commit": { "$ref": "run.v1.schema.json#/$defs/text" },
+        "cause": { "type": ["string", "null"], "minLength": 1 },
+        "issue": { "type": ["string", "null"], "minLength": 1 }
+      }
+    }
+  }
+}

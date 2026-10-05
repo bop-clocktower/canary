@@ -1,0 +1,123 @@
+{
+  "contract": "canary.site/1",
+  "generated_at": "2026-10-05T15:00:00Z",
+  "scopes": [{ "id": "canary", "env": "ci" }],
+  "suites": [
+    { "scope": { "id": "canary", "env": "ci" }, "suite": "ts-engine" }
+  ],
+  "runs": [
+    {
+      "contract": "canary.run/1",
+      "scope": { "id": "canary", "env": "ci" },
+      "producer": {
+        "name": "canary-starling",
+        "version": "0.1.0",
+        "channel": "ci"
+      },
+      "run": {
+        "id": "9001-1",
+        "suite": "ts-engine",
+        "branch": "main",
+        "commit_sha": "a8be94e6",
+        "started_at": "2026-10-04T10:00:00Z",
+        "finished_at": "2026-10-04T10:04:00Z",
+        "ci_url": null,
+        "status": "passed",
+        "shard": null
+      },
+      "totals": {
+        "passed": 2,
+        "failed": 0,
+        "flaky": 0,
+        "skipped": 0,
+        "timed_out": 0,
+        "interrupted": 0,
+        "total": 2
+      },
+      "results": null,
+      "collected": null
+    },
+    {
+      "contract": "canary.run/1",
+      "scope": { "id": "canary", "env": "ci" },
+      "producer": {
+        "name": "canary-starling",
+        "version": "0.1.0",
+        "channel": "ci"
+      },
+      "run": {
+        "id": "9002-1",
+        "suite": "ts-engine",
+        "branch": "main",
+        "commit_sha": "0ba2dd68",
+        "started_at": "2026-10-05T10:00:00Z",
+        "finished_at": "2026-10-05T10:04:00Z",
+        "ci_url": null,
+        "status": "passed",
+        "shard": null
+      },
+      "totals": {
+        "passed": 1,
+        "failed": 0,
+        "flaky": 0,
+        "skipped": 0,
+        "timed_out": 0,
+        "interrupted": 0,
+        "total": 1
+      },
+      "results": [
+        {
+          "title": "history > trims to the newest runs",
+          "file": "ts/test/history-trim-windows.test.ts",
+          "status": "passed",
+          "duration_ms": 412,
+          "retries": 0,
+          "area": null,
+          "tags": [],
+          "error": null
+        }
+      ],
+      "collected": null
+    }
+  ],
+  "flaky": [
+    {
+      "scope": { "id": "canary", "env": "ci" },
+      "suite": "ts-engine",
+      "title": "history > trims to the newest runs",
+      "file": "ts/test/history-trim-windows.test.ts",
+      "flaky_runs": 3,
+      "window_runs": 30
+    }
+  ],
+  "assessments": [
+    {
+      "contract": "canary.assessment/1",
+      "scope": { "id": "canary", "env": "ci" },
+      "source": "canary.ci-ready",
+      "metric": "flakiness",
+      "status": "healthy",
+      "value": 0.012,
+      "unit": "ratio",
+      "reason": null,
+      "evidence": { "tier": "heuristic", "denominator": 412 },
+      "observed_at": "2026-10-05T14:10:00Z",
+      "sources": ["history-v2.jsonl@0ba2dd68"],
+      "verified_by": null,
+      "verified_at": null
+    }
+  ],
+  "register": [
+    {
+      "scope": { "id": "canary", "env": "ci" },
+      "title": "legacy > old login flow",
+      "file": "tests/legacy.spec.ts",
+      "kind": "skipped",
+      "reason": "chore: quarantine the legacy login flow",
+      "recorded_at": "2026-09-30T12:00:00Z",
+      "commit": "0ba2dd68",
+      "cause": "obsolete",
+      "issue": null
+    }
+  ]
+}
