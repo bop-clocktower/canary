@@ -233,10 +233,13 @@ Design tokens live in one `tokens.css`; panels use only `var(--…)`.
 ```text
 docs/specs/canary-run-contract.md
 docs/specs/canary-assessment-contract.md
+docs/specs/canary-site-feed-contract.md
 agents/skills/lib/contracts/run.v1.schema.json
 agents/skills/lib/contracts/assessment.v1.schema.json
 agents/skills/lib/contracts/site.v1.schema.json
-agents/skills/lib/contracts/validate.mjs          # zero-dependency validator
+agents/skills/lib/contracts/validate.mjs          # zero-dependency validator (API + CLI)
+agents/skills/lib/contracts/schema-check.mjs      # JSON Schema keyword-subset interpreter
+agents/skills/lib/contracts/rules.mjs             # named cross-field rules
 agents/skills/lib/site-kit/canary-site.js         # registers all elements
 agents/skills/lib/site-kit/panels/*.js
 agents/skills/lib/site-kit/tokens.css
