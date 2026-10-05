@@ -3,7 +3,7 @@ name: canary-setup-harness
 description: >
   Configure the Harness Engineering guardrails in a new Canary project (or a
   fork) — installs the harness CLI, initialises `harness.config.json`, wires
-  up the five required CI workflows, generates the initial security ledger,
+  up the six baseline CI workflows, generates the initial security ledger,
   and verifies all gates pass on a clean repository. Use for "set up harness
   for this project", "onboard this repo with harness", "install the harness
   CLI", "configure the CI gates", or when a fork has drifted from the
@@ -35,6 +35,7 @@ description: >
   [Understanding the Harness][harness-wiki] wiki page
 
 [harness-wiki]: ../../../../docs/wiki/Understanding-the-Harness.md
+[pr-check]: ../../../../docs/guides/pr-guardian.md#pr-check
 
 ## Process
 
@@ -99,29 +100,61 @@ description: >
    ls .github/workflows/
    ```
 
-2. **Required workflows for a full harness setup.** Each
-   should exist as a `.yml` file in `.github/workflows/`:
+2. **Baseline workflows for a canary setup.** Each should
+   exist as a `.yml` file in `.github/workflows/`:
 
    - `harness.yml` — core phase-gate checks
    - `harness-architecture.yml` — layer dependency validation
    - `harness-quality.yml` — quality and integrity checks
    - `harness-security.yml` — security scan + ledger refresh
    - `docs-lint.yml` — markdown formatting enforcement
+   - `guardian.yml` — canary's PR test-guardian (diff
+     coverage and test-quality audit); see step 3
 
-   If any are missing, copy them from an upstream Canary
-   reference install or generate them:
+   If any of the first five are missing, copy them from an
+   upstream Canary reference install or generate them:
 
    ```bash
    npx --yes -p @harness-engineering/cli harness \
      generate-workflows
    ```
 
-3. **Confirm `harness-security.yml` refreshes the ledger.**
+   **Conditional add-ons.** Add each one only when its
+   condition holds:
+
+   - `leak-gate.yml` — only when the repo is public and keeps
+     an identifier denylist (company, client or consumer
+     names that must never land in it). It fails closed
+     without that denylist secret. See #843 and ADR 0023.
+   - `validate-plugin.yml` — only when the repo ships a
+     Claude plugin (a `.claude-plugin/plugin.json`
+     manifest). It validates that manifest against the
+     schema, and has nothing to check in a repo without one.
+
+   Canary's own repo requires all eight in
+   `.github/required-checks.json`: it is public with a
+   denylist, and it ships a plugin. Both add-ons protect
+   facts about canary's repo, not about every project that
+   adopts canary, so a fork or new project adds them only
+   when the same fact is true of it.
+
+3. **Wire up `guardian.yml`.** Copy canary's stock
+   `.github/workflows/guardian.yml`, then set
+   `canary.guardian.pr.enabled` to `true` in
+   `harness.config.json`. The workflow runs
+   `canary guardian pr-check --post-comment` on every pull
+   request and reports the `guardian` check. It runs on
+   `pull_request` only: it reviews a PR diff and has nothing
+   to say about a push. See the [PR check][pr-check] section
+   of the guardian guide for its configuration and how it
+   degrades without coverage.
+
+4. **Confirm `harness-security.yml` refreshes the ledger.**
    The final steps of the security job must run the ledger
    script and commit if changed. Without this, the security
    ledger goes stale and the Quality gate fails.
 
-4. **Run `docs-lint.yml` on every pull request, unfiltered.**
+5. **Run `docs-lint.yml` on every pull request, unfiltered.**
    Its checks are required, so the workflow must never carry
    a trigger-level `paths:` filter. A required check behind a
    path filter never reports on a PR that touches none of
@@ -133,7 +166,7 @@ description: >
    `markdownlint-cli "**/*.md" --ignore node_modules`), so
    `docs/**`, `agents/**` and `AGENTS.md` are all covered.
 
-5. **Set required permissions.** Workflows that commit
+6. **Set required permissions.** Workflows that commit
    back to the repository need `contents: write`:
 
    ```yaml
@@ -173,6 +206,7 @@ description: >
    - Architecture Enforcer: green
    - Quality & Integrity: green
    - Docs Lint: green
+   - PR Guardian: green (on the pull request)
    - Security Reviewer: green (ledger will be auto-refreshed
      by the workflow on first scan)
 
@@ -201,7 +235,9 @@ description: >
 ## Success Criteria
 
 - `harness validate` exits cleanly with no violations
-- All five CI workflows exist and pass on a clean push
+- All six baseline CI workflows exist and pass on a clean
+  pull request, plus each conditional add-on whose condition
+  holds
 - The security ledger (`docs/SECURITY_LEDGER.md`) exists and
   is not stale
 - `.harness/hooks/` is committed and present in the repo
@@ -228,9 +264,11 @@ It has no harness config yet.
 1. Clone the fork and run `harness init`.
 2. Review `harness.config.json` — layers match `llm`, `core`,
    `cli`. Entrypoints set to `agent`.
-3. Copy the five CI workflow files from upstream.
+3. Copy the six baseline CI workflow files from upstream.
+   The fork is private and ships no plugin, so it skips
+   `leak-gate.yml` and `validate-plugin.yml`.
 4. Run the security scan, generate the baseline ledger, commit.
-5. Push. All five gates pass. Log to `CANARY_STATE.md`.
+5. Open a PR. All six gates pass. Log to `CANARY_STATE.md`.
 
 ### Example: Re-aligning a drift after harness update
 
