@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { NdjsonHistoryStore } from './ndjson-store.js';
+import { HistoryContentError, NdjsonHistoryStore } from './ndjson-store.js';
 import {
   LEGACY_UNVERSIONED_SCHEMA_VERSION,
   SCHEMA_VERSION,
@@ -68,6 +68,48 @@ describe('NdjsonHistoryStore.readAll', () => {
     const store = new NdjsonHistoryStore(writeHistory([], 'not json\n'));
     expect(() => store.readAll()).toThrow();
   });
+});
+
+// #1156: a content problem is a typed HistoryContentError naming the physical
+// line, so callers can tell a corrupt store from a programming error by type.
+// The whole read still fails: a bad line is never dropped and the rest kept.
+describe('NdjsonHistoryStore.readAll content errors (#1156)', () => {
+  function contentError(body: string): HistoryContentError {
+    const store = new NdjsonHistoryStore(writeHistory([], body));
+    try {
+      store.readAll();
+    } catch (err) {
+      expect(err).toBeInstanceOf(HistoryContentError);
+      return err as HistoryContentError;
+    }
+    throw new Error('readAll did not throw');
+  }
+
+  it('names the physical line of invalid JSON and never returns the good lines', () => {
+    const err = contentError(`{"run_id":"r1","suite":"api"}\n\n{broken\n`);
+    expect(err.reasonFor('h.jsonl')).toBe(
+      'h.jsonl could not be parsed (line 3: invalid JSON)',
+    );
+  });
+
+  it('names the version and line of an unsupported schema', () => {
+    const err = contentError(
+      `{"run_id":"r1","suite":"api"}\n{"run_id":"r2","suite":"api","schema_version":9}\n`,
+    );
+    expect(err.message).toMatch(/Unsupported history schema_version 9/);
+    expect(err.reasonFor('h.jsonl')).toBe(
+      'h.jsonl has unsupported schema 9 (line 2; supported: 2, 3)',
+    );
+  });
+
+  it.each(['42', 'null', '[]', '"run"'])(
+    'refuses a line that is valid JSON but not an object: %s',
+    (line) => {
+      expect(contentError(`${line}\n`).reasonFor('h.jsonl')).toBe(
+        'h.jsonl could not be parsed (line 1: not a JSON object)',
+      );
+    },
+  );
 });
 
 // #701: an unversioned row is resolved to the version it was actually written

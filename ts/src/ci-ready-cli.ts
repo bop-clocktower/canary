@@ -20,7 +20,10 @@ import {
   type RunsInput,
 } from './core/ci-ready.js';
 import { parseCriticalAreas, parseInventory } from './core/inventory-checks.js';
-import { NdjsonHistoryStore } from './history/ndjson-store.js';
+import {
+  HistoryContentError,
+  NdjsonHistoryStore,
+} from './history/ndjson-store.js';
 import type { MainDeps } from './main-deps.js';
 
 /** Same default location `canary history` writes to (DEFAULT_HISTORY_FILE in history/cli.ts). */
@@ -30,8 +33,9 @@ const HISTORY_FILE = join('test-results', 'reports', 'history-v2.jsonl');
  * The run-history store as ci-ready's runs input. Absent is null; a store that
  * exists but cannot be read (EISDIR, EACCES, ...) is the reason, naming the
  * path and errno code (#1132) -- the same shape `loadInput` gives a `.canary`
- * input (#1129). Only errno-bearing read errors are caught: a corrupt or
- * unsupported-schema store still throws, as it did before.
+ * input (#1129). A corrupt or unsupported-schema store is the same skip, naming
+ * the line (#1156). Any other error is a bug, not a property of the store, and
+ * still throws.
  */
 function readRuns(root: string): RunsInput {
   const path = join(root, HISTORY_FILE);
@@ -39,6 +43,9 @@ function readRuns(root: string): RunsInput {
   try {
     return new NdjsonHistoryStore(path).readAll();
   } catch (err) {
+    if (err instanceof HistoryContentError) {
+      return { ok: false, reason: err.reasonFor(HISTORY_FILE) };
+    }
     const code = errnoCode(err);
     if (code === null) throw err;
     return { ok: false, reason: `${HISTORY_FILE} could not be read (${code})` };

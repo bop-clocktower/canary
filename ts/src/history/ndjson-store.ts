@@ -2,9 +2,10 @@
  * Local NDJSON-backed history store.
  *
  * Reads `history-v2.jsonl` (one JSON RunRecord per line) and answers the
- * query_* methods over it. Malformed JSON and an unrecognized `schema_version`
- * throw instead of reading as empty, so a corrupt or future-version history
- * fails loudly rather than silently analysing nothing.
+ * query_* methods over it. Malformed JSON, a non-object line and an
+ * unrecognized `schema_version` throw a `HistoryContentError` (naming the line)
+ * instead of reading as empty, so a corrupt or future-version history fails
+ * loudly rather than silently analysing nothing -- or analysing a subset.
  *
  * Version resolution lives in `resolveSchemaVersion` (#701): rows written by
  * this store carry their version, and a legacy unstamped row is read as the
@@ -71,6 +72,57 @@ export interface HistoryStore {
   countRuns(): number;
 }
 
+/**
+ * The store's CONTENT is unusable (#1156): a line is not valid JSON, not a JSON
+ * object, or has a schema_version this reader does not support. A distinct
+ * type, so a caller can turn exactly this into a skip with a reason while any
+ * other error -- a bug in the reader, not a property of the file -- surfaces.
+ * `line` is 1-based; `version` is set only for an unsupported schema.
+ */
+export class HistoryContentError extends Error {
+  override readonly name = 'HistoryContentError';
+
+  constructor(
+    readonly line: number,
+    readonly problem:
+      'invalid JSON' | 'not a JSON object' | 'unsupported schema',
+    readonly version?: unknown,
+  ) {
+    super(
+      problem === 'unsupported schema'
+        ? `Unsupported history schema_version ${String(version)} (expected one of ${SUPPORTED_SCHEMA_VERSIONS.join(', ')}) on line ${line}`
+        : `history store line ${line}: ${problem}`,
+    );
+  }
+
+  /** The skip reason ci-ready and the release dossier both report. */
+  reasonFor(path: string): string {
+    return this.problem === 'unsupported schema'
+      ? `${path} has unsupported schema ${String(this.version)} (line ${this.line}; supported: ${SUPPORTED_SCHEMA_VERSIONS.join(', ')})`
+      : `${path} could not be parsed (line ${this.line}: ${this.problem})`;
+  }
+}
+
+/** One non-blank NDJSON line as a RunRecord, or a HistoryContentError. */
+function parseLine(line: string, lineNo: number): RunRecord {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    throw new HistoryContentError(lineNo, 'invalid JSON');
+  }
+  // `null`, a number or an array would otherwise read as a legacy v2 row (or
+  // crash resolveSchemaVersion) -- refuse it as corrupt instead.
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new HistoryContentError(lineNo, 'not a JSON object');
+  }
+  const version = resolveSchemaVersion(value as RunRecord);
+  if (!SUPPORTED_SCHEMA_VERSIONS.includes(version)) {
+    throw new HistoryContentError(lineNo, 'unsupported schema', version);
+  }
+  return value as RunRecord;
+}
+
 export class NdjsonHistoryStore implements HistoryStore {
   constructor(private readonly path: string) {}
 
@@ -84,20 +136,12 @@ export class NdjsonHistoryStore implements HistoryStore {
       throw err;
     }
 
-    const records: RunRecord[] = [];
-    for (const raw of text.split('\n')) {
+    // Any bad line fails the WHOLE read: dropping it and keeping the rest would
+    // score a history that is not the one on disk (#1156).
+    return text.split('\n').flatMap((raw, i) => {
       const line = raw.trim();
-      if (!line) continue;
-      const record = JSON.parse(line) as RunRecord;
-      const version = resolveSchemaVersion(record);
-      if (!SUPPORTED_SCHEMA_VERSIONS.includes(version)) {
-        throw new Error(
-          `Unsupported history schema_version ${version} (expected one of ${SUPPORTED_SCHEMA_VERSIONS.join(', ')})`,
-        );
-      }
-      records.push(record);
-    }
-    return records;
+      return line ? [parseLine(line, i + 1)] : [];
+    });
   }
 
   /** The denominator probe: how many runs this store holds (#508). */
