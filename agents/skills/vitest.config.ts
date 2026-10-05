@@ -62,7 +62,9 @@ export default defineConfig({
       include: [
         // The shared skill-CLI parser every `cli:` skill now routes through
         // (#479) -- the one file whose bugs are family-wide.
-        'lib/*.mjs',
+        // Recursive (#1151): lib/contracts/ is a subdirectory, and `lib/*.mjs`
+        // silently left the contract validator outside the gate.
+        'lib/**/*.mjs',
         'claude-code/canary-savant/scripts/**/*.mjs',
         'claude-code/canary-blackhawk/scripts/**/*.mjs',
         'claude-code/canary-cassandra/scripts/**/*.mjs',
