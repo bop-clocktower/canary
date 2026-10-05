@@ -352,10 +352,15 @@ host Claude Code session via `/canary-write-test` — no API key required.
   Static definitions for framework capabilities and templates.
 - **Harness Config:** [harness.config.json](harness.config.json) — Defines
   architectural layers, dependency constraints, and project metadata. The layers
-  describe `ts/src` by role; every pattern is required to match at least one
-  git-tracked file and every tracked source file to belong to a layer
-  (`ts/test/harness-config-denominator.test.ts`), because a rule that matches
-  nothing still reports as configured (#543).
+  describe `ts/src` by role, plus two for the skills tree: `skills`
+  (`agents/skills/claude-code/**`) may import `skills-lib`
+  (`agents/skills/lib/**`), never the reverse (#1155). Every pattern is required
+  to match at least one git-tracked file and every tracked source file under
+  each source root (`ts/src`, `agents/skills/lib`) to belong to a layer
+  (`ts/test/harness-config-denominator.test.ts`, which prints the per-root
+  module count), because a rule that matches nothing still reports as configured
+  (#543), and a root no layer matches is never parsed by `harness check-deps` at
+  all (#1155).
 
 ### Generated Artifacts
 
@@ -490,8 +495,9 @@ Canary integrates with the **Harness Engineering Ecosystem** by:
    generation outputs
 2. **Layered Architecture:** A role-based layering of the TypeScript engine —
    entry and CLI on top, then feature modules (`guardian`, `analysis`,
-   `history`), then `core`, over the `ui` and `util` leaves — enforced by
-   `harness.config.json` and gated by `harness check-deps` in CI
+   `history`), then `core`, over the `ui` and `util` leaves — plus a `skills` →
+   `skills-lib` direction for the skill scripts and their shared library —
+   enforced by `harness.config.json` and gated by `harness check-deps` in CI
 3. **Mechanical Verification:** Supporting dry-runs via `--recommend-only` for
    early validation by other harness agents (like `harness-planner`)
 
@@ -544,9 +550,14 @@ cleanly decoupled and depends on none of this. The consumed subcommands are:
 | `check-security`   | `harness-security.yml`                             |
 | `check-docs`       | `harness-quality.yml`                              |
 | `cleanup`          | `harness-quality.yml`                              |
-| `check-phase-gate` | `harness-quality.yml`                              |
 | `check-arch`       | `refresh-arch-baseline.yml`, `harness.yml`         |
 | `snapshot capture` | `arch-snapshot.yml`                                |
+
+`check-phase-gate` is deliberately **not** consumed (#1155): with no phase-gate
+configuration it prints "not enabled" and exits 0 over zero items, so it is
+neither run directly nor left inside `ci check` (`--skip phase-gate`).
+`ts/test/harness-gate-list.test.ts` binds this table to the workflows: every row
+must be run by each workflow it names, and an abstaining gate may not reappear.
 
 **Pinning (#318 A).** Every gate installs the CLI at a **pinned major** via one
 workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@12'` — rather

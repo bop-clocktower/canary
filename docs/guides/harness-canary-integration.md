@@ -171,7 +171,7 @@ drifted into stale architecture narration — the lesson is to keep
 The **blocking** merge gate is the set of GitHub Actions workflows required on a
 PR; everything else is advisory. In one breath: **`harness.yml`
 (`harness ci check`) is the umbrella mechanical gate, backed by
-`harness-quality.yml` (docs coverage, entropy/drift cleanup, phase-gate),
+`harness-quality.yml` (docs coverage, entropy/drift cleanup, perf),
 `harness-architecture.yml` (dependency layers + `validate`),
 `harness-security.yml` (security scan + deps + validate), `guardian.yml` (the PR
 test-guardian: diff coverage and test-quality audit), `docs-lint.yml`
