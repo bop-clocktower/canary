@@ -36,6 +36,8 @@ description: >
 
 [harness-wiki]: ../../../../docs/wiki/Understanding-the-Harness.md
 [pr-check]: ../../../../docs/guides/pr-guardian.md#pr-check
+[leak-gate-issue]: https://github.com/bop-clocktower/canary/issues/843
+[adr-0023]: ../../../../docs/knowledge/decisions/0023-leak-gate-pull-request-target.md
 
 ## Process
 
@@ -124,12 +126,20 @@ description: >
 
    - `leak-gate.yml` — only when the repo is public and keeps
      an identifier denylist (company, client or consumer
-     names that must never land in it). It fails closed
-     without that denylist secret. See #843 and ADR 0023.
+     names that must never land in it). It reads the
+     denylist from the `CANARY_PROPRIETARY_DENYLIST` secret
+     and fails closed without it, and it runs canary's
+     `scripts/check_removed_symbols.mjs`, so copy that script
+     too. It triggers on `pull_request_target`, so keep the
+     workflow's safety invariant intact: it never checks
+     out, installs, builds or runs the PR's head code. See
+     [canary#843][leak-gate-issue] and [ADR 0023][adr-0023].
    - `validate-plugin.yml` — only when the repo ships a
      Claude plugin (a `.claude-plugin/plugin.json`
-     manifest). It validates that manifest against the
-     schema, and has nothing to check in a repo without one.
+     manifest). It validates that manifest against a
+     repo-local `.claude-plugin/schemas/plugin.schema.json`,
+     so ship that schema too. It has nothing to check in a
+     repo without a plugin.
 
    Canary's own repo requires all eight in
    `.github/required-checks.json`: it is public with a
@@ -138,16 +148,29 @@ description: >
    adopts canary, so a fork or new project adds them only
    when the same fact is true of it.
 
-3. **Wire up `guardian.yml`.** Copy canary's stock
-   `.github/workflows/guardian.yml`, then set
-   `canary.guardian.pr.enabled` to `true` in
-   `harness.config.json`. The workflow runs
-   `canary guardian pr-check --post-comment` on every pull
-   request and reports the `guardian` check. It runs on
-   `pull_request` only: it reviews a PR diff and has nothing
-   to say about a push. See the [PR check][pr-check] section
-   of the guardian guide for its configuration and how it
-   degrades without coverage.
+3. **Wire up `guardian.yml`.** Canary's own
+   `.github/workflows/guardian.yml` is the self-hosted
+   version: it builds canary from `ts/`, runs canary's test
+   suite for `ts/coverage/lcov.info`, and calls
+   `node ts/bin/canary.js guardian pr-check`. A fork of
+   canary keeps `ts/` and can copy it as is. Any other
+   project adapts the copy:
+
+   - install the published CLI (`npm i -g canary-test-cli`)
+     instead of building `ts/`, and call `canary guardian
+     pr-check --post-comment`
+   - point `--coverage` at the project's own lcov report,
+     produced by its own test step
+   - drop the advisory `mutation` job, which also builds
+     `ts/`
+
+   Keep the job id `guardian`, since that is the check name
+   the baseline requires. Leave `canary.guardian.pr.enabled`
+   unset or `true` in `harness.config.json` (it defaults to
+   on). The workflow runs on `pull_request` only: it
+   reviews a PR diff and never reports on a push. See the
+   [PR check][pr-check] section of the guardian guide for
+   its configuration and how it degrades without coverage.
 
 4. **Confirm `harness-security.yml` refreshes the ledger.**
    The final steps of the security job must run the ledger
@@ -194,21 +217,28 @@ description: >
    git commit -m "chore: initialise harness configuration"
    ```
 
-3. **Push and confirm all CI gates pass** on the resulting
-   commit before calling setup complete.
+3. **Open a pull request and confirm all CI gates pass** on
+   it before calling setup complete. A push alone is not
+   enough: `guardian.yml` reports only on a pull request.
 
 ### Phase 5: VERIFY — Confirm All Gates Pass
 
-1. **Open a pull request** (or push to the configured branch)
-   to trigger CI.
-2. **Check each workflow:**
+1. **Open a pull request** to trigger CI. Do not verify on a
+   push to a branch: the guardian never reports there, so
+   the baseline cannot go fully green.
+2. **Check each baseline workflow** (by its display name):
 
-   - Architecture Enforcer: green
-   - Quality & Integrity: green
-   - Docs Lint: green
-   - PR Guardian: green (on the pull request)
-   - Security Reviewer: green (ledger will be auto-refreshed
-     by the workflow on first scan)
+   - Harness Checks (`harness.yml`): green
+   - Dependency & project validation
+     (`harness-architecture.yml`): green
+   - Quality & Integrity (`harness-quality.yml`): green
+   - Security Reviewer (`harness-security.yml`): green
+     (ledger will be auto-refreshed by the workflow on first
+     scan)
+   - Docs Lint (`docs-lint.yml`): green
+   - PR Guardian (`guardian.yml`): green
+
+   Plus each conditional add-on you installed.
 
 3. **If any gate fails:** Read the error, fix the root cause,
    push again. Do not suppress gates or skip hooks to make CI

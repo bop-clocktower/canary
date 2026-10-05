@@ -160,9 +160,23 @@ describe('required-check prose agrees with .github/required-checks.json', () => 
       });
       expect(
         workflowCounts(
-          'wires up the five required CI workflows; all six gates pass',
+          'wires up the five required CI workflows; all six gates pass; copy 5 harness workflows',
         ),
-      ).toEqual(['five', 'six']);
+      ).toEqual(['five', 'six', 'five']);
+    });
+
+    it('keeps guardian.yml in the baseline (the decision #1143 recorded)', () => {
+      // Option 2: guardian is canary's own product, so it is baseline, not an
+      // add-on. Moving it would otherwise pass every structural check below.
+      expect(lists.baseline).toContain('guardian.yml');
+    });
+
+    it('the Phase 5 checklist names every baseline workflow', () => {
+      const start = skill.indexOf('### Phase 5');
+      const end = skill.indexOf('\n## ', start);
+      expect(start).toBeGreaterThanOrEqual(0);
+      const phase5 = skill.slice(start, end < 0 ? undefined : end);
+      expect(lists.baseline.filter((wf) => !phase5.includes(wf))).toEqual([]);
     });
 
     it('finds a non-empty baseline (zero denominator is an abstention)', () => {
@@ -218,15 +232,18 @@ const NUMBER_WORDS = [
   'twelve',
 ];
 const COUNT = new RegExp(
-  `\\b(${NUMBER_WORDS.join('|')})\\s+(?:(?:baseline|required)\\s+)?(?:CI\\s+)?(?:workflows?|workflow files|gates)\\b`,
+  `\\b(${NUMBER_WORDS.join('|')}|\\d+)\\s+(?:(?:baseline|required|harness)\\s+)?(?:CI\\s+)?(?:workflows?|workflow files|gates)\\b`,
   'gi',
 );
 const CONDITION = /\b(when|only|if|unless)\b/i;
 const LIST_ENTRY = /^\s*- `([\w.-]+\.ya?ml)`\s+—\s+(.+)$/;
 
-/** Every spelled-out number that counts workflows or gates in `text`. */
+/** Every number (word or digits, as a word) that counts workflows or gates in `text`. */
 function workflowCounts(text: string): string[] {
-  return [...text.matchAll(COUNT)].map((m) => m[1] ?? '');
+  return [...text.matchAll(COUNT)].map((m) => {
+    const n = (m[1] ?? '').toLowerCase();
+    return /^\d+$/.test(n) ? (NUMBER_WORDS[Number(n)] ?? n) : n;
+  });
 }
 
 /**
