@@ -11,10 +11,15 @@
  * internals, `<anonymous>`) are named `external` rather than resolved; a line
  * past the end of the file resolves as `stale` -- source drift after a deploy
  * is common and should be visible, not silently dropped.
+ *
+ * `mockedSuspectWarnings` (#1138) resolves the module specifiers a generated
+ * test mocks (`vi.mock`/`jest.mock`, Python `patch`/`monkeypatch`) against
+ * the brief's suspect path, so `verify` can warn when a test mocks the very
+ * code it should exercise.
  */
 
 import { readFileSync, realpathSync, statSync } from 'node:fs';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { isAbsolute, posix, relative, resolve, sep } from 'node:path';
 
 import type { FrameStatus, RawFrame, ResolvedFrame } from './types.js';
 
@@ -97,4 +102,69 @@ export function resolveFrames(
 ): ResolvedFrame[] {
   const rootReal = realpathSync(root);
   return frames.map((frame) => resolveOne(frame, rootReal));
+}
+
+const JS_EXT = /\.[cm]?[jt]sx?$/;
+const JS_MOCK = /\b(?:vi|jest)\.(?:do)?[mM]ock\(\s*(['"`])([^'"`]+)\1/g;
+const PY_PATCH =
+  /\b(?:mock\.patch|mocker\.patch|patch|monkeypatch\.(?:setattr|delattr))\(\s*(['"])([\w.]+)\1/g;
+const PY_OBJECT =
+  /\b(?:patch\.object|monkeypatch\.setattr)\(\s*([A-Za-z_]\w*)\s*,/g;
+
+/** A JS mock specifier as a root-relative path stem, or a bare suffix. */
+function jsMocksSuspect(spec: string, dir: string, stem: string): boolean {
+  if (spec.startsWith('.')) {
+    return posix.normalize(posix.join(dir, spec)).replace(JS_EXT, '') === stem;
+  }
+  const bare = spec.replace(/^[@~]\//, '').replace(JS_EXT, '');
+  return bare === stem || stem.endsWith(`/${bare}`);
+}
+
+function jsMocks(source: string, dir: string, suspect: string): string[] {
+  const stem = suspect.replace(JS_EXT, '');
+  return [...source.matchAll(JS_MOCK)]
+    .filter((m) => jsMocksSuspect(m[2]!, dir, stem))
+    .map((m) => `${m[0]})`);
+}
+
+/** The suspect's dotted module path and each dotted suffix of 2+ parts. */
+function pyModules(suspect: string): string[] {
+  const parts = suspect.replace(/\.py$/, '').split('/');
+  return parts
+    .map((_, i) => parts.slice(i).join('.'))
+    .filter((mod, i) => i === 0 || mod.includes('.'));
+}
+
+function pyMocks(source: string, suspect: string): string[] {
+  const mods = pyModules(suspect);
+  const stem = posix.basename(suspect, '.py');
+  const strings = [...source.matchAll(PY_PATCH)]
+    .filter((m) =>
+      mods.some((mod) => m[2] === mod || m[2]!.startsWith(`${mod}.`)),
+    )
+    .map((m) => `${m[0]})`);
+  const objects = [...source.matchAll(PY_OBJECT)]
+    .filter((m) => m[1] === stem)
+    .map((m) => `${m[0]} ...)`);
+  return [...strings, ...objects];
+}
+
+/**
+ * C6/C7 (#1138): one warning per call in `testSource` that mocks the
+ * suspect module. `testRelDir` and `suspectPath` are root-relative posix
+ * paths. A warning only: a test that mocks the code it should exercise can
+ * still go red for an unrelated reason, so `verify` says so.
+ */
+export function mockedSuspectWarnings(
+  testSource: string,
+  testRelDir: string,
+  suspectPath: string,
+): string[] {
+  const calls = suspectPath.endsWith('.py')
+    ? pyMocks(testSource, suspectPath)
+    : jsMocks(testSource, testRelDir, suspectPath);
+  return calls.map(
+    (call) =>
+      `the test mocks the suspect module ${suspectPath} (${call}); a regression test that mocks the code it should exercise cannot reproduce the defect`,
+  );
 }

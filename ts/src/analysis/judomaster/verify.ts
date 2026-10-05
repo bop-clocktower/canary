@@ -30,6 +30,8 @@ export interface VerifyResult {
   reason: string;
   /** Last lines of runner output (ANSI stripped), so a red run shows why. */
   tail?: string[];
+  /** Mock-the-suspect warnings (#1138); set only when non-empty. Never change the verdict. */
+  warnings?: string[];
 }
 
 const ANSI = /\x1b\[[0-9;]*m/g;

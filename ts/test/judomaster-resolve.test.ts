@@ -15,7 +15,11 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { isWithin, resolveFrames } from '../src/analysis/judomaster/resolve.js';
+import {
+  isWithin,
+  mockedSuspectWarnings,
+  resolveFrames,
+} from '../src/analysis/judomaster/resolve.js';
 
 let base: string;
 let root: string;
@@ -126,5 +130,59 @@ describe('resolveFrames containment', () => {
     writeFileSync(other, 'a\n');
     const f = resolveFrames([{ file: other, line: 1 }], root)[0]!;
     expect(f.status).toBe('missing');
+  });
+});
+
+describe('mockedSuspectWarnings', () => {
+  const DIR = 'tests/generated/regression';
+  const JS = 'src/cart/total.ts';
+  const PY = 'src/cart/total.py';
+  const warn = (src: string, suspect: string) =>
+    mockedSuspectWarnings(src, DIR, suspect);
+
+  it('flags vi.mock of the suspect by relative path and names both', () => {
+    const w = warn("vi.mock('../../../src/cart/total', () => ({}));", JS);
+    expect(w).toEqual([
+      "the test mocks the suspect module src/cart/total.ts (vi.mock('../../../src/cart/total')); a regression test that mocks the code it should exercise cannot reproduce the defect",
+    ]);
+  });
+
+  it('flags jest.doMock with an extension, and @/ ~/ bare suffixes', () => {
+    expect(warn('jest.doMock("../../../src/cart/total.js")', JS)).toHaveLength(
+      1,
+    );
+    expect(warn("vi.mock('@/cart/total')", JS)).toHaveLength(1);
+    expect(warn("jest.mock('~/cart/total')", JS)).toHaveLength(1);
+    expect(warn("vi.doMock('cart/total')", JS)).toHaveLength(1);
+  });
+
+  it('ignores a mock of another module and vi.mocked()', () => {
+    expect(warn("vi.mock('../../../src/cart/tax')", JS)).toEqual([]);
+    expect(warn("vi.mock('../../../src/cart/totals')", JS)).toEqual([]);
+    expect(warn('vi.mocked(total).mockReturnValue(1)', JS)).toEqual([]);
+  });
+
+  it('flags Python string patch targets inside the suspect module', () => {
+    expect(warn('@mock.patch("cart.total.compute")', PY)).toHaveLength(1);
+    expect(warn("mocker.patch('src.cart.total')", PY)).toHaveLength(1);
+    expect(warn('monkeypatch.setattr("cart.total.TAX", 0)', PY)).toHaveLength(
+      1,
+    );
+    expect(warn("monkeypatch.delattr('cart.total.TAX')", PY)).toHaveLength(1);
+    expect(warn("with patch('cart.total.rate'):", PY)).toHaveLength(1);
+  });
+
+  it('flags Python object forms by the module stem only', () => {
+    expect(warn('patch.object(total, "compute")', PY)).toEqual([
+      'the test mocks the suspect module src/cart/total.py (patch.object(total, ...)); a regression test that mocks the code it should exercise cannot reproduce the defect',
+    ]);
+    expect(warn('monkeypatch.setattr(total, "TAX", 0)', PY)).toHaveLength(1);
+    expect(warn('monkeypatch.setattr(tax, "rate", 0)', PY)).toEqual([]);
+  });
+
+  it('ignores Python patches of other modules', () => {
+    expect(warn("mocker.patch('cart.tax.rate')", PY)).toEqual([]);
+    expect(warn("patch('cart.totals.x')", PY)).toEqual([]);
+    expect(warn("patch('total.x')", PY)).toEqual([]);
   });
 });
