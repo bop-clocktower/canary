@@ -9,7 +9,11 @@
 import { validateDocument } from '../../../lib/contracts/document.mjs';
 import { readInputs, readJson } from './inputs.mjs';
 import { flakyTests } from './flaky.mjs';
-import { ciReadyAssessments, latestPerKey } from './assess.mjs';
+import {
+  ciReadyAssessments,
+  latestPerKey,
+  withAbstentions,
+} from './assess.mjs';
 
 const text = (v) => typeof v === 'string' && v.length > 0;
 
@@ -75,13 +79,16 @@ export function composeFeed({
 export function gatherInputs(args, notes, now) {
   const config = parseConfig(readJson(args.config, 'config'));
   const input = readInputs(args, config.scope, notes);
-  const assessments = latestPerKey([
-    ...input.assessments,
-    ...ciReadyAssessments(input.report, config.scope, {
-      now,
-      source: args.ciReady ?? null,
-    }),
-  ]);
+  const ci = ciReadyAssessments(input.report, config.scope, {
+    now,
+    source: args.ciReady ?? null,
+  });
+  if (ci.note) notes.push(ci.note);
+  // Latest per key over REAL records only; abstentions fill what is left.
+  const assessments = withAbstentions(
+    latestPerKey([...input.assessments, ...ci.real]),
+    ci.synthetic,
+  );
   return {
     config,
     runs: input.feed,

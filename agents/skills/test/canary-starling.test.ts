@@ -13,6 +13,7 @@ import {
   ciReadyAssessments,
   CI_READY_METRICS,
   latestPerKey,
+  withAbstentions,
 } from '../claude-code/canary-starling/scripts/assess.mjs';
 import {
   composeFeed,
@@ -309,9 +310,14 @@ describe('ciReadyAssessments (P1, crit 8)', () => {
     checked: 1,
     checks,
   });
+  /** Every row, real then synthetic. */
+  const all = (...args: Parameters<typeof ciReadyAssessments>) => {
+    const { real, synthetic } = ciReadyAssessments(...args);
+    return [...real, ...synthetic];
+  };
 
   it('is not-assessed for every metric when no report was supplied — planted absence', () => {
-    const out = ciReadyAssessments(null, SCOPE, { now: NOW, source: null });
+    const out = all(null, SCOPE, { now: NOW, source: null });
     expect(out.map((a: any) => a.metric)).toEqual(CI_READY_METRICS);
     for (const a of out) {
       expect(a.status).toBe('not-assessed');
@@ -329,7 +335,7 @@ describe('ciReadyAssessments (P1, crit 8)', () => {
         'no .canary/test-inventory.json: run `canary inventory` to produce it',
       measure: null,
     };
-    const a = ciReadyAssessments(report([skip]), SCOPE, {
+    const a = all(report([skip]), SCOPE, {
       now: NOW,
       source: 'ci-ready.json',
     })[0];
@@ -343,7 +349,7 @@ describe('ciReadyAssessments (P1, crit 8)', () => {
 
   it('maps pass/warn/fail with a measure to healthy/degraded/critical', () => {
     const m = { value: 0.2, unit: 'ratio', denominator: 5 };
-    const out = ciReadyAssessments(
+    const out = all(
       report(
         ['pass', 'warn', 'fail'].map((verdict) => ({
           name: 'flakiness',
@@ -372,7 +378,7 @@ describe('ciReadyAssessments (P1, crit 8)', () => {
   });
 
   it('a check with a verdict but no measure is not-assessed (thin window, structural zero)', () => {
-    const out = ciReadyAssessments(
+    const out = all(
       report([
         {
           name: 'flakiness',
@@ -390,8 +396,42 @@ describe('ciReadyAssessments (P1, crit 8)', () => {
     });
   });
 
+  it('marks absences it generated as synthetic, never as real records', () => {
+    const none = ciReadyAssessments(null, SCOPE, { now: NOW, source: null });
+    expect(none.real).toEqual([]);
+    expect(none.synthetic).toHaveLength(CI_READY_METRICS.length);
+    const dated = ciReadyAssessments(report([]), SCOPE, {
+      now: NOW,
+      source: 'r.json',
+    });
+    expect(dated.real).toEqual([]);
+    expect(dated.synthetic).toHaveLength(CI_READY_METRICS.length);
+  });
+
+  it('treats an undated report as absent, naming it and the missing observed_at', () => {
+    const { observed_at: _, ...undated } = report([
+      {
+        name: 'flakiness',
+        verdict: 'pass',
+        reason: 'x',
+        measure: { value: 0, unit: 'ratio', denominator: 9 },
+      },
+    ]);
+    const out = ciReadyAssessments(undated, SCOPE, {
+      now: NOW,
+      source: 'r.json',
+    });
+    expect(out.real).toEqual([]);
+    expect(out.note).toMatch(/r\.json.*observed_at/);
+    for (const a of out.synthetic) {
+      expect(a).toMatchObject({ status: 'not-assessed', value: null });
+      expect(a.reason).toMatch(/r\.json.*observed_at/);
+      expect(validateDocument(a, { layer: 'assessment' }).errors).toEqual([]);
+    }
+  });
+
   it('names a metric the report does not carry', () => {
-    const out = ciReadyAssessments(report([]), SCOPE, {
+    const out = all(report([]), SCOPE, {
       now: NOW,
       source: 'r.json',
     });
@@ -424,6 +464,22 @@ describe('latestPerKey (crit 19)', () => {
       a('2026-10-01T09:00:00Z', 2),
     ]);
     expect(out.map((x: any) => x.value)).toEqual([2]);
+  });
+});
+
+describe('withAbstentions (D4)', () => {
+  const row = (metric: string, status: string, source = 's') => ({
+    scope: SCOPE,
+    source,
+    metric,
+    status,
+  });
+  it('fills only keys no real record holds', () => {
+    const out = withAbstentions(
+      [row('m', 'healthy')],
+      [row('m', 'not-assessed'), row('n', 'not-assessed')],
+    );
+    expect(out).toEqual([row('m', 'healthy'), row('n', 'not-assessed')]);
   });
 });
 
@@ -671,6 +727,55 @@ describe('canary-starling (end to end)', () => {
     } finally {
       process.chdir(cwd);
     }
+  });
+
+  /** `args` without `flag` and its value. */
+  const drop = (args: string[], flag: string) =>
+    args.filter((a, i, all) => a !== flag && all[i - 1] !== flag);
+  const fileFlakiness = {
+    ...olderFlakiness,
+    observed_at: '2026-10-05T00:00:00.000Z',
+  };
+
+  it('keeps a real assessment over the abstention for a report not supplied', () => {
+    const dir = fixture({
+      'ledger.json': { entries: [] },
+      'old-assessment.json': fileFlakiness,
+    });
+    const args = drop(argv(dir), '--ci-ready');
+    const res = capture(() =>
+      starlingMain([...args, join(dir, 'old-assessment.json')]),
+    );
+    expect(res.code).toBe(0);
+    const site = JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8'));
+    const flak = site.assessments.filter((a: any) => a.metric === 'flakiness');
+    expect(flak).toEqual([fileFlakiness]);
+    expect(
+      site.assessments.find((a: any) => a.metric === 'coverage-depth').reason,
+    ).toMatch(/no ci-ready report/);
+  });
+
+  it('treats an undated ci-ready report as absent: the dated file wins, stderr says so', () => {
+    const { observed_at: _, ...undated } = ciReady;
+    const dir = fixture({
+      'ledger.json': { entries: [] },
+      'ci-ready.json': undated,
+      'old-assessment.json': fileFlakiness,
+    });
+    const res = capture(() =>
+      starlingMain(argv(dir, [join(dir, 'old-assessment.json')])),
+    );
+    expect(res.code).toBe(0);
+    expect(res.stderr).toMatch(/ci-ready\.json.*observed_at/);
+    const site = JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8'));
+    const flak = site.assessments.filter((a: any) => a.metric === 'flakiness');
+    expect(flak).toEqual([fileFlakiness]);
+    expect(
+      site.assessments.find((a: any) => a.metric === 'coverage-depth'),
+    ).toMatchObject({
+      status: 'not-assessed',
+      reason: expect.stringMatching(/ci-ready\.json.*observed_at/),
+    });
   });
 
   it('still writes the feed past an unparseable history timestamp, naming the run', () => {
