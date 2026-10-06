@@ -15,9 +15,10 @@
  */
 
 import { realpathSync, statSync } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import type { ExecuteResult } from '../../core/executor.js';
+import { isWithin } from './resolve.js';
 import type { RegressionBrief, VerifyVerdict } from './types.js';
 
 type Signature = RegressionBrief['signature'];
@@ -29,6 +30,8 @@ export interface VerifyResult {
   reason: string;
   /** Last lines of runner output (ANSI stripped), so a red run shows why. */
   tail?: string[];
+  /** Mock-the-suspect warnings (#1138); set only when non-empty. Never change the verdict. */
+  warnings?: string[];
 }
 
 const ANSI = /\x1b\[[0-9;]*m/g;
@@ -74,6 +77,20 @@ function couldNotRun(exec: ExecuteResult, framework: string): string | null {
     return `the runner could not be spawned: ${stderr.trim()}`;
   }
   return null;
+}
+
+/** npm's own refusal line on stderr, not the text anywhere in the output. */
+const NPX_CANCELED =
+  /^npm (?:ERR!|error) npx canceled due to missing packages.*$/m;
+const NPX_PACKAGE = /\["(@?[^"@]+)/;
+
+/** `verify` runs `npx --no`: a runner the root lacks is never downloaded. */
+function npxCanceled(exec: ExecuteResult, framework: string): string | null {
+  if (exec[0] === 0) return null;
+  const line = NPX_CANCELED.exec(exec[2].replace(ANSI, ''))?.[0];
+  if (line === undefined) return null;
+  const runner = NPX_PACKAGE.exec(line)?.[1] ?? framework;
+  return `the runner ${runner} is not installed under the root; verify does not fetch runners (install it, e.g. npm i -D ${runner})`;
 }
 
 function result(
@@ -198,7 +215,7 @@ export function classifyRun(
 ): VerifyResult {
   const output = `${exec[1]}\n${exec[2]}`.replace(ANSI, '');
   const tail = output.trimEnd().split('\n').slice(-TAIL_LINES);
-  const notRun = couldNotRun(exec, framework);
+  const notRun = couldNotRun(exec, framework) ?? npxCanceled(exec, framework);
   const verdict =
     notRun !== null
       ? result('unverified', COULD_NOT_REPRODUCE, notRun)
@@ -229,7 +246,7 @@ export function containedInGenerated(
   try {
     const base = realpathSync(join(root, 'tests', 'generated'));
     const real = realpathSync(resolve(root, testPath));
-    if (!real.startsWith(base + sep)) return null;
+    if (!isWithin(base, real)) return null;
     return statSync(real).isFile() ? real : null;
   } catch {
     return null;

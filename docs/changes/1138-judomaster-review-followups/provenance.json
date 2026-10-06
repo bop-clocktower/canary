@@ -1,0 +1,36 @@
+{
+  "fleet": "roadmap-fleet",
+  "run": "rf-2026-10-05b",
+  "issues": [1138],
+  "route": "feature",
+  "stages": [
+    "brainstorming",
+    "autopilot",
+    "planning",
+    "tdd",
+    "execution",
+    "ratchets",
+    "review",
+    "review-fixes"
+  ],
+  "specArtifact": "docs/changes/1138-judomaster-review-followups/proposal.md",
+  "planArtifact": "docs/changes/1138-judomaster-review-followups/plans/2026-10-05-judomaster-review-followups-plan.md",
+  "branch": "feat/1138-judomaster-review-followups",
+  "base": "37918569",
+  "closingKeyword": "Refs",
+  "closingKeywordWhy": "This PR is a slice of #1138: only the four review suggestions deferred from the MVP PR. The intake adapters (harness incident-response records, SARIF, pasted pen-test findings) and the Java/Go/Ruby/.NET trace formats stay open in #1138.",
+  "assumptions": [
+    "Brainstorming sign-off was taken autonomously (fleet lane default): decisions C1-C8 in the spec took the recommended option. No fork was parked.",
+    "C1/C2: in a chained exception the signature and the suspect stay on the reported (outermost) error, which is what the runner prints and verify anchors on. The chain is added information: a list with the root cause marked, boundary lines in the frame list, and one requirement sentence naming the root cause and where it was raised.",
+    "C3: the chain is an optional side list (ParsedTrace.chain / RegressionBrief.chain) whose `start` indexes into the existing flat frames list. An unchained trace's brief is unchanged (no `chain` key); the schema stays canary-judomaster-brief/1 because the field is additive. If any CPython block has frames but no error line, the chain is dropped and the trace parses exactly as before.",
+    "C4 (recommended default from the lane brief): verify does NOT auto-fetch a runner. It runs `npx --no` in place of `npx --yes` / `-y`, and npx's 'canceled due to missing packages' refusal is `unverified — could not reproduce` (exit 3) with the runner named. Nothing in the MVP depends on fetching. The rewrite is an opt-in executor option (`fetch: false`) set only by verify; `canary run` and MCP `run_tests` keep the registry command as is.",
+    "C5: the runner is spawned with cwd = realpath of --root (default still the process cwd).",
+    "C6/C7: mocking the suspect module is a WARNING only; the verdict and exit code are unchanged. It needs the brief's suspect, so without --brief no check runs. It reads the test file's own source, not siblings. It assumes brief and verify use the same --root (the suspect path is root-relative); the guide says so.",
+    "C8: one isWithin() helper built on path.relative() replaces both string-prefix containment checks (frame resolution and tests/generated).",
+    "mockedSuspectWarnings lives in resolve.ts rather than a new module (entropy ratchet: no new source files) and to keep verify.ts under the 300-line perf threshold.",
+    "Ratchets measured locally with harness CLI 12.10.1 against a detached worktree of the merge base 37918569: entropy 141 vs 141 (delta OK), perf 216 vs 216 (0 new findings), check-arch newViolations [] on both trees. After the review fixes module-size measured 50179 against 49675 (+504, the only regression), so an allowance was added (.harness/arch/allowances/feat-1138-judomaster-review-followups.json) and the floor refreshed with scripts/refresh-arch-baseline.mjs (violationIds untouched), as #614 did. No entryPoints added; maxFindings untouched.",
+    "Autopilot ran at fast rigor (single phase, 10 tasks, plan auto-approved): planning via harness-planner, tasks 1-9 via harness-task-executor, ratchets (task 10) by the lane, final review via harness-code-reviewer.",
+    "Review amendments (harness-code-reviewer: 0 critical, 1 important, 7 suggestions): the mock warning is strong only for a whole-module mock or a patch of the suspect function, and soft ('check it is a dependency') for a JS partial mock (importOriginal/requireActual/spy: true) or a Python patch of another name inside the module; bare JS specifiers need a '/' or an @/ ~/ alias; commented-out mocks are ignored; the npx refusal is read only from npm's own stderr line on a non-zero exit; a frameless CPython cause block takes its last error line; a frameless trailing cause gets a boundary marker and an empty message renders without a colon. Not taken (left as suggestions): a link for a [cause]: header that is not an error line (e.g. DOMException [AbortError]) - such causes merge into the outer error as before; directory-index suspects, vi.mock(import(...)), jest.unstable_mockModule and src-layout top-level Python modules are not detected.",
+    "Behaviour change noted in the CHANGELOG: the V8 frame regex now accepts a trailing ' {', so a Node error with own properties (e.g. a system error's code) keeps its outermost frame instead of dropping it, even when unchained."
+  ]
+}

@@ -137,7 +137,68 @@ async function verify(
   });
 }
 
+const RUN_OPTS = () => ({ cwd: realpathSync(root), fetch: false });
+
 describe('canary judomaster verify', () => {
+  const MOCKING = "vi.mock('../../../src/cart/total', () => ({}));\n";
+
+  it('warns when the test mocks the suspect, verdict and exit unchanged', async () => {
+    const test = seedGenerated(TEST_REL, MOCKING);
+    const exec = executorReturning([1, `TypeError: ${SIG}`, '']);
+    const res = await verify(
+      exec,
+      test,
+      '--brief',
+      await writeBrief(),
+      '--json',
+    );
+    expect(res.code).toBe(0);
+    const parsed = JSON.parse(res.stdout);
+    expect(parsed.verdict).toBe('reproduced');
+    expect(parsed.warnings).toEqual([
+      expect.stringContaining('mocks the suspect module src/cart/total.ts'),
+    ]);
+  });
+
+  it('prints a WARNING line in markdown', async () => {
+    const test = seedGenerated(TEST_REL, MOCKING);
+    const exec = executorReturning([1, `TypeError: ${SIG}`, '']);
+    const res = await verify(exec, test, '--brief', await writeBrief());
+    expect(res.stdout).toContain('WARNING: the test mocks the suspect module');
+  });
+
+  it('does not check mocks without --brief', async () => {
+    const test = seedGenerated(TEST_REL, MOCKING);
+    const exec = executorReturning([1, `TypeError: ${SIG}`, '']);
+    const res = await verify(exec, test, '--expect', SIG, '--json');
+    expect(JSON.parse(res.stdout)).not.toHaveProperty('warnings');
+  });
+
+  it('does not warn about a mock of another module', async () => {
+    const test = seedGenerated(TEST_REL, "vi.mock('../../../src/cart/tax');\n");
+    const exec = executorReturning([1, `TypeError: ${SIG}`, '']);
+    const res = await verify(
+      exec,
+      test,
+      '--brief',
+      await writeBrief(),
+      '--json',
+    );
+    expect(JSON.parse(res.stdout)).not.toHaveProperty('warnings');
+  });
+
+  it('exits 3 naming the runner when npx refuses to fetch it', async () => {
+    const test = seedGenerated();
+    const exec = executorReturning([
+      1,
+      '',
+      'npm error npx canceled due to missing packages and no YES option: ["vitest@5.0.3"]',
+    ]);
+    const res = await verify(exec, test, '--expect', SIG);
+    expect(res.code).toBe(3);
+    expect(res.stdout).toContain('verify does not fetch runners');
+  });
+
   it('reports reproduced (exit 0) when the failure carries the signature', async () => {
     const test = seedGenerated();
     const exec = executorReturning([1, `FAIL\nTypeError: ${SIG}`, '']);
@@ -265,7 +326,12 @@ describe('canary judomaster verify', () => {
     );
     const exec = executorReturning([1, `TypeError: ${SIG}`, '']);
     await verify(exec, test, '--brief', await writeBrief());
-    expect(exec.spy).toHaveBeenCalledWith(expect.any(String), 'vitest', 60);
+    expect(exec.spy).toHaveBeenCalledWith(
+      expect.any(String),
+      'vitest',
+      60,
+      RUN_OPTS(),
+    );
   });
 
   it('refuses a signature quoted by a sibling helper in tests/generated', async () => {
@@ -292,14 +358,24 @@ describe('canary judomaster verify', () => {
     const test = seedGenerated();
     const exec = executorReturning([1, SIG, '']);
     await verify(exec, test, '--framework', 'pytest', '--timeout', '5');
-    expect(exec.spy).toHaveBeenCalledWith(realpathSync(test), 'pytest', 5);
+    expect(exec.spy).toHaveBeenCalledWith(
+      realpathSync(test),
+      'pytest',
+      5,
+      RUN_OPTS(),
+    );
   });
 
   it('defaults the timeout to 60 seconds', async () => {
     const test = seedGenerated();
     const exec = executorReturning([1, SIG, '']);
     await verify(exec, test);
-    expect(exec.spy).toHaveBeenCalledWith(realpathSync(test), 'vitest', 60);
+    expect(exec.spy).toHaveBeenCalledWith(
+      realpathSync(test),
+      'vitest',
+      60,
+      RUN_OPTS(),
+    );
   });
 
   it('prints a JSON verify result with --json', async () => {

@@ -110,6 +110,21 @@ function errStr(err: unknown): string {
 }
 
 /**
+ * `npx --no` in place of `--yes` / `-y`: npx then refuses to download a
+ * runner the project does not have. Only npx's own leading flags are
+ * touched, so a runner argument such as `-y` after the package survives.
+ */
+function withoutFetch(cmd: string[]): string[] {
+  if (cmd[0] !== 'npx') return cmd;
+  const pkg = cmd.findIndex((tok, i) => i > 0 && !tok.startsWith('-'));
+  const end = pkg === -1 ? cmd.length : pkg;
+  const flags = cmd
+    .slice(1, end)
+    .filter((tok) => !['--yes', '-y', '--no'].includes(tok));
+  return ['npx', '--no', ...flags, ...cmd.slice(end)];
+}
+
+/**
  * Handles execution of generated tests in a managed subprocess.
  *
  * Python: `CanaryTestExecutor`. Coordinates with the {@link FrameworkRegistry}
@@ -131,12 +146,15 @@ export class CanaryTestExecutor {
    * @param filePath Path to the test file.
    * @param frameworkName Name of the framework (e.g. 'playwright').
    * @param timeout Maximum execution time in seconds. Defaults to 30.
+   * @param opts `cwd`: directory to run in (default: the process cwd).
+   *   `fetch: false`: never let npx download the runner (`npx --no`).
    * @returns `[exit_code, stdout, stderr]`.
    */
   execute(
     filePath: string,
     frameworkName: string,
     timeout = 30,
+    opts: { cwd?: string; fetch?: boolean } = {},
   ): ExecuteResult {
     const framework = this.registry.findByName(frameworkName);
     if (framework === null) {
@@ -159,9 +177,11 @@ export class CanaryTestExecutor {
     if (isCi()) {
       cmd.push(...(framework.ci_flags ?? []));
     }
+    const argv = opts.fetch === false ? withoutFetch(cmd) : cmd;
 
     try {
-      const result = spawnSync(cmd[0]!, cmd.slice(1), {
+      const result = spawnSync(argv[0]!, argv.slice(1), {
+        ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
         encoding: 'utf-8',
         timeout: timeout * 1000,
         // Python's subprocess.run has no output ceiling; Node defaults

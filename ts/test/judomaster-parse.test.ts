@@ -96,3 +96,117 @@ describe('parseTrace: abstains', () => {
     ).toBeNull();
   });
 });
+
+const QTY = "Cannot read properties of undefined (reading 'qty')";
+const V8_CHAIN = [
+  'Error: checkout failed',
+  '    at checkout (/app/src/cart/checkout.ts:30:10)',
+  '    at main (/app/src/main.ts:5:3) {',
+  `  [cause]: TypeError: ${QTY}`,
+  '      at cartTotal (/app/src/cart/total.ts:12:7)',
+  '      ... 2 lines matching cause stack trace ...',
+  '      at main (/app/src/main.ts:5:3)',
+  '}',
+].join('\n');
+
+const pyBlock = (file: string, line: number, error: string) => [
+  'Traceback (most recent call last):',
+  `  File "${file}", line ${line}, in fn`,
+  '    pass',
+  error,
+];
+const CAUSE =
+  'The above exception was the direct cause of the following exception:';
+const CONTEXT =
+  'During handling of the above exception, another exception occurred:';
+
+describe('parseTrace: exception chains', () => {
+  it('reads a frame line that ends in " {"', () => {
+    const t = parseTrace('TypeError: x\n    at f (/app/src/a.ts:1:2) {')!;
+    expect(t.frames[0]).toEqual({
+      file: '/app/src/a.ts',
+      line: 1,
+      column: 2,
+      fn: 'f',
+    });
+  });
+
+  it('keeps the V8 wrapper as the reported error and links its [cause]', () => {
+    const t = parseTrace(V8_CHAIN)!;
+    expect([t.errorType, t.message]).toEqual(['Error', 'checkout failed']);
+    expect(t.frames.map((f) => f.line)).toEqual([30, 5, 12, 5]);
+    expect(t.chain).toEqual([
+      { errorType: 'TypeError', message: QTY, relation: 'cause', start: 2 },
+    ]);
+  });
+
+  it('links CPython blocks outward-in with their relation', () => {
+    const text = [
+      ...pyBlock('/srv/app/cart/db.py', 3, "KeyError: 'qty'"),
+      '',
+      CONTEXT,
+      '',
+      ...pyBlock('/srv/app/cart/total.py', 8, 'ValueError: bad qty'),
+      '',
+      CAUSE,
+      '',
+      ...pyBlock('/srv/app/cart/api.py', 20, 'cart.errors.CartError: bad cart'),
+    ].join('\n');
+    const t = parseTrace(text)!;
+    expect([t.errorType, t.message]).toEqual([
+      'cart.errors.CartError',
+      'bad cart',
+    ]);
+    expect(t.frames.map((f) => f.line)).toEqual([20, 8, 3]);
+    expect(t.chain).toEqual([
+      {
+        errorType: 'ValueError',
+        message: 'bad qty',
+        relation: 'cause',
+        start: 1,
+      },
+      {
+        errorType: 'KeyError',
+        message: "'qty'",
+        relation: 'context',
+        start: 2,
+      },
+    ]);
+  });
+
+  it('drops the chain when a block has no error line', () => {
+    const text = [
+      'Traceback (most recent call last):',
+      '  File "/srv/app/cart/total.py", line 8, in total',
+      '',
+      CAUSE,
+      '',
+      ...pyBlock('/srv/app/cart/api.py', 20, 'ValueError: bad qty'),
+    ].join('\n');
+    const t = parseTrace(text)!;
+    expect(t).not.toHaveProperty('chain');
+    expect(t.errorType).toBe('ValueError');
+    expect(t.frames.map((f) => f.line)).toEqual([20, 8]);
+  });
+
+  it('takes the last error line of a frameless cause block, not log noise', () => {
+    const text = [
+      'ConnectionError: retrying',
+      "KeyError: 'k'",
+      '',
+      CAUSE,
+      '',
+      ...pyBlock('/srv/app/cart/api.py', 20, 'ValueError: bad qty'),
+    ].join('\n');
+    const t = parseTrace(text)!;
+    expect(t.errorType).toBe('ValueError');
+    expect(t.chain).toEqual([
+      { errorType: 'KeyError', message: "'k'", relation: 'cause', start: 1 },
+    ]);
+  });
+
+  it('adds no chain key to an unchained trace', () => {
+    expect(parseTrace(V8_TRACE)).not.toHaveProperty('chain');
+    expect(parseTrace(PY_TRACE)).not.toHaveProperty('chain');
+  });
+});
