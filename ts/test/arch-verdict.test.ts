@@ -599,3 +599,108 @@ describe('#626 wiring — the summary in CI actually gets the split', () => {
     expect(workflow).toContain('arch-report.json');
   });
 });
+
+// #1164 / harness#2235. In harness 12.10.1 three of the seven arch metrics are
+// 0 by construction, whatever the code does: `circular-deps` builds its graph
+// with a stub parser whose `parseFile` always fails (zero edges), and
+// `layer-violations` / `forbidden-imports` call `validateDependencies` with
+// `layers: []`. A planted cycle and a planted wrong-layer import both left
+// `check-arch` reading `newViolations: []`. So an `arch — clean` line with no
+// caveat reads as "layers and cycles are clean" when nothing looked. These
+// tests pin the caveat on every verdict, and the docs that make the same claim.
+describe('#1164 — the arch ratchet abstains on layers, imports and cycles', () => {
+  const UNMEASURED = ['circular-deps', 'layer-violations', 'forbidden-imports'];
+
+  function expectAbstentionCaveat(output: string): void {
+    expect(output).toMatch(/NOT MEASURED/);
+    for (const metric of UNMEASURED) expect(output).toContain(metric);
+    expect(output).toContain('harness-engineering#2235');
+    expect(output).toContain('check-deps');
+    // The zero itself must not be presented as a result.
+    expect(output).not.toMatch(/(layer-violations|circular-deps)[^\n]*: 0\b/);
+  }
+
+  // Not exported: a test-only consumer reads as a dead export to the entropy
+  // ratchet. The source is the contract — one named list, pointing at #2235.
+  it('keys the unmeasured set to one named constant to revisit on a harness bump', () => {
+    const source = readFileSync(VERDICT, 'utf-8');
+    const decl =
+      /const UNMEASURED_ARCH_METRICS = Object\.freeze\(\[([^\]]*)\]/.exec(
+        source,
+      );
+    expect(decl).not.toBeNull();
+    const names = [...(decl?.[1] ?? '').matchAll(/'([^']+)'/g)].map(
+      (m) => m[1],
+    );
+    expect(names.sort()).toEqual([...UNMEASURED].sort());
+    expect(source).toContain('harness-engineering#2235');
+  });
+
+  it('a clean verdict says the three metrics were not measured, and still exits 0', () => {
+    const r = runVerdict(writeJson('arch.json', archReport({ passed: true })));
+    expect(r.status).toBe(0);
+    expect(r.output).toMatch(/arch — clean/);
+    expectAbstentionCaveat(r.output);
+  });
+
+  it('a baseline trip carries the same caveat', () => {
+    const r = runVerdict(writeJson('arch.json', ratchetTrip()));
+    expect(r.status).toBe(0);
+    expectAbstentionCaveat(r.output);
+  });
+
+  it('a regression carries the same caveat, and still exits 1', () => {
+    const r = runVerdict(
+      writeJson(
+        'arch.json',
+        archReport({ newViolations: [violation('a.ts', 'x')] }),
+      ),
+    );
+    expect(r.status).toBe(1);
+    expectAbstentionCaveat(r.output);
+  });
+
+  it('the CI summariser prints the caveat on a passing arch check', () => {
+    const report = {
+      version: 1,
+      project: 'canary',
+      checks: [{ name: 'arch', status: 'pass', issues: [], durationMs: 1 }],
+      summary: { total: 1, passed: 1, failed: 0, warnings: 0, skipped: 0 },
+      exitCode: 0,
+    };
+    const r = runCapture(
+      'node',
+      [
+        SUMMARY,
+        writeJson('harness-report.json', report),
+        '--arch',
+        writeJson('arch.json', archReport({ passed: true })),
+      ],
+      { env: { ...process.env } },
+    );
+    expect(r.status).toBe(0);
+    expectAbstentionCaveat(r.output);
+  });
+
+  // The docs a reader reaches first when an arch run is green.
+  const docs = {
+    'AGENTS.md': join(REPO_ROOT, 'AGENTS.md'),
+    'arch-baseline-semantics.md': join(
+      REPO_ROOT,
+      'docs',
+      'knowledge',
+      'gates',
+      'arch-baseline-semantics.md',
+    ),
+  };
+  for (const [name, path] of Object.entries(docs)) {
+    it(`${name} names the abstention and check-deps as the real gate`, () => {
+      const text = readFileSync(path, 'utf-8');
+      expect(text).toContain('harness-engineering#2235');
+      for (const metric of UNMEASURED) expect(text).toContain(metric);
+      expect(text).toMatch(
+        /check-deps[^.]*(layer|cycle)|(layer|cycle)[^.]*check-deps/i,
+      );
+    });
+  }
+});
