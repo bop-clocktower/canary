@@ -1,0 +1,15 @@
+{
+  "contract": "canary.assessment/1",
+  "scope": { "id": "canary", "env": "ci" },
+  "source": "canary.ci-ready",
+  "metric": "flakiness",
+  "status": "healthy",
+  "value": 0.012,
+  "unit": "ratio",
+  "reason": null,
+  "evidence": { "tier": "heuristic", "denominator": 412 },
+  "observed_at": "2026-10-05T14:10:00Z",
+  "sources": ["history-v2.jsonl@0ba2dd68"],
+  "verified_by": null,
+  "verified_at": null
+}
