@@ -89,7 +89,13 @@ under the project's former name) are documented in the
   sent as `failed` and turned a green run red, and a `test.fail()` test that
   unexpectedly passed was sent as `passed` inside a failed run. Status now comes
   from `test.outcome()` first: `expected` is `passed`, `unexpected` is `failed`
-  (or `timed_out`). An interrupted test is still sent as `failed`.
+  (or `timed_out`). An interrupted test is still sent as `failed`. An unexpected
+  pass now carries Playwright's `Expected to fail, but passed.` and an
+  `expected-failure` tag, and an expected failure's error is no longer sent, so
+  it cannot become the reason of a `flaky` or merged row. **Suites already using
+  `test.fail()` will see a step in dashboard history at upgrade:** expected
+  failures move from `failed` to `passed`, unexpected passes from `passed` to
+  `failed`.
 
 ## [9.0.0] - 2026-10-05
 

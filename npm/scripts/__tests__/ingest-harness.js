@@ -109,13 +109,16 @@ async function runReporter({
   };
   console.log = (...args) => logs.push(args.join(" "));
   try {
+    // Each run is a fresh Playwright run: a fake reused across runReporter
+    // calls must not carry the previous run's attempts into its outcome.
+    for (const [t] of tests) t.results.length = 0;
     const reporter = new IngestReporter({ suite: "web", url: "https://dash.example", token: "tok", testFilePrefix: REPO, retryDelaysMs: [0, 0], ...options }); // default count (3 attempts), no waiting
     const all = collected ?? tests.map(([t]) => t);
     const projects = [...new Set(all.map((t) => t.titlePath()[1]))];
     const suite = { allTests: () => all, suites: projects.map((title) => ({ type: "project", title })) };
     reporter.onBegin(config, suite);
     for (const [t, r] of tests) {
-      t.results?.push(r); // Playwright appends the attempt before onTestEnd
+      t.results.push(r); // Playwright appends the attempt before onTestEnd
       reporter.onTestEnd(t, r);
     }
     await reporter.onEnd(fullResult);

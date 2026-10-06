@@ -27,7 +27,7 @@ test("resolveTestStatus passes a timed-out last attempt through as timed_out", (
 });
 
 test("an interrupted test reaches the wire as failed, tagged and explained", async () => {
-  const t = fakeTest({ title: "checkout", outcome: "unexpected" });
+  const t = fakeTest({ title: "checkout" }); // outcome derived: "skipped", as Playwright reports it
   const { payload } = await runReporter({
     tests: [[t, fakeResult("interrupted")]],
     fullResult: { status: "interrupted", startTime: new Date("2026-10-05T00:00:00Z"), duration: 1000 },

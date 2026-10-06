@@ -38,6 +38,55 @@ test("a test.fail() test that times out instead of failing stays timed_out", asy
   assert.equal(payload.totals.failed, 1);
 });
 
+// The error a row carries must explain its status. Playwright leaves
+// result.errors empty for an unexpected pass ("Expected to fail, but passed."
+// lives only in its formatter), and an expected failure's error is not a
+// reason for anything: on a `passed` row it is noise, on a `flaky` row or a
+// merged clean-title row it would be presented as the cause.
+const UNEXPECTED_PASS = "Expected to fail, but passed.";
+const knownBug = (extra = {}) => fakeResult("failed", { errors: [{ message: "known bug #12", stack: "at bug.ts:1" }], ...extra });
+
+test("a test.fail() that passes says why it failed, in Playwright's words, and is tagged", async () => {
+  const t = fakeTest({ title: "fixed by accident", expectedStatus: "failed" });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("passed")]] });
+  const row = payload.results[0];
+  assert.equal(row.error_message, UNEXPECTED_PASS);
+  assert.ok(row.tags.includes("expected-failure"));
+});
+
+test("an expected failure is sent passed with no error fields and no expected-failure tag", async () => {
+  const t = fakeTest({ title: "known bug", expectedStatus: "failed" });
+  const { payload } = await runReporter({ tests: [[t, knownBug()]] });
+  const row = payload.results[0];
+  assert.equal(row.status, "passed");
+  assert.equal(row.error_message, undefined);
+  assert.equal(row.error_stack, undefined);
+  assert.equal(row.tags.includes("expected-failure"), false);
+});
+
+test("a test.fail() that passed then failed as expected is flaky, and the expected error is not its reason", async () => {
+  const t = fakeTest({ title: "wavers", expectedStatus: "failed" });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("passed")], [t, knownBug({ retry: 1 })]] });
+  const row = payload.results[0];
+  assert.equal(row.status, "flaky");
+  assert.equal(row.error_message, UNEXPECTED_PASS);
+  assert.equal(row.error_stack, undefined);
+});
+
+test("a clean-title merge of an expected failure and an unexpected pass reports the real reason", async () => {
+  const chromium = fakeTest({ title: "known bug", project: "chromium", expectedStatus: "failed" });
+  const webkit = fakeTest({ title: "known bug", project: "webkit", expectedStatus: "failed" });
+  const { payload } = await runReporter({
+    options: { titleFormat: "clean" },
+    tests: [[chromium, knownBug()], [webkit, fakeResult("passed")]],
+  });
+  assert.equal(payload.results.length, 1);
+  const row = payload.results[0];
+  assert.equal(row.status, "failed");
+  assert.equal(row.error_message, UNEXPECTED_PASS);
+  assert.equal(row.error_stack, undefined);
+});
+
 test("resolveTestStatus maps from the outcome first", () => {
   assert.equal(resolveTestStatus("expected", "failed"), "passed");
   assert.equal(resolveTestStatus("unexpected", "passed"), "failed");
@@ -68,6 +117,13 @@ test("a retried flake (failed then passed) is derived flaky end to end", async (
   });
   assert.equal(payload.results[0].status, "flaky");
   assert.equal(payload.status, "flaky");
+});
+
+test("harness: a fake reused across runs starts each run with no attempts", async () => {
+  const t = fakeTest({ title: "reused" });
+  await runReporter({ tests: [[t, fakeResult("failed")]] });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("passed")]] });
+  assert.equal(payload.results[0].status, "passed", "the first run's failure must not make the second run flaky");
 });
 
 test("every status the reporter can emit is in the ingest result enum", () => {

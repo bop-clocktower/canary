@@ -229,17 +229,37 @@ function resultEntry(
   prior: ResultEntry | undefined,
 ): ResultEntry {
   const interrupted = result.status === "interrupted";
-  const firstError = prior?.error_message ?? errorField(result.errors[0]?.message, MAX_ERROR_MESSAGE);
+  const unexpectedPass = result.status === "passed" && test.expectedStatus === "failed";
+  const attempt = attemptError(test, result, unexpectedPass);
+  const firstError = prior?.error_message ?? attempt.message;
+  const extraTag = interrupted ? "interrupted" : unexpectedPass ? "expected-failure" : undefined;
   return {
     ...described,
-    tags: interrupted ? [...described.tags, "interrupted"] : described.tags,
+    tags: extraTag ? [...described.tags, extraTag] : described.tags,
     status: resolveTestStatus(test.outcome(), result.status),
     // The ingest schema requires a non-negative integer: a float or the -1
     // Playwright reports for a test that never started rejects the whole run.
     duration_ms: result.duration >= 0 ? Math.round(result.duration) : undefined,
     error_message: interrupted ? interruptedMessage(firstError) : firstError,
-    error_stack: prior?.error_stack ?? errorField(result.errors[0]?.stack, MAX_ERROR_STACK),
+    error_stack: prior?.error_stack ?? attempt.stack,
     retries: result.retry,
+  };
+}
+
+/** Playwright's own wording; it sets no `result.errors` for an unexpected pass. */
+const UNEXPECTED_PASS = "Expected to fail, but passed.";
+
+/**
+ * The error this attempt contributes to its row (#1186). An attempt that went
+ * as expected explains nothing: a `test.fail()` failing as it should is sent
+ * `passed`, and its error must not become the reason of a flaky or merged row.
+ */
+function attemptError(test: TestCase, result: TestResult, unexpectedPass: boolean): { message?: string; stack?: string } {
+  if (unexpectedPass) return { message: UNEXPECTED_PASS };
+  if (result.status === test.expectedStatus) return {};
+  return {
+    message: errorField(result.errors[0]?.message, MAX_ERROR_MESSAGE),
+    stack: errorField(result.errors[0]?.stack, MAX_ERROR_STACK),
   };
 }
 
