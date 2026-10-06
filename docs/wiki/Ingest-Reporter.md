@@ -227,6 +227,19 @@ Pushing from each shard also works now (each shard lands as its own run,
 `…-s1of4`, `…-s2of4`), but the dashboard then shows a sharded suite as several
 partial runs. `merge-reports` remains the recommended setup.
 
+## Source
+
+- [`npm/src/reporters/ingest.ts`](../../npm/src/reporters/ingest.ts) — the
+  reporter's Playwright hooks and the public exports.
+- [`ingest/config.ts`](../../npm/src/reporters/ingest/config.ts) — options, env
+  resolution (with legacy aliases) and area mapping.
+- [`ingest/payload.ts`](../../npm/src/reporters/ingest/payload.ts) — the wire
+  payload, status mapping, dedupe and the size budget.
+- [`ingest/describe.ts`](../../npm/src/reporters/ingest/describe.ts) — per-test
+  identity, tags, catalog filters and result rows.
+- [`ingest/transport.ts`](../../npm/src/reporters/ingest/transport.ts) — the
+  POST, retry and log output.
+
 ## Convergence
 
 This reporter is the **interim** delivery. The canonical design (see the
