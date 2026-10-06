@@ -35,7 +35,6 @@ import {
   stringLiteralRanges,
   inStringLiteral,
   execOutsideStrings,
-  lineRanges,
   maskJsxForFile,
   trimmedRanges,
 } from './string-literals.mjs';
@@ -301,7 +300,11 @@ function parsePragmas(lines, masks) {
     for (const t of tokens) map.get(ln).add(t);
   };
   lines.forEach((raw, i) => {
-    const m = execOutsideStrings(PRAGMA, raw, lineRanges(raw, masks[i]));
+    const m = execOutsideStrings(
+      PRAGMA,
+      raw,
+      stringLiteralRanges(raw, masks[i]),
+    );
     if (!m || !m[2].trim()) return; // reason required
     const tokens = m[1].split(/[,\s]+/).filter(Boolean);
     if (!tokens.length) return; // rule-scoped: must name a rule

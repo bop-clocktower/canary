@@ -46,7 +46,10 @@ describe.each([
   ['canary-savant copy', savantCopy],
 ])('%s', (_name, mod) => {
   const { stringLiteralRanges, inStringLiteral, execOutsideStrings } = mod as {
-    stringLiteralRanges: (line: string) => Array<[number, number]>;
+    stringLiteralRanges: (
+      line: string,
+      masked?: string,
+    ) => Array<[number, number]>;
     inStringLiteral: (ranges: Array<[number, number]>, i: number) => boolean;
     execOutsideStrings: (
       pattern: RegExp,
@@ -255,9 +258,8 @@ describe.each([
 
   // #1188: .tsx/.jsx lines are read through a JSX-masked twin.
   describe('JSX-aware ranges', () => {
-    const { maskJsxForFile, lineRanges, trimmedRanges } = mod as {
+    const { maskJsxForFile, trimmedRanges } = mod as {
       maskJsxForFile: (text: string, file: string) => string;
-      lineRanges: (line: string, masked?: string) => Array<[number, number]>;
       trimmedRanges: (raw: string, masked?: string) => Array<[number, number]>;
     };
     const SRC = "render(<p>It's</p>, label('Date.now()'));\n";
@@ -271,14 +273,14 @@ describe.each([
 
     it('is exactly stringLiteralRanges when there is no masked twin', () => {
       const line = SRC.trimEnd();
-      expect(lineRanges(line)).toEqual(stringLiteralRanges(line));
-      expect(lineRanges(line, line)).toEqual(stringLiteralRanges(line));
+      const plain = stringLiteralRanges(line);
+      expect(stringLiteralRanges(line, line)).toEqual(plain);
     });
 
     it('rejects JSX text and reads strings from the masked twin', () => {
       const line = SRC.trimEnd();
       const masked = maskJsxForFile(SRC, 'a.test.jsx').trimEnd();
-      const r = lineRanges(line, masked);
+      const r = stringLiteralRanges(line, masked);
       expect(inStringLiteral(r, line.indexOf("It's"))).toBe(true);
       expect(inStringLiteral(r, line.indexOf('Date.now'))).toBe(true);
       expect(inStringLiteral(r, line.indexOf('label'))).toBe(false);

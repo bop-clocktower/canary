@@ -35,19 +35,49 @@
 //   later quoted fixture into CODE, which DID fabricate findings. So a
 //   JSX file is masked whole-source first (lib/jsx-text.mjs blanks children
 //   text, keeping every offset and line break) and each line is read through
-//   its masked twin: `lineRanges` / `trimmedRanges` take string literals
-//   from the twin and add the blanked JSX text as rejected (data) ranges.
-//   Every other extension has no twin and reads exactly as before.
+//   its masked twin: `stringLiteralRanges(line, masked)` / `trimmedRanges`
+//   take string literals from the twin and add the blanked JSX text as
+//   rejected (data) ranges. Every other extension has no twin and reads
+//   exactly as before.
 
 import { isJsxPath, maskJsxText } from '../../../lib/jsx-text.mjs';
 
 /**
  * Compute the [start, end) index ranges of string-literal CONTENT in `line`
- * (quote characters excluded; empty literals contribute no range).
+ * (quote characters excluded; empty literals contribute no range). With a
+ * distinct masked twin `masked` (same offsets, #1188), the literals are read
+ * from the twin and every run the masking blanked is added: JSX text is data,
+ * not code. Without one, this is the plain per-line reading.
+ * @param {string} line
+ * @param {string} [masked]
+ * @returns {Array<[number, number]>}
+ */
+export function stringLiteralRanges(line, masked = line) {
+  if (masked === line) return quotedRanges(line);
+  return [...quotedRanges(masked), ...blankedRuns(line, masked)];
+}
+
+/** The [start, end) runs where `masked` differs from `line`. */
+function blankedRuns(line, masked) {
+  /** @type {Array<[number, number]>} */
+  const runs = [];
+  let start = -1;
+  for (let i = 0; i <= line.length; i += 1) {
+    const blanked = i < line.length && masked[i] !== line[i];
+    if (blanked && start < 0) start = i;
+    if (!blanked && start >= 0) {
+      runs.push([start, i]);
+      start = -1;
+    }
+  }
+  return runs;
+}
+
+/**
  * @param {string} line
  * @returns {Array<[number, number]>}
  */
-export function stringLiteralRanges(line) {
+function quotedRanges(line) {
   /** @type {Array<[number, number]>} */
   const ranges = [];
   // Frames: {quote, start} while inside a string; {interp: true, depth}
@@ -139,31 +169,7 @@ export function maskJsxForFile(text, file) {
 }
 
 /**
- * Ranges a match must not start in, for `line` read through its masked twin
- * `masked` (same offsets): the string-literal content of the twin, plus every
- * run the masking blanked (JSX text is data, not code). Without a distinct
- * twin this is exactly `stringLiteralRanges(line)`.
- * @param {string} line
- * @param {string} [masked]
- * @returns {Array<[number, number]>}
- */
-export function lineRanges(line, masked = line) {
-  if (masked === line) return stringLiteralRanges(line);
-  const ranges = stringLiteralRanges(masked);
-  let start = -1;
-  for (let i = 0; i <= line.length; i += 1) {
-    const blanked = i < line.length && masked[i] !== line[i];
-    if (blanked && start < 0) start = i;
-    if (!blanked && start >= 0) {
-      ranges.push([start, i]);
-      start = -1;
-    }
-  }
-  return ranges;
-}
-
-/**
- * `lineRanges` for `raw.trim()`, the view the scanners match against, with
+ * `stringLiteralRanges` for `raw.trim()`, the view the scanners match against, with
  * the masked twin `masked` of the untrimmed `raw` aligned to it.
  * @param {string} raw
  * @param {string} [masked]
@@ -172,5 +178,8 @@ export function lineRanges(line, masked = line) {
 export function trimmedRanges(raw, masked = raw) {
   const stripped = raw.trim();
   const lead = raw.length - raw.trimStart().length;
-  return lineRanges(stripped, masked.slice(lead, lead + stripped.length));
+  return stringLiteralRanges(
+    stripped,
+    masked.slice(lead, lead + stripped.length),
+  );
 }

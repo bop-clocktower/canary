@@ -8,9 +8,9 @@ import path from 'node:path';
 
 import { FROZEN_CLOCK_MARKERS, RULES } from './rules.mjs';
 import {
+  stringLiteralRanges,
   execOutsideStrings,
   inStringLiteral,
-  lineRanges,
   maskJsxForFile,
   trimmedRanges,
 } from './string-literals.mjs';
@@ -115,7 +115,11 @@ function parsePragmas(lines, masks) {
     // suppressed count. This suite necessarily carries pragma text inside
     // fixture strings, so the self-scan was the thing at risk. Savant shipped
     // this guard in #498; blackhawk never got it ported back.
-    const m = execOutsideStrings(PRAGMA, raw, lineRanges(raw, masks[i]));
+    const m = execOutsideStrings(
+      PRAGMA,
+      raw,
+      stringLiteralRanges(raw, masks[i]),
+    );
     if (!m || !m[2].trim()) return; // reason required
     const tokens = m[1].split(/[,\s]+/).filter(Boolean);
     if (!tokens.length) return; // rule-scoped: must name a rule
