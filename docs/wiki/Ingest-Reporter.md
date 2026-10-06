@@ -1,8 +1,14 @@
-# TestTracker Ingest Reporter
+# Ingest Reporter
 
 A config-driven Playwright reporter shipped from `canary-test-cli` that pushes a
-completed run to the TestTracker (QA dashboard) ingest API. One reporter,
-versioned with Canary — replaces per-repo copies of `testtracker-reporter.ts`.
+completed run to a QA dashboard's `/api/ingest` endpoint. One reporter,
+versioned with Canary, replacing the per-repo reporter copies consumers used to
+keep.
+
+> **Renamed.** This was the "TestTracker reporter". The import path
+> (`canary-test-cli/reporter`) is unchanged. The old `TESTTRACKER_*` env vars
+> still work for one release and print a one-line deprecation notice; rename
+> them to the `CANARY_INGEST_*` names below.
 
 > **Interim.** This reporter is the precursor to the spec-pure `canary publish`
 > command (see [Convergence](#convergence)). Adopt it now; expect to migrate to
@@ -34,29 +40,32 @@ export default defineConfig({
 
 ### Options
 
-| Option           | Env fallback                   | Default      | Purpose                                                                |
-| ---------------- | ------------------------------ | ------------ | ---------------------------------------------------------------------- |
-| `suite`          | `TESTTRACKER_SUITE`            | — (required) | Suite name on the dashboard (e.g. `consumer-b-api`, `consumer-a-web`). |
-| `testFilePrefix` | `TESTTRACKER_TEST_FILE_PREFIX` | `<cwd>/`     | Prefix stripped from absolute test file paths.                         |
-| `environment`    | `TESTTRACKER_ENVIRONMENT`      | (unset)      | Environment label (`stage`, `uat`, `prod`, …).                         |
-| `url`            | `TESTTRACKER_URL`              | (unset)      | TestTracker base URL.                                                  |
-| `token`          | `TESTTRACKER_API_TOKEN`        | (unset)      | Ingest token (`tt_…`, scope `ingest:runs`).                            |
-| `workflow`       | `TESTTRACKER_WORKFLOW`         | `playwright` | Free-form workflow label.                                              |
+| Option           | Env fallback                     | Legacy env (deprecated)        | Default      | Purpose                                                                |
+| ---------------- | -------------------------------- | ------------------------------ | ------------ | ---------------------------------------------------------------------- |
+| `suite`          | `CANARY_INGEST_SUITE`            | `TESTTRACKER_SUITE`            | — (required) | Suite name on the dashboard (e.g. `consumer-b-api`, `consumer-a-web`). |
+| `testFilePrefix` | `CANARY_INGEST_TEST_FILE_PREFIX` | `TESTTRACKER_TEST_FILE_PREFIX` | `<cwd>/`     | Prefix stripped from absolute test file paths.                         |
+| `environment`    | `CANARY_INGEST_ENVIRONMENT`      | `TESTTRACKER_ENVIRONMENT`      | (unset)      | Environment label (`stage`, `uat`, `prod`, …).                         |
+| `url`            | `CANARY_INGEST_URL`              | `TESTTRACKER_URL`              | (unset)      | Dashboard base URL; the reporter posts to `<url>/api/ingest/runs`.     |
+| `token`          | `CANARY_INGEST_TOKEN`            | `TESTTRACKER_API_TOKEN`        | (unset)      | Ingest token (scope `ingest:runs`).                                    |
+| `workflow`       | `CANARY_INGEST_WORKFLOW`         | `TESTTRACKER_WORKFLOW`         | `playwright` | Free-form workflow label.                                              |
+
+When both a `CANARY_INGEST_*` var and its legacy name are set, the new name
+wins.
 
 ### Environment variables
 
 Set these in CI (GitHub Actions secrets):
 
 ```text
-TESTTRACKER_URL=https://<your-testtracker-deployment>
-TESTTRACKER_API_TOKEN=tt_xxxxxxxx        # per-tenant, scope ingest:runs
+CANARY_INGEST_URL=https://<your-dashboard-deployment>
+CANARY_INGEST_TOKEN=<token>               # per-tenant, scope ingest:runs
 ```
 
 ## When it pushes (and when it doesn't)
 
 - Pushes **only** when `url` + `token` are set **and** running in CI (`CI=true`
   / `GITHUB_ACTIONS=true`) — **or** when you force it locally with
-  `TESTTRACKER_PUSH=true`.
+  `CANARY_INGEST_PUSH=true`.
 - Missing config, or local runs without the force flag → the reporter **no-ops
   silently**. It never fails a test run: a config or network error is logged as
   a single line and swallowed.
@@ -72,7 +81,7 @@ At the **run** level a recovered flake is **not** counted as a failure: with no
 hard failures, the run status is `flaky` (never `failed`). Clients / management
 reading the top line see a non-failing run; the flaky count is the SDET signal.
 (If a deployment prefers the run headline to read a flat `passed` when only
-flakes occurred, that is a TestTracker display choice, not a reporter change.)
+flakes occurred, that is a dashboard display choice, not a reporter change.)
 
 ## Idempotency
 
@@ -99,8 +108,8 @@ the `merge-reports` step over the merged blobs:
 npx playwright merge-reports --reporter "canary-test-cli/reporter" ./blob-report
 ```
 
-with `TESTTRACKER_URL`, `TESTTRACKER_API_TOKEN`, and `TESTTRACKER_SUITE` set in
-that step's environment. This yields exactly one run per suite per CI run.
+with `CANARY_INGEST_URL`, `CANARY_INGEST_TOKEN`, and `CANARY_INGEST_SUITE` set
+in that step's environment. This yields exactly one run per suite per CI run.
 
 ## Convergence
 

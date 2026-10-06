@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { mapStatus, resolveTestStatus, runStatus, resolveConfig, buildPayload, shouldPush, dedupeByFullTitle } = require("../../dist/reporters/testtracker.js");
+const { mapStatus, resolveTestStatus, runStatus, resolveConfig, buildPayload, shouldPush, dedupeByFullTitle } = require("../../dist/reporters/ingest.js");
 
 test("mapStatus collapses PW statuses", () => {
   assert.equal(mapStatus("passed"), "passed");
@@ -196,4 +196,43 @@ test("a duplicated title that failed in one shard fails the run", () => {
   assert.equal(p.totals.failed, 1);
   assert.equal(p.totals.passed, 0); // the passing shard must not mask the failure
   assert.equal(p.status, "failed");
+});
+
+// --- rename: TestTracker → ingest reporter ----------------------------------
+// The reporter used to read TESTTRACKER_* env vars. Consumer CI still sets them,
+// so the old names keep working for one release and are reported as deprecated.
+
+test("resolveConfig reads CANARY_INGEST_* env vars", () => {
+  const c = resolveConfig({}, {
+    CANARY_INGEST_SUITE: "s",
+    CANARY_INGEST_URL: "https://ingest.example",
+    CANARY_INGEST_TOKEN: "tok",
+    CANARY_INGEST_ENVIRONMENT: "stage",
+    CANARY_INGEST_WORKFLOW: "wf",
+    CANARY_INGEST_TEST_FILE_PREFIX: "/repo/",
+  });
+  assert.deepEqual(
+    [c.suite, c.url, c.token, c.environment, c.workflow, c.testFilePrefix],
+    ["s", "https://ingest.example", "tok", "stage", "wf", "/repo/"],
+  );
+  assert.deepEqual(c.deprecatedEnv, []);
+});
+
+test("legacy TESTTRACKER_* env vars still work and are reported as deprecated", () => {
+  const c = resolveConfig({}, { TESTTRACKER_SUITE: "old", TESTTRACKER_API_TOKEN: "t" });
+  assert.equal(c.suite, "old");
+  assert.equal(c.token, "t");
+  assert.deepEqual(c.deprecatedEnv.sort(), ["TESTTRACKER_API_TOKEN", "TESTTRACKER_SUITE"]);
+});
+
+test("a CANARY_INGEST_* var wins over its legacy alias", () => {
+  const c = resolveConfig({}, { CANARY_INGEST_SUITE: "new", TESTTRACKER_SUITE: "old" });
+  assert.equal(c.suite, "new");
+  assert.deepEqual(c.deprecatedEnv, []);
+});
+
+test("shouldPush honours CANARY_INGEST_PUSH and the legacy TESTTRACKER_PUSH", () => {
+  const base = { url: "u", token: "t" };
+  assert.equal(shouldPush(base, { CANARY_INGEST_PUSH: "true" }), true);
+  assert.equal(shouldPush(base, { TESTTRACKER_PUSH: "true" }), true);
 });

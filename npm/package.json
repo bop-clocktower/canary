@@ -13,9 +13,9 @@
   },
   "exports": {
     "./reporter": {
-      "types": "./dist/reporters/testtracker.d.ts",
-      "require": "./dist/reporters/testtracker.js",
-      "default": "./dist/reporters/testtracker.js"
+      "types": "./dist/reporters/ingest.d.ts",
+      "require": "./dist/reporters/ingest.js",
+      "default": "./dist/reporters/ingest.js"
     },
     "./vitest-sequencer": {
       "import": "./dist/engine/analysis/order/vitest-sequencer.js",

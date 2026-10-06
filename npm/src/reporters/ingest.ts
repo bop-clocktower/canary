@@ -13,7 +13,14 @@ try {
   /* dotenv not installed — use ambient env */
 }
 
-export interface TestTrackerReporterOptions {
+/**
+ * Pushes a completed Playwright run to an `/api/ingest` endpoint (a QA
+ * dashboard's ingest API). Loaded by consumers as `canary-test-cli/reporter`.
+ *
+ * Formerly the "TestTracker reporter": the `TESTTRACKER_*` env vars it used to
+ * read still work for one release (see `envVar`) and are reported as deprecated.
+ */
+export interface IngestReporterOptions {
   suite?: string;
   /** Prefix stripped from an absolute test file path. Default: `<cwd>/`. */
   testFilePrefix?: string;
@@ -24,6 +31,9 @@ export interface TestTrackerReporterOptions {
   workflow?: string;
 }
 
+/** @deprecated Use `IngestReporterOptions`. */
+export type TestTrackerReporterOptions = IngestReporterOptions;
+
 export interface ResolvedConfig {
   suite: string;
   testFilePrefix: string;
@@ -31,6 +41,8 @@ export interface ResolvedConfig {
   url: string;
   token: string;
   workflow: string;
+  /** Legacy `TESTTRACKER_*` names this config was resolved from. */
+  deprecatedEnv: string[];
 }
 
 export interface ResultEntry {
@@ -99,24 +111,47 @@ export function resolveTestStatus(outcome: string, lastAttemptStatus: string): s
   return mapStatus(lastAttemptStatus);
 }
 
+/** Each setting's env var, and the pre-rename name still accepted for it. */
+const ENV_NAMES = {
+  suite: ["CANARY_INGEST_SUITE", "TESTTRACKER_SUITE"],
+  testFilePrefix: ["CANARY_INGEST_TEST_FILE_PREFIX", "TESTTRACKER_TEST_FILE_PREFIX"],
+  environment: ["CANARY_INGEST_ENVIRONMENT", "TESTTRACKER_ENVIRONMENT"],
+  url: ["CANARY_INGEST_URL", "TESTTRACKER_URL"],
+  token: ["CANARY_INGEST_TOKEN", "TESTTRACKER_API_TOKEN"],
+  workflow: ["CANARY_INGEST_WORKFLOW", "TESTTRACKER_WORKFLOW"],
+  push: ["CANARY_INGEST_PUSH", "TESTTRACKER_PUSH"],
+} as const;
+
+/** Reads a setting's env var, falling back to its legacy name (recorded in `deprecated`). */
+function envVar(
+  env: NodeJS.ProcessEnv,
+  key: keyof typeof ENV_NAMES,
+  deprecated: string[] = [],
+): string | undefined {
+  const [current, legacy] = ENV_NAMES[key];
+  if (env[current] !== undefined) return env[current];
+  if (env[legacy] !== undefined) deprecated.push(legacy);
+  return env[legacy];
+}
+
 export function resolveConfig(
-  opts: TestTrackerReporterOptions = {},
+  opts: IngestReporterOptions = {},
   env: NodeJS.ProcessEnv = process.env,
 ): ResolvedConfig {
-  const suite = opts.suite ?? env.TESTTRACKER_SUITE;
+  const deprecatedEnv: string[] = [];
+  const read = (key: keyof typeof ENV_NAMES) => envVar(env, key, deprecatedEnv);
+  const suite = opts.suite ?? read("suite");
   if (!suite) {
-    throw new Error(
-      "TestTrackerReporter: `suite` is required (option or TESTTRACKER_SUITE).",
-    );
+    throw new Error("`suite` is required (option or CANARY_INGEST_SUITE).");
   }
   return {
     suite,
-    testFilePrefix:
-      opts.testFilePrefix ?? env.TESTTRACKER_TEST_FILE_PREFIX ?? `${process.cwd()}/`,
-    environment: opts.environment ?? env.TESTTRACKER_ENVIRONMENT,
-    url: opts.url ?? env.TESTTRACKER_URL ?? "",
-    token: opts.token ?? env.TESTTRACKER_API_TOKEN ?? "",
-    workflow: opts.workflow ?? env.TESTTRACKER_WORKFLOW ?? "playwright",
+    testFilePrefix: opts.testFilePrefix ?? read("testFilePrefix") ?? `${process.cwd()}/`,
+    environment: opts.environment ?? read("environment"),
+    url: opts.url ?? read("url") ?? "",
+    token: opts.token ?? read("token") ?? "",
+    workflow: opts.workflow ?? read("workflow") ?? "playwright",
+    deprecatedEnv,
   };
 }
 
@@ -126,7 +161,7 @@ export function shouldPush(
 ): boolean {
   if (!cfg.url || !cfg.token) return false;
   const isCI = env.CI === "true" || env.GITHUB_ACTIONS === "true";
-  const force = env.TESTTRACKER_PUSH === "true";
+  const force = envVar(env, "push") === "true";
   return isCI || force;
 }
 
@@ -166,7 +201,7 @@ const STATUS_SEVERITY: Record<string, number> = {
 /**
  * Collapse results that share a `full_title` into one row.
  *
- * TestTracker's ingest holds a unique index on `(run_id, full_title)` and
+ * The ingest API holds a unique index on `(run_id, full_title)` and
  * rejects the WHOLE run on a collision, so a duplicate title is not a cosmetic
  * problem — it takes the suite dark. The reporter keys its in-flight map by
  * `test.id`, which is genuinely unique, but a title is not: a Playwright
@@ -242,22 +277,33 @@ export function buildPayload(
   };
 }
 
-export default class TestTrackerReporter implements Reporter {
+function log(message: string): void {
+  console.log(`\ncanary ingest: ${message}`);
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+export default class IngestReporter implements Reporter {
   private results = new Map<string, ResultEntry>();
   private startTime = Date.now();
   private cfg: ResolvedConfig | null = null;
 
-  constructor(private options: TestTrackerReporterOptions = {}) {}
+  constructor(private options: IngestReporterOptions = {}) {}
 
   onBegin() {
     // Resolve config once; a config error here is logged, not thrown, so a
     // misconfigured reporter never aborts the whole run.
     try {
       this.cfg = resolveConfig(this.options);
+      if (this.cfg.deprecatedEnv.length) {
+        log(
+          `${this.cfg.deprecatedEnv.join(", ")} ${this.cfg.deprecatedEnv.length > 1 ? "are" : "is"} deprecated; rename to CANARY_INGEST_* (see docs/wiki/Ingest-Reporter.md).`,
+        );
+      }
     } catch (err) {
-      console.log(
-        `\nTestTracker: disabled — ${err instanceof Error ? err.message : String(err)}`,
-      );
+      log(`disabled — ${errText(err)}`);
       this.cfg = null;
     }
   }
@@ -288,9 +334,7 @@ export default class TestTrackerReporter implements Reporter {
         tags,
       });
     } catch (err) {
-      console.log(
-        `\nTestTracker: skipped a result — ${err instanceof Error ? err.message : String(err)}`,
-      );
+      log(`skipped a result — ${errText(err)}`);
     }
   }
 
@@ -320,17 +364,13 @@ export default class TestTrackerReporter implements Reporter {
           id?: number;
           duplicate?: boolean;
         };
-        console.log(
-          `\nTestTracker: run ${data.id ?? "?"} ingested${data.duplicate ? " (duplicate)" : ""}.`,
-        );
+        log(`run ${data.id ?? "?"} ingested${data.duplicate ? " (duplicate)" : ""}.`);
       } else {
         const text = await resp.text().catch(() => "");
-        console.log(`\nTestTracker: push failed ${resp.status} — ${text.slice(0, 200)}`);
+        log(`push failed ${resp.status} — ${text.slice(0, 200)}`);
       }
     } catch (err) {
-      console.log(
-        `\nTestTracker: push error — ${err instanceof Error ? err.message : String(err)}`,
-      );
+      log(`push error — ${errText(err)}`);
     }
   }
 }
