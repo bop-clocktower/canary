@@ -4,20 +4,31 @@
  *
  * `historyPath` is always the default store under the root -- the one
  * `canary ci-ready` reads -- never `--history`, so the two cannot score
- * different runs. A store ci-ready would throw on is DARK here, not scored as
- * if it were absent.
+ * different runs. A store that exists but cannot be read (EISDIR, EACCES, ...)
+ * is ci-ready's own skip with a reason on both history checks (#1132), consumed
+ * here as-is -- never scored as absent. A corrupt or unsupported-schema store
+ * is the same pass-through skip, naming the line (#1156). Only an error that is
+ * neither (a bug, not a property of the store) is DARK here.
  *
- * DARK when ci-ready itself abstains (no check had an input). An
+ * DARK when ci-ready itself abstains (no check had an input); the reason
+ * carries every distinct skip reason, so an unreadable input is named. An
  * `incomplete` ci-ready verdict is fed -- some checks scored -- but raised as
  * worth your eyes, because skipped checks are not passed checks.
  */
 
-import { scoreCiReady, type CiReadyReport } from '../../core/ci-ready.js';
+import {
+  scoreCiReady,
+  type CiReadyReport,
+  type RunsInput,
+} from '../../core/ci-ready.js';
 import {
   parseCriticalAreas,
   parseInventory,
 } from '../../core/inventory-checks.js';
-import { NdjsonHistoryStore } from '../../history/ndjson-store.js';
+import {
+  HistoryContentError,
+  NdjsonHistoryStore,
+} from '../../history/ndjson-store.js';
 import { readSource, sourceRef, type SourceRead } from './sources.js';
 import {
   darkSection,
@@ -48,14 +59,22 @@ function inputOf<T>(
   return parse(read.kind === 'ok' ? read.text : null);
 }
 
-type Runs = ReturnType<NdjsonHistoryStore['readAll']>;
-
-/** Stored runs, null when absent, or the error ci-ready itself would throw. */
-function runsOf(read: SourceRead, path: string): Runs | null | Error {
-  if (read.kind !== 'ok') return null;
+/**
+ * ci-ready's runs input: stored runs, null when absent, the unreadable
+ * (#1132) or corrupt (#1156) reason in ci-ready's wording, or the unexpected
+ * error ci-ready itself would throw.
+ */
+function runsOf(read: SourceRead, path: string): RunsInput | Error {
+  if (read.kind === 'missing') return null;
+  if (read.kind === 'unreadable') {
+    return { ok: false, reason: `${path} could not be read (${read.reason})` };
+  }
   try {
     return new NdjsonHistoryStore(path).readAll();
   } catch (err) {
+    if (err instanceof HistoryContentError) {
+      return { ok: false, reason: err.reasonFor(path) };
+    }
     return err as Error;
   }
 }
@@ -102,10 +121,11 @@ export function readinessSection(paths: ReadinessPaths): Section {
     criticalAreas: inputOf(critical, parseCriticalAreas),
   });
   if (report.verdict === 'abstained') {
+    const why = [...new Set(report.checks.map((c) => c.reason))].join('; ');
     return darkSection(
       'ci-readiness',
       sources,
-      'ci-ready abstained: no check had an input to score',
+      `ci-ready abstained: no check had an input to score (${why})`,
     );
   }
   return fedReadiness(report, sources);

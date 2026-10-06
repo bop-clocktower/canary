@@ -1,0 +1,8 @@
+{
+  "reason": "Ingest reporter (PR #1187; #1148 #1149 #1150 #1176 #1183): module-size 50179->50991 (+812), measured with harness check-arch --json (CLI 12.10.1) in clean worktrees at merge base c7a51998 (no regression) and at branch head 1fc88905. newViolations is 0 and the only regression is this aggregate. The growth is the reporter itself: npm/src/reporters/testtracker.ts (336 lines) became npm/src/reporters/ingest.ts plus ingest/{config,payload,describe,transport}.ts (~950 lines), carrying the shard-aware run id, timed_out/interrupted mapping, the collected catalog with partial-run detection, area mapping, retry with timeouts and a body-size budget, the advisory whoami preflight, clean titles and the project/dependency/fixme/reason tags. The split into five files was required by the perf ratchet (complexity and fileLength) and does not change the aggregate, which scores N files the same as one. Nothing was absorbed to avoid a fix: the six complexity findings CI raised were fixed in code.",
+  "categories": {
+    "module-size": 50991
+  },
+  "violationIds": [],
+  "createdFrom": "1fc88905"
+}

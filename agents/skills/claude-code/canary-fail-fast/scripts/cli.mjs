@@ -24,6 +24,7 @@ import {
 import { parseFailures } from './parse.mjs';
 import { buildDigest } from './digest.mjs';
 import { checkConfig } from './fastfail_check.mjs';
+import { isMain } from '../../../lib/is-main.mjs';
 
 const PREFIX = 'canary-fail-fast:';
 const DASH = '\u2014'; // em dash (see digest.mjs)
@@ -113,6 +114,6 @@ export function main(argv = []) {
 // `process.exitCode`, not `process.exit()`: a large `--json` payload exceeds
 // the pipe buffer, and `process.exit` tears the process down mid-write, leaving
 // truncated JSON that still exits 0 (#791).
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }

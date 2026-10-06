@@ -3,13 +3,23 @@
  * machine resolve to files under a synthetic repository root.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { resolveFrames } from '../src/analysis/judomaster/resolve.js';
+import {
+  isWithin,
+  mockedSuspectWarnings,
+  resolveFrames,
+} from '../src/analysis/judomaster/resolve.js';
 
 let base: string;
 let root: string;
@@ -90,5 +100,122 @@ describe('resolveFrames', () => {
         root,
       )[0]!.status,
     ).toBe('missing');
+  });
+});
+
+describe('isWithin', () => {
+  it('is true for a path strictly inside the base, including root /', () => {
+    expect(isWithin('/', '/a/b')).toBe(true);
+    expect(isWithin('/repo', '/repo/..foo')).toBe(true);
+  });
+
+  it('is false for a sibling with a shared prefix, the base itself, or a parent', () => {
+    expect(isWithin('/repo', '/repo-other/x')).toBe(false);
+    expect(isWithin('/repo', '/repo')).toBe(false);
+    expect(isWithin('/repo', '/')).toBe(false);
+  });
+});
+
+describe('resolveFrames containment', () => {
+  it('resolves an absolute in-repo frame when the root is /', () => {
+    const real = realpathSync(join(root, 'src', 'cart', 'total.ts'));
+    const f = resolveFrames([{ file: real, line: 3 }], '/')[0]!;
+    expect(f.status).toBe('resolved');
+    expect(f.path).toBe(real.slice(1));
+  });
+
+  it('never resolves a frame under a sibling repo-other directory', () => {
+    mkdirSync(join(base, 'repo-other', 'src'), { recursive: true });
+    const other = join(base, 'repo-other', 'src', 'a.ts');
+    writeFileSync(other, 'a\n');
+    const f = resolveFrames([{ file: other, line: 1 }], root)[0]!;
+    expect(f.status).toBe('missing');
+  });
+});
+
+describe('mockedSuspectWarnings', () => {
+  const DIR = 'tests/generated/regression';
+  const JS = 'src/cart/total.ts';
+  const PY = 'src/cart/total.py';
+  const warn = (src: string, suspect: string, fn?: string) =>
+    mockedSuspectWarnings(src, DIR, suspect, fn);
+  const SOFT = 'inside the suspect module';
+
+  it('flags vi.mock of the suspect by relative path and names both', () => {
+    const w = warn("vi.mock('../../../src/cart/total', () => ({}));", JS);
+    expect(w).toEqual([
+      "the test mocks the suspect module src/cart/total.ts (vi.mock('../../../src/cart/total')); a regression test that mocks the code it should exercise cannot reproduce the defect",
+    ]);
+  });
+
+  it('flags jest.doMock with an extension, and @/ ~/ bare suffixes', () => {
+    expect(warn('jest.doMock("../../../src/cart/total.js")', JS)).toHaveLength(
+      1,
+    );
+    expect(warn("vi.mock('@/cart/total')", JS)).toHaveLength(1);
+    expect(warn("jest.mock('~/cart/total')", JS)).toHaveLength(1);
+    expect(warn("vi.doMock('cart/total')", JS)).toHaveLength(1);
+  });
+
+  it('ignores a mock of another module and vi.mocked()', () => {
+    expect(warn("vi.mock('../../../src/cart/tax')", JS)).toEqual([]);
+    expect(warn("vi.mock('../../../src/cart/totals')", JS)).toEqual([]);
+    expect(warn('vi.mocked(total).mockReturnValue(1)', JS)).toEqual([]);
+  });
+
+  it('flags Python string patch targets inside the suspect module', () => {
+    expect(warn('@mock.patch("cart.total.compute")', PY)).toHaveLength(1);
+    expect(warn("mocker.patch('src.cart.total')", PY)).toHaveLength(1);
+    expect(warn('monkeypatch.setattr("cart.total.TAX", 0)', PY)).toHaveLength(
+      1,
+    );
+    expect(warn("monkeypatch.delattr('cart.total.TAX')", PY)).toHaveLength(1);
+    expect(warn("with patch('cart.total.rate'):", PY)).toHaveLength(1);
+  });
+
+  it('flags Python object forms by the module stem only', () => {
+    expect(warn('patch.object(total, "compute")', PY, 'compute')).toEqual([
+      'the test mocks the suspect module src/cart/total.py (patch.object(total, ...)); a regression test that mocks the code it should exercise cannot reproduce the defect',
+    ]);
+    expect(warn('monkeypatch.setattr(total, "TAX", 0)', PY)).toHaveLength(1);
+    expect(warn('monkeypatch.setattr(tax, "rate", 0)', PY)).toEqual([]);
+  });
+
+  it('softens a Python patch of a dependency inside the suspect module', () => {
+    const [dep] = warn("patch('cart.total.requests.get')", PY, 'compute');
+    expect(dep).toContain(`patches cart.total.requests.get ${SOFT}`);
+    expect(dep).toContain('check it is a dependency');
+    const [obj] = warn('patch.object(total, "helper")', PY, 'compute');
+    expect(obj).toContain(SOFT);
+    const [hit] = warn("patch('cart.total.compute')", PY, 'compute');
+    expect(hit).toContain('the test mocks the suspect module');
+    const [mod] = warn("patch('cart.total')", PY, 'compute');
+    expect(mod).toContain('the test mocks the suspect module');
+  });
+
+  it('softens a JS partial mock that keeps the real implementation', () => {
+    const src = [
+      "vi.mock('../../../src/cart/total', async (importOriginal) => ({",
+      '  ...(await importOriginal()),',
+      '  log: vi.fn(),',
+      '}));',
+    ].join('\n');
+    const [w] = warn(src, JS);
+    expect(w).toContain(SOFT);
+    const [spy] = warn("vi.mock('@/cart/total', { spy: true })", JS);
+    expect(spy).toContain(SOFT);
+  });
+
+  it('ignores single-segment bare specifiers and commented-out mocks', () => {
+    expect(warn("vi.mock('fs')", 'src/utils/fs.ts')).toEqual([]);
+    expect(warn("vi.mock('axios')", 'src/lib/axios.ts')).toEqual([]);
+    expect(warn("// vi.mock('../../../src/cart/total')", JS)).toEqual([]);
+    expect(warn("# patch('cart.total.compute')", PY)).toEqual([]);
+  });
+
+  it('ignores Python patches of other modules', () => {
+    expect(warn("mocker.patch('cart.tax.rate')", PY)).toEqual([]);
+    expect(warn("patch('cart.totals.x')", PY)).toEqual([]);
+    expect(warn("patch('total.x')", PY)).toEqual([]);
   });
 });

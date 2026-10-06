@@ -352,10 +352,15 @@ host Claude Code session via `/canary-write-test` — no API key required.
   Static definitions for framework capabilities and templates.
 - **Harness Config:** [harness.config.json](harness.config.json) — Defines
   architectural layers, dependency constraints, and project metadata. The layers
-  describe `ts/src` by role; every pattern is required to match at least one
-  git-tracked file and every tracked source file to belong to a layer
-  (`ts/test/harness-config-denominator.test.ts`), because a rule that matches
-  nothing still reports as configured (#543).
+  describe `ts/src` by role, plus two for the skills tree: `skills`
+  (`agents/skills/claude-code/**`) may import `skills-lib`
+  (`agents/skills/lib/**`), never the reverse (#1155). Every pattern is required
+  to match at least one git-tracked file and every tracked source file under
+  each source root (`ts/src`, `agents/skills/lib`) to belong to a layer
+  (`ts/test/harness-config-denominator.test.ts`, which prints the per-root
+  module count), because a rule that matches nothing still reports as configured
+  (#543), and a root no layer matches is never parsed by `harness check-deps` at
+  all (#1155).
 - **QA data contract:** `agents/skills/lib/contracts/` — `canary.run/1`,
   `canary.assessment/1` and `canary.site/1` as JSON Schemas plus a
   zero-dependency validator, `validate.mjs <file> [--layer L] [--json]` (exit 0
@@ -495,8 +500,9 @@ Canary integrates with the **Harness Engineering Ecosystem** by:
    generation outputs
 2. **Layered Architecture:** A role-based layering of the TypeScript engine —
    entry and CLI on top, then feature modules (`guardian`, `analysis`,
-   `history`), then `core`, over the `ui` and `util` leaves — enforced by
-   `harness.config.json` and gated by `harness check-deps` in CI
+   `history`), then `core`, over the `ui` and `util` leaves — plus a `skills` →
+   `skills-lib` direction for the skill scripts and their shared library —
+   enforced by `harness.config.json` and gated by `harness check-deps` in CI
 3. **Mechanical Verification:** Supporting dry-runs via `--recommend-only` for
    early validation by other harness agents (like `harness-planner`)
 
@@ -549,9 +555,14 @@ cleanly decoupled and depends on none of this. The consumed subcommands are:
 | `check-security`   | `harness-security.yml`                             |
 | `check-docs`       | `harness-quality.yml`                              |
 | `cleanup`          | `harness-quality.yml`                              |
-| `check-phase-gate` | `harness-quality.yml`                              |
 | `check-arch`       | `refresh-arch-baseline.yml`, `harness.yml`         |
 | `snapshot capture` | `arch-snapshot.yml`                                |
+
+`check-phase-gate` is deliberately **not** consumed (#1155): with no phase-gate
+configuration it prints "not enabled" and exits 0 over zero items, so it is
+neither run directly nor left inside `ci check` (`--skip phase-gate`).
+`ts/test/harness-gate-list.test.ts` binds this table to the workflows: every row
+must be run by each workflow it names, and an abstaining gate may not reappear.
 
 **Pinning (#318 A).** Every gate installs the CLI at a **pinned major** via one
 workflow-level env var — `HARNESS_CLI: '@harness-engineering/cli@12'` — rather
@@ -932,6 +943,18 @@ issue #678. Issue #698 renamed both, to **Dependency & project validation** and
 `scripts/arch-verdict.mjs` classifies). Do not put "architecture" back in that
 job's name unless it actually runs `check-arch`.
 
+**The arch ratchet is not the layer or cycle gate (#1164).** In harness 12.10.1
+three of its seven metrics are 0 by construction: `circular-deps` parses no file
+(stub parser, zero edges), and `layer-violations` and `forbidden-imports` run
+with `layers: []` (Intense-Visions/harness-engineering#2235). Their `0` in
+`baselines.json` and `timeline.json` is an abstention, and a planted cycle and a
+planted wrong-layer import both left `newViolations` empty. Layer direction,
+forbidden imports and cycles are enforced by `harness check-deps` only, in the
+`deps-and-validate` job above and the `deps` step of `harness ci check`.
+`scripts/arch-verdict.mjs` says so under every verdict (`NOT MEASURED: …`), from
+the `UNMEASURED_ARCH_METRICS` constant. Revisit that constant when canary picks
+up the harness release that fixes #2235.
+
 **A metric that silently improves is a finding (#688).** The arch analyzer skips
 55 directory names outright (`coverage`, `dist`, `build`, `bin`, `out`,
 `target`, `deps`, `obj`, `vendor`, …) plus every dot-directory, so a source
@@ -1220,6 +1243,9 @@ preservation, filed upstream.
 `harness snapshot capture` weekly and appends `.harness/arch/timeline.json` —
 the architecture time-series that feeds `harness snapshot trends`, alongside the
 `.harness/security/timeline.json` ledger refreshed by `harness-security.yml`.
+Its `circular-deps`, `layer-violations` and `forbidden-imports` series are flat
+zeros under harness 12.10.1 because nothing is measured (#1164); read them as
+missing data, not as a clean trend.
 
 **Ledger updates land on a standing branch, never on `main` directly (#548).**
 Both workflows above commit to a fixed branch (`chore/arch-timeline`,

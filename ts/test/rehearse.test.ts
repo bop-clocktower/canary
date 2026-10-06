@@ -149,6 +149,73 @@ describe('probes do not mistake an error for a firing', () => {
     expect(result.fired).toBe(false);
   });
 
+  it('a scanner listing expect.files must fire in EVERY listed file (#1188)', () => {
+    // The blackhawk fixture carries a .test.tsx whose BH001 sits after a JSX
+    // apostrophe. Without the per-file check the plain .mjs file would fire
+    // the target on its own, and a JSX-masking regression would stay silent.
+    const dir = mkdtempSync(join(tmpdir(), 'rehearse-files-'));
+    mkdirSync(join(dir, 'tests'));
+    writeFileSync(join(dir, 'tests', 'a.test.mjs'), 'const t = Date.now();\n');
+    writeFileSync(join(dir, 'tests', 'b.test.mjs'), 'const t = 1;\n');
+    const probe = (files: string[]) =>
+      runProbe({
+        id: 'files',
+        target: 'canary-blackhawk',
+        dir,
+        expect: { ruleId: 'BH001-wall-clock', files },
+      });
+    expect(probe(['tests/a.test.mjs']).fired).toBe(true);
+    expect(probe(['tests/a.test.mjs', 'tests/b.test.mjs']).fired).toBe(false);
+  });
+
+  it('expect.files matches whole path segments, not a suffix (#1193)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rehearse-boundary-'));
+    mkdirSync(join(dir, 'tests'));
+    writeFileSync(
+      join(dir, 'tests', 'xclock.test.mjs'),
+      'const t = Date.now();\n',
+    );
+    const probe = (files: unknown) =>
+      runProbe({
+        id: 'boundary',
+        target: 'canary-blackhawk',
+        dir,
+        expect: { ruleId: 'BH001-wall-clock', files },
+      });
+    expect(probe(['clock.test.mjs']).fired).toBe(false);
+    expect(probe(['tests/xclock.test.mjs']).fired).toBe(true);
+    expect(probe(['xclock.test.mjs']).fired).toBe(true);
+    // An empty list would make the check vacuous ([].every is true).
+    expect(probe([]).fired).toBe(false);
+  });
+
+  it.each([
+    ['an empty list', []],
+    ['a string', 'tests/clock.test.mjs'],
+    ['a non-string entry', [7]],
+  ])('loadManifests rejects expect.files as %s', (_name, files) => {
+    const root = mkdtempSync(join(tmpdir(), 'rehearse-bad-files-'));
+    mkdirSync(join(root, 'bad'));
+    writeFileSync(
+      join(root, 'bad', 'rehearsal.json'),
+      JSON.stringify({
+        id: 'bad',
+        target: 'canary-blackhawk',
+        expect: { ruleId: 'BH001-wall-clock', files },
+      }),
+    );
+    expect(() => loadManifests(root)).toThrow(
+      /bad: expect\.files must be a non-empty array of paths/,
+    );
+  });
+
+  it('the blackhawk fixture rehearses the JSX path too', () => {
+    const m = loadManifests(FIXTURES).find(
+      (x) => x.target === 'canary-blackhawk',
+    );
+    expect(m?.expect.files).toContain('tests/stamp.test.tsx');
+  });
+
   it('a ratchet with no report does not count its exit as a firing', () => {
     const dir = mkdtempSync(join(tmpdir(), 'rehearse-noreport-'));
     writeFileSync(join(dir, 'baseline.json'), '{"maxFindings":5}');

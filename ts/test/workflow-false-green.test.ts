@@ -33,6 +33,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { load as loadYaml } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
+import {
+  advisoryEntries,
+  readRequiredChecksManifest,
+  requiredEntries,
+} from './required-checks-testkit.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
@@ -247,11 +252,11 @@ describe('workflow false-green invariants', () => {
    * it" is exactly the state #542 was filed about.
    */
   describe('#542 — required checks run on every PR', () => {
-    const manifest = JSON.parse(
-      readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
-    ) as {
-      required: Array<{ check: string; workflow: string }>;
-      advisory: Array<{ check: string; workflow: string; reason: string }>;
+    // Read through the testkit (#1144): both sections by name, and a missing
+    // or empty `required` throws instead of reading as an empty set.
+    const manifest = {
+      required: requiredEntries(),
+      advisory: advisoryEntries(),
     };
 
     /** The check name GitHub reports for a job: its `name`, else its job id. */
@@ -359,12 +364,13 @@ describe('workflow false-green invariants', () => {
       expected: string;
       reason: string[];
     }
-    const manifest = JSON.parse(
-      readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
-    ) as {
-      required: Array<{ check: string }>;
-      advisory: Array<{ check: string }>;
+    const raw = readRequiredChecksManifest<{
       externalStatuses?: { statuses?: ExternalStatus[] };
+    }>();
+    const manifest = {
+      ...raw,
+      required: requiredEntries(raw),
+      advisory: advisoryEntries(raw),
     };
     const statuses = manifest.externalStatuses?.statuses ?? [];
 
@@ -438,12 +444,13 @@ describe('workflow false-green invariants', () => {
       parameters?: Record<string, unknown>;
       reason: string[];
     }
-    const manifest = JSON.parse(
-      readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
-    ) as {
+    const raw = readRequiredChecksManifest<{
       rulesetRules?: { rules?: RulesetRule[] };
       reviews?: Record<string, unknown>;
-      required: { check: string; workflow: string }[];
+    }>();
+    const manifest = {
+      ...raw,
+      required: requiredEntries(raw),
     };
     const rules = manifest.rulesetRules?.rules ?? [];
 
@@ -592,14 +599,15 @@ describe('workflow false-green invariants', () => {
    * where #660 left it, and the exemption list makes that a deliberate edit.
    */
   describe('#678 — the PR-time-vs-post-merge gap is recorded and bounded', () => {
-    const manifest = JSON.parse(
-      readFileSync(join(REPO_ROOT, '.github', 'required-checks.json'), 'utf-8'),
-    ) as {
-      required: Array<{ check: string; workflow: string }>;
+    const raw = readRequiredChecksManifest<{
       mergePolicy?: {
         strict?: boolean;
         postMergeDetection?: { prOnlyByNature?: string[] };
       };
+    }>();
+    const manifest = {
+      ...raw,
+      required: requiredEntries(raw),
     };
 
     it('records the branch-freshness policy rather than leaving it implicit', () => {

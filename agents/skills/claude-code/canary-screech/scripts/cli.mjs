@@ -29,6 +29,7 @@ import { loadRuns, runsForBranch } from './history.mjs';
 import { assessBranch } from './redness.mjs';
 import { clusterFailures } from './cluster.mjs';
 import { renderBlast } from './blast.mjs';
+import { isMain } from '../../../lib/is-main.mjs';
 
 const PREFIX = 'canary-screech:';
 
@@ -123,6 +124,6 @@ export function main(argv = []) {
 // `process.exitCode`, not `process.exit()`: a large payload exceeds the pipe
 // buffer, and `process.exit` tears the process down mid-write, leaving
 // truncated output that still exits 0 (#791).
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }

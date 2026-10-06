@@ -27,11 +27,42 @@ function excerptBlock(brief: RegressionBrief): string[] {
   return ['', '## Excerpt', '', '```text', ...lines, '```'];
 }
 
-function frameLines(frames: ResolvedFrame[]): string[] {
-  return frames.map((f) => {
-    const fn = f.fn === undefined ? '' : ` in \`${f.fn}\``;
-    return `- \`${where(f)}\`${fn}: ${f.status}`;
+type Link = NonNullable<RegressionBrief['chain']>[number];
+const relationWord = (l: Link) =>
+  l.relation === 'cause' ? 'caused by' : 'while handling';
+
+const errorText = (type: string, message: string) =>
+  message === '' ? type : `${type}: ${message}`;
+
+const boundary = (l: Link) =>
+  `- --- ${relationWord(l)} ${errorText(l.errorType, l.message)} ---`;
+
+function chainBlock(brief: RegressionBrief): string[] {
+  const chain = brief.chain;
+  if (chain === undefined) return [];
+  const links = chain.map((l, i) => {
+    const at = l.suspect === null ? '' : ` at \`${where(l.suspect)}\``;
+    const root = i === chain.length - 1 ? ' (root cause)' : '';
+    return `${i + 2}. ${relationWord(l)} ${errorText(l.errorType, l.message)}${at}${root}`;
   });
+  return [
+    '',
+    '## Exception chain (reported first)',
+    '',
+    `1. ${errorText(brief.errorType, brief.message)} (reported)`,
+    ...links,
+  ];
+}
+
+function frameLines(brief: RegressionBrief): string[] {
+  const marks = (i: number) =>
+    (brief.chain ?? []).filter((l) => l.start === i).map(boundary);
+  const lines = brief.frames.flatMap((f, i) => {
+    const fn = f.fn === undefined ? '' : ` in \`${f.fn}\``;
+    return [...marks(i), `- \`${where(f)}\`${fn}: ${f.status}`];
+  });
+  // A frameless trailing cause starts past the last frame.
+  return [...lines, ...marks(brief.frames.length)];
 }
 
 /** Render the regression brief as markdown. */
@@ -48,10 +79,11 @@ export function renderBrief(brief: RegressionBrief): string {
     '',
     brief.requirement,
     ...excerptBlock(brief),
+    ...chainBlock(brief),
     '',
     '## Frames (innermost first)',
     '',
-    ...frameLines(brief.frames),
+    ...frameLines(brief),
     '',
   ].join('\n');
 }
@@ -78,6 +110,7 @@ export function renderVerify(result: VerifyResult): string {
     `# Verdict: ${heading}`,
     '',
     ...(result.vacuity ? [VACUITY, ''] : []),
+    ...(result.warnings ?? []).flatMap((w) => [`WARNING: ${w}`, '']),
     `Reason: ${result.reason}`,
     '',
     ...tailBlock(result),

@@ -1,0 +1,17 @@
+{
+  "fleet": "roadmap-fleet",
+  "run": "rf-2026-10-05",
+  "issues": [1143],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "planArtifact": "docs/changes/1143-setup-harness-baseline/plans/2026-10-05-setup-harness-baseline-plan.md",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Human-approved option 2: the baseline is six workflows (the five harness workflows plus guardian.yml); leak-gate.yml and validate-plugin.yml are conditional add-ons with stated conditions.",
+    "No new guardian workflow template is built: the skill points at canary's stock .github/workflows/guardian.yml and docs/guides/pr-guardian.md#pr-check, matching how the other five are 'copied from an upstream Canary reference install'.",
+    "The skill has no generated mirror (no skill.yaml, slash command or manifest restates the count); README.md and docs/guides/harness-canary-integration.md describe the skill without a count, so only SKILL.md changes.",
+    "The test requires baseline plus conditional to cover every manifest-required workflow, so a new required workflow fails the test until the skill classifies it.",
+    "SKILL.md was not prettier-reflowed: it was not prettier-clean on main and format:check does not cover markdown, so a whole-file rewrap would be unrelated churn.",
+    "Autopilot ran as one small phase executed in-lane (plan, test-first edit, gates) with a delegated harness-code-reviewer pass, rather than separate planner/executor/verifier subagents."
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "fleet": "roadmap-fleet",
+  "run": "rf-2026-10-05",
+  "issues": [1155],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/harness-config-denominator.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Human-answered fork: extend the layer model (option 1), not record agents/skills as out of scope.",
+    "A second layer `skills` over agents/skills/claude-code/** was added alongside `skills-lib`: harness check-deps only judges an import edge when both ends resolve to a layer, so the lib -> skills direction rule is unenforceable without it.",
+    "Per-root module counts are printed and asserted by the denominator test (reportVerified 'arch-scope'); harness check-deps itself only prints a total, which is upstream output canary does not own.",
+    "check-phase-gate is a step inside the required `validate` job, not a required status context, so removing it does not touch .github/required-checks.json and did not require parking.",
+    "Removal covers both surfaces that reported it: the direct step in harness-quality.yml and the phase-gate entry inside `harness ci check` (now --skip phase-gate).",
+    "Generated harness agent docs (agents/agents/*/harness-verifier.md) that mention check-phase-gate were left untouched: they are harness-generated, not canary's gate list."
+  ],
+  "secondaryTest": "ts/test/harness-gate-list.test.ts"
+}

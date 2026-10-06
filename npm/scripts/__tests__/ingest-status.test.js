@@ -1,14 +1,50 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { mapStatus, resolveTestStatus, runStatus, resolveConfig, buildPayload, shouldPush, dedupeByFullTitle } = require("../../dist/reporters/testtracker.js");
+const { reporterModule, fakeTest, fakeResult, runReporter, CI_ENV, T } = require("./ingest-harness.js");
+const { mapStatus, resolveTestStatus, runStatus, resolveConfig, buildPayload, shouldPush, dedupeByFullTitle, ingestOutcome, retryWaitMs, fitPayload } = reporterModule;
 
-test("mapStatus collapses PW statuses", () => {
+test("mapStatus maps PW statuses onto the ingest result enum", () => {
   assert.equal(mapStatus("passed"), "passed");
-  assert.equal(mapStatus("timedOut"), "failed");
   assert.equal(mapStatus("failed"), "failed");
   assert.equal(mapStatus("flaky"), "flaky");
   assert.equal(mapStatus("skipped"), "skipped");
-  assert.equal(mapStatus("interrupted"), "skipped");
+});
+
+// --- #1149: timedOut and interrupted must not lose their meaning --------------
+// The ingest result enum is passed|failed|flaky|skipped|timed_out. A timeout is
+// often an environment signal, so it keeps its own status. `interrupted` has no
+// ingest status, and sending one would reject the whole run; it must also not
+// become `skipped`, which drops the test out of the pass-rate denominator and
+// makes a cut-short run look clean. It is sent as `failed`, tagged and explained.
+
+test("mapStatus keeps timedOut distinct and never maps interrupted to skipped", () => {
+  assert.equal(mapStatus("timedOut"), "timed_out");
+  assert.equal(mapStatus("interrupted"), "failed");
+});
+
+test("resolveTestStatus passes a timed-out last attempt through as timed_out", () => {
+  assert.equal(resolveTestStatus("unexpected", "timedOut"), "timed_out");
+});
+
+test("an interrupted test reaches the wire as failed, tagged and explained", async () => {
+  const t = fakeTest({ title: "checkout" }); // outcome derived: "skipped", as Playwright reports it
+  const { payload } = await runReporter({
+    tests: [[t, fakeResult("interrupted")]],
+    fullResult: { status: "interrupted", startTime: new Date("2026-10-05T00:00:00Z"), duration: 1000 },
+  });
+  const row = payload.results[0];
+  assert.equal(row.status, "failed");
+  assert.ok(row.tags.includes("interrupted"));
+  assert.match(row.error_message, /^interrupted: /);
+  assert.equal(payload.totals.skipped, 0, "an interrupted test must not hide as a skip");
+  assert.equal(payload.status, "cancelled");
+});
+
+test("a timed-out test reaches the wire as timed_out", async () => {
+  const t = fakeTest({ title: "slow", outcome: "unexpected" });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("timedOut")]] });
+  assert.equal(payload.results[0].status, "timed_out");
+  assert.equal(payload.totals.failed, 1);
 });
 
 test("resolveConfig requires a suite", () => {
@@ -58,23 +94,34 @@ test("resolveConfig default testFilePrefix is <cwd>/", () => {
   assert.equal(c.testFilePrefix, `${process.cwd()}/`);
 });
 
-test("timedOut counts as failed in totals", () => {
+test("a timed_out result is sent as timed_out but counted in the failed bucket", () => {
+  // The ingest totals have no timed_out bucket; counting it as failed keeps
+  // totals.total equal to the sum of the buckets and fails the run.
   const cfg = resolveConfig({ suite: "s" }, {});
   const results = [
     { full_title: "t", test_file: "t.spec.ts", status: mapStatus("timedOut"), retries: 0, tags: [] },
   ];
   const p = buildPayload(results, cfg, { startedAt: "x", finishedAt: "y" }, {});
+  assert.equal(p.results[0].status, "timed_out");
   assert.equal(p.totals.failed, 1);
+  assert.equal(p.totals.total, 1);
   assert.equal(p.status, "failed");
 });
 
-test("resolveTestStatus reports a recovered flake as flaky, else the attempt status", () => {
+test("dedupeByFullTitle never lets a passing copy hide a timed_out one", () => {
+  const out = dedupeByFullTitle([
+    { full_title: "t", test_file: "t.spec.ts", status: "timed_out", retries: 0, tags: [] },
+    { full_title: "t", test_file: "t.spec.ts", status: "passed", retries: 0, tags: [] },
+  ]);
+  assert.equal(out[0].status, "timed_out");
+});
+
+test("resolveTestStatus reports a recovered flake as flaky, and ordinary outcomes plainly", () => {
   // outcome 'flaky' wins even though the last attempt passed
   assert.equal(resolveTestStatus("flaky", "passed"), "flaky");
-  // non-flaky outcomes fall through to the last-attempt mapping
+  // for a test expected to pass, the outcome agrees with the attempt
   assert.equal(resolveTestStatus("expected", "passed"), "passed");
   assert.equal(resolveTestStatus("unexpected", "failed"), "failed");
-  assert.equal(resolveTestStatus("unexpected", "timedOut"), "failed");
   assert.equal(resolveTestStatus("skipped", "skipped"), "skipped");
 });
 

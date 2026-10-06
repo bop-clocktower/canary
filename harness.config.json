@@ -105,6 +105,16 @@
       "name": "util",
       "pattern": "ts/src/util/**",
       "allowedDependencies": []
+    },
+    {
+      "name": "skills",
+      "pattern": "agents/skills/claude-code/**",
+      "allowedDependencies": ["skills-lib"]
+    },
+    {
+      "name": "skills-lib",
+      "pattern": "agents/skills/lib/**",
+      "allowedDependencies": []
     }
   ],
   "forbiddenImports": [
@@ -211,7 +221,8 @@
       "npm/src/doctor.ts",
       "npm/src/voice.ts",
       "npm/scripts/stage-voice.mjs",
-      "npm/src/reporters/testtracker.ts",
+      "npm/src/reporters/ingest.ts",
+      "npm/scripts/__tests__/ingest-harness.js",
       "npm/src/router.ts",
       "npm/src/uninstall-render.ts",
       "npm/src/uninstall-scan.ts",
@@ -353,7 +364,8 @@
       "npm/src/doctor.ts",
       "npm/src/voice.ts",
       "npm/scripts/stage-voice.mjs",
-      "npm/src/reporters/testtracker.ts",
+      "npm/src/reporters/ingest.ts",
+      "npm/scripts/__tests__/ingest-harness.js",
       "npm/src/router.ts",
       "npm/src/uninstall-render.ts",
       "npm/src/uninstall-scan.ts",

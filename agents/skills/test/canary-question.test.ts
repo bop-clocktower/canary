@@ -49,6 +49,10 @@ import {
   renderMarkdown,
 } from '../claude-code/canary-question/scripts/render.mjs';
 import { CLI_SPEC, main } from '../claude-code/canary-question/scripts/cli.mjs';
+import {
+  FAILURE_CATEGORIES,
+  categorizeFailure as failFastCategorize,
+} from '../claude-code/canary-fail-fast/scripts/failures.mjs';
 
 const tmps: string[] = [];
 function tmp(): string {
@@ -371,12 +375,13 @@ describe('signals: failure category (D2, D7)', () => {
 
   it.each([
     // A slow or misconfigured system under test times out and 401s too.
-    ['timeout', ['environment', 'product-defect']],
-    ['auth', ['environment', 'product-defect']],
-    ['network', ['environment']],
-  ])('%s is evidence for %j', (c, want) => {
+    // The id names the observation, never a hypothesis (#1142).
+    ['timeout', 'category-timeout', ['environment', 'product-defect']],
+    ['auth', 'category-auth', ['environment', 'product-defect']],
+    ['network', 'category-network', ['environment']],
+  ])('%s is %s, evidence for %j', (c, id, want) => {
     const [r] = categoryRows({ failure_category: c });
-    expect(r.signal).toBe('category-env');
+    expect(r.signal).toBe(id);
     expect(r.supports).toEqual(want);
     expect(r.weighsAgainst).toEqual([]);
   });
@@ -399,6 +404,200 @@ describe('signals: failure category (D2, D7)', () => {
     expect(categoryRows({ failure_category: null, error_text: null })).toEqual(
       [],
     );
+  });
+});
+
+// #1140: canary-question carries its own copy of canary-fail-fast's rules
+// (skills never import each other). A test may import both, so this pins the
+// copy to the source by behaviour. Only the categorisation is pinned; the
+// category-to-hypothesis mapping is canary-question's own.
+describe('signals: categoriser parity with canary-fail-fast (#1140)', () => {
+  // Built for this copy, not shared with ts/test/enrich-failure-category.test.ts:
+  // editing one list does not update the other.
+  const SAMPLES = [
+    // One sample per alternative of each rule, each hitting that alternative
+    // alone, so dropping or narrowing any one alternative changes a result.
+    'ZodError thrown',
+    'invalid_type',
+    'unrecognized key(s) in object',
+    'expected string, received number',
+    'error at path "a.b"',
+    'zod parse failed',
+    'status 401',
+    'Unauthorized',
+    'status 403',
+    'Forbidden',
+    'invalid token',
+    'invalid auth token',
+    'token expired',
+    'Timeout 30000ms exceeded',
+    'request timed out',
+    'ETIMEDOUT',
+    'deadline exceeded',
+    'connect ECONNREFUSED',
+    'ENOTFOUND',
+    'read ECONNRESET',
+    'socket hang up',
+    'getaddrinfo failed',
+    'network request failed',
+    'status 500',
+    'internal server error',
+    'bad gateway',
+    'service unavailable',
+    'status 400',
+    'status 404',
+    'status 410',
+    'status 429',
+    'bad request',
+    'not found',
+    'unprocessable',
+    'conflict',
+    // One sample per pair of rules, matching both, so swapping the precedence of
+    // any two rules changes a result. (`gateway timeout` is the only alternative
+    // no sample can isolate: `timeout` always claims it first.)
+    'ZodError 401',
+    'ZodError timeout',
+    'ZodError ECONNRESET',
+    'ZodError 500',
+    'ZodError 404',
+    'timed out waiting for 401',
+    '401 ECONNRESET',
+    '401 500',
+    '401 404',
+    'timeout ECONNREFUSED',
+    'gateway timeout',
+    'timeout 404',
+    'ECONNRESET 502',
+    'ENOTFOUND 404',
+    '500 then 404',
+    // No rule matches.
+    'expected 3, got 4',
+    '',
+  ];
+
+  it('agrees with canary-fail-fast on every sample', () => {
+    for (const s of SAMPLES) {
+      expect([s, categorizeFailure(s)]).toEqual([s, failFastCategorize(s)]);
+    }
+  });
+
+  it('produces all seven categories over the samples (parity is not vacuous)', () => {
+    const seen = new Set(SAMPLES.map((s) => categorizeFailure(s)));
+    expect([...seen].sort()).toEqual([...FAILURE_CATEGORIES].sort());
+  });
+
+  it('agrees on missing text', () => {
+    for (const s of [null, undefined]) {
+      expect(categorizeFailure(s)).toBe(failFastCategorize(s));
+    }
+  });
+});
+
+// #1142: a signal id that names one hypothesis while its row supports another
+// reads as a lean, and canary-question never prints a lean (#613).
+const SKILL_MD = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'claude-code',
+  'canary-question',
+  'SKILL.md',
+);
+
+const FOR_WORDS: Record<string, string> = {
+  test: 'test-defect',
+  product: 'product-defect',
+  environment: 'environment',
+};
+
+/** `[id, supports]` for every row of the SKILL.md signal table. */
+function documentedSignals(): [string, string[]][] {
+  const lines = fs.readFileSync(SKILL_MD, 'utf8').split('\n');
+  const head = lines.findIndex((l) => /^\|\s*Signal\s*\|/.test(l));
+  const rows: [string, string[]][] = [];
+  for (const line of lines.slice(head + 2)) {
+    if (!line.startsWith('|')) break;
+    const [id, , forCol] = line
+      .split('|')
+      .slice(1, -1)
+      .map((c) => c.trim());
+    const supports =
+      forCol === 'all three'
+        ? [...HYPOTHESES]
+        : forCol === '—'
+          ? []
+          : forCol.split(',').map((w) => FOR_WORDS[w.trim()] ?? `?${w}`);
+    rows.push([id.replace(/`/g, ''), supports]);
+  }
+  return rows;
+}
+
+/**
+ * The hypotheses an id names. A bare `test` token is not the test-defect
+ * hypothesis: every signal is about the test (`single-test-run`).
+ */
+function namedHypotheses(id: string): string[] {
+  const tokens = id.split('-');
+  const named: string[] = [];
+  if (/(^|-)test-(only|defect)(-|$)/.test(id)) named.push('test-defect');
+  if (tokens.some((t) => ['product', 'sut'].includes(t))) {
+    named.push('product-defect');
+  }
+  if (tokens.some((t) => ['env', 'environment', 'infra'].includes(t))) {
+    named.push('environment');
+  }
+  return named;
+}
+
+/** Ids that name a hypothesis their row does not exclusively support. */
+function oneSidedIds(rows: [string, string[]][]): string[] {
+  return rows
+    .filter(([id, supports]) =>
+      namedHypotheses(id).some((h) => supports.join() !== h),
+    )
+    .map(([id, supports]) => `${id} -> ${supports.join(', ')}`);
+}
+
+describe('signals: ids never name a hypothesis they do not own (#1142)', () => {
+  it('the guard catches the pre-#1142 category-env row (not vacuous)', () => {
+    expect(
+      oneSidedIds([['category-env', ['environment', 'product-defect']]]),
+    ).toEqual(['category-env -> environment, product-defect']);
+    expect(oneSidedIds([['category-env', ['environment']]])).toEqual([]);
+    expect(namedHypotheses('single-test-run')).toEqual([]);
+  });
+
+  it('reads the whole documented signal table', () => {
+    const rows = documentedSignals();
+    expect(rows.length).toBe(15);
+    for (const [, supports] of rows) {
+      for (const h of supports) expect(HYPOTHESES).toContain(h);
+    }
+    // Some ids do name a hypothesis, so the next check has something to bite.
+    expect(
+      rows.filter(([id]) => namedHypotheses(id).length).length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it('no documented signal id names a hypothesis it does not exclusively support', () => {
+    expect(oneSidedIds(documentedSignals())).toEqual([]);
+  });
+
+  it('every category row is documented and passes the same rule', () => {
+    const documented = documentedSignals();
+    const emitted = FAILURE_CATEGORIES.map((c: string): [string, string[]] => {
+      const [r] = categoryRows({ failure_category: c });
+      return [r.signal, r.supports];
+    });
+    expect(oneSidedIds(emitted)).toEqual([]);
+    for (const [id, supports] of emitted) {
+      expect(documented).toContainEqual([id, supports]);
+    }
+    // And the reverse: no stale category-* row (a re-added category-env, say)
+    // survives in the docs once the code stops emitting it.
+    const emittedIds = new Set(emitted.map(([id]) => id));
+    for (const [id] of documented.filter(([i]) => i.startsWith('category-'))) {
+      expect(emittedIds).toContain(id);
+    }
   });
 });
 

@@ -1,0 +1,20 @@
+{
+  "fleet": "roadmap-fleet",
+  "run": "rf-2026-10-05",
+  "issues": [1140, 1142],
+  "route": "feature",
+  "stages": ["brainstorming", "autopilot"],
+  "planArtifact": "docs/changes/1140-1142-canary-question-signals/plans/2026-10-05-canary-question-signals-plan.md",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "#1142 split (category-timeout / category-auth / category-network) with no deprecated alias: human-decided at fleet CONFIRM. Verified that commit 16b70424 (#1137) is not an ancestor of tag v8.0.0, so category-env was never in a published release.",
+    "#1140 parity is by behaviour, not byte-identical: human-decided. The test imports canary-fail-fast's failures.mjs from the skills test suite. Skills never import each other at runtime, but a test may import both.",
+    "The parity test lives in the existing agents/skills/test/canary-question.test.ts, so there is no new test file and no entropy entry point.",
+    "Parity samples are built for this copy (not shared with the engine test): one sample per regex alternative hitting it alone plus one per rule pair matching both. A mutation sweep left only one survivor, an equivalent mutant: server's 'gateway timeout' alternative is always claimed first by timeout. A new alternative added on one side only is caught once a sample exercises it; docs say so.",
+    "Naming-guard vocabulary: env/environment/infra name environment, product/sut name product-defect, and test-only/test-defect name test-defect. A bare 'test' token is not the hypothesis (single-test-run). The guard runs over the SKILL.md signal table plus categoryRows for all seven categories.",
+    "Prose-only signals (single-test-run, unrelated-co-failures) are outside the SKILL.md table. Neither names a hypothesis.",
+    "Autopilot was run inline by this lane, not by dispatching planner, executor and verifier persona subagents: one phase, low complexity, about 5 files, plan auto-approved because no approval signal fired. Review was a dispatched code-reviewer subagent.",
+    "No roadmap row exists for #1140 or #1142, so no roadmap promotion was done.",
+    "Review suggestion declined: scanning scripts for row('...') literals to cross-check the SKILL.md table. diff.mjs builds ids dynamically (row(kind, ...)), so a literal scan would be a partial check presented as a whole one. Per-signal tests already pin each id."
+  ]
+}

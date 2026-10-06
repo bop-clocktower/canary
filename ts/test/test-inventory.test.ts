@@ -86,6 +86,30 @@ describe('buildInventory', () => {
     ]);
   });
 
+  it('inventories a .tsx component test and sees the assertion after JSX text (#1180)', () => {
+    put(
+      root,
+      'src/Button.test.tsx',
+      [
+        "import { Button } from './Button';",
+        "it('shows the label', () => {",
+        "  render(<Button><p>It's {count} items</p></Button>);",
+        '  expect(screen.getByText("It\'s 3 items")).toBeInTheDocument();',
+        '});',
+      ].join('\n'),
+    );
+    const inv = buildInventory(
+      root,
+      collectTestFiles(root),
+      '2026-10-06T00:00:00.000Z',
+    );
+    expect(inv.files.map((f) => f.path)).toEqual(['src/Button.test.tsx']);
+    // Depth 0 would mean the JSX apostrophe hid the expect(...).
+    expect(inv.files[0]?.tests).toEqual([
+      { name: 'shows the label', line: 2, depth: 2 },
+    ]);
+  });
+
   it('maps Python dotted and relative from-imports to paths', () => {
     put(
       root,

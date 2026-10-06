@@ -170,22 +170,24 @@ second.
 ## Alignment with the TestTracker ingest payload
 
 `canary.run/1` maps field for field onto the `IngestPayload` that
-`npm/src/reporters/testtracker.ts` sends today (D1). **The existing ingest
-payload is unchanged**; the reporter emits `canary.run/1` alongside it in
-phase 2.
+`npm/src/reporters/ingest.ts` sends today (D1). **The existing ingest payload is
+unchanged by this contract**; the reporter emits `canary.run/1` alongside it in
+phase 2. [#1148], [#1149] and [#1150] were fixed in the ingest payload itself,
+so those rows already line up.
 
-| Ingest payload today                                | `canary.run/1`                                       |
-| --------------------------------------------------- | ---------------------------------------------------- |
-| `canary_run_id`                                     | `run.id` (made shard-aware in phase 2, [#1148])      |
-| `status: flaky`                                     | `run.status: passed` with `totals.flaky > 0`         |
-| Playwright run `interrupted` (sent as `cancelled`)  | `run.status: cancelled`                              |
-| Playwright run `timedout` (sent as `failed`)        | `run.status: cancelled`: the run did not complete    |
-| `mapStatus`: `timedOut` → `failed`                  | `results[].status: timed_out` in phase 2 ([#1149])   |
-| `mapStatus`: `interrupted` → `skipped`              | `results[].status: interrupted` in phase 2 ([#1149]) |
-| `results[].full_title`                              | `results[].title`                                    |
-| `results[].test_file`                               | `results[].file`                                     |
-| `results[].error_message` / `results[].error_stack` | `results[].error.message` / `results[].error.stack`  |
-| no collected list                                   | `collected[]`, emitted in phase 2 ([#1150])          |
+| Ingest payload today                                   | `canary.run/1`                                      |
+| ------------------------------------------------------ | --------------------------------------------------- |
+| `canary_run_id`, shard-suffixed `-s2of4` ([#1148])     | `run.id`, same form                                 |
+| `status: flaky`                                        | `run.status: passed` with `totals.flaky > 0`        |
+| Playwright run `interrupted` (sent as `cancelled`)     | `run.status: cancelled`                             |
+| Playwright run `timedout` (sent as `failed`)           | `run.status: cancelled`: the run did not complete   |
+| `mapStatus`: `timedOut` → `timed_out` ([#1149])        | `results[].status: timed_out`                       |
+| `interrupted` → `failed` + `interrupted` tag ([#1149]) | `results[].status: interrupted`                     |
+| `results[].full_title`                                 | `results[].title`                                   |
+| `results[].test_file`                                  | `results[].file`                                    |
+| `results[].error_message` / `results[].error_stack`    | `results[].error.message` / `results[].error.stack` |
+| `results[].area`, omitted when unmapped                | `results[].area`, `null` when unmapped              |
+| `collected` omitted / `[]` / list ([#1150])            | `collected: null` / `[]` / list                     |
 
 ## Validating
 

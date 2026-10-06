@@ -24,8 +24,10 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
+import { isMain } from './lib/is-main.mjs';
+import { checkedManifest, firesInEveryFile } from './lib/rehearsal-expect.mjs';
 import { compare } from './test-duration-ratchet.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -50,10 +52,12 @@ export function loadManifests(root = DEFAULT_ROOT) {
     .map((entry) => join(root, entry.name))
     .filter((dir) => existsSync(join(dir, 'rehearsal.json')))
     .sort()
-    .map((dir) => ({
-      ...JSON.parse(readFileSync(join(dir, 'rehearsal.json'), 'utf8')),
-      dir,
-    }));
+    .map((dir) =>
+      checkedManifest({
+        ...JSON.parse(readFileSync(join(dir, 'rehearsal.json'), 'utf8')),
+        dir,
+      }),
+    );
 }
 
 function runNode(args) {
@@ -106,7 +110,7 @@ function probeScanner(manifest) {
   const run = spawnJson([cli, '--json', '--strict', manifest.dir]);
   if (run.out === null) return noJson(manifest, run);
   const findings = run.out.findings ?? [];
-  const hit = findings.some((f) => f.rule_id === manifest.expect.ruleId);
+  const hit = firesInEveryFile(findings, manifest.expect);
   const detail = `exit ${run.status}, ${findings.length} finding(s)`;
   const examined = scanDenominator(run.out.summary);
   return outcome(manifest, examined, hit && run.status === 1, detail);
@@ -268,9 +272,6 @@ function main(argv) {
   process.exit(exitCode);
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (isMain(import.meta.url)) {
   main(process.argv.slice(2));
 }

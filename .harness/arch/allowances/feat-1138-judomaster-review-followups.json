@@ -1,0 +1,8 @@
+{
+  "reason": "canary-judomaster review follow-ups (#1138 slice, docs/changes/1138-judomaster-review-followups/proposal.md): module-size 49675->50179 (+504) at merge base 37918569, measured with `harness check-arch --json` (CLI 12.10.1) on this branch; the merge base reports no regression (its value equals baselines.json, 49675). newViolations is [] and the only regression is this aggregate. The growth is the feature, inside the existing judomaster engine and its CLI, with no new source file: exception-chain parsing for V8 `[cause]:` and CPython chained tracebacks (parse.ts), the chain in the brief and its markdown (brief.ts, render.ts, types.ts), a path.relative()-based containment helper and the mock-the-suspect detector (resolve.ts), npm's npx-refusal classification (verify.ts), the verify CLI passing cwd=--root and fetch:false plus the warnings (judomaster-verify-cli.ts), and the executor's optional cwd/no-fetch options (core/executor.ts). Perf ratchet: delta OK (216 against 216 at the merge base, 0 new findings). Entropy: 141 against 141 at the merge base; no entryPoints were added and maxFindings was not touched.",
+  "categories": {
+    "module-size": 50179
+  },
+  "violationIds": [],
+  "createdFrom": "37918569"
+}

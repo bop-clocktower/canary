@@ -48,12 +48,27 @@
  * - A regex literal containing a quote (`/['"]/`) can open a phantom string.
  *   Because an unterminated run is discarded, the usual outcome is a no-op;
  *   the residual risk is a suppressed finding, never a fabricated one.
- * - JSX text and Python f-string nesting beyond `${...}` are not modelled.
+ * - Python f-string nesting beyond `${...}` is not modelled.
+ * - JSX children text is modelled only when the caller passes `jsx` (for
+ *   `.tsx`/`.jsx`): see `jsx-text.ts` (#1180).
  */
+
+import { regexLiteralEnd } from './js-literals.js';
+import { isJsxPath, maskJsxText } from './jsx-text.js';
 
 export interface BlankOptions {
   /** Recognise `#` line comments and `'''`/`\"\"\"` triple-quoted blocks. */
   python?: boolean;
+  /**
+   * The source is `.tsx`/`.jsx`: quotes in JSX children text are prose, not
+   * delimiters (`<p>It's</p>`). Off by default, so `.ts`/`.js` are unchanged.
+   */
+  jsx?: boolean;
+  /**
+   * The file the source came from; a `.tsx`/`.jsx` path turns `jsx` on, so a
+   * caller does not need to classify the file itself.
+   */
+  path?: string;
 }
 
 /** A resolved literal-content span, half-open: [start, end). */
@@ -69,12 +84,18 @@ export function blankStringContent(
   code: string,
   options: BlankOptions = {},
 ): string {
-  const spans = literalContentSpans(code, options.python === true);
-  if (spans.length === 0) return code;
+  // For JSX the masked text is the starting point: its children text is
+  // already blanked, and masking only replaces characters with spaces, so
+  // every offset and newline still lines up with the original.
+  const jsx =
+    options.jsx ?? (options.path !== undefined && isJsxPath(options.path));
+  const read = jsx ? maskJsxText(code) : code;
+  const spans = literalContentSpans(read, options.python === true);
+  if (spans.length === 0) return read;
 
   // `split('')`, not `[...code]`: spans are UTF-16 offsets, and spreading by
   // code point would collapse each surrogate pair and shift every offset (#861).
-  const out = code.split('');
+  const out = read.split('');
   for (const [start, end] of spans) {
     for (let i = start; i < end; i += 1) {
       // Newlines survive so line numbering is unchanged; everything else goes.
@@ -109,6 +130,14 @@ function literalContentSpans(code: string, python: boolean): Span[] {
     const commentEnd = skipComment(code, i, python);
     if (commentEnd !== null) {
       i = commentEnd;
+      continue;
+    }
+
+    // A regex literal is data; a quote inside one (`/don't/`) must not open
+    // a phantom string. Common in RTL suites: getByText(/you don't/i).
+    const regexEnd = python ? null : regexLiteralEnd(code, i);
+    if (regexEnd !== null) {
+      i = regexEnd - 1;
       continue;
     }
 

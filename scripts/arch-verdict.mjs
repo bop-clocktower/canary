@@ -41,7 +41,8 @@
 // Produce the input with:  harness check-arch --json > arch-report.json
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+
+import { isMain } from './lib/is-main.mjs';
 
 /** New violations listed before the remainder is summarised. */
 const NEW_DETAIL_CAP = 25;
@@ -51,6 +52,35 @@ const ALLOWANCE_DIR = '.harness/arch/allowances/';
 
 /** The first harness major that reads `.harness/arch/allowances/` at all. */
 const ALLOWANCE_MIN_MAJOR = 11;
+
+/**
+ * Arch metrics that harness 12.10.1 reports as 0 by construction (#1164,
+ * Intense-Visions/harness-engineering#2235). `circular-deps` builds its graph
+ * with a stub parser whose `parseFile` always fails, so the graph has zero
+ * edges; `layer-violations` and `forbidden-imports` call
+ * `validateDependencies({ layers: [] })`, so no file resolves to a layer.
+ * A planted cycle and a planted wrong-layer import both left `newViolations`
+ * empty. Their 0 in `baselines.json` and `timeline.json` is an abstention.
+ *
+ * This is a named constant rather than a probe on purpose: `check-arch --json`
+ * carries no per-metric values to detect the abstention from. REVISIT on the
+ * first harness bump that ships the #2235 fix — drop each metric from this
+ * list once a planted positive shows it reported.
+ */
+const UNMEASURED_ARCH_METRICS = Object.freeze([
+  'circular-deps',
+  'layer-violations',
+  'forbidden-imports',
+]);
+
+/** Says what the verdict above it did NOT cover, and where that is gated. */
+function unmeasuredLines() {
+  return [
+    `  NOT MEASURED: ${UNMEASURED_ARCH_METRICS.join(', ')} — harness 12.10.1 records these as 0 whatever the code` +
+      ` does (Intense-Visions/harness-engineering#2235), so this verdict says nothing about layers, forbidden imports` +
+      ` or cycles. Those are gated by \`harness check-deps\` (the deps-and-validate check and the \`deps\` step of \`harness ci check\`).`,
+  ];
+}
 
 /**
  * Reads and parses a `check-arch --json` report.
@@ -263,13 +293,22 @@ function baselineLines(v) {
   ];
 }
 
-/** Human-readable lines for a verdict. `unknown` is rendered by the caller. */
-export function archVerdictLines(v) {
-  if (v.verdict === 'regression') return regressionLines(v);
-  if (v.verdict === 'baseline') return baselineLines(v);
-  return [
+const LINES_BY_VERDICT = {
+  regression: regressionLines,
+  baseline: baselineLines,
+  clean: (v) => [
     `arch — clean: ${v.totalViolations} threshold violation(s), none new (mode: ${v.mode}).`,
-  ];
+  ],
+};
+
+/**
+ * Human-readable lines for a verdict. `unknown` is rendered by the caller.
+ * Every verdict ends with the #1164 caveat: a reader of `clean` must not take
+ * it as evidence about layers or cycles.
+ */
+export function archVerdictLines(v) {
+  const render = LINES_BY_VERDICT[v.verdict] ?? LINES_BY_VERDICT.clean;
+  return [...render(v), ...unmeasuredLines()];
 }
 
 /** GitHub annotations — one per verdict, since the arch check emits none. */
@@ -314,10 +353,8 @@ function main() {
 }
 
 // Importable as a module (the CI summariser shares the classifier) and
-// executable as a CLI. `process.argv[1]` is this file only in the latter case.
-if (
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+// executable as a CLI. `isMain` compares real paths, so it is true only in the
+// latter case, including when the CLI is invoked through a symlink (#1189).
+if (isMain(import.meta.url)) {
   main();
 }

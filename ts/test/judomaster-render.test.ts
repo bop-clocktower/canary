@@ -80,6 +80,23 @@ describe('renderBrief', () => {
 });
 
 describe('renderVerify', () => {
+  it('prints each warning after the vacuity line, verdict unchanged', () => {
+    const md = renderVerify({
+      verdict: 'not-reproduced',
+      label: 'not-reproduced',
+      vacuity: true,
+      reason: 'the test passed against the code it was written to catch',
+      warnings: ['the test mocks the suspect module src/cart/total.ts (x)'],
+    });
+    const lines = md.split('\n');
+    const vac = lines.findIndex((l) => l.startsWith('VACUITY RED FLAG'));
+    const warn = lines.indexOf(
+      'WARNING: the test mocks the suspect module src/cart/total.ts (x)',
+    );
+    expect(warn).toBeGreaterThan(vac);
+    expect(warn).toBeLessThan(lines.findIndex((l) => l.startsWith('Reason:')));
+  });
+
   it('puts the verdict first and flags vacuity', () => {
     const md = renderVerify({
       verdict: 'not-reproduced',
@@ -137,5 +154,71 @@ describe('renderVerify', () => {
     });
     expect(md.split('\n')[0]).toContain('failed-other-reason');
     expect(md).toContain('unverified');
+  });
+});
+
+describe('renderBrief: exception chain', () => {
+  const chained: RegressionBrief = {
+    ...BRIEF,
+    errorType: 'Error',
+    message: 'checkout failed',
+    chain: [
+      {
+        errorType: 'RangeError',
+        message: 'mid',
+        relation: 'context',
+        start: 1,
+        suspect: null,
+      },
+      {
+        errorType: 'TypeError',
+        message: 'qty',
+        relation: 'cause',
+        start: 2,
+        suspect: BRIEF.frames[1]!,
+      },
+    ],
+  };
+
+  it('lists the chain reported first with the root cause marked', () => {
+    const md = renderBrief(chained);
+    expect(md).toContain('## Exception chain (reported first)');
+    expect(md).toContain('1. Error: checkout failed (reported)');
+    expect(md).toContain('2. while handling RangeError: mid');
+    expect(md).toContain(
+      '3. caused by TypeError: qty at `src/cart/total.ts:12` (root cause)',
+    );
+  });
+
+  it('marks each boundary in the frame list before the link start frame', () => {
+    const lines = renderBrief(chained).split('\n');
+    const at = lines.indexOf('- --- while handling RangeError: mid ---');
+    expect(at).toBeGreaterThan(lines.indexOf('## Frames (innermost first)'));
+    expect(lines[at + 1]).toContain('src/cart/total.ts:12');
+  });
+
+  it('marks a frameless trailing cause and omits the colon on an empty message', () => {
+    const md = renderBrief({
+      ...BRIEF,
+      chain: [
+        {
+          errorType: 'StopIteration',
+          message: '',
+          relation: 'cause',
+          start: BRIEF.frames.length,
+          suspect: null,
+        },
+      ],
+    });
+    const lines = md.split('\n');
+    expect(lines).toContain('2. caused by StopIteration (root cause)');
+    const last = lines.lastIndexOf('- --- caused by StopIteration ---');
+    expect(last).toBeGreaterThan(lines.indexOf('## Frames (innermost first)'));
+  });
+
+  it('leaves an unchained brief unchanged', () => {
+    const md = renderBrief(BRIEF);
+    expect(md).not.toContain('Exception chain');
+    expect(md).not.toContain('- ---');
   });
 });

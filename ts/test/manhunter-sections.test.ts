@@ -8,7 +8,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { historySection } from '../src/analysis/manhunter/history.js';
 import { guardianSections } from '../src/analysis/manhunter/guardian.js';
@@ -16,6 +16,7 @@ import { readinessSection } from '../src/analysis/manhunter/readiness.js';
 import { ledgerSection } from '../src/analysis/manhunter/ledger.js';
 import { sweepSection } from '../src/analysis/manhunter/sweep.js';
 import { escapesSection } from '../src/analysis/manhunter/escapes.js';
+import { NdjsonHistoryStore } from '../src/history/ndjson-store.js';
 import { mkTmp, rmTmp } from './canary-cli-testkit.js';
 
 let tmp: string;
@@ -287,11 +288,100 @@ describe('ci-readiness section', () => {
     expect(s.reason).toContain('ci-ready abstained');
   });
 
-  it('is dark, not absent, when the store is corrupt (ci-ready would throw)', () => {
+  // #1156: a corrupt or unsupported-schema store is ci-ready's skip with a
+  // reason, passed through -- not DARK on a throw, and never scored as absent.
+  it('passes ci-ready skip reason through for a corrupt store, naming the line', () => {
     writeFileSync(paths().historyPath, '{broken\n');
     const s = readinessSection(paths());
     expect(s.status).toBe('dark');
-    expect(s.reason).toContain('ci-ready cannot read');
+    expect(s.reason).toContain('ci-ready abstained');
+    expect(s.reason).toContain(
+      `${paths().historyPath} could not be parsed (line 1: invalid JSON)`,
+    );
+    expect(s.reason).not.toContain('ci-ready cannot read');
+  });
+
+  it('names an unsupported-schema store beside a scored input', () => {
+    writeFileSync(
+      paths().historyPath,
+      JSON.stringify({ run_id: 'r', suite: 'api', schema_version: 9 }) + '\n',
+    );
+    write('.canary/test-inventory.json', {
+      schema_version: 1,
+      generated: '2026-09-29T00:00:00Z',
+      files: [
+        {
+          path: 'tests/a.spec.ts',
+          framework: 'vitest',
+          targets: ['src/a'],
+          tests: [{ name: 'a', line: 1, depth: 2 }],
+        },
+      ],
+      skipped: [],
+    });
+    const s = readinessSection(paths());
+    expect(s.status).toBe('fed');
+    const reason = `${paths().historyPath} has unsupported schema 9 (line 1; supported: 2, 3)`;
+    const facts = s.facts.join('\n');
+    expect(facts).toContain(`skip flakiness: ${reason}`);
+    expect(facts).toContain(`skip suite-runtime: ${reason}`);
+    expect(facts).not.toContain('no runs recorded');
+  });
+
+  // A non-content error is a bug, not a property of the store: it stays DARK
+  // naming the error, never turned into a routine skip.
+  it('stays dark on an error that is not a content problem', () => {
+    writeFileSync(paths().historyPath, '{"run_id":"r","suite":"api"}\n');
+    const spy = vi
+      .spyOn(NdjsonHistoryStore.prototype, 'readAll')
+      .mockImplementation(() => {
+        throw new TypeError('a programming error');
+      });
+    try {
+      const s = readinessSection(paths());
+      expect(s.status).toBe('dark');
+      expect(s.reason).toBe(
+        `ci-ready cannot read ${paths().historyPath} (a programming error)`,
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  // #1132: an unreadable store is ci-ready's skip with a reason, consumed here
+  // as-is -- never scored as "no runs recorded", which reads as absent.
+  it('names an unreadable store as unreadable, not absent, beside a scored input', () => {
+    mkdirSync(paths().historyPath, { recursive: true });
+    write('.canary/test-inventory.json', {
+      schema_version: 1,
+      generated: '2026-09-29T00:00:00Z',
+      files: [
+        {
+          path: 'tests/a.spec.ts',
+          framework: 'vitest',
+          targets: ['src/a'],
+          tests: [{ name: 'a', line: 1, depth: 2 }],
+        },
+      ],
+      skipped: [],
+    });
+    const s = readinessSection(paths());
+    expect(s.status).toBe('fed');
+    const facts = s.facts.join('\n');
+    const reason = `${paths().historyPath} could not be read (EISDIR)`;
+    expect(facts).toContain(`skip flakiness: ${reason}`);
+    expect(facts).toContain(`skip suite-runtime: ${reason}`);
+    expect(facts).not.toContain('no runs recorded');
+  });
+
+  it('is dark naming the unreadable store when nothing else scores', () => {
+    mkdirSync(paths().historyPath, { recursive: true });
+    const s = readinessSection(paths());
+    expect(s.status).toBe('dark');
+    expect(s.reason).toContain('ci-ready abstained');
+    expect(s.reason).toContain(
+      `${paths().historyPath} could not be read (EISDIR)`,
+    );
   });
 
   it('is fed once any check scores, and flags the incomplete verdict', () => {

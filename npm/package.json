@@ -1,6 +1,6 @@
 {
   "name": "canary-test-cli",
-  "version": "8.0.0",
+  "version": "9.0.0",
   "description": "Canary \u2014 AI-powered test automation agent",
   "license": "MIT",
   "repository": {
@@ -13,9 +13,9 @@
   },
   "exports": {
     "./reporter": {
-      "types": "./dist/reporters/testtracker.d.ts",
-      "require": "./dist/reporters/testtracker.js",
-      "default": "./dist/reporters/testtracker.js"
+      "types": "./dist/reporters/ingest.d.ts",
+      "require": "./dist/reporters/ingest.js",
+      "default": "./dist/reporters/ingest.js"
     },
     "./vitest-sequencer": {
       "import": "./dist/engine/analysis/order/vitest-sequencer.js",

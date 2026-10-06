@@ -32,6 +32,7 @@ import { diffEvidence } from './diff.mjs';
 import { loadFindings } from './findings.mjs';
 import { abstentionFor, assembleBrief } from './brief.mjs';
 import { renderJson, renderMarkdown } from './render.mjs';
+import { isMain } from '../../../lib/is-main.mjs';
 
 const PREFIX = 'canary-question:';
 
@@ -138,6 +139,6 @@ export function main(argv = []) {
 
 // `process.exitCode`, not `process.exit()`: a large payload exceeds the pipe
 // buffer and `process.exit` truncates it while still exiting 0 (#791).
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }

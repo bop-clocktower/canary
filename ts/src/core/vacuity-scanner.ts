@@ -29,8 +29,10 @@
  * - `annotated` -- the author wrote `@covers <symbol>`. The rule checks THAT
  *   symbol and says so.
  * - `import-inferred` -- no annotation, so the target set is the symbols
- *   imported from relative paths, closed over local declarations to a fixpoint
- *   (one helper, or a chain of them, still counts as reaching the target).
+ *   imported from relative paths. For VAC-002 a same-file helper whose own body
+ *   names one counts as invoking it, exactly one level deep; a longer chain, or
+ *   a helper whose body cannot be read, abstains and is counted (#1170).
+ *   VAC-003/VAC-005 still close over local declarations to a fixpoint.
  * - neither -- the target cannot be resolved. That is "cannot verify", which is
  *   a finding about the SCAN, so it lands in `skipped` with its reason.
  *
@@ -452,19 +454,82 @@ function declEnd(
       break;
     }
   }
-  // A `function` owns the text up to its next sibling. A `const`/`let`/`var`
-  // owns only its initializer (#871): inside a test body there is usually no
-  // later sibling, so bounding a bystander at one let it absorb the target
-  // call below it and read as reaching the target, silencing VAC-003. The
-  // statement ends at the first `;` or line break at the declaration's own
-  // brace depth, so an arrow helper's braced body still belongs to it.
-  if (m[1]) return sibling;
   const from = m.index! + m[0].length;
+  // A `function` owns its own braced body. Running it to the next sibling
+  // instead let a helper that never touches the target absorb a TEST below it
+  // that does, so a test calling only that helper read as invoking the target
+  // and the real VAC-002 went quiet (#1170's surviving positive).
+  if (m[1]) return Math.min(functionBodyEnd(code, from, depth), sibling);
+  // A `const`/`let`/`var` owns only its initializer (#871): inside a test body
+  // there is usually no later sibling, so bounding a bystander at one let it
+  // absorb the target call below it and read as reaching the target, silencing
+  // VAC-003. The statement ends at the first `;` or line break at the
+  // declaration's own brace depth, so an arrow helper's braced body still
+  // belongs to it -- unless the line plainly continues (#1170): an open paren
+  // or bracket, a trailing `=>`/operator, or a next line starting with `.`.
+  // Prettier wraps `const parse = (...a) =>\n  target(a)` exactly that way.
+  let parens = 0;
   for (let k = from; k < sibling; k += 1) {
     const ch = code[k];
-    if ((ch === ';' || ch === '\n') && (depth[k] ?? 0) <= own) return k;
+    if (ch === '(' || ch === '[') parens += 1;
+    else if (ch === ')' || ch === ']') parens -= 1;
+    if (parens > 0 || (depth[k] ?? 0) > own) continue;
+    if (ch === ';') return k;
+    if (ch === '\n' && !continuesPastNewline(code, k)) return k;
   }
   return sibling;
+}
+
+/** Characters that leave an expression incomplete at the end of a line. */
+const TRAILING_CONTINUATION = /(?:=>|[=,(?:|&+\-*/.[{])\s*$/;
+/** Characters that attach a line to the expression above it. */
+const LEADING_CONTINUATION = /^\s*(?:[.?:|&)\]]|=>)/;
+
+/** Does the statement around the line break at `nl` carry on past it? */
+function continuesPastNewline(code: string, nl: number): boolean {
+  const lineStart = code.lastIndexOf('\n', nl - 1) + 1;
+  const before = code.slice(lineStart, nl).replace(/\/\/.*$/, '');
+  if (TRAILING_CONTINUATION.test(before)) return true;
+  const nextEnd = code.indexOf('\n', nl + 1);
+  const after = code.slice(nl + 1, nextEnd < 0 ? code.length : nextEnd);
+  return LEADING_CONTINUATION.test(after);
+}
+
+/**
+ * The end of a `function` declaration's braced body: the `}` matching the
+ * first `{` after its parameter list, or the end of `code` when unbalanced.
+ *
+ * A `{` in TYPE position is not the body -- `function run(): { out: string } {`
+ * opens an object type first. One preceded by `:`, `|`, `&`, `<` or `,` is
+ * skipped past its matching `}`. Taking it for the body cut `run` off before it
+ * named the target, and every test calling it read as never invoking anything.
+ */
+function functionBodyEnd(
+  code: string,
+  from: number,
+  depth: Int32Array,
+): number {
+  let parens = 0;
+  for (let k = from; k < code.length; k += 1) {
+    const ch = code[k];
+    if (ch === '(') parens += 1;
+    else if (ch === ')') parens -= 1;
+    else if (ch === '{' && parens === 0) {
+      const close = matchingBrace(code, k, depth);
+      if (!/[:|&<,]\s*$/.test(code.slice(from, k))) return close;
+      k = close - 1;
+    }
+  }
+  return code.length;
+}
+
+/** One past the `}` matching the `{` at `open`, or the end of `code`. */
+function matchingBrace(code: string, open: number, depth: Int32Array): number {
+  const inner = (depth[open] ?? 0) + 1;
+  for (let j = open + 1; j < code.length; j += 1) {
+    if (code[j] === '}' && depth[j] === inner) return j + 1;
+  }
+  return code.length;
 }
 
 /**
@@ -476,13 +541,66 @@ function declEnd(
  * `load(save(v))` -- reads as never touching its target, and the rule
  * confidently reports a correct test as vacuous. One hop covers the common
  * case; the fixpoint covers a chain of them.
+ *
+ * VAC-003/VAC-005 read this closure. VAC-002 does not: since #1170 it credits
+ * one helper level only and treats the rest of the chain as an abstention (see
+ * `helperVerdict`).
  */
 function closeOverLocals(
-  code: string,
+  decls: LocalDecl[],
   targets: Set<string>,
-  python: boolean,
 ): Set<string> {
-  const decls: { names: string[]; body: string }[] = [];
+  const reaching = new Set(targets);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const d of decls) {
+      if (d.names.every((n) => reaching.has(n))) continue;
+      if (!mentionsAny(d.body, reaching)) continue;
+      for (const n of d.names) reaching.add(n);
+      grew = true;
+    }
+  }
+  return reaching;
+}
+
+/** Local names whose OWN body names a direct target: one level, no further. */
+function oneLevelHelpers(decls: LocalDecl[], direct: Set<string>): Set<string> {
+  const names = new Set<string>();
+  for (const d of decls) {
+    if (!mentionsAny(d.body, direct)) continue;
+    for (const n of d.names) if (!direct.has(n)) names.add(n);
+  }
+  return names;
+}
+
+/**
+ * `let parse;` / `let parse: Parser;` -- a module-scope name with no
+ * initializer, typically assigned later in a hook by a plain assignment no
+ * declaration pattern bounds. Its body cannot be resolved, so a test that calls
+ * it abstains (#1170) rather than being judged on a helper nobody read.
+ */
+const JS_UNINITIALIZED_DECL =
+  /(?:^|\n)\s*(?:let|var)\s+([A-Za-z_$][\w$]*)\s*(?::(?:[^=;\n]|=>)+)?;/g;
+
+function unresolvedNames(code: string, decls: LocalDecl[]): Set<string> {
+  const resolved = new Set(decls.flatMap((d) => d.names));
+  const names = new Set<string>();
+  JS_UNINITIALIZED_DECL.lastIndex = 0;
+  for (const m of code.matchAll(JS_UNINITIALIZED_DECL)) {
+    if (!resolved.has(m[1]!)) names.add(m[1]!);
+  }
+  return names;
+}
+
+/** One same-file declaration: the names it binds and the text it owns. */
+interface LocalDecl {
+  names: string[];
+  body: string;
+}
+
+function localDecls(code: string, python: boolean): LocalDecl[] {
+  const decls: LocalDecl[] = [];
   const re = python ? PY_LOCAL_DECL : JS_LOCAL_DECL;
   re.lastIndex = 0;
   const matches = [...code.matchAll(re)];
@@ -495,42 +613,47 @@ function closeOverLocals(
     const end = declEnd(code, matches, i, depth);
     decls.push({ names, body: code.slice(start, end) });
   }
-  if (!python) {
-    JS_DESTRUCTURED_ASSIGN.lastIndex = 0;
-    for (const m of code.matchAll(JS_DESTRUCTURED_ASSIGN)) {
-      const names = (m[1] ?? '')
-        .split(',')
-        .map((raw) => raw.split(':').pop()!.trim())
-        .filter((n) => /^[A-Za-z_$][\w$]*$/.test(n));
-      // The RHS alone is the body here: unlike a declaration, an assignment
-      // does not own the text that follows it.
-      if (names.length > 0) decls.push({ names, body: m[2] ?? '' });
-    }
-  }
-  const reaching = new Set(targets);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const d of decls) {
-      if (d.names.every((n) => reaching.has(n))) continue;
-      const reaches = [...reaching].some((t) =>
-        identifierPattern(t).test(d.body),
-      );
-      if (!reaches) continue;
-      for (const n of d.names) reaching.add(n);
-      grew = true;
-    }
-  }
-  return reaching;
+  if (!python) decls.push(...destructuredAssignDecls(code));
+  return decls;
 }
 
-/** Body lines of a test, paired with their 1-based line numbers. */
-function bodyLines(
-  code: string,
-  block: TestBlock,
-): { text: string; line: number }[] {
+/** `({ a, b } = rhs)` bindings, each owning only its RHS. */
+function destructuredAssignDecls(code: string): LocalDecl[] {
+  const decls: LocalDecl[] = [];
+  JS_DESTRUCTURED_ASSIGN.lastIndex = 0;
+  for (const m of code.matchAll(JS_DESTRUCTURED_ASSIGN)) {
+    const names = (m[1] ?? '')
+      .split(',')
+      .map((raw) => raw.split(':').pop()!.trim())
+      .filter((n) => /^[A-Za-z_$][\w$]*$/.test(n));
+    // The RHS alone is the body here: unlike a declaration, an assignment
+    // does not own the text that follows it.
+    if (names.length > 0) decls.push({ names, body: m[2] ?? '' });
+  }
+  return decls;
+}
+
+/** One body line: blanked `text`, the same offsets unblanked as `raw`. */
+interface BodyLine {
+  text: string;
+  raw: string;
+  line: number;
+}
+
+/**
+ * Body lines of a test, paired with their 1-based line numbers.
+ *
+ * Blanking is offset-preserving, so the raw slice splits into lines of exactly
+ * the same lengths -- `raw` is what VAC-001 compares (#1171).
+ */
+function bodyLines(code: string, source: string, block: TestBlock): BodyLine[] {
   const first = lineOf(code, block.bodyStart);
-  return block.body.split('\n').map((text, i) => ({ text, line: first + i }));
+  const raw = source
+    .slice(block.bodyStart, block.bodyStart + block.body.length)
+    .split('\n');
+  return block.body
+    .split('\n')
+    .map((text, i) => ({ text, raw: raw[i] ?? text, line: first + i }));
 }
 
 function isComment(line: string): boolean {
@@ -584,7 +707,7 @@ function expectArgument(line: string): string | null {
  */
 function matcherOf(
   line: string,
-): { argument: string; negated: boolean } | null {
+): { argument: string; start: number; negated: boolean } | null {
   const expectOpen = line.indexOf('expect(');
   let after = 0;
   if (expectOpen >= 0) {
@@ -597,54 +720,166 @@ function matcherOf(
   const open = after + m.index + m[0].length - 1;
   const close = closingParen(line, open);
   if (close < 0) return null;
-  return { argument: line.slice(open + 1, close), negated: m[1] !== undefined };
+  return {
+    argument: line.slice(open + 1, close),
+    start: open + 1,
+    negated: m[1] !== undefined,
+  };
 }
 
 function normalize(expr: string): string {
   return expr.replace(/\s+/g, '');
 }
 
-/** VAC-001 for one JS/TS line. */
-function jsTautology(line: string): boolean {
+/**
+ * `expr` with whitespace removed everywhere EXCEPT inside string literals.
+ *
+ * VAC-001's comparison key (#1171). The sides used to be compared on the
+ * BLANKED line, where every string's content is spaces, and `normalize` then
+ * deleted those spaces too -- so `score(9, 0, "severe")` and
+ * `score(9, 0, "unknown")` both became `score(9,0,"")` and a comparison of two
+ * different calls was reported as a `critical` self-comparison. Reading the raw
+ * text keeps the arguments; keeping whitespace inside quotes keeps `'a b'` and
+ * `'ab'` apart.
+ */
+function normalizeExpression(expr: string): string {
+  let out = '';
+  let quote: string | null = null;
+  for (let i = 0; i < expr.length; i += 1) {
+    const c = expr[i]!;
+    if (quote !== null) {
+      out += c;
+      if (c === '\\' && i + 1 < expr.length) out += expr[(i += 1)]!;
+      else if (c === quote) quote = null;
+    } else if (c === '"' || c === "'" || c === '`') {
+      quote = c;
+      out += c;
+    } else if (!/\s/.test(c)) {
+      out += c;
+    }
+  }
+  return out;
+}
+
+/** Same-length spans of the raw line, compared as full call expressions. */
+function sameExpression(
+  raw: string,
+  a: [number, number],
+  e: [number, number],
+): boolean {
+  const left = normalizeExpression(raw.slice(...a));
+  const right = normalizeExpression(raw.slice(...e));
+  return left !== '' && left === right;
+}
+
+/**
+ * VAC-001 for one JS/TS line.
+ *
+ * Structure is read from `line` (blanked, so a `)` inside a string cannot
+ * unbalance the extraction) and the two sides are then compared on `raw`, the
+ * same offsets in the unblanked source, so string arguments count (#1171).
+ */
+function jsTautology(line: string, raw: string): boolean {
   const actual = expectArgument(line);
   const matcher = matcherOf(line);
   if (actual === null || matcher === null || matcher.negated) return false;
-  const a = normalize(actual);
-  const e = normalize(matcher.argument);
-  if (a === '' || e === '') return false;
-  return a === e;
+  if (normalize(actual) === '' || normalize(matcher.argument) === '')
+    return false;
+  const aStart = line.indexOf('expect(') + 'expect('.length;
+  return sameExpression(
+    raw,
+    [aStart, aStart + actual.length],
+    [matcher.start, matcher.start + matcher.argument.length],
+  );
 }
 
-/** VAC-001 for one pytest line. */
-function pyTautology(line: string): boolean {
+/** VAC-001 for one pytest line; `raw` is the unblanked line (#1171). */
+function pyTautology(line: string, raw: string): boolean {
   const t = line.trim();
   // `assert False` is a deliberate unreachable marker -- it can only ever fail,
   // so it is the opposite of vacuous and must never be flagged.
   if (/^assert\s+True\s*(?:,|$)/.test(t)) return true;
   // Same reason `.not` is excluded above: `assert x != x` can only ever fail.
-  const cmp = /^assert\s+(.+?)\s*==\s*(.+?)\s*(?:,|$)/.exec(t);
-  if (!cmp) return false;
-  return normalize(cmp[1]!) === normalize(cmp[2]!);
+  const cmp = /^assert\s+(.+?)\s*==\s*(.+?)\s*(?:,|$)/d.exec(t);
+  if (!cmp?.indices) return false;
+  const lead = line.length - line.trimStart().length;
+  const shift = ([s, e]: [number, number]): [number, number] => [
+    s + lead,
+    e + lead,
+  ];
+  return sameExpression(raw, shift(cmp.indices[1]!), shift(cmp.indices[2]!));
 }
 
 function scanBlock(
-  code: string,
+  ctx: ScanContext,
   block: TestBlock,
-  file: string,
-  python: boolean,
-  reaching: Set<string> | null,
   annotated: string | null,
   skipped: SkipEntry[],
   outOfBand: boolean,
 ): VacuityFinding[] {
-  const lines = bodyLines(code, block).filter((l) => !isComment(l.text));
+  const { code, source, path: file, python, inference } = ctx;
+  const lines = bodyLines(code, source, block).filter(
+    (l) => !isComment(l.text),
+  );
+  const reaching = inference?.reaching ?? null;
   const targets = annotated !== null ? new Set([annotated]) : reaching;
+  const invoked =
+    annotated === null && !outOfBand
+      ? helperVerdict(block.body, inference)
+      : 'invoked';
+  if (invoked === 'deeper' || invoked === 'unresolved') {
+    // Abstain, counted: the helper chain is too deep or too opaque to judge,
+    // and #1170's contract is that such a test is neither passed in silence
+    // nor accused. `helperAbstained` on the result is this list's length.
+    ctx.helperAbstentions.push({
+      name: skipLabel('VAC-002', file, block),
+      reason: HELPER_ABSTAIN_REASON[invoked],
+    });
+  }
   return [
     ...tautologies(lines, block, file, python),
-    ...targetNeverInvoked(block, file, reaching, annotated, outOfBand),
+    ...targetNeverInvoked(block, file, invoked, annotated),
     ...absenceOnly(lines, block, file, python, targets, skipped),
     ...presenceOnBystander(lines, block, file, python, targets),
   ];
+}
+
+/** How a test reaches its import-inferred target, if it does (#1170). */
+type HelperVerdict = 'invoked' | 'deeper' | 'unresolved' | 'never';
+
+const HELPER_ABSTAIN_REASON = {
+  deeper:
+    'target reached only through more than one level of same-file helpers, so VAC-002 abstains rather than guess',
+  unresolved:
+    'test calls a same-file helper whose body could not be resolved, so VAC-002 abstains rather than guess',
+} as const;
+
+/**
+ * The approved contract for #1170, in order:
+ *
+ * 1. the body names an imported target -- invoked;
+ * 2. it names a same-file helper whose OWN body names one -- invoked, exactly
+ *    one level deep;
+ * 3. it names a helper that reaches only through further helpers -- `deeper`;
+ * 4. it CALLS a same-file name whose body could not be read -- `unresolved`;
+ * 5. otherwise `never`, which is the real VAC-002 and still reported.
+ *
+ * 3 and 4 abstain rather than pass: the fixpoint closure used to answer them
+ * silently, and a helper chain the scanner cannot see the end of is not proof
+ * the target ran.
+ */
+function helperVerdict(
+  body: string,
+  inference: TargetInference | null,
+): HelperVerdict {
+  if (inference === null) return 'invoked';
+  if (mentionsAny(body, inference.direct)) return 'invoked';
+  if (mentionsAny(body, inference.oneLevel)) return 'invoked';
+  if (mentionsAny(body, inference.reaching)) return 'deeper';
+  const calls = [...inference.unresolved].some((n) =>
+    new RegExp(`${identifierPattern(n).source}\\s*\\(`).test(body),
+  );
+  return calls ? 'unresolved' : 'never';
 }
 
 /**
@@ -679,13 +914,15 @@ function mentionsAny(text: string, targets: Set<string> | null): boolean {
  * value it checks cannot fail for any implementation.
  */
 function tautologies(
-  lines: { text: string; line: number }[],
+  lines: BodyLine[],
   block: TestBlock,
   file: string,
   python: boolean,
 ): VacuityFinding[] {
   return lines
-    .filter((l) => (python ? pyTautology(l.text) : jsTautology(l.text)))
+    .filter((l) =>
+      python ? pyTautology(l.text, l.raw) : jsTautology(l.text, l.raw),
+    )
     .map((l) =>
       mk(
         file,
@@ -703,9 +940,8 @@ function tautologies(
 function targetNeverInvoked(
   block: TestBlock,
   file: string,
-  reaching: Set<string> | null,
+  invoked: HelperVerdict,
   annotated: string | null,
-  outOfBand: boolean,
 ): VacuityFinding[] {
   if (annotated !== null) {
     if (mentionsAny(block.body, new Set([annotated]))) return [];
@@ -722,10 +958,9 @@ function targetNeverInvoked(
       ),
     ];
   }
-  // The subprocess / bare-dynamic-import shapes reach first-party code without
-  // naming a symbol, so no target set can ever match them (#705).
-  if (outOfBand) return [];
-  if (reaching === null || mentionsAny(block.body, reaching)) return [];
+  // `invoked` already folds in the out-of-band shapes (#705), an unresolvable
+  // target set (skipped elsewhere), and the helper abstentions (#1170).
+  if (invoked !== 'never') return [];
   return [
     mk(
       file,
@@ -1003,9 +1238,32 @@ function resolveTargets(
   source: string,
   code: string,
   python: boolean,
-): Set<string> | null {
-  const imported = importedTargets(source, python);
-  return imported.size > 0 ? closeOverLocals(code, imported, python) : null;
+): TargetInference | null {
+  const direct = importedTargets(source, python);
+  if (direct.size === 0) return null;
+  const decls = localDecls(code, python);
+  return {
+    direct,
+    reaching: closeOverLocals(decls, direct),
+    oneLevel: oneLevelHelpers(decls, direct),
+    unresolved: python ? new Set() : unresolvedNames(code, decls),
+  };
+}
+
+/**
+ * The `import-inferred` target, at the grains its two consumers need.
+ *
+ * VAC-003/VAC-005 ask "does this assertion observe anything reaching the
+ * target" and keep the full fixpoint `reaching`. VAC-002 asks "did this test
+ * invoke the target", and #1170 fixed its answer at ONE helper level, so it
+ * reads `direct` and `oneLevel` and treats the rest of `reaching` -- and any
+ * `unresolved` helper -- as an abstention.
+ */
+interface TargetInference {
+  direct: Set<string>;
+  reaching: Set<string>;
+  oneLevel: Set<string>;
+  unresolved: Set<string>;
 }
 
 /**
@@ -1041,7 +1299,7 @@ function annotationFor(
  * yields `checked: 0` plus a skip entry, never an empty finding list that reads
  * as clean.
  */
-export function scanVacuity(path: string): GateResult<VacuityFinding> {
+export function scanVacuity(path: string): VacuityResult {
   const framework = frameworkForPath(path);
   if (framework === null) {
     return unreadable(
@@ -1057,31 +1315,46 @@ export function scanVacuity(path: string): GateResult<VacuityFinding> {
   // Whole-source blanking, offset-preserving: a `expect(true).toBe(true)`
   // carried as fixture DATA is not a vacuous test, and a `it(...)` inside a
   // string must not be able to truncate a real test's body (#590).
-  const code = blankStringContent(source, { python });
+  const code = blankStringContent(source, { python, path });
   const blocks = enumerateTests(code, source, python);
-  const reaching = resolveTargets(source, code, python);
+  const inference = resolveTargets(source, code, python);
 
   const skipped: SkipEntry[] = [];
-  const findings = scanAllBlocks(
-    {
-      code,
-      source,
-      path,
-      python,
-      reaching,
-      driverImport: !python && importsBrowserDriver(source),
-      sourceLines: source.split('\n'),
-    },
-    blocks,
-    skipped,
-  );
+  const ctx: ScanContext = {
+    code,
+    source,
+    path,
+    python,
+    inference,
+    driverImport: !python && importsBrowserDriver(source),
+    sourceLines: source.split('\n'),
+    helperAbstentions: [],
+  };
+  const findings = scanAllBlocks(ctx, blocks, skipped);
+  skipped.push(...ctx.helperAbstentions);
 
-  const result: GateResult<VacuityFinding> = {
+  const result: VacuityResult = {
     checked: blocks.length,
     findings,
   };
   if (skipped.length > 0) result.skipped = skipped;
+  if (ctx.helperAbstentions.length > 0)
+    result.helperAbstained = ctx.helperAbstentions.length;
   return result;
+}
+
+/**
+ * A vacuity scan: the shared gate result, plus the one count only this scanner
+ * has.
+ *
+ * `helperAbstained` counts the tests whose VAC-002 verdict abstained because
+ * the target sat more than one same-file helper deep, or behind a helper whose
+ * body could not be resolved (#1170). Each one is ALSO a `skipped` entry, so
+ * every surface that renders skips discloses it; the count exists so a report
+ * can say how many without parsing reasons. Absent means zero.
+ */
+export interface VacuityResult extends GateResult<VacuityFinding> {
+  helperAbstained?: number;
 }
 
 /** The invariants every block in one file shares. */
@@ -1095,7 +1368,9 @@ interface ScanContext {
   source: string;
   path: string;
   python: boolean;
-  reaching: Set<string> | null;
+  inference: TargetInference | null;
+  /** VAC-002 helper abstentions, merged into `skipped` and counted (#1170). */
+  helperAbstentions: SkipEntry[];
   /** The file imports a browser-driver package (#971). */
   driverImport: boolean;
   /** `source` by line, for reading a test's declaration signature. */
@@ -1129,7 +1404,7 @@ function scanAllBlocks(
       reachesOutOfBandTarget(
         ctx.source.slice(block.bodyStart, block.bodyStart + block.body.length),
       );
-    if (annotated === null && ctx.reaching === null) {
+    if (annotated === null && ctx.inference === null) {
       // Both target-dependent rules go dark together, and both say so. VAC-003
       // asks "does any assertion observe the target", which is unanswerable
       // without a target -- so it abstains rather than falling back to the
@@ -1152,16 +1427,7 @@ function scanAllBlocks(
           : 'target unresolvable: no @covers annotation and no first-party relative import to infer from',
       });
     }
-    const blockFindings = scanBlock(
-      ctx.code,
-      block,
-      ctx.path,
-      ctx.python,
-      ctx.reaching,
-      annotated,
-      skipped,
-      outOfBand,
-    );
+    const blockFindings = scanBlock(ctx, block, annotated, skipped, outOfBand);
     findings.push(
       ...divertE2EInferred(
         blockFindings,

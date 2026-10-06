@@ -6,9 +6,8 @@
  * the canary-judomaster skill (D1): `brief` turns a pasted V8/CPython trace
  * into a regression brief, and `verify` grades the generated test by running
  * it. A pass is never reported as success. No LLM call. `verify` runs the
- * framework's registry command from the current directory (for vitest and
- * playwright that is `npx --yes ...`, which can fetch the runner), so run it
- * from the repository root, where the runner finds the project's config.
+ * framework's registry command from `--root` and never downloads a runner
+ * (see judomaster-verify-cli.ts).
  *
  * Lives in its own folder, not beside the engine, for the reason
  * `manhunter/manhunter-cli.ts` does (D8): filename binds the `cli` layer, and a

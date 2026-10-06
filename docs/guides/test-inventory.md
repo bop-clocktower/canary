@@ -16,8 +16,8 @@ $ canary ci-ready
 - `canary inventory [testDir] [--root <dir>] [--json]`
 - `testDir` defaults to `--root`. `--root` defaults to the current directory.
 - It walks the same files as `review-test` and `vacuity-check`: `test_*.py` and
-  `*.test|spec.{ts,js,mjs,cjs,mts,cts}`. It skips `node_modules`, `dist` and
-  similar directories.
+  `*.test|spec.{ts,js,mjs,cjs,mts,cts,tsx,jsx}` (component tests included since
+  #1180). It skips `node_modules`, `dist` and similar directories.
 - Exit codes: `0` when the file was written. `3` (abstained) when no test was
   found, in which case **no file is written**. An empty inventory must not look
   like a real input.

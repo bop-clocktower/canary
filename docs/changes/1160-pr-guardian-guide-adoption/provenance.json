@@ -1,0 +1,17 @@
+{
+  "fleet": "roadmap-fleet",
+  "run": "rf-2026-10-05",
+  "issues": [1160],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/guardian-workflow-docs.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Only one instance of the 'installs canary' claim exists (docs/guides/pr-guardian.md PR check section); grep over all tracked .md for 'installs canary', 'stock workflow', 'copy ... guardian.yml' and 'guardian pr-check --post-comment' found no other.",
+    "The setup-harness skill step 3 (#1159) gains one bullet naming the canary-only ts-coverage-lcov-<sha> base-coverage artifact, so the guide and skill list the same adaptations; its existing wording is otherwise reused verbatim in the guide.",
+    "The reproducing test is a new file (ts/test/guardian-workflow-docs.test.ts) rather than an addition to required-workflows-docs.test.ts, whose subject is the required-checks manifest; it reuses REPO_ROOT from required-checks-testkit.ts and never opens the manifest.",
+    "Each doc requirement is derived from a marker in guardian.yml (npm --prefix ts, node ts/bin/canary.js, --coverage ts/coverage/lcov.info, ts-coverage-lcov-, the mutation job), so the rule set follows the workflow rather than banning a string.",
+    "SKILL.md was not prettier-reflowed (prettier rewraps the whole 60-col file, unrelated churn); markdownlint-cli2 reports 0 issues on both edited docs.",
+    "docs/guides/tracked-overlays.md and docs/specs/skill-discovery.md reference templates/canary-guardian.yml as an overlay-config example, not a claim about the stock workflow; left out of scope."
+  ]
+}

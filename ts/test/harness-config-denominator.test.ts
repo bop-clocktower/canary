@@ -52,8 +52,27 @@ import { reportAbstention, reportVerified } from './abstention-testkit.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-/** The live source tree every layer rule is ultimately meant to cover. */
-const SOURCE_ROOT = 'ts/src';
+/**
+ * The live source trees every layer rule is ultimately meant to cover, with the
+ * extensions that count as a module in each.
+ *
+ * This was a single `ts/src` until #1155. `agents/skills/lib/` is shared code
+ * imported by many skill CLIs, and because no layer pattern matched it,
+ * `harness check-deps` never parsed it — `runCheckDeps` analyses exactly the
+ * union of files the layer patterns match, nothing else. The arch ratchet then
+ * reported "12 → 12, no new violations" on a PR that added a whole module
+ * there, a verdict about code it had not looked at. Every root listed here must
+ * be fully layered, and each one's module count is printed so a reader can
+ * tell "clean" from "didn't look" per root rather than in aggregate.
+ */
+const SOURCE_ROOTS: ReadonlyArray<{ root: string; exts: readonly string[] }> = [
+  { root: 'ts/src', exts: ['.ts'] },
+  { root: 'agents/skills/lib', exts: ['.mjs', '.js', '.cjs', '.ts'] },
+];
+
+/** The shared skill library and the skills that consume it (#1155). */
+const SKILLS_LIB_ROOT = 'agents/skills/lib';
+const SKILLS_ROOT = 'agents/skills/claude-code';
 
 interface Layer {
   name: string;
@@ -197,19 +216,67 @@ describe('harness.config.json architecture rules govern real files (#543)', () =
     });
   });
 
-  it('every tracked source file belongs to a layer', () => {
-    const sourceFiles = TRACKED.filter(
-      (f) => f.startsWith(`${SOURCE_ROOT}/`) && f.endsWith('.ts'),
-    );
-    expect(sourceFiles.length).toBeGreaterThan(0);
+  it.each(SOURCE_ROOTS.map((r) => [r.root, r.exts] as const))(
+    'every tracked source file under %s belongs to a layer',
+    (root, exts) => {
+      const sourceFiles = TRACKED.filter(
+        (f) => f.startsWith(`${root}/`) && exts.some((e) => f.endsWith(e)),
+      );
+      // A root with no modules is an abstention, not a clean root.
+      expect(sourceFiles.length).toBeGreaterThan(0);
 
-    const covered = new Set(
-      LAYERS.flatMap((l) => matches(l.pattern, sourceFiles)),
-    );
-    const orphans = sourceFiles.filter((f) => !covered.has(f));
+      const covered = new Set(
+        LAYERS.flatMap((l) => matches(l.pattern, sourceFiles)),
+      );
+      const orphans = sourceFiles.filter((f) => !covered.has(f));
+      reportVerified(
+        'arch-scope',
+        `${root}: ${covered.size}/${sourceFiles.length} module(s) inside a layer`,
+      );
 
-    // Named in the failure so the fix is the file list, not a bisect.
-    expect(orphans).toEqual([]);
+      // Named in the failure so the fix is the file list, not a bisect.
+      expect(orphans).toEqual([]);
+    },
+  );
+
+  /**
+   * The direction rule #1155 asked for: skills import the shared library,
+   * never the reverse. `harness check-deps` only judges an import edge when
+   * BOTH ends resolve to a layer (`checkLayerViolations` skips the edge
+   * otherwise), so the rule needs a layer on each side; a `skills-lib` layer
+   * alone would let `lib -> claude-code` through as an unlayered target.
+   *
+   * Layer binding is first-match in declaration order, so the layer that
+   * actually binds a file is the first one whose pattern matches it — which is
+   * what this resolves, rather than looking a layer up by name.
+   */
+  describe('the shared skill library may not import from the skills (#1155)', () => {
+    function bindingLayer(file: string): Layer | undefined {
+      return LAYERS.find((l) => globToRegExp(l.pattern).test(file));
+    }
+    const libFile = TRACKED.find((f) => f.startsWith(`${SKILLS_LIB_ROOT}/`));
+    const skillFile = TRACKED.find(
+      (f) => f.startsWith(`${SKILLS_ROOT}/`) && f.endsWith('.mjs'),
+    );
+
+    it('both sides of the boundary have tracked files', () => {
+      expect(libFile).toBeDefined();
+      expect(skillFile).toBeDefined();
+    });
+
+    it('both sides bind to a layer, so check-deps judges the edge', () => {
+      expect(bindingLayer(libFile!)?.name).toBe('skills-lib');
+      expect(bindingLayer(skillFile!)?.name).toBe('skills');
+    });
+
+    it('skills-lib does not allow the skills layer; skills allows skills-lib', () => {
+      expect(bindingLayer(libFile!)?.allowedDependencies ?? []).not.toContain(
+        'skills',
+      );
+      expect(bindingLayer(skillFile!)?.allowedDependencies ?? []).toContain(
+        'skills-lib',
+      );
+    });
   });
 });
 

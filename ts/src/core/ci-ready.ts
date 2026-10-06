@@ -56,9 +56,16 @@ export interface CiReadyReport {
   checks: CiCheck[];
 }
 
+/**
+ * The run-history store as ci-ready sees it: the stored runs, null when the
+ * file does not exist, or the reason a store that EXISTS cannot be read
+ * (EISDIR, EACCES, ...; #1132). Unreadable is not absent -- both history
+ * checks skip naming the reason, never "no runs recorded".
+ */
+export type RunsInput = ScoredRun[] | null | { ok: false; reason: string };
+
 export interface CiReadyInputs {
-  /** Stored runs, or null when the history file does not exist. */
-  runs: ScoredRun[] | null;
+  runs: RunsInput;
   historyPath: string;
   /** Parsed `.canary/test-inventory.json`, or the reason it cannot be scored. */
   inventory: InventoryInput;
@@ -111,12 +118,17 @@ function scoreCleanWindow(window: ScoredRun[]): CiCheck {
   };
 }
 
-function scoreFlakiness(
-  runs: ScoredRun[] | null,
-  historyPath: string,
-): CiCheck {
+/** The skip for a store that exists but cannot be read, or null. */
+function unreadableSkip(name: string, runs: RunsInput): CiCheck | null {
+  if (runs === null || Array.isArray(runs)) return null;
+  return { name, verdict: 'skip', reason: runs.reason };
+}
+
+function scoreFlakiness(runs: RunsInput, historyPath: string): CiCheck {
   const name = 'flakiness';
-  if (runs === null || runs.length === 0) {
+  const unreadable = unreadableSkip(name, runs);
+  if (unreadable) return unreadable;
+  if (!Array.isArray(runs) || runs.length === 0) {
     return {
       name,
       verdict: 'skip',
@@ -173,9 +185,11 @@ function runtimeVerdict(p95: number): CheckVerdict {
   return p95 >= RUNTIME_WARN_MS ? 'warn' : 'pass';
 }
 
-function scoreRuntime(runs: ScoredRun[] | null, historyPath: string): CiCheck {
+function scoreRuntime(runs: RunsInput, historyPath: string): CiCheck {
   const name = 'suite-runtime';
-  const durations = (runs ?? [])
+  const unreadable = unreadableSkip(name, runs);
+  if (unreadable) return unreadable;
+  const durations = (Array.isArray(runs) ? runs : [])
     .map((r) => r.duration_ms)
     .filter((d): d is number => typeof d === 'number' && d > 0 && isFinite(d))
     .slice(-RUNTIME_WINDOW_RUNS);

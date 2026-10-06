@@ -1,6 +1,9 @@
 {
   "id": "blackhawk-wall-clock",
   "target": "canary-blackhawk",
-  "plantedDefect": "a test that reads the real wall clock",
-  "expect": { "ruleId": "BH001-wall-clock" }
+  "plantedDefect": "a test that reads the real wall clock, in plain JS and after a JSX apostrophe",
+  "expect": {
+    "ruleId": "BH001-wall-clock",
+    "files": ["tests/clock.test.mjs", "tests/stamp.test.tsx"]
+  }
 }

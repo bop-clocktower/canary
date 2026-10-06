@@ -31,6 +31,7 @@ import { ingest } from './ingest.mjs';
 import { DEFAULT_ATTRS } from './component.mjs';
 import { buildReport } from './report.mjs';
 import { renderMarkdown, renderJson, abstentionLine } from './render.mjs';
+import { isMain } from '../../../lib/is-main.mjs';
 
 const PREFIX = 'canary-sweep:';
 
@@ -147,6 +148,6 @@ export function main(argv = []) {
 // `process.exitCode`, not `process.exit()`: a large payload exceeds the pipe
 // buffer, and `process.exit` tears the process down mid-write, leaving a
 // truncated document that still exits 0 (#791).
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }

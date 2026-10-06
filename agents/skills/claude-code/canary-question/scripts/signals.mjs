@@ -90,7 +90,11 @@ export function historySignals(observations, target) {
 // ---------------------------------------------------------------------------
 // Failure category. RULES + categorizeFailure are COPIED from
 // canary-fail-fast/scripts/failures.mjs (behaviour-for-behaviour): skills are
-// self-contained and never import each other. Keep the two in sync by hand.
+// self-contained and never import each other. The copy is pinned to the source
+// by the parity test in agents/skills/test/canary-question.test.ts (#1140):
+// its samples hit every alternative alone and every pair of rules, so dropping,
+// narrowing or reordering a rule in one copy only turns it red. A NEW
+// alternative is caught only once a sample exercises it -- add one with it.
 const RULES = [
   [
     'schema',
@@ -143,11 +147,13 @@ export function resolveCategory(obs) {
 
 // Categories that name a transport-level symptom, and every hypothesis each
 // symptom is consistent with. A slow or misconfigured product times out and
-// rejects credentials too; a 502/503 is as often a proxy as the product.
+// rejects credentials too; a 502/503 is as often a proxy as the product. Each
+// id names the observation, never a hypothesis (#1142): an id that names one
+// side next to a row that supports another reads as a lean.
 const CATEGORY_WEIGHTS = {
-  timeout: ['category-env', ['environment', 'product-defect']],
-  auth: ['category-env', ['environment', 'product-defect']],
-  network: ['category-env', ['environment']],
+  timeout: ['category-timeout', ['environment', 'product-defect']],
+  auth: ['category-auth', ['environment', 'product-defect']],
+  network: ['category-network', ['environment']],
   server: ['category-server', ['product-defect', 'environment']],
 };
 

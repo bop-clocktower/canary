@@ -14,11 +14,24 @@ export interface RawFrame {
   fn?: string;
 }
 
+/**
+ * One cause in an exception chain (#1138). `start` indexes the flat,
+ * innermost-first `frames` list where this error's frames begin.
+ */
+export interface ChainLink {
+  errorType: string;
+  message: string;
+  relation: 'cause' | 'context';
+  start: number;
+}
+
 export interface ParsedTrace {
   format: TraceFormat;
   errorType: string;
   message: string;
   frames: RawFrame[];
+  /** Outward-in: [0] caused the reported error, the last is the root cause. Absent when unchained. */
+  chain?: ChainLink[];
 } // innermost first
 
 export type FrameStatus = 'resolved' | 'stale' | 'external' | 'missing';
@@ -42,6 +55,7 @@ export interface RegressionBrief {
   };
   suspect: ResolvedFrame | null; // innermost resolved/stale frame
   frames: ResolvedFrame[];
+  chain?: (ChainLink & { suspect: ResolvedFrame | null })[];
   framework: string;
   outputPath: string; // tests/generated/regression/<slug>.<ext>
   requirement: string; // the /canary-write-test prompt

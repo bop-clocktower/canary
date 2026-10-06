@@ -14,6 +14,173 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- **The TestTracker reporter is now the ingest reporter.** The import path
+  `canary-test-cli/reporter` is unchanged. Env vars are now `CANARY_INGEST_*`
+  (`CANARY_INGEST_URL`, `CANARY_INGEST_TOKEN`, `CANARY_INGEST_SUITE`, …). The
+  old `TESTTRACKER_*` names still work for one release and print a deprecation
+  notice; when both are set the new name wins. Docs moved to
+  `docs/wiki/Ingest-Reporter.md`.
+- **Ingest reporter: `collected`, `area`, retry and preflight** (#1150). The
+  reporter now sends `collected`, every test Playwright collected, which is the
+  denominator that separates "not covered" from "did not run" (`[]` for an empty
+  suite). It is left out, with a log line saying why, when the run is a shard,
+  uses `--grep`/`--grep-invert` or skipped a configured project, because a
+  partial list would shrink the suite's denominator;
+  `CANARY_INGEST_COLLECTED=false` opts out a job running
+  `--last-failed`/`--only-changed`. It sends a per-test `area` from an `area`
+  annotation or an `areaMap` glob (`CANARY_INGEST_AREA_MAP`), and never a folder
+  name. It retries 5xx, 429, timeouts and network errors (3 attempts, 30 s each,
+  `Retry-After` up to 65 s) but not 4xx, caps error text (ANSI stripped, 4 KB /
+  8 KB) and drops the catalog before it would exceed the body limit. Before the
+  run it calls `GET /api/ingest/whoami` and logs the tenant; a rejected token is
+  a warning, and the push still decides. A run that is not ingested, or a
+  `collected_count` mismatch, ends in a warning plus a GitHub Actions
+  annotation; `--list` pushes nothing.
+- **Ingest reporter: titles and tags** (#1183). `titleFormat: 'clean'`
+  (`CANARY_INGEST_TITLE_FORMAT`) drops the project from the title
+  (`file > describe > title`), so a multi-browser suite reports each test once;
+  the identity still comes only from the test itself, so it never collides or
+  changes between shards. It is opt-in because `full_title` is the dashboard's
+  identity key; `legacy` stays the default. Every row is tagged
+  `project:<name>`, dependency and teardown projects are tagged `dependency` /
+  `teardown`, and `test.fixme` is tagged `fixme`, with any fixme/skip reason
+  forwarded as `reason:<text>`.
+- **Ingest reporter: no silent no-ops.** An empty `CANARY_INGEST_*` var no
+  longer hides its legacy alias, an invalid optional setting falls back to its
+  default with a warning instead of turning pushing off, and a CI run with no
+  url or token says which one is missing.
+
+### Fixed
+
+- **Skill CLIs ran nothing through a symlink or a URL-encoded path** (#1182).
+  All 14 skill `cli.mjs` entry points compared `import.meta.url` with a
+  hand-built `file://${process.argv[1]}`, which is false through a symlink
+  (macOS `/tmp`, symlinked checkouts or runner temp dirs) and for paths needing
+  URL-encoding; the CLI then printed nothing and exited 0. They now share
+  `agents/skills/lib/is-main.mjs`, which compares resolved real paths, and the
+  CLI conformance suite spawns every CLI both ways.
+- **Repo scripts ran nothing through a symlink** (#1189). Seven `scripts/*.mjs`
+  entry guards compared `import.meta.url` with `pathToFileURL(process.argv[1])`,
+  and `npm/scripts/sync-gate-result.mjs` (npm's `pretest` drift gate) compared
+  `process.argv[1]` with `fileURLToPath(import.meta.url)`. Both are false when
+  the script is reached through a symlink, so the script printed nothing and
+  exited 0: a drifted mirror passed `--check`, and `rehearse.mjs` reported
+  nothing. They now compare resolved real paths (`scripts/lib/is-main.mjs`,
+  inlined in the npm script), and a test spawns every guarded script through a
+  symlink in a path containing a space.
+- **`.tsx`/`.jsx` component tests are scanned** (#1180). They were outside
+  `JS_TEST_EXTENSIONS`, so `canary-cassandra`, `review-test` and the test
+  inventory skipped them without saying so (on one real monorepo, ~87 of ~380
+  test files). Reading them safely needed JSX awareness: an apostrophe in JSX
+  text (`<p>It's</p>`) opened a phantom string that swallowed the next line's
+  `expect(...)`. Quote characters in JSX children text are now masked before the
+  string blankers run (`core/jsx-text.ts`), only for `.tsx`/`.jsx`; `.ts` and
+  `.js` are unchanged.
+- **`canary-blackhawk` and `canary-savant`: an apostrophe in JSX text no longer
+  hides or invents findings** (#1188). Both skills scan `.tsx`/`.jsx`, but their
+  per-line string helper read `<p>It's</p>` as an open quote for the rest of the
+  line. A real finding after it was dropped (`render(<p>It's {Date.now()}</p>)`
+  lost `BH001`), and a quoted fixture after it was read as code
+  (`render(<p>It's</p>, label('Date.now()'))` gained a false `BH001`). The
+  skills now mask JSX children text the way the engine does, through a
+  self-contained port in `agents/skills/lib/jsx-text.mjs`, and read each line
+  against the masked source. Savant's teardown pairing (`SV002`) and restore
+  detection (`SV003`) read the masked source too. Only `.tsx`/`.jsx` change;
+  every other file reads exactly as before. In JSX children, a
+  `// blackhawk-ignore` or `// savant-ignore` line is rendered text, so it no
+  longer applies; use `{/* blackhawk-ignore ... */}` there.
+- **JSX masking: a closing tag closes only its own element** (#1193). A
+  type-level generic misread as an element (`render: <T>(x: T) => string`) was
+  "closed" by any later `</b>`, even one inside a string, and every line between
+  was blanked, so assertions and findings there were lost. That applied to the
+  engine (`core/jsx-text.ts`) and the skills' copy alike. Recovery now also
+  marks every unclosed `<` of a failed pass at once, so a file with more than 64
+  such generics is still masked instead of read raw. That recovery spares a real
+  element whose own closing tag was seen, so a generic in its attribute
+  (`value={{ fmt: (cb: <T>(x: T) => void) => cb }}`) no longer unmasks its
+  children. Tag names compare with whitespace and comments dropped, so
+  `<Foo .Bar>…</Foo.Bar>` balances. A conformance suite holds the two maskers to
+  the same output.
+
+- **Ingest reporter: sharded pushes no longer discard each other** (#1148).
+  Every shard of one workflow run sent the same `canary_run_id`, so the first
+  shard won and every later shard was silently dropped as a duplicate. The id
+  now carries the shard (`42-1-s2of4`), and a duplicate response that stored a
+  different number of rows is a warning, not a success line.
+- **Ingest reporter: `timedOut` and `interrupted` keep their meaning** (#1149).
+  `timedOut` is sent as `timed_out`. `interrupted` was sent as `skipped`, which
+  dropped it from the pass-rate denominator; it is now `failed`, tagged
+  `interrupted`, with an `interrupted:` error.
+- **Ingest reporter: tags and run timing** (#1176). A tag in both a describe and
+  a test title is sent once, and a `merge-reports` push carries the original
+  run's start and duration instead of the merge step's ~0 s. Fractional and
+  negative (`-1`, never started) durations, which the ingest schema rejects
+  along with the whole run, are rounded or omitted.
+- **Ingest reporter: `test.fail()` tests report what Playwright reports**
+  (#1186). Status was mapped from the last attempt, so an expected failure was
+  sent as `failed` and turned a green run red, and a `test.fail()` test that
+  unexpectedly passed was sent as `passed` inside a failed run. Status now comes
+  from `test.outcome()` first: `expected` is `passed`, `unexpected` is `failed`
+  (or `timed_out`). An interrupted test is still sent as `failed`. An unexpected
+  pass now carries Playwright's `Expected to fail, but passed.` and an
+  `expected-failure` tag, and an expected failure's error is no longer sent, so
+  it cannot become the reason of a `flaky` or merged row. **Suites already using
+  `test.fail()` will see a step in dashboard history at upgrade:** expected
+  failures move from `failed` to `passed`, unexpected passes from `passed` to
+  `failed`.
+
+## [9.0.0] - 2026-10-05
+
+### Breaking changes: upgrading from 8.x
+
+Exit codes, stream routing and two `--json` shapes changed. Each item below says
+what a script or consumer has to do; the full entries are under **Changed**.
+
+- **`canary run` exits 1 when the test it ran failed, and
+  `canary init <unknown-framework>` exits 2** (#1007, PR #1036). Both exited 0.
+  A pipeline that relied on exit 0 from a red run must now handle the non-zero
+  code explicitly.
+- **More failures exit non-zero, and errors move to stderr** (#1040, PR #1063).
+  `canary init` on a known framework with no template exits 2 (was 0).
+  `migrate`, `heal-test` and `ticket-update` print their failure reports on
+  stderr, not stdout. `canary run` passes the runner's stderr through to stderr;
+  its `Result: Failure (Exit N)` line stays on stdout. Scripts that parsed these
+  errors from stdout must read stderr.
+- **`canary migrate --check` with no overlay exits 3, not 0** (#1065, PR #1069).
+  Nothing was checked, so the run abstains. The notice moves to stderr, and
+  under `--json` stdout is empty on this path. Track an overlay
+  (`canary overlay add`) or pass `--from <overlay>`, or treat 3 as "not
+  checked".
+- **`canary history flaky --json` and `canary analyze flaky --json` emit an
+  object, not an array** (#604, PR #987). Read the rows from `.rows`; the object
+  also carries `window_requested`, `runs_read`, `sufficient`, `flaky_measurable`
+  and `disclosures`. The all-clear line now needs at least 10 runs, and
+  `canary ci-ready`'s flakiness check warns, rather than passes, below 10.
+- **The flaky surfaces rank and judge on cross-run flips too** (#604, PR #989).
+  The `--json` envelope gains `flips_measured`; rows gain `flip_count`,
+  `flip_rate_pct`, `observed` and `alternating`, and a row appears when either
+  the flake rate or the flip rate crosses the threshold. The human table gains
+  `Flip %` and `Flips/Observed` columns. `ci-ready`'s 10% flakiness threshold
+  applies to `max(flake, flip)`, so a suite that passed in 8.x can now fail it.
+- **Run-history rows are schema v3** (#461, PR #1025). 9.0 reads v2 and v3 rows,
+  but canary 8.x refuses v3 rows. Upgrade every job that reads or writes a
+  shared history store (for example a cached `history-v2.jsonl`) together.
+
+Stricter behaviour that may also turn a previously green script red:
+
+- Code-bearing skills run in the caller's directory, and canary-savant,
+  canary-blackhawk and canary-cassandra exit 2 (was 1) on a path that does not
+  exist (#955, PR #958).
+- `canary migrate --dry-run` and `--apply` abort when two workflow templates
+  would install to the same filename (#1008, PR #1096).
+- A `canary:allow-untested` pragma with no reason no longer suppresses the
+  guardian finding (PR #993).
+- `history flaky --window`, `history summary --runs`,
+  `guardian precision --days` and `guardian watch --interval` reject zero,
+  negative and non-numeric values with exit 2 (PRs #1002, #998).
+
 ### Added
 
 - **canary-question: evidence brief for one failing test** (#613).
@@ -51,6 +218,9 @@ under the project's former name) are documented in the
   first. Exit 0 complete, 1 any section dark, 3 nothing read. A sha256 content
   digest over the canonical payload is checked with `canary manhunter verify`.
   Emit-only: no network, never posts. Guide: `docs/guides/release-dossier.md`.
+  An unreadable `.canary/` input (a directory at the path, a 0-perm file) is
+  named in the ci-readiness section as `could not be read (EISDIR)`, the same
+  words `canary ci-ready` prints, not as missing (#1136).
 - **canary-savant reads PHP** (#1106). The static pass now scans PHPUnit
   (`*Test.php`) and WordPress (`test-*.php`) files. SV003 catches superglobal
   writes, `putenv`, `ini_set`, `date_default_timezone_set`, `define` (never
@@ -167,9 +337,164 @@ under the project's former name) are documented in the
   unsupported (#963). `canary ci-ready` now scores `suite-runtime` as the p95 of
   recorded run durations against absolute 5/10-minute thresholds, and still
   skips when no run carries a duration (#956).
+- **`canary gen-data`: seeded, schema-derived vitest fixtures** (#765, #1012).
+  `canary gen-data --schema <path> --framework vitest [--seed n] [--out dir]`
+  reads a JSON Schema and writes a literal-only module: a
+  `build<Name>(overrides?)` that returns a fresh object, and a `<name>Cases`
+  array of boundary, locale/timezone and unexpected-shape cases, capped at 50.
+  The same seed (default 765) gives the same file. Anything the generator cannot
+  honour (`$ref`, `allOf`, `pattern`, `minItems`, `uniqueItems`, `anyOf`
+  together with `oneOf`, an integer range with no integer in it, and more)
+  becomes an `unresolved` field with a reason instead of a wrong default (#1014,
+  #1035); an unresolved required field throws unless you pass it as an override.
+  Union cases from the first member that a sibling member accepts are dropped,
+  so a fixture never asserts a rejection the schema would accept (#1039, #1095).
+  The output is checked by canary-blackhawk and canary-savant before it is
+  written. Exit 0 written, 1 self-check findings, 2 usage, 3 abstained; `--json`
+  prints JSON on every exit. pytest is not supported yet (exit 2).
+- **`canary guardian mutation`: diff-scoped mutation report, behind an abstain
+  guard** (Refs #486, #1043). Maps a StrykerJS JSON report (`--report`) onto the
+  guardian's diff scope, attributes each kill to a test, caps the run at 150
+  mutants, honours `// canary:allow-mutant <reason>`, and always prints its
+  denominator. Exit 0 all killed, 1 survivors, 3 abstained. The installed
+  `@stryker-mutator/vitest-runner` cannot kill a mutant on vitest 5
+  (stryker-js#6210), so while that holds the command abstains naming the
+  upstream issue and never reports a survivor. Zero mutants, no coverage, an
+  unreadable report or no runner also abstain with a reason. Advisory.
+- **`canary adoption`: local adoption signals from guardian records** (#491,
+  #1041). `canary adoption [--dir <path>] [--branch <name>] [--json]` reads the
+  guardian's `.harness/analyses/` records and local git history and reports PRs
+  merged over unaddressed findings, suppression use, the gate distribution, tier
+  degradation and findings per PR, each with its denominator. A signal with
+  nothing to count prints `abstained`; whether a workflow is disabled lives in
+  the Actions API and prints `not measured`. Read-only, always exits 0, sends
+  nothing anywhere. Guide: `docs/guides/adoption-signals.md`.
+- **canary-misfit: seeded resilience injection with per-flow verdicts** (#592,
+  #1042). A Playwright `page.route` fixture injects `latency`, `error` (5xx),
+  `abort` and `network` faults from a profile (named envelopes `slow-3g`,
+  `fast-3g`, `regional-edge`, `satellite`), and
+  `canary skills run canary-misfit -- --profile <p> --results <r>` grades each
+  flow `graceful`, `degraded` or `shattered`. Each decision depends only on the
+  seed, the fault and the request identity, never arrival order, so a parallel
+  run replays exactly; every report prints the seed and a reproduce command.
+  Flows no fault touched are `unexercised` and leave the denominator; zero
+  exercised flows prints `ABSTAINED:`. Advisory; under `--strict`, 1 shattered,
+  3 abstained.
+- **canary-sweep: axe findings deduplicated by component, not page** (#594,
+  #1046). `canary skills run canary-sweep -- --results <axe-json-or-dir>`
+  post-processes axe-core output from any producer: one bad button in a shared
+  header across forty pages is one finding with `occurrences: 40` and the page
+  list. Components are read from explicit `data-component` / `data-testid` /
+  `data-test` / `data-qa` markers only; unmarked nodes are counted as
+  unattributed, not guessed. WCAG criteria come from axe's tags. It does not
+  crawl or scan pages; `--routes` names the routes it expected and did not
+  receive. Zero violations with no evidence axe evaluated anything abstains.
+  Advisory; under `--strict`, 1 violations, 3 abstained.
+- **canary-signal: QA impact digest** (#609, #1124).
+  `canary skills run canary-signal -- --history <store>` reads the run-history
+  store and the katana ledger and prints a markdown digest plus a chat-ready
+  block for a window (`--days`, `--until`): tests executed, failures on other
+  branches, failures that reached `main`, flaky tests and the quarantine trail.
+  The sample line comes first, fewer than 3 runs prints `THIN SAMPLE`, and a
+  metric with a zero denominator prints `ABSTAINED` with the reason, never `0`.
+  Sources it could not read, and production escapes (no canary store records
+  them), are listed as not measured. Emit-only: no network, never posts.
+- **`canary history gaps` (canary-clocktower): which history consumers your
+  store actually feeds** (#610, #1127). For the local NDJSON store (`--path`),
+  reports each of 9 consumers (screech, ci-ready runtime, flaky, flaky-area,
+  failure categories, order, rewind and more) as fed, partial, dark or
+  unmeasured, field by field with denominators, and names skipped and opt-in
+  consumers. Exit 0 every measured consumer fed, 1 something dark or partial or
+  an unreadable store, 3 a missing or empty store. Gap list:
+  `docs/guides/history-gaps.md`.
+- **`canary history record` fills `area` and `failure_category`** (#1125,
+  #1135). `area` maps each test file to an area in
+  `.canary/critical-areas.json`; when that file is absent, unreadable, empty or
+  maps none of the run's tests, `record` prints `note: area not recorded: …` on
+  stderr and leaves it unset. `failure_category` is set on failed and flaky
+  tests that carry error text, using canary-fail-fast's categories (`schema`,
+  `auth`, `server`, `client`, `timeout`, `network`, `other`); a test with no
+  error text gets none rather than a guessed `other`. The Playwright reader now
+  keeps a flaky test's last failing error text. The exit code does not change.
+- **`canary history trim --keep <n>`** (#1024, #1073). Keeps the newest `n` runs
+  by timestamp and writes the survivors back byte for byte; a store already at
+  or under `n` is not rewritten. `history record` still only appends, so nothing
+  is dropped unless you run `trim`. `--keep 0` is a usage error (exit 2), and a
+  configured remote store is refused (exit 1) rather than silently left alone.
+  Canary's own `fleet-health` job trims its cached store to 50 runs.
+- **canary-blackhawk reads PHP test files** (#1107, #1116). PHPUnit `*Test.php`
+  and WordPress `test-*.php` files are scanned with PHP-only token sets for
+  BH001-BH004 (`time()`, `date()`, `sleep()`, `strtotime`, Carbon,
+  `current_datetime()`, `DAY_IN_SECONDS` arithmetic and more). PHP tokens never
+  fire on other languages and the reverse. `ClockMock`, `@group time-sensitive`,
+  php-mock, Carbon `setTestNow` and the WordPress `pre_option_gmt_offset` /
+  `pre_option_timezone_string` filters count as a frozen clock. Pinning to `UTC`
+  or the `C` locale is not flagged. Tokens in strings and comments are ignored.
+  Before this, a PHP suite scanned zero files.
+- **Guardian `coverageExempt`** (#883, #952). Globs under
+  `canary.guardian.coverageExempt` (bare, or `{ "glob", "reason" }`) name trees
+  with no coverage instrumentation. Their files leave the coverage-tier
+  denominator, so they are neither stale nor a scope gap, and are still judged
+  at the graph and heuristic tiers. The skip is always disclosed: an all-exempt
+  PR reads `⚠️ coverage skipped: N file(s) coverage-exempt (<globs>)`, and a
+  mixed PR never shows a plain ✅. A malformed entry warns.
+- **canary-ci-ready and canary-failure-impact ask whether the configured
+  accounts still exist** (#1100, #1103). On an auth, permission or configuration
+  failure both skills now check the repo's configured accounts against the user
+  catalog before suggesting another user, and report `all-present`,
+  `some-missing`, `all-missing` (an account-provisioning problem, not a test
+  defect) or `cannot-verify` with the reason. No catalog, an unreachable
+  catalog, an empty catalog or zero configured accounts is `cannot-verify`,
+  never a pass. `user_catalog_skill` in `.canary/company.json` is now a
+  validated field; it used to be warned about as unknown and dropped.
 
 ### Changed
 
+- **canary-judomaster: exception chains, runner cwd, no runner fetch, mock
+  warning** (Refs #1138). `canary judomaster brief` lists a chained exception
+  (V8 `[cause]:`, CPython `raise ... from` and "During handling") with the root
+  cause marked and named in the requirement; the signature and suspect stay on
+  the reported error. An unchained brief is unchanged, except that a Node frame
+  ending in `{` (an error with own properties) is no longer dropped. `verify`
+  runs the runner from `--root` and with `npx --no` instead of `npx --yes`, so a
+  runner the project lacks is `unverified — could not reproduce` (exit 3) naming
+  it, never downloaded. With `--brief`, a test that mocks the suspect module
+  prints a `WARNING:` (verdict unchanged; softer for a partial mock or a patched
+  dependency inside the module). Frame and `tests/generated` containment use
+  `path.relative`, so `--root /` resolves frames.
+- **canary-setup-harness: a six-workflow baseline, and no advice that makes a
+  required check abstain** (#1143, #1159; #1122, #1123, #1134; #1155, #1165;
+  #1160, #1163). The baseline for a new project is now six required workflows:
+  the five harness workflows plus `guardian.yml`, with steps to wire it up.
+  `leak-gate.yml` (a public repo with an identifier denylist) and
+  `validate-plugin.yml` (a repo that ships a Claude plugin) are listed as
+  conditional, each with its condition. Step 4 used to recommend a `paths:`
+  filter on `docs-lint.yml`, which produces required checks; a required check
+  behind a path filter never reports on a PR outside those paths, so the PR
+  waits forever. It now says required workflows run unfiltered.
+  `check-phase-gate` is dropped from the gates it lists: with no phase-gate
+  configuration it prints "skipping" and exits 0, a pass over zero items. The
+  list of edits an adopter makes to the stock `guardian.yml` now includes
+  dropping or replacing its base-coverage lookup of canary's own
+  `ts-coverage-lcov-<sha>` artifact.
+- **canary-question: neutral category signal ids** (#1142). The evidence-row
+  signal `category-env` is replaced by `category-timeout`, `category-auth` and
+  `category-network`, and each keeps its support list. `timeout` and `auth` also
+  support a defect in the system under test, so an id that named only the
+  environment read as a lean, and canary-question never prints one (recorded as
+  decided in #1141). This is not a breaking change for any published consumer:
+  `category-env` was never in a release (canary-question landed on 2026-09-29,
+  #1137, after v8.0.0), so 9.0.0 is the first release with these ids and there
+  is no alias. A test now asserts that no signal id in the SKILL.md table names
+  a hypothesis it does not exclusively support.
+- **canary-question's failure categoriser is pinned to canary-fail-fast**
+  (#1140). The skill's copy of the categorisation rules is now checked by
+  behaviour against canary-fail-fast's `categorizeFailure`, over shared samples
+  that produce all seven categories. The samples hit every alternative of every
+  rule on its own, and every pair of rules together. So if one copy drops,
+  narrows or reorders a rule and the other does not, a test fails. A new
+  alternative is caught once a sample exercises it. Before this, the only
+  safeguard was a comment asking for the two copies to be kept in sync by hand.
 - **`vacuity-check` discloses both denominators on every verdict** (#1084).
   Every summary line — clean pass, findings, or abstention — now carries
   `[N file(s) resolved, M test(s) scanned]`, and `--json` gained a `files` field
@@ -216,7 +541,7 @@ under the project's former name) are documented in the
   writes the error and the supported-framework list to **stderr** instead of
   stdout. Both previously exited 0, so `canary run ... && deploy` went ahead
   after a red test. Scripts that relied on exit 0 from a failing run must now
-  tolerate the non-zero code explicitly. The next release is a major (v9).
+  tolerate the non-zero code explicitly.
 
 - **`canary history record` stores a repo-relative `test_file` and an honest
   `commit_sha`** (#1021, ADR 0029). `test_file` is now the path relative to the
@@ -294,6 +619,51 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **canary-cassandra `VAC-001` compares whole call expressions** (#1171). Both
+  sides were compared after string contents were blanked, so
+  `score(9, 0, "severe")` and `score(9, 0, "unknown")` collapsed to the same
+  text and two different calls were reported as a `critical` self-comparison.
+  The sides are now compared as callee plus normalised arguments, string
+  contents included. Identical calls on both sides, including no-argument
+  `expect(f()).toBe(f())`, are still `VAC-001`. On canary's own `ts/test` this
+  removes 5 of 6 `VAC-001` findings; the one left is a genuine `f()` vs `f()`.
+- **canary-cassandra `VAC-002` follows a same-file helper one level, and
+  abstains past that** (#1170). A helper wrapped across lines
+  (`const parse = (...a) =>\n  parseArgv(a)`) was cut off at the first line
+  break, so tests calling it were reported as never invoking their target. A
+  `function` with an object return type had that type's `{` taken for its body,
+  with the same result. A test calling a same-file helper whose own body names
+  the target now counts as invoking it. When the target is more than one helper
+  deep, or the helper's body cannot be resolved, `VAC-002` abstains for that
+  test: there is no finding, a `skipped` entry gives the reason, and the test is
+  counted. The count is `vac002_abstained` in the skill's `--json` summary and
+  an `N test(s) abstained on VAC-002` line in text output. A `function` helper's
+  body now ends at its own closing brace instead of at the next declaration, so
+  a helper that never reaches the target can no longer take credit for the test
+  below it. That is why some real `VAC-002` findings that were hidden now show.
+  On canary's own `ts/test`, `VAC-002` goes from 145 to 124, and 147 tests
+  abstain.
+- **`canary ci-ready` no longer crashes on an unreadable run-history store**
+  (#1132). A directory or 0-perm file at `test-results/reports/history-v2.jsonl`
+  threw a raw EISDIR/EACCES stack, the shape #1129 fixed for the `.canary`
+  inputs. Flakiness and suite runtime now `skip` with
+  `<path> could not be read (<code>)` and the exit code follows the normal
+  contract. The release dossier (`canary manhunter`) had scored the same store
+  as absent ("no runs recorded"); it now shows ci-ready's reason, and an
+  abstained ci-readiness section names every skip reason. A corrupt or
+  unsupported-schema store still threw at this point; see #1156 below.
+- **`canary ci-ready` no longer crashes on a corrupt or unsupported-schema
+  run-history store** (#1156). Invalid JSON, a line that is not a JSON object,
+  or an unsupported `schema_version` in `history-v2.jsonl` threw a raw stack.
+  Flakiness and suite runtime now `skip` with
+  `<path> could not be parsed (line N: invalid JSON)` or
+  `<path> has unsupported schema <v> (line N; supported: 2, 3)`, and the exit
+  code follows the normal all-skip / incomplete contract. One bad line skips the
+  whole store; the readable lines are never scored without it. The release
+  dossier passes the same reason through instead of going dark. Only an error
+  that is not a content problem still darkens it. `NdjsonHistoryStore.readAll`
+  now throws a typed `HistoryContentError` that names the line, and a `null`,
+  number or array line is refused as corrupt instead of read as a legacy row.
 - **Installing a skill's dependencies no longer freezes it** (#1066).
   `hashSkillDir` walked the whole deployed-skill tree, so `node_modules` counted
   toward the hash: running `npm install` in a skill's `scripts/` dir — which a
@@ -333,7 +703,94 @@ under the project's former name) are documented in the
   `--repo`/default `.`, and fail-fast's `--config` all failed. They now run in
   the caller's cwd. `canary-savant`, `canary-blackhawk` and `canary-cassandra`
   now exit **2** (usage error) on a path that does not exist, instead of 1, so a
-  typo can no longer read as "findings" under `--strict`.
+  typo can no longer read as "findings" under `--strict`. Each skill's SKILL.md
+  documents the exit 2 (#974).
+- **`canary migrate` refuses two workflow templates that would install to one
+  filename** (#1008; #1000, #1096, #1102). Two declared templates sharing a
+  basename (say `templates/api/guardian.yml` and `templates/e2e/guardian.yml`)
+  both landed on `.github/workflows/guardian.yml`: the dry run promised both,
+  apply installed the first and told you to re-run with `--force`, which would
+  have overwritten it. `--dry-run` and `--apply` now abort before writing
+  anything, naming both source paths and the rename remedy. The same source
+  declared twice installs once, silently. `migrate --check` reports the
+  collision instead of crashing: it is the one workflow status that reaches the
+  verdict (`in_sync: false`, exit 1), because it is the overlay's defect, not an
+  edit the consumer made.
+- **A negated phrase no longer classifies as the thing it negates** (#1080,
+  #1092). "No snapshot testing — assertions only" in a Vitest request matched
+  the `visual` keyword, so the recommender reached for a visual-regression tool.
+  A keyword is now ignored when `no`, `not`, `without`, `avoid`, `never` or
+  `don't` sits in the three words before it in the same sentence. A request that
+  does ask for snapshot, contract or mutation testing still classifies as that.
+- **`review-test` FLAKE-002 no longer fires on Playwright's
+  `test.setTimeout(ms)`** (#1088, #1090). That call sets a per-test time budget,
+  not a timer, but it was reported as a critical sleep and could fail a CI gate
+  on correct code. Bare `setTimeout(...)`, `window.setTimeout(...)` and other
+  receivers still fire.
+- **`vacuity-check` VAC-001 catches self-comparisons with a call on the expected
+  side** (#1076, #1077). The expected side was matched only when it had no
+  parentheses, so `expect(res.status()).toBe(res.status())`, which cannot fail,
+  went unreported. Both sides are now read with the same balanced-paren walk.
+  `expect(v).not.toBe(v)` is still not flagged.
+- **`canary history flaky --window` and `history summary --runs` reject values
+  below 1** (#1002). `0` or a non-number read every run in the store and exited
+  0; it is now a usage error (exit 2), as `canary analyze` already did.
+- **`canary history summary` picks the most recent runs by timestamp** (#1003).
+  It took the last rows in append order, so a backfilled old run appended last
+  was reported as the newest. The `runs` list is now in time order.
+- **Guardian finding permalinks percent-encode the path** (#996). A file named
+  `src/my file.ts` produced a link that markdown cut at the space. Spaces, `#`,
+  `?` and `%` are now encoded; the displayed path is unchanged.
+- **Guardian scopes every file in a plain unified diff** (#997). A diff with no
+  `diff --git` lines (`diff -u`, or one passed via `--diff` or stdin) never left
+  its first hunk, so later files' lines were attributed to the first file. A
+  hunk now ends when its `@@` line counts are used up.
+- **Guardian's lcov reader accepts Windows paths** (#1006). `SF:src\foo.ts`
+  never matched a diff path, so the file quietly fell to a lower coverage tier
+  even though a report was supplied. Backslashes are normalised, as the
+  Cobertura reader already did.
+- **Guardian keeps the highest lcov hit count when a file recurs** (#1004).
+  Concatenated shard reports let the last record win, so a line one shard hit
+  could read as uncovered. The max is kept, as the Cobertura reader already did.
+- **A dynamic `import()` or `import.meta` line no longer makes a file a barrel**
+  (#994). The guardian treated such files as pure re-exports and dropped their
+  untested-code findings.
+- **A reason-less `canary:allow-untested` pragma no longer clears the gate**
+  (#993). Trailing whitespace or only a comment closer after the token counted
+  as a reason, so the finding was suppressed and a `hard` gate exited 0. The
+  documented form is `canary:allow-untested <reason>`; without a reason the
+  finding stands.
+- **`canary guardian precision --days` and `guardian watch --interval` reject
+  non-numeric, zero and negative values** (#998). `--days abc` crashed with a
+  raw `RangeError` and `--interval abc` polled in a tight loop. Both are now
+  usage errors (exit 2).
+- **`canary ticket-update` exits 1 on a non-array `passed_names` or
+  `failed_names`** (#1001). It threw a raw `TypeError` stack instead of the
+  `Could not read result file` path.
+- **`canary upgrade` targets npm and reports the real error** (#1052). It
+  upgraded the discontinued pipx package `canary-test-ai`, printed "pipx not
+  found" for any failure, then fell back to a pip that cannot exist in a pipx
+  venv. It now runs `npm install -g canary-test-cli@latest`, says a binary is
+  missing only when it is, prints the tool's own stderr on failure (on stderr),
+  and no longer reports "Already up to date" after a successful upgrade.
+- **`canary guardian pr-check --format json` prints clean JSON when every unit
+  is skipped** (#940, #945). On the abstain path (exit 3) the gate summary and
+  remediation text went to stdout ahead of the JSON, so stdout could not be
+  parsed. They now go to stderr, as on the scored path. The JSON is unchanged.
+
+### Security
+
+- **Lockfiles pin patched versions of two runtime dependencies with published
+  advisories** (#1166, #1167; #1173, #1174). `fast-uri` 3.1.8, reached through
+  `ajv`, fixes
+  [GHSA-hrr3-gc8f-f4qj](https://github.com/advisories/GHSA-hrr3-gc8f-f4qj)
+  (inconsistent host case normalisation, medium). `proxy-addr` 2.0.8, reached
+  through `express` in the MCP SDK, fixes
+  [GHSA-jqcg-44mw-7w3h](https://github.com/advisories/GHSA-jqcg-44mw-7w3h) (IP
+  spoofing via an IPv4-mapped IPv6 trust subnet, critical). npm does not publish
+  a package's lockfile, and both ranges already admit the fixed versions, so a
+  fresh install of any canary release resolves them; an existing install should
+  refresh its own lockfile.
 
 ## [8.0.0] - 2026-09-15
 
@@ -3794,7 +4251,8 @@ line (descends from v3.0.0); no prior release was modified.
 - Added an open-core proprietary guard and company-leak scrub, enforced by a CI
   guard (removed-symbol / proprietary-denylist checks).
 
-[Unreleased]: https://github.com/bop-clocktower/canary/compare/v8.0.0...HEAD
+[Unreleased]: https://github.com/bop-clocktower/canary/compare/v9.0.0...HEAD
+[9.0.0]: https://github.com/bop-clocktower/canary/compare/v8.0.0...v9.0.0
 [8.0.0]: https://github.com/bop-clocktower/canary/compare/v7.2.0...v8.0.0
 [7.2.0]: https://github.com/bop-clocktower/canary/compare/v7.1.0...v7.2.0
 [7.1.0]: https://github.com/bop-clocktower/canary/compare/v7.0.0...v7.1.0

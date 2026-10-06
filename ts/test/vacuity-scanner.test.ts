@@ -250,7 +250,9 @@ describe('VAC-002 — the declared target is never invoked', () => {
     expect(rules(r.findings)).not.toContain('VAC-002');
   });
 
-  it('follows a chain of local helpers to a fixpoint', () => {
+  // Since #1170 a chain is credited one level only; past that the test
+  // abstains -- counted, never reported and never silently passed.
+  it('abstains, counted, on a chain of local helpers', () => {
     const r = scan(
       'a.test.ts',
       IMPORTS +
@@ -259,6 +261,7 @@ describe('VAC-002 — the declared target is never invoked', () => {
         `it('round-trips', () => { expect(outer(1)).toBe(1); });\n`,
     );
     expect(rules(r.findings)).not.toContain('VAC-002');
+    expect(r.helperAbstained).toBe(1);
   });
 
   // Measured on canary's own suite: the largest single source of VAC-002/003
@@ -730,5 +733,318 @@ describe('severity reflects confidence, not appetite', () => {
     const sev = new Map(r.findings.map((f) => [f.rule, f.severity]));
     expect(sev.get('VAC-001')).toBe('critical');
     expect(sev.get('VAC-002')).toBe('warning');
+  });
+});
+
+// #1171 — VAC-001 compared the two sides AFTER string content was blanked, so
+// every string argument collapsed to the same run of spaces and whitespace
+// normalisation then erased its length. `score(9, 0, "severe")` and
+// `score(9, 0, "unknown")` both read as `score(9,0,"")`: same callee, different
+// arguments, reported as a `critical` self-comparison. The full call expression
+// -- callee plus normalised argument list, string contents included -- is what
+// decides it now.
+describe('VAC-001 — same callee, different arguments (#1171)', () => {
+  it('does not flag either repro from the issue', () => {
+    const r = scan(
+      'a.test.ts',
+      `import { expect, it } from "vitest";\n` +
+        `import { score } from "./score.js";\n\n` +
+        `it("orders the header before the body", () => {\n` +
+        `  const out = render();\n` +
+        `  expect(out.indexOf("header")).toBeLessThan(out.indexOf("body"));\n` +
+        `});\n\n` +
+        `it("ranks a severe gap above an unknown one", () => {\n` +
+        `  expect(score(9, 0, "severe")).toBeGreaterThan(score(9, 0, "unknown"));\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-001');
+  });
+
+  it.each([
+    `expect(save('a')).toBe(save('b'));`,
+    `expect(save('a b')).toBe(save('ab'));`,
+    'expect(save(`x`)).toBe(save(`y`));',
+    `expect(save("it's")).toBe(save("its"));`,
+  ])('does not flag %s', (line) => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS + `it('checks', () => {\n  ${line}\n});\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-001');
+  });
+
+  // The genuine self-comparisons stay critical, with no new code: an identical
+  // call on both sides -- including the no-argument `f()` the issue counted as
+  // genuine -- and the literal tautology.
+  it.each([
+    `expect(true).toBe(true);`,
+    `expect(load()).toBe(load());`,
+    `expect(save('a')).toBe(save('a'));`,
+    `expect(save('a', 1)).toBe(save( 'a',1 ));`,
+  ])('still flags %s', (line) => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS + `it('proves nothing', () => {\n  ${line}\n});\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-001');
+  });
+
+  it('does not flag the pytest form with different string arguments', () => {
+    const r = scan(
+      'test_a.py',
+      `from store import save\n\ndef test_ranks():\n    assert save("a") == save("b")\n`,
+    );
+    expect(rules(r.findings)).not.toContain('VAC-001');
+  });
+
+  it('still flags the pytest form with identical string arguments', () => {
+    const r = scan(
+      'test_a.py',
+      `from store import save\n\ndef test_same():\n    assert save("a") == save("a")\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-001');
+  });
+});
+
+// #1170 — VAC-002 through a same-file helper. The approved contract: a call to a
+// same-file helper whose body references the imported target counts as invoking
+// it, exactly ONE level deep. Deeper indirection, or a helper whose body cannot
+// be resolved, ABSTAINS: counted in `helperAbstained` and listed in `skipped`,
+// never silently passed and never reported as VAC-002.
+describe('VAC-002 — the target reached through a same-file helper (#1170)', () => {
+  const HEAD =
+    `import { describe, expect, it } from "vitest";\n` +
+    `import { parseArgv } from "./parse-args.js";\n\n`;
+  const TEST =
+    `describe("parseArgv", () => {\n` +
+    `  it("reads --name", () => {\n` +
+    `    expect(parse("--name", "x").name).toBe("x");\n` +
+    `  });\n` +
+    `});\n`;
+
+  function vac002(r: ReturnType<typeof scan>) {
+    return r.findings.filter((f) => f.rule === 'VAC-002');
+  }
+
+  it.each([
+    [
+      'the issue repro (single-line arrow)',
+      `const parse = (...argv: string[]) => parseArgv(["node", "cli", ...argv]);\n`,
+    ],
+    [
+      'an arrow helper prettier wrapped onto the next line',
+      `const parse = (...argv: string[]) =>\n  parseArgv(["node", "cli", ...argv]);\n`,
+    ],
+    [
+      'an arrow helper with wrapped parameters',
+      `const parse = (\n  ...argv: string[]\n) => {\n  return parseArgv(argv);\n};\n`,
+    ],
+    [
+      'an async arrow helper wrapped onto the next line',
+      `const parse = async (...argv: string[]) =>\n  await parseArgv(argv);\n`,
+    ],
+    [
+      'a const-bound function expression',
+      `const parse = function (...argv: string[]) {\n  return parseArgv(argv);\n};\n`,
+    ],
+    [
+      'a function declaration',
+      `function parse(...argv: string[]) {\n  return parseArgv(argv);\n}\n`,
+    ],
+  ])('counts %s as invoking the target', (_label, helper) => {
+    const r = scan('a.test.ts', HEAD + helper + '\n' + TEST);
+    expect(vac002(r)).toEqual([]);
+    expect(r.helperAbstained ?? 0).toBe(0);
+  });
+
+  // The real positive must keep firing: a same-file helper that does NOT reach
+  // the target, and a test that never calls the target itself.
+  it('still reports a test whose helper never references the target', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `const parse = (...argv: string[]) =>\n  ({ name: argv[1] });\n\n` +
+        TEST,
+    );
+    expect(vac002(r)).toHaveLength(1);
+    expect(r.helperAbstained ?? 0).toBe(0);
+  });
+
+  // A function declaration used to own the text up to its next sibling
+  // declaration, so a non-reaching helper swallowed the test below it that DID
+  // call the target -- and a second test calling only that helper went quiet.
+  it('still reports a test whose function-declaration helper never references the target', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `function parse(...argv: string[]) {\n  return { name: argv[1] };\n}\n\n` +
+        `it("direct", () => {\n  expect(parseArgv(["--name", "x"]).name).toBe("x");\n});\n\n` +
+        `it("through the helper", () => {\n  expect(parse("--name", "x").name).toBe("x");\n});\n`,
+    );
+    expect(vac002(r).map((f) => f.test)).toEqual(['through the helper']);
+  });
+
+  it('continues an initializer onto a line that starts with `.`', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `const parse = (...argv: string[]) => base\n` +
+        `  .with(parseArgv(argv));\n\n` +
+        TEST,
+    );
+    expect(vac002(r)).toEqual([]);
+  });
+
+  // The two degenerate function shapes: an unterminated body runs to the end
+  // of the file, and a bodyless signature owns nothing that names the target.
+  it('runs an unterminated function body to the end of the file', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD + TEST + `function parse(...argv: string[]) {\n  parseArgv(argv);\n`,
+    );
+    expect(vac002(r)).toEqual([]);
+  });
+
+  it('gives a bodyless function signature nothing that reaches the target', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD + TEST + `function parse(...argv: string[]): Args;\n`,
+    );
+    expect(vac002(r)).toHaveLength(1);
+  });
+
+  // Measured on canary's own `perf-ratchet.test.ts`: a helper with an object
+  // RETURN TYPE had that type's `{` taken for its body, so `run` was cut off
+  // before it named the target and 56 correct tests read as vacuous.
+  it('reads past an object return type to the real function body', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `function parse(extra: string[] = []): { name: string } {\n` +
+        `  return parseArgv(extra);\n}\n\n` +
+        TEST,
+    );
+    expect(vac002(r)).toEqual([]);
+    expect(r.helperAbstained ?? 0).toBe(0);
+  });
+
+  it('abstains, counted, when the target is two helpers deep', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `const raw = (argv: string[]) => parseArgv(argv);\n` +
+        `const parse = (...argv: string[]) => raw(["node", ...argv]);\n\n` +
+        TEST,
+    );
+    expect(vac002(r)).toEqual([]);
+    expect(r.helperAbstained).toBe(1);
+    const skip = r.skipped?.find((s) => s.name.includes('VAC-002'));
+    expect(skip?.reason).toMatch(/more than one/i);
+  });
+
+  it('abstains, counted, when the helper body cannot be resolved', () => {
+    // Declared at module scope with no initializer, assigned inside a hook by
+    // a plain assignment the declaration patterns cannot bound.
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `let parse: (...argv: string[]) => { name: string };\n` +
+        `beforeEach(() => {\n  parse = makeParser();\n});\n\n` +
+        TEST,
+    );
+    expect(vac002(r)).toEqual([]);
+    expect(r.helperAbstained).toBe(1);
+    const skip = r.skipped?.find((s) => s.name.includes('VAC-002'));
+    expect(skip?.reason).toMatch(/could not be resolved/i);
+  });
+
+  it('does not abstain on a test that calls the target directly', () => {
+    const r = scan(
+      'a.test.ts',
+      HEAD +
+        `const raw = (argv: string[]) => parseArgv(argv);\n` +
+        `const parse = (...argv: string[]) => raw(["node", ...argv]);\n\n` +
+        `it("direct", () => {\n  expect(parseArgv(["--name", "x"]).name).toBe("x");\n});\n`,
+    );
+    expect(vac002(r)).toEqual([]);
+    expect(r.helperAbstained ?? 0).toBe(0);
+  });
+
+  // #871 must survive the wrapped-initializer fix: a one-line bystander
+  // declaration inside a test still ends at its own line, so it cannot absorb
+  // the target call below it.
+  it('still ends a one-line bystander declaration at its own line', () => {
+    const r = scan(
+      'a.test.ts',
+      IMPORTS +
+        `it('writes nothing', () => {\n` +
+        `  const ledger = '/tmp/x';\n` +
+        `  save(1);\n` +
+        `  expect(exists(ledger)).toBe(false);\n` +
+        `});\n`,
+    );
+    expect(rules(r.findings)).toContain('VAC-003');
+  });
+});
+
+describe('component tests in .tsx/.jsx (#1180)', () => {
+  const RTL = `import { it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { Button } from './Button';
+
+it('shows the label', () => {
+  render(<Button label="Don't stop"><p>It's {count} items</p></Button>);
+  expect(screen.getByText("It's 3 items")).toBeInTheDocument();
+});
+`;
+
+  it('reads a .tsx component test instead of excluding it', () => {
+    const result = scan('Button.test.tsx', RTL);
+    expect(result.checked).toBe(1);
+    expect(rules(result.findings)).toEqual([]);
+  });
+
+  it('reads .jsx too', () => {
+    expect(scan('Button.test.jsx', RTL).checked).toBe(1);
+  });
+
+  it('still catches a vacuous component test', () => {
+    const vacuous = `import { it, expect } from 'vitest';
+import { Button } from './Button';
+
+it('renders', () => {
+  render(<Button><p>It's here</p></Button>);
+  expect(true).toBe(true);
+});
+`;
+    expect(rules(scan('Button.test.tsx', vacuous).findings)).toContain(
+      'VAC-001',
+    );
+  });
+
+  it('counts every test in a file with a generic helper (review repro)', () => {
+    const code = `import { it, expect } from 'vitest';
+import { Banner } from './Banner';
+const renderWith = <P extends object>(ui: unknown, _p?: P) => render(ui);
+it('shows the warning', () => {
+  renderWith(<Banner>Don't panic</Banner>);
+  expect(screen.getByRole('alert')).toBeVisible();
+});
+it('has a label', () => {
+  renderWith(<Banner>ok</Banner>);
+  expect(screen.getByText('ok')).toBeVisible();
+});
+`;
+    expect(scan('Banner.test.tsx', code).checked).toBe(2);
+  });
+
+  it('counts every test when an assertion uses a regex with a quote', () => {
+    const code = `import { it, expect } from 'vitest';
+import { List } from './List';
+it('a', () => { render(<List />); expect(screen.getByText(/you don't have any/i)).toBeVisible(); });
+it('b', () => { render(<List />); expect(screen.getByText('x')).toBeVisible(); });
+it('c', () => { render(<List />); expect(screen.getByText('y')).toBeVisible(); });
+`;
+    expect(scan('List.test.tsx', code).checked).toBe(3);
   });
 });

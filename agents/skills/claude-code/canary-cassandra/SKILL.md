@@ -32,15 +32,19 @@ Cassandra is Tier-0: deterministic, no LLM, no network, no execution.
 
 | Rule      | Severity | Fires on                                                                                                                                                          |
 | --------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VAC-001` | critical | An assertion whose expectation is identical to the value it checks — `expect(true).toBe(true)`, `assert x == x`                                                   |
+| `VAC-001` | critical | An assertion whose expectation is identical to the value it checks — `expect(true).toBe(true)`, `assert x == x`, `expect(f()).toBe(f())`                          |
 | `VAC-002` | warning  | The test never references the target it claims to cover                                                                                                           |
 | `VAC-003` | warning  | Every assertion in the test asserts an _absence_, and none of them observes the target — so nothing proves it ran                                                 |
 | `VAC-005` | warning  | Every assertion is a trivially true _presence_ check (`toBeDefined`, `toBeTruthy`, `assert x is not None`) on a value the test built itself before the target ran |
 
-`VAC-001` is deterministic, hence `critical`: no implementation can fail it.
-`VAC-005` abstains (no finding) whenever it cannot prove the subject is a
-bystander, such as a name bound in a hook or a multi-line initialiser. `VAC-004`
-is reserved for the self-excusing-skip rule
+`VAC-001` is deterministic, hence `critical`: no implementation can fail it. It
+compares the **full expression** on each side — callee plus argument list,
+string contents included — so
+`expect(score(9, 0, 'severe')) .toBeGreaterThan(score(9, 0, 'unknown'))` is not
+a self-comparison (#1171). Identical calls on both sides, including no-argument
+`f()` vs `f()`, still are. `VAC-005` abstains (no finding) whenever it cannot
+prove the subject is a bystander, such as a name bound in a hook or a multi-line
+initialiser. `VAC-004` is reserved for the self-excusing-skip rule
 (`docs/changes/vac-004-self-excusing-skip/`). `VAC-002` and `VAC-003` depend on
 resolving a target, which is inference, so they are `warning` and carry a
 fidelity tier.
@@ -76,8 +80,8 @@ The `--json` envelope matches `canary-savant` / `canary-blackhawk` /
 `canary-katana` — `schema_version`, a `findings` array of
 `{file, line, rule_id, severity, snippet, why}`, and a `summary` — so findings
 from all four merge without special-casing one. Cassandra adds `suggestion` and
-`fidelity` per finding, and `tests_checked` to the summary, because its
-denominator is tests rather than files.
+`fidelity` per finding, and `tests_checked` and `vac002_abstained` to the
+summary, because its denominator is tests rather than files.
 
 **Advisory by design.** Findings exit **0**. This is the repo's established
 shape for a new detector — advisory first, ratchet to strict only after triage
@@ -103,7 +107,7 @@ resolve one. Three rungs, and the finding says which one it used:
 | Tier              | How the target was resolved                                                                   | Trust                                 |
 | ----------------- | --------------------------------------------------------------------------------------------- | ------------------------------------- |
 | `annotated`       | The author wrote `// @covers <symbol>`. That exact symbol is checked.                         | High — the author stated the contract |
-| `import-inferred` | The symbols imported from first-party (relative) modules, closed over local helpers           | Medium — read the test before acting  |
+| `import-inferred` | The symbols imported from first-party (relative) modules, plus one level of same-file helper  | Medium — read the test before acting  |
 | _(skipped)_       | Neither available. Reported as a skip with its reason; the test is **not** reported as clean. | None — the check did not run          |
 
 **E2E / browser-driver specs skip `import-inferred` VAC-002** (#971). A spec
@@ -128,6 +132,21 @@ inline, or that carries a bare `await import('./x.js')`, is likewise read as
 reaching its target — but `VAC-003` stays dark for it and says so in the skip
 list, because "did an assertion observe the target" needs a symbol that a
 subprocess boundary does not provide (#705).
+
+**Same-file helpers count one level deep** (#1170). A test that calls a helper
+defined in the same file — an arrow, a `function` declaration, or a
+`const`-bound function expression, wrapped across lines or not — invokes the
+target when that helper's own body names it:
+
+```ts
+const parse = (...argv: string[]) => parseArgv(['node', 'cli', ...argv]); // the test calling parse() invokes parseArgv
+```
+
+Deeper than that — a helper that reaches the target only through another helper
+— or a helper whose body cannot be resolved (declared with no initializer and
+assigned in a hook), and `VAC-002` **abstains** for that test: no finding, a
+`skipped` entry with the reason, and a count. It is never passed in silence. A
+helper that does not reach the target at all is still a `VAC-002`.
 
 To upgrade a finding from inferred to annotated, add the annotation above the
 test:
@@ -155,6 +174,9 @@ itself, so:
   prints a clean tick.
 - **A test whose target could not be resolved** → a `skipped` entry naming the
   test and the reason, rendered in every summary line.
+- **A test whose target sits behind a helper chain** → the same, plus a count:
+  `vac002_abstained` in the `--json` summary (always present, `0` included) and
+  an `N test(s) abstained on VAC-002` line in text output.
 
 `checked` in the JSON payload is the number of **tests** read, not files. Always
 read it before believing a zero.
@@ -167,6 +189,7 @@ read it before believing a zero.
   → Assert the value the code under test should have produced, not the input.
 
 3 finding(s) across 214 checked (11 skipped: VAC-002/VAC-003 (adds two numbers) [target unresolvable: ...])
+2 test(s) abstained on VAC-002: the target is reached only through more than one same-file helper, ...
 ```
 
 The summary line always carries the denominator and the skips. A finding count

@@ -38,7 +38,9 @@
 //   node scripts/test-duration-ratchet.mjs --report <vitest.json> --update
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+
+import { isMain } from './lib/is-main.mjs';
 
 import {
   Abstention,
@@ -290,9 +292,6 @@ function main(argv) {
   }
 }
 
-if (
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (isMain(import.meta.url)) {
   main(process.argv.slice(2));
 }

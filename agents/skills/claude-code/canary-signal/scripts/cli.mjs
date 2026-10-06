@@ -28,6 +28,7 @@ import { DEFAULT_LEDGER, loadLedger, loadRuns } from './sources.mjs';
 import { resolveWindow } from './window.mjs';
 import { tallyDigest } from './tally.mjs';
 import { renderDigest } from './digest.mjs';
+import { isMain } from '../../../lib/is-main.mjs';
 
 const PREFIX = 'canary-signal:';
 
@@ -122,6 +123,6 @@ export function main(argv = []) {
 
 // `process.exitCode`, not `process.exit()`: a large payload exceeds the pipe
 // buffer and `process.exit` truncates it while still exiting 0 (#791).
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }

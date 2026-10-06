@@ -117,9 +117,17 @@ function identity(f) {
 /**
  * Compile a path glob. `**` crosses directories, `*` does not, and the pattern
  * is anchored to the END of the path so it matches whether or not the scan
- * root was stripped.
+ * root was stripped. A leading `/` anchors it to the repo root instead (#1189),
+ * so `/scripts/x.mjs` cannot also cover a nested `a/scripts/x.mjs`; that form
+ * needs the root stripped (`--report-root`), and fails closed when it is not.
  */
 export function globToRegExp(glob) {
+  if (glob.startsWith('/')) return new RegExp(`^${globSource(glob.slice(1))}$`);
+  return new RegExp(`^(?:.*/)?${globSource(glob)}$`);
+}
+
+/** The unanchored regex source for a glob's path segments. */
+function globSource(glob) {
   let re = '';
   for (let i = 0; i < glob.length; i += 1) {
     const c = glob[i];
@@ -131,7 +139,7 @@ export function globToRegExp(glob) {
     else if (c === '?') re += '[^/]';
     else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
   }
-  return new RegExp(`^(?:.*/)?${re}$`);
+  return re;
 }
 
 /** The first allowance covering this finding, or `null`. */
