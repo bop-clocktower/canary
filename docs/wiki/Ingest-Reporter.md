@@ -40,18 +40,21 @@ export default defineConfig({
 
 ### Options
 
-| Option           | Env fallback                     | Legacy env (deprecated)        | Default        | Purpose                                                                  |
-| ---------------- | -------------------------------- | ------------------------------ | -------------- | ------------------------------------------------------------------------ |
-| `suite`          | `CANARY_INGEST_SUITE`            | `TESTTRACKER_SUITE`            | — (required)   | Suite name on the dashboard (e.g. `consumer-b-api`, `consumer-a-web`).   |
-| `testFilePrefix` | `CANARY_INGEST_TEST_FILE_PREFIX` | `TESTTRACKER_TEST_FILE_PREFIX` | `<cwd>/`       | Prefix stripped from absolute test file paths.                           |
-| `environment`    | `CANARY_INGEST_ENVIRONMENT`      | `TESTTRACKER_ENVIRONMENT`      | (unset)        | Environment label (`stage`, `uat`, `prod`, …).                           |
-| `url`            | `CANARY_INGEST_URL`              | `TESTTRACKER_URL`              | (unset)        | Dashboard base URL; the reporter posts to `<url>/api/ingest/runs`.       |
-| `token`          | `CANARY_INGEST_TOKEN`            | `TESTTRACKER_API_TOKEN`        | (unset)        | Ingest token (scope `ingest:runs`).                                      |
-| `workflow`       | `CANARY_INGEST_WORKFLOW`         | `TESTTRACKER_WORKFLOW`         | `playwright`   | Free-form workflow label.                                                |
-| `areaMap`        | `CANARY_INGEST_AREA_MAP` (JSON)  | —                              | `{}`           | Glob → product area, first match wins. See [Areas](#areas).              |
-| `retryDelaysMs`  | —                                | —                              | `[1000, 4000]` | Waits before each retry of a 5xx, 429 or network error.                  |
-| `titleFormat`    | `CANARY_INGEST_TITLE_FORMAT`     | —                              | `legacy`       | `legacy` or `clean`. See [Title format](#title-format).                  |
-| `collected`      | `CANARY_INGEST_COLLECTED`        | —                              | `true`         | Send the suite catalog. See [collected](#what-it-sends-besides-results). |
+| Option           | Env fallback                     | Legacy env (deprecated)        | Default        | Purpose                                                                                           |
+| ---------------- | -------------------------------- | ------------------------------ | -------------- | ------------------------------------------------------------------------------------------------- |
+| `suite`          | `CANARY_INGEST_SUITE`            | `TESTTRACKER_SUITE`            | — (required)   | Suite name on the dashboard (e.g. `consumer-b-api`, `consumer-a-web`).                            |
+| `testFilePrefix` | `CANARY_INGEST_TEST_FILE_PREFIX` | `TESTTRACKER_TEST_FILE_PREFIX` | `<cwd>/`       | Prefix stripped from absolute test file paths.                                                    |
+| `environment`    | `CANARY_INGEST_ENVIRONMENT`      | `TESTTRACKER_ENVIRONMENT`      | (unset)        | Environment label (`stage`, `uat`, `prod`, …).                                                    |
+| `url`            | `CANARY_INGEST_URL`              | `TESTTRACKER_URL`              | (unset)        | Dashboard base URL; the reporter posts to `<url>/api/ingest/runs`.                                |
+| `token`          | `CANARY_INGEST_TOKEN`            | `TESTTRACKER_API_TOKEN`        | (unset)        | Ingest token (scope `ingest:runs`).                                                               |
+| `workflow`       | `CANARY_INGEST_WORKFLOW`         | `TESTTRACKER_WORKFLOW`         | `playwright`   | Free-form workflow label.                                                                         |
+| `areaMap`        | `CANARY_INGEST_AREA_MAP` (JSON)  | —                              | `{}`           | Glob → product area, first match wins. See [Areas](#areas).                                       |
+| `retryDelaysMs`  | —                                | —                              | `[1000, 4000]` | Waits before each retry of a 5xx, 429 or network error.                                           |
+| `titleFormat`    | `CANARY_INGEST_TITLE_FORMAT`     | —                              | `legacy`       | `legacy` or `clean`. See [Title format](#title-format).                                           |
+| `collected`      | `CANARY_INGEST_COLLECTED`        | —                              | `true`         | Send the suite catalog. See [collected](#what-it-sends-besides-results).                          |
+| `runFile`        | `CANARY_RUN_FILE`                | —                              | (unset)        | Also write the run as a `canary.run/1` file. See [The `canary.run/1` file](#the-canaryrun1-file). |
+| `scopeId`        | `CANARY_SCOPE_ID`                | —                              | (unset)        | `canary.run/1` scope id. Required with `runFile`; never inferred.                                 |
+| `scopeEnv`       | `CANARY_SCOPE_ENV`               | —                              | (unset)        | `canary.run/1` scope env. Required with `runFile`; falls back to `environment`.                   |
 
 When both a `CANARY_INGEST_*` var and its legacy name are set, the new name
 wins. An empty value counts as unset, so a `${{ secrets.X }}` for a secret that
@@ -256,6 +259,27 @@ only on the merge step.
 Pushing from each shard also works now (each shard lands as its own run,
 `…-s1of4`, `…-s2of4`), but the dashboard then shows a sharded suite as several
 partial runs. `merge-reports` remains the recommended setup.
+
+## The `canary.run/1` file
+
+With `runFile` set, the reporter also writes the run as a
+[`canary.run/1`](../specs/canary-run-contract.md) record — whether or not it
+pushes. A sharded run writes one file per shard (`run.json` → `run-s2of4.json`),
+with the same shard-aware `run.id` the ingest payload carries. `scopeId` and
+`scopeEnv` are required: scope is never inferred, so with either missing the
+reporter writes nothing and warns once. The ingest payload is unchanged.
+
+| Ingest row                           | `canary.run/1`                                  |
+| ------------------------------------ | ----------------------------------------------- |
+| `status: failed` + `interrupted` tag | `status: interrupted`                           |
+| `status: timed_out`                  | `status: timed_out`                             |
+| no `duration_ms` (never started)     | `duration_ms: 0`                                |
+| run `flaky`                          | run `passed`, `totals.flaky > 0`                |
+| run `timedout` / `interrupted`       | run `cancelled`                                 |
+| `collected` omitted / `[]` / list    | `collected: null` / `[]` / `{title, file}` list |
+
+Validate a file with
+`node agents/skills/lib/contracts/validate.mjs --layer run run.json`.
 
 ## Source
 

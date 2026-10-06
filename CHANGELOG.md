@@ -24,6 +24,9 @@ under the project's former name) are documented in the
   `measure: {value, unit, denominator}` (`null` when the check measured nothing
   — a skip, a window under 10 runs, or a flake zero the reader could not
   observe) and the report gains `observed_at`. Text output is unchanged (#1151).
+- **The ingest reporter can write a `canary.run/1` file.** Set `runFile`
+  (`CANARY_RUN_FILE`) with `scopeId`/`scopeEnv`; sharded runs write one file per
+  shard. Off by default; the ingest payload is unchanged (#1151).
 
 ### Changed
 
