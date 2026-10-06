@@ -22,13 +22,15 @@
 // - An unterminated quote marks the REST OF THE LINE as string. That is the
 //   safe default for multi-line Python strings whose opener ends mid-line,
 //   and for apostrophes in trailing comments: this helper only ever REJECTS
-//   matches, so the worst case is a suppressed match inside what was really
-//   string-ish text -- never a new false positive.
+//   matches, so with no later quote on the line the worst case is a
+//   suppressed match. A LATER real quote breaks that: the phantom string
+//   closes there and the fixture after it reads as code, which can fabricate
+//   a finding (#1192 tracks comments and regexes; JSX text is fixed below).
 // - Strings spanning lines (template literals, triple quotes) are only seen
 //   on their opening line; continuation lines look like code. Accepted: the
 //   scanners are line-based by design.
 // - Regex literals containing quotes (/['"]/) can open a phantom string for
-//   the rest of the line. Same rejection-only safety argument applies.
+//   the rest of the line. Same argument and the same caveat (#1192).
 // - JSX children text (#1188): in `.tsx`/`.jsx` an apostrophe in prose
 //   (`<p>It's</p>`) is not a quote. Read raw, it opened a phantom string that
 //   suppressed a real finding after it on the line -- and, worse, flipped a
