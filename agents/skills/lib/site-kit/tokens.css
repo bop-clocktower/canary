@@ -1,0 +1,52 @@
+/*
+ * canary QA site design tokens (#1151 phase 3). The ONLY file in the kit that
+ * holds a literal color; panels read these through var(--…), so a host
+ * re-themes the kit by redefining tokens (canary-vixen, phase 4).
+ * Gold is the canary mark (docs/assets/icon-gold.svg).
+ */
+:root {
+  --canary-font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --canary-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --canary-space-1: 4px;
+  --canary-space-2: 12px;
+  --canary-radius: 8px;
+  --canary-bg: #fffbea;
+  --canary-surface: #ffffff;
+  --canary-text: #1c1a14;
+  --canary-muted: #5c5646;
+  --canary-border: #e8dfc0;
+  --canary-accent: #f0c040;
+  --canary-ok: #1a7f37;
+  --canary-fail: #b42318;
+  --canary-warn: #9a6700;
+  --canary-dark: #57534e;
+  --canary-abstain: #5c5646;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --canary-bg: #0a0a0a;
+    --canary-surface: #17150f;
+    --canary-text: #f4efdc;
+    --canary-muted: #b3ab92;
+    --canary-border: #3a3526;
+    --canary-ok: #4ac26b;
+    --canary-fail: #ff7b72;
+    --canary-warn: #e3b341;
+    --canary-dark: #a8a29e;
+    --canary-abstain: #b3ab92;
+  }
+}
+
+:root[data-theme='dark'] {
+  --canary-bg: #0a0a0a;
+  --canary-surface: #17150f;
+  --canary-text: #f4efdc;
+  --canary-muted: #b3ab92;
+  --canary-border: #3a3526;
+  --canary-ok: #4ac26b;
+  --canary-fail: #ff7b72;
+  --canary-warn: #e3b341;
+  --canary-dark: #a8a29e;
+  --canary-abstain: #b3ab92;
+}
