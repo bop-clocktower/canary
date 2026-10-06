@@ -223,6 +223,13 @@ function stepTag(walk, i, frame) {
     frame.angle += ch === '<' ? 1 : -1; // `<Select<Opt>`: type arguments
     return i + 1;
   }
+  return stepTagEnd(walk, i, frame);
+}
+
+/** `/>`, `>` or any other tag character, outside type arguments. */
+function stepTagEnd(walk, i, frame) {
+  const { code } = walk;
+  const ch = code[i];
   if (ch === '/' && code[i + 1] === '>') return closeElement(walk, i + 1, 1);
   if (ch !== '>') return i + 1;
   if (frame.closing) return closeElement(walk, i, 2);

@@ -78,50 +78,56 @@ function blankedRuns(line, masked) {
  * @returns {Array<[number, number]>}
  */
 function quotedRanges(line) {
-  /** @type {Array<[number, number]>} */
-  const ranges = [];
   // Frames: {quote, start} while inside a string; {interp: true, depth}
   // while inside a template's ${...} (which is code and may nest strings).
-  const stack = [];
-  const top = () => stack[stack.length - 1];
+  const scan = { line, ranges: [], stack: [] };
   for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-    const frame = top();
-    if (frame && frame.quote) {
-      if (ch === '\\') {
-        i += 1; // escaped char is content, never a closer
-      } else if (ch === frame.quote) {
-        ranges.push([frame.start, i]);
-        stack.pop();
-      } else if (frame.quote === '`' && ch === '$' && line[i + 1] === '{') {
-        // Interpolation is code: close the string segment before `${`.
-        ranges.push([frame.start, i]);
-        stack.push({ interp: true, depth: 0 });
-        i += 1;
-      }
-      continue;
-    }
-    // Code context: top-level, or inside `${ ... }`.
-    if (ch === "'" || ch === '"' || ch === '`') {
-      stack.push({ quote: ch, start: i + 1 });
-    } else if (frame && frame.interp) {
-      if (ch === '{') {
-        frame.depth += 1;
-      } else if (ch === '}') {
-        if (frame.depth === 0) {
-          stack.pop();
-          top().start = i + 1; // the enclosing template resumes here
-        } else {
-          frame.depth -= 1;
-        }
-      }
-    }
+    const frame = scan.stack[scan.stack.length - 1];
+    i = frame?.quote ? stepString(scan, frame, i) : stepCode(scan, frame, i);
   }
   // Unterminated string: treat the rest of the line as string (see header).
   // An open interpolation frame is code and stays unmarked.
-  const frame = top();
-  if (frame && frame.quote) ranges.push([frame.start, line.length]);
-  return ranges.filter(([start, end]) => end > start);
+  const frame = scan.stack[scan.stack.length - 1];
+  if (frame?.quote) scan.ranges.push([frame.start, line.length]);
+  return scan.ranges.filter(([from, to]) => to > from);
+}
+
+/** Inside a string at `i`; returns the index of the last character consumed. */
+function stepString(scan, frame, i) {
+  const ch = scan.line[i];
+  if (ch === '\\') return i + 1; // escaped char is content, never a closer
+  if (ch === frame.quote) {
+    scan.ranges.push([frame.start, i]);
+    scan.stack.pop();
+  } else if (frame.quote === '`' && ch === '$' && scan.line[i + 1] === '{') {
+    // Interpolation is code: close the string segment before `${`.
+    scan.ranges.push([frame.start, i]);
+    scan.stack.push({ interp: true, depth: 0 });
+    return i + 1;
+  }
+  return i;
+}
+
+/** Code context at `i`: top-level, or inside `${ ... }`. */
+function stepCode(scan, frame, i) {
+  const ch = scan.line[i];
+  if (ch === "'" || ch === '"' || ch === '`') {
+    scan.stack.push({ quote: ch, start: i + 1 });
+  } else if (frame?.interp && ch === '{') {
+    frame.depth += 1;
+  } else if (frame?.interp && ch === '}') {
+    closeBrace(scan, frame, i);
+  }
+  return i;
+}
+
+function closeBrace(scan, frame, i) {
+  if (frame.depth > 0) {
+    frame.depth -= 1;
+    return;
+  }
+  scan.stack.pop();
+  scan.stack[scan.stack.length - 1].start = i + 1; // the template resumes here
 }
 
 /**
