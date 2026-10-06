@@ -9,10 +9,11 @@
 // token (`strftime`, `time.sleep`, `Date.now`, ...) is what separates code
 // from data.
 //
-// This file is intentionally duplicated verbatim in canary-blackhawk and
-// canary-savant: skills are self-contained by contract (their packaging
-// suites forbid cross-imports), and #479 tracks extracting shared skill
-// infrastructure. A parity test pins the two copies byte-identical.
+// This per-line helper is intentionally duplicated verbatim in
+// canary-blackhawk and canary-savant, and a parity test pins the two copies
+// byte-identical. The JSX masker it calls is NOT duplicated: it lives once in
+// the shared agents/skills/lib/ (with parse-args.mjs and is-main.mjs, #479)
+// and both copies import it from there.
 //
 // Fidelity limits (line-based scanner, no parser):
 // - Handles '...', "...", and `...` template literals. `${...}` interpolation

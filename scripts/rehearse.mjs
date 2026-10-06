@@ -101,13 +101,28 @@ function scanDenominator(summary = {}) {
   return summary.tests_checked ?? summary.files_scanned ?? 0;
 }
 
+/**
+ * The rule fired -- in each of `expect.files` when the manifest lists them
+ * (#1188), so one firing file cannot hide a silent one beside it.
+ */
+function firesInEveryFile(findings, expected) {
+  const files = expected.files ?? [''];
+  return files.every((rel) =>
+    findings.some(
+      (f) =>
+        f.rule_id === expected.ruleId &&
+        String(f.file).replace(/\\/g, '/').endsWith(rel),
+    ),
+  );
+}
+
 /** savant, blackhawk, cassandra: a path scan that must report the rule. */
 function probeScanner(manifest) {
   const cli = skillCli(manifest.target);
   const run = spawnJson([cli, '--json', '--strict', manifest.dir]);
   if (run.out === null) return noJson(manifest, run);
   const findings = run.out.findings ?? [];
-  const hit = findings.some((f) => f.rule_id === manifest.expect.ruleId);
+  const hit = firesInEveryFile(findings, manifest.expect);
   const detail = `exit ${run.status}, ${findings.length} finding(s)`;
   const examined = scanDenominator(run.out.summary);
   return outcome(manifest, examined, hit && run.status === 1, detail);

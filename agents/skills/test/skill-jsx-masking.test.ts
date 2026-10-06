@@ -12,13 +12,21 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { scanText as blackhawkScan } from '../claude-code/canary-blackhawk/scripts/scanner.mjs';
-import { scanText as savantScan } from '../claude-code/canary-savant/scripts/scanner.mjs';
+import {
+  scanText as blackhawkScan,
+  scanTextFull as blackhawkScanFull,
+} from '../claude-code/canary-blackhawk/scripts/scanner.mjs';
+import {
+  scanText as savantScan,
+  scanTextFull as savantScanFull,
+} from '../claude-code/canary-savant/scripts/scanner.mjs';
 
-type Scan = (
+type Finding = { ruleId: string; line: number };
+type Scan = (text: string, file: string) => Finding[];
+type ScanFull = (
   text: string,
   file: string,
-) => Array<{ ruleId: string; line: number }>;
+) => { findings: Finding[]; suppressed: Finding[] };
 
 const BH001 = 'BH001-wall-clock';
 const SV003 = 'SV003-shared-singleton-mutation';
@@ -77,12 +85,34 @@ describe.each(SKILLS)(
       expect(linesOf(scan, prose, 'a.test.tsx', rule)).toEqual([]);
     });
 
-    it('keeps a pragma in a JSX comment container after an apostrophe', () => {
-      const tool = rule === BH001 ? 'blackhawk' : 'savant';
-      const id = rule.split('-')[0];
+    const tool = rule === BH001 ? 'blackhawk' : 'savant';
+    const id = rule.split('-')[0];
+    const full = (
+      rule === BH001 ? blackhawkScanFull : savantScanFull
+    ) as ScanFull;
+    const expr = real.match(/\{.*\}/)![0];
+
+    it('applies a pragma in a JSX comment container after an apostrophe', () => {
       const text = `${real.replace(');', '')} {/* ${tool}-ignore ${id} -- pinned */});`;
-      expect(linesOf(scan, text, 'a.test.tsx', rule)).toEqual([]);
+      const { findings, suppressed } = full(text, 'a.test.tsx');
+      expect(findings.filter((f) => f.ruleId === rule)).toEqual([]);
+      expect(suppressed.map((f) => [f.ruleId, f.line])).toEqual([[rule, 1]]);
     });
+
+    it('does not apply a // pragma written as JSX children text', () => {
+      // Inside children, `// ...` is rendered text, not a comment: only a
+      // `{/* ... */}` container is a comment there.
+      const text = `render(\n  <p>\n    // ${tool}-ignore ${id} -- rendered text\n    ${expr}\n  </p>,\n);`;
+      expect(linesOf(scan, text, 'a.test.tsx', rule)).toEqual([4]);
+    });
+
+    it.each(['* Required', '# of rows:', '// not a comment', '/* nor this'])(
+      'reads a JSX text line starting %s as JSX, not a comment',
+      (lead) => {
+        const text = `render(\n  <label>\n    ${lead} ${expr}\n  </label>,\n);`;
+        expect(linesOf(scan, text, 'a.test.tsx', rule)).toEqual([3]);
+      },
+    );
 
     it('still finds code after shapes the masker must not misread', () => {
       const shapes = [
@@ -95,6 +125,12 @@ describe.each(SKILLS)(
         // JSX after a line comment or a block comment
         `render(\n  // don't\n  ${real.replace('render(', '').replace(');', '')},\n);`,
         `render(/* empty */ ${real.replace('render(', '')}`,
+        // a closing tag closes only its own element (#1193 review): a
+        // misread `<T>` is not "closed" by a `</b>` inside a later string
+        `type R = { render: <T>(x: T) => string };\nconst v = ${code};\nexpect(html).toBe('</b>');`,
+        `const f = (cb: <T>(x: T) => T) => cb;\nconst v = ${code};\nconst s = \`</p>\`;`,
+        // more misread `<` than the masker has passes for
+        `${'type P = { cb: <T>(x: T) => void };\n'.repeat(100)}${real}`,
       ];
       for (const text of shapes) {
         const line = text.split('\n').findIndex((l) => l.includes(code)) + 1;
@@ -133,5 +169,37 @@ describe('canary-savant whole-file passes read the masked source', () => {
     ].join('\n');
     expect(ids(text.replace("It's", 'Its'))).toEqual([]);
     expect(ids(text)).toEqual([]);
+  });
+});
+
+describe('canary-savant per-line checks read the masked line', () => {
+  const ids = (text: string) =>
+    (savantScan as Scan)(text, 'a.test.tsx').map(
+      (f) => `${f.ruleId}@${f.line}`,
+    );
+
+  it('does not read JSX prose as a self-reported ordering (SV004)', () => {
+    // savant-ignore SV004 -- fixture: JSX prose the masked reading must not flag
+    const prose = 'Checkout runs after payment is confirmed.';
+    const text = `render(<Tip>${prose}</Tip>);`;
+    expect(ids(text)).toEqual([]);
+    expect(
+      (savantScan as Scan)(text, 'a.test.ts').map((f) => f.ruleId),
+    ).toEqual(['SV004-order-coupled-name']);
+  });
+
+  it('does not take JSX prose as snapshot evidence for a write-back (SV003)', () => {
+    const text = [
+      "it('a', () => {",
+      '  process.env.API = saved;',
+      '});',
+      'render(<pre>',
+      '  saved = process.env.API',
+      '</pre>);',
+    ].join('\n');
+    expect(ids(text)).toEqual([`${SV003}@2`]);
+    // control: the same evidence as code is a write-back, so no finding
+    const code = text.replace('render(<pre>', '{').replace('</pre>);', '}');
+    expect(ids(code)).toEqual([]);
   });
 });

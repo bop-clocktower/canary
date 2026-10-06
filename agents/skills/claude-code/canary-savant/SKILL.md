@@ -126,6 +126,9 @@ finding with an inline pragma, same dialect as `blackhawk-ignore`:
 - **String-guarded:** pragma text that itself sits _inside_ a string literal is
   fixture data, not a directive — it neither suppresses its own line nor the
   next one.
+- **In JSX children, use a comment container.** Between JSX tags, a
+  `// savant-ignore ...` line is rendered text, not a comment, so it does not
+  apply (#1188); write `{/* savant-ignore SV003 -- reason */}` instead.
 
 ## Which files get scanned
 

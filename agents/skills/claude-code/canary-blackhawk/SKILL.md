@@ -96,6 +96,9 @@ await new Promise((r) => setTimeout(r, 25));
   blanket-silences the line; a `BH001` on the same line still fires.
 - **Placement:** the pragma may trail the offending line or sit on the line
   directly above it. Comma-separate ids to suppress several (`BH002,BH004`).
+- **In JSX children, use a comment container.** Between JSX tags, a
+  `// blackhawk-ignore ...` line is rendered text, not a comment, so it does not
+  apply (#1188); write `{/* blackhawk-ignore BH001 -- reason */}` instead.
 - **Counted separately:** suppressed findings are reported as `N suppressed`,
   out of the actionable total — so a genuinely clean suite can read zero
   findings while the known-OK waits stay visible.

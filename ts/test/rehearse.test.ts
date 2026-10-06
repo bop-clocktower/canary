@@ -149,6 +149,32 @@ describe('probes do not mistake an error for a firing', () => {
     expect(result.fired).toBe(false);
   });
 
+  it('a scanner listing expect.files must fire in EVERY listed file (#1188)', () => {
+    // The blackhawk fixture carries a .test.tsx whose BH001 sits after a JSX
+    // apostrophe. Without the per-file check the plain .mjs file would fire
+    // the target on its own, and a JSX-masking regression would stay silent.
+    const dir = mkdtempSync(join(tmpdir(), 'rehearse-files-'));
+    mkdirSync(join(dir, 'tests'));
+    writeFileSync(join(dir, 'tests', 'a.test.mjs'), 'const t = Date.now();\n');
+    writeFileSync(join(dir, 'tests', 'b.test.mjs'), 'const t = 1;\n');
+    const probe = (files: string[]) =>
+      runProbe({
+        id: 'files',
+        target: 'canary-blackhawk',
+        dir,
+        expect: { ruleId: 'BH001-wall-clock', files },
+      });
+    expect(probe(['tests/a.test.mjs']).fired).toBe(true);
+    expect(probe(['tests/a.test.mjs', 'tests/b.test.mjs']).fired).toBe(false);
+  });
+
+  it('the blackhawk fixture rehearses the JSX path too', () => {
+    const m = loadManifests(FIXTURES).find(
+      (x) => x.target === 'canary-blackhawk',
+    );
+    expect(m?.expect.files).toContain('tests/stamp.test.tsx');
+  });
+
   it('a ratchet with no report does not count its exit as a firing', () => {
     const dir = mkdtempSync(join(tmpdir(), 'rehearse-noreport-'));
     writeFileSync(join(dir, 'baseline.json'), '{"maxFindings":5}');

@@ -347,7 +347,10 @@ export function scanTextFull(text, file = '<text>') {
 
   lines.forEach((raw, i) => {
     const stripped = raw.trim();
-    if (!stripped) return;
+    // #1193: comment-ness, SV004 prose and write-back evidence come from the
+    // masked line -- rendered JSX text is none of the three.
+    const view = masks[i].trim();
+    if (!view) return;
     // #493: a match starting inside a string literal is fixture data, not
     // code. SV003 and SV004's code-anchored alternatives reject those; the
     // SV004 text alternatives stay unfiltered because their signal (titles,
@@ -360,17 +363,17 @@ export function scanTextFull(text, file = '<text>') {
         stripped,
         ranges,
       ) ||
-      SV004_TEXT_PATTERN.test(stripped)
+      SV004_TEXT_PATTERN.test(view)
     ) {
       findings.push(
         makeFinding(file, i + 1, 'SV004-order-coupled-name', stripped),
       );
     }
-    if (isComment(stripped)) return;
+    if (isComment(view)) return;
     const mutation = classifyMutation(stripped, ranges, isPhp);
     if (mutation) {
       const restored =
-        isSnapshotWriteBack(mutation, lines) ||
+        isSnapshotWriteBack(mutation, masks) ||
         restoration.restores(mutation.family, mutation.key);
       if (!restored) {
         findings.push(

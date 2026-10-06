@@ -88,7 +88,17 @@ under the project's former name) are documented in the
   self-contained port in `agents/skills/lib/jsx-text.mjs`, and read each line
   against the masked source. Savant's teardown pairing (`SV002`) and restore
   detection (`SV003`) read the masked source too. Only `.tsx`/`.jsx` change;
-  every other file reads exactly as before.
+  every other file reads exactly as before. In JSX children, a
+  `// blackhawk-ignore` or `// savant-ignore` line is rendered text, so it no
+  longer applies; use `{/* blackhawk-ignore ... */}` there.
+- **JSX masking: a closing tag closes only its own element** (#1193). A
+  type-level generic misread as an element (`render: <T>(x: T) => string`) was
+  "closed" by any later `</b>`, even one inside a string, and every line between
+  was blanked, so assertions and findings there were lost. That applied to the
+  engine (`core/jsx-text.ts`) and the skills' copy alike. Recovery now also
+  marks every unclosed `<` of a failed pass at once, so a file with more than 64
+  such generics is still masked instead of read raw. A conformance suite holds
+  the two maskers to the same output.
 
 - **Ingest reporter: sharded pushes no longer discard each other** (#1148).
   Every shard of one workflow run sent the same `canary_run_id`, so the first

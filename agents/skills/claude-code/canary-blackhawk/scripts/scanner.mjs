@@ -172,7 +172,10 @@ export function scanTextFull(text, file = '<text>') {
   const suppressed = [];
   lines.forEach((raw, i) => {
     const stripped = raw.trim();
-    if (!stripped || isComment(stripped)) return;
+    // #1193: comment-ness comes from the masked line -- JSX text opening
+    // with `*`, `#` or `//` is rendered text, and a fully masked line is none.
+    const view = masks[i].trim();
+    if (!view || isComment(view)) return;
     // #493: a match starting inside a string literal is fixture data, not
     // code. Computed once per line; every rule's anchor token is code, even
     // when the pattern's tail reaches into quotes (BH003's strftime('..%Z')).
