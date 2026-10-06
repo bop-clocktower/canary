@@ -347,8 +347,8 @@ Stricter behaviour that may also turn a previously green script red:
   (`CANARY_INGEST_AREA_MAP`), and never a folder name. It retries 5xx, 429 and
   network errors (3 attempts) but not 4xx. Before the run it calls
   `GET /api/ingest/whoami` and logs the tenant; a rejected token stops the push
-  up front. A run that is not ingested, or a `collected_count` mismatch, now ends
-  in a warning plus a GitHub Actions annotation.
+  up front. A run that is not ingested, or a `collected_count` mismatch, now
+  ends in a warning plus a GitHub Actions annotation.
 - **Ingest reporter: readable titles and tags** (#1183). `titleFormat: 'clean'`
   (`CANARY_INGEST_TITLE_FORMAT`) sends `describe > title` without the project,
   file or inline `@tags`; it is opt-in because `full_title` is the dashboard's
