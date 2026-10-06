@@ -135,14 +135,16 @@ describe('canary ci-ready', () => {
   });
 
   it('stamps --json with when the checks ran (#1151 phase 2)', async () => {
-    const before = Date.now();
-    const { report } = await runJson(root);
-    const at = Date.parse(report.observed_at ?? '');
-    expect(report.observed_at).toMatch(
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
-    );
-    expect(at).toBeGreaterThanOrEqual(before);
-    expect(at).toBeLessThanOrEqual(Date.now());
+    // A frozen clock, not a before/after read of the wall clock: the stamp is
+    // asserted exactly, and the test cannot depend on when the suite runs.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-06T12:34:56.789Z'));
+      const { report } = await runJson(root);
+      expect(report.observed_at).toBe('2026-10-06T12:34:56.789Z');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // #604 G2: a 5-run window is too thin to pass. `0 flaky across 5 run(s)` was
