@@ -5,6 +5,7 @@ import {
   selectRuns,
 } from '../claude-code/canary-starling/scripts/runs.mjs';
 import { flakyTests } from '../claude-code/canary-starling/scripts/flaky.mjs';
+import { registerRows } from '../claude-code/canary-starling/scripts/register.mjs';
 import { validateDocument } from '../lib/contracts/validate.mjs';
 
 const SCOPE = { id: 'canary', env: 'ci' };
@@ -154,5 +155,48 @@ describe('flakyTests (D13)', () => {
         window_runs: 3,
       },
     ]);
+  });
+});
+
+describe('registerRows (fork C)', () => {
+  const ledgerRow = (over = {}) => ({
+    test: 'adds',
+    file: 'tests/cart.test.ts',
+    kind: 'skipped',
+    marker: 'it.skip',
+    commit: 'abc1234',
+    author: 'Someone',
+    date: '2026-10-01T12:00:00+02:00',
+    reason: 'chore: skip cart',
+    cause: '',
+    issue: '',
+    ...over,
+  });
+
+  it('maps a ledger row, without author, empty cause/issue as null', () => {
+    const { rows, skipped } = registerRows([ledgerRow()], SCOPE);
+    expect(skipped).toEqual([]);
+    expect(rows).toEqual([
+      {
+        scope: SCOPE,
+        title: 'adds',
+        file: 'tests/cart.test.ts',
+        kind: 'skipped',
+        reason: 'chore: skip cart',
+        recorded_at: '2026-10-01T12:00:00+02:00',
+        commit: 'abc1234',
+        cause: null,
+        issue: null,
+      },
+    ]);
+  });
+
+  it('leaves out a row with no date, commit or reason, and counts it', () => {
+    const { rows, skipped } = registerRows(
+      [ledgerRow({ date: '' }), ledgerRow({ commit: '' })],
+      SCOPE,
+    );
+    expect(rows).toEqual([]);
+    expect(skipped).toHaveLength(2);
   });
 });
