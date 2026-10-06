@@ -47,16 +47,13 @@ function fakeTest({
 
 /** Mirrors Playwright's computeTestCaseOutcome, which backs `test.outcome()`. */
 function computeOutcome(results, expectedStatus) {
-  let skipped = 0;
-  let expected = 0;
-  let unexpected = 0;
-  for (const { status } of results) {
-    if (status === "interrupted") continue;
-    if (status === "skipped") skipped += expectedStatus === "skipped" ? 1 : 0;
-    else if (status === expectedStatus) ++expected;
-    else ++unexpected;
-  }
-  if (expected === 0 && unexpected === 0) return "skipped";
+  // Interrupted attempts are ignored; a skip only counts when one was expected.
+  const statuses = results.map((r) => r.status).filter((s) => s !== "interrupted");
+  const ran = statuses.filter((s) => s !== "skipped");
+  const expected = ran.filter((s) => s === expectedStatus).length;
+  const unexpected = ran.length - expected;
+  const skipped = expectedStatus === "skipped" ? statuses.length - ran.length : 0;
+  if (ran.length === 0) return "skipped";
   if (unexpected === 0) return "expected";
   if (expected === 0 && skipped === 0) return "unexpected";
   return "flaky";
