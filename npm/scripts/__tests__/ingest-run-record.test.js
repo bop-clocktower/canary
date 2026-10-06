@@ -162,3 +162,30 @@ test("the ingest payload is unchanged by runFile", async () => {
   ).payload;
   assert.deepEqual(withFile, without);
 });
+
+// --- security review: stale artifact, symlink write ---------------------------
+// A run that writes nothing must not leave the previous run's record looking
+// current, and a link planted at the run-file path (a PR can commit one) must
+// never be written through.
+
+test("a run that writes nothing removes the previous run's file (fails closed)", async () => {
+  const dir = tmp();
+  const file = path.join(dir, "run.json");
+  fs.writeFileSync(file, '{"stale": true}');
+  const t = fakeTest({ title: "a" });
+  // Collected but never ran: onEnd returns before writing.
+  await runReporter({ options: scopeOpts(dir), collected: [t], tests: [] });
+  assert.equal(fs.existsSync(file), false);
+});
+
+test("a symlink at the run-file path is replaced, never written through", async () => {
+  const dir = tmp();
+  const target = path.join(dir, "victim.txt");
+  fs.writeFileSync(target, "untouched");
+  fs.symlinkSync(target, path.join(dir, "run.json"));
+  const t = fakeTest({ title: "a" });
+  await runReporter({ options: scopeOpts(dir), tests: [[t, fakeResult("passed")]] });
+  assert.equal(fs.readFileSync(target, "utf8"), "untouched");
+  assert.equal(fs.lstatSync(path.join(dir, "run.json")).isSymbolicLink(), false);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "run.json"), "utf8")).contract, "canary.run/1");
+});

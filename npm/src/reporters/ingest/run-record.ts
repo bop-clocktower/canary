@@ -121,9 +121,31 @@ export function emitRunFile(
   }
 }
 
+/**
+ * Removes this run's file before any test runs, so a run that ends up writing
+ * nothing (nothing ran, no scope, a write error) leaves no record rather than
+ * the previous run's, which a feed would read as current. `rmSync` removes a
+ * symlink itself, never its target.
+ */
+export function clearRunFile(runFile: string | null, shard: Shard): void {
+  if (!runFile) return;
+  try {
+    fs.rmSync(runFilePath(runFile, shard), { force: true });
+  } catch (err) {
+    warn(`could not remove the previous canary.run/1 file — ${errText(err)}`);
+  }
+}
+
+/**
+ * Write-then-rename: `rename` replaces whatever sits at `file` (including a
+ * symlink a PR planted there) instead of writing through it, and a reader never
+ * sees a half-written record. `wx` refuses a pre-existing temp path.
+ */
 function writeRunFile(file: string, record: ReturnType<typeof toRunRecord>): void {
   fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(record, null, 2) + "\n", "utf8");
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(record, null, 2) + "\n", { encoding: "utf8", flag: "wx" });
+  fs.renameSync(tmp, file);
 }
 
 /** This package's version, for `producer.version`. */

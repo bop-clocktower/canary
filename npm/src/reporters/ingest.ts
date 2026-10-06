@@ -5,7 +5,7 @@ import { cleanTitle, projectName, skipTags, catalogFilter, relativeFile } from "
 import { warn, log, errText, PREFLIGHT_TIMEOUT_MS, push, ingestOutcome, retryWaitMs } from "./ingest/transport.js";
 import type { IngestReporterOptions, ResolvedConfig } from "./ingest/config.js";
 import type { ResultEntry, CollectedEntry, Shard } from "./ingest/payload.js";
-import { emitRunFile, toRunRecord, runFilePath } from "./ingest/run-record.js";
+import { clearRunFile, emitRunFile, toRunRecord, runFilePath } from "./ingest/run-record.js";
 
 // Optional .env load — MUST NOT crash the suite if dotenv is absent.
 try {
@@ -39,6 +39,7 @@ export default class IngestReporter implements Reporter {
     this.readProjects(config);
     this.cfg = this.initConfig();
     if (!this.cfg) return;
+    clearRunFile(this.cfg.runFile, this.shard);
     this.collectedCount = countTests(suite);
     this.collected = this.collectCatalog(config, suite);
     if (shouldPush(this.cfg)) this.preflight = this.checkToken(this.cfg);

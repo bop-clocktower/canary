@@ -269,6 +269,15 @@ with the same shard-aware `run.id` the ingest payload carries. `scopeId` and
 `scopeEnv` are required: scope is never inferred, so with either missing the
 reporter writes nothing and warns once. The ingest payload is unchanged.
 
+The file is removed when the run begins, so a run that ends up writing nothing
+(nothing ran, no scope, a write error) leaves no file rather than the previous
+run's. It is written to a temporary file and renamed into place, so a symlink at
+the path is replaced, never written through.
+
+**Error text is written verbatim**, the same messages and stacks the ingest
+payload sends. Treat the file like test logs: do not upload it as an artifact
+from a public workflow unless failure output is safe to publish.
+
 | Ingest row                           | `canary.run/1`                                  |
 | ------------------------------------ | ----------------------------------------------- |
 | `status: failed` + `interrupted` tag | `status: interrupted`                           |

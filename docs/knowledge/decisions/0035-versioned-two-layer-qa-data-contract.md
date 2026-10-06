@@ -46,8 +46,9 @@ resolved a handoff to the wrong tenant.
    or both null; a producer-supplied `verified` key is refused, even `null`.
 6. **Enforcement is schema-driven and zero-dependency.** The three
    `*.v1.schema.json` files in `agents/skills/lib/contracts/` are the contract;
-   `validate.mjs` interprets a declared JSON Schema keyword subset and refuses,
-   at load, any keyword it does not enforce. Relations between fields are named
+   the validator (API in `document.mjs`, CLI in `validate.mjs`, which re-exports
+   the API) interprets a declared JSON Schema keyword subset and refuses, at
+   load, any keyword it does not enforce. Relations between fields are named
    rules in `rules.mjs`. Exit 0 valid, 1 refused (including unparseable input),
    2 usage or unreadable input.
 7. **No author field on a register row.** A site-feed register row defines no
