@@ -63,6 +63,9 @@ describe('collectTestFiles', () => {
       'd.spec.cjs': '',
       'e.test.mts': '',
       'f.spec.cts': '',
+      // #1180: component tests; ~a quarter of one real suite was .test.tsx.
+      'g.test.tsx': '',
+      'h.spec.jsx': '',
     });
     expect(collectTestFiles(root).map((p) => basename(p))).toEqual([
       'a.test.ts',
@@ -71,6 +74,8 @@ describe('collectTestFiles', () => {
       'd.spec.cjs',
       'e.test.mts',
       'f.spec.cts',
+      'g.test.tsx',
+      'h.spec.jsx',
     ]);
   });
 

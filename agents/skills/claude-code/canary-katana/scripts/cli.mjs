@@ -24,6 +24,7 @@ import {
 import * as diffscan from './diffscan.mjs';
 import * as alarm from './alarm.mjs';
 import * as ledger from './ledger.mjs';
+import { isMain } from '../../../lib/is-main.mjs';
 
 // --- no-silent-abstention (#508 D2, skill-CLI convention half) ---------------
 //
@@ -242,6 +243,6 @@ export function main(argv = []) {
 // `process.exitCode`, not `process.exit()`: a large `--json` payload exceeds
 // the pipe buffer, and `process.exit` tears the process down mid-write, leaving
 // truncated JSON that still exits 0 (#791).
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }

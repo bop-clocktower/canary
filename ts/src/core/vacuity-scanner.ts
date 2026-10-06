@@ -1315,7 +1315,7 @@ export function scanVacuity(path: string): VacuityResult {
   // Whole-source blanking, offset-preserving: a `expect(true).toBe(true)`
   // carried as fixture DATA is not a vacuous test, and a `it(...)` inside a
   // string must not be able to truncate a real test's body (#590).
-  const code = blankStringContent(source, { python });
+  const code = blankStringContent(source, { python, path });
   const blocks = enumerateTests(code, source, python);
   const inference = resolveTargets(source, code, python);
 

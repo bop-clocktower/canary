@@ -54,6 +54,22 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **Skill CLIs ran nothing through a symlink or a URL-encoded path** (#1182).
+  All 14 skill `cli.mjs` entry points compared `import.meta.url` with a
+  hand-built `file://${process.argv[1]}`, which is false through a symlink
+  (macOS `/tmp`, symlinked checkouts or runner temp dirs) and for paths needing
+  URL-encoding; the CLI then printed nothing and exited 0. They now share
+  `agents/skills/lib/is-main.mjs`, which compares resolved real paths, and the
+  CLI conformance suite spawns every CLI both ways.
+- **`.tsx`/`.jsx` component tests are scanned** (#1180). They were outside
+  `JS_TEST_EXTENSIONS`, so `canary-cassandra`, `review-test` and the test
+  inventory skipped them without saying so (on one real monorepo, ~87 of ~380
+  test files). Reading them safely needed JSX awareness: an apostrophe in JSX
+  text (`<p>It's</p>`) opened a phantom string that swallowed the next line's
+  `expect(...)`. Quote characters in JSX children text are now masked before the
+  string blankers run (`core/jsx-text.ts`), only for `.tsx`/`.jsx`; `.ts` and
+  `.js` are unchanged.
+
 - **Ingest reporter: sharded pushes no longer discard each other** (#1148).
   Every shard of one workflow run sent the same `canary_run_id`, so the first
   shard won and every later shard was silently dropped as a duplicate. The id

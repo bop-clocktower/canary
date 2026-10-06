@@ -117,7 +117,7 @@ function inventoryFile(
     return null;
   }
   const python = framework === 'pytest';
-  const code = blankStringContent(source, { python });
+  const code = blankStringContent(source, { python, path });
   const tests = enumerateTests(code, source, python).map((t) => ({
     name: t.name,
     line: t.line,
