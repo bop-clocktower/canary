@@ -164,3 +164,31 @@ test("an interrupted retry does not stack interrupted: prefixes", async () => {
   });
   assert.equal(payload.results[0].error_message, "interrupted: the run ended before this test finished");
 });
+
+// --- #1151 phase 2: canary.run/1 file + explicit scope (P2, P4) -------------
+test("runFile and scope resolve from options", () => {
+  const cfg = resolveConfig({ suite: "web", runFile: "out/run.json", scopeId: "web-app", scopeEnv: "staging" }, {});
+  assert.equal(cfg.runFile, "out/run.json");
+  assert.deepEqual(cfg.scope, { id: "web-app", env: "staging" });
+});
+
+test("runFile and scope resolve from env, env falling back to an explicit environment", () => {
+  const cfg = resolveConfig(
+    { suite: "web" },
+    { CANARY_RUN_FILE: "r.json", CANARY_SCOPE_ID: "web-app", CANARY_INGEST_ENVIRONMENT: "prod" },
+  );
+  assert.equal(cfg.runFile, "r.json");
+  assert.deepEqual(cfg.scope, { id: "web-app", env: "prod" });
+});
+
+test("an incomplete scope with runFile set is null and warns — scope is never inferred", () => {
+  const cfg = resolveConfig({ suite: "web", runFile: "r.json", scopeId: "web-app" }, {});
+  assert.equal(cfg.scope, null);
+  assert.match(cfg.configWarnings.join("\n"), /CANARY_SCOPE_ID.*CANARY_SCOPE_ENV/);
+});
+
+test("no runFile: runFile null and no scope warning", () => {
+  const cfg = resolveConfig({ suite: "web" }, {});
+  assert.equal(cfg.runFile, null);
+  assert.equal(cfg.configWarnings.length, 0);
+});

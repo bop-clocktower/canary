@@ -39,6 +39,12 @@ export interface IngestReporterOptions {
    * `--only-changed`).
    */
   collected?: boolean;
+  /** Also write the run as a `canary.run/1` file here (#1151). Off by default. */
+  runFile?: string;
+  /** `canary.run/1` scope id. Required with `runFile`; never inferred (D2). */
+  scopeId?: string;
+  /** `canary.run/1` scope env. Falls back to an explicit `environment`. */
+  scopeEnv?: string;
 }
 
 export type TitleFormat = "legacy" | "clean";
@@ -57,6 +63,8 @@ export interface ResolvedConfig {
   retryDelaysMs: number[];
   titleFormat: TitleFormat;
   collected: boolean;
+  runFile: string | null;
+  scope: { id: string; env: string } | null;
   /** Optional settings that were invalid and fell back to their default. */
   configWarnings: string[];
   /** Legacy `TESTTRACKER_*` names this config was resolved from. */
@@ -76,6 +84,9 @@ const ENV_NAMES = {
   areaMap: ["CANARY_INGEST_AREA_MAP"],
   titleFormat: ["CANARY_INGEST_TITLE_FORMAT"],
   collected: ["CANARY_INGEST_COLLECTED"],
+  runFile: ["CANARY_RUN_FILE"],
+  scopeId: ["CANARY_SCOPE_ID"],
+  scopeEnv: ["CANARY_SCOPE_ENV"],
 } as const satisfies Record<string, readonly [string] | readonly [string, string]>;
 
 /**
@@ -105,10 +116,18 @@ export function resolveConfig(
   if (!suite) {
     throw new Error("`suite` is required (option or CANARY_INGEST_SUITE).");
   }
+  const environment = opts.environment ?? read("environment");
+  const runFile = opts.runFile ?? read("runFile") ?? null;
+  const scope = resolveScope(
+    opts.scopeId ?? read("scopeId"),
+    opts.scopeEnv ?? read("scopeEnv") ?? environment,
+    runFile,
+    configWarnings,
+  );
   return {
     suite,
     testFilePrefix: opts.testFilePrefix ?? read("testFilePrefix") ?? `${process.cwd()}/`,
-    environment: opts.environment ?? read("environment"),
+    environment,
     url: opts.url ?? read("url") ?? "",
     token: opts.token ?? read("token") ?? "",
     workflow: opts.workflow ?? read("workflow") ?? "playwright",
@@ -116,9 +135,26 @@ export function resolveConfig(
     retryDelaysMs: opts.retryDelaysMs ?? [1000, 4000],
     titleFormat: parseTitleFormat(opts.titleFormat ?? read("titleFormat"), configWarnings),
     collected: opts.collected ?? read("collected") !== "false",
+    runFile,
+    scope,
     deprecatedEnv,
     configWarnings,
   };
+}
+
+/** Both halves or nothing: a guessed scope is how a run lands in the wrong place (D2). */
+function resolveScope(
+  id: string | undefined,
+  env: string | undefined,
+  runFile: string | null,
+  warnings: string[],
+): { id: string; env: string } | null {
+  if (id && env) return { id, env };
+  if (runFile)
+    warnings.push(
+      "runFile is set but scope is incomplete; set scopeId/CANARY_SCOPE_ID and scopeEnv/CANARY_SCOPE_ENV. No canary.run/1 file will be written.",
+    );
+  return null;
 }
 
 /*
