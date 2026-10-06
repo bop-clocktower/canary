@@ -48,12 +48,21 @@
  * - A regex literal containing a quote (`/['"]/`) can open a phantom string.
  *   Because an unterminated run is discarded, the usual outcome is a no-op;
  *   the residual risk is a suppressed finding, never a fabricated one.
- * - JSX text and Python f-string nesting beyond `${...}` are not modelled.
+ * - Python f-string nesting beyond `${...}` is not modelled.
+ * - JSX children text is modelled only when the caller passes `jsx` (for
+ *   `.tsx`/`.jsx`): see `jsx-text.ts` (#1180).
  */
+
+import { maskJsxTextQuotes } from './jsx-text.js';
 
 export interface BlankOptions {
   /** Recognise `#` line comments and `'''`/`\"\"\"` triple-quoted blocks. */
   python?: boolean;
+  /**
+   * The source is `.tsx`/`.jsx`: quotes in JSX children text are prose, not
+   * delimiters (`<p>It's</p>`). Off by default, so `.ts`/`.js` are unchanged.
+   */
+  jsx?: boolean;
 }
 
 /** A resolved literal-content span, half-open: [start, end). */
@@ -69,7 +78,10 @@ export function blankStringContent(
   code: string,
   options: BlankOptions = {},
 ): string {
-  const spans = literalContentSpans(code, options.python === true);
+  // Spans are found on the masked text and applied to the original; masking
+  // only replaces characters with spaces, so every offset lines up.
+  const read = options.jsx === true ? maskJsxTextQuotes(code) : code;
+  const spans = literalContentSpans(read, options.python === true);
   if (spans.length === 0) return code;
 
   // `split('')`, not `[...code]`: spans are UTF-16 offsets, and spreading by

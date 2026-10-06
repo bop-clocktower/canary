@@ -986,3 +986,39 @@ describe('VAC-002 — the target reached through a same-file helper (#1170)', ()
     expect(rules(r.findings)).toContain('VAC-003');
   });
 });
+
+describe('component tests in .tsx/.jsx (#1180)', () => {
+  const RTL = `import { it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { Button } from './Button';
+
+it('shows the label', () => {
+  render(<Button label="Don't stop"><p>It's {count} items</p></Button>);
+  expect(screen.getByText("It's 3 items")).toBeInTheDocument();
+});
+`;
+
+  it('reads a .tsx component test instead of excluding it', () => {
+    const result = scan('Button.test.tsx', RTL);
+    expect(result.checked).toBe(1);
+    expect(rules(result.findings)).toEqual([]);
+  });
+
+  it('reads .jsx too', () => {
+    expect(scan('Button.test.jsx', RTL).checked).toBe(1);
+  });
+
+  it('still catches a vacuous component test', () => {
+    const vacuous = `import { it, expect } from 'vitest';
+import { Button } from './Button';
+
+it('renders', () => {
+  render(<Button><p>It's here</p></Button>);
+  expect(true).toBe(true);
+});
+`;
+    expect(rules(scan('Button.test.tsx', vacuous).findings)).toContain(
+      'VAC-001',
+    );
+  });
+});

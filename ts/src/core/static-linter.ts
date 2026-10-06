@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { basename, extname } from 'node:path';
 
+import { isJsxPath, maskJsxTextQuotes } from './jsx-text.js';
 import { blankStringContent } from './string-literals.js';
 
 export interface LintFinding {
@@ -793,6 +794,10 @@ export const JS_TEST_EXTENSIONS = [
   '.cjs',
   '.mts',
   '.cts',
+  // #1180: component tests. Their JSX text is masked before blanking (see
+  // core/jsx-text.ts), so an apostrophe in `<p>It's</p>` is not a string.
+  '.tsx',
+  '.jsx',
 ] as const;
 
 const JS_EXT_SET: ReadonlySet<string> = new Set(JS_TEST_EXTENSIONS);
@@ -842,9 +847,12 @@ export class StaticLinter {
     // declaration inside a fixture does not just add a finding, it truncates a
     // real test's body and attributes its assertion past the end (#590).
     // Both blankers preserve line numbering, so findings agree on line numbers.
-    const lines = blankMultilineStrings(code.split('\n'));
+    const jsx = isJsxPath(path);
+    const lines = blankMultilineStrings(
+      (jsx ? maskJsxTextQuotes(code) : code).split('\n'),
+    );
     const fw = requireFramework(path, framework);
-    const scanned = blankStringContent(code, { python: fw === 'pytest' });
+    const scanned = blankStringContent(code, { python: fw === 'pytest', jsx });
     const findings: LintFinding[] = [
       ...scanFlakiness(lines, path),
       ...scanSelectors(lines, path),

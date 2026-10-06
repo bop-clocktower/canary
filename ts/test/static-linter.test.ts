@@ -43,6 +43,9 @@ describe('frameworkForPath', () => {
     expect(frameworkForPath('/repo/test_api.py')).toBe('pytest');
     expect(frameworkForPath('/repo/a.spec.ts')).toBe('vitest');
     expect(frameworkForPath('/repo/b.test.js')).toBe('vitest');
+    // #1180: React/JSX component tests are read too.
+    expect(frameworkForPath('/repo/Button.test.tsx')).toBe('vitest');
+    expect(frameworkForPath('/repo/Button.test.jsx')).toBe('vitest');
   });
 
   it('prefers playwright when the basename says so', () => {
@@ -734,5 +737,29 @@ describe('StaticLinter', () => {
     const [f] = lint('p.spec.ts', 'const cfg = { timeout: 42 };');
     expect(formatFinding(f!)).toContain('[INFO]');
     expect(formatFinding(f!)).toContain('LINT-005');
+  });
+});
+
+describe('component tests in .tsx/.jsx (#1180)', () => {
+  // An apostrophe in JSX text used to open a phantom string that swallowed
+  // the next line's expect(...), so a real assertion read as missing.
+  const RTL = `import { render, screen } from '@testing-library/react';
+import { Button } from './Button';
+
+it('shows the label', () => {
+  render(<Button><p>It's {count} items</p></Button>);
+  expect(screen.getByText("It's 3 items")).toBeInTheDocument();
+});
+`;
+
+  it('sees the assertion after a JSX apostrophe', () => {
+    for (const name of ['Button.test.tsx', 'Button.test.jsx']) {
+      expect(rules(lint(name, RTL))).not.toContain('LINT-006');
+    }
+  });
+
+  it('still flags a component test that asserts nothing', () => {
+    const empty = `it('renders', () => {\n  render(<p>It's here</p>);\n});\n`;
+    expect(rules(lint('Empty.test.tsx', empty))).toContain('LINT-006');
   });
 });
