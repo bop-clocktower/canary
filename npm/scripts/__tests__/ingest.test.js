@@ -1,14 +1,149 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { mapStatus, resolveTestStatus, runStatus, resolveConfig, buildPayload, shouldPush, dedupeByFullTitle, ingestOutcome } = require("../../dist/reporters/ingest.js");
+const reporterModule = require("../../dist/reporters/ingest.js");
+const { mapStatus, resolveTestStatus, runStatus, resolveConfig, buildPayload, shouldPush, dedupeByFullTitle, ingestOutcome } = reporterModule;
+const IngestReporter = reporterModule.default;
 
-test("mapStatus collapses PW statuses", () => {
+// --- reporter harness ---------------------------------------------------------
+// Drives the real reporter through Playwright's hooks with fake TestCase/Suite
+// objects and a stubbed fetch, so tests assert what reaches the wire, not just
+// what a helper returns.
+
+const REPO = "/repo/";
+
+/** A Playwright-shaped TestCase: root > project > file > describe* > test. */
+function fakeTest({
+  title,
+  file = "tests/a.spec.ts",
+  describes = [],
+  project = "chromium",
+  tags = [],
+  annotations = [],
+  outcome = "expected",
+  id,
+}) {
+  const projectSuite = { type: "project", title: project, project: () => ({ name: project }) };
+  const root = { type: "root", title: "" };
+  projectSuite.parent = root;
+  let parent = { type: "file", title: file, parent: projectSuite };
+  for (const d of describes) parent = { type: "describe", title: d, parent };
+  return {
+    id: id ?? `${project}:${file}:${describes.join("/")}:${title}`,
+    title,
+    tags,
+    annotations,
+    parent,
+    location: { file: REPO + file, line: 1, column: 1 },
+    outcome: () => outcome,
+    titlePath: () => ["", project, file, ...describes, title],
+  };
+}
+
+function fakeResult(status, extra = {}) {
+  return { status, duration: 12, retry: 0, errors: [], ...extra };
+}
+
+/**
+ * Runs one reporter lifecycle and returns every request it made and every line
+ * it logged. `responses` is consumed in order per request; the default answer
+ * is a fresh ingest that stored exactly what was sent.
+ */
+async function runReporter({
+  options = {},
+  config = { shard: null, projects: [] },
+  collected,
+  tests = [],
+  fullResult = { status: "passed", startTime: new Date("2026-10-05T00:00:00Z"), duration: 60000 },
+  responses = [],
+  env = {},
+} = {}) {
+  const requests = [];
+  const logs = [];
+  const realFetch = global.fetch;
+  const realLog = console.log;
+  const saved = {};
+  const allEnv = { CANARY_INGEST_PUSH: "true", ...env };
+  for (const k of Object.keys(allEnv)) {
+    saved[k] = process.env[k];
+    process.env[k] = allEnv[k];
+  }
+  global.fetch = async (url, init = {}) => {
+    const body = init.body ? JSON.parse(init.body) : undefined;
+    requests.push({ url, method: init.method ?? "GET", body });
+    const r = responses.shift() ?? {
+      status: 200,
+      json: { id: 1, duplicate: false, result_count: body?.results?.length ?? 0, collected_count: body?.collected?.length ?? null },
+    };
+    if (r.throws) throw new Error(r.throws);
+    return {
+      ok: r.status >= 200 && r.status < 300,
+      status: r.status,
+      headers: { get: (h) => (r.headers ?? {})[h.toLowerCase()] ?? null },
+      json: async () => r.json ?? {},
+      text: async () => JSON.stringify(r.json ?? ""),
+    };
+  };
+  console.log = (...args) => logs.push(args.join(" "));
+  try {
+    const reporter = new IngestReporter({ suite: "web", url: "https://dash.example", token: "tok", testFilePrefix: REPO, retryDelaysMs: [0, 0, 0], ...options });
+    const suite = { allTests: () => collected ?? tests.map(([t]) => t) };
+    reporter.onBegin(config, suite);
+    for (const [t, r] of tests) reporter.onTestEnd(t, r);
+    await reporter.onEnd(fullResult);
+  } finally {
+    global.fetch = realFetch;
+    console.log = realLog;
+    for (const k of Object.keys(saved)) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  }
+  const pushes = requests.filter((r) => r.method === "POST");
+  return { requests, pushes, payload: pushes.at(-1)?.body, logs };
+}
+
+test("mapStatus maps PW statuses onto the ingest result enum", () => {
   assert.equal(mapStatus("passed"), "passed");
-  assert.equal(mapStatus("timedOut"), "failed");
   assert.equal(mapStatus("failed"), "failed");
   assert.equal(mapStatus("flaky"), "flaky");
   assert.equal(mapStatus("skipped"), "skipped");
-  assert.equal(mapStatus("interrupted"), "skipped");
+});
+
+// --- #1149: timedOut and interrupted must not lose their meaning --------------
+// The ingest result enum is passed|failed|flaky|skipped|timed_out. A timeout is
+// often an environment signal, so it keeps its own status. `interrupted` has no
+// ingest status, and sending one would reject the whole run; it must also not
+// become `skipped`, which drops the test out of the pass-rate denominator and
+// makes a cut-short run look clean. It is sent as `failed`, tagged and explained.
+
+test("mapStatus keeps timedOut distinct and never maps interrupted to skipped", () => {
+  assert.equal(mapStatus("timedOut"), "timed_out");
+  assert.equal(mapStatus("interrupted"), "failed");
+});
+
+test("resolveTestStatus passes a timed-out last attempt through as timed_out", () => {
+  assert.equal(resolveTestStatus("unexpected", "timedOut"), "timed_out");
+});
+
+test("an interrupted test reaches the wire as failed, tagged and explained", async () => {
+  const t = fakeTest({ title: "checkout", outcome: "unexpected" });
+  const { payload } = await runReporter({
+    tests: [[t, fakeResult("interrupted")]],
+    fullResult: { status: "interrupted", startTime: new Date("2026-10-05T00:00:00Z"), duration: 1000 },
+  });
+  const row = payload.results[0];
+  assert.equal(row.status, "failed");
+  assert.ok(row.tags.includes("interrupted"));
+  assert.match(row.error_message, /^interrupted: /);
+  assert.equal(payload.totals.skipped, 0, "an interrupted test must not hide as a skip");
+  assert.equal(payload.status, "cancelled");
+});
+
+test("a timed-out test reaches the wire as timed_out", async () => {
+  const t = fakeTest({ title: "slow", outcome: "unexpected" });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("timedOut")]] });
+  assert.equal(payload.results[0].status, "timed_out");
+  assert.equal(payload.totals.failed, 1);
 });
 
 test("resolveConfig requires a suite", () => {
@@ -58,14 +193,26 @@ test("resolveConfig default testFilePrefix is <cwd>/", () => {
   assert.equal(c.testFilePrefix, `${process.cwd()}/`);
 });
 
-test("timedOut counts as failed in totals", () => {
+test("a timed_out result is sent as timed_out but counted in the failed bucket", () => {
+  // The ingest totals have no timed_out bucket; counting it as failed keeps
+  // totals.total equal to the sum of the buckets and fails the run.
   const cfg = resolveConfig({ suite: "s" }, {});
   const results = [
     { full_title: "t", test_file: "t.spec.ts", status: mapStatus("timedOut"), retries: 0, tags: [] },
   ];
   const p = buildPayload(results, cfg, { startedAt: "x", finishedAt: "y" }, {});
+  assert.equal(p.results[0].status, "timed_out");
   assert.equal(p.totals.failed, 1);
+  assert.equal(p.totals.total, 1);
   assert.equal(p.status, "failed");
+});
+
+test("dedupeByFullTitle never lets a passing copy hide a timed_out one", () => {
+  const out = dedupeByFullTitle([
+    { full_title: "t", test_file: "t.spec.ts", status: "timed_out", retries: 0, tags: [] },
+    { full_title: "t", test_file: "t.spec.ts", status: "passed", retries: 0, tags: [] },
+  ]);
+  assert.equal(out[0].status, "timed_out");
 });
 
 test("resolveTestStatus reports a recovered flake as flaky, else the attempt status", () => {
@@ -74,7 +221,6 @@ test("resolveTestStatus reports a recovered flake as flaky, else the attempt sta
   // non-flaky outcomes fall through to the last-attempt mapping
   assert.equal(resolveTestStatus("expected", "passed"), "passed");
   assert.equal(resolveTestStatus("unexpected", "failed"), "failed");
-  assert.equal(resolveTestStatus("unexpected", "timedOut"), "failed");
   assert.equal(resolveTestStatus("skipped", "skipped"), "skipped");
 });
 

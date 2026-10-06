@@ -70,7 +70,17 @@ CANARY_INGEST_TOKEN=<token>               # per-tenant, scope ingest:runs
   silently**. It never fails a test run: a config or network error is logged as
   a single line and swallowed.
 
-## Status semantics (flaky)
+## Status semantics
+
+| Playwright status | Sent as     | Notes                                                                                                                                                                                                                                         |
+| ----------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `passed`          | `passed`    |                                                                                                                                                                                                                                               |
+| `failed`          | `failed`    |                                                                                                                                                                                                                                               |
+| `timedOut`        | `timed_out` | Counted in `totals.failed` (the ingest totals have no timed-out bucket).                                                                                                                                                                      |
+| `interrupted`     | `failed`    | Tagged `interrupted`, error prefixed `interrupted:`. The ingest API has no interrupted status, and `skipped` would drop the test out of the pass-rate denominator and make a cut-short run look clean (#1149). The run itself is `cancelled`. |
+| `skipped`         | `skipped`   |                                                                                                                                                                                                                                               |
+
+### Flaky
 
 Per-test status uses Playwright's `test.outcome()`, not the per-attempt
 `result.status` (which is never `flaky`). So a test that **failed then passed on

@@ -82,18 +82,30 @@ export interface IngestPayload {
   results: ResultEntry[];
 }
 
+/**
+ * Playwright status → the ingest result enum (`passed | failed | flaky |
+ * skipped | timed_out`).
+ *
+ * `timedOut` keeps its own status: a timeout is often an environment or
+ * performance signal, and triage differs (#1149). `interrupted` (run
+ * cancelled, `maxFailures` hit, worker killed) has no ingest status, and
+ * sending an unknown one rejects the whole run. It must not become `skipped`,
+ * which drops the test out of the pass-rate denominator and makes a cut-short
+ * run look clean, so it is sent as `failed`; `onTestEnd` tags it `interrupted`
+ * and prefixes its error so it never reads as an assertion failure.
+ */
 export function mapStatus(pw: string): string {
   switch (pw) {
     case "passed":
       return "passed";
     case "failed":
-    case "timedOut":
+    case "interrupted":
       return "failed";
+    case "timedOut":
+      return "timed_out";
     case "flaky":
       return "flaky";
     case "skipped":
-    case "interrupted":
-      return "skipped";
     default:
       return "skipped";
   }
@@ -207,6 +219,7 @@ export function runStatus(
 /** Worst-first, so a collapsed row can never look healthier than its parts. */
 const STATUS_SEVERITY: Record<string, number> = {
   failed: 3,
+  timed_out: 3,
   flaky: 2,
   passed: 1,
   skipped: 0,
@@ -274,7 +287,8 @@ export function buildPayload(
   const results = dedupeByFullTitle(rawResults);
   const count = (s: string) => results.filter((r) => r.status === s).length;
   const passed = count("passed");
-  const failed = count("failed");
+  // The ingest totals have no timed_out bucket; a timeout is a failure there.
+  const failed = count("failed") + count("timed_out");
   const flaky = count("flaky");
   const skipped = count("skipped");
   return {
@@ -375,6 +389,9 @@ export default class IngestReporter implements Reporter {
       // and first-failing-attempt error preservation both still hold — a
       // recovered flake keeps the error that shows the SDET why it flaked.
       const prior = this.results.get(test.id);
+      const interrupted = result.status === "interrupted";
+      if (interrupted) tags.push("interrupted");
+      const firstError = prior?.error_message ?? result.errors[0]?.message;
       this.results.set(test.id, {
         full_title: fullTitle,
         test_file: test.location.file.startsWith(this.cfg.testFilePrefix)
@@ -382,7 +399,9 @@ export default class IngestReporter implements Reporter {
           : test.location.file,
         status: resolveTestStatus(test.outcome(), result.status),
         duration_ms: result.duration,
-        error_message: prior?.error_message ?? result.errors[0]?.message,
+        error_message: interrupted
+          ? `interrupted: ${firstError ?? "the run ended before this test finished"}`
+          : firstError,
         error_stack: prior?.error_stack ?? result.errors[0]?.stack,
         retries: result.retry,
         tags,
