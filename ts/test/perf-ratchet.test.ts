@@ -62,7 +62,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -1147,5 +1147,67 @@ describe('perf-ratchet structural allowances (#850)', () => {
       expect(status).toBe(1);
       expect(out).toMatch(/377 -> 500/);
     });
+  });
+
+  /**
+   * An allowance path is end-anchored, so `scripts/rehearse.mjs` would also
+   * cover any `**\/scripts/rehearse.mjs` added later. A leading `/` anchors it
+   * to the repo root instead (#1189).
+   */
+  describe('root-anchored allowance paths (#1189)', () => {
+    const NESTED = 'agents/skills/claude-code/x/scripts/rehearse.mjs';
+
+    it('a /-anchored allowance covers the root file and nothing nested', () => {
+      writeBaseline({
+        deltaAllowances: [
+          { rule: 'coupling', path: '/scripts/rehearse.mjs', why: 'entry' },
+        ],
+      });
+      writeFileSync(
+        report,
+        reportText(HEAD_ROOT, [
+          ...BASE,
+          ['scripts/rehearse.mjs', COUPLING],
+          [NESTED, COUPLING],
+        ]),
+      );
+      writeFileSync(baseReport, reportText(BASE_ROOT, BASE));
+      const { status, out } = runDelta();
+      expect(out).toMatch(/allowed — scripts\/rehearse\.mjs/);
+      expect(out).not.toMatch(/allowed — agents\//);
+      expect(status).toBe(1);
+    });
+  });
+});
+
+describe('perf allowance globs (#1189)', () => {
+  type Glob = { globToRegExp: (glob: string) => RegExp };
+  async function load(): Promise<Glob> {
+    const url = pathToFileURL(join(REPO_ROOT, 'scripts/lib/perf-findings.mjs'));
+    return (await import(url.href)) as Glob;
+  }
+
+  it('anchors a leading / to the repo root', async () => {
+    const { globToRegExp } = await load();
+    const re = globToRegExp('/scripts/rehearse.mjs');
+    expect(re.test('scripts/rehearse.mjs')).toBe(true);
+    expect(re.test('agents/skills/claude-code/x/scripts/rehearse.mjs')).toBe(
+      false,
+    );
+    expect(re.test('/abs/root/scripts/rehearse.mjs')).toBe(false);
+  });
+
+  it('leaves an unanchored glob end-anchored, as before', async () => {
+    const { globToRegExp } = await load();
+    const re = globToRegExp('scripts/rehearse.mjs');
+    expect(re.test('scripts/rehearse.mjs')).toBe(true);
+    expect(re.test('agents/skills/claude-code/x/scripts/rehearse.mjs')).toBe(
+      true,
+    );
+    expect(
+      globToRegExp('agents/skills/claude-code/*/scripts/cli.mjs').test(
+        '/root/agents/skills/claude-code/x/scripts/cli.mjs',
+      ),
+    ).toBe(true);
   });
 });

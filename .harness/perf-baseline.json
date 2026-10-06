@@ -40,18 +40,18 @@
     },
     {
       "rule": "coupling",
-      "path": "scripts/rehearse.mjs",
-      "why": "The repo-script twin of the skill cli.mjs entry above (#1189): a top-level script is a CLI entry point imported by nothing but its test, so once it imports two of its own modules it IS a coupling ratio of 1.00 — the rule fires on the shape, not on a defect. #1189 replaced each script's hand-rolled entry guard, which was false through a symlink and so exited 0 having run nothing, with the shared scripts/lib/is-main.mjs; that one import is what tipped rehearse.mjs, install-siren.mjs and test-duration-ratchet.mjs over the threshold. Inlining the guard instead would duplicate it into eight files and push refresh-arch-baseline.mjs past the 300-line fileLength threshold. Named per file rather than as scripts/*.mjs because the allowance glob is end-anchored, so scripts/*.mjs would also cover every skill's scripts/ dir."
+      "path": "/scripts/rehearse.mjs",
+      "why": "The repo-script twin of the skill cli.mjs entry above (#1189): a top-level script is a CLI entry point imported by nothing but its test, so once it imports two of its own modules it IS a coupling ratio of 1.00 — the rule fires on the shape, not on a defect. #1189 replaced each script's hand-rolled entry guard, which was false through a symlink and so exited 0 having run nothing, with the shared scripts/lib/is-main.mjs; that one import is what tipped rehearse.mjs, install-siren.mjs and test-duration-ratchet.mjs over the threshold. Inlining the guard instead would duplicate it into seven files and push refresh-arch-baseline.mjs past the 300-line fileLength threshold. Named per file, each root-anchored with a leading / (#1189), because an unanchored allowance glob is end-anchored: scripts/*.mjs, or even scripts/rehearse.mjs, would also cover a same-named file under any skill's scripts/ dir."
     },
     {
       "rule": "coupling",
-      "path": "scripts/install-siren.mjs",
-      "why": "Same as scripts/rehearse.mjs (#1189): a CLI entry point whose only relative import is the shared scripts/lib/is-main.mjs entry guard."
+      "path": "/scripts/install-siren.mjs",
+      "why": "Same as /scripts/rehearse.mjs (#1189): a CLI entry point whose only relative import is the shared scripts/lib/is-main.mjs entry guard."
     },
     {
       "rule": "coupling",
-      "path": "scripts/test-duration-ratchet.mjs",
-      "why": "Same shape as scripts/rehearse.mjs (#1189): a CLI entry point (also imported by rehearse.mjs for its pure compare()) whose efferent imports grew by exactly one, the shared scripts/lib/is-main.mjs entry guard, which put its ratio at 0.83 against a 0.7 threshold."
+      "path": "/scripts/test-duration-ratchet.mjs",
+      "why": "Same shape as /scripts/rehearse.mjs (#1189): a CLI entry point (also imported by rehearse.mjs for its pure compare()) whose efferent imports grew by exactly one, the shared scripts/lib/is-main.mjs entry guard, which put its ratio at 0.83 against a 0.7 threshold."
     },
     {
       "rule": "complexity",
