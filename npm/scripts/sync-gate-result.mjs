@@ -25,7 +25,7 @@
  *   node scripts/sync-gate-result.mjs --check    # exit 1 if it has drifted
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -92,8 +92,24 @@ function main(argv) {
   return 0;
 }
 
+/**
+ * True when this module is the script node was asked to run. Compares
+ * resolved real paths: `import.meta.url` is always the real path, so a plain
+ * comparison with `process.argv[1]` is false through a symlink, and the drift
+ * gate then exited 0 without checking anything (#1189). Inlined rather than
+ * shared because this package ships none of the repo's `scripts/` tree.
+ */
+function isMain(metaUrl, entry = process.argv[1]) {
+  if (!entry) return false;
+  try {
+    return realpathSync(fileURLToPath(metaUrl)) === realpathSync(entry);
+  } catch {
+    return false;
+  }
+}
+
 // Only act when run as a script; importing for tests must have no side effects.
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   process.exit(main(process.argv.slice(2)));
 }
 

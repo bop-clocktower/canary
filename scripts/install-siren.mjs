@@ -36,7 +36,9 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+
+import { isMain } from './lib/is-main.mjs';
 
 export const LABEL = 'io.github.bop-clocktower.canary-deep-siren';
 
@@ -540,9 +542,6 @@ function main(argv) {
   process.exit(2);
 }
 
-if (
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (isMain(import.meta.url)) {
   main(process.argv.slice(2));
 }

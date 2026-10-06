@@ -46,8 +46,9 @@
 // Produce the input with:  harness check-arch --json > arch-report.json
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { parseArgs as parseArgv } from 'node:util';
+
+import { isMain } from './lib/is-main.mjs';
 
 const DEFAULT_BASELINE = '.harness/arch/baselines.json';
 
@@ -140,6 +141,8 @@ function loadTolerance(path) {
   return { ok: true, value };
 }
 
+const abstain = (reason) => ({ status: 'abstain', reason });
+
 /**
  * Decides what a report asks of a baseline.
  *
@@ -151,12 +154,10 @@ function loadTolerance(path) {
  */
 function planRefresh(report, baseline) {
   if (!Array.isArray(report?.regressions)) {
-    return {
-      status: 'abstain',
-      reason:
-        'the report has no `regressions` array — reading an absent field as ' +
+    return abstain(
+      'the report has no `regressions` array — reading an absent field as ' +
         '"nothing regressed" would fabricate a green',
-    };
+    );
   }
   if (report.regressions.length === 0) {
     return { status: 'nothing' };
@@ -164,43 +165,43 @@ function planRefresh(report, baseline) {
 
   const metrics = baseline?.metrics;
   if (metrics === undefined || metrics === null) {
-    return { status: 'abstain', reason: 'the baseline has no `metrics` object' };
+    return abstain('the baseline has no `metrics` object');
   }
 
   const updates = [];
   for (const regression of report.regressions) {
-    const category = regression?.category;
-    const current = regression?.currentValue;
-    if (typeof category !== 'string') {
-      return { status: 'abstain', reason: 'a regression has no `category`' };
-    }
-    if (typeof current !== 'number' || !Number.isFinite(current)) {
-      return {
-        status: 'abstain',
-        reason:
-          `regression "${category}" carries no numeric \`currentValue\`, and ` +
-          'a refresh must never invent the number it writes',
-      };
-    }
-    const recorded = metrics[category];
-    if (recorded === undefined) {
-      return {
-        status: 'abstain',
-        reason: `the baseline records no metric "${category}"`,
-      };
-    }
-    if (current < recorded.value) {
-      return {
-        status: 'abstain',
-        reason:
-          `"${category}" measured ${current}, below the recorded ` +
-          `${recorded.value}. A refresh raises the floor to meet reality; ` +
-          'lowering it would widen the gate, which needs a deliberate decision',
-      };
-    }
-    updates.push({ category, from: recorded.value, to: current });
+    const update = planUpdate(regression, metrics);
+    if (update.status === 'abstain') return update;
+    updates.push(update);
   }
   return { status: 'refresh', updates };
+}
+
+/** One regression's `{category, from, to}`, or the abstain plan saying why not. */
+function planUpdate(regression, metrics) {
+  const category = regression?.category;
+  const current = regression?.currentValue;
+  if (typeof category !== 'string') {
+    return abstain('a regression has no `category`');
+  }
+  if (typeof current !== 'number' || !Number.isFinite(current)) {
+    return abstain(
+      `regression "${category}" carries no numeric \`currentValue\`, and ` +
+        'a refresh must never invent the number it writes',
+    );
+  }
+  const recorded = metrics[category];
+  if (recorded === undefined) {
+    return abstain(`the baseline records no metric "${category}"`);
+  }
+  if (current < recorded.value) {
+    return abstain(
+      `"${category}" measured ${current}, below the recorded ` +
+        `${recorded.value}. A refresh raises the floor to meet reality; ` +
+        'lowering it would widen the gate, which needs a deliberate decision',
+    );
+  }
+  return { category, from: recorded.value, to: current };
 }
 
 /** Applies the planned updates in place, touching `value` and nothing else. */
@@ -290,10 +291,7 @@ function writeRefresh(path, baseline, updates) {
   );
 }
 
-// Only run when invoked directly (resolved-URL guard, as in `arch-verdict.mjs`).
-if (
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+// Only run when invoked directly, symlinks included (real-path guard, #1189).
+if (isMain(import.meta.url)) {
   process.exit(main(process.argv.slice(2)));
 }
