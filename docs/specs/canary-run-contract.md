@@ -152,6 +152,9 @@ Every field is **required**. "Nullable" means the key must be present and may be
   `results[].retries` is at most `2^53 - 1` (9007199254740991). A larger JSON
   integer is not the number the producer wrote once parsed, so `totals-sum`
   could not check it honestly.
+- **Rule `real-dates`.** `run.started_at` and `run.finished_at` name a real
+  instant. The timestamp pattern admits month 13 or hour 25, which a reader
+  parses as NaN and then sorts as the newest run; such a record is refused.
 - **`file` is repo-relative** (ADR 0029). `title` plus `file` is the join key
   between `results[]`, `collected[]` and other canary records.
 

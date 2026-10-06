@@ -169,9 +169,43 @@ function authorExcluded(row, prefix) {
   }));
 }
 
-const RUN_RULES = [countsSafe, totalsMatchResults, totalsSum];
-const ASSESSMENT_RULES = [verifiedSupplied, verificationPair, statusShape];
-const REGISTER_RULES = [authorExcluded];
+/**
+ * Rule `real-dates`: a timestamp names an instant. The pattern admits month 13
+ * or hour 25, which `Date.parse` reads as NaN; a reader then sorts that record
+ * as the newest and never ages it dark (#1151 phase 3 review). Only strings
+ * are checked; a non-string is the schema's error.
+ */
+const realDates =
+  (...paths) =>
+  (record, prefix) =>
+    paths.flatMap((path) => {
+      const value = path.reduce(
+        (o, key) => (isPlainObject(o) ? o[key] : undefined),
+        record,
+      );
+      if (typeof value !== 'string' || Number.isFinite(Date.parse(value)))
+        return [];
+      return [
+        {
+          path: at(prefix, path.join('.')),
+          message: `${JSON.stringify(value)} matches the timestamp pattern but is not a real date`,
+        },
+      ];
+    });
+
+const RUN_RULES = [
+  countsSafe,
+  totalsMatchResults,
+  totalsSum,
+  realDates(['run', 'started_at'], ['run', 'finished_at']),
+];
+const ASSESSMENT_RULES = [
+  verifiedSupplied,
+  verificationPair,
+  statusShape,
+  realDates(['observed_at'], ['verified_at']),
+];
+const REGISTER_RULES = [authorExcluded, realDates(['recorded_at'])];
 
 function applyRules(rules, record, prefix) {
   if (!isPlainObject(record)) return [];
@@ -188,6 +222,7 @@ export function crossFieldErrors(layer, doc) {
   if (layer === 'run') return applyRules(RUN_RULES, doc, '');
   if (layer === 'assessment') return applyRules(ASSESSMENT_RULES, doc, '');
   return [
+    ...applyRules([realDates(['generated_at'])], doc, ''),
     ...nested(doc, 'runs', RUN_RULES),
     ...nested(doc, 'assessments', ASSESSMENT_RULES),
     ...nested(doc, 'register', REGISTER_RULES),

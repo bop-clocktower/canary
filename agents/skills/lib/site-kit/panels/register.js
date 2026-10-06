@@ -8,6 +8,22 @@
 import { CanaryPanel, el } from '../panel.js';
 import { ageDays } from '../model.js';
 
+/** The row's age as text; a date the reader's clock cannot age says why. */
+function age(r, now) {
+  const days = ageDays(r.recorded_at, now);
+  if (!Number.isFinite(days)) return 'no real date';
+  if (days < 0) return 'recorded in the future (clock skew)';
+  return `${days} day(s) old`;
+}
+
+const unageable = (r, now) => !(ageDays(r.recorded_at, now) >= 0);
+
+/** Oldest first; a row with no real date sorts last. */
+const sortKey = (r) => {
+  const t = Date.parse(r.recorded_at);
+  return Number.isFinite(t) ? t : Infinity;
+};
+
 function row(r, now) {
   const extra = [r.cause, r.issue].filter(Boolean).join(' · ');
   return el(
@@ -19,7 +35,7 @@ function row(r, now) {
     el(
       'span',
       { class: 'muted' },
-      ` · ${r.kind} · ${r.reason} · ${ageDays(r.recorded_at, now)} day(s) old${extra ? ` · ${extra}` : ''}`,
+      ` · ${r.kind} · ${r.reason} · ${age(r, now)}${extra ? ` · ${extra}` : ''}`,
     ),
   );
 }
@@ -37,12 +53,16 @@ export class Register extends CanaryPanel {
           'The register lists no skipped or removed tests. An empty register can also mean no ledger was read; this feed does not say which.',
         ],
       };
-    const rows = [...doc.register].sort(
-      (a, b) => Date.parse(a.recorded_at) - Date.parse(b.recorded_at),
-    );
+    const now = this.now();
+    const rows = [...doc.register].sort((a, b) => sortKey(a) - sortKey(b));
+    const skewed = rows.filter((r) => unageable(r, now)).length;
     return {
-      nodes: [el('ul', {}, ...rows.map((r) => row(r, this.now())))],
-      abstentions: [],
+      nodes: [el('ul', {}, ...rows.map((r) => row(r, now)))],
+      abstentions: skewed
+        ? [
+            `${skewed} row(s) have a date this page cannot age (clock skew or no real date).`,
+          ]
+        : [],
     };
   }
 }

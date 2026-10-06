@@ -13,6 +13,7 @@ import {
   logicalRuns,
   scopeLabel,
   suiteKey,
+  timeProblem,
 } from '../model.js';
 
 const BY_STATUS = {
@@ -21,12 +22,25 @@ const BY_STATUS = {
   cancelled: 'cancelled',
 };
 
+const TIME_STATES = {
+  undated: 'no real finish time on its latest run',
+  future: 'latest run is dated in the future (clock skew)',
+};
+
 function stateOf(latest, now) {
   if (!latest) return { state: 'never-reported', text: 'never reported' };
+  const problem = timeProblem(latest.finished, now);
+  if (problem) return { state: problem, text: TIME_STATES[problem] };
   if (isDark(latest.finished, now))
     return {
       state: 'dark',
       text: `dark: no run in ${DARK_AFTER_DAYS} days`,
+    };
+  // A run missing shards measured part of the suite: never "passing" (#1200).
+  if (latest.incomplete)
+    return {
+      state: 'incomplete',
+      text: `incomplete: ${latest.shards.reported} of ${latest.shards.total} shards reported`,
     };
   const state = BY_STATUS[latest.status];
   return { state, text: state };

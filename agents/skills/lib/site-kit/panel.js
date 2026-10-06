@@ -28,8 +28,8 @@ code { font-family: var(--canary-mono); }
 .abstain { color: var(--canary-abstain); font-style: italic; margin: 0; }
 [data-state='passing'], [data-state='healthy'] { color: var(--canary-ok); }
 [data-state='failing'], [data-state='critical'] { color: var(--canary-fail); }
-[data-state='cancelled'], [data-state='degraded'] { color: var(--canary-warn); }
-[data-state='dark'], [data-state='never-reported'], [data-state='not-assessed'] { color: var(--canary-dark); }
+[data-state='cancelled'], [data-state='degraded'], [data-state='incomplete'] { color: var(--canary-warn); }
+[data-state='dark'], [data-state='undated'], [data-state='future'], [data-state='never-reported'], [data-state='not-assessed'] { color: var(--canary-dark); }
 `;
 
 let sheet = null;
@@ -50,6 +50,13 @@ export function el(tag, attrs = {}, ...children) {
 }
 
 /**
+ * The page's feed, once canary-site.js has loaded it (or why it could not).
+ * A panel connected AFTER the load -- a client-rendered route, an async
+ * script -- adopts it instead of waiting forever on "No feed loaded yet."
+ */
+export const pageFeed = { doc: null, problem: null };
+
+/**
  * Subclasses provide `get heading()` and `build(doc)`, which returns
  * `{nodes, abstentions}`: the content, and every reason the panel could not
  * show something. Abstentions are never optional copy.
@@ -57,6 +64,8 @@ export function el(tag, attrs = {}, ...children) {
 export class CanaryPanel extends HTMLElement {
   #doc = null;
   #problem = null;
+  #heading;
+  #body;
   #live;
   /** Milliseconds since the epoch; tests pin it. */
   now = () => Date.now();
@@ -65,11 +74,16 @@ export class CanaryPanel extends HTMLElement {
     super();
     const root = this.attachShadow({ mode: 'open' });
     root.adoptedStyleSheets = [styles()];
+    this.#heading = el('h2');
+    this.#body = el('div', { part: 'body' });
     this.#live = el('p', {
       role: 'status',
       'aria-live': 'polite',
       class: 'abstain',
     });
+    // Attached once: a render replaces only the body, so the live region is
+    // never removed and re-inserted (which can cost the announcement).
+    root.append(this.#heading, this.#body, this.#live);
   }
 
   set feed(doc) {
@@ -90,18 +104,34 @@ export class CanaryPanel extends HTMLElement {
   }
 
   connectedCallback() {
+    if (this.#doc === null && this.#problem === null) {
+      this.#doc = pageFeed.doc;
+      this.#problem = pageFeed.problem;
+    }
     this.render();
   }
 
+  /** build(), contained: a panel that throws refuses only itself. */
+  #content() {
+    if (!this.#doc)
+      return {
+        nodes: [],
+        abstentions: [this.#problem ?? 'No feed loaded yet.'],
+      };
+    try {
+      return this.build(this.#doc);
+    } catch (exc) {
+      return {
+        nodes: [],
+        abstentions: [`This panel could not render the feed: ${exc.message}`],
+      };
+    }
+  }
+
   render() {
-    const { nodes, abstentions } = this.#doc
-      ? this.build(this.#doc)
-      : { nodes: [], abstentions: [this.#problem ?? 'No feed loaded yet.'] };
-    this.shadowRoot.replaceChildren(
-      el('h2', {}, this.heading),
-      ...nodes,
-      this.#live,
-    );
+    const { nodes, abstentions } = this.#content();
+    this.#heading.textContent = this.heading;
+    this.#body.replaceChildren(...nodes);
     this.#live.textContent = abstentions.join(' ');
   }
 }

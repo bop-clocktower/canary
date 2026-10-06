@@ -72,13 +72,20 @@ export class FailuresByArea extends CanaryPanel {
     const latest = [...logicalRuns(doc.runs).values()].map((runs) => runs[0]);
     if (latest.length === 0)
       return { nodes: [], abstentions: ['No runs in the feed.'] };
-    const carried = latest.filter((r) => r.results !== null);
-    const blind = latest.length - carried.length;
-    const abstentions = blind
-      ? [
-          `${blind} suite(s) carry no per-test results in their latest run, so their failures cannot be broken down.`,
-        ]
-      : [];
+    // A run missing shards is as blind as one without results: its failures
+    // are a part of the suite's, not the suite's (#1200).
+    const partial = latest.filter((r) => r.incomplete).length;
+    const unlisted = latest.filter((r) => !r.incomplete && r.results === null);
+    const carried = latest.filter((r) => !r.incomplete && r.results !== null);
+    const abstentions = [
+      [unlisted.length, 'carry no per-test results in their latest run'],
+      [partial, 'have a latest run missing shards'],
+    ]
+      .filter(([n]) => n > 0)
+      .map(
+        ([n, why]) =>
+          `${n} suite(s) ${why}, so their failures cannot be broken down.`,
+      );
     if (carried.length === 0) return { nodes: [], abstentions };
     const quarantined = new Set(
       doc.register.map((r) => testKey(r.scope, r.file, r.title)),

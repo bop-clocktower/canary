@@ -3,22 +3,70 @@
 // announced; it is never 0%, and no rate rounds up to 100% (model.js).
 
 import { CanaryPanel, el } from '../panel.js';
-import { logicalRuns, passCounts, percent, scopeLabel } from '../model.js';
+import {
+  ABSENT,
+  logicalRuns,
+  passCounts,
+  percent,
+  scopeLabel,
+} from '../model.js';
+
+/** Why this run's rate is not shown, or null. */
+function whyAbsent(run, denominator) {
+  if (run.incomplete)
+    return `${run.shards.reported} of ${run.shards.total} shards reported`;
+  if (!(denominator > 0)) return 'no tests counted';
+  return null;
+}
 
 function runItem(run) {
   const { numerator, denominator } = passCounts(run.totals);
-  const when = new Date(run.finished).toISOString();
+  const absent = whyAbsent(run, denominator);
+  const when = Number.isFinite(run.finished)
+    ? new Date(run.finished).toISOString()
+    : null;
+  const detail = absent ?? `${numerator}/${denominator}`;
+  const notRun = run.totals.interrupted
+    ? `, ${run.totals.interrupted} interrupted`
+    : '';
   return {
-    empty: !(denominator > 0),
+    run,
+    absent,
     node: el(
       'li',
       {},
-      el('time', { datetime: when }, when.slice(0, 10)),
+      when ? el('time', { datetime: when }, when.slice(0, 10)) : ABSENT,
       ' ',
-      el('strong', {}, percent(numerator, denominator)),
-      el('span', { class: 'muted' }, ` (${numerator}/${denominator})`),
+      el('strong', {}, absent ? ABSENT : percent(numerator, denominator)),
+      el('span', { class: 'muted' }, ` (${detail}${notRun})`),
     ),
   };
+}
+
+/** One sentence per kind of run whose rate or date could not be shown. */
+function announce(items) {
+  const count = (pred) => items.filter(pred).length;
+  const lines = [
+    [
+      count((i) => i.run.incomplete),
+      'are missing shards; their rate is shown as —',
+    ],
+    [
+      count((i) => !i.run.incomplete && i.absent),
+      'counted no tests; their rate is shown as —, not 0%',
+    ],
+    [
+      count((i) => i.run.totals.interrupted > 0),
+      'were interrupted; interrupted tests are left out of the rate',
+    ],
+    [
+      count((i) => !Number.isFinite(i.run.finished)),
+      'have no real finish time',
+    ],
+  ];
+  return lines
+    .filter(([n]) => n > 0)
+    .map(([n, what]) => `${n} run(s) ${what}.`);
 }
 
 export class PassRate extends CanaryPanel {
@@ -33,10 +81,10 @@ export class PassRate extends CanaryPanel {
         nodes: [],
         abstentions: ['No runs in the feed, so there is no pass rate.'],
       };
-    let empty = 0;
+    const all = [];
     const sections = [...bySuite.values()].map((runs) => {
       const items = runs.map(runItem);
-      empty += items.filter((i) => i.empty).length;
+      all.push(...items);
       return el(
         'section',
         {},
@@ -44,9 +92,7 @@ export class PassRate extends CanaryPanel {
         el('ol', {}, ...items.map((i) => i.node)),
       );
     });
-    const abstentions = empty
-      ? [`${empty} run(s) counted no tests; their rate is shown as —, not 0%.`]
-      : [];
+    const abstentions = announce(all);
     return { nodes: sections, abstentions };
   }
 }

@@ -98,6 +98,8 @@ refused (rule `verified-derived`).
 - **Rule `verified-derived`** (criterion 3). A supplied `verified` key is
   refused, whatever its value: `true`, `false` and `null` are all refused,
   because key presence is the assertion.
+- **Rule `real-dates`.** `observed_at` and `verified_at`, when strings, name a
+  real instant (see the run contract).
 - **Rule `verification-pair`** (criterion 17). `verified_by` and `verified_at`
   are both set or both `null`. A record that sets only one is refused, and the
   error names the half that is missing.

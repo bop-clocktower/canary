@@ -14,6 +14,7 @@ import { FailuresByArea } from './panels/failures-by-area.js';
 import { Flaky } from './panels/flaky.js';
 import { Pillars } from './panels/pillars.js';
 import { Register } from './panels/register.js';
+import { pageFeed } from './panel.js';
 
 const CONTRACT = 'canary.site/1';
 const PANELS = {
@@ -51,14 +52,18 @@ export async function loadFeed(root = document, fetchImpl = globalThis.fetch) {
     .querySelector('meta[name="canary-feed"]')
     ?.getAttribute('content');
   if (!url) return;
-  const panels = root.querySelectorAll(Object.keys(PANELS).join(','));
   try {
-    const doc = await read(url, fetchImpl);
-    for (const p of panels) p.feed = doc;
+    pageFeed.doc = await read(url, fetchImpl);
+    pageFeed.problem = null;
   } catch (exc) {
-    for (const p of panels)
-      p.refuse(`The feed could not be loaded: ${exc.message}`);
+    pageFeed.doc = null;
+    pageFeed.problem = `The feed could not be loaded: ${exc.message}`;
   }
+  // Each panel contains its own render errors (panel.js), so one panel that
+  // cannot render a field never blanks the others.
+  for (const p of root.querySelectorAll(Object.keys(PANELS).join(',')))
+    if (pageFeed.doc) p.feed = pageFeed.doc;
+    else p.refuse(pageFeed.problem);
 }
 
 define();
