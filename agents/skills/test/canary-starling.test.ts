@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { historyToRun } from '../claude-code/canary-starling/scripts/runs.mjs';
+import {
+  historyToRun,
+  RUNS_PER_SUITE,
+  selectRuns,
+} from '../claude-code/canary-starling/scripts/runs.mjs';
 import { validateDocument } from '../lib/contracts/validate.mjs';
 
 const SCOPE = { id: 'canary', env: 'ci' };
@@ -80,5 +84,36 @@ describe('historyToRun (assumption C)', () => {
       total: 2,
     });
     expect(validateDocument(run, { layer: 'run' }).errors).toEqual([]);
+  });
+});
+
+describe('selectRuns (D15)', () => {
+  const runAt = (i: number, suite = 'ts-engine') =>
+    historyToRun(
+      historyRow({
+        run_id: `r${i}`,
+        suite,
+        timestamp: new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString(),
+      }),
+      SCOPE,
+    ).run;
+
+  it('keeps the newest 30 per suite, results only on the newest', () => {
+    const all = [...Array(35).keys()]
+      .map((i) => runAt(i))
+      .concat(runAt(0, 'api'));
+    const { feed, window } = selectRuns(all);
+    const engine = feed.filter((r: any) => r.run.suite === 'ts-engine');
+    expect(RUNS_PER_SUITE).toBe(30);
+    expect(engine).toHaveLength(30);
+    expect(engine[0].run.id).toBe('r34');
+    expect(engine.filter((r: any) => r.results !== null)).toHaveLength(1);
+    expect(
+      feed.filter((r: any) => r.run.suite === 'api')[0].results,
+    ).not.toBeNull();
+    // The window keeps every kept run's results, for flaky[] (Task 12).
+    expect(window.every((r: any) => r.results !== null)).toBe(true);
+    for (const r of feed)
+      expect(validateDocument(r, { layer: 'run' }).errors).toEqual([]);
   });
 });

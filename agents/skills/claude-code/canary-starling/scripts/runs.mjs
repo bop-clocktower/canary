@@ -101,3 +101,34 @@ export function historyToRun(row, scope) {
     },
   };
 }
+
+/** D15: the last N runs per (scope, suite) keep the feed loadable in one fetch. */
+export const RUNS_PER_SUITE = 30;
+
+const suiteKey = (r) => `${r.scope.id}\u0000${r.scope.env}\u0000${r.run.suite}`;
+
+/**
+ * Newest first per suite. `window` keeps every kept run's results (flaky[]
+ * needs them); `feed` drops results on all but each suite's newest run.
+ * Dropped results become `results: null` and the run's totals stay, so the
+ * run still validates ("not carried", never "zero tests").
+ */
+export function selectRuns(runs) {
+  const bySuite = new Map();
+  for (const r of runs) {
+    const k = suiteKey(r);
+    bySuite.set(k, [...(bySuite.get(k) ?? []), r]);
+  }
+  const window = [];
+  const feed = [];
+  for (const group of bySuite.values()) {
+    const kept = group
+      .sort(
+        (a, b) => Date.parse(b.run.finished_at) - Date.parse(a.run.finished_at),
+      )
+      .slice(0, RUNS_PER_SUITE);
+    window.push(...kept);
+    feed.push(...kept.map((r, i) => (i === 0 ? r : { ...r, results: null })));
+  }
+  return { window, feed };
+}
