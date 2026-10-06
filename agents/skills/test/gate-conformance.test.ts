@@ -33,6 +33,7 @@ import { main as screechMain } from '../claude-code/canary-screech/scripts/cli.m
 import { main as misfitMain } from '../claude-code/canary-misfit/scripts/cli.mjs';
 import { main as sweepMain } from '../claude-code/canary-sweep/scripts/cli.mjs';
 import { main as signalMain } from '../claude-code/canary-signal/scripts/cli.mjs';
+import { main as starlingMain } from '../claude-code/canary-starling/scripts/cli.mjs';
 
 /** Exit code reserved CLI-wide for "abstained" (D4, mirrors gate-result.ts). */
 const EXIT_ABSTAINED = 3;
@@ -149,6 +150,14 @@ const ROWS: SkillGateRow[] = [
     strict: (base) =>
       run(signalMain, ['--history', emptyStore(base), '--strict']),
   },
+  {
+    // An empty history: a feed with zero runs. The tempting read is "all
+    // suites quiet"; in fact nothing was measured (#1151, D14).
+    command: 'canary-starling (zero runs in the feed)',
+    forbid: [': 0 run(s)'],
+    run: (base) => run(starlingMain, starlingArgs(base)),
+    strict: (base) => run(starlingMain, [...starlingArgs(base), '--strict']),
+  },
 ];
 
 /** A valid profile plus a results file whose flows no fault ever touched. */
@@ -175,6 +184,29 @@ function emptyStore(base: string): string {
   const file = path.join(base, 'history-v2.jsonl');
   fs.writeFileSync(file, '', 'utf-8');
   return file;
+}
+
+/** A minimal starling invocation over an empty store: zero runs in the feed. */
+function starlingArgs(base: string): string[] {
+  const config = path.join(base, 'canary-site.config.json');
+  fs.writeFileSync(
+    config,
+    JSON.stringify({ scope: { id: 'canary', env: 'ci' } }),
+  );
+  // emptyStore writes '', which the ledger parser refuses; a ledger with no
+  // entries is its own file.
+  const ledger = path.join(base, 'quarantine.json');
+  fs.writeFileSync(ledger, JSON.stringify({ entries: [] }));
+  return [
+    '--config',
+    config,
+    '--history',
+    emptyStore(base),
+    '--ledger',
+    ledger,
+    '--out',
+    path.join(base, 'site.json'),
+  ];
 }
 
 /** An existing but empty diff file: `loadDiff` succeeds and returns nothing. */
