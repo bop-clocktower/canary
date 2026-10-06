@@ -88,3 +88,15 @@ export function ciReadyAssessments(report, scope, { now, source }) {
   }
   return out;
 }
+
+/** Consumers read "latest per key" (spec, assessment layer); the feed ships only that. */
+export function latestPerKey(assessments) {
+  const latest = new Map();
+  for (const a of assessments) {
+    const k = [a.scope.id, a.scope.env, a.source, a.metric].join('\u0000');
+    const prior = latest.get(k);
+    if (!prior || Date.parse(a.observed_at) >= Date.parse(prior.observed_at))
+      latest.set(k, a);
+  }
+  return [...latest.values()];
+}

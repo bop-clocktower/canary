@@ -9,6 +9,7 @@ import { registerRows } from '../claude-code/canary-starling/scripts/register.mj
 import {
   ciReadyAssessments,
   CI_READY_METRICS,
+  latestPerKey,
 } from '../claude-code/canary-starling/scripts/assess.mjs';
 import { validateDocument } from '../lib/contracts/validate.mjs';
 
@@ -302,5 +303,31 @@ describe('ciReadyAssessments (P1, crit 8)', () => {
     expect(out.find((a: any) => a.metric === 'suite-runtime')?.reason).toMatch(
       /no suite-runtime check/,
     );
+  });
+});
+
+describe('latestPerKey (crit 19)', () => {
+  const a = (observed_at: string, value: number, scope = SCOPE) => ({
+    scope,
+    source: 's',
+    metric: 'm',
+    observed_at,
+    value,
+  });
+  it('keeps only the latest observed_at per scope.id + scope.env + source + metric', () => {
+    const out = latestPerKey([
+      a('2026-10-01T00:00:00Z', 1),
+      a('2026-10-03T00:00:00Z', 3),
+      a('2026-10-02T00:00:00Z', 2),
+      a('2026-10-01T00:00:00Z', 9, { id: 'canary', env: 'prod' }),
+    ]);
+    expect(out.map((x: any) => x.value).sort()).toEqual([3, 9]);
+  });
+  it('compares instants, not strings, across offsets', () => {
+    const out = latestPerKey([
+      a('2026-10-01T10:00:00+02:00', 1),
+      a('2026-10-01T09:00:00Z', 2),
+    ]);
+    expect(out.map((x: any) => x.value)).toEqual([2]);
   });
 });
