@@ -305,6 +305,7 @@
       "ts/src/history/formats/report-file.ts",
       "ts/src/mcp-server.ts",
       "ts/test/batwoman-testkit.ts",
+      "agents/skills/test/site-kit-helpers.ts",
       "ts/test/doc-links-testkit.ts",
       "ts/test/required-checks-testkit.ts",
       "ts/vitest.config.ts"
@@ -449,6 +450,7 @@
       "ts/src/history/formats/report-file.ts",
       "ts/src/mcp-server.ts",
       "ts/test/batwoman-testkit.ts",
+      "agents/skills/test/site-kit-helpers.ts",
       "ts/test/doc-links-testkit.ts",
       "ts/test/required-checks-testkit.ts",
       "ts/vitest.config.ts"
