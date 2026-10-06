@@ -42,7 +42,8 @@
 //   harness graph scan
 //   harness traceability --json > traceability-report.json
 import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+
+import { isMain } from './lib/is-main.mjs';
 
 /** Untraced requirements listed before the remainder is summarised. */
 const UNTRACED_DETAIL_CAP = 10;
@@ -266,9 +267,6 @@ function main() {
 
 // Importable as a module (the CI summariser shares the classifier) and
 // executable as a CLI. `process.argv[1]` is this file only in the latter case.
-if (
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (isMain(import.meta.url)) {
   main();
 }

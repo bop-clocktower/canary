@@ -61,6 +61,15 @@ under the project's former name) are documented in the
   URL-encoding; the CLI then printed nothing and exited 0. They now share
   `agents/skills/lib/is-main.mjs`, which compares resolved real paths, and the
   CLI conformance suite spawns every CLI both ways.
+- **Repo scripts ran nothing through a symlink** (#1189). Seven `scripts/*.mjs`
+  entry guards compared `import.meta.url` with `pathToFileURL(process.argv[1])`,
+  and `npm/scripts/sync-gate-result.mjs` (npm's `pretest` drift gate) compared
+  `process.argv[1]` with `fileURLToPath(import.meta.url)`. Both are false when
+  the script is reached through a symlink, so the script printed nothing and
+  exited 0: a drifted mirror passed `--check`, and `rehearse.mjs` reported
+  nothing. They now compare resolved real paths (`scripts/lib/is-main.mjs`,
+  inlined in the npm script), and a test spawns every guarded script through a
+  symlink in a path containing a space.
 - **`.tsx`/`.jsx` component tests are scanned** (#1180). They were outside
   `JS_TEST_EXTENSIONS`, so `canary-cassandra`, `review-test` and the test
   inventory skipped them without saying so (on one real monorepo, ~87 of ~380

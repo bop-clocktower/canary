@@ -41,7 +41,8 @@
 // Produce the input with:  harness check-arch --json > arch-report.json
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+
+import { isMain } from './lib/is-main.mjs';
 
 /** New violations listed before the remainder is summarised. */
 const NEW_DETAIL_CAP = 25;
@@ -353,9 +354,6 @@ function main() {
 
 // Importable as a module (the CI summariser shares the classifier) and
 // executable as a CLI. `process.argv[1]` is this file only in the latter case.
-if (
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (isMain(import.meta.url)) {
   main();
 }

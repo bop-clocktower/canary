@@ -46,8 +46,9 @@
 // Produce the input with:  harness check-arch --json > arch-report.json
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { parseArgs as parseArgv } from 'node:util';
+
+import { isMain } from './lib/is-main.mjs';
 
 const DEFAULT_BASELINE = '.harness/arch/baselines.json';
 
@@ -164,7 +165,10 @@ function planRefresh(report, baseline) {
 
   const metrics = baseline?.metrics;
   if (metrics === undefined || metrics === null) {
-    return { status: 'abstain', reason: 'the baseline has no `metrics` object' };
+    return {
+      status: 'abstain',
+      reason: 'the baseline has no `metrics` object',
+    };
   }
 
   const updates = [];
@@ -291,9 +295,6 @@ function writeRefresh(path, baseline, updates) {
 }
 
 // Only run when invoked directly (resolved-URL guard, as in `arch-verdict.mjs`).
-if (
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (isMain(import.meta.url)) {
   process.exit(main(process.argv.slice(2)));
 }

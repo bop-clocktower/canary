@@ -47,7 +47,8 @@
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
-import { pathToFileURL } from 'node:url';
+
+import { isMain } from './lib/is-main.mjs';
 
 /**
  * `DEFAULT_SKIP_DIRS` as of `@harness-engineering/cli@11.1.1`
@@ -485,9 +486,6 @@ function main() {
   process.exit(0);
 }
 
-if (
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (isMain(import.meta.url)) {
   main();
 }
