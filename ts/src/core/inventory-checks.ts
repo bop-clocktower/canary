@@ -171,8 +171,7 @@ function scoreCoverageDepth(
     name,
     verdict,
     reason: `${paths.length} ${label}: ${at0} at depth 0, ${at1} at depth 1, ${paths.length - at0 - at1} at depth 2`,
-
-    measure: null,
+    measure: { value: at0, unit: 'count', denominator: paths.length },
   };
 }
 
@@ -206,8 +205,7 @@ function scoreAssertionQuality(
     name,
     verdict,
     reason: `${weak} of ${tests.length} test(s) ${label} at depth <= 1 (no shaped assertion)`,
-
-    measure: null,
+    measure: { value: weak, unit: 'count', denominator: tests.length },
   };
 }
 
@@ -230,8 +228,11 @@ function scoreCriticalPaths(
     name,
     verdict,
     reason: `${uncovered.length} of the top ${top.length} area(s) uncovered${names ? `: ${names}` : ''}`,
-
-    measure: null,
+    measure: {
+      value: uncovered.length,
+      unit: 'count',
+      denominator: top.length,
+    },
   };
 }
 

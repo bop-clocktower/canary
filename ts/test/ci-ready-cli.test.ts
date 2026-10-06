@@ -353,6 +353,17 @@ describe('canary ci-ready', () => {
     ]) {
       expect(check(report, name).verdict).toBe('pass');
     }
+    for (const name of [
+      'coverage-depth',
+      'assertion-quality',
+      'critical-paths',
+    ]) {
+      expect(check(report, name).measure).toEqual({
+        value: 0,
+        unit: 'count',
+        denominator: 1,
+      });
+    }
     expect(report.checked).toBe(3);
     expect(report.verdict).toBe('incomplete');
     expect(code).toBe(0);
