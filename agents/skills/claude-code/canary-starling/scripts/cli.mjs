@@ -51,9 +51,30 @@ export const CLI_SPEC = {
 
 const parseArgs = createParser(CLI_SPEC);
 
+/** Writes the feed; returns why it could not, or null. */
 function write(out, doc) {
-  fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
-  fs.writeFileSync(out, JSON.stringify(doc, null, 2) + '\n', 'utf8');
+  try {
+    fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
+    fs.writeFileSync(out, JSON.stringify(doc, null, 2) + '\n', 'utf8');
+    return null;
+  } catch (exc) {
+    return `cannot write ${out}: ${exc.message}`;
+  }
+}
+
+/** The written feed's one-line summary; the exit code. */
+function summarize(args, doc) {
+  if (doc.runs.length === 0) {
+    // A feed of zero runs reads as "all quiet" on a page. It measured nothing.
+    console.log(
+      `${PREFIX} ABSTAINED: wrote ${args.out} with 0 runs; the feed measured nothing.`,
+    );
+    return args.strict ? EXIT_ABSTAINED : 0;
+  }
+  console.log(
+    `${PREFIX} wrote ${args.out}: ${doc.runs.length} run(s), ${doc.assessments.length} assessment(s), ${doc.flaky.length} flaky, ${doc.register.length} register row(s)`,
+  );
+  return 0;
 }
 
 export function main(argv = []) {
@@ -83,18 +104,12 @@ export function main(argv = []) {
     console.error(`${PREFIX} ${args.out} not written`);
     return 1;
   }
-  write(args.out, doc);
-  if (doc.runs.length === 0) {
-    // A feed of zero runs reads as "all quiet" on a page. It measured nothing.
-    console.log(
-      `${PREFIX} ABSTAINED: wrote ${args.out} with 0 runs; the feed measured nothing.`,
-    );
-    return args.strict ? EXIT_ABSTAINED : 0;
+  const failed = write(args.out, doc);
+  if (failed) {
+    console.error(`${PREFIX} ${failed}`);
+    return 1;
   }
-  console.log(
-    `${PREFIX} wrote ${args.out}: ${doc.runs.length} run(s), ${doc.assessments.length} assessment(s), ${doc.flaky.length} flaky, ${doc.register.length} register row(s)`,
-  );
-  return 0;
+  return summarize(args, doc);
 }
 
 // `process.exitCode`, not `process.exit()` (#791).

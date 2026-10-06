@@ -778,6 +778,17 @@ describe('canary-starling (end to end)', () => {
     });
   });
 
+  it('names an unwritable --out and exits 1, with no stack', () => {
+    const dir = fixture({ 'ledger.json': { entries: [] } });
+    const args = drop(argv(dir), '--out');
+    const res = capture(() => starlingMain([...args, '--out', dir]));
+    expect(res.code).toBe(1);
+    expect(res.stderr).toMatch(
+      new RegExp(`^canary-starling: cannot write ${dir}: \\S`),
+    );
+    expect(res.stderr).not.toMatch(/\n\s+at /);
+  });
+
   it('still writes the feed past an unparseable history timestamp, naming the run', () => {
     const dir = fixture({
       'history-v2.jsonl': [
