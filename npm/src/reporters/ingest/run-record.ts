@@ -63,12 +63,20 @@ function contractStatus(ingest: IngestPayload["status"], full?: string): "passed
   return ingest === "failed" ? "failed" : "passed";
 }
 
-/** Ingest sends an interrupted test as `failed` + an `interrupted` tag (#1149); the contract has its own status. */
+/** The reporter's own mark on an interrupted test's error (#1149). */
+export const INTERRUPTED_PREFIX = "interrupted: ";
+
+/**
+ * Ingest sends an interrupted test as `failed` with an `interrupted: ` error
+ * (#1149); the contract has its own status. The `interrupted` tag is not the
+ * signal: a user's own `@interrupted` tag lands in the same list.
+ */
 function toResult(r: ResultEntry) {
+  const interrupted = r.status === "failed" && r.error_message?.startsWith(INTERRUPTED_PREFIX);
   return {
     title: r.full_title,
     file: r.test_file,
-    status: r.tags.includes("interrupted") ? "interrupted" : r.status,
+    status: interrupted ? "interrupted" : r.status,
     // Absent only for a test that never started (Playwright reports -1).
     duration_ms: r.duration_ms ?? 0,
     retries: r.retries,

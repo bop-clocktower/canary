@@ -41,7 +41,11 @@ test("crit 5: shards of one workflow run get distinct run ids", () => {
 });
 
 test("crit 6: timed_out and interrupted keep their own status and bucket", () => {
-  const r = record([row("t", "timed_out"), row("i", "failed", { tags: ["interrupted"] }), row("f", "failed")]);
+  const r = record([
+    row("t", "timed_out"),
+    row("i", "failed", { tags: ["interrupted"], error_message: "interrupted: the run ended before this test finished" }),
+    row("f", "failed"),
+  ]);
   assert.deepEqual(
     r.results.map((x) => x.status),
     ["timed_out", "interrupted", "failed"],
@@ -203,4 +207,34 @@ test("a stale run file is removed even when config fails to resolve, with a warn
   });
   assert.equal(fs.existsSync(file), false);
   assert.match(logs.join("\n"), /WARNING — disabled — `suite` is required/);
+});
+
+test("a user tag `interrupted` does not make a passing test interrupted", () => {
+  const r = record([row("p", "passed", { tags: ["interrupted"] }), row("f", "failed", { tags: ["interrupted"], error_message: "boom" })]);
+  assert.deepEqual(
+    r.results.map((x) => x.status),
+    ["passed", "failed"],
+  );
+  assert.equal(r.totals.interrupted, 0);
+});
+
+test("end to end: a real interruption is interrupted, an @interrupted-tagged pass is passed", async () => {
+  const dir = tmp();
+  const cut = fakeTest({ title: "cut" });
+  const tagged = fakeTest({ title: "tagged", tags: ["@interrupted"] });
+  await runReporter({
+    options: scopeOpts(dir),
+    tests: [
+      [cut, fakeResult("interrupted")],
+      [tagged, fakeResult("passed")],
+    ],
+  });
+  const doc = JSON.parse(fs.readFileSync(path.join(dir, "run.json"), "utf8"));
+  assert.deepEqual(
+    doc.results.map((x) => [x.title.split(" > ").at(-1), x.status]),
+    [
+      ["cut", "interrupted"],
+      ["tagged", "passed"],
+    ],
+  );
 });

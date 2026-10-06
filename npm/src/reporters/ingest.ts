@@ -5,7 +5,7 @@ import { cleanTitle, projectName, skipTags, catalogFilter, relativeFile } from "
 import { warn, log, errText, PREFLIGHT_TIMEOUT_MS, push, ingestOutcome, retryWaitMs } from "./ingest/transport.js";
 import type { IngestReporterOptions, ResolvedConfig } from "./ingest/config.js";
 import type { ResultEntry, CollectedEntry, Shard } from "./ingest/payload.js";
-import { clearRunFile, emitRunFile, toRunRecord, runFilePath } from "./ingest/run-record.js";
+import { clearRunFile, emitRunFile, toRunRecord, runFilePath, INTERRUPTED_PREFIX } from "./ingest/run-record.js";
 
 // Optional .env load — MUST NOT crash the suite if dotenv is absent.
 try {
@@ -291,8 +291,6 @@ function attemptError(test: TestCase, result: TestResult, unexpectedPass: boolea
     stack: errorField(result.errors[0]?.stack, MAX_ERROR_STACK),
   };
 }
-
-const INTERRUPTED_PREFIX = "interrupted: ";
 
 function interruptedMessage(firstError: string | undefined): string {
   if (firstError?.startsWith(INTERRUPTED_PREFIX)) return firstError;
