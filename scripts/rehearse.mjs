@@ -27,6 +27,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { isMain } from './lib/is-main.mjs';
+import { checkedManifest, firesInEveryFile } from './lib/rehearsal-expect.mjs';
 import { compare } from './test-duration-ratchet.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -57,24 +58,6 @@ export function loadManifests(root = DEFAULT_ROOT) {
         dir,
       }),
     );
-}
-
-/**
- * Reject an `expect.files` that would make the per-file check vacuous or
- * throw mid-probe (#1193): `[]` passes `every` by definition.
- */
-function checkedManifest(manifest) {
-  const files = manifest.expect?.files;
-  if (files === undefined) return manifest;
-  const valid =
-    Array.isArray(files) &&
-    files.length > 0 &&
-    files.every((f) => typeof f === 'string' && f !== '');
-  if (!valid)
-    throw new Error(
-      `rehearsal/${manifest.id}: expect.files must be a non-empty array of paths`,
-    );
-  return manifest;
 }
 
 function runNode(args) {
@@ -119,23 +102,6 @@ function noJson(manifest, run) {
 /** cassandra's denominator is tests read; savant and blackhawk count files. */
 function scanDenominator(summary = {}) {
   return summary.tests_checked ?? summary.files_scanned ?? 0;
-}
-
-/**
- * The rule fired -- in each of `expect.files` when the manifest lists them
- * (#1188), so one firing file cannot hide a silent one beside it.
- */
-function firesInEveryFile(findings, expected) {
-  const hits = findings
-    .filter((f) => f.rule_id === expected.ruleId)
-    .map((f) => String(f.file).replace(/\\/g, '/'));
-  const { files } = expected;
-  if (files === undefined) return hits.length > 0;
-  if (!Array.isArray(files) || files.length === 0) return false;
-  // A whole-segment match: `clock.test.mjs` must not match `xclock.test.mjs`.
-  return files.every((rel) =>
-    hits.some((f) => f === rel || f.endsWith(`/${rel}`)),
-  );
 }
 
 /** savant, blackhawk, cassandra: a path scan that must report the rule. */
