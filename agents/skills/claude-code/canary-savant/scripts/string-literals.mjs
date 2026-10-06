@@ -29,6 +29,17 @@
 //   scanners are line-based by design.
 // - Regex literals containing quotes (/['"]/) can open a phantom string for
 //   the rest of the line. Same rejection-only safety argument applies.
+// - JSX children text (#1188): in `.tsx`/`.jsx` an apostrophe in prose
+//   (`<p>It's</p>`) is not a quote. Read raw, it opened a phantom string that
+//   suppressed a real finding after it on the line -- and, worse, flipped a
+//   later quoted fixture into CODE, which DID fabricate findings. So a
+//   JSX file is masked whole-source first (lib/jsx-text.mjs blanks children
+//   text, keeping every offset and line break) and each line is read through
+//   its masked twin: `lineRanges` / `trimmedRanges` take string literals
+//   from the twin and add the blanked JSX text as rejected (data) ranges.
+//   Every other extension has no twin and reads exactly as before.
+
+import { isJsxPath, maskJsxText } from '../../../lib/jsx-text.mjs';
 
 /**
  * Compute the [start, end) index ranges of string-literal CONTENT in `line`
@@ -113,4 +124,53 @@ export function execOutsideStrings(pattern, line, ranges) {
     if (re.lastIndex === match.index) re.lastIndex += 1; // zero-width guard
   }
   return null;
+}
+
+/**
+ * The source a file's lines are read through: for `.tsx`/`.jsx`, `text` with
+ * JSX children text blanked (same length and line breaks); otherwise `text`
+ * itself, so every other language reads exactly as before (#1188).
+ * @param {string} text
+ * @param {string} file
+ * @returns {string}
+ */
+export function maskJsxForFile(text, file) {
+  return isJsxPath(file) ? maskJsxText(text) : text;
+}
+
+/**
+ * Ranges a match must not start in, for `line` read through its masked twin
+ * `masked` (same offsets): the string-literal content of the twin, plus every
+ * run the masking blanked (JSX text is data, not code). Without a distinct
+ * twin this is exactly `stringLiteralRanges(line)`.
+ * @param {string} line
+ * @param {string} [masked]
+ * @returns {Array<[number, number]>}
+ */
+export function lineRanges(line, masked = line) {
+  if (masked === line) return stringLiteralRanges(line);
+  const ranges = stringLiteralRanges(masked);
+  let start = -1;
+  for (let i = 0; i <= line.length; i += 1) {
+    const blanked = i < line.length && masked[i] !== line[i];
+    if (blanked && start < 0) start = i;
+    if (!blanked && start >= 0) {
+      ranges.push([start, i]);
+      start = -1;
+    }
+  }
+  return ranges;
+}
+
+/**
+ * `lineRanges` for `raw.trim()`, the view the scanners match against, with
+ * the masked twin `masked` of the untrimmed `raw` aligned to it.
+ * @param {string} raw
+ * @param {string} [masked]
+ * @returns {Array<[number, number]>}
+ */
+export function trimmedRanges(raw, masked = raw) {
+  const stripped = raw.trim();
+  const lead = raw.length - raw.trimStart().length;
+  return lineRanges(stripped, masked.slice(lead, lead + stripped.length));
 }

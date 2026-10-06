@@ -118,7 +118,9 @@ anywhere `node` does. The cost, stated plainly:
   not fire), while an anchor whose pattern merely reaches into quotes
   (`strftime('..%Z')`) still does; template `${...}` interpolation is code. A
   string spanning lines is only seen on its opening line, so a fixture blob's
-  continuation lines are still scanned like code.
+  continuation lines are still scanned like code. In `.tsx`/`.jsx`, JSX children
+  text is prose: it is masked before the line is read, so an apostrophe in it
+  (`<p>It's</p>`) opens no string and a rule pattern in it never fires (#1188).
 - **No type awareness.** `.toLocaleString()` on a `Number` reads the same as on
   a `Date`.
 - **Suppression is a substring match.** A mention of `freezegun` in a comment

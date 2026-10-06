@@ -35,6 +35,9 @@ import {
   stringLiteralRanges,
   inStringLiteral,
   execOutsideStrings,
+  lineRanges,
+  maskJsxForFile,
+  trimmedRanges,
 } from './string-literals.mjs';
 
 export const SNIPPET_LIMIT = 120;
@@ -254,11 +257,12 @@ const langOf = (file) => {
 };
 
 /** Setup markers whose matching teardown is absent from the file. */
-function sv002MissingTeardown(lines, file, lang) {
+function sv002MissingTeardown(lines, file, lang, masks) {
   const { pairs, setupHit } = LANGS[lang];
   // #732: pair against code only. Both halves read the same projection, so
   // the rule can no longer be switched off by a comment or a fixture string.
-  const codeLines = lines.map(codeOnly);
+  // #1188: the projection is taken of the JSX-masked twin of each line.
+  const codeLines = masks.map(codeOnly);
   const codeText = codeLines.join('\n');
   const findings = [];
   for (const [setup, teardown] of pairs) {
@@ -290,14 +294,14 @@ function sv002MissingTeardown(lines, file, lang) {
 // directive.
 const PRAGMA = /\bsavant-ignore\s+([A-Za-z0-9,\s-]*?)\s*--\s*(\S.*)$/;
 
-function parsePragmas(lines) {
+function parsePragmas(lines, masks) {
   const map = new Map();
   const add = (ln, tokens) => {
     if (!map.has(ln)) map.set(ln, new Set());
     for (const t of tokens) map.get(ln).add(t);
   };
   lines.forEach((raw, i) => {
-    const m = execOutsideStrings(PRAGMA, raw, stringLiteralRanges(raw));
+    const m = execOutsideStrings(PRAGMA, raw, lineRanges(raw, masks[i]));
     if (!m || !m[2].trim()) return; // reason required
     const tokens = m[1].split(/[,\s]+/).filter(Boolean);
     if (!tokens.length) return; // rule-scoped: must name a rule
@@ -326,14 +330,17 @@ export function scanTextFull(text, file = '<text>') {
   const lang = langOf(file);
   const isPhp = lang === 'php';
   const lines = splitLines(text);
+  // #1188: .tsx/.jsx lines are read through a twin with JSX text blanked.
+  const masked = maskJsxForFile(text, file);
+  const masks = splitLines(masked);
   const findings = [];
   // #493 root cause 2: SV003's why asserts persistence, so a file that
   // restores the global (teardown restore or snapshot write-back) must not
   // be flagged. Computed once per file.
-  const restoration = analyzeRestoration(text, isPhp);
+  const restoration = analyzeRestoration(masked, isPhp);
 
   findings.push(...LANGS[lang].sv001(lines, file, text));
-  findings.push(...sv002MissingTeardown(lines, file, lang));
+  findings.push(...sv002MissingTeardown(lines, file, lang, masks));
 
   lines.forEach((raw, i) => {
     const stripped = raw.trim();
@@ -342,7 +349,7 @@ export function scanTextFull(text, file = '<text>') {
     // code. SV003 and SV004's code-anchored alternatives reject those; the
     // SV004 text alternatives stay unfiltered because their signal (titles,
     // docstrings, comments) legitimately lives inside strings.
-    const ranges = stringLiteralRanges(stripped);
+    const ranges = trimmedRanges(raw, masks[i]);
     // SV004 is self-reported ordering: it fires on comments and code alike.
     if (
       execOutsideStrings(
@@ -373,7 +380,7 @@ export function scanTextFull(text, file = '<text>') {
   findings.sort((a, b) => a.line - b.line || a.ruleId.localeCompare(b.ruleId));
 
   // Partition after the sort (stable), so both arrays stay line-ordered.
-  const pragmas = parsePragmas(lines);
+  const pragmas = parsePragmas(lines, masks);
   const kept = [];
   const suppressed = [];
   for (const f of findings) {

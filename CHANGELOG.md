@@ -78,6 +78,17 @@ under the project's former name) are documented in the
   `expect(...)`. Quote characters in JSX children text are now masked before the
   string blankers run (`core/jsx-text.ts`), only for `.tsx`/`.jsx`; `.ts` and
   `.js` are unchanged.
+- **`canary-blackhawk` and `canary-savant`: an apostrophe in JSX text no longer
+  hides or invents findings** (#1188). Both skills scan `.tsx`/`.jsx`, but their
+  per-line string helper read `<p>It's</p>` as an open quote for the rest of the
+  line. A real finding after it was dropped (`render(<p>It's {Date.now()}</p>)`
+  lost `BH001`), and a quoted fixture after it was read as code
+  (`render(<p>It's</p>, label('Date.now()'))` gained a false `BH001`). The
+  skills now mask JSX children text the way the engine does, through a
+  self-contained port in `agents/skills/lib/jsx-text.mjs`, and read each line
+  against the masked source. Savant's teardown pairing (`SV002`) and restore
+  detection (`SV003`) read the masked source too. Only `.tsx`/`.jsx` change;
+  every other file reads exactly as before.
 
 - **Ingest reporter: sharded pushes no longer discard each other** (#1148).
   Every shard of one workflow run sent the same `canary_run_id`, so the first

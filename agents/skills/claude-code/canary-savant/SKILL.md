@@ -75,7 +75,10 @@ The static pass is a scanner with no parser dependency, so it ships anywhere
 - **String-aware for code anchors.** An `SV003` (or `SV004` name-pattern) match
   that _starts_ inside a string literal on its own line is rejected as fixture
   data. `SV004`'s directive-text alternatives stay unfiltered on purpose: their
-  signal (test titles, docstrings) legitimately lives inside strings.
+  signal (test titles, docstrings) legitimately lives inside strings. In
+  `.tsx`/`.jsx`, JSX children text is prose: it is masked before lines are read,
+  so an apostrophe in it (`<p>It's</p>`) opens no string, and the teardown and
+  restore checks read the masked source too (#1188).
 - **Restoration check is file-level.** `SV003` suppression cannot verify that a
   fixture actually applies to the mutating test, and a computed-key loop restore
   is assumed to cover the whole family — the same file-wide trade blackhawk
