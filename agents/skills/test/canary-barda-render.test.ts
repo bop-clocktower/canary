@@ -67,5 +67,13 @@ it('renders every panel of a built site from its own kit and feed', async () => 
     expect(panel.shadowRoot!.textContent, tag).not.toContain(
       'could not be loaded',
     );
+    // Review F1: panel.js contains a throwing build() as this abstention, so
+    // feed and heading alone pass over a crashed panel.
+    expect(panel.shadowRoot!.textContent, tag).not.toContain(
+      'could not render',
+    );
+    // The light-DOM fallback (page.mjs) stays hidden only while the shadow
+    // root has no slot to project it into.
+    expect(panel.shadowRoot!.querySelector('slot'), tag).toBeNull();
   }
 });

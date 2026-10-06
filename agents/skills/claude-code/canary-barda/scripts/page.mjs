@@ -16,6 +16,13 @@ export const PANEL_TAGS = [
 
 const escape = (s) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+// Light-DOM text, shown only if the kit never runs (opened from file://, or
+// kit/ not deployed). Panels render into a slot-less shadow root, so once a
+// panel upgrades this is hidden -- no inline script needed to say why.
+const FALLBACK =
+  '<p>This panel did not load: kit/canary-site.js could not run. ' +
+  'Serve this directory over http(s); a file:// page cannot load it.</p>';
+
 export function page({ title }) {
   const t = escape(title);
   return `<!doctype html>
@@ -32,7 +39,7 @@ export function page({ title }) {
   <body>
     <main>
       <h1>${t}</h1>
-${PANEL_TAGS.map((tag) => `      <${tag}></${tag}>`).join('\n')}
+${PANEL_TAGS.map((tag) => `      <${tag}>${FALLBACK}</${tag}>`).join('\n')}
     </main>
   </body>
 </html>

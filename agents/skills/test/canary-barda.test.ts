@@ -20,6 +20,16 @@ describe('canary-barda page', () => {
       expect(html.match(new RegExp(`<${tag}>`, 'g'))).toHaveLength(1);
   });
 
+  // Review S2: a page opened from file:// (or with kit/ missing) never
+  // upgrades its panels. Light-DOM text says why; the kit renders into a
+  // slot-less shadow root, so the text is hidden once a panel upgrades.
+  it('says why inside each panel if the kit never runs', () => {
+    for (const tag of PANEL_TAGS)
+      expect(html).toMatch(
+        new RegExp(`<${tag}><p>This panel did not load: [^<]*</p></${tag}>`),
+      );
+  });
+
   it('names the same tags the kit registers', () => {
     const kit = readFileSync(
       new URL('../lib/site-kit/canary-site.js', import.meta.url),
@@ -104,6 +114,32 @@ describe('canary-barda build', () => {
     expect(outProblem(path.join(base, 'stale.txt'))).toMatch(
       /is not a directory/,
     );
+  });
+
+  // Review F2: cpSync does not detect copying the kit into itself; it
+  // recursed until ENAMETOOLONG and left a nested tree in the kit source.
+  it('refuses an out dir inside the site kit itself', () => {
+    const kit = new URL('../lib/site-kit/', import.meta.url).pathname;
+    expect(outProblem(path.join(kit, 'out'))).toMatch(/inside the site kit/);
+    expect(outProblem(path.join(kit, 'a', 'b'))).toMatch(/inside the site kit/);
+    expect(fs.existsSync(path.join(kit, 'out'))).toBe(false);
+  });
+
+  // Review S1: a build that fails part-way removes what it wrote, so a retry
+  // is not refused over barda's own half-built output. A null title makes
+  // page() throw after the kit has already been copied.
+  it('removes its partial output when a build fails', () => {
+    const fresh = path.join(tmp(), 'site');
+    expect(() =>
+      buildSite(siteFeed(), fresh, { title: null as unknown as string }),
+    ).toThrow();
+    expect(fs.existsSync(fresh)).toBe(false);
+
+    const empty = tmp();
+    expect(() =>
+      buildSite(siteFeed(), empty, { title: null as unknown as string }),
+    ).toThrow();
+    expect(fs.readdirSync(empty)).toEqual([]);
   });
 
   it('writes index.html, the feed and the whole kit', () => {

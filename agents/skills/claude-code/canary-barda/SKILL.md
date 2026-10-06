@@ -60,7 +60,11 @@ Serve the directory from any static host. `index.html` declares the feed with
 - **Invalid or unparseable feed:** nothing is written (exit 1), and every
   validation error is printed.
 - **Non-empty `--out`:** refused (exit 1). Barda never overwrites a file it did
-  not write.
+  not write. An `--out` inside the site kit itself is refused too.
+- **A build that fails part-way** (disk full, permissions): barda removes what
+  it wrote before exiting 1, so the same command can simply be re-run.
+- **Opened from `file://`, or `kit/` not deployed:** the kit cannot run, and
+  each panel shows a line saying so instead of an empty box.
 - **Zero runs:** the site builds, every run panel abstains on the page, and the
   CLI prints `ABSTAINED` (exit 3 under `--strict`).
 - **On the page:** a panel that cannot show something says why, in text, inside
