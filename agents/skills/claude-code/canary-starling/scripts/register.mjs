@@ -34,7 +34,8 @@ function toRow(r, scope) {
     recorded_at: r.date,
     commit: r.commit,
     cause: r.cause || null,
-    issue: r.issue || null,
+    // v1 ledgers wrote the tracker link as `ticket` (#781).
+    issue: r.issue || r.ticket || null,
   };
 }
 

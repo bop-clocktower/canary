@@ -292,6 +292,16 @@ describe('registerRows (fork C)', () => {
     ]);
   });
 
+  it('carries a v1 ledger row ticket as the issue', () => {
+    // v1 wrote the tracker link as `ticket` and had no `issue` (#781).
+    const { issue: _, ...v1 } = ledgerRow();
+    const { rows } = registerRows(
+      [{ ...v1, ticket: 'https://example.test/issues/7' }],
+      SCOPE,
+    );
+    expect(rows[0].issue).toBe('https://example.test/issues/7');
+  });
+
   it('leaves out a row with no date, commit or reason, and counts it', () => {
     const { rows, skipped } = registerRows(
       [ledgerRow({ date: '' }), ledgerRow({ commit: '' })],
