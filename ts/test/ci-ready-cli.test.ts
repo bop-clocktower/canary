@@ -21,10 +21,16 @@ import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { NdjsonHistoryStore } from '../src/history/ndjson-store.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 
+interface Measure {
+  value: number;
+  unit: 'ratio' | 'count' | 'ms';
+  denominator: number;
+}
 interface Check {
   name: string;
   verdict: 'pass' | 'warn' | 'fail' | 'skip';
   reason: string;
+  measure: Measure | null;
 }
 interface Report {
   verdict: 'ready' | 'incomplete' | 'not-ready' | 'abstained';
@@ -111,6 +117,14 @@ describe('canary ci-ready', () => {
       'suite-runtime',
     ]);
     expect(report.checks.every((c) => c.verdict === 'skip')).toBe(true);
+    // A skipped check measured nothing: null, never 0 (#1151 phase 2, P1).
+    expect(report.checks.map((c) => c.measure)).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
 
     const text = await invokeCanary(['ci-ready', '--root', root]);
     expect(text.code).toBe(EXIT_ABSTAINED);

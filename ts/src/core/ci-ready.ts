@@ -43,10 +43,23 @@ export type CheckVerdict = 'pass' | 'warn' | 'fail' | 'skip';
 export type ReadinessVerdict =
   'ready' | 'incomplete' | 'not-ready' | 'abstained';
 
+/**
+ * The number a check scored, in a form a feed can carry without parsing the
+ * prose `reason` (#1151 phase 2, P1). `null` when the check measured
+ * nothing: a skip, a window too thin to judge, or a zero the reader could
+ * not have observed. Null is never 0.
+ */
+export interface CheckMeasure {
+  value: number;
+  unit: 'ratio' | 'count' | 'ms';
+  denominator: number;
+}
+
 export interface CiCheck {
   name: string;
   verdict: CheckVerdict;
   reason: string;
+  measure: CheckMeasure | null;
 }
 
 export interface CiReadyReport {
@@ -107,6 +120,7 @@ function scoreCleanWindow(window: ScoredRun[]): CiCheck {
       name,
       verdict: 'warn',
       reason: `${insufficientHistoryNote(runsRead)} ${windowNote} \u{2014} no flake verdict`,
+      measure: null,
     };
   }
   return {
@@ -115,13 +129,14 @@ function scoreCleanWindow(window: ScoredRun[]): CiCheck {
     reason:
       `0 flaky or alternating tests across ${runsRead} run(s) ${windowNote}` +
       measurabilitySuffix(measurabilityOf(window)),
+    measure: null,
   };
 }
 
 /** The skip for a store that exists but cannot be read, or null. */
 function unreadableSkip(name: string, runs: RunsInput): CiCheck | null {
   if (runs === null || Array.isArray(runs)) return null;
-  return { name, verdict: 'skip', reason: runs.reason };
+  return { name, verdict: 'skip', reason: runs.reason, measure: null };
 }
 
 function scoreFlakiness(runs: RunsInput, historyPath: string): CiCheck {
@@ -133,6 +148,7 @@ function scoreFlakiness(runs: RunsInput, historyPath: string): CiCheck {
       name,
       verdict: 'skip',
       reason: `no runs recorded in ${historyPath}`,
+      measure: null,
     };
   }
   const window = runs.slice(-FLAKY_WINDOW_RUNS);
@@ -155,6 +171,7 @@ function scoreFlakiness(runs: RunsInput, historyPath: string): CiCheck {
       `${signals.size} flaky or alternating test(s) across ${window.length} ` +
       `run(s) (window ${FLAKY_WINDOW_RUNS}); worst is ${worstName} at ` +
       `${pct}% on ${worst.axis}`,
+    measure: null,
   };
 }
 
@@ -198,6 +215,7 @@ function scoreRuntime(runs: RunsInput, historyPath: string): CiCheck {
       name,
       verdict: 'skip',
       reason: `no run in ${historyPath} carries a duration_ms, so a p95 runtime cannot be computed`,
+      measure: null,
     };
   }
   const p95 = nearestRank(durations, 95);
@@ -205,6 +223,7 @@ function scoreRuntime(runs: RunsInput, historyPath: string): CiCheck {
     name,
     verdict: runtimeVerdict(p95),
     reason: `p95 ${humanDuration(p95)} across ${durations.length} run(s) vs. absolute threshold (warn at 5m, fail over 10m)`,
+    measure: null,
   };
 }
 
