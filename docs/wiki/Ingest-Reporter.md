@@ -278,14 +278,14 @@ the path is replaced, never written through.
 payload sends. Treat the file like test logs: do not upload it as an artifact
 from a public workflow unless failure output is safe to publish.
 
-| Ingest row                           | `canary.run/1`                                  |
-| ------------------------------------ | ----------------------------------------------- |
-| `status: failed` + `interrupted` tag | `status: interrupted`                           |
-| `status: timed_out`                  | `status: timed_out`                             |
-| no `duration_ms` (never started)     | `duration_ms: 0`                                |
-| run `flaky`                          | run `passed`, `totals.flaky > 0`                |
-| run `timedout` / `interrupted`       | run `cancelled`                                 |
-| `collected` omitted / `[]` / list    | `collected: null` / `[]` / `{title, file}` list |
+| Ingest row                                          | `canary.run/1`                                  |
+| --------------------------------------------------- | ----------------------------------------------- |
+| `status: failed` + an error prefixed `interrupted:` | `status: interrupted`                           |
+| `status: timed_out`                                 | `status: timed_out`                             |
+| no `duration_ms` (never started)                    | `duration_ms: 0`                                |
+| run `flaky`                                         | run `passed`, `totals.flaky > 0`                |
+| run `timedout` / `interrupted`                      | run `cancelled`                                 |
+| `collected` omitted / `[]` / list                   | `collected: null` / `[]` / `{title, file}` list |
 
 Validate a file with
 `node agents/skills/lib/contracts/validate.mjs --layer run run.json`.

@@ -71,31 +71,37 @@ declared" (`suites: null`); an empty list declares zero suites.
 
 ## What goes into the feed
 
-- **Runs**: history rows and RECORD run files, the newest 30 per
-  `(scope, suite)`. Per-test `results` ride only on each suite's newest run.
+- **Runs**: history rows and RECORD run files, the newest 30 LOGICAL runs per
+  `(scope, suite)`: the shard files of one run (`<id>-s1of2`, `<id>-s2of2`) are
+  one run, timed by its last shard. Per-test `results` ride only on every shard
+  of each suite's newest run. Pass one source per suite (the history store OR
+  the reporter's run files): the same run from both is counted twice.
 - **Flaky tests**: each test counted once, with `flaky_runs` over the
-  `window_runs` that carried per-test results.
+  `window_runs` (logical runs) that carried per-test results.
 - **Assessments**: the five ci-ready metrics (`coverage-depth`, `flakiness`,
   `assertion-quality`, `critical-paths`, `suite-runtime`), plus any RECORD
   assessment files, keeping only the latest `observed_at` per
-  `scope.id + scope.env + source + metric`.
+  `scope.id + scope.env + source + metric`. Starling's own `not-assessed` rows
+  only fill a key no real record holds.
 - **Register**: katana ledger rows, with no author.
 
 ## Honest degradation
 
-- **Left-out history rows**: a row with no ISO timestamp, no `duration_ms`, or a
-  test outside passed/failed/flaky/skipped (or with an absolute path) is left
-  out and named on stderr, never given an invented value.
+- **Left-out history rows**: a row with no parseable ISO timestamp, no
+  `duration_ms`, a malformed count, neither `tests` nor any count, or a test
+  outside passed/failed/flaky/skipped (or with an absolute path) is left out and
+  named on stderr, never given an invented value.
 - **Dark ledger**: the default ledger path missing is named on stderr; ledger
   rows with no date, commit or reason are left out and named.
-- **Not-assessed metrics**: with no `--ci-ready`, or a check that skipped or
-  measured nothing, each metric is a `not-assessed` assessment whose `reason`
-  names the missing input.
+- **Not-assessed metrics**: with no `--ci-ready`, a report with no `observed_at`
+  (treated as absent, and named on stderr), or a check that skipped or measured
+  nothing, each metric is a `not-assessed` assessment whose `reason` names the
+  missing input.
 - **Zero runs**: `ABSTAINED` on stdout; the feed is still written, and exits 3
   under `--strict`.
 - **Invalid input**: a RECORD file that is not a valid run or assessment record,
   or a composed feed that fails validation, is printed error by error and
-  nothing is written.
+  nothing is written. An unwritable `--out` is named and exits 1.
 
 ## Exit codes
 
