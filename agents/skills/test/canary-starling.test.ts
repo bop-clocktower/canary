@@ -4,6 +4,7 @@ import {
   RUNS_PER_SUITE,
   selectRuns,
 } from '../claude-code/canary-starling/scripts/runs.mjs';
+import { flakyTests } from '../claude-code/canary-starling/scripts/flaky.mjs';
 import { validateDocument } from '../lib/contracts/validate.mjs';
 
 const SCOPE = { id: 'canary', env: 'ci' };
@@ -115,5 +116,43 @@ describe('selectRuns (D15)', () => {
     expect(window.every((r: any) => r.results !== null)).toBe(true);
     for (const r of feed)
       expect(validateDocument(r, { layer: 'run' }).errors).toEqual([]);
+  });
+});
+
+describe('flakyTests (D13)', () => {
+  it('counts a test once, with flaky runs over runs that carry results', () => {
+    const mk = (i: number, status: string) =>
+      historyToRun(
+        historyRow({
+          run_id: `r${i}`,
+          timestamp: new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString(),
+          passed: status === 'passed' ? 1 : 0,
+          flaky: status === 'flaky' ? 1 : 0,
+          failed: 0,
+          total: 1,
+          tests: [{ test_name: 'a', test_file: 'test/a.test.ts', status }],
+        }),
+        SCOPE,
+      ).run;
+    const counted = historyToRun(
+      historyRow({ run_id: 'c', tests: undefined }),
+      SCOPE,
+    ).run;
+    const rows = flakyTests([
+      mk(1, 'flaky'),
+      mk(2, 'passed'),
+      mk(3, 'flaky'),
+      counted,
+    ]);
+    expect(rows).toEqual([
+      {
+        scope: SCOPE,
+        suite: 'ts-engine',
+        title: 'a',
+        file: 'test/a.test.ts',
+        flaky_runs: 2,
+        window_runs: 3,
+      },
+    ]);
   });
 });
