@@ -1021,4 +1021,30 @@ it('renders', () => {
       'VAC-001',
     );
   });
+
+  it('counts every test in a file with a generic helper (review repro)', () => {
+    const code = `import { it, expect } from 'vitest';
+import { Banner } from './Banner';
+const renderWith = <P extends object>(ui: unknown, _p?: P) => render(ui);
+it('shows the warning', () => {
+  renderWith(<Banner>Don't panic</Banner>);
+  expect(screen.getByRole('alert')).toBeVisible();
+});
+it('has a label', () => {
+  renderWith(<Banner>ok</Banner>);
+  expect(screen.getByText('ok')).toBeVisible();
+});
+`;
+    expect(scan('Banner.test.tsx', code).checked).toBe(2);
+  });
+
+  it('counts every test when an assertion uses a regex with a quote', () => {
+    const code = `import { it, expect } from 'vitest';
+import { List } from './List';
+it('a', () => { render(<List />); expect(screen.getByText(/you don't have any/i)).toBeVisible(); });
+it('b', () => { render(<List />); expect(screen.getByText('x')).toBeVisible(); });
+it('c', () => { render(<List />); expect(screen.getByText('y')).toBeVisible(); });
+`;
+    expect(scan('List.test.tsx', code).checked).toBe(3);
+  });
 });

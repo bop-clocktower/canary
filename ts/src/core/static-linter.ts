@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { basename, extname } from 'node:path';
 
-import { isJsxPath, maskJsxTextQuotes } from './jsx-text.js';
+import { isJsxPath, maskJsxText } from './jsx-text.js';
 import { blankStringContent } from './string-literals.js';
 
 export interface LintFinding {
@@ -849,7 +849,7 @@ export class StaticLinter {
     // Both blankers preserve line numbering, so findings agree on line numbers.
     const jsx = isJsxPath(path);
     const lines = blankMultilineStrings(
-      (jsx ? maskJsxTextQuotes(code) : code).split('\n'),
+      (jsx ? maskJsxText(code) : code).split('\n'),
     );
     const fw = requireFramework(path, framework);
     const scanned = blankStringContent(code, { python: fw === 'pytest', jsx });
@@ -870,8 +870,10 @@ export class StaticLinter {
   /** Flakiness-only subset. */
   flakeCheck(path: string): LintFinding[] {
     const code = readFileSync(path, 'utf-8');
+    // Same JSX masking as lint(), so the two never disagree on a .tsx file.
+    const source = isJsxPath(path) ? maskJsxText(code) : code;
     const findings = scanFlakiness(
-      blankMultilineStrings(code.split('\n')),
+      blankMultilineStrings(source.split('\n')),
       path,
     );
     findings.sort((a, b) => a.line - b.line);

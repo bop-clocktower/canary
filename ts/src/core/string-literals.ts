@@ -53,7 +53,7 @@
  *   `.tsx`/`.jsx`): see `jsx-text.ts` (#1180).
  */
 
-import { isJsxPath, maskJsxTextQuotes } from './jsx-text.js';
+import { isJsxPath, maskJsxText, regexLiteralEnd } from './jsx-text.js';
 
 export interface BlankOptions {
   /** Recognise `#` line comments and `'''`/`\"\"\"` triple-quoted blocks. */
@@ -83,17 +83,18 @@ export function blankStringContent(
   code: string,
   options: BlankOptions = {},
 ): string {
-  // Spans are found on the masked text and applied to the original; masking
-  // only replaces characters with spaces, so every offset lines up.
+  // For JSX the masked text is the starting point: its children text is
+  // already blanked, and masking only replaces characters with spaces, so
+  // every offset and newline still lines up with the original.
   const jsx =
     options.jsx ?? (options.path !== undefined && isJsxPath(options.path));
-  const read = jsx ? maskJsxTextQuotes(code) : code;
+  const read = jsx ? maskJsxText(code) : code;
   const spans = literalContentSpans(read, options.python === true);
-  if (spans.length === 0) return code;
+  if (spans.length === 0) return read;
 
   // `split('')`, not `[...code]`: spans are UTF-16 offsets, and spreading by
   // code point would collapse each surrogate pair and shift every offset (#861).
-  const out = code.split('');
+  const out = read.split('');
   for (const [start, end] of spans) {
     for (let i = start; i < end; i += 1) {
       // Newlines survive so line numbering is unchanged; everything else goes.
@@ -128,6 +129,14 @@ function literalContentSpans(code: string, python: boolean): Span[] {
     const commentEnd = skipComment(code, i, python);
     if (commentEnd !== null) {
       i = commentEnd;
+      continue;
+    }
+
+    // A regex literal is data; a quote inside one (`/don't/`) must not open
+    // a phantom string. Common in RTL suites: getByText(/you don't/i).
+    const regexEnd = python ? null : regexLiteralEnd(code, i);
+    if (regexEnd !== null) {
+      i = regexEnd - 1;
       continue;
     }
 

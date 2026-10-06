@@ -762,4 +762,53 @@ it('shows the label', () => {
     const empty = `it('renders', () => {\n  render(<p>It's here</p>);\n});\n`;
     expect(rules(lint('Empty.test.tsx', empty))).toContain('LINT-006');
   });
+
+  // Review repros on the first cut (#1180): each made the masker give up on
+  // the whole file, or let JSX prose reach the rules.
+  const GENERIC_HELPER = `const renderWith = <P extends object>(ui: unknown, _p?: P) => render(ui);
+it('shows the warning', () => {
+  renderWith(<Banner>Don't panic</Banner>);
+  expect(screen.getByRole('alert')).toBeVisible();
+});
+it('has a label', () => {
+  expect(screen.getByText('x')).toBeVisible();
+});
+`;
+
+  it('sees assertions in a file with a generic helper', () => {
+    expect(rules(lint('Fab.test.tsx', GENERIC_HELPER))).not.toContain(
+      'LINT-006',
+    );
+  });
+
+  it('sees assertions after a comment that precedes JSX', () => {
+    const code = `it('empty', () => {\n  render(\n    // no messages yet\n    <Inbox>You're all caught up</Inbox>,\n  );\n  expect(screen.getByRole('list')).toBeEmptyDOMElement();\n});\n`;
+    expect(rules(lint('Inbox.test.tsx', code))).not.toContain('LINT-006');
+  });
+
+  it('does not read JSX prose as an assertion or a timing value', () => {
+    const code = `it('renders', () => {\n  render(<Notice>Your session timeout is 45 minutes, so save as you should.</Notice>);\n});\n`;
+    const found = rules(lint('Notice.test.tsx', code));
+    expect(found).toContain('LINT-006');
+    expect(found).not.toContain('LINT-005');
+  });
+
+  it('flakeCheck masks JSX text the same way lint does', () => {
+    // Two lone backticks in JSX text make the line-based multiline blanker
+    // read the lines between them as a template literal, so without masking
+    // flakeCheck blanks the setTimeout line that lint sees.
+    const code =
+      "it('a', (done) => {\n  render(<p>Press <kbd>`</kbd> to open</p>);\n  setTimeout(done, 50);\n  render(<p>Press <kbd>`</kbd> to close</p>);\n  expect(1).toBe(1);\n});\n";
+    project = makeProject({ 'Flake.test.tsx': code });
+    const path = `${project.root}/Flake.test.tsx`;
+    const flake = new StaticLinter()
+      .flakeCheck(path)
+      .map((f) => `${f.rule}@${f.line}`);
+    const viaLint = new StaticLinter()
+      .lint(path)
+      .filter((f) => f.rule.startsWith('FLAKE-'))
+      .map((f) => `${f.rule}@${f.line}`);
+    expect(viaLint).toEqual(['FLAKE-002@3']);
+    expect(flake).toEqual(viaLint);
+  });
 });
