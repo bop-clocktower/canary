@@ -69,6 +69,9 @@ export function historyToRun(row, scope) {
   });
   if (typeof row.timestamp !== 'string' || !TIMESTAMP.test(row.timestamp))
     return why('no ISO timestamp');
+  // ISO-shaped is not a date: month 13 or hour 25 would throw at toISOString.
+  if (!Number.isFinite(Date.parse(row.timestamp)))
+    return why('unparseable timestamp');
   if (!(typeof row.duration_ms === 'number' && row.duration_ms > 0))
     return why('no duration_ms, so no start time');
   const res = results(row);

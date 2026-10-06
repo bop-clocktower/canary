@@ -86,6 +86,15 @@ describe('historyToRun (assumption C)', () => {
     expect(out.skipped).toMatch(/r1/);
   });
 
+  it.each(['2026-13-40T00:00:00Z', '2026-10-06T25:00:00Z'])(
+    'leaves out a row whose ISO-shaped timestamp %s is no instant',
+    (timestamp) => {
+      const out = historyToRun(historyRow({ timestamp }), SCOPE);
+      expect(out.run).toBeNull();
+      expect(out.skipped).toMatch(/r1: unparseable timestamp/);
+    },
+  );
+
   it('carries results null, totals from the counts, for a count-only row', () => {
     const run = runOf(historyRow({ tests: undefined }));
     expect(run.results).toBeNull();
@@ -635,6 +644,21 @@ describe('canary-starling (end to end)', () => {
     } finally {
       process.chdir(cwd);
     }
+  });
+
+  it('still writes the feed past an unparseable history timestamp, naming the run', () => {
+    const dir = fixture({
+      'history-v2.jsonl': [
+        historyRow({ run_id: 'r-bad', timestamp: '2026-13-40T00:00:00Z' }),
+        historyRow({ run_id: 'r-ok' }),
+      ],
+      'ledger.json': { entries: [] },
+    });
+    const res = capture(() => starlingMain(argv(dir)));
+    expect(res.code).toBe(0);
+    expect(res.stderr).toMatch(/history run r-bad: unparseable timestamp/);
+    const site = JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8'));
+    expect(site.runs.map((r: any) => r.run.id)).toEqual(['r-ok']);
   });
 
   it('says abstained and, under --strict, exits 3 when the feed has zero runs', () => {
