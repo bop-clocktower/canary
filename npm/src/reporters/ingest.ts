@@ -1,4 +1,5 @@
 import type {
+  FullConfig,
   FullResult,
   Reporter,
   TestCase,
@@ -165,11 +166,24 @@ export function shouldPush(
   return isCI || force;
 }
 
-function stableRunId(env: NodeJS.ProcessEnv): string {
+/** Playwright's `config.shard`: set while a shard runs, `null` under `merge-reports`. */
+export type Shard = { current: number; total: number } | null | undefined;
+
+/**
+ * Ingest is idempotent on `(canary_run_id, suite)`, and every shard of one
+ * workflow run shares `GITHUB_RUN_ID`/`GITHUB_RUN_ATTEMPT`. Without the shard
+ * suffix the first shard to push wins and every later shard is answered
+ * `duplicate: true` with its results discarded (#1148). The `-s2of4` form
+ * matches `canary.run/1`'s shard-aware `run.id`.
+ */
+function stableRunId(env: NodeJS.ProcessEnv, shard: Shard): string {
   const runId = env.GITHUB_RUN_ID;
-  if (runId) return env.GITHUB_RUN_ATTEMPT ? `${runId}-${env.GITHUB_RUN_ATTEMPT}` : runId;
-  const sha = env.GITHUB_SHA?.slice(0, 7);
-  return (sha ? `${sha}-` : "local-") + crypto.randomUUID();
+  if (!runId) {
+    const sha = env.GITHUB_SHA?.slice(0, 7);
+    return (sha ? `${sha}-` : "local-") + crypto.randomUUID();
+  }
+  const base = env.GITHUB_RUN_ATTEMPT ? `${runId}-${env.GITHUB_RUN_ATTEMPT}` : runId;
+  return shard && shard.total > 1 ? `${base}-s${shard.current}of${shard.total}` : base;
 }
 
 /**
@@ -252,6 +266,7 @@ export function buildPayload(
   timing: { startedAt: string; finishedAt: string },
   env: NodeJS.ProcessEnv = process.env,
   fullResultStatus?: string,
+  run: { shard?: Shard } = {},
 ): IngestPayload {
   // Deduped before the totals are counted, so `totals` always describes the
   // rows actually sent — a payload whose totals disagree with `results.length`
@@ -263,7 +278,7 @@ export function buildPayload(
   const flaky = count("flaky");
   const skipped = count("skipped");
   return {
-    canary_run_id: stableRunId(env),
+    canary_run_id: stableRunId(env, run.shard),
     suite: cfg.suite,
     branch: env.GITHUB_REF_NAME ?? "local",
     commit_sha: env.GITHUB_SHA,
@@ -275,6 +290,43 @@ export function buildPayload(
     totals: { passed, failed, flaky, skipped, total: results.length },
     results,
   };
+}
+
+/** The subset of the ingest API's `POST /runs` response the reporter reads. */
+export interface IngestResponse {
+  id?: number;
+  duplicate?: boolean;
+  result_count?: number;
+}
+
+/**
+ * What to tell the CI log about an ingest response. A `duplicate` answer is
+ * only a harmless re-push when the stored run holds as many rows as this push
+ * sent; otherwise this push's results were discarded, and that must not read
+ * as a success line (#1148).
+ */
+export function ingestOutcome(
+  data: IngestResponse,
+  sent: { results: number },
+): { level: "info" | "warn"; message: string } {
+  const id = data.id ?? "?";
+  if (!data.duplicate) return { level: "info", message: `run ${id} ingested.` };
+  if (data.result_count !== undefined && data.result_count !== sent.results) {
+    return {
+      level: "warn",
+      message:
+        `run ${id} was a duplicate: the stored run has ${data.result_count} results, this push sent ${sent.results}, ` +
+        "and this push's results were discarded. Two jobs pushed the same suite under one run id; " +
+        "push once per suite (merge-reports for sharded suites).",
+    };
+  }
+  return { level: "info", message: `run ${id} already ingested (duplicate re-push).` };
+}
+
+/** A warning that must not scroll past: also raised as a GitHub Actions annotation. */
+function warn(message: string, env: NodeJS.ProcessEnv = process.env): void {
+  if (env.GITHUB_ACTIONS === "true") console.log(`::warning title=canary ingest::${message}`);
+  log(`WARNING — ${message}`);
 }
 
 function log(message: string): void {
@@ -289,10 +341,12 @@ export default class IngestReporter implements Reporter {
   private results = new Map<string, ResultEntry>();
   private startTime = Date.now();
   private cfg: ResolvedConfig | null = null;
+  private shard: Shard = null;
 
   constructor(private options: IngestReporterOptions = {}) {}
 
-  onBegin() {
+  onBegin(config?: FullConfig) {
+    this.shard = config?.shard ?? null;
     // Resolve config once; a config error here is logged, not thrown, so a
     // misconfigured reporter never aborts the whole run.
     try {
@@ -350,6 +404,7 @@ export default class IngestReporter implements Reporter {
         },
         process.env,
         result?.status,
+        { shard: this.shard },
       );
       const resp = await fetch(`${this.cfg.url}/api/ingest/runs`, {
         method: "POST",
@@ -360,11 +415,10 @@ export default class IngestReporter implements Reporter {
         body: JSON.stringify(payload),
       });
       if (resp.ok) {
-        const data = (await resp.json().catch(() => ({}))) as {
-          id?: number;
-          duplicate?: boolean;
-        };
-        log(`run ${data.id ?? "?"} ingested${data.duplicate ? " (duplicate)" : ""}.`);
+        const data = (await resp.json().catch(() => ({}))) as IngestResponse;
+        const outcome = ingestOutcome(data, { results: payload.results.length });
+        if (outcome.level === "warn") warn(outcome.message);
+        else log(outcome.message);
       } else {
         const text = await resp.text().catch(() => "");
         log(`push failed ${resp.status} — ${text.slice(0, 200)}`);

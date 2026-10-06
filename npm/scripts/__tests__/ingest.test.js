@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { mapStatus, resolveTestStatus, runStatus, resolveConfig, buildPayload, shouldPush, dedupeByFullTitle } = require("../../dist/reporters/ingest.js");
+const { mapStatus, resolveTestStatus, runStatus, resolveConfig, buildPayload, shouldPush, dedupeByFullTitle, ingestOutcome } = require("../../dist/reporters/ingest.js");
 
 test("mapStatus collapses PW statuses", () => {
   assert.equal(mapStatus("passed"), "passed");
@@ -235,4 +235,48 @@ test("shouldPush honours CANARY_INGEST_PUSH and the legacy TESTTRACKER_PUSH", ()
   const base = { url: "u", token: "t" };
   assert.equal(shouldPush(base, { CANARY_INGEST_PUSH: "true" }), true);
   assert.equal(shouldPush(base, { TESTTRACKER_PUSH: "true" }), true);
+});
+
+// --- #1148: sharded pushes must not collide on canary_run_id ------------------
+// Ingest is idempotent on (canary_run_id, suite). Every shard of one workflow
+// run shares GITHUB_RUN_ID/ATTEMPT, so without a shard discriminator the first
+// shard wins and every later shard's results are discarded as a "duplicate".
+
+const CI_ENV = { GITHUB_RUN_ID: "42", GITHUB_RUN_ATTEMPT: "1" };
+const T = { startedAt: "2026-10-05T00:00:00Z", finishedAt: "2026-10-05T00:01:00Z" };
+
+test("two shards of one workflow run get distinct canary_run_id values", () => {
+  const cfg = resolveConfig({ suite: "web" }, {});
+  const s1 = buildPayload([], cfg, T, CI_ENV, "passed", { shard: { current: 1, total: 4 } });
+  const s2 = buildPayload([], cfg, T, CI_ENV, "passed", { shard: { current: 2, total: 4 } });
+  assert.equal(s1.canary_run_id, "42-1-s1of4");
+  assert.equal(s2.canary_run_id, "42-1-s2of4");
+});
+
+test("an unsharded run (or a merge-reports push) keeps the plain run id", () => {
+  const cfg = resolveConfig({ suite: "web" }, {});
+  assert.equal(buildPayload([], cfg, T, CI_ENV, "passed", { shard: null }).canary_run_id, "42-1");
+  assert.equal(buildPayload([], cfg, T, CI_ENV, "passed", { shard: { current: 1, total: 1 } }).canary_run_id, "42-1");
+  assert.equal(buildPayload([], cfg, T, { GITHUB_RUN_ID: "42" }, "passed", { shard: { current: 3, total: 4 } }).canary_run_id, "42-s3of4");
+});
+
+test("a duplicate response whose row count differs from what was sent is a warning, not a success", () => {
+  const out = ingestOutcome({ id: 7, duplicate: true, result_count: 120 }, { results: 95 });
+  assert.equal(out.level, "warn");
+  assert.match(out.message, /duplicate/);
+  assert.match(out.message, /95/);
+  assert.match(out.message, /120/);
+  assert.match(out.message, /discarded/);
+});
+
+test("a duplicate response matching what was sent is a plain re-push", () => {
+  const out = ingestOutcome({ id: 7, duplicate: true, result_count: 95 }, { results: 95 });
+  assert.equal(out.level, "info");
+  assert.match(out.message, /run 7 already ingested/);
+});
+
+test("a fresh ingest is reported as info", () => {
+  const out = ingestOutcome({ id: 8, duplicate: false, result_count: 95 }, { results: 95 });
+  assert.equal(out.level, "info");
+  assert.match(out.message, /run 8 ingested/);
 });

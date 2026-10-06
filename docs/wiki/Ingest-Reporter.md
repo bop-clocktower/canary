@@ -9,7 +9,7 @@ keep.
 > (`canary-test-cli/reporter`) is unchanged. The old `TESTTRACKER_*` env vars
 > still work for one release and print a one-line deprecation notice; rename
 > them to the `CANARY_INGEST_*` names below.
-
+>
 > **Interim.** This reporter is the precursor to the spec-pure `canary publish`
 > command (see [Convergence](#convergence)). Adopt it now; expect to migrate to
 > `canary publish` once `canary report` (unified-reporting Phase 2a) ships.
@@ -91,18 +91,26 @@ arbiter index `(tenant_id, canary_run_id, suite)`). `canary_run_id` is
 run dedupe and a manual re-run creates a distinct run. Outside CI it falls back
 to a `<sha>-<uuid>` / `local-<uuid>` id.
 
+When Playwright runs a shard (`--shard=2/4`), the shard is appended:
+`42-1-s2of4`. Before this, every shard of one workflow run sent the same
+`canary_run_id`, so the first shard to push won and every later shard was
+answered `duplicate: true` with its results silently discarded (#1148).
+
 `canary_run_id` intentionally does **not** include the suite — the suite is
 already part of the dedup key, so different suites in the same workflow run
 (`consumer-b-api` + `consumer-b-web`, both `run_id=42`) are distinct records.
-The corollary: do not push the **same** suite from multiple matrix legs of one
-workflow run, or they collide on the composite key — push once per suite (for
-sharded suites, at the `merge-reports` step below).
+The corollary: do not push the **same** suite from several matrix legs that are
+not Playwright shards (for example one leg per browser with `--project`), or
+they collide on the composite key.
+
+A `duplicate: true` response is logged as a plain re-push only when the stored
+run holds as many results as this push sent. If the counts differ, the reporter
+prints a warning (and a GitHub Actions `::warning` annotation) saying this
+push's results were discarded.
 
 ## Sharded suites (merge-reports)
 
-For sharded runs (e.g. the web-e2e nightly browser×shard matrix), do **not** run
-the reporter per shard — that would push partial results. Instead push once from
-the `merge-reports` step over the merged blobs:
+Push once from the `merge-reports` step over the merged blobs:
 
 ```bash
 npx playwright merge-reports --reporter "canary-test-cli/reporter" ./blob-report
@@ -110,6 +118,10 @@ npx playwright merge-reports --reporter "canary-test-cli/reporter" ./blob-report
 
 with `CANARY_INGEST_URL`, `CANARY_INGEST_TOKEN`, and `CANARY_INGEST_SUITE` set
 in that step's environment. This yields exactly one run per suite per CI run.
+
+Pushing from each shard also works now (each shard lands as its own run,
+`…-s1of4`, `…-s2of4`), but the dashboard then shows a sharded suite as several
+partial runs. `merge-reports` remains the recommended setup.
 
 ## Convergence
 
