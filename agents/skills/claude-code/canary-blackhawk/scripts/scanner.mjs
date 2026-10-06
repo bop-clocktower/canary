@@ -11,6 +11,8 @@ import {
   stringLiteralRanges,
   execOutsideStrings,
   inStringLiteral,
+  maskJsxForFile,
+  trimmedRanges,
 } from './string-literals.mjs';
 
 export const SNIPPET_LIMIT = 120;
@@ -100,7 +102,7 @@ export function toJson(f) {
 // the code) - the two idioms teams reach for.
 const PRAGMA = /\bblackhawk-ignore\s+([A-Za-z0-9,\s-]*?)\s*--\s*(\S.*)$/;
 
-function parsePragmas(lines) {
+function parsePragmas(lines, masks) {
   const map = new Map();
   const add = (ln, tokens) => {
     if (!map.has(ln)) map.set(ln, new Set());
@@ -113,7 +115,11 @@ function parsePragmas(lines) {
     // suppressed count. This suite necessarily carries pragma text inside
     // fixture strings, so the self-scan was the thing at risk. Savant shipped
     // this guard in #498; blackhawk never got it ported back.
-    const m = execOutsideStrings(PRAGMA, raw, stringLiteralRanges(raw));
+    const m = execOutsideStrings(
+      PRAGMA,
+      raw,
+      stringLiteralRanges(raw, masks[i]),
+    );
     if (!m || !m[2].trim()) return; // reason required
     const tokens = m[1].split(/[,\s]+/).filter(Boolean);
     if (!tokens.length) return; // rule-scoped: must name a rule
@@ -157,18 +163,23 @@ function phpCodeEnd(line, ranges) {
  */
 export function scanTextFull(text, file = '<text>') {
   const lines = splitLines(text);
+  // #1188: .tsx/.jsx lines are read through a twin with JSX text blanked.
+  const masks = splitLines(maskJsxForFile(text, file));
   const frozen = frozenClockMarkers(text).length > 0;
-  const pragmas = parsePragmas(lines);
+  const pragmas = parsePragmas(lines, masks);
   const php = isPhp(file);
   const findings = [];
   const suppressed = [];
   lines.forEach((raw, i) => {
     const stripped = raw.trim();
-    if (!stripped || isComment(stripped)) return;
+    // #1193: comment-ness comes from the masked line -- JSX text opening
+    // with `*`, `#` or `//` is rendered text, and a fully masked line is none.
+    const view = masks[i].trim();
+    if (!view || isComment(view)) return;
     // #493: a match starting inside a string literal is fixture data, not
     // code. Computed once per line; every rule's anchor token is code, even
     // when the pattern's tail reaches into quotes (BH003's strftime('..%Z')).
-    const ranges = stringLiteralRanges(stripped);
+    const ranges = trimmedRanges(raw, masks[i]);
     // A PHP file is matched against the PHP variants only, with any trailing
     // comment cut off; every other file against the base patterns (#1107).
     const code = php

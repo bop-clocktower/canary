@@ -78,6 +78,31 @@ under the project's former name) are documented in the
   `expect(...)`. Quote characters in JSX children text are now masked before the
   string blankers run (`core/jsx-text.ts`), only for `.tsx`/`.jsx`; `.ts` and
   `.js` are unchanged.
+- **`canary-blackhawk` and `canary-savant`: an apostrophe in JSX text no longer
+  hides or invents findings** (#1188). Both skills scan `.tsx`/`.jsx`, but their
+  per-line string helper read `<p>It's</p>` as an open quote for the rest of the
+  line. A real finding after it was dropped (`render(<p>It's {Date.now()}</p>)`
+  lost `BH001`), and a quoted fixture after it was read as code
+  (`render(<p>It's</p>, label('Date.now()'))` gained a false `BH001`). The
+  skills now mask JSX children text the way the engine does, through a
+  self-contained port in `agents/skills/lib/jsx-text.mjs`, and read each line
+  against the masked source. Savant's teardown pairing (`SV002`) and restore
+  detection (`SV003`) read the masked source too. Only `.tsx`/`.jsx` change;
+  every other file reads exactly as before. In JSX children, a
+  `// blackhawk-ignore` or `// savant-ignore` line is rendered text, so it no
+  longer applies; use `{/* blackhawk-ignore ... */}` there.
+- **JSX masking: a closing tag closes only its own element** (#1193). A
+  type-level generic misread as an element (`render: <T>(x: T) => string`) was
+  "closed" by any later `</b>`, even one inside a string, and every line between
+  was blanked, so assertions and findings there were lost. That applied to the
+  engine (`core/jsx-text.ts`) and the skills' copy alike. Recovery now also
+  marks every unclosed `<` of a failed pass at once, so a file with more than 64
+  such generics is still masked instead of read raw. That recovery spares a real
+  element whose own closing tag was seen, so a generic in its attribute
+  (`value={{ fmt: (cb: <T>(x: T) => void) => cb }}`) no longer unmasks its
+  children. Tag names compare with whitespace and comments dropped, so
+  `<Foo .Bar>…</Foo.Bar>` balances. A conformance suite holds the two maskers to
+  the same output.
 
 - **Ingest reporter: sharded pushes no longer discard each other** (#1148).
   Every shard of one workflow run sent the same `canary_run_id`, so the first

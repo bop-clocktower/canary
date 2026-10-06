@@ -1,43 +1,26 @@
-/**
- * JSX text is prose, not code (#1180).
- *
- * The string blankers and the rule regexes read raw source, so JSX children
- * text broke them two ways: an apostrophe (`<p>It's</p>`) opened a phantom
- * string that swallowed the next line's `expect(...)`, and plain English
- * ("...as you should.") matched assertion and timing rules. `maskJsxText`
- * blanks every non-newline character of JSX children text, preserving length
- * and line breaks, so the blankers run on `.tsx`/`.jsx` exactly as they do on
- * `.ts`/`.js`.
- *
- * Most cases below are the review findings on #1180's first cut, where a
- * construct the masker misread made it fall back to the unmasked source for
- * the WHOLE file -- silently restoring the bug for that file.
- */
-import { describe, expect, it } from 'vitest';
+// Unit suite for the skills' JSX children-text masker (#1188).
+//
+// agents/skills/lib/jsx-text.mjs is a self-contained port of the engine's
+// ts/src/core/jsx-text.ts + js-literals.ts (#1180): skills cannot import the
+// engine at runtime, so the cases below mirror ts/test/jsx-text.test.ts. One
+// deliberate difference: a `\r` is kept, not blanked, so a CRLF file splits
+// into the same lines before and after masking.
 
-import { maskJsxText } from '../src/core/jsx-text.js';
-import { blankStringContent } from '../src/core/string-literals.js';
+import { describe, it, expect } from 'vitest';
+
+import { isJsxPath, maskJsxText } from '../lib/jsx-text.mjs';
 
 function expectShapePreserved(code: string, out: string): void {
   expect(out).toHaveLength(code.length);
-  expect(out.split('\n').map((l) => l.length)).toEqual(
-    code.split('\n').map((l) => l.length),
+  expect(out.split(/\r\n|\r|\n/).map((l) => l.length)).toEqual(
+    code.split(/\r\n|\r|\n/).map((l) => l.length),
   );
 }
 
 /** `text` with every non-newline character replaced by a space. */
 function blank(text: string): string {
-  return text.replace(/[^\n]/g, ' ');
+  return text.replace(/[^\r\n]/g, ' ');
 }
-
-const RTL = `import { render, screen } from '@testing-library/react';
-import { Button } from './Button';
-
-it("shows the label", () => {
-  render(<Button label="Don't stop" onClick={() => {}}><p>It's {count} items</p></Button>);
-  expect(screen.getByText("It's 3 items")).toBeInTheDocument();
-});
-`;
 
 /** Asserts `text` (which must occur once in `code`) comes out blanked. */
 function expectMaskedText(code: string, text: string): void {
@@ -48,6 +31,25 @@ function expectMaskedText(code: string, text: string): void {
   expect(out.slice(at, at + text.length)).toBe(blank(text));
 }
 
+const RTL = `import { render, screen } from '@testing-library/react';
+
+it("shows the label", () => {
+  render(<Button label="Don't stop" onClick={() => {}}><p>It's {count} items</p></Button>);
+  expect(screen.getByText("It's 3 items")).toBeInTheDocument();
+});
+`;
+
+describe('isJsxPath', () => {
+  it('is true for .tsx/.jsx only', () => {
+    expect(isJsxPath('a/B.test.tsx')).toBe(true);
+    expect(isJsxPath('a/B.test.JSX')).toBe(true);
+    const others = ['a.ts', 'a.js', 'a.mjs', 'a.py', 'tsx', '<text>'];
+    for (const p of others) {
+      expect(isJsxPath(p)).toBe(false);
+    }
+  });
+});
+
 describe('maskJsxText', () => {
   it('blanks JSX children text, keeping tags, attributes and containers', () => {
     const out = maskJsxText(RTL);
@@ -57,10 +59,12 @@ describe('maskJsxText', () => {
     expect(out).toContain('expect(screen.getByText("It\'s 3 items"))');
   });
 
-  it('blanks prose that would otherwise read as an assertion or a timing value', () => {
-    expectMaskedText(
-      `it('a', () => {\n  render(<Notice>Your session timeout is 45 minutes, so save as you should.</Notice>);\n});\n`,
-      'Your session timeout is 45 minutes, so save as you should.',
+  it('keeps CRLF line breaks intact', () => {
+    const code = "render(<p>It's\r\nhere</p>);\r\nconst s = 'kept';\r\n";
+    const out = maskJsxText(code);
+    expectShapePreserved(code, out);
+    expect(out).toBe(
+      `render(<p>${blank("It's")}\r\n${blank('here')}</p>);\r\nconst s = 'kept';\r\n`,
     );
   });
 
@@ -95,22 +99,23 @@ describe('maskJsxText', () => {
       `const h = <T = string>(x?: T) => x;`,
       `const k = <A, B>(a: A, b: B) => [a, b];`,
       `const m = <const T,>(x: T) => x;`,
+      `const r = total / count; const q = (x) / 2;`,
       '',
     ].join('\n');
     expect(maskJsxText(code)).toBe(code);
   });
 
-  it('still masks JSX that follows a generic helper (review repro)', () => {
-    const code = `const renderWith = <P extends object>(ui: unknown, _p?: P) => render(ui);\nit('warns', () => {\n  renderWith(<Banner>Don't panic</Banner>);\n  expect(screen.getByRole('alert')).toBeVisible();\n});\n`;
+  it('still masks JSX that follows a generic helper', () => {
+    const code = `const renderWith = <P extends object>(ui: unknown, _p?: P) => render(ui);\nit('warns', () => {\n  renderWith(<Banner>Don't panic</Banner>);\n});\n`;
     expectMaskedText(code, "Don't panic");
   });
 
   it('recovers locally from a type-level generic instead of giving up on the file', () => {
-    const code = `type P = { cb: <T>(x: T) => void };\nit('a', () => {\n  render(<p>It's here</p>);\n  expect(1).toBe(1);\n});\n`;
+    const code = `type P = { cb: <T>(x: T) => void };\nit('a', () => {\n  render(<p>It's here</p>);\n});\n`;
     expectMaskedText(code, "It's here");
   });
 
-  it('sees JSX after a line or block comment', () => {
+  it('sees JSX after a line or block comment, and after return', () => {
     expectMaskedText(
       `render(\n  // no messages yet\n  <Inbox>You're all caught up</Inbox>,\n);\n`,
       "You're all caught up",
@@ -119,6 +124,8 @@ describe('maskJsxText', () => {
       `render(/* empty */ <Inbox>You're done</Inbox>);\n`,
       "You're done",
     );
+    expectMaskedText(`function A() {\n  return <p>It's A</p>;\n}\n`, "It's A");
+    expectMaskedText(`const A = () => <p>It's B</p>;\n`, "It's B");
   });
 
   it('skips comments inside a tag', () => {
@@ -139,25 +146,54 @@ describe('maskJsxText', () => {
     );
   });
 
-  it('skips nested template literals', () => {
+  it('skips nested template literals and their comments', () => {
     expectMaskedText(
       "const t = `${x ? `it's` : ''}`;\nrender(<p>Don't</p>);\n",
       "Don't",
     );
+    expectMaskedText(
+      "const t = `${/* } */ a + {b: 1}.b}`;\nrender(<p>Won't</p>);\n",
+      "Won't",
+    );
+    expectMaskedText("const t = `a\\`b`;\nrender(<p>Shan't</p>);\n", "Shan't");
   });
 
   it('skips a regex literal containing a quote', () => {
     expectMaskedText(
-      `expect(screen.getByText(/you don't have any/i)).toBeVisible();\nrender(<p>It's empty</p>);\n`,
+      `expect(screen.getByText(/you don't [a/b] have/i)).toBeVisible();\nrender(<p>It's empty</p>);\n`,
       "It's empty",
     );
   });
 
+  it('reads an unterminated regex-looking slash as an operator', () => {
+    const code = `const a = (/ 2\n);\nrender(<p>It's x</p>);\n`;
+    expectMaskedText(code, "It's x");
+  });
+
   it('returns the source unchanged when an element never closes', () => {
-    // Recovery treats each unclosed `<` as an operator in turn; with none left
-    // to try, the result is exactly the unmodelled source.
     const code = `const el = <div>it's\nconst s = 'kept';\n`;
     expect(maskJsxText(code)).toBe(code);
+  });
+
+  it('returns the source unchanged when an unterminated comment or string hides the close', () => {
+    for (const code of [
+      `render(<p>{/* never closed </p>);\n`,
+      `render(<p a="never closed>x</p>);\n`,
+      `const s = 'unterminated\nrender(<p>It's</p>);\n`,
+    ]) {
+      const out = maskJsxText(code);
+      expectShapePreserved(code, out);
+    }
+    expect(maskJsxText(`render(<p>{/* open </p>);\n`)).toBe(
+      `render(<p>{/* open </p>);\n`,
+    );
+  });
+
+  it('blanks prose that would otherwise read as an assertion or a timing value', () => {
+    expectMaskedText(
+      `it('a', () => {\n  render(<Notice>Your session timeout is 45 minutes, so save as you should.</Notice>);\n});\n`,
+      'Your session timeout is 45 minutes, so save as you should.',
+    );
   });
 
   // Review repros on #1193: a closing tag closed ANY open element, so a
@@ -209,64 +245,5 @@ describe('maskJsxText', () => {
       `render(<ListItemA>It's </ListItemB> here</ListItemA>);\n`,
       "It's </ListItemB> here",
     );
-  });
-});
-
-describe('blankStringContent with jsx', () => {
-  it('keeps the assertion after a JSX apostrophe visible', () => {
-    const out = blankStringContent(RTL, { jsx: true });
-    expectShapePreserved(RTL, out);
-    expect(out).toMatch(
-      /^\s+expect\(screen\.getByText\("\s+"\)\)\.toBeInTheDocument\(\);$/m,
-    );
-  });
-
-  it('is byte-identical to the plain mode when jsx is not set', () => {
-    expect(blankStringContent(RTL)).toBe(blankStringContent(RTL, {}));
-    expect(blankStringContent(RTL, { jsx: false })).toBe(
-      blankStringContent(RTL),
-    );
-  });
-
-  it('still blanks real strings inside JSX attributes and containers', () => {
-    const code = `render(<A b="it('x')" c={'test(1)'}>t</A>);\n`;
-    const out = blankStringContent(code, { jsx: true });
-    expect(out).not.toMatch(/it\(|test\(/);
-  });
-});
-
-describe('blankStringContent with a path', () => {
-  it('turns jsx on for .tsx/.jsx and leaves it off otherwise', () => {
-    for (const path of ['a/Button.test.tsx', 'a/Button.test.JSX']) {
-      expect(blankStringContent(RTL, { path })).toBe(
-        blankStringContent(RTL, { jsx: true }),
-      );
-    }
-    expect(blankStringContent(RTL, { path: 'a/b.test.ts' })).toBe(
-      blankStringContent(RTL),
-    );
-    expect(blankStringContent(RTL, { path: 'a/b.tsx', jsx: false })).toBe(
-      blankStringContent(RTL),
-    );
-  });
-});
-
-describe('blankStringContent and regex literals', () => {
-  // Pre-existing, but #1180 made it common: RTL writes getByText(/don't/i).
-  it('does not open a phantom string at a quote inside a regex', () => {
-    const code = `expect(screen.getByText(/you don't have any/i)).toBeVisible();\nconst s = 'kept';\nit('second', () => {});\n`;
-    const out = blankStringContent(code);
-    expectShapePreserved(code, out);
-    expect(out).toContain('expect(screen.getByText(/you don');
-    expect(out).toContain(`const s = '${blank('kept')}';`);
-    expect(out).toContain(`it('${blank('second')}', () => {});`);
-  });
-
-  it('reads a slash after a value as division', () => {
-    const code = `const r = total / count; const s = 'a/b'; const t = (x) / 2;\n`;
-    const out = blankStringContent(code);
-    expect(out).toContain('total / count');
-    expect(out).toContain(`'${blank('a/b')}'`);
-    expect(out).toContain('(x) / 2');
   });
 });

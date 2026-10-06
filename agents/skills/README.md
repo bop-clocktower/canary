@@ -391,6 +391,19 @@ Deliberate divergences from argparse, shared by the whole family: flags must be
 spelled in full (no prefix abbreviation), and `--bogus --help` exits 2 rather
 than printing help.
 
+### Other shared modules
+
+- [`lib/is-main.mjs`](lib/is-main.mjs) — the entry-point check every `cli.mjs`
+  uses (`if (isMain(import.meta.url))`). It compares resolved real paths, so a
+  CLI reached through a symlink or a URL-encoded path still runs instead of
+  printing nothing and exiting 0 (#1182).
+- [`lib/jsx-text.mjs`](lib/jsx-text.mjs) and
+  [`lib/js-literals.mjs`](lib/js-literals.mjs) — mask JSX children text in
+  `.tsx`/`.jsx` before canary-blackhawk and canary-savant read a line, so
+  `<p>It's</p>` cannot open a phantom string (#1188). They mirror the engine's
+  `ts/src/core/jsx-text.ts` and `js-literals.ts`;
+  `ts/test/jsx-mask-conformance.test.ts` fails if the two copies diverge.
+
 ## Related
 
 - [Guides](../../docs/guides/index.md) — descriptive component documentation
