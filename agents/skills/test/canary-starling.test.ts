@@ -11,6 +11,10 @@ import {
   CI_READY_METRICS,
   latestPerKey,
 } from '../claude-code/canary-starling/scripts/assess.mjs';
+import {
+  composeFeed,
+  parseConfig,
+} from '../claude-code/canary-starling/scripts/feed.mjs';
 import { validateDocument } from '../lib/contracts/validate.mjs';
 
 const SCOPE = { id: 'canary', env: 'ci' };
@@ -329,5 +333,46 @@ describe('latestPerKey (crit 19)', () => {
       a('2026-10-01T09:00:00Z', 2),
     ]);
     expect(out.map((x: any) => x.value)).toEqual([2]);
+  });
+});
+
+describe('loadConfig and composeFeed', () => {
+  it('reads scope and declared suites; refuses a config without a full scope', () => {
+    expect(parseConfig({ scope: SCOPE, suites: ['ts-engine'] })).toEqual({
+      scope: SCOPE,
+      suites: [{ scope: SCOPE, suite: 'ts-engine' }],
+    });
+    expect(parseConfig({ scope: SCOPE }).suites).toBeNull(); // D12: undeclared ≠ []
+    expect(() => parseConfig({ scope: { id: 'canary' } })).toThrow(
+      /scope\.env/,
+    );
+  });
+
+  it('composes a valid feed whose scopes are every scope it carries', () => {
+    const run = runOf(historyRow());
+    const other = { ...run, scope: { id: 'web', env: 'prod' } };
+    const { doc, errors } = composeFeed({
+      config: parseConfig({ scope: SCOPE, suites: ['ts-engine'] }),
+      runs: [run, other],
+      flaky: [],
+      assessments: [],
+      register: [],
+      now: '2026-10-06T12:00:00.000Z',
+    });
+    expect(errors).toEqual([]);
+    expect(doc.scopes).toEqual([SCOPE, { id: 'web', env: 'prod' }]);
+  });
+
+  it('returns the validator errors for an invalid feed', () => {
+    const bad = { ...runOf(historyRow()), contract: 'canary.run/9' };
+    const { errors } = composeFeed({
+      config: parseConfig({ scope: SCOPE }),
+      runs: [bad],
+      flaky: [],
+      assessments: [],
+      register: [],
+      now: '2026-10-06T12:00:00.000Z',
+    });
+    expect(errors.length).toBeGreaterThan(0);
   });
 });
