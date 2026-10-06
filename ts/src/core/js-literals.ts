@@ -87,22 +87,25 @@ function templateEnd(code: string, i: number): number {
 
 /** The index just past the `}` closing a `${` whose body starts at `i`. */
 function interpolationEnd(code: string, i: number): number {
-  let depth = 0;
+  const braces = { depth: 0 };
   let last = i - 1;
   for (let j = i; j < code.length; j += 1) {
-    const c = code[j]!;
-    if (/\s/.test(c)) continue;
+    if (/\s/.test(code[j]!)) continue;
     const skipped = commentEnd(code, j) ?? literalEnd(code, j, last);
-    if (skipped !== null) {
-      j = skipped - 1;
-    } else if (c === '}' && depth === 0) {
-      return j + 1;
-    } else if (c === '{' || c === '}') {
-      depth += c === '{' ? 1 : -1;
-    }
+    if (skipped !== null) j = skipped - 1;
+    else if (closesInterpolation(code[j]!, braces)) return j + 1;
     last = j;
   }
   return code.length;
+}
+
+/** Track `{`/`}` nesting; true at the `}` that closes the interpolation. */
+function closesInterpolation(c: string, braces: { depth: number }): boolean {
+  if (c === '{') braces.depth += 1;
+  if (c !== '}') return false;
+  if (braces.depth === 0) return true;
+  braces.depth -= 1;
+  return false;
 }
 
 /** A regex literal: to the next unescaped `/` outside a class, on one line. */
