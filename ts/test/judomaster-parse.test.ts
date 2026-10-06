@@ -189,6 +189,22 @@ describe('parseTrace: exception chains', () => {
     expect(t.frames.map((f) => f.line)).toEqual([20, 8]);
   });
 
+  it('takes the last error line of a frameless cause block, not log noise', () => {
+    const text = [
+      'ConnectionError: retrying',
+      "KeyError: 'k'",
+      '',
+      CAUSE,
+      '',
+      ...pyBlock('/srv/app/cart/api.py', 20, 'ValueError: bad qty'),
+    ].join('\n');
+    const t = parseTrace(text)!;
+    expect(t.errorType).toBe('ValueError');
+    expect(t.chain).toEqual([
+      { errorType: 'KeyError', message: "'k'", relation: 'cause', start: 1 },
+    ]);
+  });
+
   it('adds no chain key to an unchained trace', () => {
     expect(parseTrace(V8_TRACE)).not.toHaveProperty('chain');
     expect(parseTrace(PY_TRACE)).not.toHaveProperty('chain');

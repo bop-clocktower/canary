@@ -197,6 +197,25 @@ describe('renderBrief: exception chain', () => {
     expect(lines[at + 1]).toContain('src/cart/total.ts:12');
   });
 
+  it('marks a frameless trailing cause and omits the colon on an empty message', () => {
+    const md = renderBrief({
+      ...BRIEF,
+      chain: [
+        {
+          errorType: 'StopIteration',
+          message: '',
+          relation: 'cause',
+          start: BRIEF.frames.length,
+          suspect: null,
+        },
+      ],
+    });
+    const lines = md.split('\n');
+    expect(lines).toContain('2. caused by StopIteration (root cause)');
+    const last = lines.lastIndexOf('- --- caused by StopIteration ---');
+    expect(last).toBeGreaterThan(lines.indexOf('## Frames (innermost first)'));
+  });
+
   it('leaves an unchained brief unchanged', () => {
     const md = renderBrief(BRIEF);
     expect(md).not.toContain('Exception chain');

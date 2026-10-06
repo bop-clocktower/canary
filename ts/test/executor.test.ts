@@ -87,6 +87,26 @@ describe('CanaryTestExecutor', () => {
     expect(opts.cwd).toBe('/repo');
   });
 
+  it('rewrites only npx flags before the package when fetch is false', () => {
+    mockSpawn({ status: 0 });
+    const custom = new CanaryTestExecutor({
+      findByName: () => ({
+        execution_command: 'npx -y -p pkg runner -y --spec {file}',
+      }),
+    } as never);
+    custom.execute('/t/a.ts', 'custom', 30, { fetch: false });
+    expect(lastArgv()).toEqual([
+      'npx',
+      '--no',
+      '-p',
+      'pkg',
+      'runner',
+      '-y',
+      '--spec',
+      '/t/a.ts',
+    ]);
+  });
+
   it('leaves a non-npx command alone when fetch is false', () => {
     mockSpawn({ status: 0 });
     executor.execute('/t/test_a.py', 'pytest', 30, { fetch: false });

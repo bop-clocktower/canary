@@ -79,14 +79,17 @@ function couldNotRun(exec: ExecuteResult, framework: string): string | null {
   return null;
 }
 
-const NPX_CANCELED = /npx canceled due to missing packages/;
+/** npm's own refusal line on stderr, not the text anywhere in the output. */
+const NPX_CANCELED =
+  /^npm (?:ERR!|error) npx canceled due to missing packages.*$/m;
 const NPX_PACKAGE = /\["(@?[^"@]+)/;
 
 /** `verify` runs `npx --no`: a runner the root lacks is never downloaded. */
-function npxCanceled(output: string, framework: string): string | null {
-  const at = output.search(NPX_CANCELED);
-  if (at === -1) return null;
-  const runner = NPX_PACKAGE.exec(output.slice(at))?.[1] ?? framework;
+function npxCanceled(exec: ExecuteResult, framework: string): string | null {
+  if (exec[0] === 0) return null;
+  const line = NPX_CANCELED.exec(exec[2].replace(ANSI, ''))?.[0];
+  if (line === undefined) return null;
+  const runner = NPX_PACKAGE.exec(line)?.[1] ?? framework;
   return `the runner ${runner} is not installed under the root; verify does not fetch runners (install it, e.g. npm i -D ${runner})`;
 }
 
@@ -212,7 +215,7 @@ export function classifyRun(
 ): VerifyResult {
   const output = `${exec[1]}\n${exec[2]}`.replace(ANSI, '');
   const tail = output.trimEnd().split('\n').slice(-TAIL_LINES);
-  const notRun = couldNotRun(exec, framework) ?? npxCanceled(output, framework);
+  const notRun = couldNotRun(exec, framework) ?? npxCanceled(exec, framework);
   const verdict =
     notRun !== null
       ? result('unverified', COULD_NOT_REPRODUCE, notRun)

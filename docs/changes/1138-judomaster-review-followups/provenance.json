@@ -10,7 +10,8 @@
     "tdd",
     "execution",
     "ratchets",
-    "review"
+    "review",
+    "review-fixes"
   ],
   "specArtifact": "docs/changes/1138-judomaster-review-followups/proposal.md",
   "planArtifact": "docs/changes/1138-judomaster-review-followups/plans/2026-10-05-judomaster-review-followups-plan.md",
@@ -27,7 +28,9 @@
     "C6/C7: mocking the suspect module is a WARNING only; the verdict and exit code are unchanged. It needs the brief's suspect, so without --brief no check runs. It reads the test file's own source, not siblings. It assumes brief and verify use the same --root (the suspect path is root-relative); the guide says so.",
     "C8: one isWithin() helper built on path.relative() replaces both string-prefix containment checks (frame resolution and tests/generated).",
     "mockedSuspectWarnings lives in resolve.ts rather than a new module (entropy ratchet: no new source files) and to keep verify.ts under the 300-line perf threshold.",
-    "Ratchets measured locally with harness CLI 12.10.1 against a detached worktree of the merge base 37918569: entropy 141 vs 141 (delta OK), perf 216 vs 216 (0 new findings), check-arch regressions [] and newViolations [] on both trees, and `harness ci check` reports arch pass. No arch allowance was needed; no entryPoints added; maxFindings untouched.",
-    "Autopilot ran at fast rigor (single phase, 10 tasks, plan auto-approved): planning via harness-planner, tasks 1-9 via harness-task-executor, ratchets (task 10) by the lane, final review via harness-code-reviewer."
+    "Ratchets measured locally with harness CLI 12.10.1 against a detached worktree of the merge base 37918569: entropy 141 vs 141 (delta OK), perf 216 vs 216 (0 new findings), check-arch newViolations [] on both trees. After the review fixes module-size measured 50179 against 49675 (+504, the only regression), so an allowance was added (.harness/arch/allowances/feat-1138-judomaster-review-followups.json) and the floor refreshed with scripts/refresh-arch-baseline.mjs (violationIds untouched), as #614 did. No entryPoints added; maxFindings untouched.",
+    "Autopilot ran at fast rigor (single phase, 10 tasks, plan auto-approved): planning via harness-planner, tasks 1-9 via harness-task-executor, ratchets (task 10) by the lane, final review via harness-code-reviewer.",
+    "Review amendments (harness-code-reviewer: 0 critical, 1 important, 7 suggestions): the mock warning is strong only for a whole-module mock or a patch of the suspect function, and soft ('check it is a dependency') for a JS partial mock (importOriginal/requireActual/spy: true) or a Python patch of another name inside the module; bare JS specifiers need a '/' or an @/ ~/ alias; commented-out mocks are ignored; the npx refusal is read only from npm's own stderr line on a non-zero exit; a frameless CPython cause block takes its last error line; a frameless trailing cause gets a boundary marker and an empty message renders without a colon. Not taken (left as suggestions): a link for a [cause]: header that is not an error line (e.g. DOMException [AbortError]) - such causes merge into the outer error as before; directory-index suspects, vi.mock(import(...)), jest.unstable_mockModule and src-layout top-level Python modules are not detected.",
+    "Behaviour change noted in the CHANGELOG: the V8 frame regex now accepts a trailing ' {', so a Node error with own properties (e.g. a system error's code) keeps its outermost frame instead of dropping it, even when unchained."
   ]
 }

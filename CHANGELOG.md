@@ -174,11 +174,13 @@ under the project's former name) are documented in the
   warning** (Refs #1138). `canary judomaster brief` lists a chained exception
   (V8 `[cause]:`, CPython `raise ... from` and "During handling") with the root
   cause marked and named in the requirement; the signature and suspect stay on
-  the reported error, and an unchained brief is unchanged. `verify` runs the
-  runner from `--root` and with `npx --no` instead of `npx --yes`, so a runner
-  the project lacks is `unverified — could not reproduce` (exit 3) naming it,
-  never downloaded. With `--brief`, a test that mocks the suspect module prints
-  a `WARNING:` (verdict unchanged). Frame and `tests/generated` containment use
+  the reported error. An unchained brief is unchanged, except that a Node frame
+  ending in `{` (an error with own properties) is no longer dropped. `verify`
+  runs the runner from `--root` and with `npx --no` instead of `npx --yes`, so a
+  runner the project lacks is `unverified — could not reproduce` (exit 3) naming
+  it, never downloaded. With `--brief`, a test that mocks the suspect module
+  prints a `WARNING:` (verdict unchanged; softer for a partial mock or a patched
+  dependency inside the module). Frame and `tests/generated` containment use
   `path.relative`, so `--root /` resolves frames.
 - **canary-question: neutral category signal ids** (#1142). **Breaking for
   `--json` readers:** the evidence-row signal `category-env` is replaced by

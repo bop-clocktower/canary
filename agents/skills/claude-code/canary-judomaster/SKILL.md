@@ -80,8 +80,11 @@ test under `tests/generated/`.
    `verify` refuses any path outside `tests/generated/` (exit 2) without running
    anything. `verify` runs the runner from `--root` and never downloads it
    (`npx --no`); a missing runner is `unverified — could not reproduce`. A
-   `WARNING:` line means the test mocks the suspect module: rewrite it to call
-   the real code, even if the verdict is `reproduced`.
+   `WARNING: the test mocks the suspect module` means the test replaces the code
+   it should exercise: rewrite it to call the real code, even if the verdict is
+   `reproduced`. `WARNING: the test patches ... inside the suspect module` (a
+   partial mock, or another name in that module) may be a legitimate dependency
+   stub: check it, and keep it if it is not the code under test.
 
 4. **REPORT.** Relay the verdict verbatim:
 

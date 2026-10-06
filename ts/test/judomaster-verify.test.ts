@@ -51,6 +51,17 @@ describe('classifyRun', () => {
     expect(r.reason).toContain('the runner playwright is not installed');
   });
 
+  it('ignores the npx refusal text in the output of a run that passed', () => {
+    const r = classifyRun([0, NPX_CANCEL, ''], SIG, 'vitest');
+    expect(r.verdict).toBe('not-reproduced');
+  });
+
+  it("ignores the npx refusal text when it is not npm's own stderr line", () => {
+    const out = `quoted: npx canceled due to missing packages\nTypeError: ${SIG.text}`;
+    const r = classifyRun([1, out, ''], SIG, 'vitest');
+    expect(r.label).not.toBe(COULD_NOT);
+  });
+
   it('refuses a signature match the test could have printed itself', () => {
     // A failing assertion prints its own source; a test that quotes the
     // incident's error text would "match" whatever made it fail.

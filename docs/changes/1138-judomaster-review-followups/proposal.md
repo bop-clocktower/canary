@@ -66,9 +66,14 @@ unchained brief identical and keeps one ordering for the frame list.
   marked, and `--- caused by` / `--- while handling` boundary lines in the frame
   list. Verify renders `WARNING:` lines.
 - `resolve.ts`: `isWithin()`; `verify.ts` uses it too.
-- `verify.ts`: `mockedSuspect(testSource, testPath, root, suspectPath)`
-  returning warning strings; `couldNotRun` recognises
-  `npx canceled due to missing packages` and names the runner.
+- `resolve.ts` (not `verify.ts`, which would cross the 300-line perf threshold):
+  `mockedSuspectWarnings(testSource, testRelDir, suspectPath, suspectFn?)`
+  returning warning strings. A whole-module mock or a patch of the suspect
+  function is the strong warning; a partial mock or another name inside the
+  module is a soft "check it is a dependency" warning (review amendment).
+- `verify.ts`: a separate `npxCanceled()` after `couldNotRun` recognises npm's
+  own `npx canceled due to missing packages` stderr line on a non-zero exit and
+  names the runner.
 - `core/executor.ts`: `execute(file, framework, timeout, opts?)` with `opts.cwd`
   and `opts.fetch` (default `true`, existing callers unchanged).
 - `judomaster-verify-cli.ts`: passes `{ cwd: root, fetch: false }` and the
@@ -93,7 +98,9 @@ unchained brief identical and keeps one ordering for the frame list.
 - When a CPython trace has "The above exception was the direct cause..." or
   "During handling of the above exception...", the chain is listed with the
   matching relation, and the reported error is still the signature.
-- An unchained trace produces the same brief JSON as before (no `chain` key).
+- An unchained trace produces the same brief JSON as before (no `chain` key),
+  except that a Node frame line ending in `{` (an error with own properties,
+  such as a system error's `code`) is now read as a frame instead of dropped.
 - `verify` spawns the runner with `cwd` equal to `--root`, and with `npx --no`
   in place of `npx --yes`.
 - When npx refuses because the runner is missing, the verdict is

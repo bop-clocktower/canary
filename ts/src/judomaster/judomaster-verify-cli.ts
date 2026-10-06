@@ -196,7 +196,8 @@ function withMockWarnings(
   if (suspect === undefined) return result;
   const dir = relative(rootReal, dirname(real)).split(sep).join('/');
   const source = readFileSync(real, 'utf-8');
-  const warnings = mockedSuspectWarnings(source, dir, suspect);
+  const fn = brief?.suspect?.fn;
+  const warnings = mockedSuspectWarnings(source, dir, suspect, fn);
   return warnings.length === 0 ? result : { ...result, warnings };
 }
 

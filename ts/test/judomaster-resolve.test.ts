@@ -137,8 +137,9 @@ describe('mockedSuspectWarnings', () => {
   const DIR = 'tests/generated/regression';
   const JS = 'src/cart/total.ts';
   const PY = 'src/cart/total.py';
-  const warn = (src: string, suspect: string) =>
-    mockedSuspectWarnings(src, DIR, suspect);
+  const warn = (src: string, suspect: string, fn?: string) =>
+    mockedSuspectWarnings(src, DIR, suspect, fn);
+  const SOFT = 'inside the suspect module';
 
   it('flags vi.mock of the suspect by relative path and names both', () => {
     const w = warn("vi.mock('../../../src/cart/total', () => ({}));", JS);
@@ -173,11 +174,43 @@ describe('mockedSuspectWarnings', () => {
   });
 
   it('flags Python object forms by the module stem only', () => {
-    expect(warn('patch.object(total, "compute")', PY)).toEqual([
+    expect(warn('patch.object(total, "compute")', PY, 'compute')).toEqual([
       'the test mocks the suspect module src/cart/total.py (patch.object(total, ...)); a regression test that mocks the code it should exercise cannot reproduce the defect',
     ]);
     expect(warn('monkeypatch.setattr(total, "TAX", 0)', PY)).toHaveLength(1);
     expect(warn('monkeypatch.setattr(tax, "rate", 0)', PY)).toEqual([]);
+  });
+
+  it('softens a Python patch of a dependency inside the suspect module', () => {
+    const [dep] = warn("patch('cart.total.requests.get')", PY, 'compute');
+    expect(dep).toContain(`patches cart.total.requests.get ${SOFT}`);
+    expect(dep).toContain('check it is a dependency');
+    const [obj] = warn('patch.object(total, "helper")', PY, 'compute');
+    expect(obj).toContain(SOFT);
+    const [hit] = warn("patch('cart.total.compute')", PY, 'compute');
+    expect(hit).toContain('the test mocks the suspect module');
+    const [mod] = warn("patch('cart.total')", PY, 'compute');
+    expect(mod).toContain('the test mocks the suspect module');
+  });
+
+  it('softens a JS partial mock that keeps the real implementation', () => {
+    const src = [
+      "vi.mock('../../../src/cart/total', async (importOriginal) => ({",
+      '  ...(await importOriginal()),',
+      '  log: vi.fn(),',
+      '}));',
+    ].join('\n');
+    const [w] = warn(src, JS);
+    expect(w).toContain(SOFT);
+    const [spy] = warn("vi.mock('@/cart/total', { spy: true })", JS);
+    expect(spy).toContain(SOFT);
+  });
+
+  it('ignores single-segment bare specifiers and commented-out mocks', () => {
+    expect(warn("vi.mock('fs')", 'src/utils/fs.ts')).toEqual([]);
+    expect(warn("vi.mock('axios')", 'src/lib/axios.ts')).toEqual([]);
+    expect(warn("// vi.mock('../../../src/cart/total')", JS)).toEqual([]);
+    expect(warn("# patch('cart.total.compute')", PY)).toEqual([]);
   });
 
   it('ignores Python patches of other modules', () => {

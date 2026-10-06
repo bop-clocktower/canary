@@ -136,8 +136,15 @@ A test that mocks the suspect module (`vi.mock`/`jest.mock` of its path, or
 `patch`/`mock.patch`/`mocker.patch`/`monkeypatch` of a target inside it) cannot
 exercise the defect. With `--brief`, `verify` prints a `WARNING:` line naming
 the mock and the suspect (and `warnings` in `--json`). The verdict and exit code
-do not change. Run `verify` with the same `--root` the brief was built against,
-since the suspect path is relative to it.
+do not change. Mocking the module itself, or patching the suspect function, is
+the strong warning. A partial mock that keeps the real implementation
+(`importOriginal`, `requireActual`, `{ spy: true }`) or a Python patch of
+another name inside the module (Python patches a dependency where it is looked
+up, so `cart.total.requests.get` stubs `requests`) gets a softer "check it is a
+dependency" warning. A bare specifier needs a `/` or an `@/`/`~/` alias, so
+`vi.mock('fs')` is the package, not `src/utils/fs.ts`. Run `verify` with the
+same `--root` the brief was built against, since the suspect path is relative to
+it.
 
 Only after `reproduced` is the test ready for `canary-promote-test`.
 

@@ -141,8 +141,13 @@ function parseV8(lines: string[]): ParsedTrace | null {
 /** One CPython block: its frames innermost first and the error after them. */
 function pyBlock(lines: string[]): ParsedTrace | null {
   const frames = locate(lines, pyFrame);
-  const last = frames[frames.length - 1]?.at ?? -1;
-  const error = locate(lines, errorLine).find((e) => e.at > last)?.value;
+  const errors = locate(lines, errorLine);
+  // A frameless block (`raise X from KeyError()`) prints only its error, so
+  // the last error-like line wins over log noise above it.
+  const error =
+    frames.length === 0
+      ? errors[errors.length - 1]?.value
+      : errors.find((e) => e.at > frames[frames.length - 1]!.at)?.value;
   if (error === undefined) return null;
   return {
     format: 'python',
