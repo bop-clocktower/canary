@@ -262,7 +262,7 @@ dogfood.yml succeeds on main ─► site-deploy.yml (workflow_run, D14)
    restore history cache (as dogfood.yml) ─► canary-starling --config … --out site.json
    ─► validate.mjs (refuse on any error)
    ─► refuse if site.json has zero runs (fail loudly; production untouched)
-   ─► canary-barda build → ./site-out
+   ─► canary-barda --feed site.json --out ./site-out
    ─► scripts/check_removed_symbols.mjs over ./site-out
         (fails on any hit; reports files checked — 0 checked fails the job)
    ─► vercel deploy --prebuilt --prod   (GitHub environment: Production)
@@ -377,9 +377,9 @@ The feed is built from canary's own suites only.
     only the one with the latest `observed_at` to `site.json` `assessments`.
 20. When a assessment is `not-assessed`, `<canary-pillars>` shall render its
     `reason` as text; no panel shall render a composite score (D6).
-21. When `canary-barda build` runs over a `site.json` that passes validation,
-    the output directory shall contain a static page that renders each of the
-    six v1 panels.
+21. When `canary-barda` runs over a `site.json` that passes validation, the
+    output directory shall contain a static page that renders each of the six v1
+    panels.
 22. When `site-deploy.yml` builds the dogfood feed, every `scopes[].id` in the
     deployed `site.json` shall be canary's own (Goal 3).
 23. When one test flakes in several runs of the window, `<canary-flaky>` shall
@@ -395,8 +395,9 @@ One PR per phase, merged serially and re-measured after each merge.
    `validate.mjs`, ADR A. (Criteria 1–4, 16–18.)
 2. **Producers** — reporter emits `canary.run/1` with the #1148/#1149/#1150
    fixes; `canary-starling`. (Criteria 5–8, 19.)
-3. **Site kit** — `tokens.css`, six panels, `canary-barda`, ADR B. (Criteria
-   9–11, 20–21, 23.)
+3. **Site kit** — two PRs (phase 3 plan, P5): **3a** `tokens.css`, the six
+   panels and ADR B (criteria 9–11, 20, 23); **3b** `canary-barda` (criterion
+   21).
 4. **Embed** — `canary-vixen` and the strict-CSP host fixture. (Criterion 12.)
 5. **Dogfood** — `site-deploy.yml`, secrets, `docs/wiki/QA-Site.md`. (Criteria
    13–14, 22, 24.) **Precondition:** confirm whether a CLI
