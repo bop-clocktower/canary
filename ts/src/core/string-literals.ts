@@ -53,7 +53,7 @@
  *   `.tsx`/`.jsx`): see `jsx-text.ts` (#1180).
  */
 
-import { maskJsxTextQuotes } from './jsx-text.js';
+import { isJsxPath, maskJsxTextQuotes } from './jsx-text.js';
 
 export interface BlankOptions {
   /** Recognise `#` line comments and `'''`/`\"\"\"` triple-quoted blocks. */
@@ -63,6 +63,11 @@ export interface BlankOptions {
    * delimiters (`<p>It's</p>`). Off by default, so `.ts`/`.js` are unchanged.
    */
   jsx?: boolean;
+  /**
+   * The file the source came from; a `.tsx`/`.jsx` path turns `jsx` on, so a
+   * caller does not need to classify the file itself.
+   */
+  path?: string;
 }
 
 /** A resolved literal-content span, half-open: [start, end). */
@@ -80,7 +85,9 @@ export function blankStringContent(
 ): string {
   // Spans are found on the masked text and applied to the original; masking
   // only replaces characters with spaces, so every offset lines up.
-  const read = options.jsx === true ? maskJsxTextQuotes(code) : code;
+  const jsx =
+    options.jsx ?? (options.path !== undefined && isJsxPath(options.path));
+  const read = jsx ? maskJsxTextQuotes(code) : code;
   const spans = literalContentSpans(read, options.python === true);
   if (spans.length === 0) return code;
 

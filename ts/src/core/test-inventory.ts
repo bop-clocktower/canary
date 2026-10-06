@@ -18,7 +18,6 @@ import { readFileSync } from 'node:fs';
 import { posix, relative, sep } from 'node:path';
 
 import { enumerateTests, frameworkForPath } from './static-linter.js';
-import { isJsxPath } from './jsx-text.js';
 import { blankStringContent } from './string-literals.js';
 import {
   isAssertion,
@@ -118,7 +117,7 @@ function inventoryFile(
     return null;
   }
   const python = framework === 'pytest';
-  const code = blankStringContent(source, { python, jsx: isJsxPath(path) });
+  const code = blankStringContent(source, { python, path });
   const tests = enumerateTests(code, source, python).map((t) => ({
     name: t.name,
     line: t.line,

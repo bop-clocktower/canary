@@ -97,3 +97,20 @@ describe('blankStringContent with jsx', () => {
     expect(out).not.toMatch(/it\(|test\(/);
   });
 });
+
+describe('blankStringContent with a path', () => {
+  it('turns jsx on for .tsx/.jsx and leaves it off otherwise', () => {
+    for (const path of ['a/Button.test.tsx', 'a/Button.test.JSX']) {
+      expect(blankStringContent(RTL, { path })).toBe(
+        blankStringContent(RTL, { jsx: true }),
+      );
+    }
+    expect(blankStringContent(RTL, { path: 'a/b.test.ts' })).toBe(
+      blankStringContent(RTL),
+    );
+    // An explicit `jsx` wins over the path.
+    expect(blankStringContent(RTL, { path: 'a/b.tsx', jsx: false })).toBe(
+      blankStringContent(RTL),
+    );
+  });
+});
