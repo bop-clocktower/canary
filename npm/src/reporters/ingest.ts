@@ -47,6 +47,13 @@ export interface IngestReporterOptions {
    * (quarantine entries, flake history), so it is opt-in (#1183).
    */
   titleFormat?: TitleFormat;
+  /**
+   * Send `collected` (the suite's denominator) when the run is unfiltered.
+   * Default `true`; set `false` (`CANARY_INGEST_COLLECTED=false`) on a job
+   * that runs a subset the reporter cannot detect (`--last-failed`,
+   * `--only-changed`).
+   */
+  collected?: boolean;
 }
 
 export type TitleFormat = "legacy" | "clean";
@@ -64,6 +71,9 @@ export interface ResolvedConfig {
   areaMap: Record<string, string>;
   retryDelaysMs: number[];
   titleFormat: TitleFormat;
+  collected: boolean;
+  /** Optional settings that were invalid and fell back to their default. */
+  configWarnings: string[];
   /** Legacy `TESTTRACKER_*` names this config was resolved from. */
   deprecatedEnv: string[];
 }
@@ -172,18 +182,23 @@ const ENV_NAMES = {
   push: ["CANARY_INGEST_PUSH", "TESTTRACKER_PUSH"],
   areaMap: ["CANARY_INGEST_AREA_MAP"],
   titleFormat: ["CANARY_INGEST_TITLE_FORMAT"],
+  collected: ["CANARY_INGEST_COLLECTED"],
 } as const satisfies Record<string, readonly [string] | readonly [string, string]>;
 
-/** Reads a setting's env var, falling back to its legacy name (recorded in `deprecated`). */
+/**
+ * Reads a setting's env var, falling back to its legacy name (recorded in
+ * `deprecated`). Empty counts as unset: GitHub Actions expands a secret that
+ * does not exist yet to "", and that must not hide a working legacy value.
+ */
 function envVar(
   env: NodeJS.ProcessEnv,
   key: keyof typeof ENV_NAMES,
   deprecated: string[] = [],
 ): string | undefined {
   const [current, legacy] = ENV_NAMES[key] as readonly [string, string?];
-  if (env[current] !== undefined || legacy === undefined) return env[current];
-  if (env[legacy] !== undefined) deprecated.push(legacy);
-  return env[legacy];
+  if (env[current] || legacy === undefined) return env[current] || undefined;
+  if (env[legacy]) deprecated.push(legacy);
+  return env[legacy] || undefined;
 }
 
 export function resolveConfig(
@@ -191,8 +206,9 @@ export function resolveConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): ResolvedConfig {
   const deprecatedEnv: string[] = [];
+  const configWarnings: string[] = [];
   const read = (key: keyof typeof ENV_NAMES) => envVar(env, key, deprecatedEnv);
-  const suite = opts.suite ?? read("suite");
+  const suite = opts.suite || read("suite");
   if (!suite) {
     throw new Error("`suite` is required (option or CANARY_INGEST_SUITE).");
   }
@@ -203,34 +219,41 @@ export function resolveConfig(
     url: opts.url ?? read("url") ?? "",
     token: opts.token ?? read("token") ?? "",
     workflow: opts.workflow ?? read("workflow") ?? "playwright",
-    areaMap: opts.areaMap ?? parseAreaMap(read("areaMap")),
+    areaMap: checkAreaMap(opts.areaMap ?? parseAreaMap(read("areaMap"), configWarnings), configWarnings),
     retryDelaysMs: opts.retryDelaysMs ?? [1000, 4000],
-    titleFormat: parseTitleFormat(opts.titleFormat ?? read("titleFormat")),
+    titleFormat: parseTitleFormat(opts.titleFormat ?? read("titleFormat"), configWarnings),
+    collected: opts.collected ?? read("collected") !== "false",
     deprecatedEnv,
+    configWarnings,
   };
 }
 
-function parseTitleFormat(raw: string | undefined): TitleFormat {
+/*
+ * Optional settings degrade to their default with a warning rather than
+ * throwing: a typo in one must never turn pushing off for the whole suite.
+ */
+
+function parseTitleFormat(raw: string | undefined, warnings: string[]): TitleFormat {
   if (raw === undefined || raw === "legacy") return "legacy";
   if (raw === "clean") return "clean";
-  throw new Error(`titleFormat must be "legacy" or "clean" (got "${raw}").`);
-}
-
-/** Strips inline `@tag` tokens (they are already sent as `tags`), not `a@b` emails. */
-function stripInlineTags(title: string): string {
-  return title.replace(/(^|\s)@\S+/g, "$1").replace(/\s+/g, " ").trim();
+  warnings.push(`titleFormat must be "legacy" or "clean" (got "${raw}"); using legacy.`);
+  return "legacy";
 }
 
 /** Playwright reporter suites, innermost first, as far as the root. */
 type SuiteLike = { type?: string; title: string; parent?: SuiteLike };
 
-/** `describe… > title`, with inline tags stripped: the identity without project or file. */
+/**
+ * `file > describe… > title`: the legacy title without the project. Every
+ * part comes from the test itself, so the identity never depends on which
+ * other tests are in a push and two tests never share it.
+ */
 function cleanTitle(test: TestCase): string {
   const parts = [test.title];
-  for (let s = test.parent as SuiteLike | undefined; s && s.type === "describe"; s = s.parent) {
+  for (let s = test.parent as SuiteLike | undefined; s && (s.type === "describe" || s.type === "file"); s = s.parent) {
     parts.unshift(s.title);
   }
-  return parts.map(stripInlineTags).filter(Boolean).join(" > ");
+  return parts.filter(Boolean).join(" > ");
 }
 
 function projectName(test: TestCase): string | undefined {
@@ -259,7 +282,7 @@ function skipTags(annotations: ReadonlyArray<{ type: string; description?: strin
   return tags;
 }
 
-function parseAreaMap(raw: string | undefined): Record<string, string> {
+function parseAreaMap(raw: string | undefined, warnings: string[]): Record<string, string> {
   if (!raw) return {};
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -267,9 +290,22 @@ function parseAreaMap(raw: string | undefined): Record<string, string> {
       return Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v)]));
     }
   } catch {
-    /* fall through to the error below */
+    /* fall through to the warning below */
   }
-  throw new Error('CANARY_INGEST_AREA_MAP must be a JSON object of glob → area, e.g. {"tests/rewards/**":"rewards"}.');
+  warnings.push(
+    'CANARY_INGEST_AREA_MAP must be a JSON object of glob → area, e.g. {"tests/rewards/**":"rewards"}; sending no areas.',
+  );
+  return {};
+}
+
+/** Only `**`, `*` and `?` are glob syntax here; `{a,b}` and `[ab]` would match as literal text. */
+function checkAreaMap(map: Record<string, string>, warnings: string[]): Record<string, string> {
+  for (const glob of Object.keys(map)) {
+    if (/[{}[\]]/.test(glob)) {
+      warnings.push(`areaMap glob "${glob}" uses unsupported {a,b} or [ab] syntax and matches only literally; list each path instead.`);
+    }
+  }
+  return map;
 }
 
 /** `**` crosses directories, `*` and `?` stay within one path segment. */
@@ -425,7 +461,7 @@ export function runTiming(
   if (start === undefined || Number.isNaN(start)) {
     return { startedAt: new Date(fallbackStart).toISOString(), finishedAt: new Date(now).toISOString() };
   }
-  const end = typeof result?.duration === "number" ? start + result.duration : now;
+  const end = Number.isFinite(result?.duration) ? start + (result?.duration as number) : now;
   return { startedAt: new Date(start).toISOString(), finishedAt: new Date(end).toISOString() };
 }
 
@@ -525,10 +561,28 @@ function retryable(status: number): boolean {
   return status >= 500 || status === 429;
 }
 
+/** Longest wait a `Retry-After` can ask for; the dashboard's rate window is 60 s. */
+const MAX_RETRY_AFTER_MS = 65_000;
+
 /**
- * POSTs with a bounded retry on 5xx, 429 and network errors. Ingest is
- * idempotent on `(canary_run_id, suite)`, so a retry can never double-count. A
- * 4xx is a payload problem and is never retried: the same bytes cannot succeed.
+ * How long to wait before a retry: the backoff, or the server's `Retry-After`
+ * (seconds) when longer, capped at 65 s. A date-form `Retry-After` is ignored.
+ */
+export function retryWaitMs(backoffMs: number, retryAfter: string | null | undefined): number {
+  const seconds = retryAfter ? Number(retryAfter) : NaN;
+  const asked = Number.isFinite(seconds) ? Math.min(seconds * 1000, MAX_RETRY_AFTER_MS) : 0;
+  return Math.max(backoffMs, asked);
+}
+
+/** Per-request time limits; Playwright awaits `onEnd` with no limit of its own. */
+const PREFLIGHT_TIMEOUT_MS = 5_000;
+const POST_TIMEOUT_MS = 30_000;
+
+/**
+ * POSTs with a bounded retry on 5xx, 429 and network errors (a timeout is a
+ * network error). Ingest is idempotent on `(canary_run_id, suite)`, so a
+ * retry can never double-count. A 4xx is a payload problem and is never
+ * retried: the same bytes cannot succeed.
  */
 async function postWithRetry(
   url: string,
@@ -538,12 +592,11 @@ async function postWithRetry(
   let last: { resp?: Response; error?: unknown } = {};
   for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
     if (attempt > 0) {
-      const retryAfterS = Number(last.resp?.headers.get("retry-after"));
-      const wait = Math.max(delaysMs[attempt - 1], Number.isFinite(retryAfterS) ? Math.min(retryAfterS, 30) * 1000 : 0);
+      const wait = retryWaitMs(delaysMs[attempt - 1], last.resp?.headers.get("retry-after"));
       await new Promise((r) => setTimeout(r, wait));
     }
     try {
-      const resp = await fetch(url, init);
+      const resp = await fetch(url, { ...init, signal: AbortSignal.timeout(POST_TIMEOUT_MS) });
       if (!retryable(resp.status)) return { resp, attempts: attempt + 1 };
       last = { resp };
     } catch (error) {
@@ -553,28 +606,70 @@ async function postWithRetry(
   return { ...last, attempts: delaysMs.length + 1 };
 }
 
-/**
- * A clean title drops the file, so two different tests with the same
- * describe chain and title in different files would share one `full_title`
- * and be merged by the ingest key. Titles that collide across files keep a
- * `file > ` prefix, computed over results and catalog together so both use
- * the same identity.
- */
-type Identified = { full_title: string; test_file: string };
+/** The ingest body limit is 5 MB (and ~4.5 MB behind some proxies); stay under both. */
+const MAX_BODY_BYTES = 4_000_000;
 
-export function disambiguateAcrossFiles<R extends Identified, C extends Identified>(
-  results: R[],
-  collected: C[] | null,
-): { results: R[]; collected: C[] | null } {
-  const files = new Map<string, Set<string>>();
-  for (const row of [...results, ...(collected ?? [])]) {
-    const set = files.get(row.full_title) ?? new Set<string>();
-    set.add(row.test_file);
-    files.set(row.full_title, set);
+/**
+ * Keeps a payload under the body limit. A 413 is a 4xx, so it is not retried
+ * and the whole run would be lost, typically on a night with many large
+ * failures. The catalog goes first (the run still lands, unmeasured), then
+ * stacks are cut to 1 KB.
+ */
+export function fitPayload(
+  payload: IngestPayload,
+  maxBytes: number = MAX_BODY_BYTES,
+): { payload: IngestPayload; warnings: string[] } {
+  const warnings: string[] = [];
+  const size = (p: IngestPayload) => Buffer.byteLength(JSON.stringify(p));
+  let fitted = payload;
+  if (size(fitted) > maxBytes && fitted.collected) {
+    const { collected: _dropped, ...rest } = fitted;
+    fitted = rest;
+    warnings.push(`payload over ${maxBytes} bytes: collected was dropped, so this run's suite is unmeasured.`);
   }
-  const fix = <T extends Identified>(row: T): T =>
-    (files.get(row.full_title)?.size ?? 0) > 1 ? { ...row, full_title: `${row.test_file} > ${row.full_title}` } : row;
-  return { results: results.map(fix), collected: collected?.map(fix) ?? null };
+  if (size(fitted) > maxBytes) {
+    fitted = {
+      ...fitted,
+      results: fitted.results.map((r) => (r.error_stack ? { ...r, error_stack: r.error_stack.slice(0, 1000) } : r)),
+    };
+    warnings.push(`payload over ${maxBytes} bytes: error stacks were cut to 1 KB.`);
+  }
+  if (size(fitted) > maxBytes) {
+    warnings.push(`payload is still over ${maxBytes} bytes; the dashboard may reject it.`);
+  }
+  return { payload: fitted, warnings };
+}
+
+const MAX_ERROR_MESSAGE = 4_000;
+const MAX_ERROR_STACK = 8_000;
+// eslint-disable-next-line no-control-regex
+const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
+
+/** Playwright errors carry ANSI colour and full diffs; send readable, bounded text. */
+function errorField(text: string | undefined, max: number): string | undefined {
+  if (text === undefined) return undefined;
+  const plain = text.replace(ANSI, "");
+  return plain.length > max ? `${plain.slice(0, max)}… [truncated]` : plain;
+}
+
+/**
+ * Why `collected` would not be the whole suite, or null when it is. A
+ * filtered run's `allTests()` is only the subset that ran, and sending it
+ * would shrink the suite's denominator on the dashboard (#1150). Playwright
+ * does not expose `--last-failed`/`--only-changed` to a reporter; those jobs
+ * opt out with `collected: false`.
+ */
+export function catalogFilter(config: FullConfig | undefined, suite: Suite | undefined): string | null {
+  if (!config) return null;
+  if (config.shard && config.shard.total > 1) return `this is shard ${config.shard.current} of ${config.shard.total}`;
+  const greps = [config.grep].flat().filter(Boolean) as RegExp[];
+  if (greps.some((g) => g.source !== ".*")) return "the run is filtered by --grep";
+  if ([config.grepInvert].flat().filter(Boolean).length) return "the run is filtered by --grep-invert";
+  const configured = (config.projects ?? []).map((p) => p.name);
+  const present = new Set((suite?.suites ?? []).filter((s) => s.type === "project").map((s) => s.title));
+  const missing = configured.filter((name) => !present.has(name));
+  if (configured.length && missing.length) return `project(s) ${missing.join(", ")} did not run`;
+  return null;
 }
 
 const INTERRUPTED_PREFIX = "interrupted: ";
@@ -589,41 +684,55 @@ export default class IngestReporter implements Reporter {
   private cfg: ResolvedConfig | null = null;
   private shard: Shard = null;
   private collected: CollectedEntry[] | null = null;
-  /** Resolves false when the dashboard rejected the token before the run. */
-  private preflight: Promise<boolean> | null = null;
+  private collectedCount = 0;
+  private preflight: Promise<void> | null = null;
   /** Projects other projects depend on (`dependencies`) or tear down with (`teardown`). */
-  private setupProjects = new Set<string>();
+  private dependencyProjects = new Set<string>();
   private teardownProjects = new Set<string>();
 
   constructor(private options: IngestReporterOptions = {}) {}
 
   onBegin(config?: FullConfig, suite?: Suite) {
-    // Resolve config once; a config error here is logged, not thrown, so a
-    // misconfigured reporter never aborts the whole run.
     this.shard = config?.shard ?? null;
     try {
       for (const project of config?.projects ?? []) {
-        for (const dep of project.dependencies ?? []) this.setupProjects.add(dep);
+        for (const dep of project.dependencies ?? []) this.dependencyProjects.add(dep);
         if (project.teardown) this.teardownProjects.add(project.teardown);
       }
     } catch (err) {
-      // Costs only the setup/teardown tags; the run is still pushed.
+      // Costs only the dependency/teardown tags; the run is still pushed.
       log(`could not read the project list — ${errText(err)}`);
     }
+    // Resolve config once; a config error here is logged, not thrown, so a
+    // misconfigured reporter never aborts the whole run.
     try {
       this.cfg = resolveConfig(this.options);
-      if (this.cfg.deprecatedEnv.length) {
-        log(
-          `${this.cfg.deprecatedEnv.join(", ")} ${this.cfg.deprecatedEnv.length > 1 ? "are" : "is"} deprecated; rename to CANARY_INGEST_* (see docs/wiki/Ingest-Reporter.md).`,
-        );
-      }
     } catch (err) {
-      log(`disabled — ${errText(err)}`);
+      // Loud when the run was clearly meant to be pushed, quiet otherwise.
+      const meant = envVar(process.env, "url") && envVar(process.env, "token");
+      (meant || this.options.url ? warn : log)(`disabled — ${errText(err)}`);
       this.cfg = null;
       return;
     }
-    this.collected = this.collectCatalog(suite);
-    if (shouldPush(this.cfg)) this.preflight = this.checkToken(this.cfg);
+    if (this.cfg.deprecatedEnv.length) {
+      log(
+        `${this.cfg.deprecatedEnv.join(", ")} ${this.cfg.deprecatedEnv.length > 1 ? "are" : "is"} deprecated; rename to CANARY_INGEST_* (see docs/wiki/Ingest-Reporter.md).`,
+      );
+    }
+    for (const w of this.cfg.configWarnings) warn(w);
+    try {
+      this.collectedCount = suite?.allTests().length ?? 0;
+    } catch {
+      this.collectedCount = 0;
+    }
+    this.collected = this.collectCatalog(config, suite);
+    if (shouldPush(this.cfg)) {
+      this.preflight = this.checkToken(this.cfg);
+    } else if (process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true") {
+      // A silent skip in CI reads exactly like a clean push; name what is missing.
+      const missing = [!this.cfg.url && "CANARY_INGEST_URL", !this.cfg.token && "CANARY_INGEST_TOKEN"].filter(Boolean);
+      if (missing.length) log(`not pushing: ${missing.join(" and ")} not set.`);
+    }
   }
 
   /** The fields a test has whether or not it ran: identity, tags and area. */
@@ -640,7 +749,9 @@ export default class IngestReporter implements Reporter {
         // The project is otherwise only visible inside a legacy title, and not
         // at all in a clean one; a tag gives the dashboard the dimension (#1183).
         ...(project ? [`project:${project}`] : []),
-        ...(project && this.setupProjects.has(project) ? ["setup"] : []),
+        // Neutral on purpose: a dependency project may be setup or a real
+        // suite (api before e2e); the dashboard decides what to filter.
+        ...(project && this.dependencyProjects.has(project) ? ["dependency"] : []),
         ...(project && this.teardownProjects.has(project) ? ["teardown"] : []),
         ...skipTags(annotations),
       ]),
@@ -656,24 +767,26 @@ export default class IngestReporter implements Reporter {
   }
 
   /**
-   * Every collected test, as the suite's denominator (#1150). A shard only
-   * sees its own slice, and a partial list would overwrite the suite's real
-   * denominator, so a shard push sends no catalog; `merge-reports` (shard
-   * `null`) sees the whole suite and sends it.
+   * Every collected test, as the suite's denominator (#1150), or null when the
+   * run is filtered (see `catalogFilter`) or the job opted out.
    */
-  private collectCatalog(suite: Suite | undefined): CollectedEntry[] | null {
-    if (!this.cfg || !suite || (this.shard && this.shard.total > 1)) return null;
+  private collectCatalog(config: FullConfig | undefined, suite: Suite | undefined): CollectedEntry[] | null {
+    if (!this.cfg || !suite || !this.cfg.collected) return null;
     try {
-      // Keyed by file and title: the same test across projects is one row, but
-      // a clean title shared by two files must survive to be disambiguated.
-      const byIdentity = new Map<string, CollectedEntry>();
+      const filter = catalogFilter(config, suite);
+      if (filter) {
+        log(`collected not sent: ${filter}, so this run is not the whole suite.`);
+        return null;
+      }
+      // Keyed by title (which carries the file in both formats): the same test
+      // across projects is one row.
+      const byTitle = new Map<string, CollectedEntry>();
       for (const test of suite.allTests()) {
         const entry = this.describeTest(test, this.cfg);
-        const key = `${entry.test_file}\0${entry.full_title}`;
-        const prior = byIdentity.get(key);
-        byIdentity.set(key, prior ? { ...prior, tags: [...new Set([...prior.tags, ...entry.tags])] } : entry);
+        const prior = byTitle.get(entry.full_title);
+        byTitle.set(entry.full_title, prior ? { ...prior, tags: [...new Set([...prior.tags, ...entry.tags])] } : entry);
       }
-      return [...byIdentity.values()];
+      return [...byTitle.values()];
     } catch (err) {
       log(`collected catalog unavailable — ${errText(err)}`);
       return null;
@@ -682,20 +795,19 @@ export default class IngestReporter implements Reporter {
 
   /**
    * Asks the dashboard which tenant the token writes to before any test runs,
-   * so a wrong or revoked token shows up at the top of the log rather than
-   * after the suite. Only a 401/403 stops the push; an unreachable endpoint or
-   * an older dashboard without `/whoami` must not.
+   * so a wrong token shows up at the top of the log rather than after the
+   * suite. Advisory only: the POST's own answer is the verdict, because
+   * `/whoami` can sit behind different auth (or a WAF) than ingest.
    */
-  private async checkToken(cfg: ResolvedConfig): Promise<boolean> {
+  private async checkToken(cfg: ResolvedConfig): Promise<void> {
     try {
       const resp = await fetch(`${cfg.url}/api/ingest/whoami`, {
         headers: { Authorization: `Bearer ${cfg.token}` },
+        signal: AbortSignal.timeout(PREFLIGHT_TIMEOUT_MS),
       });
       if (resp.status === 401 || resp.status === 403) {
-        warn(`token rejected at preflight (${resp.status}); this run will not be pushed. Check CANARY_INGEST_TOKEN.`);
-        return false;
-      }
-      if (resp.ok) {
+        warn(`token rejected at preflight (${resp.status}); the push will still be tried. Check CANARY_INGEST_TOKEN.`);
+      } else if (resp.ok) {
         const who = (await resp.json().catch(() => ({}))) as {
           tenant?: { slug?: string };
           token?: { name?: string };
@@ -703,9 +815,8 @@ export default class IngestReporter implements Reporter {
         log(`pushing to tenant ${who.tenant?.slug ?? "?"} with token "${who.token?.name ?? "?"}".`);
       }
     } catch {
-      /* unreachable now; the push reports its own failure */
+      /* unreachable or slow now; the push reports its own failure */
     }
-    return true;
   }
 
   onTestEnd(test: TestCase, result: TestResult) {
@@ -721,7 +832,7 @@ export default class IngestReporter implements Reporter {
       const prior = this.results.get(test.id);
       const interrupted = result.status === "interrupted";
       if (interrupted) described.tags.push("interrupted");
-      const firstError = prior?.error_message ?? result.errors[0]?.message;
+      const firstError = prior?.error_message ?? errorField(result.errors[0]?.message, MAX_ERROR_MESSAGE);
       this.results.set(test.id, {
         ...described,
         status: resolveTestStatus(test.outcome(), result.status),
@@ -732,7 +843,7 @@ export default class IngestReporter implements Reporter {
           interrupted && !firstError?.startsWith(INTERRUPTED_PREFIX)
             ? `${INTERRUPTED_PREFIX}${firstError ?? "the run ended before this test finished"}`
             : firstError,
-        error_stack: prior?.error_stack ?? result.errors[0]?.stack,
+        error_stack: prior?.error_stack ?? errorField(result.errors[0]?.stack, MAX_ERROR_STACK),
         retries: result.retry,
       });
     } catch (err) {
@@ -742,18 +853,25 @@ export default class IngestReporter implements Reporter {
 
   async onEnd(result: FullResult) {
     if (!this.cfg || !shouldPush(this.cfg)) return;
-    if (this.preflight && !(await this.preflight)) return;
+    await this.preflight;
+    if (this.results.size === 0 && this.collectedCount > 0) {
+      // `playwright test --list` and fully-filtered runs: a green run in which
+      // nothing ran would read as real coverage.
+      log("no test ran (list mode or everything filtered out); nothing pushed.");
+      return;
+    }
     try {
-      let rows = { results: [...this.results.values()], collected: this.collected };
-      if (this.cfg.titleFormat === "clean") rows = disambiguateAcrossFiles(rows.results, rows.collected);
-      const payload = buildPayload(
-        rows.results,
-        this.cfg,
-        runTiming(result, this.startTime, Date.now()),
-        process.env,
-        result?.status,
-        { shard: this.shard, collected: rows.collected },
+      const { payload, warnings } = fitPayload(
+        buildPayload(
+          [...this.results.values()],
+          this.cfg,
+          runTiming(result, this.startTime, Date.now()),
+          process.env,
+          result?.status,
+          { shard: this.shard, collected: this.collected },
+        ),
       );
+      for (const w of warnings) warn(w);
       const { resp, error, attempts } = await postWithRetry(
         `${this.cfg.url}/api/ingest/runs`,
         {

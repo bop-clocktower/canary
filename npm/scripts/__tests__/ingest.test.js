@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const reporterModule = require("../../dist/reporters/ingest.js");
-const { mapStatus, resolveTestStatus, runStatus, resolveConfig, buildPayload, shouldPush, dedupeByFullTitle, ingestOutcome } = reporterModule;
+const { mapStatus, resolveTestStatus, runStatus, resolveConfig, buildPayload, shouldPush, dedupeByFullTitle, ingestOutcome, retryWaitMs, fitPayload } = reporterModule;
 const IngestReporter = reporterModule.default;
 
 // --- reporter harness ---------------------------------------------------------
@@ -55,6 +55,7 @@ async function runReporter({
   tests = [],
   fullResult = { status: "passed", startTime: new Date("2026-10-05T00:00:00Z"), duration: 60000 },
   responses = [],
+  onRequest = () => {},
   whoami = { status: 200, json: { tenant: { slug: "acme", displayName: "Acme" }, token: { name: "ci", scopes: ["ingest:runs"] } } },
   env = {},
 } = {}) {
@@ -71,6 +72,7 @@ async function runReporter({
   global.fetch = async (url, init = {}) => {
     const body = init.body ? JSON.parse(init.body) : undefined;
     requests.push({ url, method: init.method ?? "GET", body });
+    onRequest(init);
     const isWhoami = String(url).endsWith("/api/ingest/whoami");
     const r = (isWhoami ? whoami : responses.shift()) ?? {
       status: 200,
@@ -88,7 +90,9 @@ async function runReporter({
   console.log = (...args) => logs.push(args.join(" "));
   try {
     const reporter = new IngestReporter({ suite: "web", url: "https://dash.example", token: "tok", testFilePrefix: REPO, retryDelaysMs: [0, 0], ...options }); // default count (3 attempts), no waiting
-    const suite = { allTests: () => collected ?? tests.map(([t]) => t) };
+    const all = collected ?? tests.map(([t]) => t);
+    const projects = [...new Set(all.map((t) => t.titlePath()[1]))];
+    const suite = { allTests: () => all, suites: projects.map((title) => ({ type: "project", title })) };
     reporter.onBegin(config, suite);
     for (const [t, r] of tests) reporter.onTestEnd(t, r);
     await reporter.onEnd(fullResult);
@@ -543,7 +547,7 @@ test("a shard run omits collected — one shard's tests are not the suite's deno
 test("collected rows are unique by full_title", async () => {
   const a = fakeTest({ title: "a", id: "1" });
   const again = fakeTest({ title: "a", id: "2" });
-  const { payload } = await runReporter({ collected: [a, again] });
+  const { payload } = await runReporter({ collected: [a, again], tests: [[a, fakeResult("passed")]] });
   assert.equal(payload.collected.length, 1);
 });
 
@@ -576,8 +580,19 @@ test("CANARY_INGEST_AREA_MAP supplies areaMap as JSON", () => {
   assert.deepEqual(c.areaMap, { "tests/rewards/**": "rewards" });
 });
 
-test("a malformed CANARY_INGEST_AREA_MAP is a config error, not a silent no-area run", () => {
-  assert.throws(() => resolveConfig({ suite: "s" }, { CANARY_INGEST_AREA_MAP: "{nope" }), /CANARY_INGEST_AREA_MAP/);
+test("a malformed CANARY_INGEST_AREA_MAP warns and falls back to no areas — it never turns pushing off", async () => {
+  const c = resolveConfig({ suite: "s" }, { CANARY_INGEST_AREA_MAP: "{nope" });
+  assert.deepEqual(c.areaMap, {});
+  assert.match(c.configWarnings.join("\n"), /CANARY_INGEST_AREA_MAP/);
+  const t = fakeTest({ title: "a" });
+  const { pushes, logs } = await runReporter({ tests: [[t, fakeResult("passed")]], env: { CANARY_INGEST_AREA_MAP: "{nope", GITHUB_ACTIONS: "true" } });
+  assert.equal(pushes.length, 1);
+  assert.ok(logs.some((l) => l.startsWith("::warning") && /CANARY_INGEST_AREA_MAP/.test(l)), logs.join("\n"));
+});
+
+test("an areaMap glob using {a,b} or [ab] is flagged, not silently matched as literal text", () => {
+  const c = resolveConfig({ suite: "s", areaMap: { "tests/{rewards,shop}/**": "commerce" } }, {});
+  assert.match(c.configWarnings.join("\n"), /\{a,b\}|unsupported/);
 });
 
 test("a collected_count that differs from the catalog sent is a warning", async () => {
@@ -634,11 +649,31 @@ test("preflight names the tenant the token writes to before anything is pushed",
   assert.ok(logs.some((l) => /tenant acme/.test(l)), logs.join("\n"));
 });
 
-test("a rejected token is reported at preflight and nothing is pushed", async () => {
+test("a token rejected at preflight is warned about, and the push still decides", async () => {
+  // whoami may sit behind different auth or a WAF; a 401 there must not drop a
+  // run the ingest endpoint would have accepted.
   const t = fakeTest({ title: "a" });
   const { pushes, logs } = await runReporter({ tests: [[t, fakeResult("passed")]], whoami: { status: 401, json: {} } });
-  assert.equal(pushes.length, 0);
+  assert.equal(pushes.length, 1);
   assert.ok(logs.some((l) => /WARNING/.test(l) && /401/.test(l)), logs.join("\n"));
+});
+
+test("every request carries a timeout so a stalled dashboard cannot hang the job", async () => {
+  const t = fakeTest({ title: "a" });
+  const signals = [];
+  const realFetch = global.fetch;
+  const { requests } = await runReporter({ tests: [[t, fakeResult("passed")]], onRequest: (init) => signals.push(init.signal) });
+  global.fetch = realFetch;
+  assert.equal(requests.length, 2);
+  assert.ok(signals.every((sig) => sig instanceof AbortSignal), "whoami and POST both need a signal");
+});
+
+test("Retry-After is honoured up to 65 s and never shortens the backoff", () => {
+  assert.equal(retryWaitMs(1000, "60"), 60000);
+  assert.equal(retryWaitMs(1000, "600"), 65000);
+  assert.equal(retryWaitMs(4000, "1"), 4000);
+  assert.equal(retryWaitMs(1000, null), 1000);
+  assert.equal(retryWaitMs(1000, "Wed, 21 Oct 2026 07:28:00 GMT"), 1000);
 });
 
 test("an unreachable or older preflight endpoint does not block the push", async () => {
@@ -655,6 +690,96 @@ test("no preflight and no push when pushing is off", async () => {
   assert.equal(requests.length, 0);
 });
 
+// --- review follow-ups: silent abstention and the payload budget ---------------
+
+test("an empty CANARY_INGEST_* var does not hide its legacy alias", () => {
+  // GitHub Actions expands a not-yet-created secret to "".
+  const c = resolveConfig({}, { CANARY_INGEST_SUITE: "", TESTTRACKER_SUITE: "old", CANARY_INGEST_TOKEN: "", TESTTRACKER_API_TOKEN: "t" });
+  assert.equal(c.suite, "old");
+  assert.equal(c.token, "t");
+});
+
+test("in CI with no url or token the reporter says what is missing instead of nothing", async () => {
+  const t = fakeTest({ title: "a" });
+  const { requests, logs } = await runReporter({
+    options: { url: "", token: "" },
+    tests: [[t, fakeResult("passed")]],
+    env: { CANARY_INGEST_PUSH: "", CI: "true" },
+  });
+  assert.equal(requests.length, 0);
+  assert.ok(logs.some((l) => /not pushing/.test(l) && /CANARY_INGEST_URL/.test(l) && /CANARY_INGEST_TOKEN/.test(l)), logs.join("\n"));
+});
+
+test("a missing suite with url and token set is a warning, not a quiet log line", async () => {
+  const t = fakeTest({ title: "a" });
+  const { logs } = await runReporter({ options: { suite: "" }, tests: [[t, fakeResult("passed")]], env: { GITHUB_ACTIONS: "true" } });
+  assert.ok(logs.some((l) => l.startsWith("::warning") && /suite/.test(l)), logs.join("\n"));
+});
+
+test("error text is ANSI-stripped and capped so a bad night cannot blow the body limit", async () => {
+  const t = fakeTest({ title: "a", outcome: "unexpected" });
+  const huge = "\u001b[31mexpected\u001b[39m " + "y".repeat(50000);
+  const { payload } = await runReporter({ tests: [[t, fakeResult("failed", { errors: [{ message: huge, stack: huge }] })]] });
+  const row = payload.results[0];
+  assert.equal(row.error_message.includes("\u001b"), false);
+  assert.ok(row.error_message.length <= 4100, `${row.error_message.length}`);
+  assert.ok(row.error_stack.length <= 8100, `${row.error_stack.length}`);
+});
+
+test("a payload over budget drops the catalog first and says so", () => {
+  const big = Array.from({ length: 3 }, (_, i) => ({ full_title: `t${i}`, test_file: "x.spec.ts", tags: ["z".repeat(100)] }));
+  const cfg = resolveConfig({ suite: "s" }, {});
+  const p = buildPayload([], cfg, T, {}, "passed", { collected: big });
+  const { payload, warnings } = fitPayload(p, 200);
+  assert.equal("collected" in payload, false);
+  assert.match(warnings.join("\n"), /collected/);
+});
+
+test("--list mode (nothing ran, tests collected) pushes nothing", async () => {
+  const t = fakeTest({ title: "a" });
+  const { pushes, logs } = await runReporter({ collected: [t], tests: [] });
+  assert.equal(pushes.length, 0);
+  assert.ok(logs.some((l) => /no test ran/.test(l)), logs.join("\n"));
+});
+
+// --- collected is the whole suite or nothing ---------------------------------
+
+test("a grep-filtered run omits collected and says why", async () => {
+  const t = fakeTest({ title: "a" });
+  const { payload, logs } = await runReporter({ config: { shard: null, projects: [], grep: /@smoke/ }, tests: [[t, fakeResult("passed")]] });
+  assert.equal("collected" in payload, false);
+  assert.ok(logs.some((l) => /collected/.test(l) && /grep/.test(l)), logs.join("\n"));
+});
+
+test("a grepInvert run omits collected", async () => {
+  const t = fakeTest({ title: "a" });
+  const { payload } = await runReporter({ config: { shard: null, projects: [], grep: /.*/, grepInvert: /@slow/ }, tests: [[t, fakeResult("passed")]] });
+  assert.equal("collected" in payload, false);
+});
+
+test("a run of a subset of the configured projects omits collected", async () => {
+  const t = fakeTest({ title: "a", project: "chromium" });
+  const { payload } = await runReporter({ config: { shard: null, projects: [{ name: "chromium" }, { name: "firefox" }] }, tests: [[t, fakeResult("passed")]] });
+  assert.equal("collected" in payload, false);
+});
+
+test("a full run of every configured project sends collected", async () => {
+  const a = fakeTest({ title: "a", project: "chromium" });
+  const b = fakeTest({ title: "a", project: "firefox" });
+  const { payload } = await runReporter({
+    config: { shard: null, projects: [{ name: "chromium" }, { name: "firefox" }], grep: /.*/, grepInvert: null },
+    tests: [[a, fakeResult("passed")], [b, fakeResult("passed")]],
+  });
+  assert.equal(payload.collected.length, 2);
+});
+
+test("collected: false (CANARY_INGEST_COLLECTED=false) opts a job out", async () => {
+  const t = fakeTest({ title: "a" });
+  assert.equal(resolveConfig({ suite: "s" }, { CANARY_INGEST_COLLECTED: "false" }).collected, false);
+  const { payload } = await runReporter({ options: { collected: false }, tests: [[t, fakeResult("passed")]] });
+  assert.equal("collected" in payload, false);
+});
+
 // --- #1183: readable titles, project/setup dimension, skip reasons ------------
 // full_title is the dashboard's test identity (quarantine entries and flake
 // history key on it), so the clean format is opt-in until the dashboard
@@ -666,17 +791,37 @@ test("the legacy title format is the default and is unchanged", async () => {
   assert.equal(payload.results[0].full_title, "chromium > tests/a.spec.ts > @functional foo > does x @functional");
 });
 
-test("titleFormat clean sends the describe chain and title only, without inline @tags", async () => {
-  const t = fakeTest({ title: "does x @functional", describes: ["@functional foo", "emails user@example.com"] });
+test("titleFormat clean drops only the project: file > describe > title, tags kept", async () => {
+  // Deterministic per test: no collisions, and no identity that depends on
+  // which other tests happen to be in this push.
+  const t = fakeTest({ title: "does x @functional", describes: ["@functional foo"] });
   const { payload } = await runReporter({ options: { titleFormat: "clean" }, tests: [[t, fakeResult("passed")]] });
-  assert.equal(payload.results[0].full_title, "foo > emails user@example.com > does x");
-  assert.equal(payload.collected[0].full_title, "foo > emails user@example.com > does x");
+  assert.equal(payload.results[0].full_title, "tests/a.spec.ts > @functional foo > does x @functional");
+  assert.equal(payload.collected[0].full_title, "tests/a.spec.ts > @functional foo > does x @functional");
 });
 
-test("CANARY_INGEST_TITLE_FORMAT selects the format; an unknown value is a config error", () => {
+test("under the clean format, tests differing only by tag stay separate rows", async () => {
+  const smoke = fakeTest({ title: "works @smoke" });
+  const regression = fakeTest({ title: "works @regression" });
+  const { payload } = await runReporter({ options: { titleFormat: "clean" }, tests: [[smoke, fakeResult("passed")], [regression, fakeResult("failed")]] });
+  assert.equal(payload.totals.total, 2);
+});
+
+test("a clean title is the same whether or not a same-named test is in the push", async () => {
+  const a = fakeTest({ title: "works", describes: ["login"], file: "tests/api/login.spec.ts" });
+  const b = fakeTest({ title: "works", describes: ["login"], file: "tests/web/login.spec.ts" });
+  const alone = await runReporter({ options: { titleFormat: "clean" }, tests: [[a, fakeResult("passed")]] });
+  const both = await runReporter({ options: { titleFormat: "clean" }, tests: [[a, fakeResult("passed")], [b, fakeResult("passed")]] });
+  assert.equal(alone.payload.results[0].full_title, both.payload.results.find((r) => r.test_file === "tests/api/login.spec.ts").full_title);
+  assert.equal(both.payload.totals.total, 2);
+});
+
+test("CANARY_INGEST_TITLE_FORMAT selects the format; an unknown value warns and stays legacy", () => {
   assert.equal(resolveConfig({ suite: "s" }, { CANARY_INGEST_TITLE_FORMAT: "clean" }).titleFormat, "clean");
   assert.equal(resolveConfig({ suite: "s" }, {}).titleFormat, "legacy");
-  assert.throws(() => resolveConfig({ suite: "s" }, { CANARY_INGEST_TITLE_FORMAT: "pretty" }), /legacy.*clean/);
+  const bad = resolveConfig({ suite: "s" }, { CANARY_INGEST_TITLE_FORMAT: "Clean" });
+  assert.equal(bad.titleFormat, "legacy");
+  assert.match(bad.configWarnings.join("\n"), /legacy.*clean/);
 });
 
 test("every row carries its Playwright project as a project: tag", async () => {
@@ -702,23 +847,7 @@ test("under the clean format a 3-browser suite reports each test once, worst sta
   assert.equal(payload.collected.length, 1);
 });
 
-test("under the clean format, same-named tests in different files are never merged", async () => {
-  const api = fakeTest({ title: "works", describes: ["login"], file: "tests/api/login.spec.ts" });
-  const web = fakeTest({ title: "works", describes: ["login"], file: "tests/web/login.spec.ts" });
-  const lone = fakeTest({ title: "only once", file: "tests/web/login.spec.ts" });
-  const { payload } = await runReporter({
-    options: { titleFormat: "clean" },
-    tests: [[api, fakeResult("passed")], [web, fakeResult("failed")], [lone, fakeResult("passed")]],
-  });
-  assert.deepEqual(
-    payload.results.map((r) => r.full_title).sort(),
-    ["only once", "tests/api/login.spec.ts > login > works", "tests/web/login.spec.ts > login > works"],
-  );
-  assert.equal(payload.totals.total, 3);
-  assert.equal(payload.collected.length, 3);
-});
-
-test("setup and teardown projects are tagged so they can be filtered out of test counts", async () => {
+test("dependency and teardown projects are tagged so a dashboard can choose to filter them", async () => {
   const setup = fakeTest({ title: "authenticate", project: "setup", file: "tests/auth.setup.ts" });
   const cleanup = fakeTest({ title: "drop db", project: "cleanup", file: "tests/db.teardown.ts" });
   const real = fakeTest({ title: "a", project: "chromium" });
@@ -727,9 +856,9 @@ test("setup and teardown projects are tagged so they can be filtered out of test
     tests: [[setup, fakeResult("passed")], [cleanup, fakeResult("passed")], [real, fakeResult("passed")]],
   });
   const tagsOf = (title) => payload.results.find((r) => r.full_title.endsWith(title)).tags;
-  assert.ok(tagsOf("authenticate").includes("setup"));
+  assert.ok(tagsOf("authenticate").includes("dependency"));
   assert.ok(tagsOf("drop db").includes("teardown"));
-  assert.equal(tagsOf("> a").includes("setup"), false);
+  assert.equal(tagsOf("> a").includes("dependency"), false);
 });
 
 test("a fixme is tagged fixme and its reason reaches the dashboard", async () => {
@@ -753,5 +882,5 @@ test("a very long skip reason is capped", async () => {
   const t = fakeTest({ title: "a", outcome: "skipped", annotations: [{ type: "skip", description: "x".repeat(500) }] });
   const { payload } = await runReporter({ tests: [[t, fakeResult("skipped")]] });
   const reason = payload.results[0].tags.find((x) => x.startsWith("reason:"));
-  assert.ok(reason.length <= 120, `${reason.length}`);
+  assert.equal(reason.length, "reason:".length + 100);
 });

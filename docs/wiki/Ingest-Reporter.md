@@ -17,7 +17,7 @@ keep.
 ## Requirements
 
 - `canary-test-cli@>=5.15.0` in the repo's devDependencies.
-- `@playwright/test >=1.40.0` (already present in any Playwright suite; it is an
+- `@playwright/test >=1.42.0` (already present in any Playwright suite; it is an
   **optional** peer dependency of `canary-test-cli`).
 
 ## Usage
@@ -40,20 +40,26 @@ export default defineConfig({
 
 ### Options
 
-| Option           | Env fallback                     | Legacy env (deprecated)        | Default        | Purpose                                                                |
-| ---------------- | -------------------------------- | ------------------------------ | -------------- | ---------------------------------------------------------------------- |
-| `suite`          | `CANARY_INGEST_SUITE`            | `TESTTRACKER_SUITE`            | — (required)   | Suite name on the dashboard (e.g. `consumer-b-api`, `consumer-a-web`). |
-| `testFilePrefix` | `CANARY_INGEST_TEST_FILE_PREFIX` | `TESTTRACKER_TEST_FILE_PREFIX` | `<cwd>/`       | Prefix stripped from absolute test file paths.                         |
-| `environment`    | `CANARY_INGEST_ENVIRONMENT`      | `TESTTRACKER_ENVIRONMENT`      | (unset)        | Environment label (`stage`, `uat`, `prod`, …).                         |
-| `url`            | `CANARY_INGEST_URL`              | `TESTTRACKER_URL`              | (unset)        | Dashboard base URL; the reporter posts to `<url>/api/ingest/runs`.     |
-| `token`          | `CANARY_INGEST_TOKEN`            | `TESTTRACKER_API_TOKEN`        | (unset)        | Ingest token (scope `ingest:runs`).                                    |
-| `workflow`       | `CANARY_INGEST_WORKFLOW`         | `TESTTRACKER_WORKFLOW`         | `playwright`   | Free-form workflow label.                                              |
-| `areaMap`        | `CANARY_INGEST_AREA_MAP` (JSON)  | —                              | `{}`           | Glob → product area, first match wins. See [Areas](#areas).            |
-| `retryDelaysMs`  | —                                | —                              | `[1000, 4000]` | Waits before each retry of a 5xx, 429 or network error.                |
-| `titleFormat`    | `CANARY_INGEST_TITLE_FORMAT`     | —                              | `legacy`       | `legacy` or `clean`. See [Title format](#title-format).                |
+| Option           | Env fallback                     | Legacy env (deprecated)        | Default        | Purpose                                                                  |
+| ---------------- | -------------------------------- | ------------------------------ | -------------- | ------------------------------------------------------------------------ |
+| `suite`          | `CANARY_INGEST_SUITE`            | `TESTTRACKER_SUITE`            | — (required)   | Suite name on the dashboard (e.g. `consumer-b-api`, `consumer-a-web`).   |
+| `testFilePrefix` | `CANARY_INGEST_TEST_FILE_PREFIX` | `TESTTRACKER_TEST_FILE_PREFIX` | `<cwd>/`       | Prefix stripped from absolute test file paths.                           |
+| `environment`    | `CANARY_INGEST_ENVIRONMENT`      | `TESTTRACKER_ENVIRONMENT`      | (unset)        | Environment label (`stage`, `uat`, `prod`, …).                           |
+| `url`            | `CANARY_INGEST_URL`              | `TESTTRACKER_URL`              | (unset)        | Dashboard base URL; the reporter posts to `<url>/api/ingest/runs`.       |
+| `token`          | `CANARY_INGEST_TOKEN`            | `TESTTRACKER_API_TOKEN`        | (unset)        | Ingest token (scope `ingest:runs`).                                      |
+| `workflow`       | `CANARY_INGEST_WORKFLOW`         | `TESTTRACKER_WORKFLOW`         | `playwright`   | Free-form workflow label.                                                |
+| `areaMap`        | `CANARY_INGEST_AREA_MAP` (JSON)  | —                              | `{}`           | Glob → product area, first match wins. See [Areas](#areas).              |
+| `retryDelaysMs`  | —                                | —                              | `[1000, 4000]` | Waits before each retry of a 5xx, 429 or network error.                  |
+| `titleFormat`    | `CANARY_INGEST_TITLE_FORMAT`     | —                              | `legacy`       | `legacy` or `clean`. See [Title format](#title-format).                  |
+| `collected`      | `CANARY_INGEST_COLLECTED`        | —                              | `true`         | Send the suite catalog. See [collected](#what-it-sends-besides-results). |
 
 When both a `CANARY_INGEST_*` var and its legacy name are set, the new name
-wins.
+wins. An empty value counts as unset, so a `${{ secrets.X }}` for a secret that
+does not exist yet never hides a working legacy value.
+
+An invalid optional setting (`titleFormat`, `areaMap`) falls back to its default
+with a warning; it never turns pushing off. Only a missing `suite` disables the
+reporter, and that is a warning when `url` and `token` are set.
 
 ### Areas
 
@@ -63,7 +69,8 @@ A test's product area comes from, in order:
    `test('redeem', { annotation: { type: 'area', description: 'rewards' } }, …)`;
 2. the first `areaMap` glob matching its repo-relative file:
    `{ 'tests/**/rewards/**': 'rewards' }` (`**` crosses directories, `*` stays
-   within one).
+   within one, `?` is one character). `{a,b}` and `[ab]` are not supported; a
+   glob using them gets a warning.
 
 A test matching neither sends **no** area. The reporter never guesses one from a
 folder name, so `functional` or `smoke` never shows up as a product area.
@@ -85,12 +92,13 @@ history key on it.
 - `legacy` (default):
   `chromium > tests/functional/foo.spec.ts > @functional foo > does x @functional`
   — project, file, describe chain and title, exactly as before.
-- `clean`: `foo > does x` — describe chain and title only, with inline `@tag`
-  tokens removed (they are already in `tags`). The project moves to a
+- `clean`: `tests/functional/foo.spec.ts > @functional foo > does x @functional`
+  — the legacy title without the project. The project moves to a
   `project:<name>` tag, so a 3-browser suite reports each test **once**, with
-  the worst status across browsers and every browser in its tags. If two
-  different files hold a test with the same clean title, those titles keep a
-  file prefix (`tests/x.spec.ts > foo > does x`) so they are never merged.
+  the worst status across browsers and every browser in its tags. Everything in
+  the title comes from the test itself, so a test's identity is the same in
+  every run, shard and `--grep` subset, and no two tests share one. (Inline
+  `@tags` stay: two tests may differ only by a tag.)
 
 **Switching to `clean` changes every test's identity**, which starts fresh
 history and orphans existing quarantine entries. Coordinate with the dashboard
@@ -100,43 +108,53 @@ history and orphans existing quarantine entries. Coordinate with the dashboard
 
 On top of the test's own Playwright tags (sent once each, without the `@`):
 
-| Tag              | When                                                                                     |
-| ---------------- | ---------------------------------------------------------------------------------------- |
-| `project:<name>` | Always: the Playwright project the test ran in.                                          |
-| `setup`          | The project is another project's `dependencies` target. Filter it out of test counts.    |
-| `teardown`       | The project is another project's `teardown`.                                             |
-| `fixme`          | The test is `test.fixme`.                                                                |
-| `reason:<text>`  | A `fixme`/`skip` annotation has a description, often an issue ref (capped at 100 chars). |
-| `interrupted`    | The test was interrupted (see [Status semantics](#status-semantics)).                    |
+| Tag              | When                                                                                                                                                      |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project:<name>` | Always: the Playwright project the test ran in.                                                                                                           |
+| `dependency`     | The project is another project's `dependencies` target. Often setup, sometimes a real suite (`api` before `e2e`); filter it only if yours are setup-only. |
+| `teardown`       | The project is another project's `teardown`.                                                                                                              |
+| `fixme`          | The test is `test.fixme`.                                                                                                                                 |
+| `reason:<text>`  | A `fixme`/`skip` annotation has a description, often an issue ref (capped at 100 chars). Each distinct reason is its own tag value.                       |
+| `interrupted`    | The test was interrupted (see [Status semantics](#status-semantics)).                                                                                     |
 
 ## What it sends besides results
 
 - **`collected`** — every test Playwright collected, whether or not it ran
   (`full_title`, `test_file`, `tags`, `area`). It is the denominator that lets
   the dashboard tell "not covered" from "did not run" (#1150). An empty suite
-  sends `collected: []`, a real measured zero. A **shard** push omits it,
-  because one shard's tests are not the suite; push from `merge-reports` to get
-  a catalog for a sharded suite. If the dashboard's `collected_count` differs
-  from what was sent, the reporter prints a warning.
+  sends `collected: []`, a real measured zero. A catalog from a partial run
+  would shrink the suite's denominator, so it is **left out (and the log says
+  why)** when the run is a shard, uses `--grep`/`--grep-invert`, or skipped any
+  configured project. Push from `merge-reports` to get a catalog for a sharded
+  suite. Playwright does not tell a reporter about `--last-failed` or
+  `--only-changed`: set `CANARY_INGEST_COLLECTED=false` on jobs that use them.
+  If the dashboard's `collected_count` differs from what was sent, the reporter
+  prints a warning.
 - **Preflight** — before the tests run, the reporter calls
-  `GET <url>/api/ingest/whoami` and logs the tenant the token writes to. A
-  `401`/`403` is reported straight away and the run is not pushed. An
-  unreachable endpoint, or a dashboard without `/whoami`, does not block the
-  push.
-- **Retry** — a `5xx`, `429` or network error is retried (3 attempts in all,
-  honouring `Retry-After` up to 30 s). Ingest is idempotent, so a retry cannot
-  double-count. A `4xx` is a payload problem and is not retried. A run that is
-  not ingested ends with a warning (and a GitHub Actions annotation), never a
-  quiet log line.
+  `GET <url>/api/ingest/whoami` (5 s limit) and logs the tenant the token writes
+  to. A `401`/`403` is a warning at the top of the log; the push is still tried,
+  and its own answer is the verdict.
+- **Retry** — a `5xx`, `429`, timeout (30 s per attempt) or network error is
+  retried (3 attempts in all, honouring `Retry-After` up to 65 s). Ingest is
+  idempotent, so a retry cannot double-count. A `4xx` is a payload problem and
+  is not retried. A run that is not ingested ends with a warning (and a GitHub
+  Actions annotation), never a quiet log line.
+- **Size** — error messages and stacks are sent without ANSI colour codes and
+  capped (4 KB / 8 KB). If the body would still exceed the ingest limit,
+  `collected` is dropped first, then stacks are cut, each with a warning, so a
+  night with many failures is not lost to a `413`.
+- **Nothing ran** — `playwright test --list`, or a run where every test was
+  filtered out, pushes nothing rather than a green run with no results.
 
 ## When it pushes (and when it doesn't)
 
 - Pushes **only** when `url` + `token` are set **and** running in CI (`CI=true`
   / `GITHUB_ACTIONS=true`) — **or** when you force it locally with
   `CANARY_INGEST_PUSH=true`.
-- Missing config, or local runs without the force flag → the reporter **no-ops
-  silently**. It never fails a test run: a config or network error is logged (as
-  a warning when the run was meant to be pushed) and swallowed.
+- Local runs without the force flag → the reporter **no-ops silently**. In CI
+  with `url` or `token` missing, it logs one line naming what is missing. It
+  never fails a test run: a config or network error is logged (as a warning when
+  the run was meant to be pushed) and swallowed.
 
 ## Status semantics
 
@@ -199,6 +217,11 @@ in that step's environment. This yields exactly one run per suite per CI run.
 The run's `started_at`/`finished_at` come from Playwright's merged result, so
 they describe the original test run, not the few hundred milliseconds the merge
 step takes (#1176).
+
+Do not do both: if the reporter is in `playwright.config.ts` and the push env
+vars are set on the shard jobs too, each shard pushes a partial run **and** the
+merge step pushes the full one. Set `CANARY_INGEST_URL`/`CANARY_INGEST_TOKEN`
+only on the merge step.
 
 Pushing from each shard also works now (each shard lands as its own run,
 `…-s1of4`, `…-s2of4`), but the dashboard then shows a sharded suite as several

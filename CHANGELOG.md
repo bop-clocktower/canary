@@ -25,20 +25,32 @@ under the project's former name) are documented in the
 - **Ingest reporter: `collected`, `area`, retry and preflight** (#1150). The
   reporter now sends `collected`, every test Playwright collected, which is the
   denominator that separates "not covered" from "did not run" (`[]` for an empty
-  suite; omitted on a shard push, whose slice is not the suite). It sends a
-  per-test `area` from an `area` annotation or an `areaMap` glob
-  (`CANARY_INGEST_AREA_MAP`), and never a folder name. It retries 5xx, 429 and
-  network errors (3 attempts) but not 4xx. Before the run it calls
-  `GET /api/ingest/whoami` and logs the tenant; a rejected token stops the push
-  up front. A run that is not ingested, or a `collected_count` mismatch, now
-  ends in a warning plus a GitHub Actions annotation.
-- **Ingest reporter: readable titles and tags** (#1183). `titleFormat: 'clean'`
-  (`CANARY_INGEST_TITLE_FORMAT`) sends `describe > title` without the project,
-  file or inline `@tags`; it is opt-in because `full_title` is the dashboard's
-  identity key, and `legacy` stays the default. Every row is tagged
-  `project:<name>`, setup/teardown projects are tagged `setup`/`teardown`, and
-  `test.fixme` is tagged `fixme`, with any fixme/skip reason forwarded as
-  `reason:<text>`.
+  suite). It is left out, with a log line saying why, when the run is a shard,
+  uses `--grep`/`--grep-invert` or skipped a configured project, because a
+  partial list would shrink the suite's denominator;
+  `CANARY_INGEST_COLLECTED=false` opts out a job running
+  `--last-failed`/`--only-changed`. It sends a per-test `area` from an `area`
+  annotation or an `areaMap` glob (`CANARY_INGEST_AREA_MAP`), and never a folder
+  name. It retries 5xx, 429, timeouts and network errors (3 attempts, 30 s each,
+  `Retry-After` up to 65 s) but not 4xx, caps error text (ANSI stripped, 4 KB /
+  8 KB) and drops the catalog before it would exceed the body limit. Before the
+  run it calls `GET /api/ingest/whoami` and logs the tenant; a rejected token is
+  a warning, and the push still decides. A run that is not ingested, or a
+  `collected_count` mismatch, ends in a warning plus a GitHub Actions
+  annotation; `--list` pushes nothing.
+- **Ingest reporter: titles and tags** (#1183). `titleFormat: 'clean'`
+  (`CANARY_INGEST_TITLE_FORMAT`) drops the project from the title
+  (`file > describe > title`), so a multi-browser suite reports each test once;
+  the identity still comes only from the test itself, so it never collides or
+  changes between shards. It is opt-in because `full_title` is the dashboard's
+  identity key; `legacy` stays the default. Every row is tagged
+  `project:<name>`, dependency and teardown projects are tagged `dependency` /
+  `teardown`, and `test.fixme` is tagged `fixme`, with any fixme/skip reason
+  forwarded as `reason:<text>`.
+- **Ingest reporter: no silent no-ops.** An empty `CANARY_INGEST_*` var no
+  longer hides its legacy alias, an invalid optional setting falls back to its
+  default with a warning instead of turning pushing off, and a CI run with no
+  url or token says which one is missing.
 
 ### Fixed
 
