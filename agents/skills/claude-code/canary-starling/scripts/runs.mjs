@@ -5,6 +5,8 @@
 // duration_ms, and a row without both is LEFT OUT and named -- an invented
 // time is a lie the contract cannot detect (#1151 phase 2, P3).
 
+import { loadRuns } from '../../canary-signal/scripts/sources.mjs';
+
 const TIMESTAMP =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const SHA = /^[0-9a-f]{7,64}$/;
@@ -100,6 +102,17 @@ export function historyToRun(row, scope) {
       collected: null,
     },
   };
+}
+
+/** The history store as run records; each left-out row is named in `notes`. */
+export function historyRuns(file, scope, notes) {
+  const runs = [];
+  for (const row of loadRuns(file)) {
+    const out = historyToRun(row, scope);
+    if (out.run) runs.push(out.run);
+    else notes.push(`left out ${out.skipped}`);
+  }
+  return runs;
 }
 
 /** D15: the last N runs per (scope, suite) keep the feed loadable in one fetch. */

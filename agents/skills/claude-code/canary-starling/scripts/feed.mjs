@@ -1,9 +1,15 @@
-// feed -- canary-site.config.json and the composed canary.site/1 document.
+// feed -- canary-site.config.json, the inputs, and the composed canary.site/1
+// document.
 //
 // The feed is validated before anyone sees it: composeFeed returns the
 // validator's errors and the CLI refuses to write on any (#1151 phase 2).
+// gatherInputs lives here, not in cli.mjs, so the CLI couples to one module;
+// reading the files is inputs.mjs's job.
 
-import { validateDocument } from '../../../lib/contracts/validate.mjs';
+import { validateDocument } from '../../../lib/contracts/document.mjs';
+import { readInputs, readJson } from './inputs.mjs';
+import { flakyTests } from './flaky.mjs';
+import { ciReadyAssessments, latestPerKey } from './assess.mjs';
 
 const text = (v) => typeof v === 'string' && v.length > 0;
 
@@ -59,4 +65,28 @@ export function composeFeed({
     register,
   };
   return { doc, errors: validateDocument(doc, { layer: 'site' }).errors };
+}
+
+/**
+ * Reads every input the CLI names and returns composeFeed's arguments (less
+ * `now`). Each input it could not use is pushed onto `notes`.
+ * @throws on an unreadable config, record, store or ci-ready report
+ */
+export function gatherInputs(args, notes, now) {
+  const config = parseConfig(readJson(args.config, 'config'));
+  const input = readInputs(args, config.scope, notes);
+  const assessments = latestPerKey([
+    ...input.assessments,
+    ...ciReadyAssessments(input.report, config.scope, {
+      now,
+      source: args.ciReady ?? null,
+    }),
+  ]);
+  return {
+    config,
+    runs: input.feed,
+    flaky: flakyTests(input.window),
+    assessments,
+    register: input.register,
+  };
 }
