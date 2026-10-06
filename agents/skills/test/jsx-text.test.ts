@@ -43,7 +43,8 @@ describe('isJsxPath', () => {
   it('is true for .tsx/.jsx only', () => {
     expect(isJsxPath('a/B.test.tsx')).toBe(true);
     expect(isJsxPath('a/B.test.JSX')).toBe(true);
-    for (const p of ['a.ts', 'a.js', 'a.mjs', 'a.py', 'tsx', '<text>']) {
+    const others = ['a.ts', 'a.js', 'a.mjs', 'a.py', 'tsx', '<text>'];
+    for (const p of others) {
       expect(isJsxPath(p)).toBe(false);
     }
   });
