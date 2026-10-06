@@ -285,7 +285,7 @@ The feed is built from canary's own suites only.
 
 - `AGENTS.md`: skills section (three skills, the contract library).
 - `docs/wiki/QA-Site.md` (new): building a site, embedding panels, the contract.
-- `docs/wiki/TestTracker-Reporter.md`: `canary.run/1` emission, shard-aware run
+- `docs/wiki/Ingest-Reporter.md`: `canary.run/1` emission, shard-aware run
   ids, status mapping.
 - `README.md`: feature list.
 

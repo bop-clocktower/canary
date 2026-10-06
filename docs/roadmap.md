@@ -38,8 +38,8 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 - **Status:** in-progress
 - **Assignee:** <brianna.stevenski@example.com>
 - **Spec:** docs/changes/testtracker-ingest-reporter/proposal.md
-- **Summary:** Config-driven Playwright reporter shipped from `canary-test-cli` (`canary-test-cli/reporter`) that pushes runs to the TestTracker / QA Intelligence Dashboard ingest API. Consolidates the drifted per-repo `testtracker-reporter.ts` (consumer-a-api/web) into one versioned reporter; onboards Consumer B (consumer-b-api + consumer-b-web). INTERIM precursor to the spec-pure `canary publish` (see canary-internal unified-reporting spec), which is blocked on Phase 2a (`canary report`). Convergence + deprecation path documented in docs/wiki/TestTracker-Reporter.md.
-- **Blockers:** publish/link canary-test-cli@5.15.0; dev TestTracker tenant+token (human).
+- **Summary:** Config-driven Playwright reporter shipped from `canary-test-cli` (`canary-test-cli/reporter`) that pushes runs to the TestTracker / QA Intelligence Dashboard ingest API. Consolidates the drifted per-repo `testtracker-reporter.ts` (consumer-a-api/web) into one versioned reporter; onboards Consumer B (consumer-b-api + consumer-b-web). INTERIM precursor to the spec-pure `canary publish` (see canary-internal unified-reporting spec), which is blocked on Phase 2a (`canary report`). Convergence + deprecation path documented in docs/wiki/Ingest-Reporter.md.
+- **Blockers:** none. The reporter is published and consumers push live runs; renamed to the ingest reporter (`CANARY_INGEST_*`) with #1148, #1149, #1150, #1176 and #1183 fixed (shard-aware run ids, timed_out/interrupted, collected + area, retry + preflight, clean titles + tags).
 - **Plan:** docs/changes/testtracker-ingest-reporter/plans/
 - **Priority:** P1
 - **External-ID:** github:bop-clocktower/canary#603

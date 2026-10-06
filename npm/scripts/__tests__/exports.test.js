@@ -6,7 +6,7 @@ const assert = require("node:assert/strict");
 // name against its exports, so this exercises the real consumer resolution path.
 test("canary-test-cli/reporter resolves via the exports map", () => {
   const resolved = require.resolve("canary-test-cli/reporter");
-  assert.match(resolved, /dist[\\/]reporters[\\/]testtracker\.js$/);
+  assert.match(resolved, /dist[\\/]reporters[\\/]ingest\.js$/);
   const mod = require(resolved);
   assert.equal(typeof mod.default, "function", "default export is the Reporter class");
   for (const name of ["mapStatus", "resolveConfig", "buildPayload", "shouldPush"]) {

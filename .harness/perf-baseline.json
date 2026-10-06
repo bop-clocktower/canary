@@ -20,6 +20,11 @@
   "deltaAllowances": [
     {
       "rule": "coupling",
+      "path": "npm/src/reporters/ingest.ts",
+      "why": "The ingest reporter's package entry (`canary-test-cli/reporter`): it holds the Playwright hooks and re-exports the public API from its four submodules under npm/src/reporters/ingest/, and only consumers' playwright.config imports it. That is a coupling ratio of 1.00 by shape, the same as a CLI wiring module. The split replaced one 908-line file (the old testtracker.ts already carried a fileLength finding) with five files under 300 lines (#1187)."
+    },
+    {
+      "rule": "coupling",
       "path": "ts/src/**/cli.ts",
       "why": "A CLI wiring module imports many modules and is imported by few, which IS a coupling ratio of 1.00 — the rule fires on the shape, not on a defect. Splitting a subcommand into its own module is the change this repo wants; taxing it pushed work into the already-oversized ts/src/cli.ts."
     },

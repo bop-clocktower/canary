@@ -14,6 +14,61 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- **The TestTracker reporter is now the ingest reporter.** The import path
+  `canary-test-cli/reporter` is unchanged. Env vars are now `CANARY_INGEST_*`
+  (`CANARY_INGEST_URL`, `CANARY_INGEST_TOKEN`, `CANARY_INGEST_SUITE`, …). The
+  old `TESTTRACKER_*` names still work for one release and print a deprecation
+  notice; when both are set the new name wins. Docs moved to
+  `docs/wiki/Ingest-Reporter.md`.
+- **Ingest reporter: `collected`, `area`, retry and preflight** (#1150). The
+  reporter now sends `collected`, every test Playwright collected, which is the
+  denominator that separates "not covered" from "did not run" (`[]` for an empty
+  suite). It is left out, with a log line saying why, when the run is a shard,
+  uses `--grep`/`--grep-invert` or skipped a configured project, because a
+  partial list would shrink the suite's denominator;
+  `CANARY_INGEST_COLLECTED=false` opts out a job running
+  `--last-failed`/`--only-changed`. It sends a per-test `area` from an `area`
+  annotation or an `areaMap` glob (`CANARY_INGEST_AREA_MAP`), and never a folder
+  name. It retries 5xx, 429, timeouts and network errors (3 attempts, 30 s each,
+  `Retry-After` up to 65 s) but not 4xx, caps error text (ANSI stripped, 4 KB /
+  8 KB) and drops the catalog before it would exceed the body limit. Before the
+  run it calls `GET /api/ingest/whoami` and logs the tenant; a rejected token is
+  a warning, and the push still decides. A run that is not ingested, or a
+  `collected_count` mismatch, ends in a warning plus a GitHub Actions
+  annotation; `--list` pushes nothing.
+- **Ingest reporter: titles and tags** (#1183). `titleFormat: 'clean'`
+  (`CANARY_INGEST_TITLE_FORMAT`) drops the project from the title
+  (`file > describe > title`), so a multi-browser suite reports each test once;
+  the identity still comes only from the test itself, so it never collides or
+  changes between shards. It is opt-in because `full_title` is the dashboard's
+  identity key; `legacy` stays the default. Every row is tagged
+  `project:<name>`, dependency and teardown projects are tagged `dependency` /
+  `teardown`, and `test.fixme` is tagged `fixme`, with any fixme/skip reason
+  forwarded as `reason:<text>`.
+- **Ingest reporter: no silent no-ops.** An empty `CANARY_INGEST_*` var no
+  longer hides its legacy alias, an invalid optional setting falls back to its
+  default with a warning instead of turning pushing off, and a CI run with no
+  url or token says which one is missing.
+
+### Fixed
+
+- **Ingest reporter: sharded pushes no longer discard each other** (#1148).
+  Every shard of one workflow run sent the same `canary_run_id`, so the first
+  shard won and every later shard was silently dropped as a duplicate. The id
+  now carries the shard (`42-1-s2of4`), and a duplicate response that stored a
+  different number of rows is a warning, not a success line.
+- **Ingest reporter: `timedOut` and `interrupted` keep their meaning** (#1149).
+  `timedOut` is sent as `timed_out`. `interrupted` was sent as `skipped`, which
+  dropped it from the pass-rate denominator; it is now `failed`, tagged
+  `interrupted`, with an `interrupted:` error.
+- **Ingest reporter: tags and run timing** (#1176). A tag in both a describe and
+  a test title is sent once, and a `merge-reports` push carries the original
+  run's start and duration instead of the merge step's ~0 s. Fractional and
+  negative (`-1`, never started) durations, which the ingest schema rejects
+  along with the whole run, are rounded or omitted.
+
 ## [9.0.0] - 2026-10-05
 
 ### Breaking changes: upgrading from 8.x

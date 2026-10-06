@@ -1,37 +1,7 @@
-import type {
-  FullResult,
-  Reporter,
-  TestCase,
-  TestResult,
-} from "@playwright/test/reporter";
+// Ingest reporter: the wire payload, statuses, dedupe and size budget.
+import type { FullResult } from "@playwright/test/reporter";
 import crypto from "node:crypto";
-
-// Optional .env load — MUST NOT crash the suite if dotenv is absent.
-try {
-  require("dotenv").config();
-} catch {
-  /* dotenv not installed — use ambient env */
-}
-
-export interface TestTrackerReporterOptions {
-  suite?: string;
-  /** Prefix stripped from an absolute test file path. Default: `<cwd>/`. */
-  testFilePrefix?: string;
-  /** Explicit environment label; else derived from env at push time. */
-  environment?: string;
-  url?: string;
-  token?: string;
-  workflow?: string;
-}
-
-export interface ResolvedConfig {
-  suite: string;
-  testFilePrefix: string;
-  environment?: string;
-  url: string;
-  token: string;
-  workflow: string;
-}
+import type { ResolvedConfig } from "./config.js";
 
 export interface ResultEntry {
   full_title: string;
@@ -42,6 +12,15 @@ export interface ResultEntry {
   error_stack?: string;
   retries: number;
   tags: string[];
+  area?: string;
+}
+
+/** One test the run collected, whether or not it ran (the suite's denominator). */
+export interface CollectedEntry {
+  full_title: string;
+  test_file: string;
+  tags: string[];
+  area?: string;
 }
 
 /**
@@ -67,20 +46,38 @@ export interface IngestPayload {
     total: number;
   };
   results: ResultEntry[];
+  /**
+   * Omitted = this push has no catalog (the dashboard reports the suite as
+   * unmeasured); `[]` = a measured zero; non-empty = the suite's denominator.
+   * The three are not interchangeable (#1150).
+   */
+  collected?: CollectedEntry[];
 }
 
+/**
+ * Playwright status → the ingest result enum (`passed | failed | flaky |
+ * skipped | timed_out`).
+ *
+ * `timedOut` keeps its own status: a timeout is often an environment or
+ * performance signal, and triage differs (#1149). `interrupted` (run
+ * cancelled, `maxFailures` hit, worker killed) has no ingest status, and
+ * sending an unknown one rejects the whole run. It must not become `skipped`,
+ * which drops the test out of the pass-rate denominator and makes a cut-short
+ * run look clean, so it is sent as `failed`; `onTestEnd` tags it `interrupted`
+ * and prefixes its error so it never reads as an assertion failure.
+ */
 export function mapStatus(pw: string): string {
   switch (pw) {
     case "passed":
       return "passed";
     case "failed":
-    case "timedOut":
+    case "interrupted":
       return "failed";
+    case "timedOut":
+      return "timed_out";
     case "flaky":
       return "flaky";
     case "skipped":
-    case "interrupted":
-      return "skipped";
     default:
       return "skipped";
   }
@@ -99,42 +96,25 @@ export function resolveTestStatus(outcome: string, lastAttemptStatus: string): s
   return mapStatus(lastAttemptStatus);
 }
 
-export function resolveConfig(
-  opts: TestTrackerReporterOptions = {},
-  env: NodeJS.ProcessEnv = process.env,
-): ResolvedConfig {
-  const suite = opts.suite ?? env.TESTTRACKER_SUITE;
-  if (!suite) {
-    throw new Error(
-      "TestTrackerReporter: `suite` is required (option or TESTTRACKER_SUITE).",
-    );
-  }
-  return {
-    suite,
-    testFilePrefix:
-      opts.testFilePrefix ?? env.TESTTRACKER_TEST_FILE_PREFIX ?? `${process.cwd()}/`,
-    environment: opts.environment ?? env.TESTTRACKER_ENVIRONMENT,
-    url: opts.url ?? env.TESTTRACKER_URL ?? "",
-    token: opts.token ?? env.TESTTRACKER_API_TOKEN ?? "",
-    workflow: opts.workflow ?? env.TESTTRACKER_WORKFLOW ?? "playwright",
-  };
-}
 
-export function shouldPush(
-  cfg: Pick<ResolvedConfig, "url" | "token">,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  if (!cfg.url || !cfg.token) return false;
-  const isCI = env.CI === "true" || env.GITHUB_ACTIONS === "true";
-  const force = env.TESTTRACKER_PUSH === "true";
-  return isCI || force;
-}
+/** Playwright's `config.shard`: set while a shard runs, `null` under `merge-reports`. */
+export type Shard = { current: number; total: number } | null | undefined;
 
-function stableRunId(env: NodeJS.ProcessEnv): string {
+/**
+ * Ingest is idempotent on `(canary_run_id, suite)`, and every shard of one
+ * workflow run shares `GITHUB_RUN_ID`/`GITHUB_RUN_ATTEMPT`. Without the shard
+ * suffix the first shard to push wins and every later shard is answered
+ * `duplicate: true` with its results discarded (#1148). The `-s2of4` form
+ * matches `canary.run/1`'s shard-aware `run.id`.
+ */
+function stableRunId(env: NodeJS.ProcessEnv, shard: Shard): string {
   const runId = env.GITHUB_RUN_ID;
-  if (runId) return env.GITHUB_RUN_ATTEMPT ? `${runId}-${env.GITHUB_RUN_ATTEMPT}` : runId;
-  const sha = env.GITHUB_SHA?.slice(0, 7);
-  return (sha ? `${sha}-` : "local-") + crypto.randomUUID();
+  if (!runId) {
+    const sha = env.GITHUB_SHA?.slice(0, 7);
+    return (sha ? `${sha}-` : "local-") + crypto.randomUUID();
+  }
+  const base = env.GITHUB_RUN_ATTEMPT ? `${runId}-${env.GITHUB_RUN_ATTEMPT}` : runId;
+  return shard && shard.total > 1 ? `${base}-s${shard.current}of${shard.total}` : base;
 }
 
 /**
@@ -158,6 +138,7 @@ export function runStatus(
 /** Worst-first, so a collapsed row can never look healthier than its parts. */
 const STATUS_SEVERITY: Record<string, number> = {
   failed: 3,
+  timed_out: 3,
   flaky: 2,
   passed: 1,
   skipped: 0,
@@ -166,7 +147,7 @@ const STATUS_SEVERITY: Record<string, number> = {
 /**
  * Collapse results that share a `full_title` into one row.
  *
- * TestTracker's ingest holds a unique index on `(run_id, full_title)` and
+ * The ingest API holds a unique index on `(run_id, full_title)` and
  * rejects the WHOLE run on a collision, so a duplicate title is not a cosmetic
  * problem — it takes the suite dark. The reporter keys its in-flight map by
  * `test.id`, which is genuinely unique, but a title is not: a Playwright
@@ -211,12 +192,32 @@ function mergeEntries(prior: ResultEntry, next: ResultEntry): ResultEntry {
   };
 }
 
+/**
+ * The run's real start and end. Under `merge-reports` the reporter only lives
+ * for the merge (well under a second), but `FullResult.startTime`/`duration`
+ * still describe the original run, so they win (#1176). The wall clock is the
+ * fallback for a Playwright that does not report them.
+ */
+export function runTiming(
+  result: Partial<Pick<FullResult, "startTime" | "duration">> | undefined,
+  fallbackStart: number,
+  now: number,
+): { startedAt: string; finishedAt: string } {
+  const start = result?.startTime?.getTime();
+  if (start === undefined || Number.isNaN(start)) {
+    return { startedAt: new Date(fallbackStart).toISOString(), finishedAt: new Date(now).toISOString() };
+  }
+  const end = Number.isFinite(result?.duration) ? start + (result?.duration as number) : now;
+  return { startedAt: new Date(start).toISOString(), finishedAt: new Date(end).toISOString() };
+}
+
 export function buildPayload(
   rawResults: ResultEntry[],
   cfg: ResolvedConfig,
   timing: { startedAt: string; finishedAt: string },
   env: NodeJS.ProcessEnv = process.env,
   fullResultStatus?: string,
+  run: { shard?: Shard; collected?: CollectedEntry[] | null } = {},
 ): IngestPayload {
   // Deduped before the totals are counted, so `totals` always describes the
   // rows actually sent — a payload whose totals disagree with `results.length`
@@ -224,11 +225,12 @@ export function buildPayload(
   const results = dedupeByFullTitle(rawResults);
   const count = (s: string) => results.filter((r) => r.status === s).length;
   const passed = count("passed");
-  const failed = count("failed");
+  // The ingest totals have no timed_out bucket; a timeout is a failure there.
+  const failed = count("failed") + count("timed_out");
   const flaky = count("flaky");
   const skipped = count("skipped");
   return {
-    canary_run_id: stableRunId(env),
+    canary_run_id: stableRunId(env, run.shard),
     suite: cfg.suite,
     branch: env.GITHUB_REF_NAME ?? "local",
     commit_sha: env.GITHUB_SHA,
@@ -239,98 +241,56 @@ export function buildPayload(
     finished_at: timing.finishedAt,
     totals: { passed, failed, flaky, skipped, total: results.length },
     results,
+    // null/undefined = no catalog for this push → the key is omitted, never `[]`.
+    ...(run.collected ? { collected: run.collected } : {}),
   };
 }
 
-export default class TestTrackerReporter implements Reporter {
-  private results = new Map<string, ResultEntry>();
-  private startTime = Date.now();
-  private cfg: ResolvedConfig | null = null;
+/** The subset of the ingest API's `POST /runs` response the reporter reads. */
 
-  constructor(private options: TestTrackerReporterOptions = {}) {}
 
-  onBegin() {
-    // Resolve config once; a config error here is logged, not thrown, so a
-    // misconfigured reporter never aborts the whole run.
-    try {
-      this.cfg = resolveConfig(this.options);
-    } catch (err) {
-      console.log(
-        `\nTestTracker: disabled — ${err instanceof Error ? err.message : String(err)}`,
-      );
-      this.cfg = null;
-    }
+/** The ingest body limit is 5 MB (and ~4.5 MB behind some proxies); stay under both. */
+const MAX_BODY_BYTES = 4_000_000;
+
+/**
+ * Keeps a payload under the body limit. A 413 is a 4xx, so it is not retried
+ * and the whole run would be lost, typically on a night with many large
+ * failures. The catalog goes first (the run still lands, unmeasured), then
+ * stacks are cut to 1 KB.
+ */
+export function fitPayload(
+  payload: IngestPayload,
+  maxBytes: number = MAX_BODY_BYTES,
+): { payload: IngestPayload; warnings: string[] } {
+  const warnings: string[] = [];
+  const size = (p: IngestPayload) => Buffer.byteLength(JSON.stringify(p));
+  let fitted = payload;
+  if (size(fitted) > maxBytes && fitted.collected) {
+    const { collected: _dropped, ...rest } = fitted;
+    fitted = rest;
+    warnings.push(`payload over ${maxBytes} bytes: collected was dropped, so this run's suite is unmeasured.`);
   }
-
-  onTestEnd(test: TestCase, result: TestResult) {
-    if (!this.cfg) return;
-    // A reporter hook must never fail the suite — guard the whole body.
-    try {
-      const fullTitle = test.titlePath().filter(Boolean).join(" > ");
-      // `test.tags` requires Playwright >= 1.42; guard for the peer floor.
-      const tags = (test.tags ?? []).map((t) => t.replace(/^@/, ""));
-      // Keyed by the session-unique `test.id` (NOT the title) so `--repeat-each`
-      // and duplicate-title executions don't collapse into one entry. Retries
-      // share one TestCase (same id), so last-write-wins for the final status
-      // and first-failing-attempt error preservation both still hold — a
-      // recovered flake keeps the error that shows the SDET why it flaked.
-      const prior = this.results.get(test.id);
-      this.results.set(test.id, {
-        full_title: fullTitle,
-        test_file: test.location.file.startsWith(this.cfg.testFilePrefix)
-          ? test.location.file.slice(this.cfg.testFilePrefix.length)
-          : test.location.file,
-        status: resolveTestStatus(test.outcome(), result.status),
-        duration_ms: result.duration,
-        error_message: prior?.error_message ?? result.errors[0]?.message,
-        error_stack: prior?.error_stack ?? result.errors[0]?.stack,
-        retries: result.retry,
-        tags,
-      });
-    } catch (err) {
-      console.log(
-        `\nTestTracker: skipped a result — ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+  if (size(fitted) > maxBytes) {
+    fitted = {
+      ...fitted,
+      results: fitted.results.map((r) => (r.error_stack ? { ...r, error_stack: r.error_stack.slice(0, 1000) } : r)),
+    };
+    warnings.push(`payload over ${maxBytes} bytes: error stacks were cut to 1 KB.`);
   }
-
-  async onEnd(result: FullResult) {
-    if (!this.cfg || !shouldPush(this.cfg)) return;
-    try {
-      const payload = buildPayload(
-        [...this.results.values()],
-        this.cfg,
-        {
-          startedAt: new Date(this.startTime).toISOString(),
-          finishedAt: new Date().toISOString(),
-        },
-        process.env,
-        result?.status,
-      );
-      const resp = await fetch(`${this.cfg.url}/api/ingest/runs`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.cfg.token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-      if (resp.ok) {
-        const data = (await resp.json().catch(() => ({}))) as {
-          id?: number;
-          duplicate?: boolean;
-        };
-        console.log(
-          `\nTestTracker: run ${data.id ?? "?"} ingested${data.duplicate ? " (duplicate)" : ""}.`,
-        );
-      } else {
-        const text = await resp.text().catch(() => "");
-        console.log(`\nTestTracker: push failed ${resp.status} — ${text.slice(0, 200)}`);
-      }
-    } catch (err) {
-      console.log(
-        `\nTestTracker: push error — ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+  if (size(fitted) > maxBytes) {
+    warnings.push(`payload is still over ${maxBytes} bytes; the dashboard may reject it.`);
   }
+  return { payload: fitted, warnings };
+}
+
+export const MAX_ERROR_MESSAGE = 4_000;
+export const MAX_ERROR_STACK = 8_000;
+// eslint-disable-next-line no-control-regex
+const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
+
+/** Playwright errors carry ANSI colour and full diffs; send readable, bounded text. */
+export function errorField(text: string | undefined, max: number): string | undefined {
+  if (text === undefined) return undefined;
+  const plain = text.replace(ANSI, "");
+  return plain.length > max ? `${plain.slice(0, max)}… [truncated]` : plain;
 }

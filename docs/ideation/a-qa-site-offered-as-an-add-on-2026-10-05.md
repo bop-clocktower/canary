@@ -27,7 +27,7 @@ ranking_formula:
   idea 1.
 - Context that shaped the candidates:
   - `canary-test-cli/reporter` already pushes runs to the TestTracker / QA
-    Intelligence Dashboard ingest API (`docs/wiki/TestTracker-Reporter.md`).
+    Intelligence Dashboard ingest API (`docs/wiki/Ingest-Reporter.md`).
   - The spec-pure `canary report` → `canary publish` path (unified-reporting
     Phase 2a) is still blocked (`docs/roadmap.md`).
   - Data canary already produces: run history (NDJSON / Supabase store), flake
