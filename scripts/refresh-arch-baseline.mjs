@@ -291,7 +291,7 @@ function writeRefresh(path, baseline, updates) {
   );
 }
 
-// Only run when invoked directly (resolved-URL guard, as in `arch-verdict.mjs`).
+// Only run when invoked directly, symlinks included (real-path guard, #1189).
 if (isMain(import.meta.url)) {
   process.exit(main(process.argv.slice(2)));
 }
