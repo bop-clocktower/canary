@@ -122,9 +122,14 @@ function identity(f) {
  * needs the root stripped (`--report-root`), and fails closed when it is not.
  */
 export function globToRegExp(glob) {
-  const rooted = glob.startsWith('/');
+  if (glob.startsWith('/')) return new RegExp(`^${globSource(glob.slice(1))}$`);
+  return new RegExp(`^(?:.*/)?${globSource(glob)}$`);
+}
+
+/** The unanchored regex source for a glob's path segments. */
+function globSource(glob) {
   let re = '';
-  for (let i = rooted ? 1 : 0; i < glob.length; i += 1) {
+  for (let i = 0; i < glob.length; i += 1) {
     const c = glob[i];
     if (c === '*' && glob[i + 1] === '*') {
       re += '.*';
@@ -134,7 +139,7 @@ export function globToRegExp(glob) {
     else if (c === '?') re += '[^/]';
     else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
   }
-  return new RegExp(rooted ? `^${re}$` : `^(?:.*/)?${re}$`);
+  return re;
 }
 
 /** The first allowance covering this finding, or `null`. */
