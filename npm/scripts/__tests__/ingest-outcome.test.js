@@ -73,6 +73,51 @@ test("a test.fail() that passed then failed as expected is flaky, and the expect
   assert.equal(row.error_stack, undefined);
 });
 
+test("a flaky test.fail() row keeps the expected-failure tag from the attempt that passed", async () => {
+  const t = fakeTest({ title: "wavers", expectedStatus: "failed" });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("passed")], [t, knownBug({ retry: 1 })]] });
+  const row = payload.results[0];
+  assert.equal(row.status, "flaky");
+  assert.ok(row.tags.includes("expected-failure"), "a dashboard filtering on the tag must find this row");
+});
+
+test("a test.fail() that times out keeps its own error and is not tagged expected-failure", async () => {
+  const t = fakeTest({ title: "hangs", expectedStatus: "failed" });
+  const timeout = fakeResult("timedOut", { errors: [{ message: "Test timeout of 30000ms exceeded.", stack: "at hang.ts:3" }] });
+  const { payload } = await runReporter({ tests: [[t, timeout]] });
+  const row = payload.results[0];
+  assert.equal(row.status, "timed_out");
+  assert.equal(row.error_message, "Test timeout of 30000ms exceeded.");
+  assert.equal(row.error_stack, "at hang.ts:3");
+  assert.equal(row.tags.includes("expected-failure"), false);
+});
+
+test("an interrupted attempt with its own error keeps it, prefixed, with its stack", async () => {
+  const t = fakeTest({ title: "cut short" });
+  const { payload } = await runReporter({
+    tests: [[t, fakeResult("interrupted", { errors: [{ message: "Target page closed", stack: "at page.ts:9" }] })]],
+    fullResult: { status: "interrupted", startTime: new Date("2026-10-05T00:00:00Z"), duration: 1000 },
+  });
+  const row = payload.results[0];
+  assert.equal(row.error_message, "interrupted: Target page closed");
+  assert.equal(row.error_stack, "at page.ts:9");
+});
+
+test("a failed attempt then an interrupted retry reports the first real error, prefixed", async () => {
+  const t = fakeTest({ title: "fails then cut" });
+  const { payload } = await runReporter({
+    tests: [
+      [t, fakeResult("failed", { errors: [{ message: "expect(received).toBe(expected)", stack: "at a.ts:1" }] })],
+      [t, fakeResult("interrupted", { retry: 1, errors: [{ message: "Target page closed", stack: "at page.ts:9" }] })],
+    ],
+    fullResult: { status: "interrupted", startTime: new Date("2026-10-05T00:00:00Z"), duration: 1000 },
+  });
+  const row = payload.results[0];
+  assert.equal(row.status, "failed");
+  assert.equal(row.error_message, "interrupted: expect(received).toBe(expected)");
+  assert.equal(row.error_stack, "at a.ts:1");
+});
+
 test("a clean-title merge of an expected failure and an unexpected pass reports the real reason", async () => {
   const chromium = fakeTest({ title: "known bug", project: "chromium", expectedStatus: "failed" });
   const webkit = fakeTest({ title: "known bug", project: "webkit", expectedStatus: "failed" });

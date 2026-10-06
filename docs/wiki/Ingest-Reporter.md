@@ -116,7 +116,7 @@ On top of the test's own Playwright tags (sent once each, without the `@`):
 | `fixme`            | The test is `test.fixme`.                                                                                                                                 |
 | `reason:<text>`    | A `fixme`/`skip` annotation has a description, often an issue ref (capped at 100 chars). Each distinct reason is its own tag value.                       |
 | `interrupted`      | The test was interrupted (see [Status semantics](#status-semantics)).                                                                                     |
-| `expected-failure` | A `test.fail()` test passed, so it is sent `failed` (see [Status semantics](#status-semantics)).                                                          |
+| `expected-failure` | A `test.fail()` test passed on some attempt: sent `failed`, or `flaky` if a retry then failed as expected (see [Status semantics](#status-semantics)).    |
 
 ## What it sends besides results
 

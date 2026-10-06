@@ -232,10 +232,9 @@ function resultEntry(
   const unexpectedPass = result.status === "passed" && test.expectedStatus === "failed";
   const attempt = attemptError(test, result, unexpectedPass);
   const firstError = prior?.error_message ?? attempt.message;
-  const extraTag = interrupted ? "interrupted" : unexpectedPass ? "expected-failure" : undefined;
   return {
     ...described,
-    tags: extraTag ? [...described.tags, extraTag] : described.tags,
+    tags: [...described.tags, ...statusTags(interrupted, unexpectedPass, prior)],
     status: resolveTestStatus(test.outcome(), result.status),
     // The ingest schema requires a non-negative integer: a float or the -1
     // Playwright reports for a test that never started rejects the whole run.
@@ -244,6 +243,16 @@ function resultEntry(
     error_stack: prior?.error_stack ?? attempt.stack,
     retries: result.retry,
   };
+}
+
+/**
+ * `expected-failure` is carried forward like the error it explains: a flaky
+ * `test.fail()` row (passed, then failed as expected on retry) keeps it.
+ */
+function statusTags(interrupted: boolean, unexpectedPass: boolean, prior: ResultEntry | undefined): string[] {
+  const tags = interrupted ? ["interrupted"] : [];
+  if (unexpectedPass || prior?.tags.includes("expected-failure")) tags.push("expected-failure");
+  return tags;
 }
 
 /** Playwright's own wording; it sets no `result.errors` for an unexpected pass. */
