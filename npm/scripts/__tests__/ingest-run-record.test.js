@@ -109,7 +109,7 @@ test("runFilePath suffixes a sharded run before the extension", () => {
 // --- Task 8: onEnd writes the run file ----------------------------------------
 const fs = require("node:fs");
 const os = require("node:os");
-const { fakeTest, fakeResult, runReporter } = require("./ingest-harness.js");
+const { fakeTest, fakeResult, runReporter, IngestReporter, REPO } = require("./ingest-harness.js");
 
 function tmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "canary-run-"));
@@ -182,16 +182,30 @@ test("a run that writes nothing removes the previous run's file (fails closed)",
   assert.equal(fs.existsSync(file), false);
 });
 
-test("a symlink at the run-file path is replaced, never written through", async () => {
+// Driven hook by hook: onBegin's clearRunFile removes a link planted BEFORE
+// the run, so the link must appear after onBegin for the write to meet it.
+test("a symlink planted mid-run at the run-file path is replaced, never written through", async () => {
   const dir = tmp();
+  const file = path.join(dir, "run.json");
   const target = path.join(dir, "victim.txt");
   fs.writeFileSync(target, "untouched");
-  fs.symlinkSync(target, path.join(dir, "run.json"));
   const t = fakeTest({ title: "a" });
-  await runReporter({ options: scopeOpts(dir), tests: [[t, fakeResult("passed")]] });
+  const reporter = new IngestReporter({ suite: "web", url: "", testFilePrefix: REPO, ...scopeOpts(dir) });
+  const realLog = console.log;
+  console.log = () => {};
+  try {
+    reporter.onBegin({ shard: null, projects: [] }, { allTests: () => [t], suites: [] });
+    fs.symlinkSync(target, file);
+    const result = fakeResult("passed");
+    t.results.push(result);
+    reporter.onTestEnd(t, result);
+    await reporter.onEnd({ status: "passed", startTime: new Date("2026-10-05T00:00:00Z"), duration: 60000 });
+  } finally {
+    console.log = realLog;
+  }
   assert.equal(fs.readFileSync(target, "utf8"), "untouched");
-  assert.equal(fs.lstatSync(path.join(dir, "run.json")).isSymbolicLink(), false);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "run.json"), "utf8")).contract, "canary.run/1");
+  assert.equal(fs.lstatSync(file).isFile(), true);
+  assert.equal(JSON.parse(fs.readFileSync(file, "utf8")).contract, "canary.run/1");
 });
 
 test("a stale run file is removed even when config fails to resolve, with a warning", async () => {
