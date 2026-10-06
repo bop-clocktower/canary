@@ -53,7 +53,8 @@
  *   `.tsx`/`.jsx`): see `jsx-text.ts` (#1180).
  */
 
-import { isJsxPath, maskJsxText, regexLiteralEnd } from './jsx-text.js';
+import { regexLiteralEnd } from './js-literals.js';
+import { isJsxPath, maskJsxText } from './jsx-text.js';
 
 export interface BlankOptions {
   /** Recognise `#` line comments and `'''`/`\"\"\"` triple-quoted blocks. */
