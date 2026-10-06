@@ -14,29 +14,37 @@ const TIMESTAMP =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const REQUIRED = ['test', 'file', 'kind', 'reason', 'commit'];
 
+/** The provenance fields a ledger row lacks; [] when it can be a register row. */
+function missingFields(r) {
+  const missing = REQUIRED.filter((f) => !r[f]);
+  if (!TIMESTAMP.test(r.date ?? '')) missing.push('date');
+  return missing;
+}
+
+const skipNote = (r, missing) =>
+  `ledger row ${r.file || '?'} :: ${r.test || '?'}: no ${missing.join(', ')}`;
+
+function toRow(r, scope) {
+  return {
+    scope,
+    title: r.test,
+    file: r.file,
+    kind: r.kind,
+    reason: r.reason,
+    recorded_at: r.date,
+    commit: r.commit,
+    cause: r.cause || null,
+    issue: r.issue || null,
+  };
+}
+
 export function registerRows(ledgerRows, scope) {
   const rows = [];
   const skipped = [];
   for (const r of ledgerRows) {
-    const missing = REQUIRED.filter((f) => !r[f]);
-    if (!TIMESTAMP.test(r.date ?? '')) missing.push('date');
-    if (missing.length) {
-      skipped.push(
-        `ledger row ${r.file || '?'} :: ${r.test || '?'}: no ${missing.join(', ')}`,
-      );
-      continue;
-    }
-    rows.push({
-      scope,
-      title: r.test,
-      file: r.file,
-      kind: r.kind,
-      reason: r.reason,
-      recorded_at: r.date,
-      commit: r.commit,
-      cause: r.cause || null,
-      issue: r.issue || null,
-    });
+    const missing = missingFields(r);
+    if (missing.length) skipped.push(skipNote(r, missing));
+    else rows.push(toRow(r, scope));
   }
   return { rows, skipped };
 }

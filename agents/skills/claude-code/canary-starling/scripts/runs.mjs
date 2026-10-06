@@ -84,23 +84,28 @@ export function historyToRun(row, scope) {
         version: String(row.schema_version ?? 2),
         channel: 'history-store',
       },
-      run: {
-        id: row.run_id,
-        suite: row.suite,
-        branch: row.branch || null,
-        commit_sha: SHA.test(row.commit_sha ?? '') ? row.commit_sha : null,
-        started_at: new Date(
-          Date.parse(row.timestamp) - row.duration_ms,
-        ).toISOString(),
-        finished_at: row.timestamp,
-        ci_url: null,
-        status: t.failed > 0 ? 'failed' : 'passed',
-        shard: null,
-      },
+      run: runHeader(row, t),
       totals: t,
       results: res.list,
       collected: null,
     },
+  };
+}
+
+/** The record's `run` block, for a row historyToRun has already admitted. */
+function runHeader(row, t) {
+  return {
+    id: row.run_id,
+    suite: row.suite,
+    branch: row.branch || null,
+    commit_sha: SHA.test(row.commit_sha ?? '') ? row.commit_sha : null,
+    started_at: new Date(
+      Date.parse(row.timestamp) - row.duration_ms,
+    ).toISOString(),
+    finished_at: row.timestamp,
+    ci_url: null,
+    status: t.failed > 0 ? 'failed' : 'passed',
+    shard: null,
   };
 }
 
