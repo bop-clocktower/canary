@@ -577,6 +577,8 @@ export function disambiguateAcrossFiles<R extends Identified, C extends Identifi
   return { results: results.map(fix), collected: collected?.map(fix) ?? null };
 }
 
+const INTERRUPTED_PREFIX = "interrupted: ";
+
 function relativeFile(file: string, prefix: string): string {
   return file.startsWith(prefix) ? file.slice(prefix.length) : file;
 }
@@ -596,13 +598,18 @@ export default class IngestReporter implements Reporter {
   constructor(private options: IngestReporterOptions = {}) {}
 
   onBegin(config?: FullConfig, suite?: Suite) {
-    this.shard = config?.shard ?? null;
-    for (const project of config?.projects ?? []) {
-      for (const dep of project.dependencies ?? []) this.setupProjects.add(dep);
-      if (project.teardown) this.teardownProjects.add(project.teardown);
-    }
     // Resolve config once; a config error here is logged, not thrown, so a
     // misconfigured reporter never aborts the whole run.
+    this.shard = config?.shard ?? null;
+    try {
+      for (const project of config?.projects ?? []) {
+        for (const dep of project.dependencies ?? []) this.setupProjects.add(dep);
+        if (project.teardown) this.teardownProjects.add(project.teardown);
+      }
+    } catch (err) {
+      // Costs only the setup/teardown tags; the run is still pushed.
+      log(`could not read the project list — ${errText(err)}`);
+    }
     try {
       this.cfg = resolveConfig(this.options);
       if (this.cfg.deprecatedEnv.length) {
@@ -718,11 +725,13 @@ export default class IngestReporter implements Reporter {
       this.results.set(test.id, {
         ...described,
         status: resolveTestStatus(test.outcome(), result.status),
-        // The ingest schema requires an integer; a float rejects the whole run.
-        duration_ms: Math.round(result.duration),
-        error_message: interrupted
-          ? `interrupted: ${firstError ?? "the run ended before this test finished"}`
-          : firstError,
+        // The ingest schema requires a non-negative integer: a float or the -1
+        // Playwright reports for a test that never started rejects the whole run.
+        duration_ms: result.duration >= 0 ? Math.round(result.duration) : undefined,
+        error_message:
+          interrupted && !firstError?.startsWith(INTERRUPTED_PREFIX)
+            ? `${INTERRUPTED_PREFIX}${firstError ?? "the run ended before this test finished"}`
+            : firstError,
         error_stack: prior?.error_stack ?? result.errors[0]?.stack,
         retries: result.retry,
       });

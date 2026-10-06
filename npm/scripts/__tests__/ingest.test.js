@@ -486,6 +486,30 @@ test("a fractional test duration is sent as an integer (the ingest schema reject
   assert.equal(payload.results[0].duration_ms, 13);
 });
 
+test("a malformed Playwright config never throws out of onBegin", async () => {
+  const t = fakeTest({ title: "a" });
+  const { pushes } = await runReporter({ config: { shard: null, projects: 5 }, tests: [[t, fakeResult("passed")]] });
+  assert.equal(pushes.length, 1);
+});
+
+test("a negative duration (a test that never started) is omitted, not sent", async () => {
+  // The ingest schema requires a non-negative integer; -1 would reject the run.
+  const t = fakeTest({ title: "a", outcome: "unexpected" });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("interrupted", { duration: -1 })]] });
+  assert.equal("duration_ms" in payload.results[0], false);
+});
+
+test("an interrupted retry does not stack interrupted: prefixes", async () => {
+  const t = fakeTest({ title: "a", outcome: "unexpected" });
+  const { payload } = await runReporter({
+    tests: [
+      [t, fakeResult("interrupted", { retry: 0 })],
+      [t, fakeResult("interrupted", { retry: 1 })],
+    ],
+  });
+  assert.equal(payload.results[0].error_message, "interrupted: the run ended before this test finished");
+});
+
 // --- #1150: collected catalog, area, retry, preflight -------------------------
 // `collected` is the denominator that separates "not covered" from "did not
 // run". The ingest API reads three states and they are not interchangeable:
