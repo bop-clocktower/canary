@@ -27,7 +27,7 @@ test("resolveTestStatus passes a timed-out last attempt through as timed_out", (
 });
 
 test("an interrupted test reaches the wire as failed, tagged and explained", async () => {
-  const t = fakeTest({ title: "checkout", outcome: "unexpected" });
+  const t = fakeTest({ title: "checkout" }); // outcome derived: "skipped", as Playwright reports it
   const { payload } = await runReporter({
     tests: [[t, fakeResult("interrupted")]],
     fullResult: { status: "interrupted", startTime: new Date("2026-10-05T00:00:00Z"), duration: 1000 },
@@ -116,10 +116,10 @@ test("dedupeByFullTitle never lets a passing copy hide a timed_out one", () => {
   assert.equal(out[0].status, "timed_out");
 });
 
-test("resolveTestStatus reports a recovered flake as flaky, else the attempt status", () => {
+test("resolveTestStatus reports a recovered flake as flaky, and ordinary outcomes plainly", () => {
   // outcome 'flaky' wins even though the last attempt passed
   assert.equal(resolveTestStatus("flaky", "passed"), "flaky");
-  // non-flaky outcomes fall through to the last-attempt mapping
+  // for a test expected to pass, the outcome agrees with the attempt
   assert.equal(resolveTestStatus("expected", "passed"), "passed");
   assert.equal(resolveTestStatus("unexpected", "failed"), "failed");
   assert.equal(resolveTestStatus("skipped", "skipped"), "skipped");

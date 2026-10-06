@@ -108,14 +108,15 @@ history and orphans existing quarantine entries. Coordinate with the dashboard
 
 On top of the test's own Playwright tags (sent once each, without the `@`):
 
-| Tag              | When                                                                                                                                                      |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `project:<name>` | Always: the Playwright project the test ran in.                                                                                                           |
-| `dependency`     | The project is another project's `dependencies` target. Often setup, sometimes a real suite (`api` before `e2e`); filter it only if yours are setup-only. |
-| `teardown`       | The project is another project's `teardown`.                                                                                                              |
-| `fixme`          | The test is `test.fixme`.                                                                                                                                 |
-| `reason:<text>`  | A `fixme`/`skip` annotation has a description, often an issue ref (capped at 100 chars). Each distinct reason is its own tag value.                       |
-| `interrupted`    | The test was interrupted (see [Status semantics](#status-semantics)).                                                                                     |
+| Tag                | When                                                                                                                                                      |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project:<name>`   | Always: the Playwright project the test ran in.                                                                                                           |
+| `dependency`       | The project is another project's `dependencies` target. Often setup, sometimes a real suite (`api` before `e2e`); filter it only if yours are setup-only. |
+| `teardown`         | The project is another project's `teardown`.                                                                                                              |
+| `fixme`            | The test is `test.fixme`.                                                                                                                                 |
+| `reason:<text>`    | A `fixme`/`skip` annotation has a description, often an issue ref (capped at 100 chars). Each distinct reason is its own tag value.                       |
+| `interrupted`      | The test was interrupted (see [Status semantics](#status-semantics)).                                                                                     |
+| `expected-failure` | A `test.fail()` test passed on some attempt: sent `failed`, or `flaky` if a retry then failed as expected (see [Status semantics](#status-semantics)).    |
 
 ## What it sends besides results
 
@@ -166,12 +167,41 @@ On top of the test's own Playwright tags (sent once each, without the `@`):
 | `interrupted`     | `failed`    | Tagged `interrupted`, error prefixed `interrupted:`. The ingest API has no interrupted status, and `skipped` would drop the test out of the pass-rate denominator and make a cut-short run look clean (#1149). The run itself is `cancelled`. |
 | `skipped`         | `skipped`   |                                                                                                                                                                                                                                               |
 
+The table is how a test's attempt reads when the test is **expected to pass**.
+Per-test status is decided by Playwright's `test.outcome()` first, which
+compares the attempt with what the test expected:
+
+| `test.outcome()` | Sent as                                   | Example                                                                                                                                                                                            |
+| ---------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `expected`       | `passed`                                  | A `test.fail()` test that failed, as it should. The run stays green, and its error is not sent.                                                                                                    |
+| `unexpected`     | `failed` (`timed_out` if the attempt did) | A `test.fail()` test that passed. Playwright fails the run; the row is tagged `expected-failure` with the error `Expected to fail, but passed.` (Playwright records no error of its own for this). |
+| `flaky`          | `flaky`                                   | Failed, then passed on retry (see below).                                                                                                                                                          |
+| `skipped`        | `skipped`                                 | `test.skip()`, `test.fixme()`.                                                                                                                                                                     |
+
+An `interrupted` attempt is checked before the outcome: Playwright's
+`test.outcome()` ignores interrupted attempts, so an interrupted-only test reads
+`skipped`, and it is sent as `failed` as in the table above (#1186).
+
+An attempt that went as expected contributes no error to its row. Without this,
+an expected failure's error would show on a `passed` row, become the reason of a
+`flaky` row, or be carried into a merged clean-title row whose other copy failed
+for a different reason.
+
+> **Upgrading with `test.fail()` tests:** before #1186 these were sent by their
+> raw attempt status. After upgrading, dashboard history shows a step for them:
+> expected failures move from `failed` to `passed`, and unexpected passes move
+> from `passed` to `failed`. The step is the correction, not a change in the
+> suite.
+
 ### Flaky
 
 Per-test status uses Playwright's `test.outcome()`, not the per-attempt
 `result.status` (which is never `flaky`). So a test that **failed then passed on
 retry** is reported as `flaky` — visible to SDETs in the per-test results, with
-the first failing attempt's error preserved so they can see _why_ it flaked.
+the first unexpected attempt's error preserved so they can see _why_ it flaked.
+For a `test.fail()` test the unexpected attempt is the one that passed, so its
+reason is `Expected to fail, but passed.`; the expected failure's own error is
+never presented as the reason.
 
 At the **run** level a recovered flake is **not** counted as a failure: with no
 hard failures, the run status is `flaky` (never `failed`). Clients / management

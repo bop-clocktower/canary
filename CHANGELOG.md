@@ -84,6 +84,18 @@ under the project's former name) are documented in the
   run's start and duration instead of the merge step's ~0 s. Fractional and
   negative (`-1`, never started) durations, which the ingest schema rejects
   along with the whole run, are rounded or omitted.
+- **Ingest reporter: `test.fail()` tests report what Playwright reports**
+  (#1186). Status was mapped from the last attempt, so an expected failure was
+  sent as `failed` and turned a green run red, and a `test.fail()` test that
+  unexpectedly passed was sent as `passed` inside a failed run. Status now comes
+  from `test.outcome()` first: `expected` is `passed`, `unexpected` is `failed`
+  (or `timed_out`). An interrupted test is still sent as `failed`. An unexpected
+  pass now carries Playwright's `Expected to fail, but passed.` and an
+  `expected-failure` tag, and an expected failure's error is no longer sent, so
+  it cannot become the reason of a `flaky` or merged row. **Suites already using
+  `test.fail()` will see a step in dashboard history at upgrade:** expected
+  failures move from `failed` to `passed`, unexpected passes from `passed` to
+  `failed`.
 
 ## [9.0.0] - 2026-10-05
 

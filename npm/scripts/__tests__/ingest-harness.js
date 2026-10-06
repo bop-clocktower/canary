@@ -18,7 +18,8 @@ function fakeTest({
   project = "chromium",
   tags = [],
   annotations = [],
-  outcome = "expected",
+  outcome,
+  expectedStatus = "passed",
   id,
 }) {
   const projectSuite = { type: "project", title: project, project: () => ({ name: project }) };
@@ -26,6 +27,7 @@ function fakeTest({
   projectSuite.parent = root;
   let parent = { type: "file", title: file, parent: projectSuite };
   for (const d of describes) parent = { type: "describe", title: d, parent };
+  const results = [];
   return {
     id: id ?? `${project}:${file}:${describes.join("/")}:${title}`,
     title,
@@ -33,9 +35,28 @@ function fakeTest({
     annotations,
     parent,
     location: { file: REPO + file, line: 1, column: 1 },
-    outcome: () => outcome,
+    expectedStatus,
+    results,
+    // An explicit `outcome` pins it; otherwise it is derived from the attempts
+    // seen so far, as Playwright does, so a fake cannot pair a failed attempt
+    // with an outcome Playwright would never report (#1186).
+    outcome: () => outcome ?? computeOutcome(results, expectedStatus),
     titlePath: () => ["", project, file, ...describes, title],
   };
+}
+
+/** Mirrors Playwright's computeTestCaseOutcome, which backs `test.outcome()`. */
+function computeOutcome(results, expectedStatus) {
+  // Interrupted attempts are ignored; a skip only counts when one was expected.
+  const statuses = results.map((r) => r.status).filter((s) => s !== "interrupted");
+  const ran = statuses.filter((s) => s !== "skipped");
+  const expected = ran.filter((s) => s === expectedStatus).length;
+  const unexpected = ran.length - expected;
+  const skipped = expectedStatus === "skipped" ? statuses.length - ran.length : 0;
+  if (ran.length === 0) return "skipped";
+  if (unexpected === 0) return "expected";
+  if (expected === 0 && skipped === 0) return "unexpected";
+  return "flaky";
 }
 
 function fakeResult(status, extra = {}) {
@@ -88,12 +109,18 @@ async function runReporter({
   };
   console.log = (...args) => logs.push(args.join(" "));
   try {
+    // Each run is a fresh Playwright run: a fake reused across runReporter
+    // calls must not carry the previous run's attempts into its outcome.
+    for (const [t] of tests) t.results.length = 0;
     const reporter = new IngestReporter({ suite: "web", url: "https://dash.example", token: "tok", testFilePrefix: REPO, retryDelaysMs: [0, 0], ...options }); // default count (3 attempts), no waiting
     const all = collected ?? tests.map(([t]) => t);
     const projects = [...new Set(all.map((t) => t.titlePath()[1]))];
     const suite = { allTests: () => all, suites: projects.map((title) => ({ type: "project", title })) };
     reporter.onBegin(config, suite);
-    for (const [t, r] of tests) reporter.onTestEnd(t, r);
+    for (const [t, r] of tests) {
+      t.results.push(r); // Playwright appends the attempt before onTestEnd
+      reporter.onTestEnd(t, r);
+    }
     await reporter.onEnd(fullResult);
   } finally {
     global.fetch = realFetch;

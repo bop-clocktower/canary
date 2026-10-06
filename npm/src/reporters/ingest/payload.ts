@@ -84,18 +84,19 @@ export function mapStatus(pw: string): string {
 }
 
 /**
- * Final per-test status, flaky-aware. Playwright's per-attempt
- * `result.status` is NEVER "flaky" — flakiness is derived at the test level
- * (a test that failed then passed on retry). `test.outcome()` is the canonical
- * signal, so a recovered flake is reported as "flaky" (SDET-visible) rather
- * than the last attempt's "passed". A recovered flake does NOT count as a
- * failure at the run level (see buildPayload) — management sees a good run.
+ * Final per-test status, from `test.outcome()` first (#1186): `expected` is a
+ * pass even for a `test.fail()` that failed (Playwright keeps the run green),
+ * `unexpected` a failure even for one that passed. `flaky` (recovered on retry,
+ * not a run failure; see buildPayload) and `skipped` pass through. Interrupted
+ * goes first: outcome() ignores interrupted attempts, so it reads `skipped`.
  */
 export function resolveTestStatus(outcome: string, lastAttemptStatus: string): string {
-  if (outcome === "flaky") return "flaky";
+  if (lastAttemptStatus === "interrupted") return "failed"; // see mapStatus (#1149)
+  if (outcome === "expected") return "passed";
+  if (outcome === "unexpected") return lastAttemptStatus === "timedOut" ? "timed_out" : "failed";
+  if (outcome === "flaky" || outcome === "skipped") return outcome;
   return mapStatus(lastAttemptStatus);
 }
-
 
 /** Playwright's `config.shard`: set while a shard runs, `null` under `merge-reports`. */
 export type Shard = { current: number; total: number } | null | undefined;

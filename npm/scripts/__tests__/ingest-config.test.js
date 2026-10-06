@@ -149,13 +149,13 @@ test("a malformed Playwright config never throws out of onBegin", async () => {
 
 test("a negative duration (a test that never started) is omitted, not sent", async () => {
   // The ingest schema requires a non-negative integer; -1 would reject the run.
-  const t = fakeTest({ title: "a", outcome: "unexpected" });
+  const t = fakeTest({ title: "a" }); // outcome derived: "skipped", as Playwright reports it
   const { payload } = await runReporter({ tests: [[t, fakeResult("interrupted", { duration: -1 })]] });
   assert.equal("duration_ms" in payload.results[0], false);
 });
 
 test("an interrupted retry does not stack interrupted: prefixes", async () => {
-  const t = fakeTest({ title: "a", outcome: "unexpected" });
+  const t = fakeTest({ title: "a" }); // outcome derived: "skipped", as Playwright reports it
   const { payload } = await runReporter({
     tests: [
       [t, fakeResult("interrupted", { retry: 0 })],
