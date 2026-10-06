@@ -343,6 +343,11 @@ via slash commands.
     `canary ci-ready --json` report, and writes one `canary.site/1` `site.json`,
     validated before it is written (an invalid feed is never written). Absent
     inputs become `not-assessed` assessments; zero runs abstains.
+  - `agents/skills/lib/site-kit/` (#1151): the QA site kit. Six framework-free
+    custom elements (pipeline health, pass rate, failures by area, flaky,
+    pillars, register) loaded by `canary-site.js` from a page's
+    `<meta name="canary-feed">`. Abstentions are text in a live region; styling
+    reads only `tokens.css`; no composite score (ADR 0036).
 - **Activate:** load the repo root as a Claude Code plugin.
 
 ### LLM Layer (removed in v3.0)
