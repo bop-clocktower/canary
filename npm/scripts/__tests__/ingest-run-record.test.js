@@ -189,3 +189,18 @@ test("a symlink at the run-file path is replaced, never written through", async 
   assert.equal(fs.lstatSync(path.join(dir, "run.json")).isSymbolicLink(), false);
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "run.json"), "utf8")).contract, "canary.run/1");
 });
+
+test("a stale run file is removed even when config fails to resolve, with a warning", async () => {
+  const dir = tmp();
+  const file = path.join(dir, "run.json");
+  fs.writeFileSync(file, '{"stale": true}');
+  const t = fakeTest({ title: "a" });
+  // CANARY_RUN_FILE set, suite unset, not pushing: resolveConfig throws.
+  const { logs } = await runReporter({
+    options: { suite: "", url: "" },
+    env: { CANARY_RUN_FILE: file },
+    tests: [[t, fakeResult("passed")]],
+  });
+  assert.equal(fs.existsSync(file), false);
+  assert.match(logs.join("\n"), /WARNING — disabled — `suite` is required/);
+});

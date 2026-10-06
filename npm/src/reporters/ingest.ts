@@ -37,13 +37,20 @@ export default class IngestReporter implements Reporter {
   onBegin(config?: FullConfig, suite?: Suite) {
     this.shard = config?.shard ?? null;
     this.readProjects(config);
+    // Before config resolves: a run whose config fails must not leave the
+    // previous run's record looking current.
+    clearRunFile(this.runFileOption(), this.shard);
     this.cfg = this.initConfig();
     if (!this.cfg) return;
-    clearRunFile(this.cfg.runFile, this.shard);
     this.collectedCount = countTests(suite);
     this.collected = this.collectCatalog(config, suite);
     if (shouldPush(this.cfg)) this.preflight = this.checkToken(this.cfg);
     else explainNoPush(this.cfg);
+  }
+
+  /** The run file, resolved apart from the rest of config, which may fail. */
+  private runFileOption(): string | null {
+    return (this.options.runFile ?? envVar(process.env, "runFile")) || null;
   }
 
   /** Which projects are other projects' dependencies or teardowns. */
@@ -62,14 +69,15 @@ export default class IngestReporter implements Reporter {
   /**
    * Resolves config once. A config error is logged, not thrown, so a
    * misconfigured reporter never aborts the whole run; it is a warning when
-   * the run was clearly meant to be pushed.
+   * the run was clearly meant to be pushed or to write a run file.
    */
   private initConfig(): ResolvedConfig | null {
     let cfg: ResolvedConfig;
     try {
       cfg = resolveConfig(this.options);
     } catch (err) {
-      const meant = Boolean(this.options.url || (envVar(process.env, "url") && envVar(process.env, "token")));
+      const pushMeant = this.options.url || (envVar(process.env, "url") && envVar(process.env, "token"));
+      const meant = Boolean(pushMeant || this.runFileOption());
       (meant ? warn : log)(`disabled — ${errText(err)}`);
       return null;
     }
