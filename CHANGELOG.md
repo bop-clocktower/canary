@@ -323,6 +323,30 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **canary-cassandra `VAC-001` compares whole call expressions** (#1171). Both
+  sides were compared after string contents were blanked, so
+  `score(9, 0, "severe")` and `score(9, 0, "unknown")` collapsed to the same
+  text and two different calls were reported as a `critical` self-comparison.
+  The sides are now compared as callee plus normalised arguments, string
+  contents included. Identical calls on both sides, including no-argument
+  `expect(f()).toBe(f())`, are still `VAC-001`. On canary's own `ts/test` this
+  removes 5 of 6 `VAC-001` findings; the one left is a genuine `f()` vs `f()`.
+- **canary-cassandra `VAC-002` follows a same-file helper one level, and
+  abstains past that** (#1170). A helper wrapped across lines
+  (`const parse = (...a) =>\n  parseArgv(a)`) was cut off at the first line
+  break, so tests calling it were reported as never invoking their target. A
+  `function` with an object return type had that type's `{` taken for its body,
+  with the same result. A test calling a same-file helper whose own body names
+  the target now counts as invoking it. When the target is more than one helper
+  deep, or the helper's body cannot be resolved, `VAC-002` abstains for that
+  test: there is no finding, a `skipped` entry gives the reason, and the test is
+  counted. The count is `vac002_abstained` in the skill's `--json` summary and
+  an `N test(s) abstained on VAC-002` line in text output. A `function` helper's
+  body now ends at its own closing brace instead of at the next declaration, so
+  a helper that never reaches the target can no longer take credit for the test
+  below it. That is why some real `VAC-002` findings that were hidden now show.
+  On canary's own `ts/test`, `VAC-002` goes from 145 to 124, and 147 tests
+  abstain.
 - **`canary ci-ready` no longer crashes on an unreadable run-history store**
   (#1132). A directory or 0-perm file at `test-results/reports/history-v2.jsonl`
   threw a raw EISDIR/EACCES stack, the shape #1129 fixed for the `.canary`
