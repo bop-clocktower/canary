@@ -14,7 +14,7 @@
  *   - incomplete (exit 0): nothing failed, but at least one check skipped.
  *   - ready      (exit 0): all five checks passed.
  */
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
@@ -50,6 +50,7 @@ function writeHistory(
   runs: number,
   flakyIn: number[] = [],
   durations: (number | undefined)[] = [],
+  format?: string,
 ): void {
   mkdirSync(join(root, 'test-results', 'reports'), { recursive: true });
   const lines: string[] = [];
@@ -69,6 +70,7 @@ function writeHistory(
         skipped: 0,
         ...(durations[i] === undefined ? {} : { duration_ms: durations[i] }),
         schema_version: 2,
+        ...(format ? { reporter_format: format } : {}),
         tests: [
           {
             test_name: 't1',
@@ -177,6 +179,62 @@ describe('canary ci-ready', () => {
     const f = check(report, 'flakiness');
     expect(f.verdict).toBe('skip');
     expect(f.reason).toMatch(/history-v2\.jsonl/);
+  });
+
+  describe('flakiness measure (#1151 phase 2)', () => {
+    it('measures the worst flake rate against the window', async () => {
+      writeHistory(root, 5, [2]);
+      const m = check((await runJson(root)).report, 'flakiness').measure;
+      expect(m?.unit).toBe('ratio');
+      expect(m?.value).toBeCloseTo(0.2);
+      expect(m?.denominator).toBe(5);
+    });
+
+    // The rate is over the worst test's own appearances, so the denominator
+    // must be too: a test absent from 2 of 6 runs flaked 1 time in 4.
+    it("divides by the worst test's own appearances, not the window", async () => {
+      writeHistory(root, 6, [5]);
+      const path = join(root, HISTORY);
+      const lines = readFileSync(path, 'utf-8')
+        .trim()
+        .split('\n')
+        .map((line, i) => {
+          if (i > 1) return line;
+          const run = JSON.parse(line) as { tests: { test_name: string }[] };
+          run.tests[0]!.test_name = 't0';
+          return JSON.stringify(run);
+        });
+      writeFileSync(path, lines.join('\n') + '\n', 'utf-8');
+      expect(check((await runJson(root)).report, 'flakiness').measure).toEqual({
+        value: 0.25,
+        unit: 'ratio',
+        denominator: 4,
+      });
+    });
+
+    it('carries a measured 0 only when retry flakes were observable', async () => {
+      writeHistory(root, 10, [], [], 'playwright');
+      expect(check((await runJson(root)).report, 'flakiness').measure).toEqual({
+        value: 0,
+        unit: 'ratio',
+        denominator: 10,
+      });
+    });
+
+    it('carries null for a structural or unknown zero, and for a thin window', async () => {
+      writeHistory(root, 10, [], [], 'vitest');
+      expect(
+        check((await runJson(root)).report, 'flakiness').measure,
+      ).toBeNull();
+      writeHistory(root, 10); // unstamped: unknown
+      expect(
+        check((await runJson(root)).report, 'flakiness').measure,
+      ).toBeNull();
+      writeHistory(root, 5, [], [], 'playwright'); // thin
+      expect(
+        check((await runJson(root)).report, 'flakiness').measure,
+      ).toBeNull();
+    });
   });
 
   describe('suite runtime (p95 of recorded run durations, #956)', () => {

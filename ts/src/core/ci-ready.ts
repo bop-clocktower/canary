@@ -104,6 +104,12 @@ function measurabilitySuffix(measurable: FlakyMeasurable): string {
   return '';
 }
 
+/** A clean window's 0 is a measurement only when a flake was observable. */
+function cleanMeasure(window: ScoredRun[]): CheckMeasure | null {
+  if (measurabilityOf(window) !== 'yes') return null;
+  return { value: 0, unit: 'ratio', denominator: window.length };
+}
+
 /**
  * A window with no findings (#604 G2/SC1).
  *
@@ -129,7 +135,7 @@ function scoreCleanWindow(window: ScoredRun[]): CiCheck {
     reason:
       `0 flaky or alternating tests across ${runsRead} run(s) ${windowNote}` +
       measurabilitySuffix(measurabilityOf(window)),
-    measure: null,
+    measure: cleanMeasure(window),
   };
 }
 
@@ -155,7 +161,7 @@ function scoreFlakiness(runs: RunsInput, historyPath: string): CiCheck {
   const signals = flakeSignals(window);
   if (signals.size === 0) return scoreCleanWindow(window);
   let worstName = '';
-  let worst: FlakeSignal = { rate: 0, axis: 'retry-flake' };
+  let worst: FlakeSignal = { rate: 0, axis: 'retry-flake', denominator: 0 };
   for (const [nm, sig] of signals) {
     if (sig.rate > worst.rate) {
       worst = sig;
@@ -171,7 +177,11 @@ function scoreFlakiness(runs: RunsInput, historyPath: string): CiCheck {
       `${signals.size} flaky or alternating test(s) across ${window.length} ` +
       `run(s) (window ${FLAKY_WINDOW_RUNS}); worst is ${worstName} at ` +
       `${pct}% on ${worst.axis}`,
-    measure: null,
+    measure: {
+      value: worst.rate,
+      unit: 'ratio',
+      denominator: worst.denominator,
+    },
   };
 }
 
