@@ -166,6 +166,21 @@ On top of the test's own Playwright tags (sent once each, without the `@`):
 | `interrupted`     | `failed`    | Tagged `interrupted`, error prefixed `interrupted:`. The ingest API has no interrupted status, and `skipped` would drop the test out of the pass-rate denominator and make a cut-short run look clean (#1149). The run itself is `cancelled`. |
 | `skipped`         | `skipped`   |                                                                                                                                                                                                                                               |
 
+The table is how a test's attempt reads when the test is **expected to pass**.
+Per-test status is decided by Playwright's `test.outcome()` first, which
+compares the attempt with what the test expected:
+
+| `test.outcome()` | Sent as                                   | Example                                                                      |
+| ---------------- | ----------------------------------------- | ---------------------------------------------------------------------------- |
+| `expected`       | `passed`                                  | A `test.fail()` test that failed, as it should. The run stays green.         |
+| `unexpected`     | `failed` (`timed_out` if the attempt did) | A `test.fail()` test that passed. Playwright fails the run; this row is why. |
+| `flaky`          | `flaky`                                   | Failed, then passed on retry (see below).                                    |
+| `skipped`        | `skipped`                                 | `test.skip()`, `test.fixme()`.                                               |
+
+An `interrupted` attempt is checked before the outcome: Playwright's
+`test.outcome()` ignores interrupted attempts, so an interrupted-only test reads
+`skipped`, and it is sent as `failed` as in the table above (#1186).
+
 ### Flaky
 
 Per-test status uses Playwright's `test.outcome()`, not the per-attempt
