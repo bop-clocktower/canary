@@ -34,6 +34,7 @@ import { main as misfitMain } from '../claude-code/canary-misfit/scripts/cli.mjs
 import { main as sweepMain } from '../claude-code/canary-sweep/scripts/cli.mjs';
 import { main as signalMain } from '../claude-code/canary-signal/scripts/cli.mjs';
 import { main as starlingMain } from '../claude-code/canary-starling/scripts/cli.mjs';
+import { main as bardaMain } from '../claude-code/canary-barda/scripts/cli.mjs';
 
 /** Exit code reserved CLI-wide for "abstained" (D4, mirrors gate-result.ts). */
 const EXIT_ABSTAINED = 3;
@@ -158,6 +159,12 @@ const ROWS: SkillGateRow[] = [
     run: (base) => run(starlingMain, starlingArgs(base)),
     strict: (base) => run(starlingMain, [...starlingArgs(base), '--strict']),
   },
+  {
+    command: 'canary-barda (zero runs in the feed)',
+    forbid: ['6 panels,'],
+    run: (base) => run(bardaMain, bardaArgs(base)),
+    strict: (base) => run(bardaMain, [...bardaArgs(base), '--strict']),
+  },
 ];
 
 /** A valid profile plus a results file whose flows no fault ever touched. */
@@ -184,6 +191,25 @@ function emptyStore(base: string): string {
   const file = path.join(base, 'history-v2.jsonl');
   fs.writeFileSync(file, '', 'utf-8');
   return file;
+}
+
+/** A valid feed with zero runs, and a fresh out dir per call. */
+function bardaArgs(base: string): string[] {
+  const feed = path.join(base, 'site.json');
+  fs.writeFileSync(
+    feed,
+    JSON.stringify({
+      contract: 'canary.site/1',
+      generated_at: '2026-10-06T00:00:00Z',
+      scopes: [{ id: 'canary', env: 'ci' }],
+      suites: null,
+      runs: [],
+      flaky: [],
+      assessments: [],
+      register: [],
+    }),
+  );
+  return ['--feed', feed, '--out', fs.mkdtempSync(path.join(base, 'site-'))];
 }
 
 /** A minimal starling invocation over an empty store: zero runs in the feed. */

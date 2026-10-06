@@ -348,6 +348,10 @@ via slash commands.
     pillars, register) loaded by `canary-site.js` from a page's
     `<meta name="canary-feed">`. Abstentions are text in a live region; styling
     reads only `tokens.css`; no composite score (ADR 0036).
+  - `canary-barda` (#1151): builds a self-contained static QA site from a
+    validated `canary.site/1` feed (index.html + site.json + kit/). An invalid
+    feed builds nothing; a non-empty out dir is refused; zero runs reports
+    ABSTAINED.
 - **Activate:** load the repo root as a Claude Code plugin.
 
 ### LLM Layer (removed in v3.0)

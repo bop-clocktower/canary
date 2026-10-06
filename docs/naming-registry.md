@@ -72,6 +72,7 @@ Status is one of `shipped` (a directory exists under
 | Name                         | Status   | Issue | Claim                                                                      |
 | ---------------------------- | -------- | ----- | -------------------------------------------------------------------------- |
 | `canary-add-framework`       | shipped  | —     | Add a testing framework to the registry end-to-end                         |
+| `canary-barda`               | shipped  | 1151  | QA site builder (static site from a validated canary.site/1 feed)          |
 | `canary-batgirl`             | reserved | 619   | Developer and team quality scorecard                                       |
 | `canary-batwoman`            | shipped  | 749   | Closure-verification detector (renamed out of the 2026-08-23 collision)    |
 | `canary-blackhawk`           | shipped  | —     | Temporal-dependency linter for test files                                  |
