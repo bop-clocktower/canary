@@ -84,6 +84,7 @@ export default defineConfig({
         'claude-code/canary-screech/scripts/**/*.mjs',
         'claude-code/canary-signal/scripts/**/*.mjs',
         'claude-code/canary-starling/scripts/**/*.mjs',
+        'claude-code/canary-barda/scripts/**/*.mjs',
         'claude-code/canary-question/scripts/**/*.mjs',
         'claude-code/canary-sweep/scripts/**/*.mjs',
       ],
