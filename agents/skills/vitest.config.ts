@@ -64,7 +64,8 @@ export default defineConfig({
         // (#479) -- the one file whose bugs are family-wide.
         // Recursive (#1151): lib/contracts/ is a subdirectory, and `lib/*.mjs`
         // silently left the contract validator outside the gate.
-        'lib/**/*.mjs',
+        // .js too (#1151 phase 3): the site kit is browser ESM under lib/site-kit/.
+        'lib/**/*.{mjs,js}',
         'claude-code/canary-savant/scripts/**/*.mjs',
         'claude-code/canary-blackhawk/scripts/**/*.mjs',
         'claude-code/canary-cassandra/scripts/**/*.mjs',
