@@ -16,6 +16,10 @@ under the project's former name) are documented in the
 
 ### Added
 
+- **The ingest reporter exports `toRunRecord` and `runFilePath`** from
+  `canary-test-cli/reporter`, beside `buildPayload`: build a `canary.run/1`
+  record from an ingest payload (for example after `merge-reports`) and name its
+  shard-aware file (#1151).
 - **`canary ci-ready --json` carries its numbers.** Each check gains
   `measure: {value, unit, denominator}` (`null` when the check measured nothing
   — a skip, a window under 10 runs, or a flake zero the reader could not

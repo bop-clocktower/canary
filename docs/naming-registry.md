@@ -69,50 +69,50 @@ Status is one of `shipped` (a directory exists under
 `agents/skills/claude-code/`), `reserved` (claimed, not built), or `retired`
 (used once, never to be reused).
 
-| Name                         | Status   | Issue | Claim                                                                       |
-| ---------------------------- | -------- | ----- | --------------------------------------------------------------------------- |
-| `canary-add-framework`       | shipped  | —     | Add a testing framework to the registry end-to-end                          |
-| `canary-batgirl`             | reserved | 619   | Developer and team quality scorecard                                        |
-| `canary-batwoman`            | shipped  | 749   | Closure-verification detector (renamed out of the 2026-08-23 collision)     |
-| `canary-blackhawk`           | shipped  | —     | Temporal-dependency linter for test files                                   |
-| `canary-cassandra`           | shipped  | 612   | Vacuous-test detection                                                      |
-| `canary-ci-ready`            | shipped  | —     | Suite CI-readiness analysis                                                 |
-| `canary-clocktower`          | shipped  | 610   | Run-history gap analysis                                                    |
-| `canary-company-knowledge`   | shipped  | —     | Scaffold the org-specific `.canary/company.json` pointer file               |
-| `canary-critical-areas`      | shipped  | —     | Risk-based test prioritisation                                              |
-| `canary-cry`                 | reserved | 608   | Pre-launch exploratory "try to break it" sweep                              |
-| `canary-edge-case-discovery` | shipped  | —     | Edge-case surfacing across six categories                                   |
-| `canary-fail-fast`           | shipped  | —     | Loud, early failure surfacing for Playwright runs                           |
-| `canary-failure-impact`      | shipped  | —     | Downstream blast radius of an undetected failure                            |
-| `canary-fleet-health`        | shipped  | —     | Fleet-wide test health summary across suites                                |
-| `canary-generate-test`       | shipped  | —     | Batch test generation through the classify → recommend → generate pipeline  |
-| `canary-harley`              | reserved | 616   | Property-based and fuzz test generation                                     |
-| `canary-hawk-dove`           | reserved | 618   | Gate threshold auto-tuner                                                   |
-| `canary-huntress`            | reserved | 617   | Targeted regression pursuit                                                 |
-| `canary-instrument`          | shipped  | —     | OpenTelemetry instrumentation of a Playwright run                           |
-| `canary-ivy`                 | reserved | 615   | Suite overgrowth and pruning                                                |
-| `canary-judomaster`          | shipped  | 614   | Incident to regression test                                                 |
-| `canary-katana`              | shipped  | —     | Quarantine ledger for deleted and newly-skipped tests                       |
-| `canary-manhunter`           | shipped  | 611   | Release quality dossier                                                     |
-| `canary-misfit`              | shipped  | 592   | E2E resilience injection                                                    |
-| `canary-mission-briefing`    | shipped  | 593   | PR diff to human test charter                                               |
-| `canary-pr-guardian`         | shipped  | —     | Per-diff test-guardian orchestrator                                         |
-| `canary-promote-test`        | shipped  | 477   | Move a generated test into the committed suite                              |
-| `canary-question`            | shipped  | 613   | Test-defect vs product-defect evidence brief (never a verdict)              |
-| `canary-rewind`              | shipped  | 461   | Time-travel run debugging                                                   |
-| `canary-savant`              | shipped  | —     | Order-dependence and isolation detector                                     |
-| `canary-screech`             | shipped  | 591   | Broken-main siren (cross-run, branch-level)                                 |
-| `canary-setup-harness`       | shipped  | —     | Configure the Harness Engineering guardrails in a project                   |
-| `canary-shadow`              | shipped  | —     | Differential parity testing between a baseline and a candidate              |
-| `canary-shiva`               | shipped  | 460   | Predictive test ordering                                                    |
-| `canary-ship`                | shipped  | —     | The ship gate: adversarial review, commit, PR, merge                        |
-| `canary-signal`              | shipped  | 609   | QA impact digest (emit-only; every metric carries its denominator)          |
-| `canary-starling`            | shipped  | 1151  | QA site feed composer (validated canary.site/1; absent inputs not-assessed) |
-| `canary-strix`               | shipped  | 799   | Company/consumer identifier leak scan (files + commit authorship)           |
-| `canary-sweep`               | shipped  | 594   | Component-level dedup for axe-core a11y findings (post-processor)           |
-| `canary-test-pipeline`       | shipped  | —     | Multi-phase test intelligence orchestrator                                  |
-| `canary-test-reporter`       | shipped  | —     | Playwright JSON results to Markdown and JSON reports                        |
-| `oracle`                     | retired  | —     | The pre-rename product name. Never reuse.                                   |
+| Name                         | Status   | Issue | Claim                                                                      |
+| ---------------------------- | -------- | ----- | -------------------------------------------------------------------------- |
+| `canary-add-framework`       | shipped  | —     | Add a testing framework to the registry end-to-end                         |
+| `canary-batgirl`             | reserved | 619   | Developer and team quality scorecard                                       |
+| `canary-batwoman`            | shipped  | 749   | Closure-verification detector (renamed out of the 2026-08-23 collision)    |
+| `canary-blackhawk`           | shipped  | —     | Temporal-dependency linter for test files                                  |
+| `canary-cassandra`           | shipped  | 612   | Vacuous-test detection                                                     |
+| `canary-ci-ready`            | shipped  | —     | Suite CI-readiness analysis                                                |
+| `canary-clocktower`          | shipped  | 610   | Run-history gap analysis                                                   |
+| `canary-company-knowledge`   | shipped  | —     | Scaffold the org-specific `.canary/company.json` pointer file              |
+| `canary-critical-areas`      | shipped  | —     | Risk-based test prioritisation                                             |
+| `canary-cry`                 | reserved | 608   | Pre-launch exploratory "try to break it" sweep                             |
+| `canary-edge-case-discovery` | shipped  | —     | Edge-case surfacing across six categories                                  |
+| `canary-fail-fast`           | shipped  | —     | Loud, early failure surfacing for Playwright runs                          |
+| `canary-failure-impact`      | shipped  | —     | Downstream blast radius of an undetected failure                           |
+| `canary-fleet-health`        | shipped  | —     | Fleet-wide test health summary across suites                               |
+| `canary-generate-test`       | shipped  | —     | Batch test generation through the classify → recommend → generate pipeline |
+| `canary-harley`              | reserved | 616   | Property-based and fuzz test generation                                    |
+| `canary-hawk-dove`           | reserved | 618   | Gate threshold auto-tuner                                                  |
+| `canary-huntress`            | reserved | 617   | Targeted regression pursuit                                                |
+| `canary-instrument`          | shipped  | —     | OpenTelemetry instrumentation of a Playwright run                          |
+| `canary-ivy`                 | reserved | 615   | Suite overgrowth and pruning                                               |
+| `canary-judomaster`          | shipped  | 614   | Incident to regression test                                                |
+| `canary-katana`              | shipped  | —     | Quarantine ledger for deleted and newly-skipped tests                      |
+| `canary-manhunter`           | shipped  | 611   | Release quality dossier                                                    |
+| `canary-misfit`              | shipped  | 592   | E2E resilience injection                                                   |
+| `canary-mission-briefing`    | shipped  | 593   | PR diff to human test charter                                              |
+| `canary-pr-guardian`         | shipped  | —     | Per-diff test-guardian orchestrator                                        |
+| `canary-promote-test`        | shipped  | 477   | Move a generated test into the committed suite                             |
+| `canary-question`            | shipped  | 613   | Test-defect vs product-defect evidence brief (never a verdict)             |
+| `canary-rewind`              | shipped  | 461   | Time-travel run debugging                                                  |
+| `canary-savant`              | shipped  | —     | Order-dependence and isolation detector                                    |
+| `canary-screech`             | shipped  | 591   | Broken-main siren (cross-run, branch-level)                                |
+| `canary-setup-harness`       | shipped  | —     | Configure the Harness Engineering guardrails in a project                  |
+| `canary-shadow`              | shipped  | —     | Differential parity testing between a baseline and a candidate             |
+| `canary-shiva`               | shipped  | 460   | Predictive test ordering                                                   |
+| `canary-ship`                | shipped  | —     | The ship gate: adversarial review, commit, PR, merge                       |
+| `canary-signal`              | shipped  | 609   | QA impact digest (emit-only; every metric carries its denominator)         |
+| `canary-starling`            | shipped  | 1151  | QA site feed composer (validated canary.site/1; absences not-assessed)     |
+| `canary-strix`               | shipped  | 799   | Company/consumer identifier leak scan (files + commit authorship)          |
+| `canary-sweep`               | shipped  | 594   | Component-level dedup for axe-core a11y findings (post-processor)          |
+| `canary-test-pipeline`       | shipped  | —     | Multi-phase test intelligence orchestrator                                 |
+| `canary-test-reporter`       | shipped  | —     | Playwright JSON results to Markdown and JSON reports                       |
+| `oracle`                     | retired  | —     | The pre-rename product name. Never reuse.                                  |
 
 ## What the check does and does not cover
 
