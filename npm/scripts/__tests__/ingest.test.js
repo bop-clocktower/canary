@@ -55,6 +55,7 @@ async function runReporter({
   tests = [],
   fullResult = { status: "passed", startTime: new Date("2026-10-05T00:00:00Z"), duration: 60000 },
   responses = [],
+  whoami = { status: 200, json: { tenant: { slug: "acme", displayName: "Acme" }, token: { name: "ci", scopes: ["ingest:runs"] } } },
   env = {},
 } = {}) {
   const requests = [];
@@ -70,7 +71,8 @@ async function runReporter({
   global.fetch = async (url, init = {}) => {
     const body = init.body ? JSON.parse(init.body) : undefined;
     requests.push({ url, method: init.method ?? "GET", body });
-    const r = responses.shift() ?? {
+    const isWhoami = String(url).endsWith("/api/ingest/whoami");
+    const r = (isWhoami ? whoami : responses.shift()) ?? {
       status: 200,
       json: { id: 1, duplicate: false, result_count: body?.results?.length ?? 0, collected_count: body?.collected?.length ?? null },
     };
@@ -85,7 +87,7 @@ async function runReporter({
   };
   console.log = (...args) => logs.push(args.join(" "));
   try {
-    const reporter = new IngestReporter({ suite: "web", url: "https://dash.example", token: "tok", testFilePrefix: REPO, retryDelaysMs: [0, 0, 0], ...options });
+    const reporter = new IngestReporter({ suite: "web", url: "https://dash.example", token: "tok", testFilePrefix: REPO, retryDelaysMs: [0, 0], ...options }); // default count (3 attempts), no waiting
     const suite = { allTests: () => collected ?? tests.map(([t]) => t) };
     reporter.onBegin(config, suite);
     for (const [t, r] of tests) reporter.onTestEnd(t, r);
@@ -482,4 +484,149 @@ test("a fractional test duration is sent as an integer (the ingest schema reject
   const t = fakeTest({ title: "a" });
   const { payload } = await runReporter({ tests: [[t, fakeResult("passed", { duration: 12.7 })]] });
   assert.equal(payload.results[0].duration_ms, 13);
+});
+
+// --- #1150: collected catalog, area, retry, preflight -------------------------
+// `collected` is the denominator that separates "not covered" from "did not
+// run". The ingest API reads three states and they are not interchangeable:
+// omitted = no catalog (unknown), [] = a measured zero, non-empty = the suite.
+
+test("collected carries every collected test, including ones that never ran", async () => {
+  const ran = fakeTest({ title: "ran" });
+  const neverRan = fakeTest({ title: "never ran", file: "tests/b.spec.ts" });
+  const { payload } = await runReporter({ collected: [ran, neverRan], tests: [[ran, fakeResult("passed")]] });
+  assert.equal(payload.results.length, 1);
+  assert.deepEqual(
+    payload.collected.map((c) => [c.full_title, c.test_file]),
+    [
+      ["chromium > tests/a.spec.ts > ran", "tests/a.spec.ts"],
+      ["chromium > tests/b.spec.ts > never ran", "tests/b.spec.ts"],
+    ],
+  );
+});
+
+test("an empty suite sends collected: [] — a measured zero, not an omission", async () => {
+  const { payload } = await runReporter({ collected: [] });
+  assert.deepEqual(payload.collected, []);
+});
+
+test("a shard run omits collected — one shard's tests are not the suite's denominator", async () => {
+  const t = fakeTest({ title: "a" });
+  const { payload } = await runReporter({ config: { shard: { current: 1, total: 2 }, projects: [] }, tests: [[t, fakeResult("passed")]] });
+  assert.equal("collected" in payload, false);
+});
+
+test("collected rows are unique by full_title", async () => {
+  const a = fakeTest({ title: "a", id: "1" });
+  const again = fakeTest({ title: "a", id: "2" });
+  const { payload } = await runReporter({ collected: [a, again] });
+  assert.equal(payload.collected.length, 1);
+});
+
+test("an area annotation sets area on the result and the collected row", async () => {
+  const t = fakeTest({ title: "redeem", annotations: [{ type: "area", description: "rewards" }] });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("passed")]] });
+  assert.equal(payload.results[0].area, "rewards");
+  assert.equal(payload.collected[0].area, "rewards");
+});
+
+test("areaMap globs name the area; an unmapped test sends no area at all", async () => {
+  const mapped = fakeTest({ title: "redeem", file: "tests/functional/rewards/redeem.spec.ts" });
+  const unmapped = fakeTest({ title: "x", file: "tests/smoke/x.spec.ts" });
+  const { payload } = await runReporter({
+    options: { areaMap: { "tests/**/rewards/**": "rewards", "tests/functional/*.spec.ts": "functional-root" } },
+    tests: [[mapped, fakeResult("passed")], [unmapped, fakeResult("passed")]],
+  });
+  assert.equal(payload.results[0].area, "rewards");
+  assert.equal("area" in payload.results[1], false, "never fall back to a folder name");
+});
+
+test("an area annotation wins over areaMap", async () => {
+  const t = fakeTest({ title: "a", file: "tests/rewards/a.spec.ts", annotations: [{ type: "area", description: "checkout" }] });
+  const { payload } = await runReporter({ options: { areaMap: { "tests/rewards/**": "rewards" } }, tests: [[t, fakeResult("passed")]] });
+  assert.equal(payload.results[0].area, "checkout");
+});
+
+test("CANARY_INGEST_AREA_MAP supplies areaMap as JSON", () => {
+  const c = resolveConfig({ suite: "s" }, { CANARY_INGEST_AREA_MAP: '{"tests/rewards/**":"rewards"}' });
+  assert.deepEqual(c.areaMap, { "tests/rewards/**": "rewards" });
+});
+
+test("a malformed CANARY_INGEST_AREA_MAP is a config error, not a silent no-area run", () => {
+  assert.throws(() => resolveConfig({ suite: "s" }, { CANARY_INGEST_AREA_MAP: "{nope" }), /CANARY_INGEST_AREA_MAP/);
+});
+
+test("a collected_count that differs from the catalog sent is a warning", async () => {
+  const t = fakeTest({ title: "a" });
+  const { logs } = await runReporter({
+    tests: [[t, fakeResult("passed")]],
+    responses: [{ status: 200, json: { id: 4, duplicate: false, result_count: 1, collected_count: 0 } }],
+  });
+  assert.ok(logs.some((l) => /WARNING/.test(l) && /collected/.test(l)), logs.join("\n"));
+});
+
+test("a 5xx is retried and the run lands", async () => {
+  const t = fakeTest({ title: "a" });
+  const { pushes, logs } = await runReporter({
+    tests: [[t, fakeResult("passed")]],
+    responses: [{ status: 503 }, { status: 502 }, { status: 200, json: { id: 9, duplicate: false, result_count: 1, collected_count: 1 } }],
+  });
+  assert.equal(pushes.length, 3);
+  assert.ok(logs.some((l) => /run 9 ingested/.test(l)), logs.join("\n"));
+});
+
+test("a 429 and a network error are retried too", async () => {
+  const t = fakeTest({ title: "a" });
+  const { pushes } = await runReporter({
+    tests: [[t, fakeResult("passed")]],
+    responses: [{ status: 429 }, { throws: "ECONNRESET" }, { status: 200, json: { id: 9, result_count: 1, collected_count: 1 } }],
+  });
+  assert.equal(pushes.length, 3);
+});
+
+test("a 4xx is not retried — the payload, not the server, is wrong", async () => {
+  const t = fakeTest({ title: "a" });
+  const { pushes, logs } = await runReporter({ tests: [[t, fakeResult("passed")]], responses: [{ status: 422, json: { message: "duplicate full_title" } }] });
+  assert.equal(pushes.length, 1);
+  assert.ok(logs.some((l) => /WARNING/.test(l) && /422/.test(l)), logs.join("\n"));
+});
+
+test("the default retry schedule is two waits — three attempts in all", () => {
+  assert.deepEqual(resolveConfig({ suite: "s" }, {}).retryDelaysMs, [1000, 4000]);
+});
+
+test("retries are bounded: three 5xx answers stop after three attempts with a warning", async () => {
+  const t = fakeTest({ title: "a" });
+  const { pushes, logs } = await runReporter({ tests: [[t, fakeResult("passed")]], responses: [{ status: 500 }, { status: 500 }, { status: 500 }, { status: 200 }] });
+  assert.equal(pushes.length, 3);
+  assert.ok(logs.some((l) => /WARNING/.test(l) && /not ingested/.test(l)), logs.join("\n"));
+});
+
+test("preflight names the tenant the token writes to before anything is pushed", async () => {
+  const t = fakeTest({ title: "a" });
+  const { requests, logs } = await runReporter({ tests: [[t, fakeResult("passed")]] });
+  assert.equal(requests[0].method, "GET");
+  assert.equal(requests[0].url, "https://dash.example/api/ingest/whoami");
+  assert.ok(logs.some((l) => /tenant acme/.test(l)), logs.join("\n"));
+});
+
+test("a rejected token is reported at preflight and nothing is pushed", async () => {
+  const t = fakeTest({ title: "a" });
+  const { pushes, logs } = await runReporter({ tests: [[t, fakeResult("passed")]], whoami: { status: 401, json: {} } });
+  assert.equal(pushes.length, 0);
+  assert.ok(logs.some((l) => /WARNING/.test(l) && /401/.test(l)), logs.join("\n"));
+});
+
+test("an unreachable or older preflight endpoint does not block the push", async () => {
+  const t = fakeTest({ title: "a" });
+  const notFound = await runReporter({ tests: [[t, fakeResult("passed")]], whoami: { status: 404, json: {} } });
+  assert.equal(notFound.pushes.length, 1);
+  const down = await runReporter({ tests: [[t, fakeResult("passed")]], whoami: { throws: "ENOTFOUND" } });
+  assert.equal(down.pushes.length, 1);
+});
+
+test("no preflight and no push when pushing is off", async () => {
+  const t = fakeTest({ title: "a" });
+  const { requests } = await runReporter({ tests: [[t, fakeResult("passed")]], env: { CANARY_INGEST_PUSH: "false", CI: "", GITHUB_ACTIONS: "" } });
+  assert.equal(requests.length, 0);
 });

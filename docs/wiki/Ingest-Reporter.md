@@ -40,17 +40,52 @@ export default defineConfig({
 
 ### Options
 
-| Option           | Env fallback                     | Legacy env (deprecated)        | Default      | Purpose                                                                |
-| ---------------- | -------------------------------- | ------------------------------ | ------------ | ---------------------------------------------------------------------- |
-| `suite`          | `CANARY_INGEST_SUITE`            | `TESTTRACKER_SUITE`            | — (required) | Suite name on the dashboard (e.g. `consumer-b-api`, `consumer-a-web`). |
-| `testFilePrefix` | `CANARY_INGEST_TEST_FILE_PREFIX` | `TESTTRACKER_TEST_FILE_PREFIX` | `<cwd>/`     | Prefix stripped from absolute test file paths.                         |
-| `environment`    | `CANARY_INGEST_ENVIRONMENT`      | `TESTTRACKER_ENVIRONMENT`      | (unset)      | Environment label (`stage`, `uat`, `prod`, …).                         |
-| `url`            | `CANARY_INGEST_URL`              | `TESTTRACKER_URL`              | (unset)      | Dashboard base URL; the reporter posts to `<url>/api/ingest/runs`.     |
-| `token`          | `CANARY_INGEST_TOKEN`            | `TESTTRACKER_API_TOKEN`        | (unset)      | Ingest token (scope `ingest:runs`).                                    |
-| `workflow`       | `CANARY_INGEST_WORKFLOW`         | `TESTTRACKER_WORKFLOW`         | `playwright` | Free-form workflow label.                                              |
+| Option           | Env fallback                     | Legacy env (deprecated)        | Default        | Purpose                                                                |
+| ---------------- | -------------------------------- | ------------------------------ | -------------- | ---------------------------------------------------------------------- |
+| `suite`          | `CANARY_INGEST_SUITE`            | `TESTTRACKER_SUITE`            | — (required)   | Suite name on the dashboard (e.g. `consumer-b-api`, `consumer-a-web`). |
+| `testFilePrefix` | `CANARY_INGEST_TEST_FILE_PREFIX` | `TESTTRACKER_TEST_FILE_PREFIX` | `<cwd>/`       | Prefix stripped from absolute test file paths.                         |
+| `environment`    | `CANARY_INGEST_ENVIRONMENT`      | `TESTTRACKER_ENVIRONMENT`      | (unset)        | Environment label (`stage`, `uat`, `prod`, …).                         |
+| `url`            | `CANARY_INGEST_URL`              | `TESTTRACKER_URL`              | (unset)        | Dashboard base URL; the reporter posts to `<url>/api/ingest/runs`.     |
+| `token`          | `CANARY_INGEST_TOKEN`            | `TESTTRACKER_API_TOKEN`        | (unset)        | Ingest token (scope `ingest:runs`).                                    |
+| `workflow`       | `CANARY_INGEST_WORKFLOW`         | `TESTTRACKER_WORKFLOW`         | `playwright`   | Free-form workflow label.                                              |
+| `areaMap`        | `CANARY_INGEST_AREA_MAP` (JSON)  | —                              | `{}`           | Glob → product area, first match wins. See [Areas](#areas).            |
+| `retryDelaysMs`  | —                                | —                              | `[1000, 4000]` | Waits before each retry of a 5xx, 429 or network error.                |
 
 When both a `CANARY_INGEST_*` var and its legacy name are set, the new name
 wins.
+
+### Areas
+
+A test's product area comes from, in order:
+
+1. an `area` annotation:
+   `test('redeem', { annotation: { type: 'area', description: 'rewards' } }, …)`;
+2. the first `areaMap` glob matching its repo-relative file:
+   `{ 'tests/**/rewards/**': 'rewards' }` (`**` crosses directories, `*` stays
+   within one).
+
+A test matching neither sends **no** area. The reporter never guesses one from a
+folder name, so `functional` or `smoke` never shows up as a product area.
+
+## What it sends besides results
+
+- **`collected`** — every test Playwright collected, whether or not it ran
+  (`full_title`, `test_file`, `tags`, `area`). It is the denominator that lets
+  the dashboard tell "not covered" from "did not run" (#1150). An empty suite
+  sends `collected: []`, a real measured zero. A **shard** push omits it,
+  because one shard's tests are not the suite; push from `merge-reports` to get
+  a catalog for a sharded suite. If the dashboard's `collected_count` differs
+  from what was sent, the reporter prints a warning.
+- **Preflight** — before the tests run, the reporter calls
+  `GET <url>/api/ingest/whoami` and logs the tenant the token writes to. A
+  `401`/`403` is reported straight away and the run is not pushed. An
+  unreachable endpoint, or a dashboard without `/whoami`, does not block the
+  push.
+- **Retry** — a `5xx`, `429` or network error is retried (3 attempts in all,
+  honouring `Retry-After` up to 30 s). Ingest is idempotent, so a retry cannot
+  double-count. A `4xx` is a payload problem and is not retried. A run that is
+  not ingested ends with a warning (and a GitHub Actions annotation), never a
+  quiet log line.
 
 ### Environment variables
 
@@ -67,8 +102,8 @@ CANARY_INGEST_TOKEN=<token>               # per-tenant, scope ingest:runs
   / `GITHUB_ACTIONS=true`) — **or** when you force it locally with
   `CANARY_INGEST_PUSH=true`.
 - Missing config, or local runs without the force flag → the reporter **no-ops
-  silently**. It never fails a test run: a config or network error is logged as
-  a single line and swallowed.
+  silently**. It never fails a test run: a config or network error is logged (as
+  a warning when the run was meant to be pushed) and swallowed.
 
 ## Status semantics
 
