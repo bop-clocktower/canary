@@ -1,8 +1,7 @@
 // Ingest reporter: the wire payload, statuses, dedupe and size budget.
 import type { FullResult } from "@playwright/test/reporter";
 import crypto from "node:crypto";
-import type { ResolvedConfig } from "./config";
-import { push } from "./transport";
+import type { ResolvedConfig } from "./config.js";
 
 export interface ResultEntry {
   full_title: string;

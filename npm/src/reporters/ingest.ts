@@ -1,10 +1,10 @@
 import type { FullConfig, FullResult, Reporter, Suite, TestCase, TestResult } from "@playwright/test/reporter";
-import { envVar, resolveConfig, resolveArea, shouldPush } from "./ingest/config";
-import type { IngestReporterOptions, ResolvedConfig } from "./ingest/config";
-import { runTiming, buildPayload, fitPayload, resolveTestStatus, errorField, MAX_ERROR_MESSAGE, MAX_ERROR_STACK } from "./ingest/payload";
-import type { ResultEntry, CollectedEntry, Shard } from "./ingest/payload";
-import { cleanTitle, projectName, skipTags, catalogFilter, relativeFile } from "./ingest/describe";
-import { warn, log, errText, PREFLIGHT_TIMEOUT_MS, push } from "./ingest/transport";
+import { envVar, resolveConfig, resolveArea, shouldPush } from "./ingest/config.js";
+import type { IngestReporterOptions, ResolvedConfig } from "./ingest/config.js";
+import { runTiming, buildPayload, fitPayload, resolveTestStatus, errorField, MAX_ERROR_MESSAGE, MAX_ERROR_STACK } from "./ingest/payload.js";
+import type { ResultEntry, CollectedEntry, Shard } from "./ingest/payload.js";
+import { cleanTitle, projectName, skipTags, catalogFilter, relativeFile } from "./ingest/describe.js";
+import { warn, log, errText, PREFLIGHT_TIMEOUT_MS, push } from "./ingest/transport.js";
 
 // Optional .env load — MUST NOT crash the suite if dotenv is absent.
 try {
@@ -14,13 +14,13 @@ try {
 }
 
 /** The public surface consumers import from `canary-test-cli/reporter`. */
-export { resolveConfig, resolveArea, shouldPush } from "./ingest/config";
-export type { IngestReporterOptions, TitleFormat, TestTrackerReporterOptions, ResolvedConfig } from "./ingest/config";
-export { mapStatus, resolveTestStatus, runStatus, dedupeByFullTitle, runTiming, buildPayload, fitPayload } from "./ingest/payload";
-export type { ResultEntry, CollectedEntry, IngestPayload, Shard } from "./ingest/payload";
-export { catalogFilter } from "./ingest/describe";
-export { ingestOutcome, retryWaitMs } from "./ingest/transport";
-export type { IngestResponse } from "./ingest/transport";
+export { resolveConfig, resolveArea, shouldPush } from "./ingest/config.js";
+export type { IngestReporterOptions, TitleFormat, TestTrackerReporterOptions, ResolvedConfig } from "./ingest/config.js";
+export { mapStatus, resolveTestStatus, runStatus, dedupeByFullTitle, runTiming, buildPayload, fitPayload } from "./ingest/payload.js";
+export type { ResultEntry, CollectedEntry, IngestPayload, Shard } from "./ingest/payload.js";
+export { catalogFilter } from "./ingest/describe.js";
+export { ingestOutcome, retryWaitMs } from "./ingest/transport.js";
+export type { IngestResponse } from "./ingest/transport.js";
 
 export default class IngestReporter implements Reporter {
   private results = new Map<string, ResultEntry>();

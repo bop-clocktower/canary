@@ -1,6 +1,6 @@
 // Ingest reporter: POST with retry, response handling and log output.
-import type { ResolvedConfig } from "./config";
-import type { IngestPayload } from "./payload";
+import type { ResolvedConfig } from "./config.js";
+import type { IngestPayload } from "./payload.js";
 
 export interface IngestResponse {
   id?: number;

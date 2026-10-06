@@ -1,5 +1,4 @@
 // Ingest reporter: options, env resolution and area mapping.
-import { push } from "./transport";
 
 /**
  * Pushes a completed Playwright run to an `/api/ingest` endpoint (a QA
