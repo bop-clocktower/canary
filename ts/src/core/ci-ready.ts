@@ -233,7 +233,7 @@ function scoreRuntime(runs: RunsInput, historyPath: string): CiCheck {
     name,
     verdict: runtimeVerdict(p95),
     reason: `p95 ${humanDuration(p95)} across ${durations.length} run(s) vs. absolute threshold (warn at 5m, fail over 10m)`,
-    measure: null,
+    measure: { value: p95, unit: 'ms', denominator: durations.length },
   };
 }
 

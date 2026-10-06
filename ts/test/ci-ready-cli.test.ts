@@ -240,6 +240,13 @@ describe('canary ci-ready', () => {
   describe('suite runtime (p95 of recorded run durations, #956)', () => {
     const MIN = 60_000;
 
+    it('measures the p95 in ms against the runs that carry a duration', async () => {
+      writeHistory(root, 3, [], [1000, 2000, 3000]);
+      expect(
+        check((await runJson(root)).report, 'suite-runtime').measure,
+      ).toEqual({ value: 3000, unit: 'ms', denominator: 3 });
+    });
+
     it('skips, naming the store, when no stored run carries a duration', async () => {
       writeHistory(root, 5);
       const { report } = await runJson(root);
