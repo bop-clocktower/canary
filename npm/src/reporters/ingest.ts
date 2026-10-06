@@ -40,7 +40,16 @@ export interface IngestReporterOptions {
   areaMap?: Record<string, string>;
   /** Waits before each retry of a 5xx/429/network failure. Default `[1000, 4000]` (3 attempts). */
   retryDelaysMs?: number[];
+  /**
+   * `legacy` (default): `project > file > describe… > title`, the identity
+   * existing dashboards key history on. `clean`: `describe… > title` with
+   * inline `@tag` tokens stripped. Switching changes every test's identity
+   * (quarantine entries, flake history), so it is opt-in (#1183).
+   */
+  titleFormat?: TitleFormat;
 }
+
+export type TitleFormat = "legacy" | "clean";
 
 /** @deprecated Use `IngestReporterOptions`. */
 export type TestTrackerReporterOptions = IngestReporterOptions;
@@ -54,6 +63,7 @@ export interface ResolvedConfig {
   workflow: string;
   areaMap: Record<string, string>;
   retryDelaysMs: number[];
+  titleFormat: TitleFormat;
   /** Legacy `TESTTRACKER_*` names this config was resolved from. */
   deprecatedEnv: string[];
 }
@@ -161,6 +171,7 @@ const ENV_NAMES = {
   workflow: ["CANARY_INGEST_WORKFLOW", "TESTTRACKER_WORKFLOW"],
   push: ["CANARY_INGEST_PUSH", "TESTTRACKER_PUSH"],
   areaMap: ["CANARY_INGEST_AREA_MAP"],
+  titleFormat: ["CANARY_INGEST_TITLE_FORMAT"],
 } as const satisfies Record<string, readonly [string] | readonly [string, string]>;
 
 /** Reads a setting's env var, falling back to its legacy name (recorded in `deprecated`). */
@@ -194,8 +205,58 @@ export function resolveConfig(
     workflow: opts.workflow ?? read("workflow") ?? "playwright",
     areaMap: opts.areaMap ?? parseAreaMap(read("areaMap")),
     retryDelaysMs: opts.retryDelaysMs ?? [1000, 4000],
+    titleFormat: parseTitleFormat(opts.titleFormat ?? read("titleFormat")),
     deprecatedEnv,
   };
+}
+
+function parseTitleFormat(raw: string | undefined): TitleFormat {
+  if (raw === undefined || raw === "legacy") return "legacy";
+  if (raw === "clean") return "clean";
+  throw new Error(`titleFormat must be "legacy" or "clean" (got "${raw}").`);
+}
+
+/** Strips inline `@tag` tokens (they are already sent as `tags`), not `a@b` emails. */
+function stripInlineTags(title: string): string {
+  return title.replace(/(^|\s)@\S+/g, "$1").replace(/\s+/g, " ").trim();
+}
+
+/** Playwright reporter suites, innermost first, as far as the root. */
+type SuiteLike = { type?: string; title: string; parent?: SuiteLike };
+
+/** `describe… > title`, with inline tags stripped: the identity without project or file. */
+function cleanTitle(test: TestCase): string {
+  const parts = [test.title];
+  for (let s = test.parent as SuiteLike | undefined; s && s.type === "describe"; s = s.parent) {
+    parts.unshift(s.title);
+  }
+  return parts.map(stripInlineTags).filter(Boolean).join(" > ");
+}
+
+function projectName(test: TestCase): string | undefined {
+  for (let s = test.parent as SuiteLike | undefined; s; s = s.parent) {
+    if (s.type === "project") return s.title || undefined;
+  }
+  return undefined;
+}
+
+/** The longest `reason:` tag; enough for an issue ref and a sentence. */
+const MAX_REASON = 100;
+
+/**
+ * Tags that say why a test did not run: `fixme`, and `reason:<text>` from a
+ * fixme/skip annotation's description (often an issue ref). The ingest API
+ * has no skip-reason field, so the reason rides as a tag (#1183).
+ */
+function skipTags(annotations: ReadonlyArray<{ type: string; description?: string }>): string[] {
+  const tags: string[] = [];
+  for (const a of annotations) {
+    if (a.type !== "fixme" && a.type !== "skip") continue;
+    if (a.type === "fixme") tags.push("fixme");
+    const reason = a.description?.replace(/\s+/g, " ").trim();
+    if (reason) tags.push(`reason:${reason.slice(0, MAX_REASON)}`);
+  }
+  return tags;
 }
 
 function parseAreaMap(raw: string | undefined): Record<string, string> {
@@ -492,6 +553,30 @@ async function postWithRetry(
   return { ...last, attempts: delaysMs.length + 1 };
 }
 
+/**
+ * A clean title drops the file, so two different tests with the same
+ * describe chain and title in different files would share one `full_title`
+ * and be merged by the ingest key. Titles that collide across files keep a
+ * `file > ` prefix, computed over results and catalog together so both use
+ * the same identity.
+ */
+type Identified = { full_title: string; test_file: string };
+
+export function disambiguateAcrossFiles<R extends Identified, C extends Identified>(
+  results: R[],
+  collected: C[] | null,
+): { results: R[]; collected: C[] | null } {
+  const files = new Map<string, Set<string>>();
+  for (const row of [...results, ...(collected ?? [])]) {
+    const set = files.get(row.full_title) ?? new Set<string>();
+    set.add(row.test_file);
+    files.set(row.full_title, set);
+  }
+  const fix = <T extends Identified>(row: T): T =>
+    (files.get(row.full_title)?.size ?? 0) > 1 ? { ...row, full_title: `${row.test_file} > ${row.full_title}` } : row;
+  return { results: results.map(fix), collected: collected?.map(fix) ?? null };
+}
+
 function relativeFile(file: string, prefix: string): string {
   return file.startsWith(prefix) ? file.slice(prefix.length) : file;
 }
@@ -504,11 +589,18 @@ export default class IngestReporter implements Reporter {
   private collected: CollectedEntry[] | null = null;
   /** Resolves false when the dashboard rejected the token before the run. */
   private preflight: Promise<boolean> | null = null;
+  /** Projects other projects depend on (`dependencies`) or tear down with (`teardown`). */
+  private setupProjects = new Set<string>();
+  private teardownProjects = new Set<string>();
 
   constructor(private options: IngestReporterOptions = {}) {}
 
   onBegin(config?: FullConfig, suite?: Suite) {
     this.shard = config?.shard ?? null;
+    for (const project of config?.projects ?? []) {
+      for (const dep of project.dependencies ?? []) this.setupProjects.add(dep);
+      if (project.teardown) this.teardownProjects.add(project.teardown);
+    }
     // Resolve config once; a config error here is logged, not thrown, so a
     // misconfigured reporter never aborts the whole run.
     try {
@@ -530,13 +622,26 @@ export default class IngestReporter implements Reporter {
   /** The fields a test has whether or not it ran: identity, tags and area. */
   private describeTest(test: TestCase, cfg: ResolvedConfig): CollectedEntry {
     const testFile = relativeFile(test.location.file, cfg.testFilePrefix);
+    const annotations = test.annotations ?? [];
+    const project = projectName(test);
     // `test.tags` requires Playwright >= 1.42; guard for the peer floor.
     // A tag in both a describe title and the test title appears twice in
     // `test.tags`; per-tag counts must see it once (#1176).
-    const tags = [...new Set((test.tags ?? []).map((t) => t.replace(/^@/, "")))];
-    const area = resolveArea(test.annotations ?? [], testFile, cfg.areaMap);
+    const tags = [
+      ...new Set([
+        ...(test.tags ?? []).map((t) => t.replace(/^@/, "")),
+        // The project is otherwise only visible inside a legacy title, and not
+        // at all in a clean one; a tag gives the dashboard the dimension (#1183).
+        ...(project ? [`project:${project}`] : []),
+        ...(project && this.setupProjects.has(project) ? ["setup"] : []),
+        ...(project && this.teardownProjects.has(project) ? ["teardown"] : []),
+        ...skipTags(annotations),
+      ]),
+    ];
+    const area = resolveArea(annotations, testFile, cfg.areaMap);
     return {
-      full_title: test.titlePath().filter(Boolean).join(" > "),
+      full_title:
+        cfg.titleFormat === "clean" ? cleanTitle(test) : test.titlePath().filter(Boolean).join(" > "),
       test_file: testFile,
       tags,
       ...(area ? { area } : {}),
@@ -552,13 +657,16 @@ export default class IngestReporter implements Reporter {
   private collectCatalog(suite: Suite | undefined): CollectedEntry[] | null {
     if (!this.cfg || !suite || (this.shard && this.shard.total > 1)) return null;
     try {
-      const byTitle = new Map<string, CollectedEntry>();
+      // Keyed by file and title: the same test across projects is one row, but
+      // a clean title shared by two files must survive to be disambiguated.
+      const byIdentity = new Map<string, CollectedEntry>();
       for (const test of suite.allTests()) {
         const entry = this.describeTest(test, this.cfg);
-        const prior = byTitle.get(entry.full_title);
-        byTitle.set(entry.full_title, prior ? { ...prior, tags: [...new Set([...prior.tags, ...entry.tags])] } : entry);
+        const key = `${entry.test_file}\0${entry.full_title}`;
+        const prior = byIdentity.get(key);
+        byIdentity.set(key, prior ? { ...prior, tags: [...new Set([...prior.tags, ...entry.tags])] } : entry);
       }
-      return [...byTitle.values()];
+      return [...byIdentity.values()];
     } catch (err) {
       log(`collected catalog unavailable — ${errText(err)}`);
       return null;
@@ -627,13 +735,15 @@ export default class IngestReporter implements Reporter {
     if (!this.cfg || !shouldPush(this.cfg)) return;
     if (this.preflight && !(await this.preflight)) return;
     try {
+      let rows = { results: [...this.results.values()], collected: this.collected };
+      if (this.cfg.titleFormat === "clean") rows = disambiguateAcrossFiles(rows.results, rows.collected);
       const payload = buildPayload(
-        [...this.results.values()],
+        rows.results,
         this.cfg,
         runTiming(result, this.startTime, Date.now()),
         process.env,
         result?.status,
-        { shard: this.shard, collected: this.collected },
+        { shard: this.shard, collected: rows.collected },
       );
       const { resp, error, attempts } = await postWithRetry(
         `${this.cfg.url}/api/ingest/runs`,

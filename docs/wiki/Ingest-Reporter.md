@@ -50,6 +50,7 @@ export default defineConfig({
 | `workflow`       | `CANARY_INGEST_WORKFLOW`         | `TESTTRACKER_WORKFLOW`         | `playwright`   | Free-form workflow label.                                              |
 | `areaMap`        | `CANARY_INGEST_AREA_MAP` (JSON)  | —                              | `{}`           | Glob → product area, first match wins. See [Areas](#areas).            |
 | `retryDelaysMs`  | —                                | —                              | `[1000, 4000]` | Waits before each retry of a 5xx, 429 or network error.                |
+| `titleFormat`    | `CANARY_INGEST_TITLE_FORMAT`     | —                              | `legacy`       | `legacy` or `clean`. See [Title format](#title-format).                |
 
 When both a `CANARY_INGEST_*` var and its legacy name are set, the new name
 wins.
@@ -66,6 +67,47 @@ A test's product area comes from, in order:
 
 A test matching neither sends **no** area. The reporter never guesses one from a
 folder name, so `functional` or `smoke` never shows up as a product area.
+
+### Environment variables
+
+Set these in CI (GitHub Actions secrets):
+
+```text
+CANARY_INGEST_URL=https://<your-dashboard-deployment>
+CANARY_INGEST_TOKEN=<token>               # per-tenant, scope ingest:runs
+```
+
+### Title format
+
+`full_title` is the dashboard's test identity: quarantine entries and flake
+history key on it.
+
+- `legacy` (default):
+  `chromium > tests/functional/foo.spec.ts > @functional foo > does x @functional`
+  — project, file, describe chain and title, exactly as before.
+- `clean`: `foo > does x` — describe chain and title only, with inline `@tag`
+  tokens removed (they are already in `tags`). The project moves to a
+  `project:<name>` tag, so a 3-browser suite reports each test **once**, with
+  the worst status across browsers and every browser in its tags. If two
+  different files hold a test with the same clean title, those titles keep a
+  file prefix (`tests/x.spec.ts > foo > does x`) so they are never merged.
+
+**Switching to `clean` changes every test's identity**, which starts fresh
+history and orphans existing quarantine entries. Coordinate with the dashboard
+(re-keying history) before turning it on; the default stays `legacy` (#1183).
+
+### Tags the reporter adds
+
+On top of the test's own Playwright tags (sent once each, without the `@`):
+
+| Tag              | When                                                                                     |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| `project:<name>` | Always: the Playwright project the test ran in.                                          |
+| `setup`          | The project is another project's `dependencies` target. Filter it out of test counts.    |
+| `teardown`       | The project is another project's `teardown`.                                             |
+| `fixme`          | The test is `test.fixme`.                                                                |
+| `reason:<text>`  | A `fixme`/`skip` annotation has a description, often an issue ref (capped at 100 chars). |
+| `interrupted`    | The test was interrupted (see [Status semantics](#status-semantics)).                    |
 
 ## What it sends besides results
 
@@ -86,15 +128,6 @@ folder name, so `functional` or `smoke` never shows up as a product area.
   double-count. A `4xx` is a payload problem and is not retried. A run that is
   not ingested ends with a warning (and a GitHub Actions annotation), never a
   quiet log line.
-
-### Environment variables
-
-Set these in CI (GitHub Actions secrets):
-
-```text
-CANARY_INGEST_URL=https://<your-dashboard-deployment>
-CANARY_INGEST_TOKEN=<token>               # per-tenant, scope ingest:runs
-```
 
 ## When it pushes (and when it doesn't)
 

@@ -630,3 +630,104 @@ test("no preflight and no push when pushing is off", async () => {
   const { requests } = await runReporter({ tests: [[t, fakeResult("passed")]], env: { CANARY_INGEST_PUSH: "false", CI: "", GITHUB_ACTIONS: "" } });
   assert.equal(requests.length, 0);
 });
+
+// --- #1183: readable titles, project/setup dimension, skip reasons ------------
+// full_title is the dashboard's test identity (quarantine entries and flake
+// history key on it), so the clean format is opt-in until the dashboard
+// re-keys history; legacy stays the default.
+
+test("the legacy title format is the default and is unchanged", async () => {
+  const t = fakeTest({ title: "does x @functional", describes: ["@functional foo"] });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("passed")]] });
+  assert.equal(payload.results[0].full_title, "chromium > tests/a.spec.ts > @functional foo > does x @functional");
+});
+
+test("titleFormat clean sends the describe chain and title only, without inline @tags", async () => {
+  const t = fakeTest({ title: "does x @functional", describes: ["@functional foo", "emails user@example.com"] });
+  const { payload } = await runReporter({ options: { titleFormat: "clean" }, tests: [[t, fakeResult("passed")]] });
+  assert.equal(payload.results[0].full_title, "foo > emails user@example.com > does x");
+  assert.equal(payload.collected[0].full_title, "foo > emails user@example.com > does x");
+});
+
+test("CANARY_INGEST_TITLE_FORMAT selects the format; an unknown value is a config error", () => {
+  assert.equal(resolveConfig({ suite: "s" }, { CANARY_INGEST_TITLE_FORMAT: "clean" }).titleFormat, "clean");
+  assert.equal(resolveConfig({ suite: "s" }, {}).titleFormat, "legacy");
+  assert.throws(() => resolveConfig({ suite: "s" }, { CANARY_INGEST_TITLE_FORMAT: "pretty" }), /legacy.*clean/);
+});
+
+test("every row carries its Playwright project as a project: tag", async () => {
+  const t = fakeTest({ title: "a", project: "firefox" });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("passed")]] });
+  assert.ok(payload.results[0].tags.includes("project:firefox"));
+});
+
+test("under the clean format a 3-browser suite reports each test once, worst status kept", async () => {
+  const runs = ["chromium", "firefox", "webkit"].map((project) => fakeTest({ title: "a", project }));
+  const { payload } = await runReporter({
+    options: { titleFormat: "clean" },
+    tests: [
+      [runs[0], fakeResult("passed")],
+      [runs[1], fakeResult("failed", { errors: [{ message: "boom" }] })],
+      [runs[2], fakeResult("passed")],
+    ],
+  });
+  assert.equal(payload.results.length, 1);
+  assert.equal(payload.totals.total, 1);
+  assert.equal(payload.results[0].status, "failed");
+  for (const p of ["chromium", "firefox", "webkit"]) assert.ok(payload.results[0].tags.includes(`project:${p}`));
+  assert.equal(payload.collected.length, 1);
+});
+
+test("under the clean format, same-named tests in different files are never merged", async () => {
+  const api = fakeTest({ title: "works", describes: ["login"], file: "tests/api/login.spec.ts" });
+  const web = fakeTest({ title: "works", describes: ["login"], file: "tests/web/login.spec.ts" });
+  const lone = fakeTest({ title: "only once", file: "tests/web/login.spec.ts" });
+  const { payload } = await runReporter({
+    options: { titleFormat: "clean" },
+    tests: [[api, fakeResult("passed")], [web, fakeResult("failed")], [lone, fakeResult("passed")]],
+  });
+  assert.deepEqual(
+    payload.results.map((r) => r.full_title).sort(),
+    ["only once", "tests/api/login.spec.ts > login > works", "tests/web/login.spec.ts > login > works"],
+  );
+  assert.equal(payload.totals.total, 3);
+  assert.equal(payload.collected.length, 3);
+});
+
+test("setup and teardown projects are tagged so they can be filtered out of test counts", async () => {
+  const setup = fakeTest({ title: "authenticate", project: "setup", file: "tests/auth.setup.ts" });
+  const cleanup = fakeTest({ title: "drop db", project: "cleanup", file: "tests/db.teardown.ts" });
+  const real = fakeTest({ title: "a", project: "chromium" });
+  const { payload } = await runReporter({
+    config: { shard: null, projects: [{ name: "setup", teardown: "cleanup" }, { name: "cleanup" }, { name: "chromium", dependencies: ["setup"] }] },
+    tests: [[setup, fakeResult("passed")], [cleanup, fakeResult("passed")], [real, fakeResult("passed")]],
+  });
+  const tagsOf = (title) => payload.results.find((r) => r.full_title.endsWith(title)).tags;
+  assert.ok(tagsOf("authenticate").includes("setup"));
+  assert.ok(tagsOf("drop db").includes("teardown"));
+  assert.equal(tagsOf("> a").includes("setup"), false);
+});
+
+test("a fixme is tagged fixme and its reason reaches the dashboard", async () => {
+  const t = fakeTest({ title: "parked", outcome: "skipped", annotations: [{ type: "fixme", description: "  blocked by #123\n flaky upstream " }] });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("skipped")]] });
+  const tags = payload.results[0].tags;
+  assert.ok(tags.includes("fixme"));
+  assert.ok(tags.includes("reason:blocked by #123 flaky upstream"), tags.join(","));
+});
+
+test("a skip with a reason forwards it; a bare skip adds no reason tag", async () => {
+  const withReason = fakeTest({ title: "a", outcome: "skipped", annotations: [{ type: "skip", description: "not on webkit" }] });
+  const bare = fakeTest({ title: "b", outcome: "skipped", annotations: [{ type: "skip" }] });
+  const { payload } = await runReporter({ tests: [[withReason, fakeResult("skipped")], [bare, fakeResult("skipped")]] });
+  assert.ok(payload.results[0].tags.includes("reason:not on webkit"));
+  assert.equal(payload.results[1].tags.some((x) => x.startsWith("reason:")), false);
+  assert.equal(payload.results[1].tags.includes("fixme"), false);
+});
+
+test("a very long skip reason is capped", async () => {
+  const t = fakeTest({ title: "a", outcome: "skipped", annotations: [{ type: "skip", description: "x".repeat(500) }] });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("skipped")]] });
+  const reason = payload.results[0].tags.find((x) => x.startsWith("reason:"));
+  assert.ok(reason.length <= 120, `${reason.length}`);
+});
