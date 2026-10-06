@@ -7,7 +7,7 @@
 
 import fs from 'node:fs';
 
-import { validateText } from '../../../lib/contracts/document.mjs';
+import { validateDocument } from '../../../lib/contracts/document.mjs';
 import { historyRuns, selectRuns } from './runs.mjs';
 import { ledgerRegister } from './register.mjs';
 
@@ -22,9 +22,9 @@ export function readJson(file, what) {
 
 /** Each RECORD file must itself be a valid run or assessment record. */
 function readRecord(file) {
-  const { valid, contract, errors } = validateText(
-    fs.readFileSync(file, 'utf8'),
-  );
+  // One read, one parse: the document validated is the document returned.
+  const doc = readJson(file, 'record');
+  const { valid, contract, errors } = validateDocument(doc);
   if (!valid)
     throw new Error(
       `${file}: ${errors.map((e) => `${e.path}: ${e.message}`).join('; ')}`,
@@ -33,7 +33,7 @@ function readRecord(file) {
     throw new Error(
       `${file}: expected a run or assessment record, got ${contract}`,
     );
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  return doc;
 }
 
 const isRun = (r) => r.contract === 'canary.run/1';

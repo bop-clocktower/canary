@@ -1,4 +1,9 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import fs, {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -786,6 +791,18 @@ describe('canary-starling (end to end)', () => {
       status: 'not-assessed',
       reason: expect.stringMatching(/ci-ready\.json.*observed_at/),
     });
+  });
+
+  it('reads each RECORD file once: the text validated is the text parsed', () => {
+    const dir = fixture({ 'ledger.json': { entries: [] } });
+    const record = join(dir, 'run.json');
+    const read = vi.spyOn(fs, 'readFileSync');
+    try {
+      expect(capture(() => starlingMain(argv(dir, [record]))).code).toBe(0);
+      expect(read.mock.calls.filter(([f]) => f === record)).toHaveLength(1);
+    } finally {
+      read.mockRestore();
+    }
   });
 
   it('names an unwritable --out and exits 1, with no stack', () => {
