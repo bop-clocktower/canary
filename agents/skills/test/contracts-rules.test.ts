@@ -197,3 +197,49 @@ describe('site rules', () => {
     ).toEqual([]);
   });
 });
+
+describe('real-dates (#1151 phase 3 review)', () => {
+  const BAD = '2026-13-01T00:00:00Z';
+  const run = (finished_at: string) => ({
+    run: { started_at: '2026-10-06T00:00:00Z', finished_at },
+    totals: totals(),
+    results: null,
+  });
+
+  it('refuses a pattern-valid timestamp that names no instant', () => {
+    expect(paths(crossFieldErrors('run', run(BAD)))).toEqual([
+      'run.finished_at',
+    ]);
+    expect(crossFieldErrors('run', run(BAD))[0].message).toContain(
+      'is not a real date',
+    );
+  });
+
+  it('accepts a real date, offsets included (control)', () => {
+    expect(crossFieldErrors('run', run('2026-10-06T10:00:00+05:30'))).toEqual(
+      [],
+    );
+  });
+
+  it('checks every timestamp a site feed carries, with its path', () => {
+    const errs = crossFieldErrors('site', {
+      generated_at: BAD,
+      runs: [run(BAD)],
+      assessments: [assessment({ observed_at: BAD })],
+      register: [{ recorded_at: BAD }],
+    });
+    expect(paths(errs)).toEqual([
+      'generated_at',
+      'runs[0].run.finished_at',
+      'assessments[0].observed_at',
+      'register[0].recorded_at',
+    ]);
+  });
+
+  it('leaves a non-string timestamp to the schema', () => {
+    const errs = crossFieldErrors('assessment', assessment({ observed_at: 5 }));
+    expect(
+      errs.filter((e: { message: string }) => e.message.includes('real date')),
+    ).toEqual([]);
+  });
+});
