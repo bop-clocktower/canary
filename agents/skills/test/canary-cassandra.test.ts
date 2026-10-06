@@ -275,6 +275,41 @@ describe('--json envelope', () => {
     expect(s.abstained).toBe(false);
   });
 
+  // #1170: a test whose target sits more than one same-file helper deep is
+  // neither passed in silence nor reported -- it abstains, and the abstention is
+  // COUNTED on both surfaces so a reader can see how much went unjudged.
+  function deepHelperDir(): string {
+    const dir = mkTmp();
+    fs.writeFileSync(
+      path.join(dir, 'a.test.ts'),
+      "import { thing } from './thing';\n" +
+        'const raw = () => thing();\n' +
+        'const viaRaw = () => raw();\n' +
+        "it('deep', () => {\n  expect(viaRaw()).toBe(1);\n});\n" +
+        "it('direct', () => {\n  expect(thing()).toBe(1);\n});\n",
+      'utf8',
+    );
+    return dir;
+  }
+
+  it('counts VAC-002 helper abstentions in the summary', () => {
+    const p = JSON.parse(run([deepHelperDir(), '--json']).stdout);
+    expect(p.summary.vac002_abstained).toBe(1);
+    expect(p.findings.filter((f: any) => f.rule_id === 'VAC-002')).toEqual([]);
+    expect(
+      p.skipped.some((s: any) => /more than one level/.test(s.reason)),
+    ).toBe(true);
+  });
+
+  it('reports zero helper abstentions as 0, not as a missing key', () => {
+    expect(payload().summary.vac002_abstained).toBe(0);
+  });
+
+  it('discloses the abstention count in text output', () => {
+    const out = run([deepHelperDir()]).stdout;
+    expect(out).toMatch(/1 test\(s\) abstained on VAC-002/);
+  });
+
   it('marks the payload abstained when nothing was checked', () => {
     const p = JSON.parse(run([mkTmp(), '--json']).stdout);
     expect(p.summary.tests_checked).toBe(0);
