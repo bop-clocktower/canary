@@ -14,6 +14,13 @@ under the project's former name) are documented in the
 
 ## [Unreleased]
 
+### Added
+
+- **`canary ci-ready --json` carries its numbers.** Each check gains
+  `measure: {value, unit, denominator}` (`null` when the check measured nothing
+  — a skip, a window under 10 runs, or a flake zero the reader could not
+  observe) and the report gains `observed_at`. Text output is unchanged (#1151).
+
 ### Changed
 
 - **The TestTracker reporter is now the ingest reporter.** The import path

@@ -124,7 +124,9 @@ export function buildCiReadyCommand(deps: MainDeps): Command {
         ),
       });
       if (opts.json === true) {
-        deps.out(JSON.stringify(report, null, 2));
+        // When the checks ran, so a feed can order reports (#1151 phase 2).
+        const stamped = { observed_at: new Date().toISOString(), ...report };
+        deps.out(JSON.stringify(stamped, null, 2));
       } else {
         for (const line of renderText(report)) deps.out(line);
       }
