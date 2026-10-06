@@ -126,27 +126,45 @@ export const RUNS_PER_SUITE = 30;
 const suiteKey = (r) => `${r.scope.id}\u0000${r.scope.env}\u0000${r.run.suite}`;
 
 /**
- * Newest first per suite. `window` keeps every kept run's results (flaky[]
- * needs them); `feed` drops results on all but each suite's newest run.
- * Dropped results become `results: null` and the run's totals stay, so the
- * run still validates ("not carried", never "zero tests").
+ * A canary.run/1 record is a whole run or one shard of it; a shard's id is
+ * its run's id plus `-sNofM` (#1148). Windows and counts are per LOGICAL run.
+ */
+export const logicalId = (r) =>
+  r.run.shard ? r.run.id.replace(/-s\d+of\d+$/, '') : r.run.id;
+
+function groupBy(items, keyOf) {
+  const groups = new Map();
+  for (const it of items) {
+    const k = keyOf(it);
+    groups.set(k, [...(groups.get(k) ?? []), it]);
+  }
+  return groups;
+}
+
+/** A logical run finishes when its last shard does. */
+const finishedAt = (records) =>
+  Math.max(...records.map((r) => Date.parse(r.run.finished_at)));
+
+/**
+ * Newest first per suite, by logical run. `window` keeps every kept record's
+ * results (flaky[] needs them); `feed` drops results on all but every shard
+ * of each suite's newest logical run. Dropped results become `results: null`
+ * and the run's totals stay, so the run still validates ("not carried", never
+ * "zero tests").
  */
 export function selectRuns(runs) {
-  const bySuite = new Map();
-  for (const r of runs) {
-    const k = suiteKey(r);
-    bySuite.set(k, [...(bySuite.get(k) ?? []), r]);
-  }
   const window = [];
   const feed = [];
-  for (const group of bySuite.values()) {
-    const kept = group
-      .sort(
-        (a, b) => Date.parse(b.run.finished_at) - Date.parse(a.run.finished_at),
-      )
+  for (const group of groupBy(runs, suiteKey).values()) {
+    const kept = [...groupBy(group, logicalId).values()]
+      .sort((a, b) => finishedAt(b) - finishedAt(a))
       .slice(0, RUNS_PER_SUITE);
-    window.push(...kept);
-    feed.push(...kept.map((r, i) => (i === 0 ? r : { ...r, results: null })));
+    kept.forEach((records, i) => {
+      window.push(...records);
+      feed.push(...(i === 0 ? records : records.map(withoutResults)));
+    });
   }
   return { window, feed };
 }
+
+const withoutResults = (r) => ({ ...r, results: null });

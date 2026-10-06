@@ -131,7 +131,32 @@ describe('selectRuns (D15)', () => {
     for (const r of feed)
       expect(validateDocument(r, { layer: 'run' }).errors).toEqual([]);
   });
+
+  it('windows by logical run: every shard of the newest run keeps results', () => {
+    // r40 ran as two shards that finished a minute apart; the logical run's
+    // time is its last shard's. 30 older runs: 29 survive beside r40.
+    const sharded = [1, 2].map((s) => shardOf(runAt(40 + s), 'r40', s));
+    const older = [...Array(30).keys()].map((i) => runAt(i));
+    const { feed, window } = selectRuns([...older, ...sharded]);
+    expect(feed).toHaveLength(31);
+    const withResults = feed.filter((r: any) => r.results !== null);
+    expect(withResults.map((r: any) => r.run.id).sort()).toEqual([
+      'r40-s1of2',
+      'r40-s2of2',
+    ]);
+    expect(window.map((r: any) => r.run.id)).not.toContain('r0');
+    for (const r of feed)
+      expect(validateDocument(r, { layer: 'run' }).errors).toEqual([]);
+  });
 });
+
+/** `run` as shard `s` of 2 of the logical run `id` (the reporter's id shape). */
+function shardOf(run: any, id: string, s: number) {
+  return {
+    ...run,
+    run: { ...run.run, id: `${id}-s${s}of2`, shard: { index: s, total: 2 } },
+  };
+}
 
 describe('flakyTests (D13)', () => {
   it('counts a test once, with flaky runs over runs that carry results', () => {
@@ -168,6 +193,32 @@ describe('flakyTests (D13)', () => {
         window_runs: 3,
       },
     ]);
+  });
+
+  it('counts logical runs, not shard records', () => {
+    const shard = (i: number, s: number, status: string) =>
+      shardOf(
+        historyToRun(
+          historyRow({
+            run_id: `r${i}`,
+            timestamp: new Date(Date.UTC(2026, 9, 1, 0, i, s)).toISOString(),
+            tests: [{ test_name: 'a', test_file: 'test/a.test.ts', status }],
+          }),
+          SCOPE,
+        ).run,
+        `r${i}`,
+        s,
+      );
+    const rows = flakyTests([
+      shard(1, 1, 'flaky'),
+      shard(1, 2, 'passed'),
+      shard(2, 1, 'flaky'),
+      shard(2, 2, 'passed'),
+    ]);
+    expect(rows).toMatchObject([{ title: 'a', flaky_runs: 2, window_runs: 2 }]);
+    // Flaking on both shards of one run (two projects) is still one run.
+    const both = flakyTests([shard(1, 1, 'flaky'), shard(1, 2, 'flaky')]);
+    expect(both).toMatchObject([{ flaky_runs: 1, window_runs: 1 }]);
   });
 });
 
