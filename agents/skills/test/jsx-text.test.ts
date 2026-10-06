@@ -188,4 +188,30 @@ describe('maskJsxText', () => {
       `render(<p>{/* open </p>);\n`,
     );
   });
+
+  it('blanks prose that would otherwise read as an assertion or a timing value', () => {
+    expectMaskedText(
+      `it('a', () => {\n  render(<Notice>Your session timeout is 45 minutes, so save as you should.</Notice>);\n});\n`,
+      'Your session timeout is 45 minutes, so save as you should.',
+    );
+  });
+
+  // Review repros on #1193: a closing tag closed ANY open element, so a
+  // misread type-level `<T>` was "closed" by a `</b>` inside a later string
+  // and every line between came back blanked.
+  it('only closes an element with a closing tag of the same name', () => {
+    for (const code of [
+      `type R = { render: <T>(x: T) => string };\nconst t = Date.now();\nexpect(html).toBe('</b>');\n`,
+      'const f = (cb: <T>(x: T) => T) => cb;\nconst t = Date.now();\nconst s = `</p>`;\n',
+    ]) {
+      expect(maskJsxText(code)).toBe(code);
+      expectMaskedText(`${code}render(<p>It's real</p>);\n`, "It's real");
+    }
+    expectMaskedText(`render(<>it's</p>z</>);\n`, `it's</p>z`);
+  });
+
+  it('recovers from more misread `<` than one pass per element allows', () => {
+    const generic = 'type P = { cb: <T>(x: T) => void };\n'.repeat(100);
+    expectMaskedText(`${generic}render(<p>It's here</p>);\n`, "It's here");
+  });
 });

@@ -27,11 +27,16 @@
 // - Inside children, text is masked; `{` opens code and `<` a child or a
 //   closing tag.
 //
-// Recovery is local. When a pass ends with an element still open, the
-// innermost unclosed `<` was not JSX after all (a type-level generic such as
-// `cb: <T>(x: T) => void`), so the walk is repeated with that one `<` read as
-// an operator. Only when no pass balances does the source come back unmasked
-// -- the same reading a `.ts` file gets.
+// Recovery is local. A closing tag closes only the element it names (`</>`
+// only a fragment), so a misread `<` cannot be "closed" by an unrelated
+// `</b>` later in the file -- inside a string, say -- and blank every line
+// between (#1193). When a pass ends with elements still open, those `<` were
+// not JSX after all (a type-level generic such as `cb: <T>(x: T) => void`),
+// so the walk is repeated with every one of them read as an operator: all at
+// once, so a file with many such generics needs few passes. The cost is that
+// a real element enclosing a misread one is read as code too -- the `.ts`
+// reading, never a blanked line. Only when no pass balances does the source
+// come back unmasked -- the same reading a `.ts` file gets.
 
 const KEYWORD_BEFORE =
   /(?:^|[^\w$])(?:return|yield|default|await|case|throw|typeof|void|delete|in|of|new)$/;
@@ -42,8 +47,14 @@ const EXPRESSION_START = new Set('(,=:?[{;!&|'.split(''));
 const TAG_START = /^<(?:>|[A-Za-z_$][\w$.:-]*[\s>/{<])/;
 const TYPE_PARAMS =
   /^<\s*(?:const\s|[A-Za-z_$][\w$]*\s*(?:extends\b|=(?!>)|,))/;
-/** One pass per `<` that can turn out not to close; beyond this, give up. */
+/** The tag name after `<` or `</` (`''` for a fragment). */
+const TAG_NAME = /^\s*([A-Za-z_$][\w$.:-]*)?/;
+/** Each failed pass marks at least one more `<`; beyond this, give up. */
 const MAX_PASSES = 64;
+
+function tagName(code, at) {
+  return TAG_NAME.exec(code.slice(at, at + 80))?.[1] ?? '';
+}
 
 /**
  * `.tsx`/`.jsx`: the files whose source may contain JSX.
@@ -149,15 +160,15 @@ export function maskJsxText(code) {
   for (let pass = 0; pass < MAX_PASSES; pass += 1) {
     const walk = run(code, operators);
     if (walk.stack.length === 0) return walk.out.join('');
-    const open = innermostElementStart(walk.stack);
-    if (open === null || operators.has(open)) return code;
-    operators.add(open);
+    const open = unclosedStarts(walk.stack, operators);
+    if (open.length === 0) return code;
+    for (const start of open) operators.add(start);
   }
   return code;
 }
 
-// Frames: {kind: 'tag', start, closing, angle} | {kind: 'children', start}
-//       | {kind: 'expr', depth}. `last` is the offset of the last significant
+// Frames: {kind: 'tag', start, closing, angle, name}
+//       | {kind: 'children', start, name} | {kind: 'expr', depth}. `last` is the offset of the last significant
 // code character (whitespace and comments skipped).
 function run(code, operators) {
   const walk = { code, out: code.split(''), stack: [], operators, last: -1 };
@@ -166,17 +177,17 @@ function run(code, operators) {
   return walk;
 }
 
-function innermostElementStart(stack) {
-  for (let k = stack.length - 1; k >= 0; k -= 1) {
-    if (stack[k].kind !== 'expr') return stack[k].start;
-  }
-  return null;
+/** Starts of the elements a failed pass left open, not yet read as operators. */
+function unclosedStarts(stack, operators) {
+  return stack.flatMap((frame) =>
+    frame.kind !== 'expr' && !operators.has(frame.start) ? [frame.start] : [],
+  );
 }
 
 function step(walk, i) {
   const frame = walk.stack[walk.stack.length - 1];
   if (frame?.kind === 'tag') return stepTag(walk, i, frame);
-  if (frame?.kind === 'children') return stepChildren(walk, i);
+  if (frame?.kind === 'children') return stepChildren(walk, i, frame);
   return stepCode(walk, i, frame);
 }
 
@@ -193,7 +204,8 @@ function stepCode(walk, i, frame) {
     return literal;
   }
   if (ch === '<' && startsElement(walk, i)) {
-    walk.stack.push({ kind: 'tag', start: i, closing: false, angle: 0 });
+    const name = tagName(code, i + 1);
+    walk.stack.push({ kind: 'tag', start: i, closing: false, angle: 0, name });
     return i + 1;
   }
   if (frame) trackBraces(walk, frame, ch);
@@ -234,7 +246,7 @@ function stepTagEnd(walk, i, frame) {
   if (ch !== '>') return i + 1;
   if (frame.closing) return closeElement(walk, i, 2);
   walk.stack.pop();
-  walk.stack.push({ kind: 'children', start: frame.start });
+  walk.stack.push({ kind: 'children', start: frame.start, name: frame.name });
   return i + 1;
 }
 
@@ -246,7 +258,7 @@ function closeElement(walk, gt, frames) {
 }
 
 /** Element children: text is masked, `{` is code, `<` a child or a close. */
-function stepChildren(walk, i) {
+function stepChildren(walk, i, frame) {
   const { code, out } = walk;
   const ch = code[i];
   if (ch === '{') {
@@ -254,12 +266,23 @@ function stepChildren(walk, i) {
     return i + 1;
   }
   if (ch === '<' && !walk.operators.has(i)) {
-    const closing = code[i + 1] === '/';
-    walk.stack.push({ kind: 'tag', start: i, closing, angle: 0 });
-    return i + (closing ? 2 : 1);
+    const next = openChildTag(walk, i, frame);
+    if (next !== null) return next;
   }
   if (ch !== '\n' && ch !== '\r') out[i] = ' ';
   return i + 1;
+}
+
+/**
+ * A child element or this element's closing tag at `i`, or null when it is a
+ * closing tag for some OTHER element -- text here, so the element stays open.
+ */
+function openChildTag(walk, i, frame) {
+  const closing = walk.code[i + 1] === '/';
+  const name = tagName(walk.code, i + (closing ? 2 : 1));
+  if (closing && name !== frame.name) return null;
+  walk.stack.push({ kind: 'tag', start: i, closing, angle: 0, name });
+  return i + (closing ? 2 : 1);
 }
 
 function startsElement(walk, i) {

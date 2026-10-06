@@ -793,6 +793,14 @@ it('has a label', () => {
     expect(found).not.toContain('LINT-005');
   });
 
+  it('keeps assertions after a type-level generic and a closing tag in a string (#1193)', () => {
+    // A closing tag used to close ANY open element, so `<T>` read as JSX was
+    // "closed" by the `</b>` in the string and the expect between was blanked.
+    const code = `it('renders bold', () => {\n  const render: <T>(x: T) => string = String;\n  expect(render(html)).toBe('</b>');\n});\n`;
+    expect(rules(lint('Bold.test.tsx', code))).not.toContain('LINT-006');
+    expect(rules(lint('Bold.test.ts', code))).not.toContain('LINT-006');
+  });
+
   it('flakeCheck masks JSX text the same way lint does', () => {
     // Two lone backticks in JSX text make the line-based multiline blanker
     // read the lines between them as a template literal, so without masking
