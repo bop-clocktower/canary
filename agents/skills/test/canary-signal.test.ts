@@ -618,7 +618,9 @@ describe('cli', () => {
   });
   it('SC8: no network or process modules, and only cli.mjs writes', () => {
     const allowed =
-      /^(node:fs|node:path|\.\.\/\.\.\/\.\.\/lib\/parse-args\.mjs|\.\/[a-z]+\.mjs)$/;
+      // lib/is-main.mjs (#1182) is the shared entry-point check: node:fs
+      // realpathSync and node:url only, no network, process or writes.
+      /^(node:fs|node:path|\.\.\/\.\.\/\.\.\/lib\/(parse-args|is-main)\.mjs|\.\/[a-z]+\.mjs)$/;
     const writers: string[] = [];
     for (const name of fs.readdirSync(SCRIPTS)) {
       const src = fs.readFileSync(path.join(SCRIPTS, name), 'utf8');

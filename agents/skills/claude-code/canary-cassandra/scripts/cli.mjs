@@ -26,6 +26,7 @@ import {
   EXIT_USAGE,
 } from '../../../lib/parse-args.mjs';
 import { loadEngine } from './engine.mjs';
+import { isMain } from '../../../lib/is-main.mjs';
 
 export const SCHEMA_VERSION = 1;
 
@@ -285,6 +286,6 @@ export function main(argv = []) {
 // a machine-readable result a consumer cannot parse but a shell reads as
 // success -- the exact class of quiet failure the whole family guards against.
 // Setting the code lets node drain stdout and exit with the same status.
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }

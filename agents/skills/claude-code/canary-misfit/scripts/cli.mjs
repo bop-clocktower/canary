@@ -32,6 +32,7 @@ import {
   annotations,
   ABSTAINED_LINE,
 } from './report.mjs';
+import { isMain } from '../../../lib/is-main.mjs';
 
 const PREFIX = 'canary-misfit:';
 
@@ -203,6 +204,6 @@ export function main(argv = []) {
 // `process.exitCode`, not `process.exit()`: a large `--json` payload exceeds
 // the pipe buffer, and `process.exit` tears the process down mid-write, leaving
 // truncated JSON that still exits 0 (#791).
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }

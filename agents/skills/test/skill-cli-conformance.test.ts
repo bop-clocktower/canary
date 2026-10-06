@@ -218,6 +218,37 @@ describe.each(ROWS)('$name', (row) => {
     expect(bogus.status).toBe(EXIT_USAGE);
     expect(bogus.stderr).toMatch(/unrecognized arguments:/);
   });
+
+  it('runs main when reached through a symlink or a URL-encoded path (#1182)', () => {
+    // A hand-built `file://${argv[1]}` guard is false for both, and the CLI
+    // then printed nothing and exited 0: a silent false green for any caller
+    // that treats exit 0 as "scanned, no findings".
+    const skillsRoot = path.join(HERE, '..');
+    const rel = path.relative(skillsRoot, row.cli);
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-main-'));
+    const link = path.join(tmp, 'with space');
+    fs.symlinkSync(skillsRoot, link, 'dir');
+    try {
+      const cases: Array<[string, string[]]> = [
+        // argv[1] is the link; import.meta.url is the resolved real file.
+        ['symlink', [path.join(link, rel), '--help']],
+        // The link is kept, so import.meta.url carries `with%20space`.
+        [
+          'url-encoded',
+          ['--preserve-symlinks-main', path.join(link, rel), '--help'],
+        ],
+      ];
+      for (const [label, args] of cases) {
+        const r = spawnSync(process.execPath, args, { encoding: 'utf8' });
+        expect(r.status, `${row.name} via ${label}: ${r.stderr}`).toBe(0);
+        expect(r.stdout, `${row.name} via ${label} printed nothing`).toMatch(
+          /^usage: /m,
+        );
+      }
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('a --json payload larger than the pipe buffer survives (#791)', () => {
