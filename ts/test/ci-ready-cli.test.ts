@@ -14,22 +14,29 @@
  *   - incomplete (exit 0): nothing failed, but at least one check skipped.
  *   - ready      (exit 0): all five checks passed.
  */
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EXIT_ABSTAINED } from '../src/core/gate-result.js';
 import { NdjsonHistoryStore } from '../src/history/ndjson-store.js';
 import { invokeCanary, mkTmp, rmTmp } from './canary-cli-testkit.js';
 
+interface Measure {
+  value: number;
+  unit: 'ratio' | 'count' | 'ms';
+  denominator: number;
+}
 interface Check {
   name: string;
   verdict: 'pass' | 'warn' | 'fail' | 'skip';
   reason: string;
+  measure: Measure | null;
 }
 interface Report {
   verdict: 'ready' | 'incomplete' | 'not-ready' | 'abstained';
   checked: number;
   checks: Check[];
+  observed_at?: string;
 }
 
 const HISTORY = join('test-results', 'reports', 'history-v2.jsonl');
@@ -44,6 +51,7 @@ function writeHistory(
   runs: number,
   flakyIn: number[] = [],
   durations: (number | undefined)[] = [],
+  format?: string,
 ): void {
   mkdirSync(join(root, 'test-results', 'reports'), { recursive: true });
   const lines: string[] = [];
@@ -63,6 +71,7 @@ function writeHistory(
         skipped: 0,
         ...(durations[i] === undefined ? {} : { duration_ms: durations[i] }),
         schema_version: 2,
+        ...(format ? { reporter_format: format } : {}),
         tests: [
           {
             test_name: 't1',
@@ -111,10 +120,31 @@ describe('canary ci-ready', () => {
       'suite-runtime',
     ]);
     expect(report.checks.every((c) => c.verdict === 'skip')).toBe(true);
+    // A skipped check measured nothing: null, never 0 (#1151 phase 2, P1).
+    expect(report.checks.map((c) => c.measure)).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
 
     const text = await invokeCanary(['ci-ready', '--root', root]);
     expect(text.code).toBe(EXIT_ABSTAINED);
     expect(text.stdout).not.toMatch(/\bready\b(?!ness)/i);
+  });
+
+  it('stamps --json with when the checks ran (#1151 phase 2)', async () => {
+    // A frozen clock, not a before/after read of the wall clock: the stamp is
+    // asserted exactly, and the test cannot depend on when the suite runs.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-06T12:34:56.789Z'));
+      const { report } = await runJson(root);
+      expect(report.observed_at).toBe('2026-10-06T12:34:56.789Z');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // #604 G2: a 5-run window is too thin to pass. `0 flaky across 5 run(s)` was
@@ -165,8 +195,71 @@ describe('canary ci-ready', () => {
     expect(f.reason).toMatch(/history-v2\.jsonl/);
   });
 
+  describe('flakiness measure (#1151 phase 2)', () => {
+    it('measures the worst flake rate against the window', async () => {
+      writeHistory(root, 5, [2]);
+      const m = check((await runJson(root)).report, 'flakiness').measure;
+      expect(m?.unit).toBe('ratio');
+      expect(m?.value).toBeCloseTo(0.2);
+      expect(m?.denominator).toBe(5);
+    });
+
+    // The rate is over the worst test's own appearances, so the denominator
+    // must be too: a test absent from 2 of 6 runs flaked 1 time in 4.
+    it("divides by the worst test's own appearances, not the window", async () => {
+      writeHistory(root, 6, [5]);
+      const path = join(root, HISTORY);
+      const lines = readFileSync(path, 'utf-8')
+        .trim()
+        .split('\n')
+        .map((line, i) => {
+          if (i > 1) return line;
+          const run = JSON.parse(line) as { tests: { test_name: string }[] };
+          run.tests[0]!.test_name = 't0';
+          return JSON.stringify(run);
+        });
+      writeFileSync(path, lines.join('\n') + '\n', 'utf-8');
+      expect(check((await runJson(root)).report, 'flakiness').measure).toEqual({
+        value: 0.25,
+        unit: 'ratio',
+        denominator: 4,
+      });
+    });
+
+    it('carries a measured 0 only when retry flakes were observable', async () => {
+      writeHistory(root, 10, [], [], 'playwright');
+      expect(check((await runJson(root)).report, 'flakiness').measure).toEqual({
+        value: 0,
+        unit: 'ratio',
+        denominator: 10,
+      });
+    });
+
+    it('carries null for a structural or unknown zero, and for a thin window', async () => {
+      writeHistory(root, 10, [], [], 'vitest');
+      expect(
+        check((await runJson(root)).report, 'flakiness').measure,
+      ).toBeNull();
+      writeHistory(root, 10); // unstamped: unknown
+      expect(
+        check((await runJson(root)).report, 'flakiness').measure,
+      ).toBeNull();
+      writeHistory(root, 5, [], [], 'playwright'); // thin
+      expect(
+        check((await runJson(root)).report, 'flakiness').measure,
+      ).toBeNull();
+    });
+  });
+
   describe('suite runtime (p95 of recorded run durations, #956)', () => {
     const MIN = 60_000;
+
+    it('measures the p95 in ms against the runs that carry a duration', async () => {
+      writeHistory(root, 3, [], [1000, 2000, 3000]);
+      expect(
+        check((await runJson(root)).report, 'suite-runtime').measure,
+      ).toEqual({ value: 3000, unit: 'ms', denominator: 3 });
+    });
 
     it('skips, naming the store, when no stored run carries a duration', async () => {
       writeHistory(root, 5);
@@ -273,6 +366,17 @@ describe('canary ci-ready', () => {
       'critical-paths',
     ]) {
       expect(check(report, name).verdict).toBe('pass');
+    }
+    for (const name of [
+      'coverage-depth',
+      'assertion-quality',
+      'critical-paths',
+    ]) {
+      expect(check(report, name).measure).toEqual({
+        value: 0,
+        unit: 'count',
+        denominator: 1,
+      });
     }
     expect(report.checked).toBe(3);
     expect(report.verdict).toBe('incomplete');

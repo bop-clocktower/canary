@@ -338,6 +338,11 @@ via slash commands.
   `canary-migrator`, `canary-framework-advisor`, `canary-flake-hunter`.
 - **Skills:** `agents/skills/` — three slash commands: `/canary:generate`,
   `/canary:init`, `/canary:migrate`.
+  - `canary-starling` (#1151): the QA site feed composer. Reads the run-history
+    store, `canary.run/1` run files, the katana ledger and a
+    `canary ci-ready --json` report, and writes one `canary.site/1` `site.json`,
+    validated before it is written (an invalid feed is never written). Absent
+    inputs become `not-assessed` assessments; zero runs abstains.
 - **Activate:** load the repo root as a Claude Code plugin.
 
 ### LLM Layer (removed in v3.0)
@@ -364,8 +369,10 @@ host Claude Code session via `/canary-write-test` — no API key required.
 - **QA data contract:** `agents/skills/lib/contracts/` — `canary.run/1`,
   `canary.assessment/1` and `canary.site/1` as JSON Schemas plus a
   zero-dependency validator, `validate.mjs <file> [--layer L] [--json]` (exit 0
-  valid, 1 refused, 2 usage). Specs in `docs/specs/canary-*-contract.md`; [ADR
-  0035][adr-0035].
+  valid, 1 refused, 2 usage; its API lives in `document.mjs`). The ingest
+  reporter writes a `canary.run/1` file when `runFile` is set, and
+  `canary ci-ready --json` checks carry `measure` for assessments. Specs in
+  `docs/specs/canary-*-contract.md`; [ADR 0035][adr-0035].
 
 ### Generated Artifacts
 

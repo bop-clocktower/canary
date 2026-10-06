@@ -25,6 +25,13 @@ export interface FlakeSignal {
   rate: number;
   /** `retry-flake` or `cross-run flips`, so the reason names the axis. */
   axis: string;
+  /**
+   * What `rate` was divided by (#1151 phase 2): the test's own appearances for
+   * `retry-flake`, its definitive-outcome transitions for `cross-run flips`.
+   * Never the window length -- a test absent from some runs was not measured
+   * in them.
+   */
+  denominator: number;
 }
 
 /**
@@ -74,11 +81,13 @@ function tallyTests(runs: SignalRun[]): Map<string, TestTally> {
 /** The worse of the two axes, or `null` when neither fired. */
 function worstAxis(tally: TestTally): FlakeSignal | null {
   const flakeRate = tally.present > 0 ? tally.flaky / tally.present : 0;
-  const flipRate = alternationRate(detectAlternation(tally.statuses));
+  const alt = detectAlternation(tally.statuses);
+  const flipRate = alternationRate(alt);
   if (flakeRate <= 0 && flipRate <= 0) return null;
+  // `flip_rate_pct` is flips over `observed - 1` transitions (util/alternation).
   return flipRate > flakeRate
-    ? { rate: flipRate, axis: 'cross-run flips' }
-    : { rate: flakeRate, axis: 'retry-flake' };
+    ? { rate: flipRate, axis: 'cross-run flips', denominator: alt.observed - 1 }
+    : { rate: flakeRate, axis: 'retry-flake', denominator: tally.present };
 }
 
 /**

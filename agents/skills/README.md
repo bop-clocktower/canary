@@ -44,6 +44,7 @@ agents/skills/
 │   ├── canary-shadow/
 │   ├── canary-ship/
 │   ├── canary-signal/
+│   ├── canary-starling/
 │   ├── canary-strix/
 │   ├── canary-sweep/
 │   ├── canary-test-pipeline/
@@ -127,6 +128,13 @@ slash-command entry points.
   block of what testing caught in a window. Every number carries its
   denominator; an empty window abstains and a one- or two-run window carries a
   THIN SAMPLE banner. Emits only, never posts.
+- [`canary-starling`](./claude-code/canary-starling/SKILL.md) — Bundled
+  executable skill (`scripts/cli.mjs`). QA site feed composer: reads the
+  run-history store, `canary.run/1` files, the katana ledger and a
+  `canary ci-ready --json` report and writes one validated `canary.site/1`
+  `site.json`. An absent input is a `not-assessed` assessment naming what is
+  missing, never an omitted row; a feed that fails validation is never written,
+  and a feed with zero runs abstains. Writes only, never deploys.
 - [`canary-sweep`](./claude-code/canary-sweep/SKILL.md) — Bundled executable
   skill (`scripts/cli.mjs`). Component-level dedup for axe-core accessibility
   findings: ingests axe JSON from any producer, collapses findings by component
@@ -297,8 +305,8 @@ _how an agent should behave_, not a function to call. Several are bundled
 executable skills with their own CLI entry point (`cli:` in frontmatter).
 `canary-blackhawk`, `canary-cassandra`, `canary-fail-fast`, `canary-instrument`,
 `canary-katana`, `canary-misfit`, `canary-question`, `canary-savant`,
-`canary-screech`, `canary-shadow`, `canary-signal`, `canary-strix`,
-`canary-sweep`, and `canary-test-reporter` all ship a Node entry
+`canary-screech`, `canary-shadow`, `canary-signal`, `canary-starling`,
+`canary-strix`, `canary-sweep`, and `canary-test-reporter` all ship a Node entry
 (`scripts/cli.mjs`). Run those directly, e.g.:
 
 ```bash

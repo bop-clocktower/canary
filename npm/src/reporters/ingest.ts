@@ -5,6 +5,7 @@ import { cleanTitle, projectName, skipTags, catalogFilter, relativeFile } from "
 import { warn, log, errText, PREFLIGHT_TIMEOUT_MS, push, ingestOutcome, retryWaitMs } from "./ingest/transport.js";
 import type { IngestReporterOptions, ResolvedConfig } from "./ingest/config.js";
 import type { ResultEntry, CollectedEntry, Shard } from "./ingest/payload.js";
+import { clearRunFile, emitRunFile, toRunRecord, runFilePath, INTERRUPTED_PREFIX } from "./ingest/run-record.js";
 
 // Optional .env load — MUST NOT crash the suite if dotenv is absent.
 try {
@@ -14,7 +15,7 @@ try {
 }
 
 /** The public surface consumers import from `canary-test-cli/reporter`. */
-export { resolveConfig, resolveArea, shouldPush, mapStatus, resolveTestStatus, runStatus, dedupeByFullTitle, runTiming, buildPayload, fitPayload, catalogFilter, ingestOutcome, retryWaitMs };
+export { resolveConfig, resolveArea, shouldPush, mapStatus, resolveTestStatus, runStatus, dedupeByFullTitle, runTiming, buildPayload, fitPayload, catalogFilter, ingestOutcome, retryWaitMs, toRunRecord, runFilePath };
 export type { IngestReporterOptions, TitleFormat, TestTrackerReporterOptions, ResolvedConfig } from "./ingest/config.js";
 export type { ResultEntry, CollectedEntry, IngestPayload, Shard } from "./ingest/payload.js";
 export type { IngestResponse } from "./ingest/transport.js";
@@ -36,12 +37,20 @@ export default class IngestReporter implements Reporter {
   onBegin(config?: FullConfig, suite?: Suite) {
     this.shard = config?.shard ?? null;
     this.readProjects(config);
+    // Before config resolves: a run whose config fails must not leave the
+    // previous run's record looking current.
+    clearRunFile(this.runFileOption(), this.shard);
     this.cfg = this.initConfig();
     if (!this.cfg) return;
     this.collectedCount = countTests(suite);
     this.collected = this.collectCatalog(config, suite);
     if (shouldPush(this.cfg)) this.preflight = this.checkToken(this.cfg);
     else explainNoPush(this.cfg);
+  }
+
+  /** The run file, resolved apart from the rest of config, which may fail. */
+  private runFileOption(): string | null {
+    return (this.options.runFile ?? envVar(process.env, "runFile")) || null;
   }
 
   /** Which projects are other projects' dependencies or teardowns. */
@@ -60,14 +69,15 @@ export default class IngestReporter implements Reporter {
   /**
    * Resolves config once. A config error is logged, not thrown, so a
    * misconfigured reporter never aborts the whole run; it is a warning when
-   * the run was clearly meant to be pushed.
+   * the run was clearly meant to be pushed or to write a run file.
    */
   private initConfig(): ResolvedConfig | null {
     let cfg: ResolvedConfig;
     try {
       cfg = resolveConfig(this.options);
     } catch (err) {
-      const meant = Boolean(this.options.url || (envVar(process.env, "url") && envVar(process.env, "token")));
+      const pushMeant = this.options.url || (envVar(process.env, "url") && envVar(process.env, "token"));
+      const meant = Boolean(pushMeant || this.runFileOption());
       (meant ? warn : log)(`disabled — ${errText(err)}`);
       return null;
     }
@@ -180,14 +190,22 @@ export default class IngestReporter implements Reporter {
   }
 
   async onEnd(result: FullResult) {
-    if (!this.cfg || !shouldPush(this.cfg)) return;
-    await this.preflight;
+    if (!this.cfg) return;
+    const pushing = shouldPush(this.cfg);
+    if (!pushing && !this.cfg.runFile) return;
+    if (pushing) await this.preflight;
     if (this.results.size === 0 && this.collectedCount > 0) {
       // `playwright test --list` and fully-filtered runs: a green run in which
       // nothing ran would read as real coverage.
-      log("no test ran (list mode or everything filtered out); nothing pushed.");
+      log("no test ran (list mode or everything filtered out); nothing pushed or written.");
       return;
     }
+    await this.deliver(result, pushing);
+  }
+
+  /** Builds the payload once; writes the run file, then pushes when pushing. */
+  private async deliver(result: FullResult, pushing: boolean): Promise<void> {
+    if (!this.cfg) return;
     try {
       const raw = buildPayload(
         [...this.results.values()],
@@ -197,6 +215,8 @@ export default class IngestReporter implements Reporter {
         result?.status,
         { shard: this.shard, collected: this.collected },
       );
+      emitRunFile(this.cfg, raw, this.shard, result?.status);
+      if (!pushing) return;
       const { payload, warnings } = fitPayload(raw);
       for (const w of warnings) warn(w);
       await push(this.cfg, payload);
@@ -271,8 +291,6 @@ function attemptError(test: TestCase, result: TestResult, unexpectedPass: boolea
     stack: errorField(result.errors[0]?.stack, MAX_ERROR_STACK),
   };
 }
-
-const INTERRUPTED_PREFIX = "interrupted: ";
 
 function interruptedMessage(firstError: string | undefined): string {
   if (firstError?.startsWith(INTERRUPTED_PREFIX)) return firstError;

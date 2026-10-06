@@ -32,6 +32,12 @@ export interface InventoryCheck {
   name: string;
   verdict: CheckVerdict;
   reason: string;
+  /** `CheckMeasure` in `ci-ready.ts`, restated here for the same reason. */
+  measure: {
+    value: number;
+    unit: 'ratio' | 'count' | 'ms';
+    denominator: number;
+  } | null;
 }
 
 type CiCheck = InventoryCheck;
@@ -130,6 +136,7 @@ const skip = (name: string, reason: string): CiCheck => ({
   name,
   verdict: 'skip',
   reason,
+  measure: null,
 });
 
 /** Critical-area paths when there are any, otherwise every imported target. */
@@ -164,6 +171,7 @@ function scoreCoverageDepth(
     name,
     verdict,
     reason: `${paths.length} ${label}: ${at0} at depth 0, ${at1} at depth 1, ${paths.length - at0 - at1} at depth 2`,
+    measure: { value: at0, unit: 'count', denominator: paths.length },
   };
 }
 
@@ -197,6 +205,7 @@ function scoreAssertionQuality(
     name,
     verdict,
     reason: `${weak} of ${tests.length} test(s) ${label} at depth <= 1 (no shaped assertion)`,
+    measure: { value: weak, unit: 'count', denominator: tests.length },
   };
 }
 
@@ -219,6 +228,11 @@ function scoreCriticalPaths(
     name,
     verdict,
     reason: `${uncovered.length} of the top ${top.length} area(s) uncovered${names ? `: ${names}` : ''}`,
+    measure: {
+      value: uncovered.length,
+      unit: 'count',
+      denominator: top.length,
+    },
   };
 }
 

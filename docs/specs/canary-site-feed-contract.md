@@ -153,16 +153,16 @@ the document above is the executable fixture
 
 Every top-level field is **required**.
 
-| Field          | Type                    | Nullable | Notes                                                                                                                                                              |
-| -------------- | ----------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `contract`     | string                  | no       | Exactly `canary.site/1`.                                                                                                                                           |
-| `generated_at` | string                  | no       | ISO 8601 date-time with an offset. When the producer built the feed.                                                                                               |
-| `scopes`       | `{id, env}[]`           | no       | The scopes the feed covers.                                                                                                                                        |
-| `suites`       | `{scope, suite}[]`      | yes      | The **declared** expected suites (D12). `null` = none declared, which is not the same as `[]`; without a declaration a page cannot say a suite was never reported. |
-| `runs`         | `canary.run/1[]`        | no       | The last 30 runs per suite (D15). Per-test `results` are carried only on each suite's latest run; older runs carry `results: null` (not carried).                  |
-| `flaky`        | object[]                | no       | One row per **distinct** flaky test over the history window (D13): `scope`, `suite`, `title`, `file`, `flaky_runs` and `window_runs`, both integers `>= 1`.        |
-| `assessments`  | `canary.assessment/1[]` | no       | The latest assessment per identity key (`scope.id + scope.env + source + metric`).                                                                                 |
-| `register`     | object[]                | no       | Skipped or removed tests as visible debt. See the register mapping below.                                                                                          |
+| Field          | Type                    | Nullable | Notes                                                                                                                                                                                                                       |
+| -------------- | ----------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contract`     | string                  | no       | Exactly `canary.site/1`.                                                                                                                                                                                                    |
+| `generated_at` | string                  | no       | ISO 8601 date-time with an offset. When the producer built the feed.                                                                                                                                                        |
+| `scopes`       | `{id, env}[]`           | no       | The scopes the feed covers.                                                                                                                                                                                                 |
+| `suites`       | `{scope, suite}[]`      | yes      | The **declared** expected suites (D12). `null` = none declared, which is not the same as `[]`; without a declaration a page cannot say a suite was never reported.                                                          |
+| `runs`         | `canary.run/1[]`        | no       | The last 30 runs per suite (D15), counted as logical runs: a run's shard records are one run. Per-test `results` are carried only on the shards of each suite's latest run; older runs carry `results: null` (not carried). |
+| `flaky`        | object[]                | no       | One row per **distinct** flaky test over the history window (D13): `scope`, `suite`, `title`, `file`, `flaky_runs` and `window_runs`, both integers `>= 1`.                                                                 |
+| `assessments`  | `canary.assessment/1[]` | no       | The latest assessment per identity key (`scope.id + scope.env + source + metric`).                                                                                                                                          |
+| `register`     | object[]                | no       | Skipped or removed tests as visible debt. See the register mapping below.                                                                                                                                                   |
 
 Every nested record is validated against its own layer's schema and rules: a run
 inside `runs[]` is a full `canary.run/1` record, and errors name it by position

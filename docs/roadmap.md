@@ -148,7 +148,7 @@ last_manual_edit: 2026-08-02T23:25:00.000Z
 
 - **Status:** planned
 - **Spec:** docs/changes/canary-qa-site/proposal.md
-- **Summary:** Issue #1151. Two-layer versioned QA data contract (`canary.run/1` per-run/per-test, `canary.assessment/1` per assessed metric) feeding a static `canary.site/1` feed; six framework-free embeddable panels; skills `canary-starling` (feed), `canary-barda` (standalone site), `canary-vixen` (embed). Abstention is a first-class value (null ≠ 0, absent ≠ empty), scope is always explicit, no composite health score. Dogfooded on the Vercel `canary` project via an Actions deploy (Git integration stays off per #787). Five phases, one PR each, merged serially; phase 2 absorbs reporter fixes #1148/#1149/#1150. Ideation: docs/ideation/a-qa-site-offered-as-an-add-on-2026-10-05.md (#1147).
+- **Summary:** Issue #1151. Two-layer versioned QA data contract (`canary.run/1` per-run/per-test, `canary.assessment/1` per assessed metric) feeding a static `canary.site/1` feed; six framework-free embeddable panels; skills `canary-starling` (feed), `canary-barda` (standalone site), `canary-vixen` (embed). Abstention is a first-class value (null ≠ 0, absent ≠ empty), scope is always explicit, no composite health score. Dogfooded on the Vercel `canary` project via an Actions deploy (Git integration stays off per #787). Five phases, one PR each, merged serially; phase 2 landed the reporter's `canary.run/1` run file, `canary-starling` and ci-ready measures. Ideation: docs/ideation/a-qa-site-offered-as-an-add-on-2026-10-05.md (#1147).
 - **Blockers:** phase 5 needs repo secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` (human).
 - **Plan:** —
 - **Priority:** P2

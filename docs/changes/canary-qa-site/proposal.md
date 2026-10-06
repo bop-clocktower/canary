@@ -259,7 +259,7 @@ pinned version.
 
 ```text
 dogfood.yml succeeds on main ─► site-deploy.yml (workflow_run, D14)
-   restore history cache (as dogfood.yml) ─► canary-starling build → site.json
+   restore history cache (as dogfood.yml) ─► canary-starling --config … --out site.json
    ─► validate.mjs (refuse on any error)
    ─► refuse if site.json has zero runs (fail loudly; production untouched)
    ─► canary-barda build → ./site-out
