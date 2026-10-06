@@ -165,10 +165,7 @@ function planRefresh(report, baseline) {
 
   const metrics = baseline?.metrics;
   if (metrics === undefined || metrics === null) {
-    return {
-      status: 'abstain',
-      reason: 'the baseline has no `metrics` object',
-    };
+    return { status: 'abstain', reason: 'the baseline has no `metrics` object' };
   }
 
   const updates = [];
