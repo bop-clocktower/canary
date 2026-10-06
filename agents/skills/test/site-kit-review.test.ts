@@ -92,7 +92,7 @@ describe('a run missing shards is incomplete, never passing (#1200)', () => {
 });
 
 describe('an impossible timestamp is never a recent run', () => {
-  it('sorts an undated run last instead of posing as the latest', () => {
+  it('ranks an undated run below every dated run, so it never poses as the newest', () => {
     const runs = [
       undated({ id: 'bad' }),
       runRecord({ id: 'good', status: 'failed' }),
