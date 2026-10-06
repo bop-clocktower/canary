@@ -1,0 +1,8 @@
+{
+  "reason": "QA site phase 2 (#1151): module-size 50991->51684 (+693), measured with harness check-arch --json (CLI 12.10.1) in clean worktrees at merge base 57f46c21 and at branch head acecc17a. newViolations is 0 and the only regression is this aggregate. The growth is the feature itself: the canary-starling skill (~612 lines: history/run-file conversion, the 30-run window, distinct flaky tests, the katana register, ci-ready assessments, the validated site feed and its CLI), the ingest reporter's opt-in canary.run/1 run file (~200, including the stale-file and symlink fixes from the security review), and the ci-ready check measures (~52). Perf (215=215 vs base) and entropy (141=141) are flat; the six perf findings the branch first raised were fixed in code, not absorbed.",
+  "categories": {
+    "module-size": 51684
+  },
+  "violationIds": [],
+  "createdFrom": "acecc17a"
+}
