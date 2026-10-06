@@ -5,6 +5,7 @@ import { cleanTitle, projectName, skipTags, catalogFilter, relativeFile } from "
 import { warn, log, errText, PREFLIGHT_TIMEOUT_MS, push, ingestOutcome, retryWaitMs } from "./ingest/transport.js";
 import type { IngestReporterOptions, ResolvedConfig } from "./ingest/config.js";
 import type { ResultEntry, CollectedEntry, Shard } from "./ingest/payload.js";
+import { emitRunFile } from "./ingest/run-record.js";
 
 // Optional .env load — MUST NOT crash the suite if dotenv is absent.
 try {
@@ -180,14 +181,22 @@ export default class IngestReporter implements Reporter {
   }
 
   async onEnd(result: FullResult) {
-    if (!this.cfg || !shouldPush(this.cfg)) return;
-    await this.preflight;
+    if (!this.cfg) return;
+    const pushing = shouldPush(this.cfg);
+    if (!pushing && !this.cfg.runFile) return;
+    if (pushing) await this.preflight;
     if (this.results.size === 0 && this.collectedCount > 0) {
       // `playwright test --list` and fully-filtered runs: a green run in which
       // nothing ran would read as real coverage.
-      log("no test ran (list mode or everything filtered out); nothing pushed.");
+      log("no test ran (list mode or everything filtered out); nothing pushed or written.");
       return;
     }
+    await this.deliver(result, pushing);
+  }
+
+  /** Builds the payload once; writes the run file, then pushes when pushing. */
+  private async deliver(result: FullResult, pushing: boolean): Promise<void> {
+    if (!this.cfg) return;
     try {
       const raw = buildPayload(
         [...this.results.values()],
@@ -197,6 +206,8 @@ export default class IngestReporter implements Reporter {
         result?.status,
         { shard: this.shard, collected: this.collected },
       );
+      emitRunFile(this.cfg, raw, this.shard, result?.status);
+      if (!pushing) return;
       const { payload, warnings } = fitPayload(raw);
       for (const w of warnings) warn(w);
       await push(this.cfg, payload);

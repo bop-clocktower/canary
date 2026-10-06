@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { IngestPayload, ResultEntry, Shard } from "./payload.js";
+import { errText, log, warn } from "./transport.js";
 
 export interface RunRecordContext {
   scope: { id: string; env: string };
@@ -64,7 +65,6 @@ function contractStatus(ingest: IngestPayload["status"], full?: string): "passed
 
 /** Ingest sends an interrupted test as `failed` + an `interrupted` tag (#1149); the contract has its own status. */
 function toResult(r: ResultEntry) {
-  const hasError = r.error_message !== undefined || r.error_stack !== undefined;
   return {
     title: r.full_title,
     file: r.test_file,
@@ -74,8 +74,13 @@ function toResult(r: ResultEntry) {
     retries: r.retries,
     area: r.area ?? null,
     tags: r.tags,
-    error: hasError ? { message: r.error_message ?? "", stack: r.error_stack ?? null } : null,
+    error: resultError(r),
   };
+}
+
+function resultError(r: ResultEntry): { message: string; stack: string | null } | null {
+  if (r.error_message === undefined && r.error_stack === undefined) return null;
+  return { message: r.error_message ?? "", stack: r.error_stack ?? null };
 }
 
 function isCI(env: NodeJS.ProcessEnv): boolean {
@@ -94,13 +99,35 @@ export function runFilePath(file: string, shard: Shard): string {
   return `${file.slice(0, file.length - ext.length)}-s${shard.current}of${shard.total}${ext}`;
 }
 
-export function writeRunFile(file: string, record: ReturnType<typeof toRunRecord>): void {
+/**
+ * Writes the `canary.run/1` file when `runFile` and a complete scope are set
+ * (#1151). Its failure is a warning, never an exception: it must not cost the push.
+ */
+export function emitRunFile(
+  cfg: { runFile: string | null; scope: { id: string; env: string } | null },
+  payload: IngestPayload,
+  shard: Shard,
+  fullResultStatus: string | undefined,
+): void {
+  const { runFile, scope } = cfg;
+  if (!runFile || !scope) return;
+  try {
+    const file = runFilePath(runFile, shard);
+    const record = toRunRecord(payload, { scope, shard, fullResultStatus, env: process.env, version: packageVersion() });
+    writeRunFile(file, record);
+    log(`wrote canary.run/1 to ${file}.`);
+  } catch (err) {
+    warn(`canary.run/1 not written — ${errText(err)}`);
+  }
+}
+
+function writeRunFile(file: string, record: ReturnType<typeof toRunRecord>): void {
   fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(record, null, 2) + "\n", "utf8");
 }
 
 /** This package's version, for `producer.version`. */
-export function packageVersion(): string {
+function packageVersion(): string {
   try {
     return (require("../../../package.json") as { version: string }).version;
   } catch {

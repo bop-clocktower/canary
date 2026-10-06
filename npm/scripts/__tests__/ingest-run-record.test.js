@@ -101,3 +101,64 @@ test("runFilePath suffixes a sharded run before the extension", () => {
   assert.equal(runFilePath("out/run.json", { current: 2, total: 4 }), "out/run-s2of4.json");
   assert.equal(runFilePath("out/run", { current: 1, total: 2 }), "out/run-s1of2");
 });
+
+// --- Task 8: onEnd writes the run file ----------------------------------------
+const fs = require("node:fs");
+const os = require("node:os");
+const { fakeTest, fakeResult, runReporter } = require("./ingest-harness.js");
+
+function tmp() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "canary-run-"));
+}
+const scopeOpts = (dir) => ({ runFile: path.join(dir, "run.json"), scopeId: "web-app", scopeEnv: "staging" });
+
+test("onEnd writes a valid canary.run/1 file even when not pushing", async () => {
+  const dir = tmp();
+  const t = fakeTest({ title: "a" });
+  const { pushes } = await runReporter({
+    options: { ...scopeOpts(dir), url: "" },
+    tests: [[t, fakeResult("passed")]],
+  });
+  assert.equal(pushes.length, 0);
+  const doc = JSON.parse(fs.readFileSync(path.join(dir, "run.json"), "utf8"));
+  assert.deepEqual(await refusals(doc), []);
+  assert.equal(doc.results[0].status, "passed");
+});
+
+test("crit 5 end to end: two shards write two files with distinct run ids", async () => {
+  const dir = tmp();
+  const t = fakeTest({ title: "a" });
+  for (const current of [1, 2]) {
+    await runReporter({
+      options: scopeOpts(dir),
+      env: CI_ENV,
+      config: { shard: { current, total: 2 }, projects: [] },
+      tests: [[t, fakeResult("passed")]],
+    });
+  }
+  const ids = ["run-s1of2.json", "run-s2of2.json"].map(
+    (f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")).run.id,
+  );
+  assert.deepEqual(ids, ["42-1-s1of2", "42-1-s2of2"]);
+});
+
+test("runFile without a scope writes nothing and says why", async () => {
+  const dir = tmp();
+  const t = fakeTest({ title: "a" });
+  const { logs } = await runReporter({
+    options: { runFile: path.join(dir, "run.json") },
+    tests: [[t, fakeResult("passed")]],
+  });
+  assert.equal(fs.existsSync(path.join(dir, "run.json")), false);
+  assert.match(logs.join("\n"), /CANARY_SCOPE_ID/);
+});
+
+test("the ingest payload is unchanged by runFile", async () => {
+  const t = fakeTest({ title: "a" });
+  // CI_ENV pins canary_run_id; without GITHUB_RUN_ID it is a random UUID per run.
+  const without = (await runReporter({ env: CI_ENV, tests: [[t, fakeResult("passed")]] })).payload;
+  const withFile = (
+    await runReporter({ env: CI_ENV, options: scopeOpts(tmp()), tests: [[t, fakeResult("passed")]] })
+  ).payload;
+  assert.deepEqual(withFile, without);
+});
