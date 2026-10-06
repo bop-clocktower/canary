@@ -128,6 +128,9 @@ npx playwright merge-reports --reporter "canary-test-cli/reporter" ./blob-report
 
 with `CANARY_INGEST_URL`, `CANARY_INGEST_TOKEN`, and `CANARY_INGEST_SUITE` set
 in that step's environment. This yields exactly one run per suite per CI run.
+The run's `started_at`/`finished_at` come from Playwright's merged result, so
+they describe the original test run, not the few hundred milliseconds the merge
+step takes (#1176).
 
 Pushing from each shard also works now (each shard lands as its own run,
 `…-s1of4`, `…-s2of4`), but the dashboard then shows a sharded suite as several

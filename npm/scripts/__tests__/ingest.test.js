@@ -426,3 +426,60 @@ test("a fresh ingest is reported as info", () => {
   assert.equal(out.level, "info");
   assert.match(out.message, /run 8 ingested/);
 });
+
+test("the reporter derives the shard suffix from Playwright's config", async () => {
+  const t = fakeTest({ title: "a" });
+  const { payload } = await runReporter({
+    config: { shard: { current: 2, total: 3 }, projects: [] },
+    tests: [[t, fakeResult("passed")]],
+    env: { GITHUB_RUN_ID: "77", GITHUB_RUN_ATTEMPT: "2" },
+  });
+  assert.equal(payload.canary_run_id, "77-2-s2of3");
+});
+
+test("a duplicate push that stored fewer rows is announced as a warning", async () => {
+  const t = fakeTest({ title: "a" });
+  const { logs } = await runReporter({
+    tests: [[t, fakeResult("passed")]],
+    responses: [{ status: 200, json: { id: 3, duplicate: true, result_count: 40 } }],
+    env: { GITHUB_ACTIONS: "true" },
+  });
+  assert.ok(logs.some((l) => l.startsWith("::warning")), logs.join("\n"));
+  assert.ok(logs.some((l) => /discarded/.test(l)));
+});
+
+// --- #1176: tag duplication and merge-reports timing -------------------------
+
+test("a tag written in both the describe and the test title is sent once", async () => {
+  const t = fakeTest({ title: "does x @functional", describes: ["@functional foo"], tags: ["@functional", "@functional", "@smoke"] });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("passed")]] });
+  const tags = payload.results[0].tags;
+  assert.equal(tags.filter((x) => x === "functional").length, 1);
+  assert.ok(tags.includes("smoke"));
+});
+
+test("run timing comes from FullResult, not the reporter's wall clock", async () => {
+  // Under merge-reports the reporter lives for ~0.3 s; FullResult.startTime and
+  // duration still describe the original run.
+  const t = fakeTest({ title: "a" });
+  const { payload } = await runReporter({
+    tests: [[t, fakeResult("passed")]],
+    fullResult: { status: "passed", startTime: new Date("2026-10-05T00:00:00Z"), duration: 754321.6 },
+  });
+  assert.equal(payload.started_at, "2026-10-05T00:00:00.000Z");
+  assert.equal(payload.finished_at, "2026-10-05T00:12:34.321Z");
+});
+
+test("run timing falls back to the wall clock when FullResult has no startTime", async () => {
+  const before = Date.now();
+  const t = fakeTest({ title: "a" });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("passed")]], fullResult: { status: "passed" } });
+  assert.ok(Date.parse(payload.started_at) >= before - 1000);
+  assert.ok(Date.parse(payload.finished_at) >= Date.parse(payload.started_at));
+});
+
+test("a fractional test duration is sent as an integer (the ingest schema rejects floats)", async () => {
+  const t = fakeTest({ title: "a" });
+  const { payload } = await runReporter({ tests: [[t, fakeResult("passed", { duration: 12.7 })]] });
+  assert.equal(payload.results[0].duration_ms, 13);
+});

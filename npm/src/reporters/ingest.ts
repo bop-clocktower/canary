@@ -273,6 +273,25 @@ function mergeEntries(prior: ResultEntry, next: ResultEntry): ResultEntry {
   };
 }
 
+/**
+ * The run's real start and end. Under `merge-reports` the reporter only lives
+ * for the merge (well under a second), but `FullResult.startTime`/`duration`
+ * still describe the original run, so they win (#1176). The wall clock is the
+ * fallback for a Playwright that does not report them.
+ */
+export function runTiming(
+  result: Partial<Pick<FullResult, "startTime" | "duration">> | undefined,
+  fallbackStart: number,
+  now: number,
+): { startedAt: string; finishedAt: string } {
+  const start = result?.startTime?.getTime();
+  if (start === undefined || Number.isNaN(start)) {
+    return { startedAt: new Date(fallbackStart).toISOString(), finishedAt: new Date(now).toISOString() };
+  }
+  const end = typeof result?.duration === "number" ? start + result.duration : now;
+  return { startedAt: new Date(start).toISOString(), finishedAt: new Date(end).toISOString() };
+}
+
 export function buildPayload(
   rawResults: ResultEntry[],
   cfg: ResolvedConfig,
@@ -382,7 +401,9 @@ export default class IngestReporter implements Reporter {
     try {
       const fullTitle = test.titlePath().filter(Boolean).join(" > ");
       // `test.tags` requires Playwright >= 1.42; guard for the peer floor.
-      const tags = (test.tags ?? []).map((t) => t.replace(/^@/, ""));
+      // A tag in both a describe title and the test title appears twice in
+      // `test.tags`; per-tag counts must see it once (#1176).
+      const tags = [...new Set((test.tags ?? []).map((t) => t.replace(/^@/, "")))];
       // Keyed by the session-unique `test.id` (NOT the title) so `--repeat-each`
       // and duplicate-title executions don't collapse into one entry. Retries
       // share one TestCase (same id), so last-write-wins for the final status
@@ -398,7 +419,8 @@ export default class IngestReporter implements Reporter {
           ? test.location.file.slice(this.cfg.testFilePrefix.length)
           : test.location.file,
         status: resolveTestStatus(test.outcome(), result.status),
-        duration_ms: result.duration,
+        // The ingest schema requires an integer; a float rejects the whole run.
+        duration_ms: Math.round(result.duration),
         error_message: interrupted
           ? `interrupted: ${firstError ?? "the run ended before this test finished"}`
           : firstError,
@@ -417,10 +439,7 @@ export default class IngestReporter implements Reporter {
       const payload = buildPayload(
         [...this.results.values()],
         this.cfg,
-        {
-          startedAt: new Date(this.startTime).toISOString(),
-          finishedAt: new Date().toISOString(),
-        },
+        runTiming(result, this.startTime, Date.now()),
         process.env,
         result?.status,
         { shard: this.shard },
