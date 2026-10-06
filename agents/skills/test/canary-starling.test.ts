@@ -6,6 +6,10 @@ import {
 } from '../claude-code/canary-starling/scripts/runs.mjs';
 import { flakyTests } from '../claude-code/canary-starling/scripts/flaky.mjs';
 import { registerRows } from '../claude-code/canary-starling/scripts/register.mjs';
+import {
+  ciReadyAssessments,
+  CI_READY_METRICS,
+} from '../claude-code/canary-starling/scripts/assess.mjs';
 import { validateDocument } from '../lib/contracts/validate.mjs';
 
 const SCOPE = { id: 'canary', env: 'ci' };
@@ -198,5 +202,105 @@ describe('registerRows (fork C)', () => {
     );
     expect(rows).toEqual([]);
     expect(skipped).toHaveLength(2);
+  });
+});
+
+describe('ciReadyAssessments (P1, crit 8)', () => {
+  const NOW = '2026-10-06T12:00:00.000Z';
+  const report = (checks: object[]) => ({
+    observed_at: '2026-10-06T11:00:00.000Z',
+    verdict: 'incomplete',
+    checked: 1,
+    checks,
+  });
+
+  it('is not-assessed for every metric when no report was supplied — planted absence', () => {
+    const out = ciReadyAssessments(null, SCOPE, { now: NOW, source: null });
+    expect(out.map((a: any) => a.metric)).toEqual(CI_READY_METRICS);
+    for (const a of out) {
+      expect(a.status).toBe('not-assessed');
+      expect(a.value).toBeNull();
+      expect(a.reason).toMatch(/no ci-ready report/);
+      expect(validateDocument(a, { layer: 'assessment' }).errors).toEqual([]);
+    }
+  });
+
+  it('carries a skipped check as not-assessed with its own reason (no inventory)', () => {
+    const skip = {
+      name: 'coverage-depth',
+      verdict: 'skip',
+      reason:
+        'no .canary/test-inventory.json: run `canary inventory` to produce it',
+      measure: null,
+    };
+    const a = ciReadyAssessments(report([skip]), SCOPE, {
+      now: NOW,
+      source: 'ci-ready.json',
+    })[0];
+    expect(a).toMatchObject({
+      status: 'not-assessed',
+      value: null,
+      reason: skip.reason,
+      observed_at: '2026-10-06T11:00:00.000Z',
+    });
+  });
+
+  it('maps pass/warn/fail with a measure to healthy/degraded/critical', () => {
+    const m = { value: 0.2, unit: 'ratio', denominator: 5 };
+    const out = ciReadyAssessments(
+      report(
+        ['pass', 'warn', 'fail'].map((verdict) => ({
+          name: 'flakiness',
+          verdict,
+          reason: 'x',
+          measure: m,
+        })),
+      ),
+      SCOPE,
+      { now: NOW, source: 'ci-ready.json' },
+    );
+    const flak = out.filter((a: any) => a.metric === 'flakiness');
+    expect(flak.map((a: any) => a.status)).toEqual([
+      'healthy',
+      'degraded',
+      'critical',
+    ]);
+    expect(flak[0]).toMatchObject({
+      value: 0.2,
+      unit: 'ratio',
+      evidence: { tier: null, denominator: 5 },
+      sources: ['ci-ready.json'],
+    });
+    for (const a of out)
+      expect(validateDocument(a, { layer: 'assessment' }).errors).toEqual([]);
+  });
+
+  it('a check with a verdict but no measure is not-assessed (thin window, structural zero)', () => {
+    const out = ciReadyAssessments(
+      report([
+        {
+          name: 'flakiness',
+          verdict: 'pass',
+          reason: 'structural zero',
+          measure: null,
+        },
+      ]),
+      SCOPE,
+      { now: NOW, source: 'r.json' },
+    );
+    expect(out.find((a: any) => a.metric === 'flakiness')).toMatchObject({
+      status: 'not-assessed',
+      reason: 'structural zero',
+    });
+  });
+
+  it('names a metric the report does not carry', () => {
+    const out = ciReadyAssessments(report([]), SCOPE, {
+      now: NOW,
+      source: 'r.json',
+    });
+    expect(out.find((a: any) => a.metric === 'suite-runtime')?.reason).toMatch(
+      /no suite-runtime check/,
+    );
   });
 });
