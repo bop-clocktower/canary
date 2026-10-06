@@ -1,11 +1,12 @@
 import fs, { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildSite,
   outProblem,
 } from '../claude-code/canary-barda/scripts/build.mjs';
+import { main as bardaMain } from '../claude-code/canary-barda/scripts/cli.mjs';
 import { readFeed } from '../claude-code/canary-barda/scripts/feed.mjs';
 import { page, PANEL_TAGS } from '../claude-code/canary-barda/scripts/page.mjs';
 import { siteFeed } from './site-kit-helpers.js';
@@ -123,5 +124,84 @@ describe('canary-barda build', () => {
       JSON.parse(fs.readFileSync(path.join(out, 'site.json'), 'utf8')),
     ).toEqual(doc);
     expect(count).toBe(2 + 9 + 2);
+  });
+});
+
+function run(argv: string[]) {
+  const out: string[] = [];
+  const err: string[] = [];
+  vi.spyOn(console, 'log').mockImplementation(
+    (...a) => void out.push(a.join(' ')),
+  );
+  vi.spyOn(console, 'error').mockImplementation(
+    (...a) => void err.push(a.join(' ')),
+  );
+  const code = bardaMain(argv);
+  vi.restoreAllMocks();
+  return { code, stdout: out.join('\n'), stderr: err.join('\n') };
+}
+
+describe('canary-barda cli', () => {
+  it('builds a valid feed and says what it wrote', () => {
+    const out = path.join(tmp(), 'site');
+    const r = run([
+      '--feed',
+      fixture('site.valid.json'),
+      '--out',
+      out,
+      '--title',
+      'Canary QA',
+    ]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/built .*: 13 file\(s\), 6 panels, 2 run\(s\)/);
+    expect(fs.readFileSync(path.join(out, 'index.html'), 'utf8')).toContain(
+      '<title>Canary QA</title>',
+    );
+  });
+
+  it('builds nothing from an invalid feed (exit 1)', () => {
+    const out = path.join(tmp(), 'site');
+    const r = run(['--feed', write('{'), '--out', out]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('invalid feed');
+    expect(r.stderr).toContain('nothing built');
+    expect(fs.existsSync(out)).toBe(false);
+  });
+
+  it('refuses a non-empty out dir (exit 1)', () => {
+    const out = tmp();
+    fs.writeFileSync(path.join(out, 'keep.txt'), 'x');
+    expect(run(['--feed', fixture('site.valid.json'), '--out', out]).code).toBe(
+      1,
+    );
+    expect(fs.readdirSync(out)).toEqual(['keep.txt']);
+  });
+
+  it('reports an out path it cannot create (exit 1, no stack trace)', () => {
+    const file = path.join(tmp(), 'plain.txt');
+    fs.writeFileSync(file, 'x');
+    const r = run([
+      '--feed',
+      fixture('site.valid.json'),
+      '--out',
+      path.join(file, 'site'),
+    ]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('cannot build into');
+  });
+
+  it('abstains loudly on a feed with zero runs; exit 3 under --strict', () => {
+    const feed = write(siteFeed());
+    const soft = run(['--feed', feed, '--out', path.join(tmp(), 'a')]);
+    expect(soft.code).toBe(0);
+    expect(soft.stdout).toContain('ABSTAINED');
+    expect(soft.stdout).not.toContain('6 panels,');
+    expect(
+      run(['--feed', feed, '--out', path.join(tmp(), 'b'), '--strict']).code,
+    ).toBe(3);
+  });
+
+  it('is a usage error without --out (exit 2)', () => {
+    expect(run(['--feed', fixture('site.valid.json')]).code).toBe(2);
   });
 });
