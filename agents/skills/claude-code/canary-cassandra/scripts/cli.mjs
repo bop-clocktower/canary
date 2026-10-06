@@ -100,13 +100,18 @@ function scanFiles(files, engine) {
   const findings = [];
   const skipped = [];
   let checked = 0;
+  // Tests whose VAC-002 verdict abstained on a helper chain (#1170). Each is
+  // also a `skipped` entry; the count is what lets a report say how many went
+  // unjudged without parsing reasons. Absent on a file means zero.
+  let helperAbstained = 0;
   for (const file of files) {
     const r = engine.scanVacuity(file);
     checked += r.checked;
     findings.push(...r.findings);
     if (r.skipped) skipped.push(...r.skipped);
+    helperAbstained += r.helperAbstained ?? 0;
   }
-  return { checked, findings, skipped };
+  return { checked, findings, skipped, helperAbstained };
 }
 
 /** The sibling finding envelope, plus the two fields only cassandra has. */
@@ -141,6 +146,9 @@ function summary(result, filesScanned, outcome) {
     findings: result.findings.length,
     by_severity: bySeverity,
     skipped: result.skipped.length,
+    // Always present, 0 included: a missing key and "none abstained" must not
+    // read the same to a consumer.
+    vac002_abstained: result.helperAbstained,
   };
 }
 
@@ -156,6 +164,14 @@ function renderText(result, outcome) {
     lines.push('');
   }
   lines.push(outcome.summaryLine);
+  if (result.helperAbstained > 0) {
+    lines.push(
+      `${result.helperAbstained} test(s) abstained on VAC-002: the target is ` +
+        'reached only through more than one same-file helper, or through a ' +
+        'helper whose body could not be resolved. Add `// @covers <symbol>` ' +
+        'to have them checked.',
+    );
+  }
   if (outcome.abstained) {
     lines.push(
       'No test was read, so nothing here is proven. Point at a directory ' +

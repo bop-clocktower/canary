@@ -48,6 +48,32 @@ exit 0. PR #959 merged an over-threshold module on that green (#968). In
 detail lists any `newViolations`. Allowance-covered violations are already
 filtered out of that list by the CLI.
 
+## Three metrics are 0 by construction: no layer or cycle evidence
+
+In harness 12.10.1, three of the seven arch metrics cannot report anything,
+whatever the code does (#1164, Intense-Visions/harness-engineering#2235):
+
+- **`circular-deps`** builds its graph with a stub parser whose `parseFile`
+  always fails, so the graph has zero edges and no cycle can be found in any
+  file.
+- **`layer-violations`** and **`forbidden-imports`** call `validateDependencies`
+  with `layers: []`, so no file resolves to a layer and every edge is skipped.
+
+The `0` recorded for each in `.harness/arch/baselines.json` and
+`.harness/arch/timeline.json` is an abstention, not a measurement. A planted
+cycle and a planted wrong-layer import both left `check-arch` reporting
+`newViolations: []`. A green arch verdict therefore covers `complexity`,
+`coupling`, `module-size` and `dependency-depth` only.
+
+Layer direction, forbidden imports and cycles are gated by `harness check-deps`,
+which reads the configured `layers`. It runs in two required checks: the
+`deps-and-validate` job (`harness-architecture.yml`) and the `deps` step inside
+`harness ci check` (`harness.yml`). `ts/test/import-graph-acyclic.test.ts`
+repeats the `ts/src` cycle check at desk speed. `scripts/arch-verdict.mjs`
+prints a `NOT MEASURED` line naming the three metrics under every verdict; the
+list is the `UNMEASURED_ARCH_METRICS` constant, to be revisited when canary
+picks up the harness release that fixes #2235.
+
 ## Optional markers in inline type literals cost branches
 
 Each `?` optional marker in an **inline** type literal counts as a branch

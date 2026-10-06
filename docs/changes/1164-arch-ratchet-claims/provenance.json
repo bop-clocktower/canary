@@ -1,0 +1,19 @@
+{
+  "fleet": "roadmap-fleet",
+  "run": "rf-2026-10-05b",
+  "issues": [1164],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/arch-verdict.test.ts",
+  "closingKeyword": "Refs",
+  "upstream": "https://github.com/Intense-Visions/harness-engineering/issues/2235",
+  "manualReconciliation": "#1164 stays OPEN. After the harness release that fixes harness-engineering#2235 ships and canary picks it up: plant a cycle and a wrong-layer import, confirm check-arch reports them, drop the fixed metrics from UNMEASURED_ARCH_METRICS in scripts/arch-verdict.mjs, update AGENTS.md and docs/knowledge/gates/arch-baseline-semantics.md, then close #1164 by hand.",
+  "assumptions": [
+    "forbidden-imports is included alongside layer-violations and circular-deps: harness 12.10.1 ForbiddenImportCollector also calls validateDependencies({ layers: [] }) (read in dist/chunk-HL35BBQQ.js), so it is equally structurally 0.",
+    "No canary script prints a literal per-metric layer-violations or circular-deps number (check-arch --json carries none), so the fix is a NOT MEASURED line appended to every arch-verdict verdict, which the CI summariser inherits.",
+    "Abstention is keyed to a named constant, not a runtime probe: the report has no per-metric values to detect it from, and the CLI pin floats (@12), so a version gate would not be robust.",
+    "The constant is not exported: a test-only consumer counted as a new entropy finding (dead export); the test reads it from the script source instead.",
+    "baselines.json, timeline.json, thresholds, and required checks are unchanged. ADR bodies were not edited: none states the arch ratchet as layer/cycle coverage.",
+    "agents/agents/*/harness-architecture-enforcer.md is harness-generated and does not cite check-arch, so it was left alone."
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "fleet": "roadmap-fleet",
+  "run": "rf-2026-10-05b",
+  "issues": [1170, 1171],
+  "route": "bug",
+  "stages": ["debugging"],
+  "reproducingTest": "ts/test/vacuity-scanner.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Human-approved (#1170): one helper level credited; deeper indirection or an unresolvable helper body ABSTAINS for VAC-002, counted (helperAbstained / vac002_abstained) and listed in skipped, never reported and never silently passed.",
+    "Human-approved (#1171): compare the full call expression (callee + normalised arguments); identical calls including no-argument f() vs f() stay VAC-001 with no new code.",
+    "Root cause #1171: VAC-001 compared both sides on the string-blanked line, so string arguments collapsed to the same text. Fix compares the same offsets in the raw source, with whitespace stripped only outside string literals.",
+    "Root cause #1170: the issue's literal one-line snippet already passed at origin/main ffe44039; the failing shape is a prettier-wrapped helper, because declEnd (#871) ended a const initializer at the first newline. Fix continues past a line break when parens/brackets are open, the line ends in =>/an operator, or the next line starts with . ? : ) ] | &.",
+    "A function declaration's body now ends at its own closing brace (skipping an object return type), not at the next sibling declaration. Measured on canary's own ts/test this unmasked 16 findings that had been hidden by over-attribution; they are true positives under the rule's definition (the tests do not reference any first-party import).",
+    "An 'unresolvable helper' is a module-scope let/var declared without an initializer (e.g. assigned inside a hook) that the test calls; that is the only unresolvable shape implemented.",
+    "Typed const declarations (const x: T = ...) are still not recognised as local declarations; pre-existing gap, out of scope.",
+    "VAC-003/VAC-005 keep the full fixpoint closure; only VAC-002 moved to the one-level contract.",
+    "canary vacuity-check (ts CLI) discloses the abstentions through its existing skipped rendering; the dedicated count is added to the cassandra skill CLI only, which is what the approved decision named.",
+    "Measured impact numbers in the PR body come from the issues (an external repo) and are not re-measured; canary's own before/after numbers were measured locally on this branch."
+  ]
+}

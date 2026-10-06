@@ -149,7 +149,11 @@
         "check-arch` here — was considered and rejected in #698: the ratchet",
         "reports 21 pre-existing threshold violations, so requiring it would",
         "block every merge until those are allowanced. That is a separate",
-        "decision and must not ride along with a rename."
+        "decision and must not ride along with a rename.",
+        "",
+        "This job's `check-deps` is the layer, forbidden-import and cycle gate",
+        "(#1164): under harness 12.10.1 the arch ratchet reports those metrics",
+        "as 0 by construction (Intense-Visions/harness-engineering#2235)."
       ]
     },
     { "check": "security", "workflow": "harness-security.yml" },
