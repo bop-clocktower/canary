@@ -1,0 +1,20 @@
+/* Layout for a canary-barda standalone page (#1151 phase 3b). Tokens only. */
+body {
+  margin: 0;
+  background: var(--canary-bg);
+  color: var(--canary-text);
+  font-family: var(--canary-font);
+}
+main {
+  display: grid;
+  gap: var(--canary-space-2);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--canary-space-2);
+}
+h1 {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 1.4rem;
+}

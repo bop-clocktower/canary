@@ -37,6 +37,16 @@ describe('site-kit source rules', () => {
     },
   );
 
+  const sheets = files('.css').filter((f) => f.file !== 'tokens.css');
+  it('styles page.css only through tokens', () => {
+    expect(sheets.map((s) => s.file)).toEqual(['page.css']);
+    for (const { text } of sheets) {
+      expect(code(text)).not.toMatch(COLOR);
+      for (const [, name] of text.matchAll(/var\((--canary-[\w-]+)\)/g))
+        expect(defined, name).toContain(name);
+    }
+  });
+
   it('defines DARK_AFTER_DAYS exactly once, in model.js', () => {
     const hits = files('.js').filter(({ text }) =>
       /DARK_AFTER_DAYS\s*=/.test(text),
