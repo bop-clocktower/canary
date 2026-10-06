@@ -72,7 +72,24 @@ const CORPUS = [
   'const f = (cb: <T>(x: T) => T) => cb;\nconst t = Date.now();\nconst s = `</p>`;\n',
   `render(<>it's</p>z</>);\n`,
   `${'type P = { cb: <T>(x: T) => void };\n'.repeat(100)}render(<p>It's here</p>);\n`,
-  `render(\n  <label>\n    * Required {Date.now()}\n  </label>,\n);\n`,
+  `render(\n  <label>\n    * Required {Date.now()}\n  </label>,\n);\n`, // #1193 round 2: a misread generic inside a real element's attribute.
+  `it('a', () => {\n  render(\n    <Provider value={{ fmt: (v: unknown, cb: <T>(x: T) => void) => cb(v) }}>\n      <Button>Don't click</Button>\n    </Provider>,\n  );\n});\n`,
+  `it('a', () => {\n  render(\n    <List items={rows} renderItem={(r: Row, fmt: <T>(v: T) => string) => <li>{fmt(r)}</li>}>\n      <p>It's empty</p>\n    </List>,\n  );\n});\n`,
+  `it('a', () => {\n  render(\n    <Ctx.Provider value={{ map: (f: <T>(x: T) => T) => f }}>\n      <p>It's one</p>\n    </Ctx.Provider>,\n  );\n  render(<p>It's two</p>);\n});\n`,
+  // tag names across whitespace and comments
+  `render(<Foo .Bar>It's x</Foo.Bar>);\n`,
+  `render(<Foo.Bar>It's y</Foo .Bar>);\n`,
+  `render(<Foo>It's z</ /* x */ Foo>);\n`,
+  // witnesses for one-token divergences the fuzz alone missed
+  `render(<Foo.Bar>It's '</Foo.Baz>' x</Foo.Bar>);\n`,
+  "const ok = !/`/.test(s);\nrender(<p>It's</p>);\n",
+  "for (x of /`/g) {}\nrender(<p>It's</p>);\n",
+  `render(<ListItemA>It's </ListItemB> here</ListItemA>);\n`,
+  "const re = /[/`]/;\nrender(<p>It's</p>);\n",
+  `render(<Foo{...p}>It's spread</Foo>);\n`,
+  "const t = typeof /`/;\nrender(<p>It's</p>);\n",
+  // `=` directly before `>` is not a type-parameter default (`=(?!>)`)
+  "render(<T =>It's</T>);\n",
 ];
 
 /** Fragments chosen to hit every branch of the lexer and the masker. */
@@ -114,6 +131,21 @@ const TOKENS = [
   'c > d',
   '=',
   ',',
+  '!',
+  'of ',
+  'typeof ',
+  '/[/`]/',
+  '<Foo.Bar>',
+  '</Foo.Baz>',
+  '</Foo.Bar>',
+  '<svg:rect>',
+  '<A{...p}>',
+  '<ListItemA>',
+  '</ListItemA>',
+  '</ListItemB>',
+  '</ /* c */ p>',
+  '<Foo .Bar>',
+  '<T =>',
 ];
 
 /** Deterministic PRNG (mulberry32), so a failure reproduces from its seed. */

@@ -168,6 +168,47 @@ describe('probes do not mistake an error for a firing', () => {
     expect(probe(['tests/a.test.mjs', 'tests/b.test.mjs']).fired).toBe(false);
   });
 
+  it('expect.files matches whole path segments, not a suffix (#1193)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rehearse-boundary-'));
+    mkdirSync(join(dir, 'tests'));
+    writeFileSync(
+      join(dir, 'tests', 'xclock.test.mjs'),
+      'const t = Date.now();\n',
+    );
+    const probe = (files: unknown) =>
+      runProbe({
+        id: 'boundary',
+        target: 'canary-blackhawk',
+        dir,
+        expect: { ruleId: 'BH001-wall-clock', files },
+      });
+    expect(probe(['clock.test.mjs']).fired).toBe(false);
+    expect(probe(['tests/xclock.test.mjs']).fired).toBe(true);
+    expect(probe(['xclock.test.mjs']).fired).toBe(true);
+    // An empty list would make the check vacuous ([].every is true).
+    expect(probe([]).fired).toBe(false);
+  });
+
+  it.each([
+    ['an empty list', []],
+    ['a string', 'tests/clock.test.mjs'],
+    ['a non-string entry', [7]],
+  ])('loadManifests rejects expect.files as %s', (_name, files) => {
+    const root = mkdtempSync(join(tmpdir(), 'rehearse-bad-files-'));
+    mkdirSync(join(root, 'bad'));
+    writeFileSync(
+      join(root, 'bad', 'rehearsal.json'),
+      JSON.stringify({
+        id: 'bad',
+        target: 'canary-blackhawk',
+        expect: { ruleId: 'BH001-wall-clock', files },
+      }),
+    );
+    expect(() => loadManifests(root)).toThrow(
+      /bad: expect\.files must be a non-empty array of paths/,
+    );
+  });
+
   it('the blackhawk fixture rehearses the JSX path too', () => {
     const m = loadManifests(FIXTURES).find(
       (x) => x.target === 'canary-blackhawk',

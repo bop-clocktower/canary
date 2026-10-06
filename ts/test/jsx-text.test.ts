@@ -178,6 +178,38 @@ describe('maskJsxText', () => {
     const generic = 'type P = { cb: <T>(x: T) => void };\n'.repeat(100);
     expectMaskedText(`${generic}render(<p>It's here</p>);\n`, "It's here");
   });
+
+  // Review repros on #1193 (round 2): a misread generic INSIDE a real
+  // element's attribute. Marking every unclosed `<` also marked the real
+  // element, so its children came back unmasked. An element whose closing
+  // tag was seen is real; recovery marks the others first.
+  it('keeps masking a real element whose attribute holds a misread generic', () => {
+    expectMaskedText(
+      `it('a', () => {\n  render(\n    <Provider value={{ fmt: (v: unknown, cb: <T>(x: T) => void) => cb(v) }}>\n      <Button>Don't click</Button>\n    </Provider>,\n  );\n});\n`,
+      "Don't click",
+    );
+    expectMaskedText(
+      `it('a', () => {\n  render(\n    <List items={rows} renderItem={(r: Row, fmt: <T>(v: T) => string) => <li>{fmt(r)}</li>}>\n      <p>It's empty</p>\n    </List>,\n  );\n});\n`,
+      "It's empty",
+    );
+    const sibling = `it('a', () => {\n  render(\n    <Ctx.Provider value={{ map: (f: <T>(x: T) => T) => f }}>\n      <p>It's one</p>\n    </Ctx.Provider>,\n  );\n  render(<p>It's two</p>);\n});\n`;
+    expectMaskedText(sibling, "It's one");
+    expectMaskedText(sibling, "It's two");
+  });
+
+  it('matches tag names across whitespace and comments', () => {
+    expectMaskedText(`render(<Foo .Bar>It's x</Foo.Bar>);\n`, "It's x");
+    expectMaskedText(`render(<Foo.Bar>It's y</Foo .Bar>);\n`, "It's y");
+    expectMaskedText(`render(<Foo>It's z</ /* x */ Foo>);\n`, "It's z");
+    expectMaskedText(
+      `render(<Foo.Bar>It's '</Foo.Baz>' x</Foo.Bar>);\n`,
+      "It's '</Foo.Baz>' x",
+    );
+    expectMaskedText(
+      `render(<ListItemA>It's </ListItemB> here</ListItemA>);\n`,
+      "It's </ListItemB> here",
+    );
+  });
 });
 
 describe('blankStringContent with jsx', () => {

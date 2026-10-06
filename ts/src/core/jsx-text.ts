@@ -30,11 +30,13 @@
  * `</b>` later in the file -- inside a string, say -- and blank every line
  * between (#1193). When a pass ends with elements still open, those `<` were
  * not JSX after all (a type-level generic such as `cb: <T>(x: T) => void`),
- * so the walk is repeated with every one of them read as an operator: all at
- * once, so a file with many such generics needs few passes. The cost is that
- * a real element enclosing a misread one is read as code too -- the `.ts`
- * reading, never a blanked line. Only when no pass balances does the source
- * come back unmasked -- the same reading `.ts` gets.
+ * so the walk is repeated with them read as operators -- all at once, so a
+ * file with many such generics needs few passes. An element whose OWN closing
+ * tag was seen while a misread one blocked it (a real element with a generic
+ * in an attribute) is spared while any other is left, so it keeps its
+ * masking. Tag names compare with whitespace and comments dropped
+ * (`</ Foo .Bar>` closes `<Foo.Bar>`). Only when no pass balances does the
+ * source come back unmasked -- the same reading `.ts` gets.
  */
 
 import {
@@ -56,8 +58,9 @@ type Frame =
       closing: boolean;
       angle: number;
       name: string;
+      closerSeen?: boolean;
     }
-  | { kind: 'children'; start: number; name: string }
+  | { kind: 'children'; start: number; name: string; closerSeen?: boolean }
   | { kind: 'expr'; depth: number };
 
 interface Walk {
@@ -73,13 +76,38 @@ interface Walk {
 const TAG_START = /^<(?:>|[A-Za-z_$][\w$.:-]*[\s>/{<])/;
 const TYPE_PARAMS =
   /^<\s*(?:const\s|[A-Za-z_$][\w$]*\s*(?:extends\b|=(?!>)|,))/;
-/** The tag name after `<` or `</` (`''` for a fragment). */
-const TAG_NAME = /^\s*([A-Za-z_$][\w$.:-]*)?/;
+/** One part of a tag name: `Foo`, `my-el`; joined by `.` or `:`. */
+const NAME_PART = /^[A-Za-z_$][\w$-]*/;
 /** Each failed pass marks at least one more `<`; beyond this, give up. */
 const MAX_PASSES = 64;
 
+/** The index of the next character at or after `i` that is not whitespace or a comment. */
+function skipTrivia(code: string, i: number): number {
+  let at = i;
+  for (;;) {
+    while (at < code.length && /\s/.test(code[at]!)) at += 1;
+    const end = commentEnd(code, at);
+    if (end === null) return at;
+    at = end;
+  }
+}
+
+/**
+ * The tag name after `<` or `</` (`''` for a fragment), with whitespace and
+ * comments dropped: `</ Foo .Bar>` names `Foo.Bar`.
+ */
 function tagName(code: string, at: number): string {
-  return TAG_NAME.exec(code.slice(at, at + 80))?.[1] ?? '';
+  let i = skipTrivia(code, at);
+  let name = '';
+  for (;;) {
+    const part = NAME_PART.exec(code.slice(i, i + 256))?.[0];
+    if (part === undefined) return name;
+    name += part;
+    const sep = skipTrivia(code, i + part.length);
+    if (code[sep] !== '.' && code[sep] !== ':') return name;
+    name += code[sep];
+    i = skipTrivia(code, sep + 1);
+  }
 }
 
 export function maskJsxText(code: string): string {
@@ -107,11 +135,24 @@ function run(code: string, operators: Set<number>): Walk {
   return walk;
 }
 
-/** Starts of the elements a failed pass left open, not yet read as operators. */
+/**
+ * Starts of the elements a failed pass left open, not yet read as operators
+ * -- sparing those whose own closing tag was seen, unless none is left.
+ */
 function unclosedStarts(stack: Frame[], operators: Set<number>): number[] {
-  return stack.flatMap((frame) =>
-    frame.kind !== 'expr' && !operators.has(frame.start) ? [frame.start] : [],
+  const open = stack.flatMap((frame) =>
+    frame.kind !== 'expr' && !operators.has(frame.start) ? [frame] : [],
   );
+  const unseen = open.filter((frame) => !frame.closerSeen);
+  return (unseen.length > 0 ? unseen : open).map((frame) => frame.start);
+}
+
+/** Mark the open elements named `name`: their closing tag was seen. */
+function markCloserSeen(stack: Frame[], name: string): void {
+  for (const frame of stack) {
+    if (frame.kind === 'children' || (frame.kind === 'tag' && !frame.closing))
+      if (frame.name === name) frame.closerSeen = true;
+  }
 }
 
 function step(walk: Walk, i: number): number {
@@ -223,7 +264,10 @@ function openChildTag(
 ): number | null {
   const closing = walk.code[i + 1] === '/';
   const name = tagName(walk.code, i + (closing ? 2 : 1));
-  if (closing && name !== frame.name) return null;
+  if (closing && name !== frame.name) {
+    markCloserSeen(walk.stack, name);
+    return null;
+  }
   walk.stack.push({ kind: 'tag', start: i, closing, angle: 0, name });
   return i + (closing ? 2 : 1);
 }
