@@ -28,7 +28,24 @@ function toResult(t) {
   };
 }
 
+const COUNTS = ['passed', 'failed', 'flaky', 'skipped'];
+const isCount = (v) => Number.isSafeInteger(v) && v >= 0;
+
+/**
+ * Why the row's counts cannot be carried, or null. A malformed count is never
+ * zeroed, and a row with no tests and no count measured nothing (D4).
+ */
+function countsProblem(row) {
+  const bad = COUNTS.find((f) => row[f] != null && !isCount(row[f]));
+  if (bad) return `${bad} is ${JSON.stringify(row[bad])}, not a count`;
+  if (!Array.isArray(row.tests) && !COUNTS.some((f) => isCount(row[f])))
+    return 'neither tests nor any count';
+  return null;
+}
+
 function results(row) {
+  const problem = countsProblem(row);
+  if (problem) return { error: problem };
   if (!Array.isArray(row.tests)) return { list: null };
   // An absolute or drive-lettered test_file (vitest rows can hold one) would
   // make the whole feed invalid, so its row is left out like any other.

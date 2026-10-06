@@ -95,6 +95,33 @@ describe('historyToRun (assumption C)', () => {
     },
   );
 
+  it('leaves out a row with neither tests nor any count — never a 0-test pass', () => {
+    const out = historyToRun(
+      historyRow({
+        tests: undefined,
+        passed: undefined,
+        failed: undefined,
+        flaky: undefined,
+        skipped: undefined,
+      }),
+      SCOPE,
+    );
+    expect(out.run).toBeNull();
+    expect(out.skipped).toMatch(/r1: neither tests nor any count/);
+  });
+
+  it.each([
+    ['a fractional count', { passed: 1.5 }],
+    ['a negative count', { failed: -1 }],
+    ['a string count', { flaky: '2' }],
+  ])('leaves out a row with %s rather than zeroing it', (_why, over) => {
+    for (const tests of [undefined, historyRow().tests]) {
+      const out = historyToRun(historyRow({ ...over, tests }), SCOPE);
+      expect(out.run).toBeNull();
+      expect(out.skipped).toMatch(/r1: \w+ is .+, not a count/);
+    }
+  });
+
   it('carries results null, totals from the counts, for a count-only row', () => {
     const run = runOf(historyRow({ tests: undefined }));
     expect(run.results).toBeNull();
