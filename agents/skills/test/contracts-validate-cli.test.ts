@@ -6,6 +6,8 @@
  * entry point (main guard, stdin, exitCode) with a child-level timeout.
  */
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -51,6 +53,19 @@ describe('validate.mjs CLI (in-process)', () => {
     expect(call([SITE]).stdout).toBe(
       'valid canary.site/1: 6 records checked, 0 errors',
     );
+  });
+
+  it('strips a leading BOM from a file and from stdin (#1154 S7)', () => {
+    const text = '\uFEFF' + fs.readFileSync(RUN, 'utf8');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canary-bom-'));
+    const file = path.join(dir, 'run.bom.json');
+    fs.writeFileSync(file, text, 'utf8');
+    try {
+      expect(call([file]).code).toBe(0);
+      expect(call(['-'], text).code).toBe(0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('exits 1 on a refused document and prints each path', () => {
@@ -142,5 +157,10 @@ describe('validate.mjs CLI (real process)', () => {
 
   it('exits 2 on a usage error', () => {
     expect(run(['--layer']).status).toBe(2);
+  });
+
+  it('exits 0 on BOM-prefixed stdin (#1154 S7, end to end)', () => {
+    const text = '\uFEFF' + fs.readFileSync(RUN, 'utf8');
+    expect(run(['-'], text).status).toBe(0);
   });
 });

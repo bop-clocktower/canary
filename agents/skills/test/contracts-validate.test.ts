@@ -320,3 +320,28 @@ describe('fork E: unknown fields tolerated, wrong layer refused', () => {
     ]);
   });
 });
+
+describe('#1154 S7: one leading UTF-8 byte-order mark is stripped', () => {
+  const BOM = '\uFEFF';
+
+  it('validates a BOM-prefixed document as if there were no BOM', () => {
+    const res = validateText(BOM + JSON.stringify(valid('run')));
+    expect(res.errors).toEqual([]);
+    expect(res).toMatchObject({ valid: true, checked: 1 });
+  });
+
+  it('still refuses a BOM followed by unparseable text (control)', () => {
+    expect(validateText(BOM + '{').errors).toEqual([
+      { path: '$', message: expect.stringMatching(/^not parseable JSON/) },
+    ]);
+  });
+
+  it('strips only one: a second BOM is still a parse error', () => {
+    const res = validateText(BOM + BOM + JSON.stringify(valid('run')));
+    expect(res).toMatchObject({ valid: false, checked: 0 });
+  });
+
+  it('a BOM alone is empty input, so refused (criterion 18)', () => {
+    expect(validateText(BOM)).toMatchObject({ valid: false, checked: 0 });
+  });
+});

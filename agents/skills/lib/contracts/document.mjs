@@ -22,6 +22,9 @@ const CONTRACT_RE = /^canary\.([a-z]+)\/(\d+)$/;
 
 const schemaId = (layer) => `${layer}.v1.schema.json`;
 
+/** One leading U+FEFF is an encoding marker, not JSON (#1154 S7). */
+const stripBom = (text) => (text.startsWith('\uFEFF') ? text.slice(1) : text);
+
 function loadRegistry() {
   const registry = Object.create(null);
   for (const layer of LAYERS) {
@@ -125,7 +128,7 @@ export function validateDocument(doc, opts = {}) {
 export function validateText(text, opts = {}) {
   let doc;
   try {
-    doc = JSON.parse(text);
+    doc = JSON.parse(stripBom(text));
   } catch (err) {
     return verdict(
       null,
