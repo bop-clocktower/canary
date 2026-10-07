@@ -1,0 +1,15 @@
+{
+  "issues": [1210],
+  "route": "bug",
+  "stages": ["debugging", "tdd"],
+  "reproducingTest": "ts/test/plugin-skills.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "The `skills` key shape was confirmed against the Claude Code plugins reference (code.claude.com/docs/en/plugins-reference): path or array of paths, each a directory of <name>/SKILL.md folders, and it ADDS to the default skills/ scan (unlike `agents`/`commands`, which replace theirs).",
+    "All 36 skills under agents/skills/claude-code/ are registered, including repo-maintenance ones (canary-ship, canary-setup-harness); the human-answered fork was to register the directory, not a curated subset.",
+    "On machines that also have the harness plugin, its generated `harness:canary-*` commands list alongside the plugin's `canary:<name>` skills. Accepted per the human-answered fork; either can be suppressed via skillOverrides.",
+    "Descriptions state the agent count as a word (eight) and the test derives the expected word from plugin.json `agents`, so adding an agent forces a description update. The skill count is deliberately not stated, so adding a skill does not.",
+    "Descriptions also mention slash commands, because commands/*.md load through the default commands/ scan.",
+    "plugin.json and marketplace.json are kept in JSON.stringify(_, null, 2) form, not prettier's collapsed-array form, because version-consistency.test.ts requires bump-version.mjs to be a byte-for-byte fixed point (#1064)."
+  ]
+}

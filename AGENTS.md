@@ -341,8 +341,16 @@ via slash commands.
   `SKILL.md`, command and mirror registered as a fake agent type (#1204). A new
   agent must be added to that list; `ts/test/plugin-agents.test.ts` fails if the
   list and the top-level files differ.
-- **Skills:** `agents/skills/` — three slash commands: `/canary:generate`,
-  `/canary:init`, `/canary:migrate`.
+- **Skills:** `agents/skills/claude-code/<name>/SKILL.md`. Claude Code's default
+  skill scan reads only a top-level `skills/`, so `plugin.json` **declares**
+  `"skills": ["./agents/skills/claude-code/"]` (this key adds to the default
+  scan; `agents` replaces it). Without it a plugin-only install got no canary
+  skills (#1210). Skills list as `canary:<name>`; on a machine that also has the
+  harness plugin, its generated `harness:canary-*` commands list too (suppress
+  either via `skillOverrides`). `ts/test/plugin-skills.test.ts` fails if the key
+  is dropped, if any skill there would not load (missing `SKILL.md`, `name` ≠
+  directory, no `description`), or if the manifest descriptions stop naming the
+  real agent count, the skills and the MCP server.
   - `canary-starling` (#1151): the QA site feed composer. Reads the run-history
     store, `canary.run/1` run files, the katana ledger and a
     `canary ci-ready --json` report, and writes one `canary.site/1` `site.json`,
@@ -357,6 +365,7 @@ via slash commands.
     validated `canary.site/1` feed (index.html + site.json + kit/). An invalid
     feed builds nothing; a non-empty out dir is refused; zero runs reports
     ABSTAINED.
+- **Slash commands:** `commands/*.md`, loaded by the default `commands/` scan.
 - **Activate:** load the repo root as a Claude Code plugin.
 
 ### LLM Layer (removed in v3.0)

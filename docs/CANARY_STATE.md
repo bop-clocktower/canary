@@ -1,10 +1,10 @@
 # Canary — Current State
 
-Canary ships as a Claude Code plugin (four personas: `canary-test-author`,
-`canary-test-reviewer`, `canary-framework-advisor`, `canary-flake-hunter`) plus
-a deterministic CLI (`canary recommend/init/run/migrate/version`). See the
-[README](../README.md) for installation and usage, and [roadmap.md](roadmap.md)
-for planned and in-progress work.
+Canary ships as a Claude Code plugin (eight agents, the canary skills, slash
+commands, and the `canary-mcp` MCP server) plus a deterministic CLI
+(`canary recommend/init/run/migrate/version`). See the [README](../README.md)
+for installation and usage, and [roadmap.md](roadmap.md) for planned and
+in-progress work.
 
 This file is the project ledger — Canary skills append a one-line entry below
 after generating, promoting, or setting up test infrastructure, so downstream

@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/plugin.schema.json",
   "name": "canary",
   "version": "9.0.0",
-  "description": "AI-powered test generation for Claude Code — generate, init, and migrate test suites via slash commands.",
+  "description": "AI-powered test intelligence for Claude Code: eight agents (test authoring, generation, review, healing, flake hunting, framework advice, suite init and migration), the canary skills, /canary slash commands, and the canary-mcp MCP server.",
   "agents": [
     "./agents/canary-flake-hunter.md",
     "./agents/canary-framework-advisor.md",
@@ -12,6 +12,9 @@
     "./agents/canary-test-generator.md",
     "./agents/canary-test-healer.md",
     "./agents/canary-test-reviewer.md"
+  ],
+  "skills": [
+    "./agents/skills/claude-code/"
   ],
   "hooks": "./.claude-plugin/hooks.json",
   "//": "Canonical canary MCP server identity: 'canary-mcp' (npm bin canary-mcp → dist/engine/mcp-server.js runStdio(), TS engine port #439/#507); tools resolve as mcp__canary-mcp__*. Canary tools also surface via the harness server as mcp__harness__canary_*. Keep .mcp.json and marketplace.json in sync with this name.",
