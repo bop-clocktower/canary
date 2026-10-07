@@ -68,6 +68,14 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary migrate --apply` exited 0 after deploying zero overlay skills**
+  (#1207). On a tree where `migrate --check` abstains (exit 3) because no
+  overlay skill's `deploy_to` covers the resolved shapes, `--apply` reported
+  success. It now uses `--check`'s denominator: an `--apply` from an overlay
+  that matches zero skills prints the same `Abstained ... not a pass` block and
+  exits 3, and `--json` gains an additive `abstained` key. A re-apply where
+  every skill is already current still exits 0, as do the dry run and an
+  `--apply` with no overlay (scaffold only).
 - **`canary overlay lint` called `mobile` a typo** (#1206). Its `deploy_to`
   allow-list was a hand-kept copy of five shapes, so `mobile`, `accessibility`,
   `visual`, `contract`, `mutation`, `integration`, `synthetic_data` and the
