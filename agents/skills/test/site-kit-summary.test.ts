@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { Summary } from '../lib/site-kit/panels/summary.js';
 import {
+  assessment,
   DAY,
   iso,
   live,
@@ -108,10 +109,28 @@ describe('<canary-summary>', () => {
     expect(live(root)).toContain('flakiness was not measured');
   });
 
-  it('abstains on an empty register, which cannot be told from an unread one (#1199)', () => {
-    const root = mount(Summary, siteFeed({ runs: [runRecord()] }));
+  it('abstains on the register when the ledger was not read (#1199)', () => {
+    const unread = assessment({
+      source: 'canary.katana',
+      metric: 'register',
+      status: 'not-assessed',
+      value: null,
+      unit: null,
+      reason: 'no quarantine ledger at .canary/quarantine.json',
+      evidence: { tier: null, denominator: null },
+    });
+    const root = mount(
+      Summary,
+      siteFeed({ runs: [runRecord()], assessments: [unread] }),
+    );
     expect(tiles(root).register).toBe('—');
-    expect(live(root)).toContain('register');
+    expect(live(root)).toContain('no quarantine ledger');
+  });
+
+  it('counts an empty register that was read as 0 (#1199)', () => {
+    const root = mount(Summary, siteFeed({ runs: [runRecord()] }));
+    expect(tiles(root).register).toBe('0');
+    expect(live(root)).not.toContain('register');
   });
 
   // Review findings (ship gate): the failed tile counted every suite's latest

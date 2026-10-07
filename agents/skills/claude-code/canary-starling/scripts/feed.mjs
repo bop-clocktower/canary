@@ -12,6 +12,7 @@ import { flakyTests } from './flaky.mjs';
 import {
   ciReadyAssessments,
   latestPerKey,
+  registerAbstention,
   withAbstentions,
 } from './assess.mjs';
 
@@ -84,10 +85,11 @@ export function gatherInputs(args, notes, now) {
     source: args.ciReady ?? null,
   });
   if (ci.note) notes.push(ci.note);
+  const unread = registerAbstention(config.scope, now, input.ledgerUnread);
   // Latest per key over REAL records only; abstentions fill what is left.
   const assessments = withAbstentions(
     latestPerKey([...input.assessments, ...ci.real]),
-    ci.synthetic,
+    unread ? [...ci.synthetic, unread] : ci.synthetic,
   );
   return {
     config,

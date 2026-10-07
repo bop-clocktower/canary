@@ -169,5 +169,21 @@ export function ago(finishedMs, now) {
   return hours < 48 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
 }
 
+/**
+ * Why the katana register was not read, or null (#1199). `register: []` is
+ * ambiguous on its own; canary-starling marks a dark ledger with a
+ * not-assessed `canary.katana` / `register` assessment, so an empty register
+ * WITHOUT that marker was read and is genuinely empty.
+ */
+export function registerUnread(doc) {
+  const marker = doc.assessments.find(
+    (a) =>
+      a.source === 'canary.katana' &&
+      a.metric === 'register' &&
+      a.status === 'not-assessed',
+  );
+  return marker ? marker.reason : null;
+}
+
 export const ageDays = (isoTime, now) =>
   Math.floor((now - Date.parse(isoTime)) / DAY_MS);

@@ -74,6 +74,12 @@ under the project's former name) are documented in the
   pass (`expectedStatus: "failed"`, attempt `passed`) read as `flaky` while
   Playwright and the ingest reporter fail the run. An attempt now counts as a
   recovery only when it matched the test's `expectedStatus` (default `passed`).
+- **canary-starling marks an unread katana ledger.** A dark ledger was only
+  named on stderr, so `register: []` read the same as an empty ledger. The feed
+  now carries a `not-assessed` assessment (`canary.katana` / `register`) with
+  the reason, and the site kit's register panel and summary tile show "not
+  assessed" instead of "no entries"; an empty register without the marker counts
+  as 0 (#1199).
 - **`canary migrate` detects a JS suite from any package script or its
   dependencies** (#1205). The script probe read only `scripts.test`, so a
   multi-target package exposing only `test:<variant>` scripts (`wdio run …`)

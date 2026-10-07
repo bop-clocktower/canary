@@ -182,6 +182,14 @@ A register row mirrors a `canary-katana` ledger row. Every field below is
 required; `cause` and `issue` are `string | null`, where the ledger writes an
 empty string. "Age" is not stored: a page derives it from `recorded_at`.
 
+**An unread ledger is marked, not inferred (#1199).** `register: []` alone
+cannot tell "the ledger was read and is empty" from "no ledger was read". When
+no ledger was read, the producer adds a `not-assessed` assessment to
+`assessments[]` with `source: "canary.katana"`, `metric: "register"` and the
+reason. An empty register **without** that marker was read and is genuinely
+empty; a reader shows "not assessed" with the reason when the marker is present.
+`register` keeps its array shape, so v1 readers are unaffected.
+
 | Ledger column | Register field | Notes                                                       |
 | ------------- | -------------- | ----------------------------------------------------------- |
 | (scope)       | `scope`        | `{id, env}`; the ledger is per repo, the feed is per scope. |
