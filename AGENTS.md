@@ -333,9 +333,14 @@ via slash commands.
   them, and `ts/test/version-consistency.test.ts` fails CI if they drift. (There
   is no `pyproject.toml` — the Python engine was retired in the v6.0.0 cutover,
   and the guard is a vitest suite, not pytest.)
-- **Agents:** `agents/` — seven agent definitions: `canary-test-generator`,
-  `canary-test-author`, `canary-test-reviewer`, `canary-initializer`,
-  `canary-migrator`, `canary-framework-advisor`, `canary-flake-hunter`.
+- **Agents:** `agents/*.md` — eight agent definitions: `canary-test-generator`,
+  `canary-test-author`, `canary-test-reviewer`, `canary-test-healer`,
+  `canary-initializer`, `canary-migrator`, `canary-framework-advisor`,
+  `canary-flake-hunter`. They are **declared** in `plugin.json` `agents`, which
+  replaces Claude Code's recursive `agents/` scan; without it every nested
+  `SKILL.md`, command and mirror registered as a fake agent type (#1204). A new
+  agent must be added to that list; `ts/test/plugin-agents.test.ts` fails if the
+  list and the top-level files differ.
 - **Skills:** `agents/skills/` — three slash commands: `/canary:generate`,
   `/canary:init`, `/canary:migrate`.
   - `canary-starling` (#1151): the QA site feed composer. Reads the run-history
