@@ -33,6 +33,7 @@ interface PwLocation {
 interface PwTest {
   title?: string;
   status?: string;
+  expectedStatus?: string;
   projectName?: string;
   location?: PwLocation;
   results?: PwAttempt[];
@@ -116,16 +117,14 @@ function isPassing(status: string | undefined): boolean {
   return status === 'passed' || status === 'expected';
 }
 
-/**
- * Playwright status -> canary status, as `parse.mjs` `classify` does.
- * `timedOut`, `interrupted` and anything unrecognized count as a failure, and
- * any failure with a passing attempt is a flake.
- */
-function classify(status: string | undefined, attempts: PwAttempt[]): string {
+/** Playwright -> canary status, as `parse.mjs` `classify`. A failure is flaky
+ * only if an attempt met `expectedStatus`; a test.fail() pass is not (#1194). */
+function classify(test: PwTest, attempts: PwAttempt[]): string {
+  const { status, expectedStatus = 'passed' } = test;
   if (status === 'skipped' || status === 'pending') return 'skipped';
   if (isPassing(status)) return 'passed';
   if (status === 'flaky') return 'flaky';
-  return attempts.some((a) => isPassing(a.status)) ? 'flaky' : 'failed';
+  return attempts.some((a) => a.status === expectedStatus) ? 'flaky' : 'failed';
 }
 
 function testName(entry: PwEntry): string {
@@ -171,7 +170,7 @@ function toResultRow(
   ids: { runId: string; suite: string; repo: string },
 ): TestResultInput {
   const attempts = entry.test.results ?? [];
-  const status = classify(entry.test.status, attempts);
+  const status = classify(entry.test, attempts);
   const failing = status === 'failed' || status === 'flaky';
   const error = failing ? errorText(attempts) : undefined;
   return {

@@ -75,17 +75,22 @@ function asItems(v) {
   return []; // null/undefined/false/0/""
 }
 
-/** Classify a raw Playwright status into passed/failed/flaky/skipped. */
-function classify(rawStatus, testResults) {
+/**
+ * Classify a raw Playwright status into passed/failed/flaky/skipped. A failure
+ * is flaky only when an attempt met the test's `expectedStatus` (default
+ * `passed`): a test.fail() whose attempt passed is the failure itself, not a
+ * recovered retry (#1194) -- the same call the ingest reporter makes.
+ */
+function classify(rawStatus, testResults, test) {
   if (rawStatus === 'skipped' || rawStatus === 'pending') return 'skipped';
   if (rawStatus === 'passed' || rawStatus === 'expected') return 'passed';
   if (rawStatus === 'flaky') return 'flaky';
   if (rawStatus === 'failed' || rawStatus === 'unexpected') {
-    const hasPassingRetry = testResults.some((r) => {
-      const s = dget(r, 'status', undefined);
-      return s === 'passed' || s === 'expected';
-    });
-    return hasPassingRetry ? 'flaky' : 'failed';
+    const expectedStatus = dget(test, 'expectedStatus', 'passed');
+    const recovered = testResults.some(
+      (r) => dget(r, 'status', undefined) === expectedStatus,
+    );
+    return recovered ? 'flaky' : 'failed';
   }
   return 'failed';
 }
@@ -169,7 +174,7 @@ function processSuite(suite, results, parentPath, suiteFile) {
       const testResults = asItems(dget(test, 'results', undefined));
       const rawStatus = dget(test, 'status', 'unknown');
 
-      const status = classify(rawStatus, testResults);
+      const status = classify(rawStatus, testResults, test);
 
       let error = null;
       let duration = null;
