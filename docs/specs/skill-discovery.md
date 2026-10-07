@@ -114,14 +114,30 @@ Skills that should be automatically copied into consuming repos during
 deploy_to: [api, e2e_ui]
 ```
 
-| Value           | Deploys to                     |
-| --------------- | ------------------------------ |
-| `api`           | pytest / Playwright API shape  |
-| `e2e_ui`        | Playwright E2E / browser shape |
-| `load`          | k6 / locust load shape         |
-| `frontend_unit` | vitest / jest shape            |
-| `all`           | any detected shape             |
-| _(absent)_      | never auto-deployed            |
+| Value            | Deploys to (detected from)               |
+| ---------------- | ---------------------------------------- |
+| `api`            | pytest / Playwright API shape            |
+| `e2e_ui`         | Playwright / Cypress E2E / browser shape |
+| `frontend_unit`  | vitest / jest shape                      |
+| `performance`    | k6 shape                                 |
+| `load`           | locust shape                             |
+| `mobile`         | WebdriverIO (`wdio.conf.*`) shape        |
+| `accessibility`  | axe-core shape                           |
+| `visual`         | BackstopJS shape                         |
+| `contract`       | Pact shape                               |
+| `mutation`       | Stryker shape                            |
+| `integration`    | testcontainers shape                     |
+| `synthetic_data` | faker / SDV shape                        |
+| `all`            | any detected shape                       |
+| _(absent)_       | never auto-deployed                      |
+
+The full shape vocabulary is `TEST_SHAPES` in `ts/src/core/test-shapes.ts` — the
+list the classifier and probes are typed against, and the one
+`canary overlay lint` accepts. It also names shapes no probe detects yet
+(`security`, `chaos`, `observability`, `static_analysis`, `property`,
+`llm_eval`); those deploy when a consuming repo sets `canary_shape` to them
+explicitly. Any other value is accepted with a lint warning, for the same
+reason.
 
 A skill with no `deploy_to` is still discoverable via `canary skills list` from
 within a checkout — it just won't be copied during migration.
