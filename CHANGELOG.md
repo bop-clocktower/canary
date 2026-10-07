@@ -116,6 +116,12 @@ under the project's former name) are documented in the
   nothing. They now compare resolved real paths (`scripts/lib/is-main.mjs`,
   inlined in the npm script), and a test spawns every guarded script through a
   symlink in a path containing a space.
+- **`sync-gate-result --check` passed silently when an engine source was
+  missing** (#1196). Inside a canary checkout (marked by `ts/package.json` or
+  `.git` beside `npm/`), an unreadable `ts/src/core/<file>` now exits 3
+  (abstained) and names the path, instead of exiting 0 having compared nothing.
+  A real drift still exits 1 and outranks the abstention. Outside a checkout it
+  still exits 0, but prints a one-line note that the check was skipped.
 - **`.tsx`/`.jsx` component tests are scanned** (#1180). They were outside
   `JS_TEST_EXTENSIONS`, so `canary-cassandra`, `review-test` and the test
   inventory skipped them without saying so (on one real monorepo, ~87 of ~380
