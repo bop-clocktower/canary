@@ -190,13 +190,66 @@ describe('selectRuns (D15)', () => {
     for (const r of feed)
       expect(validateDocument(r, { layer: 'run' }).errors).toEqual([]);
   });
+
+  describe('a logical run missing shards (#1200)', () => {
+    // r9 is an older, complete three-shard run; r10 is "re-run failed jobs":
+    // only its second shard reported, and it is the newest.
+    const complete = [1, 2, 3].map((s) => shardOf(runAt(s), 'r9', s, 3));
+    const ids = (rs: any[]) => rs.map((r: any) => r.run.id).sort();
+
+    it('leaves out a run with 1 of 3 shards and names it in notes', () => {
+      const partial = shardOf(runAt(20), 'r10', 2, 3);
+      const notes: string[] = [];
+      const { feed, window } = selectRuns([...complete, partial], notes);
+      expect(ids(feed)).toEqual(['r9-s1of3', 'r9-s2of3', 'r9-s3of3']);
+      expect(ids(window)).toEqual(ids(feed));
+      // The complete run, not the partial one, now carries the results.
+      expect(feed.every((r: any) => r.results !== null)).toBe(true);
+      expect(notes).toEqual([
+        'left out run r10 (suite ts-engine): 1 of 3 shards reported',
+      ]);
+    });
+
+    it('does not count a duplicate shard index as a distinct shard', () => {
+      const dupes = [1, 1, 2].map((s) => shardOf(runAt(20 + s), 'r10', s, 3));
+      const notes: string[] = [];
+      const { feed } = selectRuns([...complete, ...dupes], notes);
+      expect(feed.map((r: any) => r.run.id)).not.toContain('r10-s1of3');
+      expect(notes).toEqual([
+        'left out run r10 (suite ts-engine): 2 of 3 shards reported',
+      ]);
+    });
+
+    it('does not count an index past shard.total as one of its shards', () => {
+      const odd = [1, 2, 4].map((s) => shardOf(runAt(20 + s), 'r10', s, 3));
+      const notes: string[] = [];
+      selectRuns([...complete, ...odd], notes);
+      expect(notes).toEqual([
+        'left out run r10 (suite ts-engine): 2 of 3 shards reported',
+      ]);
+    });
+
+    it('keeps a run that has every shard, with no note', () => {
+      const notes: string[] = [];
+      const { feed } = selectRuns(complete, notes);
+      expect(ids(feed)).toEqual(['r9-s1of3', 'r9-s2of3', 'r9-s3of3']);
+      expect(notes).toEqual([]);
+    });
+
+    it('leaves a non-sharded run alone', () => {
+      const notes: string[] = [];
+      const { feed } = selectRuns([runAt(1), runAt(2)], notes);
+      expect(ids(feed)).toEqual(['r1', 'r2']);
+      expect(notes).toEqual([]);
+    });
+  });
 });
 
-/** `run` as shard `s` of 2 of the logical run `id` (the reporter's id shape). */
-function shardOf(run: any, id: string, s: number) {
+/** `run` as shard `s` of `n` of the logical run `id` (the reporter's id shape). */
+function shardOf(run: any, id: string, s: number, n = 2) {
   return {
     ...run,
-    run: { ...run.run, id: `${id}-s${s}of2`, shard: { index: s, total: 2 } },
+    run: { ...run.run, id: `${id}-s${s}of${n}`, shard: { index: s, total: n } },
   };
 }
 
@@ -742,6 +795,24 @@ describe('canary-starling (end to end)', () => {
     } finally {
       process.chdir(cwd);
     }
+  });
+
+  it('leaves a run file missing shards out of the feed and names it on stderr (#1200)', () => {
+    const shard2of3 = {
+      ...runFile,
+      run: { ...runFile.run, id: '42-2-s2of3', shard: { index: 2, total: 3 } },
+    };
+    const dir = fixture({
+      'ledger.json': { entries: [] },
+      'run.json': shard2of3,
+    });
+    const res = capture(() => starlingMain(argv(dir, [join(dir, 'run.json')])));
+    expect(res.code).toBe(0);
+    expect(res.stderr).toMatch(
+      /left out run 42-2 \(suite e2e\): 1 of 3 shards reported/,
+    );
+    const site = JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8'));
+    expect(site.runs.map((r: any) => r.run.id)).not.toContain('42-2-s2of3');
   });
 
   /** `args` without `flag` and its value. */
