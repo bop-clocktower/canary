@@ -57,6 +57,25 @@ const _PACKAGE_SCRIPT_PATTERNS: Array<[RegExp, string, string]> = [
   [/\bwdio\b/, 'wdio', 'mobile'],
 ];
 
+// package.json dependency name -> (framework, shape) (#1205). Exact package
+// names only, mapped onto frameworks the registry already knows, reusing the
+// framework/shape vocabulary of the config and script tables above.
+// `@playwright/test` is refined to api/e2e_ui by `inferPlaywrightTestType`,
+// as the config tier does.
+const _JS_DEP_PACKAGES: Array<[string, string, string]> = [
+  ['@playwright/test', 'playwright', 'e2e_ui'],
+  ['vitest', 'vitest', 'frontend_unit'],
+  ['k6', 'k6', 'performance'],
+  ['@wdio/cli', 'wdio', 'mobile'],
+  ['webdriverio', 'wdio', 'mobile'],
+];
+
+const _JS_DEP_FIELDS = [
+  'dependencies',
+  'devDependencies',
+  'peerDependencies',
+] as const;
+
 // Python dependency -> (framework, shape). MULTILINE `^` anchored on `\n` only.
 const _PYTHON_DEP_PATTERNS: Array<[RegExp, string, string]> = [
   [/(?:^|(?<=\n))pytest\b/i, 'pytest', 'api'],
@@ -77,7 +96,7 @@ const _LANGUAGE_FALLBACKS: Record<string, [string, string]> = {
 // Detects playwright UI fixture params. MULTILINE is a no-op (no `^`/`$`).
 const _PW_UI_FIXTURE_RE = /async\s*\(\s*\{[^}]*\b(?:page|browser)\b/;
 
-export type ProbeTier = 'config' | 'content' | 'language';
+export type ProbeTier = 'config' | 'content' | 'dependency' | 'language';
 
 export type ProbeResult = [
   framework: string | null,
@@ -169,24 +188,73 @@ function probeRequirements(root: string): ProbeResult | null {
   return null;
 }
 
-/** Tier 2c -- package.json scripts.test scan. */
-function probePackageScripts(root: string): ProbeResult | null {
-  const pkgJson = join(root, 'package.json');
-  if (!existsSync(pkgJson)) return null;
+/** package.json as an object, or null when absent, unreadable, or not JSON. */
+function readPackageJson(root: string): Record<string, unknown> | null {
+  const text = readTextOrNull(join(root, 'package.json'));
+  if (text === null) return null;
   try {
-    const pkg = JSON.parse(readFileSync(pkgJson, 'utf-8')) as Record<
-      string,
-      unknown
-    >;
-    const scripts = (pkg['scripts'] ?? {}) as Record<string, unknown>;
-    const testScript = String(scripts['test'] ?? '');
+    const pkg: unknown = JSON.parse(text);
+    return isRecord(pkg) ? pkg : null;
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Every string `scripts.*` entry, `test` first. Multi-target suites often
+ * expose only `test:<variant>` scripts (#1205); keeping `test` first means a
+ * package that does declare one resolves exactly as it did before.
+ */
+function orderedScripts(pkg: Record<string, unknown>): Array<[string, string]> {
+  const scripts = isRecord(pkg['scripts']) ? pkg['scripts'] : {};
+  const entries = Object.entries(scripts).filter(
+    (e): e is [string, string] => typeof e[1] === 'string',
+  );
+  return [
+    ...entries.filter(([key]) => key === 'test'),
+    ...entries.filter(([key]) => key !== 'test'),
+  ];
+}
+
+/** Tier 2c -- package.json scripts scan (`scripts.test` first, then the rest). */
+function probePackageScripts(root: string): ProbeResult | null {
+  const pkg = readPackageJson(root);
+  if (pkg === null) return null;
+  for (const [key, command] of orderedScripts(pkg)) {
     for (const [pattern, framework, shape] of _PACKAGE_SCRIPT_PATTERNS) {
-      if (pattern.test(testScript)) {
-        return [framework, shape, 'package.json (scripts.test)', 'content'];
+      if (pattern.test(command)) {
+        return [framework, shape, `package.json (scripts.${key})`, 'content'];
       }
     }
-  } catch {
-    // OSError / JSONDecodeError -> ignore.
+  }
+  return null;
+}
+
+/**
+ * Tier 2d -- package.json dependency scan (#1205).
+ *
+ * Ranked below scripts: a script says how the suite is *run*, a dependency
+ * only that the tool is installed. Ranked above the language fallback because
+ * a declared dependency is evidence observed in this package, where the
+ * language tier is inherited from harness config. Returns confidence
+ * `content`, like the other tiers that read a file's contents.
+ */
+function probePackageDeps(root: string): ProbeResult | null {
+  const pkg = readPackageJson(root);
+  if (pkg === null) return null;
+  for (const [dep, framework, shape] of _JS_DEP_PACKAGES) {
+    const field = _JS_DEP_FIELDS.find((f) => {
+      const deps = pkg[f];
+      return isRecord(deps) && Object.hasOwn(deps, dep);
+    });
+    if (field === undefined) continue;
+    const refined =
+      framework === 'playwright' ? inferPlaywrightTestType(root) : shape;
+    return [framework, refined, `package.json (${field}: ${dep})`, 'content'];
   }
   return null;
 }
@@ -205,7 +273,7 @@ function probeLanguage(config: Record<string, unknown>): ProbeResult | null {
  * Detect a test framework under *dir*, running only the requested *tiers*.
  *
  * The tier list is the whole point of this function. Root detection passes all
- * three; per-package detection passes `['config', 'content']` ONLY. The
+ * four; per-package detection never passes `language`. The
  * language tier maps `language: typescript` to playwright/e2e_ui, so running it
  * per package would make every package in a TypeScript monorepo "detect"
  * playwright by inheritance -- canary inventing findings it never observed
@@ -228,6 +296,10 @@ export function probeFramework(
   if (on('content')) {
     const hit =
       probePyproject(dir) ?? probeRequirements(dir) ?? probePackageScripts(dir);
+    if (hit !== null) return hit;
+  }
+  if (on('dependency')) {
+    const hit = probePackageDeps(dir);
     if (hit !== null) return hit;
   }
   if (on('language')) {

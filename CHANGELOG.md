@@ -68,6 +68,20 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary migrate` detects a JS suite from any package script or its
+  dependencies** (#1205). The script probe read only `scripts.test`, so a
+  multi-target package exposing only `test:<variant>` scripts (`wdio run …`)
+  detected as `unknown`, and nothing read `package.json` dependencies even
+  though the follow-up claimed "no … dependency … matched". Every `scripts.*`
+  value is now scanned (`scripts.test` still first, so existing results are
+  unchanged) and the evidence names the script
+  (`package.json (scripts.test:wdio:android)`). A new dependency tier, below
+  scripts and above the language fallback, maps `@wdio/cli`/`webdriverio`,
+  `@playwright/test`, `vitest` and `k6` to their registered framework. At a
+  workspace root it is withheld when packages already carry findings, so hoisted
+  root tooling never masks the package suites. The unresolved-framework reason
+  now names only the probes that ran — config files are still looked for at the
+  probed root only.
 - **Skill CLIs ran nothing through a symlink or a URL-encoded path** (#1182).
   All 14 skill `cli.mjs` entry points compared `import.meta.url` with a
   hand-built `file://${process.argv[1]}`, which is false through a symlink

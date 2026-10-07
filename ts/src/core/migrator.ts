@@ -56,6 +56,7 @@ import {
   inferPlaywrightTestType,
   probeFramework,
   ProbeResult,
+  ProbeTier,
 } from './framework-probes.js';
 import {
   WORKSPACE_SKIP_DIRS,
@@ -604,8 +605,13 @@ function unresolvedFrameworkFollowups(ws: WorkspaceInfo | null): string[] {
  * run's own evidence contradicts (#504 part 1).
  */
 function unresolvedFrameworkReason(ws: WorkspaceInfo | null): string {
+  // Name exactly the probe tiers that ran: config files are only looked for at
+  // the probed root (nested configs are invisible), and dependencies are read
+  // from package.json, pyproject.toml and requirements*.txt (#1205).
   const nothingMatched =
-    'no config file, dependency, or language marker matched a known framework';
+    'no root-level config file, package.json script or dependency, ' +
+    'Python dependency, or harness.config.json language matched a known ' +
+    'framework';
   if (ws === null || ws.findings.length === 0) return nothingMatched;
   const pairs = workspacePairs(ws);
   const n = packagesWithFindings(ws);
@@ -2279,7 +2285,7 @@ export class HarnessMigrator {
     const explicitShape = (rawShape == null ? '' : String(rawShape))
       .trim()
       .toLowerCase();
-    const rootProbe = this.probeFramework(root, config);
+    const rootProbe = this.probeFramework(root, config, ws);
     // A root miss falls through to the workspace packages -- but only a miss.
     // A root config file still outranks them, unchanged from before (#504).
     const resolved =
@@ -2319,11 +2325,22 @@ export class HarnessMigrator {
     ];
   }
 
+  /**
+   * Probe the root. The dependency tier is withheld when workspace packages
+   * already carry findings: a monorepo root's dependencies are usually shared
+   * tooling hoisted for every package, so letting them win would mask the
+   * suites the packages actually declare (#1205, guarding #504).
+   */
   private probeFramework(
     root: string,
     config: Record<string, unknown>,
+    ws: WorkspaceInfo | null,
   ): ProbeResult {
-    return probeFramework(root, config, ['config', 'content', 'language']);
+    const hasPackageFindings = ws !== null && ws.findings.length > 0;
+    const tiers: ProbeTier[] = hasPackageFindings
+      ? ['config', 'content', 'language']
+      : ['config', 'content', 'dependency', 'language'];
+    return probeFramework(root, config, tiers);
   }
 
   private findExistingTests(root: string): string[] {
