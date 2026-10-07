@@ -377,6 +377,28 @@ describe('JS package evidence beside a workspace (#1205)', () => {
       );
     }));
 
+  it('never lets a delegating root script mask the workspace packages', () =>
+    withTmp((root) => {
+      monorepo(root);
+      // Root scripts that fan out to one package are not a root suite. Only
+      // `scripts.test` is read at a root whose packages carry findings.
+      writeJson(join(root, 'package.json'), {
+        name: 'mono',
+        private: true,
+        scripts: {
+          test: 'turbo test',
+          e2e: 'pnpm -F web-e2e playwright test',
+          'test:unit': 'turbo run vitest',
+        },
+      });
+      const r = report(root);
+
+      expect(r.detection_source).toBe('workspace (mixed)');
+      expect(r.to_markdown()).toContain(
+        "this workspace's packages declare 2 different framework/shape",
+      );
+    }));
+
   it('finds a workspace package from its dependencies alone', () =>
     withTmp((root) => {
       monorepo(root, { vitestPackage: false });

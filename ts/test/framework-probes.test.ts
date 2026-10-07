@@ -14,8 +14,8 @@ function withTmp<T>(fn: (tmp: string) => T): T {
   }
 }
 
-const ALL = ['config', 'content', 'dependency', 'language'] as const;
-const PKG = ['config', 'content', 'dependency'] as const;
+const ALL = ['config', 'content', 'scripts', 'dependency', 'language'] as const;
+const PKG = ['config', 'content', 'scripts', 'dependency'] as const;
 
 function writeJson(path: string, value: unknown): void {
   mkdirSync(join(path, '..'), { recursive: true });
@@ -113,7 +113,7 @@ describe('multi-target JS packages (#1205)', () => {
   it('reads every scripts.* value and names the script that matched', () =>
     withTmp((tmp) => {
       multiTargetWdioPackage(tmp, { deps: false });
-      expect(probeFramework(tmp, {}, ['content'])).toEqual([
+      expect(probeFramework(tmp, {}, ['scripts'])).toEqual([
         'wdio',
         'mobile',
         'package.json (scripts.test:wdio:android)',
@@ -219,5 +219,44 @@ describe('multi-target JS packages (#1205)', () => {
     withTmp((tmp) => {
       multiTargetWdioPackage(tmp, { scripts: false });
       expect(probeFramework(tmp, {}, ['config', 'content'])[0]).toBeNull();
+    }));
+
+  it('reads only scripts.test in the content tier, as before #1205', () =>
+    withTmp((tmp) => {
+      multiTargetWdioPackage(tmp, { deps: false });
+      expect(probeFramework(tmp, {}, ['content'])[0]).toBeNull();
+    }));
+
+  it('never takes an npm lifecycle hook as test evidence', () =>
+    withTmp((tmp) => {
+      writeJson(join(tmp, 'package.json'), {
+        scripts: { postinstall: 'playwright install', prepare: 'k6 version' },
+        devDependencies: { vitest: '*' },
+      });
+      expect(probeFramework(tmp, {}, [...PKG])).toEqual([
+        'vitest',
+        'frontend_unit',
+        'package.json (devDependencies: vitest)',
+        'content',
+      ]);
+    }));
+
+  it('skips the pre/post hooks of another script, not pre-named scripts', () =>
+    withTmp((tmp) => {
+      writeJson(join(tmp, 'package.json'), {
+        scripts: {
+          test: 'node run.js',
+          e2e: 'node run.js',
+          pree2e: 'playwright install',
+          posttest: 'k6 run x.js',
+          preview: 'vitest --ui',
+        },
+      });
+      expect(probeFramework(tmp, {}, ['scripts'])).toEqual([
+        'vitest',
+        'frontend_unit',
+        'package.json (scripts.preview)',
+        'content',
+      ]);
     }));
 });

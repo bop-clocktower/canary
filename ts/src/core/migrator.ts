@@ -2326,10 +2326,11 @@ export class HarnessMigrator {
   }
 
   /**
-   * Probe the root. The dependency tier is withheld when workspace packages
-   * already carry findings: a monorepo root's dependencies are usually shared
-   * tooling hoisted for every package, so letting them win would mask the
-   * suites the packages actually declare (#1205, guarding #504).
+   * Probe the root. When workspace packages already carry findings, the root
+   * keeps its pre-#1205 evidence (config, `scripts.test`, language): its other
+   * scripts usually delegate to one package and its dependencies are tooling
+   * hoisted for all of them, so either would mask the suites the packages
+   * declare (#504).
    */
   private probeFramework(
     root: string,
@@ -2339,7 +2340,7 @@ export class HarnessMigrator {
     const hasPackageFindings = ws !== null && ws.findings.length > 0;
     const tiers: ProbeTier[] = hasPackageFindings
       ? ['config', 'content', 'language']
-      : ['config', 'content', 'dependency', 'language'];
+      : ['config', 'content', 'scripts', 'dependency', 'language'];
     return probeFramework(root, config, tiers);
   }
 

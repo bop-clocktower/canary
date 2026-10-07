@@ -90,7 +90,8 @@ const _LANGUAGE_FALLBACKS: Record<string, [string, string]> = {
 // Detects playwright UI fixture params. MULTILINE is a no-op (no `^`/`$`).
 const _PW_UI_FIXTURE_RE = /async\s*\(\s*\{[^}]*\b(?:page|browser)\b/;
 
-export type ProbeTier = 'config' | 'content' | 'dependency' | 'language';
+export type ProbeTier =
+  'config' | 'content' | 'scripts' | 'dependency' | 'language';
 
 export type ProbeResult = [
   framework: string | null,
@@ -184,10 +185,9 @@ function probeRequirements(root: string): ProbeResult | null {
 
 /** package.json as an object, or null when absent, unreadable, or not JSON. */
 function readPackageJson(root: string): Record<string, unknown> | null {
+  const text = readTextOrNull(join(root, 'package.json'));
   try {
-    const pkg: unknown = JSON.parse(
-      readFileSync(join(root, 'package.json'), 'utf-8'),
-    );
+    const pkg: unknown = JSON.parse(text ?? ''); // missing file -> throws -> null
     return isRecord(pkg) ? pkg : null;
   } catch {
     return null;
@@ -198,37 +198,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// npm lifecycle hooks install/publish a package: never test evidence (#1205).
+const _LIFECYCLE_RE =
+  /^(?:(?:pre|post)?(?:install|publish|pack|version)|prepare|prepublishOnly)$/;
+
 /**
- * Every string `scripts.*` entry, `test` first so a package declaring one
- * resolves as before; multi-target suites often have only `test:<x>` (#1205).
+ * Tier 2d filter -- any other script except lifecycle hooks and the pre/post
+ * hook of a declared script; multi-target suites often have only `test:<x>`
+ * (#1205). Its own tier so a workspace root can withhold it.
  */
-function orderedScripts(pkg: Record<string, unknown>): Array<[string, string]> {
-  const scripts = isRecord(pkg['scripts']) ? pkg['scripts'] : {};
-  const entries = Object.entries(scripts).filter(
-    (e): e is [string, string] => typeof e[1] === 'string',
-  );
-  return [
-    ...entries.filter(([key]) => key === 'test'),
-    ...entries.filter(([key]) => key !== 'test'),
-  ];
+function isOtherScript(key: string, scripts: object): boolean {
+  const hooked = /^(?:pre|post)(.+)$/.exec(key)?.[1] ?? '';
+  const hook = _LIFECYCLE_RE.test(key) || Object.hasOwn(scripts, hooked);
+  return key !== 'test' && !hook;
 }
 
-/** Tier 2c -- package.json scripts scan (`scripts.test` first, then the rest). */
-function probePackageScripts(root: string): ProbeResult | null {
+/** Tiers 2c/2d -- the first script *keep* admits that a runner matches. */
+function probeScripts(
+  root: string,
+  keep: (key: string, scripts: object) => boolean,
+): ProbeResult | null {
   const pkg = readPackageJson(root);
-  if (pkg === null) return null;
-  for (const [key, command] of orderedScripts(pkg)) {
-    for (const [pattern, framework, shape] of _PACKAGE_SCRIPT_PATTERNS) {
-      if (pattern.test(command)) {
-        return [framework, shape, `package.json (scripts.${key})`, 'content'];
-      }
-    }
+  const scripts = isRecord(pkg?.['scripts']) ? pkg['scripts'] : {};
+  for (const [key, command] of Object.entries(scripts)) {
+    if (typeof command !== 'string' || !keep(key, scripts)) continue;
+    const m = _PACKAGE_SCRIPT_PATTERNS.find(([re]) => re.test(command));
+    if (m) return [m[1], m[2], `package.json (scripts.${key})`, 'content'];
   }
   return null;
 }
 
 /**
- * Tier 2d -- package.json dependency scan (#1205). Below scripts: a script says
+ * Tier 2e -- package.json dependency scan (#1205). Below scripts: a script says
  * how the suite runs, a dependency only that the tool is installed. Above the
  * language fallback: a dependency is observed here, a language is inherited.
  */
@@ -260,12 +261,11 @@ function probeLanguage(config: Record<string, unknown>): ProbeResult | null {
 /**
  * Detect a test framework under *dir*, running only the requested *tiers*.
  *
- * The tier list is the whole point of this function. Root detection passes all
- * four; per-package detection never passes `language`. The
- * language tier maps `language: typescript` to playwright/e2e_ui, so running it
- * per package would make every package in a TypeScript monorepo "detect"
- * playwright by inheritance -- canary inventing findings it never observed
- * (#504 part 1, spec test #8).
+ * The tier list is the whole point of this function. A workspace root whose
+ * packages carry findings withholds `scripts` and `dependency` (#1205). No
+ * package probe passes `language`: it maps `language: typescript` to
+ * playwright/e2e_ui, so every package in a TypeScript monorepo would "detect"
+ * playwright by inheritance -- findings never observed (#504 part 1, test #8).
  *
  * Note the tier list and the returned `confidence` are not the same axis: the
  * config tier returns confidence `content` when `inferPlaywrightTestType`
@@ -276,22 +276,21 @@ export function probeFramework(
   config: Record<string, unknown>,
   tiers: ProbeTier[],
 ): ProbeResult {
-  const on = (t: ProbeTier): boolean => tiers.includes(t);
-  if (on('config')) {
-    const hit = probeConfig(dir);
-    if (hit !== null) return hit;
-  }
-  if (on('content')) {
-    const hit =
-      probePyproject(dir) ?? probeRequirements(dir) ?? probePackageScripts(dir);
-    if (hit !== null) return hit;
-  }
-  if (on('dependency')) {
-    const hit = probePackageDeps(dir);
-    if (hit !== null) return hit;
-  }
-  if (on('language')) {
-    const hit = probeLanguage(config);
+  const steps: Array<[ProbeTier, () => ProbeResult | null]> = [
+    ['config', () => probeConfig(dir)],
+    [
+      'content',
+      () =>
+        probePyproject(dir) ??
+        probeRequirements(dir) ??
+        probeScripts(dir, (key) => key === 'test'),
+    ],
+    ['scripts', () => probeScripts(dir, isOtherScript)],
+    ['dependency', () => probePackageDeps(dir)],
+    ['language', () => probeLanguage(config)],
+  ];
+  for (const [tier, probe] of steps) {
+    const hit = tiers.includes(tier) ? probe() : null;
     if (hit !== null) return hit;
   }
   return [null, 'unknown', 'none', 'none'];

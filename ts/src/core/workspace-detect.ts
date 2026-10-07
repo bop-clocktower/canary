@@ -227,7 +227,7 @@ function configFindings(dir: string, rel: string): WorkspaceFinding[] {
 
 /**
  * Findings for one package: every config-tier match, or -- only when the config
- * tier found nothing at all -- a single content- or dependency-tier answer.
+ * tier found nothing at all -- a single content-, scripts- or dependency-tier answer.
  *
  * The language tier is deliberately withheld; see `probeFramework` for why
  * inheriting a root `language:` per package would invent findings (#504 part 1,
@@ -243,7 +243,7 @@ function probePackage(
   const [framework, shape, source, confidence]: ProbeResult = probeFramework(
     dir,
     config,
-    ['content', 'dependency'],
+    ['content', 'scripts', 'dependency'],
   );
   return framework === null
     ? []
