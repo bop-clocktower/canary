@@ -68,6 +68,14 @@ under the project's former name) are documented in the
 
 ### Fixed
 
+- **`canary migrate --apply` exited 0 after deploying zero overlay skills**
+  (#1207). On a tree where `migrate --check` abstains (exit 3) because no
+  overlay skill's `deploy_to` covers the resolved shapes, `--apply` reported
+  success. It now uses `--check`'s denominator: an `--apply` from an overlay
+  that matches zero skills prints the same `Abstained ... not a pass` block and
+  exits 3, and `--json` gains an additive `abstained` key. A re-apply where
+  every skill is already current still exits 0, as do the dry run and an
+  `--apply` with no overlay (scaffold only).
 - **Skill CLIs ran nothing through a symlink or a URL-encoded path** (#1182).
   All 14 skill `cli.mjs` entry points compared `import.meta.url` with a
   hand-built `file://${process.argv[1]}`, which is false through a symlink

@@ -292,6 +292,25 @@ for, so `--check` can never report in sync about skills it never examined. The
 scalar `shape` is unchanged and keeps its meaning; `shapes` is purely additive,
 so an existing consumer of this payload is unaffected.
 
+### `migrate --apply` abstains on the same tree
+
+`--apply` uses the same denominator as `--check`: the overlay skills whose
+`deploy_to` covers the resolved shape set. When an overlay is given (`--from`,
+or the single tracked overlay) and that denominator is zero, the apply deployed
+nothing, so it prints the same **Abstained** block, with the same shape
+remediation, and exits `3` instead of `0` (#1207). `--json` carries
+`abstained: true`.
+
+| Exit | Meaning                                                                                                                                      |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Applied: at least one overlay skill matched (copied, refreshed, or already current), or no overlay was given and only config was scaffolded. |
+| `1`  | Error: no harness project, unresolvable overlay, or a workflow collision.                                                                    |
+| `3`  | **Abstained**: an overlay was given and zero of its skills match this project's shapes.                                                      |
+
+An unknown framework is not part of the rule, because `--check` does not consult
+it and skills deploy either way. A dry run without `--apply` keeps its advisory
+zero and exits `0`.
+
 ### One-way ownership (the safety guarantee)
 
 Deployment is **strictly one-way**: the overlay owns every file it deploys.

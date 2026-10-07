@@ -1017,25 +1017,9 @@ export class FreshnessReport {
       );
     }
     if (this.results.length === 0) {
-      lines.push("_No overlay skills match this project's shape._", '');
       lines.push(
-        `${WARN} **Abstained** ${EMDASH} the gate verified zero skills, so this is not a pass.`,
-        '',
+        ...zeroSkillAbstention(this.shapes, 'the gate verified zero skills'),
       );
-      if (this.shapes.length === 0) {
-        lines.push(
-          'The shape could not be detected. Set `canary_shape` in',
-          '`.canary/company.json` or pass `--framework <name>`.',
-          '',
-        );
-      } else {
-        const covered = this.shapes.map((s) => `\`${s}\``).join(', ');
-        lines.push(
-          `The overlay ships no skills with \`deploy_to\` covering ${covered}.`,
-          "Check the overlay's `deploy_to` lists or the resolved `canary_shape`.",
-          '',
-        );
-      }
       lines.push(...workflowMarkdown(this.workflows, false));
       return lines.join('\n');
     }
@@ -1089,6 +1073,37 @@ export class FreshnessReport {
     lines.push(...workflowMarkdown(this.workflows, false));
     return lines.join('\n');
   }
+}
+
+/**
+ * The zero-overlay-skill abstention block shared by `--check` (#503) and
+ * `--apply` (#1207): the same denominator (overlay skills matching the
+ * resolved shapes) and the same verdict, so the two modes can never disagree
+ * about one tree. *what* names the surface's own zero ("the gate verified zero
+ * skills" / "this apply deployed zero overlay skills").
+ */
+function zeroSkillAbstention(shapes: string[], what: string): string[] {
+  const lines = [
+    "_No overlay skills match this project's shape._",
+    '',
+    `${WARN} **Abstained** ${EMDASH} ${what}, so this is not a pass.`,
+    '',
+  ];
+  if (shapes.length === 0) {
+    lines.push(
+      'The shape could not be detected. Set `canary_shape` in',
+      '`.canary/company.json` or pass `--framework <name>`.',
+      '',
+    );
+  } else {
+    const covered = shapes.map((s) => `\`${s}\``).join(', ');
+    lines.push(
+      `The overlay ships no skills with \`deploy_to\` covering ${covered}.`,
+      "Check the overlay's `deploy_to` lists or the resolved `canary_shape`.",
+      '',
+    );
+  }
+  return lines;
 }
 
 /**
@@ -1153,6 +1168,7 @@ export interface MigrationReportInit {
   config_warnings?: string[];
   workspace?: WorkspaceInfo | null;
   shapes?: string[];
+  overlay_path?: string | null;
 }
 
 export class MigrationReport {
@@ -1176,6 +1192,8 @@ export class MigrationReport {
   workspace: WorkspaceInfo | null;
   /** Every detected shape, deduplicated and sorted; unread until Milestone 2. */
   shapes: string[];
+  /** The overlay this run deployed from, or null when none was given (#1207). */
+  overlay_path: string | null;
 
   constructor(init: MigrationReportInit) {
     this.framework = init.framework;
@@ -1195,6 +1213,35 @@ export class MigrationReport {
     this.config_warnings = init.config_warnings ?? [];
     this.workspace = init.workspace ?? null;
     this.shapes = init.shapes ?? [];
+    this.overlay_path = init.overlay_path ?? null;
+  }
+
+  /**
+   * An `--apply` that deployed zero overlay skills from a given overlay has
+   * abstained, not succeeded (#1207). Mirrors `--check` (#503) exactly: the
+   * denominator is every overlay skill matching the resolved shapes -- copied,
+   * refreshed, or skipped as current/locally edited all count, as `--check`
+   * counts current and local-edit rows -- so a tree `--check` abstains on is
+   * a tree `--apply` abstains on.
+   *
+   * Scoped to an apply WITH an overlay. A dry run keeps its advisory zero
+   * (#504), and an overlay-less apply is the scaffold-only mode, whose
+   * success is the config files it writes, not skills. An unknown framework is
+   * deliberately not part of the rule: `--check` does not consult it, and a
+   * detection miss must not block deployment (#295) -- a repo that deployed
+   * skills under `unknown` did adopt.
+   */
+  get abstained(): boolean {
+    if (this.dry_run || this.overlay_path === null) return false;
+    return gateOutcome(
+      { checked: this.deployed_skills.length, findings: [] },
+      'gate',
+    ).abstained;
+  }
+
+  /** 0 applied (or dry run), 3 abstained -- the reserved code (ADR 0009). */
+  exit_code(): number {
+    return this.abstained ? EXIT_ABSTAINED : 0;
   }
 
   /**
@@ -1423,6 +1470,20 @@ export class MigrationReport {
 
     lines.push(...workflowMarkdown(this.installed_workflows, this.dry_run));
 
+    // #1207: the abstention prints whether or not follow-ups exist -- an
+    // unknown framework always has follow-ups, and that is exactly the repo
+    // where a silent zero-skill apply hid.
+    if (this.abstained) {
+      lines.push(
+        '## Status',
+        '',
+        ...zeroSkillAbstention(
+          this.shapes,
+          'this apply deployed zero overlay skills',
+        ),
+      );
+    }
+
     if (this.manual_followups.length > 0) {
       lines.push('## Manual Follow-ups Required', '');
       for (const item of this.manual_followups) lines.push(`- ${item}`);
@@ -1462,7 +1523,7 @@ export class MigrationReport {
           '',
         );
       }
-    } else {
+    } else if (!this.abstained) {
       lines.push(
         '## Status',
         '',
@@ -1654,6 +1715,7 @@ export class HarnessMigrator {
         config_warnings: ctx.config_warnings,
         workspace: ctx.workspace,
         shapes: deployShapes,
+        overlay_path: overlayPath,
         deployed_skills: deployed,
         installed_workflows: this.installWorkflows(
           deployShapes,
@@ -1765,6 +1827,7 @@ export class HarnessMigrator {
       config_warnings: ctx.config_warnings,
       workspace: ctx.workspace,
       shapes: deployShapes,
+      overlay_path: overlayPath,
     });
   }
 

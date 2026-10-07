@@ -63,4 +63,7 @@ Overlay (if applicable): <overlay path or "none">
 - User explicitly confirmed before apply was called.
 - Final response lists created files, deployed skills, and required manual
   follow-ups.
+- If an overlay was given and zero skills deployed, the apply **abstained** (the
+  CLI exits `3`). Report it as not a pass, with the shape remediation the report
+  prints, never as a successful migration.
 - If no harness project is detected, the agent surfaces the error and stops.

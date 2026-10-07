@@ -625,12 +625,17 @@ export function migrateCmd(opts: MigrateOptions, deps: MainDeps): void {
         existing_suites: report.existing_suites,
         workspace: report.workspace,
         shapes: report.shapes,
+        // #1207, additive: an --apply from an overlay that deployed zero
+        // skills is an abstention (exit 3), same denominator as --check.
+        abstained: report.abstained,
       }),
     );
+    if (report.exit_code() !== 0) throw new CliExitError(report.exit_code());
     return;
   }
 
   deps.out(report.to_markdown());
+  if (report.exit_code() !== 0) throw new CliExitError(report.exit_code());
 
   if (dryRun && report.would_create.length) {
     deps.out(
