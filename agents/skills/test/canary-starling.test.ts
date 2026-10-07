@@ -797,6 +797,45 @@ describe('canary-starling (end to end)', () => {
     }
   });
 
+  // #1199: `register: []` alone cannot tell "read and empty" from "never
+  // read". A dark ledger is carried in the feed as a not-assessed marker.
+  const katana = (site: any) =>
+    site.assessments.filter(
+      (a: any) => a.source === 'canary.katana' && a.metric === 'register',
+    );
+
+  it('marks a dark ledger with a not-assessed register assessment (#1199)', () => {
+    const dir = fixture();
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      const res = capture(() => starlingMain(drop(argv(dir), '--ledger')));
+      expect(res.code).toBe(0);
+    } finally {
+      process.chdir(cwd);
+    }
+    const site = JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8'));
+    expect(validateDocument(site, { layer: 'site' }).errors).toEqual([]);
+    expect(site.register).toEqual([]);
+    expect(katana(site)).toEqual([
+      expect.objectContaining({
+        scope: SCOPE,
+        status: 'not-assessed',
+        value: null,
+        reason: expect.stringMatching(/no quarantine ledger/),
+      }),
+    ]);
+  });
+
+  it('carries no marker when the ledger was read and is empty (#1199)', () => {
+    const dir = fixture({ 'ledger.json': { schema_version: 1, entries: [] } });
+    const res = capture(() => starlingMain(argv(dir)));
+    expect(res.code).toBe(0);
+    const site = JSON.parse(readFileSync(join(dir, 'site.json'), 'utf8'));
+    expect(site.register).toEqual([]);
+    expect(katana(site)).toEqual([]);
+  });
+
   it('leaves a run file missing shards out of the feed and names it on stderr (#1200)', () => {
     const shard2of3 = {
       ...runFile,

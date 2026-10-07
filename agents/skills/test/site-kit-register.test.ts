@@ -2,12 +2,14 @@
 import { describe, expect, it } from 'vitest';
 import { Register } from '../lib/site-kit/panels/register.js';
 import {
+  assessment,
   DAY,
   iso,
   live,
   mount,
   NOW,
   registerRow,
+  SCOPE,
   siteFeed,
 } from './site-kit-helpers.js';
 
@@ -37,11 +39,37 @@ describe('<canary-register>', () => {
     expect(root.querySelector('li strong')!.textContent).toBe('old');
   });
 
-  it('announces that an empty register is ambiguous rather than claiming no debt', () => {
-    const root = mount(Register, siteFeed());
+  // #1199: starling marks a dark ledger with a not-assessed assessment.
+  const unread = assessment({
+    scope: SCOPE,
+    source: 'canary.katana',
+    metric: 'register',
+    status: 'not-assessed',
+    value: null,
+    unit: null,
+    reason: 'no quarantine ledger at .canary/quarantine.json',
+    evidence: { tier: null, denominator: null },
+    sources: [],
+  });
+
+  it('says not assessed, with the reason, when the ledger was not read (#1199)', () => {
+    const root = mount(Register, siteFeed({ assessments: [unread] }));
     expect(root.querySelector('ul')).toBeNull();
     expect(live(root)).toContain(
-      'An empty register can also mean no ledger was read',
+      'Not assessed — no quarantine ledger at .canary/quarantine.json',
     );
+    expect(live(root)).not.toContain('No skipped or removed tests');
+  });
+
+  it('says there are no entries when the ledger was read and is empty (#1199)', () => {
+    const root = mount(Register, siteFeed());
+    expect(root.querySelector('ul')).toBeNull();
+    expect(live(root)).toBe('No skipped or removed tests.');
+  });
+
+  it('ignores a not-assessed register metric from another source', () => {
+    const other = { ...unread, source: 'canary.ci-ready' };
+    const root = mount(Register, siteFeed({ assessments: [other] }));
+    expect(live(root)).toBe('No skipped or removed tests.');
   });
 });
