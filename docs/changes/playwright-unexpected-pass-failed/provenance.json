@@ -1,0 +1,13 @@
+{
+  "issues": [1194],
+  "route": "bug",
+  "stages": ["harness-debugging", "harness-tdd"],
+  "reproducingTest": "ts/test/history-record-playwright.test.ts",
+  "closingKeyword": "Closes",
+  "assumptions": [
+    "Recovery rule follows the issue's fix direction and the ingest reporter (#1191): a failing test is flaky only when some attempt's status equals the test's expectedStatus, defaulting to 'passed' when the report omits it.",
+    "An attempt-level status of 'expected' no longer counts as a passing retry. Playwright only emits passed/failed/timedOut/skipped/interrupted on attempts, and no existing fixture used 'expected' there.",
+    "Scope is classification only. The history reader still records no error text for an unexpected pass (Playwright writes none; the ingest reporter synthesizes 'Expected to fail, but passed.'). That parity gap is left for a follow-up.",
+    "The second reproducing test is agents/skills/test/canary-test-reporter.test.ts ('keys recovery on expectedStatus ...'); both fail without the fix."
+  ]
+}

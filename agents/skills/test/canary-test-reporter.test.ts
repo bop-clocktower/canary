@@ -192,6 +192,37 @@ describe('parseResults', () => {
     expect(report.results[0].error).toBeNull();
   });
 
+  it('keys recovery on expectedStatus: a test.fail() that passed is failed, not flaky (#1194)', () => {
+    const xfail = (status: string, results: unknown[]) => ({
+      ...mkTest(status, status, results),
+      expectedStatus: 'failed',
+    });
+    const data = writeResults(mkTmp(), {
+      suites: [
+        mkSuite('root', [
+          mkSpec('s', [
+            xfail('unexpected', [mkResult('passed', 10)]),
+            xfail('expected', [mkResult('failed', 10, 'boom')]),
+            {
+              ...mkTest('flake', 'unexpected', [
+                mkResult('failed', 10, 'boom'),
+                mkResult('passed', 10),
+              ]),
+              expectedStatus: 'passed',
+            },
+          ]),
+        ]),
+      ],
+    });
+    const report = parseResults(data);
+    expect(report.results.map((r: { status: string }) => r.status)).toEqual([
+      'failed',
+      'passed',
+      'flaky',
+    ]);
+    expect(report).toMatchObject({ failed: 1, passed: 1, flaky: 1 });
+  });
+
   it('literal flaky status is honored', () => {
     const data = writeResults(mkTmp(), {
       suites: [
